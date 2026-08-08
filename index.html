@@ -7580,6 +7580,7 @@ if(location.protocol==='file:'){
 
     let kaykit3D = null;
     let kaykitSyncFrame = 0;
+    let kaykitLastSyncAt = 0;
 
     function kaykitHash(...values){
       let hash = 2166136261;
@@ -7842,12 +7843,13 @@ if(location.protocol==='file:'){
         staticGroup,dynamicGroup,hitGroup,fxGroup,raycaster,pointer,clock,loader,textureLoader,
         hitMeshes:[],assets:new Map(),assetAnimations:new Map(),assetPromises:new Map(),failedAssets:new Set(),assetSources:new Map(),assetTextureUrls:new Map(),
         textureCache:new Map(),texturedMaterials:0,untexturedMaterials:0,repairedMaterials:0,failedTextureAssets:new Set(),missingTexture:null,
-        mixers:[],heroAnimators:[],proceduralHeroes:[],animatedObjects:[],hoverCell:null,hoverMarker:null,viewMode:"isometric",disposed:false,
+        mixers:[],heroAnimators:[],proceduralHeroes:[],animatedObjects:[],hoverCell:null,hoverMarker:null,viewMode:"front",disposed:false,
         zoomDistance:12.4,minZoom:6.4,maxZoom:25,viewTarget:new THREE.Vector3(0,.22,.18),
         materials:new Map(),geometries:new Map(),lastStateSignature:"",loadedCount:0,totalAssets:Object.keys(KAYKIT_ASSETS).length,
         packCatalog:new Map(),packRepresentatives:new Map(),packReady:new Set(),packErrors:new Set(),
         animationClipNames:new Set(),pendingActionAnimations:new Map(),activeMovementTweens:new Map(),characterHistory:new Map(),characterFacing:new Map(),cellVisuals:new Map(),hoveredVisuals:[],interactiveMeshes:[],universeSeed:Date.now(),
-        orbit:null,manualOrbit:{azimuth:Math.PI/4,polar:.88},cameraTween:null,tmpTweenTarget:new THREE.Vector3(),autoFit:true,userRotated:false,userInteracting:false,lastAspect:1
+        orbit:null,manualOrbit:{azimuth:Math.PI/4,polar:.88},cameraTween:null,tmpTweenTarget:new THREE.Vector3(),autoFit:true,userRotated:false,userInteracting:false,lastAspect:1,
+        syncInProgress:false,syncPending:false
       };
 
       if(THREE.OrbitControls){
@@ -9015,7 +9017,7 @@ if(location.protocol==='file:'){
       const heightDistance=(boardSize/2)/Math.tan(verticalFov/2);
       const widthDistance=(boardSize/2)/Math.tan(horizontalFov/2);
       const base=Math.max(heightDistance,widthDistance);
-      const multiplier=mode==="front"?.60:.68;
+      const multiplier=mode==="front"?.64:.68;
       return THREE.MathUtils.clamp(base*multiplier,kaykit3D.minZoom,kaykit3D.maxZoom);
     }
 
@@ -9124,9 +9126,17 @@ if(location.protocol==='file:'){
     }
 
     function scheduleKayKitSync(){
-      if(document.body.dataset.visualMode!=="alternative") return;
+      if(document.body.dataset.visualMode!="alternative") return;
+      const now = performance.now();
+      if(kaykit3D?.syncInProgress){
+        kaykit3D.syncPending = true;
+        return;
+      }
+      if(now - kaykitLastSyncAt < 20 && kaykitSyncFrame) return;
       cancelAnimationFrame(kaykitSyncFrame);
       kaykitSyncFrame=requestAnimationFrame(() => {
+        kaykitSyncFrame = 0;
+        kaykitLastSyncAt = performance.now();
         if(!kaykit3D) initKayKit3D();
         if(kaykit3D) syncKayKitScene();
       });
@@ -9859,7 +9869,13 @@ if(location.protocol==='file:'){
 
     function syncKayKitScene(){
       if(!kaykit3D || !state || document.body.dataset.visualMode!=="alternative") return;
-      resizeKayKit3D();
+      if(kaykit3D.syncInProgress){
+        kaykit3D.syncPending = true;
+        return;
+      }
+      kaykit3D.syncInProgress = true;
+      try {
+        resizeKayKit3D();
       clearKayKitGroup(kaykit3D.dynamicGroup);
       clearKayKitVisualHover();
       kaykit3D.mixers=[];
@@ -10014,6 +10030,13 @@ if(location.protocol==='file:'){
       });
 
       kaykit3D.lastStateSignature=`${state.turn}|${state.phase}|${state.islands.length}|${state.characters.length}|${state.currentPlayer}`;
+      } finally {
+        kaykit3D.syncInProgress = false;
+        if(kaykit3D.syncPending){
+          kaykit3D.syncPending = false;
+          scheduleKayKitSync();
+        }
+      }
     }
 
     let kaykitLastVisualFrame=0;
@@ -14467,6 +14490,7 @@ if(location.protocol==='file:'){
 
 
     function scheduleBoardRender(){
+      if(document.body.dataset.visualMode === "alternative") return;
       if(boardRenderFrame || !state) return;
       boardRenderFrame = requestAnimationFrame(() => {
         boardRenderFrame = 0;
@@ -17911,8 +17935,8 @@ body{color:var(--v66-ink)}
     {value:'citadels',title:'Citadelles en mouvement',desc:'12 îles · Grande bataille.',kind:'citadels'}
   ];
   const difficultyMeta=[['easy','Facile'],['normal','Normal'],['hard','Difficile'],['expert','Expert']];
-  let selectedBoard='spiral';
-  let selectedDifficulty='normal';
+  let selectedBoard='classic';
+  let selectedDifficulty='expert';
 
   function modeIcon(kind){
     if(kind==='online') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/></svg>';
