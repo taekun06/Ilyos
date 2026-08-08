@@ -1,0 +1,8 @@
+ILYOS V75.1 — STABLE NETLIFY
+
+- Base : ILYOS V75_NETLIFY_READY.
+- Suppression du script d’autorité V74.1 qui réécrivait le badge après chargement.
+- Toutes les écritures de version retardées héritées sont alignées sur V75.1.
+- Une seule autorité finale V75.1.
+- Aucun ajout provenant de V76 ou V77.
+- Aucun changement volontaire des règles, de l’IA, du plateau, du rendu ou du multijoueur.
