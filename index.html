@@ -8705,12 +8705,13 @@ if(location.protocol==='file:'){
         kaykit3D.characterFacing.set(id,kaykitFacingRotation(character.r,character.c,target.r,target.c));
       }
       const startedAt=performance.now();
-      kaykit3D.pendingActionAnimations.set(id,{intent,startedAt,expires:startedAt+duration,duration,target,path:Array.isArray(path)?path.map(step=>[step[0],step[1]]):null});
+      const actionToken=`${id}:${intent}:${startedAt}:${Math.random().toString(16).slice(2)}`;
+      kaykit3D.pendingActionAnimations.set(id,{intent,startedAt,expires:startedAt+duration,duration,target,path:Array.isArray(path)?path.map(step=>[step[0],step[1]]):null,actionToken,played:false});
       scheduleKayKitSync();
       setTimeout(() => {
         if(!kaykit3D) return;
         const pending=kaykit3D.pendingActionAnimations.get(id);
-        if(pending && pending.expires<=performance.now()){
+        if(pending && pending.actionToken===actionToken && pending.expires<=performance.now()){
           kaykit3D.pendingActionAnimations.delete(id);
           scheduleKayKitSync();
         }
@@ -9989,7 +9990,15 @@ if(location.protocol==='file:'){
         registerKayKitInteractive(hero,"character",character.r,character.c);
         const pending=kaykit3D.pendingActionAnimations.get(String(character.id));
         const animationIntent=pending && pending.expires>performance.now() ? pending.intent : "neutral";
-        if(safeNeutral) addAssetAnimation(hero,assetKey,animationIntent,kaykitHash(character.id,index));
+        const isTransientAction = !!(pending && pending.expires>performance.now() && !["move","neutral"].includes(pending.intent));
+        const shouldStartTransientAction = isTransientAction && !pending.played;
+        const shouldSkipTransientReplay = isTransientAction && pending.played;
+        if(shouldStartTransientAction){
+          addAssetAnimation(hero,assetKey,animationIntent,kaykitHash(character.id,index));
+          pending.played = true;
+        }else if(safeNeutral && !shouldSkipTransientReplay){
+          addAssetAnimation(hero,assetKey,animationIntent,kaykitHash(character.id,index));
+        }
         if(pending?.intent==="move" && Array.isArray(pending.path) && pending.path.length){
           const route=[[character.r,character.c],...pending.path];
           kaykit3D.activeMovementTweens.set(String(character.id),{
@@ -10048,9 +10057,8 @@ if(location.protocol==='file:'){
         kaykit3D.clock.getDelta();
         return;
       }
-      const activeVisualMotion=!!(kaykit3D.activeMovementTweens?.size || kaykit3D.pendingActionAnimations?.size || kaykit3D.cameraTween || kaykit3D.userInteracting);
-      const lowPower=(navigator.hardwareConcurrency||4)<=4 || (navigator.deviceMemory||4)<=4;
-      kaykitAdaptiveFrameInterval=activeVisualMotion ? 16.7 : (lowPower ? 50 : 33.3);
+      const visibleKaykit3D = document.body.dataset.visualMode === "alternative";
+      kaykitAdaptiveFrameInterval = visibleKaykit3D ? 16.7 : 33.3;
       if(frameTime-kaykitLastVisualFrame<kaykitAdaptiveFrameInterval) return;
       kaykitLastVisualFrame=frameTime;
       const delta=Math.min(.05,kaykit3D.clock.getDelta());
