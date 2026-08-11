@@ -1,4 +1,3 @@
-wToast(
             spawn
               ? "Une île et un gardien ont été placés automatiquement."
               : "Une île a été placée automatiquement. Limite de 5 gardiens atteinte."
@@ -986,4 +985,4 @@ wToast(
         state.inputLocked = false;
         els.gameScreen.classList.remove("ai-turn");
         state.phase = "ACTION_SELECT";
-        state.sel
+        state.selectedActionType

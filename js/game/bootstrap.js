@@ -124,4 +124,4 @@
       };
 
       let state = null;
-      let pendingVisu
+      let pendingVisualMode = "alternative";

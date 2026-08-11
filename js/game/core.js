@@ -1,8 +1,3 @@
-lMode === "alternative" && !els.gameScreen.classList.contains("hidden")) {
-          kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
-        }
-      }
-
       let toastTimer = null;
       let lastWheelAt = 0;
       let lastKeyRotateAt = 0;
@@ -2725,4 +2720,4 @@ lMode === "alternative" && !els.gameScreen.classList.contains("hidden")) {
         playSfx("island");
 
         if (fromTimeout) {
-          sho
+          showToast(
