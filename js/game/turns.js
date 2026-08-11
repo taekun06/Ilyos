@@ -1,4 +1,4 @@
-ectedActionType = null;
+ = null;
         state.selectedActionCount = 1;
         state.selectedCharId = null;
         state.selectedIslandId = null;
@@ -239,4 +239,4 @@ ectedActionType = null;
           state.phase = "ACTION_SELECT";
           renderAll();
         } else if (state?.phase === "PICKUP_CROWN") {
-          state.crownPick
+          state.crownPickupCell

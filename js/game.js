@@ -125,7 +125,6 @@
 
       let state = null;
       let pendingVisualMode = "alternative";
-
       /* =====================================================================
          ILYOS — KAYKIT EDITION / moteur visuel Three.js
          Le modèle de jeu reste dans le DOM. Cette scène 3D reflète l'état et
@@ -531,7 +530,7 @@
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
           packCatalog: new Map(), packRepresentatives: new Map(), packReady: new Set(), packErrors: new Set(),
-          animationClipNames: new Set(), pendingActionAnimations: new Map(), activeMovementTweens: new Map(), characterHistory: new Map(), characterFacing: new Map(), cellVisuals: new Map(), hoveredVisuals: [], interactiveMeshes: [], universeSeed: Date.now(),
+          animationClipNames: new Set(), pendingActionAnimations: new Map(), activeMovementTweens: new Map(), characterHistory: new Map(), characterFacing: new Map(), cellVisuals: new Map(), hoveredVisuals: [], hoveredVisualKey: null, interactiveMeshes: [], universeSeed: Date.now(),
           orbit: null, manualOrbit: { azimuth: Math.PI / 4, polar: .88 }, cameraTween: null, tmpTweenTarget: new THREE.Vector3(), autoFit: true, userRotated: false, userInteracting: false, lastAspect: 1,
           syncInProgress: false, syncPending: false
         };
@@ -877,6 +876,10 @@
         });
         const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPoints), tickMat);
         ticks.userData.hoverRole = "ticks"; hover.add(ticks);
+        const hoverLight = new THREE.PointLight(0x00e5ff, 0, 2.4, 2);
+        hoverLight.position.y = .65;
+        hoverLight.userData.hoverRole = "light";
+        hover.add(hoverLight);
         hover.visible = false;
         fxGroup.add(hover);
         kaykit3D.hoverMarker = hover;
@@ -1474,14 +1477,46 @@
 
       function clearKayKitVisualHover() {
         if (!kaykit3D) return;
+        (kaykit3D.hoveredVisuals || []).forEach(record => {
+          if (!record?.mesh) return;
+          record.mesh.material = record.originalMaterial;
+          (record.clonedMaterials || []).forEach(material => material?.dispose?.());
+        });
         kaykit3D.hoveredVisuals = [];
+        kaykit3D.hoveredVisualKey = null;
       }
 
-      function setKayKitVisualHover(cell) {
-        // V21 : aucun filtre de couleur ni grossissement sur les modèles.
-        // Le retour visuel est porté par le marqueur de case et le libellé contextuel.
+      function setKayKitVisualHover(cell, intent) {
+        // Clone temporairement les matériaux afin de ne jamais modifier les matériaux partagés.
         if (!kaykit3D) return;
-        kaykit3D.hoveredVisuals = [];
+        const visualKey = cell && intent ? `${cell.r},${cell.c}|${intent.kind}` : null;
+        if (visualKey && kaykit3D.hoveredVisualKey === visualKey) return;
+        clearKayKitVisualHover();
+        if (!cell || !intent) return;
+
+        const accent = new THREE.Color(intent.color);
+        const strength = intent.actionable ? .24 : .11;
+        const emissiveStrength = intent.actionable ? .72 : .38;
+        const visuals = kaykit3D.cellVisuals.get(`${cell.r},${cell.c}`) || [];
+
+        visuals.forEach(object => object?.traverse?.(mesh => {
+          if (!mesh.isMesh || !mesh.material) return;
+          const originalMaterial = mesh.material;
+          const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
+          const clonedMaterials = originals.map(material => {
+            const clone = material.clone();
+            if (clone.color) clone.color.lerp(accent, strength);
+            if (clone.emissive) {
+              clone.emissive = clone.emissive.clone().lerp(accent, emissiveStrength);
+              clone.emissiveIntensity = Math.max(clone.emissiveIntensity || 0, intent.actionable ? .50 : .22);
+            }
+            clone.needsUpdate = true;
+            return clone;
+          });
+          mesh.material = Array.isArray(originalMaterial) ? clonedMaterials : clonedMaterials[0];
+          kaykit3D.hoveredVisuals.push({ mesh, originalMaterial, clonedMaterials });
+        }));
+        kaykit3D.hoveredVisualKey = visualKey;
       }
 
       function kaykitHoverIntent(r, c, hitAction = null) {
@@ -1532,6 +1567,11 @@
         if (!kaykit3D?.hoverMarker) return;
         const glyphKind = intent.kind === "crown-place" ? "place" : intent.kind;
         kaykit3D.hoverMarker.traverse?.(child => {
+          if (child.userData.hoverRole === "light") {
+            child.color.setHex(intent.color);
+            child.intensity = intent.kind === "neutral" ? .18 : (intent.actionable ? .80 : .48);
+            return;
+          }
           if (child.userData.hoverRole === "glyph") {
             child.visible = child.userData.hoverKind === glyphKind;
             if (child.material?.color) child.material.color.setHex(intent.kind === "crown-place" ? 0xffdf63 : 0xffffff);
@@ -1546,17 +1586,17 @@
           if (child.userData.hoverRole === "fill")
             child.material.opacity =
               intent.kind === "neutral"
-                ? .06
+                ? .08
                 : (intent.kind === "magic"
-                  ? .18
-                  : (intent.kind === "invalid" ? .16 : .17));
+                  ? .32
+                  : (intent.kind === "invalid" ? .25 : .28));
           if (child.userData.hoverRole === "outline") {
             child.material.opacity = intent.kind === "neutral" ? .78 : 1;
-            child.scale.setScalar(intent.kind === "magic" ? 1.08 : 1);
+            child.scale.setScalar(intent.kind === "magic" ? 1.18 : (intent.actionable ? 1.13 : 1));
           }
           if (child.userData.hoverRole === "ticks") {
             child.material.opacity = intent.kind === "neutral" ? .68 : 1;
-            child.scale.setScalar(intent.kind === "magic" ? 1.10 : 1);
+            child.scale.setScalar(intent.kind === "magic" ? 1.22 : (intent.actionable ? 1.16 : 1));
           }
           child.material.needsUpdate = true;
         });
@@ -1638,13 +1678,18 @@
           // Pendant la pose, conserver le dernier ancrage : les boutons de rotation
           // doivent transformer exactement la même prévisualisation.
           if (state?.phase !== "PLACE_ISLAND") clearPlacementPreview(true);
-          if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+          if (kaykit3D.hoverMarker) {
+            kaykit3D.hoverMarker.visible = false;
+            kaykit3D.hoverMarker.scale.setScalar(1);
+          }
           kaykit3D.cursorLabel?.classList.remove("visible");
           clearKayKitVisualHover();
         };
         const updateHover = event => {
           if (dragMoved) {
             if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+            kaykit3D.cursorLabel?.classList.remove("visible");
+            clearKayKitVisualHover();
             return null;
           }
           const hit = pick(event);
@@ -1672,16 +1717,17 @@
           }
 
           kaykit3D.hoverCell = next;
-          setKayKitVisualHover(next);
+          const intent = next ? kaykitHoverIntent(next.r, next.c, next.hit?.userData?.kaykitAction || null) : null;
+          setKayKitVisualHover(next, intent);
           if (kaykit3D.hoverMarker) {
             kaykit3D.hoverMarker.visible = !!next;
             if (next) {
               const p = kaykitCellPosition(next.r, next.c, kaykitCellSurfaceY(next.r, next.c) + .085);
               kaykit3D.hoverMarker.position.set(p.x, p.y, p.z);
-              applyKayKitHoverIntent(kaykitHoverIntent(next.r, next.c, next.hit?.userData?.kaykitAction || null));
+              applyKayKitHoverIntent(intent);
             }
           }
-          canvas.style.cursor = next ? (kaykitHoverIntent(next.r, next.c, next.hit?.userData?.kaykitAction || null).actionable ? "pointer" : "crosshair") : "default";
+          canvas.style.cursor = next ? (intent.actionable ? "pointer" : "crosshair") : "default";
           return next;
         };
         canvas.addEventListener("pointerdown", event => {
@@ -2298,6 +2344,7 @@
           block.position.set(p.x, KAYKIT_LEVELS.board, p.z);
           block.renderOrder = preview ? 20 : 4;
           group.add(block);
+          if (!preview) registerKayKitCellVisual(r, c, block);
         });
 
         if (preview) {
@@ -2826,6 +2873,10 @@
         kaykitLastVisualFrame = frameTime;
         const delta = Math.min(.05, kaykit3D.clock.getDelta());
         const elapsed = kaykit3D.clock.elapsedTime;
+        if (kaykit3D.hoverMarker?.visible) {
+          const pulse = 1 + Math.sin(elapsed * 7) * .035;
+          kaykit3D.hoverMarker.scale.setScalar(pulse);
+        }
         kaykit3D.mixers.forEach(mixer => mixer.update(delta));
         (kaykit3D.proceduralHeroes || []).forEach(record => {
           const model = record?.model;
@@ -2933,7 +2984,6 @@
           kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
         }
       }
-
       let toastTimer = null;
       let lastWheelAt = 0;
       let lastKeyRotateAt = 0;
@@ -6644,7 +6694,8 @@
         state.inputLocked = false;
         els.gameScreen.classList.remove("ai-turn");
         state.phase = "ACTION_SELECT";
-        state.selectedActionType = null;
+        state.selectedActionType
+ = null;
         state.selectedActionCount = 1;
         state.selectedCharId = null;
         state.selectedIslandId = null;
@@ -6885,7 +6936,8 @@
           state.phase = "ACTION_SELECT";
           renderAll();
         } else if (state?.phase === "PICKUP_CROWN") {
-          state.crownPickupCell = null;
+          state.crownPickupCell
+ = null;
           state.crownStealTargetId = null;
           state.crownPickupArtifactId = null;
           state.selectedCharId = null;
@@ -7188,7 +7240,8 @@
           case "crown":
             playTone(659.25, .24, .40, "sine");
             playTone(830.61, .34, .38, "sine", .09);
-            playTone(1046.5, .52, .34, "sine", .18);
+            playTone(1046.5, .52, .34, "sine", .18
+);
             break;
           case "turn":
             playTone(246.94, .18, .30, "triangle");

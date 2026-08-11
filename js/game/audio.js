@@ -1,4 +1,4 @@
-upCell = null;
+ = null;
           state.crownStealTargetId = null;
           state.crownPickupArtifactId = null;
           state.selectedCharId = null;
