@@ -8,6 +8,7 @@
   <link rel="icon" href="data:,">
   
   <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/turn-flow-ux.css">
 
   <script src="./js/bootstrap-cache.js"></script>
 
@@ -1005,6 +1006,12 @@
 
       <aside class="banner-panel right-panel">
         <h3 class="panel-title">ACTIONS</h3>
+        <div id="turnContext" class="turn-context context-build" role="status" aria-live="polite">
+          <small id="turnContextKicker">À FAIRE</small>
+          <strong id="turnContextTitle">Poser une île</strong>
+          <span id="turnContextNext">Choisissez une forme à gauche.</span>
+        </div>
+        <div id="actionFeedback" class="action-feedback" aria-live="polite" aria-atomic="true"></div>
         <div id="hand" class="action-list"></div>
         <div id="deckDisplay" class="deck-display"></div>
         <div class="action-buttons">

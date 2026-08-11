@@ -1,0 +1,138 @@
+/* Guide de tour compact : le plateau 3D reste la zone dominante. */
+body[data-visual-mode="alternative"] .turn-context {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 7px;
+  padding: 8px 9px;
+  border: 1px solid rgba(57, 112, 128, .24);
+  border-left: 4px solid #4e9eb2;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .88);
+  box-shadow: 0 5px 12px rgba(35, 82, 96, .08);
+}
+
+body[data-visual-mode="alternative"] .turn-context small {
+  color: #66828c;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+body[data-visual-mode="alternative"] .turn-context strong {
+  overflow: hidden;
+  color: #28596a;
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-visual-mode="alternative"] .turn-context span {
+  color: #55727c;
+  font-size: 8px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-build {
+  border-left-color: #e69a36;
+  background: linear-gradient(135deg, rgba(255, 249, 229, .98), rgba(255, 255, 255, .9));
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-move {
+  border-left-color: #168ec5;
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-push {
+  border-left-color: #d66449;
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-magic {
+  border-left-color: #8b5bd1;
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-end {
+  border-left-color: #55a765;
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-wait {
+  border-left-color: #879aa1;
+  background: rgba(239, 245, 246, .92);
+}
+
+body[data-visual-mode="alternative"] .action-feedback {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: -1px 0 7px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #e9f7ec;
+  color: #397148;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+body[data-visual-mode="alternative"] .action-feedback.show {
+  display: flex;
+  animation: turn-feedback-in .22s ease-out;
+}
+
+body[data-visual-mode="alternative"] .action-feedback strong {
+  font-size: 9px;
+}
+
+body[data-visual-mode="alternative"] .v60-action-btn.active {
+  position: relative;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 5px currentColor, 0 9px 18px rgba(35, 82, 96, .16) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-action-btn.active::after {
+  content: "ACTIVE";
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .94);
+  color: currentColor;
+  font-size: 6px;
+  font-weight: 950;
+  letter-spacing: .06em;
+}
+
+body[data-visual-mode="alternative"] #gameScreen.island-required #endTurnBtn {
+  border-color: #d99a42 !important;
+  background: #fff3d5 !important;
+  color: #8a5a17 !important;
+  opacity: 1 !important;
+}
+
+body[data-visual-mode="alternative"] #endTurnBtn.selection-will-cancel:not(:disabled) {
+  background: linear-gradient(180deg, #85c98b, #59a764) !important;
+}
+
+@keyframes turn-feedback-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-height: 760px) {
+  body[data-visual-mode="alternative"] .turn-context {
+    padding: 6px 8px;
+  }
+
+  body[data-visual-mode="alternative"] .turn-context span {
+    font-size: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-visual-mode="alternative"] .action-feedback.show {
+    animation: none;
+  }
+}
