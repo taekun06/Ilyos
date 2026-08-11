@@ -10742,7 +10742,7 @@
 
         const hover = new THREE.Group();
         const hoverFill = new THREE.Mesh(
-          kaykitGeometry("hover-fill-v56", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .68, KAYKIT_CELL_SPACING * .68)),
+          kaykitGeometry("hover-fill-v56", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .88, KAYKIT_CELL_SPACING * .88)),
           new THREE.MeshBasicMaterial({ color: 0x00d9ff, transparent: true, opacity: .10, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
         );
         hoverFill.rotation.x = -Math.PI / 2; hoverFill.position.y = .018; hoverFill.renderOrder = 90; hoverFill.userData.hoverRole = "fill"; hover.add(hoverFill);
@@ -10761,8 +10761,10 @@
           segments.forEach(([x1, z1, x2, z2]) => points.push(new THREE.Vector3(x1, .020, z1), new THREE.Vector3(x2, .020, z2)));
           const glyph = new THREE.LineSegments(
             new THREE.BufferGeometry().setFromPoints(points),
-            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true })
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: false })
           );
+          glyph.renderOrder = 95;
+          glyph.scale.setScalar(1.35);
           glyph.userData.hoverRole = "glyph";
           glyph.userData.hoverKind = kind;
           glyph.visible = false;
@@ -10777,7 +10779,13 @@
         addHoverGlyph("character", [[-.12, .15, .12, .15], [-.12, .15, -.12, -.06], [.12, .15, .12, -.06], [-.12, -.06, 0, -.16], [.12, -.06, 0, -.16]]);
         addHoverGlyph("select", [[-.15, -.15, .15, -.15], [.15, -.15, .15, .15], [.15, .15, -.15, .15], [-.15, .15, -.15, -.15]]);
         addHoverGlyph("invalid", [[-.14, -.14, .14, .14], [-.14, .14, .14, -.14]]);
-        const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
+        const tickMat = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 1,
+          depthWrite: false,
+          depthTest: false
+        })
         const tickPoints = [];
         const t = .44, l = .16;
         [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sz]) => {
@@ -11452,7 +11460,13 @@
           }
           if (!child.material?.color) return;
           child.material.color.setHex(intent.color);
-          if (child.userData.hoverRole === "fill") child.material.opacity = intent.kind === "neutral" ? .03 : (intent.kind === "magic" ? .13 : (intent.kind === "invalid" ? .10 : .11));
+          if (child.userData.hoverRole === "fill")
+            child.material.opacity =
+              intent.kind === "neutral"
+                ? .6
+                : (intent.kind === "magic"
+                  ? .18
+                  : (intent.kind === "invalid" ? .16 : .17));
           if (child.userData.hoverRole === "outline") {
             child.material.opacity = intent.kind === "neutral" ? .78 : 1;
             child.scale.setScalar(intent.kind === "magic" ? 1.08 : 1);
@@ -11501,12 +11515,30 @@
         const pick = event => {
           const rect = canvas.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
-          kaykit3D.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-          kaykit3D.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-          kaykit3D.raycaster.setFromCamera(kaykit3D.pointer, kaykit3D.camera);
-          const interactive = kaykit3D.raycaster.intersectObjects(kaykit3D.interactiveMeshes || [], false)[0]?.object;
+
+          kaykit3D.pointer.x =
+            ((event.clientX - rect.left) / rect.width) * 2 - 1;
+
+          kaykit3D.pointer.y =
+            -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+          kaykit3D.raycaster.setFromCamera(
+            kaykit3D.pointer,
+            kaykit3D.camera
+          );
+
+          const interactive =
+            kaykit3D.raycaster.intersectObjects(
+              kaykit3D.interactiveMeshes || [],
+              false
+            )[0]?.object;
+
           if (interactive) return interactive;
-          return kaykit3D.raycaster.intersectObjects(kaykit3D.hitMeshes, false)[0]?.object || null;
+
+          return kaykit3D.raycaster.intersectObjects(
+            kaykit3D.hitMeshes,
+            false
+          )[0]?.object || null;
         };
         const dispatchToCell = (type, r, c, event, bubbles = false) => {
           const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
@@ -11533,6 +11565,7 @@
             return null;
           }
           const hit = pick(event);
+
           const next = hit ? { r: hit.userData.r, c: hit.userData.c, hit } : null;
           const previous = kaykit3D.hoverCell;
           if (previous && (!next || previous.r !== next.r || previous.c !== next.c)) {
@@ -12218,7 +12251,7 @@
               const z = (r - (GRID - 1) / 2 + dr * .5) * KAYKIT_CELL_SPACING;
               const vertical = dc === 1;
               const seam = new THREE.Mesh(
-                new THREE.BoxGeometry(vertical ? .018 : KAYKIT_CELL_SPACING * .86, .010, vertical ? KAYKIT_CELL_SPACING * .86 : .018),
+                new THREE.BoxGeometry(vertical ? .018 : KAYKIT_CELL_SPACING * .68, .010, vertical ? KAYKIT_CELL_SPACING * .68 : .018),
                 seamMaterial
               );
               seam.position.set(x, KAYKIT_LEVELS.islandTop + .080, z);
@@ -12503,6 +12536,17 @@
           const nextCharacterHistory = new Map();
 
           const dynamic = kaykit3D.dynamicGroup;
+
+          (kaykit3D.hitMeshes || []).forEach(hit => {
+            const r = hit.userData.r;
+            const c = hit.userData.c;
+
+            if (!Number.isFinite(r) || !Number.isFinite(c)) return;
+
+            hit.position.y = kaykitCellSurfaceY(r, c) + .03;
+          });
+
+          // Sol central en croix sous les couronnes.
           // Sol central en croix sous les couronnes.
           dynamic.add(makeCrownCrossGround());
           // Les îles sont fusionnées visuellement : un seul bloc par île, sans quadrillage interne.
@@ -12694,7 +12738,7 @@
         }
         const activeVisualMotion = !!(kaykit3D.activeMovementTweens?.size || kaykit3D.pendingActionAnimations?.size || kaykit3D.cameraTween || kaykit3D.userInteracting);
         const lowPower = (navigator.hardwareConcurrency || 4) <= 4 || (navigator.deviceMemory || 4) <= 4;
-        kaykitAdaptiveFrameInterval = activeVisualMotion ? 16.7 : (lowPower ? 50 : 33.3);
+        kaykitAdaptiveFrameInterval = 16.7;
         if (frameTime - kaykitLastVisualFrame < kaykitAdaptiveFrameInterval) return;
         kaykitLastVisualFrame = frameTime;
         const delta = Math.min(.05, kaykit3D.clock.getDelta());
