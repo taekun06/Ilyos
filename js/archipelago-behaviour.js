@@ -17,9 +17,14 @@
         { value: 'orbit', title: 'Orbite royale', desc: '10 îles · Offensif.', kind: 'orbit' },
         { value: 'citadels', title: 'Citadelles en mouvement', desc: '12 îles · Grande bataille.', kind: 'citadels' }
       ];
-      const difficultyMeta = [['easy', 'Facile'], ['normal', 'Normal'], ['hard', 'Difficile'], ['expert', 'Expert']];
+      const difficultyMeta = [
+        ['easy', 'Facile', 'Découverte'],
+        ['normal', 'Normal', 'Recommandé'],
+        ['hard', 'Difficile', 'Expérimenté'],
+        ['expert', 'Expert', 'Maîtrise requise']
+      ];
       let selectedBoard = 'classic';
-      let selectedDifficulty = 'expert';
+      let selectedDifficulty = 'normal';
 
       function modeIcon(kind) {
         if (kind === 'online') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/></svg>';
@@ -89,7 +94,7 @@
         });
         const difficulty = document.createElement('section'); difficulty.className = 'v64-difficulty-section'; difficulty.innerHTML = '<h3 class="v64-section-title">Difficulté</h3><div class="v64-difficulty-grid" role="group" aria-label="Difficulté de l’ordinateur"></div>';
         const diffGrid = difficulty.querySelector('.v64-difficulty-grid');
-        difficultyMeta.forEach(([value, label]) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'v64-difficulty-btn'; button.dataset.value = value; button.setAttribute('aria-pressed', String(value === selectedDifficulty)); button.textContent = label; button.addEventListener('click', () => { selectedDifficulty = value; diffGrid.querySelectorAll('button').forEach(node => node.setAttribute('aria-pressed', String(node === button))); applyNativeChoices() }); diffGrid.appendChild(button) });
+        difficultyMeta.forEach(([value, label, hint]) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'v64-difficulty-btn'; button.dataset.value = value; button.setAttribute('aria-pressed', String(value === selectedDifficulty)); button.innerHTML = '<strong>' + label + '</strong><small>' + hint + '</small>'; button.addEventListener('click', () => { selectedDifficulty = value; diffGrid.querySelectorAll('button').forEach(node => node.setAttribute('aria-pressed', String(node === button))); applyNativeChoices() }); diffGrid.appendChild(button) });
         options.append(boardSection, difficulty); modeSection.after(options);
 
         const tools = document.createElement('details'); tools.className = 'v64-dev-tools'; tools.innerHTML = '<summary>Outils de développement</summary><div><button type="button" class="small-btn" data-v64-diag>Diagnostic Spirale</button><button type="button" class="small-btn" data-v64-auto>Partie automatique</button></div>';

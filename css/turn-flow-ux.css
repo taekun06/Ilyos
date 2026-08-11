@@ -116,6 +116,59 @@ body[data-visual-mode="alternative"] #endTurnBtn.selection-will-cancel:not(:disa
   background: linear-gradient(180deg, #85c98b, #59a764) !important;
 }
 
+/* Les choix d'accueil indiquent le niveau conseillé sans ajouter de texte long. */
+.v64-difficulty-btn {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+}
+
+.v64-difficulty-btn strong {
+  font: inherit;
+  font-weight: 850;
+}
+
+.v64-difficulty-btn small {
+  color: #71868d;
+  font-size: 7px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.v64-difficulty-btn[aria-pressed="true"] small {
+  color: inherit;
+}
+
+/* Pioche / Main / Défausse restent identifiables, même sur écran compact. */
+body[data-visual-mode="alternative"] .v64-mini-hand {
+  position: relative;
+  padding-top: 10px;
+}
+
+body[data-visual-mode="alternative"] .v64-mini-hand-label {
+  position: absolute;
+  inset: 0 0 auto;
+  color: #55727c;
+  font-size: 7px !important;
+  font-weight: 900;
+  letter-spacing: .05em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+body[data-visual-mode="alternative"] .v64-mini-hand-empty {
+  align-self: center;
+}
+
+/* Une couronne sécurisée ne dépend plus d'un toast fugace. */
+body[data-visual-mode="alternative"] .crown-status.crown-ready {
+  border-color: rgba(190, 132, 27, .58) !important;
+  background: #fff2be !important;
+  color: #7b5611 !important;
+  box-shadow: 0 0 0 2px rgba(255, 211, 78, .22) !important;
+}
+
 @keyframes turn-feedback-in {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }
