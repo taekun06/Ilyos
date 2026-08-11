@@ -526,7 +526,7 @@
           staticGroup, dynamicGroup, hitGroup, fxGroup, raycaster, pointer, clock, loader, textureLoader,
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
           textureCache: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
-          mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], hoverCell: null, hoverMarker: null, viewMode: "front", disposed: false,
+          mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
           packCatalog: new Map(), packRepresentatives: new Map(), packReady: new Set(), packErrors: new Set(),
@@ -821,6 +821,11 @@
             hitGroup.add(hit); hitMeshes.push(hit);
           }
         }
+
+        const actionPreviewGroup = new THREE.Group();
+        actionPreviewGroup.name = "ilyos-action-preview";
+        fxGroup.add(actionPreviewGroup);
+        kaykit3D.actionPreviewGroup = actionPreviewGroup;
 
         const hover = new THREE.Group();
         const hoverFill = new THREE.Mesh(
@@ -1523,6 +1528,7 @@
         const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         const classes = cell?.classList;
         const character = characterAt(r, c);
+        const island = islandAt(r, c);
         const crowns = [state?.artifact, state?.secondArtifact].filter(Boolean);
         const looseCrown = crowns.some(item => item.active && !item.carrierId && item.r === r && item.c === c);
 
@@ -1539,24 +1545,76 @@
           return { kind: "crown-place", actionable: true, color: 0xffc928, label: "POSER ICI" };
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "MOVE") {
-          const valid = state.selectedCharId ? state.reachable?.has(key(r, c)) : !!nearestMoverForCell(r, c);
-          if (valid) return { kind: "move", actionable: true, color: 0x23e89a, label: "DÉPLACER ICI" };
+          if (character?.player === state.currentPlayer) {
+            const selected = character.id === state.selectedCharId;
+            return {
+              kind: selected ? "select" : "ally",
+              actionable: true,
+              color: selected ? 0xffd22e : 0x43e6d0,
+              label: selected ? "GARDIEN SÉLECTIONNÉ" : "CHOISIR CE GARDIEN"
+            };
+          }
+          const nearest = state.selectedCharId ? null : nearestMoverForCell(r, c);
+          const valid = state.selectedCharId ? state.reachable?.has(key(r, c)) : !!nearest;
+          if (valid) {
+            const previewPath = state.selectedCharId ? state.smartHoverPath : nearest?.path;
+            const moveCost = previewPath?.cost ?? previewPath?.length ?? 1;
+            return {
+              kind: "move",
+              actionable: true,
+              color: moveCost > 1 ? 0x5be8ff : 0x23e89a,
+              label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`
+            };
+          }
+          return { kind: "invalid", actionable: false, color: 0xff4058, label: "DESTINATION IMPOSSIBLE" };
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "PUSH") {
+          const selected = character?.id === state.selectedCharId;
+          if (selected) return { kind: "select", actionable: true, color: 0xffd22e, label: "POUSSEUR SÉLECTIONNÉ" };
+          if (!state.selectedCharId && character?.player === state.currentPlayer) {
+            return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHOISIR CE GARDIEN" };
+          }
           const valid = state.selectedCharId
             ? (Math.abs((characterById(state.selectedCharId)?.r ?? 99) - r) + Math.abs((characterById(state.selectedCharId)?.c ?? 99) - c) === 1 && !!(character || looseCrown))
             : !!nearestPusherForTarget(r, c);
-          if (valid) return { kind: "push", actionable: true, color: 0xff8a32, label: "POUSSER CETTE CIBLE" };
+          if (valid) {
+            const falling = !!getPushHoverPreview()?.fell;
+            const force = Math.max(1, selectedBatchSize());
+            return {
+              kind: "push",
+              actionable: true,
+              color: falling ? 0xff5538 : 0xff8a32,
+              label: falling ? `POUSSER · CHUTE · F${force}` : `POUSSER · FORCE ${force}`
+            };
+          }
+          if (character?.player === state.currentPlayer) {
+            return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHOISIR CE GARDIEN" };
+          }
+          return { kind: "invalid", actionable: false, color: 0xff4058, label: "CIBLE NON ADJACENTE" };
         }
         // Un objet couronne sous le pointeur garde toujours la priorité visuelle,
         // même si sa case appartient aussi à une île ciblable par la magie.
         if (hitAction === "crown-carried" || hitAction === "crown-loose" || (!character && looseCrown)) {
           return { kind: "crown", actionable: true, color: 0xffc928, label: "COURONNE" };
         }
+        if (state?.phase === "ACTION" && state.selectedActionType === "MAGIC") {
+          if (classes?.contains("magic-invalid")) return { kind: "invalid", actionable: false, color: 0xff4058, label: "ROTATION IMPOSSIBLE" };
+          if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) {
+            return { kind: "magic", actionable: true, color: 0xc36cff, label: "ÎLE CIBLÉE PAR LA MAGIE" };
+          }
+          if (island && !character) return { kind: "magic", actionable: true, color: 0xc36cff, label: "CHOISIR CETTE ÎLE" };
+          return { kind: "invalid", actionable: false, color: 0xff4058, label: character ? "CASE OCCUPÉE" : "ÎLE REQUISE" };
+        }
         if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) return { kind: "magic", actionable: true, color: 0xc36cff, label: "MAGIE" };
         if (hitAction === "character" || character) {
           const owner = state?.players?.[character?.player]?.name;
-          return { kind: "character", actionable: true, color: 0x7edfff, label: (owner || "GARDIEN").toUpperCase() };
+          const ally = character?.player === state?.currentPlayer;
+          return {
+            kind: ally ? "ally" : "enemy",
+            actionable: true,
+            color: ally ? 0x43e6d0 : 0xff6f72,
+            label: `${ally ? "ALLIÉ" : "ADVERSAIRE"} · ${(owner || "GARDIEN").toUpperCase()}`
+          };
         }
         if (classes?.contains("push-target-preview") || classes?.contains("push-destination-preview") || classes?.contains("push-destination")) return { kind: "push", actionable: true, color: 0xff8a32, label: "POUSSER CETTE CIBLE" };
         if (classes?.contains("reachable") || classes?.contains("move-target-preview") || classes?.contains("move-path-preview")) return { kind: "move", actionable: true, color: 0x23e89a, label: "DÉPLACER ICI" };
@@ -1565,7 +1623,9 @@
       }
       function applyKayKitHoverIntent(intent) {
         if (!kaykit3D?.hoverMarker) return;
-        const glyphKind = intent.kind === "crown-place" ? "place" : intent.kind;
+        const glyphKind = intent.kind === "crown-place"
+          ? "place"
+          : (["ally", "enemy"].includes(intent.kind) ? "character" : intent.kind);
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -1683,18 +1743,33 @@
             kaykit3D.hoverMarker.scale.setScalar(1);
           }
           kaykit3D.cursorLabel?.classList.remove("visible");
+          canvas.style.cursor = "default";
           clearKayKitVisualHover();
+          refreshKayKitHoverPreviews();
         };
         const updateHover = event => {
+          if (!canLocalPlayerAct()) {
+            if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+            kaykit3D.cursorLabel?.classList.remove("visible");
+            canvas.style.cursor = "default";
+            clearKayKitVisualHover();
+            clearKayKitGroup(kaykit3D.actionPreviewGroup);
+            kaykit3D.actionPreviewKey = null;
+            return null;
+          }
           if (dragMoved) {
             if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
             kaykit3D.cursorLabel?.classList.remove("visible");
             clearKayKitVisualHover();
+            clearKayKitGroup(kaykit3D.actionPreviewGroup);
+            kaykit3D.actionPreviewKey = null;
             return null;
           }
           const hit = pick(event);
 
-          const next = hit ? { r: hit.userData.r, c: hit.userData.c, hit } : null;
+          const next = hit
+            ? { r: hit.userData.r, c: hit.userData.c, hit, hitAction: hit.userData?.kaykitAction || null }
+            : null;
           const previous = kaykit3D.hoverCell;
           if (previous && (!next || previous.r !== next.r || previous.c !== next.c)) {
             dispatchToCell("mouseleave", previous.r, previous.c, event, false);
@@ -1717,7 +1792,7 @@
           }
 
           kaykit3D.hoverCell = next;
-          const intent = next ? kaykitHoverIntent(next.r, next.c, next.hit?.userData?.kaykitAction || null) : null;
+          const intent = next ? kaykitHoverIntent(next.r, next.c, next.hitAction) : null;
           setKayKitVisualHover(next, intent);
           if (kaykit3D.hoverMarker) {
             kaykit3D.hoverMarker.visible = !!next;
@@ -1727,7 +1802,10 @@
               applyKayKitHoverIntent(intent);
             }
           }
-          canvas.style.cursor = next ? (intent.actionable ? "pointer" : "crosshair") : "default";
+          refreshKayKitHoverPreviews();
+          canvas.style.cursor = next
+            ? (intent.actionable ? "pointer" : (intent.kind === "invalid" ? "not-allowed" : "crosshair"))
+            : "default";
           return next;
         };
         canvas.addEventListener("pointerdown", event => {
@@ -2029,13 +2107,21 @@
       function addCellHighlight(r, c, classList) {
         if (!kaykit3D || !classList) return;
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
-        if (classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
+        if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
+        else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
+        else if (classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
         else if (classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (classList.contains("magic-valid") || classList.contains("magic-selected-island")) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
+        else if (classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
+        else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
+        else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
+        else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
+        else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .46; kind = "push" }
+        else if (classList.contains("push-line-preview")) { color = 0xffb14b; fillOpacity = .34; kind = "push" }
+        else if (classList.contains("diagonal-step-preview")) { color = 0x63e6ff; fillOpacity = .46; kind = "move" }
+        else if (classList.contains("move-target-preview")) { color = 0x23e89a; fillOpacity = .58; kind = "move"; size = .90 }
         else if (classList.contains("move-path-preview")) { color = 0x36e6a3; fillOpacity = .34; kind = "move" }
         else if (classList.contains("reachable")) { color = 0x23e89a; fillOpacity = .52; kind = "move" }
-        else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
-        else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .42; kind = "push" }
         if (color === null) return;
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
         const y = p.y + .026;
@@ -2120,6 +2206,289 @@
           ticks.renderOrder = 34;
           kaykit3D.dynamicGroup.add(ticks);
         }
+
+        // La sélection conserve un double halo propre, même quand un hover la recouvre.
+        if (kind === "selected") {
+          const haloMaterial = new THREE.MeshBasicMaterial({
+            color: 0xfff09a,
+            transparent: true,
+            opacity: .96,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: false
+          });
+          const halo = new THREE.Mesh(new THREE.RingGeometry(.30, .43, 32), haloMaterial);
+          halo.rotation.x = -Math.PI / 2;
+          halo.position.set(p.x, y + .065, p.z);
+          halo.renderOrder = 54;
+          halo.userData.pulse = true;
+          halo.userData.pulsePhase = (r * 11 + c) * .37;
+          kaykit3D.dynamicGroup.add(halo);
+          kaykit3D.animatedObjects.push(halo);
+
+          const selectionLight = new THREE.PointLight(0xffdf5a, .46, 1.9, 2);
+          selectionLight.position.set(p.x, y + .62, p.z);
+          kaykit3D.dynamicGroup.add(selectionLight);
+        }
+
+        // Les classes fx-* existaient déjà côté logique : ce bref anneau les rend enfin
+        // visibles dans le rendu 3D sans rallonger ni bloquer l'action.
+        if (kind === "result-move" || kind === "result-push") {
+          const resultRing = new THREE.Mesh(
+            new THREE.RingGeometry(.28, .46, 32),
+            new THREE.MeshBasicMaterial({
+              color,
+              transparent: true,
+              opacity: .92,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+              depthTest: false
+            })
+          );
+          resultRing.rotation.x = -Math.PI / 2;
+          resultRing.position.set(p.x, y + .075, p.z);
+          resultRing.renderOrder = 58;
+          resultRing.userData.pulse = true;
+          resultRing.userData.pulsePhase = (r * 7 + c) * .51;
+          kaykit3D.dynamicGroup.add(resultRing);
+          kaykit3D.animatedObjects.push(resultRing);
+
+          const resultLight = new THREE.PointLight(color, .62, 2.1, 2);
+          resultLight.position.set(p.x, y + .55, p.z);
+          kaykit3D.dynamicGroup.add(resultLight);
+        }
+      }
+
+      function addKayKitActionPreviewCell(r, c, {
+        color,
+        opacity = .34,
+        size = .78,
+        pulse = false
+      }) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+        const geometry = new THREE.PlaneGeometry(size, size);
+        geometry.userData = { ...(geometry.userData || {}), ilyosTransient: true };
+        const material = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          depthTest: true
+        });
+        material.userData = { ...(material.userData || {}), ilyosTransient: true };
+        const fill = new THREE.Mesh(geometry, material);
+        fill.rotation.x = -Math.PI / 2;
+        fill.position.set(p.x, p.y + .075, p.z);
+        fill.renderOrder = 46;
+        if (pulse) {
+          fill.userData.pulse = true;
+          fill.userData.pulsePhase = (r * 5 + c) * .41;
+          kaykit3D.animatedObjects.push(fill);
+        }
+        group.add(fill);
+
+        const half = size / 2;
+        const outlineGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(-half, 0, -half),
+          new THREE.Vector3(half, 0, -half),
+          new THREE.Vector3(half, 0, half),
+          new THREE.Vector3(-half, 0, half)
+        ]);
+        outlineGeometry.userData = { ...(outlineGeometry.userData || {}), ilyosTransient: true };
+        const outlineMaterial = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: .92,
+          depthWrite: false,
+          depthTest: false
+        });
+        outlineMaterial.userData = { ...(outlineMaterial.userData || {}), ilyosTransient: true };
+        const outline = new THREE.LineLoop(outlineGeometry, outlineMaterial);
+        outline.position.set(p.x, p.y + .088, p.z);
+        outline.renderOrder = 48;
+        group.add(outline);
+      }
+
+      function addKayKitPushDirection(pusher, target, destination) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group || !pusher || !target) return;
+        const from = kaykitCellPosition(pusher.r, pusher.c, kaykitCellSurfaceY(pusher.r, pusher.c) + .82);
+        const endCell = destination || target;
+        const to = kaykitCellPosition(endCell[0], endCell[1], kaykitCellSurfaceY(endCell[0], endCell[1]) + .82);
+        const direction = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
+        const length = direction.length();
+        if (length < .05) return;
+        direction.normalize();
+        const arrowMaterial = new THREE.MeshBasicMaterial({
+          color: 0xffa044,
+          transparent: true,
+          opacity: .98,
+          depthWrite: false,
+          depthTest: false
+        });
+        arrowMaterial.userData = { ...(arrowMaterial.userData || {}), ilyosTransient: true };
+        const shaftLength = Math.max(.08, length - .22);
+        const shaftGeometry = new THREE.CylinderGeometry(.035, .035, shaftLength, 8);
+        shaftGeometry.userData = { ...(shaftGeometry.userData || {}), ilyosTransient: true };
+        const shaft = new THREE.Mesh(shaftGeometry, arrowMaterial);
+        shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        shaft.position.copy(from).addScaledVector(direction, shaftLength / 2);
+        shaft.renderOrder = 54;
+        group.add(shaft);
+
+        const headGeometry = new THREE.ConeGeometry(.12, .24, 12);
+        headGeometry.userData = { ...(headGeometry.userData || {}), ilyosTransient: true };
+        const head = new THREE.Mesh(headGeometry, arrowMaterial);
+        head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        head.position.copy(from).addScaledVector(direction, Math.max(.12, length - .12));
+        head.renderOrder = 55;
+        group.add(head);
+      }
+
+      function refreshKayKitHoverPreviews() {
+        if (!kaykit3D?.actionPreviewGroup || !state || document.body.dataset.visualMode !== "alternative") return;
+        const pushPreview = state.phase === "ACTION" && state.selectedActionType === "PUSH"
+          ? getPushHoverPreview()
+          : null;
+        const previewKey = JSON.stringify({
+          phase: state.phase,
+          action: state.selectedActionType,
+          selected: state.selectedCharId,
+          hover: state.actionHoverCell,
+          path: state.smartHoverPath,
+          pathSteps: state.smartHoverPath?.steps,
+          magicIsland: state.magicHoverIslandId,
+          magicPivot: state.magicHoverPivot,
+          push: pushPreview,
+          force: state.selectedActionType === "PUSH" ? selectedBatchSize() : 0
+        });
+        if (previewKey === kaykit3D.actionPreviewKey) return;
+        kaykit3D.actionPreviewKey = previewKey;
+        clearKayKitGroup(kaykit3D.actionPreviewGroup);
+        kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
+
+        if (state.phase === "ACTION" && state.selectedActionType === "MOVE" && state.selectedCharId) {
+          const path = state.smartHoverPath || [];
+          path.forEach(([r, c], index) => {
+            const diagonal = !!path.steps?.[index]?.diagonal;
+            addKayKitActionPreviewCell(r, c, {
+              color: diagonal ? 0x63e6ff : 0x36e6a3,
+              opacity: diagonal ? .46 : .30,
+              size: .72
+            });
+          });
+          if (state.actionHoverCell) {
+            addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
+              color: 0x23e89a,
+              opacity: .58,
+              size: .88,
+              pulse: true
+            });
+          }
+          return;
+        }
+
+        if (state.phase === "ACTION" && state.selectedActionType === "PUSH") {
+          const preview = pushPreview;
+          (preview?.impacts || []).forEach(impact => {
+            addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
+              color: impact.fell ? 0xff3f45 : 0xffa044,
+              opacity: impact.fell ? .58 : .42,
+              size: .84
+            });
+            if (impact.to) {
+              addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
+                color: 0xff7442,
+                opacity: .48,
+                size: .86,
+                pulse: true
+              });
+            }
+          });
+          if (state.actionHoverCell) {
+            addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
+              color: 0xffa044,
+              opacity: .58,
+              size: .88
+            });
+            addKayKitPushDirection(
+              characterById(state.selectedCharId),
+              state.actionHoverCell,
+              preview?.destination || null
+            );
+          }
+          return;
+        }
+
+        if (
+          (state.phase === "ACTION_SELECT" || (state.phase === "ACTION" && state.selectedActionType === "MAGIC"))
+          && state.magicHoverIslandId
+        ) {
+          const island = state.islands.find(item => item.id === state.magicHoverIslandId);
+          (island?.cells || []).forEach(([r, c]) => {
+            const pivot = isSameCell(state.magicHoverPivot, [r, c]);
+            addKayKitActionPreviewCell(r, c, {
+              color: 0xc36cff,
+              opacity: pivot ? .58 : .32,
+              size: pivot ? .88 : .76,
+              pulse: pivot
+            });
+          });
+        }
+      }
+
+      function refreshKayKitHoverAfterSceneSync() {
+        if (!kaykit3D) return;
+        if (!canLocalPlayerAct()) {
+          if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+          kaykit3D.cursorLabel?.classList.remove("visible");
+          kaykit3D.canvas.style.cursor = "default";
+          clearKayKitVisualHover();
+          clearKayKitGroup(kaykit3D.actionPreviewGroup);
+          kaykit3D.actionPreviewKey = null;
+          return;
+        }
+
+        const hovered = kaykit3D.hoverCell;
+        if (!hovered) {
+          if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+          kaykit3D.cursorLabel?.classList.remove("visible");
+          kaykit3D.canvas.style.cursor = "default";
+          clearKayKitVisualHover();
+          refreshKayKitHoverPreviews();
+          return;
+        }
+        const intent = kaykitHoverIntent(hovered.r, hovered.c, hovered.hitAction);
+        const p = kaykitCellPosition(hovered.r, hovered.c, kaykitCellSurfaceY(hovered.r, hovered.c) + .085);
+        kaykit3D.hoverMarker.visible = true;
+        kaykit3D.hoverMarker.position.set(p.x, p.y, p.z);
+        applyKayKitHoverIntent(intent);
+        setKayKitVisualHover(hovered, intent);
+        kaykit3D.canvas.style.cursor = intent.actionable
+          ? "pointer"
+          : (intent.kind === "invalid" ? "not-allowed" : "crosshair");
+        refreshKayKitHoverPreviews();
+      }
+
+      function resetKayKitPointerFeedback() {
+        if (!kaykit3D) return;
+        kaykit3D.hoverCell = null;
+        if (kaykit3D.hoverMarker) {
+          kaykit3D.hoverMarker.visible = false;
+          kaykit3D.hoverMarker.scale.setScalar(1);
+        }
+        if (kaykit3D.cursorLabel) {
+          kaykit3D.cursorLabel.textContent = "";
+          kaykit3D.cursorLabel.dataset.kind = "neutral";
+          kaykit3D.cursorLabel.classList.remove("visible");
+        }
+        kaykit3D.canvas.style.cursor = "default";
+        clearKayKitVisualHover();
+        clearKayKitGroup(kaykit3D.actionPreviewGroup);
+        kaykit3D.actionPreviewKey = null;
       }
 
 
@@ -2848,6 +3217,7 @@
           });
 
           kaykit3D.lastStateSignature = `${state.turn}|${state.phase}|${state.islands.length}|${state.characters.length}|${state.currentPlayer}`;
+          refreshKayKitHoverAfterSceneSync();
         } finally {
           kaykit3D.syncInProgress = false;
           if (kaykit3D.syncPending) {
@@ -6792,6 +7162,7 @@
         state.aiThinking = !!p.isAI;
         els.gameScreen.classList.toggle("ai-turn", !!p.isAI);
         startTurnTimer(true);
+        resetKayKitPointerFeedback();
         renderAll();
         showTurnRibbon(p);
 
@@ -8320,6 +8691,7 @@
             state.selectedCharId = char.id;
             state.selectedIslandId = null;
             clearMagicPreview();
+            resetKayKitPointerFeedback();
             renderAll();
             animateCellPulse(r, c, "spawn-arrival");
             playSfx("spawn");
@@ -8614,6 +8986,7 @@
         state.selectedCharId = null;
         clearMagicPreview();
         state.selectedIslandId = island.id;
+        resetKayKitPointerFeedback();
         renderAll();
         animateIslandArrival(island);
         playSfx("island");
@@ -8790,6 +9163,7 @@
         state.selectedActionCardId = null;
         state.phase = "ACTION";
 
+        resetKayKitPointerFeedback();
         renderAll();
 
         const n = selectedBatchSize();
@@ -8834,6 +9208,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
+        resetKayKitPointerFeedback();
         renderAll();
         showActionConsumption(type, spent, availableActionCount(type));
 
@@ -9656,6 +10031,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
+        resetKayKitPointerFeedback();
         renderAll();
       }
 
@@ -9974,6 +10350,7 @@
         state.timerExpiring = false;
         state.inputLocked = true;
         els.gameScreen.classList.remove("ai-turn");
+        resetKayKitPointerFeedback();
 
         const p = currentPlayer();
 
