@@ -828,34 +828,55 @@
         kaykit3D.actionPreviewGroup = actionPreviewGroup;
 
         const hover = new THREE.Group();
+        // Réticule rond plutôt que carré : plus lisible sur une case comme sur un
+        // gardien, et l'anneau a une vraie épaisseur (Torus) au lieu d'un LineLoop 1px.
+        const hoverHalf = KAYKIT_CELL_SPACING * .38;
         const hoverFill = new THREE.Mesh(
-          kaykitGeometry("hover-fill-v56", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .88, KAYKIT_CELL_SPACING * .88)),
+          kaykitGeometry("hover-fill-v57", () => new THREE.CircleGeometry(hoverHalf * .92, 28)),
           new THREE.MeshBasicMaterial({ color: 0x00d9ff, transparent: true, opacity: .10, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
         );
         hoverFill.rotation.x = -Math.PI / 2; hoverFill.position.y = .018; hoverFill.renderOrder = 90; hoverFill.userData.hoverRole = "fill"; hover.add(hoverFill);
-        const hoverHalf = KAYKIT_CELL_SPACING * .38;
-        const hoverOutline = new THREE.LineLoop(
-          kaykitGeometry("hover-marker-v56", () => new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(-hoverHalf, 0, -hoverHalf), new THREE.Vector3(hoverHalf, 0, -hoverHalf), new THREE.Vector3(hoverHalf, 0, hoverHalf), new THREE.Vector3(-hoverHalf, 0, hoverHalf)
-          ])), new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: .96, depthWrite: false, depthTest: false })
+        const hoverOutline = new THREE.Mesh(
+          kaykitGeometry("hover-marker-ring-v57", () => new THREE.TorusGeometry(hoverHalf, .026, 8, 40)),
+          new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: .96, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
         );
-        hoverOutline.position.y = .026; hoverOutline.renderOrder = 92; hoverOutline.userData.hoverRole = "outline"; hover.add(hoverOutline);
+        hoverOutline.rotation.x = -Math.PI / 2; hoverOutline.position.y = .026; hoverOutline.renderOrder = 92; hoverOutline.userData.hoverRole = "outline"; hover.add(hoverOutline);
         const hoverDot = new THREE.Mesh(kaykitGeometry("hover-dot-v18", () => new THREE.RingGeometry(.075, .145, 20)), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false, depthTest: true }));
         hoverDot.rotation.x = -Math.PI / 2; hoverDot.position.y = .012; hoverDot.userData.hoverRole = "dot"; hover.add(hoverDot);
-        // Symbole central adapté à l’action ciblée.
+        // Fond sombre discret sous le glyphe : préserve la lisibilité du symbole blanc
+        // aussi bien sur herbe claire que sur terrain sombre, sans l'agrandir.
+        const glyphBacking = new THREE.Mesh(
+          kaykitGeometry("hover-glyph-backing-v1", () => new THREE.CircleGeometry(.30, 28)),
+          new THREE.MeshBasicMaterial({ color: 0x081018, transparent: true, opacity: .46, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+        );
+        glyphBacking.rotation.x = -Math.PI / 2;
+        glyphBacking.position.y = .019;
+        glyphBacking.renderOrder = 94;
+        glyphBacking.userData.hoverRole = "glyphBacking";
+        glyphBacking.visible = false;
+        hover.add(glyphBacking);
+        // Symbole central adapté à l’action ciblée : rendu en volumes fins (et non en
+        // lignes 1px THREE.LineSegments, dont l'épaisseur WebGL n'est pas fiable) afin
+        // de rester lisible à toute distance/inclinaison de caméra.
+        const GLYPH_SCALE = 1.35;
+        const glyphStrokeGeometry = kaykitGeometry("hover-glyph-stroke-v1", () => new THREE.BoxGeometry(1, .016, .05));
         const addHoverGlyph = (kind, segments) => {
-          const points = [];
-          segments.forEach(([x1, z1, x2, z2]) => points.push(new THREE.Vector3(x1, .020, z1), new THREE.Vector3(x2, .020, z2)));
-          const glyph = new THREE.LineSegments(
-            new THREE.BufferGeometry().setFromPoints(points),
-            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: false })
-          );
-          glyph.renderOrder = 95;
-          glyph.scale.setScalar(1.35);
-          glyph.userData.hoverRole = "glyph";
-          glyph.userData.hoverKind = kind;
-          glyph.visible = false;
-          hover.add(glyph);
+          const material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: false });
+          segments.forEach(([x1, z1, x2, z2]) => {
+            const sx1 = x1 * GLYPH_SCALE, sz1 = z1 * GLYPH_SCALE, sx2 = x2 * GLYPH_SCALE, sz2 = z2 * GLYPH_SCALE;
+            const dx = sx2 - sx1, dz = sz2 - sz1;
+            const length = Math.hypot(dx, dz);
+            if (length < 1e-4) return;
+            const stroke = new THREE.Mesh(glyphStrokeGeometry, material);
+            stroke.scale.set(length, 1, 1);
+            stroke.position.set((sx1 + sx2) / 2, .021, (sz1 + sz2) / 2);
+            stroke.rotation.y = -Math.atan2(dz, dx);
+            stroke.renderOrder = 95;
+            stroke.userData.hoverRole = "glyph";
+            stroke.userData.hoverKind = kind;
+            stroke.visible = false;
+            hover.add(stroke);
+          });
         };
         addHoverGlyph("move", [[0, -.18, 0, .18], [0, .18, -.10, .07], [0, .18, .10, .07]]);
         addHoverGlyph("push", [[-.17, -.10, .03, -.10], [.03, -.10, -.05, -.17], [.03, -.10, -.05, -.03], [.02, .10, .20, .10], [.20, .10, .12, .03], [.20, .10, .12, .17]]);
@@ -1500,8 +1521,13 @@
         if (!cell || !intent) return;
 
         const accent = new THREE.Color(intent.color);
-        const strength = intent.actionable ? .24 : .11;
-        const emissiveStrength = intent.actionable ? .72 : .38;
+        // Un gardien est un modèle détaillé (armure, peau, tissu) : le même
+        // repeint fort que sur un décor de case plat le "blanchit" en glaçon
+        // et le rend méconnaissable. On garde juste un léger reflet d'accent.
+        const isCharacterModel = ["ally", "enemy", "select"].includes(intent.kind);
+        const strength = isCharacterModel ? .08 : (intent.actionable ? .24 : .11);
+        const emissiveStrength = isCharacterModel ? .16 : (intent.actionable ? .72 : .38);
+        const emissiveFloor = isCharacterModel ? .12 : (intent.actionable ? .50 : .22);
         const visuals = kaykit3D.cellVisuals.get(`${cell.r},${cell.c}`) || [];
 
         visuals.forEach(object => object?.traverse?.(mesh => {
@@ -1513,7 +1539,7 @@
             if (clone.color) clone.color.lerp(accent, strength);
             if (clone.emissive) {
               clone.emissive = clone.emissive.clone().lerp(accent, emissiveStrength);
-              clone.emissiveIntensity = Math.max(clone.emissiveIntensity || 0, intent.actionable ? .50 : .22);
+              clone.emissiveIntensity = Math.max(clone.emissiveIntensity || 0, emissiveFloor);
             }
             clone.needsUpdate = true;
             return clone;
@@ -1592,6 +1618,44 @@
           }
           return { kind: "invalid", actionable: false, color: 0xff4058, label: "CIBLE NON ADJACENTE" };
         }
+        // Interaction directe gardien → destination/cible. On lit uniquement state.*
+        // (jamais les classes du plateau DOM caché, qui ne sont pas rafraîchies en mode 3D).
+        if (state?.phase === "SMART_CHAR") {
+          if (character?.id === state.selectedCharId) {
+            return { kind: "select", actionable: true, color: 0xffd22e, label: "GARDIEN SÉLECTIONNÉ" };
+          }
+          if (character?.player === state.currentPlayer) {
+            return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHANGER DE GARDIEN" };
+          }
+          const smartHovered = isSameCell(state.actionHoverCell, [r, c]);
+          if (smartHovered && state.smartHoverType === "MOVE") {
+            const moveCost = state.smartHoverPath?.cost ?? state.smartHoverPath?.length ?? 1;
+            return {
+              kind: "move",
+              actionable: true,
+              color: moveCost > 1 ? 0x5be8ff : 0x23e89a,
+              label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`
+            };
+          }
+          if (smartHovered && state.smartHoverType === "PUSH") {
+            const preview = getPushHoverPreview();
+            const force = preview?.force ?? 1;
+            const required = preview?.requiredForce ?? 1;
+            const insufficient = required > force;
+            return {
+              kind: "push",
+              actionable: !insufficient,
+              color: insufficient ? 0xff8a32 : (preview?.fell ? 0xff5538 : 0xff8a32),
+              label: insufficient
+                ? `FORCE ${required} REQUISE · VOUS AVEZ ${force}`
+                : (preview?.fell ? `POUSSER · CHUTE · F${force}` : `POUSSER · FORCE ${force}`)
+            };
+          }
+          if (character) {
+            return { kind: "enemy", actionable: false, color: 0xff6f72, label: "CIBLE NON ATTEIGNABLE" };
+          }
+          return { kind: "invalid", actionable: false, color: 0xff4058, label: "DESTINATION IMPOSSIBLE" };
+        }
         // Un objet couronne sous le pointeur garde toujours la priorité visuelle,
         // même si sa case appartient aussi à une île ciblable par la magie.
         if (hitAction === "crown-carried" || hitAction === "crown-loose" || (!character && looseCrown)) {
@@ -1626,6 +1690,9 @@
         const glyphKind = intent.kind === "crown-place"
           ? "place"
           : (["ally", "enemy"].includes(intent.kind) ? "character" : intent.kind);
+        // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
+        // "personnage" redondant n'apporte rien et surcharge le survol.
+        const glyphSuppressed = glyphKind === "character" || glyphKind === "select";
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -1633,8 +1700,12 @@
             return;
           }
           if (child.userData.hoverRole === "glyph") {
-            child.visible = child.userData.hoverKind === glyphKind;
+            child.visible = !glyphSuppressed && child.userData.hoverKind === glyphKind;
             if (child.material?.color) child.material.color.setHex(intent.kind === "crown-place" ? 0xffdf63 : 0xffffff);
+            return;
+          }
+          if (child.userData.hoverRole === "glyphBacking") {
+            child.visible = !glyphSuppressed && glyphKind !== "neutral";
             return;
           }
           if (child.userData.hoverRole === "dot") {
@@ -2125,10 +2196,16 @@
         if (color === null) return;
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
         const y = p.y + .026;
+        // Le gardien sélectionné mérite un halo rond épuré plutôt qu'un cadre carré
+        // encombré de bordures et de coches : c'est ce halo que le joueur regarde
+        // en premier, il doit rester net sur toute case (herbe, village, île sombre).
+        const isSelected = kind === "selected";
 
         // Ombre de contraste : rend la sélection lisible sur herbe, pierre et village.
         const shadow = new THREE.Mesh(
-          kaykitGeometry("cell-highlight-shadow-v25", () => new THREE.PlaneGeometry(.94, .94)),
+          isSelected
+            ? kaykitGeometry("cell-highlight-shadow-round-v1", () => new THREE.CircleGeometry(.49, 28))
+            : kaykitGeometry("cell-highlight-shadow-v25", () => new THREE.PlaneGeometry(.94, .94)),
           new THREE.MeshBasicMaterial({ color: 0x071316, transparent: true, opacity: .62, depthWrite: false, depthTest: true, side: THREE.DoubleSide })
         );
         shadow.rotation.x = -Math.PI / 2;
@@ -2137,7 +2214,7 @@
         kaykit3D.dynamicGroup.add(shadow);
 
         const fill = new THREE.Mesh(
-          new THREE.PlaneGeometry(size, size),
+          isSelected ? new THREE.CircleGeometry(size / 2, 28) : new THREE.PlaneGeometry(size, size),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fillOpacity, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.NormalBlending })
         );
         fill.rotation.x = -Math.PI / 2;
@@ -2145,56 +2222,58 @@
         fill.renderOrder = 30;
         kaykit3D.dynamicGroup.add(fill);
 
-        const outlinePoints = [
-          new THREE.Vector3(-size / 2, 0, -size / 2), new THREE.Vector3(size / 2, 0, -size / 2),
-          new THREE.Vector3(size / 2, 0, size / 2), new THREE.Vector3(-size / 2, 0, size / 2)
-        ];
-        const outer = new THREE.LineLoop(
-          new THREE.BufferGeometry().setFromPoints(outlinePoints),
-          new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true })
-        );
-        outer.position.set(p.x, y + .008, p.z);
-        outer.renderOrder = 32;
-        kaykit3D.dynamicGroup.add(outer);
+        if (!isSelected) {
+          const outlinePoints = [
+            new THREE.Vector3(-size / 2, 0, -size / 2), new THREE.Vector3(size / 2, 0, -size / 2),
+            new THREE.Vector3(size / 2, 0, size / 2), new THREE.Vector3(-size / 2, 0, size / 2)
+          ];
+          const outer = new THREE.LineLoop(
+            new THREE.BufferGeometry().setFromPoints(outlinePoints),
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true })
+          );
+          outer.position.set(p.x, y + .008, p.z);
+          outer.renderOrder = 32;
+          kaykit3D.dynamicGroup.add(outer);
 
-        const innerSize = size - .11;
-        const inner = new THREE.LineLoop(
-          new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(-innerSize / 2, 0, -innerSize / 2), new THREE.Vector3(innerSize / 2, 0, -innerSize / 2),
-            new THREE.Vector3(innerSize / 2, 0, innerSize / 2), new THREE.Vector3(-innerSize / 2, 0, innerSize / 2)
-          ]),
-          new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true })
-        );
-        inner.position.set(p.x, y + .012, p.z);
-        inner.renderOrder = 33;
-        kaykit3D.dynamicGroup.add(inner);
+          const innerSize = size - .11;
+          const inner = new THREE.LineLoop(
+            new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(-innerSize / 2, 0, -innerSize / 2), new THREE.Vector3(innerSize / 2, 0, -innerSize / 2),
+              new THREE.Vector3(innerSize / 2, 0, innerSize / 2), new THREE.Vector3(-innerSize / 2, 0, innerSize / 2)
+            ]),
+            new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true })
+          );
+          inner.position.set(p.x, y + .012, p.z);
+          inner.renderOrder = 33;
+          kaykit3D.dynamicGroup.add(inner);
 
-        // Bordure volumique : LineBasicMaterial reste souvent trop fin sous WebGL.
-        // Quatre barres 3D garantissent une sélection très lisible sur une île.
-        const borderThickness = kind === "magic" ? .105 : (kind === "selected" || kind === "place" || kind === "invalid") ? .082 : .060;
-        const borderHeight = kind === "magic" ? .042 : .030;
-        const borderMaterial = new THREE.MeshBasicMaterial({
-          color: kind === "selected" ? 0xffd22e : color,
-          transparent: true,
-          opacity: 1,
-          depthWrite: false,
-          depthTest: true
-        });
-        const borderY = y + .021;
-        const horizontalGeometry = new THREE.BoxGeometry(size, borderHeight, borderThickness);
-        const verticalGeometry = new THREE.BoxGeometry(borderThickness, borderHeight, size);
-        [
-          [horizontalGeometry, 0, -size / 2], [horizontalGeometry, 0, size / 2],
-          [verticalGeometry, -size / 2, 0], [verticalGeometry, size / 2, 0]
-        ].forEach(([geometry, dx, dz]) => {
-          const bar = new THREE.Mesh(geometry, borderMaterial);
-          bar.position.set(p.x + dx, borderY, p.z + dz);
-          bar.renderOrder = 36;
-          kaykit3D.dynamicGroup.add(bar);
-        });
+          // Bordure volumique : LineBasicMaterial reste souvent trop fin sous WebGL.
+          // Quatre barres 3D garantissent une sélection très lisible sur une île.
+          const borderThickness = kind === "magic" ? .105 : (kind === "place" || kind === "invalid") ? .082 : .060;
+          const borderHeight = kind === "magic" ? .042 : .030;
+          const borderMaterial = new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 1,
+            depthWrite: false,
+            depthTest: true
+          });
+          const borderY = y + .021;
+          const horizontalGeometry = new THREE.BoxGeometry(size, borderHeight, borderThickness);
+          const verticalGeometry = new THREE.BoxGeometry(borderThickness, borderHeight, size);
+          [
+            [horizontalGeometry, 0, -size / 2], [horizontalGeometry, 0, size / 2],
+            [verticalGeometry, -size / 2, 0], [verticalGeometry, size / 2, 0]
+          ].forEach(([geometry, dx, dz]) => {
+            const bar = new THREE.Mesh(geometry, borderMaterial);
+            bar.position.set(p.x + dx, borderY, p.z + dz);
+            bar.renderOrder = 36;
+            kaykit3D.dynamicGroup.add(bar);
+          });
+        }
 
-        if (kind === "selected" || kind === "place" || kind === "invalid") {
-          const tickMat = new THREE.LineBasicMaterial({ color: kind === "selected" ? 0xffed83 : 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
+        if (kind === "place" || kind === "invalid") {
+          const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
           const s = size / 2, l = .18;
           const pts = [];
           [[-s, -s, 1, 1], [s, -s, -1, 1], [s, s, -1, -1], [-s, s, 1, -1]].forEach(([x, z, dx, dz]) => {
@@ -2207,8 +2286,26 @@
           kaykit3D.dynamicGroup.add(ticks);
         }
 
-        // La sélection conserve un double halo propre, même quand un hover la recouvre.
-        if (kind === "selected") {
+        // Halo rond à deux couches : un anneau net qui porte la couleur du joueur,
+        // entouré d'une lueur douce plus large. Reste lisible même recouvert par un hover.
+        if (isSelected) {
+          const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffe9a8,
+            transparent: true,
+            opacity: .34,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: false
+          });
+          const glow = new THREE.Mesh(kaykitGeometry("selection-glow-v1", () => new THREE.RingGeometry(.18, .47, 40)), glowMaterial);
+          glow.rotation.x = -Math.PI / 2;
+          glow.position.set(p.x, y + .05, p.z);
+          glow.renderOrder = 52;
+          glow.userData.pulse = true;
+          glow.userData.pulsePhase = (r * 11 + c) * .37 + .6;
+          kaykit3D.dynamicGroup.add(glow);
+          kaykit3D.animatedObjects.push(glow);
+
           const haloMaterial = new THREE.MeshBasicMaterial({
             color: 0xfff09a,
             transparent: true,
@@ -2217,7 +2314,7 @@
             depthWrite: false,
             depthTest: false
           });
-          const halo = new THREE.Mesh(new THREE.RingGeometry(.30, .43, 32), haloMaterial);
+          const halo = new THREE.Mesh(kaykitGeometry("selection-ring-v1", () => new THREE.RingGeometry(.32, .40, 40)), haloMaterial);
           halo.rotation.x = -Math.PI / 2;
           halo.position.set(p.x, y + .065, p.z);
           halo.renderOrder = 54;
@@ -2350,12 +2447,18 @@
 
       function refreshKayKitHoverPreviews() {
         if (!kaykit3D?.actionPreviewGroup || !state || document.body.dataset.visualMode !== "alternative") return;
-        const pushPreview = state.phase === "ACTION" && state.selectedActionType === "PUSH"
-          ? getPushHoverPreview()
-          : null;
+        // Le gardien sélectionné via SMART_CHAR (clic direct) doit produire le même
+        // aperçu 3D que l'action MOVE/PUSH classique : on couvre les deux chemins
+        // ici plutôt que de dupliquer la simulation ou le rendu plus bas.
+        const moveActive = (state.phase === "ACTION" && state.selectedActionType === "MOVE")
+          || (state.phase === "SMART_CHAR" && state.smartHoverType === "MOVE");
+        const pushActive = (state.phase === "ACTION" && state.selectedActionType === "PUSH")
+          || (state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH");
+        const pushPreview = pushActive ? getPushHoverPreview() : null;
         const previewKey = JSON.stringify({
           phase: state.phase,
           action: state.selectedActionType,
+          smartType: state.smartHoverType,
           selected: state.selectedCharId,
           hover: state.actionHoverCell,
           path: state.smartHoverPath,
@@ -2363,14 +2466,14 @@
           magicIsland: state.magicHoverIslandId,
           magicPivot: state.magicHoverPivot,
           push: pushPreview,
-          force: state.selectedActionType === "PUSH" ? selectedBatchSize() : 0
+          force: pushPreview?.force ?? 0
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
 
-        if (state.phase === "ACTION" && state.selectedActionType === "MOVE" && state.selectedCharId) {
+        if (moveActive && state.selectedCharId) {
           const path = state.smartHoverPath || [];
           path.forEach(([r, c], index) => {
             const diagonal = !!path.steps?.[index]?.diagonal;
@@ -2391,7 +2494,7 @@
           return;
         }
 
-        if (state.phase === "ACTION" && state.selectedActionType === "PUSH") {
+        if (pushActive) {
           const preview = pushPreview;
           (preview?.impacts || []).forEach(impact => {
             addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
@@ -9402,7 +9505,13 @@
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
-        const force = smartPush ? 1 : selectedBatchSize();
+        // Hors action manuelle, aucun sélecteur de force n'est affiché : on reprend
+        // le même choix de force (state.pushForceChoice) que handleSmartCharacterClick
+        // utilisera réellement au clic, pour ne jamais présenter un aperçu optimiste.
+        const force = smartPush
+          ? Math.min(availableActionCount("PUSH"), Math.max(1, state.pushForceChoice || 1))
+          : selectedBatchSize();
+        let requiredForce = 1;
         const impacts = [];
 
         if (targetCrown) {
@@ -9431,7 +9540,7 @@
               .map(char => key(char.r, char.c))
           );
 
-          const requiredForce = line.length;
+          requiredForce = line.length;
           const previewDistance = force < requiredForce ? 0 : Math.max(1, force - requiredForce + 1);
           for (let step = 0; step < previewDistance; step++) {
             for (let i = simulated.length - 1; i >= 0; i--) {
@@ -9483,7 +9592,8 @@
           lineCount: impacts.length,
           impacts,
           direction: [dr, dc],
-          force
+          force,
+          requiredForce
         };
       }
 

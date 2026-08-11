@@ -1788,7 +1788,13 @@
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
-        const force = smartPush ? 1 : selectedBatchSize();
+        // Hors action manuelle, aucun sélecteur de force n'est affiché : on reprend
+        // le même choix de force (state.pushForceChoice) que handleSmartCharacterClick
+        // utilisera réellement au clic, pour ne jamais présenter un aperçu optimiste.
+        const force = smartPush
+          ? Math.min(availableActionCount("PUSH"), Math.max(1, state.pushForceChoice || 1))
+          : selectedBatchSize();
+        let requiredForce = 1;
         const impacts = [];
 
         if (targetCrown) {
@@ -1817,7 +1823,7 @@
               .map(char => key(char.r, char.c))
           );
 
-          const requiredForce = line.length;
+          requiredForce = line.length;
           const previewDistance = force < requiredForce ? 0 : Math.max(1, force - requiredForce + 1);
           for (let step = 0; step < previewDistance; step++) {
             for (let i = simulated.length - 1; i >= 0; i--) {
@@ -1869,7 +1875,8 @@
           lineCount: impacts.length,
           impacts,
           direction: [dr, dc],
-          force
+          force,
+          requiredForce
         };
       }
 
