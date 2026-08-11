@@ -7226,43 +7226,104 @@
       function phaseInfo() {
         const amount = state.selectedActionType ? selectedBatchSize() : 1;
         const magicDegrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
+        const player = currentPlayer();
+
+        if (player?.isAI || state.aiThinking) {
+          return { label: "Tour de l’adversaire", instruction: "L’adversaire joue. Vos commandes sont temporairement verrouillées." };
+        }
 
         switch (state.phase) {
           case "SETUP_SELECT":
             return { label: "Choisir le setup", instruction: "Sélectionnez la configuration du Duel symétrique." };
           case "CHOOSE_ISLAND_SHAPE":
-            return { label: "Choisir une île", instruction: "Choisissez une forme dans le panneau des îles." };
+            return { label: "Île obligatoire", instruction: "Prochain clic : choisissez une forme dans le panneau de gauche." };
           case "PLACE_ISLAND":
-            return { label: "Poser l’île", instruction: "Déplacez le fantôme de l’île, puis cliquez sur une zone valide." };
+            return { label: "Poser l’île", instruction: "Prochain clic : une zone verte du plateau." };
           case "PLACE_SPAWN":
-            return { label: "Invocation", instruction: "Choisissez une case libre de la nouvelle île pour invoquer votre gardien." };
+            return { label: "Invocation obligatoire", instruction: "Prochain clic : une case libre de la nouvelle île." };
           case "DROP_TREASURE":
-            return { label: "Transmettre ou poser", instruction: "Cliquez un allié adjacent ou une case libre adjacente." };
+            return { label: "Transmettre ou poser", instruction: "Prochain clic : un allié ou une case libre adjacente." };
           case "PICKUP_CROWN":
-            return { label: "Récupérer la couronne", instruction: "Choisissez un de vos gardiens adjacents." };
+            return { label: "Récupérer la couronne", instruction: "Prochain clic : un de vos gardiens adjacents." };
           case "SMART_CHAR":
-            return { label: "Gardien sélectionné", instruction: "Cliquez une destination éclairée, ou un adversaire adjacent pour préparer une poussée." };
+            return { label: "Gardien sélectionné", instruction: "Prochain clic : une destination éclairée ou une cible adjacente." };
           case "ACTION_SELECT":
             return state.islandPlacedThisTurn
-              ? { label: "Actions directes", instruction: "Cliquez un gardien pour agir ou une case d’île pour lancer la magie." }
-              : { label: "Votre tour", instruction: "Posez une île quand vous voulez. Cliquez aussi directement sur le plateau pour agir." };
+              ? { label: "Choisir une action", instruction: "Choisissez une action à droite ou cliquez directement une cible valide." }
+              : { label: "Île obligatoire", instruction: "Commencez par choisir une forme à gauche. Vous pourrez agir avant ou après sa pose." };
           case "ACTION":
             if (state.selectedActionType === "MOVE") {
               return state.selectedCharId
-                ? { label: `Déplacement 1 à ${amount}`, instruction: "Cases droites : 1 déplacement • diagonale entre deux îles : 2 déplacements." }
-                : { label: `Déplacement 1 à ${amount}`, instruction: "Choisissez directement un de vos gardiens." };
+                ? { label: `Déplacement 1 à ${amount}`, instruction: "Prochain clic : une destination éclairée." }
+                : { label: `Déplacement 1 à ${amount}`, instruction: "Prochain clic : un de vos gardiens." };
             }
             if (state.selectedActionType === "PUSH") {
               return state.selectedCharId
-                ? { label: `Poussée ×${amount}`, instruction: "Survolez une cible adjacente, puis cliquez. Recliquez au départ pour quitter." }
-                : { label: `Poussée ×${amount}`, instruction: "Choisissez le gardien qui va pousser." };
+                ? { label: `Poussée ×${amount}`, instruction: "Prochain clic : une cible adjacente éclairée." }
+                : { label: `Poussée ×${amount}`, instruction: "Prochain clic : votre gardien pousseur." };
             }
             return state.selectedIslandId
-              ? { label: `Magie ${magicDegrees ? magicDegrees + "°" : ""}`.trim(), instruction: "Tournez, observez les carrés puis validez. Recliquez le pivot pour quitter." }
-              : { label: "Magie", instruction: "Survolez une île et son carré pivot avant de cliquer." };
+              ? { label: `Magie ${magicDegrees ? magicDegrees + "°" : ""}`.trim(), instruction: magicDegrees ? "Prochain clic : une case de l’aperçu pour valider." : "Tournez l’île avec ↺, ↻ ou la molette." }
+              : { label: "Magie", instruction: "Prochain clic : une case pivot sur l’île à tourner." };
           default:
             return { label: "", instruction: "" };
         }
+      }
+
+      function turnContextInfo() {
+        const amount = state.selectedActionType ? selectedBatchSize() : 1;
+        const action = state.selectedActionType ? ACTIONS[state.selectedActionType] : null;
+        const player = currentPlayer();
+
+        if (player?.isAI || state.aiThinking) {
+          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "Ordinateur"}`.trim(), next: "L’adversaire prépare son action." };
+        }
+
+        if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
+          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme à gauche." };
+        }
+        if (state.phase === "CHOOSE_ISLAND_SHAPE") {
+          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Cliquez une forme à gauche." };
+        }
+        if (state.phase === "PLACE_ISLAND") {
+          return { kind: "build", kicker: "ÎLE SÉLECTIONNÉE", title: "Choisir son emplacement", next: "Cliquez une zone verte du plateau." };
+        }
+        if (state.phase === "PLACE_SPAWN") {
+          return { kind: "build", kicker: "INVOCATION OBLIGATOIRE", title: "Placer le gardien", next: "Cliquez une case libre de la nouvelle île." };
+        }
+        if (state.phase === "DROP_TREASURE") {
+          return { kind: "crown", kicker: "COURONNE", title: "Transmettre ou poser", next: "Cliquez un allié ou une case libre adjacente." };
+        }
+        if (state.phase === "PICKUP_CROWN") {
+          return { kind: "crown", kicker: "COURONNE", title: "Choisir le porteur", next: "Cliquez un de vos gardiens adjacents." };
+        }
+        if (state.phase === "SMART_CHAR") {
+          return { kind: "move", kicker: "GARDIEN SÉLECTIONNÉ", title: "Choisir son action", next: "Cliquez une destination ou une cible éclairée." };
+        }
+        if (state.phase === "ACTION" && action) {
+          if (state.selectedActionType === "MOVE") {
+            return { kind: "move", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name} · jusqu’à ${amount}`, next: state.selectedCharId ? "Cliquez une destination éclairée." : "Cliquez un de vos gardiens." };
+          }
+          if (state.selectedActionType === "PUSH") {
+            return { kind: "push", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name} · force ${amount}`, next: state.selectedCharId ? "Cliquez une cible adjacente éclairée." : "Cliquez votre gardien pousseur." };
+          }
+          const degrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
+          return { kind: "magic", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name}${degrees ? ` · ${degrees}°` : ""}`, next: state.selectedIslandId ? (degrees ? "Cliquez l’aperçu pour valider." : "Tournez avec ↺, ↻ ou la molette.") : "Cliquez une case pivot sur une île." };
+        }
+        if (state.islandPlacedThisTurn) {
+          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Actions à droite · Fin du tour quand vous êtes prêt." };
+        }
+        return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme à gauche." };
+      }
+
+      function renderTurnContext() {
+        const root = document.getElementById("turnContext");
+        if (!root || !state) return;
+        const info = turnContextInfo();
+        root.className = `turn-context context-${info.kind}`;
+        document.getElementById("turnContextKicker").textContent = info.kicker;
+        document.getElementById("turnContextTitle").textContent = info.title;
+        document.getElementById("turnContextNext").textContent = info.next;
       }
 
 
@@ -7293,6 +7354,7 @@
       function renderAll() {
         ensureArtifactState();
         renderHeader();
+        renderTurnContext();
         renderBoard();
         renderHand();
         renderScores();
@@ -7324,6 +7386,7 @@
 
         const islandPickPhase = !state.islandPlacedThisTurn;
         if (els.leftPanel) els.leftPanel.classList.toggle("choice-focus", islandPickPhase);
+        els.gameScreen.classList.toggle("island-required", !state.islandPlacedThisTurn);
 
         if (previousPlayer !== String(p.id)) {
           els.gameScreen.dataset.player = String(p.id);
@@ -8553,6 +8616,18 @@
         }
       }
 
+      function showActionConsumption(type, spent, remaining) {
+        const feedback = document.getElementById("actionFeedback");
+        const action = ACTIONS[type];
+        if (!feedback || !action || spent < 1) return;
+        feedback.innerHTML = `<strong>${action.icon} ${action.name}</strong><span>−${spent} · ${remaining} restante${remaining === 1 ? "" : "s"}</span>`;
+        feedback.className = `action-feedback show feedback-${type.toLowerCase()}`;
+        clearTimeout(showActionConsumption.timer);
+        showActionConsumption.timer = setTimeout(() => {
+          feedback.classList.remove("show");
+        }, 2400);
+      }
+
 
       function prepareActionSwitch() {
         if (!state) return false;
@@ -8609,6 +8684,12 @@
       function selectActionBatch(type, count) {
         if (!canLocalPlayerAct()) return;
 
+        if (state.phase === "ACTION" && state.selectedActionType === type) {
+          cancelSelectedCard();
+          showToast(`${ACTIONS[type].name} quitté.`);
+          return;
+        }
+
         const available = availableActionCount(type);
         if (available === 0) {
           showToast(`Aucune action ${ACTIONS[type].name.toLowerCase()} disponible.`);
@@ -8658,7 +8739,7 @@
         if (!state.selectedActionType) return;
 
         const type = state.selectedActionType;
-        consumeAvailableActions(
+        const spent = consumeAvailableActions(
           type,
           countOverride ?? selectedBatchSize()
         );
@@ -8677,6 +8758,7 @@
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
         renderAll();
+        showActionConsumption(type, spent, availableActionCount(type));
 
         if (allCardsUsed()) {
           showToast("Toutes les actions disponibles ont été utilisées.");
@@ -9333,14 +9415,14 @@
       }
 
       function handleMagicClick(r, c) {
-        if (state.selectedMagicPivot && isSameCell(state.selectedMagicPivot, [r, c])) {
-          cancelSelectedCard();
-          showToast("Magie quittée.");
+        if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
+          confirmMagicRotation();
           return;
         }
 
-        if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
-          confirmMagicRotation();
+        if (state.selectedMagicPivot && isSameCell(state.selectedMagicPivot, [r, c])) {
+          cancelSelectedCard();
+          showToast("Magie quittée.");
           return;
         }
 
@@ -9569,11 +9651,45 @@
         const canRotatePlacement = !aiLocked && state.phase === "PLACE_ISLAND";
         const canRotateMagic = !aiLocked && state.phase === "ACTION" && state.selectedActionType === "MAGIC" && !!state.selectedIslandId && !!state.selectedMagicPivot;
         const canCancel = !aiLocked && (state.phase === "PLACE_ISLAND" || state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType) || state.phase === "DROP_TREASURE" || state.phase === "PICKUP_CROWN" || !!state.undoSnapshot);
+        const canEndFromSelection = state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType);
+        const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.cancelCardBtn.disabled = !canCancel;
-        els.endTurnBtn.disabled = aiLocked || !(state.phase === "ACTION_SELECT" && state.islandPlacedThisTurn);
-        els.endTurnBtn.textContent = state.islandPlacedThisTurn ? "Fin du tour" : "Île obligatoire";
+        if (state.phase === "PLACE_ISLAND") {
+          els.cancelCardBtn.textContent = "Changer d’île";
+          els.cancelCardBtn.title = "Quitter le placement sans poser cette île";
+        } else if (state.phase === "ACTION" && state.selectedActionType) {
+          els.cancelCardBtn.textContent = "Quitter l’action";
+          els.cancelCardBtn.title = `Quitter ${ACTIONS[state.selectedActionType].name.toLowerCase()} sans consommer d’action`;
+        } else if (state.phase === "SMART_CHAR") {
+          els.cancelCardBtn.textContent = "Quitter le choix";
+          els.cancelCardBtn.title = "Désélectionner ce gardien";
+        } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
+          els.cancelCardBtn.textContent = "Quitter le choix";
+          els.cancelCardBtn.title = "Revenir au choix des actions";
+        } else if (state.undoSnapshot) {
+          els.cancelCardBtn.textContent = "Annuler l’action";
+          els.cancelCardBtn.title = "Revenir avant la dernière action exécutée";
+        } else {
+          els.cancelCardBtn.textContent = "Annuler";
+          els.cancelCardBtn.title = "";
+        }
+        els.endTurnBtn.disabled = aiLocked || !canEnd;
+        els.endTurnBtn.classList.toggle("selection-will-cancel", canEndFromSelection && canEnd);
+        if (!state.islandPlacedThisTurn) {
+          els.endTurnBtn.textContent = "Poser une île";
+          els.endTurnBtn.title = "La pose d’une île est obligatoire avant la fin du tour";
+        } else if (state.phase === "PLACE_SPAWN") {
+          els.endTurnBtn.textContent = "Placer le gardien";
+          els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire";
+        } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
+          els.endTurnBtn.textContent = "Finir le choix";
+          els.endTurnBtn.title = "Terminez ou quittez d’abord ce choix";
+        } else {
+          els.endTurnBtn.textContent = "Fin du tour";
+          els.endTurnBtn.title = canEndFromSelection ? "La sélection en cours sera simplement abandonnée" : "Terminer le tour";
+        }
       }
 
       function renderUnitCard() {
@@ -9756,7 +9872,11 @@
 
       async function endTurn(force = false) {
         if (!state || state.winner !== null || state.turnTransitioning) return;
-        if (!force && state.phase !== "ACTION_SELECT") return;
+        if (!force && state.phase !== "ACTION_SELECT") {
+          const cancellableSelection = state.islandPlacedThisTurn
+            && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
+          if (!cancellableSelection || !prepareActionSwitch()) return;
+        }
 
         if (!state.islandPlacedThisTurn) {
           if (force) {
@@ -9856,7 +9976,7 @@
         renderSetupFields();
       }
 
-      function replay() {
+ function replay() {
         els.victoryModal.classList.add("hidden");
         els.victoryModal.classList.remove("victory-visible");
         if (state?.onlineMode) {
