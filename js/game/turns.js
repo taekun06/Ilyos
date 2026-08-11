@@ -95,6 +95,7 @@
         state.aiThinking = !!p.isAI;
         els.gameScreen.classList.toggle("ai-turn", !!p.isAI);
         startTurnTimer(true);
+        resetKayKitPointerFeedback();
         renderAll();
         showTurnRibbon(p);
 

@@ -1077,6 +1077,7 @@
             state.selectedCharId = char.id;
             state.selectedIslandId = null;
             clearMagicPreview();
+            resetKayKitPointerFeedback();
             renderAll();
             animateCellPulse(r, c, "spawn-arrival");
             playSfx("spawn");
@@ -1371,6 +1372,7 @@
         state.selectedCharId = null;
         clearMagicPreview();
         state.selectedIslandId = island.id;
+        resetKayKitPointerFeedback();
         renderAll();
         animateIslandArrival(island);
         playSfx("island");
@@ -1547,6 +1549,7 @@
         state.selectedActionCardId = null;
         state.phase = "ACTION";
 
+        resetKayKitPointerFeedback();
         renderAll();
 
         const n = selectedBatchSize();
@@ -1591,6 +1594,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
+        resetKayKitPointerFeedback();
         renderAll();
         showActionConsumption(type, spent, availableActionCount(type));
 
@@ -2413,6 +2417,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
+        resetKayKitPointerFeedback();
         renderAll();
       }
 
@@ -2731,6 +2736,7 @@
         state.timerExpiring = false;
         state.inputLocked = true;
         els.gameScreen.classList.remove("ai-turn");
+        resetKayKitPointerFeedback();
 
         const p = currentPlayer();
 
