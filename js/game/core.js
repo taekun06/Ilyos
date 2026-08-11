@@ -557,9 +557,9 @@
             <span><b>Difficulté de l’ordinateur</b><small>Le niveau change sa stratégie et le nombre d’actions qu’il joue.</small></span>
             <select id="aiDifficultySelect">
               <option value="easy">Facile</option>
-              <option value="normal">Normal</option>
+              <option value="normal" selected>Normal</option>
               <option value="hard">Difficile</option>
-              <option value="expert" selected>Expert</option>
+              <option value="expert">Expert</option>
             </select>
           </label>
           ${startingBoardControlsHTML()}

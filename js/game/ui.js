@@ -150,10 +150,34 @@
         if (!els.crownStatus || !state) return;
         const crowns = activeArtifacts();
         const carried = crowns.filter(artifact => artifact.carrierId).length;
-        els.crownStatus.textContent = `${crowns.length} couronne${crowns.length > 1 ? "s" : ""} · ${carried} portée${carried > 1 ? "s" : ""}`;
+        const loose = crowns.length - carried;
+        const readyOwnerFor = artifact => {
+          const carrier = characterById(artifact.carrierId);
+          if (carrier) {
+            const owner = state.players[carrier.player];
+            return owner && isCrownValidationCell(owner, carrier.r, carrier.c)
+              ? owner
+              : null;
+          }
+          if (!Number.isFinite(artifact.r) || !Number.isFinite(artifact.c)) return null;
+          return state.players.find(owner => isCrownValidationCell(owner, artifact.r, artifact.c)) || null;
+        };
+        const readyCrowns = crowns
+          .map(artifact => ({ artifact, owner: readyOwnerFor(artifact) }))
+          .filter(entry => entry.owner);
+        const ready = readyCrowns.length;
+
+        els.crownStatus.classList.toggle("crown-ready", ready > 0);
+        els.crownStatus.textContent = ready > 0
+          ? `${ready} à valider · ${readyCrowns[0].owner.name}`
+          : `${loose} libre${loose > 1 ? "s" : ""} · ${carried} portée${carried > 1 ? "s" : ""}`;
         els.crownStatus.title = crowns
           .map((artifact, index) => {
             const carrier = characterById(artifact.carrierId);
+            const readyOwner = readyOwnerFor(artifact);
+            if (readyOwner) {
+              return `Couronne ${index + 1} : village de ${readyOwner.name} — validation au début de son prochain tour`;
+            }
             return carrier
               ? `Couronne ${index + 1} : ${state.players[carrier.player].name}`
               : `Couronne ${index + 1} : libre`;
@@ -2440,7 +2464,10 @@
         els.deckDisplay.innerHTML = `
         <div class="v64-deck-summary v66-deck-summary" aria-label="Pioche, main et défausse">
           <span class="v64-deck-count"><b>${deckLeft}</b><small>Pioche</small></span>
-          <div class="v64-mini-hand" aria-label="${p.hand.length} cartes en main">${cards || `<small>Nouvelle main au prochain tour</small>`}</div>
+          <div class="v64-mini-hand" aria-label="${p.hand.length} cartes en main">
+            <small class="v64-mini-hand-label">Main · ${p.hand.length}</small>
+            ${cards || `<small class="v64-mini-hand-empty">Nouvelle main au prochain tour</small>`}
+          </div>
           <span class="v64-deck-count" title="Dernière défausse : ${lastDiscardLabel}"><b>${discardCount}</b><small>Défausse</small></span>
         </div>
       `;
