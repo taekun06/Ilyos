@@ -1770,13 +1770,17 @@
           : (["ally", "enemy"].includes(intent.kind) ? "character" : intent.kind);
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = glyphKind === "character" || glyphKind === "select";
+        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation";
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
         // fait que doubler l'indicateur "sélectionné" — visible comme 2 cercles +
         // un carré empilés. On masque tout le réticule éphémère dans ce cas précis.
-        const hoverRingsSuppressed = glyphKind === "select";
+        // Même logique pour "invocation" : addKayKitSpawnGuardianGhost() dessine
+        // maintenant le futur gardien en volume à cet endroit précis — le grand
+        // réticule (remplissage + anneau + coches, depthTest désactivé) rendait ce
+        // ghost illisible en passant systématiquement devant lui.
+        const hoverRingsSuppressed = glyphKind === "select" || glyphKind === "invocation";
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -2335,11 +2339,16 @@
         // (déjà représentée par ce ghost en volume) — ne font plus que doubler
         // ou contredire visuellement ce ghost. On les masque, le ghost seul suffit.
         const magicGhostActive = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!(state?.magicPreviewSteps || 0);
+        // Même principe que pour la rotation magique : le ghost 3D de
+        // renderKayKitPlacementPreview() (vrai modèle d'île, teinté vert/rouge)
+        // montre déjà l'empreinte exacte. Le carré plat en dessous ne ferait
+        // plus que la doubler d'un gros aplat coloré — on le masque.
+        const placementGhostActive = state?.phase === "PLACE_ISLAND" && !!state?.hoverAnchor;
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
         if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
         else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
-        else if (classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
-        else if (classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
         else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
         else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
@@ -2558,6 +2567,60 @@
         group.add(ring);
       }
 
+      // Anneau discret sur chaque case d'invocation valable de la nouvelle île,
+      // visible dès l'entrée en PLACE_SPAWN (même idiome que les affordances
+      // MOVE/PUSH ci-dessus) : le joueur voit où il peut invoquer avant même
+      // de survoler une case précise.
+      function addKayKitSpawnAffordance(r, c) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
+        const ring = new THREE.Mesh(
+          kaykitGeometry("spawn-ring-v1", () => new THREE.TorusGeometry(.17, .024, 8, 26)),
+          new THREE.MeshBasicMaterial({ color: 0x53e6d1, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(p.x, p.y, p.z);
+        ring.renderOrder = 20;
+        group.add(ring);
+      }
+
+      // Un seul représentant par joueur suffit pour un ghost : contrairement au
+      // héros réel (voir teamHeroPools plus bas), il n'a pas besoin de refléter
+      // exactement quel modèle sera tiré, seulement "un gardien de cette équipe".
+      const KAYKIT_SPAWN_GHOST_HERO = { 0: "hero0", 1: "hero1", 2: "hero2", 3: "hero3" };
+
+      // Ghost du gardien à invoquer, survolé pendant PLACE_SPAWN : réutilise le
+      // même clonage d'asset que le héros réel (voir la boucle state.characters
+      // plus bas), en plus translucide — "si je clique ici, il apparaîtra ainsi".
+      function addKayKitSpawnGuardianGhost(r, c, playerId) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
+        let hero = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
+        if (!hero) hero = makeFallbackHero(playerId);
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+        hero.position.set(p.x, p.y, p.z);
+        hero.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+        const accent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId] || "#ffffff");
+        hero.traverse?.(child => {
+          if (!child.isMesh || !child.material) return;
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          const cloned = materials.map(material => {
+            const mat = material.clone();
+            if ("emissive" in mat) { mat.emissive = accent.clone(); mat.emissiveIntensity = .35; }
+            mat.transparent = true;
+            mat.opacity = .55;
+            mat.depthWrite = false;
+            mat.needsUpdate = true;
+            return mat;
+          });
+          child.material = Array.isArray(child.material) ? cloned : cloned[0];
+          child.renderOrder = 21;
+        });
+        group.add(hero);
+      }
+
       function addKayKitActionPreviewCell(r, c, {
         color,
         opacity = .34,
@@ -2675,12 +2738,29 @@
           magicPivot: state.magicHoverPivot,
           push: pushPreview,
           force: pushPreview?.force ?? 0,
-          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null
+          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null,
+          spawnHover: state.phase === "PLACE_SPAWN" ? [state.pendingSpawnIslandId, state.hoverAnchor] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
+
+        if (state.phase === "PLACE_SPAWN" && state.pendingSpawnIslandId) {
+          const spawnIsland = state.islands.find(is => is.id === state.pendingSpawnIslandId);
+          const hoverKey = state.hoverAnchor ? key(state.hoverAnchor[0], state.hoverAnchor[1]) : null;
+          (spawnIsland?.cells || []).forEach(([r, c]) => {
+            if (characterAt(r, c)) return;
+            if (key(r, c) === hoverKey) return;
+            addKayKitSpawnAffordance(r, c);
+          });
+          if (state.hoverAnchor) {
+            const [hr, hc] = state.hoverAnchor;
+            const allowed = !!spawnIsland?.cells?.some(([ir, ic]) => ir === hr && ic === hc) && !characterAt(hr, hc);
+            if (allowed) addKayKitSpawnGuardianGhost(hr, hc, state.currentPlayer);
+          }
+          return;
+        }
 
         if (smartResting) {
           const hoverKey = state.actionHoverCell ? key(state.actionHoverCell[0], state.actionHoverCell[1]) : null;
@@ -2960,6 +3040,9 @@
 
         const previewColor = previewMode === "magic" ? (valid ? 0xb768ff : 0xff3158) : (valid ? 0x20f39a : 0xff2c4c);
         const previewAccent = new THREE.Color(previewColor);
+        // Le ghost de pose d'île doit rester "léger" (lisible sans écraser le
+        // plateau) ; la rotation magique garde son opacité d'origine, inchangée.
+        const previewOpacity = previewMode === "magic" ? .82 : .60;
 
         const tintPreview = (object) => {
           if (!preview) return;
@@ -2974,7 +3057,7 @@
                 mat.emissiveIntensity = .30;
               }
               mat.transparent = true;
-              mat.opacity = .82;
+              mat.opacity = previewOpacity;
               mat.depthWrite = false;
               mat.needsUpdate = true;
               return mat;
@@ -2997,7 +3080,7 @@
               color: preview ? previewColor : 0x6fbd49,
               roughness: .88,
               transparent: preview,
-              opacity: preview ? .82 : 1
+              opacity: preview ? previewOpacity : 1
             });
             block = new THREE.Mesh(kaykitGeometry('block-bits-loading-fallback-v52', () => new THREE.BoxGeometry(KAYKIT_BLOCK_SIZE, .46, KAYKIT_BLOCK_SIZE)), fallbackMat);
           } else {
@@ -5872,6 +5955,7 @@
           selectedIslandShape: null,
           placementCells: null,
           placementOriginIndex: 0,
+          placementRotationSteps: 0,
           hoverAnchor: null,
           pendingSpawnIslandId: null,
           fxCells: [],
@@ -6045,6 +6129,7 @@
           selectedIslandShape: null,
           placementCells: null,
           placementOriginIndex: 0,
+          placementRotationSteps: 0,
           hoverAnchor: null,
           pendingSpawnIslandId: null,
           fxCells: [],
@@ -8113,10 +8198,11 @@
           return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Cliquez une forme à gauche." };
         }
         if (state.phase === "PLACE_ISLAND") {
-          return { kind: "build", kicker: "ÎLE SÉLECTIONNÉE", title: "Choisir son emplacement", next: "Cliquez une zone verte du plateau." };
+          const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
+          return { kind: "build", kicker: "ÎLE À POSER", title: `Rotation : ${degrees}°`, next: "Q/E pour tourner, clic pour poser." };
         }
         if (state.phase === "PLACE_SPAWN") {
-          return { kind: "build", kicker: "INVOCATION OBLIGATOIRE", title: "Placer le gardien", next: "Cliquez une case libre de la nouvelle île." };
+          return { kind: "build", kicker: "INVOCATION", title: "Choisir une case", next: "Cliquez une case en surbrillance." };
         }
         if (state.phase === "DROP_TREASURE") {
           return { kind: "crown", kicker: "COURONNE", title: "Transmettre ou poser", next: "Cliquez un allié ou une case libre adjacente." };
@@ -8305,6 +8391,7 @@
         state.selectedIslandShape = shapeKey;
         state.placementCells = cloneCells(SHAPES[shapeKey].cells);
         state.placementOriginIndex = 0;
+        state.placementRotationSteps = 0;
         state.hoverAnchor = null;
         state.selectedActionType = null;
         state.selectedActionCount = 1;
@@ -8315,7 +8402,8 @@
         state.reachable = new Set();
         state.phase = "PLACE_ISLAND";
         renderAll();
-        showToast(`Île sélectionnée.`);
+        // Le contexte de tour affiche déjà "Île à poser" et le ghost 3D suit la
+        // souris : ce toast ne ferait que répéter la même information.
         playSfx("card");
       }
 
@@ -8931,6 +9019,9 @@
             state.actionHoverCell = next;
             state.smartHoverPath = path;
             scheduleBoardRender();
+            // Le panneau ACTIONS doit afficher le coût MOVE dès que la case
+            // survolée change, comme pour le survol PUSH côté SMART_CHAR.
+            renderHand();
           }
         }
       }
@@ -8958,6 +9049,7 @@
           state.actionHoverCell = null;
           if (state.selectedActionType === "MOVE") state.smartHoverPath = [];
           scheduleBoardRender();
+          if (state.selectedActionType === "MOVE") renderHand();
         }
       }
 
@@ -9414,9 +9506,9 @@
         animateIslandArrival(island);
         playSfx("island");
 
-        if (canCreateGuardian(state.currentPlayer)) {
-          showToast("Invocation : choisissez la case où le gardien apparaîtra.");
-        } else {
+        // Le contexte de tour affiche déjà "Invocation obligatoire · Placer le
+        // gardien" : un toast ici ne ferait que répéter la même instruction.
+        if (!canCreateGuardian(state.currentPlayer)) {
           showToast("Île posée. Limite atteinte : 5 gardiens maximum.");
         }
       }
@@ -9453,7 +9545,7 @@
         if (smartSelected) {
           const badge = document.createElement("div");
           badge.className = "v60-context-options smart-char-badge";
-          badge.innerHTML = "<span>GARDIEN SÉLECTIONNÉ</span>";
+          badge.innerHTML = "<span>🛡️ GARDIEN SÉLECTIONNÉ</span>";
           els.hand.appendChild(badge);
         }
         const bar = document.createElement("div");
@@ -9480,6 +9572,24 @@
         });
         els.hand.appendChild(bar);
 
+        // Coût lu au survol d'une destination MOVE (chemin déjà calculé par
+        // shortestMovementPath, cost/steps déjà accrochés dessus) : que ce
+        // survol vienne du bouton MOVE classique ou du clic direct SMART_CHAR,
+        // le panneau doit dire ce que ce clic coûterait avant qu'il n'ait lieu.
+        const classicMoveActive = state.phase === "ACTION" && state.selectedActionType === "MOVE";
+        const smartMoveHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "MOVE";
+        if ((classicMoveActive || smartMoveHovered) && state.actionHoverCell) {
+          const path = state.smartHoverPath || [];
+          const cost = path.cost ?? path.length;
+          if (cost > 0) {
+            const remaining = Math.max(0, availableActionCount("MOVE") - cost);
+            const contextual = document.createElement("div");
+            contextual.className = "v60-context-options move-options";
+            contextual.innerHTML = `<span>🥾 Déplacement</span><b>Coût : ${cost}</b><small>Restera : ${remaining}</small>`;
+            els.hand.appendChild(contextual);
+          }
+        }
+
         const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH";
         const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
         if (classicPushActive || smartPushHovered) {
@@ -9487,22 +9597,30 @@
           // Même contrôle pour les deux chemins (bouton PUSH classique et clic
           // direct sur un gardien) : seule la source du minimum change. En
           // SMART_CHAR, getPushHoverPreview() reste l'unique simulation.
-          let force = null, min = 1, hint = "";
+          let force = null, min = 1, extra = "";
           if (smartPushHovered) {
             const preview = getPushHoverPreview();
             if (preview) {
               min = Math.max(1, preview.requiredForce || 1);
               force = Math.max(min, Math.min(max, preview.force || min));
-              hint = min > 1 ? `<small>Minimum requis : ${min}</small>` : "<small>Cliquez pour pousser.</small>";
+              const [targetR, targetC] = preview.target;
+              const distance = (!preview.fell && preview.destination)
+                ? Math.abs(preview.destination[0] - targetR) + Math.abs(preview.destination[1] - targetC)
+                : null;
+              extra = `<small>Minimum : ${min}</small>` + (
+                preview.fell
+                  ? `<small>Chute hors du plateau</small>`
+                  : distance ? `<small>Destination : ${distance} case${distance > 1 ? "s" : ""}</small>` : ""
+              );
             }
           } else {
             force = Math.max(1, Math.min(state.pushForceChoice || 1, max));
-            hint = "<small>Sélectionnez ensuite la cible adjacente.</small>";
+            extra = "<small>Sélectionnez ensuite la cible adjacente.</small>";
           }
           if (force !== null) {
             const contextual = document.createElement("div");
             contextual.className = "v60-context-options";
-            contextual.innerHTML = `<span>Force de poussée</span><button type="button" data-force-minus>−</button><b>${force}</b><button type="button" data-force-plus>+</button>${hint}`;
+            contextual.innerHTML = `<span>💥 Poussée</span><button type="button" data-force-minus>−</button><b>${force}</b><button type="button" data-force-plus>+</button>${extra}`;
             contextual.querySelector('[data-force-minus]').disabled = force <= min;
             contextual.querySelector('[data-force-plus]').disabled = force >= max;
             contextual.querySelector('[data-force-minus]').onclick = () => {
@@ -10443,6 +10561,10 @@
             state.placementOriginIndex = Math.max(0, state.placementOriginIndex);
           }
           state.placementCells = rotated;
+          // Purement informatif (panneau "Rotation : X°") : ne change rien à la
+          // forme réellement posée, déjà entièrement portée par placementCells.
+          state.placementRotationSteps = ((state.placementRotationSteps || 0) + direction + 4) % 4;
+          renderTurnContext();
 
           if (state.hoverAnchor) {
             updatePlacementPreview(state.hoverAnchor[0], state.hoverAnchor[1]);
@@ -10623,6 +10745,9 @@
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.cancelCardBtn.disabled = !canCancel;
+        // Désélectionner (rien n'est encore consommé) et annuler la dernière
+        // action (undoSnapshot réellement disponible) sont deux idées
+        // différentes : le libellé du bouton ne doit jamais les confondre.
         if (state.phase === "PLACE_ISLAND") {
           els.cancelCardBtn.textContent = "Changer d’île";
           els.cancelCardBtn.title = "Quitter le placement sans poser cette île";
@@ -10630,13 +10755,13 @@
           els.cancelCardBtn.textContent = "Quitter l’action";
           els.cancelCardBtn.title = `Quitter ${ACTIONS[state.selectedActionType].name.toLowerCase()} sans consommer d’action`;
         } else if (state.phase === "SMART_CHAR") {
-          els.cancelCardBtn.textContent = "Quitter le choix";
+          els.cancelCardBtn.textContent = "Désélectionner";
           els.cancelCardBtn.title = "Désélectionner ce gardien";
         } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
           els.cancelCardBtn.textContent = "Quitter le choix";
           els.cancelCardBtn.title = "Revenir au choix des actions";
         } else if (state.undoSnapshot) {
-          els.cancelCardBtn.textContent = "Annuler l’action";
+          els.cancelCardBtn.textContent = "↶ Annuler dernière action";
           els.cancelCardBtn.title = "Revenir avant la dernière action exécutée";
         } else {
           els.cancelCardBtn.textContent = "Annuler";
@@ -10644,18 +10769,19 @@
         }
         els.endTurnBtn.disabled = aiLocked || !canEnd;
         els.endTurnBtn.classList.toggle("selection-will-cancel", canEndFromSelection && canEnd);
+        // Prêt à conclure : île posée, aucune sélection en cours à abandonner.
+        // Légère mise en avant, jamais un second libellé — le bouton reste
+        // toujours "Fin du tour" (voir title pour la raison d'un blocage).
+        els.endTurnBtn.classList.toggle("end-turn-ready", canEnd && state.phase === "ACTION_SELECT");
+        els.endTurnBtn.textContent = "Fin du tour";
         if (!state.islandPlacedThisTurn) {
-          els.endTurnBtn.textContent = "Poser une île";
-          els.endTurnBtn.title = "La pose d’une île est obligatoire avant la fin du tour";
+          els.endTurnBtn.title = "Posez d’abord une île.";
         } else if (state.phase === "PLACE_SPAWN") {
-          els.endTurnBtn.textContent = "Placer le gardien";
-          els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire";
+          els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire.";
         } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
-          els.endTurnBtn.textContent = "Finir le choix";
-          els.endTurnBtn.title = "Terminez ou quittez d’abord ce choix";
+          els.endTurnBtn.title = "Terminez ou quittez d’abord ce choix.";
         } else {
-          els.endTurnBtn.textContent = "Fin du tour";
-          els.endTurnBtn.title = canEndFromSelection ? "La sélection en cours sera simplement abandonnée" : "Terminer le tour";
+          els.endTurnBtn.title = canEndFromSelection ? "La sélection en cours sera simplement abandonnée." : "Terminer le tour.";
         }
       }
 

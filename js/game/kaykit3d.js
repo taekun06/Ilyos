@@ -1643,13 +1643,17 @@
           : (["ally", "enemy"].includes(intent.kind) ? "character" : intent.kind);
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = glyphKind === "character" || glyphKind === "select";
+        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation";
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
         // fait que doubler l'indicateur "sélectionné" — visible comme 2 cercles +
         // un carré empilés. On masque tout le réticule éphémère dans ce cas précis.
-        const hoverRingsSuppressed = glyphKind === "select";
+        // Même logique pour "invocation" : addKayKitSpawnGuardianGhost() dessine
+        // maintenant le futur gardien en volume à cet endroit précis — le grand
+        // réticule (remplissage + anneau + coches, depthTest désactivé) rendait ce
+        // ghost illisible en passant systématiquement devant lui.
+        const hoverRingsSuppressed = glyphKind === "select" || glyphKind === "invocation";
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -2208,11 +2212,16 @@
         // (déjà représentée par ce ghost en volume) — ne font plus que doubler
         // ou contredire visuellement ce ghost. On les masque, le ghost seul suffit.
         const magicGhostActive = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!(state?.magicPreviewSteps || 0);
+        // Même principe que pour la rotation magique : le ghost 3D de
+        // renderKayKitPlacementPreview() (vrai modèle d'île, teinté vert/rouge)
+        // montre déjà l'empreinte exacte. Le carré plat en dessous ne ferait
+        // plus que la doubler d'un gros aplat coloré — on le masque.
+        const placementGhostActive = state?.phase === "PLACE_ISLAND" && !!state?.hoverAnchor;
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
         if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
         else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
-        else if (classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
-        else if (classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
         else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
         else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
@@ -2431,6 +2440,60 @@
         group.add(ring);
       }
 
+      // Anneau discret sur chaque case d'invocation valable de la nouvelle île,
+      // visible dès l'entrée en PLACE_SPAWN (même idiome que les affordances
+      // MOVE/PUSH ci-dessus) : le joueur voit où il peut invoquer avant même
+      // de survoler une case précise.
+      function addKayKitSpawnAffordance(r, c) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
+        const ring = new THREE.Mesh(
+          kaykitGeometry("spawn-ring-v1", () => new THREE.TorusGeometry(.17, .024, 8, 26)),
+          new THREE.MeshBasicMaterial({ color: 0x53e6d1, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(p.x, p.y, p.z);
+        ring.renderOrder = 20;
+        group.add(ring);
+      }
+
+      // Un seul représentant par joueur suffit pour un ghost : contrairement au
+      // héros réel (voir teamHeroPools plus bas), il n'a pas besoin de refléter
+      // exactement quel modèle sera tiré, seulement "un gardien de cette équipe".
+      const KAYKIT_SPAWN_GHOST_HERO = { 0: "hero0", 1: "hero1", 2: "hero2", 3: "hero3" };
+
+      // Ghost du gardien à invoquer, survolé pendant PLACE_SPAWN : réutilise le
+      // même clonage d'asset que le héros réel (voir la boucle state.characters
+      // plus bas), en plus translucide — "si je clique ici, il apparaîtra ainsi".
+      function addKayKitSpawnGuardianGhost(r, c, playerId) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
+        let hero = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
+        if (!hero) hero = makeFallbackHero(playerId);
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+        hero.position.set(p.x, p.y, p.z);
+        hero.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+        const accent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId] || "#ffffff");
+        hero.traverse?.(child => {
+          if (!child.isMesh || !child.material) return;
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          const cloned = materials.map(material => {
+            const mat = material.clone();
+            if ("emissive" in mat) { mat.emissive = accent.clone(); mat.emissiveIntensity = .35; }
+            mat.transparent = true;
+            mat.opacity = .55;
+            mat.depthWrite = false;
+            mat.needsUpdate = true;
+            return mat;
+          });
+          child.material = Array.isArray(child.material) ? cloned : cloned[0];
+          child.renderOrder = 21;
+        });
+        group.add(hero);
+      }
+
       function addKayKitActionPreviewCell(r, c, {
         color,
         opacity = .34,
@@ -2548,12 +2611,29 @@
           magicPivot: state.magicHoverPivot,
           push: pushPreview,
           force: pushPreview?.force ?? 0,
-          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null
+          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null,
+          spawnHover: state.phase === "PLACE_SPAWN" ? [state.pendingSpawnIslandId, state.hoverAnchor] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
+
+        if (state.phase === "PLACE_SPAWN" && state.pendingSpawnIslandId) {
+          const spawnIsland = state.islands.find(is => is.id === state.pendingSpawnIslandId);
+          const hoverKey = state.hoverAnchor ? key(state.hoverAnchor[0], state.hoverAnchor[1]) : null;
+          (spawnIsland?.cells || []).forEach(([r, c]) => {
+            if (characterAt(r, c)) return;
+            if (key(r, c) === hoverKey) return;
+            addKayKitSpawnAffordance(r, c);
+          });
+          if (state.hoverAnchor) {
+            const [hr, hc] = state.hoverAnchor;
+            const allowed = !!spawnIsland?.cells?.some(([ir, ic]) => ir === hr && ic === hc) && !characterAt(hr, hc);
+            if (allowed) addKayKitSpawnGuardianGhost(hr, hc, state.currentPlayer);
+          }
+          return;
+        }
 
         if (smartResting) {
           const hoverKey = state.actionHoverCell ? key(state.actionHoverCell[0], state.actionHoverCell[1]) : null;
@@ -2833,6 +2913,9 @@
 
         const previewColor = previewMode === "magic" ? (valid ? 0xb768ff : 0xff3158) : (valid ? 0x20f39a : 0xff2c4c);
         const previewAccent = new THREE.Color(previewColor);
+        // Le ghost de pose d'île doit rester "léger" (lisible sans écraser le
+        // plateau) ; la rotation magique garde son opacité d'origine, inchangée.
+        const previewOpacity = previewMode === "magic" ? .82 : .60;
 
         const tintPreview = (object) => {
           if (!preview) return;
@@ -2847,7 +2930,7 @@
                 mat.emissiveIntensity = .30;
               }
               mat.transparent = true;
-              mat.opacity = .82;
+              mat.opacity = previewOpacity;
               mat.depthWrite = false;
               mat.needsUpdate = true;
               return mat;
@@ -2870,7 +2953,7 @@
               color: preview ? previewColor : 0x6fbd49,
               roughness: .88,
               transparent: preview,
-              opacity: preview ? .82 : 1
+              opacity: preview ? previewOpacity : 1
             });
             block = new THREE.Mesh(kaykitGeometry('block-bits-loading-fallback-v52', () => new THREE.BoxGeometry(KAYKIT_BLOCK_SIZE, .46, KAYKIT_BLOCK_SIZE)), fallbackMat);
           } else {
