@@ -2387,6 +2387,50 @@
         }
       }
 
+      // Marqueur "possibilité" lisible dès la sélection, sans remplir la case :
+      // un anneau à vraie épaisseur (Torus), ~35% de la largeur de case, pas un
+      // point plat. Coût 1 = anneau simple ; coût 2+ = second anneau concentrique,
+      // pour distinguer une diagonale au repos sans avoir à la survoler.
+      function addKayKitMoveAffordance(r, c, costTier) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
+        const outer = new THREE.Mesh(
+          kaykitGeometry("smart-move-ring-outer-v1", () => new THREE.TorusGeometry(.16, .026, 8, 28)),
+          new THREE.MeshBasicMaterial({ color: 0x35d8e6, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide })
+        );
+        outer.rotation.x = -Math.PI / 2;
+        outer.position.set(p.x, p.y, p.z);
+        outer.renderOrder = 20;
+        group.add(outer);
+        if (costTier >= 2) {
+          const inner = new THREE.Mesh(
+            kaykitGeometry("smart-move-ring-inner-v1", () => new THREE.TorusGeometry(.095, .020, 8, 24)),
+            new THREE.MeshBasicMaterial({ color: 0x35d8e6, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+          );
+          inner.rotation.x = -Math.PI / 2;
+          inner.position.set(p.x, p.y + .003, p.z);
+          inner.renderOrder = 21;
+          group.add(inner);
+        }
+      }
+
+      // Anneau orange compact directement sous le personnage/couronne poussable
+      // — jamais une zone colorée sur toute la case, le modèle reste intact.
+      function addKayKitPushAffordance(r, c) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .024);
+        const ring = new THREE.Mesh(
+          kaykitGeometry("smart-push-ring-v1", () => new THREE.TorusGeometry(.19, .026, 8, 26)),
+          new THREE.MeshBasicMaterial({ color: 0xff9a3d, transparent: true, opacity: .68, depthWrite: false, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(p.x, p.y, p.z);
+        ring.renderOrder = 20;
+        group.add(ring);
+      }
+
       function addKayKitActionPreviewCell(r, c, {
         color,
         opacity = .34,
@@ -2485,6 +2529,12 @@
           || (state.phase === "SMART_CHAR" && state.smartHoverType === "MOVE");
         const pushActive = (state.phase === "ACTION" && state.selectedActionType === "PUSH")
           || (state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH");
+        // Gardien sélectionné en SMART_CHAR, avant même de survoler une case
+        // précise : le plateau doit déjà montrer, discrètement, ce qu'il peut
+        // faire (voir beginSmartCharacterAction). Reste actif même pendant un
+        // hover, pour que les autres possibilités restent visibles autour de
+        // l'option actuellement examinée.
+        const smartResting = state.phase === "SMART_CHAR" && !!state.selectedCharId;
         const pushPreview = pushActive ? getPushHoverPreview() : null;
         const previewKey = JSON.stringify({
           phase: state.phase,
@@ -2497,12 +2547,28 @@
           magicIsland: state.magicHoverIslandId,
           magicPivot: state.magicHoverPivot,
           push: pushPreview,
-          force: pushPreview?.force ?? 0
+          force: pushPreview?.force ?? 0,
+          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
+
+        if (smartResting) {
+          const hoverKey = state.actionHoverCell ? key(state.actionHoverCell[0], state.actionHoverCell[1]) : null;
+          const costs = state.reachable?.costs;
+          (state.reachable || new Set()).forEach(cellKey => {
+            if (cellKey === hoverKey) return;
+            const [r, c] = cellKey.split(",").map(Number);
+            addKayKitMoveAffordance(r, c, costs?.get(cellKey) || 1);
+          });
+          (state.smartPushTargets || new Set()).forEach(cellKey => {
+            if (cellKey === hoverKey) return;
+            const [r, c] = cellKey.split(",").map(Number);
+            addKayKitPushAffordance(r, c);
+          });
+        }
 
         if (moveActive && state.selectedCharId) {
           const path = state.smartHoverPath || [];
