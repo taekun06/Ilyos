@@ -1681,6 +1681,8 @@
         saveUndoSnapshot();
         const walkDuration = Math.min(2400, Math.max(680, path.length * 320));
         queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
+        // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
+        if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
         animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
           char.r = r;
           char.c = c;
@@ -1938,6 +1940,11 @@
         const result = targetChar ? pushCharacter(targetChar, dr, dc, force, r, c) : pushLooseArtifact(targetArtifact, dr, dc, force, r, c);
         if (!result) state.undoSnapshot = null;
         if (!result) return;
+
+        // Une poussée (surtout une chute) mérite d'être vue même par le joueur
+        // qui vient de cliquer : impact souvent hors de son cadrage actuel.
+        const impactCell = result.to || result.from;
+        kaykitFollowCell(impactCell[0], impactCell[1], { duration: 680, zoomBoost: result.fell ? 1.6 : 0 });
 
         animateToken(result.from, result.to, result.icon, result.color, "push", () => {
           triggerFx("push", [result.from, result.to]);

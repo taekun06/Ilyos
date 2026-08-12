@@ -98,6 +98,13 @@
         resetKayKitPointerFeedback();
         renderAll();
         showTurnRibbon(p);
+        // Nouveau tour d'un joueur humain : recadrage doux vers ses gardiens,
+        // sauf au tout premier tour où l'objectif (la couronne) prime.
+        // (le tour de l'IA est suivi action par action, pas ici).
+        if (!p.isAI) {
+          if (state.turn === 1) kaykitCenterOnCrown();
+          else kaykitFollowCurrentPlayer();
+        }
 
         setTimeout(() => {
           if (!state || state.winner !== null) return;

@@ -257,7 +257,13 @@
         castle0: kaykitAssetSpec("medieval", "buildings/blue/building_castle_blue.gltf", MEDIEVAL_ATLAS),
         castle1: kaykitAssetSpec("medieval", "buildings/red/building_castle_red.gltf", MEDIEVAL_ATLAS),
         castle2: kaykitAssetSpec("medieval", "buildings/green/building_castle_green.gltf", MEDIEVAL_ATLAS),
-        castle3: kaykitAssetSpec("medieval", "buildings/yellow/building_castle_yellow.gltf", MEDIEVAL_ATLAS)
+        castle3: kaykitAssetSpec("medieval", "buildings/yellow/building_castle_yellow.gltf", MEDIEVAL_ATLAS),
+
+        // Fanions de village, un par couleur de joueur (jusqu'à 4).
+        flag0: kaykitAssetSpec("medieval", "decoration/props/flag_blue.gltf", MEDIEVAL_ATLAS),
+        flag1: kaykitAssetSpec("medieval", "decoration/props/flag_red.gltf", MEDIEVAL_ATLAS),
+        flag2: kaykitAssetSpec("medieval", "decoration/props/flag_green.gltf", MEDIEVAL_ATLAS),
+        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS)
       };
 
 
@@ -441,6 +447,8 @@
         <button type="button" class="kaykit-control-btn" data-kay-view-iso>VUE ISO</button>
         <button type="button" class="kaykit-control-btn" data-kay-zoom-in>ZOOM +</button>
         <button type="button" class="kaykit-control-btn" data-kay-zoom-out>ZOOM −</button>
+        <button type="button" class="kaykit-control-btn" data-kay-camera-auto>AUTO</button>
+        <button type="button" class="kaykit-control-btn" data-kay-camera-free>LIBRE</button>
         <button type="button" class="kaykit-control-btn" data-kay-fullscreen>3D PLEIN ÉCRAN</button>
       `;
         els.boardWrap.appendChild(controls);
@@ -532,8 +540,20 @@
           packCatalog: new Map(), packRepresentatives: new Map(), packReady: new Set(), packErrors: new Set(),
           animationClipNames: new Set(), pendingActionAnimations: new Map(), activeMovementTweens: new Map(), characterHistory: new Map(), characterFacing: new Map(), cellVisuals: new Map(), hoveredVisuals: [], hoveredVisualKey: null, interactiveMeshes: [], universeSeed: Date.now(),
           orbit: null, manualOrbit: { azimuth: Math.PI / 4, polar: .88 }, cameraTween: null, tmpTweenTarget: new THREE.Vector3(), autoFit: true, userRotated: false, userInteracting: false, lastAspect: 1,
-          syncInProgress: false, syncPending: false
+          syncInProgress: false, syncPending: false, cameraMode: "auto"
         };
+
+        // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
+        // enchaîne start→change→end pour la molette exactement comme pour un
+        // glissé, donc il faut ce signal pour ne pas confondre les deux. Écouteur
+        // posé en phase de capture sur un ancêtre du canvas afin de s'exécuter
+        // avant le gestionnaire interne d'OrbitControls, quel que soit l'ordre
+        // d'inscription des écouteurs.
+        let kaykitWheelActive = false;
+        els.boardWrap.addEventListener('wheel', () => {
+          kaykitWheelActive = true;
+          setTimeout(() => { kaykitWheelActive = false; }, 0);
+        }, { capture: true, passive: true });
 
         if (THREE.OrbitControls) {
           const orbit = new THREE.OrbitControls(camera, canvas);
@@ -554,20 +574,32 @@
           orbit.minPolarAngle = .20;
           orbit.maxPolarAngle = Math.PI * .49;
           orbit.target.copy(kaykit3D.viewTarget);
+          // OrbitControls déclenche 'start' dès qu'on appuie le bouton, même pour un
+          // simple clic de jeu (sélectionner un gardien) qui ne bouge jamais la caméra.
+          // On ne bascule en LIBRE que si un vrai mouvement a lieu entre 'start' et 'end'.
+          let orbitDragActive = false;
           orbit.addEventListener('start', () => {
             if (!kaykit3D) return;
+            // Un 'start' venu de la molette ne doit pas compter comme une prise
+            // de contrôle manuelle de la caméra (voir kaykitWheelActive plus haut).
+            orbitDragActive = !kaykitWheelActive;
             kaykit3D.autoFit = false;
-            kaykit3D.userRotated = true;
             kaykit3D.userInteracting = true;
             kaykit3D.cameraTween = null;
             kaykit3D.cameraHint?.classList.add("hidden");
           });
           orbit.addEventListener('end', () => {
+            orbitDragActive = false;
             if (kaykit3D) kaykit3D.userInteracting = false;
           });
           orbit.addEventListener('change', () => {
             if (!kaykit3D) return;
             kaykit3D.zoomDistance = orbit.object.position.distanceTo(orbit.target);
+            if (orbitDragActive) {
+              kaykit3D.userRotated = true;
+              // Mouvement réel (glissé ou molette) : le joueur reprend la main.
+              if (kaykit3D.cameraMode !== "free") { kaykit3D.cameraMode = "free"; updateKayKitCameraModeUI(); }
+            }
           });
           kaykit3D.orbit = orbit;
         }
@@ -599,6 +631,15 @@
           event.stopPropagation();
           zoomKayKitCamera(-1);
         });
+        controls.querySelector("[data-kay-camera-auto]")?.addEventListener("click", event => {
+          event.stopPropagation();
+          setKayKitCameraMode("auto");
+        });
+        controls.querySelector("[data-kay-camera-free]")?.addEventListener("click", event => {
+          event.stopPropagation();
+          setKayKitCameraMode("free");
+        });
+        updateKayKitCameraModeUI();
         controls.querySelector("[data-kay-zoom-out]")?.addEventListener("click", event => {
           event.stopPropagation();
           zoomKayKitCamera(1);
@@ -860,8 +901,19 @@
         // de rester lisible à toute distance/inclinaison de caméra.
         const GLYPH_SCALE = 1.35;
         const glyphStrokeGeometry = kaykitGeometry("hover-glyph-stroke-v1", () => new THREE.BoxGeometry(1, .016, .05));
-        const addHoverGlyph = (kind, segments) => {
+        const addHoverGlyph = (kind, segments, directional = false) => {
           const material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: false });
+          // Le glyphe "move" doit pouvoir pivoter pour pointer vers la vraie
+          // destination : ses traits vivent dans un sous-groupe dédié, tourné en
+          // bloc, plutôt que directement sous `hover` comme les autres symboles
+          // (fixes, ils n'ont pas de direction à indiquer).
+          let parent = hover;
+          if (directional) {
+            parent = new THREE.Group();
+            parent.userData.hoverRole = "glyphGroup";
+            parent.userData.hoverKind = kind;
+            hover.add(parent);
+          }
           segments.forEach(([x1, z1, x2, z2]) => {
             const sx1 = x1 * GLYPH_SCALE, sz1 = z1 * GLYPH_SCALE, sx2 = x2 * GLYPH_SCALE, sz2 = z2 * GLYPH_SCALE;
             const dx = sx2 - sx1, dz = sz2 - sz1;
@@ -875,10 +927,10 @@
             stroke.userData.hoverRole = "glyph";
             stroke.userData.hoverKind = kind;
             stroke.visible = false;
-            hover.add(stroke);
+            parent.add(stroke);
           });
         };
-        addHoverGlyph("move", [[0, -.18, 0, .18], [0, .18, -.10, .07], [0, .18, .10, .07]]);
+        addHoverGlyph("move", [[0, -.18, 0, .18], [0, .18, -.10, .07], [0, .18, .10, .07]], true);
         addHoverGlyph("push", [[-.17, -.10, .03, -.10], [.03, -.10, -.05, -.17], [.03, -.10, -.05, -.03], [.02, .10, .20, .10], [.20, .10, .12, .03], [.20, .10, .12, .17]]);
         addHoverGlyph("magic", [[0, -.19, 0, .19], [-.19, 0, .19, 0], [-.13, -.13, .13, .13], [-.13, .13, .13, -.13]]);
         addHoverGlyph("place", [[-.14, 0, .14, 0], [0, -.14, 0, .14], [-.10, -.10, .10, .10], [-.10, .10, .10, -.10]]);
@@ -1183,21 +1235,43 @@
 
       function makeCrown() {
         const group = new THREE.Group();
-        const gold = kaykitMaterial(0xf0c13c, { roughness: .28, metalness: .72, emissive: 0x5a3600, emissiveIntensity: .08 });
-        const band = new THREE.Mesh(kaykitGeometry("crown-band", () => new THREE.CylinderGeometry(.20, .20, .13, 12, 1, true)), gold);
-        band.position.y = .08; band.castShadow = true; group.add(band);
-        for (let i = 0; i < 5; i++) {
-          const a = i / 5 * Math.PI * 2;
-          const spike = new THREE.Mesh(kaykitGeometry("crown-spike", () => new THREE.ConeGeometry(.065, .28, 8)), gold);
-          spike.position.set(Math.cos(a) * .16, .27, Math.sin(a) * .16); spike.castShadow = true; group.add(spike);
+        // Or plus poli (métalness élevée, faible rugosité), bonnet de velours visible
+        // sous la bande, gemmes alternées rubis/saphir : lecture "objet précieux"
+        // immédiate au lieu de la couronne plate d'origine.
+        const gold = kaykitMaterial(0xffcf3f, { roughness: .16, metalness: .9, emissive: 0x6b3f00, emissiveIntensity: .16 });
+        const velvet = kaykitMaterial(0x7a1230, { roughness: .92, metalness: 0 });
+        const ruby = kaykitMaterial(0xff2f4d, { roughness: .12, metalness: .3, emissive: 0xb0002a, emissiveIntensity: .55 });
+        const sapphire = kaykitMaterial(0x3fa0ff, { roughness: .14, metalness: .28, emissive: 0x1257c9, emissiveIntensity: .5 });
+
+        const cap = new THREE.Mesh(kaykitGeometry("crown-cap-v1", () => new THREE.CylinderGeometry(.185, .20, .10, 14)), velvet);
+        cap.position.y = .05; cap.castShadow = true; group.add(cap);
+
+        const band = new THREE.Mesh(kaykitGeometry("crown-band-v2", () => new THREE.CylinderGeometry(.205, .205, .12, 16)), gold);
+        band.position.y = .105; band.castShadow = true; group.add(band);
+
+        const spikeCount = 8;
+        const spikeGeometry = kaykitGeometry("crown-spike-v2", () => new THREE.ConeGeometry(.055, 1, 8));
+        for (let i = 0; i < spikeCount; i++) {
+          const a = i / spikeCount * Math.PI * 2;
+          const spike = new THREE.Mesh(spikeGeometry, gold);
+          spike.scale.y = .30;
+          spike.position.set(Math.cos(a) * .165, .165 + .15, Math.sin(a) * .165);
+          spike.castShadow = true;
+          group.add(spike);
+          if (i % 2 === 0) {
+            const gem = new THREE.Mesh(kaykitGeometry("crown-band-gem-v1", () => new THREE.OctahedronGeometry(.034)), i % 4 === 0 ? ruby : sapphire);
+            gem.position.set(Math.cos(a) * .205, .105, Math.sin(a) * .205);
+            group.add(gem);
+          }
         }
-        const jewel = new THREE.Mesh(kaykitGeometry("crown-jewel", () => new THREE.OctahedronGeometry(.055)), kaykitMaterial(0xffdf74, { roughness: .24, metalness: .70, emissive: 0x7a4a00, emissiveIntensity: .14 }));
-        jewel.position.y = .40; group.add(jewel);
+
+        const jewel = new THREE.Mesh(kaykitGeometry("crown-jewel-v2", () => new THREE.OctahedronGeometry(.078)), ruby);
+        jewel.position.y = .43; jewel.scale.y = 1.3; group.add(jewel);
         const halo = new THREE.Mesh(
-          kaykitGeometry("crown-gold-halo-v28", () => new THREE.TorusGeometry(.24, .024, 8, 24)),
-          new THREE.MeshBasicMaterial({ color: 0xffd96a, transparent: true, opacity: .42, depthWrite: false })
+          kaykitGeometry("crown-gold-halo-v29", () => new THREE.TorusGeometry(.26, .022, 8, 24)),
+          new THREE.MeshBasicMaterial({ color: 0xffd96a, transparent: true, opacity: .46, depthWrite: false })
         );
-        halo.rotation.x = Math.PI / 2; halo.position.y = .05; halo.renderOrder = 28; group.add(halo);
+        halo.rotation.x = Math.PI / 2; halo.position.y = .07; halo.renderOrder = 28; group.add(halo);
         const hitProxy = new THREE.Mesh(
           kaykitGeometry("crown-hit-proxy-v21", () => new THREE.SphereGeometry(.22, 12, 8)),
           new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false })
@@ -1585,11 +1659,13 @@
           if (valid) {
             const previewPath = state.selectedCharId ? state.smartHoverPath : nearest?.path;
             const moveCost = previewPath?.cost ?? previewPath?.length ?? 1;
+            const mover = state.selectedCharId ? characterById(state.selectedCharId) : nearest?.char;
             return {
               kind: "move",
               actionable: true,
               color: moveCost > 1 ? 0x5be8ff : 0x23e89a,
-              label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`
+              label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`,
+              facing: mover ? kaykitFacingRotation(mover.r, mover.c, r, c) : null
             };
           }
           return { kind: "invalid", actionable: false, color: 0xff4058, label: "DESTINATION IMPOSSIBLE" };
@@ -1630,11 +1706,13 @@
           const smartHovered = isSameCell(state.actionHoverCell, [r, c]);
           if (smartHovered && state.smartHoverType === "MOVE") {
             const moveCost = state.smartHoverPath?.cost ?? state.smartHoverPath?.length ?? 1;
+            const actor = characterById(state.selectedCharId);
             return {
               kind: "move",
               actionable: true,
               color: moveCost > 1 ? 0x5be8ff : 0x23e89a,
-              label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`
+              label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`,
+              facing: actor ? kaykitFacingRotation(actor.r, actor.c, r, c) : null
             };
           }
           if (smartHovered && state.smartHoverType === "PUSH") {
@@ -1693,6 +1771,12 @@
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
         const glyphSuppressed = glyphKind === "character" || glyphKind === "select";
+        // Le gardien sélectionné a déjà son propre halo persistant au sol
+        // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
+        // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
+        // fait que doubler l'indicateur "sélectionné" — visible comme 2 cercles +
+        // un carré empilés. On masque tout le réticule éphémère dans ce cas précis.
+        const hoverRingsSuppressed = glyphKind === "select";
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -1702,6 +1786,11 @@
           if (child.userData.hoverRole === "glyph") {
             child.visible = !glyphSuppressed && child.userData.hoverKind === glyphKind;
             if (child.material?.color) child.material.color.setHex(intent.kind === "crown-place" ? 0xffdf63 : 0xffffff);
+            return;
+          }
+          if (child.userData.hoverRole === "glyphGroup") {
+            // Seul le glyphe "move" transporte un cap réel ; les autres restent figés.
+            child.rotation.y = child.userData.hoverKind === glyphKind && Number.isFinite(intent.facing) ? intent.facing : 0;
             return;
           }
           if (child.userData.hoverRole === "glyphBacking") {
@@ -1715,18 +1804,18 @@
           if (!child.material?.color) return;
           child.material.color.setHex(intent.color);
           if (child.userData.hoverRole === "fill")
-            child.material.opacity =
+            child.material.opacity = hoverRingsSuppressed ? 0 :
               intent.kind === "neutral"
                 ? .08
                 : (intent.kind === "magic"
                   ? .32
                   : (intent.kind === "invalid" ? .25 : .28));
           if (child.userData.hoverRole === "outline") {
-            child.material.opacity = intent.kind === "neutral" ? .78 : 1;
+            child.material.opacity = hoverRingsSuppressed ? 0 : (intent.kind === "neutral" ? .78 : 1);
             child.scale.setScalar(intent.kind === "magic" ? 1.18 : (intent.actionable ? 1.13 : 1));
           }
           if (child.userData.hoverRole === "ticks") {
-            child.material.opacity = intent.kind === "neutral" ? .68 : 1;
+            child.material.opacity = hoverRingsSuppressed ? 0 : (intent.kind === "neutral" ? .68 : 1);
             child.scale.setScalar(intent.kind === "magic" ? 1.22 : (intent.actionable ? 1.16 : 1));
           }
           child.material.needsUpdate = true;
@@ -1897,6 +1986,7 @@
             kaykit3D.autoFit = false;
             kaykit3D.userRotated = true;
             kaykit3D.cameraTween = null;
+            if (kaykit3D.cameraMode !== "free") { kaykit3D.cameraMode = "free"; updateKayKitCameraModeUI(); }
             kaykit3D.cameraHint?.classList.add("hidden");
             if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
           }
@@ -1952,7 +2042,10 @@
         const position = new THREE.Vector3();
         if (!target) return position;
         if (mode === "front") {
-          position.set(target.x, target.y + distance * .40, target.z + distance * .96);
+          // Angle plus plongeant qu'un vrai plan face : on garde la même distance
+          // au plateau (même magnitude que l'ancien vecteur .40/.96) mais on relève
+          // le point de vue pour mieux lire les cases et les gardiens en survol.
+          position.set(target.x, target.y + distance * .63, target.z + distance * .83);
         } else if (kaykit3D?.orbit) {
           position.set(target.x + distance * .61, target.y + distance * .70, target.z + distance * .61);
         } else {
@@ -2001,9 +2094,68 @@
         kaykit3D.viewMode = mode;
         kaykit3D.autoFit = true;
         kaykit3D.userRotated = false;
+        // Un recadrage manuel explicite ramène toujours au centre du plateau,
+        // même si la caméra "AUTO" suivait une action ailleurs.
+        kaykit3D.viewTarget = new THREE.Vector3(0, .22, .18);
         if (mode === "isometric") kaykit3D.manualOrbit = { azimuth: Math.PI / 4, polar: .82 };
         kaykit3D.zoomDistance = kaykitFitDistance(kaykit3D.camera.aspect, mode);
         animateKayKitCameraTo(mode, kaykit3D.zoomDistance);
+      }
+
+      // Bascule AUTO / LIBRE : en AUTO, la caméra recadre seule vers le début de
+      // tour du joueur humain et vers les actions de l'IA ; en LIBRE, elle reste
+      // exactement où le joueur l'a laissée.
+      function setKayKitCameraMode(mode) {
+        if (!kaykit3D) return;
+        kaykit3D.cameraMode = mode === "free" ? "free" : "auto";
+        updateKayKitCameraModeUI();
+        if (kaykit3D.cameraMode === "auto") {
+          kaykit3D.userRotated = false;
+          kaykitFollowCurrentPlayer(true);
+        }
+      }
+
+      function updateKayKitCameraModeUI() {
+        if (!kaykit3D) return;
+        const autoBtn = kaykit3D.controls?.querySelector?.("[data-kay-camera-auto]");
+        const freeBtn = kaykit3D.controls?.querySelector?.("[data-kay-camera-free]");
+        autoBtn?.classList.toggle("kaykit-mode-active", kaykit3D.cameraMode === "auto");
+        freeBtn?.classList.toggle("kaykit-mode-active", kaykit3D.cameraMode !== "auto");
+      }
+
+      // Recadre en douceur sur une case précise (action de l'IA, poussée, chute…).
+      // `force` outrepasse le mode LIBRE (utilisé par le bouton AUTO lui-même).
+      function kaykitFollowCell(r, c, { duration = 620, force = false, zoomBoost = 0 } = {}) {
+        if (!kaykit3D || !Number.isFinite(r) || !Number.isFinite(c)) return;
+        if (!force && kaykit3D.cameraMode !== "auto") return;
+        const p = kaykitCellPosition(r, c, 0);
+        kaykit3D.viewTarget = new THREE.Vector3(p.x, kaykit3D.viewTarget?.y ?? .22, p.z);
+        const distance = zoomBoost
+          ? THREE.MathUtils.clamp(kaykit3D.zoomDistance - zoomBoost, kaykit3D.minZoom, kaykit3D.maxZoom)
+          : kaykit3D.zoomDistance;
+        animateKayKitCameraTo(kaykit3D.viewMode, distance, duration);
+      }
+
+      // Recadre vers le centre des gardiens du joueur dont c'est le tour.
+      function kaykitFollowCurrentPlayer(force = false) {
+        if (!kaykit3D || !state?.characters?.length) return;
+        if (!force && kaykit3D.cameraMode !== "auto") return;
+        const mine = state.characters.filter(ch => ch.player === state.currentPlayer);
+        if (!mine.length) return;
+        const avgR = mine.reduce((sum, ch) => sum + ch.r, 0) / mine.length;
+        const avgC = mine.reduce((sum, ch) => sum + ch.c, 0) / mine.length;
+        kaykitFollowCell(avgR, avgC, { duration: 720, force });
+      }
+
+      // Tout premier tour de la partie : on montre l'objectif (la couronne)
+      // plutôt que le village du joueur.
+      function kaykitCenterOnCrown(force = false) {
+        if (!kaykit3D || !state) return;
+        if (!force && kaykit3D.cameraMode !== "auto") return;
+        const artifact = [state.artifact, state.secondArtifact]
+          .find(item => item?.active && !item.carrierId && Number.isFinite(item.r) && Number.isFinite(item.c));
+        if (!artifact) return;
+        kaykitFollowCell(artifact.r, artifact.c, { duration: 720, force });
       }
 
       function zoomKayKitCamera(direction) {
@@ -2177,13 +2329,19 @@
 
       function addCellHighlight(r, c, classList) {
         if (!kaykit3D || !classList) return;
+        // Dès que la rotation magique a un ghost 3D à afficher (île tournée d'au
+        // moins un cran), les carrés plats ci-dessous — posés à la fois sur
+        // l'ancienne position (îlot caché, donc sol nu) et sur la nouvelle
+        // (déjà représentée par ce ghost en volume) — ne font plus que doubler
+        // ou contredire visuellement ce ghost. On les masque, le ghost seul suffit.
+        const magicGhostActive = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!(state?.magicPreviewSteps || 0);
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
         if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
         else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
         else if (classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
         else if (classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
-        else if (classList.contains("magic-valid") || classList.contains("magic-selected-island")) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
-        else if (classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
+        else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
+        else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
         else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
         else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
         else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
@@ -2909,6 +3067,25 @@
       function renderKayKitMagicRotationPreview() {
         if (!kaykit3D || state?.phase !== "ACTION" || state?.selectedActionType !== "MAGIC") return;
         if (!state.selectedIslandId || !Array.isArray(state.magicPreviewCells) || !(state.magicPreviewSteps || 0)) return;
+
+        // Trace au sol, discrète, de l'emplacement de départ : le bloc normal de
+        // cette île est caché pendant la rotation (voir hideSelectedForMagic dans
+        // renderKayKitIslandBlocks), donc sans ce contour on ne voit plus du tout
+        // d'où elle vient. Volontairement très en retrait du ghost coloré.
+        const originalIsland = state.islands.find(item => item.id === state.selectedIslandId);
+        if (originalIsland?.cells?.length) {
+          kaykitIslandComponents(originalIsland.cells).forEach(component => {
+            const boundary = kaykitIslandBoundary(component);
+            if (boundary.length < 2) return;
+            const originOutline = new THREE.LineLoop(
+              new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, .045, z))),
+              new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .30, depthWrite: false })
+            );
+            originOutline.renderOrder = 24;
+            kaykit3D.dynamicGroup.add(originOutline);
+          });
+        }
+
         const previewIsland = {
           id: `magic-preview-${state.selectedIslandId}`,
           owner: null,
@@ -3193,6 +3370,13 @@
                 castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
                 dynamic.add(castle);
                 registerKayKitCellVisual(r, c, castle);
+                // Fanion planté à côté du château, dans le même repère local :
+                // il suit automatiquement la position/rotation par coin du village.
+                const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
+                if (flag) {
+                  flag.position.set(.48, 0, .34);
+                  castle.add(flag);
+                }
               }
 
               addCellHighlight(r, c, classes);
@@ -3306,17 +3490,18 @@
           renderKayKitPlacementPreview();
           renderKayKitMagicRotationPreview();
 
-          [state.artifact, state.secondArtifact].filter(Boolean).forEach((artifact, index) => {
+          [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
             if (!artifact.active || artifact.carrierId || !Number.isFinite(artifact.r) || !Number.isFinite(artifact.c)) return;
             const p = kaykitCellPosition(artifact.r, artifact.c, 0);
+            const surfaceY = kaykitCellSurfaceY(artifact.r, artifact.c);
             const crown = makeCrown();
             crown.scale.setScalar(.96);
-            crown.position.set(p.x, kaykitCellSurfaceY(artifact.r, artifact.c) + .012, p.z);
+            crown.position.set(p.x, surfaceY + .012, p.z);
             dynamic.add(crown);
             registerKayKitCellVisual(artifact.r, artifact.c, crown);
             registerKayKitInteractive(crown, "crown-loose", artifact.r, artifact.c);
             const light = new THREE.PointLight(0xffcf52, .44, 1.8);
-            light.position.set(p.x, kaykitCellSurfaceY(artifact.r, artifact.c) + .34, p.z); dynamic.add(light);
+            light.position.set(p.x, surfaceY + .34, p.z); dynamic.add(light);
           });
 
           kaykit3D.lastStateSignature = `${state.turn}|${state.phase}|${state.islands.length}|${state.characters.length}|${state.currentPlayer}`;
@@ -7268,6 +7453,13 @@
         resetKayKitPointerFeedback();
         renderAll();
         showTurnRibbon(p);
+        // Nouveau tour d'un joueur humain : recadrage doux vers ses gardiens,
+        // sauf au tout premier tour où l'objectif (la couronne) prime.
+        // (le tour de l'IA est suivi action par action, pas ici).
+        if (!p.isAI) {
+          if (state.turn === 1) kaykitCenterOnCrown();
+          else kaykitFollowCurrentPlayer();
+        }
 
         setTimeout(() => {
           if (!state || state.winner !== null) return;
@@ -9398,6 +9590,8 @@
         saveUndoSnapshot();
         const walkDuration = Math.min(2400, Math.max(680, path.length * 320));
         queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
+        // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
+        if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
         animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
           char.r = r;
           char.c = c;
@@ -9655,6 +9849,11 @@
         const result = targetChar ? pushCharacter(targetChar, dr, dc, force, r, c) : pushLooseArtifact(targetArtifact, dr, dc, force, r, c);
         if (!result) state.undoSnapshot = null;
         if (!result) return;
+
+        // Une poussée (surtout une chute) mérite d'être vue même par le joueur
+        // qui vient de cliquer : impact souvent hors de son cadrage actuel.
+        const impactCell = result.to || result.from;
+        kaykitFollowCell(impactCell[0], impactCell[1], { duration: 680, zoomBoost: result.fell ? 1.6 : 0 });
 
         animateToken(result.from, result.to, result.icon, result.color, "push", () => {
           triggerFx("push", [result.from, result.to]);
