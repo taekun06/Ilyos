@@ -60,4 +60,35 @@ established a few reusable patterns — look for these before writing a new one:
   `requestAnimationFrame` and prevents `initKayKit3D()` from ever running —
   no canvas, no screenshots possible. Verify 3D-adjacent changes via DOM/JS
   assertions (`window.ILYOS_TEST.report()`, dispatched synthetic events) and
-  leave final pixel-level validation to the user.
+  leave final pixel-level validation to the user. "Claude in Chrome" (a
+  separate real-browser surface, if connected) sometimes works around this —
+  worth trying, but its tab is also usually unfocused, so it still throttles
+  eventually; don't assume it will paint the 3D canvas.
+- **CSS specificity in `index.html`/`css/*.css` is a real trap, not a minor
+  detail** — this cost more back-and-forth than anything else across several
+  passes. `index.html` has ~10 separate `<style>` blocks (`v54`, `v58`,
+  `v64`, `v69`, `v70`, `v72`, `v74`...) plus `css/base.css` (8700+ lines,
+  much of it dead — e.g. `.action-banner`, `.left-panel.choice-focus`'s dark
+  navy variant — check a class is actually referenced in `js/game/*.js`
+  before trusting a rule you find there), each layering `!important` on top
+  of the last. A new rule with equal-or-lower specificity than an existing
+  `!important` one silently loses even when it loads later in the document —
+  this bit `#endTurnBtn`, `.v64-deck-summary`/`.v66-deck-summary` (two
+  classes coexist on the same element from different passes), camera
+  control buttons, and a panel corner ornament hidden by a leftover
+  `.banner-panel::after { display: none !important }`. Two defaults that
+  would have prevented most of it:
+  1. **Always prefix new component rules with
+     `body[data-visual-mode="alternative"] #gameScreen <selector>`** — the
+     `#gameScreen` id alone beats any selector built only from classes/
+     attributes, regardless of how many are stacked, so this wins by
+     construction instead of by trial and error.
+  2. **Before trusting `getComputedStyle`, verify empirically** if a change
+     doesn't show up: iterate `document.styleSheets`, filter rules where
+     `element.matches(rule.selectorText)`, and check
+     `rule.style.getPropertyPriority(prop)` — this finds the actual
+     competing rule in seconds instead of guessing.
+  A single new stylesheet linked **last** in `<head>`/`<body>` (see
+  `css/sanctuary-celeste.css`, `css/fluidity.css`) is still the right
+  pattern for a whole pass — just apply the two defaults above within it
+  from the start.

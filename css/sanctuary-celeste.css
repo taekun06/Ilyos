@@ -1,0 +1,580 @@
+/* =====================================================================
+   SANCTUAIRE CÉLESTE SCULPTÉ — refonte visuelle in-game (pas de gameplay).
+   Chargé en dernier : gagne la cascade sur les ~10 blocs de style hérités
+   sans qu'il soit nécessaire de les éditer un par un. Organisé par section,
+   numérotée comme la mission, pour rester traçable.
+
+   Stratégie : la majorité des composants (boutons d'action, cartes de
+   ressources, badges, cursor-labels) consomment déjà les tokens --ilyos-*
+   via var(...) — les redéfinir ici les recolore automatiquement, sans
+   dupliquer ces règles. Le reste (formes, ombres, éléments non tokenisés)
+   est repris ci-dessous, composant par composant.
+   ===================================================================== */
+
+:root {
+  /* --- Pierre céleste (remplace le blanc plat des panneaux) --- */
+  --ilyos-panel: rgba(251, 248, 238, .95);
+  --ilyos-panel-solid: #FBF8EE;
+  --ilyos-stone-2: #F1E9D8;
+  --ilyos-stone-3: #E4D7BD;
+  --ilyos-line: rgba(143, 106, 50, .22);
+  --ilyos-line-strong: rgba(143, 106, 50, .40);
+
+  /* --- Or sculpté --- */
+  --ilyos-gold-soft: #E9D29A;
+  --ilyos-gold: #C9A45D;
+  --ilyos-gold-deep: #8F6A32;
+
+  /* --- Bleu céleste (MOVE) --- */
+  --ilyos-move: #317D9C;
+  --ilyos-move-soft: #A9E8F8;
+  --ilyos-move-glow: #67C8EA;
+
+  /* --- Cuivre (PUSH) --- */
+  --ilyos-push: #CE8B55;
+  --ilyos-push-soft: #F1C49C;
+
+  /* --- Violet (MAGIC) --- */
+  --ilyos-magic: #8B6BD1;
+  --ilyos-magic-soft: #C7B5F3;
+
+  /* --- Danger --- */
+  --ilyos-invalid: #C96B66;
+  --ilyos-warning: #C9A45D;
+
+  /* --- Ciel (fond derrière le plateau) --- */
+  --ilyos-sky-strong: #67C8EA;
+  --ilyos-sky: #A9E8F8;
+  --ilyos-sky-soft: #e9f6fb;
+}
+
+/* =====================================================================
+   1 — GRANDS PANNEAUX (ÎLES / ACTIONS) : plaques célestes, pas de bannière
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .banner-panel {
+  clip-path: none !important;
+  border: 1px solid var(--ilyos-line-strong) !important;
+  border-radius: 13px !important;
+  background:
+    linear-gradient(160deg, #fffdf6 0%, var(--ilyos-panel-solid) 55%, var(--ilyos-stone-2) 100%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .55),
+    inset 0 1px 0 rgba(255, 255, 255, .8),
+    0 10px 26px rgba(90, 68, 30, .16) !important;
+}
+
+body[data-visual-mode="alternative"] .banner-panel::before,
+body[data-visual-mode="alternative"] .banner-panel::after {
+  display: none !important;
+}
+
+/* Petit motif d'angle discret — seule concession ornementale du panneau. */
+body[data-visual-mode="alternative"] .left-panel::after,
+body[data-visual-mode="alternative"] .right-panel::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background:
+    linear-gradient(135deg, var(--ilyos-gold-soft), var(--ilyos-gold));
+  opacity: .55;
+  pointer-events: none;
+}
+
+body[data-visual-mode="alternative"] .left-panel::after { right: 10px; }
+body[data-visual-mode="alternative"] .right-panel::after { left: 10px; }
+
+body[data-visual-mode="alternative"] .panel-title {
+  font-family: var(--ilyos-font-display) !important;
+  color: #2c5c6d !important;
+  letter-spacing: .02em !important;
+}
+
+body[data-visual-mode="alternative"] .panel-title::after {
+  background: linear-gradient(90deg, var(--ilyos-gold-soft), var(--ilyos-gold)) !important;
+  opacity: .85;
+}
+
+/* =====================================================================
+   2 — PANNEAU ÎLES : niches sculptées
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .island-choice {
+  border: 1px solid var(--ilyos-line) !important;
+  border-radius: 10px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .55), var(--ilyos-stone-2)) !important;
+  box-shadow:
+    inset 0 1px 2px rgba(143, 106, 50, .14),
+    inset 0 -1px 0 rgba(255, 255, 255, .6) !important;
+  color: #4a3d22 !important;
+}
+
+body[data-visual-mode="alternative"] .island-choice:hover:not(:disabled) {
+  border-color: var(--ilyos-move-glow) !important;
+  box-shadow:
+    inset 0 1px 2px rgba(49, 125, 156, .12),
+    0 0 0 3px color-mix(in srgb, var(--ilyos-move-glow), transparent 78%),
+    0 6px 14px rgba(49, 125, 156, .16) !important;
+}
+
+body[data-visual-mode="alternative"] .island-choice.active {
+  border-color: var(--ilyos-gold) !important;
+  background:
+    linear-gradient(180deg, #fff8e6, var(--ilyos-gold-soft)) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--ilyos-gold),
+    0 0 14px rgba(201, 164, 93, .38) !important;
+}
+
+body[data-visual-mode="alternative"] .island-choice.active::after {
+  content: "✦";
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  color: var(--ilyos-gold-deep);
+  font-size: 8px;
+  opacity: .85;
+}
+
+/* "À POSER" devient un petit sceau discret plutôt qu'une pointe de bannière. */
+body[data-visual-mode="alternative"] .left-panel.choice-focus {
+  box-shadow:
+    inset 0 0 0 1px var(--ilyos-line-strong),
+    0 10px 26px rgba(90, 68, 30, .16) !important;
+}
+
+body[data-visual-mode="alternative"] .left-panel.choice-focus .panel-title {
+  color: #2c5c6d !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="alternative"] .left-panel.choice-focus .panel-title::after {
+  content: "✦ À POSER" !important;
+  width: auto !important;
+  height: auto !important;
+  margin-top: 5px !important;
+  padding: 2px 7px !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--ilyos-gold-soft), transparent 40%) !important;
+  color: var(--ilyos-gold-deep) !important;
+  font: 800 8px/1.6 var(--ilyos-font-ui, Inter, Arial, sans-serif) !important;
+  letter-spacing: .08em !important;
+}
+
+/* =====================================================================
+   3 — PANNEAU ACTIONS : cartes tactiques sobres
+   (la couleur par action vient déjà de --ilyos-move/push/magic via
+   --action-color — seuls la texture et le relief sont repris ici)
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .v60-action-btn {
+  border: 1px solid var(--ilyos-line) !important;
+  border-radius: 10px !important;
+  background: linear-gradient(180deg, #fffefb, var(--ilyos-panel-solid)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 2px 6px rgba(90, 68, 30, .08) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-action-btn.active {
+  border-color: var(--action-color) !important;
+  background:
+    linear-gradient(180deg, #fff, color-mix(in srgb, var(--action-color), white 88%)) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--action-color), transparent 40%),
+    0 0 12px color-mix(in srgb, var(--action-color), transparent 74%) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-action-btn.disabled {
+  background: var(--ilyos-stone-2) !important;
+  border-color: var(--ilyos-line) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-action-btn.disabled small {
+  color: #8a5c5c !important;
+}
+
+/* =====================================================================
+   4 — CONTEXTE OBLIGATOIRE : plaque intégrée, plus de gros orange
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .turn-context {
+  border: 1px solid var(--ilyos-line) !important;
+  border-left: 3px solid var(--ilyos-gold) !important;
+  border-radius: 10px !important;
+  background: linear-gradient(160deg, #fffdf6, var(--ilyos-stone-2)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 3px 10px rgba(90, 68, 30, .10) !important;
+}
+
+body[data-visual-mode="alternative"] .turn-context.context-build { border-left-color: var(--ilyos-gold) !important; }
+body[data-visual-mode="alternative"] .turn-context.context-move { border-left-color: var(--ilyos-move) !important; }
+body[data-visual-mode="alternative"] .turn-context.context-push { border-left-color: var(--ilyos-push) !important; }
+body[data-visual-mode="alternative"] .turn-context.context-magic { border-left-color: var(--ilyos-magic) !important; }
+body[data-visual-mode="alternative"] .turn-context.context-end { border-left-color: #6f9e6f !important; }
+body[data-visual-mode="alternative"] .turn-context.context-wait { border-left-color: var(--ilyos-line-strong) !important; }
+
+/* =====================================================================
+   5 — GARDIEN ACTIF : petit bandeau, pas une nouvelle carte
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .v60-context-options.smart-char-badge {
+  border: 1px solid var(--ilyos-line) !important;
+  border-left: 3px solid var(--ilyos-gold) !important;
+  background: linear-gradient(160deg, #fffdf6, var(--ilyos-gold-soft) 180%) !important;
+  color: var(--ilyos-gold-deep) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-context-options.smart-char-badge span::before {
+  content: "✦ ";
+}
+
+/* =====================================================================
+   6 / 7 — MOVE et PUSH contextuels : présentation seule, calculs intacts
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .v60-context-options {
+  border-radius: 10px !important;
+  background: linear-gradient(160deg, #fffdf6, var(--ilyos-stone-2)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-context-options.move-options {
+  border-left: 3px solid var(--ilyos-move) !important;
+}
+
+/* display:block : le panneau est étroit, "Coût : N" en gros doit tomber sur
+   sa propre ligne plutôt que de chevaucher le libellé "Déplacement". */
+body[data-visual-mode="alternative"] .v60-context-options.move-options b {
+  display: block !important;
+  margin-top: 2px !important;
+  color: var(--ilyos-move) !important;
+  font: 800 22px/1.25 var(--ilyos-font-display) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-context-options:not(.move-options):not(.magic-options):not(.smart-char-badge) {
+  border-left: 3px solid var(--ilyos-push) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-context-options:not(.move-options):not(.smart-char-badge) b {
+  font: 800 16px/1 var(--ilyos-font-display) !important;
+}
+
+body[data-visual-mode="alternative"] .v60-context-options.magic-options {
+  border-left: 3px solid var(--ilyos-magic) !important;
+}
+
+/* Touches sculptées pour le stepper de force. */
+body[data-visual-mode="alternative"] .v60-context-options button {
+  border-radius: 7px !important;
+  background: linear-gradient(180deg, #fff, var(--ilyos-stone-2)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 1px 2px rgba(90, 68, 30, .14) !important;
+}
+
+/* =====================================================================
+   8 — RESSOURCES : tablette incrustée
+   ===================================================================== */
+
+/* renderDeckDisplay() applique v64-deck-summary ET v66-deck-summary sur le
+   même élément. Une règle body[...] .v64-deck-summary existante gagnerait
+   sur la seule spécificité de classes (le sélecteur body[...] compte comme
+   type+attribut dans le dernier niveau de la spécificité) : on reprend donc
+   le même préfixe pour être certain de gagner, quel que soit l'ordre. */
+body[data-visual-mode="alternative"] .v64-deck-summary,
+body[data-visual-mode="alternative"] .v64-deck-summary.v66-deck-summary {
+  border: 1px solid var(--ilyos-line) !important;
+  border-radius: 11px !important;
+  background: linear-gradient(160deg, var(--ilyos-stone-2), #fffdf6) !important;
+  box-shadow: inset 0 1px 3px rgba(143, 106, 50, .16), inset 0 -1px 0 rgba(255, 255, 255, .7) !important;
+}
+
+body[data-visual-mode="alternative"] .v64-mini-card {
+  border-radius: 3px !important;
+  background: linear-gradient(180deg, #fff, var(--ilyos-stone-2)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 2px 3px rgba(90, 68, 30, .16) !important;
+}
+
+/* =====================================================================
+   9 — FIN DU TOUR : bouton noble (ciblé par id, n'affecte pas
+   les autres .primary-btn — notamment "JOUER" en accueil)
+   ===================================================================== */
+
+/* Préfixées body[data-visual-mode="alternative"] : plusieurs règles héritées
+   (turn-flow-ux.css) ciblent #endTurnBtn avec ce même préfixe, ce qui leur
+   donne une spécificité plus forte qu'un simple #endTurnBtn. Sans le
+   préfixe ici, l'ordre de chargement ne suffit pas à gagner la cascade. */
+body[data-visual-mode="alternative"] #endTurnBtn {
+  border: 1px solid var(--ilyos-line-strong) !important;
+  background: linear-gradient(180deg, #fffdf6, var(--ilyos-stone-2)) !important;
+  color: #4a3d22 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 2px 6px rgba(90, 68, 30, .10) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="alternative"] #endTurnBtn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fff, var(--ilyos-stone-2)) !important;
+  filter: brightness(1.03);
+}
+
+body[data-visual-mode="alternative"] #endTurnBtn.end-turn-ready:not(:disabled) {
+  border-color: var(--ilyos-gold) !important;
+  background: linear-gradient(180deg, #fff8e6, var(--ilyos-gold-soft)) !important;
+  color: var(--ilyos-gold-deep) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--ilyos-gold),
+    0 0 16px rgba(201, 164, 93, .38) !important;
+}
+
+body[data-visual-mode="alternative"] #endTurnBtn.selection-will-cancel:not(:disabled) {
+  background: linear-gradient(180deg, #fffdf6, var(--ilyos-stone-2)) !important;
+}
+
+body[data-visual-mode="alternative"] #endTurnBtn:disabled {
+  border-color: var(--ilyos-line) !important;
+  background: var(--ilyos-stone-2) !important;
+  color: #8a7e63 !important;
+  opacity: 1 !important;
+}
+
+/* La variante "île pas encore posée" (turn-flow-ux.css, #gameScreen.island-
+   required) est encore plus spécifique : sans reprendre exactement cette
+   chaîne de sélecteur, elle resterait dorée au lieu de pierre/gris. */
+body[data-visual-mode="alternative"] #gameScreen.island-required #endTurnBtn {
+  border-color: var(--ilyos-line) !important;
+  background: var(--ilyos-stone-2) !important;
+  color: #8a7e63 !important;
+}
+
+/* =====================================================================
+   10 — ANNULER / DÉSÉLECTIONNER : style secondaire, jamais dominant
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] #cancelCardBtn {
+  border: 1px solid var(--ilyos-line) !important;
+  background: rgba(255, 255, 255, .7) !important;
+  color: #6e6058 !important;
+  box-shadow: none !important;
+}
+
+body[data-visual-mode="alternative"] #cancelCardBtn.cancel-action:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ilyos-invalid), transparent 42%) !important;
+  color: #8a4a46 !important;
+  background: #fff7f5 !important;
+}
+
+/* =====================================================================
+   11 — BARRE SUPÉRIEURE : frise céleste fine, TOUR au centre visuel
+   ===================================================================== */
+
+body[data-visual-mode="alternative"] .topbar {
+  border-bottom: 1px solid var(--ilyos-line) !important;
+  background: linear-gradient(180deg, #fffdf6, var(--ilyos-panel)) !important;
+  box-shadow: 0 4px 16px rgba(90, 68, 30, .10) !important;
+}
+
+body[data-visual-mode="alternative"] .turn-heading strong {
+  color: #29586a !important;
+  font-size: 20px !important;
+  letter-spacing: .01em !important;
+}
+
+body[data-visual-mode="alternative"] .turn-summary::after {
+  content: "";
+  display: block;
+  width: 30px;
+  height: 2px;
+  margin: 2px auto 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--ilyos-gold), transparent);
+  opacity: .8;
+}
+
+body[data-visual-mode="alternative"] .turn-timer,
+body[data-visual-mode="alternative"] .online-badge,
+body[data-visual-mode="alternative"] .crown-status {
+  border-color: var(--ilyos-line) !important;
+  background: rgba(255, 255, 255, .8) !important;
+  color: #6b5a3a !important;
+  font-size: 8px !important;
+}
+
+body[data-visual-mode="alternative"] #instruction {
+  opacity: .82;
+  font-size: 11px !important;
+}
+
+body[data-visual-mode="alternative"] .player-text h2 {
+  font-family: var(--ilyos-font-display) !important;
+}
+
+/* =====================================================================
+   12 — COMMANDES CAMÉRA : toolbar sculptée flottante, discrète
+   La 1ère passe ne faisait QUE recolorer les boutons à leur taille et
+   position d'origine (une longue rangée pleine largeur) — le brief demandait
+   explicitement de réduire leur poids visuel et d'en faire une "petite
+   toolbar flottante". On force ici un vrai changement : capsule flottante
+   compacte, boutons nettement plus petits, largeur contrainte pour qu'elle
+   se regroupe au lieu de s'étirer sur toute la largeur du plateau. */
+body[data-visual-mode="alternative"] .kaykit-controls {
+  max-width: 190px !important;
+  padding: 5px !important;
+  border-radius: 14px !important;
+  background: rgba(251, 248, 238, .58) !important;
+  border: 1px solid var(--ilyos-line) !important;
+  box-shadow: 0 4px 14px rgba(90, 68, 30, .14) !important;
+  backdrop-filter: blur(6px);
+  opacity: .72;
+  transition: opacity .18s ease;
+}
+
+body[data-visual-mode="alternative"] .kaykit-controls:hover,
+body[data-visual-mode="alternative"] .kaykit-controls:focus-within {
+  opacity: 1 !important;
+}
+
+/* #gameScreen prefixé : un media query (max-width:1366px / max-height:800px)
+   cible "#gameScreen button" en général — un sélecteur avec un id, qui bat
+   n'importe quelle règle faite seulement de classes/attributs, quel que
+   soit le nombre de celles-ci. Sans reprendre #gameScreen ici, min-height
+   et font-size restaient bloqués à 32px/11px sous cette largeur d'écran. */
+body[data-visual-mode="alternative"] #gameScreen .kaykit-control-btn {
+  min-height: 22px !important;
+  padding: 3px 6px !important;
+  border: 1px solid var(--ilyos-line) !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, .55) !important;
+  color: #4a3d22 !important;
+  box-shadow: none !important;
+  font-size: 7px !important;
+}
+
+body[data-visual-mode="alternative"] .kaykit-control-btn.kaykit-mode-active {
+  background: linear-gradient(180deg, var(--ilyos-move-glow), var(--ilyos-move)) !important;
+  color: #fff !important;
+  border-color: var(--ilyos-move) !important;
+}
+
+/* =====================================================================
+   15 — MODALES / TOASTS : plaque de pierre / petite tablette
+   (déjà en grande partie tokenisées ; complète juste le fond du voile)
+   ===================================================================== */
+
+.modal,
+.symmetric-board-overlay {
+  background: rgba(44, 60, 40, .40) !important;
+}
+
+.modal-card h2 {
+  font-family: var(--ilyos-font-display) !important;
+}
+
+#toast {
+  border-color: var(--ilyos-line-strong) !important;
+  background: linear-gradient(160deg, #fffdf6, var(--ilyos-stone-2)) !important;
+  color: #4a3d22 !important;
+}
+
+/* =====================================================================
+   16 — ORNEMENTATION RENFORCÉE (passe 2, sur demande explicite : au-delà
+   du 80/20 sobre initial, plus proche de la référence peinte). Toujours en
+   texture/CSS pur — aucun nouvel asset externe, aucun composant dupliqué.
+   ===================================================================== */
+
+/* Motif de facettes gravées — assez marqué pour se voir à l'écran, pas
+   juste "techniquement présent" (leçon de la 1ère tentative : .10 d'opacité
+   sur 1px de trait est invisible en pratique). */
+body[data-visual-mode="alternative"] .banner-panel {
+  background-image:
+    linear-gradient(160deg, #fffdf6 0%, var(--ilyos-panel-solid) 55%, var(--ilyos-stone-2) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cpath d='M22 2 L42 22 L22 42 L2 22 Z' fill='none' stroke='%238F6A32' stroke-opacity='0.38' stroke-width='1.4'/%3E%3C/svg%3E") !important;
+  background-size: cover, 44px 44px !important;
+  border: 2px solid var(--ilyos-gold) !important;
+  outline: 1px solid var(--ilyos-line-strong) !important;
+  outline-offset: -5px !important;
+}
+
+/* Sceau en losange doré aux angles, franchement visible.
+   display:block !important est nécessaire ici : body[data-visual-mode=
+   "alternative"] .banner-panel::after (passe précédente) masque déjà tout
+   ::after de .banner-panel avec !important — .left-panel/.right-panel EN
+   FONT PARTIE (class="banner-panel left-panel"), donc sans cette
+   redéclaration explicite le losange reste display:none quoi qu'on mette
+   dans les autres propriétés. */
+body[data-visual-mode="alternative"] .left-panel::after,
+body[data-visual-mode="alternative"] .right-panel::after {
+  display: block !important;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ilyos-gold-deep);
+  border-radius: 0;
+  background: linear-gradient(135deg, var(--ilyos-gold-soft), var(--ilyos-gold));
+  box-shadow: 0 0 8px rgba(201, 164, 93, .7);
+  transform: rotate(45deg);
+  opacity: 1;
+}
+
+/* Titre de panneau : filet or plein, pas une nuance à peine teintée. */
+body[data-visual-mode="alternative"] .panel-title {
+  padding-bottom: 7px !important;
+  border-bottom: 2px solid var(--ilyos-gold) !important;
+}
+
+/* Badge circulaire derrière chaque icône d'action — teinte franche, pas un
+   quasi-blanc à 82-92% : doit se voir comme un badge coloré, pas une trace. */
+body[data-visual-mode="alternative"] .v60-action-btn .v60-action-icon {
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--action-color), white 55%), color-mix(in srgb, var(--action-color), white 74%)) !important;
+  box-shadow:
+    inset 0 0 0 1.5px var(--action-color),
+    0 1px 3px rgba(90, 68, 30, .18) !important;
+}
+
+/* "Fin du tour" prêt : lueur dorée plus affirmée, cadre à deux liserés. */
+body[data-visual-mode="alternative"] #endTurnBtn.end-turn-ready:not(:disabled) {
+  border-width: 2px !important;
+  box-shadow:
+    inset 0 0 0 1px var(--ilyos-gold),
+    inset 0 0 0 4px rgba(255, 255, 255, .6),
+    0 0 26px rgba(201, 164, 93, .65) !important;
+}
+
+/* Modale : cadre or plein + petit fronton en losange, comme le mockup
+   "COURONNE VALIDÉE". */
+body[data-visual-mode="alternative"] .modal-card {
+  border: 2px solid var(--ilyos-gold) !important;
+  outline: 1px solid var(--ilyos-line-strong) !important;
+  outline-offset: -7px !important;
+}
+
+body[data-visual-mode="alternative"] .modal-card::before {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0 auto 12px;
+  border: 1px solid var(--ilyos-gold-deep);
+  background: linear-gradient(135deg, var(--ilyos-gold-soft), var(--ilyos-gold));
+  transform: rotate(45deg);
+  box-shadow: 0 0 10px rgba(201, 164, 93, .65);
+}
+
+/* Frise dorée sous "Tour N", plus épaisse, avec un petit losange central en
+   écho au blason de la référence. */
+body[data-visual-mode="alternative"] .turn-summary {
+  position: relative;
+}
+
+body[data-visual-mode="alternative"] .turn-summary::after {
+  width: 64px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, var(--ilyos-gold), var(--ilyos-gold-deep), var(--ilyos-gold), transparent);
+}
+
+/* =====================================================================
+   Accessibilité : les états disabled restent distingués par texte/forme,
+   pas uniquement par couleur (labels déjà gérés en JS — sections 4/5
+   des passes précédentes).
+   ===================================================================== */

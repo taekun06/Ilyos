@@ -1523,7 +1523,7 @@
             return {
               kind: selected ? "select" : "ally",
               actionable: true,
-              color: selected ? 0xffd22e : 0x43e6d0,
+              color: selected ? 0xc9a45d : 0x43e6d0,
               label: selected ? "GARDIEN SÉLECTIONNÉ" : "CHOISIR CE GARDIEN"
             };
           }
@@ -1545,7 +1545,7 @@
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "PUSH") {
           const selected = character?.id === state.selectedCharId;
-          if (selected) return { kind: "select", actionable: true, color: 0xffd22e, label: "POUSSEUR SÉLECTIONNÉ" };
+          if (selected) return { kind: "select", actionable: true, color: 0xc9a45d, label: "POUSSEUR SÉLECTIONNÉ" };
           if (!state.selectedCharId && character?.player === state.currentPlayer) {
             return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHOISIR CE GARDIEN" };
           }
@@ -1571,7 +1571,7 @@
         // (jamais les classes du plateau DOM caché, qui ne sont pas rafraîchies en mode 3D).
         if (state?.phase === "SMART_CHAR") {
           if (character?.id === state.selectedCharId) {
-            return { kind: "select", actionable: true, color: 0xffd22e, label: "GARDIEN SÉLECTIONNÉ" };
+            return { kind: "select", actionable: true, color: 0xc9a45d, label: "GARDIEN SÉLECTIONNÉ" };
           }
           if (character?.player === state.currentPlayer) {
             return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHANGER DE GARDIEN" };
@@ -2224,7 +2224,7 @@
         else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
         else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
-        else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
+        else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
         else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
         else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
         else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .46; kind = "push" }
@@ -2343,6 +2343,11 @@
           glow.renderOrder = 52;
           glow.userData.pulse = true;
           glow.userData.pulsePhase = (r * 11 + c) * .37 + .6;
+          // Déjà poussé dans animatedObjects ci-dessous (pour le pulse) : on fixe
+          // juste le fondu ici plutôt que de rappeler registerKayKitFadeIn, qui
+          // le pousserait une seconde fois dans la même liste.
+          glow.userData.fadeIn = { start: performance.now(), duration: 140, target: glowMaterial.opacity };
+          glowMaterial.opacity = 0;
           kaykit3D.dynamicGroup.add(glow);
           kaykit3D.animatedObjects.push(glow);
 
@@ -2360,12 +2365,49 @@
           halo.renderOrder = 54;
           halo.userData.pulse = true;
           halo.userData.pulsePhase = (r * 11 + c) * .37;
+          halo.userData.fadeIn = { start: performance.now(), duration: 140, target: haloMaterial.opacity };
+          haloMaterial.opacity = 0;
           kaykit3D.dynamicGroup.add(halo);
           kaykit3D.animatedObjects.push(halo);
 
           const selectionLight = new THREE.PointLight(0xffdf5a, .46, 1.9, 2);
           selectionLight.position.set(p.x, y + .62, p.z);
           kaykit3D.dynamicGroup.add(selectionLight);
+
+          // Sceau céleste : anneau bleu doux + petits repères "runiques" en
+          // bordure du halo or, tournant très lentement — complète le halo
+          // or existant ci-dessus sans le remplacer. Groupe unique pour que
+          // l'anneau et les repères tournent ensemble (voir animatedObjects
+          // plus bas, propriété slowSpin).
+          const runeGroup = new THREE.Group();
+          runeGroup.position.set(p.x, y + .058, p.z);
+          runeGroup.rotation.x = -Math.PI / 2;
+          runeGroup.renderOrder = 53;
+
+          const blueRing = new THREE.Mesh(
+            kaykitGeometry("selection-ring-blue-v1", () => new THREE.RingGeometry(.43, .465, 40)),
+            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
+          );
+          runeGroup.add(blueRing);
+
+          const runeCount = 8;
+          const runePoints = [];
+          for (let i = 0; i < runeCount; i++) {
+            const angle = (i / runeCount) * Math.PI * 2;
+            runePoints.push(
+              new THREE.Vector3(Math.cos(angle) * .40, 0, Math.sin(angle) * .40),
+              new THREE.Vector3(Math.cos(angle) * .475, 0, Math.sin(angle) * .475)
+            );
+          }
+          const runes = new THREE.LineSegments(
+            new THREE.BufferGeometry().setFromPoints(runePoints),
+            new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false })
+          );
+          runeGroup.add(runes);
+
+          kaykit3D.dynamicGroup.add(runeGroup);
+          runeGroup.userData.slowSpin = true;
+          kaykit3D.animatedObjects.push(runeGroup);
         }
 
         // Les classes fx-* existaient déjà côté logique : ce bref anneau les rend enfin
@@ -2396,6 +2438,30 @@
         }
       }
 
+      // Fondu d'apparition pour un marqueur 3D éphémère (anneau d'affordance,
+      // halo...) : ces meshes sont détruits puis recréés à chaque
+      // refreshKayKitHoverPreviews(), donc une simple opacité fixe "pop"
+      // sans transition possible côté Three.js. On démarre à 0 et on laisse
+      // la boucle d'animation (voir kaykit3D.animatedObjects) remonter vers
+      // l'opacité cible en douceur, sans changer le marqueur lui-même.
+      function registerKayKitFadeIn(mesh, duration = 140) {
+        if (!mesh || !kaykit3D) return mesh;
+        // Groupe (ex. ghost de placement, un bloc par case) : même traitement
+        // sur chaque mesh transparent qu'il contient, chacun animé séparément.
+        if (!mesh.material) {
+          mesh.traverse?.(child => {
+            if (child.isMesh && child.material?.transparent) registerKayKitFadeIn(child, duration);
+          });
+          return mesh;
+        }
+        if (!mesh.material.transparent) return mesh;
+        const target = mesh.material.opacity;
+        mesh.material.opacity = 0;
+        mesh.userData.fadeIn = { start: performance.now(), duration, target };
+        kaykit3D.animatedObjects.push(mesh);
+        return mesh;
+      }
+
       // Marqueur "possibilité" lisible dès la sélection, sans remplir la case :
       // un anneau à vraie épaisseur (Torus), ~35% de la largeur de case, pas un
       // point plat. Coût 1 = anneau simple ; coût 2+ = second anneau concentrique,
@@ -2406,21 +2472,23 @@
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
         const outer = new THREE.Mesh(
           kaykitGeometry("smart-move-ring-outer-v1", () => new THREE.TorusGeometry(.16, .026, 8, 28)),
-          new THREE.MeshBasicMaterial({ color: 0x35d8e6, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide })
         );
         outer.rotation.x = -Math.PI / 2;
         outer.position.set(p.x, p.y, p.z);
         outer.renderOrder = 20;
         group.add(outer);
+        registerKayKitFadeIn(outer);
         if (costTier >= 2) {
           const inner = new THREE.Mesh(
             kaykitGeometry("smart-move-ring-inner-v1", () => new THREE.TorusGeometry(.095, .020, 8, 24)),
-            new THREE.MeshBasicMaterial({ color: 0x35d8e6, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
           );
           inner.rotation.x = -Math.PI / 2;
           inner.position.set(p.x, p.y + .003, p.z);
           inner.renderOrder = 21;
           group.add(inner);
+          registerKayKitFadeIn(inner);
         }
       }
 
@@ -2432,12 +2500,13 @@
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .024);
         const ring = new THREE.Mesh(
           kaykitGeometry("smart-push-ring-v1", () => new THREE.TorusGeometry(.19, .026, 8, 26)),
-          new THREE.MeshBasicMaterial({ color: 0xff9a3d, transparent: true, opacity: .68, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0xce8b55, transparent: true, opacity: .68, depthWrite: false, side: THREE.DoubleSide })
         );
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(p.x, p.y, p.z);
         ring.renderOrder = 20;
         group.add(ring);
+        registerKayKitFadeIn(ring);
       }
 
       // Anneau discret sur chaque case d'invocation valable de la nouvelle île,
@@ -2456,6 +2525,7 @@
         ring.position.set(p.x, p.y, p.z);
         ring.renderOrder = 20;
         group.add(ring);
+        registerKayKitFadeIn(ring);
       }
 
       // Un seul représentant par joueur suffit pour un ghost : contrairement au
@@ -3084,6 +3154,7 @@
         const previewIsland = { id: "placement-preview", owner: null, cells: previewCells };
         const block = makeKayKitIslandBlock(previewIsland, { preview: true, valid, previewMode: "placement" });
         kaykit3D.dynamicGroup.add(block);
+        registerKayKitFadeIn(block, 120);
       }
 
       function renderKayKitMagicRotationPreview() {
@@ -3613,6 +3684,19 @@
           if (object.userData.pulse) {
             const s = 1 + Math.sin(elapsed * 3 + object.userData.pulsePhase) * .055;
             object.scale.set(s, s, s);
+          }
+          // Rotation "extrêmement lente" du sceau de sélection (voir addCellHighlight,
+          // kind "selected") : un tour complet toutes les ~40 secondes.
+          if (object.userData.slowSpin) {
+            object.rotation.z = elapsed * .16;
+          }
+          // Fondu d'apparition (voir registerKayKitFadeIn) : remonte vers
+          // l'opacité cible puis se retire lui-même de la liste animée.
+          if (object.userData.fadeIn && object.material) {
+            const { start, duration, target } = object.userData.fadeIn;
+            const progress = Math.min(1, (performance.now() - start) / duration);
+            object.material.opacity = target * (progress * (2 - progress));
+            if (progress >= 1) delete object.userData.fadeIn;
           }
         });
         if (kaykit3D.cameraTween) {
