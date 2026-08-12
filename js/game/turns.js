@@ -98,6 +98,9 @@
         resetKayKitPointerFeedback();
         renderAll();
         showTurnRibbon(p);
+        // Nouveau tour d'un joueur humain : recadrage doux vers ses gardiens
+        // (le tour de l'IA est suivi action par action, pas ici).
+        if (!p.isAI) kaykitFollowCurrentPlayer();
 
         setTimeout(() => {
           if (!state || state.winner !== null) return;
