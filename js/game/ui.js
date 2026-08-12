@@ -853,7 +853,13 @@
             state.actionHoverCell = nextCell;
             state.smartHoverType = preview.type;
             state.smartHoverPath = preview.path || [];
+            // Nouvelle cible : tout choix de force explicite précédent portait
+            // sur une cible différente, il ne veut plus rien dire ici.
+            state.smartPushForce = null;
             scheduleBoardRender();
+            // Le panneau ACTIONS doit apparaître/disparaître avec le contrôle de
+            // force contextuel dès que la cible poussable survolée change.
+            renderHand();
           }
           return;
         }
@@ -920,6 +926,7 @@
         if (state.phase === "SMART_CHAR" && isSameCell(state.actionHoverCell, [r, c])) {
           clearSmartHover();
           scheduleBoardRender();
+          renderHand();
           return;
         }
 
@@ -1308,16 +1315,29 @@
           return;
         }
 
-        if (state.phase === "ACTION_SELECT" && char && char.player !== state.currentPlayer) {
-          const pusher = nearestPusherForTarget(r, c);
-          if (pusher && availableActionCount("PUSH") > 0) {
+        if (state.phase === "ACTION_SELECT" && char && char.player !== state.currentPlayer && availableActionCount("PUSH") > 0) {
+          const pushers = pushersForTarget(r, c);
+          if (pushers.length === 1) {
+            const pusher = pushers[0];
+            const required = requiredPushForce(pusher.r, pusher.c, r, c);
             state.phase = "ACTION";
             state.selectedActionType = "PUSH";
-            state.selectedActionCount = Math.max(1, Math.min(state.pushForceChoice || 1, availableActionCount("PUSH")));
+            state.selectedActionCount = Math.min(availableActionCount("PUSH"), Math.max(required, state.pushForceChoice || 1));
             state.selectedCharId = pusher.id;
             state.reachable = new Set(orthogonalNeighbors(pusher.r, pusher.c).map(([nr, nc]) => key(nr, nc)));
             renderAll();
-            showToast(`Poussée proposée — force ${state.selectedActionCount}. Ajustez-la dans la barre ou cliquez à nouveau sur la cible.`);
+            return;
+          }
+          if (pushers.length > 1) {
+            // Aucun pousseur choisi à la place du joueur : on met en évidence
+            // les gardiens éligibles et on attend son clic.
+            state.phase = "ACTION";
+            state.selectedActionType = "PUSH";
+            state.selectedActionCount = Math.max(1, Math.min(state.pushForceChoice || 1, availableActionCount("PUSH")));
+            state.selectedCharId = null;
+            state.reachable = new Set(pushers.map(p => key(p.r, p.c)));
+            renderAll();
+            showToast("Plusieurs gardiens peuvent pousser cette cible : cliquez celui qui doit agir.");
             return;
           }
         }
@@ -1409,40 +1429,83 @@
 
       function renderHand() {
         els.hand.innerHTML = "";
+        // Le panneau doit changer d'allure dès qu'un gardien est sélectionné,
+        // pas seulement quand une action classique est activée : bandeau de
+        // contexte + boutons MOVE/PUSH mis en avant (même style que "active").
+        const smartSelected = state.phase === "SMART_CHAR" && !!state.selectedCharId;
+        if (smartSelected) {
+          const badge = document.createElement("div");
+          badge.className = "v60-context-options smart-char-badge";
+          badge.innerHTML = "<span>GARDIEN SÉLECTIONNÉ</span>";
+          els.hand.appendChild(badge);
+        }
         const bar = document.createElement("div");
         bar.className = "v60-action-bar";
         ["MOVE", "PUSH", "MAGIC"].forEach(type => {
           const action = ACTIONS[type];
           const remaining = availableActionCount(type);
           const active = state.phase === "ACTION" && state.selectedActionType === type;
+          const smartReady = smartSelected && (type === "MOVE" || type === "PUSH");
           const reason = actionUnavailableReason(type);
           const disabled = remaining <= 0 || !!reason;
           const button = document.createElement("button");
           button.type = "button";
-          button.className = `v60-action-btn action-${type.toLowerCase()}${active ? " active" : ""}${disabled ? " disabled" : ""}`;
+          button.className = `v60-action-btn action-${type.toLowerCase()}${(active || smartReady) ? " active" : ""}${disabled ? " disabled" : ""}`;
           button.dataset.type = type;
           button.setAttribute("aria-pressed", active ? "true" : "false");
           button.setAttribute("aria-disabled", disabled ? "true" : "false");
           button.title = disabled ? reason : `${action.name} ×${remaining}`;
-          button.innerHTML = `<span class="v60-action-icon">${action.icon}</span><strong>${action.name}</strong><b>×${remaining}</b><small>${disabled ? reason : (active ? "Sélectionnée" : "Disponible")}</small>`;
+          const status = disabled ? reason : (active ? "Sélectionnée" : (smartReady ? `${remaining} disponible${remaining > 1 ? "s" : ""}` : "Disponible"));
+          button.innerHTML = `<span class="v60-action-icon">${action.icon}</span><strong>${action.name}</strong><b>×${remaining}</b><small>${status}</small>`;
           if (!disabled) button.addEventListener("click", () => selectActionBatch(type, type === "PUSH" ? Math.max(1, state.pushForceChoice || 1) : 1));
           else button.addEventListener("click", () => showToast(reason));
           bar.appendChild(button);
         });
         els.hand.appendChild(bar);
 
-        if (state.phase === "ACTION" && state.selectedActionType === "PUSH") {
-          const remaining = availableActionCount("PUSH");
-          const max = Math.max(1, remaining);
-          const force = Math.max(1, Math.min(state.pushForceChoice || 1, max));
-          const contextual = document.createElement("div");
-          contextual.className = "v60-context-options";
-          contextual.innerHTML = `<span>Force de poussée</span><button type="button" data-force-minus>−</button><b>${force}</b><button type="button" data-force-plus>+</button><small>Sélectionnez ensuite la cible adjacente.</small>`;
-          contextual.querySelector('[data-force-minus]').disabled = force <= 1;
-          contextual.querySelector('[data-force-plus]').disabled = force >= max;
-          contextual.querySelector('[data-force-minus]').onclick = () => { setPushForceChoice(force - 1, { notify: true }); renderHand(); };
-          contextual.querySelector('[data-force-plus]').onclick = () => { setPushForceChoice(force + 1, { notify: true }); renderHand(); };
-          els.hand.appendChild(contextual);
+        const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH";
+        const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
+        if (classicPushActive || smartPushHovered) {
+          const max = Math.max(1, availableActionCount("PUSH"));
+          // Même contrôle pour les deux chemins (bouton PUSH classique et clic
+          // direct sur un gardien) : seule la source du minimum change. En
+          // SMART_CHAR, getPushHoverPreview() reste l'unique simulation.
+          let force = null, min = 1, hint = "";
+          if (smartPushHovered) {
+            const preview = getPushHoverPreview();
+            if (preview) {
+              min = Math.max(1, preview.requiredForce || 1);
+              force = Math.max(min, Math.min(max, preview.force || min));
+              hint = min > 1 ? `<small>Minimum requis : ${min}</small>` : "<small>Cliquez pour pousser.</small>";
+            }
+          } else {
+            force = Math.max(1, Math.min(state.pushForceChoice || 1, max));
+            hint = "<small>Sélectionnez ensuite la cible adjacente.</small>";
+          }
+          if (force !== null) {
+            const contextual = document.createElement("div");
+            contextual.className = "v60-context-options";
+            contextual.innerHTML = `<span>Force de poussée</span><button type="button" data-force-minus>−</button><b>${force}</b><button type="button" data-force-plus>+</button>${hint}`;
+            contextual.querySelector('[data-force-minus]').disabled = force <= min;
+            contextual.querySelector('[data-force-plus]').disabled = force >= max;
+            contextual.querySelector('[data-force-minus]').onclick = () => {
+              if (smartPushHovered) {
+                state.smartPushForce = Math.max(min, force - 1);
+                refreshKayKitHoverPreviews();
+                scheduleBoardRender();
+                renderHand();
+              } else { setPushForceChoice(force - 1, { notify: true }); renderHand(); }
+            };
+            contextual.querySelector('[data-force-plus]').onclick = () => {
+              if (smartPushHovered) {
+                state.smartPushForce = Math.min(max, force + 1);
+                refreshKayKitHoverPreviews();
+                scheduleBoardRender();
+                renderHand();
+              } else { setPushForceChoice(force + 1, { notify: true }); renderHand(); }
+            };
+            els.hand.appendChild(contextual);
+          }
         }
         if (state.phase === "ACTION" && state.selectedActionType === "MAGIC" && state.selectedIslandId) {
           const contextual = document.createElement("div");
@@ -1522,7 +1585,9 @@
 
         if (state.phase === "ACTION" && state.selectedActionType === type) {
           cancelSelectedCard();
-          showToast(`${ACTIONS[type].name} quitté.`);
+          // Le plateau/panneau montrent déjà que l'action n'est plus active ;
+          // seule la magie (pas de retour visuel équivalent) garde un toast.
+          if (type === "MAGIC") showToast(`${ACTIONS[type].name} quitté.`);
           return;
         }
 
@@ -1551,24 +1616,13 @@
 
         resetKayKitPointerFeedback();
         renderAll();
-
-        const n = selectedBatchSize();
         playSfx("card");
 
-        if (type === "MOVE") {
-          showToast(
-            `Déplacement activé : choisissez un gardien puis une destination de 1 à ${n} case${n > 1 ? "s" : ""}.`
-          );
-        } else if (type === "PUSH") {
-          showToast(
-            `Poussée activée — force ${n}. Vous pouvez changer d’action à tout moment.`
-          );
-        } else {
-          showToast(
-            type === "MAGIC"
-              ? "Magie activée : une seule magie permet 90°, 180°, 270° ou 360°."
-              : `${ACTIONS[type].name} ×${n} sélectionné${n > 1 ? "s" : ""}.`
-          );
+        // Déplacement/Poussée : le panneau ACTIONS et le plateau (marqueurs,
+        // aperçu au survol) montrent déjà tout ce que ce toast répétait.
+        // La magie n'a pas d'équivalent visuel pour l'instant, elle garde le sien.
+        if (type === "MAGIC") {
+          showToast("Magie activée : une seule magie permet 90°, 180°, 270° ou 360°.");
         }
       }
 
@@ -1626,20 +1680,35 @@
         return options[0] || null;
       }
 
-      function nearestPusherForTarget(r, c) {
-        if (!characterAt(r, c) && !looseArtifactAt(r, c)) return null;
-        const options = orthogonalNeighbors(r, c)
+      // Tous les gardiens du joueur adjacents à (r, c), triés (déterministe).
+      // nearestPusherForTarget() reste un simple raccourci sur le premier —
+      // utilisé là où l'ambiguïté n'a pas d'importance (ex: validité de survol).
+      function pushersForTarget(r, c) {
+        if (!characterAt(r, c) && !looseArtifactAt(r, c)) return [];
+        return orthogonalNeighbors(r, c)
           .map(([nr, nc]) => characterAt(nr, nc))
           .filter(char => char && char.player === state.currentPlayer)
           .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-        return options[0] || null;
+      }
+
+      function nearestPusherForTarget(r, c) {
+        return pushersForTarget(r, c)[0] || null;
+      }
+
+      // Force minimale légale pour que `pusher` pousse la cible (r, c) — même
+      // règle que dans getPushHoverPreview() (une couronne libre n'impose pas
+      // d'alignement, une ligne de gardiens exige au moins sa longueur), utile
+      // ici où aucune preview n'existe encore (le pousseur n'est pas déterminé).
+      function requiredPushForce(pusherR, pusherC, targetR, targetC) {
+        if (!characterAt(targetR, targetC)) return 1;
+        const dr = targetR - pusherR, dc = targetC - pusherC;
+        return Math.max(1, collectPushLine(targetR, targetC, dr, dc).length);
       }
 
       function handleMoveClick(r, c) {
         const clickedChar = characterAt(r, c);
         if (state.selectedCharId && clickedChar?.id === state.selectedCharId) {
           cancelSelectedCard();
-          showToast("Déplacement quitté.");
           return;
         }
         if (!state.selectedCharId) {
@@ -1702,10 +1771,10 @@
         state.selectedActionCount = maxMoves;
         state.reachable = movementRange(char, maxMoves);
         renderAll();
+        // Une contrainte réelle mérite un toast ; le mode d'emploi normal, lui,
+        // se lit déjà sur les cases éclairées et l'aperçu au survol.
         if (state.reachable.size === 0) {
           showToast("Aucun déplacement possible pour ce gardien.");
-        } else {
-          showToast("Choisissez une destination : droite = 1, diagonale = 2 déplacements.");
         }
       }
 
@@ -1738,6 +1807,10 @@
           }
         }
 
+        // Même idiome que shortestMovementPath() (cost/steps accrochés au
+        // tableau retourné) : le Set garde son comportement normal, avec le
+        // coût par case disponible pour l'affichage au repos (voir kaykit3d.js).
+        result.costs = distances;
         return result;
       }
 
@@ -1790,13 +1863,22 @@
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
-        // Hors action manuelle, aucun sélecteur de force n'est affiché : on reprend
-        // le même choix de force (state.pushForceChoice) que handleSmartCharacterClick
-        // utilisera réellement au clic, pour ne jamais présenter un aperçu optimiste.
+        // La force minimale légale se calcule avant tout : une couronne libre
+        // n'impose pas d'alignement (1 suffit toujours), une ligne de gardiens
+        // exige au moins sa longueur — c'est la même règle qu'ailleurs, jamais
+        // dupliquée, juste lue plus tôt pour pouvoir en faire le plancher.
+        // Même précédence que la branche plus bas (if targetCrown … else …) :
+        // une case avec à la fois un gardien et une couronne libre (cas limite)
+        // suit la couronne, donc pas d'alignement à exiger.
+        const line = targetCrown ? [] : collectPushLine(targetR, targetC, dr, dc);
+        const requiredForce = targetCrown ? 1 : line.length;
+        // Hors action manuelle, aucun sélecteur de force n'est affiché par défaut :
+        // state.smartPushForce porte le choix explicite du joueur pour CETTE cible
+        // (survolée), sinon on retombe sur le minimum légal plutôt que sur le
+        // dernier choix global (qui pouvait être insuffisant pour cette cible-ci).
         const force = smartPush
-          ? Math.min(availableActionCount("PUSH"), Math.max(1, state.pushForceChoice || 1))
+          ? Math.min(availableActionCount("PUSH"), Math.max(requiredForce, state.smartPushForce || requiredForce))
           : selectedBatchSize();
-        let requiredForce = 1;
         const impacts = [];
 
         if (targetCrown) {
@@ -1812,7 +1894,6 @@
             carrying: false
           });
         } else {
-          const line = collectPushLine(targetR, targetC, dr, dc);
           const simulated = line.map(char => ({
             char,
             r: char.r,
@@ -1825,7 +1906,6 @@
               .map(char => key(char.r, char.c))
           );
 
-          requiredForce = line.length;
           const previewDistance = force < requiredForce ? 0 : Math.max(1, force - requiredForce + 1);
           for (let step = 0; step < previewDistance; step++) {
             for (let i = simulated.length - 1; i >= 0; i--) {
@@ -1886,7 +1966,6 @@
         const clickedChar = characterAt(r, c);
         if (state.selectedCharId && clickedChar?.id === state.selectedCharId) {
           cancelSelectedCard();
-          showToast("Poussée quittée.");
           return;
         }
         if (!state.selectedCharId) {
@@ -1897,11 +1976,26 @@
             renderAll();
             return;
           }
-          const nearest = nearestPusherForTarget(r, c);
-          if (!nearest) {
+          const pushers = pushersForTarget(r, c);
+          if (!pushers.length) {
             showToast("Aucun de vos gardiens n’est adjacent à cette cible.");
             return;
           }
+          if (pushers.length > 1) {
+            // Plusieurs gardiens à égalité : on n'en choisit pas un à la place
+            // du joueur, on les met en évidence et on attend son clic.
+            state.actionHoverCell = null;
+            state.selectedCharId = null;
+            state.reachable = new Set(pushers.map(p => key(p.r, p.c)));
+            renderAll();
+            showToast("Plusieurs gardiens peuvent pousser cette cible : cliquez celui qui doit agir.");
+            return;
+          }
+          const nearest = pushers[0];
+          state.selectedActionCount = Math.min(
+            availableActionCount("PUSH"),
+            Math.max(requiredPushForce(nearest.r, nearest.c, r, c), state.pushForceChoice || 1)
+          );
           state.actionHoverCell = null;
           state.selectedCharId = nearest.id;
           state.reachable = new Set(orthogonalNeighbors(nearest.r, nearest.c).map(([nr, nc]) => key(nr, nc)));

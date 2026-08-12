@@ -679,6 +679,8 @@
           actionHoverCell: null,
           smartHoverType: null,
           smartHoverPath: [],
+          smartPushForce: null,
+          smartPushTargets: [],
           savedAt: Date.now()
         }));
         return clean;
@@ -757,6 +759,8 @@
         restored.actionHoverCell = null;
         restored.smartHoverType = null;
         restored.smartHoverPath = [];
+        restored.smartPushForce = null;
+        restored.smartPushTargets = new Set();
         restored.pushForceChoice = Math.max(1, Number(restored.pushForceChoice || 1));
         restored.crownPickupArtifactId ||= null;
         restored.treasureDropArtifactId ||= null;
@@ -1304,6 +1308,23 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
+        // Force explicitement choisie par le joueur pour LA cible actuellement
+        // survolée (voir getPushHoverPreview) : n'a plus de sens dès que le
+        // survol change de case, donc réinitialisée avec le reste du hover.
+        state.smartPushForce = null;
+      }
+
+      // Cases adjacentes que `char` pourrait pousser dès maintenant (adversaire
+      // ou couronne libre), pour l'affichage discret au repos une fois le
+      // gardien sélectionné. Ne simule aucune poussée : getPushHoverPreview()
+      // reste la seule source de vérité pour le calcul réel.
+      function pushableTargetsForCharacter(char) {
+        if (!char || availableActionCount("PUSH") <= 0) return new Set();
+        return new Set(
+          orthogonalNeighbors(char.r, char.c)
+            .filter(([nr, nc]) => characterAt(nr, nc) || looseArtifactAt(nr, nc))
+            .map(([nr, nc]) => key(nr, nc))
+        );
       }
 
       function beginSmartCharacterAction(char) {
@@ -1317,9 +1338,12 @@
         state.magicHoverPivot = null;
         clearMagicPreview();
         clearSmartHover();
-        state.reachable = new Set();
+        // Le plateau doit montrer, dès la sélection et sans survol, ce que CE
+        // gardien peut faire : déplacements accessibles (calcul déjà existant,
+        // inchangé) et cibles poussables adjacentes.
+        state.reachable = movementRange(char, availableActionCount("MOVE"));
+        state.smartPushTargets = pushableTargetsForCharacter(char);
         renderAll();
-        showToast("Gardien sélectionné : choisissez une destination ou une cible à pousser.");
       }
 
       function cancelSmartCharacterAction(showMessage = true) {
@@ -1331,8 +1355,8 @@
         state.selectedActionCount = 1;
         clearSmartHover();
         state.reachable = new Set();
+        state.smartPushTargets = new Set();
         renderAll();
-        if (showMessage) showToast("Action quittée.");
       }
 
       function previewSmartCharacterTarget(r, c) {
@@ -1382,15 +1406,26 @@
         const clickedChar = characterAt(r, c);
 
         if (preview.type === "PUSH") {
+          // getPushHoverPreview() reste la seule simulation de poussée : on lui
+          // fait recalculer la force minimale légale pour CETTE cible plutôt que
+          // de repartir du dernier pushForceChoice, potentiellement insuffisant
+          // (c'était le bug : "Force 2 requise" alors que le choix affiché valait 1).
+          state.actionHoverCell = [r, c];
+          state.smartHoverType = "PUSH";
+          const pushPreview = getPushHoverPreview();
+          const requiredForce = Math.max(1, pushPreview?.requiredForce ?? 1);
+          const force = Math.min(
+            availableActionCount("PUSH"),
+            Math.max(requiredForce, pushPreview?.force ?? requiredForce)
+          );
           state.phase = "ACTION";
           state.selectedActionType = "PUSH";
-          state.selectedActionCount = Math.min(
-            availableActionCount("PUSH"),
-            Math.max(1, state.pushForceChoice || 1)
-          );
-          state.actionHoverCell = [r, c];
+          state.selectedActionCount = force;
+          setPushForceChoice(force);
           state.smartHoverType = null;
           state.smartHoverPath = [];
+          state.smartPushForce = null;
+          state.smartPushTargets = new Set();
           state.reachable = new Set(orthogonalNeighbors(actor.r, actor.c).map(([nr, nc]) => key(nr, nc)));
           handlePushClick(r, c);
           return;
@@ -1404,6 +1439,7 @@
           state.actionHoverCell = [r, c];
           state.smartHoverType = null;
           state.smartHoverPath = [];
+          state.smartPushTargets = new Set();
           state.reachable = movementRange(actor, cost);
           handleMoveClick(r, c);
           return;
@@ -1506,7 +1542,9 @@
           magicHoverPivot: null,
           actionHoverCell: null,
           smartHoverType: null,
-          smartHoverPath: []
+          smartHoverPath: [],
+          smartPushForce: null,
+          smartPushTargets: []
         }));
       }
 
@@ -2148,6 +2186,8 @@
           actionHoverCell: null,
           smartHoverType: null,
           smartHoverPath: [],
+          smartPushForce: null,
+          smartPushTargets: new Set(),
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
@@ -2324,6 +2364,8 @@
           actionHoverCell: null,
           smartHoverType: null,
           smartHoverPath: [],
+          smartPushForce: null,
+          smartPushTargets: new Set(),
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
