@@ -5099,6 +5099,25 @@
           return `Séquence "${kind}" lancée sur ${characterId} (clip ${visual.animator?.currentClipName}).`;
         },
         /**
+         * Force la validation de la 3e couronne pour un joueur, en passant par
+         * le VRAI chemin de score (scoreCrownForPlayer) plutôt qu'en simulant
+         * l'effet : sert à vérifier la célébration de victoire sans avoir à
+         * jouer une partie complète jusqu'au bout.
+         */
+        forceVictory(playerId = 0) {
+          const player = state?.players?.[playerId];
+          const char = state?.characters?.find(c => c.player === playerId);
+          if (!player || !char) return `Joueur ${playerId} ou gardien introuvable.`;
+          player.score = 2;
+          const artifact = state.artifact;
+          artifact.active = true;
+          artifact.carrierId = char.id;
+          artifact.r = char.r;
+          artifact.c = char.c;
+          scoreCrownForPlayer(player, char, false, artifact);
+          return `Victoire forcée pour ${player.name} via char-${char.id}.`;
+        },
+        /**
          * Rejoue la rotation visuelle d'une île, pour contrôler que son sens
          * correspond bien à la rotation logique appliquée par le moteur.
          */
