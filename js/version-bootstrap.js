@@ -30,23 +30,19 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
     if (![...node.options].some(opt => opt.value === wanted)) return false;
     node.value = wanted; fireChange(node); return true;
   }
-  function setInput(id, value) {
-    const node = document.getElementById(id);
+  function setInputNode(node, value) {
     if (!node) return false;
     node.value = value == null || value === 'AUTO' ? '' : String(value);
     node.dispatchEvent(new Event('input', { bubbles:true }));
     node.dispatchEvent(new Event('change', { bubbles:true }));
     return true;
   }
+  function setInput(id, value) { return setInputNode(document.getElementById(id), value); }
   function setPlayerNames(values = {}) {
     const inputs = [...document.querySelectorAll('#playersForm .player-name')];
     inputs.forEach((input, index) => {
-      const key = `name${index + 1}`;
-      if (values[key]) setInput(input.id, values[key]);
-      else if (values[key] && !input.id) {
-        input.value = values[key];
-        input.dispatchEvent(new Event('input', { bubbles:true }));
-      }
+      const value = values[`name${index + 1}`];
+      if (value) setInputNode(input, value);
     });
   }
 
@@ -61,8 +57,10 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
     } else if (mode === 'duel') {
       setSelect('startingBoardSelect', values.board || 'classic');
       setSelect('turnTimerSelect', values.timer || '0');
+      setPlayerNames(values);
     } else if (mode === 'team') {
       setSelect('startingBoardSelect', values.board || 'classic');
+      setPlayerNames(values);
     } else if (mode === 'online') {
       setSelect('onlineRoleSelect', values.role || 'host');
       setInput('onlineRoomInput', values.roomCode || 'AUTO');
@@ -102,7 +100,7 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
-    frame.src = './menu/frame.html?v=menu-polish-5';
+    frame.src = './menu/frame.html?v=menu-polish-6';
     frame.setAttribute('allow', 'autoplay');
     document.body.appendChild(frame);
 
