@@ -160,6 +160,67 @@
       const KAYKIT_BLOCK_SIZE = .932;
       const KAYKIT_BOARD_SPAN = GRID * KAYKIT_CELL_SPACING;
 
+      // ===================== CIEL ILYOS — PROFONDEUR PAR COUCHES =====================
+      // L'impression d'altitude ne vient PAS de nuages proches (essayé : ils voilaient
+      // les cases et les gardiens) mais d'un empilement de plans très éloignés :
+      //   1. dôme de ciel dégradé          (KAYKIT_SKY.domeRadius)
+      //   2. brume d'horizon               (scene.fog, démarre bien au-delà du plateau)
+      //   3. îlots lointains désaturés     (KAYKIT_SKY.farRing)
+      //   4. ZONE JOUABLE — vide           (volume de sécurité ci-dessous)
+      //   5. mer de nuages, très en bas    (KAYKIT_SKY.seaHigh / seaLow)
+      //
+      // VOLUME DE SÉCURITÉ : cylindre centré sur le plateau, de rayon `safeRadius`
+      // et ouvert vers le haut à partir de `safeFloor`. Aucun élément décoratif n'a
+      // le droit d'y exister (voir kaykitSkyPlacementAllowed). Comme la caméra est
+      // bornée par ailleurs (orbit.maxDistance = 25, maxPolarAngle ≈ 88° → elle
+      // reste au-dessus du plateau et à moins de 25 unités du centre), tout élément
+      // soit franchement extérieur au cylindre, soit franchement sous son plancher,
+      // ne peut jamais se retrouver sur le segment caméra → case. La contrainte
+      // « zéro nuage devant le plateau » est donc garantie par construction, quel que
+      // soit l'angle de vue, et pas seulement depuis la caméra initiale.
+      const KAYKIT_SKY = {
+        safeRadius: KAYKIT_BOARD_SPAN / 2 + 4.2,  // ≈ 9.3 : grille + marge d'extension
+        safeFloor: -9,                            // vide obligatoire sous les îles
+        domeRadius: 170,
+        cameraFar: 460,
+        fogNear: 44,                              // > (zoom max 25 + demi-diagonale plateau 7.2)
+        fogFar: 145,
+        seaHigh: -16.5,                           // mer principale : îles ↓ vide ↓ nuages
+        seaLow: -27.5,                            // seconde nappe, pour le parallaxe
+        farRing: 30                               // rayon minimal des silhouettes lointaines
+      };
+
+      // Palette « sanctuaire céleste lumineux » : bleu soutenu au zénith, bande
+      // d'horizon ivoire, jamais de cyan saturé ni de ciel dramatique.
+      //
+      // Point clé : les caméras d'ILYOS plongent toutes vers le plateau (≈ 20° à 56°
+      // sous l'horizontale), donc TOUT ce que le joueur voit derrière les îles est la
+      // partie du dôme SOUS l'horizon. Un premier essai blanc cassé de ce côté rendait
+      // la mer de nuages littéralement invisible (blanc sur blanc) et voilait la scène.
+      // D'où `abyss`/`deep` : un bleu pâle mais franc pour le gouffre sous l'archipel,
+      // sur lequel le blanc des nuages ressort — et contre lequel le plateau gagne du
+      // contraste. `haze` est la couleur de brume : elle se situe entre la bande
+      // d'horizon et le bleu du gouffre, pour que le lointain se dissolve sans liseré.
+      const KAYKIT_SKY_COLORS = {
+        zenith: 0x4f93d0,
+        upper: 0x7cbbe6,
+        middle: 0xafd9f0,
+        horizon: 0xe4f1fa,
+        haze: 0xc8e0f2,
+        abyss: 0xa2c8e5,
+        deep: 0x74a9d1,
+        seaHigh: 0xeef6fd,   // volontairement PAS blanc pur : le décor ne doit jamais
+        seaLow: 0xdcebf9,    // être plus lumineux que gardiens et couronnes
+        distant: 0xa9c6dd
+      };
+
+      // Un élément atmosphérique n'est accepté que s'il tient entièrement sous le
+      // plancher de sécurité, ou entièrement hors du cylindre de sécurité.
+      function kaykitSkyPlacementAllowed(x, y, z, spread = 0) {
+        if (y + spread <= KAYKIT_SKY.safeFloor) return true;
+        return Math.hypot(x, z) - spread >= KAYKIT_SKY.safeRadius;
+      }
+
       function kaykitCellPosition(r, c, y = 0) {
         return {
           x: (c - (GRID - 1) / 2) * KAYKIT_CELL_SPACING,
@@ -356,19 +417,34 @@
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = .96;
         renderer.physicallyCorrectLights = false;
-        renderer.setClearColor(0x8ecfe2, 1);
+        // Le dôme de ciel (buildKayKitSkyEnvironment) recouvre tout l'écran dès le
+        // premier rendu : cette couleur ne sert plus que de secours si le dôme n'a
+        // pas encore été construit.
+        renderer.setClearColor(KAYKIT_SKY_COLORS.haze, 1);
 
         const scene = new THREE.Scene();
-        scene.fog = null;
-        const camera = new THREE.PerspectiveCamera(33, 1, .1, 90);
+        // Brume atmosphérique lointaine seulement : elle démarre au-delà de la
+        // distance caméra→coin de plateau la plus défavorable (zoom max 25 + 7.2),
+        // donc le plateau et les gardiens restent parfaitement nets, et seul le
+        // décor très éloigné se désature vers la couleur d'horizon.
+        scene.fog = new THREE.Fog(KAYKIT_SKY_COLORS.haze, KAYKIT_SKY.fogNear, KAYKIT_SKY.fogFar);
+        // Plan lointain relevé pour laisser respirer les couches célestes (dôme,
+        // mer de nuages, îlots) : la précision du z-buffer dépend presque
+        // uniquement du plan proche, inchangé, donc aucun z-fighting supplémentaire.
+        const camera = new THREE.PerspectiveCamera(33, 1, .1, KAYKIT_SKY.cameraFar);
         camera.position.set(7.0, 9.1, 7.4);
         camera.lookAt(0, .22, .18);
 
-        const ambient = new THREE.AmbientLight(0xfffdf7, .36);
+        // Lumière céleste : soleil doux légèrement chaud sur le dessus, ambiance
+        // froide en dessous. Le bleu profond en couleur « sol » de l'hémisphérique
+        // remplace l'ancien olive : les faces inférieures des îles s'assombrissent
+        // très légèrement et lisent comme des blocs suspendus au-dessus du vide,
+        // sans halo ni faisceau sous chaque case.
+        const ambient = new THREE.AmbientLight(0xf6faff, .30);
         scene.add(ambient);
-        const hemi = new THREE.HemisphereLight(0xeaf7ff, 0x6f7658, .84);
+        const hemi = new THREE.HemisphereLight(0xeaf7ff, 0x46688a, .80);
         scene.add(hemi);
-        const sun = new THREE.DirectionalLight(0xffedcf, 1.74);
+        const sun = new THREE.DirectionalLight(0xffeed2, 1.78);
         sun.position.set(-6, 14, 8);
         sun.castShadow = true;
         sun.shadow.mapSize.set(1024, 1024);
@@ -407,7 +483,7 @@
           staticGroup, dynamicGroup, hitGroup, fxGroup, raycaster, pointer, clock, loader, textureLoader,
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
           textureCache: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
-          mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
+          mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
           packCatalog: new Map(), packRepresentatives: new Map(), packReady: new Set(), packErrors: new Set(),
@@ -649,89 +725,311 @@
         addShadowFlags(object);
       }
 
+      // Dégradé vertical du dôme de ciel. `flipY` par défaut sur une CanvasTexture
+      // fait correspondre le haut du canvas au sommet de la sphère, donc le zénith
+      // se peint en premier. Bruit très léger pour éviter le banding sur un aplat
+      // aussi étiré.
+      function kaykitSkyDomeTexture() {
+        const key = "sky-dome-gradient-v1";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const canvas = document.createElement("canvas");
+        canvas.width = 8; canvas.height = 512;
+        const ctx = canvas.getContext("2d");
+        const hex = value => `#${value.toString(16).padStart(6, "0")}`;
+        const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+        gradient.addColorStop(0, hex(KAYKIT_SKY_COLORS.zenith));
+        gradient.addColorStop(.24, hex(KAYKIT_SKY_COLORS.upper));
+        gradient.addColorStop(.41, hex(KAYKIT_SKY_COLORS.middle));
+        // Sous l'horizon, le bleu doit arriver TRÈS vite : les caméras d'ILYOS ne
+        // descendent jamais plus bas que ~56° sous l'horizontale (p ≈ .81), et une
+        // vue rasante n'en montre que les 20 premiers degrés (p ≈ .61). Étaler la
+        // transition plus bas revenait à ne jamais montrer autre chose que du blanc
+        // sous les îles — la mer de nuages devenait alors invisible.
+        gradient.addColorStop(.50, hex(KAYKIT_SKY_COLORS.horizon));
+        gradient.addColorStop(.53, hex(KAYKIT_SKY_COLORS.haze));
+        gradient.addColorStop(.61, hex(KAYKIT_SKY_COLORS.abyss));
+        gradient.addColorStop(1, hex(KAYKIT_SKY_COLORS.deep));
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 8, 512);
+        for (let y = 0; y < 512; y++) {
+          ctx.fillStyle = `rgba(255,255,255,${(Math.sin(y * 12.9898) * .5 + .5) * .035})`;
+          ctx.fillRect(0, y, 8, 1);
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.minFilter = texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Nappe de nuages vue de dessus : amas doux, faible contraste, fondus vers
+      // les bords pour qu'aucun bord de plan ne soit jamais visible. Une seule
+      // texture par variante, partagée par la nappe entière (aucun tuilage).
+      //
+      // `holeStart`/`holeEnd` (en unités monde) évident progressivement le centre :
+      // sans ce trou, la nappe s'étend jusque sous le plateau et l'on passe des îles
+      // aux nuages sans transition. Avec lui on lit bien îles ↓ vide bleu ↓ nuages.
+      function kaykitCloudSheetTexture(variant = 0, size2D = 150, holeStart = 11, holeEnd = 20) {
+        const key = `cloud-sheet-v2-${variant}-${size2D}-${holeStart}-${holeEnd}`;
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const size = 512;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * (17.13 + variant * 4.7) + salt * 78.233) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        for (let i = 0; i < 120; i++) {
+          const cx = seeded(i, 1) * size;
+          const cy = seeded(i, 2) * size;
+          const r = size * (.035 + seeded(i, 3) * .085);
+          const blob = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          const peak = .40 + seeded(i, 5) * .38;
+          blob.addColorStop(0, `rgba(255,255,255,${peak})`);
+          blob.addColorStop(.55, `rgba(255,255,255,${peak * .45})`);
+          blob.addColorStop(1, "rgba(255,255,255,0)");
+          ctx.fillStyle = blob;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        // Masque radial en une passe : trou doux au centre (le vide sous l'archipel)
+        // et extinction avant le bord du plan, pour que le carré de la géométrie ne
+        // puisse jamais se lire, quel que soit l'angle de caméra.
+        ctx.globalCompositeOperation = "destination-in";
+        const toTexel = world => THREE.MathUtils.clamp(world / size2D, 0, .5);
+        const mask = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size * .5);
+        mask.addColorStop(0, "rgba(255,255,255,0)");
+        mask.addColorStop(toTexel(holeStart) * 2, "rgba(255,255,255,0)");
+        mask.addColorStop(toTexel(holeEnd) * 2, "rgba(255,255,255,1)");
+        mask.addColorStop(.80, "rgba(255,255,255,.88)");
+        mask.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = mask;
+        ctx.fillRect(0, 0, size, size);
+        ctx.globalCompositeOperation = "source-over";
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.encoding = THREE.sRGBEncoding;
+        // Indispensable : vue rasante, une nappe horizontale est vue sous un angle
+        // très fermé et le mip le plus grossier la réduit à un aplat uniforme —
+        // c'est ce qui la faisait lire comme du brouillard au lieu d'une mer de
+        // nuages. Le filtrage anisotrope conserve le relief jusqu'à l'horizon.
+        texture.anisotropy = Math.min(16, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Silhouette d'îlot lointain : bloc évasé + éventuelle tour claire. Volumes
+      // très simples, matériau non éclairé et légèrement bleuté — ces éléments ne
+      // doivent jamais attirer le clic ni concurrencer les bâtiments joueurs.
+      function makeKayKitDistantIslet(scale, withTower, seed) {
+        const group = new THREE.Group();
+        const tint = new THREE.Color(KAYKIT_SKY_COLORS.distant);
+        // Roche nettement plus sombre que le dessus : c'est ce contraste interne qui
+        // fait lire une île suspendue plutôt qu'un cône blanc posé dans le ciel. Les
+        // deux tons restent désaturés et plus faibles que ceux du plateau (hiérarchie
+        // §10 : le décor lointain doit toujours passer derrière le jeu).
+        const rockMaterial = new THREE.MeshBasicMaterial({ color: tint.clone().multiplyScalar(.68), fog: true, toneMapped: false });
+        const topMaterial = new THREE.MeshBasicMaterial({ color: tint.clone().lerp(new THREE.Color(0xffffff), .16), fog: true, toneMapped: false });
+        const rock = new THREE.Mesh(
+          kaykitGeometry("distant-islet-rock-v2", () => new THREE.ConeGeometry(.58, .92, 6)),
+          rockMaterial
+        );
+        rock.rotation.x = Math.PI;
+        rock.position.y = -.44;
+        group.add(rock);
+        const top = new THREE.Mesh(
+          kaykitGeometry("distant-islet-top-v2", () => new THREE.CylinderGeometry(.66, .6, .18, 6)),
+          topMaterial
+        );
+        group.add(top);
+        if (withTower) {
+          const tower = new THREE.Mesh(
+            kaykitGeometry("distant-islet-tower-v2", () => new THREE.CylinderGeometry(.1, .13, .7, 6)),
+            topMaterial
+          );
+          tower.position.set(.14, .44, -.08);
+          group.add(tower);
+          const roof = new THREE.Mesh(
+            kaykitGeometry("distant-islet-roof-v2", () => new THREE.ConeGeometry(.17, .24, 6)),
+            rockMaterial
+          );
+          roof.position.set(.14, .91, -.08);
+          group.add(roof);
+        }
+        group.rotation.y = seed * Math.PI * 2;
+        group.scale.setScalar(scale);
+        group.traverse(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; } });
+        return group;
+      }
+
+      // Construit les couches 1, 2, 3 et 5 (voir KAYKIT_SKY). La couche 4 — la zone
+      // jouable — reste vide par construction : chaque élément procédural est validé
+      // par kaykitSkyPlacementAllowed avant d'être ajouté.
+      function buildKayKitSkyEnvironment(parent) {
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 43.117 + salt * 91.345) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const sky = new THREE.Group();
+        sky.name = "ilyos-sky";
+        kaykit3D.skyLayers = [];
+
+        // COUCHE 1 — dôme de ciel. Rayon très supérieur à la distance orbitale
+        // maximale : la caméra reste toujours à l'intérieur, le dôme couvre donc
+        // tout l'écran sans jamais se rapprocher du plateau. depthWrite désactivé
+        // et renderOrder minimal : il se contente de peindre le fond.
+        const dome = new THREE.Mesh(
+          kaykitGeometry("sky-dome-v1", () => new THREE.SphereGeometry(KAYKIT_SKY.domeRadius, 32, 20)),
+          new THREE.MeshBasicMaterial({
+            map: kaykitSkyDomeTexture(), side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false
+          })
+        );
+        dome.renderOrder = -1000;
+        dome.frustumCulled = false;
+        sky.add(dome);
+
+        // COUCHE 5 — mer de nuages, très bas sous les îles. Deux nappes seulement :
+        // la haute donne la lecture « îles ↓ vide ↓ nuages », la basse ajoute du
+        // parallaxe quand la caméra tourne. Elles dérivent horizontalement à des
+        // vitesses différentes, assez lentement pour ne se remarquer qu'après
+        // plusieurs secondes, et sans aucune composante verticale.
+        [
+          { y: KAYKIT_SKY.seaHigh, size: 150, hole: [7, 17], color: KAYKIT_SKY_COLORS.seaHigh, opacity: .58, variant: 0, drift: { x: 3.4, z: 2.6, sx: .0105, sz: .0082 } },
+          { y: KAYKIT_SKY.seaLow, size: 250, hole: [12, 26], color: KAYKIT_SKY_COLORS.seaLow, opacity: .42, variant: 1, drift: { x: 5.2, z: 4.1, sx: .0061, sz: .0047 } }
+        ].forEach((layer, index) => {
+          const sheet = new THREE.Mesh(
+            new THREE.PlaneGeometry(layer.size, layer.size),
+            new THREE.MeshBasicMaterial({
+              map: kaykitCloudSheetTexture(layer.variant, layer.size, layer.hole[0], layer.hole[1]),
+              color: layer.color, transparent: true,
+              opacity: layer.opacity, depthWrite: false, fog: true, toneMapped: false
+            })
+          );
+          sheet.rotation.x = -Math.PI / 2;
+          sheet.position.y = layer.y;
+          sheet.renderOrder = -900 + index * 10;
+          sheet.frustumCulled = false;
+          sky.add(sheet);
+          kaykit3D.skyLayers.push({ object: sheet, base: sheet.position.clone(), drift: layer.drift });
+        });
+
+        // Crête de la mer de nuages : des amas posés sur la nappe haute. C'est eux
+        // qui donnent son relief au sommet du moutonnement — une nappe seule, vue
+        // d'une caméra très basse, se réduit à un aplat blanc et lit comme du
+        // brouillard. Sprites (toujours face caméra, coût négligeable, silhouette
+        // correcte quel que soit l'angle), jamais au-dessus du plancher de sécurité.
+        const puffTexture = kaykitCloudTexture();
+        const puffCount = 16;
+        for (let i = 0; i < puffCount; i++) {
+          const angle = (i / puffCount) * Math.PI * 2 + seeded(i, 2) * .5;
+          const spread = seeded(i, 3);
+          // Le rayon court jusqu'au lointain et l'altitude remonte avec lui : les amas
+          // proches moutonnent sur la nappe, les plus éloignés forment un banc à
+          // hauteur d'horizon — c'est ce banc qui donne sa silhouette à la mer de
+          // nuages depuis une caméra très basse, où la nappe est vue par la tranche.
+          const radius = 20 + spread * 65;
+          const y = KAYKIT_SKY.seaHigh + .8 + spread * 5.4 + seeded(i, 4) * 1.4;
+          const scale = 10 + spread * 16 + seeded(i, 5) * 6;
+          if (!kaykitSkyPlacementAllowed(Math.cos(angle) * radius, y, Math.sin(angle) * radius, scale * .5)) continue;
+          const puff = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: puffTexture, color: KAYKIT_SKY_COLORS.seaHigh, transparent: true, depthWrite: false,
+            opacity: .30 + seeded(i, 6) * .16, fog: true, toneMapped: false
+          }));
+          puff.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+          puff.scale.set(scale, scale * .44, 1);
+          puff.renderOrder = -880;
+          sky.add(puff);
+          kaykit3D.skyLayers.push({
+            object: puff, base: puff.position.clone(),
+            drift: { x: 1.6 + seeded(i, 7) * 1.8, z: 1.3 + seeded(i, 8) * 1.6, sx: .012 + seeded(i, 9) * .008, sz: .009 + seeded(i, 10) * .007 }
+          });
+        }
+
+        // COUCHE 3 — cinq silhouettes lointaines seulement : « ILYOS fait partie d'un
+        // immense archipel », pas « il y a d'autres objets à cliquer ». Elles flottent
+        // entre le plateau et la mer de nuages, hors du cylindre de sécurité, et à un
+        // rayon supérieur à la distance orbitale maximale : la caméra reste donc
+        // toujours à l'intérieur de leur anneau et aucune ne peut passer devant le jeu.
+        // Altitudes toutes sous le niveau du plateau : l'archipel lointain se lit
+        // « plus bas et plus loin », il ne vient jamais flotter à hauteur de jeu.
+        [
+          { azimuth: .62, radius: 36, y: -6.2, scale: 1.4, tower: true },
+          { azimuth: 1.94, radius: 49, y: -4.4, scale: 1.9, tower: false },
+          { azimuth: 3.05, radius: 41, y: -9.1, scale: 1.1, tower: false },
+          { azimuth: 4.36, radius: 62, y: -6.0, scale: 2.2, tower: true }
+        ].forEach((spec, index) => {
+          const x = Math.cos(spec.azimuth) * spec.radius;
+          const z = Math.sin(spec.azimuth) * spec.radius;
+          if (spec.radius < KAYKIT_SKY.farRing) return;
+          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
+          const islet = makeKayKitDistantIslet(spec.scale, spec.tower, index / 4);
+          islet.position.set(x, spec.y, z);
+          sky.add(islet);
+        });
+
+        parent.add(sky);
+        kaykit3D.skyGroup = sky;
+      }
+
       function buildKayKitStaticScene() {
         if (!kaykit3D) return;
         const { staticGroup, hitGroup, hitMeshes, fxGroup } = kaykit3D;
 
-        const skyFloor = new THREE.Mesh(
-          kaykitGeometry("sky-floor", () => new THREE.CircleGeometry(12.5, 48)),
-          new THREE.MeshBasicMaterial({ color: 0xd7f2ff, transparent: true, opacity: 0, depthWrite: false })
-        );
-        skyFloor.rotation.x = -Math.PI / 2;
-        skyFloor.position.y = -1.45;
-        staticGroup.add(skyFloor);
-
-        // Nuages : renforcent l'idée qu'on construit suspendu dans le ciel
-        // plutôt que sur un plateau (voir suppression du socle ci-dessous).
-        // Un seul anneau, AU-DESSUS du plateau (jamais en dessous) : des
-        // nuages sous la grille se sont révélés masqués par les îles elles-
-        // mêmes (le rayon caméra qui les atteint traverse d'abord la tuile
-        // opaque au-dessus) — invisibles quel que soit leur placement dans le
-        // champ de vision. Au-dessus, rien ne peut les occulter.
-        // Sprites = toujours face caméra, coût de rendu minime.
-        const cloudTexture = kaykitCloudTexture();
-        const cloudGroup = new THREE.Group();
-        cloudGroup.name = "ilyos-clouds";
-        const cloudRng = (i, salt = 0) => {
-          const x = Math.sin((i + 1) * 91.345 + salt * 12.9898) * 43758.5453;
-          return x - Math.floor(x);
-        };
-        // Rayon calé sur la moitié du plateau (~5.1 unités), pas sur une
-        // distance orbitale arbitraire : la caméra "face" a un champ de vision
-        // étroit (33°) calibré pour cadrer tout juste le plateau, donc tout
-        // nuage placé nettement plus loin que son bord tombe hors cadre.
-        const halfSpan = KAYKIT_BOARD_SPAN / 2;
-        for (let i = 0; i < 10; i++) {
-          const material = new THREE.SpriteMaterial({
-            map: cloudTexture, transparent: true, depthWrite: false,
-            opacity: .34 + cloudRng(i, 1) * .20
-          });
-          const sprite = new THREE.Sprite(material);
-          const angle = cloudRng(i, 3) * Math.PI * 2;
-          const radius = halfSpan * (.40 + cloudRng(i, 4) * .45);
-          const scale = 1.7 + cloudRng(i, 6) * 1.7;
-          sprite.position.set(
-            Math.cos(angle) * radius,
-            1.3 + cloudRng(i, 8) * 1.7,
-            Math.sin(angle) * radius
-          );
-          sprite.scale.set(scale, scale * .62, 1);
-          sprite.renderOrder = -1;
-          sprite.userData.drift = { speed: .015 + cloudRng(i, 10) * .02, radius, phase: angle };
-          cloudGroup.add(sprite);
-          kaykit3D.animatedObjects.push(sprite);
-        }
-        staticGroup.add(cloudGroup);
+        buildKayKitSkyEnvironment(staticGroup);
 
         // Plus de socle plein, de dalles opaques ni d'ombre de plateau : seule
-        // la grille filaire reste, posée sur le dégradé de ciel du canvas (voir
-        // .kaykit-canvas en mode alternatif) — impression de flotter dans le
-        // ciel, îles et gardiens suspendus au-dessus du vide plutôt que sur un
-        // plancher. Le disque d'ombre (board-shadow-v55) a été retiré : à bords
-        // francs, il se voyait comme une tache circulaire flottante une fois le
-        // plancher disparu, au lieu de lire comme une simple ombre portée.
+        // la grille filaire reste, suspendue dans le ciel — îles et gardiens
+        // au-dessus du vide plutôt que sur un plancher. Le disque d'ombre
+        // (board-shadow-v55) a été retiré : à bords francs, il se voyait comme
+        // une tache circulaire flottante une fois le plancher disparu, au lieu
+        // de lire comme une simple ombre portée.
+        //
+        // Chaque ligne est découpée case par case et porte une alpha par sommet
+        // qui s'éteint radialement. Sans ce découpage, l'interpolation ne se
+        // ferait qu'entre les deux extrémités d'une ligne complète et fondrait
+        // tout le tracé. Objectif : la grille reste franche là où l'on joue,
+        // mais son périmètre carré disparaît — c'était lui qui recréait
+        // visuellement « un immense sol bleu invisible » sous l'archipel.
+        const half = KAYKIT_BOARD_SPAN / 2;
+        const gridFade = (x, z) => {
+          const t = Math.hypot(x, z) / half;
+          const k = THREE.MathUtils.clamp((t - .72) / (1.16 - .72), 0, 1);
+          return .10 + .90 * (1 - k * k * (3 - 2 * k));
+        };
         const gridPoints = [];
+        const gridAlphas = [];
         const majorGridPoints = [];
+        const majorGridAlphas = [];
         for (let i = 0; i <= GRID; i++) {
           const d = (i - GRID / 2) * KAYKIT_CELL_SPACING;
-          const half = KAYKIT_BOARD_SPAN / 2;
-          const target = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2)) ? majorGridPoints : gridPoints;
-          target.push(new THREE.Vector3(d, .061, -half), new THREE.Vector3(d, .061, half));
-          target.push(new THREE.Vector3(-half, .061, d), new THREE.Vector3(half, .061, d));
+          const major = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2));
+          const points = major ? majorGridPoints : gridPoints;
+          const alphas = major ? majorGridAlphas : gridAlphas;
+          for (let s = 0; s < GRID; s++) {
+            const a = (s - GRID / 2) * KAYKIT_CELL_SPACING;
+            const b = (s + 1 - GRID / 2) * KAYKIT_CELL_SPACING;
+            points.push(new THREE.Vector3(d, .061, a), new THREE.Vector3(d, .061, b));
+            alphas.push(1, 1, 1, gridFade(d, a), 1, 1, 1, gridFade(d, b));
+            points.push(new THREE.Vector3(a, .061, d), new THREE.Vector3(b, .061, d));
+            alphas.push(1, 1, 1, gridFade(a, d), 1, 1, 1, gridFade(b, d));
+          }
         }
         // Sans plancher, la grille est le seul repère pour viser une case : le
         // bleu sur bleu d'origine (pensé pour contraster avec des dalles claires,
         // pas avec le ciel) devenait trop discret. Blanc quasi opaque + liseré
         // doré sur les lignes majeures (cohérent avec le reste de la DA) pour
         // rester lisible même en mouvement de caméra.
-        const grid = new THREE.LineSegments(
-          new THREE.BufferGeometry().setFromPoints(gridPoints),
-          new THREE.LineBasicMaterial({ color: 0xf3fbff, transparent: true, opacity: .78, depthWrite: false, depthTest: true })
-        );
-        const majorGrid = new THREE.LineSegments(
-          new THREE.BufferGeometry().setFromPoints(majorGridPoints),
-          new THREE.LineBasicMaterial({ color: 0xe9c877, transparent: true, opacity: .92, depthWrite: false, depthTest: true })
-        );
+        const buildFadedGrid = (points, alphas, color, opacity) => {
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          geometry.setAttribute("color", new THREE.Float32BufferAttribute(alphas, 4));
+          return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+            color, transparent: true, opacity, vertexColors: true, depthWrite: false, depthTest: true
+          }));
+        };
+        const grid = buildFadedGrid(gridPoints, gridAlphas, 0xf3fbff, .78);
+        const majorGrid = buildFadedGrid(majorGridPoints, majorGridAlphas, 0xe9c877, .92);
         grid.renderOrder = 2; majorGrid.renderOrder = 3;
         staticGroup.add(grid, majorGrid);
 
@@ -846,19 +1144,8 @@
         fxGroup.add(hover);
         kaykit3D.hoverMarker = hover;
 
-        // Version épurée : pas de nuages ni de brume autour du plateau.
-      }
-
-      function makeFallbackCloud(scale = 1) {
-        const group = new THREE.Group();
-        const mat = kaykitMaterial(0xf7ffff, { roughness: 1 });
-        [[0, 0, 0, .68], [-.48, -.02, .05, .48], [.5, -.02, .08, .5], [.08, .18, -.12, .55], [-.05, -.11, .18, .62]].forEach(([x, y, z, s]) => {
-          const mesh = new THREE.Mesh(kaykitGeometry("cloud-ball", () => new THREE.IcosahedronGeometry(1, 1)), mat);
-          mesh.position.set(x, y, z); mesh.scale.set(s * 1.35, s * .72, s);
-          mesh.castShadow = true; group.add(mesh);
-        });
-        group.scale.setScalar(scale);
-        return group;
+        // Toute l'atmosphère vit dans buildKayKitSkyEnvironment, hors du volume
+        // de sécurité : rien de décoratif n'est ajouté autour du plateau ici.
       }
 
       function makeFallbackTile(ownerColor = null, isSanctuaryTile = false) {
@@ -2160,8 +2447,8 @@
       // Texture de nuage : plusieurs disques radiaux flous superposés à des
       // offsets aléatoires (seedés, donc stable d'un appel à l'autre) pour
       // éviter un cercle parfait trop artificiel. Un seul canvas partagé par
-      // toutes les instances de nuage — seules opacité/échelle/position varient
-      // par sprite (voir buildKayKitStaticScene).
+      // tous les amas de la mer de nuages — seules opacité/échelle/position
+      // varient par sprite (voir buildKayKitSkyEnvironment).
       function kaykitCloudTexture() {
         const key = "cloud-sprite-v1";
         if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
@@ -3504,11 +3791,6 @@
           renderKayKitIslandBlocks(dynamic);
           renderKayKitIslandSeams(dynamic);
 
-          // Version épurée : nuages désactivés.
-          kaykit3D.staticGroup.children.forEach(object => {
-            if (object.userData?.fallbackCloud) object.visible = false;
-          });
-
           const artifactByCarrier = new Map();
           [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
             if (artifact.active && artifact.carrierId) artifactByCarrier.set(artifact.carrierId, artifact);
@@ -3769,15 +4051,6 @@
           if (object.userData.slowSpin) {
             object.rotation.z = elapsed * .16;
           }
-          // Dérive lente des nuages (voir buildKayKitStaticScene) : orbite très
-          // douce autour du plateau, jamais retirée de la liste animée (contrairement
-          // à fadeIn ci-dessous) puisqu'un nuage dérive pendant toute la partie.
-          if (object.userData.drift) {
-            const { speed, radius, phase } = object.userData.drift;
-            const angle = phase + elapsed * speed;
-            object.position.x = Math.cos(angle) * radius;
-            object.position.z = Math.sin(angle) * radius;
-          }
           // Fondu d'apparition (voir registerKayKitFadeIn) : remonte vers
           // l'opacité cible puis se retire lui-même de la liste animée.
           if (object.userData.fadeIn && object.material) {
@@ -3786,6 +4059,18 @@
             object.material.opacity = target * (progress * (2 - progress));
             if (progress >= 1) delete object.userData.fadeIn;
           }
+        });
+        // Dérive des couches célestes (voir buildKayKitSkyEnvironment) : translation
+        // horizontale pure, sans pulsation ni composante verticale, à des vitesses
+        // différentes par couche pour créer du parallaxe. Volontairement lente — un
+        // aller-retour complet dure plusieurs minutes, donc le mouvement ne se
+        // remarque qu'après plusieurs secondes d'observation et n'attire jamais le
+        // regard pendant une décision tactique. Liste séparée d'animatedObjects :
+        // elle survit aux resynchronisations de scène, qui ne concernent que le jeu.
+        (kaykit3D.skyLayers || []).forEach(layer => {
+          if (!layer.object?.parent) return;
+          layer.object.position.x = layer.base.x + Math.sin(elapsed * layer.drift.sx) * layer.drift.x;
+          layer.object.position.z = layer.base.z + Math.cos(elapsed * layer.drift.sz) * layer.drift.z;
         });
         if (kaykit3D.cameraTween) {
           const tween = kaykit3D.cameraTween;

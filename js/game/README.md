@@ -36,6 +36,16 @@ established a few reusable patterns — look for these before writing a new one:
   `cancelSmartCharacterAction()` — distinct from `restoreUndoSnapshot()`
   ("↶ Annuler dernière action"), which only appears when `state.undoSnapshot`
   is actually set.
+- **Atmosphère céleste = un seul système** (kaykit3d.js) : `KAYKIT_SKY`,
+  `KAYKIT_SKY_COLORS` et `buildKayKitSkyEnvironment()` portent *toutes* les
+  couches (dôme dégradé, `scene.fog`, îlots lointains, mer de nuages). Corriger
+  l'existant plutôt qu'empiler une deuxième passe. Deux invariants à ne pas
+  casser : `kaykitSkyPlacementAllowed()` (volume de sécurité — rien de décoratif
+  au-dessus du plateau dans un cylindre de rayon ≈ 9.3, rien entre `safeFloor`
+  et les îles), et le fait que tout élément lointain vit à un rayon supérieur à
+  `orbit.maxDistance`, donc la caméra reste toujours *à l'intérieur* de l'anneau
+  décoratif. La dérive des couches passe par `kaykit3D.skyLayers` (liste
+  séparée d'`animatedObjects`, qui est filtrée à chaque resync de scène).
 - **3D "affordance ring" idiom** (kaykit3d.js): small `TorusGeometry` rings
   drawn into `kaykit3D.actionPreviewGroup`, rebuilt by
   `refreshKayKitHoverPreviews()` behind a memoized `previewKey` (cheap to call
