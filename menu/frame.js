@@ -47,10 +47,18 @@
     const n=levels[value]||0;
     return `<span class="difficulty-meter" aria-hidden="true">${[1,2,3,4].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</span>`;
   }
+  function safeText(value){return String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
   function teamBlock(values){
     if(selectedMode!=='team') return '';
-    const safe=k=>String(values[k]||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return `<div class="team-summary"><div class="team team-gold"><b>ÉQUIPE OR</b><span>${safe('name1')} · ${safe('name3')}</span></div><div class="team-vs">VS</div><div class="team team-violet"><b>ÉQUIPE VIOLETTE</b><span>${safe('name2')} · ${safe('name4')}</span></div><div class="team-goal">OBJECTIF · 3 COURONNES</div></div>`;
+    return `<div class="team-summary"><div class="team team-gold"><b>ÉQUIPE OR</b><span data-team-side="gold">${safeText(values.name1)} · ${safeText(values.name3)}</span></div><div class="team-vs">VS</div><div class="team team-violet"><b>ÉQUIPE VIOLETTE</b><span data-team-side="violet">${safeText(values.name2)} · ${safeText(values.name4)}</span></div><div class="team-goal">OBJECTIF · 3 COURONNES</div></div>`;
+  }
+  function updateTeamSummary(){
+    if(selectedMode!=='team') return;
+    const values=ensureSelections('team');
+    const gold=panel.querySelector('[data-team-side="gold"]');
+    const violet=panel.querySelector('[data-team-side="violet"]');
+    if(gold) gold.textContent=`${values.name1} · ${values.name3}`;
+    if(violet) violet.textContent=`${values.name2} · ${values.name4}`;
   }
   function stepControl(control,direction){
     if(control.fixed || control.editable || !control.options?.length) return;
@@ -95,7 +103,7 @@
         raw=isCode ? raw.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8) : raw.replace(/[<>]/g,'').slice(0,18);
         input.value=raw;
         values[input.dataset.edit]=raw||(isCode?'AUTO':'JOUEUR');
-        if(selectedMode==='team') render(selectedMode,false);
+        updateTeamSummary();
         notifySettings();
       };
       input.addEventListener('input',update);
