@@ -1,5 +1,5 @@
     (function () {
-      const BUILD = 'V75.1';
+      const BUILD = 'V76';
       const modeMeta = {
         '1': { title: 'Solo', desc: 'Affrontez une intelligence artificielle.', icon: 'solo' },
         '2': { title: 'Deux joueurs', desc: 'Duel local sur le même écran.', icon: 'duo' },
@@ -163,8 +163,8 @@
         const top = document.querySelector('#gameScreen .topbar'); if (!top || top.querySelector('.v64-game-build')) return; const badge = document.createElement('span'); badge.className = 'v64-game-build sr-only'; badge.textContent = 'Version ' + BUILD; top.appendChild(badge);
       }
       function boot() {
-        window.ILYOS_BUILD = BUILD; document.title = 'ILYOS V75.1 — Stable Netlify';
-        const badge = nativeSelect('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V75.1';
+        window.ILYOS_BUILD = BUILD; document.title = 'ILYOS V76 — Animations';
+        const badge = nativeSelect('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         buildSetup(); buildSetupCards(); improveRules(); addGameBuildBadge(); updateVisualState();
         const game = nativeSelect('gameScreen'); if (game) new MutationObserver(updateVisualState).observe(game, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class'] });
         document.addEventListener('keydown', event => { if (event.key === 'Escape') { nativeSelect('rulesModal')?.classList.add('hidden'); nativeSelect('soundMenu')?.classList.add('hidden') } });

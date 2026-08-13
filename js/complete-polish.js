@@ -1,6 +1,6 @@
     (() => {
       'use strict';
-      const VERSION = 'V70';
+      const VERSION = 'V76';
       let quality = 'high', last = performance.now(), frames = 0, ema = 60, qualityPill, flash, lastQualityChange = 0, lowSamples = 0, midSamples = 0, highSamples = 0;
       const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
       function ensureUI() {
@@ -16,6 +16,10 @@
         const shadow = window.kaykit3D?.scene?.getObjectByProperty?.('isDirectionalLight', true)?.shadow?.mapSize;
         if (shadow) { const size = next === 'high' ? 1024 : next === 'balanced' ? 768 : 512; shadow.set(size, size) }
         document.documentElement.classList.toggle('v69-fps-low', next === 'performance');
+        // Le moteur 3D lit ce mode pour alléger en priorité les particules, les
+        // trails et la cadence d'animation des gardiens AU REPOS — jamais les
+        // animations d'action, qui portent la lisibilité du jeu.
+        if (window.kaykit3D) window.kaykit3D.qualityMode = next;
         qualityPill.textContent = `Qualité ${next === 'high' ? 'élevée' : next === 'balanced' ? 'équilibrée' : 'performance'} · ${Math.round(ema)} i/s`;
         window.dispatchEvent(new Event('resize'));
       }
@@ -55,8 +59,8 @@
         document.addEventListener('visibilitychange', () => { document.documentElement.classList.toggle('v69-page-hidden', document.hidden); if (!document.hidden) requestAnimationFrame(() => window.dispatchEvent(new Event('resize'))) });
       }
       function boot() {
-        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS V75.1 — Stable Netlify';
-        const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V75.1';
+        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS V76 — Animations';
+        const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         ensureUI(); hookSound(); improveButtons(); cleanupHiddenAnimations();
         const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 4; applyQuality(cores >= 8 && mem >= 8 ? 'high' : cores >= 4 ? 'balanced' : 'performance', 'init');
         requestAnimationFrame(monitor);

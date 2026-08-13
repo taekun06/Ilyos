@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>ILYOS Menu</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#040a11;--gold:#d8aa4c;--gold2:#f4d28e;--gold3:#8f5a17;--mx:0;--my:0;color:#fff}
+    body{position:fixed;inset:0}
+  </style>
+  <link rel="stylesheet" href="./menu.css?v=menu-duel-10">
+  <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-10">
+</head>
+<body>
+<div class="app">
+  <section class="screen home active" id="home">
+    <div class="art"></div><div class="shade"></div><div class="fog"></div><div class="halo"></div><canvas id="particles"></canvas>
+    <div class="ui home-layout">
+      <img class="logo-home" src="./assets/ilyos-logo.svg" alt="ILYOS">
+      <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button></div>
+      <div class="mode-grid">
+        <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez l’IA</div></button>
+        <button class="card green" data-mode="duel"><div class="card-icon">♙ ♙</div><div class="card-title">DUEL LOCAL</div><div class="card-sub">2 joueurs</div></button>
+        <button class="card violet" data-mode="team"><div class="card-icon">♜ ♜</div><div class="card-title">2 CONTRE 2</div><div class="card-sub">Équipes</div></button>
+        <button class="card amber" data-mode="online"><div class="card-icon">◎</div><div class="card-title">EN LIGNE</div><div class="card-sub">Joueurs du monde</div></button>
+      </div>
+      <div class="home-nav"><button class="pill" data-action="rules">♛ RÈGLES</button><button class="pill" data-action="tutorial">▣ TUTORIEL</button><button class="pill" data-action="credits">★ CRÉDITS</button></div>
+    </div>
+  </section>
+
+  <section class="screen duel" id="duel">
+    <div class="duel-ambient"></div>
+    <div class="duel-art"></div>
+    <div class="duel-shade"></div>
+    <div class="fog"></div>
+    <div class="duel-left"></div><div class="duel-right"></div>
+    <div class="duel-ui">
+      <img class="logo-duel" src="./assets/ilyos-logo.svg" alt="ILYOS">
+      <button class="pill back" id="back">← RETOUR</button>
+      <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" data-action="tutorial">TUTORIEL</button><button class="pill" data-action="credits">CRÉDITS</button></div>
+      <div class="setup">
+        <div class="panel" id="panel"></div>
+        <button class="play" id="play">JOUER</button>
+        <div class="desc" id="desc"></div>
+      </div>
+    </div>
+  </section>
+  <div class="veil" id="veil"></div>
+</div>
+<script src="./menu-config.js?v=menu-duel-10"></script>
+<script src="./frame.js?v=menu-duel-10"></script>
+</body>
+</html>

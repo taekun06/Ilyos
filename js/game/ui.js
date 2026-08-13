@@ -1387,6 +1387,9 @@
           cells: absCells
         };
         state.islands.push(island);
+        // L'île se matérialise : elle descend depuis quelques centimètres
+        // au-dessus de sa position finale au lieu d'apparaître d'un coup.
+        playIslandDrop(island.id);
 
         state.islandPlacedThisTurn = true;
 
@@ -1786,7 +1789,11 @@
         const owner = state.players[char.player];
         const from = [char.r, char.c];
         saveUndoSnapshot();
-        const walkDuration = Math.min(2400, Math.max(680, path.length * 320));
+        // ~340 ms par case, plus la rotation d'anticipation absorbée en tête de
+        // séquence (voir playCharacterMove). L'ancienne cadence — 680 ms minimum
+        // pour une seule case — transformait chaque pas en petite cinématique et
+        // ralentissait nettement un joueur expérimenté.
+        const walkDuration = Math.min(1600, 140 + path.length * 340);
         queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
         // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
         if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
@@ -1852,7 +1859,7 @@
         return result;
       }
 
-      function removeCharacterFromGame(char, dropR = null, dropC = null) {
+      function removeCharacterFromGame(char, dropR = null, dropC = null, fallDirection = null) {
         if (!char) return;
         const carriedArtifact = artifactCarriedBy(char.id);
         if (carriedArtifact) {
@@ -1864,6 +1871,11 @@
             resetArtifactObject(carriedArtifact);
           }
         }
+        // Le gardien quitte immédiatement l'état logique — la règle est
+        // appliquée sans attendre l'animation. Seul le VISUEL survit quelques
+        // centaines de millisecondes, le temps de le montrer tomber vers les
+        // nuages au lieu de disparaître d'un coup (voir playCharacterFall).
+        queueKayKitCharacterFall(char.id, fallDirection);
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
       }
@@ -2113,7 +2125,11 @@
             if (!inside(nextR, nextC) || !isLand(nextR, nextC)) {
               anyFell = true;
               removedCount++;
-              removeCharacterFromGame(ch, ch.r, ch.c);
+              // La case du vide visée est transmise au visuel : le gardien la
+              // rejoint d'abord, puis tombe DEPUIS elle. Sans cette destination,
+              // il s'enfonçait à la verticale depuis sa case actuelle et
+              // traversait l'île sur laquelle il se tenait encore.
+              removeCharacterFromGame(ch, ch.r, ch.c, { dr, dc, toR: nextR, toC: nextC });
               continue;
             }
 
@@ -2371,7 +2387,18 @@
         }
 
         saveUndoSnapshot();
-        queueKayKitCurrentPlayerAnimation("magic", 1150);
+        const [pivotR, pivotC] = state.selectedMagicPivot;
+        // Rotation réellement effectuée, signée : un cran « 3 » est un quart de
+        // tour en arrière (-90°), pas trois quarts de tour en avant. Le plateau
+        // DOM continue d'afficher 270° ; la 3D, elle, doit montrer le mouvement
+        // le plus court, sinon l'île part dans le sens opposé au résultat.
+        const signedDegrees = direction * turns * 90;
+        queueKayKitCurrentPlayerAnimation("magic", 1150, { r: pivotR, c: pivotC });
+        const caster = state.selectedCharId ? characterById(state.selectedCharId) : null;
+        const casterId = caster?.id
+          ?? state.characters.find(character => character.player === state.currentPlayer)?.id;
+        if (casterId != null) linkCasterToIsland(casterId, pivotR, pivotC);
+        playIslandMagicRotation(island.id, signedDegrees, pivotR, pivotC, 500);
         state.inputLocked = true;
         showToast("L’île se soulève avant de tourner…");
         playSfx("magic");
@@ -2836,6 +2863,7 @@
       function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
         player.score++;
         triggerScoreAnimation(player.id);
+        if (char) playCrownScore(char.id);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
@@ -2847,6 +2875,9 @@
 
         if (player.score >= 3) {
           state.winner = player.id;
+          // Célébration sur le plateau AVANT l'écran de victoire : les gardiens
+          // gagnants fêtent le résultat pendant que l'interface se prépare.
+          playVictoryCelebration(player.id);
           setTimeout(() => showVictory(player), 450);
         } else {
           resetArtifactObject(artifact);

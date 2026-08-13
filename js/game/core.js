@@ -1205,9 +1205,19 @@
         if (!artifact || !char) return false;
         const alreadyCarried = artifactCarriedBy(char.id);
         if (alreadyCarried && alreadyCarried.id !== artifact.id) return false;
+        // Provenance retenue AVANT de changer de porteur : elle sert à animer le
+        // trajet de la couronne (sol -> gardien, ou gardien -> gardien).
+        const previousCarrierId = artifact.carrierId;
+        const fromR = artifact.r;
+        const fromC = artifact.c;
         artifact.active = true;
         artifact.carrierId = char.id;
         activateSecondCrownIfNeeded();
+        if (previousCarrierId != null && previousCarrierId !== char.id) {
+          const previous = characterById(previousCarrierId);
+          if (previous) playCrownFlight(previous.r, previous.c, char.r, char.c, { arc: .55, duration: 340 });
+        }
+        playCrownPickup(char.id, Number.isFinite(fromR) ? fromR : char.r, Number.isFinite(fromC) ? fromC : char.c);
         return true;
       }
 
@@ -2796,6 +2806,8 @@
           cells: cloneCells(placement.cells)
         };
         state.islands.push(island);
+        // Même matérialisation pour les poses de l'IA que pour celles du joueur.
+        playIslandDrop(island.id);
         state.islandPlacedThisTurn = true;
 
         let spawn = null;
