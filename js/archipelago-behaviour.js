@@ -23,8 +23,19 @@
         ['hard', 'Difficile', 'Expérimenté'],
         ['expert', 'Expert', 'Maîtrise requise']
       ];
+      // Durée d'un tour, en secondes. '0' = aucune limite, et c'est le défaut :
+      // une partie de base n'est pas chronométrée (voir turnTimerControlsHTML
+      // côté moteur, qui expose le <select id="turnTimerSelect"> correspondant).
+      const turnTimeMeta = [
+        ['0', 'Sans limite', 'Par défaut'],
+        ['60', '1 minute', 'Rythme rapide'],
+        ['120', '2 minutes', 'Équilibré'],
+        ['180', '3 minutes', 'Confortable'],
+        ['300', '5 minutes', 'Longue réflexion']
+      ];
       let selectedBoard = 'classic';
       let selectedDifficulty = 'normal';
+      let selectedTurnTime = '0';
 
       function modeIcon(kind) {
         if (kind === 'online') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/></svg>';
@@ -43,6 +54,8 @@
         if (board) board.value = selectedBoard === 'classic' ? 'classic' : 'symmetric';
         const diff = nativeSelect('aiDifficultySelect');
         if (diff) diff.value = selectedDifficulty;
+        const time = nativeSelect('turnTimerSelect');
+        if (time) time.value = selectedTurnTime;
       }
       function syncModeVisibility() {
         const select = nativeSelect('playerCount');
@@ -95,7 +108,14 @@
         const difficulty = document.createElement('section'); difficulty.className = 'v64-difficulty-section'; difficulty.innerHTML = '<h3 class="v64-section-title">Difficulté</h3><div class="v64-difficulty-grid" role="group" aria-label="Difficulté de l’ordinateur"></div>';
         const diffGrid = difficulty.querySelector('.v64-difficulty-grid');
         difficultyMeta.forEach(([value, label, hint]) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'v64-difficulty-btn'; button.dataset.value = value; button.setAttribute('aria-pressed', String(value === selectedDifficulty)); button.innerHTML = '<strong>' + label + '</strong><small>' + hint + '</small>'; button.addEventListener('click', () => { selectedDifficulty = value; diffGrid.querySelectorAll('button').forEach(node => node.setAttribute('aria-pressed', String(node === button))); applyNativeChoices() }); diffGrid.appendChild(button) });
-        options.append(boardSection, difficulty); modeSection.after(options);
+        // Temps par tour : mêmes classes que la difficulté (v64-difficulty-grid /
+        // -btn) pour hériter du style existant plutôt que d'introduire une
+        // nouvelle famille de règles CSS pour une seule section.
+        const time = document.createElement('section'); time.className = 'v64-time-section'; time.innerHTML = '<h3 class="v64-section-title">Temps par tour</h3><div class="v64-difficulty-grid v64-time-grid" role="group" aria-label="Temps par tour"></div>';
+        const timeGrid = time.querySelector('.v64-time-grid');
+        turnTimeMeta.forEach(([value, label, hint]) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'v64-difficulty-btn'; button.dataset.value = value; button.setAttribute('aria-pressed', String(value === selectedTurnTime)); button.innerHTML = '<strong>' + label + '</strong><small>' + hint + '</small>'; button.addEventListener('click', () => { selectedTurnTime = value; timeGrid.querySelectorAll('button').forEach(node => node.setAttribute('aria-pressed', String(node === button))); applyNativeChoices() }); timeGrid.appendChild(button) });
+
+        options.append(boardSection, difficulty, time); modeSection.after(options);
 
         const tools = document.createElement('details'); tools.className = 'v64-dev-tools'; tools.innerHTML = '<summary>Outils de développement</summary><div><button type="button" class="small-btn" data-v64-diag>Diagnostic Spirale</button><button type="button" class="small-btn" data-v64-auto>Partie automatique</button></div>';
         config.appendChild(tools);
@@ -112,7 +132,7 @@
             if (mode === 'online') return;
             event.preventDefault(); event.stopImmediatePropagation();
             applyNativeChoices();
-            const launched = window.ILYOS_API?.launchConfiguredGame?.({ opponent: mode, board: selectedBoard, difficulty: selectedDifficulty, autoplay: false });
+            const launched = window.ILYOS_API?.launchConfiguredGame?.({ opponent: mode, board: selectedBoard, difficulty: selectedDifficulty, turnTime: Number(selectedTurnTime) || 0, autoplay: false });
             if (!launched) setTimeout(() => start.click(), 0);
           }, true);
         }

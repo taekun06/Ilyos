@@ -1,9 +1,9 @@
             spawn
               ? "Une île et un gardien ont été placés automatiquement."
-              : "Une île a été placée automatiquement. Limite de 5 gardiens atteinte."
+              : `Une île a été placée automatiquement. Limite de ${MAX_GUARDIANS_PER_PLAYER} gardiens atteinte.`
           );
         } else if (!spawn) {
-          showToast("Île placée. Limite de 5 gardiens atteinte.");
+          showToast(`Île placée. Limite de ${MAX_GUARDIANS_PER_PLAYER} gardiens atteinte.`);
         }
         return island;
       }

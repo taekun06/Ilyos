@@ -1,6 +1,9 @@
       let toastTimer = null;
       let lastWheelAt = 0;
       let lastKeyRotateAt = 0;
+      // Conservé pour la sérialisation/compatibilité : la durée réelle d'un tour
+      // vient désormais de state.turnDurationSeconds (0 = aucune limite, défaut),
+      // choisi dans le menu de configuration. Voir turnTimerControlsHTML().
       const TURN_DURATION_SECONDS = 180;
       const STATE_SCHEMA_VERSION = 22;
       const LOCAL_STORAGE_KEY = "ilyos-local-session-v22";
@@ -75,6 +78,8 @@
       let onlineLocalName = "";
       let pendingOnlineStartingBoard = "classic";
       let pendingOnlineStartingPreset = "open";
+      // 0 = aucune limite de temps (défaut). L'hôte seul décide de la valeur.
+      let pendingOnlineTurnDuration = 0;
       let localPlayerIndex = null;
       let onlineConnected = false;
       let onlineReconnectTimer = null;
@@ -433,7 +438,34 @@
             <option value="symmetric">Duel symétrique — plateau préparé</option>
           </select>
         </label>
+        ${turnTimerControlsHTML()}
       `;
+      }
+
+      // Chronomètre désactivé par défaut : une partie de base se joue sans
+      // pression de temps. La valeur est une durée en secondes ; "0" signifie
+      // "aucune limite" (voir isTurnTimerEnabled).
+      function turnTimerControlsHTML() {
+        return `
+        <label class="mode-option-row turn-timer-row" for="turnTimerSelect">
+          <span>
+            <b>Temps par tour</b>
+            <small>Sans limite par défaut. Avec une limite, une île est posée automatiquement à 0:00 puis le tour passe.</small>
+          </span>
+          <select id="turnTimerSelect">
+            <option value="0" selected>Aucune limite</option>
+            <option value="60">1 minute</option>
+            <option value="120">2 minutes</option>
+            <option value="180">3 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+        </label>
+      `;
+      }
+
+      function selectedTurnDurationSeconds() {
+        const raw = Number(document.getElementById("turnTimerSelect")?.value);
+        return Number.isFinite(raw) && raw > 0 ? raw : 0;
       }
 
       function renderSymmetricSetupPreview(setupId) {
@@ -807,10 +839,20 @@
           }
         }
 
+        // Partie sans limite de temps (défaut, et cas de toutes les sauvegardes
+        // antérieures à cette option) : aucun deadline à reconstituer.
+        const duration = Number(restored.turnDurationSeconds);
+        if (!Number.isFinite(duration) || duration <= 0) {
+          restored.turnDurationSeconds = 0;
+          restored.turnTimeLeft = null;
+          restored.turnDeadline = null;
+          return restored;
+        }
+        restored.turnDurationSeconds = duration;
         const remaining = Number(restored.turnTimeLeft);
         restored.turnTimeLeft = Number.isFinite(remaining)
-          ? Math.max(1, Math.min(TURN_DURATION_SECONDS, remaining))
-          : TURN_DURATION_SECONDS;
+          ? Math.max(1, Math.min(duration, remaining))
+          : duration;
         restored.turnDeadline = Date.now() + restored.turnTimeLeft * 1000;
 
         return restored;
@@ -1657,9 +1699,11 @@
         state.undoSnapshot = null;
         state.networkRevision = revision || incoming.networkRevision || 0;
         networkRevision = state.networkRevision;
+        // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
+        // a ni deadline ni temps restant à recalculer.
         state.turnTimeLeft = state.turnDeadline
           ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
-          : TURN_DURATION_SECONDS;
+          : (turnDurationSeconds() || null);
 
         els.setupScreen.classList.add("hidden");
         els.gameScreen.classList.remove("hidden");
@@ -2134,6 +2178,7 @@
           visualMode: pendingVisualMode,
           startingBoardMode: pendingOnlineStartingBoard,
           startingBoardPreset: null,
+          turnDurationSeconds: pendingOnlineTurnDuration,
           setupSelectionPending: pendingOnlineStartingBoard === "symmetric",
           aiDifficulty: null,
           networkRevision: 0,
@@ -2141,12 +2186,16 @@
           round: 1,
           turn: 1,
           islands: [],
-          characters: players.map((player, index) => ({
-            id: `char-${index}-start`,
-            player: index,
-            r: player.village.r,
-            c: player.village.c
-          })),
+          // Même règle qu'en local (voir startGame) : plateau classique = aucun
+          // gardien de départ, le premier est invoqué avec la première île.
+          characters: pendingOnlineStartingBoard === "classic"
+            ? []
+            : players.map((player, index) => ({
+              id: `char-${index}-start`,
+              player: index,
+              r: player.village.r,
+              c: player.village.c
+            })),
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
@@ -2162,13 +2211,14 @@
           selectedIslandShape: null,
           placementCells: null,
           placementOriginIndex: 0,
+          placementRotationSteps: 0,
           hoverAnchor: null,
           pendingSpawnIslandId: null,
           fxCells: [],
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          turnTimeLeft: TURN_DURATION_SECONDS,
+          turnTimeLeft: null,
           turnDeadline: null,
           selectedActionCardId: null,
           selectedActionType: null,
@@ -2242,6 +2292,9 @@
         pendingOnlineStartingBoard = role === "host"
           ? (document.getElementById("startingBoardSelect")?.value || "classic")
           : "classic";
+        // L'invité reçoit l'état complet de l'hôte : il n'impose pas sa propre
+        // durée de tour, sinon les deux camps décompteraient différemment.
+        pendingOnlineTurnDuration = role === "host" ? selectedTurnDurationSeconds() : 0;
         pendingOnlineStartingPreset = "open";
         initializeOnlinePeer(role, roomCode);
         els.startBtn.disabled = true;
@@ -2279,6 +2332,7 @@
         const aiDifficulty = document.getElementById("aiDifficultySelect")?.value || "normal";
         const startingBoardMode = document.getElementById("startingBoardSelect")?.value || "classic";
         const startingBoardPreset = null;
+        const turnDurationChoice = selectedTurnDurationSeconds();
         const humanNames = [...els.playersForm.querySelectorAll(".player-name")]
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
@@ -2304,12 +2358,20 @@
           };
         });
 
-        const characters = players.map((p, i) => ({
-          id: `char-${i}-start`,
-          player: i,
-          r: p.village.r,
-          c: p.village.c
-        }));
+        // Plateau classique : on démarre sans aucun gardien. Le premier tour
+        // impose déjà de poser une île, ce qui déclenche l'invocation — chaque
+        // équipe obtient donc son premier gardien dès son premier tour, à
+        // l'endroit qu'elle choisit plutôt que d'office sur son village.
+        // Le mode symétrique, lui, remplace entièrement state.characters via
+        // confirmSymmetricSetup() : il n'est pas concerné.
+        const characters = startingBoardMode === "classic"
+          ? []
+          : players.map((p, i) => ({
+            id: `char-${i}-start`,
+            player: i,
+            r: p.village.r,
+            c: p.village.c
+          }));
 
         state = {
           players,
@@ -2318,6 +2380,7 @@
           visualMode: pendingVisualMode,
           startingBoardMode,
           startingBoardPreset,
+          turnDurationSeconds: turnDurationChoice,
           setupSelectionPending: startingBoardMode === "symmetric",
           aiDifficulty,
           currentPlayer: 0,
@@ -2335,13 +2398,14 @@
           selectedIslandShape: null,
           placementCells: null,
           placementOriginIndex: 0,
+          placementRotationSteps: 0,
           hoverAnchor: null,
           pendingSpawnIslandId: null,
           fxCells: [],
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          turnTimeLeft: TURN_DURATION_SECONDS,
+          turnTimeLeft: null,
           turnDeadline: null,
           selectedActionCardId: null,
           selectedActionType: null,
@@ -2478,9 +2542,28 @@
         }
       }
 
+      // 0 (ou absent) = partie sans limite de temps, le cas par défaut.
+      // Les sauvegardes/parties d'avant cette option n'ont pas le champ : elles
+      // retombent donc naturellement sur "pas de chrono".
+      function turnDurationSeconds() {
+        const value = Number(state?.turnDurationSeconds);
+        return Number.isFinite(value) && value > 0 ? value : 0;
+      }
+
+      function isTurnTimerEnabled() {
+        return turnDurationSeconds() > 0;
+      }
+
       function updateTurnTimerDisplay() {
         if (!els.turnTimer || !state) return;
-        const seconds = Math.max(0, Math.ceil(state.turnTimeLeft ?? TURN_DURATION_SECONDS));
+        // Sans limite de temps, la pastille n'a rien à afficher : on la retire
+        // du bandeau plutôt que d'y laisser un compteur figé.
+        els.turnTimer.classList.toggle("hidden", !isTurnTimerEnabled());
+        if (!isTurnTimerEnabled()) {
+          els.turnTimer.classList.remove("warning", "danger");
+          return;
+        }
+        const seconds = Math.max(0, Math.ceil(state.turnTimeLeft ?? turnDurationSeconds()));
         const minutes = Math.floor(seconds / 60);
         const rest = seconds % 60;
         els.turnTimer.textContent = `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
@@ -2492,9 +2575,18 @@
         stopTurnTimer();
         if (!state || state.winner !== null) return;
 
+        if (!isTurnTimerEnabled()) {
+          state.turnDeadline = null;
+          state.turnTimeLeft = null;
+          state.timerExpiring = false;
+          updateTurnTimerDisplay();
+          return;
+        }
+
+        const duration = turnDurationSeconds();
         if (resetDeadline || !state.turnDeadline) {
-          state.turnTimeLeft = TURN_DURATION_SECONDS;
-          state.turnDeadline = Date.now() + TURN_DURATION_SECONDS * 1000;
+          state.turnTimeLeft = duration;
+          state.turnDeadline = Date.now() + duration * 1000;
         } else {
           state.turnTimeLeft = Math.max(0, (state.turnDeadline - Date.now()) / 1000);
         }

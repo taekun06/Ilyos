@@ -116,6 +116,12 @@ body[data-visual-mode="alternative"] #endTurnBtn.selection-will-cancel:not(:disa
   background: linear-gradient(180deg, #85c98b, #59a764) !important;
 }
 
+/* Île posée, aucune sélection en cours : légère mise en avant, jamais un
+   second libellé (le bouton reste toujours "Fin du tour"). */
+body[data-visual-mode="alternative"] #endTurnBtn.end-turn-ready:not(:disabled) {
+  box-shadow: 0 0 0 3px rgba(89, 199, 125, .3), 0 6px 16px rgba(35, 82, 96, .22) !important;
+}
+
 /* Les choix d'accueil indiquent le niveau conseillé sans ajouter de texte long. */
 .v64-difficulty-btn {
   display: grid;

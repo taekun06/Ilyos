@@ -96,10 +96,11 @@
           return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Cliquez une forme à gauche." };
         }
         if (state.phase === "PLACE_ISLAND") {
-          return { kind: "build", kicker: "ÎLE SÉLECTIONNÉE", title: "Choisir son emplacement", next: "Cliquez une zone verte du plateau." };
+          const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
+          return { kind: "build", kicker: "ÎLE À POSER", title: `Rotation : ${degrees}°`, next: "Q/E pour tourner, clic pour poser." };
         }
         if (state.phase === "PLACE_SPAWN") {
-          return { kind: "build", kicker: "INVOCATION OBLIGATOIRE", title: "Placer le gardien", next: "Cliquez une case libre de la nouvelle île." };
+          return { kind: "build", kicker: "INVOCATION", title: "Choisir une case", next: "Cliquez une case en surbrillance." };
         }
         if (state.phase === "DROP_TREASURE") {
           return { kind: "crown", kicker: "COURONNE", title: "Transmettre ou poser", next: "Cliquez un allié ou une case libre adjacente." };
@@ -288,6 +289,7 @@
         state.selectedIslandShape = shapeKey;
         state.placementCells = cloneCells(SHAPES[shapeKey].cells);
         state.placementOriginIndex = 0;
+        state.placementRotationSteps = 0;
         state.hoverAnchor = null;
         state.selectedActionType = null;
         state.selectedActionCount = 1;
@@ -298,7 +300,8 @@
         state.reachable = new Set();
         state.phase = "PLACE_ISLAND";
         renderAll();
-        showToast(`Île sélectionnée.`);
+        // Le contexte de tour affiche déjà "Île à poser" et le ghost 3D suit la
+        // souris : ce toast ne ferait que répéter la même information.
         playSfx("card");
       }
 
@@ -914,6 +917,9 @@
             state.actionHoverCell = next;
             state.smartHoverPath = path;
             scheduleBoardRender();
+            // Le panneau ACTIONS doit afficher le coût MOVE dès que la case
+            // survolée change, comme pour le survol PUSH côté SMART_CHAR.
+            renderHand();
           }
         }
       }
@@ -941,6 +947,7 @@
           state.actionHoverCell = null;
           if (state.selectedActionType === "MOVE") state.smartHoverPath = [];
           scheduleBoardRender();
+          if (state.selectedActionType === "MOVE") renderHand();
         }
       }
 
@@ -1062,7 +1069,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast("Limite atteinte : 5 gardiens maximum.");
+            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -1397,10 +1404,10 @@
         animateIslandArrival(island);
         playSfx("island");
 
-        if (canCreateGuardian(state.currentPlayer)) {
-          showToast("Invocation : choisissez la case où le gardien apparaîtra.");
-        } else {
-          showToast("Île posée. Limite atteinte : 5 gardiens maximum.");
+        // Le contexte de tour affiche déjà "Invocation obligatoire · Placer le
+        // gardien" : un toast ici ne ferait que répéter la même instruction.
+        if (!canCreateGuardian(state.currentPlayer)) {
+          showToast(`Île posée. Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
         }
       }
 
@@ -1436,7 +1443,7 @@
         if (smartSelected) {
           const badge = document.createElement("div");
           badge.className = "v60-context-options smart-char-badge";
-          badge.innerHTML = "<span>GARDIEN SÉLECTIONNÉ</span>";
+          badge.innerHTML = "<span>🛡️ GARDIEN SÉLECTIONNÉ</span>";
           els.hand.appendChild(badge);
         }
         const bar = document.createElement("div");
@@ -1463,6 +1470,24 @@
         });
         els.hand.appendChild(bar);
 
+        // Coût lu au survol d'une destination MOVE (chemin déjà calculé par
+        // shortestMovementPath, cost/steps déjà accrochés dessus) : que ce
+        // survol vienne du bouton MOVE classique ou du clic direct SMART_CHAR,
+        // le panneau doit dire ce que ce clic coûterait avant qu'il n'ait lieu.
+        const classicMoveActive = state.phase === "ACTION" && state.selectedActionType === "MOVE";
+        const smartMoveHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "MOVE";
+        if ((classicMoveActive || smartMoveHovered) && state.actionHoverCell) {
+          const path = state.smartHoverPath || [];
+          const cost = path.cost ?? path.length;
+          if (cost > 0) {
+            const remaining = Math.max(0, availableActionCount("MOVE") - cost);
+            const contextual = document.createElement("div");
+            contextual.className = "v60-context-options move-options";
+            contextual.innerHTML = `<span>🥾 Déplacement</span><b>Coût : ${cost}</b><small>Restera : ${remaining}</small>`;
+            els.hand.appendChild(contextual);
+          }
+        }
+
         const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH";
         const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
         if (classicPushActive || smartPushHovered) {
@@ -1470,22 +1495,30 @@
           // Même contrôle pour les deux chemins (bouton PUSH classique et clic
           // direct sur un gardien) : seule la source du minimum change. En
           // SMART_CHAR, getPushHoverPreview() reste l'unique simulation.
-          let force = null, min = 1, hint = "";
+          let force = null, min = 1, extra = "";
           if (smartPushHovered) {
             const preview = getPushHoverPreview();
             if (preview) {
               min = Math.max(1, preview.requiredForce || 1);
               force = Math.max(min, Math.min(max, preview.force || min));
-              hint = min > 1 ? `<small>Minimum requis : ${min}</small>` : "<small>Cliquez pour pousser.</small>";
+              const [targetR, targetC] = preview.target;
+              const distance = (!preview.fell && preview.destination)
+                ? Math.abs(preview.destination[0] - targetR) + Math.abs(preview.destination[1] - targetC)
+                : null;
+              extra = `<small>Minimum : ${min}</small>` + (
+                preview.fell
+                  ? `<small>Chute hors du plateau</small>`
+                  : distance ? `<small>Destination : ${distance} case${distance > 1 ? "s" : ""}</small>` : ""
+              );
             }
           } else {
             force = Math.max(1, Math.min(state.pushForceChoice || 1, max));
-            hint = "<small>Sélectionnez ensuite la cible adjacente.</small>";
+            extra = "<small>Sélectionnez ensuite la cible adjacente.</small>";
           }
           if (force !== null) {
             const contextual = document.createElement("div");
             contextual.className = "v60-context-options";
-            contextual.innerHTML = `<span>Force de poussée</span><button type="button" data-force-minus>−</button><b>${force}</b><button type="button" data-force-plus>+</button>${hint}`;
+            contextual.innerHTML = `<span>💥 Poussée</span><button type="button" data-force-minus>−</button><b>${force}</b><button type="button" data-force-plus>+</button>${extra}`;
             contextual.querySelector('[data-force-minus]').disabled = force <= min;
             contextual.querySelector('[data-force-plus]').disabled = force >= max;
             contextual.querySelector('[data-force-minus]').onclick = () => {
@@ -2426,6 +2459,10 @@
             state.placementOriginIndex = Math.max(0, state.placementOriginIndex);
           }
           state.placementCells = rotated;
+          // Purement informatif (panneau "Rotation : X°") : ne change rien à la
+          // forme réellement posée, déjà entièrement portée par placementCells.
+          state.placementRotationSteps = ((state.placementRotationSteps || 0) + direction + 4) % 4;
+          renderTurnContext();
 
           if (state.hoverAnchor) {
             updatePlacementPreview(state.hoverAnchor[0], state.hoverAnchor[1]);
@@ -2606,6 +2643,9 @@
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.cancelCardBtn.disabled = !canCancel;
+        // Désélectionner (rien n'est encore consommé) et annuler la dernière
+        // action (undoSnapshot réellement disponible) sont deux idées
+        // différentes : le libellé du bouton ne doit jamais les confondre.
         if (state.phase === "PLACE_ISLAND") {
           els.cancelCardBtn.textContent = "Changer d’île";
           els.cancelCardBtn.title = "Quitter le placement sans poser cette île";
@@ -2613,13 +2653,13 @@
           els.cancelCardBtn.textContent = "Quitter l’action";
           els.cancelCardBtn.title = `Quitter ${ACTIONS[state.selectedActionType].name.toLowerCase()} sans consommer d’action`;
         } else if (state.phase === "SMART_CHAR") {
-          els.cancelCardBtn.textContent = "Quitter le choix";
+          els.cancelCardBtn.textContent = "Désélectionner";
           els.cancelCardBtn.title = "Désélectionner ce gardien";
         } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
           els.cancelCardBtn.textContent = "Quitter le choix";
           els.cancelCardBtn.title = "Revenir au choix des actions";
         } else if (state.undoSnapshot) {
-          els.cancelCardBtn.textContent = "Annuler l’action";
+          els.cancelCardBtn.textContent = "↶ Annuler dernière action";
           els.cancelCardBtn.title = "Revenir avant la dernière action exécutée";
         } else {
           els.cancelCardBtn.textContent = "Annuler";
@@ -2627,18 +2667,19 @@
         }
         els.endTurnBtn.disabled = aiLocked || !canEnd;
         els.endTurnBtn.classList.toggle("selection-will-cancel", canEndFromSelection && canEnd);
+        // Prêt à conclure : île posée, aucune sélection en cours à abandonner.
+        // Légère mise en avant, jamais un second libellé — le bouton reste
+        // toujours "Fin du tour" (voir title pour la raison d'un blocage).
+        els.endTurnBtn.classList.toggle("end-turn-ready", canEnd && state.phase === "ACTION_SELECT");
+        els.endTurnBtn.textContent = "Fin du tour";
         if (!state.islandPlacedThisTurn) {
-          els.endTurnBtn.textContent = "Poser une île";
-          els.endTurnBtn.title = "La pose d’une île est obligatoire avant la fin du tour";
+          els.endTurnBtn.title = "Posez d’abord une île.";
         } else if (state.phase === "PLACE_SPAWN") {
-          els.endTurnBtn.textContent = "Placer le gardien";
-          els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire";
+          els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire.";
         } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
-          els.endTurnBtn.textContent = "Finir le choix";
-          els.endTurnBtn.title = "Terminez ou quittez d’abord ce choix";
+          els.endTurnBtn.title = "Terminez ou quittez d’abord ce choix.";
         } else {
-          els.endTurnBtn.textContent = "Fin du tour";
-          els.endTurnBtn.title = canEndFromSelection ? "La sélection en cours sera simplement abandonnée" : "Terminer le tour";
+          els.endTurnBtn.title = canEndFromSelection ? "La sélection en cours sera simplement abandonnée." : "Terminer le tour.";
         }
       }
 

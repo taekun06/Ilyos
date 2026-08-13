@@ -160,6 +160,67 @@
       const KAYKIT_BLOCK_SIZE = .932;
       const KAYKIT_BOARD_SPAN = GRID * KAYKIT_CELL_SPACING;
 
+      // ===================== CIEL ILYOS — PROFONDEUR PAR COUCHES =====================
+      // L'impression d'altitude ne vient PAS de nuages proches (essayé : ils voilaient
+      // les cases et les gardiens) mais d'un empilement de plans très éloignés :
+      //   1. dôme de ciel dégradé          (KAYKIT_SKY.domeRadius)
+      //   2. brume d'horizon               (scene.fog, démarre bien au-delà du plateau)
+      //   3. îlots lointains désaturés     (KAYKIT_SKY.farRing)
+      //   4. ZONE JOUABLE — vide           (volume de sécurité ci-dessous)
+      //   5. mer de nuages, très en bas    (KAYKIT_SKY.seaHigh / seaLow)
+      //
+      // VOLUME DE SÉCURITÉ : cylindre centré sur le plateau, de rayon `safeRadius`
+      // et ouvert vers le haut à partir de `safeFloor`. Aucun élément décoratif n'a
+      // le droit d'y exister (voir kaykitSkyPlacementAllowed). Comme la caméra est
+      // bornée par ailleurs (orbit.maxDistance = 25, maxPolarAngle ≈ 88° → elle
+      // reste au-dessus du plateau et à moins de 25 unités du centre), tout élément
+      // soit franchement extérieur au cylindre, soit franchement sous son plancher,
+      // ne peut jamais se retrouver sur le segment caméra → case. La contrainte
+      // « zéro nuage devant le plateau » est donc garantie par construction, quel que
+      // soit l'angle de vue, et pas seulement depuis la caméra initiale.
+      const KAYKIT_SKY = {
+        safeRadius: KAYKIT_BOARD_SPAN / 2 + 4.2,  // ≈ 9.3 : grille + marge d'extension
+        safeFloor: -9,                            // vide obligatoire sous les îles
+        domeRadius: 170,
+        cameraFar: 460,
+        fogNear: 44,                              // > (zoom max 25 + demi-diagonale plateau 7.2)
+        fogFar: 145,
+        seaHigh: -16.5,                           // mer principale : îles ↓ vide ↓ nuages
+        seaLow: -27.5,                            // seconde nappe, pour le parallaxe
+        farRing: 30                               // rayon minimal des silhouettes lointaines
+      };
+
+      // Palette « sanctuaire céleste lumineux » : bleu soutenu au zénith, bande
+      // d'horizon ivoire, jamais de cyan saturé ni de ciel dramatique.
+      //
+      // Point clé : les caméras d'ILYOS plongent toutes vers le plateau (≈ 20° à 56°
+      // sous l'horizontale), donc TOUT ce que le joueur voit derrière les îles est la
+      // partie du dôme SOUS l'horizon. Un premier essai blanc cassé de ce côté rendait
+      // la mer de nuages littéralement invisible (blanc sur blanc) et voilait la scène.
+      // D'où `abyss`/`deep` : un bleu pâle mais franc pour le gouffre sous l'archipel,
+      // sur lequel le blanc des nuages ressort — et contre lequel le plateau gagne du
+      // contraste. `haze` est la couleur de brume : elle se situe entre la bande
+      // d'horizon et le bleu du gouffre, pour que le lointain se dissolve sans liseré.
+      const KAYKIT_SKY_COLORS = {
+        zenith: 0x4f93d0,
+        upper: 0x7cbbe6,
+        middle: 0xafd9f0,
+        horizon: 0xe4f1fa,
+        haze: 0xc8e0f2,
+        abyss: 0xa2c8e5,
+        deep: 0x74a9d1,
+        seaHigh: 0xeef6fd,   // volontairement PAS blanc pur : le décor ne doit jamais
+        seaLow: 0xdcebf9,    // être plus lumineux que gardiens et couronnes
+        distant: 0xa9c6dd
+      };
+
+      // Un élément atmosphérique n'est accepté que s'il tient entièrement sous le
+      // plancher de sécurité, ou entièrement hors du cylindre de sécurité.
+      function kaykitSkyPlacementAllowed(x, y, z, spread = 0) {
+        if (y + spread <= KAYKIT_SKY.safeFloor) return true;
+        return Math.hypot(x, z) - spread >= KAYKIT_SKY.safeRadius;
+      }
+
       function kaykitCellPosition(r, c, y = 0) {
         return {
           x: (c - (GRID - 1) / 2) * KAYKIT_CELL_SPACING,
@@ -356,19 +417,34 @@
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = .96;
         renderer.physicallyCorrectLights = false;
-        renderer.setClearColor(0x8ecfe2, 1);
+        // Le dôme de ciel (buildKayKitSkyEnvironment) recouvre tout l'écran dès le
+        // premier rendu : cette couleur ne sert plus que de secours si le dôme n'a
+        // pas encore été construit.
+        renderer.setClearColor(KAYKIT_SKY_COLORS.haze, 1);
 
         const scene = new THREE.Scene();
-        scene.fog = null;
-        const camera = new THREE.PerspectiveCamera(33, 1, .1, 90);
+        // Brume atmosphérique lointaine seulement : elle démarre au-delà de la
+        // distance caméra→coin de plateau la plus défavorable (zoom max 25 + 7.2),
+        // donc le plateau et les gardiens restent parfaitement nets, et seul le
+        // décor très éloigné se désature vers la couleur d'horizon.
+        scene.fog = new THREE.Fog(KAYKIT_SKY_COLORS.haze, KAYKIT_SKY.fogNear, KAYKIT_SKY.fogFar);
+        // Plan lointain relevé pour laisser respirer les couches célestes (dôme,
+        // mer de nuages, îlots) : la précision du z-buffer dépend presque
+        // uniquement du plan proche, inchangé, donc aucun z-fighting supplémentaire.
+        const camera = new THREE.PerspectiveCamera(33, 1, .1, KAYKIT_SKY.cameraFar);
         camera.position.set(7.0, 9.1, 7.4);
         camera.lookAt(0, .22, .18);
 
-        const ambient = new THREE.AmbientLight(0xfffdf7, .36);
+        // Lumière céleste : soleil doux légèrement chaud sur le dessus, ambiance
+        // froide en dessous. Le bleu profond en couleur « sol » de l'hémisphérique
+        // remplace l'ancien olive : les faces inférieures des îles s'assombrissent
+        // très légèrement et lisent comme des blocs suspendus au-dessus du vide,
+        // sans halo ni faisceau sous chaque case.
+        const ambient = new THREE.AmbientLight(0xf6faff, .30);
         scene.add(ambient);
-        const hemi = new THREE.HemisphereLight(0xeaf7ff, 0x6f7658, .84);
+        const hemi = new THREE.HemisphereLight(0xeaf7ff, 0x46688a, .80);
         scene.add(hemi);
-        const sun = new THREE.DirectionalLight(0xffedcf, 1.74);
+        const sun = new THREE.DirectionalLight(0xffeed2, 1.78);
         sun.position.set(-6, 14, 8);
         sun.castShadow = true;
         sun.shadow.mapSize.set(1024, 1024);
@@ -407,7 +483,7 @@
           staticGroup, dynamicGroup, hitGroup, fxGroup, raycaster, pointer, clock, loader, textureLoader,
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
           textureCache: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
-          mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
+          mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
           packCatalog: new Map(), packRepresentatives: new Map(), packReady: new Set(), packErrors: new Set(),
@@ -649,78 +725,311 @@
         addShadowFlags(object);
       }
 
+      // Dégradé vertical du dôme de ciel. `flipY` par défaut sur une CanvasTexture
+      // fait correspondre le haut du canvas au sommet de la sphère, donc le zénith
+      // se peint en premier. Bruit très léger pour éviter le banding sur un aplat
+      // aussi étiré.
+      function kaykitSkyDomeTexture() {
+        const key = "sky-dome-gradient-v1";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const canvas = document.createElement("canvas");
+        canvas.width = 8; canvas.height = 512;
+        const ctx = canvas.getContext("2d");
+        const hex = value => `#${value.toString(16).padStart(6, "0")}`;
+        const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+        gradient.addColorStop(0, hex(KAYKIT_SKY_COLORS.zenith));
+        gradient.addColorStop(.24, hex(KAYKIT_SKY_COLORS.upper));
+        gradient.addColorStop(.41, hex(KAYKIT_SKY_COLORS.middle));
+        // Sous l'horizon, le bleu doit arriver TRÈS vite : les caméras d'ILYOS ne
+        // descendent jamais plus bas que ~56° sous l'horizontale (p ≈ .81), et une
+        // vue rasante n'en montre que les 20 premiers degrés (p ≈ .61). Étaler la
+        // transition plus bas revenait à ne jamais montrer autre chose que du blanc
+        // sous les îles — la mer de nuages devenait alors invisible.
+        gradient.addColorStop(.50, hex(KAYKIT_SKY_COLORS.horizon));
+        gradient.addColorStop(.53, hex(KAYKIT_SKY_COLORS.haze));
+        gradient.addColorStop(.61, hex(KAYKIT_SKY_COLORS.abyss));
+        gradient.addColorStop(1, hex(KAYKIT_SKY_COLORS.deep));
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 8, 512);
+        for (let y = 0; y < 512; y++) {
+          ctx.fillStyle = `rgba(255,255,255,${(Math.sin(y * 12.9898) * .5 + .5) * .035})`;
+          ctx.fillRect(0, y, 8, 1);
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.minFilter = texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Nappe de nuages vue de dessus : amas doux, faible contraste, fondus vers
+      // les bords pour qu'aucun bord de plan ne soit jamais visible. Une seule
+      // texture par variante, partagée par la nappe entière (aucun tuilage).
+      //
+      // `holeStart`/`holeEnd` (en unités monde) évident progressivement le centre :
+      // sans ce trou, la nappe s'étend jusque sous le plateau et l'on passe des îles
+      // aux nuages sans transition. Avec lui on lit bien îles ↓ vide bleu ↓ nuages.
+      function kaykitCloudSheetTexture(variant = 0, size2D = 150, holeStart = 11, holeEnd = 20) {
+        const key = `cloud-sheet-v2-${variant}-${size2D}-${holeStart}-${holeEnd}`;
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const size = 512;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * (17.13 + variant * 4.7) + salt * 78.233) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        for (let i = 0; i < 120; i++) {
+          const cx = seeded(i, 1) * size;
+          const cy = seeded(i, 2) * size;
+          const r = size * (.035 + seeded(i, 3) * .085);
+          const blob = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          const peak = .40 + seeded(i, 5) * .38;
+          blob.addColorStop(0, `rgba(255,255,255,${peak})`);
+          blob.addColorStop(.55, `rgba(255,255,255,${peak * .45})`);
+          blob.addColorStop(1, "rgba(255,255,255,0)");
+          ctx.fillStyle = blob;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        // Masque radial en une passe : trou doux au centre (le vide sous l'archipel)
+        // et extinction avant le bord du plan, pour que le carré de la géométrie ne
+        // puisse jamais se lire, quel que soit l'angle de caméra.
+        ctx.globalCompositeOperation = "destination-in";
+        const toTexel = world => THREE.MathUtils.clamp(world / size2D, 0, .5);
+        const mask = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size * .5);
+        mask.addColorStop(0, "rgba(255,255,255,0)");
+        mask.addColorStop(toTexel(holeStart) * 2, "rgba(255,255,255,0)");
+        mask.addColorStop(toTexel(holeEnd) * 2, "rgba(255,255,255,1)");
+        mask.addColorStop(.80, "rgba(255,255,255,.88)");
+        mask.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = mask;
+        ctx.fillRect(0, 0, size, size);
+        ctx.globalCompositeOperation = "source-over";
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.encoding = THREE.sRGBEncoding;
+        // Indispensable : vue rasante, une nappe horizontale est vue sous un angle
+        // très fermé et le mip le plus grossier la réduit à un aplat uniforme —
+        // c'est ce qui la faisait lire comme du brouillard au lieu d'une mer de
+        // nuages. Le filtrage anisotrope conserve le relief jusqu'à l'horizon.
+        texture.anisotropy = Math.min(16, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Silhouette d'îlot lointain : bloc évasé + éventuelle tour claire. Volumes
+      // très simples, matériau non éclairé et légèrement bleuté — ces éléments ne
+      // doivent jamais attirer le clic ni concurrencer les bâtiments joueurs.
+      function makeKayKitDistantIslet(scale, withTower, seed) {
+        const group = new THREE.Group();
+        const tint = new THREE.Color(KAYKIT_SKY_COLORS.distant);
+        // Roche nettement plus sombre que le dessus : c'est ce contraste interne qui
+        // fait lire une île suspendue plutôt qu'un cône blanc posé dans le ciel. Les
+        // deux tons restent désaturés et plus faibles que ceux du plateau (hiérarchie
+        // §10 : le décor lointain doit toujours passer derrière le jeu).
+        const rockMaterial = new THREE.MeshBasicMaterial({ color: tint.clone().multiplyScalar(.68), fog: true, toneMapped: false });
+        const topMaterial = new THREE.MeshBasicMaterial({ color: tint.clone().lerp(new THREE.Color(0xffffff), .16), fog: true, toneMapped: false });
+        const rock = new THREE.Mesh(
+          kaykitGeometry("distant-islet-rock-v2", () => new THREE.ConeGeometry(.58, .92, 6)),
+          rockMaterial
+        );
+        rock.rotation.x = Math.PI;
+        rock.position.y = -.44;
+        group.add(rock);
+        const top = new THREE.Mesh(
+          kaykitGeometry("distant-islet-top-v2", () => new THREE.CylinderGeometry(.66, .6, .18, 6)),
+          topMaterial
+        );
+        group.add(top);
+        if (withTower) {
+          const tower = new THREE.Mesh(
+            kaykitGeometry("distant-islet-tower-v2", () => new THREE.CylinderGeometry(.1, .13, .7, 6)),
+            topMaterial
+          );
+          tower.position.set(.14, .44, -.08);
+          group.add(tower);
+          const roof = new THREE.Mesh(
+            kaykitGeometry("distant-islet-roof-v2", () => new THREE.ConeGeometry(.17, .24, 6)),
+            rockMaterial
+          );
+          roof.position.set(.14, .91, -.08);
+          group.add(roof);
+        }
+        group.rotation.y = seed * Math.PI * 2;
+        group.scale.setScalar(scale);
+        group.traverse(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; } });
+        return group;
+      }
+
+      // Construit les couches 1, 2, 3 et 5 (voir KAYKIT_SKY). La couche 4 — la zone
+      // jouable — reste vide par construction : chaque élément procédural est validé
+      // par kaykitSkyPlacementAllowed avant d'être ajouté.
+      function buildKayKitSkyEnvironment(parent) {
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 43.117 + salt * 91.345) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const sky = new THREE.Group();
+        sky.name = "ilyos-sky";
+        kaykit3D.skyLayers = [];
+
+        // COUCHE 1 — dôme de ciel. Rayon très supérieur à la distance orbitale
+        // maximale : la caméra reste toujours à l'intérieur, le dôme couvre donc
+        // tout l'écran sans jamais se rapprocher du plateau. depthWrite désactivé
+        // et renderOrder minimal : il se contente de peindre le fond.
+        const dome = new THREE.Mesh(
+          kaykitGeometry("sky-dome-v1", () => new THREE.SphereGeometry(KAYKIT_SKY.domeRadius, 32, 20)),
+          new THREE.MeshBasicMaterial({
+            map: kaykitSkyDomeTexture(), side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false
+          })
+        );
+        dome.renderOrder = -1000;
+        dome.frustumCulled = false;
+        sky.add(dome);
+
+        // COUCHE 5 — mer de nuages, très bas sous les îles. Deux nappes seulement :
+        // la haute donne la lecture « îles ↓ vide ↓ nuages », la basse ajoute du
+        // parallaxe quand la caméra tourne. Elles dérivent horizontalement à des
+        // vitesses différentes, assez lentement pour ne se remarquer qu'après
+        // plusieurs secondes, et sans aucune composante verticale.
+        [
+          { y: KAYKIT_SKY.seaHigh, size: 150, hole: [7, 17], color: KAYKIT_SKY_COLORS.seaHigh, opacity: .58, variant: 0, drift: { x: 3.4, z: 2.6, sx: .0105, sz: .0082 } },
+          { y: KAYKIT_SKY.seaLow, size: 250, hole: [12, 26], color: KAYKIT_SKY_COLORS.seaLow, opacity: .42, variant: 1, drift: { x: 5.2, z: 4.1, sx: .0061, sz: .0047 } }
+        ].forEach((layer, index) => {
+          const sheet = new THREE.Mesh(
+            new THREE.PlaneGeometry(layer.size, layer.size),
+            new THREE.MeshBasicMaterial({
+              map: kaykitCloudSheetTexture(layer.variant, layer.size, layer.hole[0], layer.hole[1]),
+              color: layer.color, transparent: true,
+              opacity: layer.opacity, depthWrite: false, fog: true, toneMapped: false
+            })
+          );
+          sheet.rotation.x = -Math.PI / 2;
+          sheet.position.y = layer.y;
+          sheet.renderOrder = -900 + index * 10;
+          sheet.frustumCulled = false;
+          sky.add(sheet);
+          kaykit3D.skyLayers.push({ object: sheet, base: sheet.position.clone(), drift: layer.drift });
+        });
+
+        // Crête de la mer de nuages : des amas posés sur la nappe haute. C'est eux
+        // qui donnent son relief au sommet du moutonnement — une nappe seule, vue
+        // d'une caméra très basse, se réduit à un aplat blanc et lit comme du
+        // brouillard. Sprites (toujours face caméra, coût négligeable, silhouette
+        // correcte quel que soit l'angle), jamais au-dessus du plancher de sécurité.
+        const puffTexture = kaykitCloudTexture();
+        const puffCount = 16;
+        for (let i = 0; i < puffCount; i++) {
+          const angle = (i / puffCount) * Math.PI * 2 + seeded(i, 2) * .5;
+          const spread = seeded(i, 3);
+          // Le rayon court jusqu'au lointain et l'altitude remonte avec lui : les amas
+          // proches moutonnent sur la nappe, les plus éloignés forment un banc à
+          // hauteur d'horizon — c'est ce banc qui donne sa silhouette à la mer de
+          // nuages depuis une caméra très basse, où la nappe est vue par la tranche.
+          const radius = 20 + spread * 65;
+          const y = KAYKIT_SKY.seaHigh + .8 + spread * 5.4 + seeded(i, 4) * 1.4;
+          const scale = 10 + spread * 16 + seeded(i, 5) * 6;
+          if (!kaykitSkyPlacementAllowed(Math.cos(angle) * radius, y, Math.sin(angle) * radius, scale * .5)) continue;
+          const puff = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: puffTexture, color: KAYKIT_SKY_COLORS.seaHigh, transparent: true, depthWrite: false,
+            opacity: .30 + seeded(i, 6) * .16, fog: true, toneMapped: false
+          }));
+          puff.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+          puff.scale.set(scale, scale * .44, 1);
+          puff.renderOrder = -880;
+          sky.add(puff);
+          kaykit3D.skyLayers.push({
+            object: puff, base: puff.position.clone(),
+            drift: { x: 1.6 + seeded(i, 7) * 1.8, z: 1.3 + seeded(i, 8) * 1.6, sx: .012 + seeded(i, 9) * .008, sz: .009 + seeded(i, 10) * .007 }
+          });
+        }
+
+        // COUCHE 3 — cinq silhouettes lointaines seulement : « ILYOS fait partie d'un
+        // immense archipel », pas « il y a d'autres objets à cliquer ». Elles flottent
+        // entre le plateau et la mer de nuages, hors du cylindre de sécurité, et à un
+        // rayon supérieur à la distance orbitale maximale : la caméra reste donc
+        // toujours à l'intérieur de leur anneau et aucune ne peut passer devant le jeu.
+        // Altitudes toutes sous le niveau du plateau : l'archipel lointain se lit
+        // « plus bas et plus loin », il ne vient jamais flotter à hauteur de jeu.
+        [
+          { azimuth: .62, radius: 36, y: -6.2, scale: 1.4, tower: true },
+          { azimuth: 1.94, radius: 49, y: -4.4, scale: 1.9, tower: false },
+          { azimuth: 3.05, radius: 41, y: -9.1, scale: 1.1, tower: false },
+          { azimuth: 4.36, radius: 62, y: -6.0, scale: 2.2, tower: true }
+        ].forEach((spec, index) => {
+          const x = Math.cos(spec.azimuth) * spec.radius;
+          const z = Math.sin(spec.azimuth) * spec.radius;
+          if (spec.radius < KAYKIT_SKY.farRing) return;
+          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
+          const islet = makeKayKitDistantIslet(spec.scale, spec.tower, index / 4);
+          islet.position.set(x, spec.y, z);
+          sky.add(islet);
+        });
+
+        parent.add(sky);
+        kaykit3D.skyGroup = sky;
+      }
+
       function buildKayKitStaticScene() {
         if (!kaykit3D) return;
         const { staticGroup, hitGroup, hitMeshes, fxGroup } = kaykit3D;
 
-        const skyFloor = new THREE.Mesh(
-          kaykitGeometry("sky-floor", () => new THREE.CircleGeometry(12.5, 48)),
-          new THREE.MeshBasicMaterial({ color: 0xd7f2ff, transparent: true, opacity: 0, depthWrite: false })
-        );
-        skyFloor.rotation.x = -Math.PI / 2;
-        skyFloor.position.y = -1.45;
-        staticGroup.add(skyFloor);
+        buildKayKitSkyEnvironment(staticGroup);
 
-        const boardShadow = new THREE.Mesh(
-          kaykitGeometry("board-shadow-v55", () => new THREE.CircleGeometry(KAYKIT_BOARD_SPAN * .68, 40)),
-          new THREE.MeshBasicMaterial({ color: 0x0a3561, transparent: true, opacity: .20, depthWrite: false })
-        );
-        boardShadow.rotation.x = -Math.PI / 2;
-        boardShadow.scale.set(1, .56, 1);
-        boardShadow.position.y = -.85;
-        boardShadow.position.z = .45;
-        staticGroup.add(boardShadow);
-
-        // Cadre du plateau et grille 11 x 11.
-        const frame = new THREE.Mesh(
-          kaykitGeometry("board-frame-v55", () => new THREE.BoxGeometry(KAYKIT_BOARD_SPAN + .62, .25, KAYKIT_BOARD_SPAN + .62)),
-          new THREE.MeshBasicMaterial({ color: 0x4b9fc1 })
-        );
-        frame.position.y = -.075;
-        frame.receiveShadow = true;
-        staticGroup.add(frame);
-        const inner = new THREE.Mesh(
-          kaykitGeometry("board-inner-v55", () => new THREE.BoxGeometry(KAYKIT_BOARD_SPAN + .20, .28, KAYKIT_BOARD_SPAN + .20)),
-          new THREE.MeshBasicMaterial({ color: 0x8fcddd })
-        );
-        inner.position.y = -.09;
-        inner.receiveShadow = true;
-        staticGroup.add(inner);
-
-        // Le quadrillage appartient au socle du plateau : il reste sous les îles.
-        const cellGeom = kaykitGeometry("board-grid-cell-v55", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING - .012, KAYKIT_CELL_SPACING - .012));
-        const cellMats = [
-          new THREE.MeshBasicMaterial({ color: 0xb8d9df, side: THREE.DoubleSide, depthWrite: true }),
-          new THREE.MeshBasicMaterial({ color: 0xafd3db, side: THREE.DoubleSide, depthWrite: true })
-        ];
-        for (let r = 0; r < GRID; r++) {
-          for (let c = 0; c < GRID; c++) {
-            const p = kaykitCellPosition(r, c, .055);
-            const cellSurface = new THREE.Mesh(cellGeom, cellMats[(r + c) % 2]);
-            cellSurface.rotation.x = -Math.PI / 2;
-            cellSurface.position.set(p.x, p.y, p.z);
-            cellSurface.renderOrder = 1;
-            staticGroup.add(cellSurface);
-          }
-        }
-
+        // Plus de socle plein, de dalles opaques ni d'ombre de plateau : seule
+        // la grille filaire reste, suspendue dans le ciel — îles et gardiens
+        // au-dessus du vide plutôt que sur un plancher. Le disque d'ombre
+        // (board-shadow-v55) a été retiré : à bords francs, il se voyait comme
+        // une tache circulaire flottante une fois le plancher disparu, au lieu
+        // de lire comme une simple ombre portée.
+        //
+        // Chaque ligne est découpée case par case et porte une alpha par sommet
+        // qui s'éteint radialement. Sans ce découpage, l'interpolation ne se
+        // ferait qu'entre les deux extrémités d'une ligne complète et fondrait
+        // tout le tracé. Objectif : la grille reste franche là où l'on joue,
+        // mais son périmètre carré disparaît — c'était lui qui recréait
+        // visuellement « un immense sol bleu invisible » sous l'archipel.
+        const half = KAYKIT_BOARD_SPAN / 2;
+        const gridFade = (x, z) => {
+          const t = Math.hypot(x, z) / half;
+          const k = THREE.MathUtils.clamp((t - .72) / (1.16 - .72), 0, 1);
+          return .10 + .90 * (1 - k * k * (3 - 2 * k));
+        };
         const gridPoints = [];
+        const gridAlphas = [];
         const majorGridPoints = [];
+        const majorGridAlphas = [];
         for (let i = 0; i <= GRID; i++) {
           const d = (i - GRID / 2) * KAYKIT_CELL_SPACING;
-          const half = KAYKIT_BOARD_SPAN / 2;
-          const target = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2)) ? majorGridPoints : gridPoints;
-          target.push(new THREE.Vector3(d, .061, -half), new THREE.Vector3(d, .061, half));
-          target.push(new THREE.Vector3(-half, .061, d), new THREE.Vector3(half, .061, d));
+          const major = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2));
+          const points = major ? majorGridPoints : gridPoints;
+          const alphas = major ? majorGridAlphas : gridAlphas;
+          for (let s = 0; s < GRID; s++) {
+            const a = (s - GRID / 2) * KAYKIT_CELL_SPACING;
+            const b = (s + 1 - GRID / 2) * KAYKIT_CELL_SPACING;
+            points.push(new THREE.Vector3(d, .061, a), new THREE.Vector3(d, .061, b));
+            alphas.push(1, 1, 1, gridFade(d, a), 1, 1, 1, gridFade(d, b));
+            points.push(new THREE.Vector3(a, .061, d), new THREE.Vector3(b, .061, d));
+            alphas.push(1, 1, 1, gridFade(a, d), 1, 1, 1, gridFade(b, d));
+          }
         }
-        const grid = new THREE.LineSegments(
-          new THREE.BufferGeometry().setFromPoints(gridPoints),
-          new THREE.LineBasicMaterial({ color: 0x4aa3bd, transparent: true, opacity: .46, depthWrite: false, depthTest: true })
-        );
-        const majorGrid = new THREE.LineSegments(
-          new THREE.BufferGeometry().setFromPoints(majorGridPoints),
-          new THREE.LineBasicMaterial({ color: 0x398ca8, transparent: true, opacity: .62, depthWrite: false, depthTest: true })
-        );
+        // Sans plancher, la grille est le seul repère pour viser une case : le
+        // bleu sur bleu d'origine (pensé pour contraster avec des dalles claires,
+        // pas avec le ciel) devenait trop discret. Blanc quasi opaque + liseré
+        // doré sur les lignes majeures (cohérent avec le reste de la DA) pour
+        // rester lisible même en mouvement de caméra.
+        const buildFadedGrid = (points, alphas, color, opacity) => {
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          geometry.setAttribute("color", new THREE.Float32BufferAttribute(alphas, 4));
+          return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+            color, transparent: true, opacity, vertexColors: true, depthWrite: false, depthTest: true
+          }));
+        };
+        const grid = buildFadedGrid(gridPoints, gridAlphas, 0xf3fbff, .78);
+        const majorGrid = buildFadedGrid(majorGridPoints, majorGridAlphas, 0xe9c877, .92);
         grid.renderOrder = 2; majorGrid.renderOrder = 3;
         staticGroup.add(grid, majorGrid);
 
@@ -835,19 +1144,8 @@
         fxGroup.add(hover);
         kaykit3D.hoverMarker = hover;
 
-        // Version épurée : pas de nuages ni de brume autour du plateau.
-      }
-
-      function makeFallbackCloud(scale = 1) {
-        const group = new THREE.Group();
-        const mat = kaykitMaterial(0xf7ffff, { roughness: 1 });
-        [[0, 0, 0, .68], [-.48, -.02, .05, .48], [.5, -.02, .08, .5], [.08, .18, -.12, .55], [-.05, -.11, .18, .62]].forEach(([x, y, z, s]) => {
-          const mesh = new THREE.Mesh(kaykitGeometry("cloud-ball", () => new THREE.IcosahedronGeometry(1, 1)), mat);
-          mesh.position.set(x, y, z); mesh.scale.set(s * 1.35, s * .72, s);
-          mesh.castShadow = true; group.add(mesh);
-        });
-        group.scale.setScalar(scale);
-        return group;
+        // Toute l'atmosphère vit dans buildKayKitSkyEnvironment, hors du volume
+        // de sécurité : rien de décoratif n'est ajouté autour du plateau ici.
       }
 
       function makeFallbackTile(ownerColor = null, isSanctuaryTile = false) {
@@ -957,15 +1255,22 @@
             const preserve = /skin|face|eye|hair|mouth|teeth|wood|staff|book|paper/.test(label);
             if (!preserve) {
               const useTrim = /hat|hood|cape|robe|cloth|body|torso|dress|sleeve/.test(label);
+              // Les gemmes/orbes méritent un rendu à part de la robe : plus
+              // lisses et plus réfléchissantes qu'un tissu, plutôt qu'une simple
+              // variante de la même étoffe. Sans map d'environnement dans la
+              // scène, on compte sur les lumières directionnelles existantes
+              // (sun/fill/front) pour faire vivre ce reflet — d'où un metalness
+              // modéré plutôt qu'extrême, qui resterait noir sans reflet à capter.
+              const isGem = /trim|gem|orb|magic|crystal/.test(label);
               if (mat.color) {
                 mat.color.copy(useTrim ? robeMain : robeShadow);
-                if (/trim|gem|orb|magic|crystal/.test(label)) mat.color.copy(arcaneTrim);
+                if (isGem) mat.color.copy(arcaneTrim);
               }
-              if ('metalness' in mat) mat.metalness = useTrim ? .18 : .08;
-              if ('roughness' in mat) mat.roughness = useTrim ? .52 : .66;
+              if ('metalness' in mat) mat.metalness = isGem ? .42 : (useTrim ? .16 : .08);
+              if ('roughness' in mat) mat.roughness = isGem ? .16 : (useTrim ? .40 : .58);
               if ('emissive' in mat) {
                 mat.emissive = (useTrim ? arcaneTrim : robeShadow).clone();
-                mat.emissiveIntensity = useTrim ? .10 : .05;
+                mat.emissiveIntensity = isGem ? .18 : (useTrim ? .09 : .05);
               }
             }
             mat.needsUpdate = true;
@@ -1523,7 +1828,7 @@
             return {
               kind: selected ? "select" : "ally",
               actionable: true,
-              color: selected ? 0xffd22e : 0x43e6d0,
+              color: selected ? 0xc9a45d : 0x43e6d0,
               label: selected ? "GARDIEN SÉLECTIONNÉ" : "CHOISIR CE GARDIEN"
             };
           }
@@ -1545,7 +1850,7 @@
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "PUSH") {
           const selected = character?.id === state.selectedCharId;
-          if (selected) return { kind: "select", actionable: true, color: 0xffd22e, label: "POUSSEUR SÉLECTIONNÉ" };
+          if (selected) return { kind: "select", actionable: true, color: 0xc9a45d, label: "POUSSEUR SÉLECTIONNÉ" };
           if (!state.selectedCharId && character?.player === state.currentPlayer) {
             return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHOISIR CE GARDIEN" };
           }
@@ -1571,7 +1876,7 @@
         // (jamais les classes du plateau DOM caché, qui ne sont pas rafraîchies en mode 3D).
         if (state?.phase === "SMART_CHAR") {
           if (character?.id === state.selectedCharId) {
-            return { kind: "select", actionable: true, color: 0xffd22e, label: "GARDIEN SÉLECTIONNÉ" };
+            return { kind: "select", actionable: true, color: 0xc9a45d, label: "GARDIEN SÉLECTIONNÉ" };
           }
           if (character?.player === state.currentPlayer) {
             return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHANGER DE GARDIEN" };
@@ -1641,19 +1946,35 @@
         const glyphKind = intent.kind === "crown-place"
           ? "place"
           : (["ally", "enemy"].includes(intent.kind) ? "character" : intent.kind);
+        // Pose d'île : renderKayKitPlacementPreview() affiche déjà le vrai modèle
+        // d'île teinté vert/rouge — voir plus bas pour hoverRingsSuppressed.
+        const placingIsland = state?.phase === "PLACE_ISLAND";
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = glyphKind === "character" || glyphKind === "select";
+        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
         // fait que doubler l'indicateur "sélectionné" — visible comme 2 cercles +
         // un carré empilés. On masque tout le réticule éphémère dans ce cas précis.
-        const hoverRingsSuppressed = glyphKind === "select";
+        // Même logique pour "invocation" : addKayKitSpawnGuardianGhost() dessine
+        // maintenant le futur gardien en volume à cet endroit précis — le grand
+        // réticule (remplissage + anneau + coches, depthTest désactivé) rendait ce
+        // ghost illisible en passant systématiquement devant lui.
+        // Idem pour la pose d'île : renderKayKitPlacementPreview() dessine déjà le
+        // vrai modèle d'île teinté vert/rouge selon la validité — le réticule
+        // générique (gros cercle + pictogramme) par-dessus ne fait que la
+        // cacher/la surcharger sans ajouter d'information.
+        // Survol "neutre" (case vide, plateau, décor) : il n'y a aucune action à
+        // annoncer. Le réticule — carré de coches + anneau + remplissage — suivait
+        // pourtant le curseur en permanence, ce qui bruite le plateau sans rien
+        // apprendre au joueur. On ne montre plus rien tant qu'une case ne propose
+        // pas réellement quelque chose.
+        const hoverRingsSuppressed = glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
-            child.intensity = intent.kind === "neutral" ? .18 : (intent.actionable ? .80 : .48);
+            child.intensity = hoverRingsSuppressed ? 0 : (intent.actionable ? .80 : .48);
             return;
           }
           if (child.userData.hoverRole === "glyph") {
@@ -1847,13 +2168,13 @@
           if (!kaykit3D.orbit) canvas.setPointerCapture?.(event.pointerId);
         });
         canvas.addEventListener("pointermove", event => {
-          if (kaykit3D?.cursorLabel) {
-            const rect = canvas.getBoundingClientRect();
-            kaykit3D.cursorLabel.style.left = `${THREE.MathUtils.clamp(event.clientX - rect.left + 18, 12, Math.max(12, rect.width - 230))}px`;
-            kaykit3D.cursorLabel.style.top = `${THREE.MathUtils.clamp(event.clientY - rect.top - 42, 12, Math.max(12, rect.height - 48))}px`;
-            kaykit3D.cursorLabel.style.bottom = "auto";
-            kaykit3D.cursorLabel.style.transform = "none";
-          }
+          // Le libellé suivait auparavant le curseur au pixel près : sa largeur
+          // varie avec le texte ("MAGIE" vs "DÉPLACER · 2 ACTIONS"), donc son
+          // centre optique glissait sans arrêt et ne semblait jamais aligné sur
+          // rien de fixe — d'où l'impression répétée de tooltip "pas centré".
+          // On fixe désormais sa position une fois pour toutes (voir CSS,
+          // .kaykit-cursor-label : centré sur le plateau, ancré en bas), comme
+          // une bannière de statut plutôt qu'un curseur personnalisé.
           if (pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > DRAG_THRESHOLD) {
             dragMoved = true;
             kaykit3D.autoFit = false;
@@ -1907,6 +2228,9 @@
         const heightDistance = (boardSize / 2) / Math.tan(verticalFov / 2);
         const widthDistance = (boardSize / 2) / Math.tan(horizontalFov / 2);
         const base = Math.max(heightDistance, widthDistance);
+        // Revert : .74 espaçait trop (grand ciel vide en haut, châteaux minuscules) —
+        // confirmé par capture utilisateur. Le cadrage voulu est le resserré
+        // d'origine, .64, qui remplit le cadre sans marge inutile.
         const multiplier = mode === "front" ? .64 : .68;
         return THREE.MathUtils.clamp(base * multiplier, kaykit3D.minZoom, kaykit3D.maxZoom);
       }
@@ -2120,6 +2444,38 @@
         return KAYKIT_LEVELS.board + .014;
       }
 
+      // Texture de nuage : plusieurs disques radiaux flous superposés à des
+      // offsets aléatoires (seedés, donc stable d'un appel à l'autre) pour
+      // éviter un cercle parfait trop artificiel. Un seul canvas partagé par
+      // tous les amas de la mer de nuages — seules opacité/échelle/position
+      // varient par sprite (voir buildKayKitSkyEnvironment).
+      function kaykitCloudTexture() {
+        const key = "cloud-sprite-v1";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 160;
+        const ctx = canvas.getContext('2d');
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        for (let i = 0; i < 7; i++) {
+          const cx = 60 + seeded(i, 1) * 136;
+          const cy = 70 + seeded(i, 2) * 40;
+          const r = 34 + seeded(i, 3) * 40;
+          const blob = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          blob.addColorStop(0, "rgba(255,255,255,.95)");
+          blob.addColorStop(.6, "rgba(255,255,255,.55)");
+          blob.addColorStop(1, "rgba(255,255,255,0)");
+          ctx.fillStyle = blob;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
       function kaykitCanvasTexture(name, base, accent) {
         const key = `surface-v30-${name}-${base}-${accent}`;
         if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
@@ -2208,14 +2564,27 @@
         // (déjà représentée par ce ghost en volume) — ne font plus que doubler
         // ou contredire visuellement ce ghost. On les masque, le ghost seul suffit.
         const magicGhostActive = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!(state?.magicPreviewSteps || 0);
+        // Même principe que pour la rotation magique : le ghost 3D de
+        // renderKayKitPlacementPreview() (vrai modèle d'île, teinté vert/rouge)
+        // montre déjà l'empreinte exacte. Le carré plat en dessous ne ferait
+        // plus que la doubler d'un gros aplat coloré — on le masque.
+        const placementGhostActive = state?.phase === "PLACE_ISLAND" && !!state?.hoverAnchor;
+        // placeIsland() laisse state.selectedIslandId sur l'île tout juste posée,
+        // ce qui ajoute la classe "selected" à CHACUNE de ses cases. Le sceau de
+        // sélection ci-dessous (halo or, lueur, anneau runique, lumière) est conçu
+        // pour UN gardien : appliqué à toute l'île pendant l'invocation, il empile
+        // 3 à 5 disques concentriques par case et masque le ghost du gardien.
+        // Les anneaux d'invocation (addKayKitSpawnAffordance) portent déjà cette
+        // information — on masque le sceau d'île pendant cette phase.
+        const islandSealSuppressed = state?.phase === "PLACE_SPAWN";
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
         if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
         else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
-        else if (classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
-        else if (classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
         else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
-        else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xffd22e; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
+        else if (classList.contains("selected-character") || (!islandSealSuppressed && classList.contains("selected"))) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
         else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
         else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
         else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .46; kind = "push" }
@@ -2334,6 +2703,11 @@
           glow.renderOrder = 52;
           glow.userData.pulse = true;
           glow.userData.pulsePhase = (r * 11 + c) * .37 + .6;
+          // Déjà poussé dans animatedObjects ci-dessous (pour le pulse) : on fixe
+          // juste le fondu ici plutôt que de rappeler registerKayKitFadeIn, qui
+          // le pousserait une seconde fois dans la même liste.
+          glow.userData.fadeIn = { start: performance.now(), duration: 140, target: glowMaterial.opacity };
+          glowMaterial.opacity = 0;
           kaykit3D.dynamicGroup.add(glow);
           kaykit3D.animatedObjects.push(glow);
 
@@ -2351,12 +2725,49 @@
           halo.renderOrder = 54;
           halo.userData.pulse = true;
           halo.userData.pulsePhase = (r * 11 + c) * .37;
+          halo.userData.fadeIn = { start: performance.now(), duration: 140, target: haloMaterial.opacity };
+          haloMaterial.opacity = 0;
           kaykit3D.dynamicGroup.add(halo);
           kaykit3D.animatedObjects.push(halo);
 
           const selectionLight = new THREE.PointLight(0xffdf5a, .46, 1.9, 2);
           selectionLight.position.set(p.x, y + .62, p.z);
           kaykit3D.dynamicGroup.add(selectionLight);
+
+          // Sceau céleste : anneau bleu doux + petits repères "runiques" en
+          // bordure du halo or, tournant très lentement — complète le halo
+          // or existant ci-dessus sans le remplacer. Groupe unique pour que
+          // l'anneau et les repères tournent ensemble (voir animatedObjects
+          // plus bas, propriété slowSpin).
+          const runeGroup = new THREE.Group();
+          runeGroup.position.set(p.x, y + .058, p.z);
+          runeGroup.rotation.x = -Math.PI / 2;
+          runeGroup.renderOrder = 53;
+
+          const blueRing = new THREE.Mesh(
+            kaykitGeometry("selection-ring-blue-v1", () => new THREE.RingGeometry(.43, .465, 40)),
+            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
+          );
+          runeGroup.add(blueRing);
+
+          const runeCount = 8;
+          const runePoints = [];
+          for (let i = 0; i < runeCount; i++) {
+            const angle = (i / runeCount) * Math.PI * 2;
+            runePoints.push(
+              new THREE.Vector3(Math.cos(angle) * .40, 0, Math.sin(angle) * .40),
+              new THREE.Vector3(Math.cos(angle) * .475, 0, Math.sin(angle) * .475)
+            );
+          }
+          const runes = new THREE.LineSegments(
+            new THREE.BufferGeometry().setFromPoints(runePoints),
+            new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false })
+          );
+          runeGroup.add(runes);
+
+          kaykit3D.dynamicGroup.add(runeGroup);
+          runeGroup.userData.slowSpin = true;
+          kaykit3D.animatedObjects.push(runeGroup);
         }
 
         // Les classes fx-* existaient déjà côté logique : ce bref anneau les rend enfin
@@ -2387,6 +2798,30 @@
         }
       }
 
+      // Fondu d'apparition pour un marqueur 3D éphémère (anneau d'affordance,
+      // halo...) : ces meshes sont détruits puis recréés à chaque
+      // refreshKayKitHoverPreviews(), donc une simple opacité fixe "pop"
+      // sans transition possible côté Three.js. On démarre à 0 et on laisse
+      // la boucle d'animation (voir kaykit3D.animatedObjects) remonter vers
+      // l'opacité cible en douceur, sans changer le marqueur lui-même.
+      function registerKayKitFadeIn(mesh, duration = 140) {
+        if (!mesh || !kaykit3D) return mesh;
+        // Groupe (ex. ghost de placement, un bloc par case) : même traitement
+        // sur chaque mesh transparent qu'il contient, chacun animé séparément.
+        if (!mesh.material) {
+          mesh.traverse?.(child => {
+            if (child.isMesh && child.material?.transparent) registerKayKitFadeIn(child, duration);
+          });
+          return mesh;
+        }
+        if (!mesh.material.transparent) return mesh;
+        const target = mesh.material.opacity;
+        mesh.material.opacity = 0;
+        mesh.userData.fadeIn = { start: performance.now(), duration, target };
+        kaykit3D.animatedObjects.push(mesh);
+        return mesh;
+      }
+
       // Marqueur "possibilité" lisible dès la sélection, sans remplir la case :
       // un anneau à vraie épaisseur (Torus), ~35% de la largeur de case, pas un
       // point plat. Coût 1 = anneau simple ; coût 2+ = second anneau concentrique,
@@ -2397,21 +2832,23 @@
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
         const outer = new THREE.Mesh(
           kaykitGeometry("smart-move-ring-outer-v1", () => new THREE.TorusGeometry(.16, .026, 8, 28)),
-          new THREE.MeshBasicMaterial({ color: 0x35d8e6, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide })
         );
         outer.rotation.x = -Math.PI / 2;
         outer.position.set(p.x, p.y, p.z);
         outer.renderOrder = 20;
         group.add(outer);
+        registerKayKitFadeIn(outer);
         if (costTier >= 2) {
           const inner = new THREE.Mesh(
             kaykitGeometry("smart-move-ring-inner-v1", () => new THREE.TorusGeometry(.095, .020, 8, 24)),
-            new THREE.MeshBasicMaterial({ color: 0x35d8e6, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
           );
           inner.rotation.x = -Math.PI / 2;
           inner.position.set(p.x, p.y + .003, p.z);
           inner.renderOrder = 21;
           group.add(inner);
+          registerKayKitFadeIn(inner);
         }
       }
 
@@ -2423,12 +2860,68 @@
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .024);
         const ring = new THREE.Mesh(
           kaykitGeometry("smart-push-ring-v1", () => new THREE.TorusGeometry(.19, .026, 8, 26)),
-          new THREE.MeshBasicMaterial({ color: 0xff9a3d, transparent: true, opacity: .68, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0xce8b55, transparent: true, opacity: .68, depthWrite: false, side: THREE.DoubleSide })
         );
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(p.x, p.y, p.z);
         ring.renderOrder = 20;
         group.add(ring);
+        registerKayKitFadeIn(ring);
+      }
+
+      // Anneau discret sur chaque case d'invocation valable de la nouvelle île,
+      // visible dès l'entrée en PLACE_SPAWN (même idiome que les affordances
+      // MOVE/PUSH ci-dessus) : le joueur voit où il peut invoquer avant même
+      // de survoler une case précise.
+      function addKayKitSpawnAffordance(r, c) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
+        const ring = new THREE.Mesh(
+          kaykitGeometry("spawn-ring-v1", () => new THREE.TorusGeometry(.17, .024, 8, 26)),
+          new THREE.MeshBasicMaterial({ color: 0x1fbfa6, transparent: true, opacity: .82, depthWrite: false, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(p.x, p.y, p.z);
+        ring.renderOrder = 20;
+        group.add(ring);
+        registerKayKitFadeIn(ring);
+      }
+
+      // Un seul représentant par joueur suffit pour un ghost : contrairement au
+      // héros réel (voir teamHeroPools plus bas), il n'a pas besoin de refléter
+      // exactement quel modèle sera tiré, seulement "un gardien de cette équipe".
+      const KAYKIT_SPAWN_GHOST_HERO = { 0: "hero0", 1: "hero1", 2: "hero2", 3: "hero3" };
+
+      // Ghost du gardien à invoquer, survolé pendant PLACE_SPAWN : réutilise le
+      // même clonage d'asset que le héros réel (voir la boucle state.characters
+      // plus bas), en plus translucide — "si je clique ici, il apparaîtra ainsi".
+      function addKayKitSpawnGuardianGhost(r, c, playerId) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
+        let hero = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
+        if (!hero) hero = makeFallbackHero(playerId);
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+        hero.position.set(p.x, p.y, p.z);
+        hero.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+        const accent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId] || "#ffffff");
+        hero.traverse?.(child => {
+          if (!child.isMesh || !child.material) return;
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          const cloned = materials.map(material => {
+            const mat = material.clone();
+            if ("emissive" in mat) { mat.emissive = accent.clone(); mat.emissiveIntensity = .22; }
+            mat.transparent = true;
+            mat.opacity = .74;
+            mat.depthWrite = false;
+            mat.needsUpdate = true;
+            return mat;
+          });
+          child.material = Array.isArray(child.material) ? cloned : cloned[0];
+          child.renderOrder = 21;
+        });
+        group.add(hero);
       }
 
       function addKayKitActionPreviewCell(r, c, {
@@ -2548,12 +3041,29 @@
           magicPivot: state.magicHoverPivot,
           push: pushPreview,
           force: pushPreview?.force ?? 0,
-          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null
+          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null,
+          spawnHover: state.phase === "PLACE_SPAWN" ? [state.pendingSpawnIslandId, state.hoverAnchor] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
+
+        if (state.phase === "PLACE_SPAWN" && state.pendingSpawnIslandId) {
+          const spawnIsland = state.islands.find(is => is.id === state.pendingSpawnIslandId);
+          const hoverKey = state.hoverAnchor ? key(state.hoverAnchor[0], state.hoverAnchor[1]) : null;
+          (spawnIsland?.cells || []).forEach(([r, c]) => {
+            if (characterAt(r, c)) return;
+            if (key(r, c) === hoverKey) return;
+            addKayKitSpawnAffordance(r, c);
+          });
+          if (state.hoverAnchor) {
+            const [hr, hc] = state.hoverAnchor;
+            const allowed = !!spawnIsland?.cells?.some(([ir, ic]) => ir === hr && ic === hc) && !characterAt(hr, hc);
+            if (allowed) addKayKitSpawnGuardianGhost(hr, hc, state.currentPlayer);
+          }
+          return;
+        }
 
         if (smartResting) {
           const hoverKey = state.actionHoverCell ? key(state.actionHoverCell[0], state.actionHoverCell[1]) : null;
@@ -2833,6 +3343,9 @@
 
         const previewColor = previewMode === "magic" ? (valid ? 0xb768ff : 0xff3158) : (valid ? 0x20f39a : 0xff2c4c);
         const previewAccent = new THREE.Color(previewColor);
+        // Le ghost de pose d'île doit rester "léger" (lisible sans écraser le
+        // plateau) ; la rotation magique garde son opacité d'origine, inchangée.
+        const previewOpacity = previewMode === "magic" ? .82 : .60;
 
         const tintPreview = (object) => {
           if (!preview) return;
@@ -2847,7 +3360,7 @@
                 mat.emissiveIntensity = .30;
               }
               mat.transparent = true;
-              mat.opacity = .82;
+              mat.opacity = previewOpacity;
               mat.depthWrite = false;
               mat.needsUpdate = true;
               return mat;
@@ -2870,7 +3383,7 @@
               color: preview ? previewColor : 0x6fbd49,
               roughness: .88,
               transparent: preview,
-              opacity: preview ? .82 : 1
+              opacity: preview ? previewOpacity : 1
             });
             block = new THREE.Mesh(kaykitGeometry('block-bits-loading-fallback-v52', () => new THREE.BoxGeometry(KAYKIT_BLOCK_SIZE, .46, KAYKIT_BLOCK_SIZE)), fallbackMat);
           } else {
@@ -3001,6 +3514,13 @@
         const previewIsland = { id: "placement-preview", owner: null, cells: previewCells };
         const block = makeKayKitIslandBlock(previewIsland, { preview: true, valid, previewMode: "placement" });
         kaykit3D.dynamicGroup.add(block);
+        // Pas de fondu ici : ce ghost est reconstruit à chaque déplacement de
+        // souris via un resync complet de la scène (déjà coûteux en soi), et
+        // traverser+enregistrer chaque mesh du bloc dans animatedObjects à
+        // cette fréquence ajoutait un ralentissement perceptible. Les autres
+        // marqueurs (anneaux d'affordance, halo de sélection), eux, passent
+        // par le chemin léger refreshKayKitHoverPreviews() et gardent leur
+        // fondu.
       }
 
       function renderKayKitMagicRotationPreview() {
@@ -3271,11 +3791,6 @@
           renderKayKitIslandBlocks(dynamic);
           renderKayKitIslandSeams(dynamic);
 
-          // Version épurée : nuages désactivés.
-          kaykit3D.staticGroup.children.forEach(object => {
-            if (object.userData?.fallbackCloud) object.visible = false;
-          });
-
           const artifactByCarrier = new Map();
           [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
             if (artifact.active && artifact.carrierId) artifactByCarrier.set(artifact.carrierId, artifact);
@@ -3531,6 +4046,31 @@
             const s = 1 + Math.sin(elapsed * 3 + object.userData.pulsePhase) * .055;
             object.scale.set(s, s, s);
           }
+          // Rotation "extrêmement lente" du sceau de sélection (voir addCellHighlight,
+          // kind "selected") : un tour complet toutes les ~40 secondes.
+          if (object.userData.slowSpin) {
+            object.rotation.z = elapsed * .16;
+          }
+          // Fondu d'apparition (voir registerKayKitFadeIn) : remonte vers
+          // l'opacité cible puis se retire lui-même de la liste animée.
+          if (object.userData.fadeIn && object.material) {
+            const { start, duration, target } = object.userData.fadeIn;
+            const progress = Math.min(1, (performance.now() - start) / duration);
+            object.material.opacity = target * (progress * (2 - progress));
+            if (progress >= 1) delete object.userData.fadeIn;
+          }
+        });
+        // Dérive des couches célestes (voir buildKayKitSkyEnvironment) : translation
+        // horizontale pure, sans pulsation ni composante verticale, à des vitesses
+        // différentes par couche pour créer du parallaxe. Volontairement lente — un
+        // aller-retour complet dure plusieurs minutes, donc le mouvement ne se
+        // remarque qu'après plusieurs secondes d'observation et n'attire jamais le
+        // regard pendant une décision tactique. Liste séparée d'animatedObjects :
+        // elle survit aux resynchronisations de scène, qui ne concernent que le jeu.
+        (kaykit3D.skyLayers || []).forEach(layer => {
+          if (!layer.object?.parent) return;
+          layer.object.position.x = layer.base.x + Math.sin(elapsed * layer.drift.sx) * layer.drift.x;
+          layer.object.position.z = layer.base.z + Math.cos(elapsed * layer.drift.sz) * layer.drift.z;
         });
         if (kaykit3D.cameraTween) {
           const tween = kaykit3D.cameraTween;
