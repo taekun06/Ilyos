@@ -32,6 +32,12 @@
     const hit=(control.options||[]).find(([v])=>String(v)===String(value));
     return hit ? hit[1] : String(value ?? '');
   }
+  function controlByKey(mode,key){ return (cfg[mode]?.controls||[]).find(control=>control.key===key); }
+  function labelFor(mode,key,value){
+    const control=controlByKey(mode,key);
+    return control ? optionLabel(control,value) : String(value||'');
+  }
+  function safeText(value){return String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
   function notifySettings(){
     const c=cfg[selectedMode];
     send('settings',{mode:selectedMode,playerCount:c?.playerCount,values:{...ensureSelections(selectedMode)}});
@@ -42,24 +48,94 @@
     if(selectedMode==='online') return values.role==='guest' ? 'REJOINDRE LA PARTIE' : 'CRÉER LA PARTIE';
     return c?.playLabel||'JOUER';
   }
+  function playSubLabel(){
+    const values=ensureSelections(selectedMode);
+    if(selectedMode==='solo') return 'ENTRER DANS L’ARÈNE';
+    if(selectedMode==='duel') return 'QUE LE DUEL COMMENCE';
+    if(selectedMode==='team') return '3 COURONNES POUR GAGNER';
+    if(selectedMode==='online') return values.role==='guest' ? 'SE CONNECTER AU SALON' : 'OUVRIR LE SALON';
+    return '';
+  }
   function difficultyMeter(value){
     const levels={easy:1,normal:2,hard:3,expert:4};
     const n=levels[value]||0;
     return `<span class="difficulty-meter" aria-hidden="true">${[1,2,3,4].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</span>`;
   }
-  function safeText(value){return String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-  function teamBlock(values){
-    if(selectedMode!=='team') return '';
-    return `<div class="team-summary"><div class="team team-gold"><b>ÉQUIPE OR</b><span data-team-side="gold">${safeText(values.name1)} · ${safeText(values.name3)}</span></div><div class="team-vs">VS</div><div class="team team-violet"><b>ÉQUIPE VIOLETTE</b><span data-team-side="violet">${safeText(values.name2)} · ${safeText(values.name4)}</span></div><div class="team-goal">OBJECTIF · 3 COURONNES</div></div>`;
+
+  function duelContext(mode,values){
+    if(mode==='solo') return {
+      kicker:'DUEL CONTRE L’IA',
+      leftTop:'CHEVALIER OR', leftBottom:'VOUS',
+      rightTop:'MAGE VIOLET', rightBottom:labelFor(mode,'difficulty',values.difficulty)
+    };
+    if(mode==='duel') return {
+      kicker:'FACE À FACE LOCAL',
+      leftTop:'CHEVALIER OR', leftBottom:values.name1||'JOUEUR 1',
+      rightTop:'MAGE VIOLET', rightBottom:values.name2||'JOUEUR 2'
+    };
+    if(mode==='team') return {
+      kicker:'BATAILLE D’ÉQUIPES',
+      leftTop:'ÉQUIPE OR', leftBottom:`${values.name1||'J1'} + ${values.name3||'J3'}`,
+      rightTop:'ÉQUIPE VIOLETTE', rightBottom:`${values.name2||'J2'} + ${values.name4||'J4'}`
+    };
+    return {
+      kicker:values.role==='guest'?'REJOINDRE UN DUEL':'OUVRIR UN DUEL',
+      leftTop:'CHEVALIER OR', leftBottom:values.name1||'VOUS',
+      rightTop:'MAGE VIOLET', rightBottom:values.role==='guest'?'HÔTE':'INVITÉ'
+    };
   }
-  function updateTeamSummary(){
-    if(selectedMode!=='team') return;
-    const values=ensureSelections('team');
-    const gold=panel.querySelector('[data-team-side="gold"]');
-    const violet=panel.querySelector('[data-team-side="violet"]');
-    if(gold) gold.textContent=`${values.name1} · ${values.name3}`;
-    if(violet) violet.textContent=`${values.name2} · ${values.name4}`;
+
+  function duelHeader(mode,values){
+    const c=cfg[mode];
+    const ctx=duelContext(mode,values);
+    return `<div class="duel-panel-head">
+      <div class="duelist duelist-gold"><span class="duelist-gem"></span><small>${safeText(ctx.leftTop)}</small><b>${safeText(ctx.leftBottom)}</b></div>
+      <div class="duel-medallion"><span class="duel-spark">✦</span><b>${safeText(c.label)}</b><small>${safeText(ctx.kicker)}</small></div>
+      <div class="duelist duelist-violet"><span class="duelist-gem"></span><small>${safeText(ctx.rightTop)}</small><b>${safeText(ctx.rightBottom)}</b></div>
+    </div>`;
   }
+
+  function summaryChips(mode,values){
+    const chips=[];
+    if(values.board!=null) chips.push(labelFor(mode,'board',values.board));
+    if(values.difficulty!=null) chips.push(`IA ${labelFor(mode,'difficulty',values.difficulty)}`);
+    if(values.timer!=null) chips.push(labelFor(mode,'timer',values.timer));
+    if(mode==='team') chips.push('OBJECTIF 3 COURONNES');
+    if(mode==='online') chips.push(values.role==='guest'?'REJOINDRE':'CRÉER');
+    return `<div class="duel-summary-chips">${chips.filter(Boolean).map(label=>`<span>${safeText(label)}</span>`).join('')}</div>`;
+  }
+
+  function editableField(control,values,extra=''){
+    const shown=String(values[control.key]??control.default??'');
+    const isCode=control.kind==='code';
+    const placeholder=isCode?(shown==='AUTO'?'AUTO':'CODE'):'NOM';
+    const value=shown==='AUTO'?'':safeText(shown);
+    return `<div class="field editable-field ${extra}" data-key="${control.key}"><div class="label">${control.label}</div><div class="control editable-control"><input class="value editable-value" data-edit="${control.key}" data-kind="${control.kind||'text'}" maxlength="${isCode?8:18}" value="${value}" placeholder="${placeholder}" autocomplete="off" spellcheck="false"></div></div>`;
+  }
+
+  function selectorField(control,values){
+    const fixed=!!control.fixed || (control.options||[]).length<2;
+    const meter=control.key==='difficulty'?difficultyMeter(values[control.key]):'';
+    return `<div class="field selector-field" data-key="${control.key}"><div class="label">${control.label}</div><div class="control"><button type="button" data-step="-1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Précédent">‹</button><div class="value"><span class="value-text">${optionLabel(control,values[control.key])}</span>${meter}</div><button type="button" data-step="1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Suivant">›</button></div></div>`;
+  }
+
+  function duelNames(mode,controls,values){
+    const names=controls.filter(control=>control.editable&&control.kind==='name');
+    if(mode==='duel'&&names.length>=2){
+      return `<div class="duel-name-grid">
+        <div class="duel-name-card gold-name"><span>♜</span>${editableField(names[0],values,'compact-name')}</div>
+        <div class="duel-name-card violet-name"><span>♝</span>${editableField(names[1],values,'compact-name')}</div>
+      </div>`;
+    }
+    if(mode==='team'&&names.length>=4){
+      return `<div class="team-name-grid">
+        <div class="team-name-card team-name-gold"><div class="team-name-title">ÉQUIPE OR</div>${editableField(names[0],values,'compact-name')}${editableField(names[2],values,'compact-name')}</div>
+        <div class="team-name-card team-name-violet"><div class="team-name-title">ÉQUIPE VIOLETTE</div>${editableField(names[1],values,'compact-name')}${editableField(names[3],values,'compact-name')}</div>
+      </div>`;
+    }
+    return names.map(control=>editableField(control,values)).join('');
+  }
+
   function stepControl(control,direction){
     if(control.fixed || control.editable || !control.options?.length) return;
     const values=control.options.map(([value])=>String(value));
@@ -70,29 +146,26 @@
     render(selectedMode,false);
     notifySettings();
   }
+
   function render(mode,emit=true){
     const c=cfg[mode]; if(!c) return;
     selectedMode=mode;
     const values=ensureSelections(mode);
+    duel.dataset.mode=mode;
+    document.body.dataset.duelMode=mode;
     desc.textContent=c.description||'';
-    play.textContent=playLabel();
+    play.innerHTML=`<span class="play-main">${playLabel()}</span><small>${playSubLabel()}</small>`;
 
-    const controls=(c.controls||[]).map(control=>{
-      if(control.editable){
-        const shown=String(values[control.key]??control.default??'');
-        const isCode=control.kind==='code';
-        return `<div class="field ${isCode?'code-field':''}" data-key="${control.key}"><div class="label">${control.label}</div><div class="control editable-control"><input class="value editable-value" data-edit="${control.key}" data-kind="${control.kind||'text'}" maxlength="${isCode?8:18}" value="${shown==='AUTO'?'':shown.replace(/"/g,'&quot;')}" placeholder="${shown==='AUTO'?'AUTO':'NOM'}" autocomplete="off" spellcheck="false"></div></div>`;
-      }
-      const fixed=!!control.fixed || (control.options||[]).length<2;
-      const meter=control.key==='difficulty'?difficultyMeter(values[control.key]):'';
-      return `<div class="field" data-key="${control.key}"><div class="label">${control.label}</div><div class="control"><button type="button" data-step="-1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Précédent">‹</button><div class="value"><span class="value-text">${optionLabel(control,values[control.key])}</span>${meter}</div><button type="button" data-step="1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Suivant">›</button></div></div>`;
-    }).join('');
+    const controls=c.controls||[];
+    const standard=controls.filter(control=>!(control.editable&&control.kind==='name'));
+    const renderedStandard=standard.map(control=>control.editable?editableField(control,values):selectorField(control,values)).join('');
+    const names=duelNames(mode,controls,values);
 
-    panel.innerHTML=`<div class="mode-name">${c.label}</div>${teamBlock(values)}${controls}<div class="dots">${[0,1,2,3].map(i=>`<span class="dot ${i===c.dot?'on':''}"></span>`).join('')}</div>`;
+    panel.innerHTML=`${duelHeader(mode,values)}<div class="duel-panel-body">${renderedStandard}${names}</div>${summaryChips(mode,values)}<div class="dots">${[0,1,2,3].map(i=>`<span class="dot ${i===c.dot?'on':''}"></span>`).join('')}</div>`;
     panel.dataset.mode=mode;
 
     panel.querySelectorAll('[data-step]').forEach(btn=>btn.addEventListener('click',()=>{
-      const control=(c.controls||[]).find(item=>item.key===btn.dataset.key);
+      const control=controls.find(item=>item.key===btn.dataset.key);
       btn.classList.remove('tap'); void btn.offsetWidth; btn.classList.add('tap');
       if(control) stepControl(control,Number(btn.dataset.step)||1);
     }));
@@ -103,11 +176,10 @@
         raw=isCode ? raw.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8) : raw.replace(/[<>]/g,'').slice(0,18);
         input.value=raw;
         values[input.dataset.edit]=raw||(isCode?'AUTO':'JOUEUR');
-        updateTeamSummary();
         notifySettings();
       };
       input.addEventListener('input',update);
-      input.addEventListener('change',update);
+      input.addEventListener('change',()=>{update();render(selectedMode,false)});
     });
 
     if(emit){ send('mode',{mode,config:c}); notifySettings(); }
