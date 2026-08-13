@@ -15,19 +15,68 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
   `;
   document.head.appendChild(guardStyle);
 
+  const MODE_MAP = { solo:'1', duel:'2', team:'4', online:'online' };
+
+  function fireChange(node){
+    if (!node) return;
+    node.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+
   function setLegacyMode(mode) {
-    const map = { solo:'1', duel:'2', team:'4', online:'online' };
     const select = document.getElementById('playerCount');
-    if (!select || !(mode in map)) return false;
-    select.value = map[mode];
-    select.dispatchEvent(new Event('change', { bubbles:true }));
+    if (!select || !(mode in MODE_MAP)) return false;
+    select.value = MODE_MAP[mode];
+    fireChange(select);
     return true;
   }
 
-  function launchGame(mode) {
+  function setSelect(id, value) {
+    const node = document.getElementById(id);
+    if (!node || value == null) return false;
+    const wanted = String(value);
+    if (![...node.options].some(opt => opt.value === wanted)) return false;
+    node.value = wanted;
+    fireChange(node);
+    return true;
+  }
+
+  function setInput(id, value) {
+    const node = document.getElementById(id);
+    if (!node) return false;
+    node.value = value == null || value === 'AUTO' ? '' : String(value);
+    node.dispatchEvent(new Event('input', { bubbles:true }));
+    node.dispatchEvent(new Event('change', { bubbles:true }));
+    return true;
+  }
+
+  function applySettings(mode, values = {}) {
     setLegacyMode(mode);
-    const launch = document.getElementById('altStartBtn') || document.getElementById('startBtn');
-    if (launch) launch.click();
+
+    /* playerCount change rebuilds the legacy setup synchronously. Apply values only afterwards. */
+    if (mode === 'solo') {
+      setSelect('startingBoardSelect', values.board || 'classic');
+      setSelect('turnTimerSelect', values.timer || '0');
+      setSelect('aiDifficultySelect', values.difficulty || 'normal');
+    } else if (mode === 'duel') {
+      setSelect('startingBoardSelect', values.board || 'classic');
+      setSelect('turnTimerSelect', values.timer || '0');
+    } else if (mode === 'online') {
+      setSelect('onlineRoleSelect', values.role || 'host');
+      /* Role change may enable/disable board/code fields, so apply them after it. */
+      setInput('onlineRoomInput', values.roomCode || 'AUTO');
+      if ((values.role || 'host') === 'host') setSelect('startingBoardSelect', values.board || 'classic');
+    }
+    return true;
+  }
+
+  function launchGame(mode, values) {
+    applySettings(mode, values || {});
+    requestAnimationFrame(() => {
+      /* Re-apply once after the legacy setup's own handlers have settled. */
+      applySettings(mode, values || {});
+      const launch = document.getElementById('altStartBtn') || document.getElementById('startBtn');
+      launch?.click();
+    });
   }
 
   function syncFrame(frame) {
@@ -52,7 +101,7 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
-    frame.src = './menu/frame.html?v=menu-v11-frame-2';
+    frame.src = './menu/frame.html?v=menu-controls-3';
     frame.setAttribute('allow', 'autoplay');
     document.body.appendChild(frame);
 
@@ -62,8 +111,9 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
       if (msg.source !== 'ilyos-menu') return;
 
       if (msg.type === 'mode') setLegacyMode(msg.detail?.mode);
+      if (msg.type === 'settings') applySettings(msg.detail?.mode, msg.detail?.values || {});
       if (msg.type === 'play') {
-        launchGame(msg.detail?.mode);
+        launchGame(msg.detail?.mode, msg.detail?.values || {});
         setTimeout(() => syncFrame(frame), 100);
         setTimeout(() => syncFrame(frame), 700);
       }
