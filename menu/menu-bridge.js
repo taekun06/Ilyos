@@ -17,7 +17,14 @@
     if (!style) {
       style = document.createElement('style');
       style.id = 'ilyos-menu-legacy-bridge-style';
-      style.textContent = `body.ilyos-new-menu-visible > #setupScreen{visibility:hidden!important;pointer-events:none!important}`;
+      style.textContent = `
+        body.ilyos-new-menu-visible > #setupScreen{
+          visibility:hidden!important;
+          opacity:0!important;
+          pointer-events:none!important;
+        }
+        #ilyos-new-menu{display:block!important;visibility:visible!important;opacity:1!important}
+      `;
       document.head.appendChild(style);
     }
 
@@ -30,24 +37,39 @@
     }
 
     function syncVisibility() {
-      const gameIsVisible = gameScreen && !gameScreen.classList.contains('hidden');
-      const setupIsVisible = legacySetup && !legacySetup.classList.contains('hidden');
-      if (gameIsVisible) {
+      const gameIsVisible = !!(gameScreen && !gameScreen.classList.contains('hidden'));
+      const setupExists = !!legacySetup;
+
+      /* Important: at startup some legacy code briefly toggles gameScreen.
+         The new menu must stay authoritative until a real game launch happens. */
+      if (host.dataset.gameLaunched === '1' && gameIsVisible) {
         document.body.classList.remove('ilyos-new-menu-visible');
         window.ILYOS_NEW_MENU?.hide();
-      } else if (setupIsVisible) {
+        return;
+      }
+
+      if (setupExists) {
         document.body.classList.add('ilyos-new-menu-visible');
-        if (window.ILYOS_NEW_MENU) { window.ILYOS_NEW_MENU.show(); window.ILYOS_NEW_MENU.openHome(); }
+        if (window.ILYOS_NEW_MENU) {
+          window.ILYOS_NEW_MENU.show();
+          if (host.dataset.keepDuel !== '1') window.ILYOS_NEW_MENU.openHome();
+        }
       }
     }
 
-    host.addEventListener('ilyos-menu-mode', e => applyMode(e.detail.mode));
+    host.addEventListener('ilyos-menu-mode', e => {
+      host.dataset.keepDuel = '1';
+      applyMode(e.detail.mode);
+    });
+
     host.addEventListener('ilyos-menu-play', e => {
       applyMode(e.detail.mode);
+      host.dataset.gameLaunched = '1';
       const launch = altStartBtn || startBtn;
       launch?.click();
       setTimeout(syncVisibility, 50);
       setTimeout(syncVisibility, 400);
+      setTimeout(syncVisibility, 1200);
     });
 
     host.addEventListener('ilyos-menu-action', e => {
@@ -59,12 +81,18 @@
     });
 
     const observer = new MutationObserver(syncVisibility);
-    if (legacySetup) observer.observe(legacySetup, { attributes:true, attributeFilter:['class'] });
-    if (gameScreen) observer.observe(gameScreen, { attributes:true, attributeFilter:['class'] });
+    if (legacySetup) observer.observe(legacySetup, { attributes:true, attributeFilter:['class','style'] });
+    if (gameScreen) observer.observe(gameScreen, { attributes:true, attributeFilter:['class','style'] });
 
     applyMode(window.ILYOS_MENU_CONFIG?.defaultMode || 'solo');
+    document.body.classList.add('ilyos-new-menu-visible');
+    window.ILYOS_NEW_MENU?.show();
+    window.ILYOS_NEW_MENU?.openHome();
     syncVisibility();
+
+    console.info('[ILYOS menu] bridge ready');
   }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once:true });
   else boot();
 })();
