@@ -326,6 +326,23 @@
       els.hand.addEventListener("wheel", handleActionWheel, { passive: false });
       els.boardWrap.addEventListener("click", cancelFromBackdrop);
       document.addEventListener("keydown", handleRotateKey);
+      // Échap : ferme d'abord une éventuelle fenêtre ouverte (règles, menu son) —
+      // sans quoi Échap déclencherait une annulation de coup EN PLUS de fermer la
+      // fenêtre au clic suivant, un comportement surprenant. Sinon, même geste que
+      // le bouton "Annuler" (handleCancelButton gère déjà la bonne priorité entre
+      // désélection en cours et annulation réelle d'action — voir turns.js).
+      document.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        if (els.rulesModal && !els.rulesModal.classList.contains("hidden")) {
+          els.rulesModal.classList.add("hidden");
+          return;
+        }
+        if (els.soundMenu && !els.soundMenu.classList.contains("hidden")) {
+          closeSoundMenu();
+          return;
+        }
+        handleCancelButton();
+      });
 
       els.rotateLeftBtn.addEventListener("click", () => rotateSelectedIsland(-1));
       els.rotateRightBtn.addEventListener("click", () => rotateSelectedIsland(1));

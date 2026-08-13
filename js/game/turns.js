@@ -75,7 +75,7 @@
         state.pendingSpawnIslandId = null;
         state.fxCells = [];
         state.inputLocked = false;
-        state.undoSnapshot = null;
+        state.undoHistory = [];
         state.selectedActionCardId = null;
         state.selectedActionType = null;
         state.selectedActionCount = 1;
@@ -170,13 +170,30 @@
         });
       }
 
+      // Pile d'instantanés plutôt qu'un slot unique : chaque action jouée empile
+      // son état d'avant, ce qui permet de remonter plusieurs coups en arrière en
+      // rappelant restoreUndoSnapshot() plusieurs fois (bouton, Échap, clic droit —
+      // voir bindKayKitInteractions). Plafond généreux, juste pour éviter une
+      // croissance illimitée sur une très longue partie.
+      const UNDO_HISTORY_LIMIT = 20;
+
       function saveUndoSnapshot() {
-        state.undoSnapshot = snapshotState();
+        state.undoHistory ||= [];
+        state.undoHistory.push(snapshotState());
+        if (state.undoHistory.length > UNDO_HISTORY_LIMIT) state.undoHistory.shift();
+      }
+
+      // Retire le dernier instantané empilé SANS le restaurer : utilisé quand
+      // l'action pour laquelle il venait d'être pris échoue finalement (ex. cible
+      // déjà occupée) — l'historique ne doit garder que des états correspondant à
+      // des actions réellement jouées.
+      function discardLastUndoSnapshot() {
+        state.undoHistory?.pop();
       }
 
       function restoreUndoSnapshot() {
-        if (!state?.undoSnapshot) return false;
-        const snap = JSON.parse(state.undoSnapshot);
+        if (!state?.undoHistory?.length) return false;
+        const snap = JSON.parse(state.undoHistory.pop());
         state.players = snap.players;
         state.currentPlayer = snap.currentPlayer;
         state.round = snap.round;
@@ -221,9 +238,10 @@
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
         state.actionHoverCell = null;
-        state.undoSnapshot = null;
         renderAll();
-        showToast("Dernière action annulée.");
+        showToast(state.undoHistory.length
+          ? `Action annulée · ${state.undoHistory.length} de plus possible${state.undoHistory.length > 1 ? "s" : ""}.`
+          : "Dernière action annulée.");
         return true;
       }
 

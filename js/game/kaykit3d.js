@@ -2067,7 +2067,11 @@
             return {
               kind: "move",
               actionable: true,
-              color: moveCost > 1 ? 0x5be8ff : 0x23e89a,
+              // Marron uniforme, quel que soit le coût : la distinction cyan/vert par
+              // coût laissait un rond cyan visible sur les diagonales, incohérent avec
+              // les anneaux d'affordance persistants (déjà marron, voir
+              // addKayKitMoveAffordance).
+              color: 0xd9922f,
               label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`,
               facing: mover ? kaykitFacingRotation(mover.r, mover.c, r, c) : null
             };
@@ -2114,7 +2118,11 @@
             return {
               kind: "move",
               actionable: true,
-              color: moveCost > 1 ? 0x5be8ff : 0x23e89a,
+              // Marron uniforme, quel que soit le coût : la distinction cyan/vert par
+              // coût laissait un rond cyan visible sur les diagonales, incohérent avec
+              // les anneaux d'affordance persistants (déjà marron, voir
+              // addKayKitMoveAffordance).
+              color: 0xd9922f,
               label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`,
               facing: actor ? kaykitFacingRotation(actor.r, actor.c, r, c) : null
             };
@@ -2163,7 +2171,7 @@
           };
         }
         if (classes?.contains("push-target-preview") || classes?.contains("push-destination-preview") || classes?.contains("push-destination")) return { kind: "push", actionable: true, color: 0xff8a32, label: "POUSSER CETTE CIBLE" };
-        if (classes?.contains("reachable") || classes?.contains("move-target-preview") || classes?.contains("move-path-preview")) return { kind: "move", actionable: true, color: 0x23e89a, label: "DÉPLACER ICI" };
+        if (classes?.contains("reachable") || classes?.contains("move-target-preview") || classes?.contains("move-path-preview")) return { kind: "move", actionable: true, color: 0xd9922f, label: "DÉPLACER ICI" };
         if (classes?.contains("selected") || classes?.contains("selected-character")) return { kind: "select", actionable: true, color: 0xf4c84b, label: "SÉLECTION ACTIVE" };
         return { kind: "neutral", actionable: false, color: 0xf4c84b, label: "" };
       }
@@ -2443,7 +2451,15 @@
         canvas.addEventListener("wheel", event => {
           event.stopPropagation();
         }, { passive: false });
-        canvas.addEventListener("contextmenu", event => event.preventDefault());
+        canvas.addEventListener("contextmenu", event => {
+          // Le clic droit sert déjà à tourner la caméra (OrbitControls, voir plus
+          // haut) : `dragMoved` (déjà utilisé pour désambiguïser le clic gauche
+          // simple d'un glissé, tous boutons confondus) permet de ne déclencher
+          // l'annulation que sur un clic droit SEC, jamais après une rotation.
+          event.preventDefault();
+          if (dragMoved) return;
+          handleCancelButton();
+        });
       }
 
       function kaykitFitDistance(aspect = kaykit3D?.camera?.aspect || 1, mode = kaykit3D?.viewMode || "isometric") {
@@ -2702,6 +2718,59 @@
         return texture;
       }
 
+      // Halo : un unique dégradé radial NET (cœur plein, extinction douce, contour
+      // parfaitement circulaire) — à ne jamais confondre avec kaykitCloudTexture, qui
+      // superpose des amas irréguliers pour lire comme un nuage, pas comme une source
+      // de lumière. Un premier essai réutilisait cette texture nuage pour le halo du
+      // gardien sélectionné : le contour bosselé et asymétrique se lisait comme une
+      // tache plutôt qu'un halo. Cette texture-ci sert à la fois au disque au sol et
+      // au faisceau vertical (voir la boucle de rendu des héros) — un seul dégradé
+      // suffit aux deux, il change juste d'échelle.
+      function kaykitGlowTexture() {
+        const key = "glow-radial-v1";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const c = size / 2;
+        const glow = ctx.createRadialGradient(c, c, 0, c, c, c);
+        glow.addColorStop(0, "rgba(255,255,255,1)");
+        glow.addColorStop(.35, "rgba(255,255,255,.85)");
+        glow.addColorStop(.65, "rgba(255,255,255,.32)");
+        glow.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, size, size);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Fondu vertical simple (bas opaque → haut transparent), appliqué au flanc
+      // d'un cylindre plutôt qu'à deux plans croisés : un cylindre garde toujours
+      // un contour arrondi quel que soit l'angle de caméra, donc jamais cette
+      // "carte plate" qui tranche le personnage en deux vue de biais.
+      function kaykitBeamGradientTexture() {
+        const key = "beam-gradient-v1";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const w = 8, h = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, h, 0, 0);
+        grad.addColorStop(0, "rgba(255,255,255,.9)");
+        grad.addColorStop(.18, "rgba(255,255,255,.6)");
+        grad.addColorStop(.6, "rgba(255,255,255,.18)");
+        grad.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
       function kaykitCanvasTexture(name, base, accent) {
         const key = `surface-v30-${name}-${base}-${accent}`;
         if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
@@ -2784,12 +2853,13 @@
 
       function addCellHighlight(r, c, classList) {
         if (!kaykit3D || !classList) return;
-        // Dès que la rotation magique a un ghost 3D à afficher (île tournée d'au
-        // moins un cran), les carrés plats ci-dessous — posés à la fois sur
-        // l'ancienne position (îlot caché, donc sol nu) et sur la nouvelle
-        // (déjà représentée par ce ghost en volume) — ne font plus que doubler
-        // ou contredire visuellement ce ghost. On les masque, le ghost seul suffit.
-        const magicGhostActive = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!(state?.magicPreviewSteps || 0);
+        // Dès l'entrée en MAGIE avec une île choisie, le ghost 3D (contour d'origine +
+        // bloc teinté vert/rouge, voir renderKayKitMagicRotationPreview) s'affiche en
+        // continu — plus seulement une fois la rotation amorcée (magicPreviewSteps
+        // ≠ 0). Les carrés plats ci-dessous ne font donc plus que doubler ce ghost,
+        // même à 0 cran : on les masque pour toute la durée de l'action, pas
+        // seulement après le premier cran de rotation.
+        const magicGhostActive = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!state?.selectedIslandId;
         // Même principe que pour la rotation magique : le ghost 3D de
         // renderKayKitPlacementPreview() (vrai modèle d'île, teinté vert/rouge)
         // montre déjà l'empreinte exacte. Le carré plat en dessous ne ferait
@@ -2804,21 +2874,29 @@
         // information — on masque le sceau d'île pendant cette phase.
         const islandSealSuppressed = state?.phase === "PLACE_SPAWN";
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
-        if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
-        else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
-        else if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
+        // fx-push/fx-move pilotaient un anneau de "validation" affiché après coup, une
+        // fois le déplacement/la poussée terminés — retiré : plus aucune trace visuelle
+        // au sol une fois l'action jouée (voir le bloc resultRing, supprimé plus bas).
+        if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
         else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
         else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
-        else if (classList.contains("selected-character") || (!islandSealSuppressed && classList.contains("selected"))) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
+        // Le gardien sélectionné (selected-character) n'a plus de marqueur au sol : il
+        // brille lui-même à la place (voir la boucle de rendu des héros, plus bas, et
+        // l'émissif pulsé dans animateKayKit3D). Seule une ÎLE sélectionnée (classe
+        // "selected" générique, hors invocation) garde ce sceau au sol.
+        else if (!islandSealSuppressed && classList.contains("selected")) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
         else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
         else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
         else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .46; kind = "push" }
         else if (classList.contains("push-line-preview")) { color = 0xffb14b; fillOpacity = .34; kind = "push" }
-        else if (classList.contains("diagonal-step-preview")) { color = 0x63e6ff; fillOpacity = .46; kind = "move" }
-        else if (classList.contains("move-target-preview")) { color = 0x23e89a; fillOpacity = .58; kind = "move"; size = .90 }
-        else if (classList.contains("move-path-preview")) { color = 0x36e6a3; fillOpacity = .34; kind = "move" }
-        else if (classList.contains("reachable")) { color = 0x23e89a; fillOpacity = .52; kind = "move" }
+        // Marron uniforme (0xd9922f) sur tout l'identifiant "move", diagonale comprise :
+        // ces cases utilisaient encore deux bleus cyan (0x63e6ff/0x36e6a3), en décalage
+        // avec le reste du déplacement déjà recoloré.
+        else if (classList.contains("diagonal-step-preview")) { color = 0xd9922f; fillOpacity = .46; kind = "move" }
+        else if (classList.contains("move-target-preview")) { color = 0xd9922f; fillOpacity = .58; kind = "move"; size = .90 }
+        else if (classList.contains("move-path-preview")) { color = 0xd9922f; fillOpacity = .34; kind = "move" }
+        else if (classList.contains("reachable")) { color = 0xd9922f; fillOpacity = .52; kind = "move" }
         if (color === null) return;
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
         const y = p.y + .026;
@@ -2996,32 +3074,6 @@
           kaykit3D.animatedObjects.push(runeGroup);
         }
 
-        // Les classes fx-* existaient déjà côté logique : ce bref anneau les rend enfin
-        // visibles dans le rendu 3D sans rallonger ni bloquer l'action.
-        if (kind === "result-move" || kind === "result-push") {
-          const resultRing = new THREE.Mesh(
-            new THREE.RingGeometry(.28, .46, 32),
-            new THREE.MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: .92,
-              side: THREE.DoubleSide,
-              depthWrite: false,
-              depthTest: false
-            })
-          );
-          resultRing.rotation.x = -Math.PI / 2;
-          resultRing.position.set(p.x, y + .075, p.z);
-          resultRing.renderOrder = 58;
-          resultRing.userData.pulse = true;
-          resultRing.userData.pulsePhase = (r * 7 + c) * .51;
-          kaykit3D.dynamicGroup.add(resultRing);
-          kaykit3D.animatedObjects.push(resultRing);
-
-          const resultLight = new THREE.PointLight(color, .62, 2.1, 2);
-          resultLight.position.set(p.x, y + .55, p.z);
-          kaykit3D.dynamicGroup.add(resultLight);
-        }
       }
 
       // Fondu d'apparition pour un marqueur 3D éphémère (anneau d'affordance,
@@ -3056,9 +3108,26 @@
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
+        // Bronze ambré (0xd9922f), même identité que le surlignage "case atteignable"
+        // (move-target-preview/reachable dans addCellHighlight). Un premier essai en
+        // marron désaturé (0x9c6b3f) se délavait en gris une fois mélangé en
+        // transparence au vert saturé du plateau — même hue, valeur trop proche. Le
+        // contraste vient maintenant de la VALEUR autant que de la teinte : liseré
+        // sombre (quasi opaque) juste sous l'anneau clair, comme un contour de bande
+        // dessinée — la combinaison reste lisible sur n'importe quel fond, pas
+        // seulement celui-ci.
+        const outerStroke = new THREE.Mesh(
+          kaykitGeometry("smart-move-ring-stroke-v1", () => new THREE.TorusGeometry(.165, .040, 8, 28)),
+          new THREE.MeshBasicMaterial({ color: 0x3d2408, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+        );
+        outerStroke.rotation.x = -Math.PI / 2;
+        outerStroke.position.set(p.x, p.y - .002, p.z);
+        outerStroke.renderOrder = 19;
+        group.add(outerStroke);
+        registerKayKitFadeIn(outerStroke);
         const outer = new THREE.Mesh(
           kaykitGeometry("smart-move-ring-outer-v1", () => new THREE.TorusGeometry(.16, .026, 8, 28)),
-          new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0xd9922f, transparent: true, opacity: .94, depthWrite: false, side: THREE.DoubleSide })
         );
         outer.rotation.x = -Math.PI / 2;
         outer.position.set(p.x, p.y, p.z);
@@ -3068,7 +3137,7 @@
         if (costTier >= 2) {
           const inner = new THREE.Mesh(
             kaykitGeometry("smart-move-ring-inner-v1", () => new THREE.TorusGeometry(.095, .020, 8, 24)),
-            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+            new THREE.MeshBasicMaterial({ color: 0xd9922f, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
           );
           inner.rotation.x = -Math.PI / 2;
           inner.position.set(p.x, p.y + .003, p.z);
@@ -3311,14 +3380,14 @@
           path.forEach(([r, c], index) => {
             const diagonal = !!path.steps?.[index]?.diagonal;
             addKayKitActionPreviewCell(r, c, {
-              color: diagonal ? 0x63e6ff : 0x36e6a3,
+              color: 0xd9922f,
               opacity: diagonal ? .46 : .30,
               size: .72
             });
           });
           if (state.actionHoverCell) {
             addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
-              color: 0x23e89a,
+              color: 0xd9922f,
               opacity: .58,
               size: .88,
               pulse: true
@@ -3718,11 +3787,15 @@
 
       function renderKayKitIslandBlocks(group) {
         if (kaykit3D) kaykit3D.islandColorMap = buildIlyosIslandColorMap(state?.islands || []);
+        // Masqué pour toute la durée de l'action MAGIE (plus seulement une fois la
+        // rotation amorcée) : le contour d'origine + le bloc-ghost teinté de
+        // renderKayKitMagicRotationPreview prennent le relais dès la sélection de
+        // l'île, en continu — sans ce masquage assorti, le bloc réel et le ghost se
+        // superposaient à 0 cran de rotation.
         const hideSelectedForMagic = state?.phase === "ACTION"
           && state?.selectedActionType === "MAGIC"
           && state?.selectedIslandId
-          && Array.isArray(state?.magicPreviewCells)
-          && (state?.magicPreviewSteps || 0) !== 0;
+          && Array.isArray(state?.magicPreviewCells);
         (state?.islands || []).forEach(island => {
           if (hideSelectedForMagic && island.id === state.selectedIslandId) return;
           const block = makeKayKitIslandBlock(island);
@@ -3751,10 +3824,13 @@
 
       function renderKayKitMagicRotationPreview() {
         if (!kaykit3D || state?.phase !== "ACTION" || state?.selectedActionType !== "MAGIC") return;
-        if (!state.selectedIslandId || !Array.isArray(state.magicPreviewCells) || !(state.magicPreviewSteps || 0)) return;
+        // Affiché en continu dès l'île choisie, pas seulement une fois la rotation
+        // amorcée (magicPreviewSteps ≠ 0) : le joueur doit voir d'où part l'île
+        // pendant toute l'action, pas seulement après le premier cran de rotation.
+        if (!state.selectedIslandId || !Array.isArray(state.magicPreviewCells)) return;
 
         // Trace au sol, discrète, de l'emplacement de départ : le bloc normal de
-        // cette île est caché pendant la rotation (voir hideSelectedForMagic dans
+        // cette île est caché pendant toute l'action (voir hideSelectedForMagic dans
         // renderKayKitIslandBlocks), donc sans ce contour on ne voit plus du tout
         // d'où elle vient. Volontairement très en retrait du ghost coloré.
         const originalIsland = state.islands.find(item => item.id === state.selectedIslandId);
@@ -4091,6 +4167,28 @@
             if (playerId === 0 && assetKey === "hero0") styleKnightMetalArmor(hero);
             if (playerId === 1 && assetKey === "hero1") styleMagePalette(hero);
             const teamColor = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId] || "#ffffff");
+            // Le gardien sélectionné (SMART_CHAR) n'a plus de sceau au sol classique
+            // (voir addCellHighlight) mais garde un ancrage au sol malgré tout — un
+            // premier essai posait un sprite flou au niveau du buste avec la texture
+            // "nuage" (amas irréguliers, pensée pour un ciel, pas pour une source de
+            // lumière) : contour bosselé, lisait comme une tache plutôt qu'un halo.
+            // Remplacé par un vrai halo de faisceau (voir plus bas, kaykitGlowTexture) :
+            // disque net au sol + anneau qui tourne lentement + colonne de lumière.
+            const isSelectedGuardian = character.id === state.selectedCharId;
+            // Or saturé (0xe8a317) comme base DOMINANTE, teinte d'équipe en appoint
+            // (15% seulement) — l'inverse des deux essais précédents, qui partaient
+            // d'une couleur d'équipe pâle et la teintaient légèrement de blanc/crème :
+            // un ton clair reste toujours proche du blanc, quel que soit le mélange,
+            // surtout sur un ciel déjà pâle (peu de contraste de VALEUR, pas de teinte).
+            // Un or franc et assez sombre garde du contraste sur n'importe quel fond.
+            // Cause racine des essais précédents qui "ne changeaient pas de couleur" :
+            // le renderer applique un tone mapping ACES global, qui délave toute
+            // couleur saturée passée par un matériau standard — d'où `toneMapped:
+            // false` sur chaque matériau du halo plus bas (déjà le procédé utilisé
+            // pour le ciel, voir kaykitSkyDomeTexture).
+            const glowColor = isSelectedGuardian ? new THREE.Color(0xffab1f).lerp(teamColor, .15) : teamColor;
+            const glowIntensity = isSelectedGuardian ? .22 : .075;
+            const selectionGlowMaterials = [];
             hero.traverse?.(child => {
               if (!child.isMesh || !child.material) return;
               const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -4098,8 +4196,9 @@
                 const mat = material.clone();
                 mat.userData = { ...(mat.userData || {}), ilyosTransient: true };
                 if ("emissive" in mat) {
-                  mat.emissive = teamColor.clone();
-                  mat.emissiveIntensity = .075;
+                  mat.emissive = glowColor.clone();
+                  mat.emissiveIntensity = glowIntensity;
+                  if (isSelectedGuardian) selectionGlowMaterials.push(mat);
                 }
                 mat.needsUpdate = true;
                 return mat;
@@ -4113,6 +4212,86 @@
             dynamic.add(hero);
             registerKayKitCellVisual(character.r, character.c, hero);
             registerKayKitInteractive(hero, "character", character.r, character.c);
+            if (isSelectedGuardian && selectionGlowMaterials.length) {
+              // Halo en trois pièces, plus aucune n'étant un disque plat au sol — un
+              // disque (même en deux couches, même resserré à .40) reste un cercle vu
+              // du dessus : ça se lit comme un autocollant, pas comme une lumière.
+              // 1. Anneau fin, net, en fondu NORMAL (pas additif) : sa vraie couleur
+              //    s'affiche telle quelle, sans être éclaircie par la fusion avec le
+              //    fond — c'est ce qui manquait pour que la couleur se voie enfin.
+              // 2. Colonne verticale en cylindre effilé (pas deux plans croisés, qui
+              //    présentaient un bord plat tranchant selon l'angle de caméra) :
+              //    contour rond depuis n'importe quel angle.
+              // 3. Petites particules qui montent et s'estompent, à hauteurs et
+              //    phases différentes — c'est ce qui donne un vrai volume 3D (elles
+              //    existent à des profondeurs différentes dans l'espace) plutôt qu'un
+              //    aplat qui ne fonctionne que vu de face.
+              const glowMap = kaykitGlowTexture();
+              const haloGroup = new THREE.Group();
+              haloGroup.position.set(p.x, p.y, p.z);
+              haloGroup.renderOrder = 15;
+
+              const ring = new THREE.Mesh(
+                kaykitGeometry("selection-halo-ring-v1", () => new THREE.TorusGeometry(.34, .017, 8, 40)),
+                new THREE.MeshBasicMaterial({
+                  color: glowColor.clone(), transparent: true, opacity: .95, depthWrite: false,
+                  side: THREE.DoubleSide, toneMapped: false
+                })
+              );
+              ring.rotation.x = -Math.PI / 2;
+              ring.position.y = .04;
+              ring.userData.slowSpin = true;
+              haloGroup.add(ring);
+              kaykit3D.animatedObjects.push(ring);
+
+              // Colonne unique en cylindre effilé (et non deux plans croisés) : un
+              // cylindre présente toujours un contour arrondi, jamais une carte plate
+              // qui semble trancher le personnage selon l'angle de caméra. `FrontSide`
+              // uniquement pour ne pas doubler l'opacité avec les faces arrière vues
+              // par transparence.
+              const beamHeight = 1.1;
+              const beamMaterial = new THREE.MeshBasicMaterial({
+                map: kaykitBeamGradientTexture(), color: glowColor.clone(), transparent: true, opacity: .55,
+                blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, toneMapped: false
+              });
+              const beam = new THREE.Mesh(
+                kaykitGeometry("selection-halo-beam-v2", () => new THREE.CylinderGeometry(.05, .22, beamHeight, 16, 1, true)),
+                beamMaterial
+              );
+              beam.position.y = beamHeight / 2;
+              haloGroup.add(beam);
+
+              // Un matériau CLONÉ par particule : chacune doit pouvoir moduler son
+              // opacité indépendamment (phase de montée décalée) sans faire varier
+              // les 5 autres, ce qu'un matériau partagé unique empêcherait.
+              const particleMaterial = new THREE.SpriteMaterial({
+                map: glowMap, color: glowColor.clone(), transparent: true, opacity: .85,
+                blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false
+              });
+              const particleCount = 6;
+              const particles = [];
+              for (let i = 0; i < particleCount; i++) {
+                const particle = new THREE.Sprite(particleMaterial.clone());
+                const angle = (i / particleCount) * Math.PI * 2;
+                const radius = .16 + (i % 2) * .08;
+                particle.userData.baseAngle = angle;
+                particle.userData.radius = radius;
+                particle.userData.phase = i * .9;
+                particle.scale.setScalar(.09);
+                haloGroup.add(particle);
+                particles.push(particle);
+              }
+
+              dynamic.add(haloGroup);
+              // Reconstruit à chaque sync (comme le reste de dynamicGroup) : on repousse
+              // donc systématiquement une nouvelle entrée plutôt que de réutiliser un
+              // objet d'un cycle précédent (voir animateKayKit3D, userData.selectionGlow).
+              hero.userData.selectionGlow = true;
+              hero.userData.selectionGlowMaterials = selectionGlowMaterials;
+              hero.userData.selectionGlowBase = glowIntensity;
+              hero.userData.selectionHalo = { ring, beamMaterial, particles, particleMaterial };
+              kaykit3D.animatedObjects.push(hero);
+            }
             const pending = kaykit3D.pendingActionAnimations.get(String(character.id));
             const animationIntent =
               pending && pending.expires > performance.now() ? pending.intent : "neutral";
@@ -4276,6 +4455,37 @@
           // kind "selected") : un tour complet toutes les ~40 secondes.
           if (object.userData.slowSpin) {
             object.rotation.z = elapsed * .16;
+          }
+          // Respiration très douce de la brillance du gardien sélectionné (voir la
+          // boucle de rendu des héros) : ±0.14 autour de la base, jamais assez marqué
+          // pour distraire pendant une décision tactique.
+          if (object.userData.selectionGlow && object.userData.selectionGlowMaterials) {
+            const base = object.userData.selectionGlowBase;
+            const breathe = Math.sin(elapsed * 2.1);
+            const value = base + breathe * .14;
+            object.userData.selectionGlowMaterials.forEach(mat => { mat.emissiveIntensity = value; });
+            // Le halo respire en phase avec l'émissif du modèle (même onde) : les deux
+            // se lisent comme une seule source de lumière qui pulse doucement, plutôt
+            // que deux effets désynchronisés. Les particules montent en boucle et
+            // tournent lentement autour du gardien — c'est leur MOUVEMENT dans les
+            // trois dimensions (hauteur qui varie, rotation autour du buste) qui donne
+            // du volume, pas seulement leur forme.
+            const halo = object.userData.selectionHalo;
+            if (halo?.ring?.parent) {
+              halo.beamMaterial.opacity = .30 + breathe * .05;
+              halo.particles.forEach(particle => {
+                const cycle = ((elapsed * .35 + particle.userData.phase) % 2 + 2) % 2;
+                const height = cycle * .55;
+                const fade = cycle < 1 ? cycle : 2 - cycle;
+                const angle = particle.userData.baseAngle + elapsed * .5;
+                particle.position.set(
+                  Math.cos(angle) * particle.userData.radius,
+                  .06 + height,
+                  Math.sin(angle) * particle.userData.radius
+                );
+                particle.material.opacity = fade * .85;
+              });
+            }
           }
           // Fondu d'apparition (voir registerKayKitFadeIn) : remonte vers
           // l'opacité cible puis se retire lui-même de la liste animée.

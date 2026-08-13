@@ -705,7 +705,7 @@
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          undoSnapshot: null,
+          undoHistory: [],
           magicHoverIslandId: null,
           magicHoverPivot: null,
           actionHoverCell: null,
@@ -785,7 +785,7 @@
         restored.inputLocked = false;
         restored.aiThinking = false;
         restored.timerExpiring = false;
-        restored.undoSnapshot = null;
+        restored.undoHistory = [];
         restored.magicHoverIslandId = null;
         restored.magicHoverPivot = null;
         restored.actionHoverCell = null;
@@ -1501,23 +1501,6 @@
         }
       }
 
-      function startDirectMagic(r, c) {
-        if (availableActionCount("MAGIC") < 1) {
-          showToast("Aucune action de magie disponible.");
-          return;
-        }
-        state.phase = "ACTION";
-        state.selectedActionType = "MAGIC";
-        state.selectedActionCount = 1;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        clearSmartHover();
-        clearMagicPreview();
-        handleMagicClick(r, c);
-        playSfx("card");
-      }
-
-
       function setOnlineSetupStatus(message, type = "") {
         const node = document.getElementById("onlineSetupStatus");
         if (!node) return;
@@ -1579,7 +1562,7 @@
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          undoSnapshot: null,
+          undoHistory: [],
           magicHoverIslandId: null,
           magicHoverPivot: null,
           actionHoverCell: null,
@@ -1696,7 +1679,7 @@
         state.aiThinking = false;
         state.timerExpiring = false;
         state.fxCells = [];
-        state.undoSnapshot = null;
+        state.undoHistory = [];
         state.networkRevision = revision || incoming.networkRevision || 0;
         networkRevision = state.networkRevision;
         // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
@@ -2241,7 +2224,7 @@
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
-          undoSnapshot: null,
+          undoHistory: [],
           winner: null
         };
 
@@ -2433,7 +2416,7 @@
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
-          undoSnapshot: null,
+          undoHistory: [],
           winner: null
         };
 

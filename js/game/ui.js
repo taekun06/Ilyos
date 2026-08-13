@@ -867,20 +867,10 @@
           return;
         }
 
-        if (state.phase === "ACTION_SELECT") {
-          const island = islandAt(r, c);
-          const char = characterAt(r, c);
-          const nextIslandId = island && !char && availableActionCount("MAGIC") > 0 ? island.id : null;
-          const nextPivot = nextIslandId ? [r, c] : null;
-          const samePivot = nextPivot ? isSameCell(state.magicHoverPivot, nextPivot) : !state.magicHoverPivot;
-          if (state.magicHoverIslandId !== nextIslandId || !samePivot) {
-            state.magicHoverIslandId = nextIslandId;
-            state.magicHoverPivot = nextPivot;
-            scheduleBoardRender();
-          }
-          return;
-        }
-
+        // Plus d'aperçu magie au survol en ACTION_SELECT (avant tout choix
+        // d'action) : cet aperçu n'a de sens que pendant un usage réel de la
+        // magie (voir plus bas). Survoler une case libre d'île en dehors de
+        // ce contexte ne doit plus rien annoncer côté magie.
         if (state.phase === "ACTION" && state.selectedActionType === "MAGIC") {
           const island = islandAt(r, c);
           const nextIslandId = island?.id || null;
@@ -936,7 +926,7 @@
           return;
         }
 
-        if ((state.phase === "ACTION_SELECT" || (state.phase === "ACTION" && state.selectedActionType === "MAGIC")) && isSameCell(state.magicHoverPivot, [r, c])) {
+        if (state.phase === "ACTION" && state.selectedActionType === "MAGIC" && isSameCell(state.magicHoverPivot, [r, c])) {
           state.magicHoverIslandId = null;
           state.magicHoverPivot = null;
           scheduleBoardRender();
@@ -1008,7 +998,7 @@
           const artifact = artifactById(artifactId)
             || (stealTargetId ? artifactCarriedBy(stealTargetId) : crownCell ? looseArtifactAt(crownCell[0], crownCell[1]) : null);
           if (!artifact || !giveArtifactToCharacter(artifact, claimer)) {
-            state.undoSnapshot = null;
+            discardLastUndoSnapshot();
             showToast("Ce gardien porte déjà une couronne.");
             return false;
           }
@@ -1112,7 +1102,7 @@
             const artifact = artifactById(state.treasureDropArtifactId) || artifactCarriedBy(owner.id);
 
             if (!artifact) {
-              state.undoSnapshot = null;
+              discardLastUndoSnapshot();
               showToast("Aucune couronne à transmettre ou à poser.");
               return;
             }
@@ -1124,7 +1114,7 @@
               && !characterCarriesCrown(clickedAlly.id)
             ) {
               if (!giveArtifactToCharacter(artifact, clickedAlly)) {
-                state.undoSnapshot = null;
+                discardLastUndoSnapshot();
                 showToast("Ce gardien porte déjà une couronne.");
                 return;
               }
@@ -1147,7 +1137,7 @@
             }
 
             if (clickedAlly) {
-              state.undoSnapshot = null;
+              discardLastUndoSnapshot();
               showToast("Choisissez l’allié indiqué ou une case libre adjacente.");
               return;
             }
@@ -1179,7 +1169,7 @@
             const artifact = artifactById(state.crownPickupArtifactId)
               || (stolenFrom ? artifactCarriedBy(stolenFrom.id) : state.crownPickupCell ? looseArtifactAt(state.crownPickupCell[0], state.crownPickupCell[1]) : null);
             if (!artifact || !giveArtifactToCharacter(artifact, pickedChar)) {
-              state.undoSnapshot = null;
+              discardLastUndoSnapshot();
               showToast("Ce gardien porte déjà une couronne.");
               return;
             }
@@ -1354,8 +1344,23 @@
           return;
         }
 
+        // Cliquer une case libre d'île déplace directement le gardien le plus
+        // proche capable de l'atteindre — la magie ne se déclenche plus
+        // implicitement ici, seulement via sa propre carte d'action (menant à
+        // handleMagicClick plus haut).
         if (state.phase === "ACTION_SELECT" && island && !char) {
-          startDirectMagic(r, c);
+          const nearest = nearestMoverForCell(r, c);
+          if (!nearest) {
+            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            return;
+          }
+          state.phase = "ACTION";
+          state.selectedActionType = "MOVE";
+          state.selectedActionCount = availableActionCount("MOVE");
+          state.selectedCharId = nearest.char.id;
+          state.selectedIslandId = null;
+          state.reachable = movementRange(nearest.char, availableActionCount("MOVE"));
+          handleMoveClick(r, c);
           return;
         }
 
@@ -2065,7 +2070,7 @@
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
         const result = targetChar ? pushCharacter(targetChar, dr, dc, force, r, c) : pushLooseArtifact(targetArtifact, dr, dc, force, r, c);
-        if (!result) state.undoSnapshot = null;
+        if (!result) discardLastUndoSnapshot();
         if (!result) return;
 
         // Une poussée (surtout une chute) mérite d'être vue même par le joueur
@@ -2637,15 +2642,15 @@
           || (state.onlineMode && !canLocalPlayerAct());
         const canRotatePlacement = !aiLocked && state.phase === "PLACE_ISLAND";
         const canRotateMagic = !aiLocked && state.phase === "ACTION" && state.selectedActionType === "MAGIC" && !!state.selectedIslandId && !!state.selectedMagicPivot;
-        const canCancel = !aiLocked && (state.phase === "PLACE_ISLAND" || state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType) || state.phase === "DROP_TREASURE" || state.phase === "PICKUP_CROWN" || !!state.undoSnapshot);
+        const canCancel = !aiLocked && (state.phase === "PLACE_ISLAND" || state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType) || state.phase === "DROP_TREASURE" || state.phase === "PICKUP_CROWN" || !!state.undoHistory?.length);
         const canEndFromSelection = state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType);
         const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.cancelCardBtn.disabled = !canCancel;
         // Désélectionner (rien n'est encore consommé) et annuler la dernière
-        // action (undoSnapshot réellement disponible) sont deux idées
-        // différentes : le libellé du bouton ne doit jamais les confondre.
+        // action (undoHistory réellement non vide) sont deux idées différentes :
+        // le libellé du bouton ne doit jamais les confondre.
         if (state.phase === "PLACE_ISLAND") {
           els.cancelCardBtn.textContent = "Changer d’île";
           els.cancelCardBtn.title = "Quitter le placement sans poser cette île";
@@ -2658,8 +2663,10 @@
         } else if (["DROP_TREASURE", "PICKUP_CROWN"].includes(state.phase)) {
           els.cancelCardBtn.textContent = "Quitter le choix";
           els.cancelCardBtn.title = "Revenir au choix des actions";
-        } else if (state.undoSnapshot) {
-          els.cancelCardBtn.textContent = "↶ Annuler dernière action";
+        } else if (state.undoHistory?.length) {
+          els.cancelCardBtn.textContent = state.undoHistory.length > 1
+            ? `↶ Annuler dernière action (${state.undoHistory.length})`
+            : "↶ Annuler dernière action";
           els.cancelCardBtn.title = "Revenir avant la dernière action exécutée";
         } else {
           els.cancelCardBtn.textContent = "Annuler";
@@ -2802,7 +2809,7 @@
         saveUndoSnapshot();
 
         if (consumeAvailableActions("MOVE", 1) < 1) {
-          state.undoSnapshot = null;
+          discardLastUndoSnapshot();
           if (!fromAI) showToast("Aucun déplacement disponible.");
           return false;
         }
