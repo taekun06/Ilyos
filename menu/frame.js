@@ -5,32 +5,53 @@
   const veil=document.getElementById('veil');
   const panel=document.getElementById('panel');
   const desc=document.getElementById('desc');
+  const play=document.getElementById('play');
   const cfg=(window.ILYOS_MENU_CONFIG&&window.ILYOS_MENU_CONFIG.modes)||{};
   let selectedMode=window.ILYOS_MENU_CONFIG?.defaultMode||'solo';
   const selections={};
 
-  function send(type,detail){ parent.postMessage({source:'ilyos-menu',type,detail}, location.origin); }
+  const modal=document.createElement('div');
+  modal.className='menu-modal';
+  modal.innerHTML=`<div class="menu-modal-card"><button class="menu-modal-close" type="button" aria-label="Fermer">×</button><div class="menu-modal-title"></div><div class="menu-modal-body"></div></div>`;
+  document.body.appendChild(modal);
+  const modalTitle=modal.querySelector('.menu-modal-title');
+  const modalBody=modal.querySelector('.menu-modal-body');
+  modal.querySelector('.menu-modal-close').addEventListener('click',()=>modal.classList.remove('open'));
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
 
+  function send(type,detail){ parent.postMessage({source:'ilyos-menu',type,detail}, location.origin); }
   function ensureSelections(mode){
-    const c=cfg[mode];
-    if(!c) return {};
+    const c=cfg[mode]; if(!c) return {};
     if(!selections[mode]) selections[mode]={};
     (c.controls||[]).forEach(control=>{
       if(!(control.key in selections[mode])) selections[mode][control.key]=control.default;
     });
     return selections[mode];
   }
-
   function optionLabel(control,value){
     const hit=(control.options||[]).find(([v])=>String(v)===String(value));
     return hit ? hit[1] : String(value ?? '');
   }
-
   function notifySettings(){
     const c=cfg[selectedMode];
     send('settings',{mode:selectedMode,playerCount:c?.playerCount,values:{...ensureSelections(selectedMode)}});
   }
-
+  function playLabel(){
+    const c=cfg[selectedMode];
+    const values=ensureSelections(selectedMode);
+    if(selectedMode==='online') return values.role==='guest' ? 'REJOINDRE LA PARTIE' : 'CRÉER LA PARTIE';
+    return c?.playLabel||'JOUER';
+  }
+  function difficultyMeter(value){
+    const levels={easy:1,normal:2,hard:3,expert:4};
+    const n=levels[value]||0;
+    return `<span class="difficulty-meter" aria-hidden="true">${[1,2,3,4].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</span>`;
+  }
+  function teamBlock(values){
+    if(selectedMode!=='team') return '';
+    const safe=k=>String(values[k]||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div class="team-summary"><div class="team team-gold"><b>ÉQUIPE OR</b><span>${safe('name1')} · ${safe('name3')}</span></div><div class="team-vs">VS</div><div class="team team-violet"><b>ÉQUIPE VIOLETTE</b><span>${safe('name2')} · ${safe('name4')}</span></div><div class="team-goal">OBJECTIF · 3 COURONNES</div></div>`;
+  }
   function stepControl(control,direction){
     if(control.fixed || control.editable || !control.options?.length) return;
     const values=control.options.map(([value])=>String(value));
@@ -41,43 +62,47 @@
     render(selectedMode,false);
     notifySettings();
   }
-
   function render(mode,emit=true){
     const c=cfg[mode]; if(!c) return;
     selectedMode=mode;
     const values=ensureSelections(mode);
     desc.textContent=c.description||'';
+    play.textContent=playLabel();
 
     const controls=(c.controls||[]).map(control=>{
       if(control.editable){
         const shown=String(values[control.key]??control.default??'');
-        return `<div class="field" data-key="${control.key}"><div class="label">${control.label}</div><div class="control editable-control"><input class="value editable-value" data-edit="${control.key}" maxlength="8" value="${shown==='AUTO'?'':shown}" placeholder="${shown==='AUTO'?'AUTO':'CODE'}" autocomplete="off" spellcheck="false"></div></div>`;
+        const isCode=control.kind==='code';
+        return `<div class="field ${isCode?'code-field':''}" data-key="${control.key}"><div class="label">${control.label}</div><div class="control editable-control"><input class="value editable-value" data-edit="${control.key}" data-kind="${control.kind||'text'}" maxlength="${isCode?8:18}" value="${shown==='AUTO'?'':shown.replace(/"/g,'&quot;')}" placeholder="${shown==='AUTO'?'AUTO':'NOM'}" autocomplete="off" spellcheck="false"></div></div>`;
       }
       const fixed=!!control.fixed || (control.options||[]).length<2;
-      return `<div class="field" data-key="${control.key}"><div class="label">${control.label}</div><div class="control"><button type="button" data-step="-1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Précédent">‹</button><div class="value">${optionLabel(control,values[control.key])}</div><button type="button" data-step="1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Suivant">›</button></div></div>`;
+      const meter=control.key==='difficulty'?difficultyMeter(values[control.key]):'';
+      return `<div class="field" data-key="${control.key}"><div class="label">${control.label}</div><div class="control"><button type="button" data-step="-1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Précédent">‹</button><div class="value"><span class="value-text">${optionLabel(control,values[control.key])}</span>${meter}</div><button type="button" data-step="1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Suivant">›</button></div></div>`;
     }).join('');
 
-    panel.innerHTML=`<div class="mode-name">${c.label}</div>${controls}<div class="dots">${[0,1,2,3].map(i=>`<span class="dot ${i===c.dot?'on':''}"></span>`).join('')}</div>`;
+    panel.innerHTML=`<div class="mode-name">${c.label}</div>${teamBlock(values)}${controls}<div class="dots">${[0,1,2,3].map(i=>`<span class="dot ${i===c.dot?'on':''}"></span>`).join('')}</div>`;
+    panel.dataset.mode=mode;
 
     panel.querySelectorAll('[data-step]').forEach(btn=>btn.addEventListener('click',()=>{
       const control=(c.controls||[]).find(item=>item.key===btn.dataset.key);
+      btn.classList.remove('tap'); void btn.offsetWidth; btn.classList.add('tap');
       if(control) stepControl(control,Number(btn.dataset.step)||1);
     }));
     panel.querySelectorAll('[data-edit]').forEach(input=>{
       const update=()=>{
-        const raw=input.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
+        const isCode=input.dataset.kind==='code';
+        let raw=input.value;
+        raw=isCode ? raw.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8) : raw.replace(/[<>]/g,'').slice(0,18);
         input.value=raw;
-        values[input.dataset.edit]=raw||'AUTO';
+        values[input.dataset.edit]=raw||(isCode?'AUTO':'JOUEUR');
+        if(selectedMode==='team') render(selectedMode,false);
         notifySettings();
       };
       input.addEventListener('input',update);
       input.addEventListener('change',update);
     });
 
-    if(emit){
-      send('mode',{mode,config:c});
-      notifySettings();
-    }
+    if(emit){ send('mode',{mode,config:c}); notifySettings(); }
   }
 
   function flash(){veil.classList.remove('run');void veil.offsetWidth;veil.classList.add('run')}
@@ -89,10 +114,30 @@
     setTimeout(()=>{home.classList.remove('launching');card.classList.remove('selected')},1280);
   }
 
+  function openRules(){
+    modalTitle.textContent='RÈGLES D’ILYOS';
+    modalBody.innerHTML=`<div class="rules-grid"><section><b>OBJECTIF</b><p>Validez 3 couronnes avant votre adversaire.</p></section><section><b>VOTRE TOUR</b><p>Posez une île, puis utilisez vos actions de déplacement, poussée et magie.</p></section><section><b>COURONNES</b><p>Récupérez, transmettez et ramenez les couronnes jusqu’à votre zone de validation.</p></section><section><b>2 CONTRE 2</b><p>Les deux partenaires partagent le même score. La première équipe à 3 couronnes gagne.</p></section></div>`;
+    modal.classList.add('open');
+  }
+  function openComingSoon(label){
+    modalTitle.textContent=label;
+    modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';
+    modal.classList.add('open');
+  }
+
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
   document.getElementById('back').addEventListener('click',()=>{flash();setTimeout(()=>{duel.classList.remove('active','enter');home.classList.add('active')},430)});
-  document.getElementById('play').addEventListener('click',()=>send('play',{mode:selectedMode,config:cfg[selectedMode],values:{...ensureSelections(selectedMode)}}));
-  document.querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>send('action',{action:btn.dataset.action})));
+  play.addEventListener('click',()=>{
+    play.classList.remove('pressed'); void play.offsetWidth; play.classList.add('pressed');
+    send('play',{mode:selectedMode,config:cfg[selectedMode],values:{...ensureSelections(selectedMode)}});
+  });
+  document.querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>{
+    const action=btn.dataset.action;
+    if(action==='rules'||action==='help') return openRules();
+    if(action==='tutorial') return openComingSoon('TUTORIEL');
+    if(action==='credits') return openComingSoon('CRÉDITS');
+    send('action',{action});
+  }));
 
   function setPointer(e){const x=(e.clientX/Math.max(innerWidth,1)-.5)*2,y=(e.clientY/Math.max(innerHeight,1)-.5)*2;document.documentElement.style.setProperty('--mx',x.toFixed(3));document.documentElement.style.setProperty('--my',y.toFixed(3))}
   addEventListener('pointermove',setPointer,{passive:true});
