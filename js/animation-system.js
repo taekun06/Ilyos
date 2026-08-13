@@ -127,10 +127,15 @@
       pattern: [/^hit/i, /hurt/i, /damage/i],
       loop: false
     },
+    // `fixed` : toujours le premier clip disponible, sans variation par graine.
+    // Une chute doit se lire de façon identique pour tous les gardiens, et
+    // `Jump_Idle` est la seule pose réellement aérienne du pack — les clips
+    // Death_* jouent un effondrement au sol, incohérent en plein vol.
     [STATES.FALL]: {
-      exact: ["Death_A", "Death_B", "Jump_Idle"],
-      pattern: [/death/i, /fall/i, /jump_idle/i],
-      loop: false
+      exact: ["Jump_Idle", "Death_A", "Death_B"],
+      pattern: [/jump_idle/i, /fall/i, /death/i],
+      loop: false,
+      fixed: true
     },
     [STATES.CROWN_PICKUP]: {
       exact: ["PickUp", "Interact", "Use_Item"],
@@ -241,6 +246,7 @@
     //    voisins ne jouent pas exactement le même clip.
     const availableExact = spec.exact.filter(name => clipIndex.has(name));
     if (availableExact.length) {
+      if (spec.fixed) return clipIndex.get(availableExact[0]);
       const offset = Math.floor(Math.abs(variantSeed) * availableExact.length) % availableExact.length;
       return clipIndex.get(availableExact[offset]) || clipIndex.get(availableExact[0]);
     }

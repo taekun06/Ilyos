@@ -1856,7 +1856,7 @@
         return result;
       }
 
-      function removeCharacterFromGame(char, dropR = null, dropC = null) {
+      function removeCharacterFromGame(char, dropR = null, dropC = null, fallDirection = null) {
         if (!char) return;
         const carriedArtifact = artifactCarriedBy(char.id);
         if (carriedArtifact) {
@@ -1872,7 +1872,7 @@
         // appliquée sans attendre l'animation. Seul le VISUEL survit quelques
         // centaines de millisecondes, le temps de le montrer tomber vers les
         // nuages au lieu de disparaître d'un coup (voir playCharacterFall).
-        queueKayKitCharacterFall(char.id);
+        queueKayKitCharacterFall(char.id, fallDirection);
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
       }
@@ -2122,7 +2122,10 @@
             if (!inside(nextR, nextC) || !isLand(nextR, nextC)) {
               anyFell = true;
               removedCount++;
-              removeCharacterFromGame(ch, ch.r, ch.c);
+              // La direction de la poussée est transmise au visuel : le gardien
+              // est éjecté DANS ce sens avant de tomber, au lieu de s'enfoncer
+              // verticalement sur place.
+              removeCharacterFromGame(ch, ch.r, ch.c, { dr, dc });
               continue;
             }
 

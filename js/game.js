@@ -2026,7 +2026,7 @@
             }
             case "attack":
             case "push":
-              playCharacterPush(visual, target);
+              playCharacterPush(visual, target, duration);
               break;
             case "hurt":
               // Léger décalage : quand plusieurs gardiens sont poussés d'un coup,
@@ -2075,10 +2075,10 @@
        * ne le retire de state.characters : le visuel se détache alors du
        * registre normal et s'anime seul jusqu'à disparaître.
        */
-      function queueKayKitCharacterFall(characterId) {
+      function queueKayKitCharacterFall(characterId, direction = null) {
         const visual = kaykit3D?.characterVisuals.get(String(characterId));
         if (!visual) return;
-        playCharacterFall(visual);
+        playCharacterFall(visual, direction);
       }
 
       /** Le lanceur de sort le plus pertinent pour une rotation d'île. */
@@ -4481,7 +4481,26 @@
           if (!visual.move && !visual.fall) {
             const surfaceY = kaykitCellSurfaceY(character.r, character.c);
             const p = kaykitCellPosition(character.r, character.c, surfaceY);
-            visual.wrapper.position.set(p.x, p.y, p.z);
+            const delta = Math.abs(visual.wrapper.position.x - p.x) + Math.abs(visual.wrapper.position.z - p.z);
+            // Un changement de case NON initié par un déplacement volontaire —
+            // typiquement un gardien poussé — faisait auparavant sauter le
+            // modèle d'une case à l'autre d'une image à la suivante. On le fait
+            // désormais glisser : c'est court, mais c'est ce qui rend la poussée
+            // lisible. Seuil sur la distance pour ne pas déclencher un glissement
+            // sur un simple recalage de surface.
+            if (movedLogically && delta > .05 && !kaykitReducedMotion()) {
+              visual.shove = {
+                startedAt: performance.now(),
+                duration: 240,
+                from: visual.wrapper.position.clone(),
+                to: new THREE.Vector3(p.x, p.y, p.z)
+              };
+            } else if (!visual.shove) {
+              visual.wrapper.position.set(p.x, p.y, p.z);
+            } else {
+              // Une poussée en chaîne peut redéfinir la cible en cours de route.
+              visual.shove.to.set(p.x, p.y, p.z);
+            }
             if (movedLogically) {
               const storedFacing = kaykit3D.characterFacing.get(id);
               if (Number.isFinite(storedFacing)) visual.facingTarget = storedFacing;
@@ -4568,7 +4587,7 @@
       }
 
       /** Poussée : anticipation, frappe, impact. */
-      function playCharacterPush(visual, target) {
+      function playCharacterPush(visual, target, duration = 900) {
         if (!visual) return;
         const states = ANIM_STATES();
         if (target && Number.isFinite(target.r)) {
@@ -4576,18 +4595,32 @@
         }
         const animator = visual.animator;
         if (!animator) return;
-        // Léger recul d'armement puis frappe : le recul est purement visuel
-        // (offset sur le modèle), il ne touche jamais la position logique.
-        visual.recoilPhase = { startedAt: performance.now(), duration: 420 };
+
+        // CALIBRAGE — les clips d'attaque KayKit sont longs (Punch_A dure 1,47 s)
+        // parce qu'ils sont pensés pour un jeu d'action, pas pour une action de
+        // plateau qui doit se lire en moins d'une seconde. Joués à vitesse 1
+        // dans une fenêtre de 900 ms, ils paraissaient mous et se faisaient
+        // couper en plein geste. On les recale donc sur la durée réelle de
+        // l'action, borné pour ne jamais devenir saccadé ni ridicule.
+        const clipDuration = animator.durationOf(states.PUSH);
+        const targetSeconds = Math.max(.34, (duration / 1000) * .82);
+        const timeScale = clipDuration > 0
+          ? THREE.MathUtils.clamp(clipDuration / targetSeconds, 1, 2.6)
+          : 1;
+        const scaledMs = clipDuration > 0 ? (clipDuration / timeScale) * 1000 : duration;
+
+        // Recul d'armement calé sur la durée réellement jouée.
+        visual.recoilPhase = { startedAt: performance.now(), duration: scaledMs };
         animator.play(states.PUSH, {
-          fade: 0.10,
+          fade: 0.08,
           force: true,
+          timeScale,
           returnTo: states.IDLE,
           onFinish: () => emitVisualEvent("pushRecovered", { id: visual.id })
         });
-        // L'impact tombe à ~45 % du clip d'attaque : c'est là que le poing
-        // arrive réellement, pas au démarrage du clip.
-        const impactDelay = Math.max(90, animator.durationOf(states.PUSH) * 1000 * .45);
+        // L'impact tombe à ~45 % du clip REJOUÉ (et non de sa durée d'origine) :
+        // c'est là que le poing arrive vraiment.
+        const impactDelay = Math.max(70, scaledMs * .45);
         kaykit3D.visualSequences.push({
           at: performance.now() + impactDelay,
           run: () => {
@@ -4607,6 +4640,9 @@
         const states = ANIM_STATES();
         const trigger = () => {
           if (!kaykit3D?.characterVisuals.has(visual.id)) return;
+          // Une réaction retardée ne doit jamais écraser une chute déjà lancée :
+          // le gardien éjecté repasserait en pose debout en plein vol.
+          if (visual.fall) return;
           if (source && Number.isFinite(source.r)) {
             visual.facingTarget = kaykitFacingRotation(visual.r, visual.c, source.r, source.c);
           }
@@ -4629,17 +4665,32 @@
       }
 
       /** Chute dans le vide : trajectoire courte vers la couche nuageuse. */
-      function playCharacterFall(visual) {
-        if (!visual) return;
+      function playCharacterFall(visual, direction = null) {
+        if (!visual || visual.fall) return;
         const states = ANIM_STATES();
         visual.move = null;
+        visual.shove = null;
+        // Éjection horizontale dans le sens de la poussée, si on la connaît :
+        // le gardien est projeté hors de l'île puis tombe.
+        const push = direction && (direction.dr || direction.dc)
+          ? { x: direction.dc * .7, z: direction.dr * .7 }
+          : null;
         visual.fall = {
           startedAt: performance.now(),
           duration: kaykitReducedMotion() ? 220 : 760,
           fromY: visual.wrapper.position.y,
+          fromX: visual.wrapper.position.x,
+          fromZ: visual.wrapper.position.z,
+          push,
           spin: (Math.random() - .5) * 2.4
         };
-        visual.animator?.play(states.FALL, { fade: 0.08, force: true });
+        // Le gardien réagit d'abord au coup, puis part : jouer directement la
+        // chute donnait une bascule molle, sans lien avec la poussée reçue.
+        visual.animator?.play(states.HIT, { fade: 0.06, force: true });
+        kaykit3D.visualSequences.push({
+          at: performance.now() + 130,
+          run: () => { if (visual.fall) visual.animator?.play(states.FALL, { fade: 0.1, force: true }); }
+        });
         emitVisualEvent("characterFell", { id: visual.id, r: visual.r, c: visual.c });
       }
 
@@ -4728,6 +4779,25 @@
           action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
           action.clampWhenFinished = !loop;
           return `Lecture de "${clipName}" sur le gardien ${characterId}.`;
+        },
+        /**
+         * Rejoue une séquence complète (et non un simple clip) pour vérifier
+         * son calibrage sans avoir à monter la situation de jeu correspondante.
+         */
+        sequence(characterId, kind = "push", options = {}) {
+          const visual = characterVisualById(characterId);
+          if (!visual) return `Gardien ${characterId} introuvable.`;
+          const target = options.target || { r: visual.r, c: visual.c + 1 };
+          switch (kind) {
+            case "push": playCharacterPush(visual, target, options.duration || 900); break;
+            case "hit": playCharacterHit(visual, target, options.delay || 0); break;
+            case "magic": playCharacterMagic(visual, target); break;
+            case "fall": playCharacterFall(visual, options.direction || { dr: 0, dc: 1 }); break;
+            case "spawn": playCharacterSpawn(visual); break;
+            case "victory": playCharacterVictory(visual, options.delay || 0); break;
+            default: return `Séquence inconnue : ${kind}.`;
+          }
+          return `Séquence "${kind}" lancée sur ${characterId} (clip ${visual.animator?.currentClipName}).`;
         },
         /** Rejoue un état de la machine à états (IDLE, MOVE, PUSH...). */
         state(characterId, stateName) {
@@ -4969,16 +5039,40 @@
             }
           }
 
+          /* --- 3 bis. Glissement subi (poussée) --------------------- */
+          if (visual.shove) {
+            const shove = visual.shove;
+            const t = THREE.MathUtils.clamp((now - shove.startedAt) / Math.max(1, shove.duration), 0, 1);
+            // Départ vif puis freinage : un corps poussé part d'un coup et
+            // ralentit, il n'accélère pas progressivement.
+            const eased = 1 - Math.pow(1 - t, 3);
+            visual.wrapper.position.lerpVectors(shove.from, shove.to, eased);
+            if (t >= 1) {
+              visual.wrapper.position.copy(shove.to);
+              visual.shove = null;
+            }
+          }
+
           /* --- 4. Chute --------------------------------------------- */
           if (visual.fall) {
             const fall = visual.fall;
             const t = THREE.MathUtils.clamp((now - fall.startedAt) / fall.duration, 0, 1);
+            // Le gardien part d'abord vers l'extérieur du plateau (la poussée
+            // l'éjecte) avant que la gravité ne l'emporte : une chute purement
+            // verticale se lisait comme une trappe qui s'ouvre.
+            if (fall.push) {
+              visual.wrapper.position.x = fall.fromX + fall.push.x * Math.min(1, t * 2.2);
+              visual.wrapper.position.z = fall.fromZ + fall.push.z * Math.min(1, t * 2.2);
+            }
             // Accélération quadratique : la gravité doit se sentir.
             visual.wrapper.position.y = fall.fromY - t * t * 6.4;
             visual.wrapper.rotation.z = fall.spin * t;
             const fade = 1 - THREE.MathUtils.clamp((t - .45) / .55, 0, 1);
             visual.glowMaterials.forEach(mat => {
-              if (mat.transparent !== true) { mat.transparent = true; }
+              // `transparent` bascule en cours de vie du matériau : sans
+              // needsUpdate, le programme shader compilé reste opaque et le
+              // fondu ne se voit jamais.
+              if (mat.transparent !== true) { mat.transparent = true; mat.needsUpdate = true; }
               mat.opacity = fade;
             });
             if (t >= 1) {
@@ -11624,7 +11718,7 @@
         return result;
       }
 
-      function removeCharacterFromGame(char, dropR = null, dropC = null) {
+      function removeCharacterFromGame(char, dropR = null, dropC = null, fallDirection = null) {
         if (!char) return;
         const carriedArtifact = artifactCarriedBy(char.id);
         if (carriedArtifact) {
@@ -11640,7 +11734,7 @@
         // appliquée sans attendre l'animation. Seul le VISUEL survit quelques
         // centaines de millisecondes, le temps de le montrer tomber vers les
         // nuages au lieu de disparaître d'un coup (voir playCharacterFall).
-        queueKayKitCharacterFall(char.id);
+        queueKayKitCharacterFall(char.id, fallDirection);
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
       }
@@ -11890,7 +11984,10 @@
             if (!inside(nextR, nextC) || !isLand(nextR, nextC)) {
               anyFell = true;
               removedCount++;
-              removeCharacterFromGame(ch, ch.r, ch.c);
+              // La direction de la poussée est transmise au visuel : le gardien
+              // est éjecté DANS ce sens avant de tomber, au lieu de s'enfoncer
+              // verticalement sur place.
+              removeCharacterFromGame(ch, ch.r, ch.c, { dr, dc });
               continue;
             }
 
