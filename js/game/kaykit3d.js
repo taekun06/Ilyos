@@ -1852,6 +1852,15 @@
         return Math.atan2(dc, dr);
       }
 
+      /**
+       * Point d'entrée unique du gameplay vers l'animation.
+       *
+       * Le moteur appelle cette fonction APRÈS avoir validé une action : elle ne
+       * décide jamais rien, elle raconte. Elle route l'intention vers la
+       * séquence correspondante du registre persistant, et conserve
+       * `pendingActionAnimations` — encore lu ailleurs pour savoir si une
+       * animation est en cours (caméra, cadence de rendu).
+       */
       function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null) {
         if (!kaykit3D || characterId === null || characterId === undefined) return;
         const id = String(characterId);
@@ -1872,7 +1881,47 @@
           path: Array.isArray(path) ? path.map(step => [step[0], step[1]]) : null,
           actionToken,
           played: false
-        }); scheduleKayKitSync();
+        });
+
+        // Le gardien peut ne pas encore avoir de visuel (première pose d'île) :
+        // dans ce cas la synchronisation qui suit le créera, et son état neutre
+        // sera correct. Aucune animation n'est perdue pour autant, car les
+        // actions ne concernent que des gardiens déjà présents.
+        const visual = kaykit3D.characterVisuals.get(id);
+        if (visual) {
+          switch (intent) {
+            case "move": {
+              const route = Array.isArray(path) && path.length && character
+                ? [[character.r, character.c], ...path.map(step => [step[0], step[1]])]
+                : null;
+              if (route) playCharacterMove(visual, route, duration);
+              break;
+            }
+            case "attack":
+            case "push":
+              playCharacterPush(visual, target);
+              break;
+            case "hurt":
+              // Léger décalage : quand plusieurs gardiens sont poussés d'un coup,
+              // leurs réactions se propagent au lieu de partir à l'unisson.
+              playCharacterHit(visual, target, kaykit3D._hitStagger || 0);
+              kaykit3D._hitStagger = ((kaykit3D._hitStagger || 0) + 70) % 280;
+              break;
+            case "magic":
+              playCharacterMagic(visual, target);
+              break;
+            case "victory":
+              playCharacterVictory(visual, Math.floor(visual.seed * 420));
+              break;
+            case "fall":
+              playCharacterFall(visual);
+              break;
+            default:
+              break;
+          }
+        }
+
+        scheduleKayKitSync();
         setTimeout(() => {
           if (!kaykit3D) return;
           const pending = kaykit3D.pendingActionAnimations.get(id);
@@ -1882,6 +1931,7 @@
             pending.expires <= performance.now()
           ) {
             kaykit3D.pendingActionAnimations.delete(id);
+            kaykit3D._hitStagger = 0;
             scheduleKayKitSync();
           }
         }, duration + 80);
@@ -1891,6 +1941,23 @@
         const selected = state?.selectedCharId ? characterById(state.selectedCharId) : null;
         const actor = selected || state?.characters?.find(character => character.player === state.currentPlayer);
         if (actor) queueKayKitActionAnimation(actor.id, intent, duration);
+      }
+
+      /**
+       * Chute d'un gardien éjecté du plateau. Appelé juste AVANT que la logique
+       * ne le retire de state.characters : le visuel se détache alors du
+       * registre normal et s'anime seul jusqu'à disparaître.
+       */
+      function queueKayKitCharacterFall(characterId) {
+        const visual = kaykit3D?.characterVisuals.get(String(characterId));
+        if (!visual) return;
+        playCharacterFall(visual);
+      }
+
+      /** Le lanceur de sort le plus pertinent pour une rotation d'île. */
+      function kaykitMagicCaster() {
+        const selected = state?.selectedCharId ? characterById(state.selectedCharId) : null;
+        return selected || state?.characters?.find(character => character.player === state.currentPlayer) || null;
       }
 
 

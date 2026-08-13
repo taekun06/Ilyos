@@ -1786,7 +1786,11 @@
         const owner = state.players[char.player];
         const from = [char.r, char.c];
         saveUndoSnapshot();
-        const walkDuration = Math.min(2400, Math.max(680, path.length * 320));
+        // ~340 ms par case, plus la rotation d'anticipation absorbée en tête de
+        // séquence (voir playCharacterMove). L'ancienne cadence — 680 ms minimum
+        // pour une seule case — transformait chaque pas en petite cinématique et
+        // ralentissait nettement un joueur expérimenté.
+        const walkDuration = Math.min(1600, 140 + path.length * 340);
         queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
         // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
         if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
@@ -1864,6 +1868,11 @@
             resetArtifactObject(carriedArtifact);
           }
         }
+        // Le gardien quitte immédiatement l'état logique — la règle est
+        // appliquée sans attendre l'animation. Seul le VISUEL survit quelques
+        // centaines de millisecondes, le temps de le montrer tomber vers les
+        // nuages au lieu de disparaître d'un coup (voir playCharacterFall).
+        queueKayKitCharacterFall(char.id);
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
       }
