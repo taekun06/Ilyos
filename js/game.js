@@ -4349,8 +4349,17 @@
         if (!visual || visual.selected === selected) return;
         visual.selected = selected;
 
+        // Or établi ailleurs dans le jeu pour tout ce qui est précieux/important
+        // (couronnes, halo de score, victoire — voir 0xffcf52 plus bas). Le
+        // mélanger à 15% avec la couleur d'équipe donnait un or vif pour les
+        // équipes chaudes (rouge, vert, violet) mais un kaki terne pour l'équipe
+        // bleu cyan (#deaf3f) — le bleu et l'or sont proches en teinte inversée,
+        // le mélange désature au lieu d'enrichir. Un seul gardien est sélectionné
+        // à la fois, tous joueurs confondus : rien n'exige que cette couleur
+        // varie par équipe, donc plus de mélange — un or constant et vif pour
+        // tout le monde, cohérent avec le reste du langage visuel doré du jeu.
         const glowColor = selected
-          ? new THREE.Color(0xffab1f).lerp(visual.teamColor, .15)
+          ? new THREE.Color(0xffcf52)
           : visual.teamColor;
         // À .22 (respirant jusqu'à .36), cet émissif s'appliquait à TOUT le
         // matériau du gardien (armure, peau, tissu confondus) et le noyait dans
