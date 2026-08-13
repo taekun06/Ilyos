@@ -4352,7 +4352,12 @@
         const glowColor = selected
           ? new THREE.Color(0xffab1f).lerp(visual.teamColor, .15)
           : visual.teamColor;
-        const glowIntensity = selected ? .22 : .075;
+        // À .22 (respirant jusqu'à .36), cet émissif s'appliquait à TOUT le
+        // matériau du gardien (armure, peau, tissu confondus) et le noyait dans
+        // un blanc doré translucide au lieu de se lire comme un simple reflet
+        // chaud. Le halo au sol et la colonne portent déjà la lisibilité de la
+        // sélection ; ce glin ne doit être qu'un appoint discret.
+        const glowIntensity = selected ? .09 : .075;
         visual.glowBase = glowIntensity;
         visual.glowMaterials.forEach(mat => {
           mat.emissive = glowColor.clone();
@@ -4390,13 +4395,20 @@
         ring.position.y = .04;
         haloGroup.add(ring);
 
-        const beamHeight = 1.1;
+        // La colonne précédente (rayon .22 à la base) était plus large que le
+        // gardien lui-même, et le dégradé du texture est le plus lumineux tout
+        // en bas — exactement à hauteur de buste. Le gardien se retrouvait
+        // littéralement À L'INTÉRIEUR d'un cône de lumière additive, d'où le
+        // rendu « fantôme translucide ». Rayon divisé par trois : la colonne se
+        // lit désormais comme un rai de lumière qui s'échappe derrière le
+        // gardien plutôt que comme une lampe qui l'engloutit.
+        const beamHeight = 1.35;
         const beamMaterial = new THREE.MeshBasicMaterial({
-          map: kaykitBeamGradientTexture(), color: glowColor.clone(), transparent: true, opacity: .55,
+          map: kaykitBeamGradientTexture(), color: glowColor.clone(), transparent: true, opacity: .16,
           blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, toneMapped: false
         });
         const beam = new THREE.Mesh(
-          kaykitGeometry("selection-halo-beam-v2", () => new THREE.CylinderGeometry(.05, .22, beamHeight, 16, 1, true)),
+          kaykitGeometry("selection-halo-beam-v3", () => new THREE.CylinderGeometry(.022, .075, beamHeight, 16, 1, true)),
           beamMaterial
         );
         beam.position.y = beamHeight / 2;
@@ -5502,9 +5514,16 @@
           const halo = visual.halo;
           if (halo) {
             const breathe = Math.sin(elapsed * 2.1);
-            visual.glowMaterials.forEach(mat => { mat.emissiveIntensity = (visual.glowBase || .22) + breathe * .14; });
+            // Amplitude divisée par trois (±.14 -> ±.045) : la version large
+            // faisait passer TOUT le matériau du gardien par un pic à .36, ce
+            // qui le blanchissait à chaque respiration au lieu de simplement
+            // le teinter d'un reflet doré discret.
+            visual.glowMaterials.forEach(mat => { mat.emissiveIntensity = (visual.glowBase ?? .09) + breathe * .045; });
             halo.ring.rotation.z = elapsed * .16;
-            halo.beamMaterial.opacity = .30 + breathe * .05;
+            // Le halo respire en phase avec l'émissif du modèle (même onde) :
+            // les deux se lisent comme une seule source de lumière qui pulse
+            // doucement plutôt que deux effets désynchronisés.
+            halo.beamMaterial.opacity = .14 + breathe * .04;
             halo.particles.forEach(particle => {
               const cycle = ((elapsed * .35 + particle.userData.phase) % 2 + 2) % 2;
               const fade = cycle < 1 ? cycle : 2 - cycle;
@@ -5744,37 +5763,6 @@
           // kind "selected") : un tour complet toutes les ~40 secondes.
           if (object.userData.slowSpin) {
             object.rotation.z = elapsed * .16;
-          }
-          // Respiration très douce de la brillance du gardien sélectionné (voir la
-          // boucle de rendu des héros) : ±0.14 autour de la base, jamais assez marqué
-          // pour distraire pendant une décision tactique.
-          if (object.userData.selectionGlow && object.userData.selectionGlowMaterials) {
-            const base = object.userData.selectionGlowBase;
-            const breathe = Math.sin(elapsed * 2.1);
-            const value = base + breathe * .14;
-            object.userData.selectionGlowMaterials.forEach(mat => { mat.emissiveIntensity = value; });
-            // Le halo respire en phase avec l'émissif du modèle (même onde) : les deux
-            // se lisent comme une seule source de lumière qui pulse doucement, plutôt
-            // que deux effets désynchronisés. Les particules montent en boucle et
-            // tournent lentement autour du gardien — c'est leur MOUVEMENT dans les
-            // trois dimensions (hauteur qui varie, rotation autour du buste) qui donne
-            // du volume, pas seulement leur forme.
-            const halo = object.userData.selectionHalo;
-            if (halo?.ring?.parent) {
-              halo.beamMaterial.opacity = .30 + breathe * .05;
-              halo.particles.forEach(particle => {
-                const cycle = ((elapsed * .35 + particle.userData.phase) % 2 + 2) % 2;
-                const height = cycle * .55;
-                const fade = cycle < 1 ? cycle : 2 - cycle;
-                const angle = particle.userData.baseAngle + elapsed * .5;
-                particle.position.set(
-                  Math.cos(angle) * particle.userData.radius,
-                  .06 + height,
-                  Math.sin(angle) * particle.userData.radius
-                );
-                particle.material.opacity = fade * .85;
-              });
-            }
           }
           // Fondu d'apparition (voir registerKayKitFadeIn) : remonte vers
           // l'opacité cible puis se retire lui-même de la liste animée.
