@@ -1,6 +1,6 @@
     (() => {
       'use strict';
-      const VERSION = 'V75.1';
+      const VERSION = 'V76';
       let layer, toast, wash, hideTimer, lastPlayer = '', lastPhase = '';
       const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
       function ensureLayer() {
@@ -63,8 +63,8 @@
       }
       function boot() {
         ensureLayer(); wrapSfx(); tuneRenderer(); pauseInvisibleMedia();
-        document.title = 'ILYOS V75.1 — Stable Netlify';
-        const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V75.1';
+        document.title = 'ILYOS V76 — Animations';
+        const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         const game = document.getElementById('gameScreen');
         let immersionRefreshFrame = 0;
         const scheduleImmersionRefresh = () => {

@@ -1,9 +1,9 @@
     (() => {
       'use strict';
-      const VERSION = 'V75.1';
+      const VERSION = 'V76';
       function apply() {
-        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS V75.1 — Stable Netlify';
-        const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V75.1';
+        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS V76 — Animations';
+        const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         if (window.kaykit3D) {
           const k = window.kaykit3D;
           k.minZoom = 6.4; k.maxZoom = 25;

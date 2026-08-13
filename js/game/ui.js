@@ -1387,6 +1387,9 @@
           cells: absCells
         };
         state.islands.push(island);
+        // L'île se matérialise : elle descend depuis quelques centimètres
+        // au-dessus de sa position finale au lieu d'apparaître d'un coup.
+        playIslandDrop(island.id);
 
         state.islandPlacedThisTurn = true;
 
@@ -2122,10 +2125,11 @@
             if (!inside(nextR, nextC) || !isLand(nextR, nextC)) {
               anyFell = true;
               removedCount++;
-              // La direction de la poussée est transmise au visuel : le gardien
-              // est éjecté DANS ce sens avant de tomber, au lieu de s'enfoncer
-              // verticalement sur place.
-              removeCharacterFromGame(ch, ch.r, ch.c, { dr, dc });
+              // La case du vide visée est transmise au visuel : le gardien la
+              // rejoint d'abord, puis tombe DEPUIS elle. Sans cette destination,
+              // il s'enfonçait à la verticale depuis sa case actuelle et
+              // traversait l'île sur laquelle il se tenait encore.
+              removeCharacterFromGame(ch, ch.r, ch.c, { dr, dc, toR: nextR, toC: nextC });
               continue;
             }
 
@@ -2383,7 +2387,18 @@
         }
 
         saveUndoSnapshot();
-        queueKayKitCurrentPlayerAnimation("magic", 1150);
+        const [pivotR, pivotC] = state.selectedMagicPivot;
+        // Rotation réellement effectuée, signée : un cran « 3 » est un quart de
+        // tour en arrière (-90°), pas trois quarts de tour en avant. Le plateau
+        // DOM continue d'afficher 270° ; la 3D, elle, doit montrer le mouvement
+        // le plus court, sinon l'île part dans le sens opposé au résultat.
+        const signedDegrees = direction * turns * 90;
+        queueKayKitCurrentPlayerAnimation("magic", 1150, { r: pivotR, c: pivotC });
+        const caster = state.selectedCharId ? characterById(state.selectedCharId) : null;
+        const casterId = caster?.id
+          ?? state.characters.find(character => character.player === state.currentPlayer)?.id;
+        if (casterId != null) linkCasterToIsland(casterId, pivotR, pivotC);
+        playIslandMagicRotation(island.id, signedDegrees, pivotR, pivotC, 500);
         state.inputLocked = true;
         showToast("L’île se soulève avant de tourner…");
         playSfx("magic");
@@ -2848,6 +2863,7 @@
       function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
         player.score++;
         triggerScoreAnimation(player.id);
+        if (char) playCrownScore(char.id);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
@@ -2859,6 +2875,9 @@
 
         if (player.score >= 3) {
           state.winner = player.id;
+          // Célébration sur le plateau AVANT l'écran de victoire : les gardiens
+          // gagnants fêtent le résultat pendant que l'interface se prépare.
+          playVictoryCelebration(player.id);
           setTimeout(() => showVictory(player), 450);
         } else {
           resetArtifactObject(artifact);
