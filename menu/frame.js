@@ -29,19 +29,17 @@
     return selections[mode];
   }
   function optionLabel(control,value){
-    const hit=(control.options||[]).find(([v])=>String(v)===String(value));
+    const hit=(control?.options||[]).find(([v])=>String(v)===String(value));
     return hit ? hit[1] : String(value ?? '');
   }
   function controlByKey(mode,key){ return (cfg[mode]?.controls||[]).find(control=>control.key===key); }
-  function labelFor(mode,key,value){
-    const control=controlByKey(mode,key);
-    return control ? optionLabel(control,value) : String(value||'');
-  }
+  function labelFor(mode,key,value){ return optionLabel(controlByKey(mode,key),value); }
   function safeText(value){return String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
   function notifySettings(){
     const c=cfg[selectedMode];
     send('settings',{mode:selectedMode,playerCount:c?.playerCount,values:{...ensureSelections(selectedMode)}});
   }
+
   function playLabel(){
     const c=cfg[selectedMode];
     const values=ensureSelections(selectedMode);
@@ -56,33 +54,18 @@
     if(selectedMode==='online') return values.role==='guest' ? 'SE CONNECTER AU SALON' : 'OUVRIR LE SALON';
     return '';
   }
-  function difficultyMeter(value){
-    const levels={easy:1,normal:2,hard:3,expert:4};
-    const n=levels[value]||0;
-    return `<span class="difficulty-meter" aria-hidden="true">${[1,2,3,4].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</span>`;
+
+  function difficultyLevel(value){ return ({easy:1,normal:2,hard:3,expert:4})[value]||1; }
+  function difficultyLights(value){
+    const level=difficultyLevel(value);
+    return `<div class="difficulty-lights" aria-label="Niveau ${level} sur 4">${[1,2,3,4].map(i=>`<i class="${i<=level?'on':''}"></i>`).join('')}</div>`;
   }
 
   function duelContext(mode,values){
-    if(mode==='solo') return {
-      kicker:'DUEL CONTRE L’IA',
-      leftTop:'CHEVALIER OR', leftBottom:'VOUS',
-      rightTop:'MAGE VIOLET', rightBottom:labelFor(mode,'difficulty',values.difficulty)
-    };
-    if(mode==='duel') return {
-      kicker:'FACE À FACE LOCAL',
-      leftTop:'CHEVALIER OR', leftBottom:values.name1||'JOUEUR 1',
-      rightTop:'MAGE VIOLET', rightBottom:values.name2||'JOUEUR 2'
-    };
-    if(mode==='team') return {
-      kicker:'BATAILLE D’ÉQUIPES',
-      leftTop:'ÉQUIPE OR', leftBottom:`${values.name1||'J1'} + ${values.name3||'J3'}`,
-      rightTop:'ÉQUIPE VIOLETTE', rightBottom:`${values.name2||'J2'} + ${values.name4||'J4'}`
-    };
-    return {
-      kicker:values.role==='guest'?'REJOINDRE UN DUEL':'OUVRIR UN DUEL',
-      leftTop:'CHEVALIER OR', leftBottom:values.name1||'VOUS',
-      rightTop:'MAGE VIOLET', rightBottom:values.role==='guest'?'HÔTE':'INVITÉ'
-    };
+    if(mode==='solo') return {kicker:'DUEL CONTRE L’IA',leftTop:'CHEVALIER OR',leftBottom:'VOUS',rightTop:'MAGE VIOLET',rightBottom:labelFor(mode,'difficulty',values.difficulty)};
+    if(mode==='duel') return {kicker:'FACE À FACE LOCAL',leftTop:'CHEVALIER OR',leftBottom:values.name1||'JOUEUR 1',rightTop:'MAGE VIOLET',rightBottom:values.name2||'JOUEUR 2'};
+    if(mode==='team') return {kicker:'BATAILLE D’ÉQUIPES',leftTop:'ÉQUIPE OR',leftBottom:`${values.name1||'J1'} + ${values.name3||'J3'}`,rightTop:'ÉQUIPE VIOLETTE',rightBottom:`${values.name2||'J2'} + ${values.name4||'J4'}`};
+    return {kicker:values.role==='guest'?'REJOINDRE UN DUEL':'OUVRIR UN DUEL',leftTop:'CHEVALIER OR',leftBottom:values.name1||'VOUS',rightTop:'MAGE VIOLET',rightBottom:values.role==='guest'?'HÔTE':'INVITÉ'};
   }
 
   function duelHeader(mode,values){
@@ -95,14 +78,14 @@
     </div>`;
   }
 
-  function summaryChips(mode,values){
-    const chips=[];
-    if(values.board!=null) chips.push(labelFor(mode,'board',values.board));
-    if(values.difficulty!=null) chips.push(`IA ${labelFor(mode,'difficulty',values.difficulty)}`);
-    if(values.timer!=null) chips.push(labelFor(mode,'timer',values.timer));
-    if(mode==='team') chips.push('OBJECTIF 3 COURONNES');
-    if(mode==='online') chips.push(values.role==='guest'?'REJOINDRE':'CRÉER');
-    return `<div class="duel-summary-chips">${chips.filter(Boolean).map(label=>`<span>${safeText(label)}</span>`).join('')}</div>`;
+  function recap(mode,values){
+    const items=[];
+    if(values.board!=null) items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
+    if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
+    if(mode==='solo') items.push(['IA',labelFor(mode,'difficulty',values.difficulty)]);
+    if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);
+    if(mode==='online') items.push(['SESSION',values.role==='guest'?'REJOINDRE':'CRÉER']);
+    return `<div class="match-recap">${items.map(([k,v])=>`<span><small>${safeText(k)}</small><b>${safeText(v)}</b></span>`).join('')}</div>`;
   }
 
   function editableField(control,values,extra=''){
@@ -113,18 +96,31 @@
     return `<div class="field editable-field ${extra}" data-key="${control.key}"><div class="label">${control.label}</div><div class="control editable-control"><input class="value editable-value" data-edit="${control.key}" data-kind="${control.kind||'text'}" maxlength="${isCode?8:18}" value="${value}" placeholder="${placeholder}" autocomplete="off" spellcheck="false"></div></div>`;
   }
 
-  function selectorField(control,values){
+  function selectorField(control,values,extra=''){
     const fixed=!!control.fixed || (control.options||[]).length<2;
-    const meter=control.key==='difficulty'?difficultyMeter(values[control.key]):'';
-    return `<div class="field selector-field" data-key="${control.key}"><div class="label">${control.label}</div><div class="control"><button type="button" data-step="-1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Précédent">‹</button><div class="value"><span class="value-text">${optionLabel(control,values[control.key])}</span>${meter}</div><button type="button" data-step="1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Suivant">›</button></div></div>`;
+    return `<div class="field selector-field ${extra}" data-key="${control.key}"><div class="label">${control.label}</div><div class="control"><button type="button" data-step="-1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Précédent">‹</button><div class="value"><span class="value-text">${safeText(optionLabel(control,values[control.key]))}</span></div><button type="button" data-step="1" data-key="${control.key}" ${fixed?'disabled':''} aria-label="Suivant">›</button></div></div>`;
   }
 
-  function duelNames(mode,controls,values){
+  function difficultyZone(mode,values){
+    if(mode!=='solo') return '';
+    const control=controlByKey(mode,'difficulty');
+    return `<div class="difficulty-zone" data-key="difficulty">
+      <div class="difficulty-zone-label">DIFFICULTÉ IA</div>
+      <div class="difficulty-selector">
+        <button type="button" data-step="-1" data-key="difficulty" aria-label="Difficulté précédente">‹</button>
+        <b>${safeText(optionLabel(control,values.difficulty))}</b>
+        <button type="button" data-step="1" data-key="difficulty" aria-label="Difficulté suivante">›</button>
+      </div>
+      ${difficultyLights(values.difficulty)}
+    </div>`;
+  }
+
+  function playerNames(mode,controls,values){
     const names=controls.filter(control=>control.editable&&control.kind==='name');
     if(mode==='duel'&&names.length>=2){
       return `<div class="duel-name-grid">
-        <div class="duel-name-card gold-name"><span>♜</span>${editableField(names[0],values,'compact-name')}</div>
-        <div class="duel-name-card violet-name"><span>♝</span>${editableField(names[1],values,'compact-name')}</div>
+        <div class="duel-name-card gold-name"><div class="guardian-mark">♜</div>${editableField(names[0],values,'compact-name')}</div>
+        <div class="duel-name-card violet-name"><div class="guardian-mark">♝</div>${editableField(names[1],values,'compact-name')}</div>
       </div>`;
     }
     if(mode==='team'&&names.length>=4){
@@ -137,7 +133,7 @@
   }
 
   function stepControl(control,direction){
-    if(control.fixed || control.editable || !control.options?.length) return;
+    if(!control || control.fixed || control.editable || !control.options?.length) return;
     const values=control.options.map(([value])=>String(value));
     const current=String(ensureSelections(selectedMode)[control.key]);
     let index=Math.max(0,values.indexOf(current));
@@ -151,24 +147,33 @@
     const c=cfg[mode]; if(!c) return;
     selectedMode=mode;
     const values=ensureSelections(mode);
+    const controls=c.controls||[];
     duel.dataset.mode=mode;
     document.body.dataset.duelMode=mode;
     desc.textContent=c.description||'';
-    play.innerHTML=`<span class="play-main">${playLabel()}</span><small>${playSubLabel()}</small>`;
+    play.innerHTML=`<span class="play-main">${safeText(playLabel())}</span><small>${safeText(playSubLabel())}</small>`;
 
-    const controls=c.controls||[];
-    const standard=controls.filter(control=>!(control.editable&&control.kind==='name'));
-    const renderedStandard=standard.map(control=>control.editable?editableField(control,values):selectorField(control,values)).join('');
-    const names=duelNames(mode,controls,values);
+    const bodyControls=controls.filter(control=>{
+      if(control.editable&&control.kind==='name') return false;
+      if(mode==='solo'&&control.key==='difficulty') return false;
+      return true;
+    });
+    const renderedControls=bodyControls.map(control=>control.editable?editableField(control,values):selectorField(control,values)).join('');
+    const names=playerNames(mode,controls,values);
 
-    panel.innerHTML=`${duelHeader(mode,values)}<div class="duel-panel-body">${renderedStandard}${names}</div>${summaryChips(mode,values)}<div class="dots">${[0,1,2,3].map(i=>`<span class="dot ${i===c.dot?'on':''}"></span>`).join('')}</div>`;
+    panel.innerHTML=`${duelHeader(mode,values)}
+      <div class="duel-panel-body">${renderedControls}${names}</div>
+      ${difficultyZone(mode,values)}
+      ${recap(mode,values)}
+      <div class="dots">${[0,1,2,3].map(i=>`<span class="dot ${i===c.dot?'on':''}"></span>`).join('')}</div>`;
     panel.dataset.mode=mode;
 
     panel.querySelectorAll('[data-step]').forEach(btn=>btn.addEventListener('click',()=>{
       const control=controls.find(item=>item.key===btn.dataset.key);
       btn.classList.remove('tap'); void btn.offsetWidth; btn.classList.add('tap');
-      if(control) stepControl(control,Number(btn.dataset.step)||1);
+      stepControl(control,Number(btn.dataset.step)||1);
     }));
+
     panel.querySelectorAll('[data-edit]').forEach(input=>{
       const update=()=>{
         const isCode=input.dataset.kind==='code';
@@ -188,7 +193,7 @@
   function flash(){veil.classList.remove('run');void veil.offsetWidth;veil.classList.add('run')}
   function openMode(card){
     document.querySelectorAll('.card').forEach(x=>x.classList.remove('selected'));
-    card.classList.add('selected');home.classList.add('launching');render(card.dataset.mode,true);
+    card.classList.add('selected'); home.classList.add('launching'); render(card.dataset.mode,true);
     setTimeout(flash,220);
     setTimeout(()=>{home.classList.remove('active');duel.classList.add('active');duel.classList.remove('enter');void duel.offsetWidth;duel.classList.add('enter')},650);
     setTimeout(()=>{home.classList.remove('launching');card.classList.remove('selected')},1280);
@@ -199,11 +204,7 @@
     modalBody.innerHTML=`<div class="rules-grid"><section><b>OBJECTIF</b><p>Validez 3 couronnes avant votre adversaire.</p></section><section><b>VOTRE TOUR</b><p>Posez une île, puis utilisez vos actions de déplacement, poussée et magie.</p></section><section><b>COURONNES</b><p>Récupérez, transmettez et ramenez les couronnes jusqu’à votre zone de validation.</p></section><section><b>2 CONTRE 2</b><p>Les deux partenaires partagent le même score. La première équipe à 3 couronnes gagne.</p></section></div>`;
     modal.classList.add('open');
   }
-  function openComingSoon(label){
-    modalTitle.textContent=label;
-    modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';
-    modal.classList.add('open');
-  }
+  function openComingSoon(label){modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
   document.getElementById('back').addEventListener('click',()=>{flash();setTimeout(()=>{duel.classList.remove('active','enter');home.classList.add('active')},430)});
