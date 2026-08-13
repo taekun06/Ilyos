@@ -7,8 +7,8 @@ window.ILYOS_MENU_CONFIG = {
       description: "Affrontez l’IA dans un duel stratégique sur les îles du ciel.", dot: 1,
       controls: [
         { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
-        { key:'difficulty', label:'DIFFICULTÉ IA', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] },
-        { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] }
+        { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] },
+        { key:'difficulty', label:'DIFFICULTÉ IA', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] }
       ]
     },
     duel: {
