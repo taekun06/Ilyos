@@ -3,39 +3,44 @@ window.ILYOS_MENU_CONFIG = {
   defaultMode: 'solo',
   modes: {
     solo: {
-      label: 'SOLO', subtitle: 'Affrontez l’IA', playerCount: '1',
+      label: 'SOLO', subtitle: 'Affrontez l’IA', playerCount: '1', playLabel: "AFFRONTER L’IA",
       description: "Affrontez l’IA dans un duel stratégique sur les îles du ciel.", dot: 1,
       controls: [
         { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
-        { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] },
-        { key:'difficulty', label:'DIFFICULTÉ IA', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] }
+        { key:'difficulty', label:'DIFFICULTÉ IA', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] },
+        { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] }
       ]
     },
     duel: {
-      label: 'DUEL LOCAL', subtitle: '2 joueurs', playerCount: '2',
+      label: 'DUEL LOCAL', subtitle: '2 joueurs', playerCount: '2', playLabel: 'LANCER LE DUEL',
       description: "Deux joueurs s’affrontent sur le même appareil.", dot: 0,
       controls: [
         { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
         { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] },
-        { key:'format', label:'FORMAT', default:'local2', options:[['local2','2 JOUEURS LOCAL']], fixed:true }
+        { key:'name1', label:'JOUEUR 1', default:'JOUEUR 1', editable:true, kind:'name' },
+        { key:'name2', label:'JOUEUR 2', default:'JOUEUR 2', editable:true, kind:'name' }
       ]
     },
     team: {
-      label: '2 CONTRE 2', subtitle: 'Équipes', playerCount: '4',
-      description: "Deux équipes, un score commun : 3 couronnes pour gagner.", dot: 2,
+      label: '2 CONTRE 2', subtitle: 'Équipes', playerCount: '4', playLabel: 'LANCER LE 2 CONTRE 2',
+      description: "Deux équipes s’affrontent avec un score commun. Première équipe à 3 couronnes.", dot: 2,
       controls: [
         { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE']], fixed:true },
-        { key:'format', label:'FORMAT', default:'team2v2', options:[['team2v2','2 CONTRE 2']], fixed:true },
-        { key:'goal', label:'OBJECTIF', default:'3', options:[['3','3 COURONNES']], fixed:true }
+        { key:'name1', label:'JOUEUR 1', default:'JOUEUR 1', editable:true, kind:'name' },
+        { key:'name2', label:'JOUEUR 2', default:'JOUEUR 2', editable:true, kind:'name' },
+        { key:'name3', label:'JOUEUR 3', default:'JOUEUR 3', editable:true, kind:'name' },
+        { key:'name4', label:'JOUEUR 4', default:'JOUEUR 4', editable:true, kind:'name' }
       ]
     },
     online: {
-      label: 'EN LIGNE', subtitle: 'Joueurs du monde', playerCount: 'online',
-      description: "Créez ou rejoignez une partie à distance.", dot: 3,
+      label: 'EN LIGNE', subtitle: 'Joueurs du monde', playerCount: 'online', playLabel: 'CRÉER LA PARTIE',
+      description: "Créez un salon ou rejoignez un autre joueur avec un code de partie.", dot: 3,
       controls: [
         { key:'role', label:'SESSION', default:'host', options:[['host','CRÉER'],['guest','REJOINDRE']] },
-        { key:'roomCode', label:'CODE', default:'AUTO', editable:true },
-        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] }
+        { key:'name1', label:'VOTRE NOM', default:'JOUEUR 1', editable:true, kind:'name' },
+        { key:'roomCode', label:'CODE', default:'AUTO', editable:true, kind:'code' },
+        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
+        { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] }
       ]
     }
   }
