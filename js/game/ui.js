@@ -1069,7 +1069,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast("Limite atteinte : 5 gardiens maximum.");
+            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -1407,7 +1407,7 @@
         // Le contexte de tour affiche déjà "Invocation obligatoire · Placer le
         // gardien" : un toast ici ne ferait que répéter la même instruction.
         if (!canCreateGuardian(state.currentPlayer)) {
-          showToast("Île posée. Limite atteinte : 5 gardiens maximum.");
+          showToast(`Île posée. Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
         }
       }
 

@@ -1068,7 +1068,7 @@
       <ol>
         <li>À chaque tour, vous pouvez jouer des actions avant ou après la pose de l’île.</li>
         <li>Vous devez poser une île avant de terminer votre tour. Un nouveau gardien y apparaît uniquement si votre
-          équipe possède moins de 5 gardiens.</li>
+          équipe possède moins de 6 gardiens.</li>
         <li>Cliquez directement sur un de vos gardiens : le second clic détermine automatiquement un déplacement ou une
           poussée. Cliquez sur une case d’île pour lancer la magie.</li>
         <li>Chaque deck contient 13 cartes : 8 déplacements, 4 poussées et 1 magie. Au début du tour, le joueur pioche 5
@@ -1091,11 +1091,12 @@
           magie permet de choisir librement une rotation de 90°, 180°, 270° ou 360°.</li>
         <li>Le sanctuaire de la couronne est une croix fixe de 5 cases. Il constitue un terrain permanent : aucune de
           ses cases ne peut être déplacée, tournée ou recouverte par une île.</li>
-        <li>Chaque équipe est limitée à 5 gardiens sur le plateau.</li>
+        <li>Chaque équipe est limitée à 6 gardiens sur le plateau.</li>
         <li>Recliquez sur la case de départ sélectionnée pour quitter l’action. Cliquez sur la couronne d’un adversaire
           pour la récupérer lorsqu’un de vos gardiens est adjacent.</li>
-        <li>Chaque tour dure au maximum 3 minutes. À 0:00, une île est posée automatiquement si nécessaire, puis le tour
-          se termine.</li>
+        <li>Par défaut, les tours ne sont pas chronométrés. L’option « Temps par tour » du menu de configuration permet
+          d’imposer une limite (1, 2, 3 ou 5 minutes) : à 0:00, une île est alors posée automatiquement si nécessaire,
+          puis le tour se termine.</li>
         <li>Le mode 1 joueur propose quatre difficultés. En Difficile et Expert, l’ordinateur sait poser une couronne,
           la transmettre gratuitement entre deux alliés ou la pousser vers un village.</li>
         <li>Les parties locales, solo et en ligne sont sauvegardées automatiquement. Utilisez « Reprendre » après une
@@ -1930,8 +1931,12 @@
       color: var(--ilyos-ink) !important
     }
 
+    /* Ces <select> natifs restent dans le DOM (le moteur les lit au lancement)
+       mais sont pilotés par les cartes v64 du menu — voir archipelago-behaviour.js,
+       applyNativeChoices(). On masque donc uniquement leur ligne d'origine. */
     .mode-option-row:has(#startingBoardSelect),
-    .mode-option-row:has(#aiDifficultySelect) {
+    .mode-option-row:has(#aiDifficultySelect),
+    .mode-option-row:has(#turnTimerSelect) {
       display: none !important
     }
 

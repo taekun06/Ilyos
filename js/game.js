@@ -3,7 +3,7 @@
 
       const GRID = 11;
       const CENTER = { r: 5, c: 5 };
-      const MAX_GUARDIANS_PER_PLAYER = 5;
+      const MAX_GUARDIANS_PER_PLAYER = 6;
       const PLAYER_COLORS = ["#22c3f2", "#ff5b50", "#62e36b", "#bb7cff"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
       const CORNERS = [
@@ -788,49 +788,55 @@
         skyFloor.position.y = -1.45;
         staticGroup.add(skyFloor);
 
-        const boardShadow = new THREE.Mesh(
-          kaykitGeometry("board-shadow-v55", () => new THREE.CircleGeometry(KAYKIT_BOARD_SPAN * .68, 40)),
-          new THREE.MeshBasicMaterial({ color: 0x0a3561, transparent: true, opacity: .20, depthWrite: false })
-        );
-        boardShadow.rotation.x = -Math.PI / 2;
-        boardShadow.scale.set(1, .56, 1);
-        boardShadow.position.y = -.85;
-        boardShadow.position.z = .45;
-        staticGroup.add(boardShadow);
-
-        // Cadre du plateau et grille 11 x 11.
-        const frame = new THREE.Mesh(
-          kaykitGeometry("board-frame-v55", () => new THREE.BoxGeometry(KAYKIT_BOARD_SPAN + .62, .25, KAYKIT_BOARD_SPAN + .62)),
-          new THREE.MeshBasicMaterial({ color: 0x4b9fc1 })
-        );
-        frame.position.y = -.075;
-        frame.receiveShadow = true;
-        staticGroup.add(frame);
-        const inner = new THREE.Mesh(
-          kaykitGeometry("board-inner-v55", () => new THREE.BoxGeometry(KAYKIT_BOARD_SPAN + .20, .28, KAYKIT_BOARD_SPAN + .20)),
-          new THREE.MeshBasicMaterial({ color: 0x8fcddd })
-        );
-        inner.position.y = -.09;
-        inner.receiveShadow = true;
-        staticGroup.add(inner);
-
-        // Le quadrillage appartient au socle du plateau : il reste sous les îles.
-        const cellGeom = kaykitGeometry("board-grid-cell-v55", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING - .012, KAYKIT_CELL_SPACING - .012));
-        const cellMats = [
-          new THREE.MeshBasicMaterial({ color: 0xb8d9df, side: THREE.DoubleSide, depthWrite: true }),
-          new THREE.MeshBasicMaterial({ color: 0xafd3db, side: THREE.DoubleSide, depthWrite: true })
-        ];
-        for (let r = 0; r < GRID; r++) {
-          for (let c = 0; c < GRID; c++) {
-            const p = kaykitCellPosition(r, c, .055);
-            const cellSurface = new THREE.Mesh(cellGeom, cellMats[(r + c) % 2]);
-            cellSurface.rotation.x = -Math.PI / 2;
-            cellSurface.position.set(p.x, p.y, p.z);
-            cellSurface.renderOrder = 1;
-            staticGroup.add(cellSurface);
-          }
+        // Nuages : renforcent l'idée qu'on construit suspendu dans le ciel
+        // plutôt que sur un plateau (voir suppression du socle ci-dessous).
+        // Un seul anneau, AU-DESSUS du plateau (jamais en dessous) : des
+        // nuages sous la grille se sont révélés masqués par les îles elles-
+        // mêmes (le rayon caméra qui les atteint traverse d'abord la tuile
+        // opaque au-dessus) — invisibles quel que soit leur placement dans le
+        // champ de vision. Au-dessus, rien ne peut les occulter.
+        // Sprites = toujours face caméra, coût de rendu minime.
+        const cloudTexture = kaykitCloudTexture();
+        const cloudGroup = new THREE.Group();
+        cloudGroup.name = "ilyos-clouds";
+        const cloudRng = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 91.345 + salt * 12.9898) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        // Rayon calé sur la moitié du plateau (~5.1 unités), pas sur une
+        // distance orbitale arbitraire : la caméra "face" a un champ de vision
+        // étroit (33°) calibré pour cadrer tout juste le plateau, donc tout
+        // nuage placé nettement plus loin que son bord tombe hors cadre.
+        const halfSpan = KAYKIT_BOARD_SPAN / 2;
+        for (let i = 0; i < 10; i++) {
+          const material = new THREE.SpriteMaterial({
+            map: cloudTexture, transparent: true, depthWrite: false,
+            opacity: .34 + cloudRng(i, 1) * .20
+          });
+          const sprite = new THREE.Sprite(material);
+          const angle = cloudRng(i, 3) * Math.PI * 2;
+          const radius = halfSpan * (.40 + cloudRng(i, 4) * .45);
+          const scale = 1.7 + cloudRng(i, 6) * 1.7;
+          sprite.position.set(
+            Math.cos(angle) * radius,
+            1.3 + cloudRng(i, 8) * 1.7,
+            Math.sin(angle) * radius
+          );
+          sprite.scale.set(scale, scale * .62, 1);
+          sprite.renderOrder = -1;
+          sprite.userData.drift = { speed: .015 + cloudRng(i, 10) * .02, radius, phase: angle };
+          cloudGroup.add(sprite);
+          kaykit3D.animatedObjects.push(sprite);
         }
+        staticGroup.add(cloudGroup);
 
+        // Plus de socle plein, de dalles opaques ni d'ombre de plateau : seule
+        // la grille filaire reste, posée sur le dégradé de ciel du canvas (voir
+        // .kaykit-canvas en mode alternatif) — impression de flotter dans le
+        // ciel, îles et gardiens suspendus au-dessus du vide plutôt que sur un
+        // plancher. Le disque d'ombre (board-shadow-v55) a été retiré : à bords
+        // francs, il se voyait comme une tache circulaire flottante une fois le
+        // plancher disparu, au lieu de lire comme une simple ombre portée.
         const gridPoints = [];
         const majorGridPoints = [];
         for (let i = 0; i <= GRID; i++) {
@@ -840,13 +846,18 @@
           target.push(new THREE.Vector3(d, .061, -half), new THREE.Vector3(d, .061, half));
           target.push(new THREE.Vector3(-half, .061, d), new THREE.Vector3(half, .061, d));
         }
+        // Sans plancher, la grille est le seul repère pour viser une case : le
+        // bleu sur bleu d'origine (pensé pour contraster avec des dalles claires,
+        // pas avec le ciel) devenait trop discret. Blanc quasi opaque + liseré
+        // doré sur les lignes majeures (cohérent avec le reste de la DA) pour
+        // rester lisible même en mouvement de caméra.
         const grid = new THREE.LineSegments(
           new THREE.BufferGeometry().setFromPoints(gridPoints),
-          new THREE.LineBasicMaterial({ color: 0x4aa3bd, transparent: true, opacity: .46, depthWrite: false, depthTest: true })
+          new THREE.LineBasicMaterial({ color: 0xf3fbff, transparent: true, opacity: .78, depthWrite: false, depthTest: true })
         );
         const majorGrid = new THREE.LineSegments(
           new THREE.BufferGeometry().setFromPoints(majorGridPoints),
-          new THREE.LineBasicMaterial({ color: 0x398ca8, transparent: true, opacity: .62, depthWrite: false, depthTest: true })
+          new THREE.LineBasicMaterial({ color: 0xe9c877, transparent: true, opacity: .92, depthWrite: false, depthTest: true })
         );
         grid.renderOrder = 2; majorGrid.renderOrder = 3;
         staticGroup.add(grid, majorGrid);
@@ -1084,15 +1095,22 @@
             const preserve = /skin|face|eye|hair|mouth|teeth|wood|staff|book|paper/.test(label);
             if (!preserve) {
               const useTrim = /hat|hood|cape|robe|cloth|body|torso|dress|sleeve/.test(label);
+              // Les gemmes/orbes méritent un rendu à part de la robe : plus
+              // lisses et plus réfléchissantes qu'un tissu, plutôt qu'une simple
+              // variante de la même étoffe. Sans map d'environnement dans la
+              // scène, on compte sur les lumières directionnelles existantes
+              // (sun/fill/front) pour faire vivre ce reflet — d'où un metalness
+              // modéré plutôt qu'extrême, qui resterait noir sans reflet à capter.
+              const isGem = /trim|gem|orb|magic|crystal/.test(label);
               if (mat.color) {
                 mat.color.copy(useTrim ? robeMain : robeShadow);
-                if (/trim|gem|orb|magic|crystal/.test(label)) mat.color.copy(arcaneTrim);
+                if (isGem) mat.color.copy(arcaneTrim);
               }
-              if ('metalness' in mat) mat.metalness = useTrim ? .18 : .08;
-              if ('roughness' in mat) mat.roughness = useTrim ? .52 : .66;
+              if ('metalness' in mat) mat.metalness = isGem ? .42 : (useTrim ? .16 : .08);
+              if ('roughness' in mat) mat.roughness = isGem ? .16 : (useTrim ? .40 : .58);
               if ('emissive' in mat) {
                 mat.emissive = (useTrim ? arcaneTrim : robeShadow).clone();
-                mat.emissiveIntensity = useTrim ? .10 : .05;
+                mat.emissiveIntensity = isGem ? .18 : (useTrim ? .09 : .05);
               }
             }
             mat.needsUpdate = true;
@@ -1768,9 +1786,12 @@
         const glyphKind = intent.kind === "crown-place"
           ? "place"
           : (["ally", "enemy"].includes(intent.kind) ? "character" : intent.kind);
+        // Pose d'île : renderKayKitPlacementPreview() affiche déjà le vrai modèle
+        // d'île teinté vert/rouge — voir plus bas pour hoverRingsSuppressed.
+        const placingIsland = state?.phase === "PLACE_ISLAND";
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation";
+        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
@@ -1780,11 +1801,20 @@
         // maintenant le futur gardien en volume à cet endroit précis — le grand
         // réticule (remplissage + anneau + coches, depthTest désactivé) rendait ce
         // ghost illisible en passant systématiquement devant lui.
-        const hoverRingsSuppressed = glyphKind === "select" || glyphKind === "invocation";
+        // Idem pour la pose d'île : renderKayKitPlacementPreview() dessine déjà le
+        // vrai modèle d'île teinté vert/rouge selon la validité — le réticule
+        // générique (gros cercle + pictogramme) par-dessus ne fait que la
+        // cacher/la surcharger sans ajouter d'information.
+        // Survol "neutre" (case vide, plateau, décor) : il n'y a aucune action à
+        // annoncer. Le réticule — carré de coches + anneau + remplissage — suivait
+        // pourtant le curseur en permanence, ce qui bruite le plateau sans rien
+        // apprendre au joueur. On ne montre plus rien tant qu'une case ne propose
+        // pas réellement quelque chose.
+        const hoverRingsSuppressed = glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
-            child.intensity = intent.kind === "neutral" ? .18 : (intent.actionable ? .80 : .48);
+            child.intensity = hoverRingsSuppressed ? 0 : (intent.actionable ? .80 : .48);
             return;
           }
           if (child.userData.hoverRole === "glyph") {
@@ -1978,13 +2008,13 @@
           if (!kaykit3D.orbit) canvas.setPointerCapture?.(event.pointerId);
         });
         canvas.addEventListener("pointermove", event => {
-          if (kaykit3D?.cursorLabel) {
-            const rect = canvas.getBoundingClientRect();
-            kaykit3D.cursorLabel.style.left = `${THREE.MathUtils.clamp(event.clientX - rect.left + 18, 12, Math.max(12, rect.width - 230))}px`;
-            kaykit3D.cursorLabel.style.top = `${THREE.MathUtils.clamp(event.clientY - rect.top - 42, 12, Math.max(12, rect.height - 48))}px`;
-            kaykit3D.cursorLabel.style.bottom = "auto";
-            kaykit3D.cursorLabel.style.transform = "none";
-          }
+          // Le libellé suivait auparavant le curseur au pixel près : sa largeur
+          // varie avec le texte ("MAGIE" vs "DÉPLACER · 2 ACTIONS"), donc son
+          // centre optique glissait sans arrêt et ne semblait jamais aligné sur
+          // rien de fixe — d'où l'impression répétée de tooltip "pas centré".
+          // On fixe désormais sa position une fois pour toutes (voir CSS,
+          // .kaykit-cursor-label : centré sur le plateau, ancré en bas), comme
+          // une bannière de statut plutôt qu'un curseur personnalisé.
           if (pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > DRAG_THRESHOLD) {
             dragMoved = true;
             kaykit3D.autoFit = false;
@@ -2038,6 +2068,9 @@
         const heightDistance = (boardSize / 2) / Math.tan(verticalFov / 2);
         const widthDistance = (boardSize / 2) / Math.tan(horizontalFov / 2);
         const base = Math.max(heightDistance, widthDistance);
+        // Revert : .74 espaçait trop (grand ciel vide en haut, châteaux minuscules) —
+        // confirmé par capture utilisateur. Le cadrage voulu est le resserré
+        // d'origine, .64, qui remplit le cadre sans marge inutile.
         const multiplier = mode === "front" ? .64 : .68;
         return THREE.MathUtils.clamp(base * multiplier, kaykit3D.minZoom, kaykit3D.maxZoom);
       }
@@ -2251,6 +2284,38 @@
         return KAYKIT_LEVELS.board + .014;
       }
 
+      // Texture de nuage : plusieurs disques radiaux flous superposés à des
+      // offsets aléatoires (seedés, donc stable d'un appel à l'autre) pour
+      // éviter un cercle parfait trop artificiel. Un seul canvas partagé par
+      // toutes les instances de nuage — seules opacité/échelle/position varient
+      // par sprite (voir buildKayKitStaticScene).
+      function kaykitCloudTexture() {
+        const key = "cloud-sprite-v1";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 160;
+        const ctx = canvas.getContext('2d');
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        for (let i = 0; i < 7; i++) {
+          const cx = 60 + seeded(i, 1) * 136;
+          const cy = 70 + seeded(i, 2) * 40;
+          const r = 34 + seeded(i, 3) * 40;
+          const blob = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          blob.addColorStop(0, "rgba(255,255,255,.95)");
+          blob.addColorStop(.6, "rgba(255,255,255,.55)");
+          blob.addColorStop(1, "rgba(255,255,255,0)");
+          ctx.fillStyle = blob;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
       function kaykitCanvasTexture(name, base, accent) {
         const key = `surface-v30-${name}-${base}-${accent}`;
         if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
@@ -2344,6 +2409,14 @@
         // montre déjà l'empreinte exacte. Le carré plat en dessous ne ferait
         // plus que la doubler d'un gros aplat coloré — on le masque.
         const placementGhostActive = state?.phase === "PLACE_ISLAND" && !!state?.hoverAnchor;
+        // placeIsland() laisse state.selectedIslandId sur l'île tout juste posée,
+        // ce qui ajoute la classe "selected" à CHACUNE de ses cases. Le sceau de
+        // sélection ci-dessous (halo or, lueur, anneau runique, lumière) est conçu
+        // pour UN gardien : appliqué à toute l'île pendant l'invocation, il empile
+        // 3 à 5 disques concentriques par case et masque le ghost du gardien.
+        // Les anneaux d'invocation (addKayKitSpawnAffordance) portent déjà cette
+        // information — on masque le sceau d'île pendant cette phase.
+        const islandSealSuppressed = state?.phase === "PLACE_SPAWN";
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
         if (classList.contains("fx-push")) { color = 0xff9a3d; fillOpacity = .62; kind = "result-push"; size = .94 }
         else if (classList.contains("fx-move")) { color = 0x55ddff; fillOpacity = .58; kind = "result-move"; size = .94 }
@@ -2351,7 +2424,7 @@
         else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
         else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
         else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
-        else if (classList.contains("selected") || classList.contains("selected-character")) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
+        else if (classList.contains("selected-character") || (!islandSealSuppressed && classList.contains("selected"))) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
         else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
         else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
         else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .46; kind = "push" }
@@ -2646,7 +2719,7 @@
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
         const ring = new THREE.Mesh(
           kaykitGeometry("spawn-ring-v1", () => new THREE.TorusGeometry(.17, .024, 8, 26)),
-          new THREE.MeshBasicMaterial({ color: 0x53e6d1, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0x1fbfa6, transparent: true, opacity: .82, depthWrite: false, side: THREE.DoubleSide })
         );
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(p.x, p.y, p.z);
@@ -2678,9 +2751,9 @@
           const materials = Array.isArray(child.material) ? child.material : [child.material];
           const cloned = materials.map(material => {
             const mat = material.clone();
-            if ("emissive" in mat) { mat.emissive = accent.clone(); mat.emissiveIntensity = .35; }
+            if ("emissive" in mat) { mat.emissive = accent.clone(); mat.emissiveIntensity = .22; }
             mat.transparent = true;
-            mat.opacity = .55;
+            mat.opacity = .74;
             mat.depthWrite = false;
             mat.needsUpdate = true;
             return mat;
@@ -3281,7 +3354,13 @@
         const previewIsland = { id: "placement-preview", owner: null, cells: previewCells };
         const block = makeKayKitIslandBlock(previewIsland, { preview: true, valid, previewMode: "placement" });
         kaykit3D.dynamicGroup.add(block);
-        registerKayKitFadeIn(block, 120);
+        // Pas de fondu ici : ce ghost est reconstruit à chaque déplacement de
+        // souris via un resync complet de la scène (déjà coûteux en soi), et
+        // traverser+enregistrer chaque mesh du bloc dans animatedObjects à
+        // cette fréquence ajoutait un ralentissement perceptible. Les autres
+        // marqueurs (anneaux d'affordance, halo de sélection), eux, passent
+        // par le chemin léger refreshKayKitHoverPreviews() et gardent leur
+        // fondu.
       }
 
       function renderKayKitMagicRotationPreview() {
@@ -3817,6 +3896,15 @@
           if (object.userData.slowSpin) {
             object.rotation.z = elapsed * .16;
           }
+          // Dérive lente des nuages (voir buildKayKitStaticScene) : orbite très
+          // douce autour du plateau, jamais retirée de la liste animée (contrairement
+          // à fadeIn ci-dessous) puisqu'un nuage dérive pendant toute la partie.
+          if (object.userData.drift) {
+            const { speed, radius, phase } = object.userData.drift;
+            const angle = phase + elapsed * speed;
+            object.position.x = Math.cos(angle) * radius;
+            object.position.z = Math.sin(angle) * radius;
+          }
           // Fondu d'apparition (voir registerKayKitFadeIn) : remonte vers
           // l'opacité cible puis se retire lui-même de la liste animée.
           if (object.userData.fadeIn && object.material) {
@@ -3878,6 +3966,9 @@
       let toastTimer = null;
       let lastWheelAt = 0;
       let lastKeyRotateAt = 0;
+      // Conservé pour la sérialisation/compatibilité : la durée réelle d'un tour
+      // vient désormais de state.turnDurationSeconds (0 = aucune limite, défaut),
+      // choisi dans le menu de configuration. Voir turnTimerControlsHTML().
       const TURN_DURATION_SECONDS = 180;
       const STATE_SCHEMA_VERSION = 22;
       const LOCAL_STORAGE_KEY = "ilyos-local-session-v22";
@@ -3952,6 +4043,8 @@
       let onlineLocalName = "";
       let pendingOnlineStartingBoard = "classic";
       let pendingOnlineStartingPreset = "open";
+      // 0 = aucune limite de temps (défaut). L'hôte seul décide de la valeur.
+      let pendingOnlineTurnDuration = 0;
       let localPlayerIndex = null;
       let onlineConnected = false;
       let onlineReconnectTimer = null;
@@ -4310,7 +4403,34 @@
             <option value="symmetric">Duel symétrique — plateau préparé</option>
           </select>
         </label>
+        ${turnTimerControlsHTML()}
       `;
+      }
+
+      // Chronomètre désactivé par défaut : une partie de base se joue sans
+      // pression de temps. La valeur est une durée en secondes ; "0" signifie
+      // "aucune limite" (voir isTurnTimerEnabled).
+      function turnTimerControlsHTML() {
+        return `
+        <label class="mode-option-row turn-timer-row" for="turnTimerSelect">
+          <span>
+            <b>Temps par tour</b>
+            <small>Sans limite par défaut. Avec une limite, une île est posée automatiquement à 0:00 puis le tour passe.</small>
+          </span>
+          <select id="turnTimerSelect">
+            <option value="0" selected>Aucune limite</option>
+            <option value="60">1 minute</option>
+            <option value="120">2 minutes</option>
+            <option value="180">3 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+        </label>
+      `;
+      }
+
+      function selectedTurnDurationSeconds() {
+        const raw = Number(document.getElementById("turnTimerSelect")?.value);
+        return Number.isFinite(raw) && raw > 0 ? raw : 0;
       }
 
       function renderSymmetricSetupPreview(setupId) {
@@ -4684,10 +4804,20 @@
           }
         }
 
+        // Partie sans limite de temps (défaut, et cas de toutes les sauvegardes
+        // antérieures à cette option) : aucun deadline à reconstituer.
+        const duration = Number(restored.turnDurationSeconds);
+        if (!Number.isFinite(duration) || duration <= 0) {
+          restored.turnDurationSeconds = 0;
+          restored.turnTimeLeft = null;
+          restored.turnDeadline = null;
+          return restored;
+        }
+        restored.turnDurationSeconds = duration;
         const remaining = Number(restored.turnTimeLeft);
         restored.turnTimeLeft = Number.isFinite(remaining)
-          ? Math.max(1, Math.min(TURN_DURATION_SECONDS, remaining))
-          : TURN_DURATION_SECONDS;
+          ? Math.max(1, Math.min(duration, remaining))
+          : duration;
         restored.turnDeadline = Date.now() + restored.turnTimeLeft * 1000;
 
         return restored;
@@ -5534,9 +5664,11 @@
         state.undoSnapshot = null;
         state.networkRevision = revision || incoming.networkRevision || 0;
         networkRevision = state.networkRevision;
+        // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
+        // a ni deadline ni temps restant à recalculer.
         state.turnTimeLeft = state.turnDeadline
           ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
-          : TURN_DURATION_SECONDS;
+          : (turnDurationSeconds() || null);
 
         els.setupScreen.classList.add("hidden");
         els.gameScreen.classList.remove("hidden");
@@ -6011,6 +6143,7 @@
           visualMode: pendingVisualMode,
           startingBoardMode: pendingOnlineStartingBoard,
           startingBoardPreset: null,
+          turnDurationSeconds: pendingOnlineTurnDuration,
           setupSelectionPending: pendingOnlineStartingBoard === "symmetric",
           aiDifficulty: null,
           networkRevision: 0,
@@ -6018,12 +6151,16 @@
           round: 1,
           turn: 1,
           islands: [],
-          characters: players.map((player, index) => ({
-            id: `char-${index}-start`,
-            player: index,
-            r: player.village.r,
-            c: player.village.c
-          })),
+          // Même règle qu'en local (voir startGame) : plateau classique = aucun
+          // gardien de départ, le premier est invoqué avec la première île.
+          characters: pendingOnlineStartingBoard === "classic"
+            ? []
+            : players.map((player, index) => ({
+              id: `char-${index}-start`,
+              player: index,
+              r: player.village.r,
+              c: player.village.c
+            })),
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
@@ -6046,7 +6183,7 @@
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          turnTimeLeft: TURN_DURATION_SECONDS,
+          turnTimeLeft: null,
           turnDeadline: null,
           selectedActionCardId: null,
           selectedActionType: null,
@@ -6120,6 +6257,9 @@
         pendingOnlineStartingBoard = role === "host"
           ? (document.getElementById("startingBoardSelect")?.value || "classic")
           : "classic";
+        // L'invité reçoit l'état complet de l'hôte : il n'impose pas sa propre
+        // durée de tour, sinon les deux camps décompteraient différemment.
+        pendingOnlineTurnDuration = role === "host" ? selectedTurnDurationSeconds() : 0;
         pendingOnlineStartingPreset = "open";
         initializeOnlinePeer(role, roomCode);
         els.startBtn.disabled = true;
@@ -6157,6 +6297,7 @@
         const aiDifficulty = document.getElementById("aiDifficultySelect")?.value || "normal";
         const startingBoardMode = document.getElementById("startingBoardSelect")?.value || "classic";
         const startingBoardPreset = null;
+        const turnDurationChoice = selectedTurnDurationSeconds();
         const humanNames = [...els.playersForm.querySelectorAll(".player-name")]
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
@@ -6182,12 +6323,20 @@
           };
         });
 
-        const characters = players.map((p, i) => ({
-          id: `char-${i}-start`,
-          player: i,
-          r: p.village.r,
-          c: p.village.c
-        }));
+        // Plateau classique : on démarre sans aucun gardien. Le premier tour
+        // impose déjà de poser une île, ce qui déclenche l'invocation — chaque
+        // équipe obtient donc son premier gardien dès son premier tour, à
+        // l'endroit qu'elle choisit plutôt que d'office sur son village.
+        // Le mode symétrique, lui, remplace entièrement state.characters via
+        // confirmSymmetricSetup() : il n'est pas concerné.
+        const characters = startingBoardMode === "classic"
+          ? []
+          : players.map((p, i) => ({
+            id: `char-${i}-start`,
+            player: i,
+            r: p.village.r,
+            c: p.village.c
+          }));
 
         state = {
           players,
@@ -6196,6 +6345,7 @@
           visualMode: pendingVisualMode,
           startingBoardMode,
           startingBoardPreset,
+          turnDurationSeconds: turnDurationChoice,
           setupSelectionPending: startingBoardMode === "symmetric",
           aiDifficulty,
           currentPlayer: 0,
@@ -6220,7 +6370,7 @@
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          turnTimeLeft: TURN_DURATION_SECONDS,
+          turnTimeLeft: null,
           turnDeadline: null,
           selectedActionCardId: null,
           selectedActionType: null,
@@ -6357,9 +6507,28 @@
         }
       }
 
+      // 0 (ou absent) = partie sans limite de temps, le cas par défaut.
+      // Les sauvegardes/parties d'avant cette option n'ont pas le champ : elles
+      // retombent donc naturellement sur "pas de chrono".
+      function turnDurationSeconds() {
+        const value = Number(state?.turnDurationSeconds);
+        return Number.isFinite(value) && value > 0 ? value : 0;
+      }
+
+      function isTurnTimerEnabled() {
+        return turnDurationSeconds() > 0;
+      }
+
       function updateTurnTimerDisplay() {
         if (!els.turnTimer || !state) return;
-        const seconds = Math.max(0, Math.ceil(state.turnTimeLeft ?? TURN_DURATION_SECONDS));
+        // Sans limite de temps, la pastille n'a rien à afficher : on la retire
+        // du bandeau plutôt que d'y laisser un compteur figé.
+        els.turnTimer.classList.toggle("hidden", !isTurnTimerEnabled());
+        if (!isTurnTimerEnabled()) {
+          els.turnTimer.classList.remove("warning", "danger");
+          return;
+        }
+        const seconds = Math.max(0, Math.ceil(state.turnTimeLeft ?? turnDurationSeconds()));
         const minutes = Math.floor(seconds / 60);
         const rest = seconds % 60;
         els.turnTimer.textContent = `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
@@ -6371,9 +6540,18 @@
         stopTurnTimer();
         if (!state || state.winner !== null) return;
 
+        if (!isTurnTimerEnabled()) {
+          state.turnDeadline = null;
+          state.turnTimeLeft = null;
+          state.timerExpiring = false;
+          updateTurnTimerDisplay();
+          return;
+        }
+
+        const duration = turnDurationSeconds();
         if (resetDeadline || !state.turnDeadline) {
-          state.turnTimeLeft = TURN_DURATION_SECONDS;
-          state.turnDeadline = Date.now() + TURN_DURATION_SECONDS * 1000;
+          state.turnTimeLeft = duration;
+          state.turnDeadline = Date.now() + duration * 1000;
         } else {
           state.turnTimeLeft = Math.max(0, (state.turnDeadline - Date.now()) / 1000);
         }
@@ -6644,10 +6822,10 @@
           showToast(
             spawn
               ? "Une île et un gardien ont été placés automatiquement."
-              : "Une île a été placée automatiquement. Limite de 5 gardiens atteinte."
+              : `Une île a été placée automatiquement. Limite de ${MAX_GUARDIANS_PER_PLAYER} gardiens atteinte.`
           );
         } else if (!spawn) {
-          showToast("Île placée. Limite de 5 gardiens atteinte.");
+          showToast(`Île placée. Limite de ${MAX_GUARDIANS_PER_PLAYER} gardiens atteinte.`);
         }
         return island;
       }
@@ -9255,7 +9433,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast("Limite atteinte : 5 gardiens maximum.");
+            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -9593,7 +9771,7 @@
         // Le contexte de tour affiche déjà "Invocation obligatoire · Placer le
         // gardien" : un toast ici ne ferait que répéter la même instruction.
         if (!canCreateGuardian(state.currentPlayer)) {
-          showToast("Île posée. Limite atteinte : 5 gardiens maximum.");
+          showToast(`Île posée. Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
         }
       }
 
@@ -11403,7 +11581,7 @@
       }
 
       window.ILYOS_API = {
-        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", autoplay = false } = {}) {
+        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, autoplay = false } = {}) {
           try {
             pendingVisualMode = "alternative";
             els.playerCount.value = String(opponent);
@@ -11412,6 +11590,11 @@
             if (boardSelect) boardSelect.value = board === "classic" ? "classic" : "symmetric";
             const difficultySelect = document.getElementById("aiDifficultySelect");
             if (difficultySelect) difficultySelect.value = difficulty;
+            // Comme les deux précédents : le changement de mode ci-dessus a
+            // reconstruit els.modeOptions, donc le select vient d'être recréé
+            // avec sa valeur par défaut — il faut la réappliquer ici.
+            const turnTimerSelect = document.getElementById("turnTimerSelect");
+            if (turnTimerSelect) turnTimerSelect.value = String(Number(turnTime) > 0 ? Number(turnTime) : 0);
             const names = [...els.playersForm.querySelectorAll(".player-name")];
             if (names[0] && !names[0].value.trim()) names[0].value = "JOUEUR 1";
             if (names[1] && !names[1].value.trim()) names[1].value = "JOUEUR 2";

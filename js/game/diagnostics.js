@@ -247,7 +247,7 @@
       }
 
       window.ILYOS_API = {
-        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", autoplay = false } = {}) {
+        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, autoplay = false } = {}) {
           try {
             pendingVisualMode = "alternative";
             els.playerCount.value = String(opponent);
@@ -256,6 +256,11 @@
             if (boardSelect) boardSelect.value = board === "classic" ? "classic" : "symmetric";
             const difficultySelect = document.getElementById("aiDifficultySelect");
             if (difficultySelect) difficultySelect.value = difficulty;
+            // Comme les deux précédents : le changement de mode ci-dessus a
+            // reconstruit els.modeOptions, donc le select vient d'être recréé
+            // avec sa valeur par défaut — il faut la réappliquer ici.
+            const turnTimerSelect = document.getElementById("turnTimerSelect");
+            if (turnTimerSelect) turnTimerSelect.value = String(Number(turnTime) > 0 ? Number(turnTime) : 0);
             const names = [...els.playersForm.querySelectorAll(".player-name")];
             if (names[0] && !names[0].value.trim()) names[0].value = "JOUEUR 1";
             if (names[1] && !names[1].value.trim()) names[1].value = "JOUEUR 2";

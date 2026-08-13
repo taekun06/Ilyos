@@ -3,7 +3,7 @@
 
       const GRID = 11;
       const CENTER = { r: 5, c: 5 };
-      const MAX_GUARDIANS_PER_PLAYER = 5;
+      const MAX_GUARDIANS_PER_PLAYER = 6;
       const PLAYER_COLORS = ["#22c3f2", "#ff5b50", "#62e36b", "#bb7cff"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
       const CORNERS = [
