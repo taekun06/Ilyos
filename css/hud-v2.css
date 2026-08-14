@@ -20,6 +20,46 @@ body[data-visual-mode="alternative"] #gameScreen .hud-v1-legacy {
   display: none !important;
 }
 
+/*
+  Correction de regression (post-Passe 3) : base.css definit #gameScreen en
+  grille a deux lignes ("grid-template-rows: auto minmax(0,1fr)") pensee
+  pour .topbar (ligne 1, hauteur de son contenu) + .game-main (ligne 2, tout
+  le reste). Aucune des deux ne portait de grid-row explicite : l'ordre DOM
+  suffisait. En supprimant .topbar du DOM (nettoyage legacy), .game-main
+  devient le premier enfant en flux normal et herite implicitement de la
+  ligne 1 ("auto"), qui se dimensionne sur son propre contenu — d'ou le
+  plateau 3D comprime dans une bande de ~60px en haut de l'ecran. #hudV2Top
+  et #hudV2Dock sont position:fixed, donc deja hors flux de grille ; une
+  seule ligne pleine hauteur suffit desormais.
+*/
+/* :not(.hidden) répété pour égaler la spécificité des multiples blocs
+   <style> hérités dans index.html qui redéfinissent cette même règle sous
+   ce même sélecteur exact (jusqu'à "grid-template-rows: var(--v70-top)
+   minmax(0,1fr)!important", où --v70-top:60px explique la bande de 60px
+   observée) — feuille chargée en dernier, gagne le départage à égalité. */
+body[data-visual-mode="alternative"] #gameScreen,
+body[data-visual-mode="alternative"] #gameScreen:not(.hidden) {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+body[data-visual-mode="alternative"] .game-main {
+  grid-row: 1 !important;
+}
+
+/*
+  Ancien toolbar caméra KayKit (VUE FACE/VUE ISO/ZOOM/AUTO/LIBRE/3D PLEIN
+  ÉCRAN) : masqué visuellement, PAS supprimé du DOM. Ses fonctions
+  (setKayKitCameraMode()/snapKayKitView(), voir js/game/kaykit3d.js) sont
+  desormais accessibles via le menu ⚙ (mêmes fonctions, nouveaux boutons —
+  voir js/game/diagnostics.js). Le conteneur reste dans le DOM car
+  updateKayKitCameraModeUI() continue d'appeler
+  kaykit3D.controls.querySelector(...) dessus à chaque changement de mode :
+  le supprimer casserait cette fonction encore utilisée.
+*/
+body[data-visual-mode="alternative"] .kaykit-controls {
+  display: none !important;
+}
+
 body[data-visual-mode="alternative"] #gameScreen {
   --hud-v2-glass-bg: rgba(18, 22, 30, .38);
   --hud-v2-glass-border: rgba(226, 200, 138, .22);
