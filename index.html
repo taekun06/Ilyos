@@ -896,7 +896,7 @@
 
 
   <section id="gameScreen" class="hidden">
-    <header class="topbar">
+    <header class="topbar hud-v1-legacy">
       <div class="player-summary">
         <div id="activePortrait" class="portrait">🧙</div>
         <div class="player-text">
@@ -906,8 +906,6 @@
       </div>
       <div class="turn-summary">
         <div class="turn-heading">
-          <strong id="turnLabel">Tour 1</strong>
-          <span id="turnTimer" class="turn-timer" aria-label="Temps restant">03:00</span>
           <span id="onlineBadge" class="online-badge hidden">HORS LIGNE</span>
           <span id="crownStatus" class="crown-status" aria-label="État des couronnes">👑 1</span>
         </div>
@@ -920,6 +918,55 @@
         <div id="scoreList" class="score-list"></div>
       </div>
     </header>
+
+    <!--
+      HUD V2 (Prompt 1/3) : architecture minimale, plateau 3D dominant.
+      Ces deux blocs lisent le state existant via renderHudV2() (js/game/ui.js)
+      et hebergent #turnLabel/#turnTimer/#cancelCardBtn/#endTurnBtn, deplaces
+      ici depuis l'ancien header/right-panel (memes ids, meme logique metier,
+      juste reancres dans la nouvelle mise en page).
+    -->
+    <header id="hudV2Top" class="hud-v2-top" role="status" aria-live="polite">
+      <div class="hud-v2-top-side hud-v2-top-left">
+        <span id="hudV2ActiveName" class="hud-v2-player-name">Joueur</span>
+        <span id="hudV2ActiveScore" class="hud-v2-crowns" aria-label="Score du joueur actif">○○○</span>
+      </div>
+      <div class="hud-v2-top-center">
+        <strong id="turnLabel">Tour 1</strong>
+        <span class="hud-v2-dot" aria-hidden="true">·</span>
+        <span id="turnTimer" class="turn-timer hidden" aria-label="Temps restant">03:00</span>
+      </div>
+      <div class="hud-v2-top-side hud-v2-top-right">
+        <span id="hudV2OpponentScore" class="hud-v2-crowns" aria-label="Score de l’adversaire">○○○</span>
+        <span id="hudV2OpponentName" class="hud-v2-player-name">Adversaire</span>
+      </div>
+    </header>
+
+    <div id="hudV2Dock" class="hud-v2-dock">
+      <div id="hudV2Instruction" class="hud-v2-instruction" aria-live="polite"></div>
+      <div class="hud-v2-dock-row">
+        <div class="hud-v2-slot hud-v2-slot-undo">
+          <button id="cancelCardBtn" class="small-btn cancel-action hud-v2-undo-btn" disabled>↶</button>
+        </div>
+        <div id="hudV2UnitCardSlot" class="hud-v2-slot hud-v2-slot-unitcard" aria-hidden="true">
+          <!-- mini-fiche gardien dynamique : Prompt 2 -->
+        </div>
+        <div class="hud-v2-slot hud-v2-slot-actions">
+          <span id="hudV2IslandStatus" class="hud-v2-pill hud-v2-pill-island">ÎLE</span>
+          <span id="hudV2MoveCount" class="hud-v2-pill">DÉPLACER ×0</span>
+          <span id="hudV2PushCount" class="hud-v2-pill">POUSSER ×0</span>
+          <span id="hudV2MagicCount" class="hud-v2-pill">MAGIE ×0</span>
+        </div>
+        <div class="hud-v2-slot hud-v2-slot-endturn">
+          <button id="endTurnBtn" class="primary-btn end-turn hud-v2-endturn-btn" disabled>Fin du tour</button>
+        </div>
+      </div>
+      <div class="hud-v2-dock-subrow">
+        <button id="hudV2CameraBtn" type="button" class="hud-v2-icon-btn" aria-label="Caméra" disabled>◉</button>
+        <span id="hudV2HandCount" class="hud-v2-hand-pill">MAIN ×0</span>
+      </div>
+      <div id="hudV2Toast" class="hud-v2-toast" aria-live="polite"></div>
+    </div>
 
     <div id="turnRibbon" class="turn-ribbon hidden" aria-hidden="true">
       <div id="turnRibbonPortrait" class="portrait turn-ribbon-portrait">🧙</div>
@@ -975,7 +1022,7 @@
     </div>
 
     <main class="game-main">
-      <aside class="banner-panel left-panel">
+      <aside class="banner-panel left-panel hud-v1-legacy">
         <h3 class="panel-title">ÎLES</h3>
         <div id="islandSelector" class="island-selector"></div>
         <div class="rotation-tools">
@@ -1004,7 +1051,7 @@
         <div id="board" aria-label="Plateau de jeu 11 par 11"></div>
       </div>
 
-      <aside class="banner-panel right-panel">
+      <aside class="banner-panel right-panel hud-v1-legacy">
         <h3 class="panel-title">ACTIONS</h3>
         <div id="turnContext" class="turn-context context-build" role="status" aria-live="polite">
           <small id="turnContextKicker">À FAIRE</small>
@@ -1014,10 +1061,6 @@
         <div id="actionFeedback" class="action-feedback" aria-live="polite" aria-atomic="true"></div>
         <div id="hand" class="action-list"></div>
         <div id="deckDisplay" class="deck-display"></div>
-        <div class="action-buttons">
-          <button id="cancelCardBtn" class="small-btn cancel-action" disabled>Annuler</button>
-          <button id="endTurnBtn" class="primary-btn end-turn" disabled>Fin du tour</button>
-        </div>
         <div id="phaseOrb" class="sr-only"></div>
         <div id="unitCard" class="unit-card sr-only"></div>
       </aside>
@@ -4929,6 +4972,7 @@
   <link rel="stylesheet" href="./css/hover-feedback.css">
   <link rel="stylesheet" href="./css/sanctuary-celeste.css">
   <link rel="stylesheet" href="./css/fluidity.css">
+  <link rel="stylesheet" href="./css/hud-v2.css">
   <script id="v75-1-version-authority" src="./js/version-authority.js"></script>
 </body>
 

@@ -10807,8 +10807,54 @@
         renderUnitCard();
         updateCrownStatus();
         updateOnlineBadge();
+        renderHudV2();
         scheduleOnlineSync();
         scheduleLocalSave();
+      }
+
+      // HUD V2 (Prompt 1/3) : lecture seule du state existant, aucune boucle
+      // propre — appele depuis renderAll() (deja declenche par chaque
+      // changement d'etat, pas de rAF/polling/MutationObserver ajoute ici).
+      // #turnLabel/#turnTimer/#cancelCardBtn/#endTurnBtn sont les memes
+      // elements que l'ancien HUD (juste reancres dans index.html) : leur
+      // logique (renderHeader/updateTurnTimerDisplay/renderControls) reste
+      // inchangee et continue de les mettre a jour normalement.
+      function renderHudV2() {
+        if (!state || !els.gameScreen) return;
+        const hudTop = document.getElementById("hudV2Top");
+        if (!hudTop) return;
+
+        const crownPips = score => {
+          const filled = Math.max(0, Math.min(3, score || 0));
+          return "👑".repeat(filled) + "○".repeat(3 - filled);
+        };
+
+        const active = currentPlayer();
+        const opponent = state.players.length > 1
+          ? state.players[(state.currentPlayer + 1) % state.players.length]
+          : null;
+
+        const activeNameEl = document.getElementById("hudV2ActiveName");
+        const activeScoreEl = document.getElementById("hudV2ActiveScore");
+        const opponentNameEl = document.getElementById("hudV2OpponentName");
+        const opponentScoreEl = document.getElementById("hudV2OpponentScore");
+        if (activeNameEl) activeNameEl.textContent = active.name;
+        if (activeScoreEl) activeScoreEl.textContent = crownPips(active.score);
+        if (opponentNameEl) opponentNameEl.textContent = opponent ? opponent.name : "";
+        if (opponentScoreEl) opponentScoreEl.textContent = opponent ? crownPips(opponent.score) : "";
+
+        const islandStatusEl = document.getElementById("hudV2IslandStatus");
+        if (islandStatusEl) islandStatusEl.textContent = state.islandPlacedThisTurn ? "ÎLE ✓" : "ÎLE À POSER";
+
+        const moveEl = document.getElementById("hudV2MoveCount");
+        const pushEl = document.getElementById("hudV2PushCount");
+        const magicEl = document.getElementById("hudV2MagicCount");
+        if (moveEl) moveEl.textContent = `DÉPLACER ×${availableActionCount("MOVE", active)}`;
+        if (pushEl) pushEl.textContent = `POUSSER ×${availableActionCount("PUSH", active)}`;
+        if (magicEl) magicEl.textContent = `MAGIE ×${availableActionCount("MAGIC", active)}`;
+
+        const handCountEl = document.getElementById("hudV2HandCount");
+        if (handCountEl) handCountEl.textContent = `MAIN ×${(active.hand || []).length}`;
       }
 
       function renderHeader() {
