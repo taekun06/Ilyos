@@ -15,10 +15,13 @@
 .duel .control button:disabled{opacity:.22;cursor:default}.duel .control button.tap{animation:arrowTap .22s ease}.duel .control .value{display:flex;align-items:center;justify-content:center;padding:0 .45cqw;text-align:center;font-weight:700;letter-spacing:.035em}
 .duel .editable-control{display:block}.duel .editable-value{width:100%;outline:none;text-transform:uppercase}.duel .editable-value:focus{border-color:#f2c76f;box-shadow:0 0 0 2px rgba(242,199,111,.12),0 0 16px rgba(242,199,111,.12)}
 
-/* SOLO: two primary settings, then a dedicated difficulty rail */
-.duel[data-mode="solo"] .duel-panel-body{grid-template-columns:1fr 1fr}
+/* HUD vertical demande : les deux reglages s'empilent (1 colonne) au lieu
+   d'etre cote a cote — menu.css visait deja 1fr ici, mais ce fichier est
+   charge apres et gagnait les conflits de specificite egale avec son
+   ancien "1fr 1fr", qui les remettait cote a cote malgre lui. */
+.duel[data-mode="solo"] .duel-panel-body{grid-template-columns:1fr}
 .duel[data-mode="solo"] .field[data-key="board"]{grid-column:1}
-.duel[data-mode="solo"] .field[data-key="timer"]{grid-column:2}
+.duel[data-mode="solo"] .field[data-key="timer"]{grid-column:1}
 .difficulty-zone{margin:.8cqh auto .65cqh;width:78%;text-align:center;padding:.62cqh .6cqw .72cqh;border-top:1px solid rgba(228,181,82,.2);border-bottom:1px solid rgba(228,181,82,.16);background:linear-gradient(90deg,transparent,rgba(240,190,82,.055),transparent)}
 .difficulty-zone-label{font-size:.58cqw;letter-spacing:.13em;color:#d9bb7d;margin-bottom:.33cqh}
 .difficulty-selector{display:grid;grid-template-columns:1.8cqw 1fr 1.8cqw;align-items:center;gap:.4cqw;width:72%;margin:0 auto .58cqh}
@@ -35,7 +38,12 @@
 .duel .dots{margin-top:.26cqh}
 
 /* Strong CTA, guaranteed two lines */
-.duel .play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18cqh;width:82%;min-height:max(52px,5.7cqh);margin-top:.7cqh;padding:.66cqh .8cqw .6cqh;line-height:1.02}
+/* margin-inline:auto ajoute ici : .play (flex, width:82%) n'avait aucune
+   marge horizontale, donc restait colle au bord GAUCHE de .setup au lieu
+   d'etre centre — .setup lui-meme est bien centre (text-align:center ne
+   centre que du contenu inline/inline-block, jamais un bloc flex). D'ou le
+   bouton visiblement decale a gauche sous le panneau. */
+.duel .play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18cqh;width:82%;margin-inline:auto;min-height:max(52px,5.7cqh);margin-top:.7cqh;padding:.66cqh .8cqw .6cqh;line-height:1.02}
 .duel .play .play-main{display:block;font-size:1.02cqw;font-weight:800;letter-spacing:.055em}.duel .play small{display:block!important;opacity:1!important;visibility:visible!important;height:auto!important;margin:0!important;color:rgba(57,30,4,.8);font-size:.45cqw;font-weight:700;letter-spacing:.16em;line-height:1;text-transform:uppercase}
 .duel .desc{margin-top:.5cqh;font-size:.54cqw;line-height:1.15;opacity:.86}
 
