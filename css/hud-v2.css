@@ -1,10 +1,16 @@
 /*
-  HUD V2 (Prompt 1/3) — architecture minimale, plateau 3D dominant (~85/15).
+  HUD V2 (Prompt 3/3) — architecture minimale, plateau 3D dominant (~85/15).
   Ce fichier ne touche a aucune regle de jeu : il positionne/habille les
   memes elements DOM que l'ancien HUD (voir index.html, #hudV2Top/#hudV2Dock),
-  et neutralise visuellement l'ancien layout (.hud-v1-legacy) sans le
-  supprimer du DOM — la logique metier (js/game/ui.js, core.js) continue
-  d'ecrire dans ces memes ids sans le savoir.
+  et neutralise visuellement le reste de l'ancien layout encore present
+  (.hud-v1-legacy — multijoueur/widgets contextuels sans equivalent visuel
+  dans le HUD V2, voir le rapport de la Passe 3) sans le supprimer du DOM.
+  La logique metier (js/game/ui.js, core.js) continue d'ecrire dans ces
+  memes ids sans le savoir.
+
+  DA : anthracite bleute tres transparent, verre sombre subtil, or
+  champagne fin, bordures <=1px, glow reserve aux etats actifs/emphasis
+  (jamais un glow generalise sur les panneaux), transitions 180-220ms.
 
   Portee : uniquement le mode visuel 3D (body[data-visual-mode="alternative"]),
   comme le reste des feuilles HUD existantes (turn-flow-ux.css, sanctuary-celeste.css).
@@ -81,8 +87,18 @@ body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center {
   border: 1px solid var(--hud-v2-glass-border);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: var(--hud-v2-glow);
   pointer-events: auto;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #onlineBadge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--hud-v2-text-dim);
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #onlineBadge.hidden {
+  display: none;
 }
 
 body[data-visual-mode="alternative"] #hudV2Top #turnLabel {
@@ -145,7 +161,7 @@ body[data-visual-mode="alternative"] .hud-v2-dock-row {
   border: 1px solid var(--hud-v2-glass-border);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  box-shadow: var(--hud-v2-glow), 0 10px 30px rgba(0, 0, 0, .28);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
   pointer-events: auto;
 }
 
@@ -164,6 +180,14 @@ body[data-visual-mode="alternative"] .hud-v2-slot-actions {
   display: flex;
   gap: 6px;
   padding: 0 4px;
+}
+
+/* "Fin du tour légèrement séparé" (hiérarchie) : un filet fin plutôt qu'un
+   nouveau bloc, pour ne pas recréer un panneau. */
+body[data-visual-mode="alternative"] .hud-v2-slot-endturn {
+  padding-left: 8px;
+  margin-left: 2px;
+  border-left: 1px solid rgba(255, 255, 255, .1);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-pill {
@@ -307,8 +331,10 @@ body[data-visual-mode="alternative"] #hudV2IslandStatus.hidden {
 
 /* ---------- Undo : icone seule, invisible si rien a annuler ---------- */
 
+/* !important : index.html porte "#gameScreen button{font-size:11px!important}"
+   (bloc hérité), qui sinon gagne malgré la specificite plus élevée ici. */
 body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn {
-  font-size: 0;
+  font-size: 0 !important;
 }
 
 body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn::before {
@@ -385,7 +411,7 @@ body[data-visual-mode="alternative"] .hud-v2-magic-cancel {
 
 body[data-visual-mode="alternative"] .hud-v2-island-drawer {
   pointer-events: auto;
-  max-height: 180px;
+  max-height: 220px;
   overflow-y: auto;
   padding: 10px;
   border-radius: 16px;
@@ -393,7 +419,7 @@ body[data-visual-mode="alternative"] .hud-v2-island-drawer {
   border: 1px solid var(--hud-v2-glass-border);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  box-shadow: var(--hud-v2-glow), 0 10px 30px rgba(0, 0, 0, .28);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-island-drawer.hidden {
@@ -408,7 +434,37 @@ body[data-visual-mode="alternative"] .hud-v2-island-drawer #islandSelector {
   max-width: min(70vw, 460px);
 }
 
-/* ---------- Popovers Caméra / Main ---------- */
+body[data-visual-mode="alternative"] .hud-v2-drawer-rotate {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-rotate-btn {
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--hud-v2-text);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .1);
+  transition: background 180ms ease, opacity 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-rotate-btn:disabled {
+  opacity: .35;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-rotate-btn:not(:disabled):hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+/* ---------- Popovers (menu ⚙, Main) ---------- */
 
 body[data-visual-mode="alternative"] .hud-v2-popover {
   pointer-events: auto;
@@ -422,7 +478,7 @@ body[data-visual-mode="alternative"] .hud-v2-popover {
   border: 1px solid var(--hud-v2-glass-border);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  box-shadow: var(--hud-v2-glow), 0 10px 30px rgba(0, 0, 0, .28);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-popover.hidden {
@@ -450,6 +506,38 @@ body[data-visual-mode="alternative"] .hud-v2-hand-popover {
   min-width: 130px;
 }
 
+/* ---------- Menu ⚙ (Prompt 3/3) : CAMÉRA + SON + RÈGLES + NOUVELLE PARTIE ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-gear-popover {
+  min-width: 150px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--hud-v2-text-dim);
+  padding: 2px 6px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-camera-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, .1);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn-wide {
+  text-align: left;
+  border-radius: 10px;
+  padding: 7px 10px;
+}
+
 body[data-visual-mode="alternative"] .hud-v2-hand-row {
   display: flex;
   align-items: center;
@@ -464,6 +552,10 @@ body[data-visual-mode="alternative"] .hud-v2-hand-row b {
   color: var(--hud-v2-text);
   font-size: 12px;
 }
+
+/* ---------- Responsive (Prompt 3/3) ---------- */
+/* Même architecture à toutes les tailles : on rétrécit progressivement les
+   mêmes éléments (jamais de HUD mobile séparé). */
 
 @media (max-width: 720px) {
   body[data-visual-mode="alternative"] #hudV2Top {
@@ -482,5 +574,78 @@ body[data-visual-mode="alternative"] .hud-v2-hand-row b {
   body[data-visual-mode="alternative"] .hud-v2-pill {
     font-size: 9.5px;
     padding: 5px 7px;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-slot-endturn {
+    padding-left: 6px;
+  }
+}
+
+/* Écran étroit : DÉPLACER/POUSSER/MAGIE -> icône+×N, ÎLE -> icône seule,
+   FIN DU TOUR -> FIN. Texte réel (accessible/aria-label) inchangé — seul
+   l'affichage visuel bascule sur une icône (même mécanisme que l'icône ↶
+   de l'Undo, déjà en place). */
+@media (max-width: 480px) {
+  body[data-visual-mode="alternative"] #hudV2Dock {
+    max-width: 96vw;
+  }
+
+  /* !important + prefixe #hudV2Dock nécessaires : index.html porte
+     "#gameScreen button{font-size:11px!important}" (bloc hérité), qui a
+     lui-même un id dans son sélecteur — sans un id ici aussi, il gagne
+     malgré !important des deux côtés (l'id du sélecteur départage avant le
+     nombre de classes). Voir le rapport de la Passe 3. */
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-pill:not(.hud-v2-pill-island) {
+    font-size: 0 !important;
+    padding: 6px 8px;
+  }
+
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-pill:not(.hud-v2-pill-island)::before {
+    content: attr(data-icon) "×" attr(data-count);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-pill-island {
+    font-size: 0 !important;
+    padding: 6px 8px;
+  }
+
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-pill-island::before {
+    content: attr(data-icon);
+    font-size: 13px;
+  }
+
+  body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn {
+    font-size: 0 !important;
+    padding: 8px 10px;
+  }
+
+  body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn::before {
+    content: "FIN";
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-slot-actions {
+    gap: 4px;
+  }
+}
+
+/* Hauteur réduite : dock un peu plus compact, jamais de chevauchement avec
+   le plateau. */
+@media (max-height: 480px) {
+  body[data-visual-mode="alternative"] #hudV2Dock {
+    bottom: 8px;
+    gap: 3px;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-dock-row {
+    padding: 5px 8px;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-instruction {
+    min-height: 0;
   }
 }

@@ -376,17 +376,31 @@
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
 
-      document.getElementById("hudV2CameraBtn")?.addEventListener("click", () => {
-        toggleHudV2Drawer("hudV2CameraPopover", "hudV2CameraBtn");
+      // Menu secondaire unique (Prompt 3/3) : ⚙ remplace l'ancien bouton
+      // caméra permanent. CAMÉRA garde le même délégué data-hud-camera que
+      // la Passe 2 (setKayKitCameraMode()/snapKayKitView() inchangés). SON/
+      // RÈGLES/NOUVELLE PARTIE sont les boutons réels #soundBtn/#rulesBtn/
+      // #newGameBtn reparentés : leurs propres écouteurs (ci-dessous et plus
+      // bas dans ce fichier) suffisent, celui-ci ferme juste le popover après.
+      document.getElementById("hudV2GearBtn")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2GearPopover", "hudV2GearBtn");
       });
-      document.getElementById("hudV2CameraPopover")?.addEventListener("click", event => {
-        const target = event.target.closest("[data-hud-camera]");
-        if (!target) return;
-        const mode = target.dataset.hudCamera;
-        if (mode === "auto" || mode === "free") setKayKitCameraMode(mode);
-        else if (mode === "front") snapKayKitView("front");
-        else if (mode === "iso") snapKayKitView("isometric");
-        closeHudV2Drawer();
+      document.getElementById("hudV2GearPopover")?.addEventListener("click", event => {
+        const cameraTarget = event.target.closest("[data-hud-camera]");
+        if (cameraTarget) {
+          const mode = cameraTarget.dataset.hudCamera;
+          if (mode === "auto" || mode === "free") setKayKitCameraMode(mode);
+          else if (mode === "front") snapKayKitView("front");
+          else if (mode === "iso") snapKayKitView("isometric");
+          closeHudV2Drawer();
+          return;
+        }
+        // #soundBtn est volontairement exclu : openSoundMenu() positionne le
+        // panneau son via getBoundingClientRect() du bouton dans un rAF
+        // différé (audio.js) — fermer le popover ⚙ tout de suite le
+        // masquerait avant cette lecture (rect à zéro). Le popover ⚙ se
+        // referme de toute façon au clic suivant, en dehors (voir plus bas).
+        if (event.target.closest("#rulesBtn, #newGameBtn")) closeHudV2Drawer();
       });
 
       document.getElementById("hudV2HandCount")?.addEventListener("click", () => {
@@ -395,13 +409,13 @@
 
       document.addEventListener("click", event => {
         const island = document.getElementById("hudV2IslandDrawer");
-        const camera = document.getElementById("hudV2CameraPopover");
+        const gear = document.getElementById("hudV2GearPopover");
         const hand = document.getElementById("hudV2HandPopover");
         const islandBtn = document.getElementById("hudV2IslandStatus");
-        const cameraBtn = document.getElementById("hudV2CameraBtn");
+        const gearBtn = document.getElementById("hudV2GearBtn");
         const handBtn = document.getElementById("hudV2HandCount");
-        const insideAny = [island, camera, hand].some(el => el && el.contains(event.target));
-        const onTrigger = [islandBtn, cameraBtn, handBtn].some(el => el === event.target);
+        const insideAny = [island, gear, hand].some(el => el && el.contains(event.target));
+        const onTrigger = [islandBtn, gearBtn, handBtn].some(el => el === event.target);
         if (!insideAny && !onTrigger) closeHudV2Drawer();
       });
 

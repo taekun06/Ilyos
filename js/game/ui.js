@@ -271,8 +271,11 @@
           const label = `${pillLabels[type]} ×${remaining}`;
           btn.textContent = label;
           // complete-polish.js fige aria-label sur le premier textContent vu —
-          // on le retient synchronisé nous-mêmes à chaque rendu.
+          // on le retient synchronisé nous-mêmes à chaque rendu. data-count
+          // alimente l'icône compacte affichée en dessous de 480px (CSS pur,
+          // voir css/hud-v2.css).
           btn.setAttribute("aria-label", label);
+          btn.dataset.count = remaining;
           btn.disabled = disabled;
           btn.classList.toggle("hud-v2-pill-active", isActive);
           btn.title = disabled ? reason : action.name;
@@ -320,18 +323,23 @@
         if (popDeck) popDeck.textContent = (active.deck || []).length;
         if (popHand) popHand.textContent = (active.hand || []).length;
         if (popDiscard) popDiscard.textContent = (active.discard || []).length;
+
+        // --- Séparateur "·" du timer : invisible si le chrono de tour est
+        // désactivé (isTurnTimerEnabled(), même lecture que updateTurnTimerDisplay()).
+        const timerDot = document.querySelector("#hudV2Top .hud-v2-dot");
+        if (timerDot) timerDot.classList.toggle("hidden", !isTurnTimerEnabled());
       }
 
-      // Ferme tout popover/drawer HUD V2 ouvert (island, camera, main).
+      // Ferme tout popover/drawer HUD V2 ouvert (île, menu ⚙, main).
       function closeHudV2Drawer() {
-        ["hudV2IslandDrawer", "hudV2CameraPopover", "hudV2HandPopover"].forEach(id => {
+        ["hudV2IslandDrawer", "hudV2GearPopover", "hudV2HandPopover"].forEach(id => {
           const el = document.getElementById(id);
           if (!el) return;
           el.classList.add("hidden");
           el.setAttribute("aria-hidden", "true");
         });
         document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "false");
-        document.getElementById("hudV2CameraBtn")?.setAttribute("aria-expanded", "false");
+        document.getElementById("hudV2GearBtn")?.setAttribute("aria-expanded", "false");
         document.getElementById("hudV2HandCount")?.setAttribute("aria-expanded", "false");
       }
 
@@ -352,14 +360,17 @@
         const info = phaseInfo();
         const previousPlayer = els.gameScreen.dataset.player;
 
-        els.activePortrait.textContent = p.icon;
-        els.activePortrait.style.color = p.color;
-        els.activeName.textContent = p.name;
-        els.phaseLabel.textContent = info.label;
+        // HUD V2 (Prompt 3/3) : #activePortrait/#activeName/#phaseLabel/
+        // #instruction/#stepIsland/#stepActions/#stepEnd ont été supprimés du
+        // DOM (remplacés par #hudV2Top/#hudV2Instruction) — gardés en lecture
+        // optionnelle ici pour ne rien casser si jamais réintroduits.
+        if (els.activePortrait) { els.activePortrait.textContent = p.icon; els.activePortrait.style.color = p.color; }
+        if (els.activeName) els.activeName.textContent = p.name;
+        if (els.phaseLabel) els.phaseLabel.textContent = info.label;
         els.turnLabel.textContent = `Tour ${state.turn}${p.isAI ? ` · IA ${AI_LEVELS[state.aiDifficulty || "normal"].label}` : ""}`;
         updateTurnTimerDisplay();
         updateOnlineBadge();
-        els.instruction.textContent = info.instruction;
+        if (els.instruction) els.instruction.textContent = info.instruction;
         document.documentElement.style.setProperty("--player-color", p.color);
 
         const islandPickPhase = !state.islandPlacedThisTurn;
@@ -374,17 +385,19 @@
           setTimeout(() => els.gameScreen.classList.remove("player-switch"), 720);
         }
 
-        [els.stepIsland, els.stepActions, els.stepEnd].forEach(el => el.className = "");
-        const placingIsland = state.phase === "CHOOSE_ISLAND_SHAPE" || state.phase === "PLACE_ISLAND" || state.phase === "PLACE_SPAWN";
-        if (!state.islandPlacedThisTurn || placingIsland) {
-          els.stepIsland.classList.add("active");
-          if (!placingIsland) els.stepActions.classList.add("active");
-        } else {
-          els.stepIsland.classList.add("done");
-          els.stepActions.classList.add("active");
-          if (allCardsUsed()) {
-            els.stepActions.className = "done";
-            els.stepEnd.classList.add("active");
+        if (els.stepIsland && els.stepActions && els.stepEnd) {
+          [els.stepIsland, els.stepActions, els.stepEnd].forEach(el => el.className = "");
+          const placingIsland = state.phase === "CHOOSE_ISLAND_SHAPE" || state.phase === "PLACE_ISLAND" || state.phase === "PLACE_SPAWN";
+          if (!state.islandPlacedThisTurn || placingIsland) {
+            els.stepIsland.classList.add("active");
+            if (!placingIsland) els.stepActions.classList.add("active");
+          } else {
+            els.stepIsland.classList.add("done");
+            els.stepActions.classList.add("active");
+            if (allCardsUsed()) {
+              els.stepActions.className = "done";
+              els.stepEnd.classList.add("active");
+            }
           }
         }
       }
@@ -2742,6 +2755,11 @@
       }
 
       function renderScores() {
+        // HUD V2 (Prompt 3/3) : #scoreList a été supprimé (remplacé par les
+        // couronnes compactes de #hudV2Top) — cette fonction n'a plus de
+        // cible et ne fait plus rien, sans casser availableActionCount() ni
+        // les autres lectures qui en dépendent ailleurs.
+        if (!els.scoreList) return;
         els.scoreList.innerHTML = "";
         state.players.forEach((p, i) => {
           const card = document.createElement("div");
