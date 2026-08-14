@@ -1703,10 +1703,14 @@
 
       function addVillageVisibilityBoost(object, color) {
         if (!object) return object;
+        // FUITE (corrigee) : appelee une fois par village a chaque sync (jusqu'a
+        // 4 fois), les 4 geometries ci-dessous ne dependent jamais de `color`
+        // (seuls les MATERIAUX en dependent) — elles etaient pourtant recreees
+        // a chaque appel au lieu d'etre mises en cache comme le reste du fichier.
         const accentColor = new THREE.Color(color || 0xffffff);
         const accent = accentColor.getHex();
         const basePlate = new THREE.Mesh(
-          new THREE.CylinderGeometry(.62, .66, .075, 8),
+          kaykitGeometry("village-base-plate-v1", () => new THREE.CylinderGeometry(.62, .66, .075, 8)),
           new THREE.MeshStandardMaterial({
             color: accent,
             roughness: .42,
@@ -1721,7 +1725,7 @@
         object.add(basePlate);
 
         const ring = new THREE.Mesh(
-          new THREE.TorusGeometry(.57, .065, 12, 32),
+          kaykitGeometry("village-ring-v1", () => new THREE.TorusGeometry(.57, .065, 12, 32)),
           new THREE.MeshStandardMaterial({
             color: accent,
             roughness: .26,
@@ -1739,14 +1743,14 @@
         object.add(ring);
 
         const flagPole = new THREE.Mesh(
-          new THREE.CylinderGeometry(.018, .018, .52, 8),
+          kaykitGeometry("village-flagpole-v1", () => new THREE.CylinderGeometry(.018, .018, .52, 8)),
           new THREE.MeshStandardMaterial({ color: 0xf7f0e1, roughness: .52, metalness: .08 })
         );
         flagPole.position.set(.18, .96, 0);
         object.add(flagPole);
 
         const flag = new THREE.Mesh(
-          new THREE.BoxGeometry(.20, .11, .02),
+          kaykitGeometry("village-flag-v1", () => new THREE.BoxGeometry(.20, .11, .02)),
           new THREE.MeshStandardMaterial({
             color: accentColor.clone().offsetHSL(0, .18, .10).getHex(),
             roughness: .34,
@@ -3017,10 +3021,20 @@
       }
 
       function makeKayKitPedestal(ownerColor = null, { sanctuary = false } = {}) {
+        // FUITE (corrigee) : appelee une fois par case en terre non-île a
+        // CHAQUE synchronisation de scene (survol, selection, deplacement...),
+        // sans jamais mettre en cache l'ExtrudeGeometry biseautee — la forme
+        // extrudee est pourtant TOUJOURS identique, aucun parametre ne la fait
+        // varier. Sur un plateau a une dizaine de cases en terre, chaque sync
+        // creait une dizaine d'ExtrudeGeometry neuves (le type de geometrie le
+        // plus couteux a construire ici), jamais liberees. Mesure en jeu : une
+        // seule action de deplacement en creait 16.
         const group = new THREE.Group();
-        const shape = new THREE.Shape();
-        shape.moveTo(-.46, -.46); shape.lineTo(.46, -.46); shape.lineTo(.46, .46); shape.lineTo(-.46, .46); shape.closePath();
-        const geometry = new THREE.ExtrudeGeometry(shape, { depth: .42, bevelEnabled: true, bevelSegments: 2, bevelSize: .055, bevelThickness: .05, steps: 1 });
+        const geometry = kaykitGeometry("pedestal-extrude-v1", () => {
+          const shape = new THREE.Shape();
+          shape.moveTo(-.46, -.46); shape.lineTo(.46, -.46); shape.lineTo(.46, .46); shape.lineTo(-.46, .46); shape.closePath();
+          return new THREE.ExtrudeGeometry(shape, { depth: .42, bevelEnabled: true, bevelSegments: 2, bevelSize: .055, bevelThickness: .05, steps: 1 });
+        });
         const topColor = sanctuary ? 0x8fd8d4 : 0x70bd72;
         const sideColor = sanctuary ? 0x496f77 : 0x506949;
         const topMat = new THREE.MeshStandardMaterial({ color: topColor, map: kaykitCanvasTexture(sanctuary ? 'sanctuary' : 'pedestal', sanctuary ? '#9fe8df' : '#79c77b', sanctuary ? '#5aaeb1' : '#4f9e61'), roughness: .82 });
@@ -3032,9 +3046,9 @@
         group.add(mesh);
         if (ownerColor !== null) {
           const outline = new THREE.LineLoop(
-            new THREE.BufferGeometry().setFromPoints([
+            kaykitGeometry("pedestal-outline-v1", () => new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(-.45, .008, -.45), new THREE.Vector3(.45, .008, -.45), new THREE.Vector3(.45, .008, .45), new THREE.Vector3(-.45, .008, .45)
-            ]),
+            ])),
             new THREE.LineBasicMaterial({ color: ownerColor, transparent: true, opacity: .95, depthWrite: false })
           );
           outline.position.y = .012; group.add(outline);
@@ -3108,8 +3122,21 @@
         shadow.renderOrder = 27;
         kaykit3D.dynamicGroup.add(shadow);
 
+        // CAUSE DE FUITE (corrigée) : cette fonction est appelée pour CHAQUE case
+        // surlignée à CHAQUE resynchronisation de scène (survol, sélection,
+        // déplacement) — un déplacement avec 5-8 cases atteignables pouvait
+        // créer 25-50 géométries neuves par sync, jamais libérées (ces meshes
+        // ne portent pas `ilyosTransient`, donc clearKayKitGroup ne les
+        // dispose jamais). Mesuré en jeu : +17 géométries par action de
+        // déplacement, montée continue sur toute la partie. Toutes les
+        // géométries ci-dessous passent désormais par le cache kaykitGeometry,
+        // déjà utilisé partout ailleurs dans ce fichier — un petit nombre de
+        // tailles/natures discrètes (.84/.88/.90 × quelques genres) suffit à
+        // couvrir tous les cas, donc le cache reste minuscule.
         const fill = new THREE.Mesh(
-          isSelected ? new THREE.CircleGeometry(size / 2, 28) : new THREE.PlaneGeometry(size, size),
+          isSelected
+            ? kaykitGeometry(`cell-highlight-fill-circle-${size}`, () => new THREE.CircleGeometry(size / 2, 28))
+            : kaykitGeometry(`cell-highlight-fill-plane-${size}`, () => new THREE.PlaneGeometry(size, size)),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fillOpacity, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.NormalBlending })
         );
         fill.rotation.x = -Math.PI / 2;
@@ -3118,12 +3145,11 @@
         kaykit3D.dynamicGroup.add(fill);
 
         if (!isSelected) {
-          const outlinePoints = [
-            new THREE.Vector3(-size / 2, 0, -size / 2), new THREE.Vector3(size / 2, 0, -size / 2),
-            new THREE.Vector3(size / 2, 0, size / 2), new THREE.Vector3(-size / 2, 0, size / 2)
-          ];
           const outer = new THREE.LineLoop(
-            new THREE.BufferGeometry().setFromPoints(outlinePoints),
+            kaykitGeometry(`cell-highlight-outline-outer-${size}`, () => new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(-size / 2, 0, -size / 2), new THREE.Vector3(size / 2, 0, -size / 2),
+              new THREE.Vector3(size / 2, 0, size / 2), new THREE.Vector3(-size / 2, 0, size / 2)
+            ])),
             new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true })
           );
           outer.position.set(p.x, y + .008, p.z);
@@ -3132,10 +3158,10 @@
 
           const innerSize = size - .11;
           const inner = new THREE.LineLoop(
-            new THREE.BufferGeometry().setFromPoints([
+            kaykitGeometry(`cell-highlight-outline-inner-${size}`, () => new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(-innerSize / 2, 0, -innerSize / 2), new THREE.Vector3(innerSize / 2, 0, -innerSize / 2),
               new THREE.Vector3(innerSize / 2, 0, innerSize / 2), new THREE.Vector3(-innerSize / 2, 0, innerSize / 2)
-            ]),
+            ])),
             new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true })
           );
           inner.position.set(p.x, y + .012, p.z);
@@ -3154,8 +3180,8 @@
             depthTest: true
           });
           const borderY = y + .021;
-          const horizontalGeometry = new THREE.BoxGeometry(size, borderHeight, borderThickness);
-          const verticalGeometry = new THREE.BoxGeometry(borderThickness, borderHeight, size);
+          const horizontalGeometry = kaykitGeometry(`cell-highlight-border-h-${size}-${borderHeight}-${borderThickness}`, () => new THREE.BoxGeometry(size, borderHeight, borderThickness));
+          const verticalGeometry = kaykitGeometry(`cell-highlight-border-v-${size}-${borderHeight}-${borderThickness}`, () => new THREE.BoxGeometry(borderThickness, borderHeight, size));
           [
             [horizontalGeometry, 0, -size / 2], [horizontalGeometry, 0, size / 2],
             [verticalGeometry, -size / 2, 0], [verticalGeometry, size / 2, 0]
@@ -3169,13 +3195,16 @@
 
         if (kind === "place" || kind === "invalid") {
           const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
-          const s = size / 2, l = .18;
-          const pts = [];
-          [[-s, -s, 1, 1], [s, -s, -1, 1], [s, s, -1, -1], [-s, s, 1, -1]].forEach(([x, z, dx, dz]) => {
-            pts.push(new THREE.Vector3(x, 0, z), new THREE.Vector3(x + dx * l, 0, z));
-            pts.push(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, 0, z + dz * l));
+          const ticksGeometry = kaykitGeometry(`cell-highlight-ticks-${size}`, () => {
+            const s = size / 2, l = .18;
+            const pts = [];
+            [[-s, -s, 1, 1], [s, -s, -1, 1], [s, s, -1, -1], [-s, s, 1, -1]].forEach(([x, z, dx, dz]) => {
+              pts.push(new THREE.Vector3(x, 0, z), new THREE.Vector3(x + dx * l, 0, z));
+              pts.push(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, 0, z + dz * l));
+            });
+            return new THREE.BufferGeometry().setFromPoints(pts);
           });
-          const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), tickMat);
+          const ticks = new THREE.LineSegments(ticksGeometry, tickMat);
           ticks.position.set(p.x, y + .016, p.z);
           ticks.renderOrder = 34;
           kaykit3D.dynamicGroup.add(ticks);
@@ -3255,7 +3284,7 @@
             );
           }
           const runes = new THREE.LineSegments(
-            new THREE.BufferGeometry().setFromPoints(runePoints),
+            kaykitGeometry("selection-runes-v1", () => new THREE.BufferGeometry().setFromPoints(runePoints)),
             new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false })
           );
           runeGroup.add(runes);
@@ -3916,14 +3945,21 @@
         });
 
         if (preview) {
+          // FUITE (corrigee) : contour d'île, sa forme varie a chaque case
+          // survolee (pose d'île ou rotation magique en aperçu continu) — pas
+          // de cle de cache raisonnable ici. Meme traitement que la flèche de
+          // poussée (addKayKitPushDirection) : tagué `ilyosTransient` pour que
+          // clearKayKitGroup le libère au prochain rebuild plutôt que
+          // l'abandonner en mémoire.
           const components = kaykitIslandComponents(cells);
           components.forEach(component => {
             const boundary = kaykitIslandBoundary(component);
             if (boundary.length < 2) return;
-            const outline = new THREE.LineLoop(
-              new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, KAYKIT_LEVELS.board + .48, z))),
-              new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false })
-            );
+            const outlineGeometry = new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, KAYKIT_LEVELS.board + .48, z)));
+            outlineGeometry.userData = { ...(outlineGeometry.userData || {}), ilyosTransient: true };
+            const outlineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false });
+            outlineMaterial.userData = { ...(outlineMaterial.userData || {}), ilyosTransient: true };
+            const outline = new THREE.LineLoop(outlineGeometry, outlineMaterial);
             outline.renderOrder = 25;
             group.add(outline);
           });
@@ -3947,9 +3983,14 @@
               if (next === null || String(next) === String(current)) return;
               const x = (c - (GRID - 1) / 2 + dc * .5) * KAYKIT_CELL_SPACING;
               const z = (r - (GRID - 1) / 2 + dr * .5) * KAYKIT_CELL_SPACING;
+              // FUITE (corrigee) : appelee pour CHAQUE frontiere entre deux
+              // cases d'îles differentes, sur TOUTE la grille, a chaque sync —
+              // mais seules deux formes constantes existent (barre horizontale
+              // ou verticale, KAYKIT_CELL_SPACING ne varie jamais). Cache
+              // trivial au lieu d'une BoxGeometry neuve par seam par sync.
               const vertical = dc === 1;
               const seam = new THREE.Mesh(
-                new THREE.BoxGeometry(vertical ? .018 : KAYKIT_CELL_SPACING * .68, .010, vertical ? KAYKIT_CELL_SPACING * .68 : .018),
+                kaykitGeometry(vertical ? "island-seam-vertical-v1" : "island-seam-horizontal-v1", () => new THREE.BoxGeometry(vertical ? .018 : KAYKIT_CELL_SPACING * .68, .010, vertical ? KAYKIT_CELL_SPACING * .68 : .018)),
                 seamMaterial
               );
               seam.position.set(x, KAYKIT_LEVELS.islandTop + .080, z);
@@ -4029,10 +4070,14 @@
           kaykitIslandComponents(originalIsland.cells).forEach(component => {
             const boundary = kaykitIslandBoundary(component);
             if (boundary.length < 2) return;
-            const originOutline = new THREE.LineLoop(
-              new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, .045, z))),
-              new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .30, depthWrite: false })
-            );
+            // Forme variable par île : même traitement que le contour de pose
+            // (makeKayKitIslandBlock) — tagué ilyosTransient plutôt que mis en
+            // cache, affiché en continu tant que l'action magie est active.
+            const originGeometry = new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, .045, z)));
+            originGeometry.userData = { ...(originGeometry.userData || {}), ilyosTransient: true };
+            const originMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .30, depthWrite: false });
+            originMaterial.userData = { ...(originMaterial.userData || {}), ilyosTransient: true };
+            const originOutline = new THREE.LineLoop(originGeometry, originMaterial);
             originOutline.renderOrder = 24;
             kaykit3D.dynamicGroup.add(originOutline);
           });
@@ -4057,7 +4102,7 @@
           const [r, c] = state.selectedMagicPivot;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .08);
           const pivot = new THREE.Mesh(
-            new THREE.CylinderGeometry(.17, .17, .055, 24),
+            kaykitGeometry("magic-pivot-marker-v1", () => new THREE.CylinderGeometry(.17, .17, .055, 24)),
             new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: .96, depthWrite: false })
           );
           pivot.position.set(p.x, p.y, p.z);
