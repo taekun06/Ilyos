@@ -278,6 +278,193 @@ body[data-visual-mode="alternative"] .hud-v2-toast:empty {
   display: none;
 }
 
+/* ---------- Pilules ÎLE / DÉPLACER / POUSSER / MAGIE (Prompt 2/3) ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-pill {
+  cursor: pointer;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill:not(:disabled):hover {
+  background: rgba(255, 255, 255, .09);
+  border-color: rgba(255, 255, 255, .16);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-active {
+  background: rgba(232, 201, 138, .16);
+  border-color: rgba(232, 201, 138, .45);
+  box-shadow: 0 0 10px rgba(232, 201, 138, .18);
+  color: var(--hud-v2-champagne);
+}
+
+body[data-visual-mode="alternative"] #hudV2IslandStatus.hidden {
+  display: none;
+}
+
+/* ---------- Undo : icone seule, invisible si rien a annuler ---------- */
+
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn {
+  font-size: 0;
+}
+
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn::before {
+  content: "↶";
+  font-size: 15px;
+}
+
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn:disabled {
+  display: none;
+}
+
+/* ---------- Mini-fiche gardien ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-slot-unitcard {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 999px;
+  background: var(--hud-v2-glass-bg);
+  border: 1px solid var(--hud-v2-glass-border);
+  gap: 3px;
+  padding: 0 8px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-slot-unitcard.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-unit-icon {
+  font-size: 15px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-unit-crown {
+  font-size: 12px;
+}
+
+/* ---------- Rangée contextuelle Magie ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-magic-row {
+  gap: 6px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-row.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: var(--hud-v2-text);
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .12);
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-btn:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-confirm {
+  color: #1c1710;
+  background: linear-gradient(180deg, rgba(232, 201, 138, .92), rgba(198, 160, 92, .92));
+  border-color: rgba(232, 201, 138, .5);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-cancel {
+  color: #f0a898;
+  border-color: rgba(240, 168, 152, .28);
+}
+
+/* ---------- Drawer ÎLE ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-island-drawer {
+  pointer-events: auto;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--hud-v2-glass-bg);
+  border: 1px solid var(--hud-v2-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--hud-v2-glow), 0 10px 30px rgba(0, 0, 0, .28);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-island-drawer.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-island-drawer #islandSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  max-width: min(70vw, 460px);
+}
+
+/* ---------- Popovers Caméra / Main ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-popover {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  min-width: 120px;
+  border-radius: 14px;
+  background: var(--hud-v2-glass-bg);
+  border: 1px solid var(--hud-v2-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--hud-v2-glow), 0 10px 30px rgba(0, 0, 0, .28);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-align: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: var(--hud-v2-text);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .1);
+  transition: background 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-popover {
+  min-width: 130px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--hud-v2-text-dim);
+  padding: 3px 6px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-row b {
+  color: var(--hud-v2-text);
+  font-size: 12px;
+}
+
 @media (max-width: 720px) {
   body[data-visual-mode="alternative"] #hudV2Top {
     padding: 8px 12px;

@@ -6607,6 +6607,17 @@
         els.toast.classList.add("show");
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => els.toast.classList.remove("show"), 1900);
+
+        // HUD V2 (Prompt 2/3) : miroir dans le slot toast du nouveau dock.
+        // showToast() est deja le point d'entree unique pour les evenements
+        // notables (couronne, erreur...) — jamais pour les instructions de
+        // tour normales, qui passent par turnContextInfo()/renderHudV2().
+        const hudToast = document.getElementById("hudV2Toast");
+        if (hudToast) {
+          hudToast.textContent = message;
+          clearTimeout(showToast.hudTimer);
+          showToast.hudTimer = setTimeout(() => { hudToast.textContent = ""; }, 2400);
+        }
       }
 
 
@@ -10812,13 +10823,15 @@
         scheduleLocalSave();
       }
 
-      // HUD V2 (Prompt 1/3) : lecture seule du state existant, aucune boucle
+      // HUD V2 (Prompt 2/3) : lecture seule du state existant, aucune boucle
       // propre — appele depuis renderAll() (deja declenche par chaque
       // changement d'etat, pas de rAF/polling/MutationObserver ajoute ici).
-      // #turnLabel/#turnTimer/#cancelCardBtn/#endTurnBtn sont les memes
-      // elements que l'ancien HUD (juste reancres dans index.html) : leur
-      // logique (renderHeader/updateTurnTimerDisplay/renderControls) reste
-      // inchangee et continue de les mettre a jour normalement.
+      // #turnLabel/#turnTimer/#cancelCardBtn/#endTurnBtn/#islandSelector sont
+      // les memes elements que l'ancien HUD (juste reancres dans index.html) :
+      // leur logique (renderHeader/updateTurnTimerDisplay/renderControls/
+      // renderIslandSelector/selectIslandShape) reste inchangee. Les boutons
+      // DÉPLACER/POUSSER/MAGIE appellent exactement selectActionBatch(), comme
+      // les boutons de l'ancien panneau ACTIONS — aucun second systeme d'action.
       function renderHudV2() {
         if (!state || !els.gameScreen) return;
         const hudTop = document.getElementById("hudV2Top");
@@ -10840,21 +10853,116 @@
         const opponentScoreEl = document.getElementById("hudV2OpponentScore");
         if (activeNameEl) activeNameEl.textContent = active.name;
         if (activeScoreEl) activeScoreEl.textContent = crownPips(active.score);
-        if (opponentNameEl) opponentNameEl.textContent = opponent ? opponent.name : "";
+        // Solo (un seul adversaire, IA) : nom remplacé par "IA", sans couleur
+        // écrite. 2 joueurs : nom direct. 4 joueurs/2v2 : pas de champ
+        // d'équipe fiable identifié dans state — affichage générique
+        // (prochain joueur du tour) en attendant le Prompt 3.
+        const opponentLabel = opponent ? (opponent.isAI ? "IA" : opponent.name) : "";
+        if (opponentNameEl) opponentNameEl.textContent = opponentLabel;
         if (opponentScoreEl) opponentScoreEl.textContent = opponent ? crownPips(opponent.score) : "";
 
+        // --- ÎLE : pill/bouton, disparaît une fois l'île posée ce tour ---
         const islandStatusEl = document.getElementById("hudV2IslandStatus");
-        if (islandStatusEl) islandStatusEl.textContent = state.islandPlacedThisTurn ? "ÎLE ✓" : "ÎLE À POSER";
+        const islandDrawer = document.getElementById("hudV2IslandDrawer");
+        if (islandStatusEl) {
+          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
+          islandStatusEl.textContent = "ÎLE";
+        }
+        if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
+          closeHudV2Drawer();
+        }
 
-        const moveEl = document.getElementById("hudV2MoveCount");
-        const pushEl = document.getElementById("hudV2PushCount");
-        const magicEl = document.getElementById("hudV2MagicCount");
-        if (moveEl) moveEl.textContent = `DÉPLACER ×${availableActionCount("MOVE", active)}`;
-        if (pushEl) pushEl.textContent = `POUSSER ×${availableActionCount("PUSH", active)}`;
-        if (magicEl) magicEl.textContent = `MAGIE ×${availableActionCount("MAGIC", active)}`;
+        // --- DÉPLACER / POUSSER / MAGIE : vrais boutons, meme etat que renderHand() ---
+        // Libellés fixes (verbe, pas le nom de la carte : "Déplacement" donnerait
+        // "DÉPLACEMENT ×N" au lieu de "DÉPLACER ×N" attendu par la maquette).
+        const pillLabels = { MOVE: "DÉPLACER", PUSH: "POUSSER", MAGIE: "MAGIE", MAGIC: "MAGIE" };
+        const smartSelected = state.phase === "SMART_CHAR" && !!state.selectedCharId;
+        [["MOVE", "hudV2MoveCount"], ["PUSH", "hudV2PushCount"], ["MAGIC", "hudV2MagicCount"]].forEach(([type, id]) => {
+          const btn = document.getElementById(id);
+          if (!btn) return;
+          const action = ACTIONS[type];
+          const remaining = availableActionCount(type, active);
+          const reason = actionUnavailableReason(type);
+          const disabled = remaining <= 0 || !!reason;
+          const isActive = (state.phase === "ACTION" && state.selectedActionType === type)
+            || (smartSelected && (type === "MOVE" || type === "PUSH"));
+          const label = `${pillLabels[type]} ×${remaining}`;
+          btn.textContent = label;
+          // complete-polish.js fige aria-label sur le premier textContent vu —
+          // on le retient synchronisé nous-mêmes à chaque rendu.
+          btn.setAttribute("aria-label", label);
+          btn.disabled = disabled;
+          btn.classList.toggle("hud-v2-pill-active", isActive);
+          btn.title = disabled ? reason : action.name;
+        });
 
+        // --- Rangée contextuelle Magie (rotation en cours) ---
+        const magicRow = document.getElementById("hudV2MagicRow");
+        if (magicRow) {
+          const rotating = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
+          magicRow.classList.toggle("hidden", !rotating);
+        }
+
+        // --- Mini-fiche gardien sélectionné ---
+        const unitSlot = document.getElementById("hudV2UnitCardSlot");
+        if (unitSlot) {
+          const ch = characterById(state.selectedCharId);
+          if (ch) {
+            const p = state.players[ch.player];
+            unitSlot.classList.remove("hidden");
+            unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span>` +
+              (characterCarriesCrown(ch.id) ? `<span class="hud-v2-unit-crown">👑</span>` : "");
+          } else {
+            unitSlot.classList.add("hidden");
+            unitSlot.innerHTML = "";
+          }
+        }
+
+        // --- Micro-instruction (une seule ligne, meme source que l'ancien panneau) ---
+        const instructionEl = document.getElementById("hudV2Instruction");
+        if (instructionEl) {
+          const info = turnContextInfo();
+          instructionEl.textContent = info?.next || info?.title || "";
+        }
+
+        // --- Caméra / Main : popovers, valeurs reelles ---
         const handCountEl = document.getElementById("hudV2HandCount");
-        if (handCountEl) handCountEl.textContent = `MAIN ×${(active.hand || []).length}`;
+        if (handCountEl) {
+          const handLabel = `MAIN ×${(active.hand || []).length}`;
+          handCountEl.textContent = handLabel;
+          handCountEl.setAttribute("aria-label", handLabel);
+        }
+        const popDeck = document.getElementById("hudV2HandPopoverDeck");
+        const popHand = document.getElementById("hudV2HandPopoverHand");
+        const popDiscard = document.getElementById("hudV2HandPopoverDiscard");
+        if (popDeck) popDeck.textContent = (active.deck || []).length;
+        if (popHand) popHand.textContent = (active.hand || []).length;
+        if (popDiscard) popDiscard.textContent = (active.discard || []).length;
+      }
+
+      // Ferme tout popover/drawer HUD V2 ouvert (island, camera, main).
+      function closeHudV2Drawer() {
+        ["hudV2IslandDrawer", "hudV2CameraPopover", "hudV2HandPopover"].forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.classList.add("hidden");
+          el.setAttribute("aria-hidden", "true");
+        });
+        document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "false");
+        document.getElementById("hudV2CameraBtn")?.setAttribute("aria-expanded", "false");
+        document.getElementById("hudV2HandCount")?.setAttribute("aria-expanded", "false");
+      }
+
+      function toggleHudV2Drawer(id, triggerId) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const willOpen = el.classList.contains("hidden");
+        closeHudV2Drawer();
+        if (willOpen) {
+          el.classList.remove("hidden");
+          el.setAttribute("aria-hidden", "false");
+          document.getElementById(triggerId)?.setAttribute("aria-expanded", "true");
+        }
       }
 
       function renderHeader() {
@@ -14009,6 +14117,62 @@
       els.rotateRightBtn.addEventListener("click", () => rotateSelectedIsland(1));
       els.cancelCardBtn.addEventListener("click", handleCancelButton);
       els.endTurnBtn.addEventListener("click", () => endTurn(false));
+
+      // HUD V2 (Prompt 2/3) : wiring additif uniquement — chaque bouton
+      // appelle exactement la meme fonction que l'ancien panneau (aucune
+      // logique de jeu/camera/magie dupliquee ici, juste de nouveaux points
+      // d'entree). Ecouteurs attaches une seule fois au boot, comme le reste
+      // de ce fichier — pas de nouvelle boucle rAF/polling/MutationObserver.
+      document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
+      });
+      // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector(),
+      // son propre bouton garde son clic (selectIslandShape) ; celui-ci ferme
+      // seulement le drawer une fois la sélection faite (bulle après coup).
+      document.getElementById("islandSelector")?.addEventListener("click", event => {
+        if (event.target.closest(".island-choice")) closeHudV2Drawer();
+      });
+
+      ["hudV2MoveCount", "hudV2PushCount", "hudV2MagicCount"].forEach((id, index) => {
+        const type = ["MOVE", "PUSH", "MAGIC"][index];
+        document.getElementById(id)?.addEventListener("click", () => {
+          selectActionBatch(type, type === "PUSH" ? Math.max(1, state.pushForceChoice || 1) : 1);
+        });
+      });
+
+      document.getElementById("hudV2MagicRotateLeft")?.addEventListener("click", () => rotateSelectedIsland(-1));
+      document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
+      document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
+      document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
+
+      document.getElementById("hudV2CameraBtn")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2CameraPopover", "hudV2CameraBtn");
+      });
+      document.getElementById("hudV2CameraPopover")?.addEventListener("click", event => {
+        const target = event.target.closest("[data-hud-camera]");
+        if (!target) return;
+        const mode = target.dataset.hudCamera;
+        if (mode === "auto" || mode === "free") setKayKitCameraMode(mode);
+        else if (mode === "front") snapKayKitView("front");
+        else if (mode === "iso") snapKayKitView("isometric");
+        closeHudV2Drawer();
+      });
+
+      document.getElementById("hudV2HandCount")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2HandPopover", "hudV2HandCount");
+      });
+
+      document.addEventListener("click", event => {
+        const island = document.getElementById("hudV2IslandDrawer");
+        const camera = document.getElementById("hudV2CameraPopover");
+        const hand = document.getElementById("hudV2HandPopover");
+        const islandBtn = document.getElementById("hudV2IslandStatus");
+        const cameraBtn = document.getElementById("hudV2CameraBtn");
+        const handBtn = document.getElementById("hudV2HandCount");
+        const insideAny = [island, camera, hand].some(el => el && el.contains(event.target));
+        const onTrigger = [islandBtn, cameraBtn, handBtn].some(el => el === event.target);
+        if (!insideAny && !onTrigger) closeHudV2Drawer();
+      });
 
       els.soundBtn.addEventListener("click", toggleSoundMenu);
       els.closeSoundMenuBtn.addEventListener("click", closeSoundMenu);

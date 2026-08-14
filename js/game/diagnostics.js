@@ -349,6 +349,62 @@
       els.cancelCardBtn.addEventListener("click", handleCancelButton);
       els.endTurnBtn.addEventListener("click", () => endTurn(false));
 
+      // HUD V2 (Prompt 2/3) : wiring additif uniquement — chaque bouton
+      // appelle exactement la meme fonction que l'ancien panneau (aucune
+      // logique de jeu/camera/magie dupliquee ici, juste de nouveaux points
+      // d'entree). Ecouteurs attaches une seule fois au boot, comme le reste
+      // de ce fichier — pas de nouvelle boucle rAF/polling/MutationObserver.
+      document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
+      });
+      // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector(),
+      // son propre bouton garde son clic (selectIslandShape) ; celui-ci ferme
+      // seulement le drawer une fois la sélection faite (bulle après coup).
+      document.getElementById("islandSelector")?.addEventListener("click", event => {
+        if (event.target.closest(".island-choice")) closeHudV2Drawer();
+      });
+
+      ["hudV2MoveCount", "hudV2PushCount", "hudV2MagicCount"].forEach((id, index) => {
+        const type = ["MOVE", "PUSH", "MAGIC"][index];
+        document.getElementById(id)?.addEventListener("click", () => {
+          selectActionBatch(type, type === "PUSH" ? Math.max(1, state.pushForceChoice || 1) : 1);
+        });
+      });
+
+      document.getElementById("hudV2MagicRotateLeft")?.addEventListener("click", () => rotateSelectedIsland(-1));
+      document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
+      document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
+      document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
+
+      document.getElementById("hudV2CameraBtn")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2CameraPopover", "hudV2CameraBtn");
+      });
+      document.getElementById("hudV2CameraPopover")?.addEventListener("click", event => {
+        const target = event.target.closest("[data-hud-camera]");
+        if (!target) return;
+        const mode = target.dataset.hudCamera;
+        if (mode === "auto" || mode === "free") setKayKitCameraMode(mode);
+        else if (mode === "front") snapKayKitView("front");
+        else if (mode === "iso") snapKayKitView("isometric");
+        closeHudV2Drawer();
+      });
+
+      document.getElementById("hudV2HandCount")?.addEventListener("click", () => {
+        toggleHudV2Drawer("hudV2HandPopover", "hudV2HandCount");
+      });
+
+      document.addEventListener("click", event => {
+        const island = document.getElementById("hudV2IslandDrawer");
+        const camera = document.getElementById("hudV2CameraPopover");
+        const hand = document.getElementById("hudV2HandPopover");
+        const islandBtn = document.getElementById("hudV2IslandStatus");
+        const cameraBtn = document.getElementById("hudV2CameraBtn");
+        const handBtn = document.getElementById("hudV2HandCount");
+        const insideAny = [island, camera, hand].some(el => el && el.contains(event.target));
+        const onTrigger = [islandBtn, cameraBtn, handBtn].some(el => el === event.target);
+        if (!insideAny && !onTrigger) closeHudV2Drawer();
+      });
+
       els.soundBtn.addEventListener("click", toggleSoundMenu);
       els.closeSoundMenuBtn.addEventListener("click", closeSoundMenu);
       els.soundToggleBtn.addEventListener("click", event => {
