@@ -130,6 +130,92 @@
          Le modèle de jeu reste dans le DOM. Cette scène 3D reflète l'état et
          redirige les interactions vers les cellules originales.
          ===================================================================== */
+
+      /* =====================================================================
+         INSTRUMENTATION DE FLUIDITÉ (V77) — légère, désactivable, temporaire.
+         window.ILYOS_PERF.enabled = false coupe toute la collecte (chaque
+         point d'appel est gardé par `if (window.ILYOS_PERF)`, donc désactiver
+         revient à ne plus rien mesurer, sans toucher au reste du moteur).
+         window.ILYOS_PERF.report() renvoie un instantané : durée de
+         syncKayKitScene (moyenne/p95/max), FPS et frametemps RÉELS (mesurés au
+         point de renderer.render(), pas via une boucle rAF indépendante),
+         renderer.info (appels, triangles, géométries, textures), nombre de
+         synchronisations depuis le dernier resetActionSyncCount(), et les
+         Long Tasks (>50 ms) captées par PerformanceObserver.
+         ===================================================================== */
+      window.ILYOS_PERF = (() => {
+        const syncDurations = [];
+        const frameDeltas = [];
+        const longTasks = [];
+        let lastFrameAt = 0;
+        let syncsSinceReset = 0;
+        const MAX_SAMPLES = 400;
+
+        let longTaskObserver = null;
+        try {
+          if ("PerformanceObserver" in window) {
+            longTaskObserver = new PerformanceObserver(list => {
+              list.getEntries().forEach(entry => {
+                if (entry.duration >= 50) {
+                  longTasks.push({ at: Math.round(entry.startTime), duration: Math.round(entry.duration) });
+                  if (longTasks.length > 100) longTasks.shift();
+                }
+              });
+            });
+            longTaskObserver.observe({ entryTypes: ["longtask"] });
+          }
+        } catch (_) { /* Long Tasks non supportées par ce navigateur — pas bloquant */ }
+
+        function percentile(sortedAsc, p) {
+          if (!sortedAsc.length) return 0;
+          const idx = Math.min(sortedAsc.length - 1, Math.floor(p * sortedAsc.length));
+          return sortedAsc[idx];
+        }
+        function avg(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0; }
+
+        return {
+          enabled: true,
+          recordSync(ms) {
+            if (!this.enabled) return;
+            syncDurations.push(ms);
+            if (syncDurations.length > MAX_SAMPLES) syncDurations.shift();
+            syncsSinceReset++;
+          },
+          recordFrame(now) {
+            if (!this.enabled) return;
+            if (lastFrameAt) {
+              frameDeltas.push(now - lastFrameAt);
+              if (frameDeltas.length > MAX_SAMPLES) frameDeltas.shift();
+            }
+            lastFrameAt = now;
+          },
+          resetActionSyncCount() { syncsSinceReset = 0; },
+          clear() { syncDurations.length = 0; frameDeltas.length = 0; longTasks.length = 0; syncsSinceReset = 0; lastFrameAt = 0; },
+          report() {
+            const r = window.kaykit3D?.renderer;
+            const sortedSync = [...syncDurations].sort((a, b) => a - b);
+            const meanFrameMs = avg(frameDeltas);
+            return {
+              sync: {
+                avgMs: +avg(syncDurations).toFixed(2),
+                p95Ms: +percentile(sortedSync, .95).toFixed(2),
+                maxMs: sortedSync.length ? +sortedSync[sortedSync.length - 1].toFixed(2) : 0,
+                samples: syncDurations.length
+              },
+              // FPS plafonné par la cadence réelle de renderer.render() : ne peut
+              // jamais dépasser ce que le moteur affiche vraiment à l'écran.
+              fps: meanFrameMs ? +(1000 / meanFrameMs).toFixed(1) : 0,
+              frameTimeMs: +meanFrameMs.toFixed(2),
+              render: r ? { calls: r.info.render.calls, triangles: r.info.render.triangles } : null,
+              memory: r ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures } : null,
+              syncsSinceReset,
+              longTasksCount: longTasks.length,
+              longTasksRecent: longTasks.slice(-10)
+            };
+          }
+        };
+      })();
+
       const KAYKIT_CDN = {
         characters: "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Characters/gltf/",
         adventurerAssets: "https://cdn.jsdelivr.net/gh/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0@main/addons/kaykit_character_pack_adventures/Assets/gltf/",
@@ -642,7 +728,20 @@
           syncInProgress: false, syncPending: false, cameraMode: "auto",
           // Qualité courante ("high" | "balanced" | "performance"), pilotée par
           // le moniteur d'images de js/complete-polish.js.
-          qualityMode: "balanced"
+          qualityMode: "balanced",
+          // Registres de la synchronisation incrémentale (V77) : syncKayKitScene
+          // ne vide plus dynamicGroup à chaque appel. Chaque catégorie garde la
+          // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
+          // ce qui a réellement changé. Voir syncKayKitScene pour le détail.
+          islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
+          villagesBuilt: false,         // châteaux+fanions : construits une seule fois, jamais reconstruits
+          crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
+          islandLayerObjects: [],       // objets à disposer quand la signature d'îles change
+          pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
+          villageRegistry: new Map(),   // playerId -> chateau (construit une seule fois)
+          highlightRegistry: new Map(), // "r,c" -> { signature, objects[] } pour les surbrillances de case
+          looseCrownRegistry: new Map(),// "primary"/"secondary" -> { signature, objects[] }
+          transientDynamicChildren: []  // ghosts de pose/rotation magique : reconstruits à chaque sync (peu coûteux, état éphémère)
         };
 
         // Contrat avec js/complete-polish.js, qui ajuste le pixel ratio, la
@@ -2859,18 +2958,83 @@
         if (!group) return;
         while (group.children.length) {
           const child = group.children[group.children.length - 1];
-          child.traverse?.(obj => {
-            if (obj.geometry?.userData?.ilyosTransient) obj.geometry.dispose?.();
-            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-            materials.filter(Boolean).forEach(mat => { if (mat.userData?.ilyosTransient) mat.dispose?.(); });
-          });
+          disposeKayKitTaggedResources(child);
           group.remove(child);
         }
+      }
+
+      /**
+       * Dispose les géométries/matériaux/textures d'un objet (et de ses
+       * descendants) marqués `userData.ilyosTransient` — jamais une ressource
+       * partagée via kaykitGeometry()/kaykitMaterial(), qui reste en cache pour
+       * le reste de la session. Ne retire PAS l'objet de son parent : c'est à
+       * l'appelant de le faire (voir clearKayKitGroup et disposeKayKitObjects).
+       */
+      function disposeKayKitTaggedResources(object) {
+        object?.traverse?.(obj => {
+          if (obj.geometry?.userData?.ilyosTransient) obj.geometry.dispose?.();
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          materials.filter(Boolean).forEach(mat => {
+            if (!mat.userData?.ilyosTransient) return;
+            if (mat.map?.userData?.ilyosTransient) mat.map.dispose?.();
+            mat.dispose?.();
+          });
+        });
+      }
+
+      /**
+       * Retire et dispose une LISTE d'objets top-level (par opposition à
+       * clearKayKitGroup, qui vide un groupe entier) — utilisé par la
+       * synchronisation incrémentale pour ne défaire que ce qui doit
+       * effectivement changer (une case surlignée, la couche des îles, une
+       * couronne posée...) sans toucher au reste de dynamicGroup.
+       */
+      function disposeKayKitObjects(list) {
+        if (!list?.length) return;
+        list.forEach(object => {
+          disposeKayKitTaggedResources(object);
+          object.parent?.remove(object);
+        });
+        list.length = 0;
       }
 
       function cellClassSet(r, c) {
         const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         return cell ? cell.classList : null;
+      }
+
+      /**
+       * Équivalent de cellClassSet() pour les 121 cases en une seule passe DOM
+       * au lieu de 121 querySelector individuels (un par case, à chaque sync).
+       * Utilisé par syncKayKitScene, qui doit lire l'état de TOUTES les cases
+       * à chaque appel pour les surbrillances (survol, sélection...).
+       */
+      function buildKayKitCellClassMap() {
+        const map = new Map();
+        els.board.querySelectorAll(".cell").forEach(cell => {
+          const r = Number(cell.dataset.r), c = Number(cell.dataset.c);
+          if (Number.isFinite(r) && Number.isFinite(c)) map.set(`${r},${c}`, cell.classList);
+        });
+        return map;
+      }
+
+      /**
+       * Signature compacte de state.islands : change si et seulement si une île
+       * est posée, retirée, ou tourne (donc que ses cases changent). Sert à
+       * savoir si la couche île/piédestaux/décor forestier doit être
+       * reconstruite — inchangée sur un simple survol ou une sélection.
+       */
+      function kaykitIslandsSignature(islands) {
+        if (!islands?.length) return "";
+        let sig = "";
+        for (let i = 0; i < islands.length; i++) {
+          const island = islands[i];
+          sig += island.id + ":";
+          const cells = island.cells;
+          for (let j = 0; j < cells.length; j++) sig += cells[j][0] + "." + cells[j][1] + ",";
+          sig += "|";
+        }
+        return sig;
       }
 
       const KAYKIT_LEVELS = { board: .05, islandTop: .47, pedestalTop: .47 };
@@ -3102,7 +3266,31 @@
         else if (classList.contains("move-target-preview")) { color = 0xd9922f; fillOpacity = .58; kind = "move"; size = .90 }
         else if (classList.contains("move-path-preview")) { color = 0xd9922f; fillOpacity = .34; kind = "move" }
         else if (classList.contains("reachable")) { color = 0xd9922f; fillOpacity = .52; kind = "move" }
-        if (color === null) return;
+
+        // SYNCHRONISATION INCRÉMENTALE (V77) : cette fonction est appelée pour
+        // les 121 cases à CHAQUE sync (survol, sélection, déplacement...), mais
+        // la plupart des cases n'ont pas changé d'un appel à l'autre. On calcule
+        // une signature compacte de la surbrillance voulue et on la compare à
+        // celle déjà affichée pour cette case — si rien n'a changé, on ne touche
+        // à rien (ni la scène, ni animatedObjects). Auparavant, TOUTE la scène
+        // dynamique était détruite et reconstruite à chaque sync, y compris pour
+        // un simple survol de case.
+        const registryKey = `${r},${c}`;
+        const registry = kaykit3D.highlightRegistry;
+        const existing = registry.get(registryKey);
+        const signature = color === null ? "" : `${kind}|${color}|${size}|${fillOpacity}|${lineOpacity}`;
+
+        if (existing && existing.signature === signature) return; // rien n'a changé pour cette case
+
+        if (existing) {
+          disposeKayKitObjects(existing.objects);
+          registry.delete(registryKey);
+        }
+        if (color === null) return; // la case n'a plus de surbrillance : suppression déjà faite ci-dessus
+
+        const created = [];
+        const add = object => { kaykit3D.dynamicGroup.add(object); created.push(object); };
+
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
         const y = p.y + .026;
         // Le gardien sélectionné mérite un halo rond épuré plutôt qu'un cadre carré
@@ -3111,62 +3299,64 @@
         const isSelected = kind === "selected";
 
         // Ombre de contraste : rend la sélection lisible sur herbe, pierre et village.
+        const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x071316, transparent: true, opacity: .62, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
+        shadowMaterial.userData.ilyosTransient = true;
         const shadow = new THREE.Mesh(
           isSelected
             ? kaykitGeometry("cell-highlight-shadow-round-v1", () => new THREE.CircleGeometry(.49, 28))
             : kaykitGeometry("cell-highlight-shadow-v25", () => new THREE.PlaneGeometry(.94, .94)),
-          new THREE.MeshBasicMaterial({ color: 0x071316, transparent: true, opacity: .62, depthWrite: false, depthTest: true, side: THREE.DoubleSide })
+          shadowMaterial
         );
         shadow.rotation.x = -Math.PI / 2;
         shadow.position.set(p.x, y - .006, p.z);
         shadow.renderOrder = 27;
-        kaykit3D.dynamicGroup.add(shadow);
+        add(shadow);
 
-        // CAUSE DE FUITE (corrigée) : cette fonction est appelée pour CHAQUE case
-        // surlignée à CHAQUE resynchronisation de scène (survol, sélection,
-        // déplacement) — un déplacement avec 5-8 cases atteignables pouvait
-        // créer 25-50 géométries neuves par sync, jamais libérées (ces meshes
-        // ne portent pas `ilyosTransient`, donc clearKayKitGroup ne les
-        // dispose jamais). Mesuré en jeu : +17 géométries par action de
-        // déplacement, montée continue sur toute la partie. Toutes les
-        // géométries ci-dessous passent désormais par le cache kaykitGeometry,
-        // déjà utilisé partout ailleurs dans ce fichier — un petit nombre de
-        // tailles/natures discrètes (.84/.88/.90 × quelques genres) suffit à
-        // couvrir tous les cas, donc le cache reste minuscule.
+        // Les géométries passent par le cache kaykitGeometry (un petit nombre de
+        // tailles/natures discrètes .84/.88/.90 × quelques genres suffit à couvrir
+        // tous les cas) ; les matériaux, eux, varient réellement par instance
+        // (couleur/opacité propres à cette case) et sont tagués `ilyosTransient`
+        // pour être disposés par disposeKayKitObjects quand cette case change.
+        const fillMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fillOpacity, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.NormalBlending });
+        fillMaterial.userData.ilyosTransient = true;
         const fill = new THREE.Mesh(
           isSelected
             ? kaykitGeometry(`cell-highlight-fill-circle-${size}`, () => new THREE.CircleGeometry(size / 2, 28))
             : kaykitGeometry(`cell-highlight-fill-plane-${size}`, () => new THREE.PlaneGeometry(size, size)),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fillOpacity, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.NormalBlending })
+          fillMaterial
         );
         fill.rotation.x = -Math.PI / 2;
         fill.position.set(p.x, y, p.z);
         fill.renderOrder = 30;
-        kaykit3D.dynamicGroup.add(fill);
+        add(fill);
 
         if (!isSelected) {
+          const outerMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true });
+          outerMaterial.userData.ilyosTransient = true;
           const outer = new THREE.LineLoop(
             kaykitGeometry(`cell-highlight-outline-outer-${size}`, () => new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(-size / 2, 0, -size / 2), new THREE.Vector3(size / 2, 0, -size / 2),
               new THREE.Vector3(size / 2, 0, size / 2), new THREE.Vector3(-size / 2, 0, size / 2)
             ])),
-            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true })
+            outerMaterial
           );
           outer.position.set(p.x, y + .008, p.z);
           outer.renderOrder = 32;
-          kaykit3D.dynamicGroup.add(outer);
+          add(outer);
 
           const innerSize = size - .11;
+          const innerMaterial = new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true });
+          innerMaterial.userData.ilyosTransient = true;
           const inner = new THREE.LineLoop(
             kaykitGeometry(`cell-highlight-outline-inner-${size}`, () => new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(-innerSize / 2, 0, -innerSize / 2), new THREE.Vector3(innerSize / 2, 0, -innerSize / 2),
               new THREE.Vector3(innerSize / 2, 0, innerSize / 2), new THREE.Vector3(-innerSize / 2, 0, innerSize / 2)
             ])),
-            new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true })
+            innerMaterial
           );
           inner.position.set(p.x, y + .012, p.z);
           inner.renderOrder = 33;
-          kaykit3D.dynamicGroup.add(inner);
+          add(inner);
 
           // Bordure volumique : LineBasicMaterial reste souvent trop fin sous WebGL.
           // Quatre barres 3D garantissent une sélection très lisible sur une île.
@@ -3179,6 +3369,7 @@
             depthWrite: false,
             depthTest: true
           });
+          borderMaterial.userData.ilyosTransient = true;
           const borderY = y + .021;
           const horizontalGeometry = kaykitGeometry(`cell-highlight-border-h-${size}-${borderHeight}-${borderThickness}`, () => new THREE.BoxGeometry(size, borderHeight, borderThickness));
           const verticalGeometry = kaykitGeometry(`cell-highlight-border-v-${size}-${borderHeight}-${borderThickness}`, () => new THREE.BoxGeometry(borderThickness, borderHeight, size));
@@ -3189,12 +3380,13 @@
             const bar = new THREE.Mesh(geometry, borderMaterial);
             bar.position.set(p.x + dx, borderY, p.z + dz);
             bar.renderOrder = 36;
-            kaykit3D.dynamicGroup.add(bar);
+            add(bar);
           });
         }
 
         if (kind === "place" || kind === "invalid") {
           const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
+          tickMat.userData.ilyosTransient = true;
           const ticksGeometry = kaykitGeometry(`cell-highlight-ticks-${size}`, () => {
             const s = size / 2, l = .18;
             const pts = [];
@@ -3207,7 +3399,7 @@
           const ticks = new THREE.LineSegments(ticksGeometry, tickMat);
           ticks.position.set(p.x, y + .016, p.z);
           ticks.renderOrder = 34;
-          kaykit3D.dynamicGroup.add(ticks);
+          add(ticks);
         }
 
         // Halo rond à deux couches : un anneau net qui porte la couleur du joueur,
@@ -3221,6 +3413,7 @@
             depthWrite: false,
             depthTest: false
           });
+          glowMaterial.userData.ilyosTransient = true;
           const glow = new THREE.Mesh(kaykitGeometry("selection-glow-v1", () => new THREE.RingGeometry(.18, .47, 40)), glowMaterial);
           glow.rotation.x = -Math.PI / 2;
           glow.position.set(p.x, y + .05, p.z);
@@ -3232,7 +3425,7 @@
           // le pousserait une seconde fois dans la même liste.
           glow.userData.fadeIn = { start: performance.now(), duration: 140, target: glowMaterial.opacity };
           glowMaterial.opacity = 0;
-          kaykit3D.dynamicGroup.add(glow);
+          add(glow);
           kaykit3D.animatedObjects.push(glow);
 
           const haloMaterial = new THREE.MeshBasicMaterial({
@@ -3243,6 +3436,7 @@
             depthWrite: false,
             depthTest: false
           });
+          haloMaterial.userData.ilyosTransient = true;
           const halo = new THREE.Mesh(kaykitGeometry("selection-ring-v1", () => new THREE.RingGeometry(.32, .40, 40)), haloMaterial);
           halo.rotation.x = -Math.PI / 2;
           halo.position.set(p.x, y + .065, p.z);
@@ -3251,12 +3445,12 @@
           halo.userData.pulsePhase = (r * 11 + c) * .37;
           halo.userData.fadeIn = { start: performance.now(), duration: 140, target: haloMaterial.opacity };
           haloMaterial.opacity = 0;
-          kaykit3D.dynamicGroup.add(halo);
+          add(halo);
           kaykit3D.animatedObjects.push(halo);
 
           const selectionLight = new THREE.PointLight(0xffdf5a, .46, 1.9, 2);
           selectionLight.position.set(p.x, y + .62, p.z);
-          kaykit3D.dynamicGroup.add(selectionLight);
+          add(selectionLight);
 
           // Sceau céleste : anneau bleu doux + petits repères "runiques" en
           // bordure du halo or, tournant très lentement — complète le halo
@@ -3268,9 +3462,11 @@
           runeGroup.rotation.x = -Math.PI / 2;
           runeGroup.renderOrder = 53;
 
+          const blueRingMaterial = new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false });
+          blueRingMaterial.userData.ilyosTransient = true;
           const blueRing = new THREE.Mesh(
             kaykitGeometry("selection-ring-blue-v1", () => new THREE.RingGeometry(.43, .465, 40)),
-            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
+            blueRingMaterial
           );
           runeGroup.add(blueRing);
 
@@ -3283,17 +3479,20 @@
               new THREE.Vector3(Math.cos(angle) * .475, 0, Math.sin(angle) * .475)
             );
           }
+          const runesMaterial = new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false });
+          runesMaterial.userData.ilyosTransient = true;
           const runes = new THREE.LineSegments(
             kaykitGeometry("selection-runes-v1", () => new THREE.BufferGeometry().setFromPoints(runePoints)),
-            new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false })
+            runesMaterial
           );
           runeGroup.add(runes);
 
-          kaykit3D.dynamicGroup.add(runeGroup);
+          add(runeGroup);
           runeGroup.userData.slowSpin = true;
           kaykit3D.animatedObjects.push(runeGroup);
         }
 
+        registry.set(registryKey, { signature, objects: created });
       }
 
       // Fondu d'apparition pour un marqueur 3D éphémère (anneau d'affordance,
@@ -5686,17 +5885,32 @@
           return;
         }
         kaykit3D.syncInProgress = true;
+        const __perfStart = window.ILYOS_PERF ? performance.now() : 0;
         try {
           resizeKayKit3D();
-          clearKayKitGroup(kaykit3D.dynamicGroup);
+          // SYNCHRONISATION INCRÉMENTALE (V77) : dynamicGroup n'est plus vidé en
+          // bloc à chaque appel — clearKayKitGroup(dynamicGroup) détruisait et
+          // reconstruisait TOUT (îles, piédestaux, châteaux, surbrillances...)
+          // même pour un simple survol de case. Chaque catégorie ci-dessous
+          // garde désormais son propre registre et ne recrée que ce qui a
+          // réellement changé ; le registre persistant des gardiens
+          // (characterGroup, voir syncKayKitCharacters) était déjà épargné.
           clearKayKitVisualHover();
-          // characterGroup n'est VOLONTAIREMENT pas vidé ici : les gardiens,
-          // leurs squelettes et leurs AnimationMixer doivent survivre à cette
-          // resynchronisation (voir syncKayKitCharacters). Seuls les décors,
-          // îles et couronnes posées sont reconstruits.
+          // Ghosts de pose d'île / rotation magique de LA sync précédente :
+          // état éphémère (hover, action en cours), peu coûteux à reconstruire
+          // en entier à chaque fois — inutile de les diffuser au registre.
+          disposeKayKitObjects(kaykit3D.transientDynamicChildren);
+          // cellVisuals/interactiveMeshes sont des index de LOOKUP (pas des
+          // objets 3D) : ils sont reconstruits à chaque sync pour rester
+          // exacts, mais en ne faisant que ré-enregistrer les références déjà
+          // existantes — beaucoup plus léger que recréer les objets eux-mêmes.
           kaykit3D.cellVisuals = new Map();
           kaykit3D.interactiveMeshes = [];
-          kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(obj => obj.parent === kaykit3D.staticGroup);
+          // Filtre défensif générique (déjà utilisé ailleurs, voir
+          // refreshKayKitHoverPreviews) : ne retire que les références mortes
+          // (objet réellement retiré de la scène), jamais les objets persistants
+          // encore présents dans dynamicGroup d'une sync à l'autre.
+          kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(obj => !!obj?.parent);
           const nextCharacterHistory = new Map();
 
           const dynamic = kaykit3D.dynamicGroup;
@@ -5710,17 +5924,39 @@
             hit.position.y = kaykitCellSurfaceY(r, c) + .03;
           });
 
-          // Sol central en croix sous les couronnes.
-          // Sol central en croix sous les couronnes.
-          dynamic.add(makeCrownCrossGround());
-          // Les îles sont fusionnées visuellement : un seul bloc par île, sans quadrillage interne.
-          renderKayKitIslandBlocks(dynamic);
-          renderKayKitIslandSeams(dynamic);
+          // Sol central en croix sous les couronnes : statique (dépend de
+          // isSanctuary, fixe pour toute la partie), construit une seule fois.
+          if (!kaykit3D.crownCrossGroundBuilt) {
+            dynamic.add(makeCrownCrossGround());
+            kaykit3D.crownCrossGroundBuilt = true;
+          }
+
+          // Couche île (blocs fusionnés + coutures + décor forestier + les
+          // piédestaux du grand boucle ci-dessous) : ne se reconstruit que si
+          // state.islands a réellement changé (pose, retrait, rotation) — pas
+          // sur un survol, une sélection ou un changement de tour.
+          const islandsSig = kaykitIslandsSignature(state.islands);
+          const rebuildIslandLayer = islandsSig !== kaykit3D.islandsSignature;
+          if (rebuildIslandLayer) {
+            disposeKayKitObjects(kaykit3D.islandLayerObjects);
+            const before = dynamic.children.length;
+            // Les îles sont fusionnées visuellement : un seul bloc par île, sans quadrillage interne.
+            renderKayKitIslandBlocks(dynamic);
+            renderKayKitIslandSeams(dynamic);
+            // Variation visuelle discrète issue du Forest Nature Pack.
+            renderKayKitForestNatureOnIslands(dynamic);
+            kaykit3D.islandLayerObjects.push(...dynamic.children.slice(before));
+            kaykit3D.pedestalRegistry = new Map();
+          }
 
           const artifactByCarrier = new Map();
           [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
             if (artifact.active && artifact.carrierId) artifactByCarrier.set(artifact.carrierId, artifact);
           });
+
+          // Une seule passe DOM pour les 121 cases (au lieu d'un querySelector
+          // individuel par case) : voir buildKayKitCellClassMap.
+          const cellClasses = buildKayKitCellClassMap();
 
           for (let r = 0; r < GRID; r++) {
             for (let c = 0; c < GRID; c++) {
@@ -5728,43 +5964,52 @@
               const village = villageAt(r, c);
               const sanctuary = isSanctuary(r, c);
               const island = islandAt(r, c);
-              const classes = cellClassSet(r, c);
+              const classes = cellClasses.get(`${r},${c}`);
               const p = kaykitCellPosition(r, c, 0);
+              const cellKey = `${r},${c}`;
 
               if (land && !island && !sanctuary) {
-                const owner = village?.id ?? null;
-                const ownerColor = Number.isInteger(owner) ? new THREE.Color(state.players[owner]?.color || PLAYER_COLORS[owner]).getHex() : null;
-                const pedestal = makeKayKitPedestal(ownerColor, { sanctuary: false });
-                pedestal.position.set(p.x, 0, p.z);
-                dynamic.add(pedestal);
-                registerKayKitCellVisual(r, c, pedestal);
+                if (rebuildIslandLayer) {
+                  const owner = village?.id ?? null;
+                  const ownerColor = Number.isInteger(owner) ? new THREE.Color(state.players[owner]?.color || PLAYER_COLORS[owner]).getHex() : null;
+                  const pedestal = makeKayKitPedestal(ownerColor, { sanctuary: false });
+                  pedestal.position.set(p.x, 0, p.z);
+                  dynamic.add(pedestal);
+                  kaykit3D.islandLayerObjects.push(pedestal);
+                  kaykit3D.pedestalRegistry.set(cellKey, pedestal);
+                }
+                const pedestal = kaykit3D.pedestalRegistry.get(cellKey);
+                if (pedestal) registerKayKitCellVisual(r, c, pedestal);
               }
 
               if (village) {
                 const playerId = village.id ?? state.players.indexOf(village);
-                const assetKey = `castle${Math.max(0, Math.min(3, playerId))}`;
-                const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
-                let castle = cloneKayKitAsset(assetKey, { maxWidth: .78, maxHeight: 1.18, targetFloor: 0 });
-                if (!castle) castle = makeFallbackCastle(villageAccent);
-                castle.position.set(p.x, KAYKIT_LEVELS.pedestalTop, p.z);
-                castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
-                dynamic.add(castle);
-                registerKayKitCellVisual(r, c, castle);
-                // Fanion planté à côté du château, dans le même repère local :
-                // il suit automatiquement la position/rotation par coin du village.
-                const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
-                if (flag) {
-                  flag.position.set(.48, 0, .34);
-                  castle.add(flag);
+                if (!kaykit3D.villagesBuilt) {
+                  const assetKey = `castle${Math.max(0, Math.min(3, playerId))}`;
+                  const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
+                  let castle = cloneKayKitAsset(assetKey, { maxWidth: .78, maxHeight: 1.18, targetFloor: 0 });
+                  if (!castle) castle = makeFallbackCastle(villageAccent);
+                  castle.position.set(p.x, KAYKIT_LEVELS.pedestalTop, p.z);
+                  castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
+                  dynamic.add(castle);
+                  // Fanion planté à côté du château, dans le même repère local :
+                  // il suit automatiquement la position/rotation par coin du village.
+                  const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
+                  if (flag) {
+                    flag.position.set(.48, 0, .34);
+                    castle.add(flag);
+                  }
+                  kaykit3D.villageRegistry.set(playerId, castle);
                 }
+                const castle = kaykit3D.villageRegistry.get(playerId);
+                if (castle) registerKayKitCellVisual(r, c, castle);
               }
 
               addCellHighlight(r, c, classes);
             }
           }
-
-          // Variation visuelle discrète issue du Forest Nature Pack.
-          renderKayKitForestNatureOnIslands(dynamic);
+          if (rebuildIslandLayer) kaykit3D.islandsSignature = islandsSig;
+          kaykit3D.villagesBuilt = true;
 
           // Héros / gardiens — mise à jour INCRÉMENTALE d'un registre persistant.
           // Les modèles, squelettes et AnimationMixer ne sont plus reconstruits
@@ -5772,12 +6017,35 @@
           syncKayKitCharacters(artifactByCarrier, nextCharacterHistory);
           kaykit3D.characterHistory = nextCharacterHistory;
 
-          // Couronnes posées sur le plateau.
-          renderKayKitPlacementPreview();
-          renderKayKitMagicRotationPreview();
+          // Ghosts de pose d'île / rotation magique : état éphémère (hover),
+          // reconstruits à chaque sync (peu coûteux) puis suivis dans
+          // transientDynamicChildren pour être disposés au prochain appel.
+          {
+            const before = dynamic.children.length;
+            renderKayKitPlacementPreview();
+            renderKayKitMagicRotationPreview();
+            kaykit3D.transientDynamicChildren.push(...dynamic.children.slice(before));
+          }
 
-          [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
-            if (!artifact.active || artifact.carrierId || !Number.isFinite(artifact.r) || !Number.isFinite(artifact.c)) return;
+          // Couronnes posées sur le plateau : mises à jour seulement si leur
+          // position ou leur disponibilité a changé depuis la sync précédente.
+          [state.artifact, state.secondArtifact].filter(Boolean).forEach((artifact, idx) => {
+            const slot = artifact.id != null ? String(artifact.id) : (idx === 0 ? "primary" : "secondary");
+            const active = !!(artifact.active && !artifact.carrierId && Number.isFinite(artifact.r) && Number.isFinite(artifact.c));
+            const signature = active ? `${artifact.r},${artifact.c}` : "";
+            const existing = kaykit3D.looseCrownRegistry.get(slot);
+            if (existing && existing.signature === signature) {
+              if (active && existing.crown) {
+                registerKayKitCellVisual(artifact.r, artifact.c, existing.crown);
+                registerKayKitInteractive(existing.crown, "crown-loose", artifact.r, artifact.c);
+              }
+              return;
+            }
+            if (existing) {
+              disposeKayKitObjects(existing.objects);
+              kaykit3D.looseCrownRegistry.delete(slot);
+            }
+            if (!active) return;
             const p = kaykitCellPosition(artifact.r, artifact.c, 0);
             const surfaceY = kaykitCellSurfaceY(artifact.r, artifact.c);
             const crown = makeCrown();
@@ -5787,13 +6055,26 @@
             registerKayKitCellVisual(artifact.r, artifact.c, crown);
             registerKayKitInteractive(crown, "crown-loose", artifact.r, artifact.c);
             const light = new THREE.PointLight(0xffcf52, .44, 1.8);
-            light.position.set(p.x, surfaceY + .34, p.z); dynamic.add(light);
+            light.position.set(p.x, surfaceY + .34, p.z);
+            dynamic.add(light);
+            kaykit3D.looseCrownRegistry.set(slot, { signature, crown, objects: [crown, light] });
+          });
+          // Les créneaux de couronne qui n'existent plus dans state (couronne
+          // désactivée en fin de partie) doivent tout de même être nettoyés.
+          const activeCrownSlots = new Set(
+            [state.artifact, state.secondArtifact].filter(Boolean).map((a, i) => a.id != null ? String(a.id) : (i === 0 ? "primary" : "secondary"))
+          );
+          kaykit3D.looseCrownRegistry.forEach((entry, slot) => {
+            if (activeCrownSlots.has(slot)) return;
+            disposeKayKitObjects(entry.objects);
+            kaykit3D.looseCrownRegistry.delete(slot);
           });
 
           kaykit3D.lastStateSignature = `${state.turn}|${state.phase}|${state.islands.length}|${state.characters.length}|${state.currentPlayer}`;
           refreshKayKitHoverAfterSceneSync();
         } finally {
           kaykit3D.syncInProgress = false;
+          if (window.ILYOS_PERF) window.ILYOS_PERF.recordSync(performance.now() - __perfStart);
           if (kaykit3D.syncPending) {
             kaykit3D.syncPending = false;
             scheduleKayKitSync();
@@ -5888,6 +6169,12 @@
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
         if (document.body.dataset.visualMode === "alternative" && !els.gameScreen.classList.contains("hidden")) {
+          // Mesure du FPS RÉEL : window.ILYOS_PERF.recordFrame() n'est appelé
+          // qu'ici, au moment ou renderer.render() est effectivement invoqué —
+          // pas via une boucle requestAnimationFrame indépendante qui tournerait
+          // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
+          // par js/complete-polish.js alors que le rendu est plafonné ~60).
+          if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
           kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
         }
       }
