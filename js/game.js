@@ -6083,6 +6083,7 @@
       }
 
       let kaykitLastVisualFrame = 0;
+      let kaykitFrameAccumulator = 0;
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
@@ -6103,10 +6104,24 @@
         // animation n'est en cours — jamais pendant un déplacement, une
         // poussée ou un glissé de caméra, où le moindre ralentissement se
         // verrait immédiatement.
-        if (kaykit3D.qualityMode === "performance" && !activeVisualMotion) {
-          if (frameTime - kaykitLastVisualFrame < 33) return;
-        }
+        //
+        // Même en mode "performance", un seuil fixe comparé à un timestamp rAF
+        // jitter (frameTime - lastFrame < 33) reste biaisé : une image arrivant
+        // à 32.9 ms est rejetée, son "reste" de temps perdu — ce qui, cumulé,
+        // fait tomber la cadence réelle sous la cible (~28.8 i/s mesurés au
+        // lieu de ~30 i/s). L'accumulateur ci-dessous conserve ce reste d'une
+        // image à l'autre au lieu de le jeter.
+        const throttle = kaykit3D.qualityMode === "performance" && !activeVisualMotion;
+        const elapsedSinceTick = kaykitLastVisualFrame ? Math.min(250, frameTime - kaykitLastVisualFrame) : 0;
         kaykitLastVisualFrame = frameTime;
+        if (throttle) {
+          kaykitFrameAccumulator += elapsedSinceTick;
+          if (kaykitFrameAccumulator < 32) return;
+          kaykitFrameAccumulator -= 33;
+          if (kaykitFrameAccumulator < 0 || kaykitFrameAccumulator > 33) kaykitFrameAccumulator = 0;
+        } else {
+          kaykitFrameAccumulator = 0;
+        }
         const delta = Math.min(.05, kaykit3D.clock.getDelta());
         const elapsed = kaykit3D.clock.elapsedTime;
         if (kaykit3D.hoverMarker?.visible) {
