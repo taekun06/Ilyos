@@ -2445,6 +2445,26 @@
         let pointerDown = null;
         let dragMoved = false;
         const DRAG_THRESHOLD = 7;
+        // Coalescement du survol : un mousemove natif peut arriver bien plus
+        // souvent que l'écran ne se rafraîchit (une souris de jeu à 1000 Hz
+        // envoie un événement par milliseconde). updateHover fait deux lancers
+        // de rayon contre toutes les cases + gardiens + couronnes, et une
+        // requête DOM par changement de case — répété à ce rythme, c'était une
+        // source directe de saccades au survol du plateau. Un seul appel par
+        // image suffit : l'œil ne distingue pas un survol mis à jour à 1000 Hz
+        // d'un survol mis à jour à 60 Hz.
+        let pendingHoverEvent = null;
+        let hoverFrameScheduled = false;
+        const scheduleHoverUpdate = event => {
+          pendingHoverEvent = event;
+          if (hoverFrameScheduled) return;
+          hoverFrameScheduled = true;
+          requestAnimationFrame(() => {
+            hoverFrameScheduled = false;
+            if (pendingHoverEvent) updateHover(pendingHoverEvent);
+            pendingHoverEvent = null;
+          });
+        };
         const pick = event => {
           const rect = canvas.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
@@ -2589,7 +2609,7 @@
             pointerDown.lastY = event.clientY;
             updateKayKitCamera(false);
           } else if (!dragMoved) {
-            updateHover(event);
+            scheduleHoverUpdate(event);
           }
         });
         canvas.addEventListener("pointerup", event => {
@@ -5737,7 +5757,6 @@
       }
 
       let kaykitLastVisualFrame = 0;
-      let kaykitAdaptiveFrameInterval = 16.7;
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
@@ -5746,9 +5765,21 @@
           return;
         }
         const activeVisualMotion = !!(kaykit3D.activeMovementTweens?.size || kaykit3D.pendingActionAnimations?.size || kaykit3D.cameraTween || kaykit3D.userInteracting);
-        const lowPower = (navigator.hardwareConcurrency || 4) <= 4 || (navigator.deviceMemory || 4) <= 4;
-        kaykitAdaptiveFrameInterval = 16.7;
-        if (frameTime - kaykitLastVisualFrame < kaykitAdaptiveFrameInterval) return;
+        // Ce garde-fou s'appelait "adaptatif" mais ne l'était pas : la valeur
+        // était réécrite à 16.7 à chaque image, quel que soit l'appareil. Pire,
+        // un seuil fixe comparé à des timestamps rAF légèrement irréguliers
+        // provoque lui-même des à-coups — deux images arrivant à 15.9 ms d'écart
+        // en sautent une, la suivante arrive ~33 ms plus tard : un miroitement
+        // que rien ne justifiait, même sur un appareil capable de tenir 60 fps.
+        // Le rendu suit désormais directement la cadence native de rAF (déjà
+        // calée sur l'écran, bien plus précise qu'une comparaison manuelle) et
+        // ne se limite QUE si le mode qualité est "performance" ET qu'aucune
+        // animation n'est en cours — jamais pendant un déplacement, une
+        // poussée ou un glissé de caméra, où le moindre ralentissement se
+        // verrait immédiatement.
+        if (kaykit3D.qualityMode === "performance" && !activeVisualMotion) {
+          if (frameTime - kaykitLastVisualFrame < 33) return;
+        }
         kaykitLastVisualFrame = frameTime;
         const delta = Math.min(.05, kaykit3D.clock.getDelta());
         const elapsed = kaykit3D.clock.elapsedTime;
