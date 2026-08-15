@@ -49,8 +49,13 @@
 
 .duel .editable-control{display:block}.duel .editable-value{width:100%;outline:none;text-transform:uppercase}.duel .editable-value:focus{border-color:#f2c76f;box-shadow:0 0 0 2px rgba(242,199,111,.12),0 0 16px rgba(242,199,111,.12)}
 
-/* SOLO : réglages empilés en pleine largeur (plus de côte à côte) */
+/* SOLO : réglages empilés en pleine largeur (plus de côte à côte). Le
+   grid-column:1 explicite est une sécurité héritée d'une ancienne guerre de
+   spécificité sur ce même sélecteur (voir historique de ce fichier) — sans
+   danger ici puisque la grille n'a qu'une colonne. */
 .duel[data-mode="solo"] .duel-panel-body{grid-template-columns:1fr}
+.duel[data-mode="solo"] .field[data-key="board"]{grid-column:1}
+.duel[data-mode="solo"] .field[data-key="timer"]{grid-column:1}
 
 /* 2 CONTRE 2 : plateau fixé à CLASSIQUE (option unique, non modifiable) —
    inutile d'afficher une rangée désactivée, on passe direct aux équipes. */
@@ -85,8 +90,13 @@
 .match-recap span{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:.36cqh .32cqw;border-radius:7px;border:1px solid rgba(222,170,64,.34);background:rgba(2,9,17,.76)}
 .match-recap small{font-size:.42cqw;letter-spacing:.11em;color:#bba67d;line-height:1}.match-recap b{margin-top:.18cqh;font-size:.54cqw;color:#f4d89b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 
-/* Bouton principal : intégré au bas du panneau, grande zone lisible */
-.duel .play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:88%;min-height:68px;margin-top:16px;padding:10px 16px;line-height:1.05}
+/* Bouton principal : intégré au bas du panneau, grande zone lisible.
+   margin-inline:auto necessaire : .play (flex, width:88%) n'a aucune marge
+   horizontale par defaut, donc reste colle au bord GAUCHE de .setup au lieu
+   d'etre centre — .setup:text-align:center ne centre que de l'inline,
+   jamais un bloc flex. Meme correctif que celui deja applique sur main pour
+   l'ancienne version du bouton. */
+.duel .play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:88%;margin-inline:auto;min-height:68px;margin-top:16px;padding:10px 16px;line-height:1.05}
 .duel .play .play-main{display:block;font-size:clamp(18px,1.1vw,24px);font-weight:800;letter-spacing:.055em}
 .duel .play small{display:block!important;opacity:1!important;visibility:visible!important;height:auto!important;margin:0!important;color:rgba(57,30,4,.8);font-size:clamp(10px,.6vw,13px);font-weight:700;letter-spacing:.14em;line-height:1;text-transform:uppercase}
 

@@ -34,8 +34,14 @@ established a few reusable patterns — look for these before writing a new one:
   simulation, reused by both this flow and the classic PUSH card. Re-clicking
   the selected guardian, or the dedicated "Désélectionner" button, cancels via
   `cancelSmartCharacterAction()` — distinct from `restoreUndoSnapshot()`
-  ("↶ Annuler dernière action"), which only appears when `state.undoSnapshot`
-  is actually set.
+  ("↶ Annuler dernière action"), which only appears when `state.undoHistory`
+  is non-empty. Undo is a real stack (`saveUndoSnapshot()` pushes,
+  `restoreUndoSnapshot()` pops one level per call) capped at
+  `UNDO_HISTORY_LIMIT` (turns.js), so pressing it repeatedly — or Escape, or a
+  no-drag right-click on the 3D canvas (see `bindKayKitInteractions`) — walks
+  back multiple actions in the current turn. Any code that saves a snapshot
+  before an action that might still fail must call `discardLastUndoSnapshot()`
+  on that failure path, not restore/clear the whole history.
 - **Atmosphère céleste = un seul système** (kaykit3d.js) : `KAYKIT_SKY`,
   `KAYKIT_SKY_COLORS` et `buildKayKitSkyEnvironment()` portent *toutes* les
   couches (dôme dégradé, `scene.fog`, îlots lointains, mer de nuages). Corriger

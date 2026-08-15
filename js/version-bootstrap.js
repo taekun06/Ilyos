@@ -1,4 +1,4 @@
-window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
+window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
 
 /* ILYOS V11 MENU — isolated iframe integration.
    The visual menu lives entirely in /menu. This file only bridges it to the existing game. */

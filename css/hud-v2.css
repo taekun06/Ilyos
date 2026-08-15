@@ -1,0 +1,955 @@
+/*
+  HUD V2 — architecture minimale, plateau 3D dominant (~85/15), symétrie
+  stricte gauche/droite. Ce fichier ne touche a aucune regle de jeu : il
+  positionne/habille les memes elements DOM que l'ancien HUD (voir
+  index.html, #hudV2Top/#hudV2Dock), et neutralise visuellement le reste de
+  l'ancien layout encore present (.hud-v1-legacy — multijoueur/widgets
+  contextuels sans equivalent visuel dans le HUD V2) sans le supprimer du
+  DOM. La logique metier (js/game/ui.js, core.js, kaykit3d.js,
+  complete-polish.js) continue d'ecrire dans ces memes ids/elements sans le
+  savoir.
+
+  DA : anthracite bleute tres transparent, verre sombre subtil, or
+  champagne fin, bordures <=1px, glow reserve aux etats actifs/emphasis
+  (jamais un glow generalise sur les panneaux), transitions 180-220ms.
+  Zone haute : aucun fond/pilule — texte nu + text-shadow pour la lisibilite.
+  Dock bas : aucune grande barre commune — chaque commande flotte seule avec
+  son propre tres leger fond verre (quasi invisible au repos).
+
+  Portee : uniquement le mode visuel 3D (body[data-visual-mode="alternative"]),
+  comme le reste des feuilles HUD existantes (turn-flow-ux.css, sanctuary-celeste.css).
+*/
+
+body[data-visual-mode="alternative"] #gameScreen .hud-v1-legacy {
+  display: none !important;
+}
+
+/*
+  Correction de regression : base.css definit #gameScreen en grille a deux
+  lignes ("grid-template-rows: auto minmax(0,1fr)") pensee pour .topbar
+  (ligne 1) + .game-main (ligne 2). .topbar etant supprime du DOM,
+  .game-main devient le premier enfant en flux normal (#hudV2Top/#hudV2Dock
+  sont position:fixed, donc hors flux) et heriterait de la ligne 1 "auto" —
+  d'ou un plateau comprime. :not(.hidden) repete pour egaler la specificite
+  des blocs <style> herites dans index.html qui redefinissent ce meme
+  selecteur (jusqu'a "var(--v70-top) minmax(0,1fr)", 60px) — feuille chargee
+  en dernier, gagne le departage a egalite.
+*/
+body[data-visual-mode="alternative"] #gameScreen,
+body[data-visual-mode="alternative"] #gameScreen:not(.hidden) {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+body[data-visual-mode="alternative"] .game-main {
+  grid-row: 1 !important;
+}
+
+/*
+  Ancien toolbar caméra KayKit (VUE FACE/VUE ISO/ZOOM/AUTO/LIBRE/3D PLEIN
+  ÉCRAN) : masqué visuellement, PAS supprimé du DOM — updateKayKitCameraModeUI()
+  (js/game/kaykit3d.js) continue d'appeler kaykit3D.controls.querySelector(...)
+  dessus à chaque changement de mode, y compris depuis le menu ⚙.
+*/
+body[data-visual-mode="alternative"] .kaykit-controls {
+  display: none !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen {
+  --hud-v2-glass-bg: rgba(18, 22, 30, .42);
+  --hud-v2-glass-border: rgba(226, 200, 138, .26);
+  --hud-v2-champagne: #e8c98a;
+  --hud-v2-text: rgba(248, 246, 240, .96);
+  --hud-v2-text-dim: rgba(244, 242, 236, .74);
+}
+
+/* ================= Vignettage de lisibilité (overlay, jamais une zone de layout) ================= */
+
+/*
+  BUG DE RÉGRESSION CORRIGÉ : "#gameScreen > *{position:relative}" (règle
+  héritée, id dans le sélecteur) gagnait sur ce position:fixed pourtant
+  déclaré ici — les deux vignettes restaient donc position:relative,
+  participaient au flux de la grille de #gameScreen comme deux enfants
+  directs normaux avec leur propre hauteur (90px/108px), et forçaient la
+  grille à créer deux lignes implicites supplémentaires en plus de la ligne
+  unique attendue. Résultat : .game-main perdait ~200px de hauteur en bas
+  de l'écran (la fameuse "bande inférieure"). !important nécessaire pour
+  battre l'id de la règle héritée (un id bat toujours un nombre de classes,
+  quel qu'il soit).
+*/
+body[data-visual-mode="alternative"] .hud-v2-vignette {
+  position: fixed !important;
+  left: 0;
+  right: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+/* Volontairement très subtil — presque imperceptible, jamais une "bande"
+   identifiable. */
+body[data-visual-mode="alternative"] .hud-v2-vignette-top {
+  top: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(6, 10, 18, .13), rgba(6, 10, 18, 0));
+}
+
+body[data-visual-mode="alternative"] .hud-v2-vignette-bottom {
+  bottom: 0;
+  height: 90px;
+  background: linear-gradient(to top, rgba(6, 10, 18, .09), rgba(6, 10, 18, 0));
+}
+
+/* ================= Bandeau haut : grille 3 colonnes, texte nu ================= */
+
+body[data-visual-mode="alternative"] #hudV2Top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  column-gap: 12px;
+  padding: clamp(20px, 2.4vw, 28px) clamp(28px, 3.4vw, 36px);
+  pointer-events: none;
+  font-family: inherit;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+  min-width: 0;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left {
+  justify-self: start;
+}
+
+/* Miroir exact : même ordre DOM (portrait, nom, couronnes) des deux côtés,
+   la droite est simplement inversée visuellement. */
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right {
+  justify-self: end;
+  flex-direction: row-reverse;
+}
+
+/* ---------- Portraits circulaires (fallback icône+couleur, voir rapport) ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-portrait {
+  flex: 0 0 auto;
+  width: clamp(46px, 4.2vw, 62px);
+  height: clamp(46px, 4.2vw, 62px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hud-v2-portrait-color, #34506b);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .18), transparent 55%),
+    color-mix(in srgb, var(--hud-v2-portrait-color, #34506b) 50%, #10161f 50%);
+  border: 1px solid rgba(255, 255, 255, .16);
+  opacity: .75;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+  transition: opacity 220ms ease, box-shadow 220ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-portrait.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-portrait-active {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--hud-v2-champagne), 0 0 16px rgba(232, 201, 138, .3), 0 4px 14px rgba(0, 0, 0, .35);
+}
+
+/* Silhouette neutre temporaire (voir renderHudV2()/js/game/ui.js) — pas un
+   emoji : simple contour humain, teinté doucement par la couleur du joueur. */
+body[data-visual-mode="alternative"] .hud-v2-portrait-icon {
+  width: 58%;
+  height: 58%;
+  display: block;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-portrait-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: rgba(255, 255, 255, .88);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Noms + couronnes ---------- */
+
+/*
+  "Rectangle" derrière JOUEUR 1/IA signalé : aucun background/box-shadow/
+  backdrop-filter propre sur cet élément (vérifié via getComputedStyle,
+  aucun n'était défini) — la cause réelle était le troisième text-shadow
+  (blur 18px), assez large et opaque pour se lire comme une plaque sombre
+  derrière un texte gras en majuscules sur un ciel clair. Remplacé par une
+  ombre resserrée à deux couches, sans grand halo diffus.
+*/
+body[data-visual-mode="alternative"] .hud-v2-player-name {
+  max-width: 24vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(15px, 1.35vw, 19px);
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--hud-v2-text);
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 1px 5px rgba(0, 0, 0, .4);
+  opacity: .75;
+  transition: opacity 220ms ease, color 220ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-player-name-active {
+  opacity: 1;
+  color: var(--hud-v2-champagne);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-crowns {
+  flex: 0 0 auto;
+  font-size: clamp(15px, 1.35vw, 19px);
+  letter-spacing: .08em;
+  background: none;
+  box-shadow: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 1px 5px rgba(0, 0, 0, .4);
+}
+
+/* Couronne non validée : contour seul, nettement plus sombre pour bien se
+   distinguer des couronnes validées (♔ est un glyphe texte, contrairement
+   à 👑 qui est une image emoji non recolorable). */
+body[data-visual-mode="alternative"] .hud-v2-crown-empty {
+  color: rgba(150, 140, 120, .45);
+}
+
+/* ---------- Centre : Tour · ⚙ · Timer, ⚙ exactement sur l'axe central ---------- */
+
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  column-gap: 10px;
+  pointer-events: auto;
+  /* Largeur minimale symétrique de chaque côté du ⚙, même si Timer est
+     masqué (aucun timer actif) : la géométrie centrale ne saute pas. */
+  min-width: 220px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-center-col {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-center-left {
+  justify-content: flex-end;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-center-right {
+  justify-content: flex-start;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #onlineBadge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--hud-v2-text-dim);
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #onlineBadge.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #turnLabel {
+  font-size: clamp(15px, 1.3vw, 18px);
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--hud-v2-text);
+  background: none;
+  box-shadow: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 1px 5px rgba(0, 0, 0, .4);
+}
+
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-dot {
+  color: var(--hud-v2-text-dim);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-dot.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #turnTimer {
+  font-size: clamp(14px, 1.2vw, 17px);
+  font-weight: 700;
+  color: var(--hud-v2-text-dim);
+  font-variant-numeric: tabular-nums;
+  background: none;
+  box-shadow: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 1px 5px rgba(0, 0, 0, .4);
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #turnTimer.warning {
+  color: #f0c15b;
+}
+
+body[data-visual-mode="alternative"] #hudV2Top #turnTimer.danger {
+  color: #f07260;
+}
+
+/* ⚙ : identifiable clairement (petit fond verre sombre circulaire, bordure
+   fine, icône champagne) — pas un rond blanc invisible sur un ciel clair.
+   Zone cliquable ≥38px via un pseudo-élément qui l'étend légèrement au-delà
+   du rond visible, sans le grossir ni créer de grand cercle décoratif. */
+body[data-visual-mode="alternative"] .hud-v2-gear-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-gear-btn {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--hud-v2-glass-border);
+  background: var(--hud-v2-glass-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--hud-v2-champagne);
+  font-size: 15px;
+  line-height: 1;
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-gear-btn::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-gear-btn:hover,
+body[data-visual-mode="alternative"] .hud-v2-gear-btn[aria-expanded="true"] {
+  background: rgba(232, 201, 138, .16);
+  border-color: rgba(232, 201, 138, .5);
+  color: var(--hud-v2-text);
+}
+
+/* ================= Dock bas : aucune barre commune ================= */
+
+body[data-visual-mode="alternative"] #hudV2Dock {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(22px, 3vh, 30px);
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+  width: min(94vw, 980px);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-instruction {
+  font-size: clamp(14px, 1.1vw, 16px);
+  font-weight: 600;
+  color: var(--hud-v2-text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .75), 0 1px 6px rgba(0, 0, 0, .5);
+  min-height: 19px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-toast {
+  min-height: 0;
+  font-size: 11px;
+  color: var(--hud-v2-text);
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-toast:empty {
+  display: none;
+}
+
+/* Rangée d'alignement : conteneur invisible (aucun fond/bordure propre).
+   Undo et Fin du tour encadrent le cluster central sur le même axe
+   vertical, marges latérales symétriques (space-between + padding égal
+   des deux côtés du dock via la largeur commune min(94vw,980px)). */
+body[data-visual-mode="alternative"] .hud-v2-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-action-zone {
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-action-zone-left,
+body[data-visual-mode="alternative"] .hud-v2-action-zone-right {
+  flex: 1 1 0;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-action-zone-right {
+  justify-content: flex-end;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-action-zone-center {
+  position: relative;
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+/* Cluster DECK + ÎLE + DÉPLACER + POUSSER + MAGIE : un seul flex — quand
+   ÎLE disparaît (display:none après sa pose), le reste se recentre tout
+   seul, sans trou. */
+body[data-visual-mode="alternative"] .hud-v2-action-cluster {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(20px, 2.6vw, 34px);
+}
+
+/* ---------- Actions : icône dominante, quantité secondaire, nom discret ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-pill {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 60px;
+  min-height: 60px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--hud-v2-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 6px 10px;
+  transition: background 200ms ease, border-color 200ms ease, opacity 200ms ease, transform 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-icon {
+  font-size: clamp(26px, 2.2vw, 31px);
+  line-height: 1;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-count {
+  font-size: clamp(11px, 1vw, 13px);
+  font-weight: 800;
+  color: var(--hud-v2-champagne);
+  line-height: 1.2;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-word {
+  font-size: clamp(10px, .9vw, 12px);
+  font-weight: 600;
+  letter-spacing: .03em;
+  color: var(--hud-v2-text-dim);
+  line-height: 1.2;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-island .hud-v2-pill-word {
+  color: var(--hud-v2-champagne);
+}
+
+/* Hiérarchie demandée : repos = quasi invisible, hover = léger fond verre +
+   décollement ~2px, actif = filet/halo champagne localisé, impossible =
+   30-35% opacité. Jamais de glow généralisé. */
+body[data-visual-mode="alternative"] .hud-v2-pill:disabled {
+  cursor: not-allowed;
+  opacity: .32;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill:not(:disabled):hover {
+  background: rgba(20, 24, 32, .38);
+  border-color: rgba(255, 255, 255, .12);
+  transform: translateY(-2px);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-active {
+  background: rgba(232, 201, 138, .16);
+  border-color: rgba(232, 201, 138, .48);
+  box-shadow: 0 0 8px rgba(232, 201, 138, .2);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-active .hud-v2-pill-word {
+  color: var(--hud-v2-champagne);
+}
+
+body[data-visual-mode="alternative"] #hudV2IslandStatus.hidden {
+  display: none;
+}
+
+/* ---------- Undo : seul en bas à gauche, icône seule ---------- */
+
+/* !important : index.html porte "#gameScreen button{font-size:11px!important}"
+   (bloc hérité), qui sinon gagne malgré la specificite plus élevée ici. */
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn {
+  width: 54px;
+  height: 54px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 0 !important;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--hud-v2-text);
+  transition: background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn::before {
+  content: "↶";
+  font-size: 21px;
+}
+
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn:disabled {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn:not(:disabled):hover {
+  background: rgba(20, 24, 32, .38);
+  border-color: rgba(255, 255, 255, .14);
+}
+
+/* ---------- Fin du tour : bas droite, seul élément du dock avec un vrai
+   petit fond permanent (demandé explicitement) ---------- */
+
+body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn {
+  min-height: 54px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  font-size: clamp(12px, 1vw, 13.5px);
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, rgba(232, 201, 138, .96), rgba(198, 160, 92, .96));
+  color: #1c1710;
+  border: 1px solid rgba(232, 201, 138, .6);
+  transition: filter 200ms ease, opacity 200ms ease, background 200ms ease, border-color 200ms ease;
+}
+
+/* Désactivé = très discret. */
+body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn:disabled {
+  background: rgba(20, 24, 32, .26);
+  color: var(--hud-v2-text-dim);
+  border-color: rgba(255, 255, 255, .08);
+  opacity: .5;
+}
+
+body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+/* ---------- Deck : dans le cluster, plus secondaire que les actions ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-hand-pill {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 60px;
+  min-height: 60px;
+  color: var(--hud-v2-text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 6px 10px;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+/* Deck : même alignement/hauteur que les actions, mais icône un peu plus
+   calme et jamais de halo actif (demandé explicitement — reste secondaire). */
+body[data-visual-mode="alternative"] .hud-v2-hand-pill .hud-v2-pill-icon {
+  font-size: clamp(22px, 1.9vw, 26px);
+  opacity: .8;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-pill .hud-v2-pill-word {
+  font-size: clamp(10px, .9vw, 12px);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-pill:hover {
+  background: rgba(20, 24, 32, .3);
+  border-color: rgba(255, 255, 255, .1);
+  transform: translateY(-2px);
+}
+
+/* ---------- Mini-fiche gardien : usage réduit (uniquement si utile) ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-slot-unitcard {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  border-radius: 999px;
+  background: rgba(20, 24, 32, .34);
+  border: 1px solid rgba(255, 255, 255, .1);
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  color: var(--hud-v2-text-dim);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-slot-unitcard.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-unit-icon {
+  font-size: 15px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-unit-crown {
+  font-size: 12px;
+}
+
+/* ---------- Rangée contextuelle Magie ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-magic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  background: var(--hud-v2-glass-bg);
+  border: 1px solid var(--hud-v2-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
+  pointer-events: auto;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-row.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: var(--hud-v2-text);
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .12);
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-btn:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-confirm {
+  color: #1c1710;
+  background: linear-gradient(180deg, rgba(232, 201, 138, .92), rgba(198, 160, 92, .92));
+  border-color: rgba(232, 201, 138, .5);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-magic-cancel {
+  color: #f0a898;
+  border-color: rgba(240, 168, 152, .28);
+}
+
+/* ---------- Drawer ÎLE : une seule rangée horizontale, tuiles flottantes ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-island-drawer {
+  pointer-events: auto;
+  display: flex;
+  justify-content: center;
+  max-width: 94vw;
+  /* Aucun panneau opaque : pas de fond/bordure/ombre propres ici — chaque
+     tuile (.island-choice, logique/preview inchangées) porte son propre
+     léger habillage via base.css, déjà conçu comme une carte individuelle. */
+  background: transparent;
+  border: 0;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-island-drawer.hidden {
+  display: none;
+}
+
+/* !important : base.css force ".island-selector{display:grid;grid-template-
+   columns:...}" (layout de l'ancien panneau ÎLES, 2 colonnes) — sans ça le
+   drawer restait en grille verticale au lieu d'une rangée horizontale. */
+body[data-visual-mode="alternative"] .hud-v2-island-drawer #islandSelector {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  gap: 8px;
+  justify-content: center;
+  padding: 4px 2px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-drawer-rotate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, .12);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-rotate-btn {
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--hud-v2-text);
+  background: rgba(20, 24, 32, .34);
+  border: 1px solid rgba(255, 255, 255, .1);
+  transition: background 180ms ease, opacity 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-rotate-btn:disabled {
+  opacity: .35;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-rotate-btn:not(:disabled):hover {
+  background: rgba(20, 24, 32, .5);
+}
+
+/* ---------- Popovers (menu ⚙, Deck) ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-popover {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  min-width: 120px;
+  border-radius: 14px;
+  background: var(--hud-v2-glass-bg);
+  border: 1px solid var(--hud-v2-glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .32);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-align: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: var(--hud-v2-text);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .1);
+  transition: background 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  min-width: 130px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--hud-v2-text-dim);
+  padding: 3px 6px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-row b {
+  color: var(--hud-v2-text);
+  font-size: 12px;
+}
+
+/* ---------- Menu ⚙ : CAMÉRA + SON + RÈGLES + NOUVELLE PARTIE + INFOS TECHNIQUES ---------- */
+/* Centré sous le bouton (symétrie), pas sous tout #hudV2Top. */
+body[data-visual-mode="alternative"] .hud-v2-gear-popover {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 14px;
+  min-width: 170px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--hud-v2-text-dim);
+  padding: 2px 6px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-camera-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, .1);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn-wide {
+  text-align: left;
+  border-radius: 10px;
+  padding: 7px 10px;
+}
+
+/* Infos techniques : repliée par défaut, texte réel de .kaykit-status /
+   .v69-quality-pill (reparentés par renderHudV2(), voir js/game/ui.js).
+   Ces deux éléments arrivent avec leur propre position:fixed/absolute et
+   des décalages !important (bottom/right/z-index) hérités de leur usage
+   d'origine en overlay flottant sur le plateau — remis en flux normal ici. */
+body[data-visual-mode="alternative"] .hud-v2-tech-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  margin-top: 2px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .18);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-tech-info.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-tech-info .kaykit-status,
+body[data-visual-mode="alternative"] .hud-v2-tech-info .v69-quality-pill {
+  position: static !important;
+  inset: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: auto !important;
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 4px 2px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  color: var(--hud-v2-text-dim) !important;
+  font: 600 9.5px/1.4 inherit !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+  white-space: normal !important;
+  text-shadow: none !important;
+}
+
+/* ---------- Responsive ---------- */
+/* Même architecture à toutes les tailles — axe central, portraits miroir,
+   Tour/⚙/Timer, Undo/actions/Fin du tour : on rétrécit progressivement,
+   jamais de HUD mobile séparé. La plupart des tailles (noms, couronnes,
+   Tour/Timer, icônes d'action, gaps) utilisent déjà clamp() pour suivre en
+   continu la largeur d'écran — priorité demandée (réduire les gaps avant
+   les icônes) déjà couverte par ces clamp(). Les media queries ci-dessous
+   ne couvrent que ce que clamp() ne peut pas faire seul : portraits sous
+   leur plancher, disparition des labels, abréviation Fin du tour. */
+
+@media (max-width: 720px) {
+  body[data-visual-mode="alternative"] .hud-v2-portrait {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Écran étroit : le nom (label) de chaque pilule disparaît (icône + ×N
+   restent). Texte réel (accessible/aria-label) inchangé — seul l'affichage
+   visuel se réduit. */
+@media (max-width: 560px) {
+  body[data-visual-mode="alternative"] #hudV2Dock {
+    width: 96vw;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-player-name {
+    max-width: 30vw;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-action-cluster {
+    flex-wrap: wrap;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-pill,
+  body[data-visual-mode="alternative"] .hud-v2-hand-pill {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px 6px;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-pill-word {
+    display: none;
+  }
+
+  /* !important + prefixe #hudV2Dock nécessaires : index.html porte
+     "#endTurnBtn{font-size:10px!important}" (bloc hérité). */
+  body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn {
+    font-size: 0 !important;
+    min-height: 46px;
+    padding: 0 14px;
+  }
+
+  body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn::before {
+    content: "FIN";
+    font-size: 10px;
+    font-weight: 800;
+  }
+}
+
+/* Hauteur réduite : dock un peu plus compact, jamais de chevauchement avec
+   le plateau. */
+@media (max-height: 480px) {
+  body[data-visual-mode="alternative"] #hudV2Dock {
+    bottom: 10px;
+    gap: 4px;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-instruction {
+    min-height: 0;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-vignette-bottom {
+    height: 80px;
+  }
+}

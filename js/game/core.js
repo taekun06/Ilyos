@@ -412,6 +412,17 @@
         els.toast.classList.add("show");
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => els.toast.classList.remove("show"), 1900);
+
+        // HUD V2 (Prompt 2/3) : miroir dans le slot toast du nouveau dock.
+        // showToast() est deja le point d'entree unique pour les evenements
+        // notables (couronne, erreur...) — jamais pour les instructions de
+        // tour normales, qui passent par turnContextInfo()/renderHudV2().
+        const hudToast = document.getElementById("hudV2Toast");
+        if (hudToast) {
+          hudToast.textContent = message;
+          clearTimeout(showToast.hudTimer);
+          showToast.hudTimer = setTimeout(() => { hudToast.textContent = ""; }, 2400);
+        }
       }
 
 
@@ -705,7 +716,7 @@
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          undoSnapshot: null,
+          undoHistory: [],
           magicHoverIslandId: null,
           magicHoverPivot: null,
           actionHoverCell: null,
@@ -785,7 +796,7 @@
         restored.inputLocked = false;
         restored.aiThinking = false;
         restored.timerExpiring = false;
-        restored.undoSnapshot = null;
+        restored.undoHistory = [];
         restored.magicHoverIslandId = null;
         restored.magicHoverPivot = null;
         restored.actionHoverCell = null;
@@ -1205,9 +1216,19 @@
         if (!artifact || !char) return false;
         const alreadyCarried = artifactCarriedBy(char.id);
         if (alreadyCarried && alreadyCarried.id !== artifact.id) return false;
+        // Provenance retenue AVANT de changer de porteur : elle sert à animer le
+        // trajet de la couronne (sol -> gardien, ou gardien -> gardien).
+        const previousCarrierId = artifact.carrierId;
+        const fromR = artifact.r;
+        const fromC = artifact.c;
         artifact.active = true;
         artifact.carrierId = char.id;
         activateSecondCrownIfNeeded();
+        if (previousCarrierId != null && previousCarrierId !== char.id) {
+          const previous = characterById(previousCarrierId);
+          if (previous) playCrownFlight(previous.r, previous.c, char.r, char.c, { arc: .55, duration: 340 });
+        }
+        playCrownPickup(char.id, Number.isFinite(fromR) ? fromR : char.r, Number.isFinite(fromC) ? fromC : char.c);
         return true;
       }
 
@@ -1501,23 +1522,6 @@
         }
       }
 
-      function startDirectMagic(r, c) {
-        if (availableActionCount("MAGIC") < 1) {
-          showToast("Aucune action de magie disponible.");
-          return;
-        }
-        state.phase = "ACTION";
-        state.selectedActionType = "MAGIC";
-        state.selectedActionCount = 1;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        clearSmartHover();
-        clearMagicPreview();
-        handleMagicClick(r, c);
-        playSfx("card");
-      }
-
-
       function setOnlineSetupStatus(message, type = "") {
         const node = document.getElementById("onlineSetupStatus");
         if (!node) return;
@@ -1579,7 +1583,7 @@
           inputLocked: false,
           aiThinking: false,
           timerExpiring: false,
-          undoSnapshot: null,
+          undoHistory: [],
           magicHoverIslandId: null,
           magicHoverPivot: null,
           actionHoverCell: null,
@@ -1696,7 +1700,7 @@
         state.aiThinking = false;
         state.timerExpiring = false;
         state.fxCells = [];
-        state.undoSnapshot = null;
+        state.undoHistory = [];
         state.networkRevision = revision || incoming.networkRevision || 0;
         networkRevision = state.networkRevision;
         // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
@@ -2241,7 +2245,7 @@
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
-          undoSnapshot: null,
+          undoHistory: [],
           winner: null
         };
 
@@ -2433,7 +2437,7 @@
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
-          undoSnapshot: null,
+          undoHistory: [],
           winner: null
         };
 
@@ -2813,6 +2817,8 @@
           cells: cloneCells(placement.cells)
         };
         state.islands.push(island);
+        // Même matérialisation pour les poses de l'IA que pour celles du joueur.
+        playIslandDrop(island.id);
         state.islandPlacedThisTurn = true;
 
         let spawn = null;

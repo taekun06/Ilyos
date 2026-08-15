@@ -204,7 +204,7 @@
 
         saveUndoSnapshot();
         if (!giveArtifactToCharacter(option.artifact, option.char)) {
-          state.undoSnapshot = null;
+          discardLastUndoSnapshot();
           return false;
         }
 
@@ -287,7 +287,7 @@
 
         if (option.direct) {
           if (!giveArtifactToCharacter(liveArtifact, option.ally)) {
-            state.undoSnapshot = null;
+            discardLastUndoSnapshot();
             return false;
           }
 
@@ -302,7 +302,7 @@
         }
 
         if (characterAt(option.dropR, option.dropC) || looseArtifactAt(option.dropR, option.dropC)) {
-          state.undoSnapshot = null;
+          discardLastUndoSnapshot();
           return false;
         }
 
@@ -316,7 +316,7 @@
 
         if (token !== aiRunToken || !state) return false;
         if (!giveArtifactToCharacter(liveArtifact, option.ally)) {
-          state.undoSnapshot = null;
+          discardLastUndoSnapshot();
           return false;
         }
 
