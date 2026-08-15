@@ -14,10 +14,25 @@
         requestAnimationFrame(() => toast.classList.add('show'));
         hideTimer = setTimeout(() => toast.classList.remove('show'), reduced() ? 500 : duration);
       }
+      // V78 (passe fluidité) : Web Animations API au lieu de classList.toggle +
+      // `void offsetWidth` — chaque appel à .animate() démarre une animation
+      // fraîche nativement, sans lecture de layout forcée pour "relancer" une
+      // classe CSS. Mêmes keyframes/durées/easing que @keyframes
+      // v67MoveImpact/PushImpact/MagicImpact/CrownImpact (index.html) :
+      // aucun changement perceptible.
+      const V67_EASE = 'cubic-bezier(.2,.75,.2,1)';
+      const IMPACT_ANIMS = {
+        move: { frames: [{ transform: 'translateY(0)' }, { transform: 'translateY(-2px)', offset: .45 }, { transform: 'translateY(0)' }], duration: 420 },
+        push: { frames: [{ transform: 'translateX(0)' }, { transform: 'translateX(2px)', offset: .3 }, { transform: 'translateX(-1px)', offset: .55 }, { transform: 'translateX(0)' }], duration: 520 },
+        magic: { frames: [{ filter: 'none' }, { filter: 'saturate(1.18) brightness(1.06)', offset: .4 }, { filter: 'none' }], duration: 700 },
+        crown: { frames: [{ filter: 'none' }, { filter: 'brightness(1.10) saturate(1.12)', offset: .42 }, { filter: 'none' }], duration: 850 }
+      };
       function impact(type) {
-        const game = document.getElementById('gameScreen'); if (!game) return;
-        const cls = 'v67-impact-' + type; game.classList.remove(cls); void game.offsetWidth; game.classList.add(cls);
-        setTimeout(() => game.classList.remove(cls), type === 'crown' ? 900 : 720);
+        const cfg = IMPACT_ANIMS[type]; if (!cfg) return;
+        document.querySelectorAll('#gameScreen .board-wrap, #gameScreen .board-shell').forEach(el => {
+          el.__ilyosImpactAnim?.cancel();
+          el.__ilyosImpactAnim = el.animate(cfg.frames, { duration: cfg.duration, easing: V67_EASE, fill: 'none' });
+        });
       }
       function contextualHaptic(type) {
         if (!navigator.vibrate || reduced()) return;
@@ -38,21 +53,41 @@
         };
         playSfx.__v67 = true;
       }
+      // Même conversion WAAPI que impact() ci-dessus, pour @keyframes
+      // v67TurnWash (opacity 0→1→0 à 0%/35%/100%, transform -28%→28%, 760ms
+      // ease-out) — offsets identiques, transform interpolé en continu entre
+      // les deux seuls points où il est défini, exactement comme en CSS.
+      function washTurn() {
+        ensureLayer();
+        wash.__ilyosAnim?.cancel();
+        wash.__ilyosAnim = wash.animate(
+          [
+            { opacity: 0, transform: 'translateX(-28%)', offset: 0 },
+            { opacity: 1, offset: .35 },
+            { opacity: 0, transform: 'translateX(28%)', offset: 1 }
+          ],
+          { duration: 760, easing: 'ease-out', fill: 'none' }
+        );
+      }
       function monitorTurn() {
         const player = document.querySelector('#gameScreen .active-player-name,#activePlayerName,.active-name')?.textContent?.trim() || '';
         const phase = document.getElementById('phaseLabel')?.textContent?.trim() || '';
         if (player && lastPlayer && player !== lastPlayer) {
-          ensureLayer(); wash.classList.remove('play'); void wash.offsetWidth; wash.classList.add('play');
+          washTurn();
           announce(`Au tour de ${player}`, phase || 'Préparez votre stratégie', 900); contextualHaptic('turn');
         }
         if (phase && phase !== lastPhase && /couronne|point|victoire/i.test(phase)) announce(phase, '', 1050);
         lastPlayer = player || lastPlayer; lastPhase = phase || lastPhase;
       }
+      // V78 (passe fluidité) : js/complete-polish.js est désormais l'autorité
+      // UNIQUE pour qualityMode/DPR/shadow maps (voir applyQuality()) — ce
+      // fichier ne recalcule plus son propre setPixelRatio() en concurrence
+      // (c'était appelé indépendamment à chaque resize, écrasant parfois la
+      // valeur que le contrôleur de qualité venait de poser). Seule la
+      // configuration colorimétrique, qui n'a pas d'équivalent ailleurs, est
+      // conservée — appliquée une fois, pas à chaque resize.
       function tuneRenderer() {
         const r = window.kaykit3D?.renderer; if (!r) return;
-        const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 4;
-        const maxRatio = (cores >= 8 && mem >= 8) ? 1.5 : (cores >= 4 ? 1.25 : 1);
-        r.setPixelRatio(Math.min(devicePixelRatio || 1, maxRatio));
         if ('outputColorSpace' in r && window.THREE?.SRGBColorSpace) r.outputColorSpace = THREE.SRGBColorSpace;
       }
       function pauseInvisibleMedia() {
@@ -65,19 +100,16 @@
         ensureLayer(); wrapSfx(); tuneRenderer(); pauseInvisibleMedia();
         document.title = 'ILYOS V76 — Animations';
         const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
-        const game = document.getElementById('gameScreen');
-        let immersionRefreshFrame = 0;
-        const scheduleImmersionRefresh = () => {
-          if (immersionRefreshFrame) return;
-          immersionRefreshFrame = requestAnimationFrame(() => {
-            immersionRefreshFrame = 0;
-            wrapSfx();
-            monitorTurn();
-          });
-        };
-        if (game) new MutationObserver(scheduleImmersionRefresh).observe(game, { subtree: true, childList: true, characterData: true });
-        window.addEventListener('resize', () => requestAnimationFrame(tuneRenderer), { passive: true });
-        window.ILYOS_IMMERSION = { announce, impact, version: VERSION };
+        // V78 (passe fluidité) : plus de MutationObserver sur tout #gameScreen.
+        // wrapSfx()/monitorTurn() sont désormais appelés explicitement depuis
+        // le cycle de rendu déjà existant (renderAll(), js/game/ui.js) via ce
+        // hook — monitorTurn() garde sa propre garde interne (joueur/phase
+        // inchangés ⇒ rien ne se passe). Aucun polling ajouté.
+        window.ILYOS_IMMERSION = { announce, impact, monitorTurn, version: VERSION };
+        // Rattrapage borné (pas un polling continu) : Three.js/KayKit se
+        // charge de façon asynchrone, le renderer peut ne pas encore exister
+        // au premier appel de tuneRenderer() ci-dessus.
+        [400, 1200, 3000].forEach(delay => setTimeout(tuneRenderer, delay));
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
     })();

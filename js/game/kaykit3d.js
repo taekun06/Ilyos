@@ -20,8 +20,15 @@
         const syncDurations = [];
         const frameDeltas = [];
         const longTasks = [];
+        const boardRenderDurations = [];
         let lastFrameAt = 0;
         let syncsSinceReset = 0;
+        // V78 (passe fluidité) : compteurs légers, alimentés depuis les
+        // points d'appel déjà existants (renderBoard/ensureBoardCells) —
+        // aucune boucle de mesure supplémentaire.
+        let boardFullRebuilds = 0;
+        let boardCellsTouched = 0;
+        let forcedLayoutsInPath3D = 0;
         const MAX_SAMPLES = 400;
 
         let longTaskObserver = null;
@@ -63,10 +70,27 @@
             lastFrameAt = now;
           },
           resetActionSyncCount() { syncsSinceReset = 0; },
-          clear() { syncDurations.length = 0; frameDeltas.length = 0; longTasks.length = 0; syncsSinceReset = 0; lastFrameAt = 0; },
+          // V78 : appelés depuis renderBoard()/ensureBoardCells() (js/game/ui.js)
+          // — un seul point d'appel par évènement réel, pas de nouvelle boucle.
+          recordBoardRebuild() { boardFullRebuilds++; },
+          recordBoardCellsTouched(count) { boardCellsTouched += count; },
+          recordForcedLayout3D() { forcedLayoutsInPath3D++; },
+          recordBoardRender(ms) {
+            if (!this.enabled) return;
+            boardRenderDurations.push(ms);
+            if (boardRenderDurations.length > MAX_SAMPLES) boardRenderDurations.shift();
+          },
+          clear() {
+            syncDurations.length = 0; frameDeltas.length = 0; longTasks.length = 0;
+            boardRenderDurations.length = 0;
+            syncsSinceReset = 0; lastFrameAt = 0;
+            boardFullRebuilds = 0; boardCellsTouched = 0; forcedLayoutsInPath3D = 0;
+          },
           report() {
             const r = window.kaykit3D?.renderer;
             const sortedSync = [...syncDurations].sort((a, b) => a - b);
+            const sortedFrames = [...frameDeltas].sort((a, b) => a - b);
+            const sortedBoard = [...boardRenderDurations].sort((a, b) => a - b);
             const meanFrameMs = avg(frameDeltas);
             return {
               sync: {
@@ -79,11 +103,21 @@
               // jamais dépasser ce que le moteur affiche vraiment à l'écran.
               fps: meanFrameMs ? +(1000 / meanFrameMs).toFixed(1) : 0,
               frameTimeMs: +meanFrameMs.toFixed(2),
+              frameTimeP95Ms: +percentile(sortedFrames, .95).toFixed(2),
+              frameTimeMaxMs: sortedFrames.length ? +sortedFrames[sortedFrames.length - 1].toFixed(2) : 0,
               render: r ? { calls: r.info.render.calls, triangles: r.info.render.triangles } : null,
               memory: r ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures } : null,
               syncsSinceReset,
               longTasksCount: longTasks.length,
-              longTasksRecent: longTasks.slice(-10)
+              longTasksRecent: longTasks.slice(-10),
+              board: {
+                fullRebuilds: boardFullRebuilds,
+                cellsTouched: boardCellsTouched,
+                forcedLayoutsInPath3D,
+                avgMs: +avg(boardRenderDurations).toFixed(2),
+                p95Ms: +percentile(sortedBoard, .95).toFixed(2),
+                maxMs: sortedBoard.length ? +sortedBoard[sortedBoard.length - 1].toFixed(2) : 0
+              }
             };
           }
         };
@@ -623,6 +657,9 @@
         // exposition, son `renderer()` renvoyait null et TOUT son système de
         // qualité adaptative restait sans effet.
         window.kaykit3D = kaykit3D;
+        // V78 : point d'entrée resize pour js/complete-polish.js (script
+        // séparé, ne partage pas cette IIFE) — voir resizeKayKitRenderer().
+        kaykit3D.resize = resizeKayKitRenderer;
 
         // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
         // enchaîne start→change→end pour la molette exactement comme pour un
@@ -1974,8 +2011,19 @@
        * `pendingActionAnimations` — encore lu ailleurs pour savoir si une
        * animation est en cours (caméra, cadence de rendu).
        */
-      function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null) {
-        if (!kaykit3D || characterId === null || characterId === undefined) return;
+      // V78 (passe fluidité) : onComplete devient l'autorité de fin d'action
+      // visuelle pour le chemin 3D — remplace l'ancien animateToken() HTML
+      // (getBoundingClientRect/.moving-token/element.animate) pour MOVE/PUSH
+      // en mode alternative (voir js/game/ui.js). Le délai avant l'appel de
+      // onComplete est fourni par l'appelant via `duration` : cette fonction
+      // ne réinvente aucun calcul de durée, elle réutilise le même minuteur
+      // (setTimeout(duration + 80)) qui pilotait déjà le nettoyage interne de
+      // pendingActionAnimations, en y accrochant simplement ce callback.
+      function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null, onComplete = null) {
+        if (!kaykit3D || characterId === null || characterId === undefined) {
+          if (typeof onComplete === "function") onComplete();
+          return;
+        }
         const id = String(characterId);
         const character = state?.characters?.find(item => String(item.id) === id);
         if (character && target && Number.isFinite(target.r) && Number.isFinite(target.c)) {
@@ -2036,7 +2084,7 @@
 
         scheduleKayKitSync();
         setTimeout(() => {
-          if (!kaykit3D) return;
+          if (!kaykit3D) { if (typeof onComplete === "function") onComplete(); return; }
           const pending = kaykit3D.pendingActionAnimations.get(id);
           if (
             pending &&
@@ -2047,6 +2095,7 @@
             kaykit3D._hitStagger = 0;
             scheduleKayKitSync();
           }
+          if (typeof onComplete === "function") onComplete();
         }, duration + 80);
       }
 
@@ -2778,6 +2827,18 @@
 
       function toggleKayKitCamera() {
         snapKayKitView("front");
+      }
+
+      // V78 (passe fluidité) : point d'entrée léger pour les AUTRES scripts
+      // (js/complete-polish.js, chargé séparément, hors de cette IIFE) — un
+      // changement de qualité/DPR ne doit JAMAIS refitter la caméra ni
+      // simuler un vrai resize de fenêtre. refitCamera:false garantit que
+      // seuls renderer.setSize()/camera.aspect sont mis à jour si besoin ;
+      // resizeKayKit3D() lui-même ne refit déjà QUE si forceFit ou si l'aspect
+      // a réellement changé (voir plus bas), donc refitCamera=false ici NE
+      // PASSE PAS forceFit=true — la position caméra reste intouchée.
+      function resizeKayKitRenderer({ refitCamera = false } = {}) {
+        resizeKayKit3D(refitCamera);
       }
 
       function resizeKayKit3D(forceFit = false) {
@@ -5966,46 +6027,32 @@
         }
       }
 
-      let kaykitLastVisualFrame = 0;
-      let kaykitFrameAccumulator = 0;
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
-        if (document.hidden) {
+        // Pause réelle hors jeu (V78 — passe fluidité) : rien de coûteux ne
+        // s'exécute quand l'onglet est masqué, quand #gameScreen n'est pas
+        // affiché (menu, écran de configuration), ou hors du mode visuel 3D —
+        // mixers, séquences, pulses, dérive du ciel et caméra restent tous
+        // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
+        // delta géant n'arrive d'un coup au retour. La boucle rAF continue
+        // d'être programmée, mais chaque tick ne coûte alors presque rien.
+        const gameHidden = document.body.dataset.visualMode !== "alternative"
+          || !els.gameScreen
+          || els.gameScreen.classList.contains("hidden");
+        if (document.hidden || gameHidden) {
           kaykit3D.clock.getDelta();
           return;
         }
-        const activeVisualMotion = !!(kaykit3D.activeMovementTweens?.size || kaykit3D.pendingActionAnimations?.size || kaykit3D.cameraTween || kaykit3D.userInteracting);
-        // Ce garde-fou s'appelait "adaptatif" mais ne l'était pas : la valeur
-        // était réécrite à 16.7 à chaque image, quel que soit l'appareil. Pire,
-        // un seuil fixe comparé à des timestamps rAF légèrement irréguliers
-        // provoque lui-même des à-coups — deux images arrivant à 15.9 ms d'écart
-        // en sautent une, la suivante arrive ~33 ms plus tard : un miroitement
-        // que rien ne justifiait, même sur un appareil capable de tenir 60 fps.
-        // Le rendu suit désormais directement la cadence native de rAF (déjà
-        // calée sur l'écran, bien plus précise qu'une comparaison manuelle) et
-        // ne se limite QUE si le mode qualité est "performance" ET qu'aucune
-        // animation n'est en cours — jamais pendant un déplacement, une
-        // poussée ou un glissé de caméra, où le moindre ralentissement se
-        // verrait immédiatement.
-        //
-        // Même en mode "performance", un seuil fixe comparé à un timestamp rAF
-        // jitter (frameTime - lastFrame < 33) reste biaisé : une image arrivant
-        // à 32.9 ms est rejetée, son "reste" de temps perdu — ce qui, cumulé,
-        // fait tomber la cadence réelle sous la cible (~28.8 i/s mesurés au
-        // lieu de ~30 i/s). L'accumulateur ci-dessous conserve ce reste d'une
-        // image à l'autre au lieu de le jeter.
-        const throttle = kaykit3D.qualityMode === "performance" && !activeVisualMotion;
-        const elapsedSinceTick = kaykitLastVisualFrame ? Math.min(250, frameTime - kaykitLastVisualFrame) : 0;
-        kaykitLastVisualFrame = frameTime;
-        if (throttle) {
-          kaykitFrameAccumulator += elapsedSinceTick;
-          if (kaykitFrameAccumulator < 32) return;
-          kaykitFrameAccumulator -= 33;
-          if (kaykitFrameAccumulator < 0 || kaykitFrameAccumulator > 33) kaykitFrameAccumulator = 0;
-        } else {
-          kaykitFrameAccumulator = 0;
-        }
+        // L'ancien throttle "performance" (~30 i/s dès qu'aucune animation
+        // n'était en cours) a été retiré : il plafonnait le rendu même sans
+        // aucune contrainte matérielle réelle, provoquant lui-même du
+        // miroitement (seuil fixe comparé à un timestamp rAF jitter). Le
+        // rendu suit désormais directement requestAnimationFrame, à pleine
+        // cadence quel que soit le mode qualité. Seules les animations Idle
+        // (gardiens au repos) restent allégées à une image sur deux en mode
+        // performance — logique déjà portée par updateKayKitCharacters(),
+        // indépendante de cette boucle.
         const delta = Math.min(.05, kaykit3D.clock.getDelta());
         const elapsed = kaykit3D.clock.elapsedTime;
         if (kaykit3D.hoverMarker?.visible) {
@@ -6067,13 +6114,14 @@
         // persistant (visual.move, voir updateKayKitCharacters) : il survit aux
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
-        if (document.body.dataset.visualMode === "alternative" && !els.gameScreen.classList.contains("hidden")) {
-          // Mesure du FPS RÉEL : window.ILYOS_PERF.recordFrame() n'est appelé
-          // qu'ici, au moment ou renderer.render() est effectivement invoqué —
-          // pas via une boucle requestAnimationFrame indépendante qui tournerait
-          // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
-          // par js/complete-polish.js alors que le rendu est plafonné ~60).
-          if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
-          kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
-        }
+        // gameHidden garantit déjà ici visualMode==="alternative" et
+        // #gameScreen visible (voir le retour anticipé en tête de fonction) :
+        // plus besoin de revérifier avant de rendre.
+        // Mesure du FPS RÉEL : window.ILYOS_PERF.recordFrame() n'est appelé
+        // qu'ici, au moment ou renderer.render() est effectivement invoqué —
+        // pas via une boucle requestAnimationFrame indépendante qui tournerait
+        // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
+        // par js/complete-polish.js alors que le rendu est plafonné ~60).
+        if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
+        kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
       }

@@ -16,6 +16,14 @@
       function compactPanels() {
         document.querySelectorAll('.left-panel,.right-panel').forEach(p => { p.style.removeProperty('height'); });
       }
-      function boot() { apply(); compactPanels(); setTimeout(apply, 500); setTimeout(apply, 1600); let resizeFrame = 0; window.addEventListener('resize', () => { if (resizeFrame) return; resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; apply() }) }, { passive: true }); window.ILYOS_V70 = { version: VERSION, refit: apply }; }
+      // V78 (passe fluidité) : plus de setTimeout(apply,500)/(apply,1600) —
+      // un fit initial unique (apply() ci-dessous, synchrone au boot) suffit ;
+      // un second/troisième auto-fit ne doit plus pouvoir démarrer une fois
+      // le joueur déjà dans la partie. Le vrai refit caméra sur changement de
+      // taille réel est déjà porté par kaykit3D.resizeObserver (ResizeObserver
+      // sur .board-wrap, voir resizeKayKit3D()/js/game/kaykit3d.js), qui ne
+      // refit QUE si l'aspect a réellement changé — jamais sur un simple
+      // changement de qualité/DPR (voir applyQuality(), js/complete-polish.js).
+      function boot() { apply(); compactPanels(); let resizeFrame = 0; window.addEventListener('resize', () => { if (resizeFrame) return; resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; apply() }) }, { passive: true }); window.ILYOS_V70 = { version: VERSION, refit: apply }; }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
     })();

@@ -156,7 +156,15 @@
       }
       function updateVisualState() {
         const game = nativeSelect('gameScreen'); const phase = nativeSelect('phaseLabel')?.textContent?.toLowerCase() || ''; if (!game) return;
-        const kind = phase.includes('pouss') ? 'push' : phase.includes('mag') || phase.includes('rotation') ? 'magic' : phase.includes('déplac') || phase.includes('gardien') ? 'move' : phase.includes('île') || phase.includes('invocation') ? 'build' : 'neutral'; game.dataset.context = kind;
+        const kind = phase.includes('pouss') ? 'push' : phase.includes('mag') || phase.includes('rotation') ? 'magic' : phase.includes('déplac') || phase.includes('gardien') ? 'move' : phase.includes('île') || phase.includes('invocation') ? 'build' : 'neutral';
+        // V78 (passe fluidité) : garde — rien à refaire si le contexte n'a pas
+        // changé. Remplace l'ancien MutationObserver sur tout #gameScreen
+        // (subtree+childList+characterData+attributes) : cette fonction est
+        // désormais appelée explicitement depuis le cycle de rendu existant
+        // (voir renderAll(), js/game/ui.js), potentiellement à chaque rendu —
+        // la garde évite tout travail DOM quand rien n'a changé.
+        if (game.dataset.context === kind) return;
+        game.dataset.context = kind;
         document.querySelectorAll('.portrait').forEach(node => node.setAttribute('aria-label', node.id === 'activePortrait' ? 'Gardien du joueur actif' : 'Gardien'));
       }
       function addGameBuildBadge() {
@@ -166,7 +174,11 @@
         window.ILYOS_BUILD = BUILD; document.title = 'ILYOS V76 — Animations';
         const badge = nativeSelect('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         buildSetup(); buildSetupCards(); improveRules(); addGameBuildBadge(); updateVisualState();
-        const game = nativeSelect('gameScreen'); if (game) new MutationObserver(updateVisualState).observe(game, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+        // V78 : plus de MutationObserver global sur #gameScreen — updateVisualState()
+        // est appelée explicitement depuis renderAll() (js/game/ui.js) via ce hook,
+        // avec sa propre garde interne (voir plus haut) pour ne rien faire si le
+        // contexte n'a pas changé. Aucun polling ajouté.
+        window.ILYOS_ARCHIPELAGO = { updateVisualState };
         document.addEventListener('keydown', event => { if (event.key === 'Escape') { nativeSelect('rulesModal')?.classList.add('hidden'); nativeSelect('soundMenu')?.classList.add('hidden') } });
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();

@@ -147,8 +147,15 @@
         const syncDurations = [];
         const frameDeltas = [];
         const longTasks = [];
+        const boardRenderDurations = [];
         let lastFrameAt = 0;
         let syncsSinceReset = 0;
+        // V78 (passe fluidité) : compteurs légers, alimentés depuis les
+        // points d'appel déjà existants (renderBoard/ensureBoardCells) —
+        // aucune boucle de mesure supplémentaire.
+        let boardFullRebuilds = 0;
+        let boardCellsTouched = 0;
+        let forcedLayoutsInPath3D = 0;
         const MAX_SAMPLES = 400;
 
         let longTaskObserver = null;
@@ -190,10 +197,27 @@
             lastFrameAt = now;
           },
           resetActionSyncCount() { syncsSinceReset = 0; },
-          clear() { syncDurations.length = 0; frameDeltas.length = 0; longTasks.length = 0; syncsSinceReset = 0; lastFrameAt = 0; },
+          // V78 : appelés depuis renderBoard()/ensureBoardCells() (js/game/ui.js)
+          // — un seul point d'appel par évènement réel, pas de nouvelle boucle.
+          recordBoardRebuild() { boardFullRebuilds++; },
+          recordBoardCellsTouched(count) { boardCellsTouched += count; },
+          recordForcedLayout3D() { forcedLayoutsInPath3D++; },
+          recordBoardRender(ms) {
+            if (!this.enabled) return;
+            boardRenderDurations.push(ms);
+            if (boardRenderDurations.length > MAX_SAMPLES) boardRenderDurations.shift();
+          },
+          clear() {
+            syncDurations.length = 0; frameDeltas.length = 0; longTasks.length = 0;
+            boardRenderDurations.length = 0;
+            syncsSinceReset = 0; lastFrameAt = 0;
+            boardFullRebuilds = 0; boardCellsTouched = 0; forcedLayoutsInPath3D = 0;
+          },
           report() {
             const r = window.kaykit3D?.renderer;
             const sortedSync = [...syncDurations].sort((a, b) => a - b);
+            const sortedFrames = [...frameDeltas].sort((a, b) => a - b);
+            const sortedBoard = [...boardRenderDurations].sort((a, b) => a - b);
             const meanFrameMs = avg(frameDeltas);
             return {
               sync: {
@@ -206,11 +230,21 @@
               // jamais dépasser ce que le moteur affiche vraiment à l'écran.
               fps: meanFrameMs ? +(1000 / meanFrameMs).toFixed(1) : 0,
               frameTimeMs: +meanFrameMs.toFixed(2),
+              frameTimeP95Ms: +percentile(sortedFrames, .95).toFixed(2),
+              frameTimeMaxMs: sortedFrames.length ? +sortedFrames[sortedFrames.length - 1].toFixed(2) : 0,
               render: r ? { calls: r.info.render.calls, triangles: r.info.render.triangles } : null,
               memory: r ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures } : null,
               syncsSinceReset,
               longTasksCount: longTasks.length,
-              longTasksRecent: longTasks.slice(-10)
+              longTasksRecent: longTasks.slice(-10),
+              board: {
+                fullRebuilds: boardFullRebuilds,
+                cellsTouched: boardCellsTouched,
+                forcedLayoutsInPath3D,
+                avgMs: +avg(boardRenderDurations).toFixed(2),
+                p95Ms: +percentile(sortedBoard, .95).toFixed(2),
+                maxMs: sortedBoard.length ? +sortedBoard[sortedBoard.length - 1].toFixed(2) : 0
+              }
             };
           }
         };
@@ -750,6 +784,9 @@
         // exposition, son `renderer()` renvoyait null et TOUT son système de
         // qualité adaptative restait sans effet.
         window.kaykit3D = kaykit3D;
+        // V78 : point d'entrée resize pour js/complete-polish.js (script
+        // séparé, ne partage pas cette IIFE) — voir resizeKayKitRenderer().
+        kaykit3D.resize = resizeKayKitRenderer;
 
         // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
         // enchaîne start→change→end pour la molette exactement comme pour un
@@ -2101,8 +2138,19 @@
        * `pendingActionAnimations` — encore lu ailleurs pour savoir si une
        * animation est en cours (caméra, cadence de rendu).
        */
-      function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null) {
-        if (!kaykit3D || characterId === null || characterId === undefined) return;
+      // V78 (passe fluidité) : onComplete devient l'autorité de fin d'action
+      // visuelle pour le chemin 3D — remplace l'ancien animateToken() HTML
+      // (getBoundingClientRect/.moving-token/element.animate) pour MOVE/PUSH
+      // en mode alternative (voir js/game/ui.js). Le délai avant l'appel de
+      // onComplete est fourni par l'appelant via `duration` : cette fonction
+      // ne réinvente aucun calcul de durée, elle réutilise le même minuteur
+      // (setTimeout(duration + 80)) qui pilotait déjà le nettoyage interne de
+      // pendingActionAnimations, en y accrochant simplement ce callback.
+      function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null, onComplete = null) {
+        if (!kaykit3D || characterId === null || characterId === undefined) {
+          if (typeof onComplete === "function") onComplete();
+          return;
+        }
         const id = String(characterId);
         const character = state?.characters?.find(item => String(item.id) === id);
         if (character && target && Number.isFinite(target.r) && Number.isFinite(target.c)) {
@@ -2163,7 +2211,7 @@
 
         scheduleKayKitSync();
         setTimeout(() => {
-          if (!kaykit3D) return;
+          if (!kaykit3D) { if (typeof onComplete === "function") onComplete(); return; }
           const pending = kaykit3D.pendingActionAnimations.get(id);
           if (
             pending &&
@@ -2174,6 +2222,7 @@
             kaykit3D._hitStagger = 0;
             scheduleKayKitSync();
           }
+          if (typeof onComplete === "function") onComplete();
         }, duration + 80);
       }
 
@@ -2905,6 +2954,18 @@
 
       function toggleKayKitCamera() {
         snapKayKitView("front");
+      }
+
+      // V78 (passe fluidité) : point d'entrée léger pour les AUTRES scripts
+      // (js/complete-polish.js, chargé séparément, hors de cette IIFE) — un
+      // changement de qualité/DPR ne doit JAMAIS refitter la caméra ni
+      // simuler un vrai resize de fenêtre. refitCamera:false garantit que
+      // seuls renderer.setSize()/camera.aspect sont mis à jour si besoin ;
+      // resizeKayKit3D() lui-même ne refit déjà QUE si forceFit ou si l'aspect
+      // a réellement changé (voir plus bas), donc refitCamera=false ici NE
+      // PASSE PAS forceFit=true — la position caméra reste intouchée.
+      function resizeKayKitRenderer({ refitCamera = false } = {}) {
+        resizeKayKit3D(refitCamera);
       }
 
       function resizeKayKit3D(forceFit = false) {
@@ -6093,46 +6154,32 @@
         }
       }
 
-      let kaykitLastVisualFrame = 0;
-      let kaykitFrameAccumulator = 0;
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
-        if (document.hidden) {
+        // Pause réelle hors jeu (V78 — passe fluidité) : rien de coûteux ne
+        // s'exécute quand l'onglet est masqué, quand #gameScreen n'est pas
+        // affiché (menu, écran de configuration), ou hors du mode visuel 3D —
+        // mixers, séquences, pulses, dérive du ciel et caméra restent tous
+        // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
+        // delta géant n'arrive d'un coup au retour. La boucle rAF continue
+        // d'être programmée, mais chaque tick ne coûte alors presque rien.
+        const gameHidden = document.body.dataset.visualMode !== "alternative"
+          || !els.gameScreen
+          || els.gameScreen.classList.contains("hidden");
+        if (document.hidden || gameHidden) {
           kaykit3D.clock.getDelta();
           return;
         }
-        const activeVisualMotion = !!(kaykit3D.activeMovementTweens?.size || kaykit3D.pendingActionAnimations?.size || kaykit3D.cameraTween || kaykit3D.userInteracting);
-        // Ce garde-fou s'appelait "adaptatif" mais ne l'était pas : la valeur
-        // était réécrite à 16.7 à chaque image, quel que soit l'appareil. Pire,
-        // un seuil fixe comparé à des timestamps rAF légèrement irréguliers
-        // provoque lui-même des à-coups — deux images arrivant à 15.9 ms d'écart
-        // en sautent une, la suivante arrive ~33 ms plus tard : un miroitement
-        // que rien ne justifiait, même sur un appareil capable de tenir 60 fps.
-        // Le rendu suit désormais directement la cadence native de rAF (déjà
-        // calée sur l'écran, bien plus précise qu'une comparaison manuelle) et
-        // ne se limite QUE si le mode qualité est "performance" ET qu'aucune
-        // animation n'est en cours — jamais pendant un déplacement, une
-        // poussée ou un glissé de caméra, où le moindre ralentissement se
-        // verrait immédiatement.
-        //
-        // Même en mode "performance", un seuil fixe comparé à un timestamp rAF
-        // jitter (frameTime - lastFrame < 33) reste biaisé : une image arrivant
-        // à 32.9 ms est rejetée, son "reste" de temps perdu — ce qui, cumulé,
-        // fait tomber la cadence réelle sous la cible (~28.8 i/s mesurés au
-        // lieu de ~30 i/s). L'accumulateur ci-dessous conserve ce reste d'une
-        // image à l'autre au lieu de le jeter.
-        const throttle = kaykit3D.qualityMode === "performance" && !activeVisualMotion;
-        const elapsedSinceTick = kaykitLastVisualFrame ? Math.min(250, frameTime - kaykitLastVisualFrame) : 0;
-        kaykitLastVisualFrame = frameTime;
-        if (throttle) {
-          kaykitFrameAccumulator += elapsedSinceTick;
-          if (kaykitFrameAccumulator < 32) return;
-          kaykitFrameAccumulator -= 33;
-          if (kaykitFrameAccumulator < 0 || kaykitFrameAccumulator > 33) kaykitFrameAccumulator = 0;
-        } else {
-          kaykitFrameAccumulator = 0;
-        }
+        // L'ancien throttle "performance" (~30 i/s dès qu'aucune animation
+        // n'était en cours) a été retiré : il plafonnait le rendu même sans
+        // aucune contrainte matérielle réelle, provoquant lui-même du
+        // miroitement (seuil fixe comparé à un timestamp rAF jitter). Le
+        // rendu suit désormais directement requestAnimationFrame, à pleine
+        // cadence quel que soit le mode qualité. Seules les animations Idle
+        // (gardiens au repos) restent allégées à une image sur deux en mode
+        // performance — logique déjà portée par updateKayKitCharacters(),
+        // indépendante de cette boucle.
         const delta = Math.min(.05, kaykit3D.clock.getDelta());
         const elapsed = kaykit3D.clock.elapsedTime;
         if (kaykit3D.hoverMarker?.visible) {
@@ -6194,15 +6241,16 @@
         // persistant (visual.move, voir updateKayKitCharacters) : il survit aux
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
-        if (document.body.dataset.visualMode === "alternative" && !els.gameScreen.classList.contains("hidden")) {
-          // Mesure du FPS RÉEL : window.ILYOS_PERF.recordFrame() n'est appelé
-          // qu'ici, au moment ou renderer.render() est effectivement invoqué —
-          // pas via une boucle requestAnimationFrame indépendante qui tournerait
-          // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
-          // par js/complete-polish.js alors que le rendu est plafonné ~60).
-          if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
-          kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
-        }
+        // gameHidden garantit déjà ici visualMode==="alternative" et
+        // #gameScreen visible (voir le retour anticipé en tête de fonction) :
+        // plus besoin de revérifier avant de rendre.
+        // Mesure du FPS RÉEL : window.ILYOS_PERF.recordFrame() n'est appelé
+        // qu'ici, au moment ou renderer.render() est effectivement invoqué —
+        // pas via une boucle requestAnimationFrame indépendante qui tournerait
+        // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
+        // par js/complete-polish.js alors que le rendu est plafonné ~60).
+        if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
+        kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
       }
       let toastTimer = null;
       let lastWheelAt = 0;
@@ -6408,6 +6456,21 @@
         }
 
         state.fxCells = cells.map(([r, c]) => ({ type, r, c }));
+        // V78 (passe fluidité) : en mode 3D, ces classes fx-* sur les cellules
+        // DOM n'ont jamais eu d'équivalent visuel dans la scène Three.js (le
+        // plateau HTML n'est qu'une couche d'interaction/accessibilité dans ce
+        // mode) — redessiner les 121 cellules pour ça était une dépense pure,
+        // sans rien à montrer. On se contente de faire suivre l'état à la
+        // synchronisation 3D existante ; le fallback HTML (hors mode 3D)
+        // garde son comportement d'origine, seul endroit où fx-* est visible.
+        if (document.body.dataset.visualMode === "alternative") {
+          scheduleKayKitSync();
+          setTimeout(() => {
+            state.fxCells = [];
+            scheduleKayKitSync();
+          }, 420);
+          return;
+        }
         renderBoard();
         setTimeout(() => {
           state.fxCells = [];
@@ -6538,6 +6601,14 @@
 
       function animateCellPulse(r, c, className) {
         if (isCurrentPlayerAI() && ["crown-burst", "spawn-arrival"].includes(className)) return;
+        // V78 (passe fluidité) : en mode 3D, cette pulsation CSS sur la
+        // cellule DOM (couche interaction/accessibilité, jamais affichée) n'a
+        // aucun équivalent visible — la réponse visuelle réelle passe déjà
+        // par queueKayKitActionAnimation()/Three.js (voir les appels "victory"
+        // /"magic" à proximité de chaque appel de cette fonction). Aucun
+        // intérêt à forcer un reflow (void cell.offsetWidth) pour un effet
+        // invisible.
+        if (document.body.dataset.visualMode === "alternative") return;
         requestAnimationFrame(() => {
           const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
           if (!cell) return;
@@ -6549,6 +6620,12 @@
       }
 
       function animateIslandArrival(island) {
+        // V78 : la pose d'île a déjà son propre fondu d'apparition en 3D
+        // (voir registerKayKitFadeIn/syncKayKitScene, déclenché par le
+        // changement de state.islands) — ce pulse DOM (couche interaction/
+        // accessibilité, invisible en mode 3D) serait une seconde
+        // représentation visuelle pour rien.
+        if (document.body.dataset.visualMode === "alternative") return;
         requestAnimationFrame(() => {
           island.cells.forEach(([r, c], index) => {
             const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
@@ -6576,6 +6653,11 @@
       }
 
       function animateBoardMagic() {
+        // V78 : le pulse magique 3D (playIslandMagicRotation, kaykit3d.js)
+        // porte déjà l'effet visuel réel en mode alternative — ce pulse CSS
+        // sur #board (couche interaction, invisible dans ce mode) n'apportait
+        // rien et forçait un reflow (void offsetWidth) pour rien.
+        if (document.body.dataset.visualMode === "alternative") return;
         els.board.classList.remove("magic-board-pulse");
         void els.board.offsetWidth;
         els.board.classList.add("magic-board-pulse");
@@ -10830,6 +10912,13 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
+        // V78 (passe fluidité) : remplace les MutationObserver globaux sur
+        // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
+        // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
+        // interne (contexte/joueur+phase inchangés ⇒ no-op), donc les appeler
+        // à chaque renderAll() ne fait aucun travail DOM superflu.
+        window.ILYOS_ARCHIPELAGO?.updateVisualState?.();
+        window.ILYOS_IMMERSION?.monitorTurn?.();
         scheduleOnlineSync();
         scheduleLocalSave();
       }
@@ -11249,8 +11338,46 @@
         return isValidPlacement(ar, ac) ? "preview-valid" : "preview-invalid";
       }
 
-      function renderBoard() {
+      // V78 (passe fluidité) : plateau DOM persistant. Les 121 cellules sont
+      // créées et leurs listeners attachés UNE SEULE FOIS ; ensureBoardCells()
+      // ne reconstruit plus jamais rien au-delà de ce premier appel (garde
+      // sur la taille de boardCellMap). renderBoard() devient une mise à jour
+      // incrémentale : la logique de calcul par cellule est strictement
+      // identique à avant (mêmes conditions, même ordre), mais accumulée dans
+      // des variables locales (classes/html/styles) au lieu de muter le DOM
+      // directement. Une signature texte par cellule (classes+styles+html)
+      // est comparée à la précédente : si identique, aucune écriture DOM
+      // n'a lieu pour cette cellule. La logique de clic (onCellEnter/
+      // onCellLeave/onCellClick) reste strictement inchangée.
+      let boardCellMap = null;
+      let boardCellSignatures = null;
+
+      function ensureBoardCells() {
+        if (boardCellMap && boardCellMap.size === GRID * GRID) return;
         els.board.innerHTML = "";
+        boardCellMap = new Map();
+        boardCellSignatures = new Map();
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            const cell = document.createElement("button");
+            cell.type = "button";
+            cell.className = "cell";
+            cell.dataset.r = r;
+            cell.dataset.c = c;
+            cell.addEventListener("mouseenter", onCellEnter);
+            cell.addEventListener("mousemove", onCellEnter);
+            cell.addEventListener("mouseleave", onCellLeave);
+            cell.addEventListener("click", onCellClick);
+            els.board.appendChild(cell);
+            boardCellMap.set(key(r, c), cell);
+          }
+        }
+        if (window.ILYOS_PERF) window.ILYOS_PERF.recordBoardRebuild();
+      }
+
+      function renderBoard() {
+        const __perfStart = window.ILYOS_PERF ? performance.now() : 0;
+        ensureBoardCells();
         const magicPreviewSet = new Set((state.magicPreviewCells || []).map(([r, c]) => key(r, c)));
         const fxMap = new Map((state.fxCells || []).map(fx => [key(fx.r, fx.c), fx.type]));
         const spawnIsland = state.pendingSpawnIslandId ? state.islands.find(is => is.id === state.pendingSpawnIslandId) : null;
@@ -11268,21 +11395,22 @@
             .map(impact => [key(impact.to[0], impact.to[1]), impact])
         );
 
+        let cellsTouched = 0;
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
-            const cell = document.createElement("button");
-            cell.type = "button";
-            cell.className = "cell";
-            cell.dataset.r = r;
-            cell.dataset.c = c;
+            const classes = ["cell"];
+            let html = "";
+            let islandOwnerColor = null;
+            let villageColor = null;
+            let pushArrowAngle = null;
 
             const village = villageAt(r, c);
             const villageZone = villageZoneDataAt(r, c);
             const island = islandAt(r, c);
             const char = characterAt(r, c);
             if (island) {
-              cell.style.setProperty("--island-owner", state.players[island.owner].color);
-              cell.classList.add("placed-island-cell");
+              islandOwnerColor = state.players[island.owner].color;
+              classes.push("placed-island-cell");
             }
             const northLand = inside(r - 1, c) && isLand(r - 1, c);
             const southLand = inside(r + 1, c) && isLand(r + 1, c);
@@ -11290,32 +11418,32 @@
             const eastLand = inside(r, c + 1) && isLand(r, c + 1);
 
             if (isLand(r, c)) {
-              cell.classList.add("land");
-              if (!northLand) cell.classList.add("edge-top");
-              if (!southLand) cell.classList.add("edge-bottom");
-              if (!westLand) cell.classList.add("edge-left");
-              if (!eastLand) cell.classList.add("edge-right");
+              classes.push("land");
+              if (!northLand) classes.push("edge-top");
+              if (!southLand) classes.push("edge-bottom");
+              if (!westLand) classes.push("edge-left");
+              if (!eastLand) classes.push("edge-right");
 
               if (island) {
                 const northIsland = inside(r - 1, c) ? islandAt(r - 1, c) : null;
                 const southIsland = inside(r + 1, c) ? islandAt(r + 1, c) : null;
                 const westIsland = inside(r, c - 1) ? islandAt(r, c - 1) : null;
                 const eastIsland = inside(r, c + 1) ? islandAt(r, c + 1) : null;
-                if (!northIsland || northIsland.id !== island.id) cell.classList.add("island-outline-top");
-                if (!southIsland || southIsland.id !== island.id) cell.classList.add("island-outline-bottom");
-                if (!westIsland || westIsland.id !== island.id) cell.classList.add("island-outline-left");
-                if (!eastIsland || eastIsland.id !== island.id) cell.classList.add("island-outline-right");
+                if (!northIsland || northIsland.id !== island.id) classes.push("island-outline-top");
+                if (!southIsland || southIsland.id !== island.id) classes.push("island-outline-bottom");
+                if (!westIsland || westIsland.id !== island.id) classes.push("island-outline-left");
+                if (!eastIsland || eastIsland.id !== island.id) classes.push("island-outline-right");
               }
             } else {
-              cell.classList.add("void", ((r + c) % 2 === 0 ? "cloud-a" : "cloud-b"));
+              classes.push("void", ((r + c) % 2 === 0 ? "cloud-a" : "cloud-b"));
             }
 
             if (villageZone) {
-              cell.style.setProperty("--village-color", villageZone.player.color);
+              villageColor = villageZone.player.color;
 
               if (village) {
-                cell.classList.add("village");
-                cell.innerHTML += `
+                classes.push("village");
+                html += `
                 <span class="village-icon">🏰</span>
                 <span class="village-owner-mark" style="--village-color:${village.color}">${playerShortName(village)}</span>
               `;
@@ -11324,42 +11452,42 @@
                  * Le repère coloré disparaît dès qu'une île est construite
                  * sur cette case afin de laisser apparaître le terrain normal.
                  */
-                cell.classList.add("village-zone-extension");
-                cell.innerHTML += `
+                classes.push("village-zone-extension");
+                html += `
                 <span class="village-zone-fill" style="--village-color:${villageZone.player.color}"></span>
               `;
               }
             }
             if (isSanctuary(r, c)) {
-              cell.classList.add(
+              classes.push(
                 "sanctuary",
                 isSanctuaryCenter(r, c) ? "sanctuary-center" : "sanctuary-arm"
               );
-              cell.innerHTML += isSanctuaryCenter(r, c)
+              html += isSanctuaryCenter(r, c)
                 ? `<span class="sanctuary-ring"></span>`
                 : `<span class="sanctuary-arm-mark"></span>`;
             }
             if (island && state.selectedIslandId === island.id && !(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) {
-              cell.classList.add("selected");
+              classes.push("selected");
             }
             if (
               (state.phase === "ACTION_SELECT" || (state.phase === "ACTION" && state.selectedActionType === "MAGIC"))
               && island
               && state.magicHoverIslandId === island.id
             ) {
-              cell.classList.add("magic-hover-island");
+              classes.push("magic-hover-island");
             }
             if (
               (state.phase === "ACTION_SELECT" || (state.phase === "ACTION" && state.selectedActionType === "MAGIC"))
               && isSameCell(state.magicHoverPivot, [r, c])
             ) {
-              cell.classList.add("magic-hover-pivot");
+              classes.push("magic-hover-pivot");
             }
             if (state.phase === "ACTION" && state.selectedActionType === "MAGIC" && island && state.selectedIslandId === island.id) {
-              cell.classList.add("magic-selected-island");
+              classes.push("magic-selected-island");
             }
             if (state.phase === "PICKUP_CROWN" && char && char.player === state.currentPlayer && state.reachable.has(key(r, c))) {
-              cell.classList.add("crown-claimable", "ally-ready");
+              classes.push("crown-claimable", "ally-ready");
             }
             if (
               state.phase === "DROP_TREASURE"
@@ -11367,25 +11495,25 @@
               && (state.crownTransferTargetIds || []).includes(char.id)
               && state.reachable.has(key(r, c))
             ) {
-              cell.classList.add("crown-claimable", "ally-ready", "crown-transfer-choice");
+              classes.push("crown-claimable", "ally-ready", "crown-transfer-choice");
             }
             const hideReachableAfterCharacterChoice = (
               (state.phase === "ACTION" && state.selectedCharId && ["MOVE", "PUSH"].includes(state.selectedActionType || ""))
               || state.phase === "SMART_CHAR"
             );
-            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) cell.classList.add("reachable");
-            if (state.selectedCharId && char?.id === state.selectedCharId) cell.classList.add("selected-character");
+            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
+            if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
 
             const placementClass = previewClassForCell(r, c);
-            if (placementClass) cell.classList.add(placementClass);
+            if (placementClass) classes.push(placementClass);
 
             if (showMagicRotation && magicPreviewSet.has(key(r, c))) {
-              cell.classList.add(state.magicPreviewValid ? "magic-valid" : "magic-invalid", "magic-rotation-preview");
+              classes.push(state.magicPreviewValid ? "magic-valid" : "magic-invalid", "magic-rotation-preview");
             }
-            if (state.selectedMagicPivot && state.selectedMagicPivot[0] === r && state.selectedMagicPivot[1] === c) cell.classList.add("magic-pivot");
+            if (state.selectedMagicPivot && state.selectedMagicPivot[0] === r && state.selectedMagicPivot[1] === c) classes.push("magic-pivot");
 
             const spawnAllowed = spawnIsland && spawnIsland.cells.some(([ir, ic]) => ir === r && ic === c) && !char;
-            if (spawnAllowed) cell.classList.add("spawn-choice");
+            if (spawnAllowed) classes.push("spawn-choice");
 
             const cellKey = key(r, c);
             if (
@@ -11393,58 +11521,57 @@
               && state.selectedCharId
               && actionHoverKey === cellKey
             ) {
-              cell.classList.add("move-target-preview", "action-target-preview");
+              classes.push("move-target-preview", "action-target-preview");
             }
             if (
               ((state.phase === "ACTION" && state.selectedActionType === "PUSH") || (state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH"))
               && actionHoverKey === cellKey
             ) {
-              cell.classList.add("push-target-preview", "action-target-preview");
+              classes.push("push-target-preview", "action-target-preview");
 
               const pusher = characterById(state.selectedCharId);
               if (pusher) {
                 const dr = r - pusher.r;
                 const dc = c - pusher.c;
-                const angle =
+                pushArrowAngle =
                   dc === 1 ? "0deg" :
                     dr === 1 ? "90deg" :
                       dc === -1 ? "180deg" :
                         "-90deg";
-                cell.style.setProperty("--push-arrow-angle", angle);
               }
             }
             if (state.phase === "SMART_CHAR" && state.smartHoverType === "CANCEL" && actionHoverKey === cellKey) {
-              cell.classList.add("smart-cancel-preview");
+              classes.push("smart-cancel-preview");
             }
             if (smartPathSet.has(cellKey)) {
-              cell.classList.add("move-path-preview");
+              classes.push("move-path-preview");
               const pathIndex = (state.smartHoverPath || []).findIndex(
                 ([pr, pc]) => pr === r && pc === c
               );
               const pathMeta = state.smartHoverPath?.steps?.[pathIndex];
               if (pathMeta?.diagonal) {
-                cell.classList.add("diagonal-step-preview");
+                classes.push("diagonal-step-preview");
               }
             }
             const pushOriginImpact = pushImpactOrigins.get(cellKey);
             const pushDestinationImpact = pushImpactDestinations.get(cellKey);
             if (pushOriginImpact) {
-              cell.classList.add("push-line-preview");
-              if (pushOriginImpact.fell) cell.classList.add("push-fall-preview");
+              classes.push("push-line-preview");
+              if (pushOriginImpact.fell) classes.push("push-fall-preview");
             }
             if (pushDestinationImpact || pushDestinationKey === cellKey) {
-              cell.classList.add("push-destination-preview");
+              classes.push("push-destination-preview");
             }
 
             const fxType = fxMap.get(cellKey);
-            if (fxType) cell.classList.add(`fx-${fxType}`);
+            if (fxType) classes.push(`fx-${fxType}`);
 
             const looseCrowns = activeArtifacts().filter(artifact =>
               artifact.carrierId === null && artifact.r === r && artifact.c === c
             );
             looseCrowns.forEach(artifact => {
               const crownClass = artifact.id === "crown-2" ? "crown-2" : "crown-1";
-              cell.innerHTML += `<span class="artifact ${crownClass}" data-artifact-id="${artifact.id}" title="Cliquer pour récupérer cette couronne">👑</span>`;
+              html += `<span class="artifact ${crownClass}" data-artifact-id="${artifact.id}" title="Cliquer pour récupérer cette couronne">👑</span>`;
             });
 
             if (char) {
@@ -11456,7 +11583,7 @@
                 && char.player === state.currentPlayer
                 && canValidateCrownPoint(char)
               );
-              if (crownPointReady) cell.classList.add("crown-validation-ready");
+              if (crownPointReady) classes.push("crown-validation-ready");
               const selectingActionCharacter = state.phase === "ACTION"
                 && ["MOVE", "PUSH"].includes(state.selectedActionType || "")
                 && char.player === state.currentPlayer;
@@ -11466,8 +11593,8 @@
                 || (state.phase === "PICKUP_CROWN" && char.player === state.currentPlayer && state.reachable.has(key(r, c)))
               );
               const readyAction = selectingActionCharacter && !state.selectedCharId;
-              if (readyAction) cell.classList.add("ally-ready");
-              cell.innerHTML += `
+              if (readyAction) classes.push("ally-ready");
+              html += `
               <span class="character ${carrying ? "carrying" : ""} ${selectable ? "selectable" : ""} ${readyAction ? "ready-action" : ""}" style="--pcolor:${owner.color};--token-color:${owner.color}">
                 ${carrying ? `<span class="carrier-crown ${char.player === state.currentPlayer ? "own-crown" : "opponent-crown"}" data-artifact-id="${carriedArtifact.id}" title="${char.player === state.currentPlayer ? "Cliquer pour transmettre ou poser gratuitement la couronne" : "Cliquer pour récupérer la couronne"}">👑</span>` : ``}
                 <span class="character-standee">${owner.icon}</span>
@@ -11496,7 +11623,7 @@
             `;
             } else if (state.phase === "PLACE_SPAWN" && spawnAllowed && state.hoverAnchor && state.hoverAnchor[0] === r && state.hoverAnchor[1] === c) {
               const owner = currentPlayer();
-              cell.innerHTML += `
+              html += `
               <span class="character spawn-preview" style="--pcolor:${owner.color};--token-color:${owner.color}">
                 <span class="character-standee">${owner.icon}</span>
                 <span class="alt-guardian-3d" aria-hidden="true">
@@ -11523,7 +11650,7 @@
             ) {
               const selected = characterById(state.selectedCharId);
               const owner = selected ? state.players[selected.player] : currentPlayer();
-              cell.innerHTML += `
+              html += `
               <span class="action-ghost move-ghost" style="--ghost-color:${owner.color}">
                 <span>${owner.icon}</span>
               </span>
@@ -11532,22 +11659,39 @@
 
             const destinationImpact = pushImpactDestinations.get(key(r, c));
             if (destinationImpact && !characterAt(r, c)) {
-              cell.innerHTML += `
+              html += `
               <span class="action-ghost push-ghost ${destinationImpact.carrying ? "carrying" : ""}" style="--ghost-color:${destinationImpact.color}">
                 <span>${destinationImpact.icon}</span>
               </span>
             `;
             }
 
-            cell.addEventListener("mouseenter", onCellEnter);
-            cell.addEventListener("mousemove", onCellEnter);
-            cell.addEventListener("mouseleave", onCellLeave);
-            cell.addEventListener("click", onCellClick);
-            els.board.appendChild(cell);
+            const className = classes.join(" ");
+            const signature = className + "|" + (islandOwnerColor || "") + "|" + (villageColor || "") + "|" + (pushArrowAngle || "") + "|" + html;
+            if (boardCellSignatures.get(cellKey) === signature) continue;
+            boardCellSignatures.set(cellKey, signature);
+            cellsTouched++;
+            const cellEl = boardCellMap.get(cellKey);
+            cellEl.className = className;
+            if (islandOwnerColor) cellEl.style.setProperty("--island-owner", islandOwnerColor);
+            else cellEl.style.removeProperty("--island-owner");
+            if (villageColor) cellEl.style.setProperty("--village-color", villageColor);
+            else cellEl.style.removeProperty("--village-color");
+            if (pushArrowAngle) cellEl.style.setProperty("--push-arrow-angle", pushArrowAngle);
+            else cellEl.style.removeProperty("--push-arrow-angle");
+            cellEl.innerHTML = html;
           }
         }
         renderExitGates();
-        renderIslandArtLayer();
+        // V78 : le fallback HTML seul (hors mode 3D) reste seul consommateur
+        // de cette couche décorative SVG — en mode "alternative", les îles
+        // sont déjà représentées par la scène Three.js, cette génération est
+        // une seconde représentation visuelle inutile.
+        if (document.body.dataset.visualMode !== "alternative") renderIslandArtLayer();
+        if (window.ILYOS_PERF) {
+          window.ILYOS_PERF.recordBoardCellsTouched(cellsTouched);
+          window.ILYOS_PERF.recordBoardRender(performance.now() - __perfStart);
+        }
         scheduleKayKitSync();
       }
 
@@ -12772,17 +12916,38 @@
         // pour une seule case — transformait chaque pas en petite cinématique et
         // ralentissait nettement un joueur expérimenté.
         const walkDuration = Math.min(1600, 140 + path.length * 340);
-        queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
         // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
         if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
-        animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
-          char.r = r;
-          char.c = c;
-          resolveArtifactForCharacter(char);
-          triggerFx("move", [from, ...path]);
-          playSfx("move");
-          useSelectedCard(cost);
-        }, false, path);
+        // V78 (passe fluidité) : en mode 3D, plus de animateToken() HTML
+        // (getBoundingClientRect/.moving-token/element.animate invisible en
+        // alt mode) — queueKayKitActionAnimation() devient l'autorité visuelle
+        // unique, son onComplete exécute exactement le callback de gameplay
+        // qu'animateToken() portait, à la fin de la MÊME durée déjà utilisée
+        // pour la séquence 3D "move" (walkDuration, inchangée) : aucun
+        // changement de durée perceptible. Le fallback HTML (hors 3D) garde
+        // animateToken() tel quel.
+        if (state.visualMode === "alternative") {
+          state.inputLocked = true;
+          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
+            state.inputLocked = false;
+            char.r = r;
+            char.c = c;
+            resolveArtifactForCharacter(char);
+            triggerFx("move", [from, ...path]);
+            playSfx("move");
+            useSelectedCard(cost);
+          });
+        } else {
+          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
+          animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
+            char.r = r;
+            char.c = c;
+            resolveArtifactForCharacter(char);
+            triggerFx("move", [from, ...path]);
+            playSfx("move");
+            useSelectedCard(cost);
+          }, false, path);
+        }
       }
 
       function selectCharacterForMove(char) {
@@ -13144,11 +13309,29 @@
         const impactCell = result.to || result.from;
         kaykitFollowCell(impactCell[0], impactCell[1], { duration: 680, zoomBoost: result.fell ? 1.6 : 0 });
 
-        animateToken(result.from, result.to, result.icon, result.color, "push", () => {
-          triggerFx("push", [result.from, result.to]);
-          playSfx("push");
-          useSelectedCard();
-        }, result.fell);
+        // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
+        // résolution logique (fx/sfx/carte consommée) est signalée par une
+        // entrée dédiée de queueKayKitActionAnimation (id synthétique, sans
+        // aucun visuel propre : ne collisionne pas avec les entrées "attack"/
+        // "hurt" ci-dessus, qui gardent leurs animations 3D inchangées),
+        // après le MÊME délai qu'animateToken() utilisait pour push/chute
+        // (360/520 ms) : aucun changement de durée perceptible. Le fallback
+        // HTML (hors 3D) garde animateToken() tel quel.
+        if (state.visualMode === "alternative") {
+          state.inputLocked = true;
+          queueKayKitActionAnimation(`__push-complete-${pusher.id}__`, "none", result.fell ? 520 : 360, null, null, () => {
+            state.inputLocked = false;
+            triggerFx("push", [result.from, result.to]);
+            playSfx("push");
+            useSelectedCard();
+          });
+        } else {
+          animateToken(result.from, result.to, result.icon, result.color, "push", () => {
+            triggerFx("push", [result.from, result.to]);
+            playSfx("push");
+            useSelectedCard();
+          }, result.fell);
+        }
       }
 
       function pushCharacter(target, dr, dc, force, originR, originC) {
