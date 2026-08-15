@@ -3689,6 +3689,17 @@
         }
 
         if (pushActive) {
+          // Flux direct cible → destination (ui.js: computePushOptionsForTarget) :
+          // anneaux persistants sur TOUTES les destinations légales (state.reachable),
+          // même idiome que smartResting ci-dessus. La destination actuellement
+          // "sélectionnée" (survolée ou par défaut) reçoit en plus l'aperçu complet
+          // (impacts + flèche) via le code inchangé juste en dessous.
+          if (state.pushDestinationOptions) {
+            (state.reachable || new Set()).forEach(cellKey => {
+              const [r, c] = cellKey.split(",").map(Number);
+              addKayKitPushAffordance(r, c);
+            });
+          }
           const preview = pushPreview;
           (preview?.impacts || []).forEach(impact => {
             addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
