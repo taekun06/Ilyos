@@ -3816,6 +3816,17 @@
         }
 
         if (pushActive) {
+          // Flux direct cible → destination (ui.js: computePushOptionsForTarget) :
+          // anneaux persistants sur TOUTES les destinations légales (state.reachable),
+          // même idiome que smartResting ci-dessus. La destination actuellement
+          // "sélectionnée" (survolée ou par défaut) reçoit en plus l'aperçu complet
+          // (impacts + flèche) via le code inchangé juste en dessous.
+          if (state.pushDestinationOptions) {
+            (state.reachable || new Set()).forEach(cellKey => {
+              const [r, c] = cellKey.split(",").map(Number);
+              addKayKitPushAffordance(r, c);
+            });
+          }
           const preview = pushPreview;
           (preview?.impacts || []).forEach(impact => {
             addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
@@ -10832,6 +10843,42 @@
       // renderIslandSelector/selectIslandShape) reste inchangee. Les boutons
       // DÉPLACER/POUSSER/MAGIE appellent exactement selectActionBatch(), comme
       // les boutons de l'ancien panneau ACTIONS — aucun second systeme d'action.
+      // Iconographie HUD V2 : traits SVG (stroke:currentColor), meme famille que
+      // la silhouette de portrait (fillPortrait ci-dessus) — plus d'emojis
+      // disparates (🏝👢💥✦🃏👑) dont le rendu/poids varie selon police/OS.
+      const HUD_V2_ICONS = {
+        DECK: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"7\" width=\"14\" height=\"17\" rx=\"2\"/><rect x=\"7\" y=\"3\" width=\"14\" height=\"17\" rx=\"2\"/></svg>",
+        ISLAND: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2.5 15.5L12 11l9.5 4.5L12 20l-9.5-4.5z\"/><path d=\"M8.6 15.2L12 8l3.4 7.2\"/></svg>",
+        MOVE: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3v18M3 12h18M12 3l-2.6 2.6M12 3l2.6 2.6M12 21l-2.6-2.6M12 21l2.6-2.6M3 12l2.6-2.6M3 12l2.6 2.6M21 12l-2.6-2.6M21 12l-2.6 2.6\"/></svg>",
+        PUSH: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"2.1\"/><path d=\"M12 7.2V2.4M12 7.2l-1.8 1.8M12 7.2l1.8 1.8\"/><path d=\"M12 16.8v4.8M12 16.8l-1.8-1.8M12 16.8l1.8-1.8\"/><path d=\"M16.8 12h4.8M16.8 12l-1.8-1.8M16.8 12l-1.8 1.8\"/><path d=\"M7.2 12H2.4M7.2 12l1.8-1.8M7.2 12l1.8 1.8\"/></svg>",
+        MAGIC: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20.5 12A8.5 8.5 0 1 1 17 5.6\"/><path d=\"M20.5 5.6v4.2h-4.2\"/><path d=\"M11 2.8l1.35 4.05L16.4 8.2l-3.65 2.15L11 14.4l-1.75-4.05L5.6 8.2l3.65-1.35L11 2.8z\"/></svg>",
+        CROWN: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 18.5h16l1.1-9.6-5.3 3.3L12 5.8 8.2 12.2 2.9 8.9 4 18.5z\"/></svg>"
+      };
+
+      // Sélecteur de Force manuel HUD V2 : mêmes deux chemins que renderHand()
+      // (bouton +/-), même fonction de fond (setPushForceChoice()/
+      // state.smartPushForce) — seule la source de rendu change.
+      function hudV2PushForceStep(delta) {
+        if (!state) return;
+        const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushDestinationOptions;
+        const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
+        if (!classicPushActive && !smartPushHovered) return;
+        const maxForce = Math.max(1, availableActionCount("PUSH"));
+        if (smartPushHovered) {
+          const preview = getPushHoverPreview();
+          const minForce = Math.max(1, preview?.requiredForce || 1);
+          const current = Math.max(minForce, Math.min(maxForce, preview?.force || minForce));
+          state.smartPushForce = Math.max(minForce, Math.min(maxForce, current + delta));
+          refreshKayKitHoverPreviews();
+          scheduleBoardRender();
+        } else {
+          const current = Math.max(1, Math.min(state.pushForceChoice || 1, maxForce));
+          setPushForceChoice(current + delta, { notify: true });
+        }
+        renderHudV2();
+        renderHand();
+      }
+
       function renderHudV2() {
         if (!state || !els.gameScreen) return;
         const hudTop = document.getElementById("hudV2Top");
@@ -10839,8 +10886,11 @@
 
         const crownPips = score => {
           const filled = Math.max(0, Math.min(3, score || 0));
-          return "👑".repeat(filled) +
-            `<span class="hud-v2-crown-empty">${"♔".repeat(3 - filled)}</span>`;
+          let out = "";
+          for (let i = 0; i < 3; i++) {
+            out += `<span class="hud-v2-crown-icon${i < filled ? " is-filled" : ""}">${HUD_V2_ICONS.CROWN}</span>`;
+          }
+          return out;
         };
 
         const active = currentPlayer();
@@ -10894,7 +10944,7 @@
         const islandDrawer = document.getElementById("hudV2IslandDrawer");
         if (islandStatusEl) {
           islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
-          islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">🏝</span><span class="hud-v2-pill-word">ÎLE</span>`;
+          islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
         }
         if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -10906,7 +10956,7 @@
         // Icône dans son propre span, visuellement plus grande que le texte
         // (hiérarchie demandée) — le mot se masque sous 480px, le compte reste.
         const pillLabels = { MOVE: "DÉPLACER", PUSH: "POUSSER", MAGIC: "MAGIE" };
-        const pillIcons = { MOVE: "👢", PUSH: "💥", MAGIC: "✦" };
+        const pillIcons = { MOVE: HUD_V2_ICONS.MOVE, PUSH: HUD_V2_ICONS.PUSH, MAGIC: HUD_V2_ICONS.MAGIC };
         const smartSelected = state.phase === "SMART_CHAR" && !!state.selectedCharId;
         [["MOVE", "hudV2MoveCount"], ["PUSH", "hudV2PushCount"], ["MAGIC", "hudV2MagicCount"]].forEach(([type, id]) => {
           const btn = document.getElementById(id);
@@ -10936,6 +10986,40 @@
           magicRow.classList.toggle("hidden", !rotating);
         }
 
+        // --- Sélecteur de Force manuel (repli) — équivalent HUD V2 du bloc
+        // v60-context-options de renderHand() (élément #hand invisible ici,
+        // voir index.html). Même calcul min/max/force que renderHand(), même
+        // source (getPushHoverPreview()/state.pushForceChoice), rien de neuf.
+        // Masqué pendant le flux direct cible→destination (state.
+        // pushDestinationOptions) qui choisit déjà la Force via le clic.
+        const pushForceRow = document.getElementById("hudV2PushForceRow");
+        if (pushForceRow) {
+          const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushDestinationOptions;
+          const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
+          const maxForce = Math.max(1, availableActionCount("PUSH"));
+          let force = null, minForce = 1, hint = "";
+          if (smartPushHovered) {
+            const preview = getPushHoverPreview();
+            if (preview) {
+              minForce = Math.max(1, preview.requiredForce || 1);
+              force = Math.max(minForce, Math.min(maxForce, preview.force || minForce));
+              hint = preview.fell ? "☠ Chute hors du plateau" : `Minimum ${minForce}`;
+            }
+          } else if (classicPushActive) {
+            force = Math.max(1, Math.min(state.pushForceChoice || 1, maxForce));
+            hint = "Puis cliquez la cible adjacente";
+          }
+          pushForceRow.classList.toggle("hidden", force === null);
+          if (force !== null) {
+            document.getElementById("hudV2PushForceValue").textContent = force;
+            document.getElementById("hudV2PushForceHint").textContent = hint;
+            const minusBtn = document.getElementById("hudV2PushForceMinus");
+            const plusBtn = document.getElementById("hudV2PushForcePlus");
+            if (minusBtn) minusBtn.disabled = force <= minForce;
+            if (plusBtn) plusBtn.disabled = force >= maxForce;
+          }
+        }
+
         // --- Mini-fiche gardien : usage réduit — uniquement quand elle
         // apporte une info réellement utile (couronne portée). Le halo 3D
         // suffit déjà à indiquer une simple sélection ; pas de fiche
@@ -10947,7 +11031,7 @@
           if (ch && carriesCrown) {
             const p = state.players[ch.player];
             unitSlot.classList.remove("hidden");
-            unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown">👑</span>`;
+            unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown hud-v2-crown-icon is-filled">${HUD_V2_ICONS.CROWN}</span>`;
           } else {
             unitSlot.classList.add("hidden");
             unitSlot.innerHTML = "";
@@ -10957,15 +11041,27 @@
         // --- Micro-instruction (une seule ligne, meme source que l'ancien panneau) ---
         const instructionEl = document.getElementById("hudV2Instruction");
         if (instructionEl) {
-          const info = turnContextInfo();
-          instructionEl.textContent = info?.next || info?.title || "";
+          // Flux direct POUSSER : indicateur de chute (☠ + coût) quand
+          // l'option actuellement retenue (pusherId/force) est une chute —
+          // même donnée que computePushOptionsForTarget(), rien de recalculé.
+          const currentPushOption = state.pushDestinationOptions?.find(
+            option => option.pusherId === state.selectedCharId && option.force === state.selectedActionCount
+          );
+          if (currentPushOption) {
+            instructionEl.textContent = currentPushOption.fell
+              ? `☠ Force ${state.selectedActionCount} — pousse hors du plateau.`
+              : `Cliquez une destination éclairée · Force ${state.selectedActionCount}.`;
+          } else {
+            const info = turnContextInfo();
+            instructionEl.textContent = info?.next || info?.title || "";
+          }
         }
 
         // --- Deck (ex-"Main") : commande autonome, valeurs reelles ---
         const handCountEl = document.getElementById("hudV2HandCount");
         if (handCountEl) {
           const handLabel = `DECK ×${(active.hand || []).length}`;
-          handCountEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">🃏</span><span class="hud-v2-pill-word">${handLabel}</span>`;
+          handCountEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.DECK}</span><span class="hud-v2-pill-word">${handLabel}</span>`;
           handCountEl.setAttribute("aria-label", handLabel);
         }
         const popDeck = document.getElementById("hudV2HandPopoverDeck");
@@ -11635,6 +11731,24 @@
         const r = Number(event.currentTarget.dataset.r);
         const c = Number(event.currentTarget.dataset.c);
 
+        // Flux direct POUSSER : survoler une des destinations affichées met
+        // à jour le pousseur/la Force "actuellement retenus" — actionHoverCell
+        // reste fixé sur la cible (getPushHoverPreview() l'exige adjacente au
+        // pousseur), ce qui suffit à faire réagir l'aperçu 3D existant
+        // (refreshKayKitHoverPreviews) sans aucune modification de sa part.
+        if (state.phase === "ACTION" && state.selectedActionType === "PUSH" && state.pushDestinationOptions) {
+          const match = state.pushDestinationOptions.find(option => option.fell
+            ? (option.edgeCell && option.edgeCell[0] === r && option.edgeCell[1] === c)
+            : (option.destination && option.destination[0] === r && option.destination[1] === c));
+          if (match && (state.selectedCharId !== match.pusherId || state.selectedActionCount !== match.force)) {
+            state.selectedCharId = match.pusherId;
+            state.selectedActionCount = match.force;
+            scheduleBoardRender();
+            renderHudV2();
+          }
+          return;
+        }
+
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           updatePlacementPreview(r, c);
@@ -12017,6 +12131,41 @@
           return;
         }
 
+        // Flux direct POUSSER : clic sur une des destinations affichées par
+        // computePushOptionsForTarget() (case normale ou ancre de chute) —
+        // on fixe le pousseur/la Force correspondants puis on délègue tout
+        // l'exécutif à handlePushClick(cible), strictement inchangé : depuis
+        // son point de vue c'est un clic classique sur la cible adjacente,
+        // avec la Force déjà choisie via state.selectedActionCount.
+        if (state.phase === "ACTION" && state.selectedActionType === "PUSH" && state.pushDestinationOptions) {
+          const options = state.pushDestinationOptions;
+          const targetCell = state.pushDestinationTarget;
+          const match = options.find(option => option.fell
+            ? (option.edgeCell && option.edgeCell[0] === r && option.edgeCell[1] === c)
+            : (option.destination && option.destination[0] === r && option.destination[1] === c));
+          if (match) {
+            state.selectedCharId = match.pusherId;
+            state.selectedActionCount = match.force;
+            state.pushDestinationOptions = null;
+            state.pushDestinationTarget = null;
+            handlePushClick(targetCell[0], targetCell[1]);
+            return;
+          }
+          if (targetCell && r === targetCell[0] && c === targetCell[1]) {
+            // Reclic sur la cible elle-même : exécute avec l'option
+            // actuellement retenue (par défaut la moins coûteuse, ou celle
+            // du dernier survol).
+            state.pushDestinationOptions = null;
+            state.pushDestinationTarget = null;
+            handlePushClick(r, c);
+            return;
+          }
+          state.pushDestinationOptions = null;
+          state.pushDestinationTarget = null;
+          cancelSelectedCard();
+          return;
+        }
+
         if (state.phase === "ACTION") {
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
@@ -12134,30 +12283,36 @@
         }
 
         if (state.phase === "ACTION_SELECT" && char && char.player !== state.currentPlayer && availableActionCount("PUSH") > 0) {
-          const pushers = pushersForTarget(r, c);
-          if (pushers.length === 1) {
-            const pusher = pushers[0];
-            const required = requiredPushForce(pusher.r, pusher.c, r, c);
-            state.phase = "ACTION";
-            state.selectedActionType = "PUSH";
-            state.selectedActionCount = Math.min(availableActionCount("PUSH"), Math.max(required, state.pushForceChoice || 1));
-            state.selectedCharId = pusher.id;
-            state.reachable = new Set(orthogonalNeighbors(pusher.r, pusher.c).map(([nr, nc]) => key(nr, nc)));
-            renderAll();
+          // Flux direct : clic sur la cible → toutes ses destinations légales
+          // (une par Force, tous pousseurs confondus) s'affichent d'un coup ;
+          // il ne reste plus qu'à cliquer la destination voulue (voir
+          // computePushOptionsForTarget/onCellEnter/le routage plus bas dans
+          // cette fonction pour l'exécution). Le sélecteur de Force manuel
+          // (case ACTION classique) reste disponible en repli.
+          const options = computePushOptionsForTarget(r, c);
+          if (!options.length) {
+            showToast("Aucune poussée possible pour cette cible.");
             return;
           }
-          if (pushers.length > 1) {
-            // Aucun pousseur choisi à la place du joueur : on met en évidence
-            // les gardiens éligibles et on attend son clic.
-            state.phase = "ACTION";
-            state.selectedActionType = "PUSH";
-            state.selectedActionCount = Math.max(1, Math.min(state.pushForceChoice || 1, availableActionCount("PUSH")));
-            state.selectedCharId = null;
-            state.reachable = new Set(pushers.map(p => key(p.r, p.c)));
-            renderAll();
-            showToast("Plusieurs gardiens peuvent pousser cette cible : cliquez celui qui doit agir.");
-            return;
+          const pusherIds = new Set(options.map(option => option.pusherId));
+          const cheapest = options.reduce((best, option) => (option.force < best.force ? option : best), options[0]);
+          state.phase = "ACTION";
+          state.selectedActionType = "PUSH";
+          state.pushDestinationTarget = [r, c];
+          state.pushDestinationOptions = options;
+          state.selectedCharId = cheapest.pusherId;
+          state.selectedActionCount = cheapest.force;
+          state.actionHoverCell = [r, c];
+          state.reachable = new Set(
+            options.map(option => option.fell ? option.edgeCell : option.destination)
+              .filter(Boolean)
+              .map(([nr, nc]) => key(nr, nc))
+          );
+          renderAll();
+          if (pusherIds.size > 1) {
+            showToast("Plusieurs gardiens peuvent pousser cette cible : la destination choisie déterminera lequel agit.");
           }
+          return;
         }
 
         if (state.phase === "ACTION_SELECT" && char && char.player === state.currentPlayer) {
@@ -12431,6 +12586,8 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
+        state.pushDestinationOptions = null;
+        state.pushDestinationTarget = null;
 
         clearMagicPreview();
         state.reachable = new Set();
@@ -12831,6 +12988,82 @@
           force,
           requiredForce
         };
+      }
+
+      // Flux direct POUSSER (cible → destination) : à partir de la cible
+      // cliquée, énumère toutes les destinations légales — une par Force
+      // possible, pour chaque gardien allié pouvant la pousser. Aucune règle
+      // ni aucun calcul de coût propre ici : chaque option est obtenue en
+      // appelant getPushHoverPreview() (source unique de vérité, inchangée),
+      // avec un état temporaire (pusher/force testés) restauré à l'identique
+      // ensuite. "Ne montrer aucune destination impossible" : une option
+      // n'est ajoutée que si getPushHoverPreview() renvoie une destination
+      // réelle ou une chute confirmée.
+      function computePushOptionsForTarget(targetR, targetC) {
+        const pushers = pushersForTarget(targetR, targetC);
+        const reserve = availableActionCount("PUSH");
+        if (!pushers.length || reserve <= 0) return [];
+
+        const savedPhase = state.phase;
+        const savedType = state.selectedActionType;
+        const savedCharId = state.selectedCharId;
+        const savedHoverCell = state.actionHoverCell;
+        const savedCount = state.selectedActionCount;
+
+        const options = [];
+        try {
+          state.phase = "ACTION";
+          state.selectedActionType = "PUSH";
+          state.actionHoverCell = [targetR, targetC];
+
+          pushers.forEach(pusher => {
+            const required = requiredPushForce(pusher.r, pusher.c, targetR, targetC);
+            if (required > reserve) return;
+            state.selectedCharId = pusher.id;
+            let lastDestKey = null;
+            for (let force = required; force <= reserve; force++) {
+              state.selectedActionCount = force;
+              const preview = getPushHoverPreview();
+              if (!preview || (!preview.destination && !preview.fell)) continue;
+              const destKey = preview.fell ? "fell" : `${preview.destination[0]},${preview.destination[1]}`;
+              // Force supplémentaire sans effet (ligne bloquée avant le bord) :
+              // inutile de proposer un coût plus élevé pour le même résultat.
+              if (destKey === lastDestKey) break;
+              lastDestKey = destKey;
+              const option = {
+                pusherId: pusher.id,
+                pusherR: pusher.r,
+                pusherC: pusher.c,
+                force,
+                requiredForce: required,
+                destination: preview.destination,
+                fell: preview.fell,
+                direction: preview.direction
+              };
+              if (preview.fell) {
+                // Ancre géométrique pure (aucune règle) pour le survol/clic de
+                // l'option "chute" : dernière case île valide avant le bord,
+                // dans la direction de poussée depuis la cible.
+                const [dr, dc] = preview.direction;
+                let er = targetR, ec = targetC;
+                while (inside(er + dr, ec + dc) && isLand(er + dr, ec + dc)) {
+                  er += dr;
+                  ec += dc;
+                }
+                option.edgeCell = [er, ec];
+              }
+              options.push(option);
+              if (preview.fell) break; // forces superieures = meme chute, inutile
+            }
+          });
+        } finally {
+          state.phase = savedPhase;
+          state.selectedActionType = savedType;
+          state.selectedCharId = savedCharId;
+          state.actionHoverCell = savedHoverCell;
+          state.selectedActionCount = savedCount;
+        }
+        return options;
       }
 
       function handlePushClick(r, c) {
@@ -13412,6 +13645,8 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
+        state.pushDestinationOptions = null;
+        state.pushDestinationTarget = null;
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
@@ -14209,6 +14444,9 @@
       document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
+
+      document.getElementById("hudV2PushForceMinus")?.addEventListener("click", () => hudV2PushForceStep(-1));
+      document.getElementById("hudV2PushForcePlus")?.addEventListener("click", () => hudV2PushForceStep(1));
 
       // Menu secondaire unique (Prompt 3/3) : ⚙ remplace l'ancien bouton
       // caméra permanent. CAMÉRA garde le même délégué data-hud-camera que

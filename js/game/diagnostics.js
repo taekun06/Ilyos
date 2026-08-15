@@ -376,6 +376,9 @@
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
 
+      document.getElementById("hudV2PushForceMinus")?.addEventListener("click", () => hudV2PushForceStep(-1));
+      document.getElementById("hudV2PushForcePlus")?.addEventListener("click", () => hudV2PushForceStep(1));
+
       // Menu secondaire unique (Prompt 3/3) : ⚙ remplace l'ancien bouton
       // caméra permanent. CAMÉRA garde le même délégué data-hud-camera que
       // la Passe 2 (setKayKitCameraMode()/snapKayKitView() inchangés). SON/
