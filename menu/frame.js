@@ -19,6 +19,38 @@
   modal.querySelector('.menu-modal-close').addEventListener('click',()=>modal.classList.remove('open'));
   modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
 
+  function requestSiteFullscreen(){
+    if(document.fullscreenElement) return;
+    const el=document.documentElement;
+    const req=el.requestFullscreen||el.webkitRequestFullscreen;
+    if(!req) return;
+    try{ const p=req.call(el); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
+  }
+  document.addEventListener('click', requestSiteFullscreen, {once:true, capture:true});
+
+  function exitSiteFullscreen(){
+    const exit=document.exitFullscreen||document.webkitExitFullscreen;
+    if(!exit) return;
+    try{ const p=exit.call(document); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
+  }
+  function toggleFullscreen(){
+    if(document.fullscreenElement) exitSiteFullscreen();
+    else requestSiteFullscreen();
+  }
+  function syncFullscreenButtons(){
+    const active=!!document.fullscreenElement;
+    ['fullscreenBtnHome','fullscreenBtnDuel'].forEach(id=>{
+      const btn=document.getElementById(id);
+      if(!btn) return;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-label', active ? 'Quitter le plein écran' : 'Plein écran');
+      btn.title = active ? 'Quitter le plein écran' : 'Plein écran';
+      if(btn.id==='fullscreenBtnDuel') btn.textContent = active ? '⛶ QUITTER LE PLEIN ÉCRAN' : '⛶ PLEIN ÉCRAN';
+    });
+  }
+  document.addEventListener('fullscreenchange', syncFullscreenButtons);
+  document.addEventListener('webkitfullscreenchange', syncFullscreenButtons);
+
   function send(type,detail){ parent.postMessage({source:'ilyos-menu',type,detail}, location.origin); }
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
@@ -80,7 +112,7 @@
 
   function recap(mode,values){
     const items=[];
-    if(values.board!=null) items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
+    if(values.board!=null && mode!=='team') items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
     if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
     if(mode==='solo') items.push(['IA',labelFor(mode,'difficulty',values.difficulty)]);
     if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);
@@ -214,11 +246,13 @@
   });
   document.querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>{
     const action=btn.dataset.action;
+    if(action==='fullscreen') return toggleFullscreen();
     if(action==='rules'||action==='help') return openRules();
     if(action==='tutorial') return openComingSoon('TUTORIEL');
     if(action==='credits') return openComingSoon('CRÉDITS');
     send('action',{action});
   }));
+  syncFullscreenButtons();
 
   function setPointer(e){const x=(e.clientX/Math.max(innerWidth,1)-.5)*2,y=(e.clientY/Math.max(innerHeight,1)-.5)*2;document.documentElement.style.setProperty('--mx',x.toFixed(3));document.documentElement.style.setProperty('--my',y.toFixed(3))}
   addEventListener('pointermove',setPointer,{passive:true});

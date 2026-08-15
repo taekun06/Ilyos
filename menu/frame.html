@@ -8,8 +8,8 @@
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#040a11;--gold:#d8aa4c;--gold2:#f4d28e;--gold3:#8f5a17;--mx:0;--my:0;color:#fff}
     body{position:fixed;inset:0}
   </style>
-  <link rel="stylesheet" href="./menu.css?v=menu-duel-10">
-  <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-10">
+  <link rel="stylesheet" href="./menu.css?v=menu-duel-12">
+  <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-12">
 </head>
 <body>
 <div class="app">
@@ -17,7 +17,7 @@
     <div class="art"></div><div class="shade"></div><div class="fog"></div><div class="halo"></div><canvas id="particles"></canvas>
     <div class="ui home-layout">
       <img class="logo-home" src="./assets/ilyos-logo.svg" alt="ILYOS">
-      <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button></div>
+      <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button><button class="round" id="fullscreenBtnHome" data-action="fullscreen" aria-label="Plein écran">⛶</button></div>
       <div class="mode-grid">
         <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez l’IA</div></button>
         <button class="card green" data-mode="duel"><div class="card-icon">♙ ♙</div><div class="card-title">DUEL LOCAL</div><div class="card-sub">2 joueurs</div></button>
@@ -37,7 +37,7 @@
     <div class="duel-ui">
       <img class="logo-duel" src="./assets/ilyos-logo.svg" alt="ILYOS">
       <button class="pill back" id="back">← RETOUR</button>
-      <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" data-action="tutorial">TUTORIEL</button><button class="pill" data-action="credits">CRÉDITS</button></div>
+      <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" data-action="tutorial">TUTORIEL</button><button class="pill" data-action="credits">CRÉDITS</button><button class="pill" id="fullscreenBtnDuel" data-action="fullscreen" aria-label="Plein écran">⛶ PLEIN ÉCRAN</button></div>
       <div class="setup">
         <div class="panel" id="panel"></div>
         <button class="play" id="play">JOUER</button>
@@ -47,7 +47,7 @@
   </section>
   <div class="veil" id="veil"></div>
 </div>
-<script src="./menu-config.js?v=menu-duel-10"></script>
-<script src="./frame.js?v=menu-duel-10"></script>
+<script src="./menu-config.js?v=menu-duel-12"></script>
+<script src="./frame.js?v=menu-duel-12"></script>
 </body>
 </html>
