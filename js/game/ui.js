@@ -236,6 +236,14 @@
         const leftPlayer = state.players[0] || null;
         const rightPlayer = state.players.length > 1 ? state.players[1] : null;
 
+        // Portrait : aucun asset 2D circulaire trouvé dans assets/kaykit
+        // (uniquement des modèles .glb + leurs atlas de texture, inexploitables
+        // tels quels) — silhouette neutre temporaire (pas un emoji) le temps
+        // que de vrais portraits soient fournis. Un seul <svg> statique,
+        // injecté une fois par portrait (idempotent : ne réinjecte pas si
+        // déjà présent), teinté par la couleur du joueur via le fond du
+        // cercle — aucune scène 3D, aucun coût de rendu supplémentaire.
+        const silhouetteSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4 20.5c0-4.7 3.6-8.5 8-8.5s8 3.8 8 8.5"/></svg>';
         const fillPortrait = (prefix, p, isActiveTurn) => {
           const portraitEl = document.getElementById(`hudV2${prefix}Portrait`);
           const nameEl = document.getElementById(`hudV2${prefix}Name`);
@@ -245,7 +253,10 @@
               portraitEl.classList.remove("hidden");
               portraitEl.style.setProperty("--hud-v2-portrait-color", p.color);
               const iconEl = portraitEl.querySelector(".hud-v2-portrait-icon");
-              if (iconEl) iconEl.textContent = p.icon;
+              if (iconEl && !iconEl.dataset.filled) {
+                iconEl.innerHTML = silhouetteSvg;
+                iconEl.dataset.filled = "1";
+              }
               portraitEl.classList.toggle("hud-v2-portrait-active", !!isActiveTurn);
             } else {
               portraitEl.classList.add("hidden");

@@ -427,7 +427,15 @@
         const gearBtn = document.getElementById("hudV2GearBtn");
         const handBtn = document.getElementById("hudV2HandCount");
         const insideAny = [island, gear, hand].some(el => el && el.contains(event.target));
-        const onTrigger = [islandBtn, gearBtn, handBtn].some(el => el === event.target);
+        // BUG CORRIGÉ : ces boutons contiennent des <span> enfants (icône +
+        // mot, voir renderHudV2()) — un clic dessus donne event.target = le
+        // span, jamais le bouton lui-même. Avec une égalité stricte
+        // (=== event.target), "onTrigger" restait faux, et ce même listener
+        // refermait le drawer/popover DANS LA MÊME frappe que celle qui
+        // venait de l'ouvrir (l'ouverture, elle, passe par le listener direct
+        // du bouton ligne ~357, qui tourne AVANT que cet événement ne
+        // remonte jusqu'à document). .contains() couvre aussi les enfants.
+        const onTrigger = [islandBtn, gearBtn, handBtn].some(el => el && el.contains(event.target));
         if (!insideAny && !onTrigger) closeHudV2Drawer();
       });
 
