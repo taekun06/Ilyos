@@ -2370,9 +2370,10 @@
         // Pose d'île : renderKayKitPlacementPreview() affiche déjà le vrai modèle
         // d'île teinté vert/rouge — voir plus bas pour hoverRingsSuppressed.
         const placingIsland = state?.phase === "PLACE_ISLAND";
+        const unifiedPushActive = !!state?.pushOptions?.length;
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
@@ -2391,7 +2392,7 @@
         // pourtant le curseur en permanence, ce qui bruite le plateau sans rien
         // apprendre au joueur. On ne montre plus rien tant qu'une case ne propose
         // pas réellement quelque chose.
-        const hoverRingsSuppressed = glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        const hoverRingsSuppressed = glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -2528,7 +2529,13 @@
         };
         const clearHover = (event = null) => {
           const previous = kaykit3D.hoverCell;
-          if (previous && event) dispatchToCell("mouseleave", previous.r, previous.c, event, false);
+          if (previous && !previous.special && event) dispatchToCell("mouseleave", previous.r, previous.c, event, false);
+          if (state?.pushHoverOptionId) {
+            state.pushHoverOptionId = null;
+            if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+            renderTurnContext();
+            renderHand();
+          }
           kaykit3D.hoverCell = null;
           // Pendant la pose, conserver le dernier ancrage : les boutons de rotation
           // doivent transformer exactement la même prévisualisation.
@@ -2561,12 +2568,45 @@
             return null;
           }
           const hit = pick(event);
+          const specialInteraction = hit?.userData?.ilyosInteraction;
+          if (
+            specialInteraction === "push-destination"
+            || specialInteraction === "push-death-destination"
+          ) {
+            const optionId = hit.userData.pushOptionId;
+            if (state.pushHoverOptionId !== optionId) {
+              state.pushHoverOptionId = optionId;
+              if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+              renderTurnContext();
+              renderHand();
+            }
+            const option = state.pushOptions?.find(item => item.id === optionId);
+            kaykit3D.hoverCell = { special: true, hit };
+            if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+            clearKayKitVisualHover();
+            refreshKayKitHoverPreviews();
+            if (kaykit3D.cursorLabel && option) {
+              kaykit3D.cursorLabel.textContent = option.fell
+                ? `☠ CHUTE · FORCE ${option.force}`
+                : `POUSSER · FORCE ${option.force}`;
+              kaykit3D.cursorLabel.dataset.kind = "push";
+              kaykit3D.cursorLabel.classList.add("visible");
+            }
+            canvas.style.cursor = "pointer";
+            return kaykit3D.hoverCell;
+          }
 
           const next = hit
             ? { r: hit.userData.r, c: hit.userData.c, hit, hitAction: hit.userData?.kaykitAction || null }
             : null;
           const previous = kaykit3D.hoverCell;
-          if (previous && (!next || previous.r !== next.r || previous.c !== next.c)) {
+          if (previous?.special && state?.pushHoverOptionId) {
+            state.pushHoverOptionId = null;
+            if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+            renderTurnContext();
+            renderHand();
+          }
+          if (previous && !previous.special && (!next || previous.r !== next.r || previous.c !== next.c)) {
             dispatchToCell("mouseleave", previous.r, previous.c, event, false);
           }
           if (next && (!previous || previous.r !== next.r || previous.c !== next.c)) {
@@ -2652,6 +2692,14 @@
         canvas.addEventListener("click", event => {
           if (dragMoved) return;
           const next = updateHover(event);
+          const specialInteraction = next?.hit?.userData?.ilyosInteraction;
+          if (
+            specialInteraction === "push-destination"
+            || specialInteraction === "push-death-destination"
+          ) {
+            executeUnifiedPushOption(next.hit.userData.pushOptionId);
+            return;
+          }
           if (next?.hit) dispatchKayKitClick(next.hit, event);
           else if (next) dispatchToCell("click", next.r, next.c, event, true);
         });
@@ -3176,6 +3224,7 @@
         // Les anneaux d'invocation (addKayKitSpawnAffordance) portent déjà cette
         // information — on masque le sceau d'île pendant cette phase.
         const islandSealSuppressed = state?.phase === "PLACE_SPAWN";
+        const unifiedPushActive = !!state?.pushOptions?.length;
         let color = null, fillOpacity = .30, lineOpacity = 1, kind = "generic", size = .84;
         // fx-push/fx-move pilotaient un anneau de "validation" affiché après coup, une
         // fois le déplacement/la poussée terminés — retiré : plus aucune trace visuelle
@@ -3189,10 +3238,11 @@
         // l'émissif pulsé dans animateKayKit3D). Seule une ÎLE sélectionnée (classe
         // "selected" générique, hors invocation) garde ce sceau au sol.
         else if (!islandSealSuppressed && classList.contains("selected")) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
-        else if (classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
-        else if (classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
-        else if (classList.contains("push-destination") || classList.contains("push-destination-preview")) { color = 0xff7442; fillOpacity = .46; kind = "push" }
-        else if (classList.contains("push-line-preview")) { color = 0xffb14b; fillOpacity = .34; kind = "push" }
+        else if (!unifiedPushActive && classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
+        else if (!unifiedPushActive && classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
+        else if (!unifiedPushActive && (classList.contains("push-destination") || classList.contains("push-destination-preview"))) { color = 0xff7442; fillOpacity = .46; kind = "push" }
+        else if (!unifiedPushActive && classList.contains("push-line-preview")) { color = 0xffb14b; fillOpacity = .34; kind = "push" }
+        else if (classList.contains("direct-move-candidate")) { color = 0x67c8ea; fillOpacity = .42; lineOpacity = 1; kind = "direct-move"; size = .88 }
         // Marron uniforme (0xd9922f) sur tout l'identifiant "move", diagonale comprise :
         // ces cases utilisaient encore deux bleus cyan (0x63e6ff/0x36e6a3), en décalage
         // avec le reste du déplacement déjà recoloré.
@@ -3230,7 +3280,7 @@
         // Le gardien sélectionné mérite un halo rond épuré plutôt qu'un cadre carré
         // encombré de bordures et de coches : c'est ce halo que le joueur regarde
         // en premier, il doit rester net sur toute case (herbe, village, île sombre).
-        const isSelected = kind === "selected";
+        const isSelected = kind === "selected" || kind === "direct-move";
 
         // Ombre de contraste : rend la sélection lisible sur herbe, pierre et village.
         const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x071316, transparent: true, opacity: .62, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
@@ -3517,6 +3567,154 @@
         registerKayKitFadeIn(ring);
       }
 
+      function registerUnifiedPushInteraction(object, interaction, option) {
+        if (!kaykit3D || !object || !option) return;
+        object.userData.ilyosInteraction = interaction;
+        object.userData.pushOptionId = option.id;
+        kaykit3D.interactiveMeshes.push(object);
+      }
+
+      function addKayKitPushDestination(option, emphasized = false) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group || option.fell || !Number.isFinite(option.r) || !Number.isFinite(option.c)) return;
+        const p = kaykitCellPosition(option.r, option.c, kaykitCellSurfaceY(option.r, option.c) + .04);
+        const ring = new THREE.Mesh(
+          kaykitGeometry("unified-push-destination-ring-v1", () => new THREE.TorusGeometry(.22, .035, 10, 32)),
+          new THREE.MeshBasicMaterial({
+            color: emphasized ? 0xffd08a : 0xff8a32,
+            transparent: true,
+            opacity: emphasized ? 1 : .78,
+            depthWrite: false,
+            depthTest: false,
+            side: THREE.DoubleSide
+          })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(p.x, p.y, p.z);
+        ring.scale.setScalar(emphasized ? 1.12 : 1);
+        ring.renderOrder = 58;
+        group.add(ring);
+
+        const hit = new THREE.Mesh(
+          kaykitGeometry("unified-push-destination-hit-v1", () => new THREE.CircleGeometry(.34, 24)),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+        );
+        hit.rotation.x = -Math.PI / 2;
+        hit.position.set(p.x, p.y + .012, p.z);
+        hit.renderOrder = 60;
+        group.add(hit);
+        registerUnifiedPushInteraction(hit, "push-destination", option);
+      }
+
+      function pushDeathTexture() {
+        if (kaykit3D?.pushDeathTexture) return kaykit3D.pushDeathTexture;
+        const canvas = document.createElement("canvas");
+        canvas.width = 192;
+        canvas.height = 192;
+        const context = canvas.getContext("2d");
+        context.clearRect(0, 0, 192, 192);
+        context.shadowColor = "rgba(255, 176, 70, .85)";
+        context.shadowBlur = 18;
+        context.fillStyle = "#fff0c6";
+        context.font = "bold 128px serif";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText("☠", 96, 101);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        kaykit3D.pushDeathTexture = texture;
+        return texture;
+      }
+
+      function addKayKitDeathPushDestination(option, position, emphasized = false) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group || !position) return;
+
+        const halo = new THREE.Mesh(
+          kaykitGeometry("unified-push-death-halo-v1", () => new THREE.TorusGeometry(.27, .045, 10, 32)),
+          new THREE.MeshBasicMaterial({ color: 0xffa13d, transparent: true, opacity: emphasized ? .86 : .48, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.copy(position).add(new THREE.Vector3(0, -.24, 0));
+        halo.renderOrder = 57;
+        group.add(halo);
+
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: pushDeathTexture(),
+          transparent: true,
+          opacity: emphasized ? 1 : .88,
+          depthWrite: false,
+          depthTest: false
+        }));
+        sprite.position.copy(position);
+        sprite.scale.setScalar(emphasized ? .66 : .59);
+        sprite.renderOrder = 59;
+        group.add(sprite);
+
+        const hit = new THREE.Mesh(
+          kaykitGeometry("unified-push-death-hit-v1", () => new THREE.SphereGeometry(.36, 12, 8)),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false })
+        );
+        hit.position.copy(position);
+        hit.renderOrder = 60;
+        group.add(hit);
+        registerUnifiedPushInteraction(hit, "push-death-destination", option);
+      }
+
+      function renderUnifiedPushAffordances() {
+        if (!kaykit3D || !state?.pushOptions?.length) return;
+        const hoveredId = state.pushHoverOptionId;
+        const lines = new Map();
+
+        state.pushOptions.forEach(option => {
+          const lineKey = `${option.pusherId}:${option.targetId}:${option.dr}:${option.dc}`;
+          if (!lines.has(lineKey)) lines.set(lineKey, []);
+          lines.get(lineKey).push(option);
+        });
+
+        lines.forEach(options => {
+          const target = characterById(options[0].targetId);
+          if (!target) return;
+          const hovered = options.find(option => option.id === hoveredId) || null;
+          addKayKitPushAffordance(target.r, target.c);
+
+          options.forEach(option => {
+            const emphasized = option.id === hoveredId;
+            if (!option.fell) {
+              addKayKitPushDestination(option, emphasized);
+              return;
+            }
+            const edge = kaykitCellPosition(option.lastLandR, option.lastLandC, kaykitCellSurfaceY(option.lastLandR, option.lastLandC));
+            const direction = new THREE.Vector3(option.dc, 0, option.dr).normalize();
+            const deathPosition = new THREE.Vector3(edge.x, edge.y, edge.z)
+              .add(direction.multiplyScalar(.85));
+            deathPosition.y += .35;
+            addKayKitDeathPushDestination(option, deathPosition, emphasized);
+          });
+
+          const furthest = hovered || [...options].sort((a, b) => b.force - a.force)[0];
+          const arrowEnd = furthest.fell
+            ? [furthest.lastLandR + furthest.dr, furthest.lastLandC + furthest.dc]
+            : [furthest.r, furthest.c];
+          addKayKitPushDirection(
+            { r: target.r, c: target.c },
+            [target.r + furthest.dr, target.c + furthest.dc],
+            arrowEnd
+          );
+
+          if (hovered?.preview?.impacts) {
+            hovered.preview.impacts.forEach(impact => {
+              if (!impact.to) return;
+              addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
+                color: 0xffb15c,
+                opacity: .34,
+                size: .64
+              });
+            });
+          }
+        });
+      }
+
       // Anneau discret sur chaque case d'invocation valable de la nouvelle île,
       // visible dès l'entrée en PLACE_SPAWN (même idiome que les affordances
       // MOVE/PUSH ci-dessus) : le joueur voit où il peut invoquer avant même
@@ -3670,6 +3868,7 @@
           || (state.phase === "SMART_CHAR" && state.smartHoverType === "MOVE");
         const pushActive = (state.phase === "ACTION" && state.selectedActionType === "PUSH")
           || (state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH");
+        const unifiedPushActive = !!state.pushOptions?.length;
         // Gardien sélectionné en SMART_CHAR, avant même de survoler une case
         // précise : le plateau doit déjà montrer, discrètement, ce qu'il peut
         // faire (voir beginSmartCharacterAction). Reste actif même pendant un
@@ -3689,12 +3888,15 @@
           magicPivot: state.magicHoverPivot,
           push: pushPreview,
           force: pushPreview?.force ?? 0,
-          resting: smartResting ? [[...(state.reachable || [])], [...(state.smartPushTargets || [])]] : null,
+          pushOptions: unifiedPushActive ? state.pushOptions.map(option => option.id) : null,
+          pushHover: state.pushHoverOptionId,
+          resting: smartResting ? [...(state.reachable || [])] : null,
           spawnHover: state.phase === "PLACE_SPAWN" ? [state.pendingSpawnIslandId, state.hoverAnchor] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
+        kaykit3D.interactiveMeshes = (kaykit3D.interactiveMeshes || []).filter(object => !!object?.parent);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
 
         if (state.phase === "PLACE_SPAWN" && state.pendingSpawnIslandId) {
@@ -3721,11 +3923,11 @@
             const [r, c] = cellKey.split(",").map(Number);
             addKayKitMoveAffordance(r, c, costs?.get(cellKey) || 1);
           });
-          (state.smartPushTargets || new Set()).forEach(cellKey => {
-            if (cellKey === hoverKey) return;
-            const [r, c] = cellKey.split(",").map(Number);
-            addKayKitPushAffordance(r, c);
-          });
+        }
+
+        if (unifiedPushActive) {
+          renderUnifiedPushAffordances();
+          return;
         }
 
         if (moveActive && state.selectedCharId) {
@@ -3749,7 +3951,7 @@
           return;
         }
 
-        if (pushActive) {
+        if (pushActive && !unifiedPushActive) {
           // Flux direct cible → destination (ui.js: computePushOptionsForTarget) :
           // anneaux persistants sur TOUTES les destinations légales (state.reachable),
           // même idiome que smartResting ci-dessus. La destination actuellement
@@ -3827,6 +4029,11 @@
           kaykit3D.cursorLabel?.classList.remove("visible");
           kaykit3D.canvas.style.cursor = "default";
           clearKayKitVisualHover();
+          refreshKayKitHoverPreviews();
+          return;
+        }
+        if (hovered.special) {
+          if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
           refreshKayKitHoverPreviews();
           return;
         }
