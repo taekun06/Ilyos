@@ -91,6 +91,8 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
         state.reachable = new Set();
         state.aiThinking = !!p.isAI;
         els.gameScreen.classList.toggle("ai-turn", !!p.isAI);
@@ -238,6 +240,8 @@
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
         state.actionHoverCell = null;
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
         renderAll();
         showToast(state.undoHistory.length
           ? `Action annulée · ${state.undoHistory.length} de plus possible${state.undoHistory.length > 1 ? "s" : ""}.`
@@ -247,6 +251,8 @@
 
       function handleCancelButton() {
         if (state?.inputLocked) return;
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
         if (state?.phase === "ACTION" && state?.selectedActionType) {
           cancelSelectedCard();
         } else if (state?.phase === "PLACE_ISLAND") {

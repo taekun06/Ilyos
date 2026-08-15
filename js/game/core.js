@@ -758,6 +758,10 @@
           smartHoverPath: [],
           smartPushForce: null,
           smartPushTargets: [],
+          pushOptions: [],
+          pushHoverOptionId: null,
+          pushTargetId: null,
+          pendingDirectMoveTarget: null,
           savedAt: Date.now()
         }));
         return clean;
@@ -838,6 +842,10 @@
         restored.smartHoverPath = [];
         restored.smartPushForce = null;
         restored.smartPushTargets = new Set();
+        restored.pushOptions = [];
+        restored.pushHoverOptionId = null;
+        restored.pushTargetId = null;
+        restored.pendingDirectMoveTarget = null;
         restored.pushForceChoice = Math.max(1, Number(restored.pushForceChoice || 1));
         restored.crownPickupArtifactId ||= null;
         restored.treasureDropArtifactId ||= null;
@@ -1439,7 +1447,10 @@
         // gardien peut faire : déplacements accessibles (calcul déjà existant,
         // inchangé) et cibles poussables adjacentes.
         state.reachable = movementRange(char, availableActionCount("MOVE"));
-        state.smartPushTargets = pushableTargetsForCharacter(char);
+        state.pushOptions = collectUnifiedPushOptions({ pusherId: char.id });
+        state.pushHoverOptionId = null;
+        state.pushTargetId = null;
+        state.smartPushTargets = new Set();
         renderAll();
       }
 
@@ -1451,6 +1462,8 @@
         state.selectedActionType = null;
         state.selectedActionCount = 1;
         clearSmartHover();
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
         state.reachable = new Set();
         state.smartPushTargets = new Set();
         renderAll();
@@ -1503,28 +1516,27 @@
         const clickedChar = characterAt(r, c);
 
         if (preview.type === "PUSH") {
-          // getPushHoverPreview() reste la seule simulation de poussée : on lui
-          // fait recalculer la force minimale légale pour CETTE cible plutôt que
-          // de repartir du dernier pushForceChoice, potentiellement insuffisant
-          // (c'était le bug : "Force 2 requise" alors que le choix affiché valait 1).
-          state.actionHoverCell = [r, c];
-          state.smartHoverType = "PUSH";
-          const pushPreview = getPushHoverPreview();
-          const requiredForce = Math.max(1, pushPreview?.requiredForce ?? 1);
-          const force = Math.min(
-            availableActionCount("PUSH"),
-            Math.max(requiredForce, pushPreview?.force ?? requiredForce)
-          );
+          const options = collectUnifiedPushOptions({
+            pusherId: actor.id,
+            targetId: clickedChar?.id || null
+          });
+          if (!options.length) {
+            showToast("Aucune poussée légale vers cette cible.");
+            return;
+          }
           state.phase = "ACTION";
           state.selectedActionType = "PUSH";
-          state.selectedActionCount = force;
-          setPushForceChoice(force);
+          state.selectedActionCount = 1;
+          state.pushOptions = options;
+          state.pushTargetId = clickedChar?.id || null;
+          state.pushHoverOptionId = null;
           state.smartHoverType = null;
           state.smartHoverPath = [];
           state.smartPushForce = null;
           state.smartPushTargets = new Set();
-          state.reachable = new Set(orthogonalNeighbors(actor.r, actor.c).map(([nr, nc]) => key(nr, nc)));
-          handlePushClick(r, c);
+          state.reachable = new Set();
+          renderAll();
+          scheduleKayKitSync();
           return;
         }
 
@@ -1537,6 +1549,7 @@
           state.smartHoverType = null;
           state.smartHoverPath = [];
           state.smartPushTargets = new Set();
+          clearUnifiedPushOptions();
           state.reachable = movementRange(actor, cost);
           handleMoveClick(r, c);
           return;
@@ -2276,6 +2289,10 @@
           smartHoverPath: [],
           smartPushForce: null,
           smartPushTargets: new Set(),
+          pushOptions: [],
+          pushHoverOptionId: null,
+          pushTargetId: null,
+          pendingDirectMoveTarget: null,
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,
@@ -2468,6 +2485,10 @@
           smartHoverPath: [],
           smartPushForce: null,
           smartPushTargets: new Set(),
+          pushOptions: [],
+          pushHoverOptionId: null,
+          pushTargetId: null,
+          pendingDirectMoveTarget: null,
           reachable: new Set(),
           nextIslandId: 1,
           nextCharId: 100,

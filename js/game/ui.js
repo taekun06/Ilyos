@@ -42,6 +42,10 @@
           return { label: "Tour de l’adversaire", instruction: "L’adversaire joue. Vos commandes sont temporairement verrouillées." };
         }
 
+        if (state.pendingDirectMoveTarget) {
+          return { label: "Choisir le gardien", instruction: "Cliquez l’un des gardiens éclairés pour rejoindre le sanctuaire." };
+        }
+
         switch (state.phase) {
           case "SETUP_SELECT":
             return { label: "Choisir le setup", instruction: "Sélectionnez la configuration du Duel symétrique." };
@@ -68,6 +72,12 @@
                 : { label: `Déplacement 1 à ${amount}`, instruction: "Prochain clic : un de vos gardiens." };
             }
             if (state.selectedActionType === "PUSH") {
+              if (state.pushOptions?.length) {
+                const hovered = state.pushOptions.find(option => option.id === state.pushHoverOptionId);
+                return hovered
+                  ? { label: `Poussée · Force ${hovered.force}`, instruction: hovered.fell ? "Prochain clic : ☠ pour confirmer la chute." : "Prochain clic : la destination orange choisie." }
+                  : { label: "Choisir la poussée", instruction: "Prochain clic : une destination orange ou ☠." };
+              }
               return state.selectedCharId
                 ? { label: `Poussée ×${amount}`, instruction: "Prochain clic : une cible adjacente éclairée." }
                 : { label: `Poussée ×${amount}`, instruction: "Prochain clic : votre gardien pousseur." };
@@ -87,6 +97,10 @@
 
         if (player?.isAI || state.aiThinking) {
           return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "Ordinateur"}`.trim(), next: "L’adversaire prépare son action." };
+        }
+
+        if (state.pendingDirectMoveTarget) {
+          return { kind: "move", kicker: "CHOISISSEZ LE GARDIEN", title: "Accès au sanctuaire", next: "Cliquez l’un des gardiens éclairés." };
         }
 
         if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
@@ -116,6 +130,12 @@
             return { kind: "move", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name} · jusqu’à ${amount}`, next: state.selectedCharId ? "Cliquez une destination éclairée." : "Cliquez un de vos gardiens." };
           }
           if (state.selectedActionType === "PUSH") {
+            if (state.pushOptions?.length) {
+              const hovered = state.pushOptions.find(option => option.id === state.pushHoverOptionId);
+              return hovered
+                ? { kind: "push", kicker: hovered.fell ? "☠ CHUTE" : "POUSSÉE", title: `Force ${hovered.force}`, next: "Cliquez pour exécuter ce résultat." }
+                : { kind: "push", kicker: "ACTION ACTIVE", title: "Choisir un résultat", next: "Cliquez une destination orange ou ☠." };
+            }
             return { kind: "push", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name} · force ${amount}`, next: state.selectedCharId ? "Cliquez une cible adjacente éclairée." : "Cliquez votre gardien pousseur." };
           }
           const degrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
@@ -422,8 +442,8 @@
           // Flux direct POUSSER : indicateur de chute (☠ + coût) quand
           // l'option actuellement retenue (pusherId/force) est une chute —
           // même donnée que computePushOptionsForTarget(), rien de recalculé.
-          const currentPushOption = state.pushDestinationOptions?.find(
-            option => option.pusherId === state.selectedCharId && option.force === state.selectedActionCount
+          const currentPushOption = state.pushOptions?.find(
+            option => option.id === state.pushHoverOptionId
           );
           if (currentPushOption) {
             instructionEl.textContent = currentPushOption.fell
@@ -792,6 +812,12 @@
             );
             if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
             if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
+            if (
+              char
+              && state.pendingDirectMoveTarget?.candidateIds?.includes(char.id)
+            ) {
+              classes.push("direct-move-candidate");
+            }
 
             const placementClass = previewClassForCell(r, c);
             if (placementClass) classes.push(placementClass);
@@ -1405,6 +1431,24 @@
         const clickedCrownBadge = !!event.target.closest?.(".carrier-crown");
         const clickedArtifactId = clickedCrownNode?.dataset?.artifactId || null;
 
+        if (state.pendingDirectMoveTarget) {
+          const target = state.pendingDirectMoveTarget;
+          const clicked = characterAt(r, c);
+          if (clicked && target.candidateIds.includes(clicked.id)) {
+            const range = movementRange(clicked, availableActionCount("MOVE"));
+            state.pendingDirectMoveTarget = null;
+            state.phase = "ACTION";
+            state.selectedActionType = "MOVE";
+            state.selectedActionCount = target.cost;
+            state.selectedCharId = clicked.id;
+            state.selectedIslandId = null;
+            state.reachable = range;
+            performMoveToCell(clicked, target.r, target.c, range);
+            return;
+          }
+          state.pendingDirectMoveTarget = null;
+        }
+
         if (clickedScoreOption) {
           const scoringChar = characterAt(r, c);
           validateCrownPoint(scoringChar);
@@ -1602,6 +1646,23 @@
         if (state.phase === "ACTION") {
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
+          else if (action === "PUSH" && state.pushOptions?.length) {
+            const target = characterAt(r, c);
+            if (!target) return;
+            const options = collectUnifiedPushOptions({
+              pusherId: state.selectedCharId || null,
+              targetId: target.id
+            });
+            if (!options.length) {
+              showToast("Aucune poussée légale vers cette cible.");
+              return;
+            }
+            state.pushOptions = options;
+            state.pushTargetId = target.id;
+            state.pushHoverOptionId = null;
+            renderAll();
+            scheduleKayKitSync();
+          }
           else if (action === "PUSH") handlePushClick(r, c);
           else if (action === "MAGIC") handleMagicClick(r, c);
           return;
@@ -1715,41 +1776,25 @@
           return;
         }
 
-        if (state.phase === "ACTION_SELECT" && char && char.player !== state.currentPlayer && availableActionCount("PUSH") > 0) {
-          // Flux direct : clic sur la cible → toutes ses destinations légales
-          // (une par Force, tous pousseurs confondus) s'affichent d'un coup ;
-          // il ne reste plus qu'à cliquer la destination voulue (voir
-          // computePushOptionsForTarget/onCellEnter/le routage plus bas dans
-          // cette fonction pour l'exécution). Le sélecteur de Force manuel
-          // (case ACTION classique) reste disponible en repli.
-          const options = computePushOptionsForTarget(r, c);
-          if (!options.length) {
-            showToast("Aucune poussée possible pour cette cible.");
-            return;
-          }
-          const pusherIds = new Set(options.map(option => option.pusherId));
-          const cheapest = options.reduce((best, option) => (option.force < best.force ? option : best), options[0]);
-          state.phase = "ACTION";
-          state.selectedActionType = "PUSH";
-          state.pushDestinationTarget = [r, c];
-          state.pushDestinationOptions = options;
-          state.selectedCharId = cheapest.pusherId;
-          state.selectedActionCount = cheapest.force;
-          state.actionHoverCell = [r, c];
-          state.reachable = new Set(
-            options.map(option => option.fell ? option.edgeCell : option.destination)
-              .filter(Boolean)
-              .map(([nr, nc]) => key(nr, nc))
-          );
-          renderAll();
-          if (pusherIds.size > 1) {
-            showToast("Plusieurs gardiens peuvent pousser cette cible : la destination choisie déterminera lequel agit.");
-          }
+        if (
+          state.phase === "ACTION_SELECT"
+          && char
+          && char.player !== state.currentPlayer
+          && beginPushAgainstTarget(char)
+        ) {
           return;
         }
 
         if (state.phase === "ACTION_SELECT" && char && char.player === state.currentPlayer) {
           beginSmartCharacterAction(char);
+          return;
+        }
+
+        if (
+          state.phase === "ACTION_SELECT"
+          && isSanctuary(r, c)
+          && tryDirectSanctuaryMove(r, c)
+        ) {
           return;
         }
 
@@ -1842,7 +1887,8 @@
           const target = state.characters.some(char => {
             if (char.player !== state.currentPlayer) return false;
             return orthogonalNeighbors(char.r, char.c).some(([r, c]) => {
-              const other = characterAt(r, c); return !!(looseArtifactAt(r, c) || (other && other.player !== state.currentPlayer));
+              const other = characterAt(r, c);
+              return !!(looseArtifactAt(r, c) || (other && other.id !== char.id));
             });
           });
           if (!target) return "Aucun adversaire ou objet adjacent à pousser.";
@@ -1881,7 +1927,7 @@
           button.title = disabled ? reason : `${action.name} ×${remaining}`;
           const status = disabled ? reason : (active ? "Sélectionnée" : (smartReady ? `${remaining} disponible${remaining > 1 ? "s" : ""}` : "Disponible"));
           button.innerHTML = `<span class="v60-action-icon">${action.icon}</span><strong>${action.name}</strong><b>×${remaining}</b><small>${status}</small>`;
-          if (!disabled) button.addEventListener("click", () => selectActionBatch(type, type === "PUSH" ? Math.max(1, state.pushForceChoice || 1) : 1));
+          if (!disabled) button.addEventListener("click", () => type === "PUSH" ? beginUnifiedPushFromHud() : selectActionBatch(type, 1));
           else button.addEventListener("click", () => showToast(reason));
           bar.appendChild(button);
         });
@@ -1907,7 +1953,7 @@
 
         const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH";
         const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
-        if (classicPushActive || smartPushHovered) {
+        if ((classicPushActive || smartPushHovered) && !state.pushOptions?.length) {
           const max = Math.max(1, availableActionCount("PUSH"));
           // Même contrôle pour les deux chemins (bouton PUSH classique et clic
           // direct sur un gardien) : seule la source du minimum change. En
@@ -2021,6 +2067,8 @@
         state.smartHoverPath = [];
         state.pushDestinationOptions = null;
         state.pushDestinationTarget = null;
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
 
         clearMagicPreview();
         state.reachable = new Set();
@@ -2034,6 +2082,11 @@
 
       function selectActionBatch(type, count) {
         if (!canLocalPlayerAct()) return;
+
+        if (type === "PUSH") {
+          beginUnifiedPushFromHud();
+          return;
+        }
 
         if (state.phase === "ACTION" && state.selectedActionType === type) {
           cancelSelectedCard();
@@ -2097,6 +2150,8 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
@@ -2113,6 +2168,203 @@
         const player = currentPlayer();
         return player.hand.every(card => card.used)
           && ["MOVE", "PUSH", "MAGIC"].every(type => storedActionCount(type, player) === 0);
+      }
+
+      function clearUnifiedPushOptions() {
+        if (!state) return;
+        state.pushOptions = [];
+        state.pushHoverOptionId = null;
+        state.pushTargetId = null;
+      }
+
+      function pushOptionKey(option) {
+        return [
+          option.pusherId,
+          option.targetId,
+          option.dr,
+          option.dc,
+          option.force,
+          option.fell ? "fall" : `${option.r},${option.c}`
+        ].join(":");
+      }
+
+      function computePushOptionsForTarget(target) {
+        if (!state || !target || availableActionCount("PUSH") < 1) return [];
+
+        const pushers = orthogonalNeighbors(target.r, target.c)
+          .map(([r, c]) => characterAt(r, c))
+          .filter(char =>
+            char
+            && char.player === state.currentPlayer
+            && char.id !== target.id
+          );
+        const maxForce = availableActionCount("PUSH");
+        const options = [];
+
+        pushers.forEach(pusher => {
+          const dr = target.r - pusher.r;
+          const dc = target.c - pusher.c;
+          const requiredForce = collectPushLine(target.r, target.c, dr, dc).length;
+          for (let force = Math.max(1, requiredForce); force <= maxForce; force++) {
+            const preview = getPushHoverPreview({ pusher, target, force });
+            if (!preview || force < preview.requiredForce) continue;
+            const lead = preview.impacts?.[0];
+            options.push({
+              pusherId: pusher.id,
+              targetId: target.id,
+              dr,
+              dc,
+              force,
+              r: lead?.to?.[0] ?? null,
+              c: lead?.to?.[1] ?? null,
+              fell: !!lead?.fell,
+              lastLandR: lead?.lastLand?.[0] ?? target.r,
+              lastLandC: lead?.lastLand?.[1] ?? target.c,
+              preview
+            });
+          }
+        });
+
+        return options;
+      }
+
+      function collectUnifiedPushOptions({
+        pusherId = null,
+        targetId = null
+      } = {}) {
+        if (!state || availableActionCount("PUSH") < 1) return [];
+
+        const options = [];
+        state.characters.forEach(target => {
+          if (targetId != null && String(target.id) !== String(targetId)) return;
+          computePushOptionsForTarget(target).forEach(option => {
+            if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
+            const normalized = { ...option, id: pushOptionKey(option) };
+            options.push(normalized);
+          });
+        });
+
+        const unique = new Map();
+        options.forEach(option => {
+          if (!unique.has(option.id)) unique.set(option.id, option);
+        });
+        return [...unique.values()];
+      }
+
+      function beginUnifiedPushFromHud() {
+        if (!state || !canLocalPlayerAct()) return;
+        if (availableActionCount("PUSH") < 1) {
+          showToast("Aucune poussée disponible.");
+          return;
+        }
+        const options = collectUnifiedPushOptions();
+        if (!options.length) {
+          showToast("Aucune poussée possible actuellement.");
+          return;
+        }
+        if (!prepareActionSwitch()) return;
+
+        state.phase = "ACTION";
+        state.selectedActionType = "PUSH";
+        state.selectedActionCount = 1;
+        state.selectedCharId = null;
+        state.reachable = new Set();
+        state.pushOptions = options;
+        state.pushHoverOptionId = null;
+        state.pushTargetId = null;
+        renderAll();
+        scheduleKayKitSync();
+      }
+
+      function beginPushAgainstTarget(target) {
+        const options = collectUnifiedPushOptions({ targetId: target?.id });
+        if (!options.length) return false;
+
+        state.phase = "ACTION";
+        state.selectedActionType = "PUSH";
+        state.selectedActionCount = 1;
+        state.selectedCharId = null;
+        state.reachable = new Set();
+        state.pushOptions = options;
+        state.pushTargetId = target.id;
+        state.pushHoverOptionId = null;
+        renderAll();
+        scheduleKayKitSync();
+        return true;
+      }
+
+      function executeUnifiedPushOption(optionId) {
+        const option = state?.pushOptions?.find(item => item.id === optionId);
+        if (!option) return false;
+
+        const pusher = characterById(option.pusherId);
+        const target = characterById(option.targetId);
+        if (!pusher || !target) {
+          clearUnifiedPushOptions();
+          return false;
+        }
+
+        state.phase = "ACTION";
+        state.selectedCharId = pusher.id;
+        state.selectedActionType = "PUSH";
+        state.selectedActionCount = option.force;
+        state.actionHoverCell = [target.r, target.c];
+        setPushForceChoice(option.force);
+        handlePushClick(target.r, target.c);
+        return true;
+      }
+
+      function directMoveCandidatesToCell(r, c) {
+        const budget = availableActionCount("MOVE");
+        if (budget < 1) return [];
+        const destinationKey = key(r, c);
+
+        return state.characters
+          .filter(char => char.player === state.currentPlayer)
+          .map(char => {
+            const reachable = movementRange(char, budget);
+            if (!reachable.has(destinationKey)) return null;
+            const cost = reachable.costs?.get(destinationKey);
+            if (!Number.isFinite(cost)) return null;
+            return { char, cost, reachable };
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.cost - b.cost || String(a.char.id).localeCompare(String(b.char.id)));
+      }
+
+      function tryDirectSanctuaryMove(r, c) {
+        if (!state || state.phase !== "ACTION_SELECT" || !isSanctuary(r, c)) return false;
+        if (characterAt(r, c) || looseArtifactAt(r, c)) return false;
+
+        const candidates = directMoveCandidatesToCell(r, c);
+        if (!candidates.length) {
+          showToast("Aucun gardien ne peut atteindre cette case.");
+          return true;
+        }
+
+        const bestCost = candidates[0].cost;
+        const best = candidates.filter(candidate => candidate.cost === bestCost);
+        if (best.length === 1) {
+          const candidate = best[0];
+          state.phase = "ACTION";
+          state.selectedActionType = "MOVE";
+          state.selectedActionCount = candidate.cost;
+          state.selectedCharId = candidate.char.id;
+          state.selectedIslandId = null;
+          state.reachable = candidate.reachable;
+          performMoveToCell(candidate.char, r, c, candidate.reachable);
+          return true;
+        }
+
+        state.pendingDirectMoveTarget = {
+          r,
+          c,
+          cost: bestCost,
+          candidateIds: best.map(candidate => candidate.char.id)
+        };
+        renderAll();
+        scheduleKayKitSync();
+        return true;
       }
 
       function nearestMoverForCell(r, c) {
@@ -2188,15 +2440,31 @@
           return;
         }
 
-        const char = characterById(state.selectedCharId);
+        performMoveToCell(characterById(state.selectedCharId), r, c, state.reachable);
+      }
+
+      function performMoveToCell(char, r, c, reachable = null) {
+        if (!char || characterAt(r, c) || !isLand(r, c)) return false;
+        const destinationKey = key(r, c);
+        const activeRange = reachable || movementRange(char, availableActionCount("MOVE"));
+        if (!activeRange.has(destinationKey)) {
+          showToast("Cette case n’est pas accessible.");
+          return false;
+        }
+
         const maxMoves = availableActionCount("MOVE");
         const path = shortestMovementPath(char, r, c, maxMoves);
         if (!path?.length) {
           showToast("Cette case n’est pas accessible.");
-          return;
+          return false;
         }
 
-        const cost = path.cost ?? path.length;
+        const cost = activeRange.costs?.get(destinationKey) ?? path.cost ?? path.length;
+        if (!Number.isFinite(cost) || cost < 1 || cost > maxMoves) {
+          showToast("Cette case n’est pas accessible.");
+          return false;
+        }
+
         const owner = state.players[char.player];
         const from = [char.r, char.c];
         saveUndoSnapshot();
@@ -2237,6 +2505,7 @@
             useSelectedCard(cost);
           }, false, path);
         }
+        return true;
       }
 
       function selectCharacterForMove(char) {
@@ -2326,17 +2595,19 @@
         return line;
       }
 
-      function getPushHoverPreview() {
+      function getPushHoverPreview(context = null) {
         const manualPush = state.phase === "ACTION" && state.selectedActionType === "PUSH";
         const smartPush = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
-        if (!((manualPush || smartPush) && state.selectedCharId && state.actionHoverCell)) {
+        if (!context && !((manualPush || smartPush) && state.selectedCharId && state.actionHoverCell)) {
           return null;
         }
 
-        const pusher = characterById(state.selectedCharId);
+        const pusher = context?.pusher || characterById(state.selectedCharId);
         if (!pusher) return null;
 
-        const [targetR, targetC] = state.actionHoverCell;
+        const [targetR, targetC] = context?.target
+          ? [context.target.r, context.target.c]
+          : state.actionHoverCell;
         if (Math.abs(pusher.r - targetR) + Math.abs(pusher.c - targetC) !== 1) return null;
 
         const targetChar = characterAt(targetR, targetC);
@@ -2358,9 +2629,11 @@
         // state.smartPushForce porte le choix explicite du joueur pour CETTE cible
         // (survolée), sinon on retombe sur le minimum légal plutôt que sur le
         // dernier choix global (qui pouvait être insuffisant pour cette cible-ci).
-        const force = smartPush
-          ? Math.min(availableActionCount("PUSH"), Math.max(requiredForce, state.smartPushForce || requiredForce))
-          : selectedBatchSize();
+        const force = context
+          ? Math.max(1, Math.min(availableActionCount("PUSH"), context.force || requiredForce))
+          : smartPush
+            ? Math.min(availableActionCount("PUSH"), Math.max(requiredForce, state.smartPushForce || requiredForce))
+            : selectedBatchSize();
         const impacts = [];
 
         if (targetCrown) {
@@ -2380,7 +2653,8 @@
             char,
             r: char.r,
             c: char.c,
-            alive: true
+            alive: true,
+            lastLand: [char.r, char.c]
           }));
           const fixedOccupants = new Set(
             state.characters
@@ -2397,6 +2671,7 @@
               const nc = item.c + dc;
 
               if (!inside(nr, nc) || !isLand(nr, nc)) {
+                item.lastLand = [item.r, item.c];
                 item.alive = false;
                 continue;
               }
@@ -2410,6 +2685,7 @@
 
               item.r = nr;
               item.c = nc;
+              item.lastLand = [nr, nc];
             }
           }
 
@@ -2421,6 +2697,7 @@
               from: [item.char.r, item.char.c],
               to: item.alive ? [item.r, item.c] : null,
               fell: !item.alive,
+              lastLand: item.lastLand,
               icon: owner.icon,
               color: owner.color,
               carrying: characterCarriesCrown(item.char.id)
@@ -2453,7 +2730,7 @@
       // ensuite. "Ne montrer aucune destination impossible" : une option
       // n'est ajoutée que si getPushHoverPreview() renvoie une destination
       // réelle ou une chute confirmée.
-      function computePushOptionsForTarget(targetR, targetC) {
+      function computeLegacyPushOptionsForTarget(targetR, targetC) {
         const pushers = pushersForTarget(targetR, targetC);
         const reserve = availableActionCount("PUSH");
         if (!pushers.length || reserve <= 0) return [];
@@ -3107,6 +3384,8 @@
 
       function cancelSelectedCard() {
         if (state.phase !== "ACTION") return;
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
         state.selectedActionCardId = null;
         state.selectedActionType = null;
         state.selectedActionCount = 1;
@@ -3448,6 +3727,9 @@
             return;
           }
         }
+
+        clearUnifiedPushOptions();
+        state.pendingDirectMoveTarget = null;
 
         state.turnTransitioning = true;
         stopTurnTimer();
