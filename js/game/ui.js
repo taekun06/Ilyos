@@ -221,27 +221,44 @@
 
         const crownPips = score => {
           const filled = Math.max(0, Math.min(3, score || 0));
-          return "👑".repeat(filled) + "♔".repeat(3 - filled);
+          return "👑".repeat(filled) +
+            `<span class="hud-v2-crown-empty">${"♔".repeat(3 - filled)}</span>`;
         };
 
         const active = currentPlayer();
-        const opponent = state.players.length > 1
-          ? state.players[(state.currentPlayer + 1) % state.players.length]
-          : null;
 
-        const activeNameEl = document.getElementById("hudV2ActiveName");
-        const activeScoreEl = document.getElementById("hudV2ActiveScore");
-        const opponentNameEl = document.getElementById("hudV2OpponentName");
-        const opponentScoreEl = document.getElementById("hudV2OpponentScore");
-        if (activeNameEl) activeNameEl.textContent = active.name;
-        if (activeScoreEl) activeScoreEl.textContent = crownPips(active.score);
-        // Solo (un seul adversaire, IA) : nom remplacé par "IA", sans couleur
-        // écrite. 2 joueurs : nom direct. 4 joueurs/2v2 : pas de champ
-        // d'équipe fiable identifié dans state — affichage générique
-        // (prochain joueur du tour) en attendant le Prompt 3.
-        const opponentLabel = opponent ? (opponent.isAI ? "IA" : opponent.name) : "";
-        if (opponentNameEl) opponentNameEl.textContent = opponentLabel;
-        if (opponentScoreEl) opponentScoreEl.textContent = opponent ? crownPips(opponent.score) : "";
+        // Portraits/noms fixes gauche=joueur[0] / droite=joueur[1] (jamais
+        // permutés selon le tour, cf. "le halo passe d'un portrait à
+        // l'autre" — sinon les noms sauteraient de côté à chaque tour).
+        // 4 joueurs/2v2 : toujours aucun champ d'équipe fiable identifié
+        // dans state (voir startLocalGame(), core.js) — seuls les deux
+        // premiers joueurs sont représentés, gap déjà documenté.
+        const leftPlayer = state.players[0] || null;
+        const rightPlayer = state.players.length > 1 ? state.players[1] : null;
+
+        const fillPortrait = (prefix, p, isActiveTurn) => {
+          const portraitEl = document.getElementById(`hudV2${prefix}Portrait`);
+          const nameEl = document.getElementById(`hudV2${prefix}Name`);
+          const scoreEl = document.getElementById(`hudV2${prefix}Score`);
+          if (portraitEl) {
+            if (p) {
+              portraitEl.classList.remove("hidden");
+              portraitEl.style.setProperty("--hud-v2-portrait-color", p.color);
+              const iconEl = portraitEl.querySelector(".hud-v2-portrait-icon");
+              if (iconEl) iconEl.textContent = p.icon;
+              portraitEl.classList.toggle("hud-v2-portrait-active", !!isActiveTurn);
+            } else {
+              portraitEl.classList.add("hidden");
+            }
+          }
+          if (nameEl) {
+            nameEl.textContent = p ? (p.isAI ? "IA" : p.name) : "";
+            nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
+          }
+          if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
+        };
+        fillPortrait("Active", leftPlayer, leftPlayer && state.currentPlayer === leftPlayer.id);
+        fillPortrait("Opponent", rightPlayer, rightPlayer && state.currentPlayer === rightPlayer.id);
 
         // --- ÎLE : pill/bouton, disparaît une fois l'île posée ce tour ---
         const islandStatusEl = document.getElementById("hudV2IslandStatus");
@@ -260,7 +277,7 @@
         // Icône dans son propre span, visuellement plus grande que le texte
         // (hiérarchie demandée) — le mot se masque sous 480px, le compte reste.
         const pillLabels = { MOVE: "DÉPLACER", PUSH: "POUSSER", MAGIC: "MAGIE" };
-        const pillIcons = { MOVE: "👢", PUSH: "↗", MAGIC: "✦" };
+        const pillIcons = { MOVE: "👢", PUSH: "💥", MAGIC: "✦" };
         const smartSelected = state.phase === "SMART_CHAR" && !!state.selectedCharId;
         [["MOVE", "hudV2MoveCount"], ["PUSH", "hudV2PushCount"], ["MAGIC", "hudV2MagicCount"]].forEach(([type, id]) => {
           const btn = document.getElementById(id);
@@ -290,15 +307,18 @@
           magicRow.classList.toggle("hidden", !rotating);
         }
 
-        // --- Mini-fiche gardien sélectionné ---
+        // --- Mini-fiche gardien : usage réduit — uniquement quand elle
+        // apporte une info réellement utile (couronne portée). Le halo 3D
+        // suffit déjà à indiquer une simple sélection ; pas de fiche
+        // systématique pour ça (évite de recréer un panneau permanent).
         const unitSlot = document.getElementById("hudV2UnitCardSlot");
         if (unitSlot) {
           const ch = characterById(state.selectedCharId);
-          if (ch) {
+          const carriesCrown = ch && characterCarriesCrown(ch.id);
+          if (ch && carriesCrown) {
             const p = state.players[ch.player];
             unitSlot.classList.remove("hidden");
-            unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span>` +
-              (characterCarriesCrown(ch.id) ? `<span class="hud-v2-unit-crown">👑</span>` : "");
+            unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown">👑</span>`;
           } else {
             unitSlot.classList.add("hidden");
             unitSlot.innerHTML = "";
@@ -312,11 +332,11 @@
           instructionEl.textContent = info?.next || info?.title || "";
         }
 
-        // --- Main : commande autonome, valeurs reelles ---
+        // --- Deck (ex-"Main") : commande autonome, valeurs reelles ---
         const handCountEl = document.getElementById("hudV2HandCount");
         if (handCountEl) {
-          const handLabel = `MAIN ×${(active.hand || []).length}`;
-          handCountEl.innerHTML = `<span aria-hidden="true">🃏</span> ${handLabel}`;
+          const handLabel = `DECK ×${(active.hand || []).length}`;
+          handCountEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">🃏</span><span class="hud-v2-pill-word">${handLabel}</span>`;
           handCountEl.setAttribute("aria-label", handLabel);
         }
         const popDeck = document.getElementById("hudV2HandPopoverDeck");

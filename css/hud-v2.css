@@ -1,19 +1,20 @@
 /*
-  HUD V2 — architecture minimale, plateau 3D dominant (~85/15).
-  Ce fichier ne touche a aucune regle de jeu : il positionne/habille les
-  memes elements DOM que l'ancien HUD (voir index.html, #hudV2Top/#hudV2Dock),
-  et neutralise visuellement le reste de l'ancien layout encore present
-  (.hud-v1-legacy — multijoueur/widgets contextuels sans equivalent visuel
-  dans le HUD V2) sans le supprimer du DOM. La logique metier (js/game/ui.js,
-  core.js, kaykit3d.js, complete-polish.js) continue d'ecrire dans ces memes
-  ids/elements sans le savoir.
+  HUD V2 — architecture minimale, plateau 3D dominant (~85/15), symétrie
+  stricte gauche/droite. Ce fichier ne touche a aucune regle de jeu : il
+  positionne/habille les memes elements DOM que l'ancien HUD (voir
+  index.html, #hudV2Top/#hudV2Dock), et neutralise visuellement le reste de
+  l'ancien layout encore present (.hud-v1-legacy — multijoueur/widgets
+  contextuels sans equivalent visuel dans le HUD V2) sans le supprimer du
+  DOM. La logique metier (js/game/ui.js, core.js, kaykit3d.js,
+  complete-polish.js) continue d'ecrire dans ces memes ids/elements sans le
+  savoir.
 
   DA : anthracite bleute tres transparent, verre sombre subtil, or
   champagne fin, bordures <=1px, glow reserve aux etats actifs/emphasis
   (jamais un glow generalise sur les panneaux), transitions 180-220ms.
   Zone haute : aucun fond/pilule — texte nu + text-shadow pour la lisibilite.
   Dock bas : aucune grande barre commune — chaque commande flotte seule avec
-  son propre tres leger fond verre.
+  son propre tres leger fond verre (quasi invisible au repos).
 
   Portee : uniquement le mode visuel 3D (body[data-visual-mode="alternative"]),
   comme le reste des feuilles HUD existantes (turn-flow-ux.css, sanctuary-celeste.css).
@@ -61,7 +62,29 @@ body[data-visual-mode="alternative"] #gameScreen {
   --hud-v2-text-dim: rgba(244, 242, 236, .74);
 }
 
-/* ================= Bandeau haut : texte nu, aucun panneau ================= */
+/* ================= Vignettage de lisibilité (pas un panneau) ================= */
+
+body[data-visual-mode="alternative"] .hud-v2-vignette {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-vignette-top {
+  top: 0;
+  height: 90px;
+  background: linear-gradient(to bottom, rgba(6, 10, 18, .18), rgba(6, 10, 18, 0));
+}
+
+body[data-visual-mode="alternative"] .hud-v2-vignette-bottom {
+  bottom: 0;
+  height: 108px;
+  background: linear-gradient(to top, rgba(6, 10, 18, .14), rgba(6, 10, 18, 0));
+}
+
+/* ================= Bandeau haut : grille 3 colonnes, texte nu ================= */
 
 body[data-visual-mode="alternative"] #hudV2Top {
   position: fixed;
@@ -69,58 +92,126 @@ body[data-visual-mode="alternative"] #hudV2Top {
   left: 0;
   right: 0;
   z-index: 40;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 26px;
+  column-gap: 12px;
+  padding: 18px 28px;
   pointer-events: none;
   font-family: inherit;
-}
-
-/* Vignettage quasi imperceptible, sans bord net, uniquement pour aider la
-   lisibilité du texte nu sur un ciel clair — jamais un panneau. */
-body[data-visual-mode="alternative"] #hudV2Top::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(to bottom, rgba(6, 10, 18, .22), rgba(6, 10, 18, 0));
-  pointer-events: none;
 }
 
 body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 12px;
   pointer-events: auto;
+  min-width: 0;
 }
 
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left {
+  justify-self: start;
+}
+
+/* Miroir exact : même ordre DOM (portrait, nom, couronnes) des deux côtés,
+   la droite est simplement inversée visuellement. */
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right {
+  justify-self: end;
+  flex-direction: row-reverse;
+}
+
+/* ---------- Portraits circulaires (fallback icône+couleur, voir rapport) ---------- */
+
+body[data-visual-mode="alternative"] .hud-v2-portrait {
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hud-v2-portrait-color, #34506b);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .16), transparent 55%),
+    color-mix(in srgb, var(--hud-v2-portrait-color, #34506b) 55%, #10161f 45%);
+  border: 1px solid rgba(255, 255, 255, .14);
+  font-size: 28px;
+  line-height: 1;
+  opacity: .75;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+  transition: opacity 220ms ease, box-shadow 220ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-portrait.hidden {
+  display: none;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-portrait-active {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--hud-v2-champagne), 0 0 20px rgba(232, 201, 138, .38), 0 4px 14px rgba(0, 0, 0, .35);
+}
+
+/* ---------- Noms + couronnes ---------- */
+
 body[data-visual-mode="alternative"] .hud-v2-player-name {
+  max-width: 22vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 16px;
   font-weight: 800;
   letter-spacing: .03em;
   text-transform: uppercase;
   color: var(--hud-v2-text);
   text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 2px 8px rgba(0, 0, 0, .45), 0 0 18px rgba(0, 0, 0, .3);
+  opacity: .75;
+  transition: opacity 220ms ease, color 220ms ease;
 }
 
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left .hud-v2-player-name {
+body[data-visual-mode="alternative"] .hud-v2-player-name-active {
+  opacity: 1;
   color: var(--hud-v2-champagne);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-crowns {
-  font-size: 15px;
-  letter-spacing: .08em;
+  flex: 0 0 auto;
+  font-size: 17px;
+  letter-spacing: .1em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 2px 8px rgba(0, 0, 0, .45), 0 0 18px rgba(0, 0, 0, .3);
 }
 
+/* Couronne non validée : contour seul, plus sombre (♔ est un glyphe texte,
+   contrairement à 👑 qui est une image emoji non recolorable). */
+body[data-visual-mode="alternative"] .hud-v2-crown-empty {
+  color: rgba(180, 170, 150, .55);
+}
+
+/* ---------- Centre : Tour · ⚙ · Timer, ⚙ exactement sur l'axe central ---------- */
+
 body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center {
   position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  column-gap: 10px;
+  pointer-events: auto;
+  /* Largeur minimale symétrique de chaque côté du ⚙, même si Timer est
+     masqué (aucun timer actif) : la géométrie centrale ne saute pas. */
+  min-width: 220px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-center-col {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  pointer-events: auto;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-center-left {
+  justify-content: flex-end;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-center-right {
+  justify-content: flex-start;
 }
 
 body[data-visual-mode="alternative"] #hudV2Top #onlineBadge {
@@ -168,10 +259,20 @@ body[data-visual-mode="alternative"] #hudV2Top #turnTimer.danger {
   color: #f07260;
 }
 
-/* Menu ⚙ : commande système secondaire, discrète, entre le tour et le timer. */
+/* ⚙ : discret visuellement, mais zone cliquable confortable (≥ 44px) via
+   un pseudo-élément qui étend la cible sans agrandir le rond visible —
+   pas de gros cercle décoratif autour. */
+body[data-visual-mode="alternative"] .hud-v2-gear-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 body[data-visual-mode="alternative"] .hud-v2-gear-btn {
-  width: 24px;
-  height: 24px;
+  position: relative;
+  width: 22px;
+  height: 22px;
   min-height: 0;
   padding: 0;
   border-radius: 999px;
@@ -181,6 +282,12 @@ body[data-visual-mode="alternative"] .hud-v2-gear-btn {
   font-size: 12px;
   line-height: 1;
   transition: background 180ms ease, color 180ms ease;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-gear-btn::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-gear-btn:hover,
@@ -194,7 +301,7 @@ body[data-visual-mode="alternative"] .hud-v2-gear-btn[aria-expanded="true"] {
 body[data-visual-mode="alternative"] #hudV2Dock {
   position: fixed;
   left: 50%;
-  bottom: 22px;
+  bottom: 24px;
   transform: translateX(-50%);
   z-index: 40;
   display: flex;
@@ -207,8 +314,8 @@ body[data-visual-mode="alternative"] #hudV2Dock {
 
 body[data-visual-mode="alternative"] .hud-v2-instruction {
   font-size: 12px;
-  color: var(--hud-v2-text-dim);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 2px 8px rgba(0, 0, 0, .4);
+  color: var(--hud-v2-text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 2px 8px rgba(0, 0, 0, .5);
   min-height: 15px;
   text-align: center;
 }
@@ -225,8 +332,10 @@ body[data-visual-mode="alternative"] .hud-v2-toast:empty {
   display: none;
 }
 
-/* Rangée d'alignement : conteneur invisible (aucun fond/bordure propre),
-   chaque enfant garde son propre léger fond verre. */
+/* Rangée d'alignement : conteneur invisible (aucun fond/bordure propre).
+   Undo et Fin du tour encadrent le cluster central sur le même axe
+   vertical, marges latérales symétriques (space-between + padding égal
+   des deux côtés du dock via la largeur commune min(94vw,980px)). */
 body[data-visual-mode="alternative"] .hud-v2-action-row {
   display: flex;
   align-items: center;
@@ -242,79 +351,96 @@ body[data-visual-mode="alternative"] .hud-v2-action-zone {
 
 body[data-visual-mode="alternative"] .hud-v2-action-zone-left,
 body[data-visual-mode="alternative"] .hud-v2-action-zone-right {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-action-zone-right {
+  justify-content: flex-end;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-action-zone-center {
   position: relative;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   justify-content: center;
-  gap: 18px;
 }
 
-/* Groupe ÎLE/DÉPLACER/POUSSER/MAGIE : espacement large entre actions
-   (28-36px desktop), demandé explicitement — sans fond commun. */
+/* Cluster DECK + ÎLE + DÉPLACER + POUSSER + MAGIE : un seul flex — quand
+   ÎLE disparaît (display:none après sa pose), le reste se recentre tout
+   seul, sans trou. Espacement large (28-36px desktop). */
 body[data-visual-mode="alternative"] .hud-v2-action-cluster {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 32px;
+  justify-content: center;
+  gap: 30px;
 }
 
-/* ---------- Pilules ÎLE / DÉPLACER / POUSSER / MAGIE ---------- */
+/* ---------- Actions : icône dominante, quantité secondaire, nom discret ---------- */
 
 body[data-visual-mode="alternative"] .hud-v2-pill {
+  position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 1px;
+  min-width: 52px;
+  min-height: 52px;
   cursor: pointer;
   white-space: nowrap;
   color: var(--hud-v2-text);
-  background: rgba(20, 24, 32, .34);
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 999px;
-  padding: 7px 12px;
-  transition: background 200ms ease, border-color 200ms ease, opacity 200ms ease;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 6px 10px;
+  transition: background 200ms ease, border-color 200ms ease, opacity 200ms ease, transform 180ms ease;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-pill-icon {
-  font-size: 17px;
+  font-size: 20px;
   line-height: 1;
 }
 
-body[data-visual-mode="alternative"] .hud-v2-pill-word {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .03em;
-}
-
 body[data-visual-mode="alternative"] .hud-v2-pill-count {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 800;
   color: var(--hud-v2-champagne);
+  line-height: 1.2;
 }
 
-body[data-visual-mode="alternative"] .hud-v2-pill-island {
+body[data-visual-mode="alternative"] .hud-v2-pill-word {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--hud-v2-text-dim);
+  line-height: 1.2;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-island .hud-v2-pill-word {
   color: var(--hud-v2-champagne);
-  border-color: rgba(232, 201, 138, .32);
 }
 
-/* Hiérarchie demandée : disponible = lisible normalement, impossible =
-   30-35% opacité, active = léger filet/halo champagne (jamais de glow
-   généralisé — un seul box-shadow court, localisé à ce bouton). */
+/* Hiérarchie demandée : repos = quasi invisible, hover = léger fond verre +
+   décollement ~2px, actif = filet/halo champagne localisé, impossible =
+   30-35% opacité. Jamais de glow généralisé. */
 body[data-visual-mode="alternative"] .hud-v2-pill:disabled {
   cursor: not-allowed;
   opacity: .32;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-pill:not(:disabled):hover {
-  background: rgba(20, 24, 32, .5);
-  border-color: rgba(255, 255, 255, .2);
+  background: rgba(20, 24, 32, .38);
+  border-color: rgba(255, 255, 255, .12);
+  transform: translateY(-2px);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-pill-active {
-  background: rgba(232, 201, 138, .18);
-  border-color: rgba(232, 201, 138, .5);
+  background: rgba(232, 201, 138, .16);
+  border-color: rgba(232, 201, 138, .48);
   box-shadow: 0 0 8px rgba(232, 201, 138, .2);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-pill-active .hud-v2-pill-word {
   color: var(--hud-v2-champagne);
 }
 
@@ -327,22 +453,22 @@ body[data-visual-mode="alternative"] #hudV2IslandStatus.hidden {
 /* !important : index.html porte "#gameScreen button{font-size:11px!important}"
    (bloc hérité), qui sinon gagne malgré la specificite plus élevée ici. */
 body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn {
-  width: 36px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
   min-height: 0;
   padding: 0;
   border-radius: 999px;
   font-size: 0 !important;
   line-height: 1;
-  background: rgba(20, 24, 32, .34);
-  border: 1px solid rgba(255, 255, 255, .1);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--hud-v2-text);
   transition: background 180ms ease, border-color 180ms ease, opacity 180ms ease;
 }
 
 body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn::before {
   content: "↶";
-  font-size: 17px;
+  font-size: 19px;
 }
 
 body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn:disabled {
@@ -350,15 +476,16 @@ body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn:d
 }
 
 body[data-visual-mode="alternative"] #hudV2Dock #cancelCardBtn.hud-v2-undo-btn:not(:disabled):hover {
-  background: rgba(20, 24, 32, .5);
-  border-color: rgba(255, 255, 255, .2);
+  background: rgba(20, 24, 32, .38);
+  border-color: rgba(255, 255, 255, .14);
 }
 
-/* ---------- Fin du tour : bas droite, nettement séparé ---------- */
+/* ---------- Fin du tour : bas droite, seul élément du dock avec un vrai
+   petit fond permanent (demandé explicitement) ---------- */
 
 body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn {
-  min-height: 0;
-  padding: 10px 20px;
+  min-height: 52px;
+  padding: 10px 22px;
   border-radius: 999px;
   font-size: 11.5px;
   font-weight: 800;
@@ -370,54 +497,67 @@ body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn {
   transition: filter 200ms ease, opacity 200ms ease, background 200ms ease, border-color 200ms ease;
 }
 
-/* Désactivé = discret (pas juste grisé pâle, quasi invisible dans le décor). */
+/* Désactivé = très discret. */
 body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn:disabled {
-  background: rgba(20, 24, 32, .3);
+  background: rgba(20, 24, 32, .26);
   color: var(--hud-v2-text-dim);
   border-color: rgba(255, 255, 255, .08);
-  opacity: .55;
+  opacity: .5;
 }
 
 body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn:not(:disabled):hover {
   filter: brightness(1.08);
 }
 
-/* ---------- Main : commande autonome, légèrement à gauche des actions ---------- */
+/* ---------- Deck : dans le cluster, plus secondaire que les actions ---------- */
 
 body[data-visual-mode="alternative"] .hud-v2-hand-pill {
+  position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  font-size: 10.5px;
-  font-weight: 700;
+  justify-content: center;
+  gap: 1px;
+  min-width: 52px;
+  min-height: 52px;
   color: var(--hud-v2-text-dim);
-  background: rgba(20, 24, 32, .34);
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 999px;
-  padding: 7px 12px;
-  transition: background 180ms ease, border-color 180ms ease;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 6px 10px;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
-body[data-visual-mode="alternative"] .hud-v2-hand-pill span {
-  font-size: 14px;
+body[data-visual-mode="alternative"] .hud-v2-hand-pill .hud-v2-pill-icon {
+  font-size: 16px;
+  opacity: .85;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-hand-pill .hud-v2-pill-word {
+  font-size: 8.5px;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-hand-pill:hover {
-  background: rgba(20, 24, 32, .5);
+  background: rgba(20, 24, 32, .3);
+  border-color: rgba(255, 255, 255, .1);
+  transform: translateY(-2px);
 }
 
-/* ---------- Mini-fiche gardien ---------- */
+/* ---------- Mini-fiche gardien : usage réduit (uniquement si utile) ---------- */
 
 body[data-visual-mode="alternative"] .hud-v2-slot-unitcard {
   display: flex;
   align-items: center;
-  min-width: 36px;
   min-height: 36px;
   border-radius: 999px;
   background: rgba(20, 24, 32, .34);
   border: 1px solid rgba(255, 255, 255, .1);
-  gap: 3px;
-  padding: 0 9px;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  color: var(--hud-v2-text-dim);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-slot-unitcard.hidden {
@@ -425,11 +565,11 @@ body[data-visual-mode="alternative"] .hud-v2-slot-unitcard.hidden {
 }
 
 body[data-visual-mode="alternative"] .hud-v2-unit-icon {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-unit-crown {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* ---------- Rangée contextuelle Magie ---------- */
@@ -479,40 +619,43 @@ body[data-visual-mode="alternative"] .hud-v2-magic-cancel {
   border-color: rgba(240, 168, 152, .28);
 }
 
-/* ---------- Drawer ÎLE ---------- */
+/* ---------- Drawer ÎLE : une seule rangée horizontale, tuiles flottantes ---------- */
 
 body[data-visual-mode="alternative"] .hud-v2-island-drawer {
   pointer-events: auto;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 10px;
-  border-radius: 16px;
-  background: var(--hud-v2-glass-bg);
-  border: 1px solid var(--hud-v2-glass-border);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
+  display: flex;
+  justify-content: center;
+  max-width: 94vw;
+  /* Aucun panneau opaque : pas de fond/bordure/ombre propres ici — chaque
+     tuile (.island-choice, logique/preview inchangées) porte son propre
+     léger habillage via base.css, déjà conçu comme une carte individuelle. */
+  background: transparent;
+  border: 0;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-island-drawer.hidden {
   display: none;
 }
 
+/* !important : base.css force ".island-selector{display:grid;grid-template-
+   columns:...}" (layout de l'ancien panneau ÎLES, 2 colonnes) — sans ça le
+   drawer restait en grille verticale au lieu d'une rangée horizontale. */
 body[data-visual-mode="alternative"] .hud-v2-island-drawer #islandSelector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  gap: 8px;
   justify-content: center;
-  max-width: min(70vw, 460px);
+  padding: 4px 2px;
 }
 
 body[data-visual-mode="alternative"] .hud-v2-drawer-rotate {
   display: flex;
-  justify-content: center;
+  align-items: center;
   gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, .08);
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, .12);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-rotate-btn {
@@ -523,7 +666,7 @@ body[data-visual-mode="alternative"] .hud-v2-rotate-btn {
   border-radius: 999px;
   font-size: 13px;
   color: var(--hud-v2-text);
-  background: rgba(255, 255, 255, .05);
+  background: rgba(20, 24, 32, .34);
   border: 1px solid rgba(255, 255, 255, .1);
   transition: background 180ms ease, opacity 180ms ease;
 }
@@ -533,10 +676,10 @@ body[data-visual-mode="alternative"] .hud-v2-rotate-btn:disabled {
 }
 
 body[data-visual-mode="alternative"] .hud-v2-rotate-btn:not(:disabled):hover {
-  background: rgba(255, 255, 255, .12);
+  background: rgba(20, 24, 32, .5);
 }
 
-/* ---------- Popovers (menu ⚙, Main) ---------- */
+/* ---------- Popovers (menu ⚙, Deck) ---------- */
 
 body[data-visual-mode="alternative"] .hud-v2-popover {
   pointer-events: auto;
@@ -597,14 +740,14 @@ body[data-visual-mode="alternative"] .hud-v2-hand-row b {
 }
 
 /* ---------- Menu ⚙ : CAMÉRA + SON + RÈGLES + NOUVELLE PARTIE + INFOS TECHNIQUES ---------- */
-
+/* Centré sous le bouton (symétrie), pas sous tout #hudV2Top. */
 body[data-visual-mode="alternative"] .hud-v2-gear-popover {
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-top: 10px;
-  min-width: 160px;
+  margin-top: 14px;
+  min-width: 170px;
   max-height: 70vh;
   overflow-y: auto;
 }
@@ -680,17 +823,28 @@ body[data-visual-mode="alternative"] .hud-v2-tech-info .v69-quality-pill {
 }
 
 /* ---------- Responsive ---------- */
-/* Même architecture à toutes les tailles : on rétrécit progressivement les
-   mêmes éléments (jamais de HUD mobile séparé). */
+/* Même architecture à toutes les tailles — axe central, portraits miroir,
+   Tour/⚙/Timer, Undo/actions/Fin du tour : on rétrécit progressivement,
+   jamais de HUD mobile séparé. */
 
 @media (max-width: 720px) {
   body[data-visual-mode="alternative"] #hudV2Top {
     padding: 12px 16px;
   }
 
-  body[data-visual-mode="alternative"] .hud-v2-player-name,
-  body[data-visual-mode="alternative"] .hud-v2-crowns {
+  body[data-visual-mode="alternative"] .hud-v2-portrait {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-player-name {
     font-size: 12px;
+    max-width: 26vw;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-crowns {
+    font-size: 13px;
   }
 
   body[data-visual-mode="alternative"] #hudV2Top #turnLabel,
@@ -699,53 +853,54 @@ body[data-visual-mode="alternative"] .hud-v2-tech-info .v69-quality-pill {
   }
 
   body[data-visual-mode="alternative"] .hud-v2-action-cluster {
-    gap: 14px;
+    gap: 16px;
   }
 
-  body[data-visual-mode="alternative"] .hud-v2-action-zone-center {
-    gap: 10px;
-  }
-
-  body[data-visual-mode="alternative"] .hud-v2-pill {
-    padding: 6px 9px;
+  body[data-visual-mode="alternative"] .hud-v2-pill,
+  body[data-visual-mode="alternative"] .hud-v2-hand-pill {
+    min-width: 46px;
+    min-height: 46px;
   }
 
   body[data-visual-mode="alternative"] .hud-v2-pill-icon {
-    font-size: 15px;
+    font-size: 17px;
   }
 }
 
-/* Écran étroit : le mot de chaque pilule disparaît (icône + ×N restent),
-   Fin du tour -> FIN. Texte réel (accessible/aria-label) inchangé — seul
-   l'affichage visuel se réduit. */
+/* Écran étroit : le nom (label) de chaque pilule disparaît (icône + ×N
+   restent). Texte réel (accessible/aria-label) inchangé — seul l'affichage
+   visuel se réduit. */
 @media (max-width: 560px) {
   body[data-visual-mode="alternative"] #hudV2Dock {
     width: 96vw;
   }
 
-  body[data-visual-mode="alternative"] .hud-v2-action-zone-center {
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
+  body[data-visual-mode="alternative"] .hud-v2-player-name {
+    max-width: 30vw;
   }
 
   body[data-visual-mode="alternative"] .hud-v2-action-cluster {
     gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-pill,
+  body[data-visual-mode="alternative"] .hud-v2-hand-pill {
+    min-width: 42px;
+    min-height: 42px;
+    padding: 4px 6px;
   }
 
   body[data-visual-mode="alternative"] .hud-v2-pill-word {
     display: none;
   }
 
-  body[data-visual-mode="alternative"] .hud-v2-hand-pill span:not(:last-child) {
-    display: inline;
-  }
-
   /* !important + prefixe #hudV2Dock nécessaires : index.html porte
      "#endTurnBtn{font-size:10px!important}" (bloc hérité). */
   body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn {
     font-size: 0 !important;
-    padding: 9px 12px;
+    min-height: 46px;
+    padding: 0 14px;
   }
 
   body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn.hud-v2-endturn-btn::before {
@@ -765,5 +920,9 @@ body[data-visual-mode="alternative"] .hud-v2-tech-info .v69-quality-pill {
 
   body[data-visual-mode="alternative"] .hud-v2-instruction {
     min-height: 0;
+  }
+
+  body[data-visual-mode="alternative"] .hud-v2-vignette-bottom {
+    height: 80px;
   }
 }
