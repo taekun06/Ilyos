@@ -10855,6 +10855,30 @@
         CROWN: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 18.5h16l1.1-9.6-5.3 3.3L12 5.8 8.2 12.2 2.9 8.9 4 18.5z\"/></svg>"
       };
 
+      // Sélecteur de Force manuel HUD V2 : mêmes deux chemins que renderHand()
+      // (bouton +/-), même fonction de fond (setPushForceChoice()/
+      // state.smartPushForce) — seule la source de rendu change.
+      function hudV2PushForceStep(delta) {
+        if (!state) return;
+        const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushDestinationOptions;
+        const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
+        if (!classicPushActive && !smartPushHovered) return;
+        const maxForce = Math.max(1, availableActionCount("PUSH"));
+        if (smartPushHovered) {
+          const preview = getPushHoverPreview();
+          const minForce = Math.max(1, preview?.requiredForce || 1);
+          const current = Math.max(minForce, Math.min(maxForce, preview?.force || minForce));
+          state.smartPushForce = Math.max(minForce, Math.min(maxForce, current + delta));
+          refreshKayKitHoverPreviews();
+          scheduleBoardRender();
+        } else {
+          const current = Math.max(1, Math.min(state.pushForceChoice || 1, maxForce));
+          setPushForceChoice(current + delta, { notify: true });
+        }
+        renderHudV2();
+        renderHand();
+      }
+
       function renderHudV2() {
         if (!state || !els.gameScreen) return;
         const hudTop = document.getElementById("hudV2Top");
@@ -10962,6 +10986,40 @@
           magicRow.classList.toggle("hidden", !rotating);
         }
 
+        // --- Sélecteur de Force manuel (repli) — équivalent HUD V2 du bloc
+        // v60-context-options de renderHand() (élément #hand invisible ici,
+        // voir index.html). Même calcul min/max/force que renderHand(), même
+        // source (getPushHoverPreview()/state.pushForceChoice), rien de neuf.
+        // Masqué pendant le flux direct cible→destination (state.
+        // pushDestinationOptions) qui choisit déjà la Force via le clic.
+        const pushForceRow = document.getElementById("hudV2PushForceRow");
+        if (pushForceRow) {
+          const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushDestinationOptions;
+          const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
+          const maxForce = Math.max(1, availableActionCount("PUSH"));
+          let force = null, minForce = 1, hint = "";
+          if (smartPushHovered) {
+            const preview = getPushHoverPreview();
+            if (preview) {
+              minForce = Math.max(1, preview.requiredForce || 1);
+              force = Math.max(minForce, Math.min(maxForce, preview.force || minForce));
+              hint = preview.fell ? "☠ Chute hors du plateau" : `Minimum ${minForce}`;
+            }
+          } else if (classicPushActive) {
+            force = Math.max(1, Math.min(state.pushForceChoice || 1, maxForce));
+            hint = "Puis cliquez la cible adjacente";
+          }
+          pushForceRow.classList.toggle("hidden", force === null);
+          if (force !== null) {
+            document.getElementById("hudV2PushForceValue").textContent = force;
+            document.getElementById("hudV2PushForceHint").textContent = hint;
+            const minusBtn = document.getElementById("hudV2PushForceMinus");
+            const plusBtn = document.getElementById("hudV2PushForcePlus");
+            if (minusBtn) minusBtn.disabled = force <= minForce;
+            if (plusBtn) plusBtn.disabled = force >= maxForce;
+          }
+        }
+
         // --- Mini-fiche gardien : usage réduit — uniquement quand elle
         // apporte une info réellement utile (couronne portée). Le halo 3D
         // suffit déjà à indiquer une simple sélection ; pas de fiche
@@ -10983,8 +11041,20 @@
         // --- Micro-instruction (une seule ligne, meme source que l'ancien panneau) ---
         const instructionEl = document.getElementById("hudV2Instruction");
         if (instructionEl) {
-          const info = turnContextInfo();
-          instructionEl.textContent = info?.next || info?.title || "";
+          // Flux direct POUSSER : indicateur de chute (☠ + coût) quand
+          // l'option actuellement retenue (pusherId/force) est une chute —
+          // même donnée que computePushOptionsForTarget(), rien de recalculé.
+          const currentPushOption = state.pushDestinationOptions?.find(
+            option => option.pusherId === state.selectedCharId && option.force === state.selectedActionCount
+          );
+          if (currentPushOption) {
+            instructionEl.textContent = currentPushOption.fell
+              ? `☠ Force ${state.selectedActionCount} — pousse hors du plateau.`
+              : `Cliquez une destination éclairée · Force ${state.selectedActionCount}.`;
+          } else {
+            const info = turnContextInfo();
+            instructionEl.textContent = info?.next || info?.title || "";
+          }
         }
 
         // --- Deck (ex-"Main") : commande autonome, valeurs reelles ---
@@ -11674,7 +11744,7 @@
             state.selectedCharId = match.pusherId;
             state.selectedActionCount = match.force;
             scheduleBoardRender();
-            renderHand();
+            renderHudV2();
           }
           return;
         }
@@ -14374,6 +14444,9 @@
       document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
+
+      document.getElementById("hudV2PushForceMinus")?.addEventListener("click", () => hudV2PushForceStep(-1));
+      document.getElementById("hudV2PushForcePlus")?.addEventListener("click", () => hudV2PushForceStep(1));
 
       // Menu secondaire unique (Prompt 3/3) : ⚙ remplace l'ancien bouton
       // caméra permanent. CAMÉRA garde le même délégué data-hud-camera que

@@ -997,6 +997,24 @@
         <button id="hudV2MagicCancel" type="button" class="hud-v2-magic-btn hud-v2-magic-cancel">Annuler</button>
       </div>
 
+      <!--
+        Sélecteur de Force manuel (repli) : #hand porte déjà ce contrôle
+        (v60-context-options, voir renderHand()/js/game/ui.js) mais #hand vit
+        dans .right-panel.hud-v1-legacy, masqué en display:none par le HUD V2
+        — invisible ici sans un équivalent natif. Ce bloc n'invente aucune
+        logique : les boutons appellent hudV2PushForceStep() (js/game/ui.js),
+        qui appelle exactement setPushForceChoice()/state.smartPushForce comme
+        renderHand(), simplement rendu ici. Visible uniquement pour le flux
+        classique (bouton POUSSER puis cible) ou le survol SMART_CHAR — jamais
+        pendant le flux direct cible→destination, qui choisit déjà la Force.
+      -->
+      <div id="hudV2PushForceRow" class="hud-v2-magic-row hud-v2-push-force-row hidden">
+        <button id="hudV2PushForceMinus" type="button" class="hud-v2-magic-btn">−</button>
+        <span id="hudV2PushForceValue" class="hud-v2-push-force-value">1</span>
+        <button id="hudV2PushForcePlus" type="button" class="hud-v2-magic-btn">+</button>
+        <span id="hudV2PushForceHint" class="hud-v2-push-force-hint"></span>
+      </div>
+
       <div id="hudV2IslandDrawer" class="hud-v2-island-drawer hidden" aria-hidden="true">
         <!-- #islandSelector/#rotateLeftBtn/#rotateRightBtn reparentés depuis
              l'ancien left-panel : mêmes boutons, même selectIslandShape()/

@@ -66,7 +66,6 @@ body[data-visual-mode="alternative"] #gameScreen {
      ardoise chaude mais lisible = impossible. */
   --hud-v2-ivory: #f5ecd8;
   --hud-v2-slate: #a79c88;
-  --hud-v2-scrim: radial-gradient(closest-side, rgba(8, 10, 16, .30), rgba(8, 10, 16, 0) 72%);
 }
 
 /* ================= Vignettage de lisibilité (overlay, jamais une zone de layout) ================= */
@@ -141,37 +140,17 @@ body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right {
   flex-direction: row-reverse;
 }
 
-/* ================= Profondeur : scrims locaux (jamais une barre) =================
-   Ombre diffuse tres douce derriere chaque groupe HUD, pour que le HUD se
-   detache clairement du ciel sans jamais dessiner de rectangle/panneau
-   identifiable — meme logique que .hud-v2-vignette (overlay pur, pas une
-   zone de layout). */
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side {
-  position: relative;
-}
-
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side::before,
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center::before {
-  content: "";
-  position: absolute;
-  inset: -20px -30px;
-  background: var(--hud-v2-scrim);
-  z-index: -1;
-  pointer-events: none;
-}
-
-body[data-visual-mode="alternative"] #hudV2Dock {
-  position: fixed;
-}
-
-body[data-visual-mode="alternative"] #hudV2Dock::before {
-  content: "";
-  position: absolute;
-  inset: -26px -46px -18px;
-  background: radial-gradient(ellipse 68% 100% at 50% 62%, rgba(6, 9, 15, .30), rgba(6, 9, 15, 0) 76%);
-  z-index: -1;
-  pointer-events: none;
-}
+/*
+  BUG CORRIGÉ (retour utilisateur) : la première version de cette passe
+  ajoutait un ::before radial-gradient derrière chaque groupe HUD pour les
+  détacher du ciel. En pratique, sur un fond clair, cette forme se voyait
+  comme une "barre" au-dessus des actions (le dock) et comme des "cercles"
+  visibles derrière les portraits (le radial closest-side sur une boîte
+  large étire un ovale net). Retiré entièrement : la profondeur vient
+  désormais uniquement des text-shadow/drop-shadow déjà renforcés sur
+  chaque élément (noms, Tour/Timer, instruction) et des box-shadow propres
+  à chaque pilule/portrait/bouton — jamais une forme géométrique séparée.
+*/
 
 /* ---------- Portraits circulaires (fallback icône+couleur, voir rapport) ---------- */
 
@@ -789,6 +768,23 @@ body[data-visual-mode="alternative"] .hud-v2-magic-confirm {
 body[data-visual-mode="alternative"] .hud-v2-magic-cancel {
   color: #f0a898;
   border-color: rgba(240, 168, 152, .28);
+}
+
+/* ---------- Sélecteur de Force manuel (repli, voir index.html) ---------- */
+body[data-visual-mode="alternative"] .hud-v2-push-force-value {
+  min-width: 20px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--hud-v2-champagne-bright);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-push-force-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hud-v2-text-dim);
+  white-space: nowrap;
 }
 
 /* ---------- Drawer ÎLE : une seule rangée horizontale, tuiles flottantes ---------- */
