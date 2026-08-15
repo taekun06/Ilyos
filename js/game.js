@@ -4079,17 +4079,6 @@
         }
 
         if (pushActive && !unifiedPushActive) {
-          // Flux direct cible → destination (ui.js: computePushOptionsForTarget) :
-          // anneaux persistants sur TOUTES les destinations légales (state.reachable),
-          // même idiome que smartResting ci-dessus. La destination actuellement
-          // "sélectionnée" (survolée ou par défaut) reçoit en plus l'aperçu complet
-          // (impacts + flèche) via le code inchangé juste en dessous.
-          if (state.pushDestinationOptions) {
-            (state.reachable || new Set()).forEach(cellKey => {
-              const [r, c] = cellKey.split(",").map(Number);
-              addKayKitPushAffordance(r, c);
-            });
-          }
           const preview = pushPreview;
           (preview?.impacts || []).forEach(impact => {
             addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
@@ -11203,7 +11192,7 @@
       // state.smartPushForce) — seule la source de rendu change.
       function hudV2PushForceStep(delta) {
         if (!state) return;
-        const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushDestinationOptions;
+        const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushOptions?.length;
         const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
         if (!classicPushActive && !smartPushHovered) return;
         const maxForce = Math.max(1, availableActionCount("PUSH"));
@@ -11333,11 +11322,11 @@
         // v60-context-options de renderHand() (élément #hand invisible ici,
         // voir index.html). Même calcul min/max/force que renderHand(), même
         // source (getPushHoverPreview()/state.pushForceChoice), rien de neuf.
-        // Masqué pendant le flux direct cible→destination (state.
-        // pushDestinationOptions) qui choisit déjà la Force via le clic.
+        // Masqué pendant le flux unifié cible→destination, qui choisit
+        // automatiquement la Force via la destination cliquée.
         const pushForceRow = document.getElementById("hudV2PushForceRow");
         if (pushForceRow) {
-          const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushDestinationOptions;
+          const classicPushActive = state.phase === "ACTION" && state.selectedActionType === "PUSH" && !state.pushOptions?.length;
           const smartPushHovered = state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH";
           const maxForce = Math.max(1, availableActionCount("PUSH"));
           let force = null, minForce = 1, hint = "";
@@ -12135,24 +12124,6 @@
         const r = Number(event.currentTarget.dataset.r);
         const c = Number(event.currentTarget.dataset.c);
 
-        // Flux direct POUSSER : survoler une des destinations affichées met
-        // à jour le pousseur/la Force "actuellement retenus" — actionHoverCell
-        // reste fixé sur la cible (getPushHoverPreview() l'exige adjacente au
-        // pousseur), ce qui suffit à faire réagir l'aperçu 3D existant
-        // (refreshKayKitHoverPreviews) sans aucune modification de sa part.
-        if (state.phase === "ACTION" && state.selectedActionType === "PUSH" && state.pushDestinationOptions) {
-          const match = state.pushDestinationOptions.find(option => option.fell
-            ? (option.edgeCell && option.edgeCell[0] === r && option.edgeCell[1] === c)
-            : (option.destination && option.destination[0] === r && option.destination[1] === c));
-          if (match && (state.selectedCharId !== match.pusherId || state.selectedActionCount !== match.force)) {
-            state.selectedCharId = match.pusherId;
-            state.selectedActionCount = match.force;
-            scheduleBoardRender();
-            renderHudV2();
-          }
-          return;
-        }
-
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           updatePlacementPreview(r, c);
@@ -12550,41 +12521,6 @@
 
         if (state.phase === "SMART_CHAR") {
           handleSmartCharacterClick(r, c);
-          return;
-        }
-
-        // Flux direct POUSSER : clic sur une des destinations affichées par
-        // computePushOptionsForTarget() (case normale ou ancre de chute) —
-        // on fixe le pousseur/la Force correspondants puis on délègue tout
-        // l'exécutif à handlePushClick(cible), strictement inchangé : depuis
-        // son point de vue c'est un clic classique sur la cible adjacente,
-        // avec la Force déjà choisie via state.selectedActionCount.
-        if (state.phase === "ACTION" && state.selectedActionType === "PUSH" && state.pushDestinationOptions) {
-          const options = state.pushDestinationOptions;
-          const targetCell = state.pushDestinationTarget;
-          const match = options.find(option => option.fell
-            ? (option.edgeCell && option.edgeCell[0] === r && option.edgeCell[1] === c)
-            : (option.destination && option.destination[0] === r && option.destination[1] === c));
-          if (match) {
-            state.selectedCharId = match.pusherId;
-            state.selectedActionCount = match.force;
-            state.pushDestinationOptions = null;
-            state.pushDestinationTarget = null;
-            handlePushClick(targetCell[0], targetCell[1]);
-            return;
-          }
-          if (targetCell && r === targetCell[0] && c === targetCell[1]) {
-            // Reclic sur la cible elle-même : exécute avec l'option
-            // actuellement retenue (par défaut la moins coûteuse, ou celle
-            // du dernier survol).
-            state.pushDestinationOptions = null;
-            state.pushDestinationTarget = null;
-            handlePushClick(r, c);
-            return;
-          }
-          state.pushDestinationOptions = null;
-          state.pushDestinationTarget = null;
-          cancelSelectedCard();
           return;
         }
 
@@ -13010,8 +12946,6 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
-        state.pushDestinationOptions = null;
-        state.pushDestinationTarget = null;
         clearUnifiedPushOptions();
         state.pendingDirectMoveTarget = null;
 
@@ -13666,82 +13600,6 @@
         };
       }
 
-      // Flux direct POUSSER (cible → destination) : à partir de la cible
-      // cliquée, énumère toutes les destinations légales — une par Force
-      // possible, pour chaque gardien allié pouvant la pousser. Aucune règle
-      // ni aucun calcul de coût propre ici : chaque option est obtenue en
-      // appelant getPushHoverPreview() (source unique de vérité, inchangée),
-      // avec un état temporaire (pusher/force testés) restauré à l'identique
-      // ensuite. "Ne montrer aucune destination impossible" : une option
-      // n'est ajoutée que si getPushHoverPreview() renvoie une destination
-      // réelle ou une chute confirmée.
-      function computeLegacyPushOptionsForTarget(targetR, targetC) {
-        const pushers = pushersForTarget(targetR, targetC);
-        const reserve = availableActionCount("PUSH");
-        if (!pushers.length || reserve <= 0) return [];
-
-        const savedPhase = state.phase;
-        const savedType = state.selectedActionType;
-        const savedCharId = state.selectedCharId;
-        const savedHoverCell = state.actionHoverCell;
-        const savedCount = state.selectedActionCount;
-
-        const options = [];
-        try {
-          state.phase = "ACTION";
-          state.selectedActionType = "PUSH";
-          state.actionHoverCell = [targetR, targetC];
-
-          pushers.forEach(pusher => {
-            const required = requiredPushForce(pusher.r, pusher.c, targetR, targetC);
-            if (required > reserve) return;
-            state.selectedCharId = pusher.id;
-            let lastDestKey = null;
-            for (let force = required; force <= reserve; force++) {
-              state.selectedActionCount = force;
-              const preview = getPushHoverPreview();
-              if (!preview || (!preview.destination && !preview.fell)) continue;
-              const destKey = preview.fell ? "fell" : `${preview.destination[0]},${preview.destination[1]}`;
-              // Force supplémentaire sans effet (ligne bloquée avant le bord) :
-              // inutile de proposer un coût plus élevé pour le même résultat.
-              if (destKey === lastDestKey) break;
-              lastDestKey = destKey;
-              const option = {
-                pusherId: pusher.id,
-                pusherR: pusher.r,
-                pusherC: pusher.c,
-                force,
-                requiredForce: required,
-                destination: preview.destination,
-                fell: preview.fell,
-                direction: preview.direction
-              };
-              if (preview.fell) {
-                // Ancre géométrique pure (aucune règle) pour le survol/clic de
-                // l'option "chute" : dernière case île valide avant le bord,
-                // dans la direction de poussée depuis la cible.
-                const [dr, dc] = preview.direction;
-                let er = targetR, ec = targetC;
-                while (inside(er + dr, ec + dc) && isLand(er + dr, ec + dc)) {
-                  er += dr;
-                  ec += dc;
-                }
-                option.edgeCell = [er, ec];
-              }
-              options.push(option);
-              if (preview.fell) break; // forces superieures = meme chute, inutile
-            }
-          });
-        } finally {
-          state.phase = savedPhase;
-          state.selectedActionType = savedType;
-          state.selectedCharId = savedCharId;
-          state.actionHoverCell = savedHoverCell;
-          state.selectedActionCount = savedCount;
-        }
-        return options;
-      }
-
       function handlePushClick(r, c) {
         const clickedChar = characterAt(r, c);
         if (state.selectedCharId && clickedChar?.id === state.selectedCharId) {
@@ -14341,8 +14199,6 @@
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
-        state.pushDestinationOptions = null;
-        state.pushDestinationTarget = null;
         clearMagicPreview();
         state.reachable = new Set();
         state.phase = "ACTION_SELECT";
