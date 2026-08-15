@@ -1,72 +1,124 @@
-/* Menu 2 — focused hierarchy polish. Approved artwork + split transition stay untouched. */
+/* Menu 2 — refonte panneau central (finition premium, lisible, non-formulaire).
+   Approved artwork + split transition (menu.css) restent inchangés. */
 
-.duel .setup{width:27.2cqw;top:54.8%}
-.duel .panel{position:relative;overflow:visible;padding:1.1cqh 1cqw .9cqh;border-radius:20px;border:1.7px solid rgba(238,190,86,.9);background:linear-gradient(180deg,rgba(7,18,31,.96),rgba(3,9,17,.94));box-shadow:0 18px 46px rgba(0,0,0,.5),0 0 28px rgba(229,174,68,.09),inset 0 0 0 1px rgba(255,235,180,.06),inset 0 0 34px rgba(255,206,101,.025)}
-.duel .panel::before{content:"";position:absolute;inset:7px;border:1px solid rgba(243,205,124,.12);border-radius:15px;pointer-events:none}
-.duel .duel-panel-head{margin:-.05cqh 0 .75cqh;padding:.78cqh .25cqw .7cqh;border-bottom:1px solid rgba(227,179,79,.22)}
-.duel .duel-medallion b{font-size:1.06cqw;letter-spacing:.09em}.duel .duel-medallion small{font-size:.49cqw;letter-spacing:.16em}
+/* Taille indépendante du ratio 16:9 : ne rétrécit plus avec la fenêtre.
+   ~30-40% plus grand que l'ancien panneau (27.2cqw). */
+.duel .setup{width:clamp(430px,29vw,520px);top:54%}
+
+.duel .panel{
+  position:relative;
+  overflow:hidden;
+  padding:1.1cqh 1cqw .9cqh;
+  border-radius:20px;
+  border:1.5px solid rgba(225,176,70,.75);
+  background:linear-gradient(90deg,rgba(120,75,15,.10),rgba(4,11,20,.94) 30%,rgba(4,11,20,.94) 70%,rgba(90,40,145,.10));
+  box-shadow:0 20px 50px rgba(0,0,0,.48),0 0 30px rgba(220,170,60,.08);
+}
+
+/* Header : un seul bandeau horizontal, centre nettement plus grand */
+.duel .duel-panel-head{grid-template-columns:.85fr 1.5fr .85fr;margin:-.05cqh 0 .75cqh;padding:.78cqh .25cqw .7cqh;border-bottom:1px solid rgba(227,179,79,.22)}
+.duel .duel-medallion b{font-size:clamp(16px,1.3vw,22px);letter-spacing:.09em}.duel .duel-medallion small{font-size:.49cqw;letter-spacing:.16em}
 .duel .duelist small{font-size:.49cqw}.duel .duelist b{font-size:.69cqw}
 
 .duel .duel-panel-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7cqw}
-.duel .field{margin:0}.duel .label{margin:0 0 .28cqh .12cqw;font-size:.64cqw;letter-spacing:.08em;color:#f4cf82}
-.duel .control{display:grid;grid-template-columns:2cqw 1fr 2cqw;gap:.38cqw}
-.duel .control button,.duel .control .value{min-height:max(30px,3.45cqh);border:1.4px solid rgba(224,174,73,.58);border-radius:9px;background:linear-gradient(180deg,rgba(9,23,37,.92),rgba(3,11,20,.94));color:#f6deac;font-size:.72cqw;box-shadow:inset 0 0 0 1px rgba(255,233,178,.025)}
-.duel .control button{font-size:1.08cqw;color:#ffd789;cursor:pointer;transition:.15s ease}.duel .control button:hover:not(:disabled){background:linear-gradient(180deg,rgba(86,58,20,.62),rgba(24,18,11,.92));box-shadow:0 0 15px rgba(255,207,103,.18)}
-.duel .control button:disabled{opacity:.22;cursor:default}.duel .control button.tap{animation:arrowTap .22s ease}.duel .control .value{display:flex;align-items:center;justify-content:center;padding:0 .45cqw;text-align:center;font-weight:700;letter-spacing:.035em}
+.duel .field{margin:0}.duel .label{margin:0 0 .28cqh .12cqw;font-size:clamp(11px,.62vw,14px);letter-spacing:.08em;color:#f4cf82;text-transform:uppercase}
+
+/* Un seul composant par réglage — plus de triple bordure (flèches + valeur
+   fusionnées dans une seule pilule bordée). */
+.duel .control{
+  display:grid;
+  grid-template-columns:44px 1fr 44px;
+  align-items:center;
+  min-height:48px;
+  border:1px solid rgba(220,170,70,.5);
+  border-radius:12px;
+  background:rgba(4,12,22,.78);
+}
+.duel .control button,.duel .control .value{
+  min-height:auto;
+  border:none;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.duel .control button{font-size:clamp(16px,1vw,20px);color:#ffd789;cursor:pointer;transition:.15s ease}
+.duel .control button:hover:not(:disabled){background:rgba(255,207,103,.12)}
+.duel .control button:disabled{opacity:.22;cursor:default}
+.duel .control button.tap{animation:arrowTap .22s ease}
+.duel .control .value{display:flex;align-items:center;justify-content:center;padding:0 .45cqw;text-align:center;font-weight:700;letter-spacing:.035em;font-size:clamp(13px,.78vw,16px);color:#f6deac}
+
 .duel .editable-control{display:block}.duel .editable-value{width:100%;outline:none;text-transform:uppercase}.duel .editable-value:focus{border-color:#f2c76f;box-shadow:0 0 0 2px rgba(242,199,111,.12),0 0 16px rgba(242,199,111,.12)}
 
-/* SOLO: two primary settings, then a dedicated difficulty rail */
-.duel[data-mode="solo"] .duel-panel-body{grid-template-columns:1fr 1fr}
-.duel[data-mode="solo"] .field[data-key="board"]{grid-column:1}
-.duel[data-mode="solo"] .field[data-key="timer"]{grid-column:2}
-.difficulty-zone{margin:.8cqh auto .65cqh;width:78%;text-align:center;padding:.62cqh .6cqw .72cqh;border-top:1px solid rgba(228,181,82,.2);border-bottom:1px solid rgba(228,181,82,.16);background:linear-gradient(90deg,transparent,rgba(240,190,82,.055),transparent)}
-.difficulty-zone-label{font-size:.58cqw;letter-spacing:.13em;color:#d9bb7d;margin-bottom:.33cqh}
-.difficulty-selector{display:grid;grid-template-columns:1.8cqw 1fr 1.8cqw;align-items:center;gap:.4cqw;width:72%;margin:0 auto .58cqh}
-.difficulty-selector button{min-height:28px;border:1px solid rgba(224,174,73,.5);border-radius:8px;background:rgba(5,14,23,.9);color:#ffd789;font-size:1.05cqw;cursor:pointer}
-.difficulty-selector b{font-size:.78cqw;color:#f7dfa7;letter-spacing:.07em}
-.difficulty-lights{display:flex;justify-content:center;gap:.7cqw}
-.difficulty-lights i{width:.72cqw;height:.72cqw;border-radius:50%;border:1.5px solid rgba(211,159,64,.68);background:radial-gradient(circle at 35% 32%,rgba(255,255,255,.07),rgba(62,42,13,.7));box-shadow:inset 0 0 7px rgba(0,0,0,.55);transition:.18s ease}
-.difficulty-lights i.on{background:radial-gradient(circle at 35% 30%,#fff5bd 0 13%,#ffd166 28%,#e49325 62%,#6f3b0d 100%);border-color:#ffe6a0;box-shadow:0 0 7px #ffd26b,0 0 16px rgba(255,181,52,.65),inset 0 0 5px rgba(255,255,255,.5);filter:brightness(1.08);transform:scale(1.08)}
+/* SOLO : réglages empilés en pleine largeur (plus de côte à côte) */
+.duel[data-mode="solo"] .duel-panel-body{grid-template-columns:1fr}
 
-/* One recap zone only */
+/* 2 CONTRE 2 : plateau fixé à CLASSIQUE (option unique, non modifiable) —
+   inutile d'afficher une rangée désactivée, on passe direct aux équipes. */
+.duel[data-mode="team"] .field[data-key="board"]{display:none}
+
+/* Difficulté IA : totalement séparée, pas d'encadré autour des lumières */
+.difficulty-zone{margin:14px auto 10px;width:100%;text-align:center;padding:0;border:none;background:none}
+.difficulty-zone-label{font-size:clamp(11px,.62vw,14px);letter-spacing:.13em;color:#d9bb7d;margin-bottom:8px;text-transform:uppercase}
+.difficulty-selector{
+  display:grid;
+  grid-template-columns:40px 1fr 40px;
+  align-items:center;
+  width:60%;
+  min-width:220px;
+  max-width:280px;
+  min-height:44px;
+  margin:0 auto;
+  border:1px solid rgba(220,170,70,.5);
+  border-radius:12px;
+  background:rgba(4,12,22,.78);
+}
+.difficulty-selector button{min-height:auto;border:none;background:transparent;color:#ffd789;font-size:clamp(16px,1vw,20px);cursor:pointer}
+.difficulty-selector b{font-size:clamp(13px,.85vw,17px);color:#f7dfa7;letter-spacing:.07em;font-weight:700}
+.difficulty-lights{display:flex;justify-content:center;gap:10px;margin-top:12px}
+.difficulty-lights i{width:14px;height:14px;border-radius:50%;border:1.5px solid rgba(211,159,64,.5);background:radial-gradient(circle at 35% 32%,rgba(255,255,255,.06),rgba(40,28,10,.85));box-shadow:inset 0 0 4px rgba(0,0,0,.6);transition:.18s ease;display:block}
+.difficulty-lights i.on{background:radial-gradient(circle at 35% 30%,#fff4b0,#ffd05d 35%,#c87a16 75%);box-shadow:0 0 6px #ffd05d,0 0 14px rgba(255,190,60,.75);border-color:#ffe6a0}
+
+/* Résumé bas de panneau : gardé uniquement pour le 2 contre 2 (objectif de
+   couronnes) — supprimé pour solo/duel/online, panneau plus lisible. */
+.duel:not([data-mode="team"]) .match-recap{display:none}
 .match-recap{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:.36cqw;margin:.45cqh 0 .28cqh;padding:.48cqh .35cqw;border-top:1px solid rgba(229,180,77,.22);border-bottom:1px solid rgba(229,180,77,.16);background:linear-gradient(90deg,rgba(239,187,79,.025),rgba(255,220,140,.065),rgba(239,187,79,.025))}
 .match-recap span{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:.36cqh .32cqw;border-radius:7px;border:1px solid rgba(222,170,64,.34);background:rgba(2,9,17,.76)}
 .match-recap small{font-size:.42cqw;letter-spacing:.11em;color:#bba67d;line-height:1}.match-recap b{margin-top:.18cqh;font-size:.54cqw;color:#f4d89b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.duel .dots{margin-top:.26cqh}
 
-/* Strong CTA, guaranteed two lines */
-.duel .play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18cqh;width:82%;min-height:max(52px,5.7cqh);margin-top:.7cqh;padding:.66cqh .8cqw .6cqh;line-height:1.02}
-.duel .play .play-main{display:block;font-size:1.02cqw;font-weight:800;letter-spacing:.055em}.duel .play small{display:block!important;opacity:1!important;visibility:visible!important;height:auto!important;margin:0!important;color:rgba(57,30,4,.8);font-size:.45cqw;font-weight:700;letter-spacing:.16em;line-height:1;text-transform:uppercase}
-.duel .desc{margin-top:.5cqh;font-size:.54cqw;line-height:1.15;opacity:.86}
+/* Bouton principal : intégré au bas du panneau, grande zone lisible */
+.duel .play{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:88%;min-height:68px;margin-top:16px;padding:10px 16px;line-height:1.05}
+.duel .play .play-main{display:block;font-size:clamp(18px,1.1vw,24px);font-weight:800;letter-spacing:.055em}
+.duel .play small{display:block!important;opacity:1!important;visibility:visible!important;height:auto!important;margin:0!important;color:rgba(57,30,4,.8);font-size:clamp(10px,.6vw,13px);font-weight:700;letter-spacing:.14em;line-height:1;text-transform:uppercase}
+
+/* Phrase descriptive et pagination supprimées (panneau plus simple) */
+.duel .desc{display:none}
 
 /* Local duel / teams */
 .duel-name-grid,.team-name-grid{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:.65cqw;margin-top:.08cqh}
 .duel-name-card,.team-name-card{padding:.45cqh .42cqw;border-radius:10px;border:1px solid rgba(222,174,75,.28);background:rgba(3,11,19,.72)}
 .gold-name,.team-name-gold{box-shadow:inset 0 0 18px rgba(226,174,68,.04)}.violet-name,.team-name-violet{box-shadow:inset 0 0 18px rgba(156,93,218,.05)}
 .guardian-mark{text-align:center;font-size:1cqw;color:#efcc83;line-height:1;margin-bottom:.2cqh}.team-name-title{text-align:center;font-size:.5cqw;letter-spacing:.12em;color:#d2b77e;margin-bottom:.25cqh}
-.compact-name .label{font-size:.5cqw}.compact-name+.compact-name{margin-top:.3cqh}
+.compact-name .label{font-size:clamp(10px,.55vw,13px)}.compact-name+.compact-name{margin-top:.3cqh}
 
-/* Windowed Chrome: preserve proportions without making controls microscopic. */
+/* Windowed Chrome : préserver les proportions, ne pas miniaturiser le texte
+   (clamp() gère déjà le texte) — on réduit seulement marges/gaps/logo et on
+   remonte légèrement le panneau. Le bouton principal reste toujours visible
+   (taille fixe, non réduite ici). */
 @media (max-height:900px){
-  .duel .setup{width:30cqw;top:55%}
+  .duel .setup{top:52%}
   .duel .logo-duel{width:17.6cqw;top:1.2%}
   .duel .panel{padding:.86cqh .82cqw .68cqh;border-radius:17px}
   .duel .duel-panel-head{margin-bottom:.5cqh;padding:.55cqh .18cqw .48cqh}
-  .duel .duelist small{font-size:.44cqw}.duel .duelist b{font-size:.61cqw}.duel .duel-medallion b{font-size:.9cqw}.duel .duel-medallion small{font-size:.39cqw}
-  .duel .duel-panel-body{gap:.52cqw}.duel .label{font-size:.56cqw;margin-bottom:.18cqh}.duel .control{grid-template-columns:1.75cqw 1fr 1.75cqw;gap:.28cqw}.duel .control button,.duel .control .value{min-height:29px;font-size:.64cqw}
-  .difficulty-zone{margin:.55cqh auto .45cqh;padding:.45cqh .45cqw .54cqh}.difficulty-zone-label{font-size:.5cqw}.difficulty-selector{margin-bottom:.42cqh}.difficulty-selector b{font-size:.7cqw}.difficulty-lights{gap:.58cqw}.difficulty-lights i{width:.62cqw;height:.62cqw}
-  .match-recap{margin:.3cqh 0 .2cqh;padding:.34cqh .28cqw}.match-recap small{font-size:.37cqw}.match-recap b{font-size:.48cqw}
-  .duel .play{min-height:47px;margin-top:.5cqh}.duel .play .play-main{font-size:.91cqw}.duel .play small{font-size:.39cqw}
-  .duel .desc{font-size:.47cqw;margin-top:.35cqh}
+  .duel .duel-panel-body{gap:.4cqw}
+  .difficulty-zone{margin:10px auto 8px}
+  .duel .play{margin-top:10px}
 }
 
 @media (max-height:760px){
-  .duel .setup{width:33cqw;top:55.5%}
+  .duel .setup{top:50%}
   .duel .logo-duel{width:15.8cqw;top:.5%}
   .duel .panel{padding:.65cqh .72cqw .52cqh}.duel .duel-panel-head{margin-bottom:.35cqh;padding:.4cqh .12cqw .34cqh}
-  .duel .duel-panel-body{gap:.42cqw}.duel .label{font-size:.52cqw}.duel .control button,.duel .control .value{min-height:27px;font-size:.59cqw;border-radius:7px}
-  .difficulty-zone{margin:.38cqh auto .32cqh;padding:.34cqh .38cqw .42cqh}.difficulty-zone-label{font-size:.46cqw}.difficulty-selector{width:68%;grid-template-columns:1.55cqw 1fr 1.55cqw}.difficulty-selector b{font-size:.64cqw}.difficulty-lights i{width:.56cqw;height:.56cqw}
-  .match-recap{display:none}
-  .duel .play{width:84%;min-height:43px;margin-top:.4cqh}.duel .play .play-main{font-size:.82cqw}.duel .play small{font-size:.35cqw}
-  .duel .desc{display:none}
+  .duel .duel-panel-body{gap:.32cqw}
+  .difficulty-zone{margin:6px auto 6px}
+  .duel .play{margin-top:8px}
 }

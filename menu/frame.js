@@ -19,6 +19,15 @@
   modal.querySelector('.menu-modal-close').addEventListener('click',()=>modal.classList.remove('open'));
   modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
 
+  function requestSiteFullscreen(){
+    if(document.fullscreenElement) return;
+    const el=document.documentElement;
+    const req=el.requestFullscreen||el.webkitRequestFullscreen;
+    if(!req) return;
+    try{ const p=req.call(el); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
+  }
+  document.addEventListener('click', requestSiteFullscreen, {once:true, capture:true});
+
   function send(type,detail){ parent.postMessage({source:'ilyos-menu',type,detail}, location.origin); }
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
@@ -80,7 +89,7 @@
 
   function recap(mode,values){
     const items=[];
-    if(values.board!=null) items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
+    if(values.board!=null && mode!=='team') items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
     if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
     if(mode==='solo') items.push(['IA',labelFor(mode,'difficulty',values.difficulty)]);
     if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);

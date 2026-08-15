@@ -100,8 +100,9 @@ window.ILYOS_BUILD = "V75.1"; document.title = "ILYOS V75.1 — Stable Netlify";
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
-    frame.src = './menu/frame.html?v=menu-duel-9';
-    frame.setAttribute('allow', 'autoplay');
+    frame.src = './menu/frame.html?v=menu-duel-11';
+    frame.setAttribute('allow', 'autoplay; fullscreen');
+    frame.allowFullscreen = true;
     document.body.appendChild(frame);
 
     window.addEventListener('message', (event) => {
