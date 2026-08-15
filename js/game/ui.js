@@ -1780,12 +1780,14 @@
 
       function placeIsland(anchorR, anchorC) {
         const absCells = previewAbsoluteCells(anchorR, anchorC);
+        const islandId = state.nextIslandId++;
         const island = {
-          id: state.nextIslandId++,
+          id: islandId,
           owner: state.currentPlayer,
           anchor: { r: anchorR, c: anchorC },
           relCells: cloneCells(state.placementCells),
-          cells: absCells
+          cells: absCells,
+          visualVariant: chooseIslandVisualVariant(absCells, islandId, state.islands)
         };
         state.islands.push(island);
         // L'île se matérialise : elle descend depuis quelques centimètres
