@@ -617,7 +617,7 @@
           canvas, badge, controls, status, cursorLabel, cameraHint, uiNodes: [badge, controls, status, cursorLabel, cameraHint], renderer, scene, camera, root,
           staticGroup, dynamicGroup, characterGroup, hitGroup, fxGroup, raycaster, pointer, clock, loader, textureLoader,
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
-          textureCache: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
+          textureCache: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
           mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
@@ -3011,7 +3011,7 @@
         let sig = "";
         for (let i = 0; i < islands.length; i++) {
           const island = islands[i];
-          sig += island.id + ":";
+          sig += island.id + ":" + (island.visualVariant ?? 0) + ":";
           const cells = island.cells;
           for (let j = 0; j < cells.length; j++) sig += cells[j][0] + "." + cells[j][1] + ",";
           sig += "|";
@@ -4155,7 +4155,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0xffffff, 0xf1f6df, 0xe9f2dd, 0xf5eed9, 0xe6f0e5, 0xf2e8d5, 0xe2ecdc
+        0x9aa55a,
+        0x647540,
+        0x91a77d,
+        0x476b4d,
+        0x5f8c78,
+        0x7e984f
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4185,8 +4190,44 @@
       }
 
       function ilyosIslandTint(island) {
-        const index = kaykit3D?.islandColorMap?.get(String(island?.id)) ?? 0;
+        const index = Number.isInteger(island?.visualVariant)
+          ? island.visualVariant
+          : Math.abs(Number(island?.id) || 0) % ILYOS_ISLAND_TINTS.length;
         return ILYOS_ISLAND_TINTS[index % ILYOS_ISLAND_TINTS.length];
+      }
+
+      function applyIslandTintToMaterial(material, variantIndex) {
+        if (!material?.color) return;
+        const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
+        material.color.copy(material.color.clone().lerp(tint, .32));
+      }
+
+      function kaykitIslandTintMaterial(baseMaterial, variant) {
+        const variantIndex = Math.max(0, Number(variant) || 0) % ILYOS_ISLAND_TINTS.length;
+        const map = baseMaterial.map || getBlockBitsTexture();
+        const materialIdentity = map?.uuid || baseMaterial.name || baseMaterial.type;
+        const cacheKey = `${materialIdentity}|${baseMaterial.name || "material"}|${variantIndex}`;
+        const cached = kaykit3D?.islandTintMaterials?.get(cacheKey);
+        if (cached) return cached;
+
+        const material = baseMaterial.clone();
+        if (map) {
+          configureKayKitTexture(map);
+          map.magFilter = THREE.NearestFilter;
+          map.minFilter = THREE.NearestMipmapNearestFilter || THREE.NearestFilter;
+          map.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+          map.needsUpdate = true;
+          material.map = map;
+        }
+        material.roughness = .84;
+        material.metalness = 0;
+        material.toneMapped = false;
+        applyIslandTintToMaterial(material, variantIndex);
+        material.userData.ilyosSharedIslandTint = true;
+        material.name = `${baseMaterial.name || "block-bits"}-island-tint-${variantIndex}`;
+        material.needsUpdate = true;
+        kaykit3D?.islandTintMaterials?.set(cacheKey, material);
+        return material;
       }
 
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
@@ -4235,7 +4276,7 @@
 
           if (!block) {
             const fallbackMat = new THREE.MeshStandardMaterial({
-              color: preview ? previewColor : 0x6fbd49,
+              color: preview ? previewColor : ilyosIslandTint(island),
               roughness: .88,
               transparent: preview,
               opacity: preview ? previewOpacity : 1
@@ -4250,29 +4291,7 @@
               const source = Array.isArray(child.material) ? child.material : [child.material];
               const styled = source.map(material => {
                 if (preview) return material;
-                const map = material.map || getBlockBitsTexture();
-                if (map) {
-                  configureKayKitTexture(map);
-                  map.magFilter = THREE.NearestFilter;
-                  map.minFilter = THREE.NearestMipmapNearestFilter || THREE.NearestFilter;
-                  map.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
-                  map.needsUpdate = true;
-                }
-                const mat = new THREE.MeshStandardMaterial({
-                  map,
-                  color: ilyosIslandTint(island),
-                  roughness: .84,
-                  metalness: 0,
-                  transparent: material.transparent,
-                  opacity: material.opacity ?? 1,
-                  alphaTest: material.alphaTest ?? 0,
-                  side: material.side ?? THREE.FrontSide,
-                  vertexColors: material.vertexColors || false,
-                  toneMapped: false
-                });
-                mat.name = `${material.name || 'block-bits'}-texture-forcee-v52`;
-                mat.needsUpdate = true;
-                return mat;
+                return kaykitIslandTintMaterial(material, island.visualVariant);
               });
               child.material = Array.isArray(child.material) ? styled : styled[0];
             });
@@ -4358,7 +4377,6 @@
       }
 
       function renderKayKitIslandBlocks(group) {
-        if (kaykit3D) kaykit3D.islandColorMap = buildIlyosIslandColorMap(state?.islands || []);
         // Masqué pour toute la durée de l'action MAGIE (plus seulement une fois la
         // rotation amorcée) : le contour d'origine + le bloc-ghost teinté de
         // renderKayKitMagicRotationPreview prennent le relais dès la sélection de

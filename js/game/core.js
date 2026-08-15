@@ -105,6 +105,15 @@
 
       const key = (r, c) => `${r},${c}`;
       const cloneCells = cells => cells.map(([r, c]) => [r, c]);
+      const ISLAND_VISUAL_VARIANTS = [0, 1, 2, 3, 4, 5];
+      const ISLAND_VARIANT_CONTRAST = [
+        [0, 9, 5, 10, 7, 4],
+        [9, 0, 8, 4, 6, 7],
+        [5, 8, 0, 9, 5, 6],
+        [10, 4, 9, 0, 7, 6],
+        [7, 6, 5, 7, 0, 6],
+        [4, 7, 6, 6, 6, 0]
+      ];
 
       function shuffle(arr) {
         const a = [...arr];
@@ -117,6 +126,51 @@
       function inside(r, c) { return r >= 0 && c >= 0 && r < GRID && c < GRID; }
       function orthogonalNeighbors(r, c) {
         return [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].filter(([nr, nc]) => inside(nr, nc));
+      }
+      function adjacentIslandIdsForCells(cells, islands = state?.islands || []) {
+        const ownCells = new Set((cells || []).map(([r, c]) => key(r, c)));
+        const cellToIsland = new Map();
+        islands.forEach(island => {
+          (island.cells || []).forEach(([r, c]) => cellToIsland.set(key(r, c), island.id));
+        });
+        const adjacentIds = new Set();
+        (cells || []).forEach(([r, c]) => {
+          orthogonalNeighbors(r, c).forEach(([nr, nc]) => {
+            const neighborKey = key(nr, nc);
+            if (ownCells.has(neighborKey)) return;
+            const islandId = cellToIsland.get(neighborKey);
+            if (islandId !== undefined && islandId !== null) adjacentIds.add(islandId);
+          });
+        });
+        return [...adjacentIds];
+      }
+      function chooseIslandVisualVariant(cells, islandId, islands = state?.islands || []) {
+        const adjacentIds = adjacentIslandIdsForCells(cells, islands);
+        const adjacentVariants = adjacentIds
+          .map(id => islands.find(island => String(island.id) === String(id)))
+          .filter(Boolean)
+          .map(island => Number.isInteger(island.visualVariant)
+            ? island.visualVariant
+            : Math.abs(Number(island.id) || 0) % ISLAND_VISUAL_VARIANTS.length);
+
+        if (!adjacentVariants.length) {
+          return Math.abs(Number(islandId) || 0) % ISLAND_VISUAL_VARIANTS.length;
+        }
+
+        let bestScore = -Infinity;
+        let candidates = [];
+        ISLAND_VISUAL_VARIANTS.forEach(variant => {
+          const minimumContrast = Math.min(...adjacentVariants.map(
+            adjacentVariant => ISLAND_VARIANT_CONTRAST[variant]?.[adjacentVariant] ?? 0
+          ));
+          if (minimumContrast > bestScore) {
+            bestScore = minimumContrast;
+            candidates = [variant];
+          } else if (minimumContrast === bestScore) {
+            candidates.push(variant);
+          }
+        });
+        return candidates[Math.abs(Number(islandId) || 0) % candidates.length];
       }
       function normalizeShape(cells) {
         const minR = Math.min(...cells.map(c => c[0]));
@@ -828,6 +882,13 @@
         restored.round = Math.max(1, Number(restored.round || 1));
         restored.turn = Math.max(1, Number(restored.turn || 1));
         restored.islands = Array.isArray(restored.islands) ? restored.islands : [];
+        restored.islands.forEach(island => {
+          if (!Number.isInteger(island.visualVariant)) {
+            island.visualVariant = Math.abs(Number(island.id) || 0) % ISLAND_VISUAL_VARIANTS.length;
+          }
+          island.visualVariant = ((island.visualVariant % ISLAND_VISUAL_VARIANTS.length) + ISLAND_VISUAL_VARIANTS.length)
+            % ISLAND_VISUAL_VARIANTS.length;
+        });
         restored.characters = Array.isArray(restored.characters) ? restored.characters : [];
         restored.reachable = new Set(restored.reachable || []);
         restored.fxCells = [];
@@ -2182,11 +2243,14 @@
 
         state.startingBoardMode = "symmetric";
         state.startingBoardPreset = resolvedId;
-        state.islands = setup.islands.map(island => ({
+        state.islands = setup.islands.map((island, index) => ({
           ...island,
           anchor: { ...island.anchor },
           relCells: island.relCells.map(([r, c]) => [r, c]),
-          cells: island.cells.map(([r, c]) => [r, c])
+          cells: island.cells.map(([r, c]) => [r, c]),
+          visualVariant: Number.isInteger(island.visualVariant)
+            ? island.visualVariant
+            : index % ISLAND_VISUAL_VARIANTS.length
         }));
         state.characters = setup.characters.map(character => ({ ...character }));
         state.nextIslandId = Math.max(...state.islands.map(island => island.id)) + 1;
@@ -2864,12 +2928,14 @@
           return null;
         }
 
+        const islandId = state.nextIslandId++;
         const island = {
-          id: state.nextIslandId++,
+          id: islandId,
           owner: playerId,
           anchor: { ...placement.anchor },
           relCells: cloneCells(placement.relCells),
-          cells: cloneCells(placement.cells)
+          cells: cloneCells(placement.cells),
+          visualVariant: chooseIslandVisualVariant(placement.cells, islandId, state.islands)
         };
         state.islands.push(island);
         // Même matérialisation pour les poses de l'IA que pour celles du joueur.

@@ -744,7 +744,7 @@
           canvas, badge, controls, status, cursorLabel, cameraHint, uiNodes: [badge, controls, status, cursorLabel, cameraHint], renderer, scene, camera, root,
           staticGroup, dynamicGroup, characterGroup, hitGroup, fxGroup, raycaster, pointer, clock, loader, textureLoader,
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
-          textureCache: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
+          textureCache: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
           mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
@@ -3138,7 +3138,7 @@
         let sig = "";
         for (let i = 0; i < islands.length; i++) {
           const island = islands[i];
-          sig += island.id + ":";
+          sig += island.id + ":" + (island.visualVariant ?? 0) + ":";
           const cells = island.cells;
           for (let j = 0; j < cells.length; j++) sig += cells[j][0] + "." + cells[j][1] + ",";
           sig += "|";
@@ -4282,7 +4282,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0xffffff, 0xf1f6df, 0xe9f2dd, 0xf5eed9, 0xe6f0e5, 0xf2e8d5, 0xe2ecdc
+        0x9aa55a,
+        0x647540,
+        0x91a77d,
+        0x476b4d,
+        0x5f8c78,
+        0x7e984f
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4312,8 +4317,44 @@
       }
 
       function ilyosIslandTint(island) {
-        const index = kaykit3D?.islandColorMap?.get(String(island?.id)) ?? 0;
+        const index = Number.isInteger(island?.visualVariant)
+          ? island.visualVariant
+          : Math.abs(Number(island?.id) || 0) % ILYOS_ISLAND_TINTS.length;
         return ILYOS_ISLAND_TINTS[index % ILYOS_ISLAND_TINTS.length];
+      }
+
+      function applyIslandTintToMaterial(material, variantIndex) {
+        if (!material?.color) return;
+        const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
+        material.color.copy(material.color.clone().lerp(tint, .32));
+      }
+
+      function kaykitIslandTintMaterial(baseMaterial, variant) {
+        const variantIndex = Math.max(0, Number(variant) || 0) % ILYOS_ISLAND_TINTS.length;
+        const map = baseMaterial.map || getBlockBitsTexture();
+        const materialIdentity = map?.uuid || baseMaterial.name || baseMaterial.type;
+        const cacheKey = `${materialIdentity}|${baseMaterial.name || "material"}|${variantIndex}`;
+        const cached = kaykit3D?.islandTintMaterials?.get(cacheKey);
+        if (cached) return cached;
+
+        const material = baseMaterial.clone();
+        if (map) {
+          configureKayKitTexture(map);
+          map.magFilter = THREE.NearestFilter;
+          map.minFilter = THREE.NearestMipmapNearestFilter || THREE.NearestFilter;
+          map.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+          map.needsUpdate = true;
+          material.map = map;
+        }
+        material.roughness = .84;
+        material.metalness = 0;
+        material.toneMapped = false;
+        applyIslandTintToMaterial(material, variantIndex);
+        material.userData.ilyosSharedIslandTint = true;
+        material.name = `${baseMaterial.name || "block-bits"}-island-tint-${variantIndex}`;
+        material.needsUpdate = true;
+        kaykit3D?.islandTintMaterials?.set(cacheKey, material);
+        return material;
       }
 
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
@@ -4362,7 +4403,7 @@
 
           if (!block) {
             const fallbackMat = new THREE.MeshStandardMaterial({
-              color: preview ? previewColor : 0x6fbd49,
+              color: preview ? previewColor : ilyosIslandTint(island),
               roughness: .88,
               transparent: preview,
               opacity: preview ? previewOpacity : 1
@@ -4377,29 +4418,7 @@
               const source = Array.isArray(child.material) ? child.material : [child.material];
               const styled = source.map(material => {
                 if (preview) return material;
-                const map = material.map || getBlockBitsTexture();
-                if (map) {
-                  configureKayKitTexture(map);
-                  map.magFilter = THREE.NearestFilter;
-                  map.minFilter = THREE.NearestMipmapNearestFilter || THREE.NearestFilter;
-                  map.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
-                  map.needsUpdate = true;
-                }
-                const mat = new THREE.MeshStandardMaterial({
-                  map,
-                  color: ilyosIslandTint(island),
-                  roughness: .84,
-                  metalness: 0,
-                  transparent: material.transparent,
-                  opacity: material.opacity ?? 1,
-                  alphaTest: material.alphaTest ?? 0,
-                  side: material.side ?? THREE.FrontSide,
-                  vertexColors: material.vertexColors || false,
-                  toneMapped: false
-                });
-                mat.name = `${material.name || 'block-bits'}-texture-forcee-v52`;
-                mat.needsUpdate = true;
-                return mat;
+                return kaykitIslandTintMaterial(material, island.visualVariant);
               });
               child.material = Array.isArray(child.material) ? styled : styled[0];
             });
@@ -4485,7 +4504,6 @@
       }
 
       function renderKayKitIslandBlocks(group) {
-        if (kaykit3D) kaykit3D.islandColorMap = buildIlyosIslandColorMap(state?.islands || []);
         // Masqué pour toute la durée de l'action MAGIE (plus seulement une fois la
         // rotation amorcée) : le contour d'origine + le bloc-ghost teinté de
         // renderKayKitMagicRotationPreview prennent le relais dès la sélection de
@@ -6555,6 +6573,15 @@
 
       const key = (r, c) => `${r},${c}`;
       const cloneCells = cells => cells.map(([r, c]) => [r, c]);
+      const ISLAND_VISUAL_VARIANTS = [0, 1, 2, 3, 4, 5];
+      const ISLAND_VARIANT_CONTRAST = [
+        [0, 9, 5, 10, 7, 4],
+        [9, 0, 8, 4, 6, 7],
+        [5, 8, 0, 9, 5, 6],
+        [10, 4, 9, 0, 7, 6],
+        [7, 6, 5, 7, 0, 6],
+        [4, 7, 6, 6, 6, 0]
+      ];
 
       function shuffle(arr) {
         const a = [...arr];
@@ -6567,6 +6594,51 @@
       function inside(r, c) { return r >= 0 && c >= 0 && r < GRID && c < GRID; }
       function orthogonalNeighbors(r, c) {
         return [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].filter(([nr, nc]) => inside(nr, nc));
+      }
+      function adjacentIslandIdsForCells(cells, islands = state?.islands || []) {
+        const ownCells = new Set((cells || []).map(([r, c]) => key(r, c)));
+        const cellToIsland = new Map();
+        islands.forEach(island => {
+          (island.cells || []).forEach(([r, c]) => cellToIsland.set(key(r, c), island.id));
+        });
+        const adjacentIds = new Set();
+        (cells || []).forEach(([r, c]) => {
+          orthogonalNeighbors(r, c).forEach(([nr, nc]) => {
+            const neighborKey = key(nr, nc);
+            if (ownCells.has(neighborKey)) return;
+            const islandId = cellToIsland.get(neighborKey);
+            if (islandId !== undefined && islandId !== null) adjacentIds.add(islandId);
+          });
+        });
+        return [...adjacentIds];
+      }
+      function chooseIslandVisualVariant(cells, islandId, islands = state?.islands || []) {
+        const adjacentIds = adjacentIslandIdsForCells(cells, islands);
+        const adjacentVariants = adjacentIds
+          .map(id => islands.find(island => String(island.id) === String(id)))
+          .filter(Boolean)
+          .map(island => Number.isInteger(island.visualVariant)
+            ? island.visualVariant
+            : Math.abs(Number(island.id) || 0) % ISLAND_VISUAL_VARIANTS.length);
+
+        if (!adjacentVariants.length) {
+          return Math.abs(Number(islandId) || 0) % ISLAND_VISUAL_VARIANTS.length;
+        }
+
+        let bestScore = -Infinity;
+        let candidates = [];
+        ISLAND_VISUAL_VARIANTS.forEach(variant => {
+          const minimumContrast = Math.min(...adjacentVariants.map(
+            adjacentVariant => ISLAND_VARIANT_CONTRAST[variant]?.[adjacentVariant] ?? 0
+          ));
+          if (minimumContrast > bestScore) {
+            bestScore = minimumContrast;
+            candidates = [variant];
+          } else if (minimumContrast === bestScore) {
+            candidates.push(variant);
+          }
+        });
+        return candidates[Math.abs(Number(islandId) || 0) % candidates.length];
       }
       function normalizeShape(cells) {
         const minR = Math.min(...cells.map(c => c[0]));
@@ -7278,6 +7350,13 @@
         restored.round = Math.max(1, Number(restored.round || 1));
         restored.turn = Math.max(1, Number(restored.turn || 1));
         restored.islands = Array.isArray(restored.islands) ? restored.islands : [];
+        restored.islands.forEach(island => {
+          if (!Number.isInteger(island.visualVariant)) {
+            island.visualVariant = Math.abs(Number(island.id) || 0) % ISLAND_VISUAL_VARIANTS.length;
+          }
+          island.visualVariant = ((island.visualVariant % ISLAND_VISUAL_VARIANTS.length) + ISLAND_VISUAL_VARIANTS.length)
+            % ISLAND_VISUAL_VARIANTS.length;
+        });
         restored.characters = Array.isArray(restored.characters) ? restored.characters : [];
         restored.reachable = new Set(restored.reachable || []);
         restored.fxCells = [];
@@ -8632,11 +8711,14 @@
 
         state.startingBoardMode = "symmetric";
         state.startingBoardPreset = resolvedId;
-        state.islands = setup.islands.map(island => ({
+        state.islands = setup.islands.map((island, index) => ({
           ...island,
           anchor: { ...island.anchor },
           relCells: island.relCells.map(([r, c]) => [r, c]),
-          cells: island.cells.map(([r, c]) => [r, c])
+          cells: island.cells.map(([r, c]) => [r, c]),
+          visualVariant: Number.isInteger(island.visualVariant)
+            ? island.visualVariant
+            : index % ISLAND_VISUAL_VARIANTS.length
         }));
         state.characters = setup.characters.map(character => ({ ...character }));
         state.nextIslandId = Math.max(...state.islands.map(island => island.id)) + 1;
@@ -9314,12 +9396,14 @@
           return null;
         }
 
+        const islandId = state.nextIslandId++;
         const island = {
-          id: state.nextIslandId++,
+          id: islandId,
           owner: playerId,
           anchor: { ...placement.anchor },
           relCells: cloneCells(placement.relCells),
-          cells: cloneCells(placement.cells)
+          cells: cloneCells(placement.cells),
+          visualVariant: chooseIslandVisualVariant(placement.cells, islandId, state.islands)
         };
         state.islands.push(island);
         // Même matérialisation pour les poses de l'IA que pour celles du joueur.
@@ -12714,12 +12798,14 @@
 
       function placeIsland(anchorR, anchorC) {
         const absCells = previewAbsoluteCells(anchorR, anchorC);
+        const islandId = state.nextIslandId++;
         const island = {
-          id: state.nextIslandId++,
+          id: islandId,
           owner: state.currentPlayer,
           anchor: { r: anchorR, c: anchorC },
           relCells: cloneCells(state.placementCells),
-          cells: absCells
+          cells: absCells,
+          visualVariant: chooseIslandVisualVariant(absCells, islandId, state.islands)
         };
         state.islands.push(island);
         // L'île se matérialise : elle descend depuis quelques centimètres
