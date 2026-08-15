@@ -59,8 +59,8 @@
             return { label: "Gardien sélectionné", instruction: "Prochain clic : une destination éclairée ou une cible adjacente." };
           case "ACTION_SELECT":
             return state.islandPlacedThisTurn
-              ? { label: "Choisir une action", instruction: "Choisissez une action à droite ou cliquez directement une cible valide." }
-              : { label: "Île obligatoire", instruction: "Commencez par choisir une forme à gauche. Vous pourrez agir avant ou après sa pose." };
+              ? { label: "Choisir une action", instruction: "Choisissez une action ou cliquez directement une cible valide." }
+              : { label: "Île obligatoire", instruction: "Commencez par choisir une forme d’île. Vous pourrez agir avant ou après sa pose." };
           case "ACTION":
             if (state.selectedActionType === "MOVE") {
               return state.selectedCharId
@@ -90,10 +90,10 @@
         }
 
         if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme à gauche." };
+          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "CHOOSE_ISLAND_SHAPE") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Cliquez une forme à gauche." };
+          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
@@ -122,9 +122,9 @@
           return { kind: "magic", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name}${degrees ? ` · ${degrees}°` : ""}`, next: state.selectedIslandId ? (degrees ? "Cliquez l’aperçu pour valider." : "Tournez avec ↺, ↻ ou la molette.") : "Cliquez une case pivot sur une île." };
         }
         if (state.islandPlacedThisTurn) {
-          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Actions à droite · Fin du tour quand vous êtes prêt." };
+          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Choisissez une action ou terminez votre tour." };
         }
-        return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme à gauche." };
+        return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
       }
 
       function renderTurnContext() {
@@ -200,8 +200,206 @@
         renderUnitCard();
         updateCrownStatus();
         updateOnlineBadge();
+        renderHudV2();
         scheduleOnlineSync();
         scheduleLocalSave();
+      }
+
+      // HUD V2 (Prompt 2/3) : lecture seule du state existant, aucune boucle
+      // propre — appele depuis renderAll() (deja declenche par chaque
+      // changement d'etat, pas de rAF/polling/MutationObserver ajoute ici).
+      // #turnLabel/#turnTimer/#cancelCardBtn/#endTurnBtn/#islandSelector sont
+      // les memes elements que l'ancien HUD (juste reancres dans index.html) :
+      // leur logique (renderHeader/updateTurnTimerDisplay/renderControls/
+      // renderIslandSelector/selectIslandShape) reste inchangee. Les boutons
+      // DÉPLACER/POUSSER/MAGIE appellent exactement selectActionBatch(), comme
+      // les boutons de l'ancien panneau ACTIONS — aucun second systeme d'action.
+      function renderHudV2() {
+        if (!state || !els.gameScreen) return;
+        const hudTop = document.getElementById("hudV2Top");
+        if (!hudTop) return;
+
+        const crownPips = score => {
+          const filled = Math.max(0, Math.min(3, score || 0));
+          return "👑".repeat(filled) +
+            `<span class="hud-v2-crown-empty">${"♔".repeat(3 - filled)}</span>`;
+        };
+
+        const active = currentPlayer();
+
+        // Portraits/noms fixes gauche=joueur[0] / droite=joueur[1] (jamais
+        // permutés selon le tour, cf. "le halo passe d'un portrait à
+        // l'autre" — sinon les noms sauteraient de côté à chaque tour).
+        // 4 joueurs/2v2 : toujours aucun champ d'équipe fiable identifié
+        // dans state (voir startLocalGame(), core.js) — seuls les deux
+        // premiers joueurs sont représentés, gap déjà documenté.
+        const leftPlayer = state.players[0] || null;
+        const rightPlayer = state.players.length > 1 ? state.players[1] : null;
+
+        // Portrait : aucun asset 2D circulaire trouvé dans assets/kaykit
+        // (uniquement des modèles .glb + leurs atlas de texture, inexploitables
+        // tels quels) — silhouette neutre temporaire (pas un emoji) le temps
+        // que de vrais portraits soient fournis. Un seul <svg> statique,
+        // injecté une fois par portrait (idempotent : ne réinjecte pas si
+        // déjà présent), teinté par la couleur du joueur via le fond du
+        // cercle — aucune scène 3D, aucun coût de rendu supplémentaire.
+        const silhouetteSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4 20.5c0-4.7 3.6-8.5 8-8.5s8 3.8 8 8.5"/></svg>';
+        const fillPortrait = (prefix, p, isActiveTurn) => {
+          const portraitEl = document.getElementById(`hudV2${prefix}Portrait`);
+          const nameEl = document.getElementById(`hudV2${prefix}Name`);
+          const scoreEl = document.getElementById(`hudV2${prefix}Score`);
+          if (portraitEl) {
+            if (p) {
+              portraitEl.classList.remove("hidden");
+              portraitEl.style.setProperty("--hud-v2-portrait-color", p.color);
+              const iconEl = portraitEl.querySelector(".hud-v2-portrait-icon");
+              if (iconEl && !iconEl.dataset.filled) {
+                iconEl.innerHTML = silhouetteSvg;
+                iconEl.dataset.filled = "1";
+              }
+              portraitEl.classList.toggle("hud-v2-portrait-active", !!isActiveTurn);
+            } else {
+              portraitEl.classList.add("hidden");
+            }
+          }
+          if (nameEl) {
+            nameEl.textContent = p ? (p.isAI ? "IA" : p.name) : "";
+            nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
+          }
+          if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
+        };
+        fillPortrait("Active", leftPlayer, leftPlayer && state.currentPlayer === leftPlayer.id);
+        fillPortrait("Opponent", rightPlayer, rightPlayer && state.currentPlayer === rightPlayer.id);
+
+        // --- ÎLE : pill/bouton, disparaît une fois l'île posée ce tour ---
+        const islandStatusEl = document.getElementById("hudV2IslandStatus");
+        const islandDrawer = document.getElementById("hudV2IslandDrawer");
+        if (islandStatusEl) {
+          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
+          islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">🏝</span><span class="hud-v2-pill-word">ÎLE</span>`;
+        }
+        if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
+          closeHudV2Drawer();
+        }
+
+        // --- DÉPLACER / POUSSER / MAGIE : vrais boutons, meme etat que renderHand() ---
+        // Libellés fixes (verbe, pas le nom de la carte : "Déplacement" donnerait
+        // "DÉPLACEMENT ×N" au lieu de "DÉPLACER ×N" attendu par la maquette).
+        // Icône dans son propre span, visuellement plus grande que le texte
+        // (hiérarchie demandée) — le mot se masque sous 480px, le compte reste.
+        const pillLabels = { MOVE: "DÉPLACER", PUSH: "POUSSER", MAGIC: "MAGIE" };
+        const pillIcons = { MOVE: "👢", PUSH: "💥", MAGIC: "✦" };
+        const smartSelected = state.phase === "SMART_CHAR" && !!state.selectedCharId;
+        [["MOVE", "hudV2MoveCount"], ["PUSH", "hudV2PushCount"], ["MAGIC", "hudV2MagicCount"]].forEach(([type, id]) => {
+          const btn = document.getElementById(id);
+          if (!btn) return;
+          const action = ACTIONS[type];
+          const remaining = availableActionCount(type, active);
+          const reason = actionUnavailableReason(type);
+          const disabled = remaining <= 0 || !!reason;
+          const isActive = (state.phase === "ACTION" && state.selectedActionType === type)
+            || (smartSelected && (type === "MOVE" || type === "PUSH"));
+          const label = `${pillLabels[type]} ×${remaining}`;
+          btn.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${pillIcons[type]}</span>` +
+            `<span class="hud-v2-pill-word">${pillLabels[type]}</span>` +
+            `<span class="hud-v2-pill-count">×${remaining}</span>`;
+          // complete-polish.js fige aria-label sur le premier textContent vu —
+          // on le retient synchronisé nous-mêmes à chaque rendu.
+          btn.setAttribute("aria-label", label);
+          btn.disabled = disabled;
+          btn.classList.toggle("hud-v2-pill-active", isActive);
+          btn.title = disabled ? reason : action.name;
+        });
+
+        // --- Rangée contextuelle Magie (rotation en cours) ---
+        const magicRow = document.getElementById("hudV2MagicRow");
+        if (magicRow) {
+          const rotating = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
+          magicRow.classList.toggle("hidden", !rotating);
+        }
+
+        // --- Mini-fiche gardien : usage réduit — uniquement quand elle
+        // apporte une info réellement utile (couronne portée). Le halo 3D
+        // suffit déjà à indiquer une simple sélection ; pas de fiche
+        // systématique pour ça (évite de recréer un panneau permanent).
+        const unitSlot = document.getElementById("hudV2UnitCardSlot");
+        if (unitSlot) {
+          const ch = characterById(state.selectedCharId);
+          const carriesCrown = ch && characterCarriesCrown(ch.id);
+          if (ch && carriesCrown) {
+            const p = state.players[ch.player];
+            unitSlot.classList.remove("hidden");
+            unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown">👑</span>`;
+          } else {
+            unitSlot.classList.add("hidden");
+            unitSlot.innerHTML = "";
+          }
+        }
+
+        // --- Micro-instruction (une seule ligne, meme source que l'ancien panneau) ---
+        const instructionEl = document.getElementById("hudV2Instruction");
+        if (instructionEl) {
+          const info = turnContextInfo();
+          instructionEl.textContent = info?.next || info?.title || "";
+        }
+
+        // --- Deck (ex-"Main") : commande autonome, valeurs reelles ---
+        const handCountEl = document.getElementById("hudV2HandCount");
+        if (handCountEl) {
+          const handLabel = `DECK ×${(active.hand || []).length}`;
+          handCountEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">🃏</span><span class="hud-v2-pill-word">${handLabel}</span>`;
+          handCountEl.setAttribute("aria-label", handLabel);
+        }
+        const popDeck = document.getElementById("hudV2HandPopoverDeck");
+        const popHand = document.getElementById("hudV2HandPopoverHand");
+        const popDiscard = document.getElementById("hudV2HandPopoverDiscard");
+        if (popDeck) popDeck.textContent = (active.deck || []).length;
+        if (popHand) popHand.textContent = (active.hand || []).length;
+        if (popDiscard) popDiscard.textContent = (active.discard || []).length;
+
+        // --- Séparateur "·" du timer : invisible si le chrono de tour est
+        // désactivé (isTurnTimerEnabled(), même lecture que updateTurnTimerDisplay()).
+        const timerDot = document.getElementById("hudV2TimerDot");
+        if (timerDot) timerDot.classList.toggle("hidden", !isTurnTimerEnabled());
+
+        // --- Infos techniques (menu ⚙) : reparente une seule fois les vrais
+        // éléments .kaykit-status (js/game/kaykit3d.js) et .v69-quality-pill
+        // (js/complete-polish.js) — même noeuds, même logique de mise à
+        // jour, simplement retirés de l'interface normale. Idempotent (no-op
+        // une fois déjà déplacés) : pas de nouvelle boucle, juste profité du
+        // passage habituel de renderAll().
+        const techSlot = document.getElementById("hudV2TechInfo");
+        if (techSlot) {
+          const kaykitStatus = document.querySelector(".kaykit-status");
+          if (kaykitStatus && kaykitStatus.parentElement !== techSlot) techSlot.appendChild(kaykitStatus);
+          const qualityPill = document.querySelector(".v69-quality-pill");
+          if (qualityPill && qualityPill.parentElement !== techSlot) techSlot.appendChild(qualityPill);
+        }
+      }
+
+      // Ferme tout popover/drawer HUD V2 ouvert (île, menu ⚙, main).
+      function closeHudV2Drawer() {
+        ["hudV2IslandDrawer", "hudV2GearPopover", "hudV2HandPopover"].forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.classList.add("hidden");
+          el.setAttribute("aria-hidden", "true");
+        });
+        document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "false");
+        document.getElementById("hudV2GearBtn")?.setAttribute("aria-expanded", "false");
+        document.getElementById("hudV2HandCount")?.setAttribute("aria-expanded", "false");
+      }
+
+      function toggleHudV2Drawer(id, triggerId) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const willOpen = el.classList.contains("hidden");
+        closeHudV2Drawer();
+        if (willOpen) {
+          el.classList.remove("hidden");
+          el.setAttribute("aria-hidden", "false");
+          document.getElementById(triggerId)?.setAttribute("aria-expanded", "true");
+        }
       }
 
       function renderHeader() {
@@ -209,14 +407,17 @@
         const info = phaseInfo();
         const previousPlayer = els.gameScreen.dataset.player;
 
-        els.activePortrait.textContent = p.icon;
-        els.activePortrait.style.color = p.color;
-        els.activeName.textContent = p.name;
-        els.phaseLabel.textContent = info.label;
+        // HUD V2 (Prompt 3/3) : #activePortrait/#activeName/#phaseLabel/
+        // #instruction/#stepIsland/#stepActions/#stepEnd ont été supprimés du
+        // DOM (remplacés par #hudV2Top/#hudV2Instruction) — gardés en lecture
+        // optionnelle ici pour ne rien casser si jamais réintroduits.
+        if (els.activePortrait) { els.activePortrait.textContent = p.icon; els.activePortrait.style.color = p.color; }
+        if (els.activeName) els.activeName.textContent = p.name;
+        if (els.phaseLabel) els.phaseLabel.textContent = info.label;
         els.turnLabel.textContent = `Tour ${state.turn}${p.isAI ? ` · IA ${AI_LEVELS[state.aiDifficulty || "normal"].label}` : ""}`;
         updateTurnTimerDisplay();
         updateOnlineBadge();
-        els.instruction.textContent = info.instruction;
+        if (els.instruction) els.instruction.textContent = info.instruction;
         document.documentElement.style.setProperty("--player-color", p.color);
 
         const islandPickPhase = !state.islandPlacedThisTurn;
@@ -231,17 +432,19 @@
           setTimeout(() => els.gameScreen.classList.remove("player-switch"), 720);
         }
 
-        [els.stepIsland, els.stepActions, els.stepEnd].forEach(el => el.className = "");
-        const placingIsland = state.phase === "CHOOSE_ISLAND_SHAPE" || state.phase === "PLACE_ISLAND" || state.phase === "PLACE_SPAWN";
-        if (!state.islandPlacedThisTurn || placingIsland) {
-          els.stepIsland.classList.add("active");
-          if (!placingIsland) els.stepActions.classList.add("active");
-        } else {
-          els.stepIsland.classList.add("done");
-          els.stepActions.classList.add("active");
-          if (allCardsUsed()) {
-            els.stepActions.className = "done";
-            els.stepEnd.classList.add("active");
+        if (els.stepIsland && els.stepActions && els.stepEnd) {
+          [els.stepIsland, els.stepActions, els.stepEnd].forEach(el => el.className = "");
+          const placingIsland = state.phase === "CHOOSE_ISLAND_SHAPE" || state.phase === "PLACE_ISLAND" || state.phase === "PLACE_SPAWN";
+          if (!state.islandPlacedThisTurn || placingIsland) {
+            els.stepIsland.classList.add("active");
+            if (!placingIsland) els.stepActions.classList.add("active");
+          } else {
+            els.stepIsland.classList.add("done");
+            els.stepActions.classList.add("active");
+            if (allCardsUsed()) {
+              els.stepActions.className = "done";
+              els.stepEnd.classList.add("active");
+            }
           }
         }
       }
@@ -2599,6 +2802,11 @@
       }
 
       function renderScores() {
+        // HUD V2 (Prompt 3/3) : #scoreList a été supprimé (remplacé par les
+        // couronnes compactes de #hudV2Top) — cette fonction n'a plus de
+        // cible et ne fait plus rien, sans casser availableActionCount() ni
+        // les autres lectures qui en dépendent ailleurs.
+        if (!els.scoreList) return;
         els.scoreList.innerHTML = "";
         state.players.forEach((p, i) => {
           const card = document.createElement("div");

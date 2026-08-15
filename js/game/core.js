@@ -412,6 +412,17 @@
         els.toast.classList.add("show");
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => els.toast.classList.remove("show"), 1900);
+
+        // HUD V2 (Prompt 2/3) : miroir dans le slot toast du nouveau dock.
+        // showToast() est deja le point d'entree unique pour les evenements
+        // notables (couronne, erreur...) — jamais pour les instructions de
+        // tour normales, qui passent par turnContextInfo()/renderHudV2().
+        const hudToast = document.getElementById("hudV2Toast");
+        if (hudToast) {
+          hudToast.textContent = message;
+          clearTimeout(showToast.hudTimer);
+          showToast.hudTimer = setTimeout(() => { hudToast.textContent = ""; }, 2400);
+        }
       }
 
 
