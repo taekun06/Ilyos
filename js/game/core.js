@@ -202,6 +202,21 @@
         }
 
         state.fxCells = cells.map(([r, c]) => ({ type, r, c }));
+        // V78 (passe fluidité) : en mode 3D, ces classes fx-* sur les cellules
+        // DOM n'ont jamais eu d'équivalent visuel dans la scène Three.js (le
+        // plateau HTML n'est qu'une couche d'interaction/accessibilité dans ce
+        // mode) — redessiner les 121 cellules pour ça était une dépense pure,
+        // sans rien à montrer. On se contente de faire suivre l'état à la
+        // synchronisation 3D existante ; le fallback HTML (hors mode 3D)
+        // garde son comportement d'origine, seul endroit où fx-* est visible.
+        if (document.body.dataset.visualMode === "alternative") {
+          scheduleKayKitSync();
+          setTimeout(() => {
+            state.fxCells = [];
+            scheduleKayKitSync();
+          }, 420);
+          return;
+        }
         renderBoard();
         setTimeout(() => {
           state.fxCells = [];
@@ -332,6 +347,14 @@
 
       function animateCellPulse(r, c, className) {
         if (isCurrentPlayerAI() && ["crown-burst", "spawn-arrival"].includes(className)) return;
+        // V78 (passe fluidité) : en mode 3D, cette pulsation CSS sur la
+        // cellule DOM (couche interaction/accessibilité, jamais affichée) n'a
+        // aucun équivalent visible — la réponse visuelle réelle passe déjà
+        // par queueKayKitActionAnimation()/Three.js (voir les appels "victory"
+        // /"magic" à proximité de chaque appel de cette fonction). Aucun
+        // intérêt à forcer un reflow (void cell.offsetWidth) pour un effet
+        // invisible.
+        if (document.body.dataset.visualMode === "alternative") return;
         requestAnimationFrame(() => {
           const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
           if (!cell) return;
@@ -343,6 +366,12 @@
       }
 
       function animateIslandArrival(island) {
+        // V78 : la pose d'île a déjà son propre fondu d'apparition en 3D
+        // (voir registerKayKitFadeIn/syncKayKitScene, déclenché par le
+        // changement de state.islands) — ce pulse DOM (couche interaction/
+        // accessibilité, invisible en mode 3D) serait une seconde
+        // représentation visuelle pour rien.
+        if (document.body.dataset.visualMode === "alternative") return;
         requestAnimationFrame(() => {
           island.cells.forEach(([r, c], index) => {
             const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
@@ -370,6 +399,11 @@
       }
 
       function animateBoardMagic() {
+        // V78 : le pulse magique 3D (playIslandMagicRotation, kaykit3d.js)
+        // porte déjà l'effet visuel réel en mode alternative — ce pulse CSS
+        // sur #board (couche interaction, invisible dans ce mode) n'apportait
+        // rien et forçait un reflow (void offsetWidth) pour rien.
+        if (document.body.dataset.visualMode === "alternative") return;
         els.board.classList.remove("magic-board-pulse");
         void els.board.offsetWidth;
         els.board.classList.add("magic-board-pulse");

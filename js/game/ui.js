@@ -201,6 +201,13 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
+        // V78 (passe fluidité) : remplace les MutationObserver globaux sur
+        // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
+        // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
+        // interne (contexte/joueur+phase inchangés ⇒ no-op), donc les appeler
+        // à chaque renderAll() ne fait aucun travail DOM superflu.
+        window.ILYOS_ARCHIPELAGO?.updateVisualState?.();
+        window.ILYOS_IMMERSION?.monitorTurn?.();
         scheduleOnlineSync();
         scheduleLocalSave();
       }
@@ -620,8 +627,46 @@
         return isValidPlacement(ar, ac) ? "preview-valid" : "preview-invalid";
       }
 
-      function renderBoard() {
+      // V78 (passe fluidité) : plateau DOM persistant. Les 121 cellules sont
+      // créées et leurs listeners attachés UNE SEULE FOIS ; ensureBoardCells()
+      // ne reconstruit plus jamais rien au-delà de ce premier appel (garde
+      // sur la taille de boardCellMap). renderBoard() devient une mise à jour
+      // incrémentale : la logique de calcul par cellule est strictement
+      // identique à avant (mêmes conditions, même ordre), mais accumulée dans
+      // des variables locales (classes/html/styles) au lieu de muter le DOM
+      // directement. Une signature texte par cellule (classes+styles+html)
+      // est comparée à la précédente : si identique, aucune écriture DOM
+      // n'a lieu pour cette cellule. La logique de clic (onCellEnter/
+      // onCellLeave/onCellClick) reste strictement inchangée.
+      let boardCellMap = null;
+      let boardCellSignatures = null;
+
+      function ensureBoardCells() {
+        if (boardCellMap && boardCellMap.size === GRID * GRID) return;
         els.board.innerHTML = "";
+        boardCellMap = new Map();
+        boardCellSignatures = new Map();
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            const cell = document.createElement("button");
+            cell.type = "button";
+            cell.className = "cell";
+            cell.dataset.r = r;
+            cell.dataset.c = c;
+            cell.addEventListener("mouseenter", onCellEnter);
+            cell.addEventListener("mousemove", onCellEnter);
+            cell.addEventListener("mouseleave", onCellLeave);
+            cell.addEventListener("click", onCellClick);
+            els.board.appendChild(cell);
+            boardCellMap.set(key(r, c), cell);
+          }
+        }
+        if (window.ILYOS_PERF) window.ILYOS_PERF.recordBoardRebuild();
+      }
+
+      function renderBoard() {
+        const __perfStart = window.ILYOS_PERF ? performance.now() : 0;
+        ensureBoardCells();
         const magicPreviewSet = new Set((state.magicPreviewCells || []).map(([r, c]) => key(r, c)));
         const fxMap = new Map((state.fxCells || []).map(fx => [key(fx.r, fx.c), fx.type]));
         const spawnIsland = state.pendingSpawnIslandId ? state.islands.find(is => is.id === state.pendingSpawnIslandId) : null;
@@ -639,21 +684,22 @@
             .map(impact => [key(impact.to[0], impact.to[1]), impact])
         );
 
+        let cellsTouched = 0;
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
-            const cell = document.createElement("button");
-            cell.type = "button";
-            cell.className = "cell";
-            cell.dataset.r = r;
-            cell.dataset.c = c;
+            const classes = ["cell"];
+            let html = "";
+            let islandOwnerColor = null;
+            let villageColor = null;
+            let pushArrowAngle = null;
 
             const village = villageAt(r, c);
             const villageZone = villageZoneDataAt(r, c);
             const island = islandAt(r, c);
             const char = characterAt(r, c);
             if (island) {
-              cell.style.setProperty("--island-owner", state.players[island.owner].color);
-              cell.classList.add("placed-island-cell");
+              islandOwnerColor = state.players[island.owner].color;
+              classes.push("placed-island-cell");
             }
             const northLand = inside(r - 1, c) && isLand(r - 1, c);
             const southLand = inside(r + 1, c) && isLand(r + 1, c);
@@ -661,32 +707,32 @@
             const eastLand = inside(r, c + 1) && isLand(r, c + 1);
 
             if (isLand(r, c)) {
-              cell.classList.add("land");
-              if (!northLand) cell.classList.add("edge-top");
-              if (!southLand) cell.classList.add("edge-bottom");
-              if (!westLand) cell.classList.add("edge-left");
-              if (!eastLand) cell.classList.add("edge-right");
+              classes.push("land");
+              if (!northLand) classes.push("edge-top");
+              if (!southLand) classes.push("edge-bottom");
+              if (!westLand) classes.push("edge-left");
+              if (!eastLand) classes.push("edge-right");
 
               if (island) {
                 const northIsland = inside(r - 1, c) ? islandAt(r - 1, c) : null;
                 const southIsland = inside(r + 1, c) ? islandAt(r + 1, c) : null;
                 const westIsland = inside(r, c - 1) ? islandAt(r, c - 1) : null;
                 const eastIsland = inside(r, c + 1) ? islandAt(r, c + 1) : null;
-                if (!northIsland || northIsland.id !== island.id) cell.classList.add("island-outline-top");
-                if (!southIsland || southIsland.id !== island.id) cell.classList.add("island-outline-bottom");
-                if (!westIsland || westIsland.id !== island.id) cell.classList.add("island-outline-left");
-                if (!eastIsland || eastIsland.id !== island.id) cell.classList.add("island-outline-right");
+                if (!northIsland || northIsland.id !== island.id) classes.push("island-outline-top");
+                if (!southIsland || southIsland.id !== island.id) classes.push("island-outline-bottom");
+                if (!westIsland || westIsland.id !== island.id) classes.push("island-outline-left");
+                if (!eastIsland || eastIsland.id !== island.id) classes.push("island-outline-right");
               }
             } else {
-              cell.classList.add("void", ((r + c) % 2 === 0 ? "cloud-a" : "cloud-b"));
+              classes.push("void", ((r + c) % 2 === 0 ? "cloud-a" : "cloud-b"));
             }
 
             if (villageZone) {
-              cell.style.setProperty("--village-color", villageZone.player.color);
+              villageColor = villageZone.player.color;
 
               if (village) {
-                cell.classList.add("village");
-                cell.innerHTML += `
+                classes.push("village");
+                html += `
                 <span class="village-icon">🏰</span>
                 <span class="village-owner-mark" style="--village-color:${village.color}">${playerShortName(village)}</span>
               `;
@@ -695,42 +741,42 @@
                  * Le repère coloré disparaît dès qu'une île est construite
                  * sur cette case afin de laisser apparaître le terrain normal.
                  */
-                cell.classList.add("village-zone-extension");
-                cell.innerHTML += `
+                classes.push("village-zone-extension");
+                html += `
                 <span class="village-zone-fill" style="--village-color:${villageZone.player.color}"></span>
               `;
               }
             }
             if (isSanctuary(r, c)) {
-              cell.classList.add(
+              classes.push(
                 "sanctuary",
                 isSanctuaryCenter(r, c) ? "sanctuary-center" : "sanctuary-arm"
               );
-              cell.innerHTML += isSanctuaryCenter(r, c)
+              html += isSanctuaryCenter(r, c)
                 ? `<span class="sanctuary-ring"></span>`
                 : `<span class="sanctuary-arm-mark"></span>`;
             }
             if (island && state.selectedIslandId === island.id && !(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) {
-              cell.classList.add("selected");
+              classes.push("selected");
             }
             if (
               (state.phase === "ACTION_SELECT" || (state.phase === "ACTION" && state.selectedActionType === "MAGIC"))
               && island
               && state.magicHoverIslandId === island.id
             ) {
-              cell.classList.add("magic-hover-island");
+              classes.push("magic-hover-island");
             }
             if (
               (state.phase === "ACTION_SELECT" || (state.phase === "ACTION" && state.selectedActionType === "MAGIC"))
               && isSameCell(state.magicHoverPivot, [r, c])
             ) {
-              cell.classList.add("magic-hover-pivot");
+              classes.push("magic-hover-pivot");
             }
             if (state.phase === "ACTION" && state.selectedActionType === "MAGIC" && island && state.selectedIslandId === island.id) {
-              cell.classList.add("magic-selected-island");
+              classes.push("magic-selected-island");
             }
             if (state.phase === "PICKUP_CROWN" && char && char.player === state.currentPlayer && state.reachable.has(key(r, c))) {
-              cell.classList.add("crown-claimable", "ally-ready");
+              classes.push("crown-claimable", "ally-ready");
             }
             if (
               state.phase === "DROP_TREASURE"
@@ -738,25 +784,25 @@
               && (state.crownTransferTargetIds || []).includes(char.id)
               && state.reachable.has(key(r, c))
             ) {
-              cell.classList.add("crown-claimable", "ally-ready", "crown-transfer-choice");
+              classes.push("crown-claimable", "ally-ready", "crown-transfer-choice");
             }
             const hideReachableAfterCharacterChoice = (
               (state.phase === "ACTION" && state.selectedCharId && ["MOVE", "PUSH"].includes(state.selectedActionType || ""))
               || state.phase === "SMART_CHAR"
             );
-            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) cell.classList.add("reachable");
-            if (state.selectedCharId && char?.id === state.selectedCharId) cell.classList.add("selected-character");
+            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
+            if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
 
             const placementClass = previewClassForCell(r, c);
-            if (placementClass) cell.classList.add(placementClass);
+            if (placementClass) classes.push(placementClass);
 
             if (showMagicRotation && magicPreviewSet.has(key(r, c))) {
-              cell.classList.add(state.magicPreviewValid ? "magic-valid" : "magic-invalid", "magic-rotation-preview");
+              classes.push(state.magicPreviewValid ? "magic-valid" : "magic-invalid", "magic-rotation-preview");
             }
-            if (state.selectedMagicPivot && state.selectedMagicPivot[0] === r && state.selectedMagicPivot[1] === c) cell.classList.add("magic-pivot");
+            if (state.selectedMagicPivot && state.selectedMagicPivot[0] === r && state.selectedMagicPivot[1] === c) classes.push("magic-pivot");
 
             const spawnAllowed = spawnIsland && spawnIsland.cells.some(([ir, ic]) => ir === r && ic === c) && !char;
-            if (spawnAllowed) cell.classList.add("spawn-choice");
+            if (spawnAllowed) classes.push("spawn-choice");
 
             const cellKey = key(r, c);
             if (
@@ -764,58 +810,57 @@
               && state.selectedCharId
               && actionHoverKey === cellKey
             ) {
-              cell.classList.add("move-target-preview", "action-target-preview");
+              classes.push("move-target-preview", "action-target-preview");
             }
             if (
               ((state.phase === "ACTION" && state.selectedActionType === "PUSH") || (state.phase === "SMART_CHAR" && state.smartHoverType === "PUSH"))
               && actionHoverKey === cellKey
             ) {
-              cell.classList.add("push-target-preview", "action-target-preview");
+              classes.push("push-target-preview", "action-target-preview");
 
               const pusher = characterById(state.selectedCharId);
               if (pusher) {
                 const dr = r - pusher.r;
                 const dc = c - pusher.c;
-                const angle =
+                pushArrowAngle =
                   dc === 1 ? "0deg" :
                     dr === 1 ? "90deg" :
                       dc === -1 ? "180deg" :
                         "-90deg";
-                cell.style.setProperty("--push-arrow-angle", angle);
               }
             }
             if (state.phase === "SMART_CHAR" && state.smartHoverType === "CANCEL" && actionHoverKey === cellKey) {
-              cell.classList.add("smart-cancel-preview");
+              classes.push("smart-cancel-preview");
             }
             if (smartPathSet.has(cellKey)) {
-              cell.classList.add("move-path-preview");
+              classes.push("move-path-preview");
               const pathIndex = (state.smartHoverPath || []).findIndex(
                 ([pr, pc]) => pr === r && pc === c
               );
               const pathMeta = state.smartHoverPath?.steps?.[pathIndex];
               if (pathMeta?.diagonal) {
-                cell.classList.add("diagonal-step-preview");
+                classes.push("diagonal-step-preview");
               }
             }
             const pushOriginImpact = pushImpactOrigins.get(cellKey);
             const pushDestinationImpact = pushImpactDestinations.get(cellKey);
             if (pushOriginImpact) {
-              cell.classList.add("push-line-preview");
-              if (pushOriginImpact.fell) cell.classList.add("push-fall-preview");
+              classes.push("push-line-preview");
+              if (pushOriginImpact.fell) classes.push("push-fall-preview");
             }
             if (pushDestinationImpact || pushDestinationKey === cellKey) {
-              cell.classList.add("push-destination-preview");
+              classes.push("push-destination-preview");
             }
 
             const fxType = fxMap.get(cellKey);
-            if (fxType) cell.classList.add(`fx-${fxType}`);
+            if (fxType) classes.push(`fx-${fxType}`);
 
             const looseCrowns = activeArtifacts().filter(artifact =>
               artifact.carrierId === null && artifact.r === r && artifact.c === c
             );
             looseCrowns.forEach(artifact => {
               const crownClass = artifact.id === "crown-2" ? "crown-2" : "crown-1";
-              cell.innerHTML += `<span class="artifact ${crownClass}" data-artifact-id="${artifact.id}" title="Cliquer pour récupérer cette couronne">👑</span>`;
+              html += `<span class="artifact ${crownClass}" data-artifact-id="${artifact.id}" title="Cliquer pour récupérer cette couronne">👑</span>`;
             });
 
             if (char) {
@@ -827,7 +872,7 @@
                 && char.player === state.currentPlayer
                 && canValidateCrownPoint(char)
               );
-              if (crownPointReady) cell.classList.add("crown-validation-ready");
+              if (crownPointReady) classes.push("crown-validation-ready");
               const selectingActionCharacter = state.phase === "ACTION"
                 && ["MOVE", "PUSH"].includes(state.selectedActionType || "")
                 && char.player === state.currentPlayer;
@@ -837,8 +882,8 @@
                 || (state.phase === "PICKUP_CROWN" && char.player === state.currentPlayer && state.reachable.has(key(r, c)))
               );
               const readyAction = selectingActionCharacter && !state.selectedCharId;
-              if (readyAction) cell.classList.add("ally-ready");
-              cell.innerHTML += `
+              if (readyAction) classes.push("ally-ready");
+              html += `
               <span class="character ${carrying ? "carrying" : ""} ${selectable ? "selectable" : ""} ${readyAction ? "ready-action" : ""}" style="--pcolor:${owner.color};--token-color:${owner.color}">
                 ${carrying ? `<span class="carrier-crown ${char.player === state.currentPlayer ? "own-crown" : "opponent-crown"}" data-artifact-id="${carriedArtifact.id}" title="${char.player === state.currentPlayer ? "Cliquer pour transmettre ou poser gratuitement la couronne" : "Cliquer pour récupérer la couronne"}">👑</span>` : ``}
                 <span class="character-standee">${owner.icon}</span>
@@ -867,7 +912,7 @@
             `;
             } else if (state.phase === "PLACE_SPAWN" && spawnAllowed && state.hoverAnchor && state.hoverAnchor[0] === r && state.hoverAnchor[1] === c) {
               const owner = currentPlayer();
-              cell.innerHTML += `
+              html += `
               <span class="character spawn-preview" style="--pcolor:${owner.color};--token-color:${owner.color}">
                 <span class="character-standee">${owner.icon}</span>
                 <span class="alt-guardian-3d" aria-hidden="true">
@@ -894,7 +939,7 @@
             ) {
               const selected = characterById(state.selectedCharId);
               const owner = selected ? state.players[selected.player] : currentPlayer();
-              cell.innerHTML += `
+              html += `
               <span class="action-ghost move-ghost" style="--ghost-color:${owner.color}">
                 <span>${owner.icon}</span>
               </span>
@@ -903,22 +948,39 @@
 
             const destinationImpact = pushImpactDestinations.get(key(r, c));
             if (destinationImpact && !characterAt(r, c)) {
-              cell.innerHTML += `
+              html += `
               <span class="action-ghost push-ghost ${destinationImpact.carrying ? "carrying" : ""}" style="--ghost-color:${destinationImpact.color}">
                 <span>${destinationImpact.icon}</span>
               </span>
             `;
             }
 
-            cell.addEventListener("mouseenter", onCellEnter);
-            cell.addEventListener("mousemove", onCellEnter);
-            cell.addEventListener("mouseleave", onCellLeave);
-            cell.addEventListener("click", onCellClick);
-            els.board.appendChild(cell);
+            const className = classes.join(" ");
+            const signature = className + "|" + (islandOwnerColor || "") + "|" + (villageColor || "") + "|" + (pushArrowAngle || "") + "|" + html;
+            if (boardCellSignatures.get(cellKey) === signature) continue;
+            boardCellSignatures.set(cellKey, signature);
+            cellsTouched++;
+            const cellEl = boardCellMap.get(cellKey);
+            cellEl.className = className;
+            if (islandOwnerColor) cellEl.style.setProperty("--island-owner", islandOwnerColor);
+            else cellEl.style.removeProperty("--island-owner");
+            if (villageColor) cellEl.style.setProperty("--village-color", villageColor);
+            else cellEl.style.removeProperty("--village-color");
+            if (pushArrowAngle) cellEl.style.setProperty("--push-arrow-angle", pushArrowAngle);
+            else cellEl.style.removeProperty("--push-arrow-angle");
+            cellEl.innerHTML = html;
           }
         }
         renderExitGates();
-        renderIslandArtLayer();
+        // V78 : le fallback HTML seul (hors mode 3D) reste seul consommateur
+        // de cette couche décorative SVG — en mode "alternative", les îles
+        // sont déjà représentées par la scène Three.js, cette génération est
+        // une seconde représentation visuelle inutile.
+        if (document.body.dataset.visualMode !== "alternative") renderIslandArtLayer();
+        if (window.ILYOS_PERF) {
+          window.ILYOS_PERF.recordBoardCellsTouched(cellsTouched);
+          window.ILYOS_PERF.recordBoardRender(performance.now() - __perfStart);
+        }
         scheduleKayKitSync();
       }
 
@@ -2143,17 +2205,38 @@
         // pour une seule case — transformait chaque pas en petite cinématique et
         // ralentissait nettement un joueur expérimenté.
         const walkDuration = Math.min(1600, 140 + path.length * 340);
-        queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
         // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
         if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
-        animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
-          char.r = r;
-          char.c = c;
-          resolveArtifactForCharacter(char);
-          triggerFx("move", [from, ...path]);
-          playSfx("move");
-          useSelectedCard(cost);
-        }, false, path);
+        // V78 (passe fluidité) : en mode 3D, plus de animateToken() HTML
+        // (getBoundingClientRect/.moving-token/element.animate invisible en
+        // alt mode) — queueKayKitActionAnimation() devient l'autorité visuelle
+        // unique, son onComplete exécute exactement le callback de gameplay
+        // qu'animateToken() portait, à la fin de la MÊME durée déjà utilisée
+        // pour la séquence 3D "move" (walkDuration, inchangée) : aucun
+        // changement de durée perceptible. Le fallback HTML (hors 3D) garde
+        // animateToken() tel quel.
+        if (state.visualMode === "alternative") {
+          state.inputLocked = true;
+          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
+            state.inputLocked = false;
+            char.r = r;
+            char.c = c;
+            resolveArtifactForCharacter(char);
+            triggerFx("move", [from, ...path]);
+            playSfx("move");
+            useSelectedCard(cost);
+          });
+        } else {
+          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
+          animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
+            char.r = r;
+            char.c = c;
+            resolveArtifactForCharacter(char);
+            triggerFx("move", [from, ...path]);
+            playSfx("move");
+            useSelectedCard(cost);
+          }, false, path);
+        }
       }
 
       function selectCharacterForMove(char) {
@@ -2515,11 +2598,29 @@
         const impactCell = result.to || result.from;
         kaykitFollowCell(impactCell[0], impactCell[1], { duration: 680, zoomBoost: result.fell ? 1.6 : 0 });
 
-        animateToken(result.from, result.to, result.icon, result.color, "push", () => {
-          triggerFx("push", [result.from, result.to]);
-          playSfx("push");
-          useSelectedCard();
-        }, result.fell);
+        // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
+        // résolution logique (fx/sfx/carte consommée) est signalée par une
+        // entrée dédiée de queueKayKitActionAnimation (id synthétique, sans
+        // aucun visuel propre : ne collisionne pas avec les entrées "attack"/
+        // "hurt" ci-dessus, qui gardent leurs animations 3D inchangées),
+        // après le MÊME délai qu'animateToken() utilisait pour push/chute
+        // (360/520 ms) : aucun changement de durée perceptible. Le fallback
+        // HTML (hors 3D) garde animateToken() tel quel.
+        if (state.visualMode === "alternative") {
+          state.inputLocked = true;
+          queueKayKitActionAnimation(`__push-complete-${pusher.id}__`, "none", result.fell ? 520 : 360, null, null, () => {
+            state.inputLocked = false;
+            triggerFx("push", [result.from, result.to]);
+            playSfx("push");
+            useSelectedCard();
+          });
+        } else {
+          animateToken(result.from, result.to, result.icon, result.color, "push", () => {
+            triggerFx("push", [result.from, result.to]);
+            playSfx("push");
+            useSelectedCard();
+          }, result.fell);
+        }
       }
 
       function pushCharacter(target, dr, dc, force, originR, originC) {
