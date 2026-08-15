@@ -395,6 +395,18 @@
           closeHudV2Drawer();
           return;
         }
+        // Infos techniques : replie/déplie SEULEMENT cette sous-section,
+        // sans fermer tout le popover ⚙ (l'utilisateur peut vouloir la
+        // consulter en gardant CAMÉRA/SON/RÈGLES accessibles juste au-dessus).
+        const techToggle = event.target.closest("#hudV2TechToggle");
+        if (techToggle) {
+          const techInfo = document.getElementById("hudV2TechInfo");
+          const willOpen = techInfo?.classList.contains("hidden");
+          techInfo?.classList.toggle("hidden", !willOpen);
+          techInfo?.setAttribute("aria-hidden", String(!willOpen));
+          techToggle.setAttribute("aria-expanded", String(!!willOpen));
+          return;
+        }
         // #soundBtn est volontairement exclu : openSoundMenu() positionne le
         // panneau son via getBoundingClientRect() du bouton dans un rAF
         // différé (audio.js) — fermer le popover ⚙ tout de suite le

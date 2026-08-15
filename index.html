@@ -907,17 +907,45 @@
     <header id="hudV2Top" class="hud-v2-top" role="status" aria-live="polite">
       <div class="hud-v2-top-side hud-v2-top-left">
         <span id="hudV2ActiveName" class="hud-v2-player-name">Joueur</span>
-        <span id="hudV2ActiveScore" class="hud-v2-crowns" aria-label="Score du joueur actif">○○○</span>
+        <span id="hudV2ActiveScore" class="hud-v2-crowns" aria-label="Score du joueur actif"></span>
       </div>
       <div class="hud-v2-top-center">
         <span id="onlineBadge" class="online-badge hidden">HORS LIGNE</span>
         <strong id="turnLabel">Tour 1</strong>
-        <span class="hud-v2-dot" aria-hidden="true">·</span>
+        <span id="hudV2TimerDot" class="hud-v2-dot" aria-hidden="true">·</span>
         <span id="turnTimer" class="turn-timer hidden" aria-label="Temps restant">03:00</span>
+        <span class="hud-v2-dot hud-v2-gear-dot" aria-hidden="true">·</span>
+
+        <!--
+          Menu secondaire unique : CAMÉRA réutilise le même délégué
+          data-hud-camera que la Passe 2 ; SON/RÈGLES/NOUVELLE PARTIE sont
+          les boutons réels #soundBtn/#rulesBtn/#newGameBtn reparentés
+          (mêmes handlers, aucune logique recréée). INFOS TECHNIQUES héberge
+          .kaykit-status/.v69-quality-pill, reparentés par renderHudV2() —
+          mêmes éléments, même logique de mise à jour, seulement déplacés
+          hors de l'interface normale.
+        -->
+        <button id="hudV2GearBtn" type="button" class="hud-v2-gear-btn" aria-label="Menu" aria-expanded="false">⚙</button>
+        <div id="hudV2GearPopover" class="hud-v2-popover hud-v2-gear-popover hidden" role="menu" aria-hidden="true">
+          <div class="hud-v2-popover-section-label">CAMÉRA</div>
+          <div class="hud-v2-popover-camera-grid">
+            <button type="button" class="hud-v2-popover-btn" data-hud-camera="auto">AUTO</button>
+            <button type="button" class="hud-v2-popover-btn" data-hud-camera="free">LIBRE</button>
+            <button type="button" class="hud-v2-popover-btn" data-hud-camera="front">FACE</button>
+            <button type="button" class="hud-v2-popover-btn" data-hud-camera="iso">ISO</button>
+          </div>
+          <div class="hud-v2-popover-divider" aria-hidden="true"></div>
+          <button id="soundBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Son</button>
+          <button id="rulesBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide">Règles</button>
+          <button id="newGameBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide">Nouvelle partie</button>
+          <div class="hud-v2-popover-divider" aria-hidden="true"></div>
+          <button id="hudV2TechToggle" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Infos techniques</button>
+          <div id="hudV2TechInfo" class="hud-v2-tech-info hidden" aria-hidden="true"></div>
+        </div>
       </div>
       <div class="hud-v2-top-side hud-v2-top-right">
-        <span id="hudV2OpponentScore" class="hud-v2-crowns" aria-label="Score de l’adversaire">○○○</span>
         <span id="hudV2OpponentName" class="hud-v2-player-name">Adversaire</span>
+        <span id="hudV2OpponentScore" class="hud-v2-crowns" aria-label="Score de l’adversaire"></span>
       </div>
     </header>
 
@@ -935,7 +963,7 @@
         existants — rotateSelectedIsland()/confirmMagicRotation()/
         handleCancelButton() — aucune logique de rotation dupliquée ici.
       -->
-      <div id="hudV2MagicRow" class="hud-v2-dock-row hud-v2-magic-row hidden">
+      <div id="hudV2MagicRow" class="hud-v2-magic-row hidden">
         <button id="hudV2MagicRotateLeft" type="button" class="hud-v2-magic-btn">↺ 90°</button>
         <button id="hudV2MagicRotateRight" type="button" class="hud-v2-magic-btn">↻ 90°</button>
         <button id="hudV2MagicConfirm" type="button" class="hud-v2-magic-btn hud-v2-magic-confirm">Confirmer</button>
@@ -954,52 +982,34 @@
       </div>
 
       <!--
-        Menu secondaire unique (Prompt 3/3) : remplace l'ancien bouton
-        caméra permanent. CAMÉRA réutilise le même délégué data-hud-camera
-        que la Passe 2 ; SON/RÈGLES/NOUVELLE PARTIE sont les boutons réels
-        #soundBtn/#rulesBtn/#newGameBtn reparentés (mêmes handlers, aucune
-        logique recréée).
+        Plus de grand fond commun : chaque bouton flotte indépendamment,
+        avec son propre léger fond verre. .hud-v2-action-row/-zone ne sont
+        que des conteneurs d'alignement (aucun style visuel propre).
       -->
-      <div id="hudV2GearPopover" class="hud-v2-popover hud-v2-gear-popover hidden" role="menu" aria-hidden="true">
-        <div class="hud-v2-popover-section-label">CAMÉRA</div>
-        <div class="hud-v2-popover-camera-grid">
-          <button type="button" class="hud-v2-popover-btn" data-hud-camera="auto">AUTO</button>
-          <button type="button" class="hud-v2-popover-btn" data-hud-camera="free">LIBRE</button>
-          <button type="button" class="hud-v2-popover-btn" data-hud-camera="front">FACE</button>
-          <button type="button" class="hud-v2-popover-btn" data-hud-camera="iso">ISO</button>
-        </div>
-        <div class="hud-v2-popover-divider" aria-hidden="true"></div>
-        <button id="soundBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Son</button>
-        <button id="rulesBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide">Règles</button>
-        <button id="newGameBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide">Nouvelle partie</button>
-      </div>
-
-      <div id="hudV2HandPopover" class="hud-v2-popover hud-v2-hand-popover hidden" role="menu" aria-hidden="true">
-        <div class="hud-v2-hand-row"><span>PIOCHE</span><b id="hudV2HandPopoverDeck">0</b></div>
-        <div class="hud-v2-hand-row"><span>MAIN</span><b id="hudV2HandPopoverHand">0</b></div>
-        <div class="hud-v2-hand-row"><span>DÉFAUSSE</span><b id="hudV2HandPopoverDiscard">0</b></div>
-      </div>
-
-      <div class="hud-v2-dock-row">
-        <div class="hud-v2-slot hud-v2-slot-undo">
+      <div class="hud-v2-action-row">
+        <div class="hud-v2-action-zone hud-v2-action-zone-left">
           <button id="cancelCardBtn" class="small-btn cancel-action hud-v2-undo-btn" disabled>↶</button>
         </div>
-        <div id="hudV2UnitCardSlot" class="hud-v2-slot hud-v2-slot-unitcard hidden" aria-hidden="true">
-          <!-- mini-fiche gardien : peuplée par renderHudV2() -->
+        <div class="hud-v2-action-zone hud-v2-action-zone-center">
+          <div id="hudV2UnitCardSlot" class="hud-v2-slot-unitcard hidden" aria-hidden="true">
+            <!-- mini-fiche gardien : peuplée par renderHudV2() -->
+          </div>
+          <button id="hudV2HandCount" type="button" class="hud-v2-hand-pill" aria-expanded="false">🃏 MAIN ×0</button>
+          <div id="hudV2HandPopover" class="hud-v2-popover hud-v2-hand-popover hidden" role="menu" aria-hidden="true">
+            <div class="hud-v2-hand-row"><span>PIOCHE</span><b id="hudV2HandPopoverDeck">0</b></div>
+            <div class="hud-v2-hand-row"><span>MAIN</span><b id="hudV2HandPopoverHand">0</b></div>
+            <div class="hud-v2-hand-row"><span>DÉFAUSSE</span><b id="hudV2HandPopoverDiscard">0</b></div>
+          </div>
+          <div class="hud-v2-action-cluster">
+            <button id="hudV2IslandStatus" type="button" class="hud-v2-pill hud-v2-pill-island" aria-expanded="false">ÎLE</button>
+            <button id="hudV2MoveCount" type="button" class="hud-v2-pill" disabled>DÉPLACER ×0</button>
+            <button id="hudV2PushCount" type="button" class="hud-v2-pill" disabled>POUSSER ×0</button>
+            <button id="hudV2MagicCount" type="button" class="hud-v2-pill" disabled>MAGIE ×0</button>
+          </div>
         </div>
-        <div class="hud-v2-slot hud-v2-slot-actions">
-          <button id="hudV2IslandStatus" type="button" class="hud-v2-pill hud-v2-pill-island" data-icon="🏝" aria-expanded="false">ÎLE</button>
-          <button id="hudV2MoveCount" type="button" class="hud-v2-pill" data-icon="👢" data-count="0" disabled>DÉPLACER ×0</button>
-          <button id="hudV2PushCount" type="button" class="hud-v2-pill" data-icon="↗" data-count="0" disabled>POUSSER ×0</button>
-          <button id="hudV2MagicCount" type="button" class="hud-v2-pill" data-icon="✦" data-count="0" disabled>MAGIE ×0</button>
-        </div>
-        <div class="hud-v2-slot hud-v2-slot-endturn">
+        <div class="hud-v2-action-zone hud-v2-action-zone-right">
           <button id="endTurnBtn" class="primary-btn end-turn hud-v2-endturn-btn" disabled>Fin du tour</button>
         </div>
-      </div>
-      <div class="hud-v2-dock-subrow">
-        <button id="hudV2GearBtn" type="button" class="hud-v2-icon-btn" aria-label="Menu" aria-expanded="false">⚙</button>
-        <button id="hudV2HandCount" type="button" class="hud-v2-hand-pill" aria-expanded="false">MAIN ×0</button>
       </div>
     </div>
 

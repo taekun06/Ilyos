@@ -59,8 +59,8 @@
             return { label: "Gardien sélectionné", instruction: "Prochain clic : une destination éclairée ou une cible adjacente." };
           case "ACTION_SELECT":
             return state.islandPlacedThisTurn
-              ? { label: "Choisir une action", instruction: "Choisissez une action à droite ou cliquez directement une cible valide." }
-              : { label: "Île obligatoire", instruction: "Commencez par choisir une forme à gauche. Vous pourrez agir avant ou après sa pose." };
+              ? { label: "Choisir une action", instruction: "Choisissez une action ou cliquez directement une cible valide." }
+              : { label: "Île obligatoire", instruction: "Commencez par choisir une forme d’île. Vous pourrez agir avant ou après sa pose." };
           case "ACTION":
             if (state.selectedActionType === "MOVE") {
               return state.selectedCharId
@@ -90,10 +90,10 @@
         }
 
         if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme à gauche." };
+          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "CHOOSE_ISLAND_SHAPE") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Cliquez une forme à gauche." };
+          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
@@ -122,9 +122,9 @@
           return { kind: "magic", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name}${degrees ? ` · ${degrees}°` : ""}`, next: state.selectedIslandId ? (degrees ? "Cliquez l’aperçu pour valider." : "Tournez avec ↺, ↻ ou la molette.") : "Cliquez une case pivot sur une île." };
         }
         if (state.islandPlacedThisTurn) {
-          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Actions à droite · Fin du tour quand vous êtes prêt." };
+          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Choisissez une action ou terminez votre tour." };
         }
-        return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme à gauche." };
+        return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
       }
 
       function renderTurnContext() {
@@ -221,7 +221,7 @@
 
         const crownPips = score => {
           const filled = Math.max(0, Math.min(3, score || 0));
-          return "👑".repeat(filled) + "○".repeat(3 - filled);
+          return "👑".repeat(filled) + "♔".repeat(3 - filled);
         };
 
         const active = currentPlayer();
@@ -248,7 +248,7 @@
         const islandDrawer = document.getElementById("hudV2IslandDrawer");
         if (islandStatusEl) {
           islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
-          islandStatusEl.textContent = "ÎLE";
+          islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">🏝</span><span class="hud-v2-pill-word">ÎLE</span>`;
         }
         if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -257,7 +257,10 @@
         // --- DÉPLACER / POUSSER / MAGIE : vrais boutons, meme etat que renderHand() ---
         // Libellés fixes (verbe, pas le nom de la carte : "Déplacement" donnerait
         // "DÉPLACEMENT ×N" au lieu de "DÉPLACER ×N" attendu par la maquette).
-        const pillLabels = { MOVE: "DÉPLACER", PUSH: "POUSSER", MAGIE: "MAGIE", MAGIC: "MAGIE" };
+        // Icône dans son propre span, visuellement plus grande que le texte
+        // (hiérarchie demandée) — le mot se masque sous 480px, le compte reste.
+        const pillLabels = { MOVE: "DÉPLACER", PUSH: "POUSSER", MAGIC: "MAGIE" };
+        const pillIcons = { MOVE: "👢", PUSH: "↗", MAGIC: "✦" };
         const smartSelected = state.phase === "SMART_CHAR" && !!state.selectedCharId;
         [["MOVE", "hudV2MoveCount"], ["PUSH", "hudV2PushCount"], ["MAGIC", "hudV2MagicCount"]].forEach(([type, id]) => {
           const btn = document.getElementById(id);
@@ -269,13 +272,12 @@
           const isActive = (state.phase === "ACTION" && state.selectedActionType === type)
             || (smartSelected && (type === "MOVE" || type === "PUSH"));
           const label = `${pillLabels[type]} ×${remaining}`;
-          btn.textContent = label;
+          btn.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${pillIcons[type]}</span>` +
+            `<span class="hud-v2-pill-word">${pillLabels[type]}</span>` +
+            `<span class="hud-v2-pill-count">×${remaining}</span>`;
           // complete-polish.js fige aria-label sur le premier textContent vu —
-          // on le retient synchronisé nous-mêmes à chaque rendu. data-count
-          // alimente l'icône compacte affichée en dessous de 480px (CSS pur,
-          // voir css/hud-v2.css).
+          // on le retient synchronisé nous-mêmes à chaque rendu.
           btn.setAttribute("aria-label", label);
-          btn.dataset.count = remaining;
           btn.disabled = disabled;
           btn.classList.toggle("hud-v2-pill-active", isActive);
           btn.title = disabled ? reason : action.name;
@@ -310,11 +312,11 @@
           instructionEl.textContent = info?.next || info?.title || "";
         }
 
-        // --- Caméra / Main : popovers, valeurs reelles ---
+        // --- Main : commande autonome, valeurs reelles ---
         const handCountEl = document.getElementById("hudV2HandCount");
         if (handCountEl) {
           const handLabel = `MAIN ×${(active.hand || []).length}`;
-          handCountEl.textContent = handLabel;
+          handCountEl.innerHTML = `<span aria-hidden="true">🃏</span> ${handLabel}`;
           handCountEl.setAttribute("aria-label", handLabel);
         }
         const popDeck = document.getElementById("hudV2HandPopoverDeck");
@@ -326,8 +328,22 @@
 
         // --- Séparateur "·" du timer : invisible si le chrono de tour est
         // désactivé (isTurnTimerEnabled(), même lecture que updateTurnTimerDisplay()).
-        const timerDot = document.querySelector("#hudV2Top .hud-v2-dot");
+        const timerDot = document.getElementById("hudV2TimerDot");
         if (timerDot) timerDot.classList.toggle("hidden", !isTurnTimerEnabled());
+
+        // --- Infos techniques (menu ⚙) : reparente une seule fois les vrais
+        // éléments .kaykit-status (js/game/kaykit3d.js) et .v69-quality-pill
+        // (js/complete-polish.js) — même noeuds, même logique de mise à
+        // jour, simplement retirés de l'interface normale. Idempotent (no-op
+        // une fois déjà déplacés) : pas de nouvelle boucle, juste profité du
+        // passage habituel de renderAll().
+        const techSlot = document.getElementById("hudV2TechInfo");
+        if (techSlot) {
+          const kaykitStatus = document.querySelector(".kaykit-status");
+          if (kaykitStatus && kaykitStatus.parentElement !== techSlot) techSlot.appendChild(kaykitStatus);
+          const qualityPill = document.querySelector(".v69-quality-pill");
+          if (qualityPill && qualityPill.parentElement !== techSlot) techSlot.appendChild(qualityPill);
+        }
       }
 
       // Ferme tout popover/drawer HUD V2 ouvert (île, menu ⚙, main).
