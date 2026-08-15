@@ -100,7 +100,7 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
-    frame.src = './menu/frame.html?v=menu-duel-11';
+    frame.src = './menu/frame.html?v=menu-duel-12';
     frame.setAttribute('allow', 'autoplay; fullscreen');
     frame.allowFullscreen = true;
     document.body.appendChild(frame);
