@@ -1594,7 +1594,7 @@
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
           else if (action === "PUSH" && state.pushOptions?.length) {
-            const target = characterAt(r, c);
+            const target = characterAt(r, c) || looseArtifactAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
               pusherId: state.selectedCharId || null,
@@ -2127,6 +2127,7 @@
       function pushOptionKey(option) {
         return [
           option.pusherId,
+          option.targetType || "character",
           option.targetId,
           option.dr,
           option.dc,
@@ -2135,15 +2136,16 @@
         ].join(":");
       }
 
-      function computePushOptionsForTarget(target) {
+      function computePushOptionsForTarget(target, targetType = "character") {
         if (!state || !target || availableActionCount("PUSH") < 1) return [];
+        const targetsCrown = targetType === "crown";
 
         const pushers = orthogonalNeighbors(target.r, target.c)
           .map(([r, c]) => characterAt(r, c))
           .filter(char =>
             char
             && char.player === state.currentPlayer
-            && char.id !== target.id
+            && (targetsCrown || char.id !== target.id)
           );
         const maxForce = availableActionCount("PUSH");
         const options = [];
@@ -2151,13 +2153,15 @@
         pushers.forEach(pusher => {
           const dr = target.r - pusher.r;
           const dc = target.c - pusher.c;
-          const requiredForce = collectPushLine(target.r, target.c, dr, dc).length;
+          const requiredForce = targetsCrown ? 1 : collectPushLine(target.r, target.c, dr, dc).length;
           for (let force = Math.max(1, requiredForce); force <= maxForce; force++) {
             const preview = getPushHoverPreview({ pusher, target, force });
             if (!preview || force < preview.requiredForce) continue;
             const lead = preview.impacts?.[0];
+            if (targetsCrown && !lead?.to) continue;
             options.push({
               pusherId: pusher.id,
+              targetType,
               targetId: target.id,
               dr,
               dc,
@@ -2184,12 +2188,22 @@
         const options = [];
         state.characters.forEach(target => {
           if (targetId != null && String(target.id) !== String(targetId)) return;
-          computePushOptionsForTarget(target).forEach(option => {
+          computePushOptionsForTarget(target, "character").forEach(option => {
             if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
             const normalized = { ...option, id: pushOptionKey(option) };
             options.push(normalized);
           });
         });
+        activeArtifacts()
+          .filter(artifact => artifact.carrierId === null)
+          .forEach(target => {
+            if (targetId != null && String(target.id) !== String(targetId)) return;
+            computePushOptionsForTarget(target, "crown").forEach(option => {
+              if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
+              const normalized = { ...option, id: pushOptionKey(option) };
+              options.push(normalized);
+            });
+          });
 
         const unique = new Map();
         options.forEach(option => {
@@ -2245,7 +2259,9 @@
         if (!option) return false;
 
         const pusher = characterById(option.pusherId);
-        const target = characterById(option.targetId);
+        const target = option.targetType === "crown"
+          ? artifactById(option.targetId)
+          : characterById(option.targetId);
         if (!pusher || !target) {
           clearUnifiedPushOptions();
           return false;

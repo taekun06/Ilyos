@@ -1575,11 +1575,12 @@
 
         const preview = previewSmartCharacterTarget(r, c);
         const clickedChar = characterAt(r, c);
+        const clickedCrown = looseArtifactAt(r, c);
 
         if (preview.type === "PUSH") {
           const options = collectUnifiedPushOptions({
             pusherId: actor.id,
-            targetId: clickedChar?.id || null
+            targetId: clickedChar?.id || clickedCrown?.id || null
           });
           if (!options.length) {
             showToast("Aucune poussée légale vers cette cible.");
@@ -1589,7 +1590,7 @@
           state.selectedActionType = "PUSH";
           state.selectedActionCount = 1;
           state.pushOptions = options;
-          state.pushTargetId = clickedChar?.id || null;
+          state.pushTargetId = clickedChar?.id || clickedCrown?.id || null;
           state.pushHoverOptionId = null;
           state.smartHoverType = null;
           state.smartHoverPath = [];

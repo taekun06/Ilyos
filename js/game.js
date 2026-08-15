@@ -3794,13 +3794,21 @@
         const lines = new Map();
 
         state.pushOptions.forEach(option => {
-          const lineKey = `${option.pusherId}:${option.targetId}:${option.dr}:${option.dc}`;
+          const lineKey = [
+            option.pusherId,
+            option.targetType || "character",
+            option.targetId,
+            option.dr,
+            option.dc
+          ].join(":");
           if (!lines.has(lineKey)) lines.set(lineKey, []);
           lines.get(lineKey).push(option);
         });
 
         lines.forEach(options => {
-          const target = characterById(options[0].targetId);
+          const target = options[0].targetType === "crown"
+            ? artifactById(options[0].targetId)
+            : characterById(options[0].targetId);
           if (!target) return;
           const hovered = options.find(option => option.id === hoveredId) || null;
           addKayKitPushAffordance(target.r, target.c);
@@ -4282,12 +4290,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0x9aa55a,
-        0x647540,
-        0x91a77d,
-        0x476b4d,
-        0x5f8c78,
-        0x7e984f
+        0xd4b85f,
+        0x344d2e,
+        0xb8d4a3,
+        0x1f5a3a,
+        0x3a8f93,
+        0x91b63c
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4326,7 +4334,7 @@
       function applyIslandTintToMaterial(material, variantIndex) {
         if (!material?.color) return;
         const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
-        material.color.copy(material.color.clone().lerp(tint, .32));
+        material.color.copy(tint);
       }
 
       function kaykitIslandTintMaterial(baseMaterial, variant) {
@@ -4355,6 +4363,31 @@
         material.needsUpdate = true;
         kaykit3D?.islandTintMaterials?.set(cacheKey, material);
         return material;
+      }
+
+      function addKayKitIslandTintOverlay(block, island) {
+        if (!block || !Number.isInteger(island?.visualVariant)) return;
+        const variantIndex = Math.max(0, island.visualVariant) % ILYOS_ISLAND_TINTS.length;
+        const material = kaykitMaterial(ILYOS_ISLAND_TINTS[variantIndex], {
+          roughness: 1,
+          metalness: 0,
+          transparent: true,
+          opacity: .58,
+          side: THREE.DoubleSide
+        });
+        material.depthWrite = false;
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = -2;
+        material.polygonOffsetUnits = -2;
+        material.toneMapped = false;
+        const overlay = new THREE.Mesh(
+          kaykitGeometry("island-tint-overlay-v1", () => new THREE.PlaneGeometry(KAYKIT_BLOCK_SIZE * .94, KAYKIT_BLOCK_SIZE * .94)),
+          material
+        );
+        overlay.rotation.x = -Math.PI / 2;
+        overlay.position.y = .468;
+        overlay.renderOrder = 6;
+        block.add(overlay);
       }
 
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
@@ -4424,6 +4457,7 @@
             });
           }
 
+          if (!preview) addKayKitIslandTintOverlay(block, island);
           block.position.set(p.x, KAYKIT_LEVELS.board, p.z);
           block.renderOrder = preview ? 20 : 4;
           group.add(block);
@@ -8043,11 +8077,12 @@
 
         const preview = previewSmartCharacterTarget(r, c);
         const clickedChar = characterAt(r, c);
+        const clickedCrown = looseArtifactAt(r, c);
 
         if (preview.type === "PUSH") {
           const options = collectUnifiedPushOptions({
             pusherId: actor.id,
-            targetId: clickedChar?.id || null
+            targetId: clickedChar?.id || clickedCrown?.id || null
           });
           if (!options.length) {
             showToast("Aucune poussée légale vers cette cible.");
@@ -8057,7 +8092,7 @@
           state.selectedActionType = "PUSH";
           state.selectedActionCount = 1;
           state.pushOptions = options;
-          state.pushTargetId = clickedChar?.id || null;
+          state.pushTargetId = clickedChar?.id || clickedCrown?.id || null;
           state.pushHoverOptionId = null;
           state.smartHoverType = null;
           state.smartHoverPath = [];
@@ -12612,7 +12647,7 @@
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
           else if (action === "PUSH" && state.pushOptions?.length) {
-            const target = characterAt(r, c);
+            const target = characterAt(r, c) || looseArtifactAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
               pusherId: state.selectedCharId || null,
@@ -13145,6 +13180,7 @@
       function pushOptionKey(option) {
         return [
           option.pusherId,
+          option.targetType || "character",
           option.targetId,
           option.dr,
           option.dc,
@@ -13153,15 +13189,16 @@
         ].join(":");
       }
 
-      function computePushOptionsForTarget(target) {
+      function computePushOptionsForTarget(target, targetType = "character") {
         if (!state || !target || availableActionCount("PUSH") < 1) return [];
+        const targetsCrown = targetType === "crown";
 
         const pushers = orthogonalNeighbors(target.r, target.c)
           .map(([r, c]) => characterAt(r, c))
           .filter(char =>
             char
             && char.player === state.currentPlayer
-            && char.id !== target.id
+            && (targetsCrown || char.id !== target.id)
           );
         const maxForce = availableActionCount("PUSH");
         const options = [];
@@ -13169,13 +13206,15 @@
         pushers.forEach(pusher => {
           const dr = target.r - pusher.r;
           const dc = target.c - pusher.c;
-          const requiredForce = collectPushLine(target.r, target.c, dr, dc).length;
+          const requiredForce = targetsCrown ? 1 : collectPushLine(target.r, target.c, dr, dc).length;
           for (let force = Math.max(1, requiredForce); force <= maxForce; force++) {
             const preview = getPushHoverPreview({ pusher, target, force });
             if (!preview || force < preview.requiredForce) continue;
             const lead = preview.impacts?.[0];
+            if (targetsCrown && !lead?.to) continue;
             options.push({
               pusherId: pusher.id,
+              targetType,
               targetId: target.id,
               dr,
               dc,
@@ -13202,12 +13241,22 @@
         const options = [];
         state.characters.forEach(target => {
           if (targetId != null && String(target.id) !== String(targetId)) return;
-          computePushOptionsForTarget(target).forEach(option => {
+          computePushOptionsForTarget(target, "character").forEach(option => {
             if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
             const normalized = { ...option, id: pushOptionKey(option) };
             options.push(normalized);
           });
         });
+        activeArtifacts()
+          .filter(artifact => artifact.carrierId === null)
+          .forEach(target => {
+            if (targetId != null && String(target.id) !== String(targetId)) return;
+            computePushOptionsForTarget(target, "crown").forEach(option => {
+              if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
+              const normalized = { ...option, id: pushOptionKey(option) };
+              options.push(normalized);
+            });
+          });
 
         const unique = new Map();
         options.forEach(option => {
@@ -13263,7 +13312,9 @@
         if (!option) return false;
 
         const pusher = characterById(option.pusherId);
-        const target = characterById(option.targetId);
+        const target = option.targetType === "crown"
+          ? artifactById(option.targetId)
+          : characterById(option.targetId);
         if (!pusher || !target) {
           clearUnifiedPushOptions();
           return false;

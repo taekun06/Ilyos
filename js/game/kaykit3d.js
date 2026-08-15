@@ -3667,13 +3667,21 @@
         const lines = new Map();
 
         state.pushOptions.forEach(option => {
-          const lineKey = `${option.pusherId}:${option.targetId}:${option.dr}:${option.dc}`;
+          const lineKey = [
+            option.pusherId,
+            option.targetType || "character",
+            option.targetId,
+            option.dr,
+            option.dc
+          ].join(":");
           if (!lines.has(lineKey)) lines.set(lineKey, []);
           lines.get(lineKey).push(option);
         });
 
         lines.forEach(options => {
-          const target = characterById(options[0].targetId);
+          const target = options[0].targetType === "crown"
+            ? artifactById(options[0].targetId)
+            : characterById(options[0].targetId);
           if (!target) return;
           const hovered = options.find(option => option.id === hoveredId) || null;
           addKayKitPushAffordance(target.r, target.c);
@@ -4155,12 +4163,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0x9aa55a,
-        0x647540,
-        0x91a77d,
-        0x476b4d,
-        0x5f8c78,
-        0x7e984f
+        0xd4b85f,
+        0x344d2e,
+        0xb8d4a3,
+        0x1f5a3a,
+        0x3a8f93,
+        0x91b63c
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4199,7 +4207,7 @@
       function applyIslandTintToMaterial(material, variantIndex) {
         if (!material?.color) return;
         const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
-        material.color.copy(material.color.clone().lerp(tint, .32));
+        material.color.copy(tint);
       }
 
       function kaykitIslandTintMaterial(baseMaterial, variant) {
@@ -4228,6 +4236,31 @@
         material.needsUpdate = true;
         kaykit3D?.islandTintMaterials?.set(cacheKey, material);
         return material;
+      }
+
+      function addKayKitIslandTintOverlay(block, island) {
+        if (!block || !Number.isInteger(island?.visualVariant)) return;
+        const variantIndex = Math.max(0, island.visualVariant) % ILYOS_ISLAND_TINTS.length;
+        const material = kaykitMaterial(ILYOS_ISLAND_TINTS[variantIndex], {
+          roughness: 1,
+          metalness: 0,
+          transparent: true,
+          opacity: .58,
+          side: THREE.DoubleSide
+        });
+        material.depthWrite = false;
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = -2;
+        material.polygonOffsetUnits = -2;
+        material.toneMapped = false;
+        const overlay = new THREE.Mesh(
+          kaykitGeometry("island-tint-overlay-v1", () => new THREE.PlaneGeometry(KAYKIT_BLOCK_SIZE * .94, KAYKIT_BLOCK_SIZE * .94)),
+          material
+        );
+        overlay.rotation.x = -Math.PI / 2;
+        overlay.position.y = .468;
+        overlay.renderOrder = 6;
+        block.add(overlay);
       }
 
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
@@ -4297,6 +4330,7 @@
             });
           }
 
+          if (!preview) addKayKitIslandTintOverlay(block, island);
           block.position.set(p.x, KAYKIT_LEVELS.board, p.z);
           block.renderOrder = preview ? 20 : 4;
           group.add(block);

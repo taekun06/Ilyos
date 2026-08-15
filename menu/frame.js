@@ -19,9 +19,13 @@
   modal.querySelector('.menu-modal-close').addEventListener('click',()=>modal.classList.remove('open'));
   modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
 
+  function fullscreenDocument(){
+    try{return parent?.document||document}catch(_){return document}
+  }
   function requestSiteFullscreen(){
-    if(document.fullscreenElement) return;
-    const el=document.documentElement;
+    const doc=fullscreenDocument();
+    if(doc.fullscreenElement) return;
+    const el=doc.documentElement;
     const req=el.requestFullscreen||el.webkitRequestFullscreen;
     if(!req) return;
     try{ const p=req.call(el); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
@@ -29,16 +33,17 @@
   document.addEventListener('click', requestSiteFullscreen, {once:true, capture:true});
 
   function exitSiteFullscreen(){
-    const exit=document.exitFullscreen||document.webkitExitFullscreen;
+    const doc=fullscreenDocument();
+    const exit=doc.exitFullscreen||doc.webkitExitFullscreen;
     if(!exit) return;
-    try{ const p=exit.call(document); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
+    try{ const p=exit.call(doc); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
   }
   function toggleFullscreen(){
-    if(document.fullscreenElement) exitSiteFullscreen();
+    if(fullscreenDocument().fullscreenElement) exitSiteFullscreen();
     else requestSiteFullscreen();
   }
   function syncFullscreenButtons(){
-    const active=!!document.fullscreenElement;
+    const active=!!fullscreenDocument().fullscreenElement;
     ['fullscreenBtnHome','fullscreenBtnDuel'].forEach(id=>{
       const btn=document.getElementById(id);
       if(!btn) return;
@@ -48,8 +53,8 @@
       if(btn.id==='fullscreenBtnDuel') btn.textContent = active ? '⛶ QUITTER LE PLEIN ÉCRAN' : '⛶ PLEIN ÉCRAN';
     });
   }
-  document.addEventListener('fullscreenchange', syncFullscreenButtons);
-  document.addEventListener('webkitfullscreenchange', syncFullscreenButtons);
+  fullscreenDocument().addEventListener('fullscreenchange', syncFullscreenButtons);
+  fullscreenDocument().addEventListener('webkitfullscreenchange', syncFullscreenButtons);
 
   function send(type,detail){ parent.postMessage({source:'ilyos-menu',type,detail}, location.origin); }
   function ensureSelections(mode){
