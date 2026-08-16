@@ -1,15 +1,15 @@
 window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
 
-/* HUD Organique V2 — couche visuelle isolée. */
+/* HUD Organique V2 DIRECT — overlay autonome issu du prototype validé. */
 (function(){
   if (window.__ILYOS_HUD_ORGANIC_LOADER__) return;
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
-  const styles = ['./css/hud-organique-v2.css?v=3','./css/hud-organique-v2-context.css?v=3','./css/hud-organique-v2-polish.css?v=3'];
-  styles.forEach(href=>{
-    const link=document.createElement('link'); link.rel='stylesheet'; link.href=href; document.head.appendChild(link);
-  });
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href='./css/hud-organique-v2.css?v=4';
+  document.head.appendChild(link);
   const script=document.createElement('script');
-  script.src='./js/hud-organique-v2.js?v=3';
+  script.src='./js/hud-organique-v2.js?v=4';
   script.defer=true;
   document.head.appendChild(script);
 })();
