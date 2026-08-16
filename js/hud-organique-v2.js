@@ -62,42 +62,53 @@
     if (!source || !panel) return;
     const text = (source.textContent || '').replace(/\s+/g,' ').trim();
     const isGuardian = !source.classList.contains('empty') && /Gardien/i.test(text);
+    const moveCount = document.querySelector('#hudV2MoveCount .hud-v2-pill-count')?.textContent?.trim() || '—';
+    const pushCount = document.querySelector('#hudV2PushCount .hud-v2-pill-count')?.textContent?.trim() || '—';
     if (!isGuardian) {
-      panel.classList.add('hidden');
-      panel.innerHTML = '';
+      if (panel.dataset.signature !== 'hidden') {
+        panel.dataset.signature = 'hidden';
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+      }
       return;
     }
     const crown = /Porte une couronne/i.test(text);
     const nameMatch = text.match(/Gardien de\s+(.+?)(?:Déplacement|Poussée|Porte|Gardien standard|$)/i);
     const owner = nameMatch?.[1]?.trim() || 'Équipe active';
+    const signature = [owner,crown?'1':'0',moveCount,pushCount].join('|');
+    if (panel.dataset.signature === signature) return;
+    panel.dataset.signature = signature;
     panel.innerHTML = `
       <div class="hud-organic-context-head">
         <span class="hud-organic-context-avatar"><svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M15 48V29c0-10 7-18 17-18s17 8 17 18v19"/><path d="M20 30h24M25 24h14"/></svg></span>
         <span><b>GARDIEN</b><small>${owner}</small></span>
       </div>
       ${crown ? '<div class="hud-organic-context-crown"><span>♛</span> Couronne portée</div>' : ''}
-      <div class="hud-organic-context-stat"><span>${ICONS.move}</span><em>Déplacement</em><b id="hudOrganicMoveReserve">—</b></div>
-      <div class="hud-organic-context-stat"><span>${ICONS.push}</span><em>Poussée</em><b id="hudOrganicPushReserve">—</b></div>`;
+      <div class="hud-organic-context-stat"><span>${ICONS.move}</span><em>Déplacement</em><b>${moveCount}</b></div>
+      <div class="hud-organic-context-stat"><span>${ICONS.push}</span><em>Poussée</em><b>${pushCount}</b></div>`;
     panel.classList.remove('hidden');
-    const moveCount = document.querySelector('#hudV2MoveCount .hud-v2-pill-count')?.textContent?.trim();
-    const pushCount = document.querySelector('#hudV2PushCount .hud-v2-pill-count')?.textContent?.trim();
-    const m = document.getElementById('hudOrganicMoveReserve'); if (m) m.textContent = moveCount || '—';
-    const p = document.getElementById('hudOrganicPushReserve'); if (p) p.textContent = pushCount || '—';
   }
 
+  let scheduled = false;
   function enhance(){
+    scheduled = false;
     if (document.body.dataset.visualMode !== 'alternative') return;
     enhanceActions();
     enhanceUndo();
     syncActiveSide();
     syncContextPanel();
   }
+  function scheduleEnhance(){
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(enhance);
+  }
 
   function boot(){
     enhance();
     const game = document.getElementById('gameScreen');
     if (!game) return;
-    const observer = new MutationObserver(() => requestAnimationFrame(enhance));
+    const observer = new MutationObserver(scheduleEnhance);
     observer.observe(game,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','disabled']});
     console.info('[ILYOS HUD] Organic V2 active');
   }
