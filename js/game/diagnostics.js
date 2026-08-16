@@ -357,11 +357,19 @@
       document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
         toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
       });
-      // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector(),
-      // son propre bouton garde son clic (selectIslandShape) ; celui-ci ferme
-      // seulement le drawer une fois la sélection faite (bulle après coup).
+      // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector().
+      // Après le choix d'une forme, le drawer doit rester ouvert pendant
+      // PLACE_ISLAND afin de rendre l'encadré de rotation immédiatement
+      // accessible. On arrête aussi la propagation : renderAll() a déjà
+      // remplacé le bouton cliqué et le listener document le prendrait sinon
+      // pour un clic extérieur, puis refermerait le drawer dans la même frappe.
       document.getElementById("islandSelector")?.addEventListener("click", event => {
-        if (event.target.closest(".island-choice")) closeHudV2Drawer();
+        if (!event.target.closest(".island-choice")) return;
+        event.stopPropagation();
+        const drawer = document.getElementById("hudV2IslandDrawer");
+        drawer?.classList.remove("hidden");
+        drawer?.setAttribute("aria-hidden", "false");
+        document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "true");
       });
 
       ["hudV2MoveCount", "hudV2PushCount", "hudV2MagicCount"].forEach((id, index) => {

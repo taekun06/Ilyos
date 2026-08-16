@@ -3371,6 +3371,11 @@
         const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
+        const islandRotate = document.getElementById("hudV2IslandRotate");
+        if (islandRotate) {
+          islandRotate.classList.toggle("hidden", !canRotatePlacement);
+          islandRotate.setAttribute("aria-hidden", canRotatePlacement ? "false" : "true");
+        }
         els.cancelCardBtn.disabled = !canCancel;
         // Désélectionner (rien n'est encore consommé) et annuler la dernière
         // action (undoHistory réellement non vide) sont deux idées différentes :

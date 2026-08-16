@@ -4290,12 +4290,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0xd4b85f,
-        0x344d2e,
-        0xb8d4a3,
-        0x1f5a3a,
-        0x3a8f93,
-        0x91b63c
+        0x9aae58,
+        0x668348,
+        0xadc47d,
+        0x4f7653,
+        0x65967a,
+        0x83a84f
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4332,9 +4332,23 @@
       }
 
       function applyIslandTintToMaterial(material, variantIndex) {
-        if (!material?.color) return;
+        if (!material) return;
         const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
-        material.color.copy(tint);
+        material.onBeforeCompile = shader => {
+          shader.uniforms.ilyosIslandGrassTint = { value: tint };
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <map_fragment>",
+            `#include <map_fragment>
+            float ilyosGrassDominance = diffuseColor.g - max(diffuseColor.r, diffuseColor.b);
+            float ilyosGrassMask = smoothstep(0.025, 0.16, ilyosGrassDominance);
+            float ilyosSourceLight = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+            float ilyosTintLight = max(0.001, dot(ilyosIslandGrassTint, vec3(0.299, 0.587, 0.114)));
+            vec3 ilyosNaturalTint = ilyosIslandGrassTint * (ilyosSourceLight / ilyosTintLight);
+            diffuseColor.rgb = mix(diffuseColor.rgb, ilyosNaturalTint, ilyosGrassMask * 0.62);`
+          );
+          shader.fragmentShader = `uniform vec3 ilyosIslandGrassTint;\n${shader.fragmentShader}`;
+        };
+        material.customProgramCacheKey = () => `ilyos-island-grass-${variantIndex}`;
       }
 
       function kaykitIslandTintMaterial(baseMaterial, variant) {
@@ -4354,40 +4368,12 @@
           map.needsUpdate = true;
           material.map = map;
         }
-        material.roughness = .84;
-        material.metalness = 0;
-        material.toneMapped = false;
         applyIslandTintToMaterial(material, variantIndex);
         material.userData.ilyosSharedIslandTint = true;
         material.name = `${baseMaterial.name || "block-bits"}-island-tint-${variantIndex}`;
         material.needsUpdate = true;
         kaykit3D?.islandTintMaterials?.set(cacheKey, material);
         return material;
-      }
-
-      function addKayKitIslandTintOverlay(block, island) {
-        if (!block || !Number.isInteger(island?.visualVariant)) return;
-        const variantIndex = Math.max(0, island.visualVariant) % ILYOS_ISLAND_TINTS.length;
-        const material = kaykitMaterial(ILYOS_ISLAND_TINTS[variantIndex], {
-          roughness: 1,
-          metalness: 0,
-          transparent: true,
-          opacity: .58,
-          side: THREE.DoubleSide
-        });
-        material.depthWrite = false;
-        material.polygonOffset = true;
-        material.polygonOffsetFactor = -2;
-        material.polygonOffsetUnits = -2;
-        material.toneMapped = false;
-        const overlay = new THREE.Mesh(
-          kaykitGeometry("island-tint-overlay-v1", () => new THREE.PlaneGeometry(KAYKIT_BLOCK_SIZE * .94, KAYKIT_BLOCK_SIZE * .94)),
-          material
-        );
-        overlay.rotation.x = -Math.PI / 2;
-        overlay.position.y = .468;
-        overlay.renderOrder = 6;
-        block.add(overlay);
       }
 
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
@@ -4457,7 +4443,6 @@
             });
           }
 
-          if (!preview) addKayKitIslandTintOverlay(block, island);
           block.position.set(p.x, KAYKIT_LEVELS.board, p.z);
           block.renderOrder = preview ? 20 : 4;
           group.add(block);
@@ -14424,6 +14409,11 @@
         const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
+        const islandRotate = document.getElementById("hudV2IslandRotate");
+        if (islandRotate) {
+          islandRotate.classList.toggle("hidden", !canRotatePlacement);
+          islandRotate.setAttribute("aria-hidden", canRotatePlacement ? "false" : "true");
+        }
         els.cancelCardBtn.disabled = !canCancel;
         // Désélectionner (rien n'est encore consommé) et annuler la dernière
         // action (undoHistory réellement non vide) sont deux idées différentes :
@@ -15118,11 +15108,19 @@
       document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
         toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
       });
-      // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector(),
-      // son propre bouton garde son clic (selectIslandShape) ; celui-ci ferme
-      // seulement le drawer une fois la sélection faite (bulle après coup).
+      // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector().
+      // Après le choix d'une forme, le drawer doit rester ouvert pendant
+      // PLACE_ISLAND afin de rendre l'encadré de rotation immédiatement
+      // accessible. On arrête aussi la propagation : renderAll() a déjà
+      // remplacé le bouton cliqué et le listener document le prendrait sinon
+      // pour un clic extérieur, puis refermerait le drawer dans la même frappe.
       document.getElementById("islandSelector")?.addEventListener("click", event => {
-        if (event.target.closest(".island-choice")) closeHudV2Drawer();
+        if (!event.target.closest(".island-choice")) return;
+        event.stopPropagation();
+        const drawer = document.getElementById("hudV2IslandDrawer");
+        drawer?.classList.remove("hidden");
+        drawer?.setAttribute("aria-hidden", "false");
+        document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "true");
       });
 
       ["hudV2MoveCount", "hudV2PushCount", "hudV2MagicCount"].forEach((id, index) => {
