@@ -1,327 +1,250 @@
-/* ILYOS — HUD Organique V2
-   Skin visuel uniquement : réutilise les vrais contrôles #hudV2* déjà branchés au gameplay. */
+/* ILYOS — HUD Organique V2 DIRECT
+   Géométrie issue du prototype validé ILYOS_HUD_ORGANIQUE_V2.html.
+   L'ancien HUD reste uniquement comme source de données/actions, jamais comme visuel. */
 
 body[data-visual-mode="alternative"] #gameScreen{
-  --org-gold:#e6b74b;
-  --org-gold2:#ffd879;
-  --org-violet:#a86df2;
-  --org-violet2:#d6b0ff;
-  --org-ink:rgba(4,13,22,.84);
-  --org-text:#f3efe4;
-  --org-muted:#aeb9c1;
+  --ov2-gold:#e6b74b;
+  --ov2-gold2:#ffd879;
+  --ov2-gold3:#a87622;
+  --ov2-violet:#a86df2;
+  --ov2-violet2:#d6b0ff;
+  --ov2-green:#8fe26f;
+  --ov2-orange:#ff9b38;
+  --ov2-ink:#07131e;
+  --ov2-ink2:rgba(4,13,22,.78);
+  --ov2-text:#f3efe4;
+  --ov2-muted:#aeb9c1;
 }
 
-/* ---------- TOP : rubans organiques arrêtés AVANT les portraits ---------- */
+/* L'ancien HUD V2 continue de recevoir les valeurs du moteur mais n'est plus dessiné. */
 body[data-visual-mode="alternative"] #hudV2Top{
-  top:18px!important;
-  left:24px!important;
-  right:24px!important;
-  padding:0!important;
-  min-height:84px;
-  grid-template-columns:minmax(330px,1fr) auto minmax(330px,1fr)!important;
-  gap:32px!important;
-  align-items:start!important;
+  opacity:0!important;
+  pointer-events:none!important;
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side{
-  position:relative;
-  min-height:82px;
-  gap:14px!important;
-  padding-top:9px;
-  isolation:isolate;
+body[data-visual-mode="alternative"] #hudV2Dock > #hudV2Instruction,
+body[data-visual-mode="alternative"] #hudV2Dock > #hudV2Toast,
+body[data-visual-mode="alternative"] #hudV2Dock > .hud-v2-action-row{
+  display:none!important;
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side::before{
-  content:"";
-  position:absolute;
-  top:4px;
-  height:56px;
-  z-index:-1;
-  border-top:1px solid rgba(230,183,75,.23);
-  border-bottom:1px solid rgba(230,183,75,.42);
+/* Les contrôles contextuels métier de l'ancien HUD restent disponibles. */
+body[data-visual-mode="alternative"] #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #hudV2PushForce,
+body[data-visual-mode="alternative"] #hudV2MagicControls{
+  z-index:96!important;
+}
+body[data-visual-mode="alternative"] #gameScreen > #hudV2GearPopover{
+  position:fixed!important;
+  top:88px!important;
+  left:50%!important;
+  right:auto!important;
+  bottom:auto!important;
+  transform:translateX(-50%)!important;
+  z-index:110!important;
+  pointer-events:auto!important;
+}
+
+#ilyosHudOrganicV2,
+#ilyosHudOrganicV2 *{box-sizing:border-box}
+#ilyosHudOrganicV2{
+  position:fixed;
+  inset:0;
+  z-index:72;
   pointer-events:none;
+  color:var(--ov2-text);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left::before{
-  left:76px;
-  right:0;
-  background:linear-gradient(90deg,rgba(5,17,28,.91),rgba(5,17,28,.52) 68%,transparent);
+#ilyosHudOrganicV2 button{font:inherit}
+#ilyosHudOrganicV2 .ov2-interactive{pointer-events:auto}
+#ilyosHudOrganicV2 .ov2-off{display:none!important}
+body:not([data-visual-mode="alternative"]) #ilyosHudOrganicV2,
+#gameScreen.hidden #ilyosHudOrganicV2{display:none!important}
+
+/* ---------- TOP ORGANIC PLAYER STRIPS : copie de la V2 validée ---------- */
+#ilyosHudOrganicV2 .ov2-top{
+  position:absolute;left:24px;right:24px;top:18px;height:86px;
+  display:grid;grid-template-columns:1fr auto 1fr;gap:32px;align-items:start;
+}
+#ilyosHudOrganicV2 .ov2-side{position:relative;height:82px;min-width:0}
+#ilyosHudOrganicV2 .ov2-avatar{
+  position:absolute;top:0;width:82px;height:82px;border-radius:46% 54% 48% 52% / 52% 46% 54% 48%;
+  display:grid;place-items:center;
+  background:radial-gradient(circle at 48% 36%,rgba(255,226,145,.20),transparent 42%),linear-gradient(145deg,#16364b,#07131e 65%);
+  border:2px solid var(--ov2-gold);
+  box-shadow:0 0 0 4px rgba(3,11,19,.76),0 0 22px rgba(230,183,75,.26);
+}
+#ilyosHudOrganicV2 .ov2-side.ov2-left .ov2-avatar{left:0;transform:rotate(-2deg)}
+#ilyosHudOrganicV2 .ov2-side.ov2-right .ov2-avatar{
+  right:0;transform:rotate(2deg);border-color:var(--ov2-violet);
+  box-shadow:0 0 0 4px rgba(14,7,24,.78),0 0 22px rgba(168,109,242,.25)
+}
+#ilyosHudOrganicV2 .ov2-avatar svg{width:48px;height:48px}
+#ilyosHudOrganicV2 .ov2-ribbon{
+  position:absolute;top:12px;height:56px;display:flex;align-items:center;
+  background:linear-gradient(90deg,rgba(5,17,28,.90),rgba(5,17,28,.52) 67%,transparent);
+  border-top:1px solid rgba(230,183,75,.23);border-bottom:1px solid rgba(230,183,75,.42);
+}
+#ilyosHudOrganicV2 .ov2-left .ov2-ribbon{
+  left:94px;right:0;padding:0 40px 0 16px;
   clip-path:polygon(0 0,94% 0,100% 50%,94% 100%,0 100%,2% 50%);
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right::before{
-  left:0;
-  right:76px;
-  background:linear-gradient(-90deg,rgba(24,10,39,.92),rgba(24,10,39,.52) 68%,transparent);
+#ilyosHudOrganicV2 .ov2-right .ov2-ribbon{
+  left:0;right:94px;padding:0 16px 0 40px;justify-content:flex-end;
+  background:linear-gradient(-90deg,rgba(24,10,39,.92),rgba(24,10,39,.50) 67%,transparent);
   border-color:rgba(168,109,242,.42);
   clip-path:polygon(6% 0,100% 0,98% 50%,100% 100%,6% 100%,0 50%);
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left::after,
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right::after{
-  content:"";position:absolute;top:60px;width:52%;height:1px;pointer-events:none;
+#ilyosHudOrganicV2 .ov2-ribbon:after{
+  content:"";position:absolute;bottom:-4px;height:1px;width:52%;
+  background:linear-gradient(90deg,var(--ov2-gold),transparent);
+  filter:drop-shadow(0 0 4px rgba(230,183,75,.45));
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left::after{
-  left:88px;background:linear-gradient(90deg,var(--org-gold),transparent);
+#ilyosHudOrganicV2 .ov2-left .ov2-ribbon:after{left:14px}
+#ilyosHudOrganicV2 .ov2-right .ov2-ribbon:after{right:14px;background:linear-gradient(-90deg,var(--ov2-violet),transparent)}
+#ilyosHudOrganicV2 .ov2-player-main{display:flex;align-items:center;gap:18px;min-width:0}
+#ilyosHudOrganicV2 .ov2-right .ov2-player-main{flex-direction:row-reverse}
+#ilyosHudOrganicV2 .ov2-pname{
+  font-family:Georgia,"Times New Roman",serif;font-size:23px;letter-spacing:.055em;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:min(26vw,420px)
 }
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right::after{
-  right:88px;background:linear-gradient(-90deg,var(--org-violet),transparent);
+#ilyosHudOrganicV2 .ov2-score{display:flex;align-items:center;gap:7px;flex:none}
+#ilyosHudOrganicV2 .ov2-crown{width:25px;height:19px;color:var(--ov2-gold2);filter:drop-shadow(0 0 5px rgba(255,216,121,.24))}
+#ilyosHudOrganicV2 .ov2-right .ov2-crown{color:var(--ov2-violet2)}
+#ilyosHudOrganicV2 .ov2-crown.ov2-empty{opacity:.23;filter:none}
+#ilyosHudOrganicV2 .ov2-active{
+  position:absolute;top:69px;left:100px;font-size:12px;letter-spacing:.13em;color:var(--ov2-gold2)
 }
-
-body[data-visual-mode="alternative"] .hud-v2-portrait{
-  width:72px!important;height:72px!important;
-  margin-top:-9px;
-  border:2px solid var(--org-gold)!important;
-  background:radial-gradient(circle at 42% 30%,rgba(255,229,150,.22),transparent 43%),linear-gradient(145deg,#17354a,#07131e 68%)!important;
-  box-shadow:0 0 0 4px rgba(3,11,19,.76),0 0 22px rgba(230,183,75,.24)!important;
-  opacity:1!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-top-right .hud-v2-portrait{
-  border-color:var(--org-violet)!important;
-  box-shadow:0 0 0 4px rgba(14,7,24,.78),0 0 22px rgba(168,109,242,.25)!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-portrait-active{
-  box-shadow:0 0 0 4px rgba(3,11,19,.78),0 0 0 2px var(--org-gold2),0 0 24px rgba(230,183,75,.38)!important;
-}
-
-body[data-visual-mode="alternative"] .hud-v2-player-name{
-  font-family:Georgia,"Times New Roman",serif!important;
-  font-size:clamp(17px,1.35vw,23px)!important;
-  letter-spacing:.055em!important;
-  color:var(--org-text)!important;
-  opacity:.82!important;
-  z-index:2;
-}
-body[data-visual-mode="alternative"] .hud-v2-player-name-active{
-  color:var(--org-gold2)!important;
-  opacity:1!important;
+#ilyosHudOrganicV2 .ov2-right .ov2-active{left:auto;right:100px;color:var(--ov2-violet2)}
+#ilyosHudOrganicV2 .ov2-active:before{
+  content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;
+  background:currentColor;box-shadow:0 0 10px currentColor
 }
 
-/* Couronnes plus fines, mieux alignées et clairement séparées du nom. */
-body[data-visual-mode="alternative"] .hud-v2-crowns{
-  gap:6px!important;
-  margin-inline:4px 2px;
-  transform:translateY(1px);
-  z-index:2;
-}
-body[data-visual-mode="alternative"] .hud-v2-crown-icon{
-  width:24px!important;height:18px!important;
-  color:var(--org-gold2);
-}
-body[data-visual-mode="alternative"] .hud-v2-top-right .hud-v2-crown-icon{
-  color:var(--org-violet2);
-}
-body[data-visual-mode="alternative"] .hud-v2-crown-icon svg{
-  fill:none!important;
-  stroke:currentColor!important;
-  stroke-width:1.55!important;
-  filter:none!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-crown-icon.is-filled svg{
-  fill:currentColor!important;
-  stroke:rgba(64,45,17,.65)!important;
-  stroke-width:.7!important;
-  filter:drop-shadow(0 0 5px rgba(255,216,121,.28))!important;
-}
-
-/* ---------- TOUR / TIMER : petit artefact central, gear discret dessous ---------- */
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center{
-  min-width:300px!important;
-  height:64px;
-  margin-top:0;
-  padding:0 28px;
-  display:grid!important;
-  grid-template-columns:1fr auto 1fr!important;
-  align-items:center!important;
-  column-gap:14px!important;
-  background:linear-gradient(180deg,rgba(5,16,27,.74),rgba(4,12,21,.52));
-  border:1px solid rgba(230,183,75,.27);
-  clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%);
-  backdrop-filter:blur(10px);
-}
-body[data-visual-mode="alternative"] #hudV2Top #turnLabel{
-  font-family:Georgia,"Times New Roman",serif!important;
-  font-size:clamp(18px,1.3vw,23px)!important;
-  color:#f7f0df!important;
-  text-shadow:0 2px 8px rgba(0,0,0,.7)!important;
-}
-body[data-visual-mode="alternative"] #hudV2Top #turnTimer{
-  font-family:Georgia,"Times New Roman",serif!important;
-  font-size:clamp(15px,1.15vw,18px)!important;
-  color:#e8e0d1!important;
-}
-body[data-visual-mode="alternative"] #hudV2Top .hud-v2-dot{
-  color:var(--org-gold)!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-gear-wrap{
-  align-self:center!important;
-}
-body[data-visual-mode="alternative"] #hudV2GearBtn{
-  width:34px!important;height:34px!important;
-  border-color:rgba(230,183,75,.24)!important;
-  background:rgba(4,13,22,.72)!important;
-  color:var(--org-gold2)!important;
-}
-
-/* ---------- Instruction : ligne légère, jamais une barre opaque ---------- */
-body[data-visual-mode="alternative"] #hudV2Instruction{
-  position:fixed!important;
-  left:50%!important;
-  bottom:142px!important;
-  transform:translateX(-50%)!important;
-  width:min(700px,56vw)!important;
-  min-height:38px!important;
-  padding:8px 52px!important;
-  background:linear-gradient(90deg,transparent,rgba(4,13,22,.55) 18%,rgba(4,13,22,.55) 82%,transparent)!important;
-  border:0!important;
-  border-top:1px solid rgba(230,183,75,.13)!important;
-  border-bottom:1px solid rgba(230,183,75,.10)!important;
-  color:#f4e8c6!important;
-  font:600 clamp(13px,1vw,16px)/1.2 Georgia,"Times New Roman",serif!important;
-  text-align:center!important;
-  text-shadow:0 2px 8px rgba(0,0,0,.7)!important;
-}
-
-/* ---------- Dock : artefacts organiques flottants, pas de barre commune ---------- */
-body[data-visual-mode="alternative"] #hudV2Dock{
-  position:fixed!important;inset:0!important;z-index:42!important;pointer-events:none!important;
-}
-body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-row{
-  position:fixed!important;inset:0!important;display:block!important;pointer-events:none!important;
-}
-body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-center{
-  position:fixed!important;left:50%!important;bottom:18px!important;transform:translateX(-50%)!important;
-  width:auto!important;pointer-events:auto!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-action-cluster{
-  display:flex!important;align-items:flex-end!important;justify-content:center!important;
-  gap:clamp(14px,1.8vw,20px)!important;
-  flex-wrap:nowrap!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill,
-body[data-visual-mode="alternative"] .hud-v2-hand-pill{
-  position:relative!important;
-  width:clamp(90px,7.1vw,112px)!important;
-  min-width:0!important;
-  height:clamp(88px,7vw,103px)!important;
-  min-height:0!important;
-  padding:0 8px 6px!important;
-  border:0!important;
-  border-radius:0!important;
-  background:transparent!important;
-  box-shadow:none!important;
-  overflow:visible!important;
-  color:#d9d6ce!important;
-  transition:transform .18s ease!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill::before,
-body[data-visual-mode="alternative"] .hud-v2-hand-pill::before{
-  content:"";position:absolute;left:50%;top:3px;transform:translateX(-50%);
-  width:clamp(58px,4.6vw,70px);height:clamp(58px,4.6vw,70px);
+/* TOUR : dimensions exactes du prototype. Le petit diamant ouvre le menu HUD existant. */
+#ilyosHudOrganicV2 .ov2-turn{
+  min-width:300px;height:64px;display:flex;align-items:center;justify-content:center;gap:20px;padding:0 30px;
+  background:linear-gradient(180deg,rgba(5,16,27,.72),rgba(4,12,21,.50));
   border:1px solid rgba(230,183,75,.24);
-  background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.80),rgba(3,12,20,.78));
-  clip-path:polygon(24% 0,76% 0,100% 21%,92% 78%,50% 100%,8% 78%,0 21%);
-  z-index:-1;box-shadow:0 10px 19px rgba(0,0,0,.24);
+  clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%);
+  backdrop-filter:blur(10px);font-family:Georgia,"Times New Roman",serif;
 }
-body[data-visual-mode="alternative"] .hud-v2-pill:not(:disabled):hover,
-body[data-visual-mode="alternative"] .hud-v2-hand-pill:hover{
-  transform:translateY(-4px)!important;background:transparent!important;box-shadow:none!important;
+#ilyosHudOrganicV2 .ov2-turn strong{font-size:24px;letter-spacing:.06em;white-space:nowrap}
+#ilyosHudOrganicV2 .ov2-turn .ov2-timer{font-size:18px;color:#e8e0d1;white-space:nowrap}
+#ilyosHudOrganicV2 .ov2-gem{
+  width:9px;height:9px;min-width:9px;padding:0;border:0;background:var(--ov2-gold);transform:rotate(45deg);
+  box-shadow:0 0 9px rgba(230,183,75,.5);cursor:pointer
 }
-body[data-visual-mode="alternative"] .hud-v2-pill-active{
-  color:#f5d68d!important;background:transparent!important;border:0!important;box-shadow:none!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill-active::before{
-  border-color:var(--org-gold)!important;
-  background:radial-gradient(circle at 50% 55%,rgba(112,75,22,.26),rgba(3,12,20,.84) 64%)!important;
-  box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 19px rgba(0,0,0,.24)!important;
-}
-body[data-visual-mode="alternative"] #hudV2MagicCount::before{
-  border-color:rgba(168,109,242,.30);
-}
-body[data-visual-mode="alternative"] #hudV2MagicCount.hud-v2-pill-active::before{
-  border-color:var(--org-violet)!important;
-  box-shadow:0 0 18px rgba(168,109,242,.18),0 10px 19px rgba(0,0,0,.24)!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill-icon{
-  width:clamp(30px,2.5vw,39px)!important;height:clamp(30px,2.5vw,39px)!important;
-  margin-bottom:10px!important;color:currentColor!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill-icon svg{
-  stroke-width:1.8!important;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill-word{
-  display:block!important;font:700 clamp(10px,.85vw,13px)/1 Georgia,"Times New Roman",serif!important;
-  color:inherit!important;letter-spacing:.04em!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill-count{
-  display:block!important;font-size:clamp(10px,.8vw,12px)!important;color:var(--org-muted)!important;
-}
-body[data-visual-mode="alternative"] .hud-v2-pill-active .hud-v2-pill-count{color:inherit!important}
-body[data-visual-mode="alternative"] .hud-v2-pill:disabled{
-  opacity:.46!important;filter:saturate(.35)!important;color:#9da5aa!important;
-}
+#ilyosHudOrganicV2 .ov2-gem:hover{box-shadow:0 0 14px var(--ov2-gold2)}
 
-/* ---------- Undo bas gauche ---------- */
-body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-left{
-  position:fixed!important;left:28px!important;bottom:26px!important;width:auto!important;pointer-events:auto!important;
+/* ---------- CONTEXT PANEL ---------- */
+#ilyosHudOrganicV2 .ov2-guardian{
+  position:absolute;left:28px;bottom:114px;width:286px;padding:15px 16px 14px;
+  background:linear-gradient(145deg,rgba(5,17,28,.93),rgba(3,10,17,.82));
+  border:1px solid rgba(230,183,75,.38);
+  clip-path:polygon(7% 0,100% 0,100% 91%,93% 100%,0 100%,0 9%);
+  backdrop-filter:blur(14px);box-shadow:0 17px 36px rgba(0,0,0,.31);transition:.25s ease;
 }
-body[data-visual-mode="alternative"] #cancelCardBtn.hud-v2-undo-btn{
-  width:56px!important;height:56px!important;min-width:56px!important;min-height:56px!important;
-  padding:0!important;border-radius:50%!important;
-  border:1px solid rgba(230,183,75,.30)!important;
-  background:rgba(4,13,22,.72)!important;color:#f1ce78!important;
-  font-size:27px!important;box-shadow:0 10px 22px rgba(0,0,0,.22)!important;
+#ilyosHudOrganicV2 .ov2-guardian:before{content:"";position:absolute;left:0;top:0;width:68%;height:1px;background:linear-gradient(90deg,var(--ov2-gold),transparent)}
+#ilyosHudOrganicV2 .ov2-guardian.ov2-hidden-context{transform:translateX(-120%);opacity:0;pointer-events:none}
+#ilyosHudOrganicV2 .ov2-gh{display:grid;grid-template-columns:58px 1fr;gap:12px;align-items:center;padding-bottom:11px;border-bottom:1px solid rgba(255,255,255,.06)}
+#ilyosHudOrganicV2 .ov2-gportrait{
+  width:56px;height:56px;display:grid;place-items:center;border:1px solid rgba(230,183,75,.40);
+  border-radius:45% 55% 50% 50%;background:linear-gradient(145deg,#15354a,#07131e)
 }
+#ilyosHudOrganicV2 .ov2-gportrait svg{width:38px;height:38px}
+#ilyosHudOrganicV2 .ov2-gh b{display:block;font-family:Georgia,serif;font-size:18px;color:#f2d486;letter-spacing:.05em}
+#ilyosHudOrganicV2 .ov2-gh small{display:block;color:#aeb8bf;margin-top:3px}
+#ilyosHudOrganicV2 .ov2-grow{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+#ilyosHudOrganicV2 .ov2-grow:last-child{border-bottom:0}
+#ilyosHudOrganicV2 .ov2-grow svg{width:28px;height:28px}
+#ilyosHudOrganicV2 .ov2-grow strong{font-size:18px}
+#ilyosHudOrganicV2 .ov2-green{color:var(--ov2-green)}
+#ilyosHudOrganicV2 .ov2-orange{color:var(--ov2-orange)}
 
-/* ---------- Fin du tour : définitivement bas droite ---------- */
-body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-right{
-  position:fixed!important;right:28px!important;bottom:25px!important;width:auto!important;pointer-events:auto!important;
+/* ---------- INSTRUCTION ---------- */
+#ilyosHudOrganicV2 .ov2-instruction{
+  position:absolute;left:50%;bottom:139px;transform:translateX(-50%);min-width:500px;max-width:700px;
+  padding:10px 52px;text-align:center;color:#f4e7c3;font-family:Georgia,serif;font-size:16px;
+  text-shadow:0 2px 8px rgba(0,0,0,.68)
 }
-body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn{
-  width:clamp(180px,13vw,210px)!important;height:68px!important;min-height:68px!important;
-  padding:0 22px!important;
-  border:1px solid rgba(230,183,75,.48)!important;color:#f3d389!important;
-  background:linear-gradient(90deg,rgba(46,32,16,.82),rgba(87,61,25,.86),rgba(46,32,16,.82))!important;
-  clip-path:polygon(9% 0,91% 0,100% 22%,100% 78%,91% 100%,9% 100%,0 78%,0 22%)!important;
-  border-radius:0!important;
-  font:800 clamp(14px,1vw,18px)/1 Georgia,"Times New Roman",serif!important;
-  letter-spacing:.05em!important;
-  box-shadow:0 11px 25px rgba(0,0,0,.27),0 0 14px rgba(230,183,75,.08)!important;
-}
-body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn:disabled{
-  opacity:.52!important;filter:saturate(.45)!important;
-}
+#ilyosHudOrganicV2 .ov2-instruction:before,
+#ilyosHudOrganicV2 .ov2-instruction:after{content:"✦";position:absolute;top:8px;color:var(--ov2-gold);text-shadow:0 0 8px rgba(230,183,75,.55)}
+#ilyosHudOrganicV2 .ov2-instruction:before{left:11%}
+#ilyosHudOrganicV2 .ov2-instruction:after{right:11%}
+#ilyosHudOrganicV2 .ov2-instruction-line{position:absolute;left:17%;right:17%;bottom:2px;height:1px;background:linear-gradient(90deg,transparent,rgba(230,183,75,.5),transparent)}
 
-/* Toast : petit carton contextuel, pas un panneau permanent. */
-body[data-visual-mode="alternative"] #hudV2Toast{
-  position:fixed!important;right:28px!important;bottom:112px!important;
-  width:min(310px,28vw)!important;max-width:310px!important;
-  background:rgba(4,13,22,.88)!important;
-  border:1px solid rgba(230,183,75,.29)!important;
-  border-radius:12px!important;
-  clip-path:polygon(5% 0,100% 0,100% 87%,95% 100%,0 100%,0 13%);
-  backdrop-filter:blur(12px)!important;
+/* ---------- ORGANIC ACTION DOCK ---------- */
+#ilyosHudOrganicV2 .ov2-dock{position:absolute;left:50%;bottom:17px;transform:translateX(-50%);display:flex;align-items:flex-end;gap:18px}
+#ilyosHudOrganicV2 .ov2-action{
+  position:relative;width:112px;height:103px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  padding:0 8px 6px;border:0;background:transparent;color:#d9d6ce;cursor:pointer;transition:.18s ease
 }
-
-/* Drawers/popovers restent fonctionnels, simplement harmonisés. */
-body[data-visual-mode="alternative"] .hud-v2-popover,
-body[data-visual-mode="alternative"] .hud-v2-island-drawer,
-body[data-visual-mode="alternative"] .hud-v2-magic-row,
-body[data-visual-mode="alternative"] .hud-v2-push-force-row{
-  background:rgba(4,13,22,.93)!important;
-  border-color:rgba(230,183,75,.34)!important;
-  color:var(--org-text)!important;
-  backdrop-filter:blur(14px)!important;
+#ilyosHudOrganicV2 .ov2-action:before{
+  content:"";position:absolute;left:50%;top:3px;transform:translateX(-50%) rotate(1deg);width:70px;height:70px;
+  border:1px solid rgba(230,183,75,.24);background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.80),rgba(3,12,20,.78));
+  clip-path:polygon(24% 0,76% 0,100% 21%,92% 78%,50% 100%,8% 78%,0 21%);z-index:-1;
+  box-shadow:0 10px 19px rgba(0,0,0,.24);transition:.18s ease
 }
+#ilyosHudOrganicV2 .ov2-action:hover:not(:disabled){transform:translateY(-4px)}
+#ilyosHudOrganicV2 .ov2-action:hover:not(:disabled):before{border-color:rgba(230,183,75,.48)}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected{color:#f5d58b}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected:before{border-color:var(--ov2-gold);background:radial-gradient(circle at 50% 55%,rgba(112,75,22,.26),rgba(3,12,20,.84) 64%);box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 19px rgba(0,0,0,.24)}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic{color:#cba8ff}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic:before{border-color:rgba(168,109,242,.30)}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected:before{border-color:var(--ov2-violet);background:radial-gradient(circle at 50% 55%,rgba(105,53,150,.24),rgba(3,12,20,.84) 64%);box-shadow:0 0 18px rgba(168,109,242,.18),0 10px 19px rgba(0,0,0,.24)}
+#ilyosHudOrganicV2 .ov2-action .ov2-ico{width:38px;height:38px;margin-bottom:13px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))}
+#ilyosHudOrganicV2 .ov2-action strong{font-family:Georgia,serif;font-size:13px;letter-spacing:.04em;text-shadow:0 2px 6px rgba(0,0,0,.68)}
+#ilyosHudOrganicV2 .ov2-action small{font-size:11px;color:#aab3ba;margin-top:3px}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected small{color:inherit}
+#ilyosHudOrganicV2 .ov2-action:disabled{opacity:.43;filter:saturate(.25);cursor:default}
+#ilyosHudOrganicV2 .ov2-dock:before{content:"";position:absolute;left:-34px;right:-34px;bottom:20px;height:1px;background:linear-gradient(90deg,transparent 0,var(--ov2-gold3) 14%,rgba(230,183,75,.52) 50%,var(--ov2-gold3) 86%,transparent 100%);z-index:-2}
+#ilyosHudOrganicV2 .ov2-dock:after{content:"";position:absolute;left:50%;bottom:16px;transform:translateX(-50%) rotate(45deg);width:7px;height:7px;background:var(--ov2-gold);box-shadow:0 0 10px rgba(230,183,75,.45)}
 
-/* Responsive Chrome non plein écran : préserver la taille des textes et réduire d'abord les espacements. */
+/* ---------- FIN DU TOUR / UNDO ---------- */
+#ilyosHudOrganicV2 .ov2-end{
+  position:absolute;right:28px;bottom:25px;width:205px;height:68px;border:1px solid rgba(230,183,75,.48);color:#f3d388;
+  background:linear-gradient(90deg,rgba(46,32,16,.82),rgba(87,61,25,.86),rgba(46,32,16,.82));
+  clip-path:polygon(9% 0,91% 0,100% 22%,100% 78%,91% 100%,9% 100%,0 78%,0 22%);
+  display:flex;align-items:center;justify-content:center;gap:13px;cursor:pointer;box-shadow:0 11px 25px rgba(0,0,0,.27),0 0 14px rgba(230,183,75,.08);transition:.18s ease
+}
+#ilyosHudOrganicV2 .ov2-end:hover:not(:disabled){filter:brightness(1.09);transform:translateY(-2px)}
+#ilyosHudOrganicV2 .ov2-end:disabled{opacity:.48;filter:saturate(.35);cursor:default}
+#ilyosHudOrganicV2 .ov2-end svg{width:28px;height:28px}
+#ilyosHudOrganicV2 .ov2-end b{font-family:Georgia,serif;font-size:18px;letter-spacing:.05em}
+#ilyosHudOrganicV2 .ov2-undo{
+  position:absolute;left:28px;bottom:26px;width:54px;height:54px;border-radius:50%;border:1px solid rgba(230,183,75,.30);
+  background:rgba(4,13,22,.69);color:#f0cd76;display:grid;place-items:center;font-size:26px;cursor:pointer;backdrop-filter:blur(10px)
+}
+#ilyosHudOrganicV2 .ov2-undo:disabled{opacity:.38;cursor:default}
+
+/* ---------- TOAST ---------- */
+#ilyosHudOrganicV2 .ov2-toast{
+  position:absolute;right:28px;bottom:112px;width:310px;min-height:70px;display:grid;grid-template-columns:42px 1fr 22px;
+  gap:10px;align-items:center;padding:11px 12px;background:rgba(4,13,22,.88);border:1px solid rgba(230,183,75,.29);
+  clip-path:polygon(5% 0,100% 0,100% 87%,95% 100%,0 100%,0 13%);backdrop-filter:blur(12px);box-shadow:0 14px 30px rgba(0,0,0,.28)
+}
+#ilyosHudOrganicV2 .ov2-toast b{display:block;font-size:14px}
+#ilyosHudOrganicV2 .ov2-toast small{display:block;color:#aab5bd;margin-top:3px}
+#ilyosHudOrganicV2 .ov2-toast button{border:0;background:transparent;color:#aeb6bc;font-size:18px;cursor:pointer}
+#ilyosHudOrganicV2 .ov2-toasticon{width:38px;height:38px;display:grid;place-items:center;border:1px solid rgba(230,183,75,.22);border-radius:50%;background:rgba(230,183,75,.08)}
+
+@keyframes ov2Breathe{0%,100%{filter:brightness(1)}50%{filter:brightness(1.12)}}
+#ilyosHudOrganicV2 .ov2-active:before{animation:ov2Breathe 2.2s ease-in-out infinite}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected .ov2-ico{animation:ov2Breathe 2.4s ease-in-out infinite}
+
+/* Responsive identique à la V2 : on scale le système complet, pas chaque élément séparément. */
 @media(max-height:800px){
-  body[data-visual-mode="alternative"] #hudV2Top{top:8px!important;transform:scale(.90);transform-origin:top center}
-  body[data-visual-mode="alternative"] #hudV2Instruction{bottom:116px!important;transform:translateX(-50%) scale(.90)!important}
-  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-center{bottom:4px!important;transform:translateX(-50%) scale(.86)!important;transform-origin:bottom center!important}
-  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-left{left:16px!important;bottom:13px!important;transform:scale(.90);transform-origin:bottom left}
-  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-right{right:16px!important;bottom:13px!important;transform:scale(.90);transform-origin:bottom right}
-  body[data-visual-mode="alternative"] #hudV2Toast{right:16px!important;bottom:88px!important;transform:scale(.88);transform-origin:bottom right}
+  #ilyosHudOrganicV2 .ov2-top{top:8px;transform:scale(.91);transform-origin:top center}
+  #ilyosHudOrganicV2 .ov2-guardian{bottom:93px;transform:scale(.88);transform-origin:bottom left}
+  #ilyosHudOrganicV2 .ov2-guardian.ov2-hidden-context{transform:translateX(-120%) scale(.88)}
+  #ilyosHudOrganicV2 .ov2-instruction{bottom:116px;transform:translateX(-50%) scale(.90)}
+  #ilyosHudOrganicV2 .ov2-dock{bottom:4px;transform:translateX(-50%) scale(.86);transform-origin:bottom center}
+  #ilyosHudOrganicV2 .ov2-end{right:17px;bottom:14px;transform:scale(.90);transform-origin:bottom right}
+  #ilyosHudOrganicV2 .ov2-undo{left:17px;bottom:14px;transform:scale(.90);transform-origin:bottom left}
+  #ilyosHudOrganicV2 .ov2-toast{right:17px;bottom:88px;transform:scale(.88);transform-origin:bottom right}
 }
-
-@media(max-width:1050px){
-  body[data-visual-mode="alternative"] #hudV2Top{left:12px!important;right:12px!important;gap:12px!important;grid-template-columns:minmax(260px,1fr) auto minmax(260px,1fr)!important}
-  body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center{min-width:220px!important;padding-inline:16px!important}
-  body[data-visual-mode="alternative"] .hud-v2-crown-icon{width:19px!important;height:15px!important}
-  body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn{width:160px!important}
+@media(max-width:1180px){
+  #ilyosHudOrganicV2 .ov2-top{left:14px;right:14px;gap:18px}
+  #ilyosHudOrganicV2 .ov2-turn{min-width:260px;padding:0 22px;gap:15px}
+  #ilyosHudOrganicV2 .ov2-pname{font-size:19px;max-width:20vw}
+  #ilyosHudOrganicV2 .ov2-crown{width:21px;height:16px}
 }
