@@ -12,6 +12,64 @@
     magic: `<svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="13"/><path d="m24 6 4.5 11.5L42 24l-13.5 6.5L24 42l-4.5-11.5L6 24l13.5-6.5L24 6Z"/><circle class="magic-core" cx="24" cy="24" r="4"/></svg>`
   };
 
+  function installViewportFix(){
+    if (document.getElementById('hud-organic-v2-viewport-fix')) return;
+    const style = document.createElement('style');
+    style.id = 'hud-organic-v2-viewport-fix';
+    style.textContent = `
+      body[data-visual-mode="alternative"] #hudV2Dock{
+        position:fixed!important;
+        inset:0!important;
+        left:0!important;
+        top:0!important;
+        right:0!important;
+        bottom:0!important;
+        width:100vw!important;
+        height:100vh!important;
+        margin:0!important;
+        padding:0!important;
+        transform:none!important;
+        display:block!important;
+        gap:0!important;
+        pointer-events:none!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-row{
+        position:fixed!important;
+        inset:0!important;
+        left:0!important;
+        top:0!important;
+        width:100vw!important;
+        height:100vh!important;
+        margin:0!important;
+        padding:0!important;
+        transform:none!important;
+        display:block!important;
+        pointer-events:none!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2Instruction{
+        left:50%!important;
+        right:auto!important;
+        margin:0!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-center{
+        left:50%!important;
+        right:auto!important;
+        margin:0!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-left{
+        left:28px!important;
+        right:auto!important;
+        margin:0!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-right{
+        right:28px!important;
+        left:auto!important;
+        margin:0!important;
+      }
+    `;
+    document.body.appendChild(style);
+  }
+
   function actionIcon(id, svg){
     const btn = document.getElementById(id);
     if (!btn) return;
@@ -105,6 +163,7 @@
   }
 
   function boot(){
+    installViewportFix();
     enhance();
     const game = document.getElementById('gameScreen');
     if (!game) return;
