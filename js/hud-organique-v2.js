@@ -20,6 +20,102 @@
   let scheduled = false;
   let toastDismissedText = '';
 
+  function installRuntimeFixes(){
+    if (legacy('ov2DirectRuntimeFixes')) return;
+    const style = document.createElement('style');
+    style.id = 'ov2DirectRuntimeFixes';
+    style.textContent = `
+      body[data-visual-mode="alternative"] #ilyosHudOrganicV2{
+        position:fixed!important;
+        inset:0!important;
+        width:100vw!important;
+        height:100vh!important;
+        z-index:100000!important;
+        visibility:visible!important;
+        opacity:1!important;
+        overflow:visible!important;
+      }
+      body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+        position:fixed!important;
+        left:24px!important;
+        right:24px!important;
+        top:18px!important;
+        display:grid!important;
+        visibility:visible!important;
+        opacity:1!important;
+        z-index:4!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2IslandDrawer{
+        position:fixed!important;
+        left:50%!important;
+        right:auto!important;
+        top:auto!important;
+        bottom:126px!important;
+        transform:translateX(-50%)!important;
+        z-index:100020!important;
+        max-width:min(94vw,1100px)!important;
+        pointer-events:auto!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2IslandDrawer:not(.hidden){
+        display:flex!important;
+        visibility:visible!important;
+        opacity:1!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2IslandDrawer.hidden{
+        display:none!important;
+      }
+      body[data-visual-mode="alternative"] #hudV2IslandDrawer #islandSelector,
+      body[data-visual-mode="alternative"] #hudV2IslandDrawer button{
+        pointer-events:auto!important;
+      }
+      @media(max-height:800px){
+        body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+          top:8px!important;
+        }
+        body[data-visual-mode="alternative"] #hudV2IslandDrawer{
+          bottom:105px!important;
+          transform:translateX(-50%) scale(.90)!important;
+          transform-origin:bottom center!important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function setIslandDrawerOpen(open){
+    const drawer = legacy('hudV2IslandDrawer');
+    const trigger = legacy('hudV2IslandStatus');
+    if (!drawer) return false;
+    drawer.classList.toggle('hidden',!open);
+    drawer.setAttribute('aria-hidden',open ? 'false' : 'true');
+    if (trigger) trigger.setAttribute('aria-expanded',open ? 'true' : 'false');
+    return true;
+  }
+
+  function toggleIslandDrawerDirect(){
+    const trigger = legacy('hudV2IslandStatus');
+    const drawer = legacy('hudV2IslandDrawer');
+    if (!trigger || trigger.disabled) return;
+    if (!drawer) {
+      trigger.click();
+      return;
+    }
+
+    const wasHidden = drawer.classList.contains('hidden');
+    // On laisse d'abord le gestionnaire historique faire son travail.
+    trigger.click();
+
+    requestAnimationFrame(()=>{
+      // Si l'ancien bouton n'a rien changé (cas produit par le HUD direct),
+      // on pilote uniquement l'ouverture visuelle du vrai drawer existant.
+      if (drawer.classList.contains('hidden') === wasHidden) {
+        setIslandDrawerOpen(wasHidden);
+      }
+      reparentFunctionalPopovers();
+      schedule();
+    });
+  }
+
   function build(){
     const game = legacy('gameScreen');
     if (!game || legacy('ilyosHudOrganicV2')) return legacy('ilyosHudOrganicV2');
@@ -51,7 +147,7 @@
       <div id="ov2Instruction" class="ov2-instruction">Choisissez une action.<div class="ov2-instruction-line"></div></div>
 
       <div class="ov2-dock">
-        <button id="ov2Island" class="ov2-action ov2-interactive" type="button" data-legacy="hudV2IslandStatus">${islandSvg}<strong>ÎLE</strong><small>OBLIGATOIRE</small></button>
+        <button id="ov2Island" class="ov2-action ov2-interactive" type="button">${islandSvg}<strong>ÎLE</strong><small>OBLIGATOIRE</small></button>
         <button id="ov2Move" class="ov2-action ov2-interactive" type="button" data-legacy="hudV2MoveCount">${moveSvg}<strong>DÉPLACER</strong><small id="ov2MoveCount">×0</small></button>
         <button id="ov2Push" class="ov2-action ov2-interactive" type="button" data-legacy="hudV2PushCount">${pushSvg}<strong>POUSSER</strong><small id="ov2PushCount">×0</small></button>
         <button id="ov2Magic" class="ov2-action ov2-interactive ov2-magic" type="button" data-legacy="hudV2MagicCount">${magicSvg}<strong>MAGIE</strong><small id="ov2MagicCount">×0</small></button>
@@ -69,6 +165,7 @@
         if (target && !target.disabled) target.click();
       });
     });
+    legacy('ov2Island').addEventListener('click',toggleIslandDrawerDirect);
     legacy('ov2End').addEventListener('click',()=>{ const b=legacy('endTurnBtn'); if(b && !b.disabled) b.click(); });
     legacy('ov2Undo').addEventListener('click',()=>{ const b=legacy('cancelCardBtn'); if(b && !b.disabled) b.click(); });
     legacy('ov2Gear').addEventListener('click',()=>legacy('hudV2GearBtn')?.click());
@@ -81,8 +178,11 @@
 
   function reparentFunctionalPopovers(){
     const game = legacy('gameScreen');
-    const gear = legacy('hudV2GearPopover');
-    if (game && gear && gear.parentElement !== game) game.appendChild(gear);
+    if (!game) return;
+    ['hudV2GearPopover','hudV2IslandDrawer'].forEach(id=>{
+      const node = legacy(id);
+      if (node && node.parentElement !== game) game.appendChild(node);
+    });
   }
 
   function countFrom(id){
@@ -143,10 +243,12 @@
     });
     const island = legacy('ov2Island');
     const oldIsland = legacy('hudV2IslandStatus');
+    const drawer = legacy('hudV2IslandDrawer');
     if (island) {
       island.classList.toggle('ov2-off',!oldIsland || oldIsland.classList.contains('hidden'));
       island.disabled = !oldIsland || !!oldIsland.disabled;
-      island.classList.toggle('ov2-selected',oldIsland?.getAttribute('aria-expanded') === 'true');
+      const drawerOpen = !!drawer && !drawer.classList.contains('hidden');
+      island.classList.toggle('ov2-selected',drawerOpen || oldIsland?.getAttribute('aria-expanded') === 'true');
     }
     const end = legacy('ov2End'), oldEnd = legacy('endTurnBtn');
     if (end) end.disabled = !oldEnd || !!oldEnd.disabled;
@@ -213,10 +315,11 @@
   }
 
   function boot(){
+    installRuntimeFixes();
     root = build();
     if (!root) return;
     reparentFunctionalPopovers();
-    ['hudV2Top','hudV2Dock','unitCard','turnLabel','turnTimer','endTurnBtn','cancelCardBtn'].forEach(id=>observe(legacy(id)));
+    ['hudV2Top','hudV2Dock','hudV2IslandDrawer','unitCard','turnLabel','turnTimer','endTurnBtn','cancelCardBtn'].forEach(id=>observe(legacy(id)));
     sync();
     console.info('[ILYOS HUD] Organic V2 DIRECT active');
   }
