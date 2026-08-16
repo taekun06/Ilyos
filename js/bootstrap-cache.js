@@ -1,5 +1,5 @@
     (function forceLatestIlyosVersion() {
-      const VERSION = "ILYOS_20260816_NATURAL_ISLANDS_2";
+      const VERSION = "ILYOS_20260816_NATURAL_ISLANDS_3";
       try {
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.getRegistrations().then(registrations => registrations.forEach(reg => reg.unregister()));

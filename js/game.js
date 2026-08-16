@@ -4290,12 +4290,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0x9aae58,
-        0x668348,
-        0xadc47d,
-        0x4f7653,
-        0x65967a,
-        0x83a84f
+        0x9aa55a,
+        0x647540,
+        0x91a77d,
+        0x476b4d,
+        0x5f8c78,
+        0x7e984f
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4332,23 +4332,9 @@
       }
 
       function applyIslandTintToMaterial(material, variantIndex) {
-        if (!material) return;
+        if (!material?.color) return;
         const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
-        material.onBeforeCompile = shader => {
-          shader.uniforms.ilyosIslandGrassTint = { value: tint };
-          shader.fragmentShader = shader.fragmentShader.replace(
-            "#include <map_fragment>",
-            `#include <map_fragment>
-            float ilyosGrassDominance = diffuseColor.g - max(diffuseColor.r, diffuseColor.b);
-            float ilyosGrassMask = smoothstep(0.025, 0.16, ilyosGrassDominance);
-            float ilyosSourceLight = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-            float ilyosTintLight = max(0.001, dot(ilyosIslandGrassTint, vec3(0.299, 0.587, 0.114)));
-            vec3 ilyosNaturalTint = ilyosIslandGrassTint * (ilyosSourceLight / ilyosTintLight);
-            diffuseColor.rgb = mix(diffuseColor.rgb, ilyosNaturalTint, ilyosGrassMask * 0.62);`
-          );
-          shader.fragmentShader = `uniform vec3 ilyosIslandGrassTint;\n${shader.fragmentShader}`;
-        };
-        material.customProgramCacheKey = () => `ilyos-island-grass-${variantIndex}`;
+        material.color.copy(material.color.clone().lerp(tint, .32));
       }
 
       function kaykitIslandTintMaterial(baseMaterial, variant) {
@@ -4368,6 +4354,9 @@
           map.needsUpdate = true;
           material.map = map;
         }
+        material.roughness = .84;
+        material.metalness = 0;
+        material.toneMapped = false;
         applyIslandTintToMaterial(material, variantIndex);
         material.userData.ilyosSharedIslandTint = true;
         material.name = `${baseMaterial.name || "block-bits"}-island-tint-${variantIndex}`;
