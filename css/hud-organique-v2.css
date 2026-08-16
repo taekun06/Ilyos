@@ -1,0 +1,327 @@
+/* ILYOS — HUD Organique V2
+   Skin visuel uniquement : réutilise les vrais contrôles #hudV2* déjà branchés au gameplay. */
+
+body[data-visual-mode="alternative"] #gameScreen{
+  --org-gold:#e6b74b;
+  --org-gold2:#ffd879;
+  --org-violet:#a86df2;
+  --org-violet2:#d6b0ff;
+  --org-ink:rgba(4,13,22,.84);
+  --org-text:#f3efe4;
+  --org-muted:#aeb9c1;
+}
+
+/* ---------- TOP : rubans organiques arrêtés AVANT les portraits ---------- */
+body[data-visual-mode="alternative"] #hudV2Top{
+  top:18px!important;
+  left:24px!important;
+  right:24px!important;
+  padding:0!important;
+  min-height:84px;
+  grid-template-columns:minmax(330px,1fr) auto minmax(330px,1fr)!important;
+  gap:32px!important;
+  align-items:start!important;
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side{
+  position:relative;
+  min-height:82px;
+  gap:14px!important;
+  padding-top:9px;
+  isolation:isolate;
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-side::before{
+  content:"";
+  position:absolute;
+  top:4px;
+  height:56px;
+  z-index:-1;
+  border-top:1px solid rgba(230,183,75,.23);
+  border-bottom:1px solid rgba(230,183,75,.42);
+  pointer-events:none;
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left::before{
+  left:76px;
+  right:0;
+  background:linear-gradient(90deg,rgba(5,17,28,.91),rgba(5,17,28,.52) 68%,transparent);
+  clip-path:polygon(0 0,94% 0,100% 50%,94% 100%,0 100%,2% 50%);
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right::before{
+  left:0;
+  right:76px;
+  background:linear-gradient(-90deg,rgba(24,10,39,.92),rgba(24,10,39,.52) 68%,transparent);
+  border-color:rgba(168,109,242,.42);
+  clip-path:polygon(6% 0,100% 0,98% 50%,100% 100%,6% 100%,0 50%);
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left::after,
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right::after{
+  content:"";position:absolute;top:60px;width:52%;height:1px;pointer-events:none;
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-left::after{
+  left:88px;background:linear-gradient(90deg,var(--org-gold),transparent);
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-right::after{
+  right:88px;background:linear-gradient(-90deg,var(--org-violet),transparent);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-portrait{
+  width:72px!important;height:72px!important;
+  margin-top:-9px;
+  border:2px solid var(--org-gold)!important;
+  background:radial-gradient(circle at 42% 30%,rgba(255,229,150,.22),transparent 43%),linear-gradient(145deg,#17354a,#07131e 68%)!important;
+  box-shadow:0 0 0 4px rgba(3,11,19,.76),0 0 22px rgba(230,183,75,.24)!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-top-right .hud-v2-portrait{
+  border-color:var(--org-violet)!important;
+  box-shadow:0 0 0 4px rgba(14,7,24,.78),0 0 22px rgba(168,109,242,.25)!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-portrait-active{
+  box-shadow:0 0 0 4px rgba(3,11,19,.78),0 0 0 2px var(--org-gold2),0 0 24px rgba(230,183,75,.38)!important;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-player-name{
+  font-family:Georgia,"Times New Roman",serif!important;
+  font-size:clamp(17px,1.35vw,23px)!important;
+  letter-spacing:.055em!important;
+  color:var(--org-text)!important;
+  opacity:.82!important;
+  z-index:2;
+}
+body[data-visual-mode="alternative"] .hud-v2-player-name-active{
+  color:var(--org-gold2)!important;
+  opacity:1!important;
+}
+
+/* Couronnes plus fines, mieux alignées et clairement séparées du nom. */
+body[data-visual-mode="alternative"] .hud-v2-crowns{
+  gap:6px!important;
+  margin-inline:4px 2px;
+  transform:translateY(1px);
+  z-index:2;
+}
+body[data-visual-mode="alternative"] .hud-v2-crown-icon{
+  width:24px!important;height:18px!important;
+  color:var(--org-gold2);
+}
+body[data-visual-mode="alternative"] .hud-v2-top-right .hud-v2-crown-icon{
+  color:var(--org-violet2);
+}
+body[data-visual-mode="alternative"] .hud-v2-crown-icon svg{
+  fill:none!important;
+  stroke:currentColor!important;
+  stroke-width:1.55!important;
+  filter:none!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-crown-icon.is-filled svg{
+  fill:currentColor!important;
+  stroke:rgba(64,45,17,.65)!important;
+  stroke-width:.7!important;
+  filter:drop-shadow(0 0 5px rgba(255,216,121,.28))!important;
+}
+
+/* ---------- TOUR / TIMER : petit artefact central, gear discret dessous ---------- */
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center{
+  min-width:300px!important;
+  height:64px;
+  margin-top:0;
+  padding:0 28px;
+  display:grid!important;
+  grid-template-columns:1fr auto 1fr!important;
+  align-items:center!important;
+  column-gap:14px!important;
+  background:linear-gradient(180deg,rgba(5,16,27,.74),rgba(4,12,21,.52));
+  border:1px solid rgba(230,183,75,.27);
+  clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%);
+  backdrop-filter:blur(10px);
+}
+body[data-visual-mode="alternative"] #hudV2Top #turnLabel{
+  font-family:Georgia,"Times New Roman",serif!important;
+  font-size:clamp(18px,1.3vw,23px)!important;
+  color:#f7f0df!important;
+  text-shadow:0 2px 8px rgba(0,0,0,.7)!important;
+}
+body[data-visual-mode="alternative"] #hudV2Top #turnTimer{
+  font-family:Georgia,"Times New Roman",serif!important;
+  font-size:clamp(15px,1.15vw,18px)!important;
+  color:#e8e0d1!important;
+}
+body[data-visual-mode="alternative"] #hudV2Top .hud-v2-dot{
+  color:var(--org-gold)!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-gear-wrap{
+  align-self:center!important;
+}
+body[data-visual-mode="alternative"] #hudV2GearBtn{
+  width:34px!important;height:34px!important;
+  border-color:rgba(230,183,75,.24)!important;
+  background:rgba(4,13,22,.72)!important;
+  color:var(--org-gold2)!important;
+}
+
+/* ---------- Instruction : ligne légère, jamais une barre opaque ---------- */
+body[data-visual-mode="alternative"] #hudV2Instruction{
+  position:fixed!important;
+  left:50%!important;
+  bottom:142px!important;
+  transform:translateX(-50%)!important;
+  width:min(700px,56vw)!important;
+  min-height:38px!important;
+  padding:8px 52px!important;
+  background:linear-gradient(90deg,transparent,rgba(4,13,22,.55) 18%,rgba(4,13,22,.55) 82%,transparent)!important;
+  border:0!important;
+  border-top:1px solid rgba(230,183,75,.13)!important;
+  border-bottom:1px solid rgba(230,183,75,.10)!important;
+  color:#f4e8c6!important;
+  font:600 clamp(13px,1vw,16px)/1.2 Georgia,"Times New Roman",serif!important;
+  text-align:center!important;
+  text-shadow:0 2px 8px rgba(0,0,0,.7)!important;
+}
+
+/* ---------- Dock : artefacts organiques flottants, pas de barre commune ---------- */
+body[data-visual-mode="alternative"] #hudV2Dock{
+  position:fixed!important;inset:0!important;z-index:42!important;pointer-events:none!important;
+}
+body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-row{
+  position:fixed!important;inset:0!important;display:block!important;pointer-events:none!important;
+}
+body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-center{
+  position:fixed!important;left:50%!important;bottom:18px!important;transform:translateX(-50%)!important;
+  width:auto!important;pointer-events:auto!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-action-cluster{
+  display:flex!important;align-items:flex-end!important;justify-content:center!important;
+  gap:clamp(14px,1.8vw,20px)!important;
+  flex-wrap:nowrap!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill,
+body[data-visual-mode="alternative"] .hud-v2-hand-pill{
+  position:relative!important;
+  width:clamp(90px,7.1vw,112px)!important;
+  min-width:0!important;
+  height:clamp(88px,7vw,103px)!important;
+  min-height:0!important;
+  padding:0 8px 6px!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  overflow:visible!important;
+  color:#d9d6ce!important;
+  transition:transform .18s ease!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill::before,
+body[data-visual-mode="alternative"] .hud-v2-hand-pill::before{
+  content:"";position:absolute;left:50%;top:3px;transform:translateX(-50%);
+  width:clamp(58px,4.6vw,70px);height:clamp(58px,4.6vw,70px);
+  border:1px solid rgba(230,183,75,.24);
+  background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.80),rgba(3,12,20,.78));
+  clip-path:polygon(24% 0,76% 0,100% 21%,92% 78%,50% 100%,8% 78%,0 21%);
+  z-index:-1;box-shadow:0 10px 19px rgba(0,0,0,.24);
+}
+body[data-visual-mode="alternative"] .hud-v2-pill:not(:disabled):hover,
+body[data-visual-mode="alternative"] .hud-v2-hand-pill:hover{
+  transform:translateY(-4px)!important;background:transparent!important;box-shadow:none!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-active{
+  color:#f5d68d!important;background:transparent!important;border:0!important;box-shadow:none!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-active::before{
+  border-color:var(--org-gold)!important;
+  background:radial-gradient(circle at 50% 55%,rgba(112,75,22,.26),rgba(3,12,20,.84) 64%)!important;
+  box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 19px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] #hudV2MagicCount::before{
+  border-color:rgba(168,109,242,.30);
+}
+body[data-visual-mode="alternative"] #hudV2MagicCount.hud-v2-pill-active::before{
+  border-color:var(--org-violet)!important;
+  box-shadow:0 0 18px rgba(168,109,242,.18),0 10px 19px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-icon{
+  width:clamp(30px,2.5vw,39px)!important;height:clamp(30px,2.5vw,39px)!important;
+  margin-bottom:10px!important;color:currentColor!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-icon svg{
+  stroke-width:1.8!important;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-word{
+  display:block!important;font:700 clamp(10px,.85vw,13px)/1 Georgia,"Times New Roman",serif!important;
+  color:inherit!important;letter-spacing:.04em!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-count{
+  display:block!important;font-size:clamp(10px,.8vw,12px)!important;color:var(--org-muted)!important;
+}
+body[data-visual-mode="alternative"] .hud-v2-pill-active .hud-v2-pill-count{color:inherit!important}
+body[data-visual-mode="alternative"] .hud-v2-pill:disabled{
+  opacity:.46!important;filter:saturate(.35)!important;color:#9da5aa!important;
+}
+
+/* ---------- Undo bas gauche ---------- */
+body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-left{
+  position:fixed!important;left:28px!important;bottom:26px!important;width:auto!important;pointer-events:auto!important;
+}
+body[data-visual-mode="alternative"] #cancelCardBtn.hud-v2-undo-btn{
+  width:56px!important;height:56px!important;min-width:56px!important;min-height:56px!important;
+  padding:0!important;border-radius:50%!important;
+  border:1px solid rgba(230,183,75,.30)!important;
+  background:rgba(4,13,22,.72)!important;color:#f1ce78!important;
+  font-size:27px!important;box-shadow:0 10px 22px rgba(0,0,0,.22)!important;
+}
+
+/* ---------- Fin du tour : définitivement bas droite ---------- */
+body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-right{
+  position:fixed!important;right:28px!important;bottom:25px!important;width:auto!important;pointer-events:auto!important;
+}
+body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn{
+  width:clamp(180px,13vw,210px)!important;height:68px!important;min-height:68px!important;
+  padding:0 22px!important;
+  border:1px solid rgba(230,183,75,.48)!important;color:#f3d389!important;
+  background:linear-gradient(90deg,rgba(46,32,16,.82),rgba(87,61,25,.86),rgba(46,32,16,.82))!important;
+  clip-path:polygon(9% 0,91% 0,100% 22%,100% 78%,91% 100%,9% 100%,0 78%,0 22%)!important;
+  border-radius:0!important;
+  font:800 clamp(14px,1vw,18px)/1 Georgia,"Times New Roman",serif!important;
+  letter-spacing:.05em!important;
+  box-shadow:0 11px 25px rgba(0,0,0,.27),0 0 14px rgba(230,183,75,.08)!important;
+}
+body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn:disabled{
+  opacity:.52!important;filter:saturate(.45)!important;
+}
+
+/* Toast : petit carton contextuel, pas un panneau permanent. */
+body[data-visual-mode="alternative"] #hudV2Toast{
+  position:fixed!important;right:28px!important;bottom:112px!important;
+  width:min(310px,28vw)!important;max-width:310px!important;
+  background:rgba(4,13,22,.88)!important;
+  border:1px solid rgba(230,183,75,.29)!important;
+  border-radius:12px!important;
+  clip-path:polygon(5% 0,100% 0,100% 87%,95% 100%,0 100%,0 13%);
+  backdrop-filter:blur(12px)!important;
+}
+
+/* Drawers/popovers restent fonctionnels, simplement harmonisés. */
+body[data-visual-mode="alternative"] .hud-v2-popover,
+body[data-visual-mode="alternative"] .hud-v2-island-drawer,
+body[data-visual-mode="alternative"] .hud-v2-magic-row,
+body[data-visual-mode="alternative"] .hud-v2-push-force-row{
+  background:rgba(4,13,22,.93)!important;
+  border-color:rgba(230,183,75,.34)!important;
+  color:var(--org-text)!important;
+  backdrop-filter:blur(14px)!important;
+}
+
+/* Responsive Chrome non plein écran : préserver la taille des textes et réduire d'abord les espacements. */
+@media(max-height:800px){
+  body[data-visual-mode="alternative"] #hudV2Top{top:8px!important;transform:scale(.90);transform-origin:top center}
+  body[data-visual-mode="alternative"] #hudV2Instruction{bottom:116px!important;transform:translateX(-50%) scale(.90)!important}
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-center{bottom:4px!important;transform:translateX(-50%) scale(.86)!important;transform-origin:bottom center!important}
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-left{left:16px!important;bottom:13px!important;transform:scale(.90);transform-origin:bottom left}
+  body[data-visual-mode="alternative"] #hudV2Dock .hud-v2-action-zone-right{right:16px!important;bottom:13px!important;transform:scale(.90);transform-origin:bottom right}
+  body[data-visual-mode="alternative"] #hudV2Toast{right:16px!important;bottom:88px!important;transform:scale(.88);transform-origin:bottom right}
+}
+
+@media(max-width:1050px){
+  body[data-visual-mode="alternative"] #hudV2Top{left:12px!important;right:12px!important;gap:12px!important;grid-template-columns:minmax(260px,1fr) auto minmax(260px,1fr)!important}
+  body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center{min-width:220px!important;padding-inline:16px!important}
+  body[data-visual-mode="alternative"] .hud-v2-crown-icon{width:19px!important;height:15px!important}
+  body[data-visual-mode="alternative"] #hudV2Dock #endTurnBtn{width:160px!important}
+}
