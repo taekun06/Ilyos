@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Almendra:wght@400;700&family=Cinzel+Decorative:wght@700;900&family=Nunito+Sans:wght@600;700;800;900&display=swap');
+
+/* ILYOS MENU — TYPOGRAPHY G2C
+   Cinzel Decorative = identité / titres / boutons de navigation
+   Almendra = actions et texte expressif
+   Nunito Sans = descriptions / champs / infos
+   Aucun layout n'est modifié. */
+
+:root{
+  --font-ilyos-display:'Cinzel Decorative', Georgia, serif;
+  --font-ilyos-action:'Almendra', Georgia, serif;
+  --font-ilyos-info:'Nunito Sans', Inter, system-ui, sans-serif;
+}
+
+.app{font-family:var(--font-ilyos-info)!important}
+
+.card-title,
+.pill,
+.play,
+.back,
+.duel-nav .pill,
+.panel h1,
+.panel h2,
+.panel h3,
+.panel legend,
+.panel .title,
+.panel .mode-title{
+  font-family:var(--font-ilyos-display)!important;
+  font-weight:700!important;
+  letter-spacing:.035em!important;
+}
+
+.card-sub,
+.desc,
+.panel label,
+.panel input,
+.panel select,
+.panel option,
+.panel small,
+.panel p{
+  font-family:var(--font-ilyos-info)!important;
+}
+
+/* Les libellés de choix/commandes internes gagnent la touche Almendra. */
+.panel button:not(.play):not(.pill),
+.panel .choice,
+.panel .option-label,
+.panel .setting-name{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:700!important;
+}
+
+.card-title{letter-spacing:.025em!important}
+.play{letter-spacing:.06em!important}
