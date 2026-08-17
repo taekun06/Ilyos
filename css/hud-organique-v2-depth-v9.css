@@ -1,0 +1,89 @@
+/* ILYOS — HUD Organique V2 / DEPTH V9
+   Ombres locales, socles renforcés et hiérarchie d'action.
+   Aucun changement de gameplay, aucune augmentation des icônes. */
+
+/* 1) HUD clairement devant le monde 3D : ombres courtes et diffuses. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon{
+  filter:drop-shadow(0 7px 9px rgba(0,0,0,.24))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-avatar{
+  filter:drop-shadow(0 8px 10px rgba(0,0,0,.30))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn{
+  box-shadow:0 10px 20px rgba(0,0,0,.23),inset 0 1px 0 rgba(255,236,185,.035)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-toast{
+  filter:drop-shadow(0 11px 16px rgba(0,0,0,.27))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end{
+  filter:drop-shadow(0 9px 12px rgba(0,0,0,.25))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-undo{
+  box-shadow:0 8px 15px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,230,157,.035)!important;
+}
+
+/* Ombre commune sous le dock : sensation d'un ensemble qui flotte devant le plateau. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+  filter:drop-shadow(0 12px 12px rgba(0,0,0,.25))!important;
+}
+
+/* 2) Socles : un peu plus denses, mais toujours organiques et légers. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action::before{
+  background:radial-gradient(circle at 50% 43%,rgba(39,51,58,.82),rgba(6,16,25,.77) 58%,rgba(3,10,17,.72) 100%)!important;
+  border-color:rgba(230,183,75,.30)!important;
+  box-shadow:0 9px 17px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,237,190,.035)!important;
+}
+
+/* Disponible : bordure subtile, icône nette, texte/quantité inchangés. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(240,197,94,.43)!important;
+  box-shadow:0 0 0 1px rgba(255,220,132,.025),0 9px 17px rgba(0,0,0,.28),0 0 9px rgba(230,183,75,.055)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-magic:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(181,126,246,.46)!important;
+}
+
+/* Indisponible : matière éteinte, mais nom et quantité restent prioritaires. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  background:radial-gradient(circle at 50% 43%,rgba(26,33,38,.63),rgba(5,13,21,.61) 68%,rgba(3,9,15,.58))!important;
+  border-color:rgba(167,178,184,.18)!important;
+  box-shadow:0 7px 13px rgba(0,0,0,.20)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  color:#f8f1e4!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled small{
+  color:#f0d99f!important;
+  opacity:1!important;
+}
+
+/* Actif : liseré lumineux précis + glow intérieur, sans grossir le bouton. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
+  border-color:#ffe095!important;
+  background:radial-gradient(circle at 50% 43%,rgba(132,91,28,.34),rgba(7,16,24,.81) 65%,rgba(3,10,17,.76))!important;
+  box-shadow:0 0 0 1px rgba(255,225,154,.24),inset 0 0 16px rgba(255,201,76,.075),0 0 18px rgba(230,183,75,.24),0 10px 18px rgba(0,0,0,.30)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::before{
+  border-color:#d1a5ff!important;
+  background:radial-gradient(circle at 50% 43%,rgba(98,53,145,.34),rgba(9,13,25,.82) 65%,rgba(4,8,17,.77))!important;
+  box-shadow:0 0 0 1px rgba(215,176,255,.22),inset 0 0 16px rgba(179,111,255,.075),0 0 19px rgba(168,109,242,.26),0 10px 18px rgba(0,0,0,.30)!important;
+}
+
+/* La ligne reste sous la quantité : surtout ne pas la remonter. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before{bottom:-4px!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after{bottom:-8px!important}
+
+/* Focus clavier aussi lisible que le hover. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:focus-visible,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end:focus-visible,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-undo:focus-visible,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-gem:focus-visible{
+  outline:2px solid rgba(255,224,149,.88)!important;
+  outline-offset:3px!important;
+}
+
+@media(prefers-reduced-motion:reduce){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action{transition:none!important}
+}
