@@ -1,0 +1,137 @@
+/* ILYOS — HUD CONSOLIDATION V12
+   Source unique pour les correctifs contextuels validés.
+
+   CONSERVE volontairement :
+   - géométrie / spacing actuel du dock principal ;
+   - longueur actuelle de la ligne dorée ;
+   - fondu volontaire des rubans joueurs dans le ciel ;
+   - tailles actuelles des icônes ;
+   - profondeur / socles V10.
+
+   RESTAURE uniquement : tiroirs contextuels, rotation d'île, Undo et instruction.
+   Aucun gameplay, coût, déplacement ou règle n'est modifié ici. */
+
+body[data-visual-mode="alternative"] #gameScreen{
+  --ov2-context-bottom:188px;
+}
+
+/* Le tiroir d'île respire davantage SANS modifier l'espacement des 4 actions. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{
+  gap:clamp(14px,1.5vw,24px)!important;
+  padding:6px 8px!important;
+}
+
+/* Tous les contrôles contextuels appartiennent au même niveau visuel :
+   centrés, juste au-dessus de la phrase d'instruction. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
+  position:fixed!important;
+  left:50%!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:var(--ov2-context-bottom)!important;
+  margin:0!important;
+  transform:translateX(-50%)!important;
+  transform-origin:bottom center!important;
+  z-index:100050!important;
+  pointer-events:auto!important;
+}
+
+/* Les flèches natives restent dans le DOM comme contrôles métier, mais V12
+   dessine une seule barre contextuelle cohérente pendant le placement. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v12-rotation-mode{
+  display:none!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:8px 10px;
+  border-radius:16px;
+  background:rgba(18,22,30,.72);
+  border:1px solid rgba(226,200,138,.34);
+  -webkit-backdrop-filter:blur(14px) saturate(.95);
+  backdrop-filter:blur(14px) saturate(.95);
+  box-shadow:0 12px 30px rgba(0,0,0,.32);
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12.hidden{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label{
+  margin-right:3px;
+  color:#f5dfaa;
+  font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.12em;
+  white-space:nowrap;
+  text-shadow:0 1px 3px rgba(0,0,0,.85);
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-magic-btn{
+  min-height:32px;
+}
+
+/* Magie / poussée : même matière que le reste du HUD, aucune duplication. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
+  background:rgba(18,22,30,.72)!important;
+  border-color:rgba(226,200,138,.28)!important;
+  box-shadow:0 11px 27px rgba(0,0,0,.29)!important;
+  -webkit-backdrop-filter:blur(14px) saturate(.95)!important;
+  backdrop-filter:blur(14px) saturate(.95)!important;
+}
+
+/* Étoiles attachées à la phrase et non à une largeur arbitraire de panneau. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction{
+  font-size:0!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::before,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::after{
+  content:none!important;
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  max-width:100%;
+  white-space:nowrap;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text{
+  color:#fff0c6;
+  font:700 clamp(14px,1vw,16px)/1.25 Georgia,"Times New Roman",serif;
+  text-shadow:0 1px 3px rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.58),0 0 10px rgba(2,8,14,.42);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-star{
+  flex:0 0 auto;
+  color:#e6b74b;
+  font:700 12px/1 Georgia,"Times New Roman",serif;
+  text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{
+  left:50%!important;
+  right:auto!important;
+  width:min(360px,70%)!important;
+  transform:translateX(-50%)!important;
+}
+
+@media(max-width:900px){
+  body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{
+    gap:12px!important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12,
+  body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+  body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
+    gap:5px!important;
+    padding:7px 8px!important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{
+    gap:12px;
+  }
+}
