@@ -7,16 +7,21 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
 
   const base=document.createElement('link');
   base.rel='stylesheet';
-  base.href='./css/hud-organique-v2.css?v=6';
+  base.href='./css/hud-organique-v2.css?v=7';
   document.head.appendChild(base);
 
   const polish=document.createElement('link');
   polish.rel='stylesheet';
-  polish.href='./css/hud-organique-v2-polish-v6.css?v=6';
+  polish.href='./css/hud-organique-v2-polish-v6.css?v=7';
   document.head.appendChild(polish);
 
+  const readability=document.createElement('link');
+  readability.rel='stylesheet';
+  readability.href='./css/hud-organique-v2-readability-v7.css?v=7';
+  document.head.appendChild(readability);
+
   const script=document.createElement('script');
-  script.src='./js/hud-organique-v2.js?v=6';
+  script.src='./js/hud-organique-v2.js?v=7';
   script.defer=true;
   document.head.appendChild(script);
 })();
