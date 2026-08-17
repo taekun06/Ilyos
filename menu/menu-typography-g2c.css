@@ -1,0 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=Almendra:wght@400;700&family=Cinzel+Decorative:wght@700;900&family=Nunito+Sans:wght@600;700;800;900&display=swap');
+
+/* ILYOS MENU — TYPOGRAPHY G2C / POLISH 3
+   Almendra = voix principale de TOUS les menus.
+   Cinzel Decorative = uniquement :
+   1) les 4 titres de mode du menu 1 ;
+   2) le nom du mode actif dans le menu 2 (SOLO / DUEL LOCAL / 2 CONTRE 2 / EN LIGNE).
+   Aucun gameplay ni géométrie de panneau modifié. */
+
+:root{
+  --font-ilyos-display:'Cinzel Decorative', Georgia, serif;
+  --font-ilyos-action:'Almendra', Georgia, serif;
+  --font-ilyos-info:'Nunito Sans', Inter, system-ui, sans-serif;
+}
+
+/* Almendra devient réellement la voix de tout le menu. */
+.app,
+.app button,
+.app input,
+.app select,
+.app option,
+.pill,
+.play,
+.back,
+.duel-nav .pill,
+.panel,
+.panel *,
+.desc,
+.card-sub,
+.menu-modal,
+.menu-modal *{
+  font-family:var(--font-ilyos-action)!important;
+}
+
+/* EXCEPTION 1 — les quatre cartes de mode du premier écran. */
+.mode-grid .card-title{
+  font-family:var(--font-ilyos-display)!important;
+  font-weight:700!important;
+  letter-spacing:.025em!important;
+}
+.mode-grid .card-sub{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:400!important;
+}
+
+/* EXCEPTION 2 — nom du mode actif au centre du menu 2. */
+.duel .duel-medallion b{
+  font-family:var(--font-ilyos-display)!important;
+  font-weight:900!important;
+  letter-spacing:.055em!important;
+  text-shadow:0 2px 4px rgba(0,0,0,.82),0 0 10px rgba(239,197,103,.12)!important;
+}
+
+/* Le kicker sous SOLO reste Almendra pour créer une vraie hiérarchie. */
+.duel .duel-medallion small{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:700!important;
+  letter-spacing:.08em!important;
+}
+
+/* Panneau central : Almendra partout, y compris valeurs et difficulté. */
+.duel .label,
+.duel .control .value,
+.duel .control .value-text,
+.duel .difficulty-zone-label,
+.duel .difficulty-selector b,
+.duel .duelist small,
+.duel .duelist b,
+.duel .field,
+.duel .editable-value,
+.duel .team-name-title,
+.duel .match-recap,
+.duel .match-recap *{
+  font-family:var(--font-ilyos-action)!important;
+}
+
+/* CTA : Almendra devient volontairement très imposante sans agrandir le bouton. */
+.duel .play{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:700!important;
+  letter-spacing:.02em!important;
+}
+.duel .play .play-main{
+  font-family:var(--font-ilyos-action)!important;
+  font-size:clamp(26px,1.65vw,36px)!important;
+  font-weight:700!important;
+  line-height:.92!important;
+  letter-spacing:.012em!important;
+  text-shadow:0 1px 0 rgba(255,237,188,.34),0 2px 3px rgba(91,47,5,.22)!important;
+}
+.duel .play small{
+  font-family:var(--font-ilyos-action)!important;
+  font-size:clamp(11px,.67vw,14px)!important;
+  font-weight:700!important;
+  letter-spacing:.105em!important;
+}
+
+/* Navigation secondaire : Almendra lisible, légèrement plus assumée. */
+.pill,
+.back,
+.duel-nav .pill{
+  font-weight:700!important;
+  letter-spacing:.012em!important;
+}
