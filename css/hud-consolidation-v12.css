@@ -35,13 +35,34 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-ins
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-star{flex:0 0 auto;color:#e6b74b;font:700 12px/1 Georgia,"Times New Roman",serif;text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72)}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{left:50%!important;right:auto!important;width:min(360px,70%)!important;transform:translateX(-50%)!important}
 
-/* Réserve détaillée : MOVE / PUSH / MAGIC au lieu d'un total opaque. */
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{display:inline-flex;align-items:center;gap:6px;height:25px;padding:0 8px;border-radius:12px;border:1px solid rgba(230,183,75,.30);background:rgba(4,13,22,.36);color:#f0d68e;font:800 9px/1 Inter,system-ui,sans-serif;letter-spacing:.06em;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.72);box-shadow:inset 0 0 10px rgba(230,183,75,.04)}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{color:#d8b5ff;border-color:rgba(168,109,242,.30)}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-label{opacity:.72;font-size:8px;letter-spacing:.09em}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{display:inline-flex;align-items:center;gap:2px;min-width:24px;justify-content:center}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{width:13px;height:13px;flex:none}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{font-size:10px;color:#fff0c0}
+/* Réserve V12.5 : aucune capsule. Simple libellé + trois compteurs lisibles. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
+  display:inline-flex;align-items:center;gap:10px;height:26px;padding:0!important;
+  border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;
+  color:#f0d68e;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;white-space:nowrap;
+  text-shadow:0 1px 3px rgba(0,0,0,.74)
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{color:#d8b5ff!important;border:0!important;background:transparent!important;box-shadow:none!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-label{
+  opacity:.66;font-size:8px;letter-spacing:.11em;margin-right:2px
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:0;padding:0!important;
+  border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action + .ov2-reserve-action::before{
+  content:"·";position:absolute;left:-7px;top:50%;transform:translateY(-52%);color:rgba(245,220,160,.38);font-size:11px;font-weight:700
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve-action + .ov2-reserve-action::before{color:rgba(216,181,255,.34)}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{
+  width:16px;height:16px;flex:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{
+  min-width:10px;font-size:13px;line-height:1;color:#fff1c4;font-weight:900;letter-spacing:0;text-align:left;
+  text-shadow:0 1px 3px rgba(0,0,0,.82)
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve-action b{color:#f0ddff}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-move{color:#f2d47f}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-push{color:#ffb05e}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-magic{color:#d5a5ff}
 
@@ -67,6 +88,8 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-fo
   body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
   body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{gap:5px!important;padding:7px 8px!important}
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{gap:12px}
-  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{gap:4px;padding:0 5px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{gap:7px}
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-label{display:none}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{width:14px;height:14px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{font-size:12px}
 }
