@@ -1,0 +1,241 @@
+/* ILYOS — HUD Organique V2 / READABILITY V7
+   Priorité absolue : HUD clairement au premier plan et informations toujours lisibles.
+   Aucun changement de gameplay ni de taille des icônes. */
+
+/* =========================================================
+   1. SÉPARATION VISUELLE HUD / MONDE 3D
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2::before{
+  content:"";
+  position:fixed;
+  z-index:0;
+  pointer-events:none;
+  left:0;
+  right:0;
+  top:0;
+  height:118px;
+  background:linear-gradient(180deg,
+    rgba(3,10,17,.27) 0%,
+    rgba(3,10,17,.15) 44%,
+    rgba(3,10,17,.045) 76%,
+    transparent 100%);
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2::after{
+  content:"";
+  position:fixed;
+  z-index:0;
+  pointer-events:none;
+  left:0;
+  right:0;
+  bottom:0;
+  height:158px;
+  background:linear-gradient(0deg,
+    rgba(3,10,17,.22) 0%,
+    rgba(3,10,17,.10) 46%,
+    transparent 100%);
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 > *{
+  z-index:2;
+}
+
+/* Le texte essentiel ne dépend jamais de la luminosité du plateau. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn strong,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn .ov2-timer,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
+  text-shadow:
+    0 1px 2px rgba(0,0,0,.98),
+    0 2px 6px rgba(0,0,0,.78),
+    0 0 10px rgba(2,8,14,.38)!important;
+}
+
+/* =========================================================
+   2. BARRES HAUTES / COURONNES : TOUJOURS LISIBLE
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname{
+  color:#fff8e9!important;
+  font-weight:700!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown{
+  width:24px!important;
+  height:18px!important;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.7)) drop-shadow(0 0 5px rgba(255,216,121,.24))!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
+  opacity:.34!important;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))!important;
+}
+
+/* =========================================================
+   3. TOUR / TIMER : LE MENU REMPLACE LE SÉPARATEUR
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn{
+  gap:11px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem{
+  position:relative!important;
+  width:28px!important;
+  height:28px!important;
+  min-width:28px!important;
+  padding:0!important;
+  transform:none!important;
+  border-radius:50%!important;
+  border:1px solid rgba(255,215,121,.54)!important;
+  background:rgba(5,15,24,.88)!important;
+  box-shadow:
+    0 4px 10px rgba(0,0,0,.30),
+    inset 0 0 0 1px rgba(255,255,255,.025),
+    0 0 8px rgba(230,183,75,.10)!important;
+  color:#f5d47f!important;
+  cursor:pointer!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem::before{
+  content:"⚙";
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  color:#f5d47f;
+  font:700 14px/1 system-ui,sans-serif;
+  transform:none;
+  text-shadow:0 1px 3px rgba(0,0,0,.9);
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem:hover{
+  border-color:#ffe19a!important;
+  background:rgba(33,27,16,.92)!important;
+  box-shadow:0 0 13px rgba(230,183,75,.24),0 4px 10px rgba(0,0,0,.32)!important;
+}
+
+/* =========================================================
+   4. DOCK : INFORMATIONS TOUJOURS NETTES
+   ========================================================= */
+/* Demande utilisateur : conserver exactement la taille d'icône V2. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action .ov2-ico{
+  width:38px!important;
+  height:38px!important;
+  margin-bottom:13px!important;
+}
+
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong{
+  color:#fff8e9!important;
+  font-weight:800!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small{
+  color:#f4dfad!important;
+  font-size:13px!important;
+  line-height:1!important;
+  font-weight:900!important;
+  letter-spacing:.045em!important;
+  opacity:1!important;
+  font-variant-numeric:tabular-nums!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MoveCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2PushCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MagicCount{
+  color:#ffe5a2!important;
+  font-size:13px!important;
+  font-weight:900!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2Island small{
+  color:#ffd879!important;
+  font-size:11px!important;
+  font-weight:900!important;
+  letter-spacing:.055em!important;
+}
+
+/* Une action indisponible reste identifiable : on assombrit l'objet, jamais l'information. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled{
+  opacity:1!important;
+  filter:none!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  border-color:rgba(176,184,191,.14)!important;
+  background:radial-gradient(circle at 50% 55%,rgba(15,25,34,.49),rgba(3,12,20,.42))!important;
+  box-shadow:0 7px 14px rgba(0,0,0,.14)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
+  opacity:.42!important;
+  filter:saturate(.20) brightness(.82)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  color:rgba(255,248,233,.88)!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled small{
+  color:#ead59f!important;
+  opacity:1!important;
+}
+
+/* Disponible mais non sélectionné : icône claire, sans faux glow. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected) .ov2-ico{
+  opacity:.91!important;
+}
+/* Sélection : état sans ambiguïté. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
+  border-color:#ffd879!important;
+  box-shadow:0 0 0 1px rgba(255,216,121,.15),0 0 20px rgba(230,183,75,.25),0 9px 18px rgba(0,0,0,.22)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected strong,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected small{
+  color:#ffe6a5!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::before{
+  border-color:#c99cff!important;
+  box-shadow:0 0 0 1px rgba(201,156,255,.14),0 0 21px rgba(168,109,242,.27),0 9px 18px rgba(0,0,0,.22)!important;
+}
+
+/* La ligne d'or est désormais réellement SOUS les quantités. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock::before{
+  bottom:-3px!important;
+  height:1px!important;
+  opacity:.70!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock::after{
+  bottom:-7px!important;
+}
+
+/* =========================================================
+   5. FIN DE TOUR / UNDO / INSTRUCTION
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled{
+  opacity:1!important;
+  color:rgba(255,244,217,.82)!important;
+  background:linear-gradient(90deg,rgba(24,29,31,.70),rgba(45,47,43,.72),rgba(24,29,31,.70))!important;
+  border-color:rgba(230,183,75,.25)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled svg{
+  opacity:.56!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled b{
+  color:rgba(255,244,217,.84)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+  font-size:25px!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.9)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo:disabled{
+  opacity:.62!important;
+  color:#dec783!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
+  font-weight:700!important;
+}
+
+/* =========================================================
+   6. CHROME FENÊTRÉ : NE JAMAIS SACRIFIER LE TEXTE
+   ========================================================= */
+@media(max-height:800px){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong{
+    font-size:13px!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MoveCount,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2PushCount,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MagicCount{
+    font-size:12px!important;
+  }
+}
