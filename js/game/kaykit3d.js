@@ -617,7 +617,7 @@
           canvas, badge, controls, status, cursorLabel, cameraHint, uiNodes: [badge, controls, status, cursorLabel, cameraHint], renderer, scene, camera, root,
           staticGroup, dynamicGroup, characterGroup, hitGroup, fxGroup, raycaster, pointer, clock, loader, textureLoader,
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
-          textureCache: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
+          textureCache: new Map(), islandTintTextures: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
           mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
@@ -4204,10 +4204,47 @@
         return ILYOS_ISLAND_TINTS[index % ILYOS_ISLAND_TINTS.length];
       }
 
-      function applyIslandTintToMaterial(material, variantIndex) {
-        if (!material?.color) return;
-        const tint = new THREE.Color(ILYOS_ISLAND_TINTS[variantIndex]);
-        material.color.copy(material.color.clone().lerp(tint, .32));
+      function kaykitIslandTintTexture(sourceTexture, variantIndex) {
+        const sourceImage = sourceTexture?.image;
+        if (!sourceImage?.width || !sourceImage?.height) return sourceTexture;
+        const cacheKey = `${sourceTexture.uuid}|${variantIndex}`;
+        const cached = kaykit3D?.islandTintTextures?.get(cacheKey);
+        if (cached) return cached;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = sourceImage.width;
+        canvas.height = sourceImage.height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return sourceTexture;
+        context.drawImage(sourceImage, 0, 0);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const pixels = imageData.data;
+        const tint = ILYOS_ISLAND_TINTS[variantIndex];
+        const red = (tint >> 16) & 255;
+        const green = (tint >> 8) & 255;
+        const blue = tint & 255;
+
+        for (let index = 0; index < pixels.length; index += 4) {
+          const sourceRed = pixels[index];
+          const sourceGreen = pixels[index + 1];
+          const sourceBlue = pixels[index + 2];
+          // L'atlas Block Bits partage herbe et terre. Seuls les pixels dont
+          // le vert domine franchement sont remplacés : les flancs orange,
+          // rochers et autres détails gardent ainsi exactement leur texture.
+          if (sourceGreen > 72 && sourceGreen > sourceRed * 1.18 && sourceGreen > sourceBlue * 1.18) {
+            pixels[index] = red;
+            pixels[index + 1] = green;
+            pixels[index + 2] = blue;
+          }
+        }
+        context.putImageData(imageData, 0, 0);
+
+        const texture = sourceTexture.clone();
+        texture.image = canvas;
+        texture.needsUpdate = true;
+        texture.name = `${sourceTexture.name || "block-bits"}-island-${variantIndex}`;
+        kaykit3D?.islandTintTextures?.set(cacheKey, texture);
+        return texture;
       }
 
       function kaykitIslandTintMaterial(baseMaterial, variant) {
@@ -4225,12 +4262,9 @@
           map.minFilter = THREE.NearestMipmapNearestFilter || THREE.NearestFilter;
           map.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
           map.needsUpdate = true;
-          material.map = map;
+          material.map = kaykitIslandTintTexture(map, variantIndex);
         }
-        material.roughness = .84;
-        material.metalness = 0;
-        material.toneMapped = false;
-        applyIslandTintToMaterial(material, variantIndex);
+        material.color?.set(0xffffff);
         material.userData.ilyosSharedIslandTint = true;
         material.name = `${baseMaterial.name || "block-bits"}-island-tint-${variantIndex}`;
         material.needsUpdate = true;
