@@ -1,5 +1,5 @@
     (function forceLatestIlyosVersion() {
-      const VERSION = "ILYOS_20260817_ISLAND_GRASS_COLORS_1";
+      const VERSION = "ILYOS_20260817_MAIN_V12_6_G2C_1";
       try {
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.getRegistrations().then(registrations => registrations.forEach(reg => reg.unregister()));
