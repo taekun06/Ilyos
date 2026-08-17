@@ -151,7 +151,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
    The visual menu lives entirely in /menu. This file only bridges it to the existing game. */
 (function () {
   if (window.__ILYOS_MENU_IFRAME_BOOT__) return;
-  window.__ILYOS_MENU_ORGANIC_LOADER__ = true;
+  window.__ILYOS_MENU_IFRAME_BOOT__ = true;
 
   const guardStyle = document.createElement('style');
   guardStyle.id = 'ilyos-menu-v11-guard';
