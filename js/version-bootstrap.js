@@ -4,12 +4,19 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
 (function(){
   if (window.__ILYOS_HUD_ORGANIC_LOADER__) return;
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
-  const link=document.createElement('link');
-  link.rel='stylesheet';
-  link.href='./css/hud-organique-v2.css?v=5';
-  document.head.appendChild(link);
+
+  const base=document.createElement('link');
+  base.rel='stylesheet';
+  base.href='./css/hud-organique-v2.css?v=6';
+  document.head.appendChild(base);
+
+  const polish=document.createElement('link');
+  polish.rel='stylesheet';
+  polish.href='./css/hud-organique-v2-polish-v6.css?v=6';
+  document.head.appendChild(polish);
+
   const script=document.createElement('script');
-  script.src='./js/hud-organique-v2.js?v=5';
+  script.src='./js/hud-organique-v2.js?v=6';
   script.defer=true;
   document.head.appendChild(script);
 })();
