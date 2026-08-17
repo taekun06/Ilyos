@@ -1,4 +1,131 @@
-window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
+/* ILYOS — version canonique.
+   Toute version visible doit lire window.ILYOS_BUILD au lieu de recopier un numéro. */
+window.ILYOS_BUILD = "V76";
+document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
+
+/* L'ancien splash contient encore un fallback HTML historique (V64).
+   Il n'est plus une source de vérité : avant qu'il puisse être affiché,
+   son libellé est reconstruit depuis ILYOS_BUILD. */
+(function syncVisibleBuildLabel(){
+  function applyBuildLabel(){
+    const label = document.querySelector('#altModeIntro .alt-intro-copy strong');
+    if (label) label.textContent = `ILYOS · ARCHIPEL CÉLESTE ${window.ILYOS_BUILD}`;
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyBuildLabel, { once:true });
+  } else {
+    applyBuildLabel();
+  }
+})();
+
+/* Caméra FRONT canonique.
+   Le moteur fait un auto-fit complet du plateau lors de initKayKit3D(), puis à
+   chaque rappel de VUE FACE. Sur un écran 16:9 cela produit le gros dézoom vu
+   en jeu. Le preset validé visuellement doit au contraire rester proche du
+   zoom minimal : il remplit le cadre tout en gardant les quatre sanctuaires
+   périphériques lisibles.
+
+   Le hook est installé AVANT game.js. Lors de l'exposition window.kaykit3D,
+   maxZoom est limité à 6.4 uniquement pendant l'initialisation synchrone : le
+   resize forcé de démarrage ne peut donc plus dézoomer. La valeur normale de
+   maxZoom est restaurée dès la micro-tâche suivante, donc la molette conserve
+   toute sa plage ensuite. */
+(function installFrontCameraPreset(){
+  if (window.__ILYOS_FRONT_CAMERA_PRESET__) return;
+  window.__ILYOS_FRONT_CAMERA_PRESET__ = true;
+
+  const FRONT_DISTANCE = 6.4;
+  const FRONT_Y = .52;
+  const FRONT_Z = .90;
+  let currentKaykit = window.kaykit3D || null;
+
+  function applyFrontPreset(k = currentKaykit){
+    if (!k?.camera || !k?.viewTarget || !window.THREE) return false;
+
+    const distance = Math.max(
+      Number.isFinite(k.minZoom) ? k.minZoom : FRONT_DISTANCE,
+      Math.min(FRONT_DISTANCE, Number.isFinite(k.maxZoom) ? k.maxZoom : FRONT_DISTANCE)
+    );
+
+    k.cameraTween = null;
+    k.viewMode = 'front';
+    k.autoFit = false;
+    k.userRotated = false;
+    k.zoomDistance = distance;
+
+    if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, .22, .18);
+    const target = k.viewTarget;
+    k.camera.position.set(
+      target.x,
+      target.y + distance * FRONT_Y,
+      target.z + distance * FRONT_Z
+    );
+    k.camera.lookAt(target);
+
+    if (k.orbit) {
+      k.orbit.target.copy(target);
+      k.orbit.update();
+    }
+    return true;
+  }
+
+  /* Intercepte la toute première affectation faite par game.js. */
+  try {
+    const existing = Object.getOwnPropertyDescriptor(window, 'kaykit3D');
+    if (!existing || existing.configurable) {
+      Object.defineProperty(window, 'kaykit3D', {
+        configurable: true,
+        enumerable: true,
+        get(){ return currentKaykit; },
+        set(value){
+          currentKaykit = value;
+          if (!value) return;
+
+          const normalMaxZoom = Number.isFinite(value.maxZoom) ? value.maxZoom : 25;
+          value.zoomDistance = FRONT_DISTANCE;
+          value.maxZoom = Math.min(normalMaxZoom, FRONT_DISTANCE);
+
+          queueMicrotask(() => {
+            if (currentKaykit !== value) return;
+            value.maxZoom = normalMaxZoom;
+            applyFrontPreset(value);
+          });
+        }
+      });
+    }
+  } catch (_) {
+    /* Le fallback ci-dessous suffit si un navigateur refuse de redéfinir la propriété. */
+  }
+
+  /* Après un clic VUE FACE, le moteur lance son tween d'auto-fit. On le laisse
+     traiter son UI, puis on annule seulement ce tween et on réapplique le
+     cadrage de référence. Le clic ISO et les mouvements libres sont intacts. */
+  document.addEventListener('click', event => {
+    const target = event.target?.closest?.('[data-kay-view-face], [data-hud-camera="front"]');
+    if (!target) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => applyFrontPreset(window.kaykit3D || currentKaykit));
+    });
+  }, true);
+
+  /* Sécurité au passage réel menu -> partie : elle corrige aussi un éventuel
+     resize tardif du navigateur sans créer de suivi permanent ni coût par frame. */
+  function watchGameVisibility(){
+    const game = document.getElementById('gameScreen');
+    if (!game) return;
+    const applyWhenVisible = () => {
+      if (game.classList.contains('hidden')) return;
+      requestAnimationFrame(() => applyFrontPreset(window.kaykit3D || currentKaykit));
+      setTimeout(() => applyFrontPreset(window.kaykit3D || currentKaykit), 80);
+    };
+    new MutationObserver(applyWhenVisible).observe(game, { attributes:true, attributeFilter:['class'] });
+    applyWhenVisible();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchGameVisibility, { once:true });
+  else watchGameVisibility();
+
+  window.ILYOS_applyFrontCameraPreset = () => applyFrontPreset(window.kaykit3D || currentKaykit);
+})();
 
 /* HUD Organique V2 DIRECT — overlay autonome issu du prototype validé. */
 (function(){
@@ -27,8 +154,7 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
     './js/hud-organique-v2-depth-v9.js?v=12.7',
     './js/hud-organique-v2-depth-v10.js?v=12.7',
     './js/hud-consolidation-v12.js?v=12.7',
-    './js/ai-move-tail-guard-v12.js?v=12.7',
-    './js/runtime-polish-v13.js?v=13.0'
+    './js/ai-move-tail-guard-v12.js?v=12.7'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
@@ -138,7 +264,7 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
-    frame.src = './menu/frame.html?v=menu-duel-15';
+    frame.src = `./menu/frame.html?v=${encodeURIComponent(window.ILYOS_BUILD)}`;
     frame.setAttribute('allow', 'autoplay; fullscreen');
     frame.allowFullscreen = true;
     document.body.appendChild(frame);
