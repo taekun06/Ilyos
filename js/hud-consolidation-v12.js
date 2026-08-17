@@ -16,19 +16,23 @@
   let polishTailTimer = 0;
   let last3DPolishAt = 0;
 
-  /* Proposition 1 validée : deux empreintes de pas, simples et immédiatement
-     lisibles. Elles restent dans la même famille de traits dorés que le HUD. */
+  /* Proposition 1 validée : empreintes plus grandes, orientées vers le haut
+     (du bas-gauche vers le haut-droit), dans la même famille dorée du HUD. */
   const moveFootprintsSvg = `
     <svg class="ov2-ico ov2-move-footprints" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      <g transform="rotate(-18 24 24)" fill="#f3d27f">
-        <ellipse cx="17" cy="14" rx="5.1" ry="8.1"/>
-        <circle cx="13.2" cy="24.2" r="2.1"/>
-        <circle cx="17.1" cy="23.2" r="2.15"/>
-        <circle cx="20.7" cy="21.6" r="1.85"/>
-        <ellipse cx="31" cy="31.5" rx="5.1" ry="8.1"/>
-        <circle cx="27.1" cy="41.1" r="2.1"/>
-        <circle cx="31" cy="40.1" r="2.15"/>
-        <circle cx="34.6" cy="38.5" r="1.85"/>
+      <g fill="#f3d27f">
+        <g transform="rotate(18 16 31)">
+          <ellipse cx="16" cy="31" rx="5.8" ry="8.2"/>
+          <circle cx="11.8" cy="21.1" r="2.35"/>
+          <circle cx="15.9" cy="20.0" r="2.45"/>
+          <circle cx="20.0" cy="20.8" r="2.15"/>
+        </g>
+        <g transform="rotate(18 31 16)">
+          <ellipse cx="31" cy="16.5" rx="5.8" ry="8.2"/>
+          <circle cx="26.8" cy="6.9" r="2.35"/>
+          <circle cx="30.9" cy="5.8" r="2.45"/>
+          <circle cx="35.0" cy="6.6" r="2.15"/>
+        </g>
       </g>
     </svg>`;
 
@@ -115,18 +119,31 @@
 
   function installMoveIcon(){
     const move = byId('ov2Move');
-    if (!move || move.dataset.v12MoveIcon === 'footprints') return;
+    if (!move || move.dataset.v12MoveIcon === 'footprints-up') return;
     const icon = move.querySelector('svg.ov2-ico');
     if (!icon) return;
     icon.outerHTML = moveFootprintsSvg;
-    move.dataset.v12MoveIcon = 'footprints';
+    move.dataset.v12MoveIcon = 'footprints-up';
+  }
+
+  function ensureIslandHalo(){
+    const island = byId('ov2Island');
+    if (!island || island.querySelector('.ov2-island-required-halo')) return;
+    const halo = document.createElement('span');
+    halo.className = 'ov2-island-required-halo';
+    halo.setAttribute('aria-hidden','true');
+    island.prepend(halo);
   }
 
   function syncIslandRequiredState(){
     const island = byId('ov2Island');
-    const source = byId('hudV2IslandStatus');
     if (!island) return;
-    const required = !!source && !source.classList.contains('hidden') && !source.disabled;
+    ensureIslandHalo();
+
+    /* Le HUD direct masque complètement le bouton une fois l'île faite. C'est
+       donc le signal le plus robuste pour l'état obligatoire, sans dépendre du
+       timing du HUD historique. */
+    const required = !island.classList.contains('ov2-off') && !island.disabled;
     island.classList.toggle('ov2-island-required',required);
   }
 
@@ -202,19 +219,12 @@
     });
   }
 
-  function cellSurfaceY(r,c){
-    const visuals = window.kaykit3D?.cellVisuals?.get?.(`${r},${c}`);
-    return visuals?.length ? .47 : .05;
-  }
-
   function syncVillageFlags(){
     const dynamic = window.kaykit3D?.dynamicGroup;
     if (!dynamic?.children?.length || !window.THREE) return;
 
-    /* Le fanion historique est reconnaissable sans dépendre du nom du GLTF :
-       il est l'enfant ajouté au château à la position locale (.48,0,.34).
-       On le masque puis on réutilise exactement ce modèle deux fois sur les
-       deux cases adjacentes vers l'intérieur du plateau. */
+    /* Le fanion historique est l'enfant du château à (.48,0,.34). On le cache
+       et on réutilise son vrai modèle deux fois, sur les deux cases adjacentes. */
     const originals = [];
     dynamic.children.forEach(parent=>{
       if (!parent?.children?.length || parent.userData?.ov2VillageFlagV12) return;
@@ -253,16 +263,20 @@
       const r0 = Math.round(castle.position.z / CELL_SPACING + BOARD_CENTER);
       const dc = castle.position.x <= 0 ? 1 : -1;
       const dr = castle.position.z <= 0 ? 1 : -1;
+      const outwardX = castle.position.x <= 0 ? -1 : 1;
+      const outwardZ = castle.position.z <= 0 ? -1 : 1;
+      const cornerOffset = .34;
       const targets = [
-        { r:r0, c:c0 + dc, edgeZ:castle.position.z <= 0 ? -.20 : .20 },
-        { r:r0 + dr, c:c0, edgeX:castle.position.x <= 0 ? -.20 : .20 }
+        { r:r0, c:c0 + dc },
+        { r:r0 + dr, c:c0 }
       ];
 
       targets.forEach((target,index)=>{
         const clone = clones[index];
-        const x = (target.c - BOARD_CENTER) * CELL_SPACING + (target.edgeX || 0);
-        const z = (target.r - BOARD_CENTER) * CELL_SPACING + (target.edgeZ || 0);
-        clone.position.set(x,cellSurfaceY(target.r,target.c),z);
+        const x = (target.c - BOARD_CENTER) * CELL_SPACING + outwardX * cornerOffset;
+        const z = (target.r - BOARD_CENTER) * CELL_SPACING + outwardZ * cornerOffset;
+        // Même niveau de base que le château/village, quelle que soit la case.
+        clone.position.set(x,castle.position.y,z);
         clone.quaternion.copy(castle.quaternion).multiply(flag.quaternion);
         clone.visible = true;
       });
@@ -388,6 +402,7 @@
     syncInstructionText();
     installUndoFix();
     installMoveIcon();
+    ensureIslandHalo();
     ensureReserveBadges();
     syncReserveBadges();
     syncIslandRequiredState();
