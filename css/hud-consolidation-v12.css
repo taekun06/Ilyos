@@ -1,3 +1,5 @@
+@import url('./typography-g2c.css');
+
 /* ILYOS — HUD CONSOLIDATION V12
    Source unique pour les correctifs contextuels validés. */
 
@@ -71,7 +73,6 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action 
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{min-height:16px;display:flex;align-items:center;justify-content:center}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small{min-height:14px;display:flex;align-items:center;justify-content:center;margin-top:2px!important}
 
-/* Halo dédié : séparé du ::before, donc Depth V10 ne peut plus l'écraser. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island{overflow:visible!important}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island .ov2-island-required-halo{
   position:absolute;left:50%;top:38px;width:82px;height:82px;transform:translate(-50%,-50%) rotate(1deg);pointer-events:none;z-index:-2;
@@ -92,7 +93,6 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.o
   50%{transform:translate(-50%,-50%) rotate(1deg) scale(1.07);filter:brightness(1.22);box-shadow:0 0 13px rgba(255,237,179,1),0 0 31px rgba(255,211,104,.88),0 0 54px rgba(255,170,32,.48)}
 }
 
-/* Empreintes plus grandes et direction clairement montante. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-footprints{
   overflow:visible;width:47px!important;height:47px!important;transform:scale(1.13)!important;transform-origin:center;filter:drop-shadow(0 3px 5px rgba(0,0,0,.36))
 }
