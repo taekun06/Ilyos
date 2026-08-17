@@ -7,6 +7,16 @@
 
   const byId = id => document.getElementById(id);
   let scheduled = false;
+  let drawerCloseLockUntil = 0;
+  let drawerCloseUnlockTimer = 0;
+
+  const moveWingedBootSvg = `
+    <svg class="ov2-ico ov2-move-winged" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <path d="M21 7h9l2 15 9 5-4 10H17l-8-6 7-8 3-16Z" stroke="#f3d27f" stroke-width="2.8" stroke-linejoin="round"/>
+      <path d="M17 37h20" stroke="#f3d27f" stroke-width="3" stroke-linecap="round"/>
+      <path d="M17 14H8M17 20H5M16 26H8" stroke="#f3d27f" stroke-width="2.7" stroke-linecap="round"/>
+      <path d="m9 11-4 3 4 3M6 18l-4 3 4 3" stroke="#f3d27f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".78"/>
+    </svg>`;
 
   function closeIslandDrawer(){
     const drawer = byId('hudV2IslandDrawer');
@@ -24,13 +34,39 @@
     }
   }
 
+  function releaseDrawerCloseLock(){
+    drawerCloseLockUntil = 0;
+    if (drawerCloseUnlockTimer) {
+      clearTimeout(drawerCloseUnlockTimer);
+      drawerCloseUnlockTimer = 0;
+    }
+    byId('gameScreen')?.classList.remove('ov2-v12-force-close');
+  }
+
   function forceCloseAfterUndo(){
-    // L'ancien HUD peut se re-rendre immédiatement après Undo : fermeture répétée
-    // sur quelques ticks pour éviter que le drawer ne réapparaisse visuellement.
+    /* Fermeture visuelle immédiate : la classe CSS masque le drawer dès le
+       premier frame, indépendamment du rerender historique qui suit Undo. */
+    const game = byId('gameScreen');
+    drawerCloseLockUntil = performance.now() + 420;
+    game?.classList.add('ov2-v12-force-close');
     closeIslandDrawer();
-    requestAnimationFrame(closeIslandDrawer);
-    setTimeout(closeIslandDrawer,0);
-    setTimeout(closeIslandDrawer,60);
+
+    if (drawerCloseUnlockTimer) clearTimeout(drawerCloseUnlockTimer);
+    drawerCloseUnlockTimer = setTimeout(()=>{
+      closeIslandDrawer();
+      releaseDrawerCloseLock();
+    },430);
+  }
+
+  function maintainDrawerCloseLock(){
+    if (!drawerCloseLockUntil) return;
+    if (performance.now() < drawerCloseLockUntil) {
+      closeIslandDrawer();
+      byId('gameScreen')?.classList.add('ov2-v12-force-close');
+    } else {
+      closeIslandDrawer();
+      releaseDrawerCloseLock();
+    }
   }
 
   function installUndoFix(){
@@ -39,6 +75,35 @@
       btn.dataset.v12DrawerFix = '1';
       btn.addEventListener('click',forceCloseAfterUndo,true);
     });
+
+    /* Si le joueur rouvre volontairement ÎLE juste après Undo, on libère le
+       verrou immédiatement : aucune sensation de délai artificiel. */
+    const islandButton = byId('ov2Island');
+    if (islandButton && islandButton.dataset.v12DrawerReopen !== '1') {
+      islandButton.dataset.v12DrawerReopen = '1';
+      islandButton.addEventListener('click',releaseDrawerCloseLock,true);
+    }
+  }
+
+  function installMoveIcon(){
+    const move = byId('ov2Move');
+    if (!move || move.dataset.v12MoveIcon === '1') return;
+    const icon = move.querySelector('svg.ov2-ico');
+    if (!icon) return;
+    icon.outerHTML = moveWingedBootSvg;
+    move.dataset.v12MoveIcon = '1';
+  }
+
+  function syncIslandRequiredState(){
+    const island = byId('ov2Island');
+    const source = byId('hudV2IslandStatus');
+    if (!island) return;
+
+    /* Le HUD direct utilise déjà la visibilité de hudV2IslandStatus comme
+       source de vérité pour savoir si l'action ÎLE est encore disponible.
+       On s'appuie sur le même signal : aucun état gameplay dupliqué ici. */
+    const required = !!source && !source.classList.contains('hidden') && !source.disabled;
+    island.classList.toggle('ov2-island-required',required);
   }
 
   function ensureInstructionMarkup(){
@@ -150,8 +215,11 @@
     ensureInstructionMarkup();
     syncInstructionText();
     installUndoFix();
+    installMoveIcon();
+    syncIslandRequiredState();
     syncPlacementRotation();
     positionContextRows();
+    maintainDrawerCloseLock();
   }
 
   function schedule(){
