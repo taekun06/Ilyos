@@ -6,13 +6,12 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
 
   const styles = [
-    './css/hud-organique-v2.css?v=11',
-    './css/hud-organique-v2-polish-v6.css?v=11',
-    './css/hud-organique-v2-readability-v7.css?v=11',
-    './css/hud-organique-v2-final-v8.css?v=11',
-    './css/hud-organique-v2-depth-v9.css?v=11',
-    './css/hud-organique-v2-depth-v10.css?v=11',
-    './css/hud-context-fixes-v11.css?v=11'
+    './css/hud-organique-v2.css?v=10',
+    './css/hud-organique-v2-polish-v6.css?v=10',
+    './css/hud-organique-v2-readability-v7.css?v=10',
+    './css/hud-organique-v2-final-v8.css?v=10',
+    './css/hud-organique-v2-depth-v9.css?v=10',
+    './css/hud-organique-v2-depth-v10.css?v=10'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -22,11 +21,10 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=11',
-    './js/hud-organique-v2-final-v8.js?v=11',
-    './js/hud-organique-v2-depth-v9.js?v=11',
-    './js/hud-organique-v2-depth-v10.js?v=11',
-    './js/hud-context-fixes-v11.js?v=11'
+    './js/hud-organique-v2.js?v=10',
+    './js/hud-organique-v2-final-v8.js?v=10',
+    './js/hud-organique-v2-depth-v9.js?v=10',
+    './js/hud-organique-v2-depth-v10.js?v=10'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
