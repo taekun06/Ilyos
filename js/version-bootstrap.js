@@ -27,7 +27,8 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
     './js/hud-organique-v2-depth-v9.js?v=12.7',
     './js/hud-organique-v2-depth-v10.js?v=12.7',
     './js/hud-consolidation-v12.js?v=12.7',
-    './js/ai-move-tail-guard-v12.js?v=12.7'
+    './js/ai-move-tail-guard-v12.js?v=12.7',
+    './js/runtime-polish-v13.js?v=13.0'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
