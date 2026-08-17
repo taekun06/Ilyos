@@ -16,25 +16,27 @@
   let polishTailTimer = 0;
   let last3DPolishAt = 0;
 
-  /* Proposition 1 validée : empreintes plus grandes, orientées vers le haut
-     (du bas-gauche vers le haut-droit), dans la même famille dorée du HUD. */
+  /* Retour à la proposition 1 telle qu'elle avait été validée avant la passe
+     V12.3 : deux empreintes compactes en diagonale, sans agrandissement forcé. */
   const moveFootprintsSvg = `
     <svg class="ov2-ico ov2-move-footprints" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      <g fill="#f3d27f">
-        <g transform="rotate(18 16 31)">
-          <ellipse cx="16" cy="31" rx="5.8" ry="8.2"/>
-          <circle cx="11.8" cy="21.1" r="2.35"/>
-          <circle cx="15.9" cy="20.0" r="2.45"/>
-          <circle cx="20.0" cy="20.8" r="2.15"/>
-        </g>
-        <g transform="rotate(18 31 16)">
-          <ellipse cx="31" cy="16.5" rx="5.8" ry="8.2"/>
-          <circle cx="26.8" cy="6.9" r="2.35"/>
-          <circle cx="30.9" cy="5.8" r="2.45"/>
-          <circle cx="35.0" cy="6.6" r="2.15"/>
-        </g>
+      <g transform="rotate(-18 24 24)" fill="#f3d27f">
+        <ellipse cx="17" cy="14" rx="5.1" ry="8.1"/>
+        <circle cx="13.2" cy="24.2" r="2.1"/>
+        <circle cx="17.1" cy="23.2" r="2.15"/>
+        <circle cx="20.7" cy="21.6" r="1.85"/>
+        <ellipse cx="31" cy="31.5" rx="5.1" ry="8.1"/>
+        <circle cx="27.1" cy="41.1" r="2.1"/>
+        <circle cx="31" cy="40.1" r="2.15"/>
+        <circle cx="34.6" cy="38.5" r="1.85"/>
       </g>
     </svg>`;
+
+  const reserveIcons = {
+    MOVE: `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><ellipse cx="8" cy="7" rx="2.6" ry="4"/><circle cx="5.9" cy="12.1" r="1.15"/><circle cx="8" cy="11.8" r="1.15"/><ellipse cx="16" cy="16" rx="2.6" ry="4"/><circle cx="13.9" cy="21" r="1.15"/><circle cx="16" cy="20.7" r="1.15"/></g></svg>`,
+    PUSH: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h12M11 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><path d="m19 5 1.2 3.4L23 10l-2.8 1.6L19 15l-1.2-3.4L15 10l2.8-1.6L19 5Z" fill="currentColor"/></svg>`,
+    MAGIC: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m12 2.5 2.2 6.1 6.3 3.4-6.3 3.4-2.2 6.1-2.2-6.1L3.5 12l6.3-3.4L12 2.5Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`
+  };
 
   function closeIslandDrawer(){
     const drawer = byId('hudV2IslandDrawer');
@@ -119,11 +121,11 @@
 
   function installMoveIcon(){
     const move = byId('ov2Move');
-    if (!move || move.dataset.v12MoveIcon === 'footprints-up') return;
+    if (!move || move.dataset.v12MoveIcon === 'footprints-classic') return;
     const icon = move.querySelector('svg.ov2-ico');
     if (!icon) return;
     icon.outerHTML = moveFootprintsSvg;
-    move.dataset.v12MoveIcon = 'footprints-up';
+    move.dataset.v12MoveIcon = 'footprints-classic';
   }
 
   function ensureIslandHalo(){
@@ -139,15 +141,18 @@
     const island = byId('ov2Island');
     if (!island) return;
     ensureIslandHalo();
-
-    /* Le HUD direct masque complètement le bouton une fois l'île faite. C'est
-       donc le signal le plus robuste pour l'état obligatoire, sans dépendre du
-       timing du HUD historique. */
     const required = !island.classList.contains('ov2-off') && !island.disabled;
     island.classList.toggle('ov2-island-required',required);
   }
 
   /* ---------- RÉSERVE D'ACTIONS DANS LE RUBAN JOUEUR ---------- */
+  function reserveMarkup(){
+    return `<span class="ov2-reserve-label">RÉSERVE</span>
+      <span class="ov2-reserve-action ov2-reserve-move" title="Déplacements en réserve">${reserveIcons.MOVE}<b data-reserve-move>0</b></span>
+      <span class="ov2-reserve-action ov2-reserve-push" title="Poussées en réserve">${reserveIcons.PUSH}<b data-reserve-push>0</b></span>
+      <span class="ov2-reserve-action ov2-reserve-magic" title="Magies en réserve">${reserveIcons.MAGIC}<b data-reserve-magic>0</b></span>`;
+  }
+
   function ensureReserveBadges(){
     [['ov2LeftName','ov2LeftReserve'],['ov2RightName','ov2RightReserve']].forEach(([nameId,reserveId])=>{
       const name = byId(nameId);
@@ -155,7 +160,7 @@
       const badge = document.createElement('span');
       badge.id = reserveId;
       badge.className = 'ov2-reserve ov2-off';
-      badge.textContent = 'RÉSERVE 0';
+      badge.innerHTML = reserveMarkup();
       name.insertAdjacentElement('afterend',badge);
     });
   }
@@ -170,13 +175,25 @@
     }
   }
 
-  function reserveTotal(player){
-    const stash = player?.stash || {};
-    return ['MOVE','PUSH','MAGIC'].reduce((sum,type)=>sum + Math.max(0,Number(stash[type]) || 0),0);
-  }
-
   function sameName(a,b){
     return String(a || '').trim().toLocaleUpperCase('fr-FR') === String(b || '').trim().toLocaleUpperCase('fr-FR');
+  }
+
+  function setReserveValues(badge,player){
+    if (!badge || !player) return;
+    const stash = player.stash || {};
+    const values = {
+      MOVE: Math.max(0,Number(stash.MOVE) || 0),
+      PUSH: Math.max(0,Number(stash.PUSH) || 0),
+      MAGIC: Math.max(0,Number(stash.MAGIC) || 0)
+    };
+    const move = badge.querySelector('[data-reserve-move]');
+    const push = badge.querySelector('[data-reserve-push]');
+    const magic = badge.querySelector('[data-reserve-magic]');
+    if (move) move.textContent = values.MOVE;
+    if (push) push.textContent = values.PUSH;
+    if (magic) magic.textContent = values.MAGIC;
+    badge.setAttribute('aria-label',`Réserve : ${values.MOVE} déplacements, ${values.PUSH} poussées, ${values.MAGIC} magies`);
   }
 
   function syncReserveBadges(){
@@ -200,7 +217,7 @@
     [[byId('ov2LeftReserve'),left],[byId('ov2RightReserve'),right]].forEach(([badge,player])=>{
       if (!badge) return;
       badge.classList.toggle('ov2-off',!player);
-      if (player) badge.textContent = `RÉSERVE ${reserveTotal(player)}`;
+      if (player) setReserveValues(badge,player);
     });
   }
 
@@ -223,8 +240,6 @@
     const dynamic = window.kaykit3D?.dynamicGroup;
     if (!dynamic?.children?.length || !window.THREE) return;
 
-    /* Le fanion historique est l'enfant du château à (.48,0,.34). On le cache
-       et on réutilise son vrai modèle deux fois, sur les deux cases adjacentes. */
     const originals = [];
     dynamic.children.forEach(parent=>{
       if (!parent?.children?.length || parent.userData?.ov2VillageFlagV12) return;
@@ -265,17 +280,28 @@
       const dr = castle.position.z <= 0 ? 1 : -1;
       const outwardX = castle.position.x <= 0 ? -1 : 1;
       const outwardZ = castle.position.z <= 0 ? -1 : 1;
-      const cornerOffset = .34;
+      // Demi-case = .4625. .415 place le mât presque au coin, tout en gardant
+      // une petite marge pour que le modèle reste visuellement sur la case.
+      const cornerOffset = .415;
       const targets = [
-        { r:r0, c:c0 + dc },
-        { r:r0 + dr, c:c0 }
+        {
+          r:r0,
+          c:c0 + dc,
+          offsetX:dc * cornerOffset,
+          offsetZ:outwardZ * cornerOffset
+        },
+        {
+          r:r0 + dr,
+          c:c0,
+          offsetX:outwardX * cornerOffset,
+          offsetZ:dr * cornerOffset
+        }
       ];
 
       targets.forEach((target,index)=>{
         const clone = clones[index];
-        const x = (target.c - BOARD_CENTER) * CELL_SPACING + outwardX * cornerOffset;
-        const z = (target.r - BOARD_CENTER) * CELL_SPACING + outwardZ * cornerOffset;
-        // Même niveau de base que le château/village, quelle que soit la case.
+        const x = (target.c - BOARD_CENTER) * CELL_SPACING + target.offsetX;
+        const z = (target.r - BOARD_CENTER) * CELL_SPACING + target.offsetZ;
         clone.position.set(x,castle.position.y,z);
         clone.quaternion.copy(castle.quaternion).multiply(flag.quaternion);
         clone.visible = true;
