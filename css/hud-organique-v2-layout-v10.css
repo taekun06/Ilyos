@@ -1,0 +1,138 @@
+/* ILYOS — HUD Organique V2 / LAYOUT V10
+   Placement des tiroirs contextuels, espacement du dock et étoiles d'instruction.
+   Purement visuel : aucune règle, aucun coût, aucun déplacement n'est modifié. */
+
+/* Le point d'ancrage est calculé par hud-organique-v2-layout-v10.js à partir
+   du bord supérieur réel de la phrase centrale. Ainsi le tiroir reste juste
+   au-dessus de la phrase, y compris en fenêtre courte / responsive. */
+body[data-visual-mode="alternative"] #gameScreen{
+  --ov2-context-bottom:188px;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow{
+  position:fixed!important;
+  left:50%!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:var(--ov2-context-bottom)!important;
+  margin:0!important;
+  transform:translateX(-50%)!important;
+  transform-origin:bottom center!important;
+  z-index:100040!important;
+  pointer-events:auto!important;
+}
+
+/* Le sélecteur reste léger et centré, mais respire davantage. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{
+  gap:12px!important;
+  padding:5px 4px!important;
+}
+
+/* Une fois la forme choisie, l'ancien bloc avec seulement deux flèches est
+   remplacé visuellement par la barre V10 ci-dessous. Le drawer reste dans le
+   DOM pour ne jamais perturber l'état du jeu. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v10-rotation-mode{
+  visibility:hidden!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:8px 10px;
+  border-radius:16px;
+  background:rgba(18,22,30,.66);
+  border:1px solid rgba(226,200,138,.30);
+  -webkit-backdrop-filter:blur(14px) saturate(.95);
+  backdrop-filter:blur(14px) saturate(.95);
+  box-shadow:0 10px 30px rgba(0,0,0,.28);
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow.hidden{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow .ov2-v10-rotation-label{
+  margin:0 4px 0 2px;
+  color:#f5dfaa;
+  font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.12em;
+  text-shadow:0 1px 3px rgba(0,0,0,.85);
+  white-space:nowrap;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow .hud-v2-magic-btn{
+  min-height:32px;
+}
+
+/* Même ancrage pour la magie : la barre ne coupe plus les libellés du dock. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
+  background:rgba(18,22,30,.66)!important;
+}
+
+/* Les quatre actions principales sont volontairement plus espacées. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+  gap:clamp(34px,3.1vw,50px)!important;
+}
+
+/* Étoiles attachées au texte et non plus à une largeur arbitraire de panneau. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v10-instruction{
+  font-size:0!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v10-instruction::before,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v10-instruction::after{
+  content:none!important;
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-copy{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:18px;
+  max-width:100%;
+  white-space:nowrap;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-text{
+  color:#fff0c6;
+  font:700 clamp(14px,1vw,16px)/1.25 Georgia,"Times New Roman",serif;
+  text-shadow:0 1px 3px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.52),0 0 10px rgba(2,8,14,.38);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-star{
+  flex:0 0 auto;
+  color:#e6b74b;
+  font:700 12px/1 Georgia,"Times New Roman",serif;
+  text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{
+  left:50%!important;
+  right:auto!important;
+  width:min(360px,70%)!important;
+  transform:translateX(-50%)!important;
+}
+
+@media(max-width:1180px){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+    gap:26px!important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-copy{
+    gap:13px;
+  }
+}
+
+@media(max-width:900px){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+    gap:18px!important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow,
+  body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow{
+    gap:5px!important;
+    padding:7px 8px!important;
+  }
+}
