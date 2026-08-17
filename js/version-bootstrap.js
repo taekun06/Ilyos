@@ -1,5 +1,19 @@
 window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
 
+/* HUD Organique V2 DIRECT — overlay autonome issu du prototype validé. */
+(function(){
+  if (window.__ILYOS_HUD_ORGANIC_LOADER__) return;
+  window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href='./css/hud-organique-v2.css?v=5';
+  document.head.appendChild(link);
+  const script=document.createElement('script');
+  script.src='./js/hud-organique-v2.js?v=5';
+  script.defer=true;
+  document.head.appendChild(script);
+})();
+
 /* ILYOS V11 MENU — isolated iframe integration.
    The visual menu lives entirely in /menu. This file only bridges it to the existing game. */
 (function () {
