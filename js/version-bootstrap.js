@@ -5,35 +5,31 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
   if (window.__ILYOS_HUD_ORGANIC_LOADER__) return;
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
 
-  const base=document.createElement('link');
-  base.rel='stylesheet';
-  base.href='./css/hud-organique-v2.css?v=8';
-  document.head.appendChild(base);
+  const styles = [
+    './css/hud-organique-v2.css?v=9',
+    './css/hud-organique-v2-polish-v6.css?v=9',
+    './css/hud-organique-v2-readability-v7.css?v=9',
+    './css/hud-organique-v2-final-v8.css?v=9',
+    './css/hud-organique-v2-depth-v9.css?v=9'
+  ];
+  styles.forEach(href=>{
+    const link=document.createElement('link');
+    link.rel='stylesheet';
+    link.href=href;
+    document.head.appendChild(link);
+  });
 
-  const polish=document.createElement('link');
-  polish.rel='stylesheet';
-  polish.href='./css/hud-organique-v2-polish-v6.css?v=8';
-  document.head.appendChild(polish);
-
-  const readability=document.createElement('link');
-  readability.rel='stylesheet';
-  readability.href='./css/hud-organique-v2-readability-v7.css?v=8';
-  document.head.appendChild(readability);
-
-  const finalPolish=document.createElement('link');
-  finalPolish.rel='stylesheet';
-  finalPolish.href='./css/hud-organique-v2-final-v8.css?v=8';
-  document.head.appendChild(finalPolish);
-
-  const script=document.createElement('script');
-  script.src='./js/hud-organique-v2.js?v=8';
-  script.defer=true;
-  document.head.appendChild(script);
-
-  const finalScript=document.createElement('script');
-  finalScript.src='./js/hud-organique-v2-final-v8.js?v=8';
-  finalScript.defer=true;
-  document.head.appendChild(finalScript);
+  const scripts = [
+    './js/hud-organique-v2.js?v=9',
+    './js/hud-organique-v2-final-v8.js?v=9',
+    './js/hud-organique-v2-depth-v9.js?v=9'
+  ];
+  scripts.forEach(src=>{
+    const script=document.createElement('script');
+    script.src=src;
+    script.defer=true;
+    document.head.appendChild(script);
+  });
 })();
 
 /* ILYOS V11 MENU — isolated iframe integration.
