@@ -1,0 +1,283 @@
+/* ILYOS — HUD Organique V2 / POLISH V6
+   Passe visuelle ciblée d'après capture réelle. Aucun gameplay. */
+
+/* TOP — réduire la masse, augmenter l'air, garder les rubans premium. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+  left:34px!important;
+  right:34px!important;
+  top:16px!important;
+  height:78px!important;
+  grid-template-columns:minmax(360px,1fr) auto minmax(360px,1fr)!important;
+  gap:26px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-side{height:76px!important}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar{
+  width:74px!important;
+  height:74px!important;
+  top:1px!important;
+  border-width:1.5px!important;
+  box-shadow:0 0 0 3px rgba(3,11,19,.72),0 0 18px rgba(230,183,75,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-avatar{
+  box-shadow:0 0 0 3px rgba(14,7,24,.74),0 0 18px rgba(168,109,242,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon{
+  top:10px!important;
+  height:50px!important;
+  border-top-color:rgba(230,183,75,.16)!important;
+  border-bottom-color:rgba(230,183,75,.30)!important;
+  backdrop-filter:blur(5px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-left .ov2-ribbon{
+  left:86px!important;
+  right:8%!important;
+  padding-left:18px!important;
+  background:linear-gradient(90deg,rgba(5,17,28,.72),rgba(5,17,28,.38) 62%,transparent)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-ribbon{
+  left:8%!important;
+  right:86px!important;
+  padding-right:18px!important;
+  background:linear-gradient(-90deg,rgba(24,10,39,.74),rgba(24,10,39,.38) 62%,transparent)!important;
+  border-color:rgba(168,109,242,.30)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon:after{
+  width:46%!important;
+  bottom:-3px!important;
+  opacity:.80!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname{
+  font-size:clamp(18px,1.28vw,22px)!important;
+  letter-spacing:.045em!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.82),0 2px 8px rgba(0,0,0,.45)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-player-main{
+  gap:16px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-score{
+  gap:8px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown{
+  width:23px!important;
+  height:17px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
+  opacity:.18!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-active{
+  top:62px!important;
+  left:91px!important;
+  font-size:10px!important;
+  letter-spacing:.14em!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-active{
+  left:auto!important;
+  right:91px!important;
+}
+
+/* TOUR — plus petit et plus élégant. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn{
+  min-width:238px!important;
+  height:50px!important;
+  margin-top:3px!important;
+  gap:12px!important;
+  padding:0 22px!important;
+  background:linear-gradient(180deg,rgba(5,16,27,.60),rgba(4,12,21,.38))!important;
+  border-color:rgba(230,183,75,.18)!important;
+  clip-path:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%)!important;
+  backdrop-filter:blur(6px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn strong{
+  font-size:clamp(18px,1.25vw,21px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn .ov2-timer{
+  font-size:clamp(13px,.95vw,15px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem{
+  width:7px!important;
+  height:7px!important;
+  min-width:7px!important;
+}
+
+/* INSTRUCTION — remonter et alléger. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
+  bottom:147px!important;
+  min-width:430px!important;
+  max-width:600px!important;
+  padding:7px 46px!important;
+  font-size:clamp(14px,1vw,16px)!important;
+  color:#fff0c6!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.52)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction:before,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction:after{
+  opacity:.85!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction-line{
+  left:24%!important;
+  right:24%!important;
+  opacity:.68!important;
+}
+
+/* DOCK — plus haut, plus lisible, moins comprimé au bord. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{
+  bottom:26px!important;
+  gap:22px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action{
+  width:120px!important;
+  height:112px!important;
+  padding-bottom:8px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:before{
+  width:76px!important;
+  height:76px!important;
+  top:1px!important;
+  border-color:rgba(230,183,75,.20)!important;
+  background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.72),rgba(3,12,20,.66))!important;
+  box-shadow:0 9px 18px rgba(0,0,0,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action .ov2-ico{
+  width:42px!important;
+  height:42px!important;
+  margin-bottom:14px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong{
+  font-size:14px!important;
+  letter-spacing:.045em!important;
+  color:inherit!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small{
+  font-size:12px!important;
+  margin-top:4px!important;
+  color:rgba(236,232,220,.72)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled{
+  opacity:.56!important;
+  filter:saturate(.38)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected:before{
+  border-color:rgba(255,215,121,.92)!important;
+  box-shadow:0 0 20px rgba(230,183,75,.22),0 9px 18px rgba(0,0,0,.22)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock:before{
+  bottom:23px!important;
+  opacity:.72!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock:after{
+  bottom:19px!important;
+}
+
+/* FIN DU TOUR — moins gris, mieux hiérarchisé. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end{
+  right:32px!important;
+  bottom:28px!important;
+  width:190px!important;
+  height:62px!important;
+  background:linear-gradient(90deg,rgba(46,32,16,.70),rgba(96,65,25,.78),rgba(46,32,16,.70))!important;
+  border-color:rgba(230,183,75,.40)!important;
+  box-shadow:0 9px 20px rgba(0,0,0,.23),0 0 13px rgba(230,183,75,.06)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:not(:disabled){
+  color:#ffe19a!important;
+  border-color:rgba(255,217,121,.70)!important;
+  background:linear-gradient(90deg,rgba(69,44,16,.88),rgba(141,91,28,.90),rgba(69,44,16,.88))!important;
+  box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 22px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
+  font-size:16px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled{
+  opacity:.58!important;
+}
+
+/* UNDO — même langage visuel que le reste du HUD. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+  left:30px!important;
+  bottom:29px!important;
+  width:50px!important;
+  height:50px!important;
+  border-color:rgba(230,183,75,.24)!important;
+  background:rgba(4,13,22,.58)!important;
+  color:#f3cf79!important;
+  box-shadow:0 8px 18px rgba(0,0,0,.19)!important;
+}
+
+/* TOAST — éloigner du bord et l'éclaircir légèrement. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast{
+  right:34px!important;
+  bottom:116px!important;
+  width:292px!important;
+  min-height:66px!important;
+  background:rgba(5,15,25,.83)!important;
+  border-color:rgba(230,183,75,.25)!important;
+  box-shadow:0 12px 28px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast b{
+  color:#f4ead0!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast small{
+  color:#bdc5cb!important;
+}
+
+/* CONTEXT GUARDIAN — légèrement plus compact. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-guardian{
+  left:30px!important;
+  bottom:120px!important;
+  width:272px!important;
+  padding:13px 14px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gportrait{
+  width:52px!important;
+  height:52px!important;
+}
+
+/* Fenêtre Chrome courte : conserver la hiérarchie sans écraser les éléments. */
+@media(max-height:800px){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+    top:7px!important;
+    transform:scale(.92)!important;
+    transform-origin:top center!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
+    bottom:120px!important;
+    transform:translateX(-50%) scale(.90)!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{
+    bottom:7px!important;
+    transform:translateX(-50%) scale(.86)!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end{
+    right:18px!important;
+    bottom:15px!important;
+    transform:scale(.90)!important;
+    transform-origin:bottom right!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+    left:18px!important;
+    bottom:15px!important;
+    transform:scale(.90)!important;
+    transform-origin:bottom left!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast{
+    right:18px!important;
+    bottom:92px!important;
+    transform:scale(.88)!important;
+    transform-origin:bottom right!important;
+  }
+}
+
+@media(max-width:1180px){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+    left:16px!important;
+    right:16px!important;
+    gap:14px!important;
+    grid-template-columns:minmax(280px,1fr) auto minmax(280px,1fr)!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-left .ov2-ribbon{right:4%!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-ribbon{left:4%!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname{font-size:18px!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown{width:20px!important;height:15px!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn{min-width:210px!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{gap:12px!important}
+}
