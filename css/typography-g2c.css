@@ -103,3 +103,18 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island s
   opacity:1!important;
   text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(255,207,80,.74),0 0 14px rgba(255,170,32,.28)!important;
 }
+
+/* PRIORITÉ FINALE face aux shorthands de V12 chargés après l'import. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction .ov2-v12-instruction-text{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:700!important;
+  letter-spacing:.012em!important;
+  text-shadow:0 2px 4px rgba(0,0,0,.98),0 0 10px rgba(0,0,0,.66),0 0 14px rgba(230,183,75,.18)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island#ov2Island small{
+  font-family:var(--font-ilyos-info)!important;
+  font-weight:900!important;
+  color:#ffe18a!important;
+  opacity:1!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 9px rgba(255,207,80,.82),0 0 16px rgba(255,170,32,.32)!important;
+}
