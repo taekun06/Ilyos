@@ -18,35 +18,32 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   }
 })();
 
-/* Caméra FRONT canonique.
-   Le moteur fait un auto-fit complet du plateau lors de initKayKit3D(), puis à
-   chaque rappel de VUE FACE. Sur un écran 16:9 cela produit le gros dézoom vu
-   en jeu. Le preset validé visuellement doit au contraire rester proche du
-   zoom minimal : il remplit le cadre tout en gardant les quatre sanctuaires
-   périphériques lisibles.
+/* Caméra FRONT — preset non invasif.
+   IMPORTANT : ne jamais redéfinir window.kaykit3D, minZoom ou maxZoom ici.
+   Le précédent essai clampait temporairement maxZoom à 6.4 et provoquait le
+   gros zoom + la molette bloquée. On conserve désormais toute la plage native.
 
-   Le hook est installé AVANT game.js. Lors de l'exposition window.kaykit3D,
-   maxZoom est limité à 6.4 uniquement pendant l'initialisation synchrone : le
-   resize forcé de démarrage ne peut donc plus dézoomer. La valeur normale de
-   maxZoom est restaurée dès la micro-tâche suivante, donc la molette conserve
-   toute sa plage ensuite. */
+   12.4 est la distance FRONT historique du moteur et correspond au cadrage
+   souhaité : plateau lisible, villages périphériques visibles, sans auto-fit
+   excessif. */
 (function installFrontCameraPreset(){
   if (window.__ILYOS_FRONT_CAMERA_PRESET__) return;
   window.__ILYOS_FRONT_CAMERA_PRESET__ = true;
 
-  const FRONT_DISTANCE = 6.4;
-  const FRONT_Y = .52;
-  const FRONT_Z = .90;
-  let currentKaykit = window.kaykit3D || null;
+  const FRONT_DISTANCE = 12.4;
+  const FRONT_Y = .63;
+  const FRONT_Z = .83;
 
-  function applyFrontPreset(k = currentKaykit){
-    if (!k?.camera || !k?.viewTarget || !window.THREE) return false;
+  function applyFrontPreset(){
+    const k = window.kaykit3D;
+    if (!k?.camera || !k?.viewTarget) return false;
 
-    const distance = Math.max(
-      Number.isFinite(k.minZoom) ? k.minZoom : FRONT_DISTANCE,
-      Math.min(FRONT_DISTANCE, Number.isFinite(k.maxZoom) ? k.maxZoom : FRONT_DISTANCE)
-    );
+    const min = Number.isFinite(k.minZoom) ? k.minZoom : 6.4;
+    const max = Number.isFinite(k.maxZoom) ? k.maxZoom : 25;
+    const distance = Math.max(min, Math.min(FRONT_DISTANCE, max));
 
+    /* Annule uniquement un éventuel tween d'auto-fit FRONT en cours.
+       On ne touche pas aux bornes de zoom : la molette reste totalement libre. */
     k.cameraTween = null;
     k.viewMode = 'front';
     k.autoFit = false;
@@ -69,62 +66,48 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     return true;
   }
 
-  /* Intercepte la toute première affectation faite par game.js. */
-  try {
-    const existing = Object.getOwnPropertyDescriptor(window, 'kaykit3D');
-    if (!existing || existing.configurable) {
-      Object.defineProperty(window, 'kaykit3D', {
-        configurable: true,
-        enumerable: true,
-        get(){ return currentKaykit; },
-        set(value){
-          currentKaykit = value;
-          if (!value) return;
-
-          const normalMaxZoom = Number.isFinite(value.maxZoom) ? value.maxZoom : 25;
-          value.zoomDistance = FRONT_DISTANCE;
-          value.maxZoom = Math.min(normalMaxZoom, FRONT_DISTANCE);
-
-          queueMicrotask(() => {
-            if (currentKaykit !== value) return;
-            value.maxZoom = normalMaxZoom;
-            applyFrontPreset(value);
-          });
-        }
-      });
-    }
-  } catch (_) {
-    /* Le fallback ci-dessous suffit si un navigateur refuse de redéfinir la propriété. */
+  function applySoon(){
+    requestAnimationFrame(() => applyFrontPreset());
+    setTimeout(() => applyFrontPreset(), 120);
   }
 
-  /* Après un clic VUE FACE, le moteur lance son tween d'auto-fit. On le laisse
-     traiter son UI, puis on annule seulement ce tween et on réapplique le
-     cadrage de référence. Le clic ISO et les mouvements libres sont intacts. */
-  document.addEventListener('click', event => {
-    const target = event.target?.closest?.('[data-kay-view-face], [data-hud-camera="front"]');
-    if (!target) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => applyFrontPreset(window.kaykit3D || currentKaykit));
-    });
-  }, true);
-
-  /* Sécurité au passage réel menu -> partie : elle corrige aussi un éventuel
-     resize tardif du navigateur sans créer de suivi permanent ni coût par frame. */
+  /* Au passage menu -> partie, attendre que la scène 3D soit réellement créée.
+     Pas de boucle permanente et aucun coût par frame. */
   function watchGameVisibility(){
     const game = document.getElementById('gameScreen');
     if (!game) return;
+
     const applyWhenVisible = () => {
       if (game.classList.contains('hidden')) return;
-      requestAnimationFrame(() => applyFrontPreset(window.kaykit3D || currentKaykit));
-      setTimeout(() => applyFrontPreset(window.kaykit3D || currentKaykit), 80);
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts++;
+        if (applyFrontPreset() || attempts >= 20) clearInterval(timer);
+      }, 40);
     };
-    new MutationObserver(applyWhenVisible).observe(game, { attributes:true, attributeFilter:['class'] });
+
+    new MutationObserver(applyWhenVisible).observe(game, {
+      attributes:true,
+      attributeFilter:['class']
+    });
     applyWhenVisible();
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchGameVisibility, { once:true });
-  else watchGameVisibility();
 
-  window.ILYOS_applyFrontCameraPreset = () => applyFrontPreset(window.kaykit3D || currentKaykit);
+  /* Le moteur fait encore son auto-fit natif quand on clique VUE FACE.
+     On réapplique simplement le preset après ce clic, sans modifier ISO/LIBRE. */
+  document.addEventListener('click', event => {
+    const front = event.target?.closest?.('[data-kay-view-face], [data-hud-camera="front"]');
+    if (!front) return;
+    applySoon();
+  }, true);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', watchGameVisibility, { once:true });
+  } else {
+    watchGameVisibility();
+  }
+
+  window.ILYOS_applyFrontCameraPreset = applyFrontPreset;
 })();
 
 /* HUD Organique V2 DIRECT — overlay autonome issu du prototype validé. */
@@ -168,7 +151,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
    The visual menu lives entirely in /menu. This file only bridges it to the existing game. */
 (function () {
   if (window.__ILYOS_MENU_IFRAME_BOOT__) return;
-  window.__ILYOS_MENU_IFRAME_BOOT__ = true;
+  window.__ILYOS_MENU_ORGANIC_LOADER__ = true;
 
   const guardStyle = document.createElement('style');
   guardStyle.id = 'ilyos-menu-v11-guard';
