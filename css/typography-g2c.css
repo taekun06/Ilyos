@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Almendra:wght@400;700&family=Cinzel+Decorative:wght@700;900&family=Nunito+Sans:wght@600;700;800;900&display=swap');
 
-/* ILYOS — TYPOGRAPHY G2C
+/* ILYOS — TYPOGRAPHY G2C / POLISH 2
    Cinzel Decorative = identité / univers
    Almendra = actions + instruction + panneau gardien
    Nunito Sans = chiffres / infos fonctionnelles
@@ -44,12 +44,16 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action 
   font-size:15px!important;
   font-weight:700!important;
   letter-spacing:.02em!important;
+  color:#fffaf0!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 9px rgba(0,0,0,.82)!important;
 }
 
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text,
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction{
+  font-family:var(--font-ilyos-action)!important;
   font-weight:700!important;
   letter-spacing:.012em!important;
+  text-shadow:0 2px 4px rgba(0,0,0,.98),0 0 10px rgba(0,0,0,.66),0 0 14px rgba(230,183,75,.16)!important;
 }
 
 /* PANNEAU GARDIEN = G2C : Almendra pour le contenu, Cinzel pour le nom/titre */
@@ -58,6 +62,10 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardia
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-gh b{
   font-family:var(--font-ilyos-display)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-gh small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-grow{
+  text-shadow:0 1px 3px rgba(0,0,0,.88)!important;
 }
 
 /* INFOS / CHIFFRES */
@@ -77,13 +85,21 @@ body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover select{
 }
 
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small,
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-count{
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-count,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MoveCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2PushCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MagicCount{
   font-weight:900!important;
   letter-spacing:.015em!important;
+  color:#ffe5a5!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(0,0,0,.78),0 0 10px rgba(230,183,75,.15)!important;
 }
 
-/* Le texte OBLIGATOIRE reste une info stratégique, donc sans-serif. */
+/* OBLIGATOIRE : info stratégique très lisible + retour du relief doré. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island small{
   font-family:var(--font-ilyos-info)!important;
   font-weight:900!important;
+  color:#ffe18a!important;
+  opacity:1!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(255,207,80,.74),0 0 14px rgba(255,170,32,.28)!important;
 }
