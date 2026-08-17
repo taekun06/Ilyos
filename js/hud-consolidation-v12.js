@@ -6,16 +6,30 @@
   window.__ILYOS_HUD_CONSOLIDATION_V12__ = true;
 
   const byId = id => document.getElementById(id);
+  const LOCAL_SAVE_KEY = 'ilyos-local-session-v22';
+  const CELL_SPACING = .925;
+  const BOARD_CENTER = 5;
   let scheduled = false;
   let drawerCloseLockUntil = 0;
   let drawerCloseUnlockTimer = 0;
+  let reserveTailTimer = 0;
+  let polishTailTimer = 0;
+  let last3DPolishAt = 0;
 
-  const moveWingedBootSvg = `
-    <svg class="ov2-ico ov2-move-winged" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      <path d="M21 7h9l2 15 9 5-4 10H17l-8-6 7-8 3-16Z" stroke="#f3d27f" stroke-width="2.8" stroke-linejoin="round"/>
-      <path d="M17 37h20" stroke="#f3d27f" stroke-width="3" stroke-linecap="round"/>
-      <path d="M17 14H8M17 20H5M16 26H8" stroke="#f3d27f" stroke-width="2.7" stroke-linecap="round"/>
-      <path d="m9 11-4 3 4 3M6 18l-4 3 4 3" stroke="#f3d27f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".78"/>
+  /* Proposition 1 validée : deux empreintes de pas, simples et immédiatement
+     lisibles. Elles restent dans la même famille de traits dorés que le HUD. */
+  const moveFootprintsSvg = `
+    <svg class="ov2-ico ov2-move-footprints" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <g transform="rotate(-18 24 24)" fill="#f3d27f">
+        <ellipse cx="17" cy="14" rx="5.1" ry="8.1"/>
+        <circle cx="13.2" cy="24.2" r="2.1"/>
+        <circle cx="17.1" cy="23.2" r="2.15"/>
+        <circle cx="20.7" cy="21.6" r="1.85"/>
+        <ellipse cx="31" cy="31.5" rx="5.1" ry="8.1"/>
+        <circle cx="27.1" cy="41.1" r="2.1"/>
+        <circle cx="31" cy="40.1" r="2.15"/>
+        <circle cx="34.6" cy="38.5" r="1.85"/>
+      </g>
     </svg>`;
 
   function closeIslandDrawer(){
@@ -44,8 +58,6 @@
   }
 
   function forceCloseAfterUndo(){
-    /* Fermeture visuelle immédiate : la classe CSS masque le drawer dès le
-       premier frame, indépendamment du rerender historique qui suit Undo. */
     const game = byId('gameScreen');
     drawerCloseLockUntil = performance.now() + 420;
     game?.classList.add('ov2-v12-force-close');
@@ -76,8 +88,6 @@
       btn.addEventListener('click',forceCloseAfterUndo,true);
     });
 
-    /* Si le joueur rouvre volontairement ÎLE juste après Undo, on libère le
-       verrou immédiatement : aucune sensation de délai artificiel. */
     const islandButton = byId('ov2Island');
     if (islandButton && islandButton.dataset.v12DrawerReopen !== '1') {
       islandButton.dataset.v12DrawerReopen = '1';
@@ -95,10 +105,6 @@
       const drawerOpen = !!drawer && !drawer.classList.contains('hidden');
       const rotationOpen = !!rotation && !rotation.classList.contains('hidden');
       if (!drawerOpen && !rotationOpen) return;
-
-      /* Même logique que le clic gauche hors tiroir : un clic droit à
-         l'extérieur ferme immédiatement. On laisse le clic droit fonctionner
-         normalement à l'intérieur des contrôles du tiroir. */
       if (drawer?.contains(event.target) || rotation?.contains(event.target)) return;
       event.preventDefault();
       releaseDrawerCloseLock();
@@ -109,23 +115,173 @@
 
   function installMoveIcon(){
     const move = byId('ov2Move');
-    if (!move || move.dataset.v12MoveIcon === '1') return;
+    if (!move || move.dataset.v12MoveIcon === 'footprints') return;
     const icon = move.querySelector('svg.ov2-ico');
     if (!icon) return;
-    icon.outerHTML = moveWingedBootSvg;
-    move.dataset.v12MoveIcon = '1';
+    icon.outerHTML = moveFootprintsSvg;
+    move.dataset.v12MoveIcon = 'footprints';
   }
 
   function syncIslandRequiredState(){
     const island = byId('ov2Island');
     const source = byId('hudV2IslandStatus');
     if (!island) return;
-
-    /* Le HUD direct utilise déjà la visibilité de hudV2IslandStatus comme
-       source de vérité pour savoir si l'action ÎLE est encore disponible.
-       On s'appuie sur le même signal : aucun état gameplay dupliqué ici. */
     const required = !!source && !source.classList.contains('hidden') && !source.disabled;
     island.classList.toggle('ov2-island-required',required);
+  }
+
+  /* ---------- RÉSERVE D'ACTIONS DANS LE RUBAN JOUEUR ---------- */
+  function ensureReserveBadges(){
+    [['ov2LeftName','ov2LeftReserve'],['ov2RightName','ov2RightReserve']].forEach(([nameId,reserveId])=>{
+      const name = byId(nameId);
+      if (!name || byId(reserveId)) return;
+      const badge = document.createElement('span');
+      badge.id = reserveId;
+      badge.className = 'ov2-reserve ov2-off';
+      badge.textContent = 'RÉSERVE 0';
+      name.insertAdjacentElement('afterend',badge);
+    });
+  }
+
+  function readSavedGameState(){
+    try {
+      const raw = localStorage.getItem(LOCAL_SAVE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed?.state || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function reserveTotal(player){
+    const stash = player?.stash || {};
+    return ['MOVE','PUSH','MAGIC'].reduce((sum,type)=>sum + Math.max(0,Number(stash[type]) || 0),0);
+  }
+
+  function sameName(a,b){
+    return String(a || '').trim().toLocaleUpperCase('fr-FR') === String(b || '').trim().toLocaleUpperCase('fr-FR');
+  }
+
+  function syncReserveBadges(){
+    ensureReserveBadges();
+    const snapshot = readSavedGameState();
+    const players = snapshot?.players;
+    if (!Array.isArray(players) || !players.length) {
+      byId('ov2LeftReserve')?.classList.add('ov2-off');
+      byId('ov2RightReserve')?.classList.add('ov2-off');
+      return;
+    }
+
+    const currentIndex = Math.max(0,Math.min(players.length - 1,Number(snapshot.currentPlayer) || 0));
+    const leftLabel = byId('ov2LeftName')?.textContent;
+    const rightLabel = byId('ov2RightName')?.textContent;
+    const left = players.find(player=>sameName(player?.name,leftLabel)) || players[currentIndex];
+    const right = players.find(player=>player !== left && sameName(player?.name,rightLabel))
+      || players.find(player=>player !== left)
+      || null;
+
+    [[byId('ov2LeftReserve'),left],[byId('ov2RightReserve'),right]].forEach(([badge,player])=>{
+      if (!badge) return;
+      badge.classList.toggle('ov2-off',!player);
+      if (player) badge.textContent = `RÉSERVE ${reserveTotal(player)}`;
+    });
+  }
+
+  /* ---------- NETTOYAGE 3D SANS TOUCHER AUX RÈGLES ---------- */
+  function hideLegacyIslandSeams(){
+    const dynamic = window.kaykit3D?.dynamicGroup;
+    if (!dynamic?.traverse) return;
+    dynamic.traverse(object=>{
+      if (!object?.isMesh || !object.geometry || !object.material?.color?.getHex) return;
+      if (object.material.color.getHex() !== 0x183027) return;
+      const p = object.geometry.parameters || {};
+      const thinWidth = Math.abs(Number(p.width) - .018) < .008;
+      const thinDepth = Math.abs(Number(p.depth) - .018) < .008;
+      const seamHeight = Math.abs(Number(p.height) - .010) < .008;
+      if (seamHeight && (thinWidth || thinDepth)) object.visible = false;
+    });
+  }
+
+  function cellSurfaceY(r,c){
+    const visuals = window.kaykit3D?.cellVisuals?.get?.(`${r},${c}`);
+    return visuals?.length ? .47 : .05;
+  }
+
+  function syncVillageFlags(){
+    const dynamic = window.kaykit3D?.dynamicGroup;
+    if (!dynamic?.children?.length || !window.THREE) return;
+
+    /* Le fanion historique est reconnaissable sans dépendre du nom du GLTF :
+       il est l'enfant ajouté au château à la position locale (.48,0,.34).
+       On le masque puis on réutilise exactement ce modèle deux fois sur les
+       deux cases adjacentes vers l'intérieur du plateau. */
+    const originals = [];
+    dynamic.children.forEach(parent=>{
+      if (!parent?.children?.length || parent.userData?.ov2VillageFlagV12) return;
+      const flag = parent.children.find(child=>
+        Math.abs((child?.position?.x ?? 99) - .48) < .025 &&
+        Math.abs((child?.position?.z ?? 99) - .34) < .025 &&
+        Math.abs(child?.position?.y ?? 99) < .025
+      );
+      if (flag) originals.push({ castle:parent, flag });
+    });
+
+    const owners = new Set(originals.map(item=>item.castle.uuid));
+    [...dynamic.children].forEach(object=>{
+      if (!object?.userData?.ov2VillageFlagV12) return;
+      if (owners.has(object.userData.ov2VillageFlagOwner)) return;
+      dynamic.remove(object);
+    });
+
+    originals.forEach(({castle,flag})=>{
+      flag.visible = false;
+      const owner = castle.uuid;
+      let clones = dynamic.children.filter(object=>object?.userData?.ov2VillageFlagV12 && object.userData.ov2VillageFlagOwner === owner);
+      while (clones.length < 2) {
+        const clone = flag.clone(true);
+        clone.visible = true;
+        clone.userData = { ...(clone.userData || {}), ov2VillageFlagV12:true, ov2VillageFlagOwner:owner };
+        dynamic.add(clone);
+        clones.push(clone);
+      }
+      while (clones.length > 2) {
+        const extra = clones.pop();
+        dynamic.remove(extra);
+      }
+
+      const c0 = Math.round(castle.position.x / CELL_SPACING + BOARD_CENTER);
+      const r0 = Math.round(castle.position.z / CELL_SPACING + BOARD_CENTER);
+      const dc = castle.position.x <= 0 ? 1 : -1;
+      const dr = castle.position.z <= 0 ? 1 : -1;
+      const targets = [
+        { r:r0, c:c0 + dc, edgeZ:castle.position.z <= 0 ? -.20 : .20 },
+        { r:r0 + dr, c:c0, edgeX:castle.position.x <= 0 ? -.20 : .20 }
+      ];
+
+      targets.forEach((target,index)=>{
+        const clone = clones[index];
+        const x = (target.c - BOARD_CENTER) * CELL_SPACING + (target.edgeX || 0);
+        const z = (target.r - BOARD_CENTER) * CELL_SPACING + (target.edgeZ || 0);
+        clone.position.set(x,cellSurfaceY(target.r,target.c),z);
+        clone.quaternion.copy(castle.quaternion).multiply(flag.quaternion);
+        clone.visible = true;
+      });
+    });
+  }
+
+  function sync3DPolish(force=false){
+    const now = performance.now();
+    if (!force && now - last3DPolishAt < 100) return;
+    last3DPolishAt = now;
+    hideLegacyIslandSeams();
+    syncVillageFlags();
+  }
+
+  function scheduleTailSync(){
+    if (reserveTailTimer) clearTimeout(reserveTailTimer);
+    reserveTailTimer = setTimeout(syncReserveBadges,180);
+    if (polishTailTimer) clearTimeout(polishTailTimer);
+    polishTailTimer = setTimeout(()=>sync3DPolish(true),90);
   }
 
   function ensureInstructionMarkup(){
@@ -197,8 +353,6 @@
       if (btn && !btn.disabled) btn.click();
     });
     byId('ov2PlacementConfirmV12')?.addEventListener('click',()=>{
-      // Le clic plateau reste la validation réelle de la pose. Ici on ferme
-      // seulement la palette d'orientation pour rendre la vue au plateau.
       closeIslandDrawer();
     });
     byId('ov2PlacementCancelV12')?.addEventListener('click',()=>{
@@ -215,11 +369,7 @@
     const nativePlacementRotate = byId('hudV2IslandRotate');
     if (!row || !drawer || !nativePlacementRotate) return;
 
-    // Critère fiable hérité du fix V11 : le conteneur natif de rotation n'est
-    // visible que pendant la rotation DE PLACEMENT. On ne se base surtout pas
-    // sur l'état enabled des flèches, qui peut aussi changer pendant Magie.
     const active = !nativePlacementRotate.classList.contains('hidden');
-
     row.classList.toggle('hidden',!active);
     row.setAttribute('aria-hidden',active ? 'false' : 'true');
     drawer.classList.toggle('ov2-v12-rotation-mode',active);
@@ -238,10 +388,14 @@
     syncInstructionText();
     installUndoFix();
     installMoveIcon();
+    ensureReserveBadges();
+    syncReserveBadges();
     syncIslandRequiredState();
     syncPlacementRotation();
     positionContextRows();
     maintainDrawerCloseLock();
+    sync3DPolish();
+    scheduleTailSync();
   }
 
   function schedule(){
@@ -265,6 +419,7 @@
     }
     window.addEventListener('resize',schedule,{passive:true});
     window.addEventListener('pageshow',schedule,{passive:true});
+    window.addEventListener('pointerup',scheduleTailSync,{passive:true});
     console.info('[ILYOS HUD] consolidation V12 active');
   }
 
