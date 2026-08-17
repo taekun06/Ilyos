@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Almendra:wght@400;700&family=Cinzel+Decorative:wght@700;900&family=Nunito+Sans:wght@600;700;800;900&display=swap');
+
+/* ILYOS — TYPOGRAPHY G2C
+   Cinzel Decorative = identité / univers
+   Almendra = actions + instruction + panneau gardien
+   Nunito Sans = chiffres / infos fonctionnelles
+   Purement typographique : aucun layout/gameplay modifié. */
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2{
+  --font-ilyos-display:'Cinzel Decorative', Georgia, serif;
+  --font-ilyos-action:'Almendra', Georgia, serif;
+  --font-ilyos-info:'Nunito Sans', Inter, system-ui, sans-serif;
+}
+
+/* IDENTITÉ / UNIVERS */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-pname,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn strong,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-gh b,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian-title,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover h2,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover h3{
+  font-family:var(--font-ilyos-display)!important;
+  font-weight:700!important;
+  letter-spacing:.035em!important;
+}
+
+/* ACTIONS / MAGIE */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action > span:not(.ov2-count),
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-gh small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-grow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer button,
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow button,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow button,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 button{
+  font-family:var(--font-ilyos-action)!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{
+  font-size:15px!important;
+  font-weight:700!important;
+  letter-spacing:.02em!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction{
+  font-weight:700!important;
+  letter-spacing:.012em!important;
+}
+
+/* PANNEAU GARDIEN = G2C : Almendra pour le contenu, Cinzel pour le nom/titre */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian{
+  font-family:var(--font-ilyos-action)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-gh b{
+  font-family:var(--font-ilyos-display)!important;
+}
+
+/* INFOS / CHIFFRES */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-active,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-timer,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-count,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-grow strong,
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer small,
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow small,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow small,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover label,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover input,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover select{
+  font-family:var(--font-ilyos-info)!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-count{
+  font-weight:900!important;
+  letter-spacing:.015em!important;
+}
+
+/* Le texte OBLIGATOIRE reste une info stratégique, donc sans-serif. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island small{
+  font-family:var(--font-ilyos-info)!important;
+  font-weight:900!important;
+}
