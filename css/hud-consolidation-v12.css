@@ -39,15 +39,11 @@ body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
   pointer-events:auto!important;
 }
 
-/* Undo : fermeture optiquement immédiate, même si l'ancien HUD tente de
-   reconstruire le drawer dans les frames suivantes. */
 body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #hudV2IslandDrawer,
 body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #ov2IslandRotationV12{
   display:none!important;
 }
 
-/* Les flèches natives restent dans le DOM comme contrôles métier, mais V12
-   dessine une seule barre contextuelle cohérente pendant le placement. */
 body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{
   display:none!important;
 }
@@ -83,7 +79,6 @@ body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-m
   min-height:32px;
 }
 
-/* Magie / poussée : même matière que le reste du HUD, aucune duplication. */
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
 body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
   background:rgba(18,22,30,.72)!important;
@@ -128,9 +123,31 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruc
   transform:translateX(-50%)!important;
 }
 
+/* ---------- RUBANS / RÉSERVE ---------- */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:68px;
+  height:24px;
+  padding:0 9px;
+  border-radius:11px;
+  border:1px solid rgba(230,183,75,.30);
+  background:rgba(4,13,22,.34);
+  color:#f0d68e;
+  font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.07em;
+  white-space:nowrap;
+  text-shadow:0 1px 3px rgba(0,0,0,.72);
+  box-shadow:inset 0 0 10px rgba(230,183,75,.04);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{
+  color:#d8b5ff;
+  border-color:rgba(168,109,242,.30);
+  box-shadow:inset 0 0 10px rgba(168,109,242,.04);
+}
+
 /* ---------- POLISH ACTIONS V12 ---------- */
-/* Réalignement optique : les 4 blocs gardent la même boîte verticale. Le mot
-   OBLIGATOIRE ne pousse plus visuellement ÎLE vers le bas. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action{
   justify-content:flex-start!important;
   padding-top:11px!important;
@@ -154,33 +171,35 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action 
   margin-top:2px!important;
 }
 
-/* ÎLE encore obligatoire : lumière dorée forte mais élégante, sans grossir le
-   bouton. L'état disparaît automatiquement dès que l'action n'est plus requise. */
+/* ÎLE obligatoire : l'intérieur reste sombre comme les autres boutons.
+   Seuls le contour et le halo extérieur pulsent pour guider le joueur. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required{
-  color:#ffe6a0!important;
+  color:#f5dfaa!important;
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required:before{
-  border-color:rgba(255,215,112,.95)!important;
-  background:radial-gradient(circle at 50% 52%,rgba(174,112,20,.48) 0%,rgba(76,44,10,.38) 42%,rgba(3,12,20,.90) 76%)!important;
-  box-shadow:0 0 12px rgba(255,210,92,.62),0 0 30px rgba(255,184,55,.30),0 11px 21px rgba(0,0,0,.30)!important;
-  animation:ov2V12IslandPulse 1.65s ease-in-out infinite;
+  border-color:rgba(255,218,113,.96)!important;
+  background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.80),rgba(3,12,20,.78))!important;
+  box-shadow:0 0 0 2px rgba(255,217,112,.12),0 0 15px rgba(255,209,91,.62),0 0 31px rgba(255,181,49,.28),0 10px 19px rgba(0,0,0,.24)!important;
+  animation:ov2V12IslandHalo 1.7s ease-in-out infinite;
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required .ov2-ico{
-  filter:drop-shadow(0 0 7px rgba(255,222,121,.82)) drop-shadow(0 3px 5px rgba(0,0,0,.42))!important;
+  filter:drop-shadow(0 3px 5px rgba(0,0,0,.42))!important;
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required small{
   color:#ffd66f!important;
-  text-shadow:0 0 7px rgba(255,198,71,.52),0 1px 3px rgba(0,0,0,.82);
+  text-shadow:0 1px 3px rgba(0,0,0,.82);
 }
-@keyframes ov2V12IslandPulse{
-  0%,100%{filter:brightness(1);box-shadow:0 0 12px rgba(255,210,92,.52),0 0 28px rgba(255,184,55,.24),0 11px 21px rgba(0,0,0,.30)}
-  50%{filter:brightness(1.16);box-shadow:0 0 18px rgba(255,222,120,.82),0 0 38px rgba(255,184,55,.38),0 11px 21px rgba(0,0,0,.30)}
+@keyframes ov2V12IslandHalo{
+  0%,100%{box-shadow:0 0 0 2px rgba(255,217,112,.10),0 0 13px rgba(255,209,91,.48),0 0 27px rgba(255,181,49,.21),0 10px 19px rgba(0,0,0,.24)}
+  50%{box-shadow:0 0 0 3px rgba(255,226,137,.18),0 0 20px rgba(255,221,116,.84),0 0 39px rgba(255,181,49,.35),0 10px 19px rgba(0,0,0,.24)}
 }
 
-/* Nouvelle icône Déplacer : botte + lignes d'élan, plus immédiatement lisible
-   que l'ancien symbole très compact. */
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-winged{
+/* Proposition 1 : empreintes de pas. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-footprints{
   overflow:visible;
+  transform:scale(.92);
+  transform-origin:center;
+  filter:drop-shadow(0 3px 5px rgba(0,0,0,.36));
 }
 
 @media(max-width:900px){
@@ -195,5 +214,10 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-wi
   }
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{
     gap:12px;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
+    min-width:58px;
+    padding:0 6px;
+    font-size:9px;
   }
 }
