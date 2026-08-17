@@ -6,13 +6,13 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
 
   const styles = [
-    './css/hud-organique-v2.css?v=12.6',
-    './css/hud-organique-v2-polish-v6.css?v=12.6',
-    './css/hud-organique-v2-readability-v7.css?v=12.6',
-    './css/hud-organique-v2-final-v8.css?v=12.6',
-    './css/hud-organique-v2-depth-v9.css?v=12.6',
-    './css/hud-organique-v2-depth-v10.css?v=12.6',
-    './css/hud-consolidation-v12.css?v=12.6'
+    './css/hud-organique-v2.css?v=12.7',
+    './css/hud-organique-v2-polish-v6.css?v=12.7',
+    './css/hud-organique-v2-readability-v7.css?v=12.7',
+    './css/hud-organique-v2-final-v8.css?v=12.7',
+    './css/hud-organique-v2-depth-v9.css?v=12.7',
+    './css/hud-organique-v2-depth-v10.css?v=12.7',
+    './css/hud-consolidation-v12.css?v=12.7'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -22,12 +22,12 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=12.6',
-    './js/hud-organique-v2-final-v8.js?v=12.6',
-    './js/hud-organique-v2-depth-v9.js?v=12.6',
-    './js/hud-organique-v2-depth-v10.js?v=12.6',
-    './js/hud-consolidation-v12.js?v=12.6',
-    './js/ai-move-tail-guard-v12.js?v=12.6'
+    './js/hud-organique-v2.js?v=12.7',
+    './js/hud-organique-v2-final-v8.js?v=12.7',
+    './js/hud-organique-v2-depth-v9.js?v=12.7',
+    './js/hud-organique-v2-depth-v10.js?v=12.7',
+    './js/hud-consolidation-v12.js?v=12.7',
+    './js/ai-move-tail-guard-v12.js?v=12.7'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
@@ -137,7 +137,7 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
-    frame.src = './menu/frame.html?v=menu-duel-14';
+    frame.src = './menu/frame.html?v=menu-duel-15';
     frame.setAttribute('allow', 'autoplay; fullscreen');
     frame.allowFullscreen = true;
     document.body.appendChild(frame);
