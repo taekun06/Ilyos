@@ -1,28 +1,15 @@
 /* ILYOS — HUD CONSOLIDATION V12
-   Source unique pour les correctifs contextuels validés.
-
-   CONSERVE volontairement :
-   - géométrie / spacing actuel du dock principal ;
-   - longueur actuelle de la ligne dorée ;
-   - fondu volontaire des rubans joueurs dans le ciel ;
-   - tailles actuelles des icônes ;
-   - profondeur / socles V10.
-
-   RESTAURE uniquement : tiroirs contextuels, rotation d'île, Undo et instruction.
-   Aucun gameplay, coût, déplacement ou règle n'est modifié ici. */
+   Source unique pour les correctifs contextuels validés. */
 
 body[data-visual-mode="alternative"] #gameScreen{
   --ov2-context-bottom:188px;
 }
 
-/* Le tiroir d'île respire davantage SANS modifier l'espacement des 4 actions. */
 body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{
   gap:clamp(14px,1.5vw,24px)!important;
   padding:6px 8px!important;
 }
 
-/* Tous les contrôles contextuels appartiennent au même niveau visuel :
-   centrés, juste au-dessus de la phrase d'instruction. */
 body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
 body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow,
@@ -40,184 +27,81 @@ body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
 }
 
 body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #hudV2IslandDrawer,
-body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #ov2IslandRotationV12{
-  display:none!important;
-}
-
-body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{
-  display:none!important;
-}
-body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v12-rotation-mode{
-  display:none!important;
-}
+body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #ov2IslandRotationV12{display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v12-rotation-mode{display:none!important}
 
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  padding:8px 10px;
-  border-radius:16px;
-  background:rgba(18,22,30,.72);
-  border:1px solid rgba(226,200,138,.34);
-  -webkit-backdrop-filter:blur(14px) saturate(.95);
-  backdrop-filter:blur(14px) saturate(.95);
-  box-shadow:0 12px 30px rgba(0,0,0,.32);
+  display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 10px;border-radius:16px;
+  background:rgba(18,22,30,.72);border:1px solid rgba(226,200,138,.34);
+  -webkit-backdrop-filter:blur(14px) saturate(.95);backdrop-filter:blur(14px) saturate(.95);
+  box-shadow:0 12px 30px rgba(0,0,0,.32)
 }
-body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12.hidden{
-  display:none!important;
-}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12.hidden{display:none!important}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label{
-  margin-right:3px;
-  color:#f5dfaa;
-  font:800 10px/1 Inter,system-ui,sans-serif;
-  letter-spacing:.12em;
-  white-space:nowrap;
-  text-shadow:0 1px 3px rgba(0,0,0,.85);
+  margin-right:3px;color:#f5dfaa;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.12em;white-space:nowrap;
+  text-shadow:0 1px 3px rgba(0,0,0,.85)
 }
-body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-magic-btn{
-  min-height:32px;
-}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-magic-btn{min-height:32px}
 
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
 body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
-  background:rgba(18,22,30,.72)!important;
-  border-color:rgba(226,200,138,.28)!important;
-  box-shadow:0 11px 27px rgba(0,0,0,.29)!important;
-  -webkit-backdrop-filter:blur(14px) saturate(.95)!important;
-  backdrop-filter:blur(14px) saturate(.95)!important;
+  background:rgba(18,22,30,.72)!important;border-color:rgba(226,200,138,.28)!important;
+  box-shadow:0 11px 27px rgba(0,0,0,.29)!important;-webkit-backdrop-filter:blur(14px) saturate(.95)!important;
+  backdrop-filter:blur(14px) saturate(.95)!important
 }
 
-/* Étoiles attachées à la phrase et non à une largeur arbitraire de panneau. */
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction{
-  font-size:0!important;
-}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction{font-size:0!important}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::before,
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::after{
-  content:none!important;
-  display:none!important;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:16px;
-  max-width:100%;
-  white-space:nowrap;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text{
-  color:#fff0c6;
-  font:700 clamp(14px,1vw,16px)/1.25 Georgia,"Times New Roman",serif;
-  text-shadow:0 1px 3px rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.58),0 0 10px rgba(2,8,14,.42);
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-star{
-  flex:0 0 auto;
-  color:#e6b74b;
-  font:700 12px/1 Georgia,"Times New Roman",serif;
-  text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72);
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{
-  left:50%!important;
-  right:auto!important;
-  width:min(360px,70%)!important;
-  transform:translateX(-50%)!important;
-}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::after{content:none!important;display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{display:inline-flex;align-items:center;justify-content:center;gap:16px;max-width:100%;white-space:nowrap}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text{color:#fff0c6;font:700 clamp(14px,1vw,16px)/1.25 Georgia,"Times New Roman",serif;text-shadow:0 1px 3px rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.58),0 0 10px rgba(2,8,14,.42)}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-star{flex:0 0 auto;color:#e6b74b;font:700 12px/1 Georgia,"Times New Roman",serif;text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72)}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{left:50%!important;right:auto!important;width:min(360px,70%)!important;transform:translateX(-50%)!important}
 
-/* ---------- RUBANS / RÉSERVE ---------- */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  min-width:68px;
-  height:24px;
-  padding:0 9px;
-  border-radius:11px;
-  border:1px solid rgba(230,183,75,.30);
-  background:rgba(4,13,22,.34);
-  color:#f0d68e;
-  font:800 10px/1 Inter,system-ui,sans-serif;
-  letter-spacing:.07em;
-  white-space:nowrap;
-  text-shadow:0 1px 3px rgba(0,0,0,.72);
-  box-shadow:inset 0 0 10px rgba(230,183,75,.04);
+  display:inline-flex;align-items:center;justify-content:center;min-width:68px;height:24px;padding:0 9px;border-radius:11px;
+  border:1px solid rgba(230,183,75,.30);background:rgba(4,13,22,.34);color:#f0d68e;font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.07em;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.72);box-shadow:inset 0 0 10px rgba(230,183,75,.04)
 }
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{
-  color:#d8b5ff;
-  border-color:rgba(168,109,242,.30);
-  box-shadow:inset 0 0 10px rgba(168,109,242,.04);
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{color:#d8b5ff;border-color:rgba(168,109,242,.30);box-shadow:inset 0 0 10px rgba(168,109,242,.04)}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action{justify-content:flex-start!important;padding-top:11px!important;padding-bottom:6px!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico{margin-bottom:9px!important;flex:0 0 38px!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{min-height:16px;display:flex;align-items:center;justify-content:center}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small{min-height:14px;display:flex;align-items:center;justify-content:center;margin-top:2px!important}
+
+/* Halo dédié : séparé du ::before, donc Depth V10 ne peut plus l'écraser. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island{overflow:visible!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island .ov2-island-required-halo{
+  position:absolute;left:50%;top:38px;width:82px;height:82px;transform:translate(-50%,-50%) rotate(1deg);pointer-events:none;z-index:-2;
+  clip-path:polygon(24% 0,76% 0,100% 21%,92% 78%,50% 100%,8% 78%,0 21%);
+  opacity:0;border:2px solid rgba(255,224,138,0);box-shadow:none
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required .ov2-island-required-halo{
+  opacity:1;border-color:rgba(255,225,139,.96);
+  box-shadow:0 0 8px rgba(255,229,153,.92),0 0 22px rgba(255,204,88,.70),0 0 42px rgba(255,170,32,.40);
+  animation:ov2V12IslandHaloDedicated 1.55s ease-in-out infinite
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required::before{
+  background:radial-gradient(circle at 50% 40%,rgba(52,65,72,.94),rgba(8,18,27,.91) 60%,rgba(3,10,17,.88) 100%)!important
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required small{color:#ffd66f!important}
+@keyframes ov2V12IslandHaloDedicated{
+  0%,100%{transform:translate(-50%,-50%) rotate(1deg) scale(.98);filter:brightness(.92);box-shadow:0 0 7px rgba(255,229,153,.76),0 0 18px rgba(255,204,88,.56),0 0 34px rgba(255,170,32,.30)}
+  50%{transform:translate(-50%,-50%) rotate(1deg) scale(1.07);filter:brightness(1.22);box-shadow:0 0 13px rgba(255,237,179,1),0 0 31px rgba(255,211,104,.88),0 0 54px rgba(255,170,32,.48)}
 }
 
-/* ---------- POLISH ACTIONS V12 ---------- */
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action{
-  justify-content:flex-start!important;
-  padding-top:11px!important;
-  padding-bottom:6px!important;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico{
-  margin-bottom:9px!important;
-  flex:0 0 38px!important;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{
-  min-height:16px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small{
-  min-height:14px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  margin-top:2px!important;
-}
-
-/* ÎLE obligatoire : l'intérieur reste sombre comme les autres boutons.
-   Seuls le contour et le halo extérieur pulsent pour guider le joueur. */
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required{
-  color:#f5dfaa!important;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required:before{
-  border-color:rgba(255,218,113,.96)!important;
-  background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.80),rgba(3,12,20,.78))!important;
-  box-shadow:0 0 0 2px rgba(255,217,112,.12),0 0 15px rgba(255,209,91,.62),0 0 31px rgba(255,181,49,.28),0 10px 19px rgba(0,0,0,.24)!important;
-  animation:ov2V12IslandHalo 1.7s ease-in-out infinite;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required .ov2-ico{
-  filter:drop-shadow(0 3px 5px rgba(0,0,0,.42))!important;
-}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required small{
-  color:#ffd66f!important;
-  text-shadow:0 1px 3px rgba(0,0,0,.82);
-}
-@keyframes ov2V12IslandHalo{
-  0%,100%{box-shadow:0 0 0 2px rgba(255,217,112,.10),0 0 13px rgba(255,209,91,.48),0 0 27px rgba(255,181,49,.21),0 10px 19px rgba(0,0,0,.24)}
-  50%{box-shadow:0 0 0 3px rgba(255,226,137,.18),0 0 20px rgba(255,221,116,.84),0 0 39px rgba(255,181,49,.35),0 10px 19px rgba(0,0,0,.24)}
-}
-
-/* Proposition 1 : empreintes de pas. */
+/* Empreintes plus grandes et direction clairement montante. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-footprints{
-  overflow:visible;
-  transform:scale(.92);
-  transform-origin:center;
-  filter:drop-shadow(0 3px 5px rgba(0,0,0,.36));
+  overflow:visible;width:47px!important;height:47px!important;transform:scale(1.13)!important;transform-origin:center;filter:drop-shadow(0 3px 5px rgba(0,0,0,.36))
 }
 
 @media(max-width:900px){
-  body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{
-    gap:12px!important;
-  }
+  body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{gap:12px!important}
   body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12,
   body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
-  body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
-    gap:5px!important;
-    padding:7px 8px!important;
-  }
-  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{
-    gap:12px;
-  }
-  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
-    min-width:58px;
-    padding:0 6px;
-    font-size:9px;
-  }
+  body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{gap:5px!important;padding:7px 8px!important}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{gap:12px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{min-width:58px;padding:0 6px;font-size:9px}
 }
