@@ -6,8 +6,10 @@
   window.__ILYOS_HUD_ORGANIQUE_V2_DIRECT__ = true;
 
   const crownSvg = (empty=false) => `<svg class="ov2-crown${empty ? ' ov2-empty' : ''}" viewBox="0 0 36 25" aria-hidden="true"><path d="M3 18L6 6l9 7 4-10 6 10 7-7 1 12H3Z" fill="currentColor"/><path d="M5 20h27v3H5z" fill="currentColor"/></svg>`;
-  const knightSvg = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M15 49V29c0-10 7-18 17-18s17 8 17 18v20" stroke="#ffd879" stroke-width="4"/><path d="M20 29h24M24 23h16M26 36h12" stroke="#ffd879" stroke-width="3"/><path d="M20 48h24l-5 8H25z" fill="#ffd879" opacity=".85"/></svg>`;
-  const mageSvg = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M12 47c8-5 12-16 13-27 5 5 9 5 14 0 1 12 6 22 13 27" stroke="#d6b0ff" stroke-width="4"/><path d="M17 21h31L33 7 17 21Z" fill="#a86df2" opacity=".88"/><path d="M24 37c5 4 11 4 16 0" stroke="#d6b0ff" stroke-width="3"/></svg>`;
+  /* Portraits du Chevalier et du Mage : illustrations fournies par l'utilisateur
+     (badge blason/étoile déjà encadré), placées telles quelles dans le HUD. */
+  const knightSvg = `<img class="ov2-portrait-img" src="./assets/hud/knight-portrait.png" alt="Chevalier" loading="eager">`;
+  const mageSvg = `<img class="ov2-portrait-img" src="./assets/hud/mage-portrait.png" alt="Mage" loading="eager">`;
   const islandSvg = `<svg class="ov2-ico" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M8 19 24 10l16 9-16 9L8 19Z" fill="#8fe26f" stroke="#ffd879" stroke-width="2"/><path d="M8 19v10l16 9 16-9V19M24 28v10" stroke="#d1a04b" stroke-width="2"/></svg>`;
   const moveSvg = `<svg class="ov2-ico" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M16 7h13l2 16 9 5-4 10H13l-5-6 7-9 1-16Z" stroke="#f0d383" stroke-width="3"/><path d="M11 34h25" stroke="#f0d383" stroke-width="3"/></svg>`;
   const pushSvg = `<svg class="ov2-ico" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M6 24h23M23 14l10 10-10 10" stroke="#ff9b38" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M39 11l2.2 7 6.8 2.2-6.8 2.2-2.2 7-2.2-7-6.8-2.2 6.8-2.2 2.2-7Z" fill="#ff9b38"/></svg>`;

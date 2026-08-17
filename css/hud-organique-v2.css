@@ -78,6 +78,7 @@ body:not([data-visual-mode="alternative"]) #ilyosHudOrganicV2,
   box-shadow:0 0 0 4px rgba(14,7,24,.78),0 0 22px rgba(168,109,242,.25)
 }
 #ilyosHudOrganicV2 .ov2-avatar svg{width:48px;height:48px}
+#ilyosHudOrganicV2 .ov2-avatar .ov2-portrait-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
 #ilyosHudOrganicV2 .ov2-ribbon{
   position:absolute;top:12px;height:56px;display:flex;align-items:center;
   background:linear-gradient(90deg,rgba(5,17,28,.90),rgba(5,17,28,.52) 67%,transparent);
@@ -147,10 +148,11 @@ body:not([data-visual-mode="alternative"]) #ilyosHudOrganicV2,
 #ilyosHudOrganicV2 .ov2-guardian.ov2-hidden-context{transform:translateX(-120%);opacity:0;pointer-events:none}
 #ilyosHudOrganicV2 .ov2-gh{display:grid;grid-template-columns:58px 1fr;gap:12px;align-items:center;padding-bottom:11px;border-bottom:1px solid rgba(255,255,255,.06)}
 #ilyosHudOrganicV2 .ov2-gportrait{
-  width:56px;height:56px;display:grid;place-items:center;border:1px solid rgba(230,183,75,.40);
-  border-radius:45% 55% 50% 50%;background:linear-gradient(145deg,#15354a,#07131e)
+  position:relative;width:56px;height:56px;display:grid;place-items:center;border:1px solid rgba(230,183,75,.40);
+  border-radius:45% 55% 50% 50%;background:linear-gradient(145deg,#15354a,#07131e);overflow:hidden
 }
 #ilyosHudOrganicV2 .ov2-gportrait svg{width:38px;height:38px}
+#ilyosHudOrganicV2 .ov2-gportrait .ov2-portrait-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
 #ilyosHudOrganicV2 .ov2-gh b{display:block;font-family:Georgia,serif;font-size:18px;color:#f2d486;letter-spacing:.05em}
 #ilyosHudOrganicV2 .ov2-gh small{display:block;color:#aeb8bf;margin-top:3px}
 #ilyosHudOrganicV2 .ov2-grow{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}

@@ -18,6 +18,18 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   }
 })();
 
+/* Passe visuelle 3D dédiée aux gardiens KayKit.
+   Le module est isolé du moteur : il restaure les matériaux Knight/Mage depuis
+   les GLB sources et interdit toute teinte globale sur une texture atlas. */
+(function loadCharacterMaterialsV1(){
+  if (window.__ILYOS_CHARACTER_MATERIALS_V1_LOADER__) return;
+  window.__ILYOS_CHARACTER_MATERIALS_V1_LOADER__ = true;
+  const script = document.createElement('script');
+  script.src = './js/character-materials-v1.js?v=1';
+  script.defer = true;
+  document.head.appendChild(script);
+})();
+
 /* Caméra FRONT — preset non invasif.
    - appliqué UNE SEULE FOIS au vrai passage menu -> partie ;
    - réappliqué ensuite uniquement si le joueur clique explicitement VUE FACE ;
