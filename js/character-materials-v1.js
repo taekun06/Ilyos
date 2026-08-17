@@ -6,9 +6,14 @@
 
    Principe : la scène source stockée dans kaykit3D.assets reste l'autorité.
    Lorsqu'un CharacterVisual est créé, ses matériaux sont d'abord restaurés
-   depuis le clone source (couleur + propriétés physiques), puis seuls des
-   matériaux SANS texture et explicitement identifiables peuvent recevoir un
-   accent de faction. Une texture atlas ne reçoit donc jamais de teinte globale.
+   depuis le clone source (couleur + propriétés physiques), puis un accent de
+   faction est appliqué par nom de MESH (Knight_Body, Mage_Cape, ...), jamais
+   par nom de matériau — KayKit partage un seul matériau texturé par
+   personnage, donc s'en remettre au nom du matériau ne permettrait plus
+   aucune distinction. Chaque mesh possède déjà son propre clone de matériau
+   (voir "cloned" dans kaykit3d.js/createCharacterVisual) avant l'exécution de
+   cette passe : teinter un mesh ne déteint donc jamais sur les autres. La
+   tête (peau/visage) est explicitement exclue de toute teinte.
 */
 (function installIlyosCharacterMaterialsV1(){
   if (window.__ILYOS_CHARACTER_MATERIALS_V1__) return;
@@ -48,7 +53,10 @@
   }
 
   function materialLabel(mesh, material){
-    return `${mesh?.name || ''} ${material?.name || ''}`.trim().toLowerCase();
+    /* Les noms KayKit utilisent "_" comme séparateur ("Knight_Head") : on le
+       convertit en espace pour que les regex \b (limite de mot) fonctionnent
+       correctement sur "head", "body", etc. */
+    return `${mesh?.name || ''} ${material?.name || ''}`.replace(/[_-]/g, ' ').trim().toLowerCase();
   }
 
   function copyColor(target, source){
@@ -76,14 +84,21 @@
   }
 
   function applyMageAccent(mesh, material, sourceMaterial){
-    /* Une map = atlas KayKit. Interdiction absolue de recolorer : peau, robe,
-       visage ou accessoire peuvent partager le même gradient. */
-    if (!material || material.map || sourceMaterial?.map) return null;
+    if (!material) return null;
 
+    /* KayKit Mage n'a qu'un seul matériau texturé ("mage_texture") partagé
+       par tous les meshes du personnage (corps, cape, chapeau, tête...).
+       Le partage du nom de matériau ne veut PAS dire partage de l'instance :
+       kaykit3d.js clone un matériau par mesh avant d'enregistrer le visuel
+       (voir "cloned" dans createCharacterVisual), donc teinter le clone d'un
+       mesh ne déteint jamais sur les autres. On peut donc recolorer par nom
+       de MESH ("Mage_Head", "Mage_Body", ...) même si le matériau est texturé,
+       à condition d'exclure explicitement la tête (peau/visage). */
     const label = materialLabel(mesh, material);
-    const isGem = /(?:^|\b)(gem|orb|crystal|magic|arcane|jewel)(?:\b|$)/.test(label);
-    const isSafeGarment = /(?:^|\b)(hat|hood|cape|robe|dress|sleeve)(?:\b|$)/.test(label);
+    if (/(?:^|\b)head(?:\b|$)/.test(label)) return null;
+    if (/(?:^|\b)(spellbook|book|staff|wand|paper)(?:\b|$)/.test(label)) return null;
 
+    const isGem = /(?:^|\b)(gem|orb|crystal|magic|arcane|jewel)(?:\b|$)/.test(label);
     if (isGem) {
       if (material.color) material.color.setHex(PALETTE.mageCyan);
       if ('roughness' in material) material.roughness = .20;
@@ -94,27 +109,27 @@
       return 'mage-magic-accent';
     }
 
-    if (isSafeGarment) {
-      if (material.color) material.color.setHex(PALETTE.mageViolet);
-      if ('roughness' in material) material.roughness = .66;
-      if ('metalness' in material) material.metalness = 0;
-      if (material.emissive) material.emissive.setHex(PALETTE.mageVioletDeep);
-      if ('emissiveIntensity' in material) material.emissiveIntensity = .025;
-      material.needsUpdate = true;
-      return 'mage-garment-accent';
-    }
-
-    return null;
+    const isTrim = /(?:^|\b)(hat|hood|cape)(?:\b|$)/.test(label);
+    if (material.color) material.color.setHex(isTrim ? PALETTE.mageVioletLight : PALETTE.mageViolet);
+    if ('roughness' in material) material.roughness = .66;
+    if ('metalness' in material) material.metalness = 0;
+    if (material.emissive) material.emissive.setHex(PALETTE.mageVioletDeep);
+    if ('emissiveIntensity' in material) material.emissiveIntensity = .025;
+    material.needsUpdate = true;
+    return isTrim ? 'mage-trim-accent' : 'mage-garment-accent';
   }
 
   function applyKnightAccent(mesh, material, sourceMaterial){
-    /* Même règle que le Mage : jamais de material.color sur une texture atlas. */
-    if (!material || material.map || sourceMaterial?.map) return null;
+    if (!material) return null;
 
+    /* Même principe que le Mage : un seul "knight_texture" partagé par nom,
+       mais un clone de matériau par mesh (garanti avant l'enregistrement du
+       visuel). On recolore donc par nom de MESH, en excluant la tête pour ne
+       jamais teinter la peau/le visage. */
     const label = materialLabel(mesh, material);
-    const isGoldAccent = /(?:^|\b)(trim|emblem|badge|buckle|ornament|gold|jewel)(?:\b|$)/.test(label);
-    const isArmor = /(?:^|\b)(armor|armour|plate|helmet|helm|gauntlet|pauldron|mail|metal)(?:\b|$)/.test(label);
+    if (/(?:^|\b)head(?:\b|$)/.test(label)) return null;
 
+    const isGoldAccent = /(?:^|\b)(trim|emblem|badge|buckle|ornament|gold|jewel)(?:\b|$)/.test(label);
     if (isGoldAccent) {
       if (material.color) material.color.setHex(PALETTE.knightGold);
       if ('roughness' in material) material.roughness = .38;
@@ -125,17 +140,14 @@
       return 'knight-gold-accent';
     }
 
-    if (isArmor) {
-      if (material.color) material.color.setHex(PALETTE.knightSteel);
-      if ('roughness' in material) material.roughness = .48;
-      if ('metalness' in material) material.metalness = .38;
-      if (material.emissive) material.emissive.setHex(0x15191a);
-      if ('emissiveIntensity' in material) material.emissiveIntensity = .015;
-      material.needsUpdate = true;
-      return 'knight-warm-steel';
-    }
-
-    return null;
+    /* Casque, cape, corps, bras, jambes, armes et boucliers : acier chaud. */
+    if (material.color) material.color.setHex(PALETTE.knightSteel);
+    if ('roughness' in material) material.roughness = .48;
+    if ('metalness' in material) material.metalness = .38;
+    if (material.emissive) material.emissive.setHex(0x15191a);
+    if ('emissiveIntensity' in material) material.emissiveIntensity = .015;
+    material.needsUpdate = true;
+    return 'knight-warm-steel';
   }
 
   function inspectAsset(kaykit, assetKey){
@@ -258,7 +270,7 @@
         knight,
         mage,
         applied:[...runtime.applied.values()],
-        rule:'Les matériaux texturés sont restaurés depuis le GLB source et ne sont jamais recolorés.'
+        rule:'Les matériaux sont restaurés depuis le GLB source puis teintés par nom de mesh (clone par mesh, jamais la tête).'
       };
     },
     reapply(){

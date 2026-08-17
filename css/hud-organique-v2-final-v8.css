@@ -17,47 +17,15 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action::before{
   backdrop-filter:blur(4px) saturate(.88)!important;
 }
 
-/* ===== Portraits : vrais rendus KayKit Knight / Mage ===== */
+/* ===== Portraits : image fournie, recadrée dans le cercle d'origine ===== */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar{
   overflow:hidden!important;
   isolation:isolate!important;
 }
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar::before{
-  content:"";
-  position:absolute;
-  inset:4px;
-  z-index:0;
-  border-radius:inherit;
-  background:radial-gradient(circle at 50% 38%,rgba(255,228,147,.12),rgba(5,17,28,.18) 58%,rgba(3,10,17,.46));
-  pointer-events:none;
-}
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-avatar::before{
-  background:radial-gradient(circle at 50% 38%,rgba(199,151,255,.14),rgba(19,9,33,.18) 58%,rgba(7,4,14,.48));
-}
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar > svg{
-  opacity:.18!important;
+  opacity:1!important;
   z-index:1!important;
 }
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar.ov2-kaykit-ready > svg{
-  display:none!important;
-}
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-kaykit-portrait{
-  position:absolute!important;
-  z-index:2!important;
-  left:50%!important;
-  top:50%!important;
-  width:104%!important;
-  height:104%!important;
-  max-width:none!important;
-  object-fit:contain!important;
-  object-position:center center!important;
-  transform:translate(-50%,-49%)!important;
-  filter:drop-shadow(0 4px 5px rgba(0,0,0,.46)) saturate(1.08) contrast(1.04)!important;
-  pointer-events:none!important;
-  opacity:0;
-  animation:ov2PortraitReveal .28s ease-out forwards;
-}
-@keyframes ov2PortraitReveal{to{opacity:1}}
 
 /* ===== Couronnes : gagnée pleine / non gagnée réellement en contour ===== */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown:not(.ov2-empty) path{
