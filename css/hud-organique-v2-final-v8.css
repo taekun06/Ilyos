@@ -1,0 +1,194 @@
+/* ILYOS — HUD Organique V2 / FINAL POLISH V8
+   Profondeur, états d'action, couronnes contour, Undo SVG et portraits KayKit.
+   Aucun changement de gameplay. */
+
+/* ===== Profondeur locale : le HUD appartient clairement au premier plan ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-guardian{
+  -webkit-backdrop-filter:blur(6px) saturate(.92)!important;
+  backdrop-filter:blur(6px) saturate(.92)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action::before{
+  -webkit-backdrop-filter:blur(4px) saturate(.88)!important;
+  backdrop-filter:blur(4px) saturate(.88)!important;
+}
+
+/* ===== Portraits : vrais rendus KayKit Knight / Mage ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar{
+  overflow:hidden!important;
+  isolation:isolate!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar::before{
+  content:"";
+  position:absolute;
+  inset:4px;
+  z-index:0;
+  border-radius:inherit;
+  background:radial-gradient(circle at 50% 38%,rgba(255,228,147,.12),rgba(5,17,28,.18) 58%,rgba(3,10,17,.46));
+  pointer-events:none;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-avatar::before{
+  background:radial-gradient(circle at 50% 38%,rgba(199,151,255,.14),rgba(19,9,33,.18) 58%,rgba(7,4,14,.48));
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar > svg{
+  opacity:.18!important;
+  z-index:1!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar.ov2-kaykit-ready > svg{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-kaykit-portrait{
+  position:absolute!important;
+  z-index:2!important;
+  left:50%!important;
+  top:50%!important;
+  width:104%!important;
+  height:104%!important;
+  max-width:none!important;
+  object-fit:contain!important;
+  object-position:center center!important;
+  transform:translate(-50%,-49%)!important;
+  filter:drop-shadow(0 4px 5px rgba(0,0,0,.46)) saturate(1.08) contrast(1.04)!important;
+  pointer-events:none!important;
+  opacity:0;
+  animation:ov2PortraitReveal .28s ease-out forwards;
+}
+@keyframes ov2PortraitReveal{to{opacity:1}}
+
+/* ===== Couronnes : gagnée pleine / non gagnée réellement en contour ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown:not(.ov2-empty) path{
+  fill:currentColor!important;
+  stroke:none!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
+  opacity:.56!important;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.62))!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty path{
+  fill:transparent!important;
+  stroke:currentColor!important;
+  stroke-width:1.65!important;
+  stroke-linejoin:round!important;
+  vector-effect:non-scaling-stroke!important;
+}
+
+/* ===== Actions : disponible / indisponible / sélectionnée ===== */
+/* Disponible : matière subtilement éclairée, sans voler la sélection. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(230,183,75,.36)!important;
+  background:radial-gradient(circle at 50% 52%,rgba(32,43,48,.72),rgba(3,12,20,.60) 72%)!important;
+  box-shadow:0 0 8px rgba(230,183,75,.055),0 8px 16px rgba(0,0,0,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(168,109,242,.40)!important;
+}
+
+/* Indisponible : l'objet baisse, JAMAIS son information. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  border-color:rgba(178,187,194,.16)!important;
+  background:radial-gradient(circle at 50% 52%,rgba(16,25,32,.46),rgba(3,12,20,.38) 72%)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
+  opacity:.48!important;
+  filter:saturate(.20) brightness(.80) drop-shadow(0 2px 4px rgba(0,0,0,.35))!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  opacity:1!important;
+  color:#f3eee3!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled small,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov2MoveCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov2PushCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov2MagicCount{
+  opacity:1!important;
+  color:#f3dca3!important;
+}
+
+/* Sélection : pulsation de matière + petite étincelle. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
+  animation:ov2SelectedPulse 2.25s ease-in-out infinite!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{
+  content:"✦";
+  position:absolute;
+  z-index:3;
+  left:calc(50% + 27px);
+  top:0;
+  color:#ffe7a4;
+  font:700 12px/1 Georgia,serif;
+  text-shadow:0 0 5px #ffd879,0 0 11px rgba(255,216,121,.72);
+  pointer-events:none;
+  animation:ov2SelectedSpark 2.6s ease-in-out infinite;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::after{
+  color:#ddb9ff;
+  text-shadow:0 0 5px #c99cff,0 0 11px rgba(168,109,242,.74);
+}
+@keyframes ov2SelectedPulse{
+  0%,100%{filter:brightness(1);transform:translateX(-50%) rotate(1deg) scale(1)}
+  50%{filter:brightness(1.10);transform:translateX(-50%) rotate(1deg) scale(1.025)}
+}
+@keyframes ov2SelectedSpark{
+  0%,30%,100%{opacity:0;transform:translate(2px,4px) scale(.65) rotate(0deg)}
+  42%{opacity:1;transform:translate(0,0) scale(1.05) rotate(16deg)}
+  58%{opacity:.42;transform:translate(-3px,-5px) scale(.82) rotate(34deg)}
+  70%{opacity:0;transform:translate(-5px,-8px) scale(.6) rotate(48deg)}
+}
+@media(prefers-reduced-motion:reduce){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::before,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{animation:none!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{opacity:.8!important}
+}
+
+/* ===== Undo : vrai pictogramme SVG, aucun compteur ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+  font-size:0!important;
+  overflow:visible!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo .ov2-undo-svg{
+  display:block!important;
+  width:27px!important;
+  height:27px!important;
+  fill:none!important;
+  stroke:currentColor!important;
+  stroke-width:3!important;
+  stroke-linecap:round!important;
+  stroke-linejoin:round!important;
+  pointer-events:none!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo::after{
+  content:"ANNULER";
+  position:absolute;
+  left:60px;
+  top:50%;
+  transform:translate(-4px,-50%);
+  padding:6px 9px;
+  border:1px solid rgba(230,183,75,.24);
+  border-radius:8px;
+  background:rgba(4,13,22,.91);
+  color:#f5de9d;
+  font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.08em;
+  white-space:nowrap;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+  opacity:0;
+  visibility:hidden;
+  transition:opacity .14s ease,transform .14s ease,visibility .14s ease;
+  pointer-events:none;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo:hover::after,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo:focus-visible::after{
+  opacity:1;
+  visibility:visible;
+  transform:translate(0,-50%);
+}
+
+/* ===== Fin du tour : texte toujours sûr ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
+  color:inherit!important;
+  opacity:1!important;
+}

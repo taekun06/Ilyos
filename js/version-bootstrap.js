@@ -4,14 +4,32 @@ window.ILYOS_BUILD = "V76"; document.title = "ILYOS V76 — Animations";
 (function(){
   if (window.__ILYOS_HUD_ORGANIC_LOADER__) return;
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
-  const link=document.createElement('link');
-  link.rel='stylesheet';
-  link.href='./css/hud-organique-v2.css?v=5';
-  document.head.appendChild(link);
-  const script=document.createElement('script');
-  script.src='./js/hud-organique-v2.js?v=5';
-  script.defer=true;
-  document.head.appendChild(script);
+
+  const styles = [
+    './css/hud-organique-v2.css?v=9',
+    './css/hud-organique-v2-polish-v6.css?v=9',
+    './css/hud-organique-v2-readability-v7.css?v=9',
+    './css/hud-organique-v2-final-v8.css?v=9',
+    './css/hud-organique-v2-depth-v9.css?v=9'
+  ];
+  styles.forEach(href=>{
+    const link=document.createElement('link');
+    link.rel='stylesheet';
+    link.href=href;
+    document.head.appendChild(link);
+  });
+
+  const scripts = [
+    './js/hud-organique-v2.js?v=9',
+    './js/hud-organique-v2-final-v8.js?v=9',
+    './js/hud-organique-v2-depth-v9.js?v=9'
+  ];
+  scripts.forEach(src=>{
+    const script=document.createElement('script');
+    script.src=src;
+    script.defer=true;
+    document.head.appendChild(script);
+  });
 })();
 
 /* ILYOS V11 MENU — isolated iframe integration.
