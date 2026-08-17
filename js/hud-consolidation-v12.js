@@ -85,6 +85,28 @@
     }
   }
 
+  function installRightClickClose(){
+    if (document.documentElement.dataset.ov2V12RightClickClose === '1') return;
+    document.documentElement.dataset.ov2V12RightClickClose = '1';
+
+    document.addEventListener('contextmenu',event=>{
+      const drawer = byId('hudV2IslandDrawer');
+      const rotation = byId('ov2IslandRotationV12');
+      const drawerOpen = !!drawer && !drawer.classList.contains('hidden');
+      const rotationOpen = !!rotation && !rotation.classList.contains('hidden');
+      if (!drawerOpen && !rotationOpen) return;
+
+      /* Même logique que le clic gauche hors tiroir : un clic droit à
+         l'extérieur ferme immédiatement. On laisse le clic droit fonctionner
+         normalement à l'intérieur des contrôles du tiroir. */
+      if (drawer?.contains(event.target) || rotation?.contains(event.target)) return;
+      event.preventDefault();
+      releaseDrawerCloseLock();
+      closeIslandDrawer();
+      schedule();
+    },true);
+  }
+
   function installMoveIcon(){
     const move = byId('ov2Move');
     if (!move || move.dataset.v12MoveIcon === '1') return;
@@ -229,6 +251,7 @@
   }
 
   function boot(){
+    installRightClickClose();
     sync();
     const game = byId('gameScreen');
     if (game && 'MutationObserver' in window) {
