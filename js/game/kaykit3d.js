@@ -4262,8 +4262,8 @@
       //
       // Un vrai grain (dégradé, taches, brins) a été tenté ici puis abandonné :
       // le modèle est un monticule bas-poly fait de nombreuses petites
-      // facettes qui échantillonnent chacune une sous-région DIFFÉRENTE et
-      // NON ADJACENTE de cette même case (UV irréguliers, hérités de l'asset
+      // facettes, et chacune échantillonne une sous-région DIFFÉRENTE et NON
+      // ADJACENTE de cette même case (UV irréguliers, hérités de l'asset
       // source). Confirmé par test contrôlé en jeu : même un motif fin et
       // "raccordable" en bord de rectangle laisse une ligne visible à chaque
       // frontière de facette — seule une teinte strictement unie n'en laisse
@@ -4275,17 +4275,6 @@
       const KAYKIT_ISLAND_GRASS_RECT = { x: 384, y: 768, w: 128, h: 256 };
       const KAYKIT_ISLAND_DIRT_RECT = { x: 640, y: 0, w: 128, h: 256 };
 
-      // Le modèle "dirt_with_grass" n'est pas un simple pavé à une seule face
-      // plane par côté : c'est un petit monticule bas-poly fait de nombreuses
-      // facettes, et chacune pointe ses UV vers une sous-région du MÊME
-      // rectangle de nuancier — mais ces sous-régions ne sont PAS adjacentes
-      // ni cohérentes entre facettes (confirmé empiriquement : même un motif
-      // rendu parfaitement raccordable en bord de rectangle, ou un simple
-      // bruit fin par pixel, laisse des lignes visibles à chaque frontière de
-      // facette). Seule une teinte strictement UNIE ne montre aucune ligne,
-      // quelle que soit la sous-région échantillonnée. On se limite donc à un
-      // aplat par variant — plus riche en couleur que l'unique vert délavé
-      // d'origine, mais sans grain (la géométrie du modèle ne le permet pas).
       function kaykitPaintIslandGrass(context, rect, tint) {
         const { x, y, w, h } = rect;
         context.fillStyle = `#${new THREE.Color(tint).getHexString()}`;
