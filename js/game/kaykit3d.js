@@ -4216,6 +4216,144 @@
         return loop.map(([x, z]) => [(x / 2) * KAYKIT_CELL_SPACING, (z / 2) * KAYKIT_CELL_SPACING]);
       }
 
+      // ── Falaises d'île (visual-island-relief-v1) ──────────────────────────
+      // Couche purement décorative, sous le niveau jouable (KAYKIT_LEVELS.board).
+      // Ne modifie ni la géométrie KayKit de la surface, ni hitMeshes/
+      // interactiveMeshes (le raycast ne teste que ces deux listes — voir
+      // buildKayKitStaticScene — donc ces meshes sont invisibles au clic par
+      // construction, sans protection supplémentaire nécessaire).
+
+      // "Cette face donne sur le vide" vs "touche une case de la même île" :
+      // simple lookup 4-voisins dans l'ensemble des cellules de l'île. Un trou
+      // (via kaykitIslandComponents) n'a pas besoin d'être traité à part ici —
+      // deux cellules non adjacentes ne peuvent de toute façon jamais se
+      // "toucher", donc les traiter comme un seul ensemble est correct que
+      // l'île forme une ou plusieurs composantes connexes.
+      function kaykitIslandExposedSides(cells) {
+        const set = new Set((cells || []).map(([r, c]) => `${r},${c}`));
+        const result = [];
+        (cells || []).forEach(([r, c]) => {
+          if (!set.has(`${r - 1},${c}`)) result.push({ r, c, dir: "N" });
+          if (!set.has(`${r + 1},${c}`)) result.push({ r, c, dir: "S" });
+          if (!set.has(`${r},${c - 1}`)) result.push({ r, c, dir: "W" });
+          if (!set.has(`${r},${c + 1}`)) result.push({ r, c, dir: "E" });
+        });
+        return result;
+      }
+
+      const KAYKIT_CLIFF_DEPTHS = { short: .495, medium: .55, deep: .616 };
+      const KAYKIT_CLIFF_COLOR = 0xac6f4a;
+      // Petit rebord (section 7) : la ceinture à 15% de la profondeur est
+      // légèrement PLUS large que le haut avant de se resserrer vers le bas —
+      // silhouette "rebord puis roche", pas un simple cône.
+      function kaykitCliffWedgeGeometry(depth) {
+        const topW = KAYKIT_CELL_SPACING * .98;
+        const ledgeW = topW * 1.03;
+        const bottomW = KAYKIT_CELL_SPACING * .72;
+        const th = .09;
+        const ledgeY = -depth * .15;
+        const bottomY = -depth;
+        // 3 anneaux (haut / rebord / bas) × (avant en z=th, arrière en z=0).
+        const rows = [
+          { y: 0, w: topW }, { y: ledgeY, w: ledgeW }, { y: bottomY, w: bottomW }
+        ];
+        const pos = [];
+        const push = (x, y, z) => pos.push(x, y, z);
+        const quad = (a, b, c, d) => { // a,b,c,d = [x,y,z], sens direct
+          push(...a); push(...b); push(...c);
+          push(...a); push(...c); push(...d);
+        };
+        for (let i = 0; i < rows.length - 1; i++) {
+          const top = rows[i], bot = rows[i + 1];
+          const tL = [-top.w / 2, top.y, th], tR = [top.w / 2, top.y, th];
+          const bL = [-bot.w / 2, bot.y, th], bR = [bot.w / 2, bot.y, th];
+          const tLb = [-top.w / 2, top.y, 0], tRb = [top.w / 2, top.y, 0];
+          const bLb = [-bot.w / 2, bot.y, 0], bRb = [bot.w / 2, bot.y, 0];
+          // Face avant (visible, tournée vers le vide).
+          quad(tL, tR, bR, bL);
+          // Côtés gauche/droit (referment le volume vu de biais).
+          quad(tLb, tL, bL, bLb);
+          quad(tR, tRb, bRb, bR);
+        }
+        // Fond : referme le dessous pour éviter un volume ouvert vu de bas.
+        const last = rows[rows.length - 1];
+        const bL = [-last.w / 2, last.y, th], bR = [last.w / 2, last.y, th];
+        const bLb = [-last.w / 2, last.y, 0], bRb = [last.w / 2, last.y, 0];
+        quad(bLb, bRb, bR, bL);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geometry.computeVertexNormals();
+        return geometry;
+      }
+
+      function kaykitCliffRockGeometry() {
+        return kaykitGeometry("cliff-rock-v1", () => new THREE.IcosahedronGeometry(.055, 0));
+      }
+
+      function kaykitCliffMaterial() {
+        return kaykitMaterial(KAYKIT_CLIFF_COLOR, { roughness: .94, metalness: 0 });
+      }
+
+      const KAYKIT_CLIFF_DIR_ROTATION = { S: 0, W: Math.PI / 2, N: Math.PI, E: -Math.PI / 2 };
+      const KAYKIT_CLIFF_DIR_OFFSET = {
+        S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0]
+      };
+
+      // Une falaise par bord exposé (jamais sur un bord intérieur à la même
+      // île). Profondeur déterministe par (île, case, bord) via kaykitHash —
+      // jamais aléatoire à chaque frame. Aucun ajout à hitMeshes/
+      // interactiveMeshes/cellVisuals : purement décoratif, jamais sélectionné
+      // au survol, jamais testé par le raycast.
+      function addKayKitIslandCliffs(group, island, cells) {
+        const islandKey = island?.id ?? "preview";
+        const sides = kaykitIslandExposedSides(cells);
+        const material = kaykitCliffMaterial();
+        const half = KAYKIT_CELL_SPACING / 2;
+        sides.forEach(({ r, c, dir }) => {
+          const depthRoll = kaykitHash("cliff-depth", islandKey, r, c, dir);
+          const variant = depthRoll < .28 ? "short" : depthRoll < .78 ? "medium" : "deep";
+          const geometry = kaykitGeometry(`cliff-wedge-${variant}`, () => kaykitCliffWedgeGeometry(KAYKIT_CLIFF_DEPTHS[variant]));
+          const wedge = new THREE.Mesh(geometry, material);
+          const p = kaykitCellPosition(r, c, KAYKIT_LEVELS.board);
+          const [ox, oz] = KAYKIT_CLIFF_DIR_OFFSET[dir];
+          wedge.position.set(p.x + ox * half, p.y, p.z + oz * half);
+          wedge.rotation.y = KAYKIT_CLIFF_DIR_ROTATION[dir];
+          // Variation de silhouette (section 10) : quelques % de largeur/profondeur,
+          // jamais assez pour déborder sur la case voisine ou le vide au-delà.
+          const jitter = kaykitHash("cliff-jitter", islandKey, r, c, dir);
+          wedge.scale.x = .97 + jitter * .06;
+          wedge.scale.y = .96 + kaykitHash("cliff-jitter-y", islandKey, r, c, dir) * .08;
+          wedge.castShadow = false;
+          wedge.receiveShadow = true;
+          wedge.raycast = () => {};
+          group.add(wedge);
+
+          // Petit affleurement rocheux : rare (environ 1 bord exposé sur 6).
+          if (kaykitHash("cliff-rock", islandKey, r, c, dir) < .16) {
+            const rock = new THREE.Mesh(kaykitCliffRockGeometry(), material);
+            const along = (kaykitHash("cliff-rock-along", islandKey, r, c, dir) - .5) * KAYKIT_CELL_SPACING * .55;
+            const depth = KAYKIT_CLIFF_DEPTHS[variant];
+            const downOffset = depth * (.25 + kaykitHash("cliff-rock-down", islandKey, r, c, dir) * .35);
+            rock.position.set(
+              p.x + ox * (half + .05) + (dir === "N" || dir === "S" ? along : 0),
+              p.y - downOffset,
+              p.z + oz * (half + .05) + (dir === "E" || dir === "W" ? along : 0)
+            );
+            const rockScale = .7 + kaykitHash("cliff-rock-scale", islandKey, r, c, dir) * .6;
+            rock.scale.setScalar(rockScale);
+            rock.rotation.set(
+              kaykitHash("cliff-rock-rx", islandKey, r, c, dir) * Math.PI,
+              kaykitHash("cliff-rock-ry", islandKey, r, c, dir) * Math.PI,
+              0
+            );
+            rock.castShadow = false;
+            rock.receiveShadow = true;
+            rock.raycast = () => {};
+            group.add(rock);
+          }
+        });
+      }
+
       function kaykitIslandAccentColor(island, { preview = false, previewColor = 0x20f39a } = {}) {
         if (preview) return new THREE.Color(previewColor);
         const owner = Number.isInteger(island?.owner) ? island.owner : null;
@@ -4406,6 +4544,11 @@
           group.add(block);
           if (!preview) registerKayKitCellVisual(r, c, block);
         });
+
+        // Falaises sous les bords extérieurs uniquement — jamais pour le
+        // ghost de pose/rotation (pas de relief sur une île qui n'existe pas
+        // encore, et son contenu de cells change à chaque frame de survol).
+        if (!preview) addKayKitIslandCliffs(group, island, cells);
 
         if (preview) {
           // FUITE (corrigee) : contour d'île, sa forme varie a chaque case
