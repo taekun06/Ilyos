@@ -4209,12 +4209,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0x9aa55a,
-        0x647540,
-        0x91a77d,
-        0x476b4d,
-        0x5f8c78,
-        0x7e984f
+        0x9fae57,
+        0x5f7a3c,
+        0x8bbf8a,
+        0x3f6b52,
+        0x4f9488,
+        0x8aa63f
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4250,10 +4250,159 @@
         return ILYOS_ISLAND_TINTS[index % ILYOS_ISLAND_TINTS.length];
       }
 
+      // Repasses "matière" de l'atlas Block Bits (passe plateau/environnement v1).
+      //
+      // L'atlas partagé par dirt_with_grass.gltf n'est pas une texture peinte :
+      // c'est un nuancier de dégradés plats (une case = une teinte unie), et le
+      // modèle pointe ses UV sur DEUX cases précises — une pour le dessus
+      // (herbe), une pour les flancs (terre/falaise). Confirmé par inspection
+      // des UV/normales du GLB : la case herbe est le rectangle pixel
+      // [384..512)×[768..1024), la case terre le rectangle [640..768)×[0..256)
+      // du fichier 1024×1024 ./assets/kaykit/blockBits/block_bits_texture.png.
+      // Recolorer un simple aplat (ancien comportement) donnait donc des cases
+      // plates et pâles quel que soit le variant. On repeint maintenant CES
+      // deux rectangles avec un vrai grain (touffes/brins pour l'herbe, strates
+      // + cailloux pour la terre) — le reste de l'atlas (bois, pierre, fenêtres
+      // d'autres assets Block Bits inutilisés) n'est jamais touché.
+      const KAYKIT_ISLAND_GRASS_RECT = { x: 384, y: 768, w: 128, h: 256 };
+      const KAYKIT_ISLAND_DIRT_RECT = { x: 640, y: 0, w: 128, h: 256 };
+
+      function kaykitSeededRandom(seedBase) {
+        let seed = seedBase >>> 0 || 1;
+        return () => {
+          seed ^= seed << 13; seed >>>= 0;
+          seed ^= seed >>> 17;
+          seed ^= seed << 5; seed >>>= 0;
+          return (seed >>> 0) / 4294967296;
+        };
+      }
+
+      function kaykitPaintIslandGrass(context, rect, tint, variantIndex) {
+        const { x, y, w, h } = rect;
+        const base = new THREE.Color(tint);
+        const light = base.clone().offsetHSL(0, -.04, .12);
+        const shadow = base.clone().offsetHSL(.01, .06, -.14);
+        context.save();
+        context.beginPath();
+        context.rect(x, y, w, h);
+        context.clip();
+        const gradient = context.createLinearGradient(x, y, x + w * .3, y + h);
+        gradient.addColorStop(0, `#${light.getHexString()}`);
+        gradient.addColorStop(.55, `#${base.getHexString()}`);
+        gradient.addColorStop(1, `#${shadow.getHexString()}`);
+        context.fillStyle = gradient;
+        context.fillRect(x, y, w, h);
+
+        const rand = kaykitSeededRandom(0x9e17 + variantIndex * 97);
+        // Mouchetures à grande échelle (taches douces) : le grain fin des
+        // brins ci-dessous se moyenne et disparaît sous le mip-mapping dès
+        // que la case est vue à distance de jeu normale. Ces taches, plus
+        // larges, survivent au mip-mapping et donnent une surface vivante
+        // même de loin — le grain fin ajoute le détail au zoom rapproché.
+        const blotchCount = Math.round(w * h / 900);
+        for (let i = 0; i < blotchCount; i++) {
+          const px = x + rand() * w;
+          const py = y + rand() * h;
+          const r = 9 + rand() * 16;
+          const dark = rand() > .5;
+          const tone = dark ? shadow : light;
+          const blotch = context.createRadialGradient(px, py, 0, px, py, r);
+          blotch.addColorStop(0, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.20 + rand() * .16})`);
+          blotch.addColorStop(1, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},0)`);
+          context.fillStyle = blotch;
+          context.beginPath();
+          context.arc(px, py, r, 0, Math.PI * 2);
+          context.fill();
+        }
+        // Touffes d'herbe : petits traits courts, deux tons (ombre/lumière),
+        // densité modérée pour rester lisible même à distance de jeu.
+        const bladeCount = Math.round(w * h / 95);
+        for (let i = 0; i < bladeCount; i++) {
+          const px = x + rand() * w;
+          const py = y + rand() * h;
+          const len = 2.4 + rand() * 5.2;
+          const angle = -.5 + rand() * 1.0;
+          const dark = rand() > .5;
+          const tone = dark ? shadow : light;
+          context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.30 + rand() * .30})`;
+          context.lineWidth = .9 + rand() * 1.1;
+          context.beginPath();
+          context.moveTo(px, py);
+          context.lineTo(px + Math.sin(angle) * len, py - len);
+          context.stroke();
+        }
+        // Petites zones denses (touffes), pour casser la répétition du dégradé.
+        const tuftCount = Math.round(w * h / 780);
+        for (let i = 0; i < tuftCount; i++) {
+          const px = x + rand() * w;
+          const py = y + rand() * h;
+          const r = 2 + rand() * 3.4;
+          context.fillStyle = `rgba(${shadow.r * 255 | 0},${shadow.g * 255 | 0},${shadow.b * 255 | 0},${.16 + rand() * .16})`;
+          context.beginPath();
+          context.arc(px, py, r, 0, Math.PI * 2);
+          context.fill();
+        }
+        context.restore();
+      }
+
+      function kaykitPaintIslandDirt(context, rect) {
+        const { x, y, w, h } = rect;
+        // Teinte terre commune à toutes les factions/variants (la pierre des
+        // châteaux suit la même logique : un monde cohérent, seul l'accent
+        // change selon le sujet — ici l'herbe, pas la terre).
+        const light = new THREE.Color(0xb3805f);
+        const dark = new THREE.Color(0x6d4630);
+        context.save();
+        context.beginPath();
+        context.rect(x, y, w, h);
+        context.clip();
+        const gradient = context.createLinearGradient(x, y, x, y + h);
+        gradient.addColorStop(0, `#${light.getHexString()}`);
+        gradient.addColorStop(1, `#${dark.getHexString()}`);
+        context.fillStyle = gradient;
+        context.fillRect(x, y, w, h);
+
+        const rand = kaykitSeededRandom(0x4c31);
+        // Strates horizontales : bandes fines, légèrement décalées, qui lisent
+        // comme des couches de roche/terre plutôt qu'un aplat.
+        const bandCount = Math.round(h / 9);
+        for (let i = 0; i < bandCount; i++) {
+          const py = y + (i + rand() * .6) * (h / bandCount);
+          const bandLight = rand() > .5;
+          const tone = bandLight ? light.clone().offsetHSL(0, 0, .06) : dark.clone().offsetHSL(0, 0, -.05);
+          context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.22 + rand() * .22})`;
+          context.lineWidth = .8 + rand() * 1.6;
+          context.beginPath();
+          context.moveTo(x, py);
+          for (let px = x; px <= x + w; px += 8) {
+            context.lineTo(px, py + (rand() - .5) * 3.2);
+          }
+          context.stroke();
+        }
+        // Petits cailloux/graviers.
+        const pebbleCount = Math.round(w * h / 340);
+        for (let i = 0; i < pebbleCount; i++) {
+          const px = x + rand() * w;
+          const py = y + rand() * h;
+          const r = 1.1 + rand() * 2.2;
+          const pebbleDark = rand() > .45;
+          const tone = pebbleDark ? dark.clone().offsetHSL(0, 0, -.10) : light.clone().offsetHSL(0, 0, .10);
+          context.fillStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.34 + rand() * .30})`;
+          context.beginPath();
+          context.arc(px, py, r, 0, Math.PI * 2);
+          context.fill();
+        }
+        // Ombre de racine : bande sombre fine juste sous le rebord d'herbe,
+        // pour renforcer la séparation dessus/côté sans changer la géométrie.
+        context.fillStyle = "rgba(28,18,12,.30)";
+        context.fillRect(x, y, w, Math.max(2, h * .045));
+        context.restore();
+      }
+
       function kaykitIslandTintTexture(sourceTexture, variantIndex) {
         const sourceImage = sourceTexture?.image;
         if (!sourceImage?.width || !sourceImage?.height) return sourceTexture;
-        const cacheKey = `${sourceTexture.uuid}|${variantIndex}`;
+        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2`;
         const cached = kaykit3D?.islandTintTextures?.get(cacheKey);
         if (cached) return cached;
 
@@ -4263,27 +4412,10 @@
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) return sourceTexture;
         context.drawImage(sourceImage, 0, 0);
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-        const pixels = imageData.data;
-        const tint = ILYOS_ISLAND_TINTS[variantIndex];
-        const red = (tint >> 16) & 255;
-        const green = (tint >> 8) & 255;
-        const blue = tint & 255;
 
-        for (let index = 0; index < pixels.length; index += 4) {
-          const sourceRed = pixels[index];
-          const sourceGreen = pixels[index + 1];
-          const sourceBlue = pixels[index + 2];
-          // L'atlas Block Bits partage herbe et terre. Seuls les pixels dont
-          // le vert domine franchement sont remplacés : les flancs orange,
-          // rochers et autres détails gardent ainsi exactement leur texture.
-          if (sourceGreen > 72 && sourceGreen > sourceRed * 1.18 && sourceGreen > sourceBlue * 1.18) {
-            pixels[index] = red;
-            pixels[index + 1] = green;
-            pixels[index + 2] = blue;
-          }
-        }
-        context.putImageData(imageData, 0, 0);
+        const tint = ILYOS_ISLAND_TINTS[variantIndex];
+        kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint, variantIndex);
+        kaykitPaintIslandDirt(context, KAYKIT_ISLAND_DIRT_RECT);
 
         const texture = sourceTexture.clone();
         texture.image = canvas;
