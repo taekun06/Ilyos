@@ -4291,7 +4291,13 @@
       }
 
       function kaykitCliffMaterial() {
-        return kaykitMaterial(KAYKIT_CLIFF_COLOR, { roughness: .94, metalness: 0 });
+        // DoubleSide : la géométrie main-codée (avant/côtés/fond) a un sens de
+        // winding qui n'est pas garanti cohérent sur chaque quad — en single-side
+        // certaines faces se retrouvaient culled selon la direction (falaise
+        // "ouverte", visible de biais comme de fines lames). DoubleSide élimine
+        // ce risque quel que soit l'angle de vue, Three.js retourne la normale
+        // interpolée côté face arrière automatiquement pour l'éclairage.
+        return kaykitMaterial(KAYKIT_CLIFF_COLOR, { roughness: .94, metalness: 0, side: THREE.DoubleSide });
       }
 
       const KAYKIT_CLIFF_DIR_ROTATION = { S: 0, W: Math.PI / 2, N: Math.PI, E: -Math.PI / 2 };
