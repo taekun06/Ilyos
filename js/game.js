@@ -4418,20 +4418,38 @@
         };
       }
 
+      // Le modèle "dirt_with_grass" n'est pas un simple pavé à une seule face
+      // plane par côté : c'est un petit monticule bas-poly fait de nombreuses
+      // facettes, et chacune pointe ses UV vers CE MÊME rectangle de nuancier
+      // (RepeatWrapping) — la case herbe/terre est donc répétée/carrelée des
+      // dizaines de fois sur un seul bloc. Un dégradé directionnel (comme la
+      // v1 de cette passe) crée une coupure nette à chaque répétition : vu en
+      // jeu, ça se lisait comme des "lignes réglées" régulières. Toute
+      // peinture ici doit donc être RACCORDABLE (aucune variation qui ne soit
+      // pas la même des deux côtés du rectangle) : pas de dégradé directionnel,
+      // et chaque élément de bruit est dupliqué sur ses bords opposés.
+      function kaykitDrawTiled(rect, px, py, margin, draw) {
+        const { x, y, w, h } = rect;
+        const nearLeft = px - x < margin, nearRight = x + w - px < margin;
+        const nearTop = py - y < margin, nearBottom = y + h - py < margin;
+        const dxs = [0, ...(nearLeft ? [w] : []), ...(nearRight ? [-w] : [])];
+        const dys = [0, ...(nearTop ? [h] : []), ...(nearBottom ? [-h] : [])];
+        dxs.forEach(dx => dys.forEach(dy => draw(px + dx, py + dy)));
+      }
+
       function kaykitPaintIslandGrass(context, rect, tint, variantIndex) {
         const { x, y, w, h } = rect;
         const base = new THREE.Color(tint);
-        const light = base.clone().offsetHSL(0, -.04, .12);
-        const shadow = base.clone().offsetHSL(.01, .06, -.14);
+        const light = base.clone().offsetHSL(0, -.04, .10);
+        const shadow = base.clone().offsetHSL(.01, .06, -.12);
         context.save();
         context.beginPath();
         context.rect(x, y, w, h);
         context.clip();
-        const gradient = context.createLinearGradient(x, y, x + w * .3, y + h);
-        gradient.addColorStop(0, `#${light.getHexString()}`);
-        gradient.addColorStop(.55, `#${base.getHexString()}`);
-        gradient.addColorStop(1, `#${shadow.getHexString()}`);
-        context.fillStyle = gradient;
+        // Teinte de base UNIE (pas de dégradé directionnel — voir note
+        // ci-dessus) : toute la variation vient des éléments de bruit,
+        // raccordables, dessinés par-dessus.
+        context.fillStyle = `#${base.getHexString()}`;
         context.fillRect(x, y, w, h);
 
         const rand = kaykitSeededRandom(0x9e17 + variantIndex * 97);
@@ -4440,23 +4458,28 @@
         // que la case est vue à distance de jeu normale. Ces taches, plus
         // larges, survivent au mip-mapping et donnent une surface vivante
         // même de loin — le grain fin ajoute le détail au zoom rapproché.
+        const blotchMargin = 18;
         const blotchCount = Math.round(w * h / 900);
         for (let i = 0; i < blotchCount; i++) {
           const px = x + rand() * w;
           const py = y + rand() * h;
-          const r = 9 + rand() * 16;
+          const r = 9 + rand() * 14;
           const dark = rand() > .5;
           const tone = dark ? shadow : light;
-          const blotch = context.createRadialGradient(px, py, 0, px, py, r);
-          blotch.addColorStop(0, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.20 + rand() * .16})`);
-          blotch.addColorStop(1, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},0)`);
-          context.fillStyle = blotch;
-          context.beginPath();
-          context.arc(px, py, r, 0, Math.PI * 2);
-          context.fill();
+          const alpha = .20 + rand() * .16;
+          kaykitDrawTiled(rect, px, py, blotchMargin, (dx, dy) => {
+            const blotch = context.createRadialGradient(dx, dy, 0, dx, dy, r);
+            blotch.addColorStop(0, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${alpha})`);
+            blotch.addColorStop(1, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},0)`);
+            context.fillStyle = blotch;
+            context.beginPath();
+            context.arc(dx, dy, r, 0, Math.PI * 2);
+            context.fill();
+          });
         }
         // Touffes d'herbe : petits traits courts, deux tons (ombre/lumière),
         // densité modérée pour rester lisible même à distance de jeu.
+        const bladeMargin = 8;
         const bladeCount = Math.round(w * h / 95);
         for (let i = 0; i < bladeCount; i++) {
           const px = x + rand() * w;
@@ -4467,21 +4490,26 @@
           const tone = dark ? shadow : light;
           context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.30 + rand() * .30})`;
           context.lineWidth = .9 + rand() * 1.1;
-          context.beginPath();
-          context.moveTo(px, py);
-          context.lineTo(px + Math.sin(angle) * len, py - len);
-          context.stroke();
+          kaykitDrawTiled(rect, px, py, bladeMargin, (dx, dy) => {
+            context.beginPath();
+            context.moveTo(dx, dy);
+            context.lineTo(dx + Math.sin(angle) * len, dy - len);
+            context.stroke();
+          });
         }
-        // Petites zones denses (touffes), pour casser la répétition du dégradé.
+        // Petites zones denses (touffes), pour casser la répétition du motif.
+        const tuftMargin = 6;
         const tuftCount = Math.round(w * h / 780);
         for (let i = 0; i < tuftCount; i++) {
           const px = x + rand() * w;
           const py = y + rand() * h;
           const r = 2 + rand() * 3.4;
           context.fillStyle = `rgba(${shadow.r * 255 | 0},${shadow.g * 255 | 0},${shadow.b * 255 | 0},${.16 + rand() * .16})`;
-          context.beginPath();
-          context.arc(px, py, r, 0, Math.PI * 2);
-          context.fill();
+          kaykitDrawTiled(rect, px, py, tuftMargin, (dx, dy) => {
+            context.beginPath();
+            context.arc(dx, dy, r, 0, Math.PI * 2);
+            context.fill();
+          });
         }
         context.restore();
       }
@@ -4491,36 +4519,43 @@
         // Teinte terre commune à toutes les factions/variants (la pierre des
         // châteaux suit la même logique : un monde cohérent, seul l'accent
         // change selon le sujet — ici l'herbe, pas la terre).
-        const light = new THREE.Color(0xb3805f);
-        const dark = new THREE.Color(0x6d4630);
+        const base = new THREE.Color(0x92694a);
+        const light = base.clone().offsetHSL(0, 0, .12);
+        const dark = base.clone().offsetHSL(0, 0, -.12);
         context.save();
         context.beginPath();
         context.rect(x, y, w, h);
         context.clip();
-        const gradient = context.createLinearGradient(x, y, x, y + h);
-        gradient.addColorStop(0, `#${light.getHexString()}`);
-        gradient.addColorStop(1, `#${dark.getHexString()}`);
-        context.fillStyle = gradient;
+        // Teinte unie (pas de dégradé directionnel, même raison que pour
+        // l'herbe ci-dessus — cette case est carrelée sur tout le pourtour
+        // du bloc, pas affichée une seule fois).
+        context.fillStyle = `#${base.getHexString()}`;
         context.fillRect(x, y, w, h);
 
         const rand = kaykitSeededRandom(0x4c31);
-        // Strates horizontales : bandes fines, légèrement décalées, qui lisent
-        // comme des couches de roche/terre plutôt qu'un aplat.
-        const bandCount = Math.round(h / 9);
-        for (let i = 0; i < bandCount; i++) {
-          const py = y + (i + rand() * .6) * (h / bandCount);
-          const bandLight = rand() > .5;
-          const tone = bandLight ? light.clone().offsetHSL(0, 0, .06) : dark.clone().offsetHSL(0, 0, -.05);
-          context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.22 + rand() * .22})`;
+        // Mouchetures (équivalent des strates, mais raccordables : des bandes
+        // horizontales continues sur toute la largeur créeraient la même
+        // coupure au raccord qu'un dégradé — remplacées par des taches
+        // allongées locales, dupliquées sur les bords comme le reste).
+        const streakMargin = 16;
+        const streakCount = Math.round(w * h / 260);
+        for (let i = 0; i < streakCount; i++) {
+          const px = x + rand() * w;
+          const py = y + rand() * h;
+          const streakLight = rand() > .5;
+          const tone = streakLight ? light : dark;
+          const len = 6 + rand() * 14;
+          context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.20 + rand() * .20})`;
           context.lineWidth = .8 + rand() * 1.6;
-          context.beginPath();
-          context.moveTo(x, py);
-          for (let px = x; px <= x + w; px += 8) {
-            context.lineTo(px, py + (rand() - .5) * 3.2);
-          }
-          context.stroke();
+          kaykitDrawTiled(rect, px, py, streakMargin, (dx, dy) => {
+            context.beginPath();
+            context.moveTo(dx - len / 2, dy + (rand() - .5) * 3);
+            context.lineTo(dx + len / 2, dy + (rand() - .5) * 3);
+            context.stroke();
+          });
         }
         // Petits cailloux/graviers.
+        const pebbleMargin = 5;
         const pebbleCount = Math.round(w * h / 340);
         for (let i = 0; i < pebbleCount; i++) {
           const px = x + rand() * w;
@@ -4529,14 +4564,12 @@
           const pebbleDark = rand() > .45;
           const tone = pebbleDark ? dark.clone().offsetHSL(0, 0, -.10) : light.clone().offsetHSL(0, 0, .10);
           context.fillStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.34 + rand() * .30})`;
-          context.beginPath();
-          context.arc(px, py, r, 0, Math.PI * 2);
-          context.fill();
+          kaykitDrawTiled(rect, px, py, pebbleMargin, (dx, dy) => {
+            context.beginPath();
+            context.arc(dx, dy, r, 0, Math.PI * 2);
+            context.fill();
+          });
         }
-        // Ombre de racine : bande sombre fine juste sous le rebord d'herbe,
-        // pour renforcer la séparation dessus/côté sans changer la géométrie.
-        context.fillStyle = "rgba(28,18,12,.30)";
-        context.fillRect(x, y, w, Math.max(2, h * .045));
         context.restore();
       }
 
