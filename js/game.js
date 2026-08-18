@@ -4462,18 +4462,6 @@
 
         const texture = sourceTexture.clone();
         texture.image = canvas;
-        // L'atlas est un nuancier de cases discrètes : le filtrage NEAREST +
-        // mipmaps du reste du fichier (voir kaykitIslandTintMaterial) évite
-        // qu'une case ne "bave" sur sa voisine à un mip grossier. Mais
-        // appliqué à un aplat plat, ça ne changeait rien — appliqué au grain
-        // fin peint ci-dessus, la sélection de mip NEAREST créait un
-        // aliasing/moiré (les fameuses "lignes réglées") sur une surface vue
-        // en angle rasant. On désactive donc les mipmaps sur CETTE texture
-        // précise et on repasse en filtrage linéaire simple (échantillonnage
-        // résolution native, jamais mélangé à une case voisine).
-        texture.generateMipmaps = false;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
         texture.needsUpdate = true;
         texture.name = `${sourceTexture.name || "block-bits"}-island-${variantIndex}`;
         kaykit3D?.islandTintTextures?.set(cacheKey, texture);
