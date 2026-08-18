@@ -6207,9 +6207,16 @@
    }
 
    .symmetric-board-overlay {
-       position: fixed;
+       /* !important nécessaire : "#gameScreen > *{position:relative}" (id
+          dans le sélecteur, voir css/hud-v2.css) bat un position:fixed en
+          simple classe, ce qui repassait cet overlay dans le flux normal de
+          #gameScreen. Concrètement, le bouton "Lancer ce setup" se
+          retrouvait alors sous la barre HUD fixe (z-index 100000) : le clic
+          touchait "FIN DU TOUR" en dessous à la place, sans jamais confirmer
+          le setup — donc, vu du joueur, plus aucune île ne se posait. */
+       position: fixed !important;
        inset: 0;
-       z-index: 138;
+       z-index: 100050 !important;
        display: grid;
        place-items: center;
        padding: 18px;
