@@ -172,7 +172,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './css/hud-organique-v2-final-v8.css?v=12.7',
     './css/hud-organique-v2-depth-v9.css?v=12.7',
     './css/hud-organique-v2-depth-v10.css?v=12.7',
-    './css/hud-consolidation-v12.css?v=12.7'
+    './css/hud-consolidation-v12.css?v=12.7',
+    './css/hud-organique-v2-layout-v10.css?v=1'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -187,7 +188,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './js/hud-organique-v2-depth-v9.js?v=12.7',
     './js/hud-organique-v2-depth-v10.js?v=12.7',
     './js/hud-consolidation-v12.js?v=12.7',
-    './js/ai-move-tail-guard-v12.js?v=12.7'
+    './js/ai-move-tail-guard-v12.js?v=12.7',
+    './js/hud-organique-v2-layout-v10.js?v=1'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
