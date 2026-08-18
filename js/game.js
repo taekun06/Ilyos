@@ -4431,7 +4431,7 @@
           edgeDirs.push([dirX, dirZ]);
           // Normale à 90° de la direction d'arête ; le signe (déterminé par le
           // winding global) pointe toujours vers l'intérieur du polygone.
-          edgeNormals.push([dirZ * inwardSign, -dirX * inwardSign]);
+          edgeNormals.push([-dirZ * inwardSign, dirX * inwardSign]);
         }
         const result = [];
         for (let i = 0; i < n; i++) {
