@@ -4259,118 +4259,37 @@
       // des UV/normales du GLB : la case herbe est le rectangle pixel
       // [384..512)×[768..1024), la case terre le rectangle [640..768)×[0..256)
       // du fichier 1024×1024 ./assets/kaykit/blockBits/block_bits_texture.png.
-      // Recolorer un simple aplat (ancien comportement) donnait donc des cases
-      // plates et pâles quel que soit le variant. On repeint maintenant CES
-      // deux rectangles avec un vrai grain (touffes/brins pour l'herbe, strates
-      // + cailloux pour la terre) — le reste de l'atlas (bois, pierre, fenêtres
-      // d'autres assets Block Bits inutilisés) n'est jamais touché.
+      //
+      // Un vrai grain (dégradé, taches, brins) a été tenté ici puis abandonné :
+      // le modèle est un monticule bas-poly fait de nombreuses petites
+      // facettes qui échantillonnent chacune une sous-région DIFFÉRENTE et
+      // NON ADJACENTE de cette même case (UV irréguliers, hérités de l'asset
+      // source). Confirmé par test contrôlé en jeu : même un motif fin et
+      // "raccordable" en bord de rectangle laisse une ligne visible à chaque
+      // frontière de facette — seule une teinte strictement unie n'en laisse
+      // aucune, quelle que soit la sous-région échantillonnée. On se limite
+      // donc à un aplat par variant (plus riche que l'unique vert délavé
+      // d'origine, voir ILYOS_ISLAND_TINTS) — le reste de l'atlas (bois,
+      // pierre, fenêtres d'autres assets Block Bits inutilisés) n'est jamais
+      // touché.
       const KAYKIT_ISLAND_GRASS_RECT = { x: 384, y: 768, w: 128, h: 256 };
       const KAYKIT_ISLAND_DIRT_RECT = { x: 640, y: 0, w: 128, h: 256 };
 
-      function kaykitSeededRandom(seedBase) {
-        let seed = seedBase >>> 0 || 1;
-        return () => {
-          seed ^= seed << 13; seed >>>= 0;
-          seed ^= seed >>> 17;
-          seed ^= seed << 5; seed >>>= 0;
-          return (seed >>> 0) / 4294967296;
-        };
-      }
-
       // Le modèle "dirt_with_grass" n'est pas un simple pavé à une seule face
       // plane par côté : c'est un petit monticule bas-poly fait de nombreuses
-      // facettes, et chacune pointe ses UV vers CE MÊME rectangle de nuancier
-      // (RepeatWrapping) — la case herbe/terre est donc répétée/carrelée des
-      // dizaines de fois sur un seul bloc. Un dégradé directionnel (comme la
-      // v1 de cette passe) crée une coupure nette à chaque répétition : vu en
-      // jeu, ça se lisait comme des "lignes réglées" régulières. Toute
-      // peinture ici doit donc être RACCORDABLE (aucune variation qui ne soit
-      // pas la même des deux côtés du rectangle) : pas de dégradé directionnel,
-      // et chaque élément de bruit est dupliqué sur ses bords opposés.
-      function kaykitDrawTiled(rect, px, py, margin, draw) {
+      // facettes, et chacune pointe ses UV vers une sous-région du MÊME
+      // rectangle de nuancier — mais ces sous-régions ne sont PAS adjacentes
+      // ni cohérentes entre facettes (confirmé empiriquement : même un motif
+      // rendu parfaitement raccordable en bord de rectangle, ou un simple
+      // bruit fin par pixel, laisse des lignes visibles à chaque frontière de
+      // facette). Seule une teinte strictement UNIE ne montre aucune ligne,
+      // quelle que soit la sous-région échantillonnée. On se limite donc à un
+      // aplat par variant — plus riche en couleur que l'unique vert délavé
+      // d'origine, mais sans grain (la géométrie du modèle ne le permet pas).
+      function kaykitPaintIslandGrass(context, rect, tint) {
         const { x, y, w, h } = rect;
-        const nearLeft = px - x < margin, nearRight = x + w - px < margin;
-        const nearTop = py - y < margin, nearBottom = y + h - py < margin;
-        const dxs = [0, ...(nearLeft ? [w] : []), ...(nearRight ? [-w] : [])];
-        const dys = [0, ...(nearTop ? [h] : []), ...(nearBottom ? [-h] : [])];
-        dxs.forEach(dx => dys.forEach(dy => draw(px + dx, py + dy)));
-      }
-
-      function kaykitPaintIslandGrass(context, rect, tint, variantIndex) {
-        const { x, y, w, h } = rect;
-        const base = new THREE.Color(tint);
-        const light = base.clone().offsetHSL(0, -.04, .10);
-        const shadow = base.clone().offsetHSL(.01, .06, -.12);
-        context.save();
-        context.beginPath();
-        context.rect(x, y, w, h);
-        context.clip();
-        // Teinte de base UNIE (pas de dégradé directionnel — voir note
-        // ci-dessus) : toute la variation vient des éléments de bruit,
-        // raccordables, dessinés par-dessus.
-        context.fillStyle = `#${base.getHexString()}`;
+        context.fillStyle = `#${new THREE.Color(tint).getHexString()}`;
         context.fillRect(x, y, w, h);
-
-        const rand = kaykitSeededRandom(0x9e17 + variantIndex * 97);
-        // Mouchetures à grande échelle (taches douces) : le grain fin des
-        // brins ci-dessous se moyenne et disparaît sous le mip-mapping dès
-        // que la case est vue à distance de jeu normale. Ces taches, plus
-        // larges, survivent au mip-mapping et donnent une surface vivante
-        // même de loin — le grain fin ajoute le détail au zoom rapproché.
-        const blotchMargin = 18;
-        const blotchCount = Math.round(w * h / 900);
-        for (let i = 0; i < blotchCount; i++) {
-          const px = x + rand() * w;
-          const py = y + rand() * h;
-          const r = 9 + rand() * 14;
-          const dark = rand() > .5;
-          const tone = dark ? shadow : light;
-          const alpha = .20 + rand() * .16;
-          kaykitDrawTiled(rect, px, py, blotchMargin, (dx, dy) => {
-            const blotch = context.createRadialGradient(dx, dy, 0, dx, dy, r);
-            blotch.addColorStop(0, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${alpha})`);
-            blotch.addColorStop(1, `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},0)`);
-            context.fillStyle = blotch;
-            context.beginPath();
-            context.arc(dx, dy, r, 0, Math.PI * 2);
-            context.fill();
-          });
-        }
-        // Touffes d'herbe : petits traits courts, deux tons (ombre/lumière),
-        // densité modérée pour rester lisible même à distance de jeu.
-        const bladeMargin = 8;
-        const bladeCount = Math.round(w * h / 95);
-        for (let i = 0; i < bladeCount; i++) {
-          const px = x + rand() * w;
-          const py = y + rand() * h;
-          const len = 2.4 + rand() * 5.2;
-          const angle = -.5 + rand() * 1.0;
-          const dark = rand() > .5;
-          const tone = dark ? shadow : light;
-          context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.30 + rand() * .30})`;
-          context.lineWidth = .9 + rand() * 1.1;
-          kaykitDrawTiled(rect, px, py, bladeMargin, (dx, dy) => {
-            context.beginPath();
-            context.moveTo(dx, dy);
-            context.lineTo(dx + Math.sin(angle) * len, dy - len);
-            context.stroke();
-          });
-        }
-        // Petites zones denses (touffes), pour casser la répétition du motif.
-        const tuftMargin = 6;
-        const tuftCount = Math.round(w * h / 780);
-        for (let i = 0; i < tuftCount; i++) {
-          const px = x + rand() * w;
-          const py = y + rand() * h;
-          const r = 2 + rand() * 3.4;
-          context.fillStyle = `rgba(${shadow.r * 255 | 0},${shadow.g * 255 | 0},${shadow.b * 255 | 0},${.16 + rand() * .16})`;
-          kaykitDrawTiled(rect, px, py, tuftMargin, (dx, dy) => {
-            context.beginPath();
-            context.arc(dx, dy, r, 0, Math.PI * 2);
-            context.fill();
-          });
-        }
-        context.restore();
       }
 
       function kaykitPaintIslandDirt(context, rect) {
@@ -4378,58 +4297,8 @@
         // Teinte terre commune à toutes les factions/variants (la pierre des
         // châteaux suit la même logique : un monde cohérent, seul l'accent
         // change selon le sujet — ici l'herbe, pas la terre).
-        const base = new THREE.Color(0x92694a);
-        const light = base.clone().offsetHSL(0, 0, .12);
-        const dark = base.clone().offsetHSL(0, 0, -.12);
-        context.save();
-        context.beginPath();
-        context.rect(x, y, w, h);
-        context.clip();
-        // Teinte unie (pas de dégradé directionnel, même raison que pour
-        // l'herbe ci-dessus — cette case est carrelée sur tout le pourtour
-        // du bloc, pas affichée une seule fois).
-        context.fillStyle = `#${base.getHexString()}`;
+        context.fillStyle = "#92694a";
         context.fillRect(x, y, w, h);
-
-        const rand = kaykitSeededRandom(0x4c31);
-        // Mouchetures (équivalent des strates, mais raccordables : des bandes
-        // horizontales continues sur toute la largeur créeraient la même
-        // coupure au raccord qu'un dégradé — remplacées par des taches
-        // allongées locales, dupliquées sur les bords comme le reste).
-        const streakMargin = 16;
-        const streakCount = Math.round(w * h / 260);
-        for (let i = 0; i < streakCount; i++) {
-          const px = x + rand() * w;
-          const py = y + rand() * h;
-          const streakLight = rand() > .5;
-          const tone = streakLight ? light : dark;
-          const len = 6 + rand() * 14;
-          context.strokeStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.20 + rand() * .20})`;
-          context.lineWidth = .8 + rand() * 1.6;
-          kaykitDrawTiled(rect, px, py, streakMargin, (dx, dy) => {
-            context.beginPath();
-            context.moveTo(dx - len / 2, dy + (rand() - .5) * 3);
-            context.lineTo(dx + len / 2, dy + (rand() - .5) * 3);
-            context.stroke();
-          });
-        }
-        // Petits cailloux/graviers.
-        const pebbleMargin = 5;
-        const pebbleCount = Math.round(w * h / 340);
-        for (let i = 0; i < pebbleCount; i++) {
-          const px = x + rand() * w;
-          const py = y + rand() * h;
-          const r = 1.1 + rand() * 2.2;
-          const pebbleDark = rand() > .45;
-          const tone = pebbleDark ? dark.clone().offsetHSL(0, 0, -.10) : light.clone().offsetHSL(0, 0, .10);
-          context.fillStyle = `rgba(${tone.r * 255 | 0},${tone.g * 255 | 0},${tone.b * 255 | 0},${.34 + rand() * .30})`;
-          kaykitDrawTiled(rect, px, py, pebbleMargin, (dx, dy) => {
-            context.beginPath();
-            context.arc(dx, dy, r, 0, Math.PI * 2);
-            context.fill();
-          });
-        }
-        context.restore();
       }
 
       function kaykitIslandTintTexture(sourceTexture, variantIndex) {
@@ -4447,7 +4316,7 @@
         context.drawImage(sourceImage, 0, 0);
 
         const tint = ILYOS_ISLAND_TINTS[variantIndex];
-        kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint, variantIndex);
+        kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint);
         kaykitPaintIslandDirt(context, KAYKIT_ISLAND_DIRT_RECT);
 
         const texture = sourceTexture.clone();
