@@ -229,6 +229,18 @@
       function handleRotateKey(event) {
         if (!state || !canLocalPlayerAct()) return;
         const key = event.key.toLowerCase();
+
+        if (key === "f") {
+          const canFlipPlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
+          if (!canFlipPlacement) return;
+          event.preventDefault();
+          const now = performance.now();
+          if (now - lastKeyRotateAt < 90) return;
+          lastKeyRotateAt = now;
+          flipSelectedIsland();
+          return;
+        }
+
         if (!["q", "e", "arrowleft", "arrowright"].includes(key)) return;
 
         const canRotatePlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
@@ -679,7 +691,7 @@
           cpu.innerHTML = `
           <span class="player-dot ai-dot" style="background:${PLAYER_COLORS[1]};color:${PLAYER_COLORS[1]}"></span>
           <span class="ai-player-name"><b>ORDINATEUR</b><small>Adversaire automatique</small></span>
-          <span class="ai-chip">IA</span>
+          <span class="ai-chip">CPU</span>
         `;
           els.playersForm.appendChild(cpu);
 
@@ -1160,6 +1172,19 @@
       }
       function islandAt(r, c) { return state.islands.find(is => is.cells.some(([ir, ic]) => ir === r && ic === c)); }
 
+      // Règle personnalisable (duel symétrique uniquement, voir
+      // confirmSymmetricSetup) : nombre total d'îles qu'un joueur peut poser
+      // sur toute la partie. 0/absent = illimité, comportement inchangé.
+      function islandCountForOwner(playerId) {
+        return state.islands.filter(island => island.owner === playerId).length;
+      }
+
+      function islandLimitReachedForPlayer(playerId) {
+        const limit = state.rules?.islandLimitPerPlayer;
+        if (!limit) return false;
+        return islandCountForOwner(playerId) >= limit;
+      }
+
       /*
        * La zone attenuée indique seulement une future zone de validation.
        * Seule la case Château est déjà praticable. Les deux autres cases
@@ -1346,6 +1371,17 @@
         if (occupant && !characterCarriesCrown(occupant.id)) {
           artifact.carrierId = occupant.id;
           activateSecondCrownIfNeeded();
+        }
+        // aiCrownMemory (voir aiCrownActionUsed/markAICrownAction, js/game/ai.js)
+        // marque "passe gratuite déjà faite" / "pose+poussée déjà faite" par
+        // identifiant de couronne, sans jamais s'effacer — un jeton ne
+        // pouvait donc bénéficier de ces tactiques gratuites qu'une seule
+        // fois sur TOUTE la partie. Une couronne qui repart de zéro après
+        // avoir été validée mérite un nouveau trajet, donc un nouveau droit
+        // à ces tactiques.
+        if (state.aiCrownMemory) {
+          delete state.aiCrownMemory[`${artifact.id}:handoff`];
+          delete state.aiCrownMemory[`${artifact.id}:drop-push`];
         }
       }
 
@@ -2217,6 +2253,13 @@
 
         applyStartingBoardMode("symmetric", setupId);
         state.startingBoardPreset = setupId;
+        // Options personnalisées : seul le duel symétrique les propose — le
+        // classique reste figé sans dissolution et sans limite (voir la
+        // valeur par défaut posée à la création de state).
+        state.rules = {
+          allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
+          islandLimitPerPlayer: Number(els.symmetricIslandLimitSelect?.value || 0) || 0
+        };
         state.setupSelectionPending = false;
         state.inputLocked = false;
         closeSymmetricSetupOverlay();
@@ -2315,6 +2358,7 @@
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           treasureDropFromId: null,
@@ -2458,6 +2502,7 @@
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
         const villageAssignments = getVillageAssignments(count);
+        const startingPlayerIndex = Math.floor(Math.random() * count);
 
         const players = names.map((name, i) => {
           const villages = villageAssignments[i].map(village => ({ ...village }));
@@ -2503,7 +2548,7 @@
           turnDurationSeconds: turnDurationChoice,
           setupSelectionPending: startingBoardMode === "symmetric",
           aiDifficulty,
-          currentPlayer: 0,
+          currentPlayer: startingPlayerIndex,
           round: 1,
           turn: 1,
           islands: [],
@@ -2511,6 +2556,9 @@
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
+          // Règles optionnelles : jamais activées en classique. Le duel
+          // symétrique peut les personnaliser via confirmSymmetricSetup().
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           treasureDropFromId: null,
@@ -2783,6 +2831,28 @@
         const ownCharacters = state.characters.filter(char => char.player === playerId);
         const ownCarrier = ownCharacters.find(char => characterCarriesCrown(char.id));
 
+        // Défense prioritaire : un porteur adverse tout proche de SA PROPRE
+        // zone de validation marquera au début de son prochain tour. Sans ce
+        // garde-fou, la pose d'île obligatoire suivait toujours d'abord la
+        // progression de notre propre porteur ou une couronne libre — l'IA
+        // "oubliait" donc de placer une île (et le nouveau gardien qui va
+        // avec) pour aller contester ce point pendant qu'elle poursuivait son
+        // propre objectif. Ignoré si un de nos gardiens est déjà assez près
+        // pour intervenir ce tour-ci sans aide d'une nouvelle île.
+        if (aiConfig().crownTactics >= 2) {
+          const urgentCarrier = state.characters.find(char => {
+            if (char.player === playerId || !characterCarriesCrown(char.id)) return false;
+            const owner = state.players[char.player];
+            return aiValidationDistanceForPlayer(owner, char.r, char.c) <= 2;
+          });
+          if (urgentCarrier) {
+            const alreadyClose = ownCharacters.some(char =>
+              Math.abs(char.r - urgentCarrier.r) + Math.abs(char.c - urgentCarrier.c) <= 3
+            );
+            if (!alreadyClose) return [urgentCarrier.r, urgentCarrier.c];
+          }
+        }
+
         if (ownCarrier) {
           const validationCells = crownValidationCellsForPlayer(player);
           return [...validationCells].sort((a, b) =>
@@ -2829,6 +2899,10 @@
         const candidates = [];
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
+          // Test SHAPE_LIMIT_PER_OWNER (voir js/game/bootstrap.js) : l'IA
+          // respecte la même limite que le joueur humain, sinon elle
+          // continuerait à spammer sa forme préférée sans restriction.
+          if (SHAPE_LIMIT_PER_OWNER && shapeUsageCountForOwner(playerId, shapeKey) >= SHAPE_LIMIT_PER_OWNER) return;
           let rotated = normalizeShape(shape.cells);
           const seen = new Set();
 
@@ -2879,18 +2953,21 @@
                     carrierBridge = nearCarrier + nearValidation;
                   }
 
+                  // La connectivité au reste du terrain (contacts) n'a plus
+                  // qu'un poids mineur : combler systématiquement les trous
+                  // n'apporte rien de tactique en soi, et un terrain plus
+                  // morcelé peut même gêner l'adversaire (accès imprévisible,
+                  // moins de raccourcis). Seul un très léger tiebreaker
+                  // subsiste pour éviter un semis totalement erratique.
                   let score =
                     targetDistance * 1.55
                     + characterDistance * .38
                     + centerDistance * .10
                     + (ownCarrier ? carrierBridge * .52 : 0)
-                    - Math.min(contacts, 3) * 2.25
+                    - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
                     + enemyZoneCells * 4.4
                     + Math.random() * aiConfig().randomness;
-
-                  if (contacts >= 2) score -= 4.8;
-                  if (contacts === 0) score += 4.2;
 
                   candidates.push({
                     shapeKey,
@@ -2933,6 +3010,7 @@
         const island = {
           id: islandId,
           owner: playerId,
+          shapeKey: placement.shapeKey,
           anchor: { ...placement.anchor },
           relCells: cloneCells(placement.relCells),
           cells: cloneCells(placement.cells),

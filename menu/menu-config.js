@@ -3,12 +3,12 @@ window.ILYOS_MENU_CONFIG = {
   defaultMode: 'solo',
   modes: {
     solo: {
-      label: 'SOLO', subtitle: 'Affrontez l’IA', playerCount: '1', playLabel: "AFFRONTER L’IA",
-      description: "Affrontez l’IA dans un duel stratégique sur les îles du ciel.", dot: 1,
+      label: 'SOLO', subtitle: 'Affrontez le CPU', playerCount: '1', playLabel: "AFFRONTER LE CPU",
+      description: "Affrontez le CPU dans un duel stratégique sur les îles du ciel.", dot: 1,
       controls: [
         { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
         { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] },
-        { key:'difficulty', label:'DIFFICULTÉ IA', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] }
+        { key:'difficulty', label:'DIFFICULTÉ CPU', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] }
       ]
     },
     duel: {

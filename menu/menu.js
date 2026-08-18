@@ -22,7 +22,7 @@
   <img class="logo-home" src="./menu/assets/ilyos-logo.svg" alt="ILYOS">
   <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button></div>
   <div class="mode-grid">
-   <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez l’IA</div></button>
+   <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez le CPU</div></button>
    <button class="card green" data-mode="duel"><div class="card-icon">♙ ♙</div><div class="card-title">DUEL LOCAL</div><div class="card-sub">2 joueurs</div></button>
    <button class="card violet" data-mode="team"><div class="card-icon">♜ ♜</div><div class="card-title">2 CONTRE 2</div><div class="card-sub">Équipes</div></button>
    <button class="card amber" data-mode="online"><div class="card-icon">◎</div><div class="card-title">EN LIGNE</div><div class="card-sub">Joueurs du monde</div></button>
@@ -100,7 +100,7 @@
   function resizeParticles() {
     const rect=host.getBoundingClientRect(), w=Math.max(1,rect.width), h=Math.max(1,rect.height), d=Math.min(devicePixelRatio||1,2);
     canvas.width=w*d; canvas.height=h*d; canvas.style.width=w+'px'; canvas.style.height=h+'px'; ctx.setTransform(d,0,0,d,0,0);
-    pts=Array.from({length:64},()=>({x:Math.random()*w,y:Math.random()*h,r:.5+Math.random()*1.5,v:.07+Math.random()*.18,a:.14+Math.random()*.46,p:Math.random()*6.28}));
+    pts=Array.from({length:170},()=>({x:Math.random()*w,y:Math.random()*h,r:.4+Math.random()*2.1,v:.05+Math.random()*.22,a:.10+Math.random()*.52,p:Math.random()*6.28}));
   }
   function drawParticles(t) {
     const rect=host.getBoundingClientRect(), w=rect.width, h=rect.height; ctx.clearRect(0,0,w,h);

@@ -64,7 +64,10 @@
         drawCards(p, 5);
         state.deckAnimationMode = "deal";
         state.phase = "ACTION_SELECT";
-        state.islandPlacedThisTurn = false;
+        // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
+        // atteinte, la pose d'île redevient facultative au lieu de rester
+        // obligatoire sans qu'aucune forme ne puisse plus être choisie.
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id);
         state.centerCrownTakenThisTurn = false;
         state.treasureDropFromId = null;
         state.crownPickupCell = null;
@@ -119,13 +122,17 @@
             || "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
         } else if (p.isAI) {
-          showToast(`${p.name} prépare son tour.`);
+          showToast(state.turn === 1
+            ? `Tirage au sort : ${p.name} commence la partie.`
+            : `${p.name} prépare son tour.`);
           const token = ++aiRunToken;
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
           if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
-            showToast(`${p.name} commence son tour.`);
+            showToast(state.turn === 1
+              ? `Tirage au sort : ${p.name} commence la partie.`
+              : `${p.name} commence son tour.`);
           }
         }
       }

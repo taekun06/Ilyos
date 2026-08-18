@@ -889,6 +889,7 @@
         </button>
         <button id="ilyosSpiralTestBtn" class="secondary-btn ilyos-test-btn" type="button">Tester Spirale des
           vents</button>
+        <button id="ilyosAIvsAITestBtn" class="secondary-btn ilyos-test-btn" type="button">IA contre IA (Expert)</button>
         <button id="rulesSetupBtn" class="secondary-btn">Règles</button>
       </div>
     </div>
@@ -993,6 +994,7 @@
       <div id="hudV2MagicRow" class="hud-v2-magic-row hidden">
         <button id="hudV2MagicRotateLeft" type="button" class="hud-v2-magic-btn">↺ 90°</button>
         <button id="hudV2MagicRotateRight" type="button" class="hud-v2-magic-btn">↻ 90°</button>
+        <button id="hudV2MagicDissolve" type="button" class="hud-v2-magic-btn hud-v2-magic-dissolve hidden" title="Retire une île vide pour 1 magie">✦ Dissoudre</button>
         <button id="hudV2MagicConfirm" type="button" class="hud-v2-magic-btn hud-v2-magic-confirm">Confirmer</button>
         <button id="hudV2MagicCancel" type="button" class="hud-v2-magic-btn hud-v2-magic-cancel">Annuler</button>
       </div>
@@ -1023,6 +1025,7 @@
         <div id="hudV2IslandRotate" class="hud-v2-drawer-rotate hidden" aria-hidden="true">
           <button id="rotateLeftBtn" class="small-btn hud-v2-rotate-btn" disabled>↺</button>
           <button id="rotateRightBtn" class="small-btn hud-v2-rotate-btn" disabled>↻</button>
+          <button id="flipBtn" class="small-btn hud-v2-rotate-btn" disabled title="Retourner l’île (miroir)" aria-label="Retourner l’île (miroir)">⇄</button>
         </div>
       </div>
 
@@ -1104,6 +1107,25 @@
               <span id="symmetricSetupStyle">Très mobile</span>
             </div>
           </div>
+        </div>
+
+        <div class="symmetric-setup-custom">
+          <strong class="symmetric-setup-custom-title">Personnaliser</strong>
+          <label for="symmetricIslandLimitSelect">
+            <span>Îles par équipe</span>
+            <select id="symmetricIslandLimitSelect">
+              <option value="0">Illimité</option>
+              <option value="6">6</option>
+              <option value="8">8</option>
+              <option value="10">10</option>
+              <option value="12">12</option>
+              <option value="15">15</option>
+            </select>
+          </label>
+          <label class="symmetric-setup-toggle" for="symmetricAllowDissolveCheckbox">
+            <input type="checkbox" id="symmetricAllowDissolveCheckbox">
+            <span>Autoriser la dissolution d’île (1 Magie sur une île vide)</span>
+          </label>
         </div>
 
         <div id="symmetricSetupWaiting" class="symmetric-setup-waiting hidden">

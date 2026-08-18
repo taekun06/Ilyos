@@ -4,7 +4,12 @@
       const GRID = 11;
       const CENTER = { r: 5, c: 5 };
       const MAX_GUARDIANS_PER_PLAYER = 6;
-      const PLAYER_COLORS = ["#22c3f2", "#ff5b50", "#62e36b", "#bb7cff"];
+      // Joueur 0 (Chevalier) et 1 (Mage) alignés sur les couleurs déjà
+      // utilisées pour leur armure/robe (character-materials-v1.js) et leur
+      // portrait HUD (or / violet) — les villages, fanions et halos de
+      // sélection lisaient auparavant bleu/rouge, sans rapport avec le reste
+      // de l'identité visuelle du joueur.
+      const PLAYER_COLORS = ["#ddb653", "#8052bc", "#62e36b", "#bb7cff"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
       const CORNERS = [
         { r: 0, c: 0 },
@@ -13,15 +18,20 @@
         { r: 10, c: 0 }
       ];
       const SHAPES = {
-        domino: { name: "Domino", cells: [[0, 0], [0, 1]] },
+        domino: { name: "Domino", cells: [[0, 0], [1, 1]] },
         line3: { name: "Passerelle", cells: [[0, 0], [0, 1], [0, 2]] },
         l3: { name: "Virage", cells: [[0, 0], [1, 0], [1, 1]] },
         square: { name: "Carré", cells: [[0, 0], [0, 1], [1, 0], [1, 1]] },
         t4: { name: "Carrefour", cells: [[0, 0], [0, 1], [0, 2], [1, 1]] },
-        s4: { name: "Serpent", cells: [[0, 1], [0, 2], [1, 0], [1, 1]] },
+        s4: { name: "Serpent", cells: [[0, 1], [0, 2], [1, 0], [1, 1]], flippable: true },
         cross5: { name: "Croix", cells: [[0, 1], [1, 0], [1, 1], [1, 2], [2, 1]] },
+        crossHollow: { name: "Croix creuse", cells: [[0, 1], [1, 0], [1, 2], [2, 1]] },
         v3: { name: "V", cells: [[0, 0], [1, 1], [0, 2]] }
       };
+      // Test : limite le nombre de fois qu'une même forme peut être posée par
+      // équipe (owner) sur toute la partie. À 0/false, aucune limite — permet
+      // de désactiver l'essai sans toucher au reste du code.
+      const SHAPE_LIMIT_PER_OWNER = 2;
       const ACTIONS = {
         MOVE: { name: "Déplacement", icon: "🥾", desc: "1 action = 1 case. 2 actions permettent une diagonale.", bg: "#0d84c9" },
         PUSH: { name: "Poussée", icon: "💥", desc: "Poussez une cible adjacente.", bg: "#b33d32" },
@@ -56,6 +66,8 @@
         randomSymmetricSetupBtn: document.getElementById("randomSymmetricSetupBtn"),
         confirmSymmetricSetupBtn: document.getElementById("confirmSymmetricSetupBtn"),
         symmetricSetupWaiting: document.getElementById("symmetricSetupWaiting"),
+        symmetricIslandLimitSelect: document.getElementById("symmetricIslandLimitSelect"),
+        symmetricAllowDissolveCheckbox: document.getElementById("symmetricAllowDissolveCheckbox"),
         phaseLabel: document.getElementById("phaseLabel"),
         turnLabel: document.getElementById("turnLabel"),
         turnTimer: document.getElementById("turnTimer"),
@@ -75,6 +87,7 @@
         islandSelector: document.getElementById("islandSelector"),
         rotateLeftBtn: document.getElementById("rotateLeftBtn"),
         rotateRightBtn: document.getElementById("rotateRightBtn"),
+        flipBtn: document.getElementById("flipBtn"),
         cancelCardBtn: document.getElementById("cancelCardBtn"),
         endTurnBtn: document.getElementById("endTurnBtn"),
 
@@ -102,6 +115,7 @@
         kaykitCacheStatus: document.getElementById("kaykitCacheStatus"),
         newGameBtn: document.getElementById("newGameBtn"),
         ilyosSpiralTestBtn: document.getElementById("ilyosSpiralTestBtn"),
+        ilyosAIvsAITestBtn: document.getElementById("ilyosAIvsAITestBtn"),
         onlineTools: document.getElementById("onlineTools"),
         onlineRoomCodeLabel: document.getElementById("onlineRoomCodeLabel"),
         copyRoomCodeBtn: document.getElementById("copyRoomCodeBtn"),
@@ -1793,42 +1807,65 @@
         return hero;
       }
 
+      /* La texture "hexagons_medieval" des bâtiments n'est pas une photo mais un
+         atlas de nuanciers : chaque colonne est un dégradé vertical plat (pierre
+         grise, bois brun, un bleu, un rouge...) et le modèle GLTF choisit sa
+         couleur de toit/fanion simplement en pointant ses UV sur la colonne
+         voulue. On garde tout le rendu/texture KayKit d'origine tel quel (pierre,
+         bois, fenêtres, reflets) et on ne touche QUE les pixels de la colonne
+         "équipe" du modèle (bleu ou rouge, saturés) pour les faire glisser vers
+         la teinte de faction — le minimum nécessaire pour la couleur d'équipe. */
+      function recolorKayKitBuildingTexture(sourceMap, accentColor) {
+        if (!sourceMap?.image?.width) return sourceMap;
+        const accent = new THREE.Color(accentColor);
+        const cacheKey = `village-atlas:${sourceMap.uuid}:${accent.getHexString()}`;
+        if (kaykit3D.materials.has(cacheKey)) return kaykit3D.materials.get(cacheKey);
+        const accentHsl = { h: 0, s: 0, l: 0 };
+        accent.getHSL(accentHsl);
+        const img = sourceMap.image;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width; canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const px = data.data;
+        const tmp = new THREE.Color();
+        const hsl = { h: 0, s: 0, l: 0 };
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i + 3] === 0) continue;
+          tmp.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
+          tmp.getHSL(hsl);
+          const hueDeg = hsl.h * 360;
+          const isBlueBand = hsl.s > .25 && hueDeg >= 190 && hueDeg <= 260;
+          const isRedBand = hsl.s > .30 && (hueDeg >= 335 || hueDeg <= 15);
+          if (isBlueBand || isRedBand) {
+            tmp.setHSL(accentHsl.h, Math.max(hsl.s, accentHsl.s * .85), hsl.l);
+            px[i] = tmp.r * 255; px[i + 1] = tmp.g * 255; px[i + 2] = tmp.b * 255;
+          }
+        }
+        ctx.putImageData(data, 0, 0);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = sourceMap.wrapS;
+        texture.wrapT = sourceMap.wrapT;
+        // Sans repasser par configureKayKitTexture() (encodage sRGB, mipmaps,
+        // anisotropie), la nouvelle texture canvas rendait plate et délavée par
+        // rapport au modèle KayKit d'origine — c'était la vraie cause du rendu
+        // terne, pas la recoloration elle-même.
+        configureKayKitTexture(texture);
+        kaykit3D.materials.set(cacheKey, texture);
+        return texture;
+      }
+
       function accentVillageColors(object, color) {
         if (!object) return object;
         const accent = new THREE.Color(color || 0xffffff);
-        const brightStone = new THREE.Color(0xf6edd6);
-        const roofColor = accent.clone().offsetHSL(0, .24, .12);
         object.traverse?.(child => {
           if (!child.isMesh || !child.material) return;
           const source = Array.isArray(child.material) ? child.material : [child.material];
           const styled = source.map(material => {
             const mat = material.clone();
-            const label = `${child.name || ''} ${mat.name || ''}`.toLowerCase();
-            const isRoof = /roof|flag|banner|cloth|cap|cone|spire/.test(label);
-            const isStone = /wall|stone|tower|base|castle/.test(label);
-            if (isRoof || isStone) {
-              if ('map' in mat) mat.map = null;
-              if ('aoMap' in mat) mat.aoMap = null;
-              if ('lightMap' in mat) mat.lightMap = null;
-              if ('emissiveMap' in mat) mat.emissiveMap = null;
-            }
-            if (mat.color) {
-              const base = mat.color.clone();
-              if (isRoof) {
-                mat.color.copy(roofColor);
-              } else if (isStone) {
-                const stone = brightStone.clone().lerp(accent, .40);
-                mat.color.copy(stone);
-              } else {
-                mat.color.copy(base.lerp(accent, .98));
-              }
-            }
-            if ('emissive' in mat) {
-              mat.emissive = (isRoof ? roofColor : accent).clone();
-              mat.emissiveIntensity = isRoof ? .78 : (isStone ? .26 : .46);
-            }
-            if ('metalness' in mat) mat.metalness = isRoof ? .10 : Math.min(mat.metalness ?? 0, .06);
-            if ('roughness' in mat) mat.roughness = isRoof ? .20 : Math.min(mat.roughness ?? .75, .46);
+            if (mat.map) mat.map = recolorKayKitBuildingTexture(mat.map, accent);
+            if (mat.color) mat.color.set(0xffffff);
             mat.needsUpdate = true;
             return mat;
           });
@@ -1931,8 +1968,12 @@
         const group = new THREE.Group();
         // Or plus poli (métalness élevée, faible rugosité), bonnet de velours visible
         // sous la bande, gemmes alternées rubis/saphir : lecture "objet précieux"
-        // immédiate au lieu de la couronne plate d'origine.
+        // immédiate au lieu de la couronne plate d'origine. Bande à deux niveaux,
+        // pointes de hauteurs alternées terminées par des perles, joyau central
+        // plus gros et plus facetté, avec sa propre lueur : silhouette de
+        // couronne royale plutôt qu'une simple étoile dorée.
         const gold = kaykitMaterial(0xffcf3f, { roughness: .16, metalness: .9, emissive: 0x6b3f00, emissiveIntensity: .16 });
+        const goldTrim = kaykitMaterial(0xffe27a, { roughness: .10, metalness: .95, emissive: 0x8a5a00, emissiveIntensity: .22 });
         const velvet = kaykitMaterial(0x7a1230, { roughness: .92, metalness: 0 });
         const ruby = kaykitMaterial(0xff2f4d, { roughness: .12, metalness: .3, emissive: 0xb0002a, emissiveIntensity: .55 });
         const sapphire = kaykitMaterial(0x3fa0ff, { roughness: .14, metalness: .28, emissive: 0x1257c9, emissiveIntensity: .5 });
@@ -1943,15 +1984,30 @@
         const band = new THREE.Mesh(kaykitGeometry("crown-band-v2", () => new THREE.CylinderGeometry(.205, .205, .12, 16)), gold);
         band.position.y = .105; band.castShadow = true; group.add(band);
 
+        // Filet plus fin et plus clair sur le bord supérieur de la bande :
+        // profondeur sculptée au lieu d'un cylindre unique tout plat.
+        const bandTrim = new THREE.Mesh(kaykitGeometry("crown-band-trim-v1", () => new THREE.TorusGeometry(.207, .016, 8, 20)), goldTrim);
+        bandTrim.rotation.x = Math.PI / 2; bandTrim.position.y = .165; bandTrim.castShadow = true; group.add(bandTrim);
+
         const spikeCount = 8;
-        const spikeGeometry = kaykitGeometry("crown-spike-v2", () => new THREE.ConeGeometry(.055, 1, 8));
+        const tallSpikeGeometry = kaykitGeometry("crown-spike-tall-v3", () => new THREE.ConeGeometry(.052, .40, 8));
+        const shortSpikeGeometry = kaykitGeometry("crown-spike-short-v3", () => new THREE.ConeGeometry(.048, .28, 8));
+        const pearlGeometry = kaykitGeometry("crown-spike-pearl-v1", () => new THREE.SphereGeometry(.030, 10, 8));
         for (let i = 0; i < spikeCount; i++) {
           const a = i / spikeCount * Math.PI * 2;
+          const tall = i % 2 === 0;
+          const spikeGeometry = tall ? tallSpikeGeometry : shortSpikeGeometry;
+          const spikeHeight = tall ? .40 : .28;
           const spike = new THREE.Mesh(spikeGeometry, gold);
-          spike.scale.y = .30;
-          spike.position.set(Math.cos(a) * .165, .165 + .15, Math.sin(a) * .165);
+          spike.position.set(Math.cos(a) * .165, .165 + spikeHeight / 2, Math.sin(a) * .165);
           spike.castShadow = true;
           group.add(spike);
+
+          const pearl = new THREE.Mesh(pearlGeometry, goldTrim);
+          pearl.position.set(Math.cos(a) * .165, .165 + spikeHeight, Math.sin(a) * .165);
+          pearl.castShadow = true;
+          group.add(pearl);
+
           if (i % 2 === 0) {
             const gem = new THREE.Mesh(kaykitGeometry("crown-band-gem-v1", () => new THREE.OctahedronGeometry(.034)), i % 4 === 0 ? ruby : sapphire);
             gem.position.set(Math.cos(a) * .205, .105, Math.sin(a) * .205);
@@ -1959,8 +2015,11 @@
           }
         }
 
-        const jewel = new THREE.Mesh(kaykitGeometry("crown-jewel-v2", () => new THREE.OctahedronGeometry(.078)), ruby);
-        jewel.position.y = .43; jewel.scale.y = 1.3; group.add(jewel);
+        const jewel = new THREE.Mesh(kaykitGeometry("crown-jewel-v3", () => new THREE.IcosahedronGeometry(.095, 0)), ruby);
+        jewel.position.y = .47; jewel.scale.y = 1.25; jewel.castShadow = true; group.add(jewel);
+        const jewelLight = new THREE.PointLight(0xff4d6a, .55, 1.1, 2);
+        jewelLight.position.y = .47; group.add(jewelLight);
+
         const halo = new THREE.Mesh(
           kaykitGeometry("crown-gold-halo-v29", () => new THREE.TorusGeometry(.26, .022, 8, 24)),
           new THREE.MeshBasicMaterial({ color: 0xffd96a, transparent: true, opacity: .46, depthWrite: false })
@@ -3748,6 +3807,7 @@
         context.textBaseline = "middle";
         context.fillText("☠", 96, 101);
         const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
         texture.needsUpdate = true;
         kaykit3D.pushDeathTexture = texture;
         return texture;
@@ -4529,20 +4589,343 @@
         }
       }
 
+      // Halo doré du sanctuaire : un unique disque radial partagé (comme
+      // kaykitCloudTexture), posé à plat au sol en blending additif pour
+      // lire comme une lumière plutôt qu'une décalcomanie plaquée.
+      function kaykitSanctuaryHaloTexture() {
+        const key = "sanctuary-halo-v2";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const glow = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+        glow.addColorStop(0, "rgba(255,226,158,.96)");
+        glow.addColorStop(.42, "rgba(255,190,90,.58)");
+        glow.addColorStop(.75, "rgba(214,110,60,.18)");
+        glow.addColorStop(1, "rgba(214,110,60,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, 256, 256);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Réseau de fissures lumineuses du sanctuaire : baké directement dans le
+      // matériau du dessus (map couleur + emissiveMap), pas posé comme un
+      // plan par-dessus — donc plus aucun risque d'avoir l'impression d'un
+      // symbole qui "flotte" au-dessus de la pierre : la lueur sort de la
+      // surface elle-même. Un unique canvas partagé (comme kaykitCloudTexture),
+      // généré une fois via un bruit pseudo-aléatoire seedé (donc stable).
+      function kaykitSanctuaryCrackedGoldTextures() {
+        const key = "sanctuary-cracked-gold-v2";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+          return x - Math.floor(x);
+        };
+
+        const SIZE = 512;
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = colorCanvas.height = SIZE;
+        const colorCtx = colorCanvas.getContext('2d');
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = glowCanvas.height = SIZE;
+        const glowCtx = glowCanvas.getContext('2d');
+
+        // Pierre dorée mouchetée, pas un aplat uni.
+        const base = colorCtx.createLinearGradient(0, 0, SIZE, SIZE);
+        base.addColorStop(0, "#ecc271");
+        base.addColorStop(.5, "#dba848");
+        base.addColorStop(1, "#c48b34");
+        colorCtx.fillStyle = base;
+        colorCtx.fillRect(0, 0, SIZE, SIZE);
+        for (let i = 0; i < 46; i++) {
+          const x = seeded(i, 1) * SIZE, y = seeded(i, 2) * SIZE, r = 14 + seeded(i, 3) * 48;
+          const dark = seeded(i, 4) > .5;
+          const blob = colorCtx.createRadialGradient(x, y, 0, x, y, r);
+          blob.addColorStop(0, dark ? "rgba(110,72,26,.14)" : "rgba(255,232,175,.14)");
+          blob.addColorStop(1, "rgba(0,0,0,0)");
+          colorCtx.fillStyle = blob;
+          colorCtx.beginPath(); colorCtx.arc(x, y, r, 0, Math.PI * 2); colorCtx.fill();
+        }
+
+        // Fissures : plusieurs branches partant du centre vers les bords,
+        // chacune coudée 3-4 fois — un vrai réseau, pas une seule forme.
+        const cx = SIZE / 2, cy = SIZE / 2;
+        const branchCount = 5;
+        const paths = [];
+        for (let b = 0; b < branchCount; b++) {
+          let angle = (b / branchCount) * Math.PI * 2 + seeded(b, 10) * .6;
+          let x = cx, y = cy;
+          const pts = [[x, y]];
+          const segs = 3 + Math.floor(seeded(b, 11) * 2);
+          for (let s = 0; s < segs; s++) {
+            angle += (seeded(b * 10 + s, 12) - .5) * 1.15;
+            const len = SIZE * .15 + seeded(b * 10 + s, 13) * SIZE * .11;
+            x += Math.cos(angle) * len; y += Math.sin(angle) * len;
+            pts.push([x, y]);
+          }
+          paths.push(pts);
+          // Sous-fissure courte greffée sur le 2e segment, pour la ramification.
+          if (seeded(b, 14) > .35) {
+            const [bx, by] = pts[1];
+            let ba = angle + (seeded(b, 15) - .5) * 2.2;
+            const bpts = [[bx, by]];
+            for (let s = 0; s < 2; s++) {
+              ba += (seeded(b * 5 + s, 16) - .5) * 1.2;
+              const len = SIZE * .09 + seeded(b * 5 + s, 17) * SIZE * .07;
+              bpts.push([bpts[bpts.length - 1][0] + Math.cos(ba) * len, bpts[bpts.length - 1][1] + Math.sin(ba) * len]);
+            }
+            paths.push(bpts);
+          }
+        }
+
+        const strokePath = (ctx, pts, width, color) => {
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.lineCap = "round"; ctx.lineJoin = "round";
+          ctx.stroke();
+        };
+
+        // Cercle magique à deux anneaux (extérieur + intérieur), gravé comme
+        // les fissures : une vraie limite de rituel plutôt qu'une simple dalle.
+        const strokeCircle = (ctx, radius, width, color) => {
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.stroke();
+        };
+        const circleRadii = [SIZE * .41, SIZE * .30];
+
+        // Graduations autour de l'anneau extérieur, comme un cadran gravé —
+        // une ligne courte tous les 30°, une longue tous les 90°.
+        const tickPaths = [];
+        const tickCount = 24;
+        for (let i = 0; i < tickCount; i++) {
+          const a = (i / tickCount) * Math.PI * 2;
+          const long = i % 6 === 0;
+          const rOuter = circleRadii[0] + (long ? 15 : 8);
+          const rInner = circleRadii[0] - (long ? 7 : 3);
+          tickPaths.push([
+            [cx + Math.cos(a) * rInner, cy + Math.sin(a) * rInner],
+            [cx + Math.cos(a) * rOuter, cy + Math.sin(a) * rOuter]
+          ]);
+        }
+
+        // Runes : symboles angulaires abstraits (pas un alphabet réel), posés
+        // entre les deux anneaux à intervalles réguliers, chacun légèrement
+        // désaxé pour ne pas paraître tamponné à la machine.
+        const runeTemplates = [
+          [[[0, -.5], [0, .5]], [[0, -.5], [.4, -.15]], [[0, -.5], [-.4, -.15]]],
+          [[[0, -.5], [0, .5]], [[0, 0], [.35, .25]], [[0, 0], [.35, -.25]]],
+          [[[-.4, -.4], [.4, .4]], [[-.4, .4], [.4, -.4]]],
+          [[[0, -.5], [0, .5]], [[-.3, 0], [.3, 0]]],
+          [[[-.35, -.45], [.1, -.05]], [[.1, -.05], [-.1, .05]], [[-.1, .05], [.35, .45]]],
+          [[[0, -.4], [.3, 0]], [[.3, 0], [0, .4]], [[0, .4], [-.3, 0]], [[-.3, 0], [0, -.4]]]
+        ];
+        const runePaths = [];
+        const runeCount = 6;
+        const runeRadius = (circleRadii[0] + circleRadii[1]) / 2;
+        for (let i = 0; i < runeCount; i++) {
+          const angle = (i / runeCount) * Math.PI * 2 + seeded(i, 20) * .3;
+          const px = cx + Math.cos(angle) * runeRadius;
+          const py = cy + Math.sin(angle) * runeRadius;
+          const tmpl = runeTemplates[Math.floor(seeded(i, 21) * runeTemplates.length) % runeTemplates.length];
+          const tilt = angle + Math.PI / 2 + (seeded(i, 22) - .5) * .5;
+          const cosT = Math.cos(tilt), sinT = Math.sin(tilt);
+          const scale = SIZE * .050;
+          tmpl.forEach(seg => {
+            runePaths.push(seg.map(([lx, ly]) => [
+              px + (lx * cosT - ly * sinT) * scale,
+              py + (lx * sinT + ly * cosT) * scale
+            ]));
+          });
+        }
+
+        // Gravure sur la map couleur : rainure sombre + reflet clair au bord.
+        paths.forEach(pts => {
+          strokePath(colorCtx, pts, 9, "rgba(66,42,16,.92)");
+          strokePath(colorCtx, pts, 3, "rgba(255,226,155,.6)");
+        });
+        circleRadii.forEach(radius => {
+          strokeCircle(colorCtx, radius, 6, "rgba(66,42,16,.85)");
+          strokeCircle(colorCtx, radius, 2, "rgba(255,226,155,.55)");
+        });
+        tickPaths.forEach(pts => {
+          strokePath(colorCtx, pts, 3, "rgba(66,42,16,.75)");
+          strokePath(colorCtx, pts, 1.1, "rgba(255,226,155,.5)");
+        });
+        runePaths.forEach(pts => {
+          strokePath(colorCtx, pts, 5, "rgba(66,42,16,.9)");
+          strokePath(colorCtx, pts, 1.8, "rgba(255,226,155,.65)");
+        });
+
+        // Carte émissive : noir partout sauf les fissures/cercles/runes, qui
+        // rayonnent — c'est elle qui donne l'impression que la lumière
+        // traverse la pierre plutôt qu'une simple gravure éclairée dessus.
+        glowCtx.fillStyle = "#000";
+        glowCtx.fillRect(0, 0, SIZE, SIZE);
+        paths.forEach(pts => {
+          glowCtx.shadowColor = "rgba(255,190,110,1)";
+          glowCtx.shadowBlur = 30;
+          strokePath(glowCtx, pts, 9, "rgba(255,225,170,1)");
+          glowCtx.shadowBlur = 0;
+          strokePath(glowCtx, pts, 2.2, "rgba(255,248,225,1)");
+        });
+        circleRadii.forEach(radius => {
+          glowCtx.shadowColor = "rgba(255,190,110,1)";
+          glowCtx.shadowBlur = 16;
+          strokeCircle(glowCtx, radius, 4, "rgba(255,220,160,1)");
+          glowCtx.shadowBlur = 0;
+          strokeCircle(glowCtx, radius, 1.4, "rgba(255,248,225,1)");
+        });
+        tickPaths.forEach(pts => {
+          glowCtx.shadowColor = "rgba(255,190,110,1)";
+          glowCtx.shadowBlur = 8;
+          strokePath(glowCtx, pts, 2.4, "rgba(255,220,160,1)");
+          glowCtx.shadowBlur = 0;
+        });
+        runePaths.forEach(pts => {
+          glowCtx.shadowColor = "rgba(255,150,210,1)";
+          glowCtx.shadowBlur = 14;
+          strokePath(glowCtx, pts, 3.6, "rgba(255,200,235,1)");
+          glowCtx.shadowBlur = 0;
+          strokePath(glowCtx, pts, 1.3, "rgba(255,245,250,1)");
+        });
+
+        const colorTexture = new THREE.CanvasTexture(colorCanvas);
+        colorTexture.encoding = THREE.sRGBEncoding;
+        const glowTexture = new THREE.CanvasTexture(glowCanvas);
+        glowTexture.encoding = THREE.sRGBEncoding;
+
+        const result = { colorTexture, glowTexture };
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, result);
+        return result;
+      }
+
+      // Dalle de sanctuaire — style "autel royal" : pierre dorée craquelée,
+      // toute la surface du dessus laisse passer une lueur chaude à travers
+      // un réseau de fissures gravées (bakées dans le matériau, rien ne
+      // flotte au-dessus). Socle taillé (même extrusion biseautée que
+      // makeKayKitPedestal, pas un bloc d'île grass/dirt) : le sanctuaire doit
+      // se lire comme le trône de la couronne, pas comme une île de plus.
+      function makeSanctuaryTile() {
+        const group = new THREE.Group();
+        // ExtrudeGeometry par défaut génère les UV du dessus à partir des
+        // coordonnées BRUTES de la forme (-.46..46), pas normalisées 0..1 —
+        // avec le wrap par défaut (clamp), ça n'affichait qu'un minuscule
+        // coin du motif étiré/écrasé sur toute la dalle. UVGenerator maison
+        // pour recentrer proprement le dessus sur 0..1 (le motif tient enfin
+        // en entier sur chaque dalle) ; les côtés gardent la génération
+        // standard mais avec un wrap répété (texture appliquée en dessous).
+        const sanctuaryUVGenerator = {
+          generateTopUV(geometry, vertices, indexA, indexB, indexC) {
+            const n = (x, y) => new THREE.Vector2((x + .46) / .92, (y + .46) / .92);
+            return [
+              n(vertices[indexA * 3], vertices[indexA * 3 + 1]),
+              n(vertices[indexB * 3], vertices[indexB * 3 + 1]),
+              n(vertices[indexC * 3], vertices[indexC * 3 + 1])
+            ];
+          },
+          generateBottomUV(geometry, vertices, indexA, indexB, indexC) {
+            return sanctuaryUVGenerator.generateTopUV(geometry, vertices, indexA, indexB, indexC);
+          },
+          generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD) {
+            const fallback = THREE.ExtrudeGeometry?.WorldUVGenerator;
+            if (fallback?.generateSideWallUV) return fallback.generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD);
+            const n = (x, y, z) => new THREE.Vector2((x + z + .92) / 1.84, (y + .46) / .92);
+            return [
+              n(vertices[indexA * 3], vertices[indexA * 3 + 1], vertices[indexA * 3 + 2]),
+              n(vertices[indexB * 3], vertices[indexB * 3 + 1], vertices[indexB * 3 + 2]),
+              n(vertices[indexC * 3], vertices[indexC * 3 + 1], vertices[indexC * 3 + 2]),
+              n(vertices[indexD * 3], vertices[indexD * 3 + 1], vertices[indexD * 3 + 2])
+            ];
+          }
+        };
+        const geometry = kaykitGeometry("sanctuary-extrude-v2", () => {
+          const shape = new THREE.Shape();
+          shape.moveTo(-.46, -.46); shape.lineTo(.46, -.46); shape.lineTo(.46, .46); shape.lineTo(-.46, .46); shape.closePath();
+          return new THREE.ExtrudeGeometry(shape, {
+            depth: .42, bevelEnabled: true, bevelSegments: 2, bevelSize: .055, bevelThickness: .05, steps: 1,
+            UVGenerator: sanctuaryUVGenerator
+          });
+        });
+        const { colorTexture, glowTexture } = kaykitSanctuaryCrackedGoldTextures();
+        const topMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff, map: colorTexture, roughness: .45, metalness: .22,
+          emissive: new THREE.Color(0xffffff), emissiveMap: glowTexture, emissiveIntensity: 2.1
+        });
+
+        // Le même motif se devine sur les parois, en transparence — on
+        // réutilise les mêmes textures avec un wrap répété (les UV de côté
+        // ne couvrent pas une seule fois 0..1 comme le dessus) et une
+        // opacité plus faible pour rester un aperçu, pas une copie nette.
+        const sideColorTexture = colorTexture.clone();
+        sideColorTexture.wrapS = sideColorTexture.wrapT = THREE.RepeatWrapping;
+        sideColorTexture.repeat.set(1.6, 1);
+        sideColorTexture.needsUpdate = true;
+        const sideGlowTexture = glowTexture.clone();
+        sideGlowTexture.wrapS = sideGlowTexture.wrapT = THREE.RepeatWrapping;
+        sideGlowTexture.repeat.set(1.6, 1);
+        sideGlowTexture.needsUpdate = true;
+
+        // Contour translucide : les faces latérales lisent comme du verre
+        // ambré éclairé de l'intérieur plutôt qu'une pierre opaque — cohérent
+        // avec les fissures lumineuses du dessus.
+        const sideMat = new THREE.MeshStandardMaterial({
+          color: 0xd9a54a, map: sideColorTexture, roughness: .28, metalness: .05,
+          emissive: new THREE.Color(0xffb35a), emissiveMap: sideGlowTexture, emissiveIntensity: .9,
+          transparent: true, opacity: .58, depthWrite: false, side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geometry, [topMat, sideMat]);
+        mesh.rotation.x = Math.PI / 2;
+        mesh.position.y = .47;
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        mesh.renderOrder = 4;
+        group.add(mesh);
+
+        return group;
+      }
+
       function makeCrownCrossGround() {
         const crossCells = [];
         for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) if (isSanctuary(r, c)) crossCells.push([r, c]);
-        const block = makeKayKitIslandBlock({ id: "crown-cross", cells: crossCells }, { preview: false, valid: true });
-        block.userData.crownCross = true;
-        block.traverse?.(child => {
-          if (!child.isMesh || !child.material) return;
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat, index) => {
-            if (mat.color) mat.color.setHex(index === 0 ? 0xd7d2a1 : 0x716b58);
-            mat.roughness = .9; mat.needsUpdate = true;
-          });
+
+        const group = new THREE.Group();
+        group.userData.crownCross = true;
+        crossCells.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          const tile = makeSanctuaryTile();
+          tile.position.set(p.x, 0, p.z);
+          group.add(tile);
+          registerKayKitCellVisual(r, c, tile);
         });
-        return block;
+
+        const center = kaykitCellPosition(CENTER.r, CENTER.c, KAYKIT_LEVELS.islandTop + .018);
+        const halo = new THREE.Mesh(
+          kaykitGeometry("sanctuary-halo-plane-v1", () => new THREE.PlaneGeometry(2.55, 2.55)),
+          new THREE.MeshBasicMaterial({
+            map: kaykitSanctuaryHaloTexture(), transparent: true, depthWrite: false,
+            blending: THREE.AdditiveBlending, toneMapped: false
+          })
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.set(center.x, center.y, center.z);
+        halo.renderOrder = 6;
+        halo.userData.sanctuaryHalo = true;
+        group.add(halo);
+
+        const light = new THREE.PointLight(0xffcf78, .5, 2.6, 2);
+        light.position.set(center.x, center.y + .5, center.z);
+        group.add(light);
+
+        return group;
       }
 
       function renderKayKitIslandBlocks(group) {
@@ -4631,6 +5014,43 @@
           const pivot = new THREE.Mesh(
             kaykitGeometry("magic-pivot-marker-v1", () => new THREE.CylinderGeometry(.17, .17, .055, 24)),
             new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: .96, depthWrite: false })
+          );
+          pivot.position.set(p.x, p.y, p.z);
+          pivot.renderOrder = 45;
+          kaykit3D.dynamicGroup.add(pivot);
+        }
+      }
+
+      // Avant même de cliquer un pivot : simple survol d'une case d'île pendant
+      // Magie -> aperçu fantôme immédiat d'une rotation de 90° autour de cette
+      // case (state.magicHoverPreviewCells, calculé au survol dans ui.js).
+      // L'île réelle reste visible normalement ; seul le ghost est superposé
+      // (contrairement à la rotation confirmée, qui masque l'île d'origine).
+      function renderKayKitMagicHoverPreview() {
+        if (!kaykit3D || state?.phase !== "ACTION" || state?.selectedActionType !== "MAGIC") return;
+        if (state.selectedIslandId) return;
+        if (!state.magicHoverIslandId || !Array.isArray(state.magicHoverPreviewCells)) return;
+
+        const previewIsland = {
+          id: `magic-hover-preview-${state.magicHoverIslandId}`,
+          owner: null,
+          cells: state.magicHoverPreviewCells.map(([r, c]) => [r, c])
+        };
+        const block = makeKayKitIslandBlock(previewIsland, {
+          preview: true,
+          valid: !!state.magicHoverPreviewValid,
+          previewMode: "magic"
+        });
+        block.position.y = .055;
+        block.userData.magicRotationPreview = true;
+        kaykit3D.dynamicGroup.add(block);
+
+        if (Array.isArray(state.magicHoverPivot)) {
+          const [r, c] = state.magicHoverPivot;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .08);
+          const pivot = new THREE.Mesh(
+            kaykitGeometry("magic-pivot-marker-v1", () => new THREE.CylinderGeometry(.17, .17, .055, 24)),
+            new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: .55, depthWrite: false })
           );
           pivot.position.set(p.x, p.y, p.z);
           pivot.renderOrder = 45;
@@ -6178,7 +6598,7 @@
         });
         const forestAssets = [
           { key: "forestTree", width: .34, height: .70, scale: .90 },
-          { key: "forestBush", width: .32, height: .32, scale: .92 },
+          { key: "grain", width: .32, height: .34, scale: .85 },
           { key: "forestRock", width: .30, height: .24, scale: .92 },
           { key: "forestGrass", width: .27, height: .18, scale: .88 }
         ];
@@ -6316,14 +6736,23 @@
                   const assetKey = `castle${Math.max(0, Math.min(3, playerId))}`;
                   const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
                   let castle = cloneKayKitAsset(assetKey, { maxWidth: .78, maxHeight: 1.18, targetFloor: 0 });
-                  if (!castle) castle = makeFallbackCastle(villageAccent);
-                  castle.position.set(p.x, KAYKIT_LEVELS.pedestalTop, p.z);
+                  if (castle) accentVillageColors(castle, villageAccent);
+                  else castle = makeFallbackCastle(villageAccent);
+                  // Décalé vers le coin extérieur réel du plateau (diagonale
+                  // opposée au centre) plutôt que centré sur sa case : le
+                  // village se lit comme posé au bord de l'île plutôt qu'au
+                  // milieu d'une case vide.
+                  const cornerDirR = r <= CENTER.r ? -1 : 1;
+                  const cornerDirC = c <= CENTER.c ? -1 : 1;
+                  const cornerOffset = KAYKIT_CELL_SPACING * .32;
+                  castle.position.set(p.x + cornerDirC * cornerOffset, KAYKIT_LEVELS.pedestalTop, p.z + cornerDirR * cornerOffset);
                   castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
                   dynamic.add(castle);
                   // Fanion planté à côté du château, dans le même repère local :
                   // il suit automatiquement la position/rotation par coin du village.
                   const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
                   if (flag) {
+                    accentVillageColors(flag, villageAccent);
                     flag.position.set(.48, 0, .34);
                     castle.add(flag);
                   }
@@ -6352,6 +6781,7 @@
             const before = dynamic.children.length;
             renderKayKitPlacementPreview();
             renderKayKitMagicRotationPreview();
+            renderKayKitMagicHoverPreview();
             kaykit3D.transientDynamicChildren.push(...dynamic.children.slice(before));
           }
 
@@ -6739,6 +7169,18 @@
       function handleRotateKey(event) {
         if (!state || !canLocalPlayerAct()) return;
         const key = event.key.toLowerCase();
+
+        if (key === "f") {
+          const canFlipPlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
+          if (!canFlipPlacement) return;
+          event.preventDefault();
+          const now = performance.now();
+          if (now - lastKeyRotateAt < 90) return;
+          lastKeyRotateAt = now;
+          flipSelectedIsland();
+          return;
+        }
+
         if (!["q", "e", "arrowleft", "arrowright"].includes(key)) return;
 
         const canRotatePlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
@@ -7189,7 +7631,7 @@
           cpu.innerHTML = `
           <span class="player-dot ai-dot" style="background:${PLAYER_COLORS[1]};color:${PLAYER_COLORS[1]}"></span>
           <span class="ai-player-name"><b>ORDINATEUR</b><small>Adversaire automatique</small></span>
-          <span class="ai-chip">IA</span>
+          <span class="ai-chip">CPU</span>
         `;
           els.playersForm.appendChild(cpu);
 
@@ -7670,6 +8112,19 @@
       }
       function islandAt(r, c) { return state.islands.find(is => is.cells.some(([ir, ic]) => ir === r && ic === c)); }
 
+      // Règle personnalisable (duel symétrique uniquement, voir
+      // confirmSymmetricSetup) : nombre total d'îles qu'un joueur peut poser
+      // sur toute la partie. 0/absent = illimité, comportement inchangé.
+      function islandCountForOwner(playerId) {
+        return state.islands.filter(island => island.owner === playerId).length;
+      }
+
+      function islandLimitReachedForPlayer(playerId) {
+        const limit = state.rules?.islandLimitPerPlayer;
+        if (!limit) return false;
+        return islandCountForOwner(playerId) >= limit;
+      }
+
       /*
        * La zone attenuée indique seulement une future zone de validation.
        * Seule la case Château est déjà praticable. Les deux autres cases
@@ -7856,6 +8311,17 @@
         if (occupant && !characterCarriesCrown(occupant.id)) {
           artifact.carrierId = occupant.id;
           activateSecondCrownIfNeeded();
+        }
+        // aiCrownMemory (voir aiCrownActionUsed/markAICrownAction, js/game/ai.js)
+        // marque "passe gratuite déjà faite" / "pose+poussée déjà faite" par
+        // identifiant de couronne, sans jamais s'effacer — un jeton ne
+        // pouvait donc bénéficier de ces tactiques gratuites qu'une seule
+        // fois sur TOUTE la partie. Une couronne qui repart de zéro après
+        // avoir été validée mérite un nouveau trajet, donc un nouveau droit
+        // à ces tactiques.
+        if (state.aiCrownMemory) {
+          delete state.aiCrownMemory[`${artifact.id}:handoff`];
+          delete state.aiCrownMemory[`${artifact.id}:drop-push`];
         }
       }
 
@@ -8727,6 +9193,13 @@
 
         applyStartingBoardMode("symmetric", setupId);
         state.startingBoardPreset = setupId;
+        // Options personnalisées : seul le duel symétrique les propose — le
+        // classique reste figé sans dissolution et sans limite (voir la
+        // valeur par défaut posée à la création de state).
+        state.rules = {
+          allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
+          islandLimitPerPlayer: Number(els.symmetricIslandLimitSelect?.value || 0) || 0
+        };
         state.setupSelectionPending = false;
         state.inputLocked = false;
         closeSymmetricSetupOverlay();
@@ -8825,6 +9298,7 @@
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           treasureDropFromId: null,
@@ -8968,6 +9442,7 @@
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
         const villageAssignments = getVillageAssignments(count);
+        const startingPlayerIndex = Math.floor(Math.random() * count);
 
         const players = names.map((name, i) => {
           const villages = villageAssignments[i].map(village => ({ ...village }));
@@ -9013,7 +9488,7 @@
           turnDurationSeconds: turnDurationChoice,
           setupSelectionPending: startingBoardMode === "symmetric",
           aiDifficulty,
-          currentPlayer: 0,
+          currentPlayer: startingPlayerIndex,
           round: 1,
           turn: 1,
           islands: [],
@@ -9021,6 +9496,9 @@
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
+          // Règles optionnelles : jamais activées en classique. Le duel
+          // symétrique peut les personnaliser via confirmSymmetricSetup().
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           treasureDropFromId: null,
@@ -9293,6 +9771,28 @@
         const ownCharacters = state.characters.filter(char => char.player === playerId);
         const ownCarrier = ownCharacters.find(char => characterCarriesCrown(char.id));
 
+        // Défense prioritaire : un porteur adverse tout proche de SA PROPRE
+        // zone de validation marquera au début de son prochain tour. Sans ce
+        // garde-fou, la pose d'île obligatoire suivait toujours d'abord la
+        // progression de notre propre porteur ou une couronne libre — l'IA
+        // "oubliait" donc de placer une île (et le nouveau gardien qui va
+        // avec) pour aller contester ce point pendant qu'elle poursuivait son
+        // propre objectif. Ignoré si un de nos gardiens est déjà assez près
+        // pour intervenir ce tour-ci sans aide d'une nouvelle île.
+        if (aiConfig().crownTactics >= 2) {
+          const urgentCarrier = state.characters.find(char => {
+            if (char.player === playerId || !characterCarriesCrown(char.id)) return false;
+            const owner = state.players[char.player];
+            return aiValidationDistanceForPlayer(owner, char.r, char.c) <= 2;
+          });
+          if (urgentCarrier) {
+            const alreadyClose = ownCharacters.some(char =>
+              Math.abs(char.r - urgentCarrier.r) + Math.abs(char.c - urgentCarrier.c) <= 3
+            );
+            if (!alreadyClose) return [urgentCarrier.r, urgentCarrier.c];
+          }
+        }
+
         if (ownCarrier) {
           const validationCells = crownValidationCellsForPlayer(player);
           return [...validationCells].sort((a, b) =>
@@ -9339,6 +9839,10 @@
         const candidates = [];
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
+          // Test SHAPE_LIMIT_PER_OWNER (voir js/game/bootstrap.js) : l'IA
+          // respecte la même limite que le joueur humain, sinon elle
+          // continuerait à spammer sa forme préférée sans restriction.
+          if (SHAPE_LIMIT_PER_OWNER && shapeUsageCountForOwner(playerId, shapeKey) >= SHAPE_LIMIT_PER_OWNER) return;
           let rotated = normalizeShape(shape.cells);
           const seen = new Set();
 
@@ -9389,18 +9893,21 @@
                     carrierBridge = nearCarrier + nearValidation;
                   }
 
+                  // La connectivité au reste du terrain (contacts) n'a plus
+                  // qu'un poids mineur : combler systématiquement les trous
+                  // n'apporte rien de tactique en soi, et un terrain plus
+                  // morcelé peut même gêner l'adversaire (accès imprévisible,
+                  // moins de raccourcis). Seul un très léger tiebreaker
+                  // subsiste pour éviter un semis totalement erratique.
                   let score =
                     targetDistance * 1.55
                     + characterDistance * .38
                     + centerDistance * .10
                     + (ownCarrier ? carrierBridge * .52 : 0)
-                    - Math.min(contacts, 3) * 2.25
+                    - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
                     + enemyZoneCells * 4.4
                     + Math.random() * aiConfig().randomness;
-
-                  if (contacts >= 2) score -= 4.8;
-                  if (contacts === 0) score += 4.2;
 
                   candidates.push({
                     shapeKey,
@@ -9443,6 +9950,7 @@
         const island = {
           id: islandId,
           owner: playerId,
+          shapeKey: placement.shapeKey,
           anchor: { ...placement.anchor },
           relCells: cloneCells(placement.relCells),
           cells: cloneCells(placement.cells),
@@ -10074,6 +10582,25 @@
         return threat + edgeRisk * 2.5;
       }
 
+      /*
+       * Anticipation locale (un coup) : un ennemi déjà adjacent à cette case
+       * pourrait-il, dès son prochain tour, pousser le gardien qui s'y trouve
+       * dans le vide avec une seule poussée de force 1 (aucune ligne de
+       * gardiens à déplacer derrière lui) ? aiCellThreatForPlayer ne mesure
+       * qu'une proximité générique ; ceci vérifie la perte immédiate et
+       * concrète du porteur de couronne, le pire résultat possible.
+       */
+      function aiPushOffRisk(playerId, r, c) {
+        for (const enemy of state.characters) {
+          if (enemy.player === playerId) continue;
+          const dr = r - enemy.r, dc = c - enemy.c;
+          if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
+          const landR = r + dr, landC = c + dc;
+          if (!inside(landR, landC) || !isLand(landR, landC)) return true;
+        }
+        return false;
+      }
+
       function aiBestMove() {
         const availableMoves = availableActionCount("MOVE");
         if (availableMoves < 1) return null;
@@ -10107,16 +10634,31 @@
             // Un porteur déjà sécurisé ne quitte pas son village sauf pour fuir un danger immédiat.
             if (alreadySafe && !scoringCell && startThreat < 12) continue;
 
+            // defensePriority/denyScorePriority/crownPriority (définis dans
+            // AI_LEVELS.expert) : coefficients normalisés autour de 5 (le
+            // niveau implicite des difficultés inférieures) pour renforcer,
+            // à l'Expert, la fuite du porteur menacé et la course pour priver
+            // l'adversaire d'un point imminent — sans rien changer aux
+            // niveaux qui ne définissent pas ces clés.
+            const defenseScale = (cfg.defensePriority ?? 5) / 5;
+            const denyScale = (cfg.denyScorePriority ?? 5) / 5;
+            const crownScale = (cfg.crownPriority ?? 5) / 5;
+
             let utility = progress * 42 - cost * 3 - targetDistance * 1.2;
-            if (carrying) utility += progress * 58 - threat * 13;
+            if (carrying) utility += progress * 58 - threat * 13 * defenseScale;
             else utility -= threat * 3.2;
-            if (scoringCell) utility += 2200;
-            if (looseCrown && !carrying) utility += 1050;
-            if (adjacentOpponentCarrier && !carrying) utility += 360 + aiOpponentScoreThreat() * 2;
-            if (blocksEnemyVillage) utility += 95;
+            // Un porteur qu'on amène volontairement à portée d'une poussée
+            // dans le vide perd la couronne pour de bon dès le tour adverse
+            // suivant — un coup d'avance suffit à repérer ce cas précis, bien
+            // plus grave qu'une simple proximité (threat) déjà comptée.
+            if (carrying && aiPushOffRisk(char.player, r, c)) utility -= 1800 * defenseScale;
+            if (scoringCell) utility += 2200 * crownScale;
+            if (looseCrown && !carrying) utility += 1050 * crownScale;
+            if (adjacentOpponentCarrier && !carrying) utility += 360 * denyScale + aiOpponentScoreThreat() * 2 * denyScale;
+            if (blocksEnemyVillage) utility += 95 * denyScale;
             if (progress <= 0) utility -= 18 + cost * 5;
             if (targetDistance >= 30) utility -= 28;
-            if (alreadySafe && scoringCell) utility += 500;
+            if (alreadySafe && scoringCell) utility += 500 * crownScale;
 
             if (!best || utility > best.utility) {
               best = {
@@ -10136,6 +10678,10 @@
         const cfg = aiConfig();
         const maxForce = Math.min(availablePush, cfg.pushMax);
         const options = [];
+        // Voir aiBestMove : mêmes coefficients normalisés autour de 5.
+        const defenseScale = (cfg.defensePriority ?? 5) / 5;
+        const denyScale = (cfg.denyScorePriority ?? 5) / 5;
+        const crownScale = (cfg.crownPriority ?? 5) / 5;
 
         aiOwnCharacters().forEach(pusher => {
           orthogonalNeighbors(pusher.r, pusher.c).forEach(([r, c]) => {
@@ -10153,7 +10699,7 @@
                 const after = distanceToNearestOwnVillage(simulation.r, simulation.c);
                 const ally = adjacentFreeAllyForCrown(simulation.r, simulation.c, [pusher.id]);
                 const gain = before - after;
-                const utility = gain * 85 + (ally ? 190 : 0) - force * 8;
+                const utility = gain * 85 * crownScale + (ally ? 190 : 0) - force * 8;
                 if (utility > 15) options.push({ pusher, r, c, count: force, priority: -utility, utility, targetType: "crown" });
               }
               return;
@@ -10170,18 +10716,32 @@
                 const carrying = characterCarriesCrown(item.char.id);
                 const owner = state.players[item.char.player];
                 if (!item.alive) {
-                  utility += isOwn ? (carrying ? -1400 : -260) : (carrying ? 1150 : 260);
+                  // Éliminer un gardien adverse (sans couronne) en le poussant
+                  // dans le vide était sous-valorisé face aux gains de
+                  // progression/déplacement, alors que c'est justement près
+                  // du village adverse (deux bords proches à la fois) que ces
+                  // occasions sont les plus fréquentes. Mis à l'échelle de
+                  // denyScorePriority : moins de gardiens adverses, c'est
+                  // aussi moins de capacité à défendre ou marquer plus tard.
+                  utility += isOwn ? (carrying ? -1400 : -260) : (carrying ? 1150 : 480 * denyScale);
                   continue;
                 }
                 const beforeThreat = aiCellThreatForPlayer(item.char.player, item.char.r, item.char.c);
                 const afterThreat = aiCellThreatForPlayer(item.char.player, item.r, item.c);
-                utility += isOwn ? (beforeThreat - afterThreat) * 8 : (afterThreat - beforeThreat) * 5;
+                utility += isOwn
+                  ? (beforeThreat - afterThreat) * 8 * (carrying ? defenseScale : 1)
+                  : (afterThreat - beforeThreat) * 5;
                 if (carrying) {
                   const before = aiValidationDistanceForPlayer(owner, item.char.r, item.char.c);
                   const after = aiValidationDistanceForPlayer(owner, item.r, item.c);
-                  utility += isOwn ? (before - after) * 120 : (after - before) * 145;
-                  if (!isOwn && before === 0 && after > 0) utility += 950;
-                  if (isOwn && after === 0) utility += 750;
+                  // Repousser le porteur adverse pour l'éloigner de sa case de
+                  // validation (denyScale) pèse désormais nettement plus lourd
+                  // à l'Expert que faire progresser son propre porteur
+                  // (crownScale) — priver l'adversaire d'un point imminent
+                  // passe avant sa propre progression.
+                  utility += isOwn ? (before - after) * 120 * crownScale : (after - before) * 145 * denyScale;
+                  if (!isOwn && before === 0 && after > 0) utility += 950 * denyScale;
+                  if (isOwn && after === 0) utility += 750 * crownScale;
                 } else if (isOwn) {
                   utility -= 22;
                 }
@@ -10199,6 +10759,9 @@
         if (availableMagic < 1 || !state.islands.length) return null;
         const cfg = aiConfig();
         const options = [];
+        // Voir aiBestMove : mêmes coefficients normalisés autour de 5.
+        const denyScale = (cfg.denyScorePriority ?? 5) / 5;
+        const crownScale = (cfg.crownPriority ?? 5) / 5;
         for (const island of state.islands) for (const pivot of island.cells) for (const steps of [1, 3, 2]) {
           const direction = steps === 3 ? -1 : 1, turns = steps === 3 ? 1 : steps;
           const rotation = calculateIslandRotationAroundPivot(island, pivot[0], pivot[1], direction, turns);
@@ -10211,9 +10774,9 @@
             if (carrying) {
               const before = aiValidationDistanceForPlayer(owner, move.char.r, move.char.c);
               const after = aiValidationDistanceForPlayer(owner, move.r, move.c);
-              utility += isOwn ? (before - after) * 145 : (after - before) * 165;
-              if (isOwn && after === 0) utility += 900;
-              if (!isOwn && before === 0 && after > 0) utility += 1000;
+              utility += isOwn ? (before - after) * 145 * crownScale : (after - before) * 165 * denyScale;
+              if (isOwn && after === 0) utility += 900 * crownScale;
+              if (!isOwn && before === 0 && after > 0) utility += 1000 * denyScale;
             } else {
               const beforeThreat = aiCellThreatForPlayer(move.char.player, move.char.r, move.char.c);
               const afterThreat = aiCellThreatForPlayer(move.char.player, move.r, move.c);
@@ -10225,9 +10788,15 @@
             const after = aiNearestOwnCharacterDistance(move.r, move.c);
             utility += (before - after) * 55;
           }
+          // Poids fortement réduit : combler des trous de terrain n'est pas
+          // un objectif en soi (un plateau plus morcelé peut même gêner
+          // l'adversaire), ce terme ne doit plus pouvoir, à lui seul, motiver
+          // une rotation qui n'apporte aucun gain de couronne/menace réel —
+          // sinon la magie se gaspille sur du "rangement" plutôt que sur de
+          // la tactique.
           const beforeContacts = aiExternalLandContacts(island.cells, island.id);
           const afterContacts = aiExternalLandContacts(rotation.absCells, island.id);
-          utility += (afterContacts - beforeContacts) * 28;
+          utility += (afterContacts - beforeContacts) * 4;
           if (utility > 20) options.push({ island, pivot, steps, cost: 1, score: -utility, utility });
         }
         options.sort((a, b) => b.utility - a.utility);
@@ -10547,7 +11116,10 @@
         drawCards(p, 5);
         state.deckAnimationMode = "deal";
         state.phase = "ACTION_SELECT";
-        state.islandPlacedThisTurn = false;
+        // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
+        // atteinte, la pose d'île redevient facultative au lieu de rester
+        // obligatoire sans qu'aucune forme ne puisse plus être choisie.
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id);
         state.centerCrownTakenThisTurn = false;
         state.treasureDropFromId = null;
         state.crownPickupCell = null;
@@ -10602,13 +11174,17 @@
             || "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
         } else if (p.isAI) {
-          showToast(`${p.name} prépare son tour.`);
+          showToast(state.turn === 1
+            ? `Tirage au sort : ${p.name} commence la partie.`
+            : `${p.name} prépare son tour.`);
           const token = ++aiRunToken;
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
           if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
-            showToast(`${p.name} commence son tour.`);
+            showToast(state.turn === 1
+              ? `Tirage au sort : ${p.name} commence la partie.`
+              : `${p.name} commence son tour.`);
           }
         }
       }
@@ -11390,7 +11966,7 @@
             }
           }
           if (nameEl) {
-            nameEl.textContent = p ? (p.isAI ? "IA" : p.name) : "";
+            nameEl.textContent = p ? (p.isAI ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
@@ -11443,6 +12019,10 @@
         if (magicRow) {
           const rotating = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
           magicRow.classList.toggle("hidden", !rotating);
+        }
+        const magicDissolveBtn = document.getElementById("hudV2MagicDissolve");
+        if (magicDissolveBtn) {
+          magicDissolveBtn.classList.toggle("hidden", !canDissolveSelectedIsland());
         }
 
         // --- Sélecteur de Force manuel (repli) — équivalent HUD V2 du bloc
@@ -11587,7 +12167,7 @@
         if (els.activePortrait) { els.activePortrait.textContent = p.icon; els.activePortrait.style.color = p.color; }
         if (els.activeName) els.activeName.textContent = p.name;
         if (els.phaseLabel) els.phaseLabel.textContent = info.label;
-        els.turnLabel.textContent = `Tour ${state.turn}${p.isAI ? ` · IA ${AI_LEVELS[state.aiDifficulty || "normal"].label}` : ""}`;
+        els.turnLabel.textContent = `Tour ${state.turn}${p.isAI ? ` · CPU ${AI_LEVELS[state.aiDifficulty || "normal"].label}` : ""}`;
         updateTurnTimerDisplay();
         updateOnlineBadge();
         if (els.instruction) els.instruction.textContent = info.instruction;
@@ -11638,21 +12218,44 @@
         return html + "</span>";
       }
 
+      // Test : nombre d'îles d'une forme donnée déjà posées par ce
+      // propriétaire (owner d'île = state.currentPlayer côté joueur humain)
+      // sur toute la partie. SHAPE_LIMIT_PER_OWNER=0 désactive la limite.
+      function shapeUsageCountForOwner(ownerId, shapeKey) {
+        return state.islands.filter(island => island.owner === ownerId && island.shapeKey === shapeKey).length;
+      }
+
+      function shapeLimitReached(shapeKey) {
+        if (!SHAPE_LIMIT_PER_OWNER) return false;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= SHAPE_LIMIT_PER_OWNER;
+      }
+
       function renderIslandSelector() {
         els.islandSelector.innerHTML = "";
         const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase);
         const emphasize = !state.islandPlacedThisTurn;
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
+          const used = shapeUsageCountForOwner(state.currentPlayer, shapeKey);
+          const maxedOut = shapeLimitReached(shapeKey);
           const button = document.createElement("button");
           button.type = "button";
           button.className = "island-choice" +
             (state.selectedIslandShape === shapeKey ? " active" : "") +
-            (emphasize ? " choice-ready" : "");
-          button.disabled = !available;
-          button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}</span><span class="island-choice-name">${shape.name}</span>`;
-          button.title = shape.name;
-          button.setAttribute("aria-label", `Choisir l’île ${shape.name}`);
+            (emphasize ? " choice-ready" : "") +
+            (maxedOut ? " choice-maxed" : "");
+          button.disabled = !available || maxedOut;
+          const flipBadge = shape.flippable
+            ? `<span class="island-choice-flip" aria-hidden="true" title="Peut être retournée (miroir)">⇄</span>`
+            : "";
+          const limitBadge = SHAPE_LIMIT_PER_OWNER
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${SHAPE_LIMIT_PER_OWNER}</span>`
+            : "";
+          button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
+          const limitSuffix = SHAPE_LIMIT_PER_OWNER ? ` (${used}/${SHAPE_LIMIT_PER_OWNER} posées)` : "";
+          button.title = (shape.flippable ? `${shape.name} (peut être retournée en miroir)` : shape.name)
+            + (maxedOut ? " — limite atteinte" : limitSuffix);
+          button.setAttribute("aria-label", (shape.flippable ? `Choisir l’île ${shape.name}, peut être retournée en miroir` : `Choisir l’île ${shape.name}`) + limitSuffix);
           button.addEventListener("click", () => selectIslandShape(shapeKey));
           els.islandSelector.appendChild(button);
         });
@@ -11662,6 +12265,10 @@
         if (!canLocalPlayerAct()) return;
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
+        if (shapeLimitReached(shapeKey)) {
+          showToast(`Limite atteinte : ${SHAPE_LIMIT_PER_OWNER} îles « ${SHAPES[shapeKey].name} » maximum.`);
+          return;
+        }
         state.selectedIslandShape = shapeKey;
         state.placementCells = cloneCells(SHAPES[shapeKey].cells);
         state.placementOriginIndex = 0;
@@ -12316,7 +12923,15 @@
           if (state.magicHoverIslandId !== nextIslandId || !samePivot) {
             state.magicHoverIslandId = nextIslandId;
             state.magicHoverPivot = nextPivot;
+            // Ghost immédiat au survol (avant même le clic de pivot) : un aperçu
+            // de la rotation à 90° s'affiche dès qu'on survole une case d'île,
+            // pour ne plus avoir à cliquer puis tourner pour voir le résultat.
+            updateMagicHoverPreview();
             scheduleBoardRender();
+            if (kaykit3D) {
+              kaykit3D.lastStateSignature = "";
+              scheduleKayKitSync();
+            }
           }
           return;
         }
@@ -12366,7 +12981,13 @@
         if (state.phase === "ACTION" && state.selectedActionType === "MAGIC" && isSameCell(state.magicHoverPivot, [r, c])) {
           state.magicHoverIslandId = null;
           state.magicHoverPivot = null;
+          state.magicHoverPreviewCells = null;
+          state.magicHoverPreviewValid = false;
           scheduleBoardRender();
+          if (kaykit3D) {
+            kaykit3D.lastStateSignature = "";
+            scheduleKayKitSync();
+          }
           return;
         }
 
@@ -12845,6 +13466,7 @@
         const island = {
           id: islandId,
           owner: state.currentPlayer,
+          shapeKey: state.selectedIslandShape,
           anchor: { r: anchorR, c: anchorC },
           relCells: cloneCells(state.placementCells),
           cells: absCells,
@@ -13072,6 +13694,8 @@
 
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
@@ -13155,6 +13779,8 @@
         state.selectedIslandId = null;
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
@@ -14059,6 +14685,27 @@
         };
       }
 
+      // Aperçu au simple survol, avant tout clic de pivot : pas de rotation,
+      // juste la forme actuelle de l'île survolée. Sert d'identification
+      // visuelle (remplace le surlignage de case classique, peu visible en
+      // 3D) — pas un aperçu de résultat. Le vrai aperçu de rotation
+      // (updateMagicPreview ci-dessous) prend le relais dès qu'une île est
+      // confirmée par un clic et qu'on tourne réellement.
+      function updateMagicHoverPreview() {
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
+
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        if (state.selectedIslandId) return;
+        if (!state.magicHoverIslandId) return;
+
+        const island = state.islands.find(is => is.id === state.magicHoverIslandId);
+        if (!island) return;
+
+        state.magicHoverPreviewCells = island.cells.map(([r, c]) => [r, c]);
+        state.magicHoverPreviewValid = true;
+      }
+
       function updateMagicPreview() {
         state.magicPreviewCells = null;
         state.magicPreviewValid = false;
@@ -14176,6 +14823,65 @@
         });
       }
 
+      /*
+       * Règle « dissoudre une île » : 1 magie retire du plateau une île
+       * entièrement vide (aucun gardien, aucune couronne dessus). Simple et
+       * équilibré — ça coûte la même ressource rare qu'une rotation, et
+       * l'impossibilité de cibler une île occupée exclut tout usage pour
+       * capturer ou piéger un gardien : on ne peut dissoudre que du terrain
+       * inutilisé.
+       */
+      function islandIsEmpty(island) {
+        if (!island) return false;
+        return island.cells.every(([r, c]) => !characterAt(r, c) && !looseArtifactAt(r, c));
+      }
+
+      function canDissolveSelectedIsland() {
+        if (!state.rules?.allowDissolve) return false;
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return false;
+        if (!state.selectedIslandId) return false;
+        return islandIsEmpty(state.islands.find(is => is.id === state.selectedIslandId));
+      }
+
+      function dissolveSelectedIsland() {
+        if (!state.rules?.allowDissolve) {
+          showToast("La dissolution d’île n’est pas activée pour cette partie.");
+          return;
+        }
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        const island = state.islands.find(is => is.id === state.selectedIslandId);
+        if (!island) {
+          showToast("Choisissez d’abord une case pivot sur une île.");
+          return;
+        }
+        if (!islandIsEmpty(island)) {
+          showToast("Cette île n’est pas vide : impossible de la dissoudre.");
+          return;
+        }
+        if (availableActionCount("MAGIC") < 1) {
+          showToast("Aucune magie disponible.");
+          return;
+        }
+
+        saveUndoSnapshot();
+        const cells = island.cells.map(([ir, ic]) => [ir, ic]);
+        state.islands = state.islands.filter(is => is.id !== island.id);
+        cells.forEach(([ir, ic]) => animateCellPulse(ir, ic, "magic-vanish"));
+
+        if (kaykit3D) {
+          const avgR = cells.reduce((sum, [ir]) => sum + ir, 0) / cells.length;
+          const avgC = cells.reduce((sum, [, ic]) => sum + ic, 0) / cells.length;
+          const p = kaykitCellPosition(avgR, avgC, KAYKIT_LEVELS.islandTop + .1);
+          spawnGroundBurst(p, new THREE.Color(0xa86df2), { radius: .55, duration: 620 });
+          kaykit3D.lastStateSignature = "";
+        }
+
+        playSfx("magic");
+        showToast("Île dissoute pour 1 magie : elle retourne au vide.");
+        scheduleKayKitSync();
+        useSelectedCard(1);
+      }
+
       function handleMagicClick(r, c) {
         if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
           confirmMagicRotation();
@@ -14200,6 +14906,8 @@
           state.selectedMagicPivot = [r, c];
           state.magicHoverIslandId = null;
           state.magicHoverPivot = null;
+          state.magicHoverPreviewCells = null;
+          state.magicHoverPreviewValid = false;
           state.selectedCharId = null;
           state.reachable = new Set();
           state.magicPreviewDirection = 0;
@@ -14285,6 +14993,35 @@
         }
       }
 
+      // Miroir horizontal de l'île en cours de pose : la rotation seule ne
+      // peut pas transformer une forme chirale (ex. le "Serpent" en S) en son
+      // symétrique (en Z) — il faut un vrai flip. Uniquement disponible en
+      // pose (pas de flip sur une île déjà posée via la magie).
+      function flipSelectedIsland() {
+        if (!(state.phase === "PLACE_ISLAND" && state.placementCells)) return;
+
+        const origin = state.placementCells[state.placementOriginIndex] || state.placementCells[0] || [0, 0];
+        let flipped = state.placementCells.map(([r, c]) => [r, origin[1] - (c - origin[1])]);
+
+        // recentre pour garder de petites coordonnées, comme rotateSelectedIsland.
+        const minR = Math.min(...flipped.map(c => c[0]));
+        const minC = Math.min(...flipped.map(c => c[1]));
+        flipped = flipped.map(([r, c]) => [r - minR, c - minC]);
+        state.placementCells = flipped;
+
+        if (state.hoverAnchor) {
+          updatePlacementPreview(state.hoverAnchor[0], state.hoverAnchor[1]);
+          if (kaykit3D) {
+            kaykit3D.lastStateSignature = "";
+            scheduleKayKitSync();
+          }
+          playSfx("rotate");
+        } else {
+          renderBoard();
+          scheduleKayKitSync();
+        }
+      }
+
       function calculateIslandRotation(island, direction) {
         const oldRel = island.relCells;
         const newRel = rotateCells(oldRel, direction, false);
@@ -14341,6 +15078,8 @@
         state.selectedIslandId = null;
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
@@ -14432,6 +15171,14 @@
         const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
+        // Le miroir n'a de sens que pour une forme chirale (ex. Serpent) : les
+        // autres formes n'ont rien à retourner, le bouton reste donc masqué.
+        const currentShapeFlippable = !!(state.selectedIslandShape && SHAPES[state.selectedIslandShape]?.flippable);
+        const canFlipPlacement = canRotatePlacement && currentShapeFlippable;
+        if (els.flipBtn) {
+          els.flipBtn.disabled = !canFlipPlacement;
+          els.flipBtn.classList.toggle("hidden", !currentShapeFlippable);
+        }
         const islandRotate = document.getElementById("hudV2IslandRotate");
         if (islandRotate) {
           islandRotate.classList.toggle("hidden", !canRotatePlacement);
@@ -14643,6 +15390,12 @@
           playVictoryCelebration(player.id);
           setTimeout(() => showVictory(player), 450);
         } else {
+          // Un gardien qui valide une couronne (dépôt au village, hors sortie
+          // par une porte — mécanique historique déjà désactivée) est retiré
+          // du jeu : la couronne se paie du gardien qui l'a portée jusqu'ici.
+          // Exclu de la couronne gagnante ci-dessus pour ne pas faire
+          // disparaître le gardien pendant sa propre célébration de victoire.
+          if (char && !throughExit) removeCharacterFromGame(char);
           resetArtifactObject(artifact);
         }
       }
@@ -15020,6 +15773,45 @@
         setTimeout(finishSetup, 80);
       }
 
+      /*
+       * IA contre IA : jusqu'ici accessible uniquement depuis la console
+       * (window.ILYOS_API.launchConfiguredGame({..., autoplay:true}) ou
+       * startIlyosAutoplay() sur une partie déjà lancée). Ce bouton fait la
+       * même chose sans passer par la console : plateau classique à 2
+       * joueurs (pas de préréglage symétrique à confirmer, donc plus direct
+       * que Spirale des vents), les deux joueurs basculés en IA Expert.
+       */
+      function launchIlyosAIvsAI({ difficulty = 'expert', maxTurns = 40 } = {}) {
+        document.body.classList.add('ilyos-diagnostic-mode');
+        pendingVisualMode = 'alternative';
+        els.playerCount.value = '2';
+        els.playerCount.dispatchEvent(new Event('change', { bubbles: true }));
+        const boardSelect = document.getElementById('startingBoardSelect');
+        if (boardSelect) boardSelect.value = 'classic';
+        const difficultySelect = document.getElementById('aiDifficultySelect');
+        if (difficultySelect) difficultySelect.value = difficulty;
+        const names = [...els.playersForm.querySelectorAll('.player-name')];
+        if (names[0]) names[0].value = 'BOT AZUR';
+        if (names[1]) names[1].value = 'BOT CORAIL';
+        startLocalGame();
+
+        let attempts = 0;
+        const finishSetup = () => {
+          attempts++;
+          if (state && !state.setupSelectionPending) {
+            setTimeout(() => startIlyosAutoplay({ maxTurns, difficulty }), 500);
+            setTimeout(showIlyosDiagnosticPanel, 1200);
+            return;
+          }
+          if (attempts < 30) setTimeout(finishSetup, 100);
+          else {
+            console.error('[ILYOS V74] Échec du lancement IA vs IA', state);
+            showToast('Le lancement IA vs IA a échoué.');
+          }
+        };
+        setTimeout(finishSetup, 80);
+      }
+
       window.ILYOS_API = {
         launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, autoplay = false } = {}) {
           try {
@@ -15074,6 +15866,7 @@
       window.ILYOS_TEST = {
         launchSpiral: launchIlyosSpiralDiagnostic,
         playSpiral: launchIlyosSpiralAutoplay,
+        playAIvsAI: launchIlyosAIvsAI,
         startAutoplay: startIlyosAutoplay,
         stopAutoplay: stopIlyosAutoplay,
         report: collectIlyosDiagnosticReport,
@@ -15082,6 +15875,7 @@
       };
 
       els.ilyosSpiralTestBtn?.addEventListener('click', launchIlyosSpiralDiagnostic);
+      els.ilyosAIvsAITestBtn?.addEventListener('click', () => launchIlyosAIvsAI());
 
       els.startBtn.addEventListener("click", () => {
         pendingVisualMode = "alternative";
@@ -15120,6 +15914,7 @@
 
       els.rotateLeftBtn.addEventListener("click", () => rotateSelectedIsland(-1));
       els.rotateRightBtn.addEventListener("click", () => rotateSelectedIsland(1));
+      els.flipBtn?.addEventListener("click", () => flipSelectedIsland());
       els.cancelCardBtn.addEventListener("click", handleCancelButton);
       els.endTurnBtn.addEventListener("click", () => endTurn(false));
 
@@ -15155,6 +15950,7 @@
 
       document.getElementById("hudV2MagicRotateLeft")?.addEventListener("click", () => rotateSelectedIsland(-1));
       document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
+      document.getElementById("hudV2MagicDissolve")?.addEventListener("click", () => dissolveSelectedIsland());
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
 

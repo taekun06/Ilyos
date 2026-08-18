@@ -579,6 +579,25 @@
         return threat + edgeRisk * 2.5;
       }
 
+      /*
+       * Anticipation locale (un coup) : un ennemi déjà adjacent à cette case
+       * pourrait-il, dès son prochain tour, pousser le gardien qui s'y trouve
+       * dans le vide avec une seule poussée de force 1 (aucune ligne de
+       * gardiens à déplacer derrière lui) ? aiCellThreatForPlayer ne mesure
+       * qu'une proximité générique ; ceci vérifie la perte immédiate et
+       * concrète du porteur de couronne, le pire résultat possible.
+       */
+      function aiPushOffRisk(playerId, r, c) {
+        for (const enemy of state.characters) {
+          if (enemy.player === playerId) continue;
+          const dr = r - enemy.r, dc = c - enemy.c;
+          if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
+          const landR = r + dr, landC = c + dc;
+          if (!inside(landR, landC) || !isLand(landR, landC)) return true;
+        }
+        return false;
+      }
+
       function aiBestMove() {
         const availableMoves = availableActionCount("MOVE");
         if (availableMoves < 1) return null;
@@ -612,16 +631,31 @@
             // Un porteur déjà sécurisé ne quitte pas son village sauf pour fuir un danger immédiat.
             if (alreadySafe && !scoringCell && startThreat < 12) continue;
 
+            // defensePriority/denyScorePriority/crownPriority (définis dans
+            // AI_LEVELS.expert) : coefficients normalisés autour de 5 (le
+            // niveau implicite des difficultés inférieures) pour renforcer,
+            // à l'Expert, la fuite du porteur menacé et la course pour priver
+            // l'adversaire d'un point imminent — sans rien changer aux
+            // niveaux qui ne définissent pas ces clés.
+            const defenseScale = (cfg.defensePriority ?? 5) / 5;
+            const denyScale = (cfg.denyScorePriority ?? 5) / 5;
+            const crownScale = (cfg.crownPriority ?? 5) / 5;
+
             let utility = progress * 42 - cost * 3 - targetDistance * 1.2;
-            if (carrying) utility += progress * 58 - threat * 13;
+            if (carrying) utility += progress * 58 - threat * 13 * defenseScale;
             else utility -= threat * 3.2;
-            if (scoringCell) utility += 2200;
-            if (looseCrown && !carrying) utility += 1050;
-            if (adjacentOpponentCarrier && !carrying) utility += 360 + aiOpponentScoreThreat() * 2;
-            if (blocksEnemyVillage) utility += 95;
+            // Un porteur qu'on amène volontairement à portée d'une poussée
+            // dans le vide perd la couronne pour de bon dès le tour adverse
+            // suivant — un coup d'avance suffit à repérer ce cas précis, bien
+            // plus grave qu'une simple proximité (threat) déjà comptée.
+            if (carrying && aiPushOffRisk(char.player, r, c)) utility -= 1800 * defenseScale;
+            if (scoringCell) utility += 2200 * crownScale;
+            if (looseCrown && !carrying) utility += 1050 * crownScale;
+            if (adjacentOpponentCarrier && !carrying) utility += 360 * denyScale + aiOpponentScoreThreat() * 2 * denyScale;
+            if (blocksEnemyVillage) utility += 95 * denyScale;
             if (progress <= 0) utility -= 18 + cost * 5;
             if (targetDistance >= 30) utility -= 28;
-            if (alreadySafe && scoringCell) utility += 500;
+            if (alreadySafe && scoringCell) utility += 500 * crownScale;
 
             if (!best || utility > best.utility) {
               best = {
@@ -641,6 +675,10 @@
         const cfg = aiConfig();
         const maxForce = Math.min(availablePush, cfg.pushMax);
         const options = [];
+        // Voir aiBestMove : mêmes coefficients normalisés autour de 5.
+        const defenseScale = (cfg.defensePriority ?? 5) / 5;
+        const denyScale = (cfg.denyScorePriority ?? 5) / 5;
+        const crownScale = (cfg.crownPriority ?? 5) / 5;
 
         aiOwnCharacters().forEach(pusher => {
           orthogonalNeighbors(pusher.r, pusher.c).forEach(([r, c]) => {
@@ -658,7 +696,7 @@
                 const after = distanceToNearestOwnVillage(simulation.r, simulation.c);
                 const ally = adjacentFreeAllyForCrown(simulation.r, simulation.c, [pusher.id]);
                 const gain = before - after;
-                const utility = gain * 85 + (ally ? 190 : 0) - force * 8;
+                const utility = gain * 85 * crownScale + (ally ? 190 : 0) - force * 8;
                 if (utility > 15) options.push({ pusher, r, c, count: force, priority: -utility, utility, targetType: "crown" });
               }
               return;
@@ -675,18 +713,32 @@
                 const carrying = characterCarriesCrown(item.char.id);
                 const owner = state.players[item.char.player];
                 if (!item.alive) {
-                  utility += isOwn ? (carrying ? -1400 : -260) : (carrying ? 1150 : 260);
+                  // Éliminer un gardien adverse (sans couronne) en le poussant
+                  // dans le vide était sous-valorisé face aux gains de
+                  // progression/déplacement, alors que c'est justement près
+                  // du village adverse (deux bords proches à la fois) que ces
+                  // occasions sont les plus fréquentes. Mis à l'échelle de
+                  // denyScorePriority : moins de gardiens adverses, c'est
+                  // aussi moins de capacité à défendre ou marquer plus tard.
+                  utility += isOwn ? (carrying ? -1400 : -260) : (carrying ? 1150 : 480 * denyScale);
                   continue;
                 }
                 const beforeThreat = aiCellThreatForPlayer(item.char.player, item.char.r, item.char.c);
                 const afterThreat = aiCellThreatForPlayer(item.char.player, item.r, item.c);
-                utility += isOwn ? (beforeThreat - afterThreat) * 8 : (afterThreat - beforeThreat) * 5;
+                utility += isOwn
+                  ? (beforeThreat - afterThreat) * 8 * (carrying ? defenseScale : 1)
+                  : (afterThreat - beforeThreat) * 5;
                 if (carrying) {
                   const before = aiValidationDistanceForPlayer(owner, item.char.r, item.char.c);
                   const after = aiValidationDistanceForPlayer(owner, item.r, item.c);
-                  utility += isOwn ? (before - after) * 120 : (after - before) * 145;
-                  if (!isOwn && before === 0 && after > 0) utility += 950;
-                  if (isOwn && after === 0) utility += 750;
+                  // Repousser le porteur adverse pour l'éloigner de sa case de
+                  // validation (denyScale) pèse désormais nettement plus lourd
+                  // à l'Expert que faire progresser son propre porteur
+                  // (crownScale) — priver l'adversaire d'un point imminent
+                  // passe avant sa propre progression.
+                  utility += isOwn ? (before - after) * 120 * crownScale : (after - before) * 145 * denyScale;
+                  if (!isOwn && before === 0 && after > 0) utility += 950 * denyScale;
+                  if (isOwn && after === 0) utility += 750 * crownScale;
                 } else if (isOwn) {
                   utility -= 22;
                 }
@@ -704,6 +756,9 @@
         if (availableMagic < 1 || !state.islands.length) return null;
         const cfg = aiConfig();
         const options = [];
+        // Voir aiBestMove : mêmes coefficients normalisés autour de 5.
+        const denyScale = (cfg.denyScorePriority ?? 5) / 5;
+        const crownScale = (cfg.crownPriority ?? 5) / 5;
         for (const island of state.islands) for (const pivot of island.cells) for (const steps of [1, 3, 2]) {
           const direction = steps === 3 ? -1 : 1, turns = steps === 3 ? 1 : steps;
           const rotation = calculateIslandRotationAroundPivot(island, pivot[0], pivot[1], direction, turns);
@@ -716,9 +771,9 @@
             if (carrying) {
               const before = aiValidationDistanceForPlayer(owner, move.char.r, move.char.c);
               const after = aiValidationDistanceForPlayer(owner, move.r, move.c);
-              utility += isOwn ? (before - after) * 145 : (after - before) * 165;
-              if (isOwn && after === 0) utility += 900;
-              if (!isOwn && before === 0 && after > 0) utility += 1000;
+              utility += isOwn ? (before - after) * 145 * crownScale : (after - before) * 165 * denyScale;
+              if (isOwn && after === 0) utility += 900 * crownScale;
+              if (!isOwn && before === 0 && after > 0) utility += 1000 * denyScale;
             } else {
               const beforeThreat = aiCellThreatForPlayer(move.char.player, move.char.r, move.char.c);
               const afterThreat = aiCellThreatForPlayer(move.char.player, move.r, move.c);
@@ -730,9 +785,15 @@
             const after = aiNearestOwnCharacterDistance(move.r, move.c);
             utility += (before - after) * 55;
           }
+          // Poids fortement réduit : combler des trous de terrain n'est pas
+          // un objectif en soi (un plateau plus morcelé peut même gêner
+          // l'adversaire), ce terme ne doit plus pouvoir, à lui seul, motiver
+          // une rotation qui n'apporte aucun gain de couronne/menace réel —
+          // sinon la magie se gaspille sur du "rangement" plutôt que sur de
+          // la tactique.
           const beforeContacts = aiExternalLandContacts(island.cells, island.id);
           const afterContacts = aiExternalLandContacts(rotation.absCells, island.id);
-          utility += (afterContacts - beforeContacts) * 28;
+          utility += (afterContacts - beforeContacts) * 4;
           if (utility > 20) options.push({ island, pivot, steps, cost: 1, score: -utility, utility });
         }
         options.sort((a, b) => b.utility - a.utility);

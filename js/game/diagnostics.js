@@ -246,6 +246,45 @@
         setTimeout(finishSetup, 80);
       }
 
+      /*
+       * IA contre IA : jusqu'ici accessible uniquement depuis la console
+       * (window.ILYOS_API.launchConfiguredGame({..., autoplay:true}) ou
+       * startIlyosAutoplay() sur une partie déjà lancée). Ce bouton fait la
+       * même chose sans passer par la console : plateau classique à 2
+       * joueurs (pas de préréglage symétrique à confirmer, donc plus direct
+       * que Spirale des vents), les deux joueurs basculés en IA Expert.
+       */
+      function launchIlyosAIvsAI({ difficulty = 'expert', maxTurns = 40 } = {}) {
+        document.body.classList.add('ilyos-diagnostic-mode');
+        pendingVisualMode = 'alternative';
+        els.playerCount.value = '2';
+        els.playerCount.dispatchEvent(new Event('change', { bubbles: true }));
+        const boardSelect = document.getElementById('startingBoardSelect');
+        if (boardSelect) boardSelect.value = 'classic';
+        const difficultySelect = document.getElementById('aiDifficultySelect');
+        if (difficultySelect) difficultySelect.value = difficulty;
+        const names = [...els.playersForm.querySelectorAll('.player-name')];
+        if (names[0]) names[0].value = 'BOT AZUR';
+        if (names[1]) names[1].value = 'BOT CORAIL';
+        startLocalGame();
+
+        let attempts = 0;
+        const finishSetup = () => {
+          attempts++;
+          if (state && !state.setupSelectionPending) {
+            setTimeout(() => startIlyosAutoplay({ maxTurns, difficulty }), 500);
+            setTimeout(showIlyosDiagnosticPanel, 1200);
+            return;
+          }
+          if (attempts < 30) setTimeout(finishSetup, 100);
+          else {
+            console.error('[ILYOS V74] Échec du lancement IA vs IA', state);
+            showToast('Le lancement IA vs IA a échoué.');
+          }
+        };
+        setTimeout(finishSetup, 80);
+      }
+
       window.ILYOS_API = {
         launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, autoplay = false } = {}) {
           try {
@@ -300,6 +339,7 @@
       window.ILYOS_TEST = {
         launchSpiral: launchIlyosSpiralDiagnostic,
         playSpiral: launchIlyosSpiralAutoplay,
+        playAIvsAI: launchIlyosAIvsAI,
         startAutoplay: startIlyosAutoplay,
         stopAutoplay: stopIlyosAutoplay,
         report: collectIlyosDiagnosticReport,
@@ -308,6 +348,7 @@
       };
 
       els.ilyosSpiralTestBtn?.addEventListener('click', launchIlyosSpiralDiagnostic);
+      els.ilyosAIvsAITestBtn?.addEventListener('click', () => launchIlyosAIvsAI());
 
       els.startBtn.addEventListener("click", () => {
         pendingVisualMode = "alternative";
@@ -346,6 +387,7 @@
 
       els.rotateLeftBtn.addEventListener("click", () => rotateSelectedIsland(-1));
       els.rotateRightBtn.addEventListener("click", () => rotateSelectedIsland(1));
+      els.flipBtn?.addEventListener("click", () => flipSelectedIsland());
       els.cancelCardBtn.addEventListener("click", handleCancelButton);
       els.endTurnBtn.addEventListener("click", () => endTurn(false));
 
@@ -381,6 +423,7 @@
 
       document.getElementById("hudV2MagicRotateLeft")?.addEventListener("click", () => rotateSelectedIsland(-1));
       document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
+      document.getElementById("hudV2MagicDissolve")?.addEventListener("click", () => dissolveSelectedIsland());
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
 

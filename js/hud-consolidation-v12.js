@@ -380,6 +380,7 @@
       <span class="ov2-v12-rotation-label">ROTATION</span>
       <button id="ov2PlacementRotateLeftV12" type="button" class="hud-v2-magic-btn">↺ 90°</button>
       <button id="ov2PlacementRotateRightV12" type="button" class="hud-v2-magic-btn">↻ 90°</button>
+      <button id="ov2PlacementFlipV12" type="button" class="hud-v2-magic-btn" title="Retourner l’île (miroir)" aria-label="Retourner l’île (miroir)">⇄ Miroir</button>
       <button id="ov2PlacementConfirmV12" type="button" class="hud-v2-magic-btn hud-v2-magic-confirm">Confirmer</button>
       <button id="ov2PlacementCancelV12" type="button" class="hud-v2-magic-btn hud-v2-magic-cancel">Annuler</button>`;
     game.appendChild(row);
@@ -390,6 +391,10 @@
     });
     byId('ov2PlacementRotateRightV12')?.addEventListener('click',()=>{
       const btn = byId('rotateRightBtn');
+      if (btn && !btn.disabled) btn.click();
+    });
+    byId('ov2PlacementFlipV12')?.addEventListener('click',()=>{
+      const btn = byId('flipBtn');
       if (btn && !btn.disabled) btn.click();
     });
     byId('ov2PlacementConfirmV12')?.addEventListener('click',()=>{
@@ -416,10 +421,17 @@
 
     const left = byId('rotateLeftBtn');
     const right = byId('rotateRightBtn');
+    const flip = byId('flipBtn');
     const leftProxy = byId('ov2PlacementRotateLeftV12');
     const rightProxy = byId('ov2PlacementRotateRightV12');
+    const flipProxy = byId('ov2PlacementFlipV12');
     if (leftProxy) leftProxy.disabled = !active || !!left?.disabled;
     if (rightProxy) rightProxy.disabled = !active || !!right?.disabled;
+    if (flipProxy) {
+      const flipApplicable = !flip?.classList.contains('hidden');
+      flipProxy.classList.toggle('hidden', !flipApplicable);
+      flipProxy.disabled = !active || !!flip?.disabled;
+    }
   }
 
   function sync(){

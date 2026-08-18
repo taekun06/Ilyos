@@ -1666,42 +1666,65 @@
         return hero;
       }
 
+      /* La texture "hexagons_medieval" des bâtiments n'est pas une photo mais un
+         atlas de nuanciers : chaque colonne est un dégradé vertical plat (pierre
+         grise, bois brun, un bleu, un rouge...) et le modèle GLTF choisit sa
+         couleur de toit/fanion simplement en pointant ses UV sur la colonne
+         voulue. On garde tout le rendu/texture KayKit d'origine tel quel (pierre,
+         bois, fenêtres, reflets) et on ne touche QUE les pixels de la colonne
+         "équipe" du modèle (bleu ou rouge, saturés) pour les faire glisser vers
+         la teinte de faction — le minimum nécessaire pour la couleur d'équipe. */
+      function recolorKayKitBuildingTexture(sourceMap, accentColor) {
+        if (!sourceMap?.image?.width) return sourceMap;
+        const accent = new THREE.Color(accentColor);
+        const cacheKey = `village-atlas:${sourceMap.uuid}:${accent.getHexString()}`;
+        if (kaykit3D.materials.has(cacheKey)) return kaykit3D.materials.get(cacheKey);
+        const accentHsl = { h: 0, s: 0, l: 0 };
+        accent.getHSL(accentHsl);
+        const img = sourceMap.image;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width; canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const px = data.data;
+        const tmp = new THREE.Color();
+        const hsl = { h: 0, s: 0, l: 0 };
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i + 3] === 0) continue;
+          tmp.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
+          tmp.getHSL(hsl);
+          const hueDeg = hsl.h * 360;
+          const isBlueBand = hsl.s > .25 && hueDeg >= 190 && hueDeg <= 260;
+          const isRedBand = hsl.s > .30 && (hueDeg >= 335 || hueDeg <= 15);
+          if (isBlueBand || isRedBand) {
+            tmp.setHSL(accentHsl.h, Math.max(hsl.s, accentHsl.s * .85), hsl.l);
+            px[i] = tmp.r * 255; px[i + 1] = tmp.g * 255; px[i + 2] = tmp.b * 255;
+          }
+        }
+        ctx.putImageData(data, 0, 0);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = sourceMap.wrapS;
+        texture.wrapT = sourceMap.wrapT;
+        // Sans repasser par configureKayKitTexture() (encodage sRGB, mipmaps,
+        // anisotropie), la nouvelle texture canvas rendait plate et délavée par
+        // rapport au modèle KayKit d'origine — c'était la vraie cause du rendu
+        // terne, pas la recoloration elle-même.
+        configureKayKitTexture(texture);
+        kaykit3D.materials.set(cacheKey, texture);
+        return texture;
+      }
+
       function accentVillageColors(object, color) {
         if (!object) return object;
         const accent = new THREE.Color(color || 0xffffff);
-        const brightStone = new THREE.Color(0xf6edd6);
-        const roofColor = accent.clone().offsetHSL(0, .24, .12);
         object.traverse?.(child => {
           if (!child.isMesh || !child.material) return;
           const source = Array.isArray(child.material) ? child.material : [child.material];
           const styled = source.map(material => {
             const mat = material.clone();
-            const label = `${child.name || ''} ${mat.name || ''}`.toLowerCase();
-            const isRoof = /roof|flag|banner|cloth|cap|cone|spire/.test(label);
-            const isStone = /wall|stone|tower|base|castle/.test(label);
-            if (isRoof || isStone) {
-              if ('map' in mat) mat.map = null;
-              if ('aoMap' in mat) mat.aoMap = null;
-              if ('lightMap' in mat) mat.lightMap = null;
-              if ('emissiveMap' in mat) mat.emissiveMap = null;
-            }
-            if (mat.color) {
-              const base = mat.color.clone();
-              if (isRoof) {
-                mat.color.copy(roofColor);
-              } else if (isStone) {
-                const stone = brightStone.clone().lerp(accent, .40);
-                mat.color.copy(stone);
-              } else {
-                mat.color.copy(base.lerp(accent, .98));
-              }
-            }
-            if ('emissive' in mat) {
-              mat.emissive = (isRoof ? roofColor : accent).clone();
-              mat.emissiveIntensity = isRoof ? .78 : (isStone ? .26 : .46);
-            }
-            if ('metalness' in mat) mat.metalness = isRoof ? .10 : Math.min(mat.metalness ?? 0, .06);
-            if ('roughness' in mat) mat.roughness = isRoof ? .20 : Math.min(mat.roughness ?? .75, .46);
+            if (mat.map) mat.map = recolorKayKitBuildingTexture(mat.map, accent);
+            if (mat.color) mat.color.set(0xffffff);
             mat.needsUpdate = true;
             return mat;
           });
@@ -1804,8 +1827,12 @@
         const group = new THREE.Group();
         // Or plus poli (métalness élevée, faible rugosité), bonnet de velours visible
         // sous la bande, gemmes alternées rubis/saphir : lecture "objet précieux"
-        // immédiate au lieu de la couronne plate d'origine.
+        // immédiate au lieu de la couronne plate d'origine. Bande à deux niveaux,
+        // pointes de hauteurs alternées terminées par des perles, joyau central
+        // plus gros et plus facetté, avec sa propre lueur : silhouette de
+        // couronne royale plutôt qu'une simple étoile dorée.
         const gold = kaykitMaterial(0xffcf3f, { roughness: .16, metalness: .9, emissive: 0x6b3f00, emissiveIntensity: .16 });
+        const goldTrim = kaykitMaterial(0xffe27a, { roughness: .10, metalness: .95, emissive: 0x8a5a00, emissiveIntensity: .22 });
         const velvet = kaykitMaterial(0x7a1230, { roughness: .92, metalness: 0 });
         const ruby = kaykitMaterial(0xff2f4d, { roughness: .12, metalness: .3, emissive: 0xb0002a, emissiveIntensity: .55 });
         const sapphire = kaykitMaterial(0x3fa0ff, { roughness: .14, metalness: .28, emissive: 0x1257c9, emissiveIntensity: .5 });
@@ -1816,15 +1843,30 @@
         const band = new THREE.Mesh(kaykitGeometry("crown-band-v2", () => new THREE.CylinderGeometry(.205, .205, .12, 16)), gold);
         band.position.y = .105; band.castShadow = true; group.add(band);
 
+        // Filet plus fin et plus clair sur le bord supérieur de la bande :
+        // profondeur sculptée au lieu d'un cylindre unique tout plat.
+        const bandTrim = new THREE.Mesh(kaykitGeometry("crown-band-trim-v1", () => new THREE.TorusGeometry(.207, .016, 8, 20)), goldTrim);
+        bandTrim.rotation.x = Math.PI / 2; bandTrim.position.y = .165; bandTrim.castShadow = true; group.add(bandTrim);
+
         const spikeCount = 8;
-        const spikeGeometry = kaykitGeometry("crown-spike-v2", () => new THREE.ConeGeometry(.055, 1, 8));
+        const tallSpikeGeometry = kaykitGeometry("crown-spike-tall-v3", () => new THREE.ConeGeometry(.052, .40, 8));
+        const shortSpikeGeometry = kaykitGeometry("crown-spike-short-v3", () => new THREE.ConeGeometry(.048, .28, 8));
+        const pearlGeometry = kaykitGeometry("crown-spike-pearl-v1", () => new THREE.SphereGeometry(.030, 10, 8));
         for (let i = 0; i < spikeCount; i++) {
           const a = i / spikeCount * Math.PI * 2;
+          const tall = i % 2 === 0;
+          const spikeGeometry = tall ? tallSpikeGeometry : shortSpikeGeometry;
+          const spikeHeight = tall ? .40 : .28;
           const spike = new THREE.Mesh(spikeGeometry, gold);
-          spike.scale.y = .30;
-          spike.position.set(Math.cos(a) * .165, .165 + .15, Math.sin(a) * .165);
+          spike.position.set(Math.cos(a) * .165, .165 + spikeHeight / 2, Math.sin(a) * .165);
           spike.castShadow = true;
           group.add(spike);
+
+          const pearl = new THREE.Mesh(pearlGeometry, goldTrim);
+          pearl.position.set(Math.cos(a) * .165, .165 + spikeHeight, Math.sin(a) * .165);
+          pearl.castShadow = true;
+          group.add(pearl);
+
           if (i % 2 === 0) {
             const gem = new THREE.Mesh(kaykitGeometry("crown-band-gem-v1", () => new THREE.OctahedronGeometry(.034)), i % 4 === 0 ? ruby : sapphire);
             gem.position.set(Math.cos(a) * .205, .105, Math.sin(a) * .205);
@@ -1832,8 +1874,11 @@
           }
         }
 
-        const jewel = new THREE.Mesh(kaykitGeometry("crown-jewel-v2", () => new THREE.OctahedronGeometry(.078)), ruby);
-        jewel.position.y = .43; jewel.scale.y = 1.3; group.add(jewel);
+        const jewel = new THREE.Mesh(kaykitGeometry("crown-jewel-v3", () => new THREE.IcosahedronGeometry(.095, 0)), ruby);
+        jewel.position.y = .47; jewel.scale.y = 1.25; jewel.castShadow = true; group.add(jewel);
+        const jewelLight = new THREE.PointLight(0xff4d6a, .55, 1.1, 2);
+        jewelLight.position.y = .47; group.add(jewelLight);
+
         const halo = new THREE.Mesh(
           kaykitGeometry("crown-gold-halo-v29", () => new THREE.TorusGeometry(.26, .022, 8, 24)),
           new THREE.MeshBasicMaterial({ color: 0xffd96a, transparent: true, opacity: .46, depthWrite: false })
@@ -3621,6 +3666,7 @@
         context.textBaseline = "middle";
         context.fillText("☠", 96, 101);
         const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
         texture.needsUpdate = true;
         kaykit3D.pushDeathTexture = texture;
         return texture;
@@ -4402,20 +4448,343 @@
         }
       }
 
+      // Halo doré du sanctuaire : un unique disque radial partagé (comme
+      // kaykitCloudTexture), posé à plat au sol en blending additif pour
+      // lire comme une lumière plutôt qu'une décalcomanie plaquée.
+      function kaykitSanctuaryHaloTexture() {
+        const key = "sanctuary-halo-v2";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const glow = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+        glow.addColorStop(0, "rgba(255,226,158,.96)");
+        glow.addColorStop(.42, "rgba(255,190,90,.58)");
+        glow.addColorStop(.75, "rgba(214,110,60,.18)");
+        glow.addColorStop(1, "rgba(214,110,60,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, 256, 256);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
+        return texture;
+      }
+
+      // Réseau de fissures lumineuses du sanctuaire : baké directement dans le
+      // matériau du dessus (map couleur + emissiveMap), pas posé comme un
+      // plan par-dessus — donc plus aucun risque d'avoir l'impression d'un
+      // symbole qui "flotte" au-dessus de la pierre : la lueur sort de la
+      // surface elle-même. Un unique canvas partagé (comme kaykitCloudTexture),
+      // généré une fois via un bruit pseudo-aléatoire seedé (donc stable).
+      function kaykitSanctuaryCrackedGoldTextures() {
+        const key = "sanctuary-cracked-gold-v2";
+        if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
+
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+          return x - Math.floor(x);
+        };
+
+        const SIZE = 512;
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = colorCanvas.height = SIZE;
+        const colorCtx = colorCanvas.getContext('2d');
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = glowCanvas.height = SIZE;
+        const glowCtx = glowCanvas.getContext('2d');
+
+        // Pierre dorée mouchetée, pas un aplat uni.
+        const base = colorCtx.createLinearGradient(0, 0, SIZE, SIZE);
+        base.addColorStop(0, "#ecc271");
+        base.addColorStop(.5, "#dba848");
+        base.addColorStop(1, "#c48b34");
+        colorCtx.fillStyle = base;
+        colorCtx.fillRect(0, 0, SIZE, SIZE);
+        for (let i = 0; i < 46; i++) {
+          const x = seeded(i, 1) * SIZE, y = seeded(i, 2) * SIZE, r = 14 + seeded(i, 3) * 48;
+          const dark = seeded(i, 4) > .5;
+          const blob = colorCtx.createRadialGradient(x, y, 0, x, y, r);
+          blob.addColorStop(0, dark ? "rgba(110,72,26,.14)" : "rgba(255,232,175,.14)");
+          blob.addColorStop(1, "rgba(0,0,0,0)");
+          colorCtx.fillStyle = blob;
+          colorCtx.beginPath(); colorCtx.arc(x, y, r, 0, Math.PI * 2); colorCtx.fill();
+        }
+
+        // Fissures : plusieurs branches partant du centre vers les bords,
+        // chacune coudée 3-4 fois — un vrai réseau, pas une seule forme.
+        const cx = SIZE / 2, cy = SIZE / 2;
+        const branchCount = 5;
+        const paths = [];
+        for (let b = 0; b < branchCount; b++) {
+          let angle = (b / branchCount) * Math.PI * 2 + seeded(b, 10) * .6;
+          let x = cx, y = cy;
+          const pts = [[x, y]];
+          const segs = 3 + Math.floor(seeded(b, 11) * 2);
+          for (let s = 0; s < segs; s++) {
+            angle += (seeded(b * 10 + s, 12) - .5) * 1.15;
+            const len = SIZE * .15 + seeded(b * 10 + s, 13) * SIZE * .11;
+            x += Math.cos(angle) * len; y += Math.sin(angle) * len;
+            pts.push([x, y]);
+          }
+          paths.push(pts);
+          // Sous-fissure courte greffée sur le 2e segment, pour la ramification.
+          if (seeded(b, 14) > .35) {
+            const [bx, by] = pts[1];
+            let ba = angle + (seeded(b, 15) - .5) * 2.2;
+            const bpts = [[bx, by]];
+            for (let s = 0; s < 2; s++) {
+              ba += (seeded(b * 5 + s, 16) - .5) * 1.2;
+              const len = SIZE * .09 + seeded(b * 5 + s, 17) * SIZE * .07;
+              bpts.push([bpts[bpts.length - 1][0] + Math.cos(ba) * len, bpts[bpts.length - 1][1] + Math.sin(ba) * len]);
+            }
+            paths.push(bpts);
+          }
+        }
+
+        const strokePath = (ctx, pts, width, color) => {
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.lineCap = "round"; ctx.lineJoin = "round";
+          ctx.stroke();
+        };
+
+        // Cercle magique à deux anneaux (extérieur + intérieur), gravé comme
+        // les fissures : une vraie limite de rituel plutôt qu'une simple dalle.
+        const strokeCircle = (ctx, radius, width, color) => {
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.stroke();
+        };
+        const circleRadii = [SIZE * .41, SIZE * .30];
+
+        // Graduations autour de l'anneau extérieur, comme un cadran gravé —
+        // une ligne courte tous les 30°, une longue tous les 90°.
+        const tickPaths = [];
+        const tickCount = 24;
+        for (let i = 0; i < tickCount; i++) {
+          const a = (i / tickCount) * Math.PI * 2;
+          const long = i % 6 === 0;
+          const rOuter = circleRadii[0] + (long ? 15 : 8);
+          const rInner = circleRadii[0] - (long ? 7 : 3);
+          tickPaths.push([
+            [cx + Math.cos(a) * rInner, cy + Math.sin(a) * rInner],
+            [cx + Math.cos(a) * rOuter, cy + Math.sin(a) * rOuter]
+          ]);
+        }
+
+        // Runes : symboles angulaires abstraits (pas un alphabet réel), posés
+        // entre les deux anneaux à intervalles réguliers, chacun légèrement
+        // désaxé pour ne pas paraître tamponné à la machine.
+        const runeTemplates = [
+          [[[0, -.5], [0, .5]], [[0, -.5], [.4, -.15]], [[0, -.5], [-.4, -.15]]],
+          [[[0, -.5], [0, .5]], [[0, 0], [.35, .25]], [[0, 0], [.35, -.25]]],
+          [[[-.4, -.4], [.4, .4]], [[-.4, .4], [.4, -.4]]],
+          [[[0, -.5], [0, .5]], [[-.3, 0], [.3, 0]]],
+          [[[-.35, -.45], [.1, -.05]], [[.1, -.05], [-.1, .05]], [[-.1, .05], [.35, .45]]],
+          [[[0, -.4], [.3, 0]], [[.3, 0], [0, .4]], [[0, .4], [-.3, 0]], [[-.3, 0], [0, -.4]]]
+        ];
+        const runePaths = [];
+        const runeCount = 6;
+        const runeRadius = (circleRadii[0] + circleRadii[1]) / 2;
+        for (let i = 0; i < runeCount; i++) {
+          const angle = (i / runeCount) * Math.PI * 2 + seeded(i, 20) * .3;
+          const px = cx + Math.cos(angle) * runeRadius;
+          const py = cy + Math.sin(angle) * runeRadius;
+          const tmpl = runeTemplates[Math.floor(seeded(i, 21) * runeTemplates.length) % runeTemplates.length];
+          const tilt = angle + Math.PI / 2 + (seeded(i, 22) - .5) * .5;
+          const cosT = Math.cos(tilt), sinT = Math.sin(tilt);
+          const scale = SIZE * .050;
+          tmpl.forEach(seg => {
+            runePaths.push(seg.map(([lx, ly]) => [
+              px + (lx * cosT - ly * sinT) * scale,
+              py + (lx * sinT + ly * cosT) * scale
+            ]));
+          });
+        }
+
+        // Gravure sur la map couleur : rainure sombre + reflet clair au bord.
+        paths.forEach(pts => {
+          strokePath(colorCtx, pts, 9, "rgba(66,42,16,.92)");
+          strokePath(colorCtx, pts, 3, "rgba(255,226,155,.6)");
+        });
+        circleRadii.forEach(radius => {
+          strokeCircle(colorCtx, radius, 6, "rgba(66,42,16,.85)");
+          strokeCircle(colorCtx, radius, 2, "rgba(255,226,155,.55)");
+        });
+        tickPaths.forEach(pts => {
+          strokePath(colorCtx, pts, 3, "rgba(66,42,16,.75)");
+          strokePath(colorCtx, pts, 1.1, "rgba(255,226,155,.5)");
+        });
+        runePaths.forEach(pts => {
+          strokePath(colorCtx, pts, 5, "rgba(66,42,16,.9)");
+          strokePath(colorCtx, pts, 1.8, "rgba(255,226,155,.65)");
+        });
+
+        // Carte émissive : noir partout sauf les fissures/cercles/runes, qui
+        // rayonnent — c'est elle qui donne l'impression que la lumière
+        // traverse la pierre plutôt qu'une simple gravure éclairée dessus.
+        glowCtx.fillStyle = "#000";
+        glowCtx.fillRect(0, 0, SIZE, SIZE);
+        paths.forEach(pts => {
+          glowCtx.shadowColor = "rgba(255,190,110,1)";
+          glowCtx.shadowBlur = 30;
+          strokePath(glowCtx, pts, 9, "rgba(255,225,170,1)");
+          glowCtx.shadowBlur = 0;
+          strokePath(glowCtx, pts, 2.2, "rgba(255,248,225,1)");
+        });
+        circleRadii.forEach(radius => {
+          glowCtx.shadowColor = "rgba(255,190,110,1)";
+          glowCtx.shadowBlur = 16;
+          strokeCircle(glowCtx, radius, 4, "rgba(255,220,160,1)");
+          glowCtx.shadowBlur = 0;
+          strokeCircle(glowCtx, radius, 1.4, "rgba(255,248,225,1)");
+        });
+        tickPaths.forEach(pts => {
+          glowCtx.shadowColor = "rgba(255,190,110,1)";
+          glowCtx.shadowBlur = 8;
+          strokePath(glowCtx, pts, 2.4, "rgba(255,220,160,1)");
+          glowCtx.shadowBlur = 0;
+        });
+        runePaths.forEach(pts => {
+          glowCtx.shadowColor = "rgba(255,150,210,1)";
+          glowCtx.shadowBlur = 14;
+          strokePath(glowCtx, pts, 3.6, "rgba(255,200,235,1)");
+          glowCtx.shadowBlur = 0;
+          strokePath(glowCtx, pts, 1.3, "rgba(255,245,250,1)");
+        });
+
+        const colorTexture = new THREE.CanvasTexture(colorCanvas);
+        colorTexture.encoding = THREE.sRGBEncoding;
+        const glowTexture = new THREE.CanvasTexture(glowCanvas);
+        glowTexture.encoding = THREE.sRGBEncoding;
+
+        const result = { colorTexture, glowTexture };
+        if (kaykit3D?.materials) kaykit3D.materials.set(key, result);
+        return result;
+      }
+
+      // Dalle de sanctuaire — style "autel royal" : pierre dorée craquelée,
+      // toute la surface du dessus laisse passer une lueur chaude à travers
+      // un réseau de fissures gravées (bakées dans le matériau, rien ne
+      // flotte au-dessus). Socle taillé (même extrusion biseautée que
+      // makeKayKitPedestal, pas un bloc d'île grass/dirt) : le sanctuaire doit
+      // se lire comme le trône de la couronne, pas comme une île de plus.
+      function makeSanctuaryTile() {
+        const group = new THREE.Group();
+        // ExtrudeGeometry par défaut génère les UV du dessus à partir des
+        // coordonnées BRUTES de la forme (-.46..46), pas normalisées 0..1 —
+        // avec le wrap par défaut (clamp), ça n'affichait qu'un minuscule
+        // coin du motif étiré/écrasé sur toute la dalle. UVGenerator maison
+        // pour recentrer proprement le dessus sur 0..1 (le motif tient enfin
+        // en entier sur chaque dalle) ; les côtés gardent la génération
+        // standard mais avec un wrap répété (texture appliquée en dessous).
+        const sanctuaryUVGenerator = {
+          generateTopUV(geometry, vertices, indexA, indexB, indexC) {
+            const n = (x, y) => new THREE.Vector2((x + .46) / .92, (y + .46) / .92);
+            return [
+              n(vertices[indexA * 3], vertices[indexA * 3 + 1]),
+              n(vertices[indexB * 3], vertices[indexB * 3 + 1]),
+              n(vertices[indexC * 3], vertices[indexC * 3 + 1])
+            ];
+          },
+          generateBottomUV(geometry, vertices, indexA, indexB, indexC) {
+            return sanctuaryUVGenerator.generateTopUV(geometry, vertices, indexA, indexB, indexC);
+          },
+          generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD) {
+            const fallback = THREE.ExtrudeGeometry?.WorldUVGenerator;
+            if (fallback?.generateSideWallUV) return fallback.generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD);
+            const n = (x, y, z) => new THREE.Vector2((x + z + .92) / 1.84, (y + .46) / .92);
+            return [
+              n(vertices[indexA * 3], vertices[indexA * 3 + 1], vertices[indexA * 3 + 2]),
+              n(vertices[indexB * 3], vertices[indexB * 3 + 1], vertices[indexB * 3 + 2]),
+              n(vertices[indexC * 3], vertices[indexC * 3 + 1], vertices[indexC * 3 + 2]),
+              n(vertices[indexD * 3], vertices[indexD * 3 + 1], vertices[indexD * 3 + 2])
+            ];
+          }
+        };
+        const geometry = kaykitGeometry("sanctuary-extrude-v2", () => {
+          const shape = new THREE.Shape();
+          shape.moveTo(-.46, -.46); shape.lineTo(.46, -.46); shape.lineTo(.46, .46); shape.lineTo(-.46, .46); shape.closePath();
+          return new THREE.ExtrudeGeometry(shape, {
+            depth: .42, bevelEnabled: true, bevelSegments: 2, bevelSize: .055, bevelThickness: .05, steps: 1,
+            UVGenerator: sanctuaryUVGenerator
+          });
+        });
+        const { colorTexture, glowTexture } = kaykitSanctuaryCrackedGoldTextures();
+        const topMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff, map: colorTexture, roughness: .45, metalness: .22,
+          emissive: new THREE.Color(0xffffff), emissiveMap: glowTexture, emissiveIntensity: 2.1
+        });
+
+        // Le même motif se devine sur les parois, en transparence — on
+        // réutilise les mêmes textures avec un wrap répété (les UV de côté
+        // ne couvrent pas une seule fois 0..1 comme le dessus) et une
+        // opacité plus faible pour rester un aperçu, pas une copie nette.
+        const sideColorTexture = colorTexture.clone();
+        sideColorTexture.wrapS = sideColorTexture.wrapT = THREE.RepeatWrapping;
+        sideColorTexture.repeat.set(1.6, 1);
+        sideColorTexture.needsUpdate = true;
+        const sideGlowTexture = glowTexture.clone();
+        sideGlowTexture.wrapS = sideGlowTexture.wrapT = THREE.RepeatWrapping;
+        sideGlowTexture.repeat.set(1.6, 1);
+        sideGlowTexture.needsUpdate = true;
+
+        // Contour translucide : les faces latérales lisent comme du verre
+        // ambré éclairé de l'intérieur plutôt qu'une pierre opaque — cohérent
+        // avec les fissures lumineuses du dessus.
+        const sideMat = new THREE.MeshStandardMaterial({
+          color: 0xd9a54a, map: sideColorTexture, roughness: .28, metalness: .05,
+          emissive: new THREE.Color(0xffb35a), emissiveMap: sideGlowTexture, emissiveIntensity: .9,
+          transparent: true, opacity: .58, depthWrite: false, side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geometry, [topMat, sideMat]);
+        mesh.rotation.x = Math.PI / 2;
+        mesh.position.y = .47;
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        mesh.renderOrder = 4;
+        group.add(mesh);
+
+        return group;
+      }
+
       function makeCrownCrossGround() {
         const crossCells = [];
         for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) if (isSanctuary(r, c)) crossCells.push([r, c]);
-        const block = makeKayKitIslandBlock({ id: "crown-cross", cells: crossCells }, { preview: false, valid: true });
-        block.userData.crownCross = true;
-        block.traverse?.(child => {
-          if (!child.isMesh || !child.material) return;
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat, index) => {
-            if (mat.color) mat.color.setHex(index === 0 ? 0xd7d2a1 : 0x716b58);
-            mat.roughness = .9; mat.needsUpdate = true;
-          });
+
+        const group = new THREE.Group();
+        group.userData.crownCross = true;
+        crossCells.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          const tile = makeSanctuaryTile();
+          tile.position.set(p.x, 0, p.z);
+          group.add(tile);
+          registerKayKitCellVisual(r, c, tile);
         });
-        return block;
+
+        const center = kaykitCellPosition(CENTER.r, CENTER.c, KAYKIT_LEVELS.islandTop + .018);
+        const halo = new THREE.Mesh(
+          kaykitGeometry("sanctuary-halo-plane-v1", () => new THREE.PlaneGeometry(2.55, 2.55)),
+          new THREE.MeshBasicMaterial({
+            map: kaykitSanctuaryHaloTexture(), transparent: true, depthWrite: false,
+            blending: THREE.AdditiveBlending, toneMapped: false
+          })
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.set(center.x, center.y, center.z);
+        halo.renderOrder = 6;
+        halo.userData.sanctuaryHalo = true;
+        group.add(halo);
+
+        const light = new THREE.PointLight(0xffcf78, .5, 2.6, 2);
+        light.position.set(center.x, center.y + .5, center.z);
+        group.add(light);
+
+        return group;
       }
 
       function renderKayKitIslandBlocks(group) {
@@ -4504,6 +4873,43 @@
           const pivot = new THREE.Mesh(
             kaykitGeometry("magic-pivot-marker-v1", () => new THREE.CylinderGeometry(.17, .17, .055, 24)),
             new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: .96, depthWrite: false })
+          );
+          pivot.position.set(p.x, p.y, p.z);
+          pivot.renderOrder = 45;
+          kaykit3D.dynamicGroup.add(pivot);
+        }
+      }
+
+      // Avant même de cliquer un pivot : simple survol d'une case d'île pendant
+      // Magie -> aperçu fantôme immédiat d'une rotation de 90° autour de cette
+      // case (state.magicHoverPreviewCells, calculé au survol dans ui.js).
+      // L'île réelle reste visible normalement ; seul le ghost est superposé
+      // (contrairement à la rotation confirmée, qui masque l'île d'origine).
+      function renderKayKitMagicHoverPreview() {
+        if (!kaykit3D || state?.phase !== "ACTION" || state?.selectedActionType !== "MAGIC") return;
+        if (state.selectedIslandId) return;
+        if (!state.magicHoverIslandId || !Array.isArray(state.magicHoverPreviewCells)) return;
+
+        const previewIsland = {
+          id: `magic-hover-preview-${state.magicHoverIslandId}`,
+          owner: null,
+          cells: state.magicHoverPreviewCells.map(([r, c]) => [r, c])
+        };
+        const block = makeKayKitIslandBlock(previewIsland, {
+          preview: true,
+          valid: !!state.magicHoverPreviewValid,
+          previewMode: "magic"
+        });
+        block.position.y = .055;
+        block.userData.magicRotationPreview = true;
+        kaykit3D.dynamicGroup.add(block);
+
+        if (Array.isArray(state.magicHoverPivot)) {
+          const [r, c] = state.magicHoverPivot;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .08);
+          const pivot = new THREE.Mesh(
+            kaykitGeometry("magic-pivot-marker-v1", () => new THREE.CylinderGeometry(.17, .17, .055, 24)),
+            new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: .55, depthWrite: false })
           );
           pivot.position.set(p.x, p.y, p.z);
           pivot.renderOrder = 45;
@@ -6051,7 +6457,7 @@
         });
         const forestAssets = [
           { key: "forestTree", width: .34, height: .70, scale: .90 },
-          { key: "forestBush", width: .32, height: .32, scale: .92 },
+          { key: "grain", width: .32, height: .34, scale: .85 },
           { key: "forestRock", width: .30, height: .24, scale: .92 },
           { key: "forestGrass", width: .27, height: .18, scale: .88 }
         ];
@@ -6189,14 +6595,23 @@
                   const assetKey = `castle${Math.max(0, Math.min(3, playerId))}`;
                   const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
                   let castle = cloneKayKitAsset(assetKey, { maxWidth: .78, maxHeight: 1.18, targetFloor: 0 });
-                  if (!castle) castle = makeFallbackCastle(villageAccent);
-                  castle.position.set(p.x, KAYKIT_LEVELS.pedestalTop, p.z);
+                  if (castle) accentVillageColors(castle, villageAccent);
+                  else castle = makeFallbackCastle(villageAccent);
+                  // Décalé vers le coin extérieur réel du plateau (diagonale
+                  // opposée au centre) plutôt que centré sur sa case : le
+                  // village se lit comme posé au bord de l'île plutôt qu'au
+                  // milieu d'une case vide.
+                  const cornerDirR = r <= CENTER.r ? -1 : 1;
+                  const cornerDirC = c <= CENTER.c ? -1 : 1;
+                  const cornerOffset = KAYKIT_CELL_SPACING * .32;
+                  castle.position.set(p.x + cornerDirC * cornerOffset, KAYKIT_LEVELS.pedestalTop, p.z + cornerDirR * cornerOffset);
                   castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
                   dynamic.add(castle);
                   // Fanion planté à côté du château, dans le même repère local :
                   // il suit automatiquement la position/rotation par coin du village.
                   const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
                   if (flag) {
+                    accentVillageColors(flag, villageAccent);
                     flag.position.set(.48, 0, .34);
                     castle.add(flag);
                   }
@@ -6225,6 +6640,7 @@
             const before = dynamic.children.length;
             renderKayKitPlacementPreview();
             renderKayKitMagicRotationPreview();
+            renderKayKitMagicHoverPreview();
             kaykit3D.transientDynamicChildren.push(...dynamic.children.slice(before));
           }
 
