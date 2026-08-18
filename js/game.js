@@ -4357,6 +4357,218 @@
         return loop.map(([x, z]) => [(x / 2) * KAYKIT_CELL_SPACING, (z / 2) * KAYKIT_CELL_SPACING]);
       }
 
+      // ── Coque d'île (visual-island-relief-v2) ──────────────────────────────
+      // Une seule coque continue par composante connexe, construite à partir
+      // du contour extérieur (kaykitIslandBoundary, inchangé) : anneau plein →
+      // anneau intermédiaire → anneau final, resserrés vers l'intérieur, reliés
+      // par des parois, fond fermé par une vraie triangulation. Aucune pièce
+      // par case ni par bord — contrairement à la V1 (archivée sur
+      // visual-island-relief-v1), qui produisait des blocs indépendants.
+      // Purement décoratif, sous KAYKIT_LEVELS.board : jamais ajouté à
+      // hitMeshes/interactiveMeshes (seules listes testées par le raycast —
+      // voir buildKayKitStaticScene) + raycast = no-op en défense en profondeur.
+
+      function kaykitPolygonSignedArea(points) {
+        let area = 0;
+        for (let i = 0; i < points.length; i++) {
+          const [x0, z0] = points[i];
+          const [x1, z1] = points[(i + 1) % points.length];
+          area += x0 * z1 - x1 * z0;
+        }
+        return area / 2;
+      }
+
+      function kaykitSegmentsIntersect([ax, az], [bx, bz], [cx, cz], [dx, dz]) {
+        const d1x = bx - ax, d1z = bz - az;
+        const d2x = dx - cx, d2z = dz - cz;
+        const denom = d1x * d2z - d1z * d2x;
+        if (Math.abs(denom) < 1e-9) return false; // parallèles : pas d'intersection franche
+        const t = ((cx - ax) * d2z - (cz - az) * d2x) / denom;
+        const u = ((cx - ax) * d1z - (cz - az) * d1x) / denom;
+        const eps = 1e-6;
+        return t > eps && t < 1 - eps && u > eps && u < 1 - eps;
+      }
+
+      // Un polygone rectiligne (tous les angles à 90°) est simple s'il n'a
+      // aucune paire d'arêtes non adjacentes qui se croisent.
+      function kaykitPolygonSelfIntersects(points) {
+        const n = points.length;
+        for (let i = 0; i < n; i++) {
+          const a1 = points[i], a2 = points[(i + 1) % n];
+          for (let j = i + 1; j < n; j++) {
+            if (j === i || (j + 1) % n === i || i === (j + 1) % n) continue;
+            if (Math.abs(i - j) <= 1 || (i === 0 && j === n - 1)) continue; // arêtes adjacentes
+            const b1 = points[j], b2 = points[(j + 1) % n];
+            if (kaykitSegmentsIntersect(a1, a2, b1, b2)) return true;
+          }
+        }
+        return false;
+      }
+
+      // Rétrécit un contour fermé vers l'intérieur d'une distance donnée.
+      // Robuste sur les coins concaves (L/T/croix) : normale intérieure
+      // déterminée une fois pour tout le polygone via le signe de son aire
+      // (donc valable aussi bien en coin convexe que rentrant), puis
+      // intersection des droites d'arêtes décalées pour chaque sommet, avec
+      // une distance de pointe clampée (jamais plus de miterLimit × distance)
+      // pour éviter les pointes qui débordent au-delà du contour d'origine.
+      // Le nombre de sommets ne change jamais : chaque anneau reste en
+      // correspondance 1-pour-1 avec le contour d'origine, ce qui simplifie
+      // la construction des parois entre anneaux.
+      function kaykitOffsetPolygonInward(points, distance, { miterLimit = 3 } = {}) {
+        const n = points.length;
+        if (n < 3 || distance <= 0) return points.slice();
+        const area = kaykitPolygonSignedArea(points);
+        const inwardSign = area >= 0 ? 1 : -1;
+        const edgeDirs = [];
+        const edgeNormals = [];
+        for (let i = 0; i < n; i++) {
+          const [x0, z0] = points[i];
+          const [x1, z1] = points[(i + 1) % n];
+          const dx = x1 - x0, dz = z1 - z0;
+          const len = Math.hypot(dx, dz) || 1;
+          const dirX = dx / len, dirZ = dz / len;
+          edgeDirs.push([dirX, dirZ]);
+          // Normale à 90° de la direction d'arête ; le signe (déterminé par le
+          // winding global) pointe toujours vers l'intérieur du polygone.
+          edgeNormals.push([dirZ * inwardSign, -dirX * inwardSign]);
+        }
+        const result = [];
+        for (let i = 0; i < n; i++) {
+          const prev = (i - 1 + n) % n;
+          const [px, pz] = points[i];
+          const [d0x, d0z] = edgeDirs[prev];
+          const [n0x, n0z] = edgeNormals[prev];
+          const [d1x, d1z] = edgeDirs[i];
+          const [n1x, n1z] = edgeNormals[i];
+          // Point de départ + direction de chacune des deux droites décalées.
+          const p0x = px + n0x * distance, p0z = pz + n0z * distance;
+          const p1x = px + n1x * distance, p1z = pz + n1z * distance;
+          const cross = d0x * d1z - d0z * d1x;
+          let newX, newZ;
+          if (Math.abs(cross) < 1e-6) {
+            // Arêtes quasi colinéaires (sommet inutile côté source) : simple
+            // translation moyenne, jamais de division par une quasi-nulle.
+            newX = px + (n0x + n1x) * .5 * distance;
+            newZ = pz + (n0z + n1z) * .5 * distance;
+          } else {
+            const t = ((p1x - p0x) * d1z - (p1z - p0z) * d1x) / cross;
+            newX = p0x + d0x * t;
+            newZ = p0z + d0z * t;
+          }
+          const rawX = newX - px, rawZ = newZ - pz;
+          const rawLen = Math.hypot(rawX, rawZ);
+          const maxLen = distance * miterLimit;
+          if (rawLen > maxLen && rawLen > 1e-6) {
+            const k = maxLen / rawLen;
+            newX = px + rawX * k;
+            newZ = pz + rawZ * k;
+          }
+          result.push([newX, newZ]);
+        }
+        return result;
+      }
+
+      // Tente l'offset ; si le résultat s'auto-intersecte (goulet trop étroit
+      // pour la distance demandée), réduit progressivement la distance plutôt
+      // que de produire une géométrie cassée.
+      function kaykitSafeOffsetPolygonInward(points, distance) {
+        let attemptDistance = distance;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const candidate = kaykitOffsetPolygonInward(points, attemptDistance);
+          if (!kaykitPolygonSelfIntersects(candidate)) return candidate;
+          attemptDistance *= 0.65;
+        }
+        return kaykitOffsetPolygonInward(points, attemptDistance);
+      }
+
+      function kaykitTriangulateRing(points) {
+        const shapePoints = points.map(([x, z]) => new THREE.Vector2(x, z));
+        return THREE.ShapeUtils.triangulateShape(shapePoints, []);
+      }
+
+      const KAYKIT_HULL_RING1_INSET = KAYKIT_CELL_SPACING * .10;
+      const KAYKIT_HULL_RING2_INSET = KAYKIT_CELL_SPACING * .28;
+      const KAYKIT_HULL_RING1_DEPTH = .30;
+      const KAYKIT_HULL_RING2_DEPTH = .55;
+      const KAYKIT_HULL_OVERLAP = .04; // chevauchement dans le dessous KayKit, jamais au-dessus de la surface jouable
+      const KAYKIT_HULL_COLOR = 0xa9723f;
+
+      // Construit une seule géométrie fermée (anneau plein → parois → anneau
+      // intermédiaire → parois → anneau final → fond triangulé) à partir d'un
+      // contour en coordonnées locales (déjà recentré sur l'île).
+      function kaykitBuildIslandHullGeometry(localContour) {
+        const topY = KAYKIT_LEVELS.board + KAYKIT_HULL_OVERLAP;
+        const ring0 = localContour;
+        const ring1 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING1_INSET);
+        const ring2 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING2_INSET);
+        const y0 = topY, y1 = topY - KAYKIT_HULL_RING1_DEPTH, y2 = topY - KAYKIT_HULL_RING2_DEPTH;
+        const n = ring0.length;
+
+        const pos = [];
+        const push = (x, y, z) => pos.push(x, y, z);
+        const wallStrip = (ringA, yA, ringB, yB) => {
+          for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            const a0 = [ringA[i][0], yA, ringA[i][1]];
+            const a1 = [ringA[j][0], yA, ringA[j][1]];
+            const b0 = [ringB[i][0], yB, ringB[i][1]];
+            const b1 = [ringB[j][0], yB, ringB[j][1]];
+            push(...a0); push(...a1); push(...b1);
+            push(...a0); push(...b1); push(...b0);
+          }
+        };
+        wallStrip(ring0, y0, ring1, y1);
+        wallStrip(ring1, y1, ring2, y2);
+
+        // Fond : triangulation robuste (Earcut via THREE.ShapeUtils), valable
+        // sur un contour concave (L/T/croix) — jamais un éventail naïf.
+        const faces = kaykitTriangulateRing(ring2);
+        faces.forEach(([a, b, c]) => {
+          push(ring2[a][0], y2, ring2[a][1]);
+          push(ring2[b][0], y2, ring2[b][1]);
+          push(ring2[c][0], y2, ring2[c][1]);
+        });
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geometry.computeVertexNormals();
+        return geometry;
+      }
+
+      function kaykitIslandHullMaterial() {
+        // DoubleSide : leçon retenue de la V1 — une géométrie main-codée n'a
+        // pas un winding garanti cohérent sur chaque face (parois + fond
+        // triangulé indépendamment) ; DoubleSide élimine tout risque de face
+        // culled selon l'angle de vue, sans coût triangle supplémentaire.
+        return kaykitMaterial(KAYKIT_HULL_COLOR, { roughness: .85, metalness: 0, side: THREE.DoubleSide });
+      }
+
+      // Une coque par composante connexe (jamais un polygone reliant deux
+      // groupes de cellules non adjacentes à travers le vide). Géométrie mise
+      // en cache par signature de contour local : les îles de même forme sur
+      // le plateau réutilisent le même BufferGeometry, seule la position du
+      // mesh diffère.
+      function addKayKitIslandHull(group, island, cells) {
+        const components = kaykitIslandComponents(cells);
+        const material = kaykitIslandHullMaterial();
+        components.forEach(component => {
+          const contour = kaykitIslandBoundary(component);
+          if (contour.length < 3) return;
+          const [anchorR, anchorC] = component[0];
+          const anchor = kaykitCellPosition(anchorR, anchorC, 0);
+          const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
+          const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
+          const geometry = kaykitGeometry(`island-hull-v2:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          const hull = new THREE.Mesh(geometry, material);
+          hull.position.set(anchor.x, 0, anchor.z);
+          hull.castShadow = false;
+          hull.receiveShadow = true;
+          hull.raycast = () => {};
+          group.add(hull);
+        });
+      }
+
       function kaykitIslandAccentColor(island, { preview = false, previewColor = 0x20f39a } = {}) {
         if (preview) return new THREE.Color(previewColor);
         const owner = Number.isInteger(island?.owner) ? island.owner : null;
@@ -4547,6 +4759,8 @@
           group.add(block);
           if (!preview) registerKayKitCellVisual(r, c, block);
         });
+
+        if (!preview) addKayKitIslandHull(group, island, cells);
 
         if (preview) {
           // FUITE (corrigee) : contour d'île, sa forme varie a chaque case
