@@ -570,22 +570,38 @@
         // remplace l'ancien olive : les faces inférieures des îles s'assombrissent
         // très légèrement et lisent comme des blocs suspendus au-dessus du vide,
         // sans halo ni faisceau sous chaque case.
-        const ambient = new THREE.AmbientLight(0xf6faff, .30);
+        //
+        // Passe éclairage/volume (visual-lighting-materials-v1) : ces valeurs
+        // étaient auparavant re-clampées au runtime par deux scripts nommés
+        // "HUD" (js/hud-organique-v2-depth-v9.js et -v10.js) qui ne touchaient
+        // en réalité qu'à ces mêmes 3 lumières — source de vérité désormais
+        // consolidée ici, ces deux fichiers sont neutralisés. Le ratio
+        // ambient+hémisphère/soleil était trop favorable aux lumières
+        // omnidirectionnelles (elles éclairent toutes les faces quasi
+        // uniformément, quel que soit leur angle par rapport au soleil), ce
+        // qui aplatissait le modelé des personnages/châteaux/reliefs. Ambient
+        // et hémisphère réduits + désaturés (le bleu de sol de l'hémisphère
+        // partait trop cyan une fois mélangé au fill), soleil renforcé pour
+        // redevenir la vraie source du modelé. Luminosité globale volontairement
+        // proche de l'ancienne — voir comparatif A/B/C dans le compte-rendu.
+        const ambient = new THREE.AmbientLight(0xfff7ec, .16);
         scene.add(ambient);
-        const hemi = new THREE.HemisphereLight(0xeaf7ff, 0x46688a, .80);
+        const hemi = new THREE.HemisphereLight(0xeef5f7, 0x56666a, .58);
         scene.add(hemi);
-        const sun = new THREE.DirectionalLight(0xffeed2, 1.78);
+        const sun = new THREE.DirectionalLight(0xffeed2, 2.05);
         sun.position.set(-6, 14, 8);
         sun.castShadow = true;
         sun.shadow.mapSize.set(1024, 1024);
         sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
         sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
         sun.shadow.camera.near = .5; sun.shadow.camera.far = 35;
-        sun.shadow.bias = -.00035;
-        sun.shadow.normalBias = .012;
-        sun.shadow.radius = 1.4;
+        sun.shadow.bias = -.0004;
+        sun.shadow.normalBias = .014;
+        sun.shadow.radius = 1.75;
         scene.add(sun);
-        const fill = new THREE.DirectionalLight(0x8ed8ef, .22);
+        // Bleu ciel neutre, moins saturé que l'ancien cyan (#8ed8ef) — son rôle
+        // est d'ouvrir doucement les ombres, pas de reteinter les objets.
+        const fill = new THREE.DirectionalLight(0xb7d9e0, .16);
         fill.position.set(8, 5, -8);
         scene.add(fill);
         const front = new THREE.DirectionalLight(0xfffbf1, .12);
