@@ -31,13 +31,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
 })();
 
 /* Caméra FRONT — preset non invasif.
-   IMPORTANT : ne jamais redéfinir window.kaykit3D, minZoom ou maxZoom ici.
-   Le précédent essai clampait temporairement maxZoom à 6.4 et provoquait le
-   gros zoom + la molette bloquée. On conserve désormais toute la plage native.
-
-   12.4 est la distance FRONT historique du moteur et correspond au cadrage
-   souhaité : plateau lisible, villages périphériques visibles, sans auto-fit
-   excessif. */
+   - appliqué UNE SEULE FOIS au vrai passage menu -> partie ;
+   - réappliqué ensuite uniquement si le joueur clique explicitement VUE FACE ;
+   - jamais sur un changement de tour / classe CSS / qualité / resize ;
+   - la molette est désormais considérée comme une prise de contrôle manuelle :
+     après un zoom, AUTO ne peut plus ramener la caméra en vue face. */
 (function installFrontCameraPreset(){
   if (window.__ILYOS_FRONT_CAMERA_PRESET__) return;
   window.__ILYOS_FRONT_CAMERA_PRESET__ = true;
@@ -45,21 +43,34 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   const FRONT_DISTANCE = 13.8;
   const FRONT_Y = .63;
   const FRONT_Z = .83;
+  let initialPresetApplied = false;
 
-  function applyFrontPreset(){
+  function markManualCameraControl(){
+    const k = window.kaykit3D;
+    if (!k) return;
+    k.autoFit = false;
+    k.userRotated = true;
+    k.cameraTween = null;
+    if (k.cameraMode !== 'free') k.cameraMode = 'free';
+  }
+
+  function applyFrontPreset({ explicit = false } = {}){
     const k = window.kaykit3D;
     if (!k?.camera || !k?.viewTarget) return false;
+
+    /* Une action manuelle du joueur prime toujours sur le preset initial.
+       Seul un clic explicite sur VUE FACE est autorisé à reprendre la main. */
+    if (!explicit && (k.userRotated || k.userInteracting || k.cameraMode === 'free')) {
+      return false;
+    }
 
     const min = Number.isFinite(k.minZoom) ? k.minZoom : 6.4;
     const max = Number.isFinite(k.maxZoom) ? k.maxZoom : 25;
     const distance = Math.max(min, Math.min(FRONT_DISTANCE, max));
 
-    /* Annule uniquement un éventuel tween d'auto-fit FRONT en cours.
-       On ne touche pas aux bornes de zoom : la molette reste totalement libre. */
     k.cameraTween = null;
     k.viewMode = 'front';
     k.autoFit = false;
-    k.userRotated = false;
     k.zoomDistance = distance;
 
     if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, .22, .18);
@@ -78,9 +89,22 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     return true;
   }
 
-  function applySoon(){
-    requestAnimationFrame(() => applyFrontPreset());
-    setTimeout(() => applyFrontPreset(), 120);
+  function applyInitialWhenReady(){
+    if (initialPresetApplied) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts++;
+      if (initialPresetApplied) {
+        clearInterval(timer);
+        return;
+      }
+      if (applyFrontPreset()) {
+        initialPresetApplied = true;
+        clearInterval(timer);
+      } else if (attempts >= 20) {
+        clearInterval(timer);
+      }
+    }, 40);
   }
 
   /* Au passage menu -> partie, attendre que la scène 3D soit réellement créée.
@@ -96,34 +120,35 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     const game = document.getElementById('gameScreen');
     if (!game) return;
 
-    let wasHidden = game.classList.contains('hidden');
-
-    const applyWhenVisible = () => {
-      if (game.classList.contains('hidden')) return;
-      let attempts = 0;
-      const timer = setInterval(() => {
-        attempts++;
-        if (applyFrontPreset() || attempts >= 20) clearInterval(timer);
-      }, 40);
-    };
+    let wasVisible = !game.classList.contains('hidden');
+    if (wasVisible) applyInitialWhenReady();
 
     new MutationObserver(() => {
-      const hidden = game.classList.contains('hidden');
-      if (wasHidden && !hidden) applyWhenVisible();
-      wasHidden = hidden;
+      const visible = !game.classList.contains('hidden');
+      /* Important : seules les vraies transitions caché -> visible comptent.
+         Les classes ai-turn et autres états du jeu ne doivent jamais rappeler
+         applyFrontPreset(). */
+      if (visible && !wasVisible && !initialPresetApplied) applyInitialWhenReady();
+      wasVisible = visible;
     }).observe(game, {
       attributes:true,
       attributeFilter:['class']
     });
-    if (!wasHidden) applyWhenVisible();
   }
 
-  /* Le moteur fait encore son auto-fit natif quand on clique VUE FACE.
-     On réapplique simplement le preset après ce clic, sans modifier ISO/LIBRE. */
+  /* Le moteur historique gardait AUTO lors d'un zoom molette. Pour l'utilisateur,
+     zoomer signifie qu'il a choisi son cadrage : on passe donc en LIBRE. */
+  document.addEventListener('wheel', event => {
+    if (!event.target?.closest?.('#kaykitCanvas')) return;
+    markManualCameraControl();
+  }, { capture:true, passive:true });
+
+  /* VUE FACE reste disponible, mais uniquement sur demande explicite. */
   document.addEventListener('click', event => {
     const front = event.target?.closest?.('[data-kay-view-face], [data-hud-camera="front"]');
     if (!front) return;
-    applySoon();
+    requestAnimationFrame(() => applyFrontPreset({ explicit:true }));
+    setTimeout(() => applyFrontPreset({ explicit:true }), 120);
   }, true);
 
   if (document.readyState === 'loading') {
@@ -132,7 +157,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     watchGameVisibility();
   }
 
-  window.ILYOS_applyFrontCameraPreset = applyFrontPreset;
+  window.ILYOS_applyFrontCameraPreset = () => applyFrontPreset({ explicit:true });
 })();
 
 /* HUD Organique V2 DIRECT — overlay autonome issu du prototype validé. */
