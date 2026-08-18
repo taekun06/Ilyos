@@ -329,7 +329,7 @@
             }
           }
           if (nameEl) {
-            nameEl.textContent = p ? (p.isAI ? "IA" : p.name) : "";
+            nameEl.textContent = p ? (p.isAI ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
@@ -382,6 +382,10 @@
         if (magicRow) {
           const rotating = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
           magicRow.classList.toggle("hidden", !rotating);
+        }
+        const magicDissolveBtn = document.getElementById("hudV2MagicDissolve");
+        if (magicDissolveBtn) {
+          magicDissolveBtn.classList.toggle("hidden", !canDissolveSelectedIsland());
         }
 
         // --- Sélecteur de Force manuel (repli) — équivalent HUD V2 du bloc
@@ -526,7 +530,7 @@
         if (els.activePortrait) { els.activePortrait.textContent = p.icon; els.activePortrait.style.color = p.color; }
         if (els.activeName) els.activeName.textContent = p.name;
         if (els.phaseLabel) els.phaseLabel.textContent = info.label;
-        els.turnLabel.textContent = `Tour ${state.turn}${p.isAI ? ` · IA ${AI_LEVELS[state.aiDifficulty || "normal"].label}` : ""}`;
+        els.turnLabel.textContent = `Tour ${state.turn}${p.isAI ? ` · CPU ${AI_LEVELS[state.aiDifficulty || "normal"].label}` : ""}`;
         updateTurnTimerDisplay();
         updateOnlineBadge();
         if (els.instruction) els.instruction.textContent = info.instruction;
@@ -577,21 +581,44 @@
         return html + "</span>";
       }
 
+      // Test : nombre d'îles d'une forme donnée déjà posées par ce
+      // propriétaire (owner d'île = state.currentPlayer côté joueur humain)
+      // sur toute la partie. SHAPE_LIMIT_PER_OWNER=0 désactive la limite.
+      function shapeUsageCountForOwner(ownerId, shapeKey) {
+        return state.islands.filter(island => island.owner === ownerId && island.shapeKey === shapeKey).length;
+      }
+
+      function shapeLimitReached(shapeKey) {
+        if (!SHAPE_LIMIT_PER_OWNER) return false;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= SHAPE_LIMIT_PER_OWNER;
+      }
+
       function renderIslandSelector() {
         els.islandSelector.innerHTML = "";
         const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase);
         const emphasize = !state.islandPlacedThisTurn;
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
+          const used = shapeUsageCountForOwner(state.currentPlayer, shapeKey);
+          const maxedOut = shapeLimitReached(shapeKey);
           const button = document.createElement("button");
           button.type = "button";
           button.className = "island-choice" +
             (state.selectedIslandShape === shapeKey ? " active" : "") +
-            (emphasize ? " choice-ready" : "");
-          button.disabled = !available;
-          button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}</span><span class="island-choice-name">${shape.name}</span>`;
-          button.title = shape.name;
-          button.setAttribute("aria-label", `Choisir l’île ${shape.name}`);
+            (emphasize ? " choice-ready" : "") +
+            (maxedOut ? " choice-maxed" : "");
+          button.disabled = !available || maxedOut;
+          const flipBadge = shape.flippable
+            ? `<span class="island-choice-flip" aria-hidden="true" title="Peut être retournée (miroir)">⇄</span>`
+            : "";
+          const limitBadge = SHAPE_LIMIT_PER_OWNER
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${SHAPE_LIMIT_PER_OWNER}</span>`
+            : "";
+          button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
+          const limitSuffix = SHAPE_LIMIT_PER_OWNER ? ` (${used}/${SHAPE_LIMIT_PER_OWNER} posées)` : "";
+          button.title = (shape.flippable ? `${shape.name} (peut être retournée en miroir)` : shape.name)
+            + (maxedOut ? " — limite atteinte" : limitSuffix);
+          button.setAttribute("aria-label", (shape.flippable ? `Choisir l’île ${shape.name}, peut être retournée en miroir` : `Choisir l’île ${shape.name}`) + limitSuffix);
           button.addEventListener("click", () => selectIslandShape(shapeKey));
           els.islandSelector.appendChild(button);
         });
@@ -601,6 +628,10 @@
         if (!canLocalPlayerAct()) return;
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
+        if (shapeLimitReached(shapeKey)) {
+          showToast(`Limite atteinte : ${SHAPE_LIMIT_PER_OWNER} îles « ${SHAPES[shapeKey].name} » maximum.`);
+          return;
+        }
         state.selectedIslandShape = shapeKey;
         state.placementCells = cloneCells(SHAPES[shapeKey].cells);
         state.placementOriginIndex = 0;
@@ -1255,7 +1286,15 @@
           if (state.magicHoverIslandId !== nextIslandId || !samePivot) {
             state.magicHoverIslandId = nextIslandId;
             state.magicHoverPivot = nextPivot;
+            // Ghost immédiat au survol (avant même le clic de pivot) : un aperçu
+            // de la rotation à 90° s'affiche dès qu'on survole une case d'île,
+            // pour ne plus avoir à cliquer puis tourner pour voir le résultat.
+            updateMagicHoverPreview();
             scheduleBoardRender();
+            if (kaykit3D) {
+              kaykit3D.lastStateSignature = "";
+              scheduleKayKitSync();
+            }
           }
           return;
         }
@@ -1305,7 +1344,13 @@
         if (state.phase === "ACTION" && state.selectedActionType === "MAGIC" && isSameCell(state.magicHoverPivot, [r, c])) {
           state.magicHoverIslandId = null;
           state.magicHoverPivot = null;
+          state.magicHoverPreviewCells = null;
+          state.magicHoverPreviewValid = false;
           scheduleBoardRender();
+          if (kaykit3D) {
+            kaykit3D.lastStateSignature = "";
+            scheduleKayKitSync();
+          }
           return;
         }
 
@@ -1784,6 +1829,7 @@
         const island = {
           id: islandId,
           owner: state.currentPlayer,
+          shapeKey: state.selectedIslandShape,
           anchor: { r: anchorR, c: anchorC },
           relCells: cloneCells(state.placementCells),
           cells: absCells,
@@ -2011,6 +2057,8 @@
 
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
@@ -2094,6 +2142,8 @@
         state.selectedIslandId = null;
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
@@ -2998,6 +3048,27 @@
         };
       }
 
+      // Aperçu au simple survol, avant tout clic de pivot : pas de rotation,
+      // juste la forme actuelle de l'île survolée. Sert d'identification
+      // visuelle (remplace le surlignage de case classique, peu visible en
+      // 3D) — pas un aperçu de résultat. Le vrai aperçu de rotation
+      // (updateMagicPreview ci-dessous) prend le relais dès qu'une île est
+      // confirmée par un clic et qu'on tourne réellement.
+      function updateMagicHoverPreview() {
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
+
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        if (state.selectedIslandId) return;
+        if (!state.magicHoverIslandId) return;
+
+        const island = state.islands.find(is => is.id === state.magicHoverIslandId);
+        if (!island) return;
+
+        state.magicHoverPreviewCells = island.cells.map(([r, c]) => [r, c]);
+        state.magicHoverPreviewValid = true;
+      }
+
       function updateMagicPreview() {
         state.magicPreviewCells = null;
         state.magicPreviewValid = false;
@@ -3115,6 +3186,65 @@
         });
       }
 
+      /*
+       * Règle « dissoudre une île » : 1 magie retire du plateau une île
+       * entièrement vide (aucun gardien, aucune couronne dessus). Simple et
+       * équilibré — ça coûte la même ressource rare qu'une rotation, et
+       * l'impossibilité de cibler une île occupée exclut tout usage pour
+       * capturer ou piéger un gardien : on ne peut dissoudre que du terrain
+       * inutilisé.
+       */
+      function islandIsEmpty(island) {
+        if (!island) return false;
+        return island.cells.every(([r, c]) => !characterAt(r, c) && !looseArtifactAt(r, c));
+      }
+
+      function canDissolveSelectedIsland() {
+        if (!state.rules?.allowDissolve) return false;
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return false;
+        if (!state.selectedIslandId) return false;
+        return islandIsEmpty(state.islands.find(is => is.id === state.selectedIslandId));
+      }
+
+      function dissolveSelectedIsland() {
+        if (!state.rules?.allowDissolve) {
+          showToast("La dissolution d’île n’est pas activée pour cette partie.");
+          return;
+        }
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        const island = state.islands.find(is => is.id === state.selectedIslandId);
+        if (!island) {
+          showToast("Choisissez d’abord une case pivot sur une île.");
+          return;
+        }
+        if (!islandIsEmpty(island)) {
+          showToast("Cette île n’est pas vide : impossible de la dissoudre.");
+          return;
+        }
+        if (availableActionCount("MAGIC") < 1) {
+          showToast("Aucune magie disponible.");
+          return;
+        }
+
+        saveUndoSnapshot();
+        const cells = island.cells.map(([ir, ic]) => [ir, ic]);
+        state.islands = state.islands.filter(is => is.id !== island.id);
+        cells.forEach(([ir, ic]) => animateCellPulse(ir, ic, "magic-vanish"));
+
+        if (kaykit3D) {
+          const avgR = cells.reduce((sum, [ir]) => sum + ir, 0) / cells.length;
+          const avgC = cells.reduce((sum, [, ic]) => sum + ic, 0) / cells.length;
+          const p = kaykitCellPosition(avgR, avgC, KAYKIT_LEVELS.islandTop + .1);
+          spawnGroundBurst(p, new THREE.Color(0xa86df2), { radius: .55, duration: 620 });
+          kaykit3D.lastStateSignature = "";
+        }
+
+        playSfx("magic");
+        showToast("Île dissoute pour 1 magie : elle retourne au vide.");
+        scheduleKayKitSync();
+        useSelectedCard(1);
+      }
+
       function handleMagicClick(r, c) {
         if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
           confirmMagicRotation();
@@ -3139,6 +3269,8 @@
           state.selectedMagicPivot = [r, c];
           state.magicHoverIslandId = null;
           state.magicHoverPivot = null;
+          state.magicHoverPreviewCells = null;
+          state.magicHoverPreviewValid = false;
           state.selectedCharId = null;
           state.reachable = new Set();
           state.magicPreviewDirection = 0;
@@ -3224,6 +3356,35 @@
         }
       }
 
+      // Miroir horizontal de l'île en cours de pose : la rotation seule ne
+      // peut pas transformer une forme chirale (ex. le "Serpent" en S) en son
+      // symétrique (en Z) — il faut un vrai flip. Uniquement disponible en
+      // pose (pas de flip sur une île déjà posée via la magie).
+      function flipSelectedIsland() {
+        if (!(state.phase === "PLACE_ISLAND" && state.placementCells)) return;
+
+        const origin = state.placementCells[state.placementOriginIndex] || state.placementCells[0] || [0, 0];
+        let flipped = state.placementCells.map(([r, c]) => [r, origin[1] - (c - origin[1])]);
+
+        // recentre pour garder de petites coordonnées, comme rotateSelectedIsland.
+        const minR = Math.min(...flipped.map(c => c[0]));
+        const minC = Math.min(...flipped.map(c => c[1]));
+        flipped = flipped.map(([r, c]) => [r - minR, c - minC]);
+        state.placementCells = flipped;
+
+        if (state.hoverAnchor) {
+          updatePlacementPreview(state.hoverAnchor[0], state.hoverAnchor[1]);
+          if (kaykit3D) {
+            kaykit3D.lastStateSignature = "";
+            scheduleKayKitSync();
+          }
+          playSfx("rotate");
+        } else {
+          renderBoard();
+          scheduleKayKitSync();
+        }
+      }
+
       function calculateIslandRotation(island, direction) {
         const oldRel = island.relCells;
         const newRel = rotateCells(oldRel, direction, false);
@@ -3280,6 +3441,8 @@
         state.selectedIslandId = null;
         state.magicHoverIslandId = null;
         state.magicHoverPivot = null;
+        state.magicHoverPreviewCells = null;
+        state.magicHoverPreviewValid = false;
         state.actionHoverCell = null;
         state.smartHoverType = null;
         state.smartHoverPath = [];
@@ -3371,6 +3534,14 @@
         const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
+        // Le miroir n'a de sens que pour une forme chirale (ex. Serpent) : les
+        // autres formes n'ont rien à retourner, le bouton reste donc masqué.
+        const currentShapeFlippable = !!(state.selectedIslandShape && SHAPES[state.selectedIslandShape]?.flippable);
+        const canFlipPlacement = canRotatePlacement && currentShapeFlippable;
+        if (els.flipBtn) {
+          els.flipBtn.disabled = !canFlipPlacement;
+          els.flipBtn.classList.toggle("hidden", !currentShapeFlippable);
+        }
         const islandRotate = document.getElementById("hudV2IslandRotate");
         if (islandRotate) {
           islandRotate.classList.toggle("hidden", !canRotatePlacement);
@@ -3582,6 +3753,12 @@
           playVictoryCelebration(player.id);
           setTimeout(() => showVictory(player), 450);
         } else {
+          // Un gardien qui valide une couronne (dépôt au village, hors sortie
+          // par une porte — mécanique historique déjà désactivée) est retiré
+          // du jeu : la couronne se paie du gardien qui l'a portée jusqu'ici.
+          // Exclu de la couronne gagnante ci-dessus pour ne pas faire
+          // disparaître le gardien pendant sa propre célébration de victoire.
+          if (char && !throughExit) removeCharacterFromGame(char);
           resetArtifactObject(artifact);
         }
       }

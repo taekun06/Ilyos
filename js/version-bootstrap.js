@@ -42,7 +42,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   if (window.__ILYOS_FRONT_CAMERA_PRESET__) return;
   window.__ILYOS_FRONT_CAMERA_PRESET__ = true;
 
-  const FRONT_DISTANCE = 12.4;
+  const FRONT_DISTANCE = 13.8;
   const FRONT_Y = .63;
   const FRONT_Z = .83;
 
@@ -84,10 +84,19 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   }
 
   /* Au passage menu -> partie, attendre que la scène 3D soit réellement créée.
-     Pas de boucle permanente et aucun coût par frame. */
+     Pas de boucle permanente et aucun coût par frame.
+
+     IMPORTANT : #gameScreen change de classe pour bien d'autres raisons
+     pendant une partie déjà en cours (ex. "ai-turn" togglée à chaque tour,
+     voir js/game/turns.js). Observer *tout* changement de classe et réappliquer
+     le preset à chaque fois ramenait la caméra en vue de face à chaque tour de
+     l'IA, écrasant la vue iso/manuelle choisie par le joueur. On ne réapplique
+     donc plus que sur la vraie transition menu -> partie (hidden -> visible). */
   function watchGameVisibility(){
     const game = document.getElementById('gameScreen');
     if (!game) return;
+
+    let wasHidden = game.classList.contains('hidden');
 
     const applyWhenVisible = () => {
       if (game.classList.contains('hidden')) return;
@@ -98,11 +107,15 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
       }, 40);
     };
 
-    new MutationObserver(applyWhenVisible).observe(game, {
+    new MutationObserver(() => {
+      const hidden = game.classList.contains('hidden');
+      if (wasHidden && !hidden) applyWhenVisible();
+      wasHidden = hidden;
+    }).observe(game, {
       attributes:true,
       attributeFilter:['class']
     });
-    applyWhenVisible();
+    if (!wasHidden) applyWhenVisible();
   }
 
   /* Le moteur fait encore son auto-fit natif quand on clique VUE FACE.
@@ -278,6 +291,16 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
       if (msg.type === 'action') {
         const action = msg.detail?.action;
         if (action === 'settings') document.getElementById('soundBtn')?.click();
+        if (action === 'resume') {
+          document.getElementById('resumeLocalBtn')?.click();
+          setTimeout(() => syncFrame(frame), 100);
+          setTimeout(() => syncFrame(frame), 700);
+        }
+        if (action === 'aivsai') {
+          window.ILYOS_TEST?.playAIvsAI?.();
+          setTimeout(() => syncFrame(frame), 700);
+          setTimeout(() => syncFrame(frame), 1400);
+        }
       }
     });
 

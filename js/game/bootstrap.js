@@ -4,7 +4,12 @@
       const GRID = 11;
       const CENTER = { r: 5, c: 5 };
       const MAX_GUARDIANS_PER_PLAYER = 6;
-      const PLAYER_COLORS = ["#22c3f2", "#ff5b50", "#62e36b", "#bb7cff"];
+      // Joueur 0 (Chevalier) et 1 (Mage) alignés sur les couleurs déjà
+      // utilisées pour leur armure/robe (character-materials-v1.js) et leur
+      // portrait HUD (or / violet) — les villages, fanions et halos de
+      // sélection lisaient auparavant bleu/rouge, sans rapport avec le reste
+      // de l'identité visuelle du joueur.
+      const PLAYER_COLORS = ["#ddb653", "#8052bc", "#62e36b", "#bb7cff"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
       const CORNERS = [
         { r: 0, c: 0 },
@@ -13,15 +18,20 @@
         { r: 10, c: 0 }
       ];
       const SHAPES = {
-        domino: { name: "Domino", cells: [[0, 0], [0, 1]] },
+        domino: { name: "Domino", cells: [[0, 0], [1, 1]] },
         line3: { name: "Passerelle", cells: [[0, 0], [0, 1], [0, 2]] },
         l3: { name: "Virage", cells: [[0, 0], [1, 0], [1, 1]] },
         square: { name: "Carré", cells: [[0, 0], [0, 1], [1, 0], [1, 1]] },
         t4: { name: "Carrefour", cells: [[0, 0], [0, 1], [0, 2], [1, 1]] },
-        s4: { name: "Serpent", cells: [[0, 1], [0, 2], [1, 0], [1, 1]] },
+        s4: { name: "Serpent", cells: [[0, 1], [0, 2], [1, 0], [1, 1]], flippable: true },
         cross5: { name: "Croix", cells: [[0, 1], [1, 0], [1, 1], [1, 2], [2, 1]] },
+        crossHollow: { name: "Croix creuse", cells: [[0, 1], [1, 0], [1, 2], [2, 1]] },
         v3: { name: "V", cells: [[0, 0], [1, 1], [0, 2]] }
       };
+      // Test : limite le nombre de fois qu'une même forme peut être posée par
+      // équipe (owner) sur toute la partie. À 0/false, aucune limite — permet
+      // de désactiver l'essai sans toucher au reste du code.
+      const SHAPE_LIMIT_PER_OWNER = 2;
       const ACTIONS = {
         MOVE: { name: "Déplacement", icon: "🥾", desc: "1 action = 1 case. 2 actions permettent une diagonale.", bg: "#0d84c9" },
         PUSH: { name: "Poussée", icon: "💥", desc: "Poussez une cible adjacente.", bg: "#b33d32" },
@@ -56,6 +66,8 @@
         randomSymmetricSetupBtn: document.getElementById("randomSymmetricSetupBtn"),
         confirmSymmetricSetupBtn: document.getElementById("confirmSymmetricSetupBtn"),
         symmetricSetupWaiting: document.getElementById("symmetricSetupWaiting"),
+        symmetricIslandLimitSelect: document.getElementById("symmetricIslandLimitSelect"),
+        symmetricAllowDissolveCheckbox: document.getElementById("symmetricAllowDissolveCheckbox"),
         phaseLabel: document.getElementById("phaseLabel"),
         turnLabel: document.getElementById("turnLabel"),
         turnTimer: document.getElementById("turnTimer"),
@@ -75,6 +87,7 @@
         islandSelector: document.getElementById("islandSelector"),
         rotateLeftBtn: document.getElementById("rotateLeftBtn"),
         rotateRightBtn: document.getElementById("rotateRightBtn"),
+        flipBtn: document.getElementById("flipBtn"),
         cancelCardBtn: document.getElementById("cancelCardBtn"),
         endTurnBtn: document.getElementById("endTurnBtn"),
 
@@ -102,6 +115,7 @@
         kaykitCacheStatus: document.getElementById("kaykitCacheStatus"),
         newGameBtn: document.getElementById("newGameBtn"),
         ilyosSpiralTestBtn: document.getElementById("ilyosSpiralTestBtn"),
+        ilyosAIvsAITestBtn: document.getElementById("ilyosAIvsAITestBtn"),
         onlineTools: document.getElementById("onlineTools"),
         onlineRoomCodeLabel: document.getElementById("onlineRoomCodeLabel"),
         copyRoomCodeBtn: document.getElementById("copyRoomCodeBtn"),

@@ -57,6 +57,16 @@
   fullscreenDocument().addEventListener('webkitfullscreenchange', syncFullscreenButtons);
 
   function send(type,detail){ parent.postMessage({source:'ilyos-menu',type,detail}, location.origin); }
+
+  function checkResumableSession(){
+    const btn=document.getElementById('resumeHomeBtn');
+    if(!btn) return;
+    try{
+      const saved=JSON.parse(localStorage.getItem('ilyos-local-session-v22')||'null');
+      btn.hidden=!(saved?.state && !saved.state.onlineMode);
+    }catch(_){ btn.hidden=true; }
+  }
+  checkResumableSession();
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
     if(!selections[mode]) selections[mode]={};
@@ -99,7 +109,7 @@
   }
 
   function duelContext(mode,values){
-    if(mode==='solo') return {kicker:'DUEL CONTRE L’IA',leftTop:'CHEVALIER OR',leftBottom:'VOUS',rightTop:'MAGE VIOLET',rightBottom:labelFor(mode,'difficulty',values.difficulty)};
+    if(mode==='solo') return {kicker:'DUEL CONTRE LE CPU',leftTop:'CHEVALIER OR',leftBottom:'VOUS',rightTop:'MAGE VIOLET',rightBottom:labelFor(mode,'difficulty',values.difficulty)};
     if(mode==='duel') return {kicker:'FACE À FACE LOCAL',leftTop:'CHEVALIER OR',leftBottom:values.name1||'JOUEUR 1',rightTop:'MAGE VIOLET',rightBottom:values.name2||'JOUEUR 2'};
     if(mode==='team') return {kicker:'BATAILLE D’ÉQUIPES',leftTop:'ÉQUIPE OR',leftBottom:`${values.name1||'J1'} + ${values.name3||'J3'}`,rightTop:'ÉQUIPE VIOLETTE',rightBottom:`${values.name2||'J2'} + ${values.name4||'J4'}`};
     return {kicker:values.role==='guest'?'REJOINDRE UN DUEL':'OUVRIR UN DUEL',leftTop:'CHEVALIER OR',leftBottom:values.name1||'VOUS',rightTop:'MAGE VIOLET',rightBottom:values.role==='guest'?'HÔTE':'INVITÉ'};
@@ -119,7 +129,7 @@
     const items=[];
     if(values.board!=null && mode!=='team') items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
     if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
-    if(mode==='solo') items.push(['IA',labelFor(mode,'difficulty',values.difficulty)]);
+    if(mode==='solo') items.push(['CPU',labelFor(mode,'difficulty',values.difficulty)]);
     if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);
     if(mode==='online') items.push(['SESSION',values.role==='guest'?'REJOINDRE':'CRÉER']);
     return `<div class="match-recap">${items.map(([k,v])=>`<span><small>${safeText(k)}</small><b>${safeText(v)}</b></span>`).join('')}</div>`;
@@ -142,7 +152,7 @@
     if(mode!=='solo') return '';
     const control=controlByKey(mode,'difficulty');
     return `<div class="difficulty-zone" data-key="difficulty">
-      <div class="difficulty-zone-label">DIFFICULTÉ IA</div>
+      <div class="difficulty-zone-label">DIFFICULTÉ CPU</div>
       <div class="difficulty-selector">
         <button type="button" data-step="-1" data-key="difficulty" aria-label="Difficulté précédente">‹</button>
         <b>${safeText(optionLabel(control,values.difficulty))}</b>
@@ -263,7 +273,21 @@
   addEventListener('pointermove',setPointer,{passive:true});
 
   const canvas=document.getElementById('particles'),ctx=canvas.getContext('2d'); let pts=[];
-  function resize(){const w=innerWidth,h=innerHeight,d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(d,0,0,d,0,0);pts=Array.from({length:64},()=>({x:Math.random()*w,y:Math.random()*h,r:.5+Math.random()*1.5,v:.07+Math.random()*.18,a:.14+Math.random()*.46,p:Math.random()*6.28}))}
-  function draw(t){const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);for(const p of pts){p.y-=p.v;p.x+=Math.sin(t*.00035+p.p)*.07;if(p.y<-8){p.y=h+8;p.x=Math.random()*w}const a=p.a*(.65+.35*Math.sin(t*.002+p.p));ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fillStyle=`rgba(255,215,125,${a})`;ctx.fill()}requestAnimationFrame(draw)}
-  addEventListener('resize',resize);resize();requestAnimationFrame(draw);render(selectedMode,true);send('ready',{});
+  function resize(){
+    const w=innerWidth,h=innerHeight,d=Math.min(devicePixelRatio||1,2);
+    canvas.width=w*d;canvas.height=h*d;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(d,0,0,d,0,0);
+    // Densité proportionnelle à la surface : un compte fixe devenait trop
+    // clairsemé en plein écran (surface bien plus grande, même nombre de
+    // points). Bornes pour rester léger en petite fenêtre et dense en grand.
+    const count=Math.round(Math.min(320,Math.max(140,(w*h)/6000)));
+    pts=Array.from({length:count},()=>({x:Math.random()*w,y:Math.random()*h,r:.6+Math.random()*2.1,v:.05+Math.random()*.20,a:.22+Math.random()*.58,p:Math.random()*6.28}));
+  }
+  function draw(t){const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);for(const p of pts){p.y-=p.v;p.x+=Math.sin(t*.00035+p.p)*.07;if(p.y<-8){p.y=h+8;p.x=Math.random()*w}const a=p.a*(.65+.35*Math.sin(t*.002+p.p));ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fillStyle=`rgba(255,225,150,${a})`;ctx.fill()}requestAnimationFrame(draw)}
+  addEventListener('resize',resize);
+  // Le passage plein écran ne déclenche pas toujours un 'resize' assez tôt
+  // (ou avec les bonnes dimensions) selon le navigateur : on refait le calcul
+  // explicitement sur fullscreenchange pour que la densité reste correcte.
+  fullscreenDocument().addEventListener('fullscreenchange',resize);
+  fullscreenDocument().addEventListener('webkitfullscreenchange',resize);
+  resize();requestAnimationFrame(draw);render(selectedMode,true);send('ready',{});
 })();
