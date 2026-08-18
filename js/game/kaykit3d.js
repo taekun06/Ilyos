@@ -4346,61 +4346,141 @@
         return THREE.ShapeUtils.triangulateShape(shapePoints, []);
       }
 
+      // Profil en 4 anneaux : ringA très peu resserré juste sous la tuile
+      // (falaise quasi verticale) puis ring1/ring2 qui accentuent le
+      // resserrement — silhouette "falaise puis masse rocheuse", plus un
+      // socle trapézoïdal. Profondeur totale ~+27% par rapport au premier
+      // jet (0.55 → 0.70) pour bien lire l'île comme flottante en caméra
+      // normale.
+      const KAYKIT_HULL_RINGA_INSET = KAYKIT_CELL_SPACING * .03;
       const KAYKIT_HULL_RING1_INSET = KAYKIT_CELL_SPACING * .10;
-      const KAYKIT_HULL_RING2_INSET = KAYKIT_CELL_SPACING * .28;
-      const KAYKIT_HULL_RING1_DEPTH = .30;
-      const KAYKIT_HULL_RING2_DEPTH = .55;
+      const KAYKIT_HULL_RING2_INSET = KAYKIT_CELL_SPACING * .26;
+      const KAYKIT_HULL_RINGA_DEPTH = .20;
+      const KAYKIT_HULL_RING1_DEPTH = .40;
+      const KAYKIT_HULL_RING2_DEPTH = .70;
       const KAYKIT_HULL_OVERLAP = .04; // chevauchement dans le dessous KayKit, jamais au-dessus de la surface jouable
-      const KAYKIT_HULL_COLOR = 0xa9723f;
+      // Amplitude des micro-irrégularités déterministes (jamais sur ring0/ringA,
+      // qui doivent rester nettes sous la tuile) : décalage latéral sur
+      // ring1/ring2, variation de hauteur uniquement sur ring2 (le fond).
+      const KAYKIT_HULL_JITTER_XZ = KAYKIT_CELL_SPACING * .03;
+      const KAYKIT_HULL_JITTER_Y = KAYKIT_HULL_RING2_DEPTH * .065;
 
-      // Construit une seule géométrie fermée (anneau plein → parois → anneau
-      // intermédiaire → parois → anneau final → fond triangulé) à partir d'un
-      // contour en coordonnées locales (déjà recentré sur l'île).
+      // Teintes volontairement plus sombres/saturées que la valeur "cible" à
+      // l'œil : sous l'éclairage B (ambiant + hémisphère clairs, ACES) une
+      // couleur plate en vertex color est délavée bien plus qu'une texture
+      // KayKit équivalente (constaté en jeu — voir rapport). Ces valeurs sont
+      // calibrées pour retomber sur le ton terre KayKit une fois éclairées.
+      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(0x8a5228);    // proche de la terre KayKit du dessus, une fois éclairé
+      const KAYKIT_HULL_COLOR_MID = new THREE.Color(0x6b3d1e);    // brun chaud plus sombre
+      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(0x452712); // brun rocheux profond
+
+      function kaykitHullColorAt(y, yTop, yBottom) {
+        const span = yTop - yBottom || 1;
+        const t = Math.min(1, Math.max(0, (yTop - y) / span));
+        const color = new THREE.Color();
+        if (t <= .5) color.lerpColors(KAYKIT_HULL_COLOR_TOP, KAYKIT_HULL_COLOR_MID, t / .5);
+        else color.lerpColors(KAYKIT_HULL_COLOR_MID, KAYKIT_HULL_COLOR_BOTTOM, (t - .5) / .5);
+        return color;
+      }
+
+      // Décalage latéral déterministe très faible (2-4% d'une case), jamais
+      // assez pour remettre en cause l'offset intérieur déjà validé — juste
+      // de quoi casser l'aspect "extrusion CAO" sur les anneaux inférieurs.
+      function kaykitHullJitterRing(ring, ring0Ref, ringTag) {
+        return ring.map(([x, z], i) => {
+          const [ox, oz] = ring0Ref[i];
+          const jx = (kaykitHash("hull-jitter-x", ringTag, Math.round(ox * 1000), Math.round(oz * 1000)) - .5) * 2 * KAYKIT_HULL_JITTER_XZ;
+          const jz = (kaykitHash("hull-jitter-z", ringTag, Math.round(ox * 1000), Math.round(oz * 1000)) - .5) * 2 * KAYKIT_HULL_JITTER_XZ;
+          return [x + jx, z + jz];
+        });
+      }
+
+      // Fond légèrement irrégulier (±5-8%) : casse la ligne horizontale
+      // parfaite du dessous sans remettre en cause la fermeture technique du
+      // volume (le fond triangulé utilise ces mêmes hauteurs par sommet).
+      function kaykitHullRing2YDeltas(ring0Ref, ringTag) {
+        return ring0Ref.map(([ox, oz]) => {
+          const roll = kaykitHash("hull-bottom-y", ringTag, Math.round(ox * 1000), Math.round(oz * 1000));
+          return (roll - .5) * 2 * KAYKIT_HULL_JITTER_Y;
+        });
+      }
+
+      // Construit une seule géométrie fermée (anneau plein → falaise quasi
+      // verticale → resserrement → fond légèrement irrégulier fermé par une
+      // vraie triangulation) à partir d'un contour en coordonnées locales
+      // (déjà recentré sur l'île). Couleur en dégradé (attribut vertex color)
+      // du ton terre KayKit en haut vers un brun rocheux plus sombre en bas.
       function kaykitBuildIslandHullGeometry(localContour) {
         const topY = KAYKIT_LEVELS.board + KAYKIT_HULL_OVERLAP;
         const ring0 = localContour;
-        const ring1 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING1_INSET);
-        const ring2 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING2_INSET);
-        const y0 = topY, y1 = topY - KAYKIT_HULL_RING1_DEPTH, y2 = topY - KAYKIT_HULL_RING2_DEPTH;
+        const ringA = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RINGA_INSET);
+        let ring1 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING1_INSET);
+        let ring2 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING2_INSET);
+        ring1 = kaykitHullJitterRing(ring1, ring0, "ring1");
+        ring2 = kaykitHullJitterRing(ring2, ring0, "ring2");
+        const ring2YDeltas = kaykitHullRing2YDeltas(ring0, "ring2-y");
+
+        const y0 = topY, yA = topY - KAYKIT_HULL_RINGA_DEPTH, y1 = topY - KAYKIT_HULL_RING1_DEPTH, y2 = topY - KAYKIT_HULL_RING2_DEPTH;
         const n = ring0.length;
+        const yArr = (y) => new Array(n).fill(y);
+        const y2Arr = yArr(y2).map((y, i) => y + ring2YDeltas[i]);
 
         const pos = [];
-        const push = (x, y, z) => pos.push(x, y, z);
-        const wallStrip = (ringA, yA, ringB, yB) => {
+        const col = [];
+        const push = (x, y, z) => {
+          pos.push(x, y, z);
+          const c = kaykitHullColorAt(y, y0, y2);
+          col.push(c.r, c.g, c.b);
+        };
+        const wallStrip = (ringA_, yArrA, ringB_, yArrB) => {
           for (let i = 0; i < n; i++) {
             const j = (i + 1) % n;
-            const a0 = [ringA[i][0], yA, ringA[i][1]];
-            const a1 = [ringA[j][0], yA, ringA[j][1]];
-            const b0 = [ringB[i][0], yB, ringB[i][1]];
-            const b1 = [ringB[j][0], yB, ringB[j][1]];
+            const a0 = [ringA_[i][0], yArrA[i], ringA_[i][1]];
+            const a1 = [ringA_[j][0], yArrA[j], ringA_[j][1]];
+            const b0 = [ringB_[i][0], yArrB[i], ringB_[i][1]];
+            const b1 = [ringB_[j][0], yArrB[j], ringB_[j][1]];
             push(...a0); push(...a1); push(...b1);
             push(...a0); push(...b1); push(...b0);
           }
         };
-        wallStrip(ring0, y0, ring1, y1);
-        wallStrip(ring1, y1, ring2, y2);
+        wallStrip(ring0, yArr(y0), ringA, yArr(yA));
+        wallStrip(ringA, yArr(yA), ring1, yArr(y1));
+        wallStrip(ring1, yArr(y1), ring2, y2Arr);
 
         // Fond : triangulation robuste (Earcut via THREE.ShapeUtils), valable
-        // sur un contour concave (L/T/croix) — jamais un éventail naïf.
+        // sur un contour concave (L/T/croix) — jamais un éventail naïf. La
+        // triangulation ne regarde que (x,z) ; la hauteur par sommet (avec
+        // irrégularité) est réappliquée ensuite via l'index d'origine.
         const faces = kaykitTriangulateRing(ring2);
         faces.forEach(([a, b, c]) => {
-          push(ring2[a][0], y2, ring2[a][1]);
-          push(ring2[b][0], y2, ring2[b][1]);
-          push(ring2[c][0], y2, ring2[c][1]);
+          push(ring2[a][0], y2Arr[a], ring2[a][1]);
+          push(ring2[b][0], y2Arr[b], ring2[b][1]);
+          push(ring2[c][0], y2Arr[c], ring2[c][1]);
         });
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geometry.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
         geometry.computeVertexNormals();
         return geometry;
       }
 
+      let kaykitHullMaterialCache = null;
       function kaykitIslandHullMaterial() {
-        // DoubleSide : leçon retenue de la V1 — une géométrie main-codée n'a
-        // pas un winding garanti cohérent sur chaque face (parois + fond
-        // triangulé indépendamment) ; DoubleSide élimine tout risque de face
-        // culled selon l'angle de vue, sans coût triangle supplémentaire.
-        return kaykitMaterial(KAYKIT_HULL_COLOR, { roughness: .85, metalness: 0, side: THREE.DoubleSide });
+        // Matériau construit directement (pas via kaykitMaterial, qui ne
+        // propage pas vertexColors et n'en tient pas compte dans sa clé de
+        // cache) : un seul matériau pour toute la coque, dégradé terre KayKit
+        // → brun rocheux porté par la géométrie (voir kaykitHullColorAt),
+        // color blanc pour ne pas multiplier le dégradé par une teinte
+        // supplémentaire. DoubleSide : leçon retenue de la V1 — une
+        // géométrie main-codée n'a pas un winding garanti cohérent sur
+        // chaque face (parois + fond triangulé indépendamment) ; DoubleSide
+        // élimine tout risque de face culled selon l'angle de vue.
+        if (kaykitHullMaterialCache) return kaykitHullMaterialCache;
+        kaykitHullMaterialCache = new THREE.MeshStandardMaterial({
+          color: 0xffffff, roughness: .85, metalness: 0, side: THREE.DoubleSide, vertexColors: true
+        });
+        return kaykitHullMaterialCache;
       }
 
       // Une coque par composante connexe (jamais un polygone reliant deux
