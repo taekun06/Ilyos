@@ -97,10 +97,13 @@
     const hud = byId('ov2DiscardHud');
     if (!hud) return;
     const rect = hud.getBoundingClientRect();
+    const cssRight = parseFloat(getComputedStyle(hud).right);
+    const rightOffset = Number.isFinite(cssRight) ? cssRight : Math.max(0, window.innerWidth - rect.right);
+    const hudWidth = hud.offsetWidth || rect.width;
     const gap = 10;
     root.style.setProperty('left', 'auto', 'important');
     root.style.setProperty('bottom', 'auto', 'important');
-    root.style.setProperty('right', `${Math.max(8, window.innerWidth - rect.left + gap)}px`, 'important');
+    root.style.setProperty('right', `${rightOffset + hudWidth + gap}px`, 'important');
     root.style.setProperty('top', `${rect.top + rect.height / 2}px`, 'important');
   }
 
