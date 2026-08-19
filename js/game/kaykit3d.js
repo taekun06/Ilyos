@@ -4349,21 +4349,32 @@
       // Profil en 4 anneaux : ringA très peu resserré juste sous la tuile
       // (falaise quasi verticale) puis ring1/ring2 qui accentuent le
       // resserrement — silhouette "falaise puis masse rocheuse", plus un
-      // socle trapézoïdal. Profondeur totale ~+27% par rapport au premier
-      // jet (0.55 → 0.70) pour bien lire l'île comme flottante en caméra
-      // normale.
+      // socle trapézoïdal. Profondeur totale ~+31% par rapport à la passe
+      // précédente (0.70 → 0.92 pour ring2) pour bien lire l'île comme
+      // flottante en caméra normale ; des pointes rocheuses (voir plus bas)
+      // descendent encore davantage sous ring2 par endroits.
       const KAYKIT_HULL_RINGA_INSET = KAYKIT_CELL_SPACING * .03;
       const KAYKIT_HULL_RING1_INSET = KAYKIT_CELL_SPACING * .10;
       const KAYKIT_HULL_RING2_INSET = KAYKIT_CELL_SPACING * .26;
       const KAYKIT_HULL_RINGA_DEPTH = .20;
-      const KAYKIT_HULL_RING1_DEPTH = .40;
-      const KAYKIT_HULL_RING2_DEPTH = .70;
+      const KAYKIT_HULL_RING1_DEPTH = .48;
+      const KAYKIT_HULL_RING2_DEPTH = .92;
       const KAYKIT_HULL_OVERLAP = .04; // chevauchement dans le dessous KayKit, jamais au-dessus de la surface jouable
       // Amplitude des micro-irrégularités déterministes (jamais sur ring0/ringA,
       // qui doivent rester nettes sous la tuile) : décalage latéral sur
       // ring1/ring2, variation de hauteur uniquement sur ring2 (le fond).
       const KAYKIT_HULL_JITTER_XZ = KAYKIT_CELL_SPACING * .03;
       const KAYKIT_HULL_JITTER_Y = KAYKIT_HULL_RING2_DEPTH * .065;
+      // Variation "sculptée" du resserrement lui-même (pas juste un décalage
+      // latéral) : chaque sommet de ring1/ring2 pousse son propre offset
+      // intérieur (déjà validé sans auto-intersection à facteur 1) entre 70%
+      // et 130% de la distance de base — certaines faces restent larges plus
+      // longtemps, d'autres se contractent plus tôt. Bornes conservatrices :
+      // même à 130%, l'inset final de ring2 (~34%) reste très en-deçà de la
+      // moitié d'une case, donc pas de risque d'auto-intersection nouveau sur
+      // les goulets à une case de large déjà validés par l'offset de base.
+      const KAYKIT_HULL_ORGANIC_MIN = .70;
+      const KAYKIT_HULL_ORGANIC_MAX = 1.30;
 
       // Teintes volontairement plus sombres/saturées que la valeur "cible" à
       // l'œil : sous l'éclairage B (ambiant + hémisphère clairs, ACES) une
@@ -4395,6 +4406,19 @@
         });
       }
 
+      // Pousse chaque sommet plus ou moins loin le long de son propre vecteur
+      // de resserrement déjà calculé (ring0 → ringBase), au lieu d'un anneau
+      // uniformément plus petit. C'est ça qui donne "certaines portions
+      // restent larges plus longtemps, d'autres se contractent plus tôt" —
+      // une silhouette sculptée plutôt qu'une extrusion mathématique.
+      function kaykitHullOrganicRing(ringBase, ring0Ref, ringTag) {
+        return ringBase.map(([x, z], i) => {
+          const [ox, oz] = ring0Ref[i];
+          const factor = KAYKIT_HULL_ORGANIC_MIN + kaykitHash("hull-organic", ringTag, Math.round(ox * 1000), Math.round(oz * 1000)) * (KAYKIT_HULL_ORGANIC_MAX - KAYKIT_HULL_ORGANIC_MIN);
+          return [ox + (x - ox) * factor, oz + (z - oz) * factor];
+        });
+      }
+
       // Fond légèrement irrégulier (±5-8%) : casse la ligne horizontale
       // parfaite du dessous sans remettre en cause la fermeture technique du
       // volume (le fond triangulé utilise ces mêmes hauteurs par sommet).
@@ -4405,17 +4429,78 @@
         });
       }
 
+      // Pointes rocheuses intégrées à la même géométrie : jamais un cône
+      // séparé. Chaque pointe part d'un sommet de ring2 (déjà place dans la
+      // masse) et de ses deux voisins immédiats — la "naissance" de la
+      // pointe, assez large — puis se referme sur un unique sommet-pointe
+      // décalé latéralement (asymétrique, "cassé") et poussé plus bas. Le
+      // nombre de pointes dépend de la taille du contour (nombre de sommets
+      // de ring0), jamais du nombre de cases : pas une pointe par cellule.
+      function kaykitHullSpikeAnchors(n, islandTag) {
+        if (n <= 4) {
+          // Petite île (~1 case) : rarement une pointe, jamais plus d'une.
+          return kaykitHash("hull-spike-count-small", islandTag) < .45 ? 1 : 0;
+        }
+        if (n <= 8) {
+          return kaykitHash("hull-spike-count-mid", islandTag) < .35 ? 2 : 1;
+        }
+        return kaykitHash("hull-spike-count-large", islandTag) < .5 ? 3 : 2;
+      }
+
+      function kaykitHullBuildSpikes(ring2, y2Arr, n, islandTag) {
+        const spikeCount = kaykitHullSpikeAnchors(n, islandTag);
+        if (!spikeCount) return [];
+        const usedAnchors = new Set();
+        const spikes = [];
+        for (let s = 0; s < spikeCount; s++) {
+          // Répartit les pointes autour du contour au lieu de les laisser
+          // s'agglutiner au même endroit ; jitter déterministe pour éviter
+          // une symétrie parfaite entre pointes.
+          const spread = Math.round((s / spikeCount + kaykitHash("hull-spike-spread", islandTag, s) * .5) * n) % n;
+          let anchor = spread;
+          let guard = 0;
+          while (usedAnchors.has(anchor) && guard++ < n) anchor = (anchor + 1) % n;
+          usedAnchors.add(anchor);
+          const prev = (anchor - 1 + n) % n;
+          const next = (anchor + 1) % n;
+          const rim = [prev, anchor, next];
+          const cx = (ring2[prev][0] + ring2[anchor][0] + ring2[next][0]) / 3;
+          const cz = (ring2[prev][1] + ring2[anchor][1] + ring2[next][1]) / 3;
+          const cy = (y2Arr[prev] + y2Arr[anchor] + y2Arr[next]) / 3;
+          const isDominant = s === 0;
+          const depthFactor = isDominant
+            ? 1.20 + kaykitHash("hull-spike-depth-dom", islandTag, s) * .15
+            : 1.02 + kaykitHash("hull-spike-depth-sec", islandTag, s) * .10;
+          const apexY = (KAYKIT_LEVELS.board + KAYKIT_HULL_OVERLAP - KAYKIT_HULL_RING2_DEPTH) - KAYKIT_HULL_RING2_DEPTH * (depthFactor - 1);
+          // Décalage latéral de la pointe : casse la symétrie du cône,
+          // jamais assez grand pour sortir de l'aplomb de la masse basse.
+          const lateralAmp = KAYKIT_CELL_SPACING * (isDominant ? .16 : .10);
+          const apexAngle = kaykitHash("hull-spike-angle", islandTag, s) * Math.PI * 2;
+          const apexX = cx + Math.cos(apexAngle) * lateralAmp * (.4 + kaykitHash("hull-spike-lateral", islandTag, s) * .6);
+          const apexZ = cz + Math.sin(apexAngle) * lateralAmp * (.4 + kaykitHash("hull-spike-lateral2", islandTag, s) * .6);
+          spikes.push({ rim, apex: [apexX, apexY, apexZ] });
+        }
+        return spikes;
+      }
+
       // Construit une seule géométrie fermée (anneau plein → falaise quasi
-      // verticale → resserrement → fond légèrement irrégulier fermé par une
-      // vraie triangulation) à partir d'un contour en coordonnées locales
-      // (déjà recentré sur l'île). Couleur en dégradé (attribut vertex color)
-      // du ton terre KayKit en haut vers un brun rocheux plus sombre en bas.
+      // verticale → resserrement sculpté → fond légèrement irrégulier avec
+      // quelques pointes rocheuses intégrées, fermé par une vraie
+      // triangulation) à partir d'un contour en coordonnées locales (déjà
+      // recentré sur l'île). Couleur en dégradé (attribut vertex color) du
+      // ton terre KayKit en haut vers un brun rocheux plus sombre en bas et
+      // dans les pointes.
       function kaykitBuildIslandHullGeometry(localContour) {
         const topY = KAYKIT_LEVELS.board + KAYKIT_HULL_OVERLAP;
         const ring0 = localContour;
         const ringA = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RINGA_INSET);
         let ring1 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING1_INSET);
         let ring2 = kaykitSafeOffsetPolygonInward(localContour, KAYKIT_HULL_RING2_INSET);
+        // Resserrement sculpté (pas uniforme) sur ring1/ring2 uniquement —
+        // ring0/ringA restent nets pour le raccord aux tuiles — puis le
+        // micro-jitter latéral existant par-dessus.
+        ring1 = kaykitHullOrganicRing(ring1, ring0, "ring1-organic");
+        ring2 = kaykitHullOrganicRing(ring2, ring0, "ring2-organic");
         ring1 = kaykitHullJitterRing(ring1, ring0, "ring1");
         ring2 = kaykitHullJitterRing(ring2, ring0, "ring2");
         const ring2YDeltas = kaykitHullRing2YDeltas(ring0, "ring2-y");
@@ -4425,11 +4510,15 @@
         const yArr = (y) => new Array(n).fill(y);
         const y2Arr = yArr(y2).map((y, i) => y + ring2YDeltas[i]);
 
+        const islandTag = ring0.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
+        const spikes = kaykitHullBuildSpikes(ring2, y2Arr, n, islandTag);
+        const deepestY = spikes.reduce((min, sp) => Math.min(min, sp.apex[1]), y2);
+
         const pos = [];
         const col = [];
         const push = (x, y, z) => {
           pos.push(x, y, z);
-          const c = kaykitHullColorAt(y, y0, y2);
+          const c = kaykitHullColorAt(y, y0, deepestY);
           col.push(c.r, c.g, c.b);
         };
         const wallStrip = (ringA_, yArrA, ringB_, yArrB) => {
@@ -4450,12 +4539,29 @@
         // Fond : triangulation robuste (Earcut via THREE.ShapeUtils), valable
         // sur un contour concave (L/T/croix) — jamais un éventail naïf. La
         // triangulation ne regarde que (x,z) ; la hauteur par sommet (avec
-        // irrégularité) est réappliquée ensuite via l'index d'origine.
+        // irrégularité) est réappliquée ensuite via l'index d'origine. Le
+        // fond reste entier même là où une pointe part d'un sommet : la
+        // pointe prolonge simplement la masse plus bas depuis ces mêmes
+        // sommets, elle ne remplace pas le fond (le petit triangle de fond
+        // resté au même endroit se retrouve caché à l'intérieur du volume de
+        // la pointe, invisible de l'extérieur — aucun trou, aucune couture).
         const faces = kaykitTriangulateRing(ring2);
         faces.forEach(([a, b, c]) => {
           push(ring2[a][0], y2Arr[a], ring2[a][1]);
           push(ring2[b][0], y2Arr[b], ring2[b][1]);
           push(ring2[c][0], y2Arr[c], ring2[c][1]);
+        });
+
+        // Pointes : 3 faces reliant le triangle de naissance (large) au
+        // sommet-pointe décalé (fin, asymétrique) — prolonge la masse au
+        // lieu d'un cône rapporté.
+        spikes.forEach(({ rim: [ri, rj, rk], apex }) => {
+          const pi = [ring2[ri][0], y2Arr[ri], ring2[ri][1]];
+          const pj = [ring2[rj][0], y2Arr[rj], ring2[rj][1]];
+          const pk = [ring2[rk][0], y2Arr[rk], ring2[rk][1]];
+          push(...pi); push(...pj); push(...apex);
+          push(...pj); push(...pk); push(...apex);
+          push(...pk); push(...pi); push(...apex);
         });
 
         const geometry = new THREE.BufferGeometry();
