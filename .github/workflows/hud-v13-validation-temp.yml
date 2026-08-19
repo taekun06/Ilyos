@@ -73,15 +73,15 @@ jobs:
             if(!leftActive){ leftActive=document.createElement('div'); leftActive.id='ov2LeftActive'; document.body.appendChild(leftActive); }
             leftActive.classList.remove('ov2-off');
             document.getElementById('ov2RightActive')?.classList.add('ov2-off');
-            if(!reserve){
-              reserve=document.createElement('div'); reserve.id='ov2LeftReserve';
-              reserve.innerHTML='<div class="ov2-reserve-action ov2-reserve-move"><span data-reserve-move>0</span></div>';
-              document.body.appendChild(reserve);
-            }
-            let count=reserve.querySelector('[data-reserve-move]');
-            if(!count){ const wrap=document.createElement('div'); wrap.className='ov2-reserve-action ov2-reserve-move'; wrap.innerHTML='<span data-reserve-move>0</span>'; reserve.appendChild(wrap); count=wrap.firstElementChild; }
+            if(!reserve){ reserve=document.createElement('div'); reserve.id='ov2LeftReserve'; document.body.appendChild(reserve); }
+            reserve.style.cssText='position:fixed!important;left:40px!important;top:150px!important;display:block!important;visibility:visible!important;opacity:1!important;width:140px!important;height:48px!important;z-index:999990!important;';
+            let target=reserve.querySelector('.ov2-reserve-move');
+            if(!target){ target=document.createElement('div'); target.className='ov2-reserve-action ov2-reserve-move'; reserve.appendChild(target); }
+            target.style.cssText='position:absolute!important;left:8px!important;top:8px!important;display:block!important;width:42px!important;height:32px!important;visibility:visible!important;opacity:1!important;';
+            let count=target.querySelector('[data-reserve-move]');
+            if(!count){ count=document.createElement('span'); count.setAttribute('data-reserve-move',''); target.appendChild(count); }
             count.textContent='0';
-            const target=count.closest('.ov2-reserve-action')||reserve;
+            count.style.cssText='display:block!important;width:24px!important;height:18px!important;line-height:18px!important;visibility:visible!important;opacity:1!important;';
             const tr=target.getBoundingClientRect();
             const ghost=document.createElement('div');
             ghost.className='card-cycle-v7-card card-cycle-v10-card type-move transfer is-stack';
@@ -101,7 +101,7 @@ jobs:
             const hidden=getComputedStyle(count).opacity;
             await new Promise(r=>setTimeout(r,380));
             ghost.remove();
-            return {mid,hidden};
+            return {mid,hidden,targetRect:[tr.left,tr.top,tr.width,tr.height]};
           });
           console.log('PROGRESS_CHECK',progress);
           if(!progress.mid || Number(progress.mid) < 1 || progress.hidden !== '0') throw new Error('Progression réserve non validée');
