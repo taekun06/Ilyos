@@ -101,7 +101,7 @@
     if (root.parentElement !== hud) hud.appendChild(root);
     root.style.setProperty('left', 'auto', 'important');
     root.style.setProperty('bottom', 'auto', 'important');
-    root.style.setProperty('right', 'calc(100% + 10px)', 'important');
+    root.style.setProperty('right', 'calc(100% + 32px)', 'important');
     root.style.setProperty('top', '50%', 'important');
   }
 
