@@ -4350,12 +4350,12 @@
       }
 
       const ILYOS_ISLAND_TINTS = [
-        0x9aa55a,
-        0x647540,
-        0x91a77d,
-        0x476b4d,
-        0x5f8c78,
-        0x7e984f
+        0x9fae57,
+        0x5f7a3c,
+        0x8bbf8a,
+        0x3f6b52,
+        0x4f9488,
+        0x8aa63f
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -4391,10 +4391,50 @@
         return ILYOS_ISLAND_TINTS[index % ILYOS_ISLAND_TINTS.length];
       }
 
+      // Repasses "matière" de l'atlas Block Bits (passe plateau/environnement v1).
+      //
+      // L'atlas partagé par dirt_with_grass.gltf n'est pas une texture peinte :
+      // c'est un nuancier de dégradés plats (une case = une teinte unie), et le
+      // modèle pointe ses UV sur DEUX cases précises — une pour le dessus
+      // (herbe), une pour les flancs (terre/falaise). Confirmé par inspection
+      // des UV/normales du GLB : la case herbe est le rectangle pixel
+      // [384..512)×[768..1024), la case terre le rectangle [640..768)×[0..256)
+      // du fichier 1024×1024 ./assets/kaykit/blockBits/block_bits_texture.png.
+      //
+      // Un vrai grain (dégradé, taches, brins) a été tenté ici puis abandonné :
+      // le modèle est un monticule bas-poly fait de nombreuses petites
+      // facettes, et chacune échantillonne une sous-région DIFFÉRENTE et NON
+      // ADJACENTE de cette même case (UV irréguliers, hérités de l'asset
+      // source). Confirmé par test contrôlé en jeu : même un motif fin et
+      // "raccordable" en bord de rectangle laisse une ligne visible à chaque
+      // frontière de facette — seule une teinte strictement unie n'en laisse
+      // aucune, quelle que soit la sous-région échantillonnée. On se limite
+      // donc à un aplat par variant (plus riche que l'unique vert délavé
+      // d'origine, voir ILYOS_ISLAND_TINTS) — le reste de l'atlas (bois,
+      // pierre, fenêtres d'autres assets Block Bits inutilisés) n'est jamais
+      // touché.
+      const KAYKIT_ISLAND_GRASS_RECT = { x: 384, y: 768, w: 128, h: 256 };
+      const KAYKIT_ISLAND_DIRT_RECT = { x: 640, y: 0, w: 128, h: 256 };
+
+      function kaykitPaintIslandGrass(context, rect, tint) {
+        const { x, y, w, h } = rect;
+        context.fillStyle = `#${new THREE.Color(tint).getHexString()}`;
+        context.fillRect(x, y, w, h);
+      }
+
+      function kaykitPaintIslandDirt(context, rect) {
+        const { x, y, w, h } = rect;
+        // Teinte terre commune à toutes les factions/variants (la pierre des
+        // châteaux suit la même logique : un monde cohérent, seul l'accent
+        // change selon le sujet — ici l'herbe, pas la terre).
+        context.fillStyle = "#92694a";
+        context.fillRect(x, y, w, h);
+      }
+
       function kaykitIslandTintTexture(sourceTexture, variantIndex) {
         const sourceImage = sourceTexture?.image;
         if (!sourceImage?.width || !sourceImage?.height) return sourceTexture;
-        const cacheKey = `${sourceTexture.uuid}|${variantIndex}`;
+        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2`;
         const cached = kaykit3D?.islandTintTextures?.get(cacheKey);
         if (cached) return cached;
 
@@ -4404,27 +4444,10 @@
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) return sourceTexture;
         context.drawImage(sourceImage, 0, 0);
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-        const pixels = imageData.data;
-        const tint = ILYOS_ISLAND_TINTS[variantIndex];
-        const red = (tint >> 16) & 255;
-        const green = (tint >> 8) & 255;
-        const blue = tint & 255;
 
-        for (let index = 0; index < pixels.length; index += 4) {
-          const sourceRed = pixels[index];
-          const sourceGreen = pixels[index + 1];
-          const sourceBlue = pixels[index + 2];
-          // L'atlas Block Bits partage herbe et terre. Seuls les pixels dont
-          // le vert domine franchement sont remplacés : les flancs orange,
-          // rochers et autres détails gardent ainsi exactement leur texture.
-          if (sourceGreen > 72 && sourceGreen > sourceRed * 1.18 && sourceGreen > sourceBlue * 1.18) {
-            pixels[index] = red;
-            pixels[index + 1] = green;
-            pixels[index + 2] = blue;
-          }
-        }
-        context.putImageData(imageData, 0, 0);
+        const tint = ILYOS_ISLAND_TINTS[variantIndex];
+        kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint);
+        kaykitPaintIslandDirt(context, KAYKIT_ISLAND_DIRT_RECT);
 
         const texture = sourceTexture.clone();
         texture.image = canvas;
