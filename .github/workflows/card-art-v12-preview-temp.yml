@@ -3,6 +3,8 @@ name: Card art V12 preview temp
 on:
   push:
     branches: [card-art-v12]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
