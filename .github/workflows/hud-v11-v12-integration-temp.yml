@@ -2,7 +2,7 @@ name: HUD V11 + Cards V12 integration temp
 
 on:
   push:
-    branches: [hud-card-piles-discard-v11]
+    branches: [hud-card-piles-discard-v11, hud-v11-v12-validation-run]
   pull_request:
     branches: [hud-card-piles-discard-v11]
     types: [opened, synchronize, reopened]
