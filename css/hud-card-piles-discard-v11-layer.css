@@ -1,0 +1,10 @@
+/* ILYOS — couche finale V11 : la consultation Défausse reste au-dessus du HUD et à la taille exacte des 3 cartes. */
+.ov2-discard-viewer {
+  position: fixed !important;
+  inset: auto !important;
+  width: max-content !important;
+  height: max-content !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 1002000 !important;
+}
