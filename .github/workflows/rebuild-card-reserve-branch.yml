@@ -1,0 +1,38 @@
+name: Rebuild card reserve branch
+
+on:
+  push:
+    branches:
+      - card-cycle-physical-reserve-v1
+    paths-ignore:
+      - js/game.js
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: card-cycle-physical-reserve-v1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build and verify game bundle
+        run: |
+          node scripts/build-game.js --write
+          node scripts/build-game.js
+      - name: Commit generated bundle if changed
+        run: |
+          if git diff --quiet -- js/game.js; then
+            echo "game.js already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/game.js
+          git commit -m "build(game): rebuild bundle for physical reserve"
+          git push origin HEAD:card-cycle-physical-reserve-v1
