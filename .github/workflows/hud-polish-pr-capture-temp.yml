@@ -27,7 +27,7 @@ jobs:
           python3 -m http.server 4173 >/tmp/http.log 2>&1 &
           sleep 2
           mkdir -p validation/hud-polish
-          cat > /tmp/capture.mjs <<'NODE'
+          cat > capture-temp.mjs <<'NODE'
           import { chromium } from 'playwright';
           const b=await chromium.launch({headless:true});
           const p=await b.newPage({viewport:{width:1440,height:900}});
@@ -81,7 +81,7 @@ jobs:
           if(op>.43) throw Error('disabled undo opacity failed');
           await b.close();
           NODE
-          node /tmp/capture.mjs
+          node capture-temp.mjs
       - name: Commit captures
         run: |
           git config user.name 'ilyos-hud-validation'
