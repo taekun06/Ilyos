@@ -1,16 +1,16 @@
-/* ILYOS — HUD Pioche / Défausse V10
+/* ILYOS — HUD Pioche / Défausse V11
    Lit les compteurs réels déjà rendus par le moteur et les ancre aux
    contrôles organiques visibles. Aucune règle de jeu n'est recréée ici.
-   V10 : empreinte visuelle abaissée, interaction Défausse conservée. */
+   V11 : piles nues, compteur au-dessus, positionnement bord à bord symétrique. */
 (function(){
   'use strict';
-  if (window.__ILYOS_DECK_DISCARD_HUD_V10__) return;
-  window.__ILYOS_DECK_DISCARD_HUD_V10__ = true;
+  if (window.__ILYOS_DECK_DISCARD_HUD_V11__) return;
+  window.__ILYOS_DECK_DISCARD_HUD_V11__ = true;
 
   const byId = id => document.getElementById(id);
-  const BASE_OPACITY = '.42';
-  const ACTIVE_OPACITY = '.68';
-  const PULSE_OPACITY = '.74';
+  const BASE_OPACITY = '.74';
+  const ACTIVE_OPACITY = '.96';
+  const PULSE_OPACITY = '1';
   let scheduled = false;
   let observer = null;
   let previousDeck = null;
@@ -60,8 +60,8 @@
     discard.style.setProperty('cursor','pointer','important');
     discard.style.setProperty('z-index','100160','important');
 
-    if (discard.dataset.v10Interactive === '1') return;
-    discard.dataset.v10Interactive = '1';
+    if (discard.dataset.v11Interactive === '1') return;
+    discard.dataset.v11Interactive = '1';
 
     discard.addEventListener('mouseenter',()=>setOpacity(discard,ACTIVE_OPACITY));
     discard.addEventListener('mouseleave',()=>setOpacity(discard,BASE_OPACITY));
@@ -122,12 +122,22 @@
     },430);
   }
 
-  function placeHud(hud, anchor, gap = 12){
-    if (!hud || !anchor) return;
-    const rect = anchor.getBoundingClientRect();
-    if (!rect.width && !rect.height) return;
-    hud.style.left = `${rect.left + rect.width / 2}px`;
-    hud.style.top = `${Math.max(62, rect.top - gap)}px`;
+  function placeHudPair(deckHud, discardHud, gap = 12){
+    if (!deckHud || !discardHud) return;
+    const undoRect = byId('ov2Undo')?.getBoundingClientRect();
+    const endRect = byId('ov2End')?.getBoundingClientRect();
+    const tops = [undoRect?.top, endRect?.top].filter(Number.isFinite);
+    const anchorTop = tops.length ? Math.min(...tops) : window.innerHeight - 70;
+    const top = Math.max(86, anchorTop - gap);
+    const edge = Math.max(12, Math.min(20, Math.round(window.innerWidth * .0125)));
+
+    deckHud.style.left = `${edge}px`;
+    deckHud.style.right = 'auto';
+    deckHud.style.top = `${top}px`;
+
+    discardHud.style.left = 'auto';
+    discardHud.style.right = `${edge}px`;
+    discardHud.style.top = `${top}px`;
   }
 
   function sync(){
@@ -151,8 +161,7 @@
     previousDeck = deck;
     previousDiscard = discard;
 
-    placeHud(deckHud, byId('ov2Undo'), 10);
-    placeHud(discardHud, byId('ov2End'), 10);
+    placeHudPair(deckHud, discardHud, 10);
     makeDiscardInteractive(discardHud);
   }
 
