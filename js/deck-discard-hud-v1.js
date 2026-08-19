@@ -1,14 +1,16 @@
-/* ILYOS — HUD Pioche / Défausse V9
+/* ILYOS — HUD Pioche / Défausse V10
    Lit les compteurs réels déjà rendus par le moteur et les ancre aux
    contrôles organiques visibles. Aucune règle de jeu n'est recréée ici.
-   V9 : opacité réellement réduite et Défausse directement interactive. */
+   V10 : empreinte visuelle abaissée, interaction Défausse conservée. */
 (function(){
   'use strict';
-  if (window.__ILYOS_DECK_DISCARD_HUD_V9__) return;
-  window.__ILYOS_DECK_DISCARD_HUD_V9__ = true;
+  if (window.__ILYOS_DECK_DISCARD_HUD_V10__) return;
+  window.__ILYOS_DECK_DISCARD_HUD_V10__ = true;
 
   const byId = id => document.getElementById(id);
-  const BASE_OPACITY = '.50';
+  const BASE_OPACITY = '.42';
+  const ACTIVE_OPACITY = '.68';
+  const PULSE_OPACITY = '.74';
   let scheduled = false;
   let observer = null;
   let previousDeck = null;
@@ -58,12 +60,12 @@
     discard.style.setProperty('cursor','pointer','important');
     discard.style.setProperty('z-index','100160','important');
 
-    if (discard.dataset.v9Interactive === '1') return;
-    discard.dataset.v9Interactive = '1';
+    if (discard.dataset.v10Interactive === '1') return;
+    discard.dataset.v10Interactive = '1';
 
-    discard.addEventListener('mouseenter',()=>setOpacity(discard,'.82'));
+    discard.addEventListener('mouseenter',()=>setOpacity(discard,ACTIVE_OPACITY));
     discard.addEventListener('mouseleave',()=>setOpacity(discard,BASE_OPACITY));
-    discard.addEventListener('focus',()=>setOpacity(discard,'.82'));
+    discard.addEventListener('focus',()=>setOpacity(discard,ACTIVE_OPACITY));
     discard.addEventListener('blur',()=>setOpacity(discard,BASE_OPACITY));
     discard.addEventListener('click',event=>{
       event.preventDefault();
@@ -113,7 +115,7 @@
     node.classList.remove('ov2-pile-hit');
     void node.offsetWidth;
     node.classList.add('ov2-pile-hit');
-    setOpacity(node,'.90');
+    setOpacity(node,PULSE_OPACITY);
     setTimeout(()=>{
       node.classList.remove('ov2-pile-hit');
       if (!node.matches(':hover,:focus')) setOpacity(node,BASE_OPACITY);
@@ -149,8 +151,8 @@
     previousDeck = deck;
     previousDiscard = discard;
 
-    placeHud(deckHud, byId('ov2Undo'), 13);
-    placeHud(discardHud, byId('ov2End'), 13);
+    placeHud(deckHud, byId('ov2Undo'), 10);
+    placeHud(discardHud, byId('ov2End'), 10);
     makeDiscardInteractive(discardHud);
   }
 
