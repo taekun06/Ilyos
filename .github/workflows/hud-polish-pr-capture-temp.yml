@@ -1,0 +1,91 @@
+name: HUD polish PR capture temp
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: github.head_ref == 'hud-polish-targeted-v1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - run: |
+          python3 -m http.server 4173 >/tmp/http.log 2>&1 &
+          sleep 2
+          mkdir -p validation/hud-polish
+          cat > /tmp/capture.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          const b=await chromium.launch({headless:true});
+          const p=await b.newPage({viewport:{width:1440,height:900}});
+          await p.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:60000});
+          await p.waitForTimeout(1500);
+          for (const href of ['./css/hud-organique-v2.css','./css/deck-discard-hud-v1.css','./css/card-cycle-animation-v7.css','./css/hud-polish-targeted-v1.css']) await p.addStyleTag({url:'http://127.0.0.1:4173/'+href.slice(2)});
+          await p.addScriptTag({url:'http://127.0.0.1:4173/js/hud-organique-v2.js'});
+          await p.waitForTimeout(250);
+          await p.addScriptTag({url:'http://127.0.0.1:4173/js/deck-discard-hud-v1.js'});
+          await p.addScriptTag({url:'http://127.0.0.1:4173/js/hud-polish-targeted-v1.js'});
+          await p.waitForTimeout(450);
+          await p.evaluate(()=>{
+            document.body.dataset.visualMode='alternative';
+            document.body.style.margin='0'; document.body.style.overflow='hidden';
+            const g=document.getElementById('gameScreen'); if(!g) throw Error('gameScreen absent');
+            g.classList.remove('hidden'); g.style.position='fixed'; g.style.inset='0'; g.style.width='100vw'; g.style.height='100vh';
+            g.style.background='radial-gradient(circle at 50% 43%,rgba(96,148,158,.27),transparent 34%),linear-gradient(180deg,#173643,#07151f 75%)';
+            const r=document.getElementById('ilyosHudOrganicV2'); if(!r) throw Error('HUD absent');
+            [...g.children].forEach(e=>{if(e!==r)e.style.visibility='hidden'}); r.style.visibility='visible';
+            document.getElementById('ov2LeftName').textContent='JOUEUR AZUR';
+            document.getElementById('ov2RightName').textContent='JOUEUR CORAIL';
+            document.getElementById('ov2MoveCount').textContent='×8';
+            document.getElementById('ov2PushCount').textContent='×4';
+            document.getElementById('ov2MagicCount').textContent='×1';
+            document.getElementById('ov2Push').classList.add('ov2-selected');
+            document.getElementById('ov2Undo').disabled=false;
+            document.getElementById('ov2LeftActive').classList.remove('ov2-off');
+            document.getElementById('ov2RightActive').classList.add('ov2-off');
+            const d=document.getElementById('ov2DeckHud'),x=document.getElementById('ov2DiscardHud');
+            d.querySelector('.ov2-pile-count').textContent='8'; x.querySelector('.ov2-pile-count').textContent='5';
+          });
+          await p.waitForTimeout(350);
+          const c=await p.evaluate(()=>({
+            q:parseFloat(getComputedStyle(document.getElementById('ov2MoveCount')).fontSize),
+            u:document.getElementById('ov2Undo').getBoundingClientRect().width,
+            pw:document.getElementById('ov2DeckHud').getBoundingClientRect().width,
+            po:parseFloat(getComputedStyle(document.getElementById('ov2DeckHud')).opacity),
+            la:document.querySelector('.ov2-side.ov2-left').classList.contains('is-active'),
+            st:getComputedStyle(document.getElementById('ov2Push')).transform
+          }));
+          console.log('CHECK',c);
+          if(c.q<13.5||c.u<41||c.u>47||c.pw>61||c.po>.46||!c.la||c.st==='none') throw Error('HUD checks failed');
+          await p.screenshot({path:'validation/hud-polish/hud-normal.png'});
+          await p.evaluate(()=>{document.getElementById('ov2LeftActive').classList.add('ov2-off');document.getElementById('ov2RightActive').classList.remove('ov2-off')});
+          await p.waitForTimeout(1000);
+          if(!await p.evaluate(()=>document.querySelector('.ov2-side.ov2-right').classList.contains('is-active'))) throw Error('right active failed');
+          await p.screenshot({path:'validation/hud-polish/hud-right-active.png'});
+          await p.evaluate(()=>{document.getElementById('ov2MoveCount').textContent='×0';document.getElementById('ov2PushCount').textContent='×1';document.getElementById('ov2MagicCount').textContent='×8';document.getElementById('ov2Undo').disabled=true;document.getElementById('ov2DeckHud').querySelector('.ov2-pile-count').textContent='0';document.getElementById('ov2DiscardHud').querySelector('.ov2-pile-count').textContent='0'});
+          await p.waitForTimeout(120);
+          const op=await p.evaluate(()=>parseFloat(getComputedStyle(document.getElementById('ov2Undo')).opacity));
+          if(op>.43) throw Error('disabled undo opacity failed');
+          await b.close();
+          NODE
+          node /tmp/capture.mjs
+      - name: Commit captures
+        run: |
+          git config user.name 'ilyos-hud-validation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add validation/hud-polish/*.png
+          git commit -m 'Temp: captures validation HUD polish' || exit 0
+          git push
