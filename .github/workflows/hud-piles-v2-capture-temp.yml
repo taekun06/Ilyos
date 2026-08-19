@@ -1,0 +1,78 @@
+name: HUD piles V2 capture temp
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+    branches: [main]
+
+jobs:
+  capture:
+    if: github.head_ref == 'hud-polish-targeted-v1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install chromium
+      - run: |
+          python3 -m http.server 4173 >/tmp/http.log 2>&1 &
+          sleep 2
+          mkdir -p validation/hud-piles-v2
+          cat > capture-piles.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          const browser=await chromium.launch({headless:true});
+          const page=await browser.newPage({viewport:{width:1440,height:900},deviceScaleFactor:1});
+          await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForTimeout(2200);
+          await page.evaluate(()=>document.getElementById('gameScreen')?.classList.remove('hidden'));
+          await page.waitForTimeout(350);
+          const play=page.locator('button:visible',{hasText:'JOUER'}).first();
+          if(await play.count()) {
+            await play.click({timeout:10000});
+            await page.waitForTimeout(4500);
+          }
+          await page.waitForSelector('#ilyosHudOrganicV2',{state:'visible',timeout:15000});
+          await page.evaluate(()=>{
+            window.ILYOS_HUD_POLISH_TARGETED?.stop?.();
+            const deck=document.getElementById('ov2DeckHud');
+            const discard=document.getElementById('ov2DiscardHud');
+            if(deck?.querySelector('.ov2-pile-count')) deck.querySelector('.ov2-pile-count').textContent='8';
+            if(discard?.querySelector('.ov2-pile-count')) discard.querySelector('.ov2-pile-count').textContent='5';
+            window.ILYOS_DECK_DISCARD_HUD?.sync?.();
+          });
+          await page.waitForTimeout(350);
+          const check=await page.evaluate(()=>{
+            const d=document.getElementById('ov2DeckHud');
+            const x=document.getElementById('ov2DiscardHud');
+            const dr=d.getBoundingClientRect(), xr=x.getBoundingClientRect();
+            const ds=getComputedStyle(d), xs=getComputedStyle(x);
+            const dc=d.querySelector('.ov2-pile-count').getBoundingClientRect();
+            const dv=d.querySelector('.ov2-pile-visual').getBoundingClientRect();
+            return {
+              left:Math.round(dr.left), right:Math.round(innerWidth-xr.right),
+              topDiff:Math.abs(Math.round(dr.top-xr.top)),
+              bg:ds.backgroundColor, border:ds.borderTopWidth,
+              discardBg:xs.backgroundColor, discardBorder:xs.borderTopWidth,
+              countAbove:dc.bottom <= dv.top + 2,
+              discardRole:x.getAttribute('role'),
+              discardPointer:getComputedStyle(x).pointerEvents
+            };
+          });
+          console.log('PILE_CHECK',check);
+          if(Math.abs(check.left-check.right)>2||check.topDiff>1||check.border!=='0px'||check.discardBorder!=='0px'||!check.countAbove||check.discardRole!=='button'||check.discardPointer==='none') throw new Error('Pile V2 validation failed');
+          await page.screenshot({path:'validation/hud-piles-v2/hud-piles-v2.png'});
+          await browser.close();
+          NODE
+          node capture-piles.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ilyos-hud-piles-v2
+          path: validation/hud-piles-v2/hud-piles-v2.png
+          if-no-files-found: error
+          retention-days: 1
