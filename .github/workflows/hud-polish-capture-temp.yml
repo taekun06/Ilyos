@@ -1,0 +1,173 @@
+name: HUD polish capture temp
+
+on:
+  push:
+    branches: [hud-polish-targeted-v1]
+    paths-ignore:
+      - 'validation/hud-polish/**'
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start local server
+        run: |
+          python3 -m http.server 4173 >/tmp/ilyos-http.log 2>&1 &
+          sleep 2
+      - name: Capture and assert HUD states
+        run: |
+          mkdir -p validation/hud-polish
+          cat > /tmp/capture.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+          await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+          await page.waitForTimeout(1800);
+
+          async function ensureAsset(kind, url, marker) {
+            const exists = await page.evaluate(([kind, marker]) => kind === 'script'
+              ? !!document.querySelector(`script[data-capture="${marker}"]`)
+              : !!document.querySelector(`link[data-capture="${marker}"]`), [kind, marker]);
+            if (exists) return;
+            if (kind === 'style') {
+              await page.evaluate(([url, marker]) => new Promise((resolve, reject) => {
+                const l=document.createElement('link'); l.rel='stylesheet'; l.href=url; l.dataset.capture=marker;
+                l.onload=resolve; l.onerror=reject; document.head.appendChild(l);
+              }), [url, marker]);
+            } else {
+              await page.evaluate(([url, marker]) => new Promise((resolve, reject) => {
+                const s=document.createElement('script'); s.src=url; s.dataset.capture=marker;
+                s.onload=resolve; s.onerror=reject; document.head.appendChild(s);
+              }), [url, marker]);
+            }
+          }
+
+          await ensureAsset('style','./css/hud-organique-v2.css','hud-base');
+          await ensureAsset('style','./css/deck-discard-hud-v1.css','pile-base');
+          await ensureAsset('style','./css/card-cycle-animation-v7.css','cards-v7');
+          await ensureAsset('style','./css/card-cycle-animation-v8.css','cards-v8');
+          await ensureAsset('style','./css/card-cycle-animation-v10.css','cards-v10');
+          await ensureAsset('style','./css/hud-polish-targeted-v1.css','hud-polish');
+          await ensureAsset('script','./js/hud-organique-v2.js','hud-base-js');
+          await page.waitForTimeout(300);
+          await ensureAsset('script','./js/deck-discard-hud-v1.js','pile-js');
+          await ensureAsset('script','./js/hud-polish-targeted-v1.js','hud-polish-js');
+          await page.waitForTimeout(500);
+
+          await page.evaluate(() => {
+            document.body.dataset.visualMode='alternative';
+            document.documentElement.style.background='#07131e';
+            document.body.style.margin='0';
+            document.body.style.overflow='hidden';
+            document.body.style.background='radial-gradient(circle at 50% 42%, #274756 0%, #102735 38%, #07131e 78%)';
+            const game=document.getElementById('gameScreen');
+            if (!game) throw new Error('gameScreen absent');
+            game.classList.remove('hidden');
+            game.style.position='fixed'; game.style.inset='0'; game.style.width='100vw'; game.style.height='100vh';
+            game.style.background='radial-gradient(circle at 50% 46%, rgba(85,135,148,.30), transparent 32%),linear-gradient(180deg,#153544,#071620 74%)';
+            const root=document.getElementById('ilyosHudOrganicV2');
+            if (!root) throw new Error('HUD organique absent');
+            [...game.children].forEach(el => { if (el !== root) el.style.visibility='hidden'; });
+            root.style.visibility='visible';
+            root.querySelectorAll('*').forEach(el=>el.style.visibility='');
+
+            document.getElementById('ov2LeftName').textContent='JOUEUR AZUR';
+            document.getElementById('ov2RightName').textContent='JOUEUR CORAIL';
+            document.getElementById('ov2MoveCount').textContent='×8';
+            document.getElementById('ov2PushCount').textContent='×4';
+            document.getElementById('ov2MagicCount').textContent='×1';
+            document.getElementById('ov2Island').querySelector('small').textContent='OBLIGATOIRE';
+            document.getElementById('ov2Push').classList.add('ov2-selected');
+            document.getElementById('ov2Undo').disabled=false;
+            document.getElementById('ov2Instruction').childNodes[0].nodeValue='Choisissez une action.';
+            const deck=document.getElementById('ov2DeckHud');
+            const discard=document.getElementById('ov2DiscardHud');
+            if (!deck || !discard) throw new Error('HUD piles absent');
+            deck.querySelector('.ov2-pile-count').textContent='8';
+            discard.querySelector('.ov2-pile-count').textContent='5';
+            document.getElementById('ov2LeftActive').classList.remove('ov2-off');
+            document.getElementById('ov2RightActive').classList.add('ov2-off');
+          });
+          await page.waitForTimeout(350);
+
+          const checks = await page.evaluate(() => {
+            const q=id=>getComputedStyle(document.getElementById(id));
+            const undo=document.getElementById('ov2Undo');
+            const deck=document.getElementById('ov2DeckHud');
+            const discard=document.getElementById('ov2DiscardHud');
+            const left=document.querySelector('.ov2-side.ov2-left');
+            const selected=document.getElementById('ov2Push');
+            return {
+              moveFont:parseFloat(q('ov2MoveCount').fontSize),
+              pushFont:parseFloat(q('ov2PushCount').fontSize),
+              magicFont:parseFloat(q('ov2MagicCount').fontSize),
+              undoW:undo.getBoundingClientRect().width,
+              undoH:undo.getBoundingClientRect().height,
+              deckW:deck.getBoundingClientRect().width,
+              discardW:discard.getBoundingClientRect().width,
+              deckOpacity:parseFloat(getComputedStyle(deck).opacity),
+              discardOpacity:parseFloat(getComputedStyle(discard).opacity),
+              leftActive:left.classList.contains('is-active'),
+              selectedTransform:getComputedStyle(selected).transform
+            };
+          });
+          console.log('HUD_CHECKS', JSON.stringify(checks));
+          if (checks.moveFont < 13.5 || checks.pushFont < 13.5 || checks.magicFont < 13.5) throw new Error('Quantités pas assez renforcées');
+          if (checks.undoW < 41 || checks.undoW > 47 || checks.undoH < 41 || checks.undoH > 47) throw new Error('Undo hors gabarit');
+          if (checks.deckW > 61 || checks.discardW > 61) throw new Error('Piles encore trop larges');
+          if (checks.deckOpacity > .46 || checks.discardOpacity > .46) throw new Error('Piles pas assez légères');
+          if (!checks.leftActive) throw new Error('Portrait gauche actif non détecté');
+          if (checks.selectedTransform === 'none') throw new Error('Action sélectionnée sans translation');
+
+          await page.screenshot({path:'validation/hud-polish/hud-normal.png'});
+
+          await page.evaluate(() => {
+            document.getElementById('ov2LeftActive').classList.add('ov2-off');
+            document.getElementById('ov2RightActive').classList.remove('ov2-off');
+          });
+          await page.waitForTimeout(1000);
+          const rightActive = await page.evaluate(() => document.querySelector('.ov2-side.ov2-right')?.classList.contains('is-active'));
+          if (!rightActive) throw new Error('Portrait droit actif non détecté');
+          await page.screenshot({path:'validation/hud-polish/hud-right-active.png'});
+
+          await page.evaluate(() => {
+            document.getElementById('ov2MoveCount').textContent='×0';
+            document.getElementById('ov2PushCount').textContent='×1';
+            document.getElementById('ov2MagicCount').textContent='×8';
+            const undo=document.getElementById('ov2Undo'); undo.disabled=true;
+            document.getElementById('ov2DeckHud').querySelector('.ov2-pile-count').textContent='0';
+            document.getElementById('ov2DiscardHud').querySelector('.ov2-pile-count').textContent='0';
+          });
+          await page.waitForTimeout(120);
+          const edgeChecks=await page.evaluate(()=>({
+            undoOpacity:parseFloat(getComputedStyle(document.getElementById('ov2Undo')).opacity),
+            move0:document.getElementById('ov2MoveCount').textContent,
+            push1:document.getElementById('ov2PushCount').textContent,
+            magic8:document.getElementById('ov2MagicCount').textContent
+          }));
+          console.log('HUD_EDGE_CHECKS', JSON.stringify(edgeChecks));
+          if (edgeChecks.undoOpacity > .43) throw new Error('Undo disabled trop visible');
+          if (edgeChecks.move0!=='×0' || edgeChecks.push1!=='×1' || edgeChecks.magic8!=='×8') throw new Error('Quantités edge incorrectes');
+
+          await browser.close();
+          NODE
+          node /tmp/capture.mjs
+      - name: Commit validation captures
+        run: |
+          git config user.name "ilyos-hud-validation"
+          git config user.email "actions@users.noreply.github.com"
+          git add validation/hud-polish/hud-normal.png validation/hud-polish/hud-right-active.png
+          git commit -m "Temp: captures validation HUD polish" || exit 0
+          git push
