@@ -29,8 +29,6 @@ jobs:
           import { chromium } from 'playwright';
           const browser=await chromium.launch({headless:true});
           const page=await browser.newPage({viewport:{width:1440,height:900},deviceScaleFactor:1});
-          const pageErrors=[];
-          page.on('pageerror',e=>pageErrors.push(String(e)));
           await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:60000});
           await page.waitForTimeout(2400);
           await page.evaluate(()=>document.getElementById('gameScreen')?.classList.remove('hidden'));
@@ -48,7 +46,6 @@ jobs:
             const ps=document.getElementById('hudV2HandPopoverDeck')||document.getElementById('deckCount'); if(ps) ps.textContent='7';
             window.ILYOS_DECK_DISCARD_HUD?.sync?.();
             window.ILYOS_DISCARD_VIEWER?.open?.();
-
             const icons={MOVE:'<svg viewBox="0 0 48 48"><g fill="currentColor"><ellipse cx="17" cy="14" rx="5" ry="8"/><ellipse cx="31" cy="32" rx="5" ry="8"/></g></svg>',PUSH:'<svg viewBox="0 0 48 48"><path d="M7 24h24M23 14l10 10-10 10" fill="none" stroke="currentColor" stroke-width="4"/></svg>',MAGIC:'<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>'};
             const sample=document.createElement('div'); sample.id='v12IntegrationSample'; sample.style.cssText='position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;gap:18px;z-index:1005000;pointer-events:none';
             for(const type of ['MOVE','PUSH','MAGIC']){const el=document.createElement('div');el.className=`card-cycle-v7-card card-cycle-v10-card showcase type-${type.toLowerCase()}`;el.style.cssText='position:relative!important;left:auto!important;top:auto!important;width:88px!important;height:138px!important';el.innerHTML=`<span class="card-cycle-v7-kicker">CARTE ACTION</span><span class="card-cycle-v7-icon">${icons[type]}</span><b>${type==='MOVE'?'DÉPLACER':type==='PUSH'?'POUSSER':'MAGIE'}</b><i class="card-cycle-v7-rune"></i><span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>`;sample.appendChild(el)}
@@ -80,7 +77,6 @@ jobs:
           if(!check.cardArt||!check.tuning||!check.discardOpen||check.discardCards!==3||check.counts.join(',')!=='×3,×2,×1'||check.kicker!=='none'||check.source!=='none'||check.iconRatio<.72||check.labelSize<11) throw new Error('Validation intégrée échouée');
           await page.screenshot({path:'validation/hud-v11-v12/hud-v11-v12-integrated.png'});
           await browser.close();
-          if(pageErrors.length) console.log('PAGE_ERRORS',pageErrors);
           NODE
           node integration.mjs
       - uses: actions/upload-artifact@v4
