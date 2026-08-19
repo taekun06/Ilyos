@@ -39,6 +39,7 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
   justify-items: center !important;
   align-items: center !important;
   row-gap: 2px !important;
+  margin: 0 !important;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
