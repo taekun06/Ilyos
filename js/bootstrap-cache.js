@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V6_POLISH";
+  const VERSION = "ILYOS_20260819_CARD_CYCLE_V7_VERTICAL_CENTER";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -57,23 +57,23 @@
   else install();
 })();
 
-/* Cycle visuel des cartes V6 — joueur local uniquement, cartes lisibles et batch xN. */
-(function loadIlyosCardCycleV6() {
-  const VERSION = '20260819-card-cycle-v6-polish';
+/* Cycle visuel des cartes V7 — centrage viewport + cartes/HUD plus verticaux. */
+(function loadIlyosCardCycleV7() {
+  const VERSION = '20260819-card-cycle-v7-vertical-center';
 
   function install() {
-    if (!document.querySelector('link[data-ilyos-card-cycle-v2]')) {
+    if (!document.querySelector('link[data-ilyos-card-cycle-v7]')) {
       const style = document.createElement('link');
       style.rel = 'stylesheet';
-      style.href = `./css/card-cycle-animation-v2.css?v=${VERSION}`;
-      style.dataset.ilyosCardCycleV2 = 'style';
+      style.href = `./css/card-cycle-animation-v7.css?v=${VERSION}`;
+      style.dataset.ilyosCardCycleV7 = 'style';
       document.head.appendChild(style);
     }
 
-    if (!document.querySelector('script[data-ilyos-card-cycle-v2]')) {
+    if (!document.querySelector('script[data-ilyos-card-cycle-v7]')) {
       const script = document.createElement('script');
-      script.src = `./js/card-cycle-animation-v2.js?v=${VERSION}`;
-      script.dataset.ilyosCardCycleV2 = 'script';
+      script.src = `./js/card-cycle-animation-v7.js?v=${VERSION}`;
+      script.dataset.ilyosCardCycleV7 = 'script';
       document.head.appendChild(script);
     }
   }
