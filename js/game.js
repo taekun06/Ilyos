@@ -397,7 +397,13 @@
         flag0: kaykitAssetSpec("medieval", "decoration/props/flag_blue.gltf", MEDIEVAL_ATLAS),
         flag1: kaykitAssetSpec("medieval", "decoration/props/flag_red.gltf", MEDIEVAL_ATLAS),
         flag2: kaykitAssetSpec("medieval", "decoration/props/flag_green.gltf", MEDIEVAL_ATLAS),
-        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS)
+        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS),
+
+        // Nuages KayKit réels (voir buildKayKitBoardClouds) : dérivent juste hors
+        // du rayon de sécurité de l'archipel, à hauteur du plateau — lecture
+        // "on est dans le ciel, il y a du vent" depuis la vue "front".
+        cloudSmall: kaykitAssetSpec("medieval", "decoration/nature/cloud_small.gltf", MEDIEVAL_ATLAS),
+        cloudBig: kaykitAssetSpec("medieval", "decoration/nature/cloud_big.gltf", MEDIEVAL_ATLAS)
       };
 
 
@@ -799,6 +805,7 @@
           // ce qui a réellement changé. Voir syncKayKitScene pour le détail.
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
+          boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -1506,6 +1513,99 @@
 
         parent.add(sky);
         kaykit3D.skyGroup = sky;
+      }
+
+      /**
+       * Nuages KayKit réels autour du plateau + ombres de nuages douces sur le
+       * sol des îles — passe "éclairage/ambiance" (visual-island-relief-v2) :
+       * la vue de jeu principale ("front") est plongeante et cadrée serré sur
+       * le plateau, donc c'est ce qui se voit juste au-dessus et sur les îles
+       * qui porte l'ambiance, pas le ciel lointain (déjà traité par
+       * buildKayKitSkyEnvironment). Construite une seule fois, séparément du
+       * ciel procédural, car elle dépend d'assets GLTF chargés de façon
+       * asynchrone (voir l'appelant dans syncKayKitScene).
+       *
+       * Sécurité géométrique : les nuages sont placés à un rayon horizontal
+       * ≥ KAYKIT_SKY.safeRadius (même garde que buildKayKitSkyEnvironment, via
+       * kaykitSkyPlacementAllowed) — jamais entre la caméra et une case, quel
+       * que soit l'angle de vue. Les ombres, elles, restent à ras du plateau
+       * (juste au-dessus du sommet des îles) : ce ne sont pas des objets 3D
+       * flottants mais un décalque plat, donc hors de portée de cette règle.
+       */
+      function buildKayKitBoardClouds(parent) {
+        if (!kaykit3D) return;
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 71.31 + salt * 19.71) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const group = new THREE.Group();
+        group.name = "ilyos-board-clouds";
+
+        // Nuages : juste hors du rayon de sécurité. La vue "front" par défaut
+        // est cadrée TRÈS serré sur le plateau (voir kaykitFitDistance,
+        // multiplicateur .64) — vérifié empiriquement par projection caméra
+        // (Vector3.project) que seuls azimuth≈3.93/5.5, rayon≈9.8, hauteur≈.8
+        // entrent tout juste dans le cadre par défaut (coins bas). Ces deux-là
+        // sont donc placés pour être visibles depuis "front" ; les deux autres,
+        // plus hauts/éloignés, ne se révèlent qu'en vue orbitale/isométrique
+        // ou au zoom arrière — c'est la dérive des couronnes d'ombres au sol
+        // (plus bas) qui porte l'essentiel de l'ambiance en vue "front".
+        [
+          { key: "cloudSmall", azimuth: 3.93, radius: 9.8, y: .85, scale: 1.3 },
+          { key: "cloudBig", azimuth: 5.5, radius: 9.9, y: .85, scale: 1.6 },
+          { key: "cloudSmall", azimuth: 1.3, radius: 12.5, y: 2.4, scale: 1.4 },
+          { key: "cloudBig", azimuth: 2.6, radius: 14, y: 3.0, scale: 2.0 }
+        ].forEach((spec, index) => {
+          const x = Math.cos(spec.azimuth) * spec.radius;
+          const z = Math.sin(spec.azimuth) * spec.radius;
+          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
+          const cloud = cloneKayKitAsset(spec.key, { maxWidth: spec.scale, maxHeight: spec.scale * .6, targetFloor: 0 });
+          if (!cloud) return;
+          cloud.position.set(x, spec.y, z);
+          cloud.rotation.y = seeded(index, 1) * Math.PI * 2;
+          cloud.traverse(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; } });
+          group.add(cloud);
+          kaykit3D.skyLayers.push({
+            object: cloud, base: cloud.position.clone(),
+            // Même mécanisme de dérive que buildKayKitSkyEnvironment (voir la
+            // boucle d'animation dans animateKayKit3D) : aucun code d'animation
+            // supplémentaire nécessaire.
+            drift: {
+              x: 1.1 + seeded(index, 2) * 1.0, z: .9 + seeded(index, 3) * .8,
+              sx: .006 + seeded(index, 4) * .004, sz: .005 + seeded(index, 5) * .003
+            }
+          });
+        });
+
+        // Ombres de nuages : décalques doux au ras du plateau (alpha faible,
+        // même texture que les amas du ciel), pas de vrais objets shadow-caster
+        // — assombrissent légèrement le terrain sous leur passage sans toucher
+        // au shadow-mapping (coût quasi nul, y compris sur mobile).
+        const shadowTexture = kaykitCloudTexture();
+        [
+          { x: -2.5, z: 1.5, scale: 9, opacity: .15 },
+          { x: 3, z: -2, scale: 7, opacity: .11 }
+        ].forEach((spec, index) => {
+          const decal = new THREE.Mesh(
+            kaykitGeometry("cloud-shadow-decal-v1", () => new THREE.PlaneGeometry(1, .625)),
+            new THREE.MeshBasicMaterial({
+              map: shadowTexture, color: 0x27384a, transparent: true, opacity: spec.opacity,
+              depthWrite: false, fog: false, toneMapped: false
+            })
+          );
+          decal.rotation.x = -Math.PI / 2;
+          decal.scale.set(spec.scale, spec.scale, 1);
+          decal.position.set(spec.x, KAYKIT_LEVELS.islandTop + .03, spec.z);
+          decal.renderOrder = 6;
+          group.add(decal);
+          kaykit3D.skyLayers.push({
+            object: decal, base: decal.position.clone(),
+            drift: { x: 3.2 + index, z: 2.4 + index * .6, sx: .004 + index * .001, sz: .003 + index * .001 }
+          });
+        });
+
+        parent.add(group);
+        kaykit3D.boardCloudsGroup = group;
       }
 
       function buildKayKitStaticScene() {
@@ -7170,6 +7270,14 @@
           if (!kaykit3D.crownCrossGroundBuilt) {
             dynamic.add(makeCrownCrossGround());
             kaykit3D.crownCrossGroundBuilt = true;
+          }
+          // Nuages du plateau : statiques (comme le sol en croix), construits une
+          // seule fois — mais seulement une fois les deux assets KayKit chargés
+          // (même principe que châteaux/gardiens : jamais de secours à remplacer
+          // à chaud, on attend juste que l'asset soit prêt).
+          if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
+            buildKayKitBoardClouds(dynamic);
+            kaykit3D.boardCloudsBuilt = true;
           }
 
           // Couche île (blocs fusionnés + coutures + décor forestier + les
