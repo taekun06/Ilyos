@@ -1,0 +1,5 @@
+/* ILYOS — couche finale V11 : la consultation Défausse doit rester au-dessus des cartes contextuelles. */
+.ov2-discard-viewer {
+  position: fixed !important;
+  z-index: 1002000 !important;
+}
