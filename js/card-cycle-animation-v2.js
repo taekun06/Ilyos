@@ -62,10 +62,10 @@
   }
 
   /* Le moteur applique déjà .ai-turn pendant le tour IA. En ligne, les trois
-     boutons legacy sont verrouillés quand ce n'est pas le tour local. Cette
-     garde évite donc la pioche et les transferts pendant le tour adverse sans
-     introduire de dépendance au state interne de game.js. */
-  function isLocalVisualTurn() {
+     boutons legacy sont verrouillés quand ce n'est pas le tour local. On ne
+     consulte ce verrou que pour la PIOCHE : après une action locale, tous les
+     boutons peuvent aussi être désactivés simplement parce que la main est vide. */
+  function isLocalVisualTurn({ checkRemoteLock = false } = {}) {
     const game = byId('gameScreen');
     if (!game || game.classList.contains('hidden') || game.classList.contains('ai-turn')) return false;
 
@@ -76,11 +76,13 @@
     ].filter(Boolean).join(' ').toLocaleUpperCase('fr-FR');
     if (/TOUR DE L[’']ADVERSAIRE|L[’']ADVERSAIRE JOUE|ORDINATEUR/.test(visibleContext)) return false;
 
-    const legacyActions = ['hudV2MoveCount', 'hudV2PushCount', 'hudV2MagicCount']
-      .map(byId)
-      .filter(Boolean);
-    const cardsPresent = miniCards().length > 0;
-    if (cardsPresent && legacyActions.length === 3 && legacyActions.every(button => button.disabled)) return false;
+    if (checkRemoteLock) {
+      const legacyActions = ['hudV2MoveCount', 'hudV2PushCount', 'hudV2MagicCount']
+        .map(byId)
+        .filter(Boolean);
+      const cardsPresent = miniCards().length > 0;
+      if (cardsPresent && legacyActions.length === 3 && legacyActions.every(button => button.disabled)) return false;
+    }
 
     return true;
   }
@@ -230,7 +232,7 @@
   }
 
   async function runDealAnimation(cards) {
-    if (!isLocalVisualTurn()) return;
+    if (!isLocalVisualTurn({ checkRemoteLock: true })) return;
     const types = cards.slice(0, 5).map(cardType).filter(Boolean);
     if (!types.length) return;
 
@@ -361,8 +363,9 @@
     }
 
     if (reserveUsed > 0) {
-      pulse(reserveTarget(type), 'card-cycle-reserve-hit');
-      floatCount(reserveTarget(type), `−${reserveUsed}`);
+      const reserve = reserveTarget(type);
+      pulse(reserve, 'card-cycle-reserve-hit');
+      floatCount(reserve, `−${reserveUsed}`);
     }
 
     const ghost = makeFlyingCard(type, 'card-cycle-used-card card-cycle-batch-use', count);
@@ -477,7 +480,7 @@
       dealActive = true;
       /* Le HUD et .ai-turn peuvent être mis à jour quelques ms après la main. */
       setTimeout(() => {
-        if (isLocalVisualTurn()) runDealAnimation(miniCards());
+        if (isLocalVisualTurn({ checkRemoteLock: true })) runDealAnimation(miniCards());
       }, 80);
     } else if (!hasDeal) {
       dealActive = false;
