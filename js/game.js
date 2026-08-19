@@ -806,6 +806,7 @@
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
+          distantDecorBuilt: false,     // îlots lointains habillés (montagnes/cascade) : statique, construit une seule fois
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -1630,6 +1631,92 @@
 
         parent.add(group);
         kaykit3D.boardCloudsGroup = group;
+      }
+
+      /**
+       * Reteint un modèle KayKit RÉEL en silhouette plate pour le décor
+       * lointain — même traitement que makeKayKitDistantIslet (matériau
+       * unique, non éclairé, soumis au brouillard) mais appliqué à un GLTF
+       * complet au lieu d'un cône procédural : donne une silhouette variée
+       * (montagne, arête) sans jamais devenir assez détaillé pour rivaliser
+       * visuellement avec le plateau (hiérarchie §10 : le lointain reste
+       * TOUJOURS derrière le jeu). Matériau partagé par teinte (cache), pas
+       * un clone par objet.
+       */
+      function kaykitTintAsDistantSilhouette(object, tint) {
+        const key = `distant-silhouette:${tint.getHexString()}`;
+        if (!kaykit3D.materials.has(key)) {
+          kaykit3D.materials.set(key, new THREE.MeshBasicMaterial({ color: tint.clone(), fog: true, toneMapped: false }));
+        }
+        const material = kaykit3D.materials.get(key);
+        object.traverse(child => {
+          if (!child.isMesh) return;
+          child.material = material;
+          child.castShadow = false;
+          child.receiveShadow = false;
+        });
+        return object;
+      }
+
+      /**
+       * Îlots lointains "habillés" avec de vrais modèles KayKit (montagnes)
+       * plutôt que le cône procédural de makeKayKitDistantIslet — plus de
+       * variété de silhouette pour un archipel qui se sent plus vaste, sans
+       * jamais devenir détaillé (voir kaykitTintAsDistantSilhouette). Ajoute
+       * aussi une cascade sommaire (plan vertical texturé, très bon marché)
+       * sous l'un d'eux — pas de modèle "cascade" dédié dans le pack KayKit
+       * local actuel, donc approximée avec la même texture de nuage déjà en
+       * cache plutôt que de dépendre d'un nouvel asset.
+       *
+       * Différée et construite une seule fois (voir l'appelant dans
+       * syncKayKitScene) : dépend d'assets GLTF chargés de façon asynchrone,
+       * comme buildKayKitBoardClouds.
+       */
+      function buildKayKitDistantDecoratedIslets(parent) {
+        if (!kaykit3D) return;
+        const group = new THREE.Group();
+        group.name = "ilyos-distant-decorated-islets";
+        const baseTint = new THREE.Color(KAYKIT_SKY_COLORS.distant);
+
+        const specs = [
+          { key: "mountainA", azimuth: 1.3, radius: 34, y: -6.6, width: 4.2, height: 3.0, lightness: 0, waterfall: true },
+          { key: "mountainB", azimuth: 2.55, radius: 38, y: -5.2, width: 3.6, height: 2.6, lightness: .1 },
+          { key: "mountainC", azimuth: 3.7, radius: 36, y: -7.4, width: 3.9, height: 2.8, lightness: -.08 }
+        ];
+        specs.forEach((spec, index) => {
+          const x = Math.cos(spec.azimuth) * spec.radius;
+          const z = Math.sin(spec.azimuth) * spec.radius;
+          if (spec.radius < KAYKIT_SKY.farRing) return;
+          if (!kaykitSkyPlacementAllowed(x, spec.y, z, Math.max(spec.width, spec.height))) return;
+          const mountain = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
+          if (!mountain) return;
+          const tint = baseTint.clone().multiplyScalar(1 + spec.lightness);
+          kaykitTintAsDistantSilhouette(mountain, tint);
+          mountain.position.set(x, spec.y, z);
+          mountain.rotation.y = kaykitHash("distant-mountain-rotation", index) * Math.PI * 2;
+          group.add(mountain);
+
+          if (spec.waterfall) {
+            // Cascade sommaire : plan translucide vertical accroché au flanc
+            // de la montagne, teinte pâle bleu-blanc — lisible comme un filet
+            // d'eau depuis la distance/désaturation où elle vit, jamais comme
+            // un vrai objet d'eau détaillé.
+            const waterfall = new THREE.Mesh(
+              kaykitGeometry("distant-waterfall-plane-v1", () => new THREE.PlaneGeometry(1, 1)),
+              new THREE.MeshBasicMaterial({
+                map: kaykitCloudTexture(), color: 0xdcefff, transparent: true, opacity: .5,
+                depthWrite: false, fog: true, toneMapped: false
+              })
+            );
+            waterfall.scale.set(spec.width * .22, spec.height * .9, 1);
+            waterfall.position.set(x + spec.width * .3, spec.y - spec.height * .55, z);
+            waterfall.rotation.y = mountain.rotation.y + Math.PI / 5;
+            group.add(waterfall);
+          }
+        });
+
+        parent.add(group);
+        kaykit3D.distantDecoratedIsletsGroup = group;
       }
 
       function buildKayKitStaticScene() {
@@ -7314,6 +7401,12 @@
           if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
             buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
+          }
+          // Îlots lointains habillés (montagnes réelles + cascade sommaire) :
+          // même principe, en attente des 3 assets montagne.
+          if (!kaykit3D.distantDecorBuilt && kaykit3D.assets.has("mountainA") && kaykit3D.assets.has("mountainB") && kaykit3D.assets.has("mountainC")) {
+            buildKayKitDistantDecoratedIslets(dynamic);
+            kaykit3D.distantDecorBuilt = true;
           }
 
           // Couche île (blocs fusionnés + coutures + décor forestier + les
