@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_HUD_POLISH_TARGETED_V1B";
+  const VERSION = "ILYOS_20260819_HUD_POLISH_TARGETED_V2";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -49,7 +49,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20260819-hud-polish-targeted-v1b';
+  const VERSION = '20260819-hud-polish-targeted-v2';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
