@@ -1,0 +1,232 @@
+/* ILYOS — HUD polish ciblé V1
+   Scope strict : quantités d'actions, piles, Undo, portrait actif, sélection.
+   Aucun changement de structure, gameplay, caméra ou 3D. */
+
+/* 1) Quantités d'actions : même carte, même géométrie, information renforcée. */
+#ilyosHudOrganicV2 #ov2MoveCount,
+#ilyosHudOrganicV2 #ov2PushCount,
+#ilyosHudOrganicV2 #ov2MagicCount {
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  letter-spacing: .015em !important;
+  margin-top: 3px !important;
+  transform: translateY(2px) scale(1.04);
+  transform-origin: top center;
+  text-shadow: 0 2px 5px rgba(0,0,0,.82), 0 0 7px rgba(255,230,166,.18) !important;
+}
+#ilyosHudOrganicV2 #ov2Island small {
+  font-size: 11px !important;
+  font-weight: inherit !important;
+  transform: none !important;
+  text-shadow: none !important;
+}
+
+/* 2) PIOCHE / DÉFAUSSE : secondaires, 20–25 % plus compactes. */
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+  width: 58px !important;
+  min-height: 88px !important;
+  grid-template-rows: 41px auto auto !important;
+  row-gap: 1px !important;
+  padding: 5px 5px 6px !important;
+  border-width: .65px !important;
+  box-shadow: 0 7px 17px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.012) !important;
+  backdrop-filter: blur(7px) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud {
+  margin-left: -7px !important;
+  border-color: rgba(146,176,194,.18) !important;
+  background: linear-gradient(160deg, rgba(18,33,44,.48), rgba(7,15,23,.32)) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+  margin-left: 7px !important;
+  border-color: rgba(181,145,216,.18) !important;
+  background: linear-gradient(200deg, rgba(37,22,49,.46), rgba(9,14,22,.31)) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-visual {
+  width: 39px !important;
+  height: 43px !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card {
+  left: 9px !important;
+  top: 5px !important;
+  width: 22px !important;
+  height: 33px !important;
+  border-radius: 4px !important;
+  border-width: .7px !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-count {
+  font-size: 23px !important;
+  font-weight: 800 !important;
+  line-height: .98 !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-label {
+  font-size: 6.5px !important;
+  font-weight: 760 !important;
+  letter-spacing: .09em !important;
+  opacity: .68 !important;
+}
+
+/* 3) Undo : petit écusson cohérent avec les actions. */
+#ilyosHudOrganicV2 .ov2-undo {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 0 !important;
+  clip-path: polygon(25% 3%,75% 3%,97% 25%,97% 75%,75% 97%,25% 97%,3% 75%,3% 25%);
+  border: 1px solid rgba(212,184,124,.43) !important;
+  background: linear-gradient(145deg, rgba(26,38,48,.74), rgba(7,16,24,.66)) !important;
+  color: #f3ead7 !important;
+  font-size: 23px !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 5px 10px rgba(0,0,0,.22)) drop-shadow(0 0 5px rgba(225,190,111,.10));
+  transition: filter 150ms ease, opacity 150ms ease, color 150ms ease, border-color 150ms ease !important;
+}
+#ilyosHudOrganicV2 .ov2-undo:not(:disabled) {
+  border-color: rgba(235,204,135,.60) !important;
+  filter: drop-shadow(0 5px 10px rgba(0,0,0,.24)) drop-shadow(0 0 7px rgba(235,197,106,.16));
+}
+#ilyosHudOrganicV2 .ov2-undo:hover:not(:disabled) {
+  color: #fff7e5 !important;
+  filter: drop-shadow(0 5px 11px rgba(0,0,0,.26)) drop-shadow(0 0 9px rgba(240,203,113,.23));
+}
+#ilyosHudOrganicV2 .ov2-undo:disabled {
+  opacity: .40 !important;
+  filter: none !important;
+  border-color: rgba(161,163,160,.25) !important;
+}
+
+/* 4) Portrait actif : anneau intérieur + halo extérieur sans layout shift. */
+#ilyosHudOrganicV2 .ov2-avatar {
+  isolation: isolate;
+  overflow: visible !important;
+}
+#ilyosHudOrganicV2 .ov2-avatar::before,
+#ilyosHudOrganicV2 .ov2-avatar::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+}
+#ilyosHudOrganicV2 .ov2-avatar::before {
+  inset: 4px;
+  z-index: 3;
+  border: 1px solid rgba(255,220,133,.0);
+  box-shadow: inset 0 0 7px rgba(255,218,125,0);
+  transition: opacity 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+#ilyosHudOrganicV2 .ov2-avatar::after {
+  inset: -10px;
+  z-index: -1;
+  border: 1px solid transparent;
+  transform: scale(1);
+  transition: opacity 220ms ease;
+}
+#ilyosHudOrganicV2 .ov2-side.is-active .ov2-avatar::before {
+  opacity: 1;
+  border-color: rgba(255,221,135,.88);
+  box-shadow: inset 0 0 9px rgba(255,217,116,.28), 0 0 8px rgba(255,211,103,.20);
+}
+#ilyosHudOrganicV2 .ov2-left.is-active .ov2-avatar::after {
+  opacity: .78;
+  border-color: rgba(255,217,121,.28);
+  box-shadow: 0 0 12px rgba(255,205,96,.16), 0 0 24px rgba(76,202,232,.14);
+  animation: hudPortraitBreatheAzure 2s ease-in-out infinite;
+}
+#ilyosHudOrganicV2 .ov2-right.is-active .ov2-avatar::after {
+  opacity: .78;
+  border-color: rgba(255,217,121,.28);
+  box-shadow: 0 0 12px rgba(255,205,96,.15), 0 0 24px rgba(164,104,226,.14);
+  animation: hudPortraitBreatheCoral 2s ease-in-out infinite;
+}
+#ilyosHudOrganicV2 .ov2-side.turn-boost .ov2-avatar::before {
+  animation: hudPortraitRingBoost 700ms cubic-bezier(.2,.72,.25,1) both;
+}
+#ilyosHudOrganicV2 .ov2-side.turn-boost .ov2-avatar::after {
+  animation-duration: 700ms !important;
+  animation-name: hudPortraitHaloBoost !important;
+  animation-iteration-count: 1 !important;
+}
+#ilyosHudOrganicV2 .hud-polish-particle {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px;
+  border-radius: 50%;
+  background: #ffe19a;
+  box-shadow: 0 0 6px rgba(255,218,124,.72);
+  pointer-events: none;
+  opacity: 0;
+  animation: hudPortraitParticle 680ms ease-out forwards;
+}
+#ilyosHudOrganicV2 .hud-polish-particle.p1 { --px:-38px; --py:-20px; animation-delay: 20ms; }
+#ilyosHudOrganicV2 .hud-polish-particle.p2 { --px: 36px; --py:-25px; animation-delay: 70ms; }
+#ilyosHudOrganicV2 .hud-polish-particle.p3 { --px:-31px; --py: 29px; animation-delay: 115ms; }
+#ilyosHudOrganicV2 .hud-polish-particle.p4 { --px: 34px; --py: 24px; animation-delay: 155ms; }
+
+/* 5) Action sélectionnée : petite hausse + bord/halo seulement. */
+#ilyosHudOrganicV2 .ov2-action.ov2-selected {
+  transform: translateY(-3px) !important;
+}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected:before {
+  border-color: rgba(255,215,119,.92) !important;
+  box-shadow: 0 0 13px rgba(235,188,78,.24), 0 8px 18px rgba(0,0,0,.22) !important;
+}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected .ov2-ico {
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.45)) drop-shadow(0 0 6px rgba(244,202,103,.25)) !important;
+}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected:before {
+  border-color: rgba(220,186,255,.88) !important;
+  box-shadow: 0 0 13px rgba(183,121,242,.21), 0 8px 18px rgba(0,0,0,.22) !important;
+}
+
+@keyframes hudPortraitBreatheAzure {
+  0%,100% { transform: scale(1); opacity:.58; box-shadow:0 0 10px rgba(255,205,96,.13),0 0 20px rgba(76,202,232,.11); }
+  50% { transform: scale(1.15); opacity:.82; box-shadow:0 0 14px rgba(255,205,96,.18),0 0 28px rgba(76,202,232,.17); }
+}
+@keyframes hudPortraitBreatheCoral {
+  0%,100% { transform: scale(1); opacity:.58; box-shadow:0 0 10px rgba(255,205,96,.12),0 0 20px rgba(164,104,226,.11); }
+  50% { transform: scale(1.15); opacity:.82; box-shadow:0 0 14px rgba(255,205,96,.17),0 0 28px rgba(164,104,226,.17); }
+}
+@keyframes hudPortraitRingBoost {
+  0% { box-shadow:inset 0 0 8px rgba(255,217,116,.24),0 0 7px rgba(255,211,103,.18); }
+  42% { border-color:#ffe8a7; box-shadow:inset 0 0 12px rgba(255,225,151,.50),0 0 14px rgba(255,215,112,.46); }
+  100% { box-shadow:inset 0 0 9px rgba(255,217,116,.28),0 0 8px rgba(255,211,103,.20); }
+}
+@keyframes hudPortraitHaloBoost {
+  0% { transform:scale(1); opacity:.55; }
+  45% { transform:scale(1.18); opacity:1; }
+  100% { transform:scale(1.05); opacity:.72; }
+}
+@keyframes hudPortraitParticle {
+  0% { transform:translate(0,0) scale(.6); opacity:0; }
+  22% { opacity:.90; }
+  100% { transform:translate(var(--px),var(--py)) scale(.15); opacity:0; }
+}
+
+@media (max-width:980px), (max-height:720px) {
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+    width: 52px !important;
+    min-height: 78px !important;
+    grid-template-rows: 35px auto auto !important;
+    padding: 4px 4px 5px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen .ov2-pile-visual { width:34px !important; height:36px !important; }
+  body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card { width:19px !important; height:29px !important; left:8px !important; top:4px !important; }
+  body[data-visual-mode="alternative"] #gameScreen .ov2-pile-count { font-size:20px !important; }
+  #ilyosHudOrganicV2 #ov2MoveCount,
+  #ilyosHudOrganicV2 #ov2PushCount,
+  #ilyosHudOrganicV2 #ov2MagicCount { font-size:13px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ilyosHudOrganicV2 .ov2-side.is-active .ov2-avatar::after,
+  #ilyosHudOrganicV2 .ov2-side.turn-boost .ov2-avatar::before,
+  #ilyosHudOrganicV2 .hud-polish-particle { animation:none !important; }
+}

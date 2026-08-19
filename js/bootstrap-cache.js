@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V10_DRAW_LOWER_POLISH";
+  const VERSION = "ILYOS_20260819_HUD_POLISH_TARGETED_V2";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -48,18 +48,21 @@ function ilyosLoadScriptOnce(marker, src) {
   document.head.appendChild(node);
 }
 
-(function loadIlyosV10HudAndCards() {
-  const VERSION = '20260819-v10-draw-lower-polish';
+(function loadIlyosHudPolishTargetedV1() {
+  const VERSION = '20260819-hud-polish-targeted-v2';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
     ilyosLoadStyleOnce('card-cycle-v7-base-v10', `./css/card-cycle-animation-v7.css?v=${VERSION}`);
     ilyosLoadStyleOnce('card-cycle-v8-overrides-v10', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
     ilyosLoadStyleOnce('card-cycle-v10-polish', `./css/card-cycle-animation-v10.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('hud-polish-targeted-v1', `./css/hud-polish-targeted-v1.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
 
     ilyosLoadScriptOnce('deck-discard-hud-v10', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v10', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
     ilyosLoadScriptOnce('card-cycle-v10', `./js/card-cycle-animation-v10.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('hud-polish-targeted-v1', `./js/hud-polish-targeted-v1.js?v=${VERSION}`);
 
     /* Départ de partie en VUE FACE + caméra AUTO — inchangé. */
     ilyosLoadScriptOnce('camera-start-face-auto-v10', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);

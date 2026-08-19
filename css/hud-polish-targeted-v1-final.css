@@ -1,0 +1,133 @@
+/* ILYOS — verrou final du polish ciblé.
+   Sélecteurs renforcés pour passer après les correctifs HUD historiques. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Move #ov2MoveCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Push #ov2PushCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Magic #ov2MagicCount {
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  margin-top: 4px !important;
+  transform: translateY(1px) scale(1.04) !important;
+  transform-origin: top center !important;
+  text-shadow: 0 2px 5px rgba(0,0,0,.82), 0 0 7px rgba(255,230,166,.18) !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo {
+  box-sizing: border-box !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  transform: none !important;
+  transform-origin: center !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo:disabled {
+  opacity: .40 !important;
+  filter: none !important;
+  transition: none !important;
+}
+
+/* Pioche / Défausse V2 : plus de panneau. La pile EST le contrôle. */
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+  width: 52px !important;
+  min-height: 0 !important;
+  height: auto !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: auto 44px auto !important;
+  justify-items: center !important;
+  align-items: center !important;
+  row-gap: 2px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  clip-path: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  transform: translateY(-100%) !important;
+  transform-origin: center bottom !important;
+  overflow: visible !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-count,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-count {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  margin: 0 0 1px !important;
+  align-self: center !important;
+  font-size: 21px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-visual,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-visual {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  width: 42px !important;
+  height: 44px !important;
+  margin: 0 !important;
+  align-self: center !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-label,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-label {
+  grid-column: 1 !important;
+  grid-row: 3 !important;
+  margin: 1px 0 0 !important;
+  align-self: center !important;
+  font-size: 6.5px !important;
+  font-weight: 760 !important;
+  letter-spacing: .10em !important;
+  opacity: .66 !important;
+  text-align: center !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-card,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-card {
+  width: 24px !important;
+  height: 34px !important;
+  left: 9px !important;
+  top: 6px !important;
+  border-width: .8px !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 9px rgba(0,0,0,.34) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.ov2-pile-hit,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-pile-hit {
+  transform: translateY(-100%) scale(1.055) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-interactive:focus-visible {
+  outline: 1px solid rgba(220,186,255,.72) !important;
+  outline-offset: 4px !important;
+  border-radius: 6px !important;
+}
+
+@media (max-width:980px), (max-height:720px) {
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Move #ov2MoveCount,
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Push #ov2PushCount,
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Magic #ov2MagicCount {
+    font-size: 14px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+    width: 48px !important;
+    grid-template-rows: auto 40px auto !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-count,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-count {
+    font-size: 19px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-visual,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-visual {
+    width: 38px !important;
+    height: 40px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-card,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-card {
+    width: 22px !important;
+    height: 31px !important;
+    left: 8px !important;
+    top: 5px !important;
+  }
+}
