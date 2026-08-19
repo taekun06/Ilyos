@@ -1,16 +1,23 @@
-/* ILYOS — cycle visuel des cartes V5
-   Flux physique : PIOCHE -> MAIN -> ACTION ; puis DÉFAUSSE si jouée,
-   ou RÉSERVE si conservée. Une carte de réserve jouée finit en DÉFAUSSE.
-   Les trajectoires utilisent uniquement les éléments réellement visibles du HUD. */
+/* ILYOS — cycle visuel des cartes V6
+   Flux physique inchangé : PIOCHE -> MAIN -> ACTION ; puis DÉFAUSSE si jouée,
+   ou RÉSERVE si conservée. Cette couche ne modifie aucune règle de jeu.
+   V6 : animation uniquement pour le joueur local, cartes de pioche plus lisibles,
+   centrage strict au-dessus des actions et animation groupée pour les actions xN. */
 (() => {
   'use strict';
 
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
 
+  const ICONS = {
+    MOVE: `<svg viewBox="0 0 48 48" aria-hidden="true"><g fill="currentColor"><ellipse cx="17" cy="14" rx="5" ry="8"/><circle cx="13" cy="24" r="2"/><circle cx="17" cy="23" r="2"/><ellipse cx="31" cy="32" rx="5" ry="8"/><circle cx="27" cy="41" r="2"/><circle cx="31" cy="40" r="2"/></g></svg>`,
+    PUSH: `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M7 24h24M23 14l10 10-10 10" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="m39 10 2.2 7L48 19l-6.8 2.2L39 28l-2.2-6.8L30 19l6.8-2.2L39 10Z" fill="currentColor"/></svg>`,
+    MAGIC: `<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="m24 5 4.8 13.2L43 24l-14.2 5.8L24 43l-4.8-13.2L5 24l14.2-5.8L24 5Z" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="24" cy="24" r="4.2" fill="currentColor"/></svg>`
+  };
+
   const META = {
-    MOVE:  { label: 'DÉPLACER', symbol: '↟' },
-    PUSH:  { label: 'POUSSER',  symbol: '➜' },
-    MAGIC: { label: 'MAGIE',    symbol: '✦' }
+    MOVE:  { label: 'DÉPLACER', icon: ICONS.MOVE },
+    PUSH:  { label: 'POUSSER',  icon: ICONS.PUSH },
+    MAGIC: { label: 'MAGIE',    icon: ICONS.MAGIC }
   };
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -23,6 +30,7 @@
   let interceptingEndTurn = false;
   let bypassEndTurn = false;
   let actionAnimationQueue = Promise.resolve();
+  const pendingUsage = new Map();
 
   function cardType(card) {
     if (card?.classList.contains('action-move')) return 'MOVE';
@@ -51,6 +59,30 @@
 
   function endTarget() {
     return byId('ov2End') || byId('endTurnBtn');
+  }
+
+  /* Le moteur applique déjà .ai-turn pendant le tour IA. En ligne, les trois
+     boutons legacy sont verrouillés quand ce n'est pas le tour local. Cette
+     garde évite donc la pioche et les transferts pendant le tour adverse sans
+     introduire de dépendance au state interne de game.js. */
+  function isLocalVisualTurn() {
+    const game = byId('gameScreen');
+    if (!game || game.classList.contains('hidden') || game.classList.contains('ai-turn')) return false;
+
+    const visibleContext = [
+      byId('turnContextKicker')?.textContent,
+      byId('turnContextTitle')?.textContent,
+      byId('ov2Instruction')?.textContent
+    ].filter(Boolean).join(' ').toLocaleUpperCase('fr-FR');
+    if (/TOUR DE L[’']ADVERSAIRE|L[’']ADVERSAIRE JOUE|ORDINATEUR/.test(visibleContext)) return false;
+
+    const legacyActions = ['hudV2MoveCount', 'hudV2PushCount', 'hudV2MagicCount']
+      .map(byId)
+      .filter(Boolean);
+    const cardsPresent = miniCards().length > 0;
+    if (cardsPresent && legacyActions.length === 3 && legacyActions.every(button => button.disabled)) return false;
+
+    return true;
   }
 
   function activeReserveBadge() {
@@ -87,32 +119,40 @@
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
-  function syntheticRect(cx, cy, width = 76, height = 104) {
+  function syntheticRect(cx, cy, width = 84, height = 118) {
     return { left: cx - width / 2, top: cy - height / 2, width, height };
   }
 
-  function dockGeometry() {
-    const targets = ['MOVE', 'PUSH', 'MAGIC'].map(bottomTarget).map(rectOf).filter(Boolean);
-    if (!targets.length) return { cx: innerWidth / 2, top: innerHeight - 120 };
-    const centers = targets.map(center);
+  function actionGeometry() {
+    const rects = ['MOVE', 'PUSH', 'MAGIC'].map(bottomTarget).map(rectOf).filter(Boolean);
+    if (!rects.length) return { cx: innerWidth / 2, top: innerHeight - 120, left: innerWidth * .35, right: innerWidth * .65 };
+    const left = Math.min(...rects.map(r => r.left));
+    const right = Math.max(...rects.map(r => r.left + r.width));
     return {
-      cx: centers.reduce((sum, p) => sum + p.x, 0) / centers.length,
-      top: Math.min(...targets.map(r => r.top))
+      left,
+      right,
+      cx: (left + right) / 2,
+      top: Math.min(...rects.map(r => r.top))
     };
   }
 
-  function makeFlyingCard(type, extraClass = '') {
+  function makeFlyingCard(type, extraClass = '', count = 1) {
     const meta = META[type] || META.MOVE;
     const el = document.createElement('div');
-    el.className = `card-cycle-flying-card type-${type.toLowerCase()} ${extraClass}`.trim();
+    el.className = `card-cycle-flying-card type-${type.toLowerCase()} ${extraClass}${count > 1 ? ' card-cycle-stack-card' : ''}`.trim();
     el.setAttribute('aria-hidden', 'true');
-    el.innerHTML = `<span>${meta.symbol}</span><b>${meta.label}</b>`;
+    el.innerHTML = `
+      <span class="card-cycle-card-kicker">ACTION</span>
+      <span class="card-cycle-card-icon">${meta.icon}</span>
+      <b>${meta.label}</b>
+      <i class="card-cycle-card-rune" aria-hidden="true"></i>
+      ${count > 1 ? `<em class="card-cycle-batch">×${count}</em>` : ''}`;
     document.body.appendChild(el);
     return el;
   }
 
   async function fly(el, fromRect, toRect, {
-    duration = 460,
+    duration = 440,
     delay = 0,
     arc = 28,
     startScale = 1,
@@ -136,7 +176,7 @@
     const animation = el.animate([
       { transform: `translate(0,0) scale(${startScale}) rotate(${startRotate}deg)`, opacity: startOpacity },
       {
-        transform: `translate(${dx * .48}px,${dy * .43 - arc}px) scale(${(startScale + endScale) / 2 + .08}) rotate(${startRotate * -.6}deg)`,
+        transform: `translate(${dx * .48}px,${dy * .43 - arc}px) scale(${(startScale + endScale) / 2 + .075}) rotate(${startRotate * -.55}deg)`,
         opacity: 1,
         offset: .52
       },
@@ -144,7 +184,7 @@
     ], {
       duration,
       delay,
-      easing: 'cubic-bezier(.18,.74,.18,1)',
+      easing: 'cubic-bezier(.18,.78,.17,1)',
       fill: 'forwards'
     });
 
@@ -159,7 +199,7 @@
     setTimeout(() => node.classList.remove(className), 620);
   }
 
-  function plusOne(node, text = '+1') {
+  function floatCount(node, text = '+1') {
     const rect = rectOf(node);
     if (!rect) return;
     const p = document.createElement('div');
@@ -169,10 +209,10 @@
     p.style.top = `${rect.top}px`;
     document.body.appendChild(p);
     const a = p.animate([
-      { opacity: 0, transform: 'translate(-50%,6px) scale(.82)' },
-      { opacity: 1, transform: 'translate(-50%,-14px) scale(1.08)', offset: .35 },
-      { opacity: 0, transform: 'translate(-50%,-34px) scale(.92)' }
-    ], { duration: 620, easing: 'ease-out', fill: 'forwards' });
+      { opacity: 0, transform: 'translate(-50%,5px) scale(.84)' },
+      { opacity: 1, transform: 'translate(-50%,-13px) scale(1.08)', offset: .32 },
+      { opacity: 0, transform: 'translate(-50%,-31px) scale(.94)' }
+    ], { duration: 580, easing: 'ease-out', fill: 'forwards' });
     a.onfinish = () => p.remove();
   }
 
@@ -190,209 +230,244 @@
   }
 
   async function runDealAnimation(cards) {
+    if (!isLocalVisualTurn()) return;
     const types = cards.slice(0, 5).map(cardType).filter(Boolean);
     if (!types.length) return;
 
-    const dock = dockGeometry();
-    const visibleDeckRect = rectOf(deckTarget());
-    const sourceRect = visibleDeckRect
-      || syntheticRect(Math.max(70, dock.cx - 340), Math.max(120, dock.top - 30), 68, 92);
-    const fallback = visibleDeckRect ? null : fallbackDrawSource(sourceRect);
-    pulse(deckTarget(), 'ov2-pile-hit');
-
-    /* Les 5 cartes occupent volontairement une large zone lisible : environ
-       400 px au total sur desktop. Aucun chevauchement entre leurs libellés. */
-    const cardW = innerWidth < 900 ? 64 : 80;
-    const cardH = innerWidth < 900 ? 88 : 108;
-    const spacing = innerWidth < 900 ? 68 : 88;
-    const fanY = Math.max(118, dock.top - (innerHeight < 700 ? 124 : 162));
+    const actions = actionGeometry();
+    const cardW = innerWidth < 900 ? 70 : (innerWidth < 1250 ? 82 : 94);
+    const cardH = innerWidth < 900 ? 98 : (innerWidth < 1250 ? 114 : 132);
+    const maxSpan = Math.min(innerWidth - 52, 560);
+    const spacing = Math.min(cardW + 16, (maxSpan - cardW) / Math.max(1, types.length - 1));
+    const fanCenterY = Math.max(cardH / 2 + 76, actions.top - cardH / 2 - 34);
     const mid = (types.length - 1) / 2;
+
+    /* Le centre de la main est exactement celui des trois actions MOVE/PUSH/MAGIC. */
     const fanRects = types.map((_, index) => {
       const distance = index - mid;
       return syntheticRect(
-        dock.cx + distance * spacing,
-        fanY + Math.abs(distance) * 7,
+        actions.cx + distance * spacing,
+        fanCenterY + Math.abs(distance) * 5,
         cardW,
         cardH
       );
     });
+
+    const visibleDeckRect = rectOf(deckTarget());
+    const sourceRect = visibleDeckRect
+      || syntheticRect(Math.max(66, actions.left - 100), Math.max(100, actions.top - 54), 66, 90);
+    const fallback = visibleDeckRect ? null : fallbackDrawSource(sourceRect);
+    pulse(deckTarget(), 'ov2-pile-hit');
+
     const ghosts = types.map(type => makeFlyingCard(type, 'card-cycle-draw-card card-cycle-showcase-card'));
 
-    /* 1. Sortie de la vraie pile PIOCHE vers un éventail large. */
+    /* Sortie séquentielle de la pioche, puis vraie pause de lecture. */
     await Promise.all(ghosts.map((ghost, index) =>
       fly(ghost, sourceRect, fanRects[index], {
-        duration: 440,
-        delay: index * 90,
-        arc: 34,
-        startScale: .58,
+        duration: 500,
+        delay: index * 88,
+        arc: 42,
+        startScale: .48,
         endScale: 1,
-        startOpacity: .20,
+        startOpacity: .12,
         endOpacity: 1,
-        startRotate: (index - mid) * 2,
-        endRotate: (index - mid) * 3
+        startRotate: -6 + index * 1.5,
+        endRotate: (index - mid) * 2.2
       })
     ));
 
-    /* 2. Temps de lecture réel : les cinq cartes restent toutes visibles. */
-    await sleep(innerHeight < 700 ? 520 : 760);
+    await sleep(innerHeight < 700 ? 700 : 980);
 
-    /* 3. Chaque carte descend dans son action exacte. */
+    /* Les cinq cartes rejoignent leurs actions. Les compteurs sont regroupés :
+       une main 3 MOVE / 1 PUSH / 1 MAGIC affiche +3, +1, +1 au lieu de 5 labels. */
+    const drawnCounts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    types.forEach(type => drawnCounts[type]++);
+
     await Promise.all(ghosts.map(async (ghost, index) => {
       const target = bottomTarget(types[index]);
       const targetRect = rectOf(target);
       if (!targetRect) { ghost.remove(); return; }
       await fly(ghost, fanRects[index], targetRect, {
-        duration: 480,
-        delay: index * 72,
-        arc: 30,
+        duration: 460,
+        delay: index * 48,
+        arc: 26,
         startScale: 1,
-        endScale: .24,
-        endOpacity: .05,
-        startRotate: (index - mid) * 3,
+        endScale: .22,
+        endOpacity: .04,
+        startRotate: (index - mid) * 2.2,
         endRotate: 0
       });
-      pulse(target);
-      plusOne(target);
       ghost.remove();
     }));
 
+    Object.entries(drawnCounts).forEach(([type, count]) => {
+      if (!count) return;
+      const target = bottomTarget(type);
+      pulse(target);
+      floatCount(target, `+${count}`);
+    });
+
     fallback?.classList.add('is-leaving');
-    if (fallback) setTimeout(() => fallback.remove(), 260);
+    if (fallback) setTimeout(() => fallback.remove(), 240);
   }
 
   function reserveCurrent(type) {
     return parseCount(reserveCountNode(type)?.textContent);
   }
 
-  function incrementReserveVisual(type) {
+  function incrementReserveVisual(type, count = 1) {
     const node = reserveCountNode(type);
     if (!node) return;
-    node.textContent = String(Math.min(5, parseCount(node.textContent) + 1));
+    node.textContent = String(Math.min(5, parseCount(node.textContent) + count));
   }
 
-  async function animateToDiscard(type, fromNode, count = 1, {fromReserve = false} = {}) {
-    const discard = discardTarget();
-    const discardRect = rectOf(discard);
-    if (!discardRect) return;
-
-    for (let i = 0; i < count; i++) {
-      const startNode = fromNode || (fromReserve ? reserveTarget(type) : bottomTarget(type));
-      const startRect = rectOf(startNode);
-      if (!startRect) continue;
-      const ghost = makeFlyingCard(type, 'card-cycle-used-card');
-      await fly(ghost, startRect, discardRect, {
-        duration: 430,
-        delay: i * 55,
-        arc: 34,
-        startScale: .58,
-        endScale: .22,
-        startOpacity: .96,
-        endOpacity: .05
-      });
-      ghost.remove();
-      pulse(discard, 'ov2-pile-hit');
-    }
-  }
-
-  async function animateReserveUse(type, count = 1) {
-    const reserve = reserveTarget(type);
+  async function animateActionUse(type, count = 1, freshUsed = 0, reserveUsed = 0) {
+    if (!isLocalVisualTurn() || !META[type]) return;
     const action = bottomTarget(type);
     const discard = discardTarget();
-    const reserveRect = rectOf(reserve);
     const actionRect = rectOf(action);
     const discardRect = rectOf(discard);
-    if (!reserveRect || !actionRect || !discardRect) return;
+    if (!actionRect || !discardRect) return;
 
-    for (let i = 0; i < count; i++) {
-      const ghost = makeFlyingCard(type, 'card-cycle-reserve-use-card');
-      await fly(ghost, reserveRect, actionRect, {
-        duration: 360,
-        delay: i * 60,
-        arc: 38,
-        startScale: .42,
-        endScale: .55,
-        startOpacity: .88,
-        endOpacity: .95
-      });
-      pulse(action);
-      await fly(ghost, actionRect, discardRect, {
-        duration: 390,
-        arc: 28,
-        startScale: .55,
-        endScale: .22,
-        startOpacity: .95,
-        endOpacity: .05
-      });
-      ghost.remove();
-      pulse(discard, 'ov2-pile-hit');
-    }
-  }
-
-  async function runEndTurnAnimation(cards) {
-    /* Avec la règle physique V1, une carte déjà jouée quitte immédiatement la
-       main. Les cartes encore visibles ici sont donc les cartes réellement
-       inutilisées, candidates à la réserve. */
-    const entries = cards.slice(0, 5).map(card => ({ type: cardType(card) || 'MOVE' }));
-    if (!entries.length) {
-      pulse(endTarget(), 'card-cycle-end-hit');
-      return;
-    }
-
-    const capacity = {
-      MOVE: Math.max(0, 5 - reserveCurrent('MOVE')),
-      PUSH: Math.max(0, 5 - reserveCurrent('PUSH')),
-      MAGIC: Math.max(0, 5 - reserveCurrent('MAGIC'))
-    };
-    const banked = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    const discard = discardTarget();
-    const discardRect = rectOf(discard);
-
-    for (let index = 0; index < entries.length; index++) {
-      const { type } = entries[index];
-      const from = rectOf(bottomTarget(type));
-      if (!from) continue;
-
-      if (banked[type] < capacity[type]) {
-        const reserve = reserveTarget(type);
-        const to = rectOf(reserve);
-        if (!to) continue;
-        banked[type]++;
-        const ghost = makeFlyingCard(type, 'card-cycle-bank-card');
-        await fly(ghost, from, to, {
-          duration: 500,
-          arc: 42,
-          startScale: .62,
-          endScale: .32,
-          startOpacity: .96,
-          endOpacity: .10
-        });
-        ghost.remove();
-        incrementReserveVisual(type);
-        pulse(reserve, 'card-cycle-reserve-hit');
-        plusOne(reserve, '+1 RÉSERVE');
-      } else if (discardRect) {
-        /* Réserve de ce type déjà à 5 : la carte ne peut pas être stockée et
-           rejoint directement la défausse. */
-        const ghost = makeFlyingCard(type, 'card-cycle-overflow-card');
-        await fly(ghost, from, discardRect, {
-          duration: 450,
+    /* Une action consommant plusieurs cartes produit UNE animation, matérialisée
+       par une petite pile avec badge ×N. */
+    if (count === 1 && reserveUsed === 1 && freshUsed === 0) {
+      const reserve = reserveTarget(type);
+      const reserveRect = rectOf(reserve);
+      if (reserveRect) {
+        const ghost = makeFlyingCard(type, 'card-cycle-reserve-use-card', 1);
+        await fly(ghost, reserveRect, actionRect, {
+          duration: 330,
           arc: 34,
-          startScale: .60,
-          endScale: .22,
-          startOpacity: .95,
-          endOpacity: .05
+          startScale: .38,
+          endScale: .56,
+          startOpacity: .84,
+          endOpacity: .98
+        });
+        pulse(action);
+        await fly(ghost, actionRect, discardRect, {
+          duration: 390,
+          arc: 26,
+          startScale: .56,
+          endScale: .20,
+          startOpacity: .98,
+          endOpacity: .04
         });
         ghost.remove();
         pulse(discard, 'ov2-pile-hit');
+        floatCount(discard, '+1');
+        return;
       }
-      await sleep(45);
     }
 
-    /* La réserve est une destination finale : aucune carte réservée ne repart
-       vers Fin du tour ou vers la défausse. Le bouton ne reçoit qu'un léger
-       signal de conclusion de la séquence. */
+    if (reserveUsed > 0) {
+      pulse(reserveTarget(type), 'card-cycle-reserve-hit');
+      floatCount(reserveTarget(type), `−${reserveUsed}`);
+    }
+
+    const ghost = makeFlyingCard(type, 'card-cycle-used-card card-cycle-batch-use', count);
+    await fly(ghost, actionRect, discardRect, {
+      duration: count > 1 ? 470 : 410,
+      arc: count > 1 ? 38 : 28,
+      startScale: count > 1 ? .70 : .58,
+      endScale: .20,
+      startOpacity: .98,
+      endOpacity: .04
+    });
+    ghost.remove();
+    pulse(action);
+    pulse(discard, 'ov2-pile-hit');
+    floatCount(discard, `+${count}`);
+  }
+
+  function queueUsage(type, { fresh = 0, reserve = 0 } = {}) {
+    if (!META[type] || !isLocalVisualTurn()) return;
+    const current = pendingUsage.get(type) || { fresh: 0, reserve: 0, timer: null };
+    current.fresh += Math.max(0, Number(fresh) || 0);
+    current.reserve += Math.max(0, Number(reserve) || 0);
+    if (current.timer) clearTimeout(current.timer);
+    current.timer = setTimeout(() => {
+      pendingUsage.delete(type);
+      const total = current.fresh + current.reserve;
+      if (!total) return;
+      actionAnimationQueue = actionAnimationQueue.then(() =>
+        animateActionUse(type, total, current.fresh, current.reserve)
+      );
+    }, 72);
+    pendingUsage.set(type, current);
+  }
+
+  async function runEndTurnAnimation(cards) {
+    if (!isLocalVisualTurn()) return;
+
+    const grouped = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    cards.slice(0, 5).forEach(card => {
+      const type = cardType(card);
+      if (type) grouped[type]++;
+    });
+
+    const jobs = [];
+    let order = 0;
+    for (const type of ['MOVE', 'PUSH', 'MAGIC']) {
+      const count = grouped[type];
+      if (!count) continue;
+
+      const capacity = Math.max(0, 5 - reserveCurrent(type));
+      const bankCount = Math.min(count, capacity);
+      const overflow = count - bankCount;
+      const from = rectOf(bottomTarget(type));
+      if (!from) continue;
+      const delay = order++ * 90;
+
+      if (bankCount > 0) {
+        const reserve = reserveTarget(type);
+        const to = rectOf(reserve);
+        if (to) {
+          jobs.push((async () => {
+            await sleep(delay);
+            const ghost = makeFlyingCard(type, 'card-cycle-bank-card', bankCount);
+            await fly(ghost, from, to, {
+              duration: 500,
+              arc: 44,
+              startScale: bankCount > 1 ? .70 : .60,
+              endScale: .30,
+              startOpacity: .98,
+              endOpacity: .06
+            });
+            ghost.remove();
+            incrementReserveVisual(type, bankCount);
+            pulse(reserve, 'card-cycle-reserve-hit');
+            floatCount(reserve, `+${bankCount} RÉSERVE`);
+          })());
+        }
+      }
+
+      if (overflow > 0) {
+        const discard = discardTarget();
+        const to = rectOf(discard);
+        if (to) {
+          jobs.push((async () => {
+            await sleep(delay + (bankCount ? 110 : 0));
+            const ghost = makeFlyingCard(type, 'card-cycle-overflow-card', overflow);
+            await fly(ghost, from, to, {
+              duration: 430,
+              arc: 32,
+              startScale: overflow > 1 ? .68 : .58,
+              endScale: .20,
+              startOpacity: .96,
+              endOpacity: .04
+            });
+            ghost.remove();
+            pulse(discard, 'ov2-pile-hit');
+            floatCount(discard, `+${overflow}`);
+          })());
+        }
+      }
+    }
+
+    if (jobs.length) await Promise.all(jobs);
     pulse(endTarget(), 'card-cycle-end-hit');
-    await sleep(100);
+    await sleep(90);
   }
 
   function inspectDeck() {
@@ -400,7 +475,10 @@
     const hasDeal = cards.some(card => card.classList.contains('deal-card'));
     if (hasDeal && !dealActive) {
       dealActive = true;
-      requestAnimationFrame(() => runDealAnimation(miniCards()));
+      /* Le HUD et .ai-turn peuvent être mis à jour quelques ms après la main. */
+      setTimeout(() => {
+        if (isLocalVisualTurn()) runDealAnimation(miniCards());
+      }, 80);
     } else if (!hasDeal) {
       dealActive = false;
     }
@@ -410,15 +488,13 @@
     window.addEventListener('ilyos:fresh-card-used', event => {
       const type = event.detail?.type;
       const count = Math.max(1, Number(event.detail?.count) || 1);
-      if (!META[type]) return;
-      actionAnimationQueue = actionAnimationQueue.then(() => animateToDiscard(type, bottomTarget(type), count));
+      queueUsage(type, { fresh: count });
     });
 
     window.addEventListener('ilyos:reserve-card-used', event => {
       const type = event.detail?.type;
       const count = Math.max(1, Number(event.detail?.count) || 1);
-      if (!META[type]) return;
-      actionAnimationQueue = actionAnimationQueue.then(() => animateReserveUse(type, count));
+      queueUsage(type, { reserve: count });
     });
   }
 
@@ -426,6 +502,7 @@
     document.addEventListener('click', async event => {
       const button = event.target?.closest?.('#endTurnBtn');
       if (!button || button.disabled || bypassEndTurn || interceptingEndTurn) return;
+      if (!isLocalVisualTurn()) return;
 
       const cards = miniCards();
       event.preventDefault();
@@ -465,9 +542,9 @@
     });
     inspectDeck();
 
-    window.ILYOS_CARD_CYCLE_V5 = {
+    window.ILYOS_CARD_CYCLE_V6 = {
       inspect: inspectDeck,
-      animateReserveUse,
+      isLocalVisualTurn,
       stop: () => observer?.disconnect()
     };
   }
