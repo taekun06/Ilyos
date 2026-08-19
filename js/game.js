@@ -798,11 +798,11 @@
           // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
           // ce qui a réellement changé. Voir syncKayKitScene pour le détail.
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
-          villagesBuilt: false,         // châteaux+fanions : construits une seule fois, jamais reconstruits
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
-          islandLayerObjects: [],       // objets à disposer quand la signature d'îles change
+          islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
+          islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
-          villageRegistry: new Map(),   // playerId -> chateau (construit une seule fois)
+          villageRegistry: new Map(),   // playerId -> chateau (reconstruit si posé en secours puis modèle réel disponible)
           highlightRegistry: new Map(), // "r,c" -> { signature, objects[] } pour les surbrillances de case
           looseCrownRegistry: new Map(),// "primary"/"secondary" -> { signature, objects[] }
           transientDynamicChildren: []  // ghosts de pose/rotation magique : reconstruits à chaque sync (peu coûteux, état éphémère)
@@ -1852,9 +1852,17 @@
           tmp.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
           tmp.getHSL(hsl);
           const hueDeg = hsl.h * 360;
+          // Les 4 châteaux KayKit sources (castle0..3) ne sont pas tous
+          // bleus/rouges : ce sont des modèles bleu/rouge/VERT/JAUNE distincts
+          // (building_castle_{blue,red,green,yellow}.gltf). Ne détecter que
+          // les bandes bleue/rouge laissait les châteaux vert et jaune
+          // intacts — jamais reteintés vers la couleur réelle du joueur (ex:
+          // un joueur lavande héritant du modèle jaune restait jaune).
           const isBlueBand = hsl.s > .25 && hueDeg >= 190 && hueDeg <= 260;
           const isRedBand = hsl.s > .30 && (hueDeg >= 335 || hueDeg <= 15);
-          if (isBlueBand || isRedBand) {
+          const isGreenBand = hsl.s > .25 && hueDeg >= 80 && hueDeg <= 165;
+          const isYellowBand = hsl.s > .35 && hueDeg >= 35 && hueDeg <= 70;
+          if (isBlueBand || isRedBand || isGreenBand || isYellowBand) {
             tmp.setHSL(accentHsl.h, Math.max(hsl.s, accentHsl.s * .85), hsl.l);
             px[i] = tmp.r * 255; px[i + 1] = tmp.g * 255; px[i + 2] = tmp.b * 255;
           }
@@ -5395,22 +5403,26 @@
         return group;
       }
 
-      function renderKayKitIslandBlocks(group) {
-        // Masqué pour toute la durée de l'action MAGIE (plus seulement une fois la
-        // rotation amorcée) : le contour d'origine + le bloc-ghost teinté de
-        // renderKayKitMagicRotationPreview prennent le relais dès la sélection de
-        // l'île, en continu — sans ce masquage assorti, le bloc réel et le ghost se
-        // superposaient à 0 cran de rotation.
-        const hideSelectedForMagic = state?.phase === "ACTION"
+      /**
+       * Masque/affiche le bloc réel de l'île en cours de rotation MAGIE — pas
+       * une reconstruction, juste `.visible` : appelé à CHAQUE sync (le survol/
+       * la sélection ne change pas la signature de l'île, donc ne passe pas par
+       * la reconstruction incrémentale de syncKayKitScene). Sans ce masquage,
+       * le bloc réel et le ghost de renderKayKitMagicRotationPreview se
+       * superposaient à 0 cran de rotation.
+       */
+      function refreshKayKitMagicHiddenIsland() {
+        if (!kaykit3D) return;
+        const hiddenId = (state?.phase === "ACTION"
           && state?.selectedActionType === "MAGIC"
           && state?.selectedIslandId
-          && Array.isArray(state?.magicPreviewCells);
-        (state?.islands || []).forEach(island => {
-          if (hideSelectedForMagic && island.id === state.selectedIslandId) return;
-          const block = makeKayKitIslandBlock(island);
-          group.add(block);
+          && Array.isArray(state?.magicPreviewCells))
+          ? String(state.selectedIslandId)
+          : null;
+        kaykit3D.islandObjectRegistry.forEach((entry, id) => {
+          const visible = id !== hiddenId;
+          entry.objects.forEach(object => { object.visible = visible; });
         });
-        // Le léger retrait de chaque bloc crée une séparation fine sans rainure artificielle.
       }
 
       function renderKayKitPlacementPreview() {
@@ -5439,9 +5451,9 @@
         if (!state.selectedIslandId || !Array.isArray(state.magicPreviewCells)) return;
 
         // Trace au sol, discrète, de l'emplacement de départ : le bloc normal de
-        // cette île est caché pendant toute l'action (voir hideSelectedForMagic dans
-        // renderKayKitIslandBlocks), donc sans ce contour on ne voit plus du tout
-        // d'où elle vient. Volontairement très en retrait du ghost coloré.
+        // cette île est caché pendant toute l'action (voir refreshKayKitMagicHiddenIsland),
+        // donc sans ce contour on ne voit plus du tout d'où elle vient.
+        // Volontairement très en retrait du ghost coloré.
         const originalIsland = state.islands.find(item => item.id === state.selectedIslandId);
         if (originalIsland?.cells?.length) {
           kaykitIslandComponents(originalIsland.cells).forEach(component => {
@@ -5723,6 +5735,12 @@
       function createCharacterVisual(character, index) {
         const playerId = character.player ?? 0;
         const assetKey = resolveHeroAssetKey(character, index);
+        // Modèle encore en cours de chargement (pas encore dans assets, pas
+        // encore marqué en échec) : on attend plutôt que de poser un modèle
+        // de secours qu'il faudrait ensuite remplacer à chaud — l'attente est
+        // très brève (assets locaux). Le modèle de secours ne reste utilisé
+        // que si l'asset a réellement échoué (kaykit3D.failedAssets).
+        if (!kaykit3D.assets.has(assetKey) && !kaykit3D.failedAssets.has(assetKey)) return null;
         const clips = kaykit3D?.assetAnimations.get(assetKey) || [];
         let wrapper = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
         const usesFallback = !wrapper;
@@ -5775,6 +5793,7 @@
           animator,
           seed,
           hasClips: clips.length > 0 && !usesFallback,
+          usesFallback,
           headBone: animator ? findHeadBone(model) : null,
           glowMaterials,
           teamColor: new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId] || "#ffffff"),
@@ -5973,8 +5992,7 @@
           const assetKey = resolveHeroAssetKey(character, index);
           let visual = kaykit3D.characterVisuals.get(id);
 
-          // Reconstruction UNIQUEMENT si le modèle change réellement, ou si le
-          // gardien vient d'apparaître.
+          // Reconstruction UNIQUEMENT si le modèle change réellement.
           if (visual && visual.assetKey !== assetKey) {
             disposeCharacterVisual(visual);
             visual = null;
@@ -5982,6 +6000,10 @@
 
           const isNew = !visual;
           if (!visual) visual = createCharacterVisual(character, index);
+          // Modèle KayKit pas encore chargé : on ne pose rien plutôt qu'un
+          // modèle de secours (voir createCharacterVisual) — le gardien
+          // apparaîtra dès que son modèle sera prêt, à la prochaine
+          // synchronisation (assets locaux, attente très brève).
           if (!visual) return;
 
           // Un gardien réellement nouveau (pose d'île) joue son apparition ;
@@ -7056,41 +7078,68 @@
 
 
 
-      function renderKayKitForestNatureOnIslands(group) {
-        if (!kaykit3D || !state?.islands?.length) return;
-        const occupied = new Set();
-        (state.characters || []).forEach(character => occupied.add(key(character.r, character.c)));
-        activeArtifacts().forEach(artifact => {
-          if (artifact.active && !artifact.carrierId && Number.isFinite(artifact.r) && Number.isFinite(artifact.c)) occupied.add(key(artifact.r, artifact.c));
+      const KAYKIT_FOREST_ASSETS = [
+        { key: "forestTree", width: .34, height: .70, scale: .90 },
+        { key: "grain", width: .32, height: .34, scale: .85 },
+        { key: "forestRock", width: .30, height: .24, scale: .92 },
+        { key: "forestGrass", width: .27, height: .18, scale: .88 }
+      ];
+
+      /**
+       * Décor forestier d'UNE SEULE île (voir kaykitBuildIslandVisual) —
+       * retourne la liste d'objets à ajouter, ne touche pas au groupe.
+       * `occupied` est calculé une seule fois par sync (personnages/artefacts),
+       * pas par île.
+       */
+      function buildKayKitIslandForestDecor(island, occupied) {
+        const objects = [];
+        const cells = (island.cells || []).filter(([r, c]) => {
+          const cellKey = key(r, c);
+          return !occupied.has(cellKey) && !villageAt(r, c) && !isSanctuary(r, c);
         });
-        const forestAssets = [
-          { key: "forestTree", width: .34, height: .70, scale: .90 },
-          { key: "grain", width: .32, height: .34, scale: .85 },
-          { key: "forestRock", width: .30, height: .24, scale: .92 },
-          { key: "forestGrass", width: .27, height: .18, scale: .88 }
-        ];
-        (state.islands || []).forEach(island => {
-          const cells = (island.cells || []).filter(([r, c]) => {
-            const cellKey = key(r, c);
-            return !occupied.has(cellKey) && !villageAt(r, c) && !isSanctuary(r, c);
-          });
-          if (cells.length < 3) return;
-          cells.sort((a, b) => kaykitHash("forest-cell", island.id, b[0], b[1]) - kaykitHash("forest-cell", island.id, a[0], a[1]));
-          const amount = cells.length >= 7 ? 2 : 1;
-          for (let index = 0; index < Math.min(amount, cells.length); index++) {
-            const [r, c] = cells[index];
-            const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * forestAssets.length) % forestAssets.length;
-            const spec = forestAssets[pick];
-            const object = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
-            if (!object) continue;
-            const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
-            object.position.set(p.x, p.y + .015, p.z);
-            object.rotation.y = kaykitHash("forest-rotation", island.id, r, c) * Math.PI * 2;
-            object.scale.multiplyScalar(spec.scale);
-            object.userData.forestNatureDecoration = true;
-            group.add(object);
-          }
-        });
+        if (cells.length < 3) return objects;
+        cells.sort((a, b) => kaykitHash("forest-cell", island.id, b[0], b[1]) - kaykitHash("forest-cell", island.id, a[0], a[1]));
+        const amount = cells.length >= 7 ? 2 : 1;
+        for (let index = 0; index < Math.min(amount, cells.length); index++) {
+          const [r, c] = cells[index];
+          const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * KAYKIT_FOREST_ASSETS.length) % KAYKIT_FOREST_ASSETS.length;
+          const spec = KAYKIT_FOREST_ASSETS[pick];
+          const object = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
+          if (!object) continue;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+          object.position.set(p.x, p.y + .015, p.z);
+          object.rotation.y = kaykitHash("forest-rotation", island.id, r, c) * Math.PI * 2;
+          object.scale.multiplyScalar(spec.scale);
+          object.userData.forestNatureDecoration = true;
+          objects.push(object);
+        }
+        return objects;
+      }
+
+      /** Signature d'UNE île : tout ce qui influence son bloc+coque+décor. */
+      function kaykitIslandSignature(island) {
+        const cells = island.cells || [];
+        let sig = (island.visualVariant ?? 0) + ":" + (Number.isInteger(island.owner) ? island.owner : "-") + ":";
+        for (let j = 0; j < cells.length; j++) sig += cells[j][0] + "." + cells[j][1] + ",";
+        return sig;
+      }
+
+      /**
+       * Bloc+coque+décor d'UNE île, prêts à ajouter au groupe dynamique.
+       * Isolé de renderKayKitIslandBlocks (qui bouclait sur TOUTES les îles)
+       * pour permettre la reconstruction incrémentale : voir l'appelant dans
+       * syncKayKitScene, qui ne rappelle cette fonction que pour l'île dont la
+       * signature a changé — la géométrie de la coque elle-même reste de toute
+       * façon mise en cache par forme (kaykitGeometry, voir addKayKitIslandHull),
+       * mais le clonage des blocs/matériaux par cellule ne l'était pas et se
+       * refaisait pour TOUT le plateau à chaque pose d'île.
+       */
+      function buildKayKitIslandVisual(island, occupied) {
+        const objects = [];
+        const block = makeKayKitIslandBlock(island);
+        objects.push(block);
+        objects.push(...buildKayKitIslandForestDecor(island, occupied));
+        return objects;
       }
 
       function syncKayKitScene() {
@@ -7153,16 +7202,51 @@
           const islandsSig = kaykitIslandsSignature(state.islands);
           const rebuildIslandLayer = islandsSig !== kaykit3D.islandsSignature;
           if (rebuildIslandLayer) {
+            // INCRÉMENTAL PAR ÎLE : ne reconstruit que l'île dont la
+            // signature a changé (pose, retrait, rotation), pas tout le
+            // plateau — voir buildKayKitIslandVisual. La géométrie de coque
+            // est déjà mise en cache par forme (kaykitGeometry), mais le
+            // clonage des blocs/matériaux/décor par cellule ne l'était pas et
+            // se refaisait pour TOUTES les îles à chaque pose, causant des
+            // pics de 100-300ms mesurés en jeu (voir window.ILYOS_PERF).
+            const currentIds = new Set(state.islands.map(island => String(island.id)));
+            kaykit3D.islandObjectRegistry.forEach((entry, id) => {
+              if (currentIds.has(id)) return;
+              disposeKayKitObjects(entry.objects);
+              kaykit3D.islandObjectRegistry.delete(id);
+            });
+            const occupied = new Set();
+            (state.characters || []).forEach(character => occupied.add(key(character.r, character.c)));
+            activeArtifacts().forEach(artifact => {
+              if (artifact.active && !artifact.carrierId && Number.isFinite(artifact.r) && Number.isFinite(artifact.c)) occupied.add(key(artifact.r, artifact.c));
+            });
+            state.islands.forEach(island => {
+              const id = String(island.id);
+              const signature = kaykitIslandSignature(island);
+              const entry = kaykit3D.islandObjectRegistry.get(id);
+              if (entry && entry.signature === signature) return;
+              if (entry) disposeKayKitObjects(entry.objects);
+              const objects = buildKayKitIslandVisual(island, occupied);
+              objects.forEach(object => dynamic.add(object));
+              kaykit3D.islandObjectRegistry.set(id, { objects, signature });
+            });
+
+            // Coutures + piédestaux : dépendent de l'adjacence entre îles
+            // (donc de TOUT le plateau) mais restent bon marché — géométries
+            // mises en cache, pas de clonage GLTF — rebâtir l'ensemble à
+            // chaque changement reste largement moins coûteux que le pic
+            // ci-dessus, inutile de les rendre incrémentaux aussi.
             disposeKayKitObjects(kaykit3D.islandLayerObjects);
             const before = dynamic.children.length;
-            // Les îles sont fusionnées visuellement : un seul bloc par île, sans quadrillage interne.
-            renderKayKitIslandBlocks(dynamic);
             renderKayKitIslandSeams(dynamic);
-            // Variation visuelle discrète issue du Forest Nature Pack.
-            renderKayKitForestNatureOnIslands(dynamic);
             kaykit3D.islandLayerObjects.push(...dynamic.children.slice(before));
             kaykit3D.pedestalRegistry = new Map();
           }
+          // Masquage du bloc réel pendant une rotation MAGIE en cours : pas une
+          // reconstruction (voir refreshKayKitMagicHiddenIsland), donc appelé à
+          // CHAQUE sync, y compris celles qui ne passent pas par rebuildIslandLayer
+          // (sélection/survol pendant l'action).
+          refreshKayKitMagicHiddenIsland();
 
           const artifactByCarrier = new Map();
           [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
@@ -7199,8 +7283,25 @@
 
               if (village) {
                 const playerId = village.id ?? state.players.indexOf(village);
-                if (!kaykit3D.villagesBuilt) {
-                  const assetKey = `castle${Math.max(0, Math.min(3, playerId))}`;
+                const assetKey = `castle${Math.max(0, Math.min(3, playerId))}`;
+                // Clé = la CASE (cellKey), pas le joueur : en 2 joueurs, chacun
+                // possède 2 villages en diagonale (voir getVillageAssignments
+                // dans core.js) — villageAt(r,c) renvoie alors le MÊME objet
+                // joueur pour ses deux cases. Une clé par playerId ne gardait
+                // donc qu'un seul château par joueur : le second village de
+                // chaque joueur n'avait jamais le sien (case vide).
+                const villageKey = cellKey;
+                // Construit une seule fois, mais seulement une fois le vrai
+                // modèle KayKit disponible : tant qu'il charge encore, on ne
+                // pose RIEN plutôt qu'un modèle de secours qui devrait ensuite
+                // être remplacé (l'ancienne version de ce correctif tentait ce
+                // remplacement à chaud et pouvait faire disparaître le château
+                // si le remplacement échouait). L'attente ne dure qu'un instant
+                // au tout premier rendu (assets locaux, chargement rapide) ;
+                // le modèle de secours ne sert plus qu'au cas — normalement
+                // jamais atteint — où l'asset a définitivement échoué.
+                const assetStillLoading = !kaykit3D.assets.has(assetKey) && !kaykit3D.failedAssets.has(assetKey);
+                if (!kaykit3D.villageRegistry.has(villageKey) && !assetStillLoading) {
                   const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
                   let castle = cloneKayKitAsset(assetKey, { maxWidth: .78, maxHeight: 1.18, targetFloor: 0 });
                   if (castle) accentVillageColors(castle, villageAccent);
@@ -7223,9 +7324,9 @@
                     flag.position.set(.48, 0, .34);
                     castle.add(flag);
                   }
-                  kaykit3D.villageRegistry.set(playerId, castle);
+                  kaykit3D.villageRegistry.set(villageKey, castle);
                 }
-                const castle = kaykit3D.villageRegistry.get(playerId);
+                const castle = kaykit3D.villageRegistry.get(villageKey);
                 if (castle) registerKayKitCellVisual(r, c, castle);
               }
 
@@ -7233,7 +7334,6 @@
             }
           }
           if (rebuildIslandLayer) kaykit3D.islandsSignature = islandsSig;
-          kaykit3D.villagesBuilt = true;
 
           // Héros / gardiens — mise à jour INCRÉMENTALE d'un registre persistant.
           // Les modèles, squelettes et AnimationMixer ne sont plus reconstruits
