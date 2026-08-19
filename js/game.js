@@ -806,8 +806,6 @@
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
-          distantDecorBuilt: false,     // îlots lointains habillés (montagnes/cascade) : statique, construit une seule fois
-          nearBoardClouds: [],          // objets "proches" (nuages + montagnes) visibles uniquement en vue "front" — voir refreshKayKitBoardCloudVisibility
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -1468,31 +1466,42 @@
           });
         }
 
-        // COUCHE 3 — cinq silhouettes lointaines seulement : « ILYOS fait partie d'un
-        // immense archipel », pas « il y a d'autres objets à cliquer ». Elles flottent
-        // entre le plateau et la mer de nuages, hors du cylindre de sécurité, et à un
-        // rayon supérieur à la distance orbitale maximale : la caméra reste donc
-        // toujours à l'intérieur de leur anneau et aucune ne peut passer devant le jeu.
-        // Altitudes toutes sous le niveau du plateau : l'archipel lointain se lit
-        // « plus bas et plus loin », il ne vient jamais flotter à hauteur de jeu.
-        // Deux rapprochés (30/32, juste au-dessus de `farRing` et `orbit.maxDistance`
-        // = 25 : 5-7 unités de marge, la caméra ne peut donc jamais les atteindre) pour
-        // qu'ils se distinguent déjà au zoom de jeu normal ; les deux autres restent
-        // très loin, pour la profondeur en zoom éloigné.
-        [
+        // COUCHE 3 — îlots lointains : « ILYOS fait partie d'un immense
+        // archipel », pas « il y a d'autres objets à cliquer ». Toutes sûres
+        // PAR CONSTRUCTION (hors du cylindre de sécurité — voir
+        // kaykitSkyPlacementAllowed — jamais par masquage conditionnel).
+        // Deux groupes :
+        //  - "horizon" (rayon 30-49, très sous le niveau du plateau) : la
+        //    silhouette d'archipel lointain, surtout lisible en isométrique/
+        //    zoom arrière — la caméra (maxDistance 25) reste toujours à
+        //    l'intérieur de leur anneau, aucune ne peut passer devant le jeu.
+        //  - "proches" (rayon ≈9.8, hauteur ≈1.3) : calées au plus près du
+        //    rayon de sécurité pour dépasser dans le cadrage "front" par
+        //    défaut (vérifié par projection caméra réelle, azimuths repris
+        //    de l'arc déjà validé pour les nuages proches ci-dessus) — ce
+        //    sont elles qui portent "une île → falaise → ciel" en vue de
+        //    face, pas les lointaines qui restent hors cadre à cette
+        //    distance.
+        // Densité pilotée par kaykit3D.qualityMode (desktop ~5, mobile ~3).
+        const isletEconomy = kaykit3D.qualityMode === "performance";
+        const horizonIslets = [
           { azimuth: .62, radius: 30, y: -5.8, scale: 1.5, tower: true },
           { azimuth: 1.94, radius: 49, y: -4.4, scale: 1.9, tower: false },
-          { azimuth: 3.05, radius: 32, y: -8.4, scale: 1.3, tower: false },
-          { azimuth: 4.36, radius: 62, y: -6.0, scale: 2.2, tower: true }
-        ].forEach((spec, index) => {
-          const x = Math.cos(spec.azimuth) * spec.radius;
-          const z = Math.sin(spec.azimuth) * spec.radius;
-          if (spec.radius < KAYKIT_SKY.farRing) return;
-          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
-          const islet = makeKayKitDistantIslet(spec.scale, spec.tower, index / 4);
-          islet.position.set(x, spec.y, z);
-          sky.add(islet);
-        });
+          { azimuth: 3.05, radius: 32, y: -8.4, scale: 1.3, tower: false }
+        ];
+        const nearIslets = [
+          { azimuth: 3.93, radius: 9.8, y: 1.3, scale: 1.6, tower: false },
+          { azimuth: 5.5, radius: 9.9, y: 1.5, scale: 1.9, tower: true }
+        ];
+        [...(isletEconomy ? horizonIslets.slice(0, 1) : horizonIslets), ...nearIslets]
+          .forEach((spec, index) => {
+            const x = Math.cos(spec.azimuth) * spec.radius;
+            const z = Math.sin(spec.azimuth) * spec.radius;
+            if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
+            const islet = makeKayKitDistantIslet(spec.scale, spec.tower, index / 5);
+            islet.position.set(x, spec.y, z);
+            sky.add(islet);
+          });
 
         // Îlots SOUS l'archipel, aperçus par les interstices entre les îles. Ils sont
         // à l'intérieur du rayon de sécurité, ce qui est autorisé ici parce qu'ils
@@ -1518,31 +1527,30 @@
       }
 
       /**
-       * Nuages KayKit réels autour du plateau + ombres de nuages douces sur le
-       * sol des îles — passe "éclairage/ambiance" (visual-island-relief-v2) :
-       * la vue de jeu principale ("front") est plongeante et cadrée TRÈS serré
-       * sur le plateau (voir kaykitFitDistance, multiplicateur .64), au point
-       * qu'un nuage placé hors du rayon de sécurité de l'archipel (comme le
-       * reste du décor céleste, voir buildKayKitSkyEnvironment) sort quasiment
-       * toujours du cadre — vérifié par retour utilisateur direct sur une
-       * première version qui suivait cette règle à la lettre.
+       * Nuages KayKit réels, en DEUX niveaux d'altitude tous deux sûrs PAR
+       * CONSTRUCTION (jamais de masquage conditionnel selon le mode de
+       * caméra — voir cahier des charges "environnement céleste léger",
+       * 2026-08-19) :
        *
-       * Deux groupes, donc, avec un compromis assumé :
-       *  - `nearClouds` : AU NIVEAU DE LA GRILLE (hauteur ≈ .5, celle des
-       *    îles), juste hors du plateau côté lointain (le seul visible dans
-       *    ce cadrage — le côté proche de la caméra sort du cadre par le bas
-       *    quelle que soit la hauteur), habillant le terrain aux abords des
-       *    villages/sur les côtés plutôt que de flotter dans le ciel. Rayon
-       *    7-7.5, positions vérifiées par projection caméra (Vector3.project,
-       *    arc NDC x∈[-0.85,0.85], y∈[0.70,0.90] — au-dessus du sommet des
-       *    châteaux, donc jamais devant une case/un gardien depuis CETTE vue).
-       *    Comme rien ne garantit ça sous rotation/zoom libres, ils sont
-       *    masqués dès que kaykit3D.viewMode quitte "front" (voir
-       *    refreshKayKitBoardCloudVisibility).
-       *  - `farClouds` : hors du rayon de sécurité (kaykitSkyPlacementAllowed,
-       *    même garantie géométrique que buildKayKitSkyEnvironment — jamais
-       *    entre la caméra et une case, quel que soit l'angle), visibles en
-       *    permanence, pour l'orbite/l'isométrique.
+       *  - BAS (mer de nuages sous le plateau, y ≈ -1.8 à -2.5) : rayon
+       *    libre, y compris proche du centre. Sûr à TOUT angle/zoom parce
+       *    que la caméra elle-même ne descend jamais sous y≈4 (vue "front",
+       *    zoom minimal 6.4) ni y≈4.5 (orbite/isométrique, même zoom) — une
+       *    caméra qui ne peut pas être en dessous de y=4 ne peut pas non
+       *    plus regarder VERS une case (toutes à y∈[0, 1.3]) EN PASSANT par
+       *    y=-2 : ces nuages ne peuvent donc géométriquement jamais finir
+       *    entre l'œil et une case. C'est ce niveau, proche et large, qui
+       *    porte l'essentiel de la lecture "on est haut dans le ciel" en vue
+       *    "front" (le mockup de référence : îles → nuages en contrebas).
+       *  - LOINTAIN, hors du rayon de sécurité de l'archipel
+       *    (kaykitSkyPlacementAllowed, même garantie que
+       *    buildKayKitSkyEnvironment — sûr à tout angle par construction,
+       *    pas par masquage), calé au plus près de ce rayon pour rester
+       *    visible en bordure du cadrage "front" par défaut (vérifié par
+       *    projection caméra réelle).
+       *
+       * Densité pilotée par kaykit3D.qualityMode (mobile = moins d'instances,
+       * jamais moins de sécurité géométrique).
        */
       function buildKayKitBoardClouds(parent) {
         if (!kaykit3D) return;
@@ -1552,18 +1560,17 @@
         };
         const group = new THREE.Group();
         group.name = "ilyos-board-clouds";
+        const economy = kaykit3D.qualityMode === "performance";
 
-        const addCloud = (spec, index, { gated }) => {
+        const addCloud = (spec, index) => {
           const x = Math.cos(spec.azimuth) * spec.radius;
           const z = Math.sin(spec.azimuth) * spec.radius;
-          if (!gated && !kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
           const cloud = cloneKayKitAsset(spec.key, { maxWidth: spec.scale, maxHeight: spec.scale * .6, targetFloor: 0 });
           if (!cloud) return;
           cloud.position.set(x, spec.y, z);
           cloud.rotation.y = seeded(index, 1) * Math.PI * 2;
           cloud.traverse(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; } });
           group.add(cloud);
-          if (gated) kaykit3D.nearBoardClouds.push(cloud);
           kaykit3D.skyLayers.push({
             object: cloud, base: cloud.position.clone(),
             // Même mécanisme de dérive que buildKayKitSkyEnvironment (voir la
@@ -1576,31 +1583,25 @@
           });
         };
 
-        // Proches : AU NIVEAU DE LA GRILLE (hauteur ≈ .5, celle des îles),
-        // juste à l'extérieur du plateau, côté lointain (celui qui se voit
-        // dans le cadre "front" par défaut — le côté proche de la caméra
-        // sort du cadre par le bas, sous la barre d'actions, quelle que soit
-        // la hauteur). Habillent le terrain aux abords des deux villages
-        // lointaines et sur les côtés, plutôt que de flotter en hauteur —
-        // retour utilisateur direct après une première version trop
-        // "nuages dans le ciel". Positions vérifiées par projection caméra
-        // (arc NDC x∈[-0.85,0.85], y∈[0.70,0.90]) ; masqués hors de "front"
-        // pour la même raison que le premier essai (aucune garantie hors de
-        // ce cadrage précis).
-        [
-          { key: "cloudBig", azimuth: 5.484, radius: 7.46, y: .5, scale: 1.5 },
-          { key: "cloudSmall", azimuth: 5.113, radius: 6.97, y: .45, scale: 1.2 },
-          { key: "cloudBig", azimuth: 4.712, radius: 7.0, y: .5, scale: 1.6 },
-          { key: "cloudSmall", azimuth: 4.312, radius: 6.97, y: .45, scale: 1.2 },
-          { key: "cloudBig", azimuth: 3.940, radius: 7.46, y: .5, scale: 1.5 }
-        ].forEach((spec, index) => addCloud(spec, index, { gated: true }));
+        // BAS — mer de nuages proche, sous le plateau (sécurité : voir
+        // docstring). Desktop 4, mobile 3 — grandes masses, pas une nuée.
+        const lowSpecs = [
+          { key: "cloudBig", azimuth: .6, radius: 2.4, y: -1.8, scale: 2.6 },
+          { key: "cloudSmall", azimuth: 2.4, radius: 3.6, y: -2.3, scale: 2.1 },
+          { key: "cloudBig", azimuth: 4.1, radius: 2.8, y: -2.0, scale: 2.5 },
+          { key: "cloudSmall", azimuth: 5.3, radius: 4.2, y: -2.5, scale: 2.2 }
+        ];
+        (economy ? lowSpecs.slice(0, 3) : lowSpecs).forEach((spec, index) => addCloud(spec, index));
 
-        // Lointains : hors du rayon de sécurité, visibles en permanence — ce
-        // sont eux qui se voient en orbite/isométrique ou au zoom arrière.
-        [
-          { key: "cloudSmall", azimuth: 1.3, radius: 12.5, y: 2.4, scale: 1.4 },
-          { key: "cloudBig", azimuth: 2.6, radius: 14, y: 3.0, scale: 2.0 }
-        ].forEach((spec, index) => addCloud(spec, index + 10, { gated: false }));
+        // LOINTAIN — hors du rayon de sécurité, calé pour dépasser dans le
+        // cadrage "front" (azimuth 3.93/5.5 : même arc que les îlots proches
+        // ci-dessous, vérifié par projection caméra). Desktop 3, mobile 2.
+        const farSpecs = [
+          { key: "cloudSmall", azimuth: 1.3, radius: 12.5, y: 1.8, scale: 1.4 },
+          { key: "cloudBig", azimuth: 2.6, radius: 14, y: 2.4, scale: 2.0 },
+          { key: "cloudBig", azimuth: 4.7, radius: 9.6, y: .6, scale: 1.6 }
+        ];
+        (economy ? farSpecs.slice(0, 2) : farSpecs).forEach((spec, index) => addCloud(spec, index + 10));
 
         // Ombres de nuages : décalques doux au ras du plateau (alpha faible,
         // même texture que les amas du ciel), pas de vrais objets shadow-caster
@@ -1631,97 +1632,6 @@
 
         parent.add(group);
         kaykit3D.boardCloudsGroup = group;
-      }
-
-      /**
-       * Reteint un modèle KayKit RÉEL en silhouette plate pour le décor
-       * lointain — même traitement que makeKayKitDistantIslet (matériau
-       * unique, non éclairé, soumis au brouillard) mais appliqué à un GLTF
-       * complet au lieu d'un cône procédural : donne une silhouette variée
-       * (montagne, arête) sans jamais devenir assez détaillé pour rivaliser
-       * visuellement avec le plateau (hiérarchie §10 : le lointain reste
-       * TOUJOURS derrière le jeu). Matériau partagé par teinte (cache), pas
-       * un clone par objet.
-       */
-      function kaykitTintAsDistantSilhouette(object, tint) {
-        const key = `distant-silhouette:${tint.getHexString()}`;
-        if (!kaykit3D.materials.has(key)) {
-          kaykit3D.materials.set(key, new THREE.MeshBasicMaterial({ color: tint.clone(), fog: true, toneMapped: false }));
-        }
-        const material = kaykit3D.materials.get(key);
-        object.traverse(child => {
-          if (!child.isMesh) return;
-          child.material = material;
-          child.castShadow = false;
-          child.receiveShadow = false;
-        });
-        return object;
-      }
-
-      /**
-       * Montagnes KayKit réelles + cascade sommaire, habillant le fond du
-       * plateau — v2 : la première version les plaçait hors du rayon de
-       * sécurité (comme les îlots lointains procéduraux), donc au même
-       * régime que le reste du décor céleste. Retour utilisateur direct :
-       * à cette distance elles ne se voient quasiment plus dans le cadrage
-       * "front" serré par défaut (même leçon que buildKayKitBoardClouds).
-       *
-       * Repositionnées ici en AU NIVEAU DE LA GRILLE, juste hors du plateau
-       * côté lointain — même zone que les nuages proches, à des azimuts
-       * différents pour ne pas se chevaucher — par projection caméra
-       * (Vector3.project). Comme les nuages proches, cette garantie ne tient
-       * que pour le cadrage "front" par défaut : masquées dès que
-       * kaykit3D.viewMode change (voir refreshKayKitBoardCloudVisibility,
-       * qui gère kaykit3D.nearBoardClouds — même tableau, même bascule).
-       *
-       * Différée et construite une seule fois (voir l'appelant dans
-       * syncKayKitScene) : dépend d'assets GLTF chargés de façon asynchrone.
-       */
-      function buildKayKitDistantDecoratedIslets(parent) {
-        if (!kaykit3D) return;
-        const group = new THREE.Group();
-        group.name = "ilyos-distant-decorated-islets";
-        const baseTint = new THREE.Color(KAYKIT_SKY_COLORS.distant);
-
-        const specs = [
-          { key: "mountainA", azimuth: 5.754, radius: 7, y: 1.0, width: 2.0, height: 1.4, lightness: 0, waterfall: true },
-          { key: "mountainB", azimuth: 4.714, radius: 7, y: 1.0, width: 2.3, height: 1.7, lightness: .1 },
-          { key: "mountainC", azimuth: 3.674, radius: 7, y: 1.0, width: 2.0, height: 1.4, lightness: -.08 }
-        ];
-        specs.forEach((spec, index) => {
-          const x = Math.cos(spec.azimuth) * spec.radius;
-          const z = Math.sin(spec.azimuth) * spec.radius;
-          const mountain = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
-          if (!mountain) return;
-          const tint = baseTint.clone().multiplyScalar(1 + spec.lightness);
-          kaykitTintAsDistantSilhouette(mountain, tint);
-          mountain.position.set(x, spec.y, z);
-          mountain.rotation.y = kaykitHash("distant-mountain-rotation", index) * Math.PI * 2;
-          group.add(mountain);
-          kaykit3D.nearBoardClouds.push(mountain);
-
-          if (spec.waterfall) {
-            // Cascade sommaire : plan translucide vertical accroché au flanc
-            // de la montagne, teinte pâle bleu-blanc — lisible comme un filet
-            // d'eau depuis la distance/désaturation où elle vit, jamais comme
-            // un vrai objet d'eau détaillé.
-            const waterfall = new THREE.Mesh(
-              kaykitGeometry("distant-waterfall-plane-v1", () => new THREE.PlaneGeometry(1, 1)),
-              new THREE.MeshBasicMaterial({
-                map: kaykitCloudTexture(), color: 0xdcefff, transparent: true, opacity: .6,
-                depthWrite: false, fog: true, toneMapped: false
-              })
-            );
-            waterfall.scale.set(spec.width * .22, spec.height * .9, 1);
-            waterfall.position.set(x + spec.width * .3, spec.y - spec.height * .5, z);
-            waterfall.rotation.y = mountain.rotation.y + Math.PI / 5;
-            group.add(waterfall);
-            kaykit3D.nearBoardClouds.push(waterfall);
-          }
-        });
-
-        parent.add(group);
-        kaykit3D.distantDecoratedIsletsGroup = group;
       }
 
       function buildKayKitStaticScene() {
@@ -1786,10 +1696,30 @@
             color, transparent: true, opacity, vertexColors: true, depthWrite: false, depthTest: true
           }));
         };
-        const grid = buildFadedGrid(gridPoints, gridAlphas, 0xf3fbff, .74);
-        const majorGrid = buildFadedGrid(majorGridPoints, majorGridAlphas, 0xe9c877, .86);
+        // Passe "environnement céleste léger" (visual-island-relief-v2, v3) :
+        // grille beaucoup plus translucide (0.74/0.86 → 0.20/0.24) pour lire
+        // comme une trame magique suspendue plutôt qu'un sol plein — le ciel
+        // et les nuages doivent transparaître au travers. gridFade() garde son
+        // dégradé radial existant, juste appliqué à une base plus basse.
+        const grid = buildFadedGrid(gridPoints, gridAlphas, 0xf3fbff, .20);
+        const majorGrid = buildFadedGrid(majorGridPoints, majorGridAlphas, 0xe9c877, .24);
         grid.renderOrder = 2; majorGrid.renderOrder = 3;
         staticGroup.add(grid, majorGrid);
+
+        // Fond de grille très ténu : un simple aplat sous les lignes, pour que
+        // les cases vides se lisent comme une trame de lumière posée dans le
+        // ciel plutôt que comme des trous — jamais un sol, juste assez pour
+        // ancrer visuellement la grille. Un seul plan, une seule couleur.
+        const gridFill = new THREE.Mesh(
+          kaykitGeometry("grid-fill-plane-v1", () => new THREE.PlaneGeometry(KAYKIT_BOARD_SPAN, KAYKIT_BOARD_SPAN)),
+          new THREE.MeshBasicMaterial({
+            color: 0xdcefff, transparent: true, opacity: .06, depthWrite: false, fog: true, toneMapped: false
+          })
+        );
+        gridFill.rotation.x = -Math.PI / 2;
+        gridFill.position.y = .04;
+        gridFill.renderOrder = 1;
+        staticGroup.add(gridFill);
 
         const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
         for (let r = 0; r < GRID; r++) {
@@ -3624,6 +3554,34 @@
             new THREE.LineBasicMaterial({ color: ownerColor, transparent: true, opacity: .95, depthWrite: false })
           );
           outline.position.y = .012; group.add(outline);
+
+          // Dessous rocheux simple pour les 4 plateformes de château (brief
+          // "environnement céleste", section 7) : un bloc carré posé dans le
+          // vide se lisait comme un simple socle, pas comme un fragment d'île.
+          // Même direction artistique que les coques d'île jouables (roche,
+          // pointes) mais géométrie de coût "îlot lointain" — cône + pointes
+          // partagés (kaykitGeometry), jamais reconstruits par instance, pas
+          // le système de coque V2 complet pour 4 éléments aussi éloignés de
+          // la caméra. Pas d'ombre dynamique : cohérent avec le reste du
+          // décor d'ambiance (voir le brief mobile-first).
+          const underRock = new THREE.Mesh(
+            kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
+            new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
+          );
+          underRock.rotation.x = Math.PI;
+          underRock.position.y = -.36;
+          underRock.castShadow = false; underRock.receiveShadow = false;
+          group.add(underRock);
+          [.9, 2.4, 4.1].forEach((angle, i) => {
+            const spike = new THREE.Mesh(
+              kaykitGeometry(`pedestal-underside-spike-v1-${i}`, () => new THREE.ConeGeometry(.09, .3, 5)),
+              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_BOTTOM.getHex(), roughness: .95 })
+            );
+            spike.position.set(Math.cos(angle) * .32, -.62, Math.sin(angle) * .32);
+            spike.rotation.x = Math.PI * .92;
+            spike.castShadow = false; spike.receiveShadow = false;
+            group.add(spike);
+          });
         }
         return group;
       }
@@ -5618,19 +5576,6 @@
         });
       }
 
-      /**
-       * Bascule les objets "proches" (nuages + montagnes/cascade, voir
-       * buildKayKitBoardClouds et buildKayKitDistantDecoratedIslets) : ils ne
-       * sont positionnés pour ne jamais recouvrir une case/un gardien que
-       * depuis le cadrage exact de la vue "front" — masqués dès qu'on quitte
-       * ce mode (isométrique, orbite libre) où cette garantie ne tient plus.
-       */
-      function refreshKayKitBoardCloudVisibility() {
-        if (!kaykit3D?.nearBoardClouds) return;
-        const visible = kaykit3D.viewMode === "front";
-        kaykit3D.nearBoardClouds.forEach(cloud => { cloud.visible = visible; });
-      }
-
       function renderKayKitPlacementPreview() {
         if (!kaykit3D || state.phase !== "PLACE_ISLAND" || !state.hoverAnchor) return;
         const [anchorR, anchorC] = state.hoverAnchor;
@@ -7408,12 +7353,6 @@
             buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
           }
-          // Îlots lointains habillés (montagnes réelles + cascade sommaire) :
-          // même principe, en attente des 3 assets montagne.
-          if (!kaykit3D.distantDecorBuilt && kaykit3D.assets.has("mountainA") && kaykit3D.assets.has("mountainB") && kaykit3D.assets.has("mountainC")) {
-            buildKayKitDistantDecoratedIslets(dynamic);
-            kaykit3D.distantDecorBuilt = true;
-          }
 
           // Couche île (blocs fusionnés + coutures + décor forestier + les
           // piédestaux du grand boucle ci-dessous) : ne se reconstruit que si
@@ -7467,9 +7406,6 @@
           // CHAQUE sync, y compris celles qui ne passent pas par rebuildIslandLayer
           // (sélection/survol pendant l'action).
           refreshKayKitMagicHiddenIsland();
-          // Idem pour les nuages proches (voir buildKayKitBoardClouds) : le
-          // mode de vue peut changer sans que state.islands change.
-          refreshKayKitBoardCloudVisibility();
 
           const artifactByCarrier = new Map();
           [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
