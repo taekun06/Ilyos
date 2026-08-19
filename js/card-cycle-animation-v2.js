@@ -1,36 +1,34 @@
-/* ILYOS — cycle visuel des cartes V2
-   Cette couche n'écrit jamais dans le state du jeu. Elle observe le HUD rendu
-   par game.js et ajoute uniquement des fantômes visuels temporaires. */
+/* ILYOS — cycle visuel des cartes V3
+   Animation centrale indépendante du layout du HUD.
+   Aucune règle de jeu n'est modifiée : cette couche observe uniquement le rendu existant. */
 (() => {
   'use strict';
 
   const REDUCED = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
   if (REDUCED) return;
 
-  const COLORS = {
-    MOVE: '#44c8ff',
-    PUSH: '#ff9b55',
-    MAGIC: '#b68cff'
+  const META = {
+    MOVE:  { label: 'DÉPLACEMENT', short: 'D', icon: '➜' },
+    PUSH:  { label: 'POUSSÉE', short: 'P', icon: '✹' },
+    MAGIC: { label: 'MAGIE', short: 'M', icon: '✦' }
   };
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const byType = type => document.querySelector(`.v60-action-btn[data-type="${type}"]`);
   const deckRoot = () => document.getElementById('deckDisplay');
   const miniCards = () => [...(deckRoot()?.querySelectorAll('.v64-mini-card') || [])];
-  const deckPile = () => deckRoot()?.querySelector('.v64-deck-summary > .v64-deck-count:first-child');
-  const discardPile = () => deckRoot()?.querySelector('.v64-deck-summary > .v64-deck-count:last-child');
+  const byType = type => document.querySelector(`.v60-action-btn[data-type="${type}"]`);
 
-  let dealActive = false;
-  let discardActive = false;
   let baseline = null;
+  let dealActive = false;
   let interceptingEndTurn = false;
   let bypassEndTurn = false;
   let observer = null;
+  let stage = null;
 
   function cardType(card) {
-    if (card.classList.contains('action-move')) return 'MOVE';
-    if (card.classList.contains('action-push')) return 'PUSH';
-    if (card.classList.contains('action-magic')) return 'MAGIC';
+    if (card?.classList.contains('action-move')) return 'MOVE';
+    if (card?.classList.contains('action-push')) return 'PUSH';
+    if (card?.classList.contains('action-magic')) return 'MAGIC';
     return null;
   }
 
@@ -46,123 +44,51 @@
   function readAvailable() {
     const result = { MOVE: 0, PUSH: 0, MAGIC: 0 };
     Object.keys(result).forEach(type => {
-      const button = byType(type);
-      const raw = button?.querySelector('b')?.textContent || '';
+      const raw = byType(type)?.querySelector('b')?.textContent || '';
       const value = Number.parseInt(raw.replace(/[^0-9-]/g, ''), 10);
       result[type] = Number.isFinite(value) ? value : 0;
     });
     return result;
   }
 
-  function center(rect) {
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  function removeStage() {
+    stage?.remove();
+    stage = null;
   }
 
-  function addPulse(target, className, color) {
-    if (!target) return;
-    if (color) target.style.setProperty('--cycle-color', color);
-    target.classList.remove(className);
-    void target.offsetWidth;
-    target.classList.add(className);
-    setTimeout(() => {
-      target.classList.remove(className);
-      target.style.removeProperty('--cycle-color');
-    }, 520);
+  function createStage(kind, eyebrow, title, subtitle = '') {
+    removeStage();
+    const root = document.createElement('div');
+    root.className = `card-cycle-stage card-cycle-${kind}`;
+    root.setAttribute('aria-hidden', 'true');
+    root.innerHTML = `
+      <div class="card-cycle-scene">
+        <div class="card-cycle-heading">
+          <span class="card-cycle-eyebrow">${eyebrow}</span>
+          <strong>${title}</strong>
+          ${subtitle ? `<small>${subtitle}</small>` : ''}
+        </div>
+        <div class="card-cycle-content"></div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    stage = root;
+    requestAnimationFrame(() => root.classList.add('is-visible'));
+    return root;
   }
 
-  function spawnCaption(text, anchor) {
-    if (!anchor) return;
-    const rect = anchor.getBoundingClientRect();
-    const el = document.createElement('div');
-    el.className = 'card-cycle-caption';
-    el.textContent = text;
-    el.style.left = `${rect.left + rect.width / 2}px`;
-    el.style.top = `${Math.max(24, rect.top - 18)}px`;
-    document.body.appendChild(el);
-    el.animate([
-      { opacity: 0, transform: 'translate(-50%,-36%) scale(.92)' },
-      { opacity: 1, transform: 'translate(-50%,-50%) scale(1)', offset: .22 },
-      { opacity: 1, transform: 'translate(-50%,-50%) scale(1)', offset: .72 },
-      { opacity: 0, transform: 'translate(-50%,-68%) scale(.98)' }
-    ], { duration: 1050, easing: 'ease-out', fill: 'forwards' }).onfinish = () => el.remove();
+  function bigCardHTML(type, index, extra = '') {
+    const meta = META[type] || META.MOVE;
+    return `
+      <div class="card-cycle-big-card type-${type.toLowerCase()} ${extra}" data-type="${type}" style="--i:${index}">
+        <span class="card-cycle-card-glyph">${meta.icon}</span>
+        <b>${meta.label}</b>
+        <small>ACTION</small>
+      </div>
+    `;
   }
 
-  function spawnBurstLabel(target, text, color) {
-    if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const el = document.createElement('div');
-    el.className = 'card-cycle-burst-label';
-    el.textContent = text;
-    el.style.setProperty('--cycle-color', color || '#fff');
-    el.style.left = `${rect.left + rect.width / 2}px`;
-    el.style.top = `${rect.top + 4}px`;
-    document.body.appendChild(el);
-    el.animate([
-      { opacity: 0, transform: 'translate(-50%,-25%) scale(.82)' },
-      { opacity: 1, transform: 'translate(-50%,-85%) scale(1.05)', offset: .28 },
-      { opacity: 0, transform: 'translate(-50%,-150%) scale(.95)' }
-    ], { duration: 760, easing: 'cubic-bezier(.18,.72,.2,1)', fill: 'forwards' }).onfinish = () => el.remove();
-  }
-
-  function cloneCard(card) {
-    const rect = card.getBoundingClientRect();
-    const ghost = card.cloneNode(true);
-    ghost.classList.add('card-cycle-ghost');
-    ghost.classList.remove('deal-card', 'discard-card', 'card-cycle-arrival', 'card-cycle-pre-end');
-    ghost.removeAttribute('style');
-    ghost.style.left = `${rect.left}px`;
-    ghost.style.top = `${rect.top}px`;
-    ghost.style.width = `${rect.width}px`;
-    ghost.style.height = `${rect.height}px`;
-    document.body.appendChild(ghost);
-    return { ghost, rect };
-  }
-
-  function animateDealCard(card, index, sourceRect) {
-    const { ghost, rect } = cloneCard(card);
-    const source = center(sourceRect);
-    const target = center(rect);
-    const startX = source.x - target.x;
-    const startY = source.y - target.y;
-    const rotation = -10 + index * 5;
-
-    card.classList.add('card-cycle-arrival');
-    const anim = ghost.animate([
-      {
-        transform: `translate(${startX}px,${startY}px) scale(.64) rotate(${rotation - 7}deg)`,
-        opacity: .12,
-        filter: 'brightness(.9)'
-      },
-      {
-        transform: `translate(${startX * .42}px,${startY * .38 - 13}px) scale(.9) rotate(${rotation}deg)`,
-        opacity: 1,
-        filter: 'brightness(1.2)',
-        offset: .58
-      },
-      {
-        transform: 'translate(0,0) scale(1.04) rotate(0deg)',
-        opacity: 1,
-        filter: 'brightness(1.15)',
-        offset: .9
-      },
-      { transform: 'translate(0,0) scale(1) rotate(0deg)', opacity: 0 }
-    ], {
-      duration: 500,
-      delay: index * 82,
-      easing: 'cubic-bezier(.18,.72,.18,1)',
-      fill: 'forwards'
-    });
-    anim.onfinish = () => ghost.remove();
-  }
-
-  function runDealAnimation(cards) {
-    const source = deckPile();
-    if (!source || !cards.length) return;
-    const sourceRect = source.getBoundingClientRect();
-    addPulse(source, 'card-cycle-deck-pulse');
-    spawnCaption(`${cards.length} CARTES PIOCHÉES`, deckRoot());
-    cards.slice(0, 5).forEach((card, index) => animateDealCard(card, index, sourceRect));
-
+  function captureBaseline(cards) {
     baseline = {
       fresh: countCards(cards),
       available: readAvailable(),
@@ -170,142 +96,164 @@
     };
   }
 
-  function animateEnergy(card, target, index, type) {
-    if (!target) return Promise.resolve();
-    const fromRect = card.getBoundingClientRect();
-    const toRect = target.getBoundingClientRect();
-    const from = center(fromRect);
-    const to = center(toRect);
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const color = COLORS[type] || '#fff';
+  async function runDealAnimation(cards) {
+    const types = cards.slice(0, 5).map(cardType).filter(Boolean);
+    if (!types.length) return;
+    captureBaseline(cards);
 
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const orb = document.createElement('div');
-        orb.className = 'card-cycle-energy';
-        orb.style.setProperty('--cycle-color', color);
-        orb.style.left = `${from.x}px`;
-        orb.style.top = `${from.y}px`;
-        document.body.appendChild(orb);
+    const root = createStage('deal', 'NOUVEAU TOUR', `${types.length} CARTES PIOCHÉES`, 'Votre main d’actions pour ce tour');
+    const content = root.querySelector('.card-cycle-content');
+    content.innerHTML = `
+      <div class="card-cycle-deal-layout">
+        <div class="card-cycle-deck-visual" aria-hidden="true">
+          <i></i><i></i><i></i>
+          <span>PIOCHE</span>
+        </div>
+        <div class="card-cycle-deal-arrow"><span>›</span><span>›</span><span>›</span></div>
+        <div class="card-cycle-hand-fan">
+          ${types.map((type, index) => bigCardHTML(type, index, 'deal-big-card')).join('')}
+        </div>
+      </div>
+    `;
 
-        const anim = orb.animate([
-          { transform: 'translate(0,0) scale(.45)', opacity: 0 },
-          { transform: `translate(${dx * .12}px,${dy * .08 - 12}px) scale(1.2)`, opacity: 1, offset: .2 },
-          { transform: `translate(${dx * .63}px,${dy * .48 - 18}px) scale(.9)`, opacity: 1, offset: .67 },
-          { transform: `translate(${dx}px,${dy}px) scale(.3)`, opacity: .15 }
-        ], {
-          duration: 470,
-          easing: 'cubic-bezier(.16,.72,.18,1)',
-          fill: 'forwards'
-        });
-
-        anim.onfinish = () => {
-          orb.remove();
-          addPulse(target, 'card-cycle-reserve-pulse', color);
-          spawnBurstLabel(target, '+1 RÉSERVE', color);
-          resolve();
-        };
-      }, index * 62);
+    const bigCards = [...content.querySelectorAll('.deal-big-card')];
+    await sleep(120);
+    bigCards.forEach((card, index) => {
+      setTimeout(() => card.classList.add('is-dealt'), index * 120);
     });
+
+    await sleep(1180);
+    root.classList.add('is-leaving');
+    await sleep(260);
+    if (stage === root) removeStage();
   }
 
   function classifyFreshCards(cards) {
-    if (!baseline) return cards.map(card => ({ card, type: cardType(card), unused: false }));
+    if (!baseline) return cards.map(card => ({ type: cardType(card), unused: false }));
 
     const now = readAvailable();
-    const spent = { MOVE: 0, PUSH: 0, MAGIC: 0 };
     const freshUsed = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    const consumedPerType = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    const seen = { MOVE: 0, PUSH: 0, MAGIC: 0 };
 
-    Object.keys(spent).forEach(type => {
-      spent[type] = Math.max(0, (baseline.available[type] || 0) - (now[type] || 0));
-      freshUsed[type] = Math.min(baseline.fresh[type] || 0, spent[type]);
+    Object.keys(freshUsed).forEach(type => {
+      const spent = Math.max(0, (baseline.available[type] || 0) - (now[type] || 0));
+      freshUsed[type] = Math.min(baseline.fresh[type] || 0, spent);
     });
 
     return cards.map(card => {
       const type = cardType(card);
-      if (!type) return { card, type: null, unused: false };
-      const used = consumedPerType[type] < freshUsed[type];
-      consumedPerType[type]++;
-      return { card, type, unused: !used };
+      if (!type) return { type: 'MOVE', unused: false };
+      const used = seen[type] < freshUsed[type];
+      seen[type]++;
+      return { type, unused: !used };
     });
   }
 
-  async function runReservePrelude(cards) {
-    if (!cards.length || !baseline) return;
-    cards.forEach(card => card.classList.add('card-cycle-pre-end'));
+  function reserveTotals(classified) {
+    const totals = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    classified.forEach(entry => {
+      if (entry.unused && entry.type) totals[entry.type]++;
+    });
+    return totals;
+  }
 
-    const classified = classifyFreshCards(cards);
-    const unused = classified.filter(entry => entry.unused && entry.type);
-    if (!unused.length) {
-      await sleep(240);
-      return;
+  function pulseLiveHud(type) {
+    const target = byType(type);
+    if (!target) return;
+    target.classList.remove('card-cycle-live-pulse');
+    void target.offsetWidth;
+    target.classList.add('card-cycle-live-pulse');
+    setTimeout(() => target.classList.remove('card-cycle-live-pulse'), 720);
+  }
+
+  async function runEndTurnAnimation(cards) {
+    const classified = classifyFreshCards(cards.slice(0, 5));
+    const totals = reserveTotals(classified);
+    const unusedCount = Object.values(totals).reduce((sum, value) => sum + value, 0);
+
+    const root = createStage(
+      'end',
+      'FIN DU TOUR',
+      unusedCount ? 'LES ACTIONS INUTILISÉES SONT CONSERVÉES' : 'TOUTES LES ACTIONS ONT ÉTÉ UTILISÉES',
+      unusedCount ? 'Leur énergie rejoint la réserve, puis les cartes vont à la défausse.' : 'Les cartes jouées rejoignent maintenant la défausse.'
+    );
+    const content = root.querySelector('.card-cycle-content');
+
+    content.innerHTML = `
+      <div class="card-cycle-end-layout">
+        <div class="card-cycle-end-hand">
+          ${classified.map((entry, index) => bigCardHTML(entry.type, index, `end-big-card ${entry.unused ? 'is-unused' : 'is-used'}`)).join('')}
+        </div>
+
+        <div class="card-cycle-reserve-block">
+          <span class="card-cycle-flow-label">RÉSERVE</span>
+          <div class="card-cycle-reserve-row">
+            ${Object.keys(META).map(type => `
+              <div class="card-cycle-reserve-slot type-${type.toLowerCase()}" data-reserve="${type}">
+                <span>${META[type].icon}</span>
+                <b>${META[type].label}</b>
+                <em>+${totals[type]}</em>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="card-cycle-discard-zone">
+          <div class="card-cycle-discard-stack"><i></i><i></i><i></i></div>
+          <b>DÉFAUSSE</b>
+        </div>
+      </div>
+    `;
+
+    const bigCards = [...content.querySelectorAll('.end-big-card')];
+    await sleep(120);
+    bigCards.forEach((card, index) => setTimeout(() => card.classList.add('is-shown'), index * 75));
+    await sleep(520);
+
+    if (unusedCount) {
+      root.classList.add('phase-reserve');
+      const counters = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+      const unusedCards = bigCards.filter(card => card.classList.contains('is-unused'));
+
+      unusedCards.forEach((card, index) => {
+        const type = card.dataset.type;
+        setTimeout(() => {
+          card.classList.add('send-energy');
+          const slot = content.querySelector(`[data-reserve="${type}"]`);
+          counters[type]++;
+          slot?.classList.add('is-receiving');
+          const counter = slot?.querySelector('em');
+          if (counter) counter.textContent = `+${counters[type]}`;
+          pulseLiveHud(type);
+          setTimeout(() => slot?.classList.remove('is-receiving'), 470);
+        }, index * 170);
+      });
+
+      await sleep(520 + Math.max(0, unusedCards.length - 1) * 170);
+    } else {
+      await sleep(140);
     }
 
-    spawnCaption('ACTIONS INUTILISÉES → RÉSERVE', deckRoot());
-    await Promise.all(unused.map((entry, index) =>
-      animateEnergy(entry.card, byType(entry.type), index, entry.type)
-    ));
-    await sleep(70);
-  }
-
-  function animateDiscardCard(card, index, targetRect) {
-    const { ghost, rect } = cloneCard(card);
-    const start = center(rect);
-    const target = center(targetRect);
-    const dx = target.x - start.x;
-    const dy = target.y - start.y;
-    const bend = 12 + (index % 2) * 8;
-
-    const anim = ghost.animate([
-      { transform: 'translate(0,0) scale(1) rotate(0deg)', opacity: 1 },
-      {
-        transform: `translate(${dx * .38}px,${dy * .28 - bend}px) scale(.9) rotate(${index % 2 ? 7 : -7}deg)`,
-        opacity: 1,
-        offset: .48
-      },
-      {
-        transform: `translate(${dx}px,${dy}px) scale(.44) rotate(${index % 2 ? 16 : -16}deg)`,
-        opacity: .12
-      }
-    ], {
-      duration: 450,
-      delay: index * 28,
-      easing: 'cubic-bezier(.2,.66,.22,1)',
-      fill: 'forwards'
+    root.classList.add('phase-discard');
+    bigCards.forEach((card, index) => {
+      setTimeout(() => card.classList.add('to-discard'), index * 55);
     });
-    anim.onfinish = () => ghost.remove();
-  }
+    await sleep(680);
 
-  function runDiscardAnimation(cards) {
-    const target = discardPile();
-    if (!target || !cards.length) return;
-    const targetRect = target.getBoundingClientRect();
-    spawnCaption('CARTES → DÉFAUSSE', deckRoot());
-    cards.slice(0, 5).forEach((card, index) => animateDiscardCard(card, index, targetRect));
-    setTimeout(() => addPulse(target, 'card-cycle-discard-pulse'), 390);
+    root.classList.add('is-leaving');
+    await sleep(240);
+    if (stage === root) removeStage();
   }
 
   function inspectDeck() {
-    const root = deckRoot();
-    if (!root) return;
     const cards = miniCards();
     const hasDeal = cards.some(card => card.classList.contains('deal-card'));
-    const hasDiscard = cards.some(card => card.classList.contains('discard-card'));
 
     if (hasDeal && !dealActive) {
       dealActive = true;
-      requestAnimationFrame(() => runDealAnimation(miniCards()));
+      runDealAnimation(cards);
     } else if (!hasDeal) {
       dealActive = false;
-    }
-
-    if (hasDiscard && !discardActive) {
-      discardActive = true;
-      requestAnimationFrame(() => runDiscardAnimation(miniCards()));
-    } else if (!hasDiscard) {
-      discardActive = false;
     }
   }
 
@@ -324,7 +272,7 @@
       button.classList.add('card-cycle-locked');
 
       try {
-        await runReservePrelude(cards);
+        await runEndTurnAnimation(cards);
       } finally {
         interceptingEndTurn = false;
         button.classList.remove('card-cycle-locked');
@@ -346,7 +294,8 @@
     observer = new MutationObserver(inspectDeck);
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     inspectDeck();
-    window.ILYOS_CARD_CYCLE_V2 = {
+
+    window.ILYOS_CARD_CYCLE_V3 = {
       inspect: inspectDeck,
       getBaseline: () => baseline ? JSON.parse(JSON.stringify(baseline)) : null,
       stop: () => observer?.disconnect()
