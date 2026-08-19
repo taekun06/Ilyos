@@ -1,0 +1,156 @@
+/* ILYOS — HUD V13
+   Ajustements ciblés uniquement : tiroir d'îles, progression visuelle réserve,
+   et cartes V12 dans la consultation de défausse. */
+
+/* 1) Tiroir d'îles : on conserve sa structure et sa position, mais on donne
+   davantage d'air entre les choix. */
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-selector {
+  column-gap: 20px !important;
+  row-gap: 14px !important;
+  padding: 10px 12px !important;
+}
+
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice {
+  position: relative !important;
+}
+
+/* Le quota 0/2, 1/2, 2/2 devient une vraie information de gameplay. */
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit {
+  position: absolute !important;
+  top: 6px !important;
+  right: 7px !important;
+  z-index: 8 !important;
+  min-width: 34px !important;
+  padding: 3px 6px !important;
+  border: 1px solid rgba(244, 214, 132, .72) !important;
+  border-radius: 999px !important;
+  background: rgba(8, 19, 27, .82) !important;
+  color: #fff0b8 !important;
+  font: 900 15px/1 Georgia, "Times New Roman", serif !important;
+  letter-spacing: -.02em !important;
+  text-align: center !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,.90), 0 0 8px rgba(242,205,110,.34) !important;
+  box-shadow: 0 3px 10px rgba(0,0,0,.30), inset 0 0 0 1px rgba(255,255,255,.05) !important;
+  pointer-events: none !important;
+}
+
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit[data-maxed="true"] {
+  border-color: rgba(255, 156, 92, .84) !important;
+  background: rgba(65, 24, 18, .88) !important;
+  color: #ffd0ab !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,.92), 0 0 9px rgba(255,126,61,.32) !important;
+}
+
+/* 2) Compteur de réserve progressif superposé pendant le trajet d'une carte.
+   Il n'affecte jamais le layout ni la valeur de jeu réelle. */
+.v13-reserve-progress {
+  position: fixed !important;
+  z-index: 101200 !important;
+  display: grid !important;
+  place-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: #fff1b7 !important;
+  font: 900 15px/1 Georgia, "Times New Roman", serif !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,.92), 0 0 8px rgba(238,199,103,.34) !important;
+  pointer-events: none !important;
+  transform-origin: center !important;
+}
+
+.v13-reserve-progress.is-step {
+  animation: v13ReserveCountStep 180ms ease-out both;
+}
+
+@keyframes v13ReserveCountStep {
+  0% { transform: scale(.86); filter: brightness(1); }
+  45% { transform: scale(1.20); filter: brightness(1.28); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+/* 3) Consultation de défausse : les trois cartes reprennent directement la
+   DA V12 utilisée pendant la pioche. La mécanique coulissante reste intacte. */
+.ov2-discard-type-card.card-cycle-v10-card.showcase.discard-v12-card {
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  width: 78px !important;
+  height: 122px !important;
+  flex: 0 0 78px !important;
+  min-width: 78px !important;
+  min-height: 122px !important;
+  padding: 12px 9px 11px !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  transform: translateX(24px) scale(.95) !important;
+  transform-origin: right center !important;
+  transition: opacity 150ms ease, transform 250ms cubic-bezier(.18,.82,.22,1), filter 160ms ease !important;
+  pointer-events: none !important;
+}
+
+.ov2-discard-viewer-open .ov2-discard-type-card.card-cycle-v10-card.showcase.discard-v12-card {
+  opacity: 1 !important;
+  transform: translateX(0) scale(1) !important;
+}
+
+.ov2-discard-type-card.card-cycle-v10-card.showcase.discard-v12-card.is-empty {
+  opacity: .27 !important;
+  filter: grayscale(.50) saturate(.62) !important;
+}
+
+.ov2-discard-type-card.discard-v12-card .card-cycle-v7-icon {
+  flex: 0 0 auto !important;
+}
+
+.ov2-discard-type-card.discard-v12-card > b {
+  flex: 0 0 auto !important;
+  font-size: 11px !important;
+}
+
+.ov2-discard-type-card.discard-v12-card .card-cycle-v7-rune {
+  flex: 0 0 auto !important;
+}
+
+.ov2-discard-type-card.discard-v12-card .ov2-discard-type-count {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  z-index: 12 !important;
+  margin: 0 !important;
+  color: #fff5da !important;
+  font: 900 18px/1 Georgia, "Times New Roman", serif !important;
+  letter-spacing: -.035em !important;
+  text-shadow: 0 2px 5px rgba(0,0,0,.92), 0 0 8px currentColor !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 980px), (max-height: 720px) {
+  body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-selector {
+    column-gap: 14px !important;
+    row-gap: 10px !important;
+    padding: 7px 9px !important;
+  }
+  body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit {
+    top: 5px !important;
+    right: 5px !important;
+    min-width: 31px !important;
+    padding: 3px 5px !important;
+    font-size: 13px !important;
+  }
+  .ov2-discard-type-card.card-cycle-v10-card.showcase.discard-v12-card {
+    width: 68px !important;
+    height: 106px !important;
+    min-width: 68px !important;
+    min-height: 106px !important;
+    flex-basis: 68px !important;
+    padding: 10px 8px 9px !important;
+  }
+  .ov2-discard-type-card.discard-v12-card > b { font-size: 9.5px !important; }
+  .ov2-discard-type-card.discard-v12-card .ov2-discard-type-count { font-size: 16px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v13-reserve-progress.is-step { animation: none !important; }
+}
