@@ -78,12 +78,27 @@
       const height = parseFloat(node.style.height) || node.getBoundingClientRect().height || 0;
       const frames = animation?.effect?.getKeyframes?.() || [];
       const last = frames[frames.length - 1];
-      const transform = String(last?.transform || '');
+      const transform = String(last?.transform || '').trim();
+      let dx = 0;
+      let dy = 0;
+
       const match = transform.match(/translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/i);
-      if (!match) return null;
+      if (match) {
+        dx = Number(match[1]);
+        dy = Number(match[2]);
+      } else if (transform && transform !== 'none') {
+        try {
+          const matrix = new DOMMatrixReadOnly(transform);
+          dx = Number(matrix.m41) || 0;
+          dy = Number(matrix.m42) || 0;
+        } catch (_) {
+          return null;
+        }
+      }
+
       return {
-        x: left + width / 2 + Number(match[1]),
-        y: top + height / 2 + Number(match[2])
+        x: left + width / 2 + dx,
+        y: top + height / 2 + dy
       };
     } catch (_) {
       return null;
@@ -147,7 +162,10 @@
 
     const end = animationEndCenter(node, animation);
     const reserve = targetCenter(reserveTarget(type));
-    if (!end || !reserve) return;
+    if (!end || !reserve) {
+      if (attempt < 8) requestAnimationFrame(() => inspectTransfer(node, attempt + 1));
+      return;
+    }
 
     const distance = Math.hypot(end.x - reserve.x, end.y - reserve.y);
     if (distance > 70) return;
