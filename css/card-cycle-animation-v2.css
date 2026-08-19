@@ -1,4 +1,4 @@
-/* ILYOS — cycle visuel des cartes V5
+/* ILYOS — cycle visuel des cartes V6
    Animation PIOCHE -> ACTION -> RÉSERVE/DÉFAUSSE. Aucun panneau central. */
 
 .card-cycle-flying-card {
@@ -8,78 +8,160 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
   margin: 0 !important;
-  padding: 7px 5px !important;
+  padding: 12px 8px 10px !important;
   box-sizing: border-box !important;
   pointer-events: none !important;
-  border-radius: 11px;
-  border: 1px solid currentColor;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, currentColor 82%, white 18%);
+  color: #f1cf79;
   background:
-    linear-gradient(145deg, rgba(255,255,255,.20), rgba(255,255,255,.035) 42%, rgba(5,15,24,.24)),
-    rgba(20,30,42,.94);
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, currentColor 24%, transparent), transparent 34%),
+    linear-gradient(150deg, rgba(255,255,255,.16), rgba(255,255,255,.028) 34%, rgba(3,10,17,.28) 70%),
+    linear-gradient(165deg, rgba(28,42,54,.98), rgba(9,18,28,.98));
   box-shadow:
-    0 10px 24px rgba(0,0,0,.34),
-    inset 0 0 0 1px rgba(255,255,255,.09),
-    0 0 16px color-mix(in srgb, currentColor 38%, transparent);
+    0 14px 30px rgba(0,0,0,.40),
+    inset 0 0 0 1px rgba(255,255,255,.08),
+    inset 0 -20px 34px rgba(0,0,0,.15),
+    0 0 20px color-mix(in srgb, currentColor 36%, transparent);
   transform-origin: 50% 50%;
   will-change: transform, opacity;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.card-cycle-flying-card::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  pointer-events: none;
 }
 
 .card-cycle-flying-card::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, transparent 18%, rgba(255,255,255,.20) 44%, transparent 70%);
-  transform: translateX(-120%);
-  animation: cardCycleSheen 1000ms ease-out both;
+  border-radius: inherit;
+  background: linear-gradient(118deg, transparent 17%, rgba(255,255,255,.20) 44%, transparent 70%);
+  transform: translateX(-125%);
+  animation: cardCycleSheen 1150ms ease-out both;
   pointer-events: none;
+  overflow: hidden;
 }
 
-.card-cycle-flying-card > span {
+.card-cycle-card-kicker {
   position: relative;
-  z-index: 1;
-  font-size: 24px;
-  line-height: 1;
-  font-weight: 900;
-  text-shadow: 0 2px 7px rgba(0,0,0,.34);
+  z-index: 2;
+  margin-bottom: 2px;
+  font: 800 7px/1 Inter, system-ui, sans-serif;
+  letter-spacing: .24em;
+  color: rgba(255,255,255,.48);
+}
+
+.card-cycle-card-icon {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 42%;
+  aspect-ratio: 1;
+  margin: 2px 0 1px;
+  border-radius: 50%;
+  color: currentColor;
+  background: color-mix(in srgb, currentColor 10%, rgba(3,10,17,.58));
+  border: 1px solid color-mix(in srgb, currentColor 34%, transparent);
+  box-shadow: inset 0 0 14px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.card-cycle-card-icon svg {
+  width: 72%;
+  height: 72%;
+  overflow: visible;
 }
 
 .card-cycle-flying-card > b {
   position: relative;
-  z-index: 1;
-  font-family: inherit;
-  font-size: 8px;
-  line-height: 1;
-  letter-spacing: .055em;
+  z-index: 2;
+  max-width: 100%;
+  font: 900 8px/1.05 Inter, system-ui, sans-serif;
+  letter-spacing: .07em;
   color: rgba(255,255,255,.98);
-  text-shadow: 0 1px 4px rgba(0,0,0,.58);
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0,0,0,.64);
   white-space: nowrap;
 }
 
-/* Les cinq cartes piochées sont volontairement plus grandes et beaucoup plus
-   lisibles que les fantômes utilisés pour les transferts rapides. */
-.card-cycle-showcase-card {
-  border-width: 2px;
-  border-radius: 13px;
-  box-shadow:
-    0 16px 34px rgba(0,0,0,.40),
-    inset 0 0 0 1px rgba(255,255,255,.12),
-    0 0 22px color-mix(in srgb, currentColor 46%, transparent);
-}
-.card-cycle-showcase-card > span {
-  font-size: clamp(30px, 3vw, 40px);
-  margin-bottom: 3px;
-}
-.card-cycle-showcase-card > b {
-  font-size: clamp(9px, .85vw, 12px);
-  letter-spacing: .075em;
+.card-cycle-card-rune {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 26%;
+  height: 2px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: .56;
+  box-shadow: 0 0 8px currentColor;
 }
 
-.card-cycle-flying-card.type-move { color: #f1cf79; }
-.card-cycle-flying-card.type-push { color: #ff9d3f; }
-.card-cycle-flying-card.type-magic { color: #c59cff; }
+.card-cycle-showcase-card {
+  border-width: 2px;
+  box-shadow:
+    0 18px 42px rgba(0,0,0,.44),
+    inset 0 0 0 1px rgba(255,255,255,.10),
+    inset 0 -28px 40px rgba(0,0,0,.14),
+    0 0 26px color-mix(in srgb, currentColor 44%, transparent);
+}
+
+.card-cycle-showcase-card .card-cycle-card-kicker {
+  font-size: clamp(7px, .62vw, 9px);
+}
+
+.card-cycle-showcase-card .card-cycle-card-icon {
+  width: 48%;
+}
+
+.card-cycle-showcase-card > b {
+  font-size: clamp(10px, .88vw, 13px);
+  letter-spacing: .08em;
+}
+
+.card-cycle-flying-card.type-move { color: #f2d27f; }
+.card-cycle-flying-card.type-push { color: #ff9f45; }
+.card-cycle-flying-card.type-magic { color: #caa2ff; }
+
+.card-cycle-stack-card::before {
+  box-shadow:
+    4px 4px 0 -1px rgba(11,20,29,.92),
+    5px 5px 0 0 color-mix(in srgb, currentColor 32%, transparent),
+    8px 8px 0 -1px rgba(11,20,29,.82),
+    9px 9px 0 0 color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.card-cycle-batch {
+  position: absolute;
+  z-index: 4;
+  right: -8px;
+  top: -8px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,.82);
+  background: currentColor;
+  color: #07111b;
+  font: 950 13px/1 Inter, system-ui, sans-serif;
+  font-style: normal;
+  box-shadow: 0 5px 14px rgba(0,0,0,.42), 0 0 13px color-mix(in srgb, currentColor 44%, transparent);
+}
+
+.card-cycle-batch-use {
+  filter: saturate(1.08);
+}
 
 .card-cycle-draw-source {
   position: fixed !important;
@@ -87,14 +169,14 @@
   pointer-events: none !important;
   opacity: 1;
   transition: opacity 220ms ease, transform 220ms ease;
-  filter: drop-shadow(0 7px 10px rgba(0,0,0,.26));
+  filter: drop-shadow(0 8px 11px rgba(0,0,0,.30));
 }
 
 .card-cycle-draw-source i {
   position: absolute;
   inset: 0;
-  border-radius: 8px;
-  border: 1px solid rgba(241,207,121,.7);
+  border-radius: 9px;
+  border: 1px solid rgba(241,207,121,.72);
   background:
     radial-gradient(circle at 50% 38%, rgba(241,207,121,.22), transparent 34%),
     linear-gradient(145deg, #263846, #111c27);
@@ -121,10 +203,10 @@
   z-index: 100540 !important;
   pointer-events: none !important;
   color: #ffe09a;
-  font: 900 10px/1 system-ui, sans-serif;
-  letter-spacing: .04em;
+  font: 950 11px/1 Inter, system-ui, sans-serif;
+  letter-spacing: .045em;
   text-transform: uppercase;
-  text-shadow: 0 1px 2px rgba(0,0,0,.8), 0 0 8px rgba(255,211,116,.55);
+  text-shadow: 0 1px 2px rgba(0,0,0,.82), 0 0 9px rgba(255,211,116,.62);
   white-space: nowrap;
   will-change: transform, opacity;
 }
@@ -132,39 +214,40 @@
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-target-hit,
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-reserve-hit,
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-end-hit {
-  animation: cardCycleTargetHit 600ms cubic-bezier(.18,.82,.24,1.18) both !important;
+  animation: cardCycleTargetHit 590ms cubic-bezier(.18,.82,.24,1.18) both !important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-reserve-hit { animation-name: cardCycleReserveHit !important; }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-end-hit { animation-name: cardCycleEndHit !important; }
 .card-cycle-locked { pointer-events: none !important; }
 
 @keyframes cardCycleSheen {
-  0% { transform: translateX(-120%); opacity: 0; }
-  30% { opacity: .9; }
-  100% { transform: translateX(120%); opacity: 0; }
+  0% { transform: translateX(-125%); opacity: 0; }
+  28% { opacity: .9; }
+  100% { transform: translateX(125%); opacity: 0; }
 }
 @keyframes cardCycleTargetHit {
-  0% { filter: brightness(1); }
-  38% { filter: brightness(1.42) drop-shadow(0 0 10px rgba(255,215,125,.78)); }
-  100% { filter: brightness(1); }
+  0% { filter: brightness(1); transform: translateY(0) scale(1); }
+  38% { filter: brightness(1.38) drop-shadow(0 0 11px rgba(255,215,125,.76)); transform: translateY(-1px) scale(1.035); }
+  100% { filter: brightness(1); transform: translateY(0) scale(1); }
 }
 @keyframes cardCycleReserveHit {
   0% { filter: brightness(1); transform: translateY(0) scale(1); }
-  42% { filter: brightness(1.48) drop-shadow(0 0 8px rgba(255,220,145,.78)); transform: translateY(-1px) scale(1.12); }
+  42% { filter: brightness(1.46) drop-shadow(0 0 9px rgba(255,220,145,.80)); transform: translateY(-2px) scale(1.10); }
   100% { filter: brightness(1); transform: translateY(0) scale(1); }
 }
 @keyframes cardCycleEndHit {
   0% { filter: brightness(1); }
-  35% { filter: brightness(1.55) drop-shadow(0 0 12px rgba(255,211,116,.88)); }
-  65% { filter: brightness(1.18) drop-shadow(0 0 4px rgba(255,211,116,.35)); }
+  35% { filter: brightness(1.50) drop-shadow(0 0 12px rgba(255,211,116,.84)); }
+  65% { filter: brightness(1.16) drop-shadow(0 0 4px rgba(255,211,116,.33)); }
   100% { filter: brightness(1); }
 }
 
 @media (max-height: 760px), (max-width: 1100px) {
-  .card-cycle-flying-card > span { font-size: 20px; }
+  .card-cycle-flying-card { padding: 9px 6px 8px !important; border-radius: 11px; }
+  .card-cycle-card-kicker { font-size: 6px; }
   .card-cycle-flying-card > b { font-size: 7px; }
-  .card-cycle-showcase-card > span { font-size: 28px; }
-  .card-cycle-showcase-card > b { font-size: 9px; }
+  .card-cycle-showcase-card > b { font-size: 10px; }
+  .card-cycle-batch { min-width: 26px; height: 26px; font-size: 11px; right: -6px; top: -6px; }
   .card-cycle-plus-one { font-size: 9px; }
 }
 
