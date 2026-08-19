@@ -1,6 +1,6 @@
 /* ILYOS — ajustements finaux cartes V12 */
 .card-cycle-v10-card.showcase .card-cycle-v7-icon {
-  width: 80% !important;
+  width: 94% !important;
   flex: 0 0 auto !important;
 }
 .card-cycle-v10-card.showcase > b {
@@ -11,6 +11,6 @@
   flex: 0 0 auto !important;
 }
 @media (max-width: 980px), (max-height: 720px) {
-  .card-cycle-v10-card.showcase .card-cycle-v7-icon { width: 78% !important; }
+  .card-cycle-v10-card.showcase .card-cycle-v7-icon { width: 92% !important; }
   .card-cycle-v10-card.showcase > b { font-size: 11px !important; }
 }
