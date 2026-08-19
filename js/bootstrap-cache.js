@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V8_CAMERA_DISCARD";
+  const VERSION = "ILYOS_20260819_CARD_CYCLE_V9_HUD_CLICK_POSITION";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -48,23 +48,20 @@ function ilyosLoadScriptOnce(marker, src) {
   document.head.appendChild(node);
 }
 
-(function loadIlyosV8HudAndCards() {
-  const VERSION = '20260819-v8-camera-discard';
+(function loadIlyosV9HudAndCards() {
+  const VERSION = '20260819-v9-hud-click-position';
 
   function install() {
-    /* HUD Pioche/Défausse existant + format vertical V7 + correctifs V8. */
-    ilyosLoadStyleOnce('deck-discard-base', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-cycle-v7-base', `./css/card-cycle-animation-v7.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-cycle-v8-overrides', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('deck-discard-base-v9', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('card-cycle-v7-base-v9', `./css/card-cycle-animation-v7.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('card-cycle-v8-overrides-v9', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
 
-    ilyosLoadScriptOnce('deck-discard-hud', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
-    ilyosLoadScriptOnce('discard-viewer-v2', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('deck-discard-hud-v9', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('discard-viewer-v9', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('card-cycle-v9', `./js/card-cycle-animation-v8.js?v=${VERSION}`);
 
-    /* V8 remplace le JS V7 : même rendu vertical, garde de tour corrigée. */
-    ilyosLoadScriptOnce('card-cycle-v8', `./js/card-cycle-animation-v8.js?v=${VERSION}`);
-
-    /* Départ de partie en VUE FACE + caméra AUTO. */
-    ilyosLoadScriptOnce('camera-start-face-auto', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);
+    /* Départ de partie en VUE FACE + caméra AUTO — inchangé. */
+    ilyosLoadScriptOnce('camera-start-face-auto-v9', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
