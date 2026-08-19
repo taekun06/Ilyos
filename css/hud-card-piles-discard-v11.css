@@ -96,15 +96,13 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-pile-hit {
   transform: translateY(-100%) scale(1.06) !important;
 }
 
-/* Consultation de la défausse : aucune modale, aucun backdrop. */
+/* Consultation de la défausse : attachée directement à la pile Défausse. */
 .ov2-discard-viewer {
-  position: fixed !important;
-  inset: auto !important;
+  position: absolute !important;
   z-index: 100980 !important;
   width: auto !important;
   height: auto !important;
   display: block !important;
-  place-items: initial !important;
   pointer-events: none !important;
   opacity: 0 !important;
   transform: translateY(-50%) translateX(28px) scale(.97) !important;
