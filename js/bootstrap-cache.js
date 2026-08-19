@@ -59,6 +59,7 @@ function ilyosLoadScriptOnce(marker, src) {
     ilyosLoadStyleOnce('hud-polish-targeted-v1', `./css/hud-polish-targeted-v1.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-card-piles-discard-v11', `./css/hud-card-piles-discard-v11.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('hud-card-piles-discard-v11-layer', `./css/hud-card-piles-discard-v11-layer.css?v=${VERSION}`);
 
     ilyosLoadScriptOnce('deck-discard-hud-v11', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v11', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
