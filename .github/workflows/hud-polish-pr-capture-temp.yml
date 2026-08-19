@@ -22,7 +22,7 @@ jobs:
           node-version: '20'
       - run: |
           npm install --no-save playwright@1.55.0
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
       - run: |
           python3 -m http.server 4173 >/tmp/http.log 2>&1 &
           sleep 2
@@ -33,7 +33,7 @@ jobs:
           const p=await b.newPage({viewport:{width:1440,height:900}});
           await p.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:60000});
           await p.waitForTimeout(1500);
-          for (const href of ['./css/hud-organique-v2.css','./css/deck-discard-hud-v1.css','./css/card-cycle-animation-v7.css','./css/hud-polish-targeted-v1.css']) await p.addStyleTag({url:'http://127.0.0.1:4173/'+href.slice(2)});
+          for (const href of ['./css/hud-organique-v2.css','./css/deck-discard-hud-v1.css','./css/card-cycle-animation-v7.css','./css/hud-polish-targeted-v1.css','./css/hud-polish-targeted-v1-final.css']) await p.addStyleTag({url:'http://127.0.0.1:4173/'+href.slice(2)});
           await p.addScriptTag({url:'http://127.0.0.1:4173/js/hud-organique-v2.js'});
           await p.waitForTimeout(250);
           await p.addScriptTag({url:'http://127.0.0.1:4173/js/deck-discard-hud-v1.js'});
@@ -63,13 +63,14 @@ jobs:
           const c=await p.evaluate(()=>({
             q:parseFloat(getComputedStyle(document.getElementById('ov2MoveCount')).fontSize),
             u:document.getElementById('ov2Undo').getBoundingClientRect().width,
+            uh:document.getElementById('ov2Undo').getBoundingClientRect().height,
             pw:document.getElementById('ov2DeckHud').getBoundingClientRect().width,
             po:parseFloat(getComputedStyle(document.getElementById('ov2DeckHud')).opacity),
             la:document.querySelector('.ov2-side.ov2-left').classList.contains('is-active'),
             st:getComputedStyle(document.getElementById('ov2Push')).transform
           }));
           console.log('CHECK',c);
-          if(c.q<13.5||c.u<41||c.u>47||c.pw>61||c.po>.46||!c.la||c.st==='none') throw Error('HUD checks failed');
+          if(c.q<13.5||c.q>15.5||c.u<41||c.u>47||c.uh<41||c.uh>47||c.pw>61||c.po>.46||!c.la||c.st==='none') throw Error('HUD checks failed');
           await p.screenshot({path:'validation/hud-polish/hud-normal.png'});
           await p.evaluate(()=>{document.getElementById('ov2LeftActive').classList.add('ov2-off');document.getElementById('ov2RightActive').classList.remove('ov2-off')});
           await p.waitForTimeout(1000);
@@ -77,8 +78,16 @@ jobs:
           await p.screenshot({path:'validation/hud-polish/hud-right-active.png'});
           await p.evaluate(()=>{document.getElementById('ov2MoveCount').textContent='×0';document.getElementById('ov2PushCount').textContent='×1';document.getElementById('ov2MagicCount').textContent='×8';document.getElementById('ov2Undo').disabled=true;document.getElementById('ov2DeckHud').querySelector('.ov2-pile-count').textContent='0';document.getElementById('ov2DiscardHud').querySelector('.ov2-pile-count').textContent='0'});
           await p.waitForTimeout(120);
-          const op=await p.evaluate(()=>parseFloat(getComputedStyle(document.getElementById('ov2Undo')).opacity));
-          if(op>.43) throw Error('disabled undo opacity failed');
+          const edge=await p.evaluate(()=>({
+            op:parseFloat(getComputedStyle(document.getElementById('ov2Undo')).opacity),
+            m:document.getElementById('ov2MoveCount').textContent,
+            p:document.getElementById('ov2PushCount').textContent,
+            g:document.getElementById('ov2MagicCount').textContent,
+            d:document.getElementById('ov2DeckHud').querySelector('.ov2-pile-count').textContent,
+            x:document.getElementById('ov2DiscardHud').querySelector('.ov2-pile-count').textContent
+          }));
+          console.log('EDGE',edge);
+          if(edge.op>.43||edge.m!=='×0'||edge.p!=='×1'||edge.g!=='×8'||edge.d!=='0'||edge.x!=='0') throw Error('edge state failed');
           await b.close();
           NODE
           node capture-temp.mjs
