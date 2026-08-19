@@ -98,8 +98,10 @@
     if (!hud) return;
     const rect = hud.getBoundingClientRect();
     const gap = 10;
-    root.style.right = `${Math.max(8, window.innerWidth - rect.left + gap)}px`;
-    root.style.top = `${rect.top + rect.height / 2}px`;
+    root.style.setProperty('left', 'auto', 'important');
+    root.style.setProperty('bottom', 'auto', 'important');
+    root.style.setProperty('right', `${Math.max(8, window.innerWidth - rect.left + gap)}px`, 'important');
+    root.style.setProperty('top', `${rect.top + rect.height / 2}px`, 'important');
   }
 
   function open() {
