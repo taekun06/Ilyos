@@ -1,0 +1,31 @@
+/* ILYOS — verrou final du polish ciblé.
+   Sélecteurs renforcés pour passer après les correctifs HUD historiques. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Move #ov2MoveCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Push #ov2PushCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Magic #ov2MagicCount {
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  margin-top: 4px !important;
+  transform: translateY(1px) scale(1.04) !important;
+  transform-origin: top center !important;
+  text-shadow: 0 2px 5px rgba(0,0,0,.82), 0 0 7px rgba(255,230,166,.18) !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo {
+  box-sizing: border-box !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  transform: none !important;
+  transform-origin: center !important;
+}
+
+@media (max-width:980px), (max-height:720px) {
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Move #ov2MoveCount,
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Push #ov2PushCount,
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Magic #ov2MagicCount {
+    font-size: 14px !important;
+  }
+}
