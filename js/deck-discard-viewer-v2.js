@@ -16,6 +16,7 @@
   let viewer = null;
   let opened = false;
   let outsideBound = false;
+  let positionTimer = 0;
 
   function parseStoredState() {
     for (const key of ['ilyos-local-session-v22', 'ilyos-online-session-v1']) {
@@ -97,25 +98,41 @@
   function position() {
     const root = ensureViewer();
     const hud = byId('ov2DiscardHud');
-    if (!hud) return;
-    if (root.parentElement !== hud) hud.appendChild(root);
-    root.style.setProperty('left', 'auto', 'important');
+    if (!hud || !opened) return;
+    if (root.parentElement !== document.body) document.body.appendChild(root);
+    const rect = hud.getBoundingClientRect();
+    const width = root.offsetWidth || root.getBoundingClientRect().width || 225;
+    const gap = 12;
+    const left = Math.max(8, rect.left - gap - width);
+    const top = rect.top + rect.height / 2;
+    root.style.setProperty('right', 'auto', 'important');
     root.style.setProperty('bottom', 'auto', 'important');
-    root.style.setProperty('right', 'calc(100% + 32px)', 'important');
-    root.style.setProperty('top', '50%', 'important');
+    root.style.setProperty('left', `${left}px`, 'important');
+    root.style.setProperty('top', `${top}px`, 'important');
+  }
+
+  function settlePosition() {
+    cancelAnimationFrame(positionTimer);
+    positionTimer = requestAnimationFrame(() => {
+      position();
+      requestAnimationFrame(position);
+    });
+    setTimeout(() => { if (opened) position(); }, 120);
   }
 
   function open() {
     const root = ensureViewer();
     render();
-    position();
     opened = true;
     root.classList.remove('ov2-discard-viewer-hidden');
     root.setAttribute('aria-hidden', 'false');
     const hud = byId('ov2DiscardHud');
     hud?.setAttribute('aria-expanded', 'true');
     hud?.style.setProperty('opacity', '.98', 'important');
-    requestAnimationFrame(() => root.classList.add('ov2-discard-viewer-open'));
+    requestAnimationFrame(() => {
+      settlePosition();
+      root.classList.add('ov2-discard-viewer-open');
+    });
   }
 
   function close() {
@@ -147,6 +164,8 @@
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && opened) close();
     });
+    window.addEventListener('resize', () => { if (opened) settlePosition(); }, { passive: true });
+    window.addEventListener('orientationchange', () => { if (opened) settlePosition(); }, { passive: true });
   }
 
   function boot() {
@@ -157,6 +176,6 @@
     window.ILYOS_DISCARD_VIEWER = { open, close, toggle, render, position };
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once:true });
   else boot();
 })();
