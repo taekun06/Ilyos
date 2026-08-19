@@ -1,10 +1,10 @@
-/* ILYOS — Défausse interactive V2
+/* ILYOS — Défausse interactive V9
    Clic sur le HUD DÉFAUSSE => détail des vraies cartes du joueur actif.
    Lecture seule : aucune carte n'est déplacée ni modifiée. */
 (() => {
   'use strict';
-  if (window.__ILYOS_DISCARD_VIEWER_V2__) return;
-  window.__ILYOS_DISCARD_VIEWER_V2__ = true;
+  if (window.__ILYOS_DISCARD_VIEWER_V9__) return;
+  window.__ILYOS_DISCARD_VIEWER_V9__ = true;
 
   const byId = id => document.getElementById(id);
   const META = {
@@ -120,15 +120,18 @@
     const hud = byId('ov2DiscardHud');
     if (!hud || hud === boundHud) return !!hud;
     boundHud = hud;
+    hud.classList.add('ov2-interactive');
     hud.setAttribute('role', 'button');
     hud.setAttribute('tabindex', '0');
     hud.setAttribute('aria-haspopup', 'dialog');
     hud.title = 'Voir les cartes en défausse';
+    hud.style.setProperty('pointer-events','auto','important');
+    hud.style.setProperty('cursor','pointer','important');
     hud.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
       open();
-    });
+    }, true);
     hud.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
@@ -141,9 +144,9 @@
     ensureViewer();
     if (!bindHud()) setTimeout(boot, 120);
     const game = byId('gameScreen');
-    if (game) {
-      new MutationObserver(bindHud).observe(game, { childList: true, subtree: true });
-    }
+    if (game) new MutationObserver(bindHud).observe(game, { childList: true, subtree: true });
+
+    window.addEventListener('ilyos:open-discard-viewer', open);
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && viewer && !viewer.classList.contains('ov2-discard-viewer-hidden')) close();
     });

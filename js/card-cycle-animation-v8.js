@@ -1,12 +1,14 @@
-/* ILYOS — cycle visuel des cartes V8
+/* ILYOS — cycle visuel des cartes V9
    Pure couche d'animation. Aucune règle de jeu modifiée.
-   Corrige le faux négatif V7 quand les actions sont verrouillées avant la pose d'île. */
+   - seulement pendant le tour local
+   - 5 cartes positionnées juste au-dessus de la phrase du HUD bas
+   - actions xN regroupées en une seule animation */
 (() => {
   'use strict';
 
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
-  if (window.__ILYOS_CARD_CYCLE_V8__) return;
-  window.__ILYOS_CARD_CYCLE_V8__ = true;
+  if (window.__ILYOS_CARD_CYCLE_V9__) return;
+  window.__ILYOS_CARD_CYCLE_V9__ = true;
 
   const ICONS = {
     MOVE: `<svg viewBox="0 0 48 48" aria-hidden="true"><g fill="currentColor"><ellipse cx="17" cy="14" rx="5" ry="8"/><circle cx="13" cy="24" r="2"/><circle cx="17" cy="23" r="2"/><ellipse cx="31" cy="32" rx="5" ry="8"/><circle cx="27" cy="41" r="2"/><circle cx="31" cy="40" r="2"/></g></svg>`,
@@ -53,10 +55,9 @@
   function discardTarget() { return byId('ov2DiscardHud') || byId('ov2End') || byId('endTurnBtn'); }
   function endTarget() { return byId('ov2End') || byId('endTurnBtn'); }
 
-  /* IMPORTANT V8 : ne jamais utiliser l'état disabled des actions pour décider
-     si le tour est local. Avant la pose d'île obligatoire elles peuvent toutes
-     être verrouillées pendant le vrai tour du joueur. Le moteur place .ai-turn
-     avant renderAll() pour l'IA, ce qui est le signal autoritaire en solo. */
+  /* Ne jamais utiliser l'état disabled des actions pour décider si le tour est
+     local : avant la pose d'île obligatoire elles peuvent toutes être verrouillées
+     pendant le vrai tour du joueur. */
   function isLocalVisualTurn() {
     const game = byId('gameScreen');
     if (!game || game.classList.contains('hidden') || game.classList.contains('ai-turn')) return false;
@@ -107,6 +108,22 @@
   function actionTop() {
     const rects = ['MOVE', 'PUSH', 'MAGIC'].map(bottomTarget).map(rectOf).filter(Boolean);
     return rects.length ? Math.min(...rects.map(r => r.top)) : innerHeight - 120;
+  }
+
+  function dealAnchor(cardH) {
+    const instruction = rectOf(byId('ov2Instruction'));
+    if (instruction) {
+      const gap = innerHeight < 720 ? 10 : 14;
+      const centerY = instruction.top - gap - cardH / 2;
+      return {
+        x: instruction.left + instruction.width / 2,
+        y: clamp(centerY, cardH / 2 + 82, actionTop() - cardH / 2 - 12)
+      };
+    }
+    return {
+      x: innerWidth / 2,
+      y: clamp(innerHeight * .52, cardH / 2 + 82, actionTop() - cardH / 2 - 18)
+    };
   }
 
   function makeCard(type, extraClass = '', count = 1) {
@@ -183,17 +200,17 @@
     if (!types.length) return;
 
     const compact = innerWidth < 980 || innerHeight < 720;
-    const cardW = compact ? 76 : 94;
-    const cardH = compact ? 120 : 150;
-    const spacing = compact ? 88 : 112;
+    const cardW = compact ? 72 : 90;
+    const cardH = compact ? 114 : 144;
+    const spacing = compact ? 84 : 108;
     const mid = (types.length - 1) / 2;
-    const maxCenterY = actionTop() - cardH / 2 - (compact ? 28 : 42);
-    const centerY = clamp(innerHeight * .50, cardH / 2 + 100, maxCenterY);
-    const centerX = innerWidth / 2;
+    const anchor = dealAnchor(cardH);
 
+    /* V9 : le centre de la main suit directement la phrase #ov2Instruction.
+       Le bord inférieur des cartes reste à 10–14 px au-dessus du texte. */
     const fanRects = types.map((_, index) => {
       const d = index - mid;
-      return syntheticRect(centerX + d * spacing, centerY + Math.abs(d) * 4, cardW, cardH);
+      return syntheticRect(anchor.x + d * spacing, anchor.y + Math.abs(d) * 3, cardW, cardH);
     });
 
     const source = rectOf(deckTarget()) || syntheticRect(72, actionTop() - 66, 64, 104);
@@ -212,7 +229,7 @@
       endRotate: (index - mid) * 1.6
     })));
 
-    await sleep(compact ? 760 : 1100);
+    await sleep(compact ? 760 : 1050);
 
     const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
     types.forEach(type => counts[type]++);
@@ -358,7 +375,7 @@
     observer = new MutationObserver(inspectDeck);
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     inspectDeck();
-    window.ILYOS_CARD_CYCLE_V8 = { inspect: inspectDeck, stop: () => observer?.disconnect() };
+    window.ILYOS_CARD_CYCLE_V9 = { inspect: inspectDeck, stop: () => observer?.disconnect() };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

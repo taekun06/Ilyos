@@ -1,9 +1,9 @@
-/* ILYOS — Card Cycle / HUD V8 : correctifs visuels uniquement */
+/* ILYOS — Card Cycle / HUD V9 : correctifs visuels uniquement */
 
-/* Les deux HUD restent lisibles mais s'effacent davantage devant le plateau. */
+/* Les deux HUD restent visibles mais réellement plus transparents. */
 body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
 body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
-  opacity: .66 !important;
+  opacity: .50 !important;
   transition: opacity 160ms ease, filter 160ms ease, transform 160ms ease !important;
 }
 
@@ -11,15 +11,16 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
 body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
   pointer-events: auto !important;
   cursor: pointer !important;
+  z-index: 100160 !important;
 }
 body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud:hover,
 body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud:focus-visible {
-  opacity: .90 !important;
+  opacity: .82 !important;
   filter: brightness(1.12) drop-shadow(0 0 8px rgba(198,154,255,.28));
 }
 body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.ov2-pile-hit,
 body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-pile-hit {
-  opacity: .92 !important;
+  opacity: .90 !important;
 }
 
 /* Visionneuse de défausse */
