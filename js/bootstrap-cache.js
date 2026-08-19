@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V2";
+  const VERSION = "ILYOS_20260819_CARD_CYCLE_V4";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -36,13 +36,13 @@
 })();
 
 /*
- * Cycle visuel des cartes V2.
+ * Cycle visuel des cartes V4.
  * Chargé dynamiquement pour rester totalement découplé du bundle game.js :
  * si l'effet doit être retiré, il suffit de supprimer ce loader et les deux
  * fichiers dédiés, sans toucher au moteur de jeu ni au HUD.
  */
-(function loadIlyosCardCycleV2() {
-  const VERSION = '20260819-card-cycle-v2';
+(function loadIlyosCardCycleV4() {
+  const VERSION = '20260819-card-cycle-v4';
 
   function install() {
     if (!document.querySelector('link[data-ilyos-card-cycle-v2]')) {
