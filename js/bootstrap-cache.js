@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_HUD_POLISH_TARGETED_V1";
+  const VERSION = "ILYOS_20260819_HUD_POLISH_TARGETED_V1B";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -49,7 +49,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20260819-hud-polish-targeted-v1';
+  const VERSION = '20260819-hud-polish-targeted-v1b';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
@@ -57,6 +57,7 @@ function ilyosLoadScriptOnce(marker, src) {
     ilyosLoadStyleOnce('card-cycle-v8-overrides-v10', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
     ilyosLoadStyleOnce('card-cycle-v10-polish', `./css/card-cycle-animation-v10.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-polish-targeted-v1', `./css/hud-polish-targeted-v1.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
 
     ilyosLoadScriptOnce('deck-discard-hud-v10', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v10', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
