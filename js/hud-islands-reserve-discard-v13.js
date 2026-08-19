@@ -22,6 +22,15 @@
 
   const LABELS = { MOVE: 'DÉPLACER', PUSH: 'POUSSER', MAGIC: 'MAGIE' };
 
+  function applyIslandPolish() {
+    const selector = byId('islandSelector');
+    if (!selector || !selector.closest('#hudV2IslandDrawer')) return false;
+    selector.style.setProperty('column-gap', innerWidth < 980 || innerHeight < 720 ? '14px' : '20px', 'important');
+    selector.style.setProperty('row-gap', innerWidth < 980 || innerHeight < 720 ? '10px' : '14px', 'important');
+    selector.style.setProperty('padding', innerWidth < 980 || innerHeight < 720 ? '7px 9px' : '10px 12px', 'important');
+    return true;
+  }
+
   function activeReserveBadge() {
     const leftActive = byId('ov2LeftActive');
     const rightActive = byId('ov2RightActive');
@@ -141,7 +150,7 @@
     if (!end || !reserve) return;
 
     const distance = Math.hypot(end.x - reserve.x, end.y - reserve.y);
-    if (distance > 70) return; // trajet vers Défausse : on ne touche pas au compteur Réserve.
+    if (distance > 70) return;
 
     node.dataset.v13ReserveInspected = '1';
     const timing = animation.effect?.getTiming?.() || {};
@@ -152,9 +161,8 @@
     if (!(node instanceof Element)) return;
     if (node.matches?.('.card-cycle-v10-card.transfer')) inspectTransfer(node);
     node.querySelectorAll?.('.card-cycle-v10-card.transfer').forEach(inspectTransfer);
-    if (node.id === 'ov2DiscardViewer' || node.querySelector?.('#ov2DiscardViewer')) {
-      requestAnimationFrame(upgradeDiscardViewer);
-    }
+    if (node.id === 'ov2DiscardViewer' || node.querySelector?.('#ov2DiscardViewer')) requestAnimationFrame(upgradeDiscardViewer);
+    if (node.id === 'hudV2IslandDrawer' || node.id === 'islandSelector' || node.querySelector?.('#hudV2IslandDrawer, #islandSelector')) requestAnimationFrame(applyIslandPolish);
   }
 
   function upgradeDiscardViewer() {
@@ -181,16 +189,19 @@
   }
 
   const observer = new MutationObserver(records => {
-    for (const record of records) {
-      record.addedNodes.forEach(inspectAddedNode);
-    }
+    for (const record of records) record.addedNodes.forEach(inspectAddedNode);
   });
 
   function boot() {
     observer.observe(document.body, { childList: true, subtree: true });
+    applyIslandPolish();
     upgradeDiscardViewer();
+    setTimeout(applyIslandPolish, 120);
+    setTimeout(applyIslandPolish, 600);
     setTimeout(upgradeDiscardViewer, 120);
     setTimeout(upgradeDiscardViewer, 600);
+    window.addEventListener('resize', applyIslandPolish, { passive: true });
+    window.addEventListener('orientationchange', applyIslandPolish, { passive: true });
     window.addEventListener('ilyos:open-discard-viewer', () => requestAnimationFrame(upgradeDiscardViewer));
   }
 
