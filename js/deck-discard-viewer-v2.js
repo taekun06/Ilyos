@@ -60,6 +60,8 @@
     viewer.innerHTML = `<div class="ov2-discard-strip" role="group" aria-label="Cartes en défausse">
       ${typeCard('MOVE')}${typeCard('PUSH')}${typeCard('MAGIC')}
     </div>`;
+    viewer.addEventListener('pointerdown', event => event.stopPropagation());
+    viewer.addEventListener('click', event => event.stopPropagation());
     document.body.appendChild(viewer);
     return viewer;
   }
@@ -96,15 +98,11 @@
     const root = ensureViewer();
     const hud = byId('ov2DiscardHud');
     if (!hud) return;
-    const rect = hud.getBoundingClientRect();
-    const cssRight = parseFloat(getComputedStyle(hud).right);
-    const rightOffset = Number.isFinite(cssRight) ? cssRight : Math.max(0, window.innerWidth - rect.right);
-    const hudWidth = hud.offsetWidth || rect.width;
-    const gap = 10;
+    if (root.parentElement !== hud) hud.appendChild(root);
     root.style.setProperty('left', 'auto', 'important');
     root.style.setProperty('bottom', 'auto', 'important');
-    root.style.setProperty('right', `${rightOffset + hudWidth + gap}px`, 'important');
-    root.style.setProperty('top', `${rect.top + rect.height / 2}px`, 'important');
+    root.style.setProperty('right', 'calc(100% + 10px)', 'important');
+    root.style.setProperty('top', '50%', 'important');
   }
 
   function open() {
@@ -114,7 +112,9 @@
     opened = true;
     root.classList.remove('ov2-discard-viewer-hidden');
     root.setAttribute('aria-hidden', 'false');
-    byId('ov2DiscardHud')?.setAttribute('aria-expanded', 'true');
+    const hud = byId('ov2DiscardHud');
+    hud?.setAttribute('aria-expanded', 'true');
+    hud?.style.setProperty('opacity', '.98', 'important');
     requestAnimationFrame(() => root.classList.add('ov2-discard-viewer-open'));
   }
 
@@ -123,7 +123,9 @@
     opened = false;
     viewer.classList.remove('ov2-discard-viewer-open');
     viewer.setAttribute('aria-hidden', 'true');
-    byId('ov2DiscardHud')?.setAttribute('aria-expanded', 'false');
+    const hud = byId('ov2DiscardHud');
+    hud?.setAttribute('aria-expanded', 'false');
+    hud?.style.setProperty('opacity', '.78', 'important');
     setTimeout(() => {
       if (!opened) viewer?.classList.add('ov2-discard-viewer-hidden');
     }, 180);
@@ -145,8 +147,6 @@
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && opened) close();
     });
-    window.addEventListener('resize', () => { if (opened) position(); }, { passive: true });
-    window.addEventListener('orientationchange', () => { if (opened) position(); }, { passive: true });
   }
 
   function boot() {
