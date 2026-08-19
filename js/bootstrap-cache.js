@@ -57,6 +57,7 @@ function ilyosLoadScriptOnce(marker, src) {
     ilyosLoadStyleOnce('card-cycle-v8-overrides-v10', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
     ilyosLoadStyleOnce('card-cycle-v10-polish', `./css/card-cycle-animation-v10.css?v=${VERSION}`);
     ilyosLoadStyleOnce('card-art-v12', `./css/card-art-v12.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('card-art-v12-tuning', `./css/card-art-v12-tuning.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-polish-targeted-v1', `./css/hud-polish-targeted-v1.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-card-piles-discard-v11', `./css/hud-card-piles-discard-v11.css?v=${VERSION}`);
