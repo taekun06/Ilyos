@@ -21,6 +21,11 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo {
   transform: none !important;
   transform-origin: center !important;
 }
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo:disabled {
+  opacity: .40 !important;
+  filter: none !important;
+  transition: none !important;
+}
 
 @media (max-width:980px), (max-height:720px) {
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Move #ov2MoveCount,
