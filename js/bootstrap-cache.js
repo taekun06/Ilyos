@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V7_VERTICAL_CENTER";
+  const VERSION = "ILYOS_20260819_CARD_CYCLE_V8_CAMERA_DISCARD";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -18,10 +18,6 @@
       updateViaCache: 'none'
     }).then(registration => {
       registration.update().catch(() => {});
-
-      /* Première installation seulement : dès que le worker prend le contrôle,
-         recharge automatiquement la page une fois. Les chargements suivants
-         utilisent toujours le code réseau-frais, sans intervention manuelle. */
       if (!navigator.serviceWorker.controller) {
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           if (reloadStarted) return;
@@ -35,52 +31,42 @@
   } catch (_) { }
 })();
 
-/* HUD PIOCHE / DÉFAUSSE V1 — deux compteurs visibles ancrés sur Undo et Fin du tour. */
-(function loadIlyosDeckDiscardHudV1() {
-  const VERSION = '20260819-deck-discard-hud-v1';
+function ilyosLoadStyleOnce(marker, href) {
+  if (document.querySelector(`link[data-ilyos-loader="${marker}"]`)) return;
+  const node = document.createElement('link');
+  node.rel = 'stylesheet';
+  node.href = href;
+  node.dataset.ilyosLoader = marker;
+  document.head.appendChild(node);
+}
+
+function ilyosLoadScriptOnce(marker, src) {
+  if (document.querySelector(`script[data-ilyos-loader="${marker}"]`)) return;
+  const node = document.createElement('script');
+  node.src = src;
+  node.dataset.ilyosLoader = marker;
+  document.head.appendChild(node);
+}
+
+(function loadIlyosV8HudAndCards() {
+  const VERSION = '20260819-v8-camera-discard';
+
   function install() {
-    if (!document.querySelector('link[data-ilyos-deck-discard-hud]')) {
-      const style = document.createElement('link');
-      style.rel = 'stylesheet';
-      style.href = `./css/deck-discard-hud-v1.css?v=${VERSION}`;
-      style.dataset.ilyosDeckDiscardHud = 'style';
-      document.head.appendChild(style);
-    }
-    if (!document.querySelector('script[data-ilyos-deck-discard-hud]')) {
-      const script = document.createElement('script');
-      script.src = `./js/deck-discard-hud-v1.js?v=${VERSION}`;
-      script.dataset.ilyosDeckDiscardHud = 'script';
-      document.head.appendChild(script);
-    }
+    /* HUD Pioche/Défausse existant + format vertical V7 + correctifs V8. */
+    ilyosLoadStyleOnce('deck-discard-base', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('card-cycle-v7-base', `./css/card-cycle-animation-v7.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('card-cycle-v8-overrides', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
+
+    ilyosLoadScriptOnce('deck-discard-hud', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('discard-viewer-v2', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
+
+    /* V8 remplace le JS V7 : même rendu vertical, garde de tour corrigée. */
+    ilyosLoadScriptOnce('card-cycle-v8', `./js/card-cycle-animation-v8.js?v=${VERSION}`);
+
+    /* Départ de partie en VUE FACE + caméra AUTO. */
+    ilyosLoadScriptOnce('camera-start-face-auto', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);
   }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
   else install();
-})();
-
-/* Cycle visuel des cartes V7 — centrage viewport + cartes/HUD plus verticaux. */
-(function loadIlyosCardCycleV7() {
-  const VERSION = '20260819-card-cycle-v7-vertical-center';
-
-  function install() {
-    if (!document.querySelector('link[data-ilyos-card-cycle-v7]')) {
-      const style = document.createElement('link');
-      style.rel = 'stylesheet';
-      style.href = `./css/card-cycle-animation-v7.css?v=${VERSION}`;
-      style.dataset.ilyosCardCycleV7 = 'style';
-      document.head.appendChild(style);
-    }
-
-    if (!document.querySelector('script[data-ilyos-card-cycle-v7]')) {
-      const script = document.createElement('script');
-      script.src = `./js/card-cycle-animation-v7.js?v=${VERSION}`;
-      script.dataset.ilyosCardCycleV7 = 'script';
-      document.head.appendChild(script);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', install, { once: true });
-  } else {
-    install();
-  }
 })();
