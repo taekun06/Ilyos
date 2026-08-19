@@ -1,0 +1,138 @@
+name: HUD cards V11 preview temp
+
+on:
+  push:
+    branches: [hud-card-piles-discard-v11]
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hud-card-piles-discard-v11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install chromium
+      - run: |
+          python3 -m http.server 4173 >/tmp/http.log 2>&1 &
+          sleep 2
+          mkdir -p validation/hud-card-v11
+          cat > capture-v11.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage({viewport:{width:1440,height:900},deviceScaleFactor:1});
+          await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForTimeout(2400);
+          await page.evaluate(()=>document.getElementById('gameScreen')?.classList.remove('hidden'));
+          await page.waitForTimeout(400);
+          const play=page.locator('button:visible',{hasText:'JOUER'}).first();
+          if(await play.count()) {
+            await play.click({timeout:10000}).catch(()=>{});
+            await page.waitForTimeout(4200);
+          }
+          await page.waitForSelector('#ilyosHudOrganicV2',{state:'visible',timeout:15000});
+          await page.waitForSelector('#ov2DiscardHud',{state:'attached',timeout:15000});
+          await page.waitForTimeout(500);
+
+          // État de test de défausse : 3 déplacements, 2 poussées, 1 magie.
+          await page.evaluate(()=>{
+            const snapshot={currentPlayer:0,players:[{
+              name:'JOUEUR AZUR',
+              discard:[
+                {id:'d1',action:'MOVE'},{id:'d2',action:'MOVE'},{id:'d3',action:'MOVE'},
+                {id:'p1',action:'PUSH'},{id:'p2',action:'PUSH'},
+                {id:'m1',action:'MAGIC'}
+              ]
+            }]};
+            localStorage.setItem('ilyos-local-session-v22',JSON.stringify(snapshot));
+            const discardSource=document.getElementById('hudV2HandPopoverDiscard') || document.getElementById('discardCount');
+            if(discardSource) discardSource.textContent='6';
+            const deckSource=document.getElementById('hudV2HandPopoverDeck') || document.getElementById('deckCount');
+            if(deckSource) deckSource.textContent='7';
+            window.ILYOS_DECK_DISCARD_HUD?.sync?.();
+          });
+          await page.waitForTimeout(250);
+          await page.evaluate(()=>window.ILYOS_DISCARD_VIEWER?.open?.());
+          await page.waitForTimeout(450);
+
+          const checks=await page.evaluate(()=>{
+            const deck=document.getElementById('ov2DeckHud');
+            const discard=document.getElementById('ov2DiscardHud');
+            const count=deck.querySelector('.ov2-pile-count').getBoundingClientRect();
+            const visual=deck.querySelector('.ov2-pile-visual').getBoundingClientRect();
+            const card=deck.querySelector('.ov2-pile-card:nth-child(3)').getBoundingClientRect();
+            const viewer=document.getElementById('ov2DiscardViewer');
+            const vr=viewer.getBoundingClientRect();
+            const dr=discard.getBoundingClientRect();
+            const counts=[...viewer.querySelectorAll('.ov2-discard-type-count')].map(x=>x.textContent);
+            const typeCards=[...viewer.querySelectorAll('.ov2-discard-type-card')];
+            const overlap = Math.max(0, Math.min(count.bottom,visual.bottom)-Math.max(count.top,visual.top));
+            return {
+              countInCards: overlap > count.height*.70,
+              pileCardW:Math.round(card.width), pileCardH:Math.round(card.height),
+              viewerLeftOfDiscard: vr.right <= dr.left,
+              threeCards:typeCards.length,
+              counts,
+              viewerOpen:viewer.classList.contains('ov2-discard-viewer-open'),
+              deckText:deck.querySelector('.ov2-pile-count').textContent,
+              discardText:discard.querySelector('.ov2-pile-count').textContent
+            };
+          });
+          console.log('HUD_V11_CHECK',checks);
+          if(!checks.countInCards || checks.pileCardW<29 || checks.pileCardH<43 || !checks.viewerLeftOfDiscard || checks.threeCards!==3 || checks.counts.join(',')!=='×3,×2,×1' || !checks.viewerOpen) throw new Error('HUD V11 validation failed');
+          await page.screenshot({path:'validation/hud-card-v11/hud-discard-v11.png'});
+
+          // Planche de référence : dos et faces ACTUELS des cartes V10.
+          await page.evaluate(()=>{
+            document.body.innerHTML='';
+            document.body.style.margin='0';
+            document.body.style.background='radial-gradient(circle at 50% 35%,#203847,#07131e 72%)';
+            const stage=document.createElement('div');
+            stage.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;gap:54px;color:#fff;font-family:system-ui,sans-serif;';
+            const icons={
+              MOVE:'<svg viewBox="0 0 48 48"><g fill="currentColor"><ellipse cx="17" cy="14" rx="5" ry="8"/><circle cx="13" cy="24" r="2"/><circle cx="17" cy="23" r="2"/><ellipse cx="31" cy="32" rx="5" ry="8"/><circle cx="27" cy="41" r="2"/><circle cx="31" cy="40" r="2"/></g></svg>',
+              PUSH:'<svg viewBox="0 0 48 48"><path d="M7 24h24M23 14l10 10-10 10" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="m39 10 2.2 7L48 19l-6.8 2.2L39 28l-2.2-6.8L30 19l6.8-2.2L39 10Z" fill="currentColor"/></svg>',
+              MAGIC:'<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="m24 5 4.8 13.2L43 24l-14.2 5.8L24 43l-4.8-13.2L5 24l14.2-5.8L24 5Z" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="24" cy="24" r="4.2" fill="currentColor"/></svg>'
+            };
+            const meta={MOVE:'DÉPLACER',PUSH:'POUSSER',MAGIC:'MAGIE'};
+            function wrap(caption,card){
+              const w=document.createElement('div');
+              w.style.cssText='position:relative;width:150px;height:250px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:18px;';
+              const lab=document.createElement('div');lab.textContent=caption;lab.style.cssText='height:20px;font:800 12px/1 system-ui;letter-spacing:.12em;color:rgba(255,255,255,.72);';
+              w.append(lab,card);return w;
+            }
+            function front(type){
+              const el=document.createElement('div');
+              el.className=`card-cycle-v7-card card-cycle-v10-card showcase type-${type.toLowerCase()}`;
+              el.style.cssText='position:relative!important;left:auto!important;top:auto!important;width:112px!important;height:176px!important;';
+              el.innerHTML=`<span class="card-cycle-v7-kicker">CARTE ACTION</span><span class="card-cycle-v7-icon">${icons[type]}</span><b>${meta[type]}</b><i class="card-cycle-v7-rune"></i><span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>`;
+              return el;
+            }
+            function back(){
+              const el=front('MOVE');
+              el.classList.add('is-draw-back');
+              el.innerHTML=`<span class="card-cycle-v10-backface"><i>✦</i><b>ILYOS</b><small>PIOCHE</small></span><span class="card-cycle-v10-index">01/05</span><span class="card-cycle-v7-kicker">CARTE ACTION</span><span class="card-cycle-v7-icon">${icons.MOVE}</span><b>DÉPLACER</b><i class="card-cycle-v7-rune"></i><span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>`;
+              return el;
+            }
+            stage.append(wrap('DOS ACTUEL',back()),wrap('FACE DÉPLACER',front('MOVE')),wrap('FACE POUSSER',front('PUSH')),wrap('FACE MAGIE',front('MAGIC')));
+            document.body.append(stage);
+          });
+          await page.waitForTimeout(250);
+          await page.screenshot({path:'validation/hud-card-v11/cartes-actuelles-face-dos.png'});
+          await browser.close();
+          NODE
+          node capture-v11.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ilyos-hud-card-v11-preview
+          path: validation/hud-card-v11/*.png
+          if-no-files-found: error
+          retention-days: 1
