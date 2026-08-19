@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V5_PHYSICAL_RESERVE";
+  const VERSION = "ILYOS_20260819_CARD_CYCLE_V6_POLISH";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -57,9 +57,9 @@
   else install();
 })();
 
-/* Cycle visuel des cartes V5 — ancré sur PIOCHE, actions, RÉSERVE et DÉFAUSSE. */
-(function loadIlyosCardCycleV5() {
-  const VERSION = '20260819-card-cycle-v5-physical-reserve';
+/* Cycle visuel des cartes V6 — joueur local uniquement, cartes lisibles et batch xN. */
+(function loadIlyosCardCycleV6() {
+  const VERSION = '20260819-card-cycle-v6-polish';
 
   function install() {
     if (!document.querySelector('link[data-ilyos-card-cycle-v2]')) {
