@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_ART_V12";
+  const VERSION = "ILYOS_20260820_HUD_V13";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -49,7 +49,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20260819-card-art-v12';
+  const VERSION = '20260820-hud-v13';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
@@ -62,11 +62,13 @@ function ilyosLoadScriptOnce(marker, src) {
     ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-card-piles-discard-v11', `./css/hud-card-piles-discard-v11.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-card-piles-discard-v11-layer', `./css/hud-card-piles-discard-v11-layer.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('hud-islands-reserve-discard-v13', `./css/hud-islands-reserve-discard-v13.css?v=${VERSION}`);
 
     ilyosLoadScriptOnce('deck-discard-hud-v11', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v11', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
     ilyosLoadScriptOnce('card-cycle-v10', `./js/card-cycle-animation-v10.js?v=${VERSION}`);
     ilyosLoadScriptOnce('hud-polish-targeted-v1', `./js/hud-polish-targeted-v1.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('hud-islands-reserve-discard-v13', `./js/hud-islands-reserve-discard-v13.js?v=${VERSION}`);
 
     /* Départ de partie en VUE FACE + caméra AUTO — inchangé. */
     ilyosLoadScriptOnce('camera-start-face-auto-v10', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);
