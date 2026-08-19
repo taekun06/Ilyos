@@ -1,0 +1,251 @@
+/* ILYOS — Card Cycle V7 : cartes et HUD plus verticaux */
+.card-cycle-v7-card {
+  position: fixed !important;
+  z-index: 100520 !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 9px 11px !important;
+  border-radius: 14px;
+  border: 1.5px solid currentColor;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 36%, color-mix(in srgb, currentColor 17%, transparent), transparent 34%),
+    linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.025) 32%, rgba(4,12,20,.24)),
+    rgba(13,24,34,.96);
+  box-shadow:
+    0 16px 34px rgba(0,0,0,.42),
+    inset 0 0 0 1px rgba(255,255,255,.08),
+    0 0 22px color-mix(in srgb, currentColor 28%, transparent);
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+}
+
+.card-cycle-v7-card::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid color-mix(in srgb, currentColor 34%, transparent);
+  border-radius: 9px;
+  pointer-events: none;
+}
+
+.card-cycle-v7-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(118deg, transparent 20%, rgba(255,255,255,.17) 47%, transparent 72%);
+  transform: translateX(-125%);
+  animation: cardCycleV7Sheen 1150ms ease-out both;
+}
+
+.card-cycle-v7-card.type-move { color: #f1cf79; }
+.card-cycle-v7-card.type-push { color: #ff9d43; }
+.card-cycle-v7-card.type-magic { color: #caa5ff; }
+
+.card-cycle-v7-kicker {
+  position: relative;
+  z-index: 2;
+  font: 800 7px/1 system-ui, sans-serif;
+  letter-spacing: .18em;
+  color: rgba(255,255,255,.56);
+}
+
+.card-cycle-v7-icon {
+  position: relative;
+  z-index: 2;
+  width: 54%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, currentColor 40%, transparent));
+}
+.card-cycle-v7-icon svg { width: 100%; height: 100%; }
+
+.card-cycle-v7-card > b {
+  position: relative;
+  z-index: 2;
+  font: 850 9px/1 system-ui, sans-serif;
+  letter-spacing: .06em;
+  color: rgba(255,255,255,.98);
+  text-shadow: 0 2px 5px rgba(0,0,0,.62);
+  white-space: nowrap;
+}
+
+.card-cycle-v7-rune {
+  position: relative;
+  z-index: 2;
+  width: 16px;
+  height: 2px;
+  border-radius: 99px;
+  background: currentColor;
+  opacity: .62;
+  box-shadow: 0 0 7px currentColor;
+}
+
+.card-cycle-v7-card > em {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  z-index: 4;
+  min-width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: rgba(7,12,20,.88);
+  color: #fff;
+  font: 900 10px/1 system-ui, sans-serif;
+  font-style: normal;
+  box-shadow: 0 4px 12px rgba(0,0,0,.34), 0 0 9px color-mix(in srgb, currentColor 36%, transparent);
+}
+
+.card-cycle-v7-card.showcase {
+  border-width: 2px;
+  box-shadow:
+    0 20px 42px rgba(0,0,0,.44),
+    inset 0 0 0 1px rgba(255,255,255,.10),
+    0 0 26px color-mix(in srgb, currentColor 34%, transparent);
+}
+.card-cycle-v7-card.showcase .card-cycle-v7-kicker { font-size: 8px; }
+.card-cycle-v7-card.showcase > b { font-size: 10px; letter-spacing: .075em; }
+.card-cycle-v7-card.showcase .card-cycle-v7-icon { width: 58%; }
+
+.card-cycle-v7-card.transfer {
+  border-radius: 12px;
+  padding: 9px 7px !important;
+}
+
+.card-cycle-v7-count {
+  position: fixed !important;
+  z-index: 100560 !important;
+  pointer-events: none !important;
+  color: #ffe7a9;
+  font: 900 11px/1 system-ui, sans-serif;
+  letter-spacing: .04em;
+  text-shadow: 0 2px 3px rgba(0,0,0,.8), 0 0 8px rgba(255,211,116,.52);
+  white-space: nowrap;
+}
+
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-v7-hit,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-v7-reserve-hit,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-v7-end-hit {
+  animation: cardCycleV7Hit 520ms cubic-bezier(.18,.82,.24,1.12) both !important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-v7-reserve-hit {
+  animation-name: cardCycleV7ReserveHit !important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .card-cycle-v7-end-hit {
+  animation-name: cardCycleV7EndHit !important;
+}
+.card-cycle-v7-locked { pointer-events: none !important; }
+
+/* PIOCHE / DÉFAUSSE : format étroit et vertical */
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+  width: 76px !important;
+  min-height: 116px !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 58px auto auto !important;
+  justify-items: center !important;
+  align-items: center !important;
+  row-gap: 3px !important;
+  column-gap: 0 !important;
+  padding: 8px 7px 9px !important;
+  clip-path: polygon(11% 0, 100% 0, 100% 91%, 89% 100%, 0 100%, 0 9%) !important;
+  opacity: .96 !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+  clip-path: polygon(0 0, 89% 0, 100% 9%, 100% 100%, 11% 100%, 0 91%) !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-visual {
+  grid-row: auto !important;
+  width: 50px !important;
+  height: 58px !important;
+  align-self: auto !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card {
+  left: 11px !important;
+  top: 5px !important;
+  width: 29px !important;
+  height: 45px !important;
+  border-radius: 5px !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card:nth-child(1) {
+  transform: translate(-5px, 4px) rotate(-7deg) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card:nth-child(2) {
+  transform: translate(-1px, 1px) rotate(-2deg) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card:nth-child(3) {
+  transform: translate(3px, -2px) rotate(3deg) !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-count {
+  align-self: auto !important;
+  font-size: 27px !important;
+  line-height: 1 !important;
+}
+body[data-visual-mode="alternative"] #gameScreen .ov2-pile-label {
+  align-self: auto !important;
+  margin-top: 0 !important;
+  font-size: 8px !important;
+  letter-spacing: .11em !important;
+  text-align: center !important;
+}
+
+@keyframes cardCycleV7Sheen {
+  0% { transform: translateX(-125%); opacity: 0; }
+  28% { opacity: .85; }
+  100% { transform: translateX(125%); opacity: 0; }
+}
+@keyframes cardCycleV7Hit {
+  0% { filter: brightness(1); }
+  42% { filter: brightness(1.42) drop-shadow(0 0 10px rgba(255,215,125,.68)); }
+  100% { filter: brightness(1); }
+}
+@keyframes cardCycleV7ReserveHit {
+  0% { filter: brightness(1); transform: translateY(0) scale(1); }
+  44% { filter: brightness(1.45) drop-shadow(0 0 8px rgba(255,220,145,.7)); transform: translateY(-1px) scale(1.10); }
+  100% { filter: brightness(1); transform: translateY(0) scale(1); }
+}
+@keyframes cardCycleV7EndHit {
+  0% { filter: brightness(1); }
+  40% { filter: brightness(1.48) drop-shadow(0 0 10px rgba(255,211,116,.78)); }
+  100% { filter: brightness(1); }
+}
+
+@media (max-width: 980px), (max-height: 720px) {
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+    width: 66px !important;
+    min-height: 98px !important;
+    grid-template-rows: 48px auto auto !important;
+    padding: 7px 6px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen .ov2-pile-visual {
+    width: 42px !important;
+    height: 49px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen .ov2-pile-card {
+    width: 25px !important;
+    height: 38px !important;
+    left: 9px !important;
+    top: 5px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen .ov2-pile-count { font-size: 23px !important; }
+  .card-cycle-v7-card.showcase > b { font-size: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-cycle-v7-card,
+  .card-cycle-v7-count { display: none !important; }
+  .card-cycle-v7-hit,
+  .card-cycle-v7-reserve-hit,
+  .card-cycle-v7-end-hit { animation: none !important; }
+}
