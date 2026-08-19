@@ -3,6 +3,9 @@ name: HUD V13 validation temp
 on:
   push:
     branches: [hud-islands-reserve-discard-v13]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
