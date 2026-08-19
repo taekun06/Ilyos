@@ -149,15 +149,6 @@
     bindOutside();
     window.addEventListener('ilyos:open-discard-viewer', open);
     window.addEventListener('ilyos:toggle-discard-viewer', toggle);
-    const game = byId('gameScreen');
-    if (game) {
-      new MutationObserver(() => {
-        if (opened) {
-          render();
-          position();
-        }
-      }).observe(game, { subtree: true, childList: true, characterData: true });
-    }
     window.ILYOS_DISCARD_VIEWER = { open, close, toggle, render, position };
   }
 
