@@ -53,8 +53,10 @@
     right.classList.toggle('is-active', rightActive);
 
     const next = leftActive ? 'left' : rightActive ? 'right' : null;
-    if (next && lastActiveSide && next !== lastActiveSide) boost(next === 'left' ? left : right);
-    lastActiveSide = next;
+    if (next) {
+      if (lastActiveSide && next !== lastActiveSide) boost(next === 'left' ? left : right);
+      lastActiveSide = next;
+    }
   }
 
   function schedule() {
