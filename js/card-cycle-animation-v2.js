@@ -1,29 +1,28 @@
-/* ILYOS — cycle visuel des cartes V3
-   Animation centrale indépendante du layout du HUD.
-   Aucune règle de jeu n'est modifiée : cette couche observe uniquement le rendu existant. */
+/* ILYOS — cycle visuel des cartes V4
+   Animation directement ancree sur le HUD organique visible.
+   Aucune regle de jeu n'est modifiee : cette couche observe le HUD historique
+   pour connaitre les 5 cartes, puis anime uniquement des fantomes visuels. */
 (() => {
   'use strict';
 
-  const REDUCED = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  if (REDUCED) return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
 
   const META = {
-    MOVE:  { label: 'DÉPLACEMENT', short: 'D', icon: '➜' },
-    PUSH:  { label: 'POUSSÉE', short: 'P', icon: '✹' },
-    MAGIC: { label: 'MAGIE', short: 'M', icon: '✦' }
+    MOVE:  { label: 'DEPLACER', symbol: '↟' },
+    PUSH:  { label: 'POUSSER',  symbol: '➜' },
+    MAGIC: { label: 'MAGIE',    symbol: '✦' }
   };
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const deckRoot = () => document.getElementById('deckDisplay');
+  const byId = id => document.getElementById(id);
+  const deckRoot = () => byId('deckDisplay');
   const miniCards = () => [...(deckRoot()?.querySelectorAll('.v64-mini-card') || [])];
-  const byType = type => document.querySelector(`.v60-action-btn[data-type="${type}"]`);
 
   let baseline = null;
   let dealActive = false;
+  let observer = null;
   let interceptingEndTurn = false;
   let bypassEndTurn = false;
-  let observer = null;
-  let stage = null;
 
   function cardType(card) {
     if (card?.classList.contains('action-move')) return 'MOVE';
@@ -32,68 +31,194 @@
     return null;
   }
 
-  function countCards(cards = miniCards()) {
-    const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    cards.forEach(card => {
-      const type = cardType(card);
-      if (type) counts[type]++;
-    });
-    return counts;
+  function parseCount(text) {
+    const match = String(text || '').match(/-?\d+/);
+    return match ? Math.max(0, Number(match[0]) || 0) : 0;
+  }
+
+  function bottomTarget(type) {
+    return byId({ MOVE: 'ov2Move', PUSH: 'ov2Push', MAGIC: 'ov2Magic' }[type])
+      || byId({ MOVE: 'hudV2MoveCount', PUSH: 'hudV2PushCount', MAGIC: 'hudV2MagicCount' }[type]);
+  }
+
+  function bottomCount(type) {
+    return byId({ MOVE: 'ov2MoveCount', PUSH: 'ov2PushCount', MAGIC: 'ov2MagicCount' }[type]);
+  }
+
+  function endTarget() {
+    return byId('ov2End') || byId('endTurnBtn');
+  }
+
+  function activeReserveBadge() {
+    const leftActive = byId('ov2LeftActive');
+    const rightActive = byId('ov2RightActive');
+    if (leftActive && !leftActive.classList.contains('ov2-off')) return byId('ov2LeftReserve');
+    if (rightActive && !rightActive.classList.contains('ov2-off')) return byId('ov2RightReserve');
+
+    // Fallback : le bouton FIN DU TOUR n'est actif que pour le joueur humain.
+    // En cas de synchronisation HUD legerement retardee, le premier badge visible
+    // reste une meilleure ancre que les anciens compteurs caches.
+    return [byId('ov2LeftReserve'), byId('ov2RightReserve')]
+      .find(node => node && !node.classList.contains('ov2-off')) || null;
+  }
+
+  function reserveTarget(type) {
+    const badge = activeReserveBadge();
+    if (!badge) return null;
+    const key = type.toLowerCase();
+    return badge.querySelector(`.ov2-reserve-${key}`)
+      || badge.querySelector(`[data-reserve-${key}]`)?.closest('.ov2-reserve-action')
+      || badge;
+  }
+
+  function reserveCountNode(type) {
+    const badge = activeReserveBadge();
+    return badge?.querySelector(`[data-reserve-${type.toLowerCase()}]`) || null;
   }
 
   function readAvailable() {
-    const result = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    Object.keys(result).forEach(type => {
-      const raw = byType(type)?.querySelector('b')?.textContent || '';
-      const value = Number.parseInt(raw.replace(/[^0-9-]/g, ''), 10);
-      result[type] = Number.isFinite(value) ? value : 0;
+    const out = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    Object.keys(out).forEach(type => {
+      const organic = bottomCount(type);
+      if (organic) {
+        out[type] = parseCount(organic.textContent);
+        return;
+      }
+      const legacy = bottomTarget(type);
+      const explicit = legacy?.querySelector?.('.hud-v2-pill-count')?.textContent;
+      out[type] = parseCount(explicit || legacy?.textContent);
     });
-    return result;
+    return out;
   }
 
-  function removeStage() {
-    stage?.remove();
-    stage = null;
-  }
-
-  function createStage(kind, eyebrow, title, subtitle = '') {
-    removeStage();
-    const root = document.createElement('div');
-    root.className = `card-cycle-stage card-cycle-${kind}`;
-    root.setAttribute('aria-hidden', 'true');
-    root.innerHTML = `
-      <div class="card-cycle-scene">
-        <div class="card-cycle-heading">
-          <span class="card-cycle-eyebrow">${eyebrow}</span>
-          <strong>${title}</strong>
-          ${subtitle ? `<small>${subtitle}</small>` : ''}
-        </div>
-        <div class="card-cycle-content"></div>
-      </div>
-    `;
-    document.body.appendChild(root);
-    stage = root;
-    requestAnimationFrame(() => root.classList.add('is-visible'));
-    return root;
-  }
-
-  function bigCardHTML(type, index, extra = '') {
-    const meta = META[type] || META.MOVE;
-    return `
-      <div class="card-cycle-big-card type-${type.toLowerCase()} ${extra}" data-type="${type}" style="--i:${index}">
-        <span class="card-cycle-card-glyph">${meta.icon}</span>
-        <b>${meta.label}</b>
-        <small>ACTION</small>
-      </div>
-    `;
+  function countFresh(cards = miniCards()) {
+    const out = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    cards.forEach(card => {
+      const type = cardType(card);
+      if (type) out[type]++;
+    });
+    return out;
   }
 
   function captureBaseline(cards) {
     baseline = {
-      fresh: countCards(cards),
+      fresh: countFresh(cards),
       available: readAvailable(),
       capturedAt: Date.now()
     };
+  }
+
+  function rectOf(node) {
+    if (!node) return null;
+    const r = node.getBoundingClientRect();
+    if (!r.width && !r.height) return null;
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }
+
+  function center(rect) {
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  function syntheticRect(cx, cy, width = 58, height = 78) {
+    return { left: cx - width / 2, top: cy - height / 2, width, height };
+  }
+
+  function dockGeometry() {
+    const targets = ['MOVE', 'PUSH', 'MAGIC'].map(bottomTarget).map(rectOf).filter(Boolean);
+    if (!targets.length) {
+      return { cx: innerWidth / 2, top: innerHeight - 120 };
+    }
+    const centers = targets.map(center);
+    return {
+      cx: centers.reduce((sum, p) => sum + p.x, 0) / centers.length,
+      top: Math.min(...targets.map(r => r.top))
+    };
+  }
+
+  function makeFlyingCard(type, extraClass = '') {
+    const meta = META[type] || META.MOVE;
+    const el = document.createElement('div');
+    el.className = `card-cycle-flying-card type-${type.toLowerCase()} ${extraClass}`.trim();
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = `<span>${meta.symbol}</span><b>${meta.label}</b>`;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  async function fly(el, fromRect, toRect, {
+    duration = 430,
+    delay = 0,
+    arc = 22,
+    startScale = 1,
+    endScale = .42,
+    startOpacity = 1,
+    endOpacity = .12
+  } = {}) {
+    if (!el || !fromRect || !toRect) return;
+    const from = center(fromRect);
+    const to = center(toRect);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    el.style.left = `${fromRect.left}px`;
+    el.style.top = `${fromRect.top}px`;
+    el.style.width = `${fromRect.width}px`;
+    el.style.height = `${fromRect.height}px`;
+
+    const animation = el.animate([
+      { transform: `translate(0,0) scale(${startScale}) rotate(-2deg)`, opacity: startOpacity },
+      {
+        transform: `translate(${dx * .48}px,${dy * .42 - arc}px) scale(${(startScale + endScale) / 2 + .08}) rotate(3deg)`,
+        opacity: 1,
+        offset: .52
+      },
+      { transform: `translate(${dx}px,${dy}px) scale(${endScale}) rotate(0deg)`, opacity: endOpacity }
+    ], {
+      duration,
+      delay,
+      easing: 'cubic-bezier(.18,.74,.18,1)',
+      fill: 'forwards'
+    });
+
+    try { await animation.finished; } catch (_) { }
+  }
+
+  function pulse(node, className = 'card-cycle-target-hit') {
+    if (!node) return;
+    node.classList.remove(className);
+    void node.offsetWidth;
+    node.classList.add(className);
+    setTimeout(() => node.classList.remove(className), 620);
+  }
+
+  function plusOne(node, text = '+1') {
+    const rect = rectOf(node);
+    if (!rect) return;
+    const p = document.createElement('div');
+    p.className = 'card-cycle-plus-one';
+    p.textContent = text;
+    p.style.left = `${rect.left + rect.width / 2}px`;
+    p.style.top = `${rect.top}px`;
+    document.body.appendChild(p);
+    const a = p.animate([
+      { opacity: 0, transform: 'translate(-50%,6px) scale(.82)' },
+      { opacity: 1, transform: 'translate(-50%,-14px) scale(1.08)', offset: .35 },
+      { opacity: 0, transform: 'translate(-50%,-34px) scale(.92)' }
+    ], { duration: 620, easing: 'ease-out', fill: 'forwards' });
+    a.onfinish = () => p.remove();
+  }
+
+  function showDrawSource(rect) {
+    const source = document.createElement('div');
+    source.className = 'card-cycle-draw-source';
+    source.setAttribute('aria-hidden', 'true');
+    source.innerHTML = '<i></i><i></i><i></i><b>PIOCHE</b>';
+    source.style.left = `${rect.left}px`;
+    source.style.top = `${rect.top}px`;
+    source.style.width = `${rect.width}px`;
+    source.style.height = `${rect.height}px`;
+    document.body.appendChild(source);
+    return source;
   }
 
   async function runDealAnimation(cards) {
@@ -101,35 +226,57 @@
     if (!types.length) return;
     captureBaseline(cards);
 
-    const root = createStage('deal', 'NOUVEAU TOUR', `${types.length} CARTES PIOCHÉES`, 'Votre main d’actions pour ce tour');
-    const content = root.querySelector('.card-cycle-content');
-    content.innerHTML = `
-      <div class="card-cycle-deal-layout">
-        <div class="card-cycle-deck-visual" aria-hidden="true">
-          <i></i><i></i><i></i>
-          <span>PIOCHE</span>
-        </div>
-        <div class="card-cycle-deal-arrow"><span>›</span><span>›</span><span>›</span></div>
-        <div class="card-cycle-hand-fan">
-          ${types.map((type, index) => bigCardHTML(type, index, 'deal-big-card')).join('')}
-        </div>
-      </div>
-    `;
+    // Toute la sequence vit juste au-dessus des vraies icones du dock.
+    const dock = dockGeometry();
+    const sourceRect = syntheticRect(dock.cx, Math.max(110, dock.top - 78), 46, 62);
+    const source = showDrawSource(sourceRect);
+    const fanY = Math.max(96, dock.top - 128);
+    const fanRects = types.map((_, index) =>
+      syntheticRect(dock.cx + (index - 2) * 54, fanY + Math.abs(index - 2) * 5, 54, 72)
+    );
+    const ghosts = types.map(type => makeFlyingCard(type, 'card-cycle-draw-card'));
 
-    const bigCards = [...content.querySelectorAll('.deal-big-card')];
-    await sleep(120);
-    bigCards.forEach((card, index) => {
-      setTimeout(() => card.classList.add('is-dealt'), index * 120);
-    });
+    // 1) Les cinq cartes sortent visiblement de la pioche et se montrent un instant.
+    await Promise.all(ghosts.map((ghost, index) =>
+      fly(ghost, sourceRect, fanRects[index], {
+        duration: 360,
+        delay: index * 72,
+        arc: 18,
+        startScale: .68,
+        endScale: 1,
+        startOpacity: .25,
+        endOpacity: 1
+      })
+    ));
 
-    await sleep(1180);
-    root.classList.add('is-leaving');
-    await sleep(260);
-    if (stage === root) removeStage();
+    await sleep(180);
+
+    // 2) Chaque carte rejoint l'icone correspondant exactement a son type.
+    await Promise.all(ghosts.map(async (ghost, index) => {
+      const target = bottomTarget(types[index]);
+      const targetRect = rectOf(target);
+      if (!targetRect) { ghost.remove(); return; }
+      await fly(ghost, fanRects[index], targetRect, {
+        duration: 430,
+        delay: index * 82,
+        arc: 26,
+        startScale: 1,
+        endScale: .28,
+        endOpacity: .08
+      });
+      pulse(target);
+      plusOne(target);
+      ghost.remove();
+    }));
+
+    source.classList.add('is-leaving');
+    setTimeout(() => source.remove(), 260);
   }
 
   function classifyFreshCards(cards) {
-    if (!baseline) return cards.map(card => ({ type: cardType(card), unused: false }));
+    if (!baseline) {
+      return cards.map(card => ({ type: cardType(card) || 'MOVE', unused: false }));
+    }
 
     const now = readAvailable();
     const freshUsed = { MOVE: 0, PUSH: 0, MAGIC: 0 };
@@ -137,112 +284,96 @@
 
     Object.keys(freshUsed).forEach(type => {
       const spent = Math.max(0, (baseline.available[type] || 0) - (now[type] || 0));
+      // Le moteur consomme les cartes fraiches avant la reserve : ce calcul
+      // reproduit uniquement ce fait pour savoir quelles cartes ANIMER.
       freshUsed[type] = Math.min(baseline.fresh[type] || 0, spent);
     });
 
     return cards.map(card => {
-      const type = cardType(card);
-      if (!type) return { type: 'MOVE', unused: false };
+      const type = cardType(card) || 'MOVE';
       const used = seen[type] < freshUsed[type];
       seen[type]++;
       return { type, unused: !used };
     });
   }
 
-  function reserveTotals(classified) {
-    const totals = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    classified.forEach(entry => {
-      if (entry.unused && entry.type) totals[entry.type]++;
-    });
-    return totals;
+  function reserveCurrent(type) {
+    return parseCount(reserveCountNode(type)?.textContent);
   }
 
-  function pulseLiveHud(type) {
-    const target = byType(type);
-    if (!target) return;
-    target.classList.remove('card-cycle-live-pulse');
-    void target.offsetWidth;
-    target.classList.add('card-cycle-live-pulse');
-    setTimeout(() => target.classList.remove('card-cycle-live-pulse'), 720);
+  function incrementReserveVisual(type) {
+    const node = reserveCountNode(type);
+    if (!node) return;
+    node.textContent = String(Math.min(5, parseCount(node.textContent) + 1));
   }
 
   async function runEndTurnAnimation(cards) {
-    const classified = classifyFreshCards(cards.slice(0, 5));
-    const totals = reserveTotals(classified);
-    const unusedCount = Object.values(totals).reduce((sum, value) => sum + value, 0);
+    const entries = classifyFreshCards(cards.slice(0, 5));
+    const end = endTarget();
+    const endRect = rectOf(end);
+    if (!endRect || !entries.length) return;
 
-    const root = createStage(
-      'end',
-      'FIN DU TOUR',
-      unusedCount ? 'LES ACTIONS INUTILISÉES SONT CONSERVÉES' : 'TOUTES LES ACTIONS ONT ÉTÉ UTILISÉES',
-      unusedCount ? 'Leur énergie rejoint la réserve, puis les cartes vont à la défausse.' : 'Les cartes jouées rejoignent maintenant la défausse.'
-    );
-    const content = root.querySelector('.card-cycle-content');
+    const capacity = {
+      MOVE: Math.max(0, 5 - reserveCurrent('MOVE')),
+      PUSH: Math.max(0, 5 - reserveCurrent('PUSH')),
+      MAGIC: Math.max(0, 5 - reserveCurrent('MAGIC'))
+    };
+    const reservedSoFar = { MOVE: 0, PUSH: 0, MAGIC: 0 };
 
-    content.innerHTML = `
-      <div class="card-cycle-end-layout">
-        <div class="card-cycle-end-hand">
-          ${classified.map((entry, index) => bigCardHTML(entry.type, index, `end-big-card ${entry.unused ? 'is-unused' : 'is-used'}`)).join('')}
-        </div>
+    // Les cartes inutilisees quittent leurs icones du bas et montent d'abord
+    // vers les vrais compteurs RESERVE du joueur actif dans le ruban superieur.
+    const banked = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (!entry.unused || reservedSoFar[entry.type] >= capacity[entry.type]) continue;
+      const from = rectOf(bottomTarget(entry.type));
+      const reserve = reserveTarget(entry.type);
+      const to = rectOf(reserve);
+      if (!from || !to) continue;
 
-        <div class="card-cycle-reserve-block">
-          <span class="card-cycle-flow-label">RÉSERVE</span>
-          <div class="card-cycle-reserve-row">
-            ${Object.keys(META).map(type => `
-              <div class="card-cycle-reserve-slot type-${type.toLowerCase()}" data-reserve="${type}">
-                <span>${META[type].icon}</span>
-                <b>${META[type].label}</b>
-                <em>+${totals[type]}</em>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-
-        <div class="card-cycle-discard-zone">
-          <div class="card-cycle-discard-stack"><i></i><i></i><i></i></div>
-          <b>DÉFAUSSE</b>
-        </div>
-      </div>
-    `;
-
-    const bigCards = [...content.querySelectorAll('.end-big-card')];
-    await sleep(120);
-    bigCards.forEach((card, index) => setTimeout(() => card.classList.add('is-shown'), index * 75));
-    await sleep(520);
-
-    if (unusedCount) {
-      root.classList.add('phase-reserve');
-      const counters = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-      const unusedCards = bigCards.filter(card => card.classList.contains('is-unused'));
-
-      unusedCards.forEach((card, index) => {
-        const type = card.dataset.type;
-        setTimeout(() => {
-          card.classList.add('send-energy');
-          const slot = content.querySelector(`[data-reserve="${type}"]`);
-          counters[type]++;
-          slot?.classList.add('is-receiving');
-          const counter = slot?.querySelector('em');
-          if (counter) counter.textContent = `+${counters[type]}`;
-          pulseLiveHud(type);
-          setTimeout(() => slot?.classList.remove('is-receiving'), 470);
-        }, index * 170);
+      reservedSoFar[entry.type]++;
+      const ghost = makeFlyingCard(entry.type, 'card-cycle-bank-card');
+      banked.push({ index: i, type: entry.type, reserve, reserveRect: to });
+      await fly(ghost, from, to, {
+        duration: 500,
+        arc: 34,
+        startScale: .62,
+        endScale: .34,
+        startOpacity: .94,
+        endOpacity: .16
       });
-
-      await sleep(520 + Math.max(0, unusedCards.length - 1) * 170);
-    } else {
-      await sleep(140);
+      ghost.remove();
+      incrementReserveVisual(entry.type);
+      pulse(reserve, 'card-cycle-reserve-hit');
+      plusOne(reserve, '+1 RESERVE');
+      await sleep(55);
     }
 
-    root.classList.add('phase-discard');
-    bigCards.forEach((card, index) => {
-      setTimeout(() => card.classList.add('to-discard'), index * 55);
-    });
-    await sleep(680);
+    if (banked.length) await sleep(120);
 
-    root.classList.add('is-leaving');
-    await sleep(240);
-    if (stage === root) removeStage();
+    // Puis les cinq cartes physiques convergent vers FIN DU TOUR.
+    // - carte conservee : depart depuis le compteur de reserve qu'elle vient de toucher ;
+    // - carte utilisee / reserve pleine : depart depuis son icone d'action en bas.
+    const bankedByIndex = new Map(banked.map(item => [item.index, item]));
+    await Promise.all(entries.map(async (entry, index) => {
+      const bankedEntry = bankedByIndex.get(index);
+      const from = bankedEntry?.reserveRect || rectOf(bottomTarget(entry.type));
+      if (!from) return;
+      const ghost = makeFlyingCard(entry.type, 'card-cycle-end-card');
+      await fly(ghost, from, endRect, {
+        duration: 460,
+        delay: index * 54,
+        arc: 28 + index * 2,
+        startScale: bankedEntry ? .48 : .58,
+        endScale: .20,
+        startOpacity: .9,
+        endOpacity: .05
+      });
+      ghost.remove();
+    }));
+
+    pulse(end, 'card-cycle-end-hit');
+    await sleep(120);
   }
 
   function inspectDeck() {
@@ -251,7 +382,7 @@
 
     if (hasDeal && !dealActive) {
       dealActive = true;
-      runDealAnimation(cards);
+      requestAnimationFrame(() => runDealAnimation(miniCards()));
     } else if (!hasDeal) {
       dealActive = false;
     }
@@ -263,19 +394,19 @@
       if (!button || button.disabled || bypassEndTurn || interceptingEndTurn) return;
 
       const cards = miniCards();
-      if (!cards.length || !baseline) return;
+      if (!cards.length) return;
 
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
       interceptingEndTurn = true;
-      button.classList.add('card-cycle-locked');
+      byId('ov2End')?.classList.add('card-cycle-locked');
 
       try {
         await runEndTurnAnimation(cards);
       } finally {
         interceptingEndTurn = false;
-        button.classList.remove('card-cycle-locked');
+        byId('ov2End')?.classList.remove('card-cycle-locked');
         bypassEndTurn = true;
         button.click();
         queueMicrotask(() => { bypassEndTurn = false; });
@@ -292,12 +423,17 @@
 
     bindEndTurnInterception();
     observer = new MutationObserver(inspectDeck);
-    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class']
+    });
     inspectDeck();
 
-    window.ILYOS_CARD_CYCLE_V3 = {
+    window.ILYOS_CARD_CYCLE_V4 = {
       inspect: inspectDeck,
-      getBaseline: () => baseline ? JSON.parse(JSON.stringify(baseline)) : null,
+      baseline: () => baseline ? JSON.parse(JSON.stringify(baseline)) : null,
       stop: () => observer?.disconnect()
     };
   }
