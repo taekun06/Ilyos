@@ -1,0 +1,82 @@
+name: Card art V12 preview temp
+
+on:
+  push:
+    branches: [card-art-v12]
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install chromium
+      - run: |
+          python3 -m http.server 4173 >/tmp/http.log 2>&1 &
+          sleep 2
+          mkdir -p validation/card-art-v12
+          cat > card-v12-preview.html <<'HTML'
+          <!doctype html>
+          <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <link rel="stylesheet" href="/css/card-cycle-animation-v7.css">
+          <link rel="stylesheet" href="/css/card-cycle-animation-v10.css">
+          <link rel="stylesheet" href="/css/card-art-v12.css">
+          <style>
+            *{box-sizing:border-box}body{margin:0;min-height:100vh;overflow:hidden;background:radial-gradient(circle at 50% 35%,#2a4455 0,#101e2a 38%,#071019 76%);color:#fff;font-family:system-ui,sans-serif}
+            .stage{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:30px}
+            .title{font:800 13px/1 system-ui;letter-spacing:.18em;color:rgba(255,255,255,.72)}
+            .row{display:flex;gap:54px;align-items:flex-start;justify-content:center}
+            .item{width:170px;display:flex;flex-direction:column;align-items:center;gap:15px}.caption{font:800 10px/1 system-ui;letter-spacing:.11em;color:rgba(255,255,255,.62)}
+            .card-cycle-v7-card.preview{position:relative!important;left:auto!important;top:auto!important;width:140px!important;height:220px!important;pointer-events:none!important}
+            .note{max-width:760px;text-align:center;font:600 11px/1.45 system-ui;color:rgba(255,255,255,.48)}
+          </style></head><body><main class="stage">
+          <div class="title">ILYOS — CARTES ACTION V12</div><div class="row" id="row"></div>
+          <div class="note">Même structure que les cartes animées du jeu · refonte graphique uniquement · aucune règle modifiée</div>
+          <script>
+            const icons={
+              MOVE:'<svg viewBox="0 0 48 48"><g fill="currentColor"><ellipse cx="17" cy="14" rx="5" ry="8"/><circle cx="13" cy="24" r="2"/><circle cx="17" cy="23" r="2"/><ellipse cx="31" cy="32" rx="5" ry="8"/><circle cx="27" cy="41" r="2"/><circle cx="31" cy="40" r="2"/></g></svg>',
+              PUSH:'<svg viewBox="0 0 48 48"><path d="M7 24h24M23 14l10 10-10 10" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="m39 10 2.2 7L48 19l-6.8 2.2L39 28l-2.2-6.8L30 19l6.8-2.2L39 10Z" fill="currentColor"/></svg>',
+              MAGIC:'<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="m24 5 4.8 13.2L43 24l-14.2 5.8L24 43l-4.8-13.2L5 24l14.2-5.8L24 5Z" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="24" cy="24" r="4.2" fill="currentColor"/></svg>'
+            };
+            const labels={MOVE:'DÉPLACER',PUSH:'POUSSER',MAGIC:'MAGIE'};
+            function face(type){const el=document.createElement('div');el.className=`card-cycle-v7-card card-cycle-v10-card showcase preview type-${type.toLowerCase()}`;el.innerHTML=`<span class="card-cycle-v7-kicker">CARTE ACTION</span><span class="card-cycle-v7-icon">${icons[type]}</span><b>${labels[type]}</b><i class="card-cycle-v7-rune"></i><span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>`;return el}
+            function back(){const el=face('MOVE');el.classList.add('is-draw-back');el.innerHTML=`<span class="card-cycle-v10-backface"><i>✦</i><b>ILYOS</b><small>PIOCHE</small></span><span class="card-cycle-v10-index">01/05</span><span class="card-cycle-v7-kicker">CARTE ACTION</span><span class="card-cycle-v7-icon">${icons.MOVE}</span><b>DÉPLACER</b><i class="card-cycle-v7-rune"></i><span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>`;return el}
+            function item(caption,card){const x=document.createElement('div');x.className='item';const c=document.createElement('div');c.className='caption';c.textContent=caption;x.append(c,card);return x}
+            document.getElementById('row').append(item('DOS',back()),item('DÉPLACER',face('MOVE')),item('POUSSER',face('PUSH')),item('MAGIE',face('MAGIC')));
+          </script></main></body></html>
+          HTML
+          cat > capture-v12.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          const browser=await chromium.launch({headless:true});
+          const page=await browser.newPage({viewport:{width:1400,height:720},deviceScaleFactor:1});
+          await page.goto('http://127.0.0.1:4173/card-v12-preview.html',{waitUntil:'networkidle'});
+          await page.waitForTimeout(300);
+          const checks=await page.evaluate(()=>{
+            const face=document.querySelector('.preview.type-push');
+            const kicker=face.querySelector('.card-cycle-v7-kicker');
+            const source=face.querySelector('.card-cycle-v10-source');
+            const icon=face.querySelector('.card-cycle-v7-icon');
+            const label=face.querySelector(':scope > b');
+            const back=document.querySelector('.preview.is-draw-back .card-cycle-v10-backface');
+            const small=back.querySelector('small');
+            const ir=icon.getBoundingClientRect(), fr=face.getBoundingClientRect();
+            return {kicker:getComputedStyle(kicker).display,source:getComputedStyle(source).display,iconRatio:ir.width/fr.width,labelSize:parseFloat(getComputedStyle(label).fontSize),backSmall:getComputedStyle(small).display,cards:document.querySelectorAll('.preview').length};
+          });
+          console.log('CARD_V12_CHECK',checks);
+          if(checks.kicker!=='none'||checks.source!=='none'||checks.iconRatio<.68||checks.labelSize<11||checks.backSmall!=='none'||checks.cards!==4) throw new Error('Validation cartes V12 échouée');
+          await page.screenshot({path:'validation/card-art-v12/cartes-v12.png'});
+          await browser.close();
+          NODE
+          node capture-v12.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ilyos-card-art-v12-preview
+          path: validation/card-art-v12/*.png
+          retention-days: 1
