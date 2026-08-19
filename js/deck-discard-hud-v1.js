@@ -1,15 +1,15 @@
 /* ILYOS — HUD Pioche / Défausse V11
    Lit les compteurs réels déjà rendus par le moteur et les ancre aux
    contrôles organiques visibles. Aucune règle de jeu n'est recréée ici.
-   V11 : piles nues, compteur au-dessus, positionnement bord à bord symétrique. */
+   V11 : piles nues, compteur sur les cartes, positionnement bord à bord symétrique. */
 (function(){
   'use strict';
   if (window.__ILYOS_DECK_DISCARD_HUD_V11__) return;
   window.__ILYOS_DECK_DISCARD_HUD_V11__ = true;
 
   const byId = id => document.getElementById(id);
-  const BASE_OPACITY = '.74';
-  const ACTIVE_OPACITY = '.96';
+  const BASE_OPACITY = '.78';
+  const ACTIVE_OPACITY = '.98';
   const PULSE_OPACITY = '1';
   let scheduled = false;
   let observer = null;
@@ -42,11 +42,15 @@
   }
 
   function openDiscard(){
+    if (window.ILYOS_DISCARD_VIEWER?.toggle) {
+      window.ILYOS_DISCARD_VIEWER.toggle();
+      return;
+    }
     if (window.ILYOS_DISCARD_VIEWER?.open) {
       window.ILYOS_DISCARD_VIEWER.open();
       return;
     }
-    window.dispatchEvent(new CustomEvent('ilyos:open-discard-viewer'));
+    window.dispatchEvent(new CustomEvent('ilyos:toggle-discard-viewer'));
   }
 
   function makeDiscardInteractive(discard){
@@ -54,8 +58,9 @@
     discard.classList.add('ov2-interactive');
     discard.setAttribute('role','button');
     discard.setAttribute('tabindex','0');
-    discard.setAttribute('aria-haspopup','dialog');
-    discard.title = 'Voir les cartes en défausse';
+    discard.setAttribute('aria-expanded', discard.getAttribute('aria-expanded') || 'false');
+    discard.setAttribute('aria-controls','ov2DiscardViewer');
+    discard.title = 'Afficher ou masquer la défausse';
     discard.style.setProperty('pointer-events','auto','important');
     discard.style.setProperty('cursor','pointer','important');
     discard.style.setProperty('z-index','100160','important');
@@ -154,7 +159,7 @@
     if (deckCount) deckCount.textContent = String(deck);
     if (discardCount) discardCount.textContent = String(discard);
     deckHud?.setAttribute('aria-label', `Pioche : ${deck} carte${deck === 1 ? '' : 's'}`);
-    discardHud?.setAttribute('aria-label', `Défausse : ${discard} carte${discard === 1 ? '' : 's'} — cliquer pour voir`);
+    discardHud?.setAttribute('aria-label', `Défausse : ${discard} carte${discard === 1 ? '' : 's'} — cliquer pour consulter`);
 
     if (previousDeck !== null && deck !== previousDeck) pulse(deckHud);
     if (previousDiscard !== null && discard !== previousDiscard) pulse(discardHud);
