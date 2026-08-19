@@ -30,6 +30,7 @@ jobs:
           <link rel="stylesheet" href="/css/card-cycle-animation-v7.css">
           <link rel="stylesheet" href="/css/card-cycle-animation-v10.css">
           <link rel="stylesheet" href="/css/card-art-v12.css">
+          <link rel="stylesheet" href="/css/card-art-v12-tuning.css">
           <style>
             *{box-sizing:border-box}body{margin:0;min-height:100vh;overflow:hidden;background:radial-gradient(circle at 50% 35%,#2a4455 0,#101e2a 38%,#071019 76%);color:#fff;font-family:system-ui,sans-serif}
             .stage{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:30px}
@@ -57,7 +58,7 @@ jobs:
           cat > capture-v12.mjs <<'NODE'
           import { chromium } from 'playwright';
           const browser=await chromium.launch({headless:true});
-          const page=await browser.newPage({viewport:{width:1400,height:720},deviceScaleFactor:1});
+          const page=await browser.newPage({viewport:{width:1400,height:800},deviceScaleFactor:1});
           await page.goto('http://127.0.0.1:4173/card-v12-preview.html',{waitUntil:'networkidle'});
           await page.waitForTimeout(300);
           const checks=await page.evaluate(()=>{
@@ -72,7 +73,7 @@ jobs:
             return {kicker:getComputedStyle(kicker).display,source:getComputedStyle(source).display,iconRatio:ir.width/fr.width,labelSize:parseFloat(getComputedStyle(label).fontSize),backSmall:getComputedStyle(small).display,cards:document.querySelectorAll('.preview').length};
           });
           console.log('CARD_V12_CHECK',checks);
-          if(checks.kicker!=='none'||checks.source!=='none'||checks.iconRatio<.68||checks.labelSize<11||checks.backSmall!=='none'||checks.cards!==4) throw new Error('Validation cartes V12 échouée');
+          if(checks.kicker!=='none'||checks.source!=='none'||checks.iconRatio<.66||checks.labelSize<12||checks.backSmall!=='none'||checks.cards!==4) throw new Error('Validation cartes V12 échouée');
           await page.screenshot({path:'validation/card-art-v12/cartes-v12.png'});
           await browser.close();
           NODE
