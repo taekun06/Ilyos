@@ -666,6 +666,7 @@
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
           distantDecorBuilt: false,     // îlots lointains habillés (montagnes/cascade) : statique, construit une seule fois
+          nearBoardClouds: [],          // objets "proches" (nuages + montagnes) visibles uniquement en vue "front" — voir refreshKayKitBoardCloudVisibility
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -1410,7 +1411,6 @@
         };
         const group = new THREE.Group();
         group.name = "ilyos-board-clouds";
-        kaykit3D.nearBoardClouds = [];
 
         const addCloud = (spec, index, { gated }) => {
           const x = Math.cos(spec.azimuth) * spec.radius;
@@ -1518,18 +1518,23 @@
       }
 
       /**
-       * Îlots lointains "habillés" avec de vrais modèles KayKit (montagnes)
-       * plutôt que le cône procédural de makeKayKitDistantIslet — plus de
-       * variété de silhouette pour un archipel qui se sent plus vaste, sans
-       * jamais devenir détaillé (voir kaykitTintAsDistantSilhouette). Ajoute
-       * aussi une cascade sommaire (plan vertical texturé, très bon marché)
-       * sous l'un d'eux — pas de modèle "cascade" dédié dans le pack KayKit
-       * local actuel, donc approximée avec la même texture de nuage déjà en
-       * cache plutôt que de dépendre d'un nouvel asset.
+       * Montagnes KayKit réelles + cascade sommaire, habillant le fond du
+       * plateau — v2 : la première version les plaçait hors du rayon de
+       * sécurité (comme les îlots lointains procéduraux), donc au même
+       * régime que le reste du décor céleste. Retour utilisateur direct :
+       * à cette distance elles ne se voient quasiment plus dans le cadrage
+       * "front" serré par défaut (même leçon que buildKayKitBoardClouds).
+       *
+       * Repositionnées ici en AU NIVEAU DE LA GRILLE, juste hors du plateau
+       * côté lointain — même zone que les nuages proches, à des azimuts
+       * différents pour ne pas se chevaucher — par projection caméra
+       * (Vector3.project). Comme les nuages proches, cette garantie ne tient
+       * que pour le cadrage "front" par défaut : masquées dès que
+       * kaykit3D.viewMode change (voir refreshKayKitBoardCloudVisibility,
+       * qui gère kaykit3D.nearBoardClouds — même tableau, même bascule).
        *
        * Différée et construite une seule fois (voir l'appelant dans
-       * syncKayKitScene) : dépend d'assets GLTF chargés de façon asynchrone,
-       * comme buildKayKitBoardClouds.
+       * syncKayKitScene) : dépend d'assets GLTF chargés de façon asynchrone.
        */
       function buildKayKitDistantDecoratedIslets(parent) {
         if (!kaykit3D) return;
@@ -1538,15 +1543,13 @@
         const baseTint = new THREE.Color(KAYKIT_SKY_COLORS.distant);
 
         const specs = [
-          { key: "mountainA", azimuth: 1.3, radius: 34, y: -6.6, width: 4.2, height: 3.0, lightness: 0, waterfall: true },
-          { key: "mountainB", azimuth: 2.55, radius: 38, y: -5.2, width: 3.6, height: 2.6, lightness: .1 },
-          { key: "mountainC", azimuth: 3.7, radius: 36, y: -7.4, width: 3.9, height: 2.8, lightness: -.08 }
+          { key: "mountainA", azimuth: 5.754, radius: 7, y: 1.0, width: 2.0, height: 1.4, lightness: 0, waterfall: true },
+          { key: "mountainB", azimuth: 4.714, radius: 7, y: 1.0, width: 2.3, height: 1.7, lightness: .1 },
+          { key: "mountainC", azimuth: 3.674, radius: 7, y: 1.0, width: 2.0, height: 1.4, lightness: -.08 }
         ];
         specs.forEach((spec, index) => {
           const x = Math.cos(spec.azimuth) * spec.radius;
           const z = Math.sin(spec.azimuth) * spec.radius;
-          if (spec.radius < KAYKIT_SKY.farRing) return;
-          if (!kaykitSkyPlacementAllowed(x, spec.y, z, Math.max(spec.width, spec.height))) return;
           const mountain = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
           if (!mountain) return;
           const tint = baseTint.clone().multiplyScalar(1 + spec.lightness);
@@ -1554,6 +1557,7 @@
           mountain.position.set(x, spec.y, z);
           mountain.rotation.y = kaykitHash("distant-mountain-rotation", index) * Math.PI * 2;
           group.add(mountain);
+          kaykit3D.nearBoardClouds.push(mountain);
 
           if (spec.waterfall) {
             // Cascade sommaire : plan translucide vertical accroché au flanc
@@ -1563,14 +1567,15 @@
             const waterfall = new THREE.Mesh(
               kaykitGeometry("distant-waterfall-plane-v1", () => new THREE.PlaneGeometry(1, 1)),
               new THREE.MeshBasicMaterial({
-                map: kaykitCloudTexture(), color: 0xdcefff, transparent: true, opacity: .5,
+                map: kaykitCloudTexture(), color: 0xdcefff, transparent: true, opacity: .6,
                 depthWrite: false, fog: true, toneMapped: false
               })
             );
             waterfall.scale.set(spec.width * .22, spec.height * .9, 1);
-            waterfall.position.set(x + spec.width * .3, spec.y - spec.height * .55, z);
+            waterfall.position.set(x + spec.width * .3, spec.y - spec.height * .5, z);
             waterfall.rotation.y = mountain.rotation.y + Math.PI / 5;
             group.add(waterfall);
+            kaykit3D.nearBoardClouds.push(waterfall);
           }
         });
 
@@ -5473,7 +5478,8 @@
       }
 
       /**
-       * Bascule les nuages "proches" (voir buildKayKitBoardClouds) : ils ne
+       * Bascule les objets "proches" (nuages + montagnes/cascade, voir
+       * buildKayKitBoardClouds et buildKayKitDistantDecoratedIslets) : ils ne
        * sont positionnés pour ne jamais recouvrir une case/un gardien que
        * depuis le cadrage exact de la vue "front" — masqués dès qu'on quitte
        * ce mode (isométrique, orbite libre) où cette garantie ne tient plus.
