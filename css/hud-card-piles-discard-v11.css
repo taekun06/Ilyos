@@ -1,0 +1,259 @@
+/* ILYOS — HUD cartes V11
+   - piles PIOCHE / DÉFAUSSE agrandies, quantité directement sur les cartes
+   - consultation DÉFAUSSE sans modale : 3 cartes d'action coulissent vers la gauche */
+
+/* Piles : la carte devient l'information, sans cartouche. */
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+  width: 68px !important;
+  min-height: 0 !important;
+  height: auto !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 58px auto !important;
+  justify-items: center !important;
+  align-items: center !important;
+  row-gap: 2px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  backdrop-filter: none !important;
+  transform: translateY(-100%) !important;
+  transform-origin: center bottom !important;
+  overflow: visible !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-visual,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-visual {
+  position: relative !important;
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  width: 58px !important;
+  height: 58px !important;
+  margin: 0 !important;
+  align-self: center !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-card,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-card {
+  width: 30px !important;
+  height: 44px !important;
+  left: 14px !important;
+  top: 8px !important;
+  border-width: 1px !important;
+  border-radius: 5px !important;
+  box-shadow: 0 5px 12px rgba(0,0,0,.38) !important;
+}
+
+/* La quantité est imprimée visuellement sur la pile, pas au-dessus. */
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-count,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-count {
+  position: relative !important;
+  z-index: 10 !important;
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  align-self: center !important;
+  justify-self: center !important;
+  margin: 1px 0 0 2px !important;
+  font-family: Georgia, "Times New Roman", serif !important;
+  font-size: 24px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  letter-spacing: -.03em !important;
+  color: #fff1bd !important;
+  text-shadow:
+    0 2px 4px rgba(0,0,0,.95),
+    0 0 5px rgba(0,0,0,.78),
+    0 0 9px rgba(239,203,116,.26) !important;
+  pointer-events: none !important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-count {
+  color: #ead6ff !important;
+  text-shadow:
+    0 2px 4px rgba(0,0,0,.95),
+    0 0 5px rgba(0,0,0,.78),
+    0 0 9px rgba(188,143,239,.30) !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-label,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-label {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  margin: 0 !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+  letter-spacing: .11em !important;
+  line-height: 1 !important;
+  opacity: .62 !important;
+  text-align: center !important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.ov2-pile-hit,
+body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-pile-hit {
+  transform: translateY(-100%) scale(1.06) !important;
+}
+
+/* Consultation de la défausse : aucune modale, aucun backdrop. */
+.ov2-discard-viewer {
+  position: fixed !important;
+  inset: auto !important;
+  z-index: 100980 !important;
+  width: auto !important;
+  height: auto !important;
+  display: block !important;
+  place-items: initial !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transform: translateY(-50%) translateX(28px) scale(.97) !important;
+  transform-origin: right center !important;
+  transition: opacity 170ms ease, transform 240ms cubic-bezier(.2,.82,.2,1) !important;
+  background: none !important;
+  backdrop-filter: none !important;
+}
+.ov2-discard-viewer-hidden {
+  display: none !important;
+}
+.ov2-discard-viewer.ov2-discard-viewer-open {
+  opacity: 1 !important;
+  transform: translateY(-50%) translateX(0) scale(1) !important;
+  pointer-events: auto !important;
+}
+
+.ov2-discard-strip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+
+.ov2-discard-type-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 72px;
+  height: 104px;
+  flex: 0 0 72px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  align-items: center;
+  padding: 9px 7px 9px;
+  overflow: hidden;
+  border-radius: 11px;
+  border: 1px solid currentColor;
+  color: #f1cf79;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, currentColor 18%, transparent), transparent 38%),
+    linear-gradient(180deg, rgba(255,255,255,.09), rgba(4,10,18,.20)),
+    rgba(11,22,32,.96);
+  box-shadow:
+    0 9px 20px rgba(0,0,0,.35),
+    inset 0 0 0 1px rgba(255,255,255,.055),
+    0 0 12px color-mix(in srgb, currentColor 15%, transparent);
+  opacity: 0;
+  transform: translateX(22px) scale(.95);
+  transition:
+    opacity 150ms ease,
+    transform 250ms cubic-bezier(.18,.82,.22,1),
+    filter 160ms ease;
+}
+.ov2-discard-type-card::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
+  border-radius: 7px;
+  pointer-events: none;
+}
+.ov2-discard-type-card.type-push { color: #ff9d43; }
+.ov2-discard-type-card.type-magic { color: #caa5ff; }
+.ov2-discard-type-card.is-empty {
+  opacity: .30 !important;
+  filter: grayscale(.48) saturate(.65);
+}
+.ov2-discard-viewer-open .ov2-discard-type-card {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+.ov2-discard-viewer-open .ov2-discard-type-card:nth-child(1) { transition-delay: 70ms; }
+.ov2-discard-viewer-open .ov2-discard-type-card:nth-child(2) { transition-delay: 38ms; }
+.ov2-discard-viewer-open .ov2-discard-type-card:nth-child(3) { transition-delay: 6ms; }
+
+.ov2-discard-type-card small {
+  position: relative;
+  z-index: 2;
+  color: rgba(255,255,255,.60);
+  font: 850 6.5px/1 system-ui, sans-serif;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.ov2-discard-type-icon {
+  position: relative;
+  z-index: 2;
+  font: 700 31px/1 Georgia, "Times New Roman", serif;
+  text-shadow: 0 0 11px color-mix(in srgb, currentColor 45%, transparent);
+}
+.ov2-discard-type-count {
+  position: relative;
+  z-index: 2;
+  color: #fff7e7;
+  font: 900 21px/1 Georgia, "Times New Roman", serif;
+  letter-spacing: -.02em;
+  text-shadow: 0 2px 5px rgba(0,0,0,.78), 0 0 7px color-mix(in srgb, currentColor 34%, transparent);
+}
+
+/* L'ancien panneau de défausse V9 n'est plus utilisé. */
+.ov2-discard-viewer-backdrop,
+.ov2-discard-panel,
+.ov2-discard-head,
+.ov2-discard-summary,
+.ov2-discard-grid,
+.ov2-discard-empty,
+.ov2-discard-close {
+  display: none !important;
+}
+
+@media (max-width: 980px), (max-height: 720px) {
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud {
+    width: 60px !important;
+    grid-template-rows: 52px auto !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-visual,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-visual {
+    width: 52px !important;
+    height: 52px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-card,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-card {
+    width: 27px !important;
+    height: 40px !important;
+    left: 13px !important;
+    top: 7px !important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud .ov2-pile-count,
+  body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud .ov2-pile-count {
+    font-size: 21px !important;
+  }
+  .ov2-discard-strip { gap: 6px; }
+  .ov2-discard-type-card {
+    width: 62px;
+    height: 92px;
+    flex-basis: 62px;
+    padding: 8px 6px;
+  }
+  .ov2-discard-type-icon { font-size: 27px; }
+  .ov2-discard-type-count { font-size: 18px; }
+  .ov2-discard-type-card small { font-size: 5.8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov2-discard-viewer,
+  .ov2-discard-type-card { transition: none !important; }
+}
