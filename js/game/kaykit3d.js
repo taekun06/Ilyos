@@ -1377,19 +1377,29 @@
       /**
        * Nuages KayKit réels autour du plateau + ombres de nuages douces sur le
        * sol des îles — passe "éclairage/ambiance" (visual-island-relief-v2) :
-       * la vue de jeu principale ("front") est plongeante et cadrée serré sur
-       * le plateau, donc c'est ce qui se voit juste au-dessus et sur les îles
-       * qui porte l'ambiance, pas le ciel lointain (déjà traité par
-       * buildKayKitSkyEnvironment). Construite une seule fois, séparément du
-       * ciel procédural, car elle dépend d'assets GLTF chargés de façon
-       * asynchrone (voir l'appelant dans syncKayKitScene).
+       * la vue de jeu principale ("front") est plongeante et cadrée TRÈS serré
+       * sur le plateau (voir kaykitFitDistance, multiplicateur .64), au point
+       * qu'un nuage placé hors du rayon de sécurité de l'archipel (comme le
+       * reste du décor céleste, voir buildKayKitSkyEnvironment) sort quasiment
+       * toujours du cadre — vérifié par retour utilisateur direct sur une
+       * première version qui suivait cette règle à la lettre.
        *
-       * Sécurité géométrique : les nuages sont placés à un rayon horizontal
-       * ≥ KAYKIT_SKY.safeRadius (même garde que buildKayKitSkyEnvironment, via
-       * kaykitSkyPlacementAllowed) — jamais entre la caméra et une case, quel
-       * que soit l'angle de vue. Les ombres, elles, restent à ras du plateau
-       * (juste au-dessus du sommet des îles) : ce ne sont pas des objets 3D
-       * flottants mais un décalque plat, donc hors de portée de cette règle.
+       * Deux groupes, donc, avec un compromis assumé :
+       *  - `nearClouds` : AU NIVEAU DE LA GRILLE (hauteur ≈ .5, celle des
+       *    îles), juste hors du plateau côté lointain (le seul visible dans
+       *    ce cadrage — le côté proche de la caméra sort du cadre par le bas
+       *    quelle que soit la hauteur), habillant le terrain aux abords des
+       *    villages/sur les côtés plutôt que de flotter dans le ciel. Rayon
+       *    7-7.5, positions vérifiées par projection caméra (Vector3.project,
+       *    arc NDC x∈[-0.85,0.85], y∈[0.70,0.90] — au-dessus du sommet des
+       *    châteaux, donc jamais devant une case/un gardien depuis CETTE vue).
+       *    Comme rien ne garantit ça sous rotation/zoom libres, ils sont
+       *    masqués dès que kaykit3D.viewMode quitte "front" (voir
+       *    refreshKayKitBoardCloudVisibility).
+       *  - `farClouds` : hors du rayon de sécurité (kaykitSkyPlacementAllowed,
+       *    même garantie géométrique que buildKayKitSkyEnvironment — jamais
+       *    entre la caméra et une case, quel que soit l'angle), visibles en
+       *    permanence, pour l'orbite/l'isométrique.
        */
       function buildKayKitBoardClouds(parent) {
         if (!kaykit3D) return;
@@ -1399,31 +1409,19 @@
         };
         const group = new THREE.Group();
         group.name = "ilyos-board-clouds";
+        kaykit3D.nearBoardClouds = [];
 
-        // Nuages : juste hors du rayon de sécurité. La vue "front" par défaut
-        // est cadrée TRÈS serré sur le plateau (voir kaykitFitDistance,
-        // multiplicateur .64) — vérifié empiriquement par projection caméra
-        // (Vector3.project) que seuls azimuth≈3.93/5.5, rayon≈9.8, hauteur≈.8
-        // entrent tout juste dans le cadre par défaut (coins bas). Ces deux-là
-        // sont donc placés pour être visibles depuis "front" ; les deux autres,
-        // plus hauts/éloignés, ne se révèlent qu'en vue orbitale/isométrique
-        // ou au zoom arrière — c'est la dérive des couronnes d'ombres au sol
-        // (plus bas) qui porte l'essentiel de l'ambiance en vue "front".
-        [
-          { key: "cloudSmall", azimuth: 3.93, radius: 9.8, y: .85, scale: 1.3 },
-          { key: "cloudBig", azimuth: 5.5, radius: 9.9, y: .85, scale: 1.6 },
-          { key: "cloudSmall", azimuth: 1.3, radius: 12.5, y: 2.4, scale: 1.4 },
-          { key: "cloudBig", azimuth: 2.6, radius: 14, y: 3.0, scale: 2.0 }
-        ].forEach((spec, index) => {
+        const addCloud = (spec, index, { gated }) => {
           const x = Math.cos(spec.azimuth) * spec.radius;
           const z = Math.sin(spec.azimuth) * spec.radius;
-          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
+          if (!gated && !kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
           const cloud = cloneKayKitAsset(spec.key, { maxWidth: spec.scale, maxHeight: spec.scale * .6, targetFloor: 0 });
           if (!cloud) return;
           cloud.position.set(x, spec.y, z);
           cloud.rotation.y = seeded(index, 1) * Math.PI * 2;
           cloud.traverse(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; } });
           group.add(cloud);
+          if (gated) kaykit3D.nearBoardClouds.push(cloud);
           kaykit3D.skyLayers.push({
             object: cloud, base: cloud.position.clone(),
             // Même mécanisme de dérive que buildKayKitSkyEnvironment (voir la
@@ -1434,7 +1432,33 @@
               sx: .006 + seeded(index, 4) * .004, sz: .005 + seeded(index, 5) * .003
             }
           });
-        });
+        };
+
+        // Proches : AU NIVEAU DE LA GRILLE (hauteur ≈ .5, celle des îles),
+        // juste à l'extérieur du plateau, côté lointain (celui qui se voit
+        // dans le cadre "front" par défaut — le côté proche de la caméra
+        // sort du cadre par le bas, sous la barre d'actions, quelle que soit
+        // la hauteur). Habillent le terrain aux abords des deux villages
+        // lointaines et sur les côtés, plutôt que de flotter en hauteur —
+        // retour utilisateur direct après une première version trop
+        // "nuages dans le ciel". Positions vérifiées par projection caméra
+        // (arc NDC x∈[-0.85,0.85], y∈[0.70,0.90]) ; masqués hors de "front"
+        // pour la même raison que le premier essai (aucune garantie hors de
+        // ce cadrage précis).
+        [
+          { key: "cloudBig", azimuth: 5.484, radius: 7.46, y: .5, scale: 1.5 },
+          { key: "cloudSmall", azimuth: 5.113, radius: 6.97, y: .45, scale: 1.2 },
+          { key: "cloudBig", azimuth: 4.712, radius: 7.0, y: .5, scale: 1.6 },
+          { key: "cloudSmall", azimuth: 4.312, radius: 6.97, y: .45, scale: 1.2 },
+          { key: "cloudBig", azimuth: 3.940, radius: 7.46, y: .5, scale: 1.5 }
+        ].forEach((spec, index) => addCloud(spec, index, { gated: true }));
+
+        // Lointains : hors du rayon de sécurité, visibles en permanence — ce
+        // sont eux qui se voient en orbite/isométrique ou au zoom arrière.
+        [
+          { key: "cloudSmall", azimuth: 1.3, radius: 12.5, y: 2.4, scale: 1.4 },
+          { key: "cloudBig", azimuth: 2.6, radius: 14, y: 3.0, scale: 2.0 }
+        ].forEach((spec, index) => addCloud(spec, index + 10, { gated: false }));
 
         // Ombres de nuages : décalques doux au ras du plateau (alpha faible,
         // même texture que les amas du ciel), pas de vrais objets shadow-caster
@@ -5361,6 +5385,18 @@
         });
       }
 
+      /**
+       * Bascule les nuages "proches" (voir buildKayKitBoardClouds) : ils ne
+       * sont positionnés pour ne jamais recouvrir une case/un gardien que
+       * depuis le cadrage exact de la vue "front" — masqués dès qu'on quitte
+       * ce mode (isométrique, orbite libre) où cette garantie ne tient plus.
+       */
+      function refreshKayKitBoardCloudVisibility() {
+        if (!kaykit3D?.nearBoardClouds) return;
+        const visible = kaykit3D.viewMode === "front";
+        kaykit3D.nearBoardClouds.forEach(cloud => { cloud.visible = visible; });
+      }
+
       function renderKayKitPlacementPreview() {
         if (!kaykit3D || state.phase !== "PLACE_ISLAND" || !state.hoverAnchor) return;
         const [anchorR, anchorC] = state.hoverAnchor;
@@ -7191,6 +7227,9 @@
           // CHAQUE sync, y compris celles qui ne passent pas par rebuildIslandLayer
           // (sélection/survol pendant l'action).
           refreshKayKitMagicHiddenIsland();
+          // Idem pour les nuages proches (voir buildKayKitBoardClouds) : le
+          // mode de vue peut changer sans que state.islands change.
+          refreshKayKitBoardCloudVisibility();
 
           const artifactByCarrier = new Map();
           [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
