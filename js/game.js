@@ -4517,21 +4517,44 @@
       const KAYKIT_HULL_ORGANIC_MIN = .70;
       const KAYKIT_HULL_ORGANIC_MAX = 1.30;
 
-      // Teintes volontairement plus sombres/saturées que la valeur "cible" à
-      // l'œil : sous l'éclairage B (ambiant + hémisphère clairs, ACES) une
-      // couleur plate en vertex color est délavée bien plus qu'une texture
-      // KayKit équivalente (constaté en jeu — voir rapport). Ces valeurs sont
-      // calibrées pour retomber sur le ton terre KayKit une fois éclairées.
-      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(0x8a5228);    // proche de la terre KayKit du dessus, une fois éclairé
-      const KAYKIT_HULL_COLOR_MID = new THREE.Color(0x6b3d1e);    // brun chaud plus sombre
-      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(0x452712); // brun rocheux profond
+      // Calibré par échantillonnage réel en jeu (gl.readPixels sur le flanc
+      // de terre KayKit visible juste au-dessus de la coque, éclairage B,
+      // assets chargés) — pas une valeur théorique. Le flanc KayKit lit
+      // autour de RGB(210,148,106) sur ses faces éclairées ; la teinte
+      // "raccord" ci-dessous est calée dessus (légèrement retenue pour rester
+      // cohérente une fois mélangée aux teintes plus sombres du dégradé).
+      // La correction précédente (passe silhouette) était trop sombre :
+      // le vrai problème de délavage venait du calibrage initial, pas d'un
+      // effet d'éclairage à sur-corriger indéfiniment.
+      // Re-calibré après comparaison face éclairée / face à l'ombre : la
+      // teinte doit rester assez saturée pour survivre à la lumière hémisphère
+      // (composante "sol" froide #56666a) qui délave nettement plus les faces
+      // orientées vers le bas de la coque que le flanc KayKit (faces plus
+      // variées). But : rester crédible côté soleil ET côté ombre, pas un
+      // calibrage parfait dans un seul cas.
+      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(0xaf5f37);    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLOR_MID = new THREE.Color(0x8f5228);    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(0x4a3223); // roche profonde, jamais noire
 
-      function kaykitHullColorAt(y, yTop, yBottom) {
+      // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
+      // masse bascule vers le registre "minéral" assez tôt plutôt que de
+      // s'attarder dans le ton terre chaude, sans pour autant créer de bande
+      // nette (toujours un lerp continu de bout en bout).
+      const KAYKIT_HULL_COLOR_MID_T = .42;
+
+      function kaykitHullColorAt(y, yTop, yBottom, seed = 0) {
         const span = yTop - yBottom || 1;
         const t = Math.min(1, Math.max(0, (yTop - y) / span));
         const color = new THREE.Color();
-        if (t <= .5) color.lerpColors(KAYKIT_HULL_COLOR_TOP, KAYKIT_HULL_COLOR_MID, t / .5);
-        else color.lerpColors(KAYKIT_HULL_COLOR_MID, KAYKIT_HULL_COLOR_BOTTOM, (t - .5) / .5);
+        if (t <= KAYKIT_HULL_COLOR_MID_T) color.lerpColors(KAYKIT_HULL_COLOR_TOP, KAYKIT_HULL_COLOR_MID, t / KAYKIT_HULL_COLOR_MID_T);
+        else color.lerpColors(KAYKIT_HULL_COLOR_MID, KAYKIT_HULL_COLOR_BOTTOM, (t - KAYKIT_HULL_COLOR_MID_T) / (1 - KAYKIT_HULL_COLOR_MID_T));
+        // Variation de luminosité très subtile et déterministe (±4%) pour
+        // casser l'uniformité plate sans bruit visible ni texture — un
+        // multiplicateur par sommet, pas un motif.
+        if (seed) {
+          const lum = .96 + kaykitHash("hull-lum", seed) * .08;
+          color.multiplyScalar(lum);
+        }
         return color;
       }
 
@@ -4659,7 +4682,8 @@
         const col = [];
         const push = (x, y, z) => {
           pos.push(x, y, z);
-          const c = kaykitHullColorAt(y, y0, deepestY);
+          const seed = `${Math.round(x * 500)}:${Math.round(y * 500)}:${Math.round(z * 500)}`;
+          const c = kaykitHullColorAt(y, y0, deepestY, seed);
           col.push(c.r, c.g, c.b);
         };
         const wallStrip = (ringA_, yArrA, ringB_, yArrB) => {
@@ -4724,8 +4748,12 @@
         // chaque face (parois + fond triangulé indépendamment) ; DoubleSide
         // élimine tout risque de face culled selon l'angle de vue.
         if (kaykitHullMaterialCache) return kaykitHullMaterialCache;
+        // roughness légèrement relevée (.85 → .90) : matière mate, réduit le
+        // léger lobe spéculaire résiduel sur les faces quasi verticales
+        // (ringA) directement face au soleil de la scène B, sans toucher à
+        // l'éclairage global — la réponse du matériau, pas la lumière.
         kaykitHullMaterialCache = new THREE.MeshStandardMaterial({
-          color: 0xffffff, roughness: .85, metalness: 0, side: THREE.DoubleSide, vertexColors: true
+          color: 0xffffff, roughness: .90, metalness: 0, side: THREE.DoubleSide, vertexColors: true
         });
         return kaykitHullMaterialCache;
       }
