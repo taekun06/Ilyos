@@ -1,14 +1,14 @@
-/* ILYOS — cycle visuel des cartes V4
-   Animation directement ancree sur le HUD organique visible.
-   Aucune regle de jeu n'est modifiee : cette couche observe le HUD historique
-   pour connaitre les 5 cartes, puis anime uniquement des fantomes visuels. */
+/* ILYOS — cycle visuel des cartes V5
+   Flux physique : PIOCHE -> MAIN -> ACTION ; puis DÉFAUSSE si jouée,
+   ou RÉSERVE si conservée. Une carte de réserve jouée finit en DÉFAUSSE.
+   Les trajectoires utilisent uniquement les éléments réellement visibles du HUD. */
 (() => {
   'use strict';
 
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
 
   const META = {
-    MOVE:  { label: 'DEPLACER', symbol: '↟' },
+    MOVE:  { label: 'DÉPLACER', symbol: '↟' },
     PUSH:  { label: 'POUSSER',  symbol: '➜' },
     MAGIC: { label: 'MAGIE',    symbol: '✦' }
   };
@@ -18,11 +18,11 @@
   const deckRoot = () => byId('deckDisplay');
   const miniCards = () => [...(deckRoot()?.querySelectorAll('.v64-mini-card') || [])];
 
-  let baseline = null;
   let dealActive = false;
   let observer = null;
   let interceptingEndTurn = false;
   let bypassEndTurn = false;
+  let actionAnimationQueue = Promise.resolve();
 
   function cardType(card) {
     if (card?.classList.contains('action-move')) return 'MOVE';
@@ -41,8 +41,12 @@
       || byId({ MOVE: 'hudV2MoveCount', PUSH: 'hudV2PushCount', MAGIC: 'hudV2MagicCount' }[type]);
   }
 
-  function bottomCount(type) {
-    return byId({ MOVE: 'ov2MoveCount', PUSH: 'ov2PushCount', MAGIC: 'ov2MagicCount' }[type]);
+  function deckTarget() {
+    return byId('ov2DeckHud');
+  }
+
+  function discardTarget() {
+    return byId('ov2DiscardHud') || byId('ov2End') || byId('endTurnBtn');
   }
 
   function endTarget() {
@@ -54,10 +58,6 @@
     const rightActive = byId('ov2RightActive');
     if (leftActive && !leftActive.classList.contains('ov2-off')) return byId('ov2LeftReserve');
     if (rightActive && !rightActive.classList.contains('ov2-off')) return byId('ov2RightReserve');
-
-    // Fallback : le bouton FIN DU TOUR n'est actif que pour le joueur humain.
-    // En cas de synchronisation HUD legerement retardee, le premier badge visible
-    // reste une meilleure ancre que les anciens compteurs caches.
     return [byId('ov2LeftReserve'), byId('ov2RightReserve')]
       .find(node => node && !node.classList.contains('ov2-off')) || null;
   }
@@ -76,38 +76,6 @@
     return badge?.querySelector(`[data-reserve-${type.toLowerCase()}]`) || null;
   }
 
-  function readAvailable() {
-    const out = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    Object.keys(out).forEach(type => {
-      const organic = bottomCount(type);
-      if (organic) {
-        out[type] = parseCount(organic.textContent);
-        return;
-      }
-      const legacy = bottomTarget(type);
-      const explicit = legacy?.querySelector?.('.hud-v2-pill-count')?.textContent;
-      out[type] = parseCount(explicit || legacy?.textContent);
-    });
-    return out;
-  }
-
-  function countFresh(cards = miniCards()) {
-    const out = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    cards.forEach(card => {
-      const type = cardType(card);
-      if (type) out[type]++;
-    });
-    return out;
-  }
-
-  function captureBaseline(cards) {
-    baseline = {
-      fresh: countFresh(cards),
-      available: readAvailable(),
-      capturedAt: Date.now()
-    };
-  }
-
   function rectOf(node) {
     if (!node) return null;
     const r = node.getBoundingClientRect();
@@ -119,15 +87,13 @@
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
-  function syntheticRect(cx, cy, width = 58, height = 78) {
+  function syntheticRect(cx, cy, width = 76, height = 104) {
     return { left: cx - width / 2, top: cy - height / 2, width, height };
   }
 
   function dockGeometry() {
     const targets = ['MOVE', 'PUSH', 'MAGIC'].map(bottomTarget).map(rectOf).filter(Boolean);
-    if (!targets.length) {
-      return { cx: innerWidth / 2, top: innerHeight - 120 };
-    }
+    if (!targets.length) return { cx: innerWidth / 2, top: innerHeight - 120 };
     const centers = targets.map(center);
     return {
       cx: centers.reduce((sum, p) => sum + p.x, 0) / centers.length,
@@ -146,13 +112,15 @@
   }
 
   async function fly(el, fromRect, toRect, {
-    duration = 430,
+    duration = 460,
     delay = 0,
-    arc = 22,
+    arc = 28,
     startScale = 1,
     endScale = .42,
     startOpacity = 1,
-    endOpacity = .12
+    endOpacity = .10,
+    startRotate = -2,
+    endRotate = 0
   } = {}) {
     if (!el || !fromRect || !toRect) return;
     const from = center(fromRect);
@@ -166,13 +134,13 @@
     el.style.height = `${fromRect.height}px`;
 
     const animation = el.animate([
-      { transform: `translate(0,0) scale(${startScale}) rotate(-2deg)`, opacity: startOpacity },
+      { transform: `translate(0,0) scale(${startScale}) rotate(${startRotate}deg)`, opacity: startOpacity },
       {
-        transform: `translate(${dx * .48}px,${dy * .42 - arc}px) scale(${(startScale + endScale) / 2 + .08}) rotate(3deg)`,
+        transform: `translate(${dx * .48}px,${dy * .43 - arc}px) scale(${(startScale + endScale) / 2 + .08}) rotate(${startRotate * -.6}deg)`,
         opacity: 1,
         offset: .52
       },
-      { transform: `translate(${dx}px,${dy}px) scale(${endScale}) rotate(0deg)`, opacity: endOpacity }
+      { transform: `translate(${dx}px,${dy}px) scale(${endScale}) rotate(${endRotate}deg)`, opacity: endOpacity }
     ], {
       duration,
       delay,
@@ -208,7 +176,7 @@
     a.onfinish = () => p.remove();
   }
 
-  function showDrawSource(rect) {
+  function fallbackDrawSource(rect) {
     const source = document.createElement('div');
     source.className = 'card-cycle-draw-source';
     source.setAttribute('aria-hidden', 'true');
@@ -224,77 +192,72 @@
   async function runDealAnimation(cards) {
     const types = cards.slice(0, 5).map(cardType).filter(Boolean);
     if (!types.length) return;
-    captureBaseline(cards);
 
-    // Toute la sequence vit juste au-dessus des vraies icones du dock.
     const dock = dockGeometry();
-    const sourceRect = syntheticRect(dock.cx, Math.max(110, dock.top - 78), 46, 62);
-    const source = showDrawSource(sourceRect);
-    const fanY = Math.max(96, dock.top - 128);
-    const fanRects = types.map((_, index) =>
-      syntheticRect(dock.cx + (index - 2) * 54, fanY + Math.abs(index - 2) * 5, 54, 72)
-    );
-    const ghosts = types.map(type => makeFlyingCard(type, 'card-cycle-draw-card'));
+    const visibleDeckRect = rectOf(deckTarget());
+    const sourceRect = visibleDeckRect
+      || syntheticRect(Math.max(70, dock.cx - 340), Math.max(120, dock.top - 30), 68, 92);
+    const fallback = visibleDeckRect ? null : fallbackDrawSource(sourceRect);
+    pulse(deckTarget(), 'ov2-pile-hit');
 
-    // 1) Les cinq cartes sortent visiblement de la pioche et se montrent un instant.
+    /* Les 5 cartes occupent volontairement une large zone lisible : environ
+       400 px au total sur desktop. Aucun chevauchement entre leurs libellés. */
+    const cardW = innerWidth < 900 ? 64 : 80;
+    const cardH = innerWidth < 900 ? 88 : 108;
+    const spacing = innerWidth < 900 ? 68 : 88;
+    const fanY = Math.max(118, dock.top - (innerHeight < 700 ? 124 : 162));
+    const mid = (types.length - 1) / 2;
+    const fanRects = types.map((_, index) => {
+      const distance = index - mid;
+      return syntheticRect(
+        dock.cx + distance * spacing,
+        fanY + Math.abs(distance) * 7,
+        cardW,
+        cardH
+      );
+    });
+    const ghosts = types.map(type => makeFlyingCard(type, 'card-cycle-draw-card card-cycle-showcase-card'));
+
+    /* 1. Sortie de la vraie pile PIOCHE vers un éventail large. */
     await Promise.all(ghosts.map((ghost, index) =>
       fly(ghost, sourceRect, fanRects[index], {
-        duration: 360,
-        delay: index * 72,
-        arc: 18,
-        startScale: .68,
+        duration: 440,
+        delay: index * 90,
+        arc: 34,
+        startScale: .58,
         endScale: 1,
-        startOpacity: .25,
-        endOpacity: 1
+        startOpacity: .20,
+        endOpacity: 1,
+        startRotate: (index - mid) * 2,
+        endRotate: (index - mid) * 3
       })
     ));
 
-    await sleep(180);
+    /* 2. Temps de lecture réel : les cinq cartes restent toutes visibles. */
+    await sleep(innerHeight < 700 ? 520 : 760);
 
-    // 2) Chaque carte rejoint l'icone correspondant exactement a son type.
+    /* 3. Chaque carte descend dans son action exacte. */
     await Promise.all(ghosts.map(async (ghost, index) => {
       const target = bottomTarget(types[index]);
       const targetRect = rectOf(target);
       if (!targetRect) { ghost.remove(); return; }
       await fly(ghost, fanRects[index], targetRect, {
-        duration: 430,
-        delay: index * 82,
-        arc: 26,
+        duration: 480,
+        delay: index * 72,
+        arc: 30,
         startScale: 1,
-        endScale: .28,
-        endOpacity: .08
+        endScale: .24,
+        endOpacity: .05,
+        startRotate: (index - mid) * 3,
+        endRotate: 0
       });
       pulse(target);
       plusOne(target);
       ghost.remove();
     }));
 
-    source.classList.add('is-leaving');
-    setTimeout(() => source.remove(), 260);
-  }
-
-  function classifyFreshCards(cards) {
-    if (!baseline) {
-      return cards.map(card => ({ type: cardType(card) || 'MOVE', unused: false }));
-    }
-
-    const now = readAvailable();
-    const freshUsed = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    const seen = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-
-    Object.keys(freshUsed).forEach(type => {
-      const spent = Math.max(0, (baseline.available[type] || 0) - (now[type] || 0));
-      // Le moteur consomme les cartes fraiches avant la reserve : ce calcul
-      // reproduit uniquement ce fait pour savoir quelles cartes ANIMER.
-      freshUsed[type] = Math.min(baseline.fresh[type] || 0, spent);
-    });
-
-    return cards.map(card => {
-      const type = cardType(card) || 'MOVE';
-      const used = seen[type] < freshUsed[type];
-      seen[type]++;
-      return { type, unused: !used };
-    });
+    fallback?.classList.add('is-leaving');
+    if (fallback) setTimeout(() => fallback.remove(), 260);
   }
 
   function reserveCurrent(type) {
@@ -307,79 +270,134 @@
     node.textContent = String(Math.min(5, parseCount(node.textContent) + 1));
   }
 
+  async function animateToDiscard(type, fromNode, count = 1, {fromReserve = false} = {}) {
+    const discard = discardTarget();
+    const discardRect = rectOf(discard);
+    if (!discardRect) return;
+
+    for (let i = 0; i < count; i++) {
+      const startNode = fromNode || (fromReserve ? reserveTarget(type) : bottomTarget(type));
+      const startRect = rectOf(startNode);
+      if (!startRect) continue;
+      const ghost = makeFlyingCard(type, 'card-cycle-used-card');
+      await fly(ghost, startRect, discardRect, {
+        duration: 430,
+        delay: i * 55,
+        arc: 34,
+        startScale: .58,
+        endScale: .22,
+        startOpacity: .96,
+        endOpacity: .05
+      });
+      ghost.remove();
+      pulse(discard, 'ov2-pile-hit');
+    }
+  }
+
+  async function animateReserveUse(type, count = 1) {
+    const reserve = reserveTarget(type);
+    const action = bottomTarget(type);
+    const discard = discardTarget();
+    const reserveRect = rectOf(reserve);
+    const actionRect = rectOf(action);
+    const discardRect = rectOf(discard);
+    if (!reserveRect || !actionRect || !discardRect) return;
+
+    for (let i = 0; i < count; i++) {
+      const ghost = makeFlyingCard(type, 'card-cycle-reserve-use-card');
+      await fly(ghost, reserveRect, actionRect, {
+        duration: 360,
+        delay: i * 60,
+        arc: 38,
+        startScale: .42,
+        endScale: .55,
+        startOpacity: .88,
+        endOpacity: .95
+      });
+      pulse(action);
+      await fly(ghost, actionRect, discardRect, {
+        duration: 390,
+        arc: 28,
+        startScale: .55,
+        endScale: .22,
+        startOpacity: .95,
+        endOpacity: .05
+      });
+      ghost.remove();
+      pulse(discard, 'ov2-pile-hit');
+    }
+  }
+
   async function runEndTurnAnimation(cards) {
-    const entries = classifyFreshCards(cards.slice(0, 5));
-    const end = endTarget();
-    const endRect = rectOf(end);
-    if (!endRect || !entries.length) return;
+    /* Avec la règle physique V1, une carte déjà jouée quitte immédiatement la
+       main. Les cartes encore visibles ici sont donc les cartes réellement
+       inutilisées, candidates à la réserve. */
+    const entries = cards.slice(0, 5).map(card => ({ type: cardType(card) || 'MOVE' }));
+    if (!entries.length) {
+      pulse(endTarget(), 'card-cycle-end-hit');
+      return;
+    }
 
     const capacity = {
       MOVE: Math.max(0, 5 - reserveCurrent('MOVE')),
       PUSH: Math.max(0, 5 - reserveCurrent('PUSH')),
       MAGIC: Math.max(0, 5 - reserveCurrent('MAGIC'))
     };
-    const reservedSoFar = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    const banked = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    const discard = discardTarget();
+    const discardRect = rectOf(discard);
 
-    // Les cartes inutilisees quittent leurs icones du bas et montent d'abord
-    // vers les vrais compteurs RESERVE du joueur actif dans le ruban superieur.
-    const banked = [];
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      if (!entry.unused || reservedSoFar[entry.type] >= capacity[entry.type]) continue;
-      const from = rectOf(bottomTarget(entry.type));
-      const reserve = reserveTarget(entry.type);
-      const to = rectOf(reserve);
-      if (!from || !to) continue;
+    for (let index = 0; index < entries.length; index++) {
+      const { type } = entries[index];
+      const from = rectOf(bottomTarget(type));
+      if (!from) continue;
 
-      reservedSoFar[entry.type]++;
-      const ghost = makeFlyingCard(entry.type, 'card-cycle-bank-card');
-      banked.push({ index: i, type: entry.type, reserve, reserveRect: to });
-      await fly(ghost, from, to, {
-        duration: 500,
-        arc: 34,
-        startScale: .62,
-        endScale: .34,
-        startOpacity: .94,
-        endOpacity: .16
-      });
-      ghost.remove();
-      incrementReserveVisual(entry.type);
-      pulse(reserve, 'card-cycle-reserve-hit');
-      plusOne(reserve, '+1 RESERVE');
-      await sleep(55);
+      if (banked[type] < capacity[type]) {
+        const reserve = reserveTarget(type);
+        const to = rectOf(reserve);
+        if (!to) continue;
+        banked[type]++;
+        const ghost = makeFlyingCard(type, 'card-cycle-bank-card');
+        await fly(ghost, from, to, {
+          duration: 500,
+          arc: 42,
+          startScale: .62,
+          endScale: .32,
+          startOpacity: .96,
+          endOpacity: .10
+        });
+        ghost.remove();
+        incrementReserveVisual(type);
+        pulse(reserve, 'card-cycle-reserve-hit');
+        plusOne(reserve, '+1 RÉSERVE');
+      } else if (discardRect) {
+        /* Réserve de ce type déjà à 5 : la carte ne peut pas être stockée et
+           rejoint directement la défausse. */
+        const ghost = makeFlyingCard(type, 'card-cycle-overflow-card');
+        await fly(ghost, from, discardRect, {
+          duration: 450,
+          arc: 34,
+          startScale: .60,
+          endScale: .22,
+          startOpacity: .95,
+          endOpacity: .05
+        });
+        ghost.remove();
+        pulse(discard, 'ov2-pile-hit');
+      }
+      await sleep(45);
     }
 
-    if (banked.length) await sleep(120);
-
-    // Puis les cinq cartes physiques convergent vers FIN DU TOUR.
-    // - carte conservee : depart depuis le compteur de reserve qu'elle vient de toucher ;
-    // - carte utilisee / reserve pleine : depart depuis son icone d'action en bas.
-    const bankedByIndex = new Map(banked.map(item => [item.index, item]));
-    await Promise.all(entries.map(async (entry, index) => {
-      const bankedEntry = bankedByIndex.get(index);
-      const from = bankedEntry?.reserveRect || rectOf(bottomTarget(entry.type));
-      if (!from) return;
-      const ghost = makeFlyingCard(entry.type, 'card-cycle-end-card');
-      await fly(ghost, from, endRect, {
-        duration: 460,
-        delay: index * 54,
-        arc: 28 + index * 2,
-        startScale: bankedEntry ? .48 : .58,
-        endScale: .20,
-        startOpacity: .9,
-        endOpacity: .05
-      });
-      ghost.remove();
-    }));
-
-    pulse(end, 'card-cycle-end-hit');
-    await sleep(120);
+    /* La réserve est une destination finale : aucune carte réservée ne repart
+       vers Fin du tour ou vers la défausse. Le bouton ne reçoit qu'un léger
+       signal de conclusion de la séquence. */
+    pulse(endTarget(), 'card-cycle-end-hit');
+    await sleep(100);
   }
 
   function inspectDeck() {
     const cards = miniCards();
     const hasDeal = cards.some(card => card.classList.contains('deal-card'));
-
     if (hasDeal && !dealActive) {
       dealActive = true;
       requestAnimationFrame(() => runDealAnimation(miniCards()));
@@ -388,14 +406,28 @@
     }
   }
 
+  function bindPhysicalCardEvents() {
+    window.addEventListener('ilyos:fresh-card-used', event => {
+      const type = event.detail?.type;
+      const count = Math.max(1, Number(event.detail?.count) || 1);
+      if (!META[type]) return;
+      actionAnimationQueue = actionAnimationQueue.then(() => animateToDiscard(type, bottomTarget(type), count));
+    });
+
+    window.addEventListener('ilyos:reserve-card-used', event => {
+      const type = event.detail?.type;
+      const count = Math.max(1, Number(event.detail?.count) || 1);
+      if (!META[type]) return;
+      actionAnimationQueue = actionAnimationQueue.then(() => animateReserveUse(type, count));
+    });
+  }
+
   function bindEndTurnInterception() {
     document.addEventListener('click', async event => {
       const button = event.target?.closest?.('#endTurnBtn');
       if (!button || button.disabled || bypassEndTurn || interceptingEndTurn) return;
 
       const cards = miniCards();
-      if (!cards.length) return;
-
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -403,6 +435,7 @@
       byId('ov2End')?.classList.add('card-cycle-locked');
 
       try {
+        await actionAnimationQueue;
         await runEndTurnAnimation(cards);
       } finally {
         interceptingEndTurn = false;
@@ -421,6 +454,7 @@
       return;
     }
 
+    bindPhysicalCardEvents();
     bindEndTurnInterception();
     observer = new MutationObserver(inspectDeck);
     observer.observe(root, {
@@ -431,9 +465,9 @@
     });
     inspectDeck();
 
-    window.ILYOS_CARD_CYCLE_V4 = {
+    window.ILYOS_CARD_CYCLE_V5 = {
       inspect: inspectDeck,
-      baseline: () => baseline ? JSON.parse(JSON.stringify(baseline)) : null,
+      animateReserveUse,
       stop: () => observer?.disconnect()
     };
   }

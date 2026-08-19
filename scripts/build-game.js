@@ -13,6 +13,7 @@ const fragmentNames = [
   'turns.js',
   'audio.js',
   'ui.js',
+  'card-rules-physical-reserve.js',
   'diagnostics.js',
 ];
 

@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260819_CARD_CYCLE_V4";
+  const VERSION = "ILYOS_20260819_CARD_CYCLE_V5_PHYSICAL_RESERVE";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -35,14 +35,31 @@
   } catch (_) { }
 })();
 
-/*
- * Cycle visuel des cartes V4.
- * Chargé dynamiquement pour rester totalement découplé du bundle game.js :
- * si l'effet doit être retiré, il suffit de supprimer ce loader et les deux
- * fichiers dédiés, sans toucher au moteur de jeu ni au HUD.
- */
-(function loadIlyosCardCycleV4() {
-  const VERSION = '20260819-card-cycle-v4';
+/* HUD PIOCHE / DÉFAUSSE V1 — deux compteurs visibles ancrés sur Undo et Fin du tour. */
+(function loadIlyosDeckDiscardHudV1() {
+  const VERSION = '20260819-deck-discard-hud-v1';
+  function install() {
+    if (!document.querySelector('link[data-ilyos-deck-discard-hud]')) {
+      const style = document.createElement('link');
+      style.rel = 'stylesheet';
+      style.href = `./css/deck-discard-hud-v1.css?v=${VERSION}`;
+      style.dataset.ilyosDeckDiscardHud = 'style';
+      document.head.appendChild(style);
+    }
+    if (!document.querySelector('script[data-ilyos-deck-discard-hud]')) {
+      const script = document.createElement('script');
+      script.src = `./js/deck-discard-hud-v1.js?v=${VERSION}`;
+      script.dataset.ilyosDeckDiscardHud = 'script';
+      document.head.appendChild(script);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
+  else install();
+})();
+
+/* Cycle visuel des cartes V5 — ancré sur PIOCHE, actions, RÉSERVE et DÉFAUSSE. */
+(function loadIlyosCardCycleV5() {
+  const VERSION = '20260819-card-cycle-v5-physical-reserve';
 
   function install() {
     if (!document.querySelector('link[data-ilyos-card-cycle-v2]')) {
