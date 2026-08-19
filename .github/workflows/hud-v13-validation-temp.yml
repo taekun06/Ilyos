@@ -1,0 +1,107 @@
+name: HUD V13 validation temp
+
+on:
+  push:
+    branches: [hud-islands-reserve-discard-v13]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install chromium
+      - run: |
+          python3 -m http.server 4173 >/tmp/http.log 2>&1 &
+          sleep 2
+          cat > validate.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage({viewport:{width:1440,height:900}});
+          await page.goto('http://127.0.0.1:4173/', {waitUntil:'domcontentloaded', timeout:60000});
+          await page.waitForTimeout(2600);
+          await page.evaluate(()=>document.getElementById('gameScreen')?.classList.remove('hidden'));
+          await page.waitForTimeout(300);
+          const play = page.locator('button:visible',{hasText:'JOUER'}).first();
+          if (await play.count()) { await play.click({timeout:10000}).catch(()=>{}); await page.waitForTimeout(3200); }
+          await page.waitForSelector('#ov2DiscardHud',{state:'attached',timeout:15000});
+
+          await page.evaluate(()=>{
+            const snapshot={currentPlayer:0,players:[{name:'JOUEUR AZUR',discard:[
+              {id:'d1',action:'MOVE'},{id:'d2',action:'MOVE'},
+              {id:'p1',action:'PUSH'},{id:'m1',action:'MAGIC'}
+            ]}]};
+            localStorage.setItem('ilyos-local-session-v22',JSON.stringify(snapshot));
+            window.ILYOS_DISCARD_VIEWER?.open?.();
+          });
+          await page.waitForTimeout(220);
+
+          const baseCheck = await page.evaluate(()=>{
+            const hrefs=[...document.querySelectorAll('link[rel="stylesheet"]')].map(x=>x.href);
+            const viewer=document.getElementById('ov2DiscardViewer');
+            const cards=[...viewer.querySelectorAll('.ov2-discard-type-card')];
+            const limit=document.querySelector('#hudV2IslandDrawer .island-choice-limit');
+            const selector=document.querySelector('#hudV2IslandDrawer .island-selector');
+            const cs=selector ? getComputedStyle(selector) : null;
+            return {
+              cssLoaded: hrefs.some(x=>x.includes('hud-islands-reserve-discard-v13.css')),
+              v12Cards: cards.length===3 && cards.every(c=>c.classList.contains('card-cycle-v10-card')&&c.classList.contains('showcase')&&c.classList.contains('discard-v12-card')),
+              counts: cards.map(c=>c.querySelector('.ov2-discard-type-count')?.textContent),
+              labels: cards.map(c=>c.querySelector(':scope > b')?.textContent),
+              gap: cs ? `${cs.columnGap}/${cs.rowGap}` : '',
+              limitFont: limit ? parseFloat(getComputedStyle(limit).fontSize) : 0
+            };
+          });
+          console.log('BASE_CHECK',baseCheck);
+          if(!baseCheck.cssLoaded || !baseCheck.v12Cards || baseCheck.counts.join(',')!=='×2,×1,×1') throw new Error('Défausse V12 non validée');
+          if(baseCheck.gap && !baseCheck.gap.startsWith('20px/14px')) throw new Error('Espacement îles incorrect');
+          if(baseCheck.limitFont && baseCheck.limitFont < 14) throw new Error('Quota îles pas assez visible');
+
+          const progress = await page.evaluate(async()=>{
+            let leftActive=document.getElementById('ov2LeftActive');
+            let reserve=document.getElementById('ov2LeftReserve');
+            if(!leftActive){ leftActive=document.createElement('div'); leftActive.id='ov2LeftActive'; document.body.appendChild(leftActive); }
+            leftActive.classList.remove('ov2-off');
+            document.getElementById('ov2RightActive')?.classList.add('ov2-off');
+            if(!reserve){
+              reserve=document.createElement('div'); reserve.id='ov2LeftReserve';
+              reserve.innerHTML='<div class="ov2-reserve-action ov2-reserve-move"><span data-reserve-move>0</span></div>';
+              document.body.appendChild(reserve);
+            }
+            let count=reserve.querySelector('[data-reserve-move]');
+            if(!count){ const wrap=document.createElement('div'); wrap.className='ov2-reserve-action ov2-reserve-move'; wrap.innerHTML='<span data-reserve-move>0</span>'; reserve.appendChild(wrap); count=wrap.firstElementChild; }
+            count.textContent='0';
+            const target=count.closest('.ov2-reserve-action')||reserve;
+            const tr=target.getBoundingClientRect();
+            const ghost=document.createElement('div');
+            ghost.className='card-cycle-v7-card card-cycle-v10-card type-move transfer is-stack';
+            ghost.innerHTML='<em>×3</em>';
+            ghost.style.cssText='position:fixed;left:600px;top:500px;width:80px;height:120px;z-index:999999';
+            document.body.appendChild(ghost);
+            const from={x:640,y:560};
+            const to={x:tr.left+tr.width/2,y:tr.top+tr.height/2};
+            const dx=to.x-from.x,dy=to.y-from.y;
+            ghost.animate([
+              {transform:'translate(0px,0px) scale(1)'},
+              {transform:`translate(${dx}px,${dy}px) scale(.22)`}
+            ],{duration:700,easing:'linear',fill:'forwards'});
+            await new Promise(r=>setTimeout(r,430));
+            const overlay=document.querySelector('.v13-reserve-progress');
+            const mid=overlay?.textContent||'';
+            const hidden=getComputedStyle(count).opacity;
+            await new Promise(r=>setTimeout(r,380));
+            ghost.remove();
+            return {mid,hidden};
+          });
+          console.log('PROGRESS_CHECK',progress);
+          if(!progress.mid || Number(progress.mid) < 1 || progress.hidden !== '0') throw new Error('Progression réserve non validée');
+          await browser.close();
+          NODE
+          node validate.mjs
