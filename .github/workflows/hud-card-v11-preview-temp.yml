@@ -3,12 +3,16 @@ name: HUD cards V11 preview temp
 on:
   push:
     branches: [hud-card-piles-discard-v11]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   preview:
+    if: github.event_name == 'push' || github.head_ref == 'hud-card-piles-discard-v11'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
