@@ -8667,7 +8667,7 @@
       };
 
       const kaykitBloom = {
-        pret: false, cibleScene: null, cibleA: null, cibleB: null,
+        pret: false, multiEchantillon: false, cibleScene: null, cibleA: null, cibleB: null,
         camera: null, quad: null, matSeuil: null, matFlou: null, matCompo: null,
         largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false
       };
@@ -8701,10 +8701,20 @@
         };
 
         if (!kaykitBloom.pret) {
-          // La cible de scène reprend l'encodage de sortie du renderer : sans cela, la
-          // couleur écrite dans la cible ne serait pas celle qu'on voit d'ordinaire à
-          // l'écran, et le jeu changerait d'aspect à l'activation du bloom.
-          kaykitBloom.cibleScene = new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+          // CIBLE MULTI-ÉCHANTILLONNÉE, et ce n'est pas un raffinement.
+          // Le renderer est créé avec antialias:true, mais ce réglage ne vaut QUE pour
+          // le tampon de l'écran. Une WebGLRenderTarget ordinaire n'est pas
+          // multi-échantillonnée : envoyer la scène dedans lui faisait perdre son
+          // anticrénelage, et tout le jeu ressortait crénelé — régression signalée dès
+          // la première mise en service du bloom.
+          // WebGL2 sait rendre en multi-échantillonnage dans une cible ; à défaut, on
+          // renonce au bloom plutôt que de dégrader l'image (voir kaykitRenderAvecBloom).
+          const multiDispo = !!(renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget);
+          kaykitBloom.multiEchantillon = multiDispo;
+          kaykitBloom.cibleScene = multiDispo
+            ? new THREE.WebGLMultisampleRenderTarget(l, h, Object.assign({ depthBuffer: true }, options))
+            : new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+          if (multiDispo) kaykitBloom.cibleScene.samples = 4;
           kaykitBloom.cibleScene.texture.encoding = renderer.outputEncoding;
           kaykitBloom.cibleA = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
           kaykitBloom.cibleB = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
@@ -8789,6 +8799,9 @@
       function kaykitRenderAvecBloom(renderer, scene, camera) {
         if (!KAYKIT_BLOOM.actif || kaykitBloom.coupeAuto) return false;
         if (!kaykitBloomEnsure(renderer)) return false;
+        // Sans multi-échantillonnage disponible, le bloom coûterait l'anticrénelage de
+        // toute la scène pour un halo : le marché n'en vaut pas la peine.
+        if (!kaykitBloom.multiEchantillon) return false;
 
         const B = kaykitBloom;
         renderer.setRenderTarget(B.cibleScene);
