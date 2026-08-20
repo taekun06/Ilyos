@@ -1189,7 +1189,12 @@
       // confirmSymmetricSetup) : nombre total d'îles qu'un joueur peut poser
       // sur toute la partie. 0/absent = illimité, comportement inchangé.
       function islandCountForOwner(playerId) {
-        return state.islands.filter(island => island.owner === playerId).length;
+        // On ne compte QUE les îles posées pendant la partie. Celles du plateau préparé
+        // (Duel symétrique) portent déjà un propriétaire sans avoir été jouées : les
+        // inclure revenait à décompter d'avance des poses que le joueur n'a pas faites.
+        // La limite choisie au menu est donc bien un stock de pièces à poser, et non un
+        // plafond du nombre d'îles possédées sur le plateau.
+        return state.islands.filter(island => island.owner === playerId && !island.fromSetup).length;
       }
 
       function islandLimitReachedForPlayer(playerId) {
@@ -2302,6 +2307,11 @@
         state.startingBoardPreset = resolvedId;
         state.islands = setup.islands.map((island, index) => ({
           ...island,
+          // Marqueur indispensable pour islandCountForOwner : ces îles appartiennent
+          // déjà à un joueur alors qu'il ne les a pas posées. Sans lui, la limite
+          // d'îles par joueur les comptait et le Duel symétrique démarrait DÉJÀ à la
+          // limite — plus aucune pose n'était possible de toute la partie.
+          fromSetup: true,
           anchor: { ...island.anchor },
           relCells: island.relCells.map(([r, c]) => [r, c]),
           cells: island.cells.map(([r, c]) => [r, c]),

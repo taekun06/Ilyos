@@ -512,7 +512,15 @@
         // venait de l'ouvrir (l'ouverture, elle, passe par le listener direct
         // du bouton ligne ~357, qui tourne AVANT que cet événement ne
         // remonte jusqu'à document). .contains() couvre aussi les enfants.
-        const onTrigger = [islandBtn, gearBtn, handBtn].some(el => el && el.contains(event.target));
+        // Les déclencheurs du HUD organique comptent AUSSI. Ils ne font que relayer
+        // le clic vers les boutons d'origine (voir hud-organique-v2.js), mais c'est bien
+        // sur EUX que le clic réel atterrit : sans les lister ici, ce listener refermait
+        // le popover dans la même frappe que celle qui venait de l'ouvrir — exactement le
+        // bug décrit juste au-dessus, sous une autre forme.
+        const islandBtnOv2 = document.getElementById("ov2Island");
+        const gearBtnOv2 = document.getElementById("ov2Gear");
+        const onTrigger = [islandBtn, gearBtn, handBtn, islandBtnOv2, gearBtnOv2]
+          .some(el => el && el.contains(event.target));
         if (!insideAny && !onTrigger) closeHudV2Drawer();
       });
 

@@ -131,3 +131,59 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-interactive:
     top: 5px !important;
   }
 }
+
+/* ============================================================
+   ANNEAU DU JOUEUR ACTIF — RENFORCÉ
+   Le HUD organique possédait déjà un anneau sur `.is-active`, mais réglé si bas
+   (1 px de bordure, débord de 10 px, doré presque transparent) qu'il ne se distinguait
+   pas du liseré permanent de l'avatar : rien n'indiquait à qui était le tour.
+   On garde ce mécanisme — inutile d'en ajouter un second — et on lui donne la présence
+   attendue : débord porté à 13 px, donc un anneau nettement PLUS GRAND que le portrait
+   (77 px d'avatar, 103 px d'anneau), bordure épaisse et halo chaud.
+   Le battement est lent (2,8 s) et de faible amplitude : un clignotement rapide
+   deviendrait une gêne pendant la réflexion.
+   ============================================================ */
+#ilyosHudOrganicV2 .ov2-left.is-active .ov2-avatar::after,
+#ilyosHudOrganicV2 .ov2-right.is-active .ov2-avatar::after,
+#ilyosHudOrganicV2 .ov2-side-active .ov2-avatar::after {
+  inset: -13px !important;
+  border-width: 3px !important;
+  border-style: solid !important;
+  border-color: rgba(255, 228, 158, .95) !important;
+  box-shadow:
+    0 0 22px 8px rgba(255, 199, 88, .45),
+    inset 0 0 16px rgba(255, 226, 152, .28) !important;
+  opacity: 1 !important;
+  animation: ilyos-anneau-actif 2.8s ease-in-out infinite !important;
+}
+
+@keyframes ilyos-anneau-actif {
+  50% {
+    border-color: rgba(255, 244, 205, 1);
+    box-shadow:
+      0 0 34px 14px rgba(255, 208, 104, .62),
+      inset 0 0 20px rgba(255, 236, 182, .38);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ilyosHudOrganicV2 .ov2-left.is-active .ov2-avatar::after,
+  #ilyosHudOrganicV2 .ov2-right.is-active .ov2-avatar::after,
+  #ilyosHudOrganicV2 .ov2-side-active .ov2-avatar::after { animation: none !important; }
+}
+
+
+/* L'anneau de base n'est déclaré que sur `.is-active` par les feuilles précédentes.
+   Quand seul notre marqueur synchrone est posé, il faut donc créer le pseudo-élément,
+   sans quoi la règle ci-dessus n'a rien à styliser. */
+/* NE JAMAIS forcer 'position' sur .ov2-avatar : il est positionne en absolu pour etre
+   epingle au bord de l ecran. Le passer en relative le renvoyait dans le flux normal et
+   l avatar du mage sautait de x=1821 a x=1105 — en plein milieu du HUD.
+   Un element en position absolue est de toute facon deja un bloc conteneur pour ses
+   descendants absolus : le ::after de l anneau s ancre correctement sans cette regle. */
+#ilyosHudOrganicV2 .ov2-side-active .ov2-avatar::after {
+  content: "" !important;
+  position: absolute !important;
+  border-radius: 50% !important;
+  pointer-events: none !important;
+}
