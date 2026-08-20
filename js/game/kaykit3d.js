@@ -2300,6 +2300,8 @@
             "ilots({ teinte: 0x93a9c6 })   silhouettes d'archipel lointain",
             "horizon({ force, elevation, epaisseur })  bande d'horizon peinte dans le ciel :",
             "                      elevation en p (.611 = 20° sous l'horizontale), epaisseur en degrés",
+            "bloom({ actif, force, seuil, rayon })   éblouissement autour des hautes",
+            "                      lumières. seuil = luminance de déclenchement (0..1).",
             "cadrage({ hauteur, recul, inclinaison })   recul = distance caméra (17) ;",
             "                      inclinaison en degrés sous l'horizontale (37.2) : le haut",
             "                      du cadre est à (inclinaison - 16,5°). 30 fait entrer l'horizon.",
@@ -2386,6 +2388,15 @@
             taille: +champ.object.material.size.toFixed(3),
             force: +champ.object.material.opacity.toFixed(3)
           }));
+        },
+        bloom(opts = {}) {
+          if (opts.actif !== undefined) KAYKIT_BLOOM.actif = !!opts.actif;
+          if (opts.force !== undefined) KAYKIT_BLOOM.force = opts.force;
+          if (opts.seuil !== undefined) KAYKIT_BLOOM.seuil = opts.seuil;
+          if (opts.douceur !== undefined) KAYKIT_BLOOM.douceur = opts.douceur;
+          if (opts.rayon !== undefined) KAYKIT_BLOOM.rayon = opts.rayon;
+          if (opts.reprendre) kaykitBloom.coupeAuto = false;
+          return Object.assign({}, KAYKIT_BLOOM, { coupeAutomatique: kaykitBloom.coupeAuto });
         },
         cadrage(opts = {}) {
           if (opts.hauteur !== undefined) window.ILYOS_FRONT_VIEW_HEIGHT = opts.hauteur;
@@ -8629,6 +8640,182 @@
         }
       }
 
+      // ========================= BLOOM (post-traitement) =========================
+      // Écrit à la main plutôt qu'en important EffectComposer/UnrealBloomPass : trois
+      // fichiers de moins dans vendor/, aucune dépendance ajoutée, et surtout le contrôle
+      // exact de la résolution des passes — c'est elle qui décide du coût.
+      //
+      // Chaîne : scène → cible plein écran, puis extraction des hautes lumières et flou
+      // séparable à RÉSOLUTION RÉDUITE (moitié par axe = quart de surface), enfin
+      // composition additive sur l'écran. Le flou étant une opération de basse fréquence,
+      // le faire en pleine résolution serait payer quatre fois pour un résultat
+      // indiscernable.
+      //
+      // C'est pour lui que le cœur solaire dépasse volontairement la luminosité du décor
+      // (voir KAYKIT_SKY_SUN) : sans une zone au-dessus du seuil, il n'y a rien à cueillir.
+      const KAYKIT_BLOOM = {
+        actif: true,
+        // Seuil retenu à l'image. À .74 le bloom attrapait les nuages pâles et noyait
+        // toute la scène dans un voile blanc — l'inverse du contraste qu'on cherchait.
+        // À .90 seuls le disque solaire et les arêtes dorées du plateau le franchissent.
+        seuil: .90,        // luminance à partir de laquelle un pixel déborde
+        douceur: .10,      // largeur de la transition, pour éviter un seuil net et sale
+        force: .46,        // intensité de la réinjection
+        echelle: .5,       // diviseur de résolution des passes de flou
+        rayon: 1.0,        // écartement des échantillons, en texels
+        fpsPlancher: 32    // sous ce FPS soutenu, le bloom se coupe tout seul
+      };
+
+      const kaykitBloom = {
+        pret: false, cibleScene: null, cibleA: null, cibleB: null,
+        camera: null, quad: null, matSeuil: null, matFlou: null, matCompo: null,
+        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false
+      };
+
+      function kaykitBloomShader(uniforms, fragment) {
+        return new THREE.ShaderMaterial({
+          uniforms,
+          vertexShader: [
+            "varying vec2 vUv;",
+            "void main() {",
+            "  vUv = uv;",
+            "  gl_Position = vec4(position.xy, 0.0, 1.0);",
+            "}"
+          ].join("\n"),
+          fragmentShader: fragment.join("\n"),
+          depthTest: false, depthWrite: false, transparent: false
+        });
+      }
+
+      function kaykitBloomEnsure(renderer) {
+        const taille = renderer.getDrawingBufferSize(new THREE.Vector2());
+        const l = Math.max(2, Math.floor(taille.x));
+        const h = Math.max(2, Math.floor(taille.y));
+        if (kaykitBloom.pret && kaykitBloom.largeur === l && kaykitBloom.hauteur === h) return true;
+
+        const petitL = Math.max(2, Math.floor(l * KAYKIT_BLOOM.echelle));
+        const petitH = Math.max(2, Math.floor(h * KAYKIT_BLOOM.echelle));
+        const options = {
+          minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+          format: THREE.RGBAFormat, stencilBuffer: false
+        };
+
+        if (!kaykitBloom.pret) {
+          // La cible de scène reprend l'encodage de sortie du renderer : sans cela, la
+          // couleur écrite dans la cible ne serait pas celle qu'on voit d'ordinaire à
+          // l'écran, et le jeu changerait d'aspect à l'activation du bloom.
+          kaykitBloom.cibleScene = new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+          kaykitBloom.cibleScene.texture.encoding = renderer.outputEncoding;
+          kaykitBloom.cibleA = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
+          kaykitBloom.cibleB = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
+          kaykitBloom.cibleA.texture.encoding = renderer.outputEncoding;
+          kaykitBloom.cibleB.texture.encoding = renderer.outputEncoding;
+
+          kaykitBloom.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+          kaykitBloom.matSeuil = kaykitBloomShader(
+            { tSource: { value: null }, uSeuil: { value: KAYKIT_BLOOM.seuil }, uDouceur: { value: KAYKIT_BLOOM.douceur } },
+            [
+              "uniform sampler2D tSource;",
+              "uniform float uSeuil;",
+              "uniform float uDouceur;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec3 c = texture2D(tSource, vUv).rgb;",
+              "  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));",
+              "  float f = smoothstep(uSeuil, uSeuil + uDouceur, l);",
+              "  gl_FragColor = vec4(c * f, 1.0);",
+              "}"
+            ]);
+
+          // Flou gaussien SÉPARABLE : deux passes à cinq échantillons au lieu d'une passe
+          // à vingt-cinq. Les poids exploitent l'interpolation bilinéaire du GPU, chaque
+          // échantillon en valant deux.
+          kaykitBloom.matFlou = kaykitBloomShader(
+            { tSource: { value: null }, uDirection: { value: new THREE.Vector2() } },
+            [
+              "uniform sampler2D tSource;",
+              "uniform vec2 uDirection;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec3 s = texture2D(tSource, vUv).rgb * 0.2270270270;",
+              "  s += texture2D(tSource, vUv + uDirection * 1.3846153846).rgb * 0.3162162162;",
+              "  s += texture2D(tSource, vUv - uDirection * 1.3846153846).rgb * 0.3162162162;",
+              "  s += texture2D(tSource, vUv + uDirection * 3.2307692308).rgb * 0.0702702703;",
+              "  s += texture2D(tSource, vUv - uDirection * 3.2307692308).rgb * 0.0702702703;",
+              "  gl_FragColor = vec4(s, 1.0);",
+              "}"
+            ]);
+
+          // L'alpha vient de la scène, jamais du bloom : le canvas est en alpha:true et
+          // la page compte dessus.
+          kaykitBloom.matCompo = kaykitBloomShader(
+            { tScene: { value: null }, tBloom: { value: null }, uForce: { value: KAYKIT_BLOOM.force } },
+            [
+              "uniform sampler2D tScene;",
+              "uniform sampler2D tBloom;",
+              "uniform float uForce;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec4 base = texture2D(tScene, vUv);",
+              "  vec3 halo = texture2D(tBloom, vUv).rgb;",
+              "  gl_FragColor = vec4(base.rgb + halo * uForce, base.a);",
+              "}"
+            ]);
+
+          kaykitBloom.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), kaykitBloom.matSeuil);
+          kaykitBloom.quad.frustumCulled = false;
+          kaykitBloom.pret = true;
+        } else {
+          kaykitBloom.cibleScene.setSize(l, h);
+          kaykitBloom.cibleA.setSize(petitL, petitH);
+          kaykitBloom.cibleB.setSize(petitL, petitH);
+        }
+
+        kaykitBloom.largeur = l;
+        kaykitBloom.hauteur = h;
+        return true;
+      }
+
+      function kaykitBloomPasse(renderer, materiau, cible) {
+        kaykitBloom.quad.material = materiau;
+        renderer.setRenderTarget(cible);
+        renderer.clear();
+        renderer.render(kaykitBloom.quad, kaykitBloom.camera);
+      }
+
+      /** Rend la scène avec bloom. Retourne false si le bloom n'a pas pu s'appliquer,
+       *  auquel cas l'appelant fait un rendu direct. */
+      function kaykitRenderAvecBloom(renderer, scene, camera) {
+        if (!KAYKIT_BLOOM.actif || kaykitBloom.coupeAuto) return false;
+        if (!kaykitBloomEnsure(renderer)) return false;
+
+        const B = kaykitBloom;
+        renderer.setRenderTarget(B.cibleScene);
+        renderer.clear();
+        renderer.render(scene, camera);
+
+        B.matSeuil.uniforms.tSource.value = B.cibleScene.texture;
+        B.matSeuil.uniforms.uSeuil.value = KAYKIT_BLOOM.seuil;
+        B.matSeuil.uniforms.uDouceur.value = KAYKIT_BLOOM.douceur;
+        kaykitBloomPasse(renderer, B.matSeuil, B.cibleA);
+
+        const px = KAYKIT_BLOOM.rayon / Math.max(1, B.cibleA.width);
+        const py = KAYKIT_BLOOM.rayon / Math.max(1, B.cibleA.height);
+        B.matFlou.uniforms.tSource.value = B.cibleA.texture;
+        B.matFlou.uniforms.uDirection.value.set(px, 0);
+        kaykitBloomPasse(renderer, B.matFlou, B.cibleB);
+        B.matFlou.uniforms.tSource.value = B.cibleB.texture;
+        B.matFlou.uniforms.uDirection.value.set(0, py);
+        kaykitBloomPasse(renderer, B.matFlou, B.cibleA);
+
+        B.matCompo.uniforms.tScene.value = B.cibleScene.texture;
+        B.matCompo.uniforms.tBloom.value = B.cibleA.texture;
+        B.matCompo.uniforms.uForce.value = KAYKIT_BLOOM.force;
+        kaykitBloomPasse(renderer, B.matCompo, null);
+        return true;
+      }
+
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
@@ -8725,5 +8912,9 @@
         // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
         // par js/complete-polish.js alors que le rendu est plafonné ~60).
         if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
-        kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
+        // Bloom si disponible, rendu direct sinon — jamais d'écran noir en cas d'échec.
+        if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
+          kaykit3D.renderer.setRenderTarget(null);
+          kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
+        }
       }
