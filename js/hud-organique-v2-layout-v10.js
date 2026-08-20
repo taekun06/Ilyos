@@ -53,6 +53,22 @@
   }
 
   function ensureIslandRotationRow(){
+    /* La passe V12 (hud-consolidation-v12.js) construit son propre panneau de
+       rotation, #ov2IslandRotationV12, avec un bouton Miroir en plus, et ne
+       retire jamais celui-ci. Les deux se retrouvaient donc rendus en meme
+       temps, superposes a quelques pixels pres : celui du dessous
+       reapparaissait des que la geometrie du tiroir changeait (taille de
+       fenetre, espacement des iles). Ce fichier etant charge APRES le V12 dans
+       js/version-bootstrap.js, c'est a lui de ceder.
+
+       Le test porte sur le drapeau du script, pas sur la presence de son
+       element : le V12 cree le sien paresseusement, donc le chercher dans le
+       DOM donnerait un resultat dependant de l'ordre des synchronisations.
+
+       Le reste de ce fichier continue de fonctionner : barre d'instruction,
+       fermeture du tiroir sur Undo, variable --ov2-context-bottom. */
+    if (window.__ILYOS_HUD_CONSOLIDATION_V12__) return null;
+
     let row = byId('ov2IslandRotationRow');
     if (row) return row;
     const game = byId('gameScreen');

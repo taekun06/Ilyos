@@ -1,0 +1,34 @@
+# Fins de ligne — normalisation explicite.
+#
+# Le dépôt stocke tout le texte en LF (vérifié : aucun blob texte commité ne
+# contient de CRLF). Sous Windows, core.autocrlf=true convertissait déjà en
+# CRLF à l'extraction, mais ce réglage est propre à chaque machine : rien ne
+# garantissait le même comportement ailleurs, ni dans une CI.
+#
+# Sans cette déclaration, un outil qui réécrit un fichier en LF alors que le
+# reste de la copie de travail est en CRLF passe inaperçu — jusqu'à ce que
+# scripts/build-game.js compare js/game.js à ses fragments octet pour octet et
+# signale une dérive qui n'existe que localement. C'est exactement ce qui est
+# arrivé le 20/08/2026 sur js/game/audio.js et js/game/ui.js.
+
+* text=auto
+
+# Types binaires : jamais de conversion, sous aucun réglage local.
+*.glb   binary
+*.gltf  text
+*.bin   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.mp3   binary
+*.ogg   binary
+*.opus  binary
+*.wav   binary
+*.m4a   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary

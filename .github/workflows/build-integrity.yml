@@ -1,0 +1,48 @@
+# js/game.js est un artefact de build : il est assemblé octet pour octet depuis
+# les fragments de js/game/. Le contrôle existait déjà (scripts/build-game.js)
+# mais se lançait à la main — donc un commit qui modifie un fragment sans
+# reconstruire, ou qui corrige directement js/game.js, passait sans bruit et le
+# fichier servi ne correspondait plus au code source.
+name: Intégrité du build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  fragments:
+    name: js/game.js correspond à ses fragments
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Sort en échec si js/game.js diffère de la concaténation des fragments,
+      # et affiche les deux empreintes SHA-256 pour situer l'écart.
+      - name: Vérifier la concaténation des fragments
+        run: node scripts/build-game.js
+
+      # Le script parse aussi la source assemblée (new Function(...)), donc une
+      # frontière de fragment cassée est déjà détectée ci-dessus. Ce second
+      # contrôle attrape le cas inverse : un fragment valide isolément mais qui
+      # ne l'est plus une fois concaténé n'existe pas — en revanche un fragment
+      # laissé hors de la liste de build, lui, se voit ici.
+      - name: Vérifier qu'aucun fragment n'est oublié
+        run: |
+          declare -a listes
+          listes=$(node -e "
+            const fs = require('fs');
+            const source = fs.readFileSync('scripts/build-game.js', 'utf8');
+            const bloc = source.match(/fragmentNames = \[([^\]]*)\]/s)[1];
+            const declares = [...bloc.matchAll(/'([^']+)'/g)].map(m => m[1]).sort();
+            const presents = fs.readdirSync('js/game').filter(f => f.endsWith('.js')).sort();
+            const oublies = presents.filter(f => !declares.includes(f));
+            const fantomes = declares.filter(f => !presents.includes(f));
+            if (oublies.length) { console.error('Fragments présents mais absents de la liste de build : ' + oublies.join(', ')); process.exit(1); }
+            if (fantomes.length) { console.error('Fragments listés mais introuvables : ' + fantomes.join(', ')); process.exit(1); }
+            console.log(declares.length + ' fragments déclarés, tous présents.');
+          ")
+          echo "$listes"
