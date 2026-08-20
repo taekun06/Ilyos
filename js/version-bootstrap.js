@@ -40,9 +40,22 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   if (window.__ILYOS_FRONT_CAMERA_PRESET__) return;
   window.__ILYOS_FRONT_CAMERA_PRESET__ = true;
 
-  const FRONT_DISTANCE = 13.8;
-  const FRONT_Y = .63;
-  const FRONT_Z = .83;
+  /* Recul porté de 13,8 à 20 : à 13,8 le plateau remplissait le cadre et l'atmosphère
+     construite autour (soleil, godrays, archipel, horizon) restait hors champ ou
+     tronquée. À 20 la scène respire sans que les pièces deviennent illisibles.
+     Ajustable à chaud par ILYOS_SKY.cadrage({ recul }). */
+  const FRONT_DISTANCE = 17;
+  /* INCLINAISON DE LA VUE FACE, en degrés sous l'horizontale.
+     Elle décide seule de ce qui entre dans le cadre : le haut de l'image se situe à
+     (inclinaison − 16,5°), la moitié du champ vertical de 33°. À 37,2° — la valeur
+     historique, qui est exactement l'angle du couple .63/.83 d'origine — le cadre
+     commence à 20,7° sous l'horizon, soit là où la mer de nuages se perd : la bande
+     d'horizon reste à la limite supérieure. À 30° le haut du cadre remonte à 13,5° et
+     la laisse entrer entièrement, au prix d'un plateau un peu plus plat.
+     Sous 16,5° l'horizon géométrique lui-même entrerait dans l'image, mais la lecture
+     en volume du plateau serait trop dégradée pour le jeu.
+     Réglable à chaud : ILYOS_SKY.cadrage({ inclinaison }). */
+  const FRONT_PITCH_DEG = 37.2;
   let initialPresetApplied = false;
 
   function markManualCameraControl(){
@@ -66,19 +79,34 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
 
     const min = Number.isFinite(k.minZoom) ? k.minZoom : 6.4;
     const max = Number.isFinite(k.maxZoom) ? k.maxZoom : 25;
-    const distance = Math.max(min, Math.min(FRONT_DISTANCE, max));
+    const reculVoulu = Number.isFinite(window.ILYOS_FRONT_DISTANCE)
+      ? window.ILYOS_FRONT_DISTANCE : FRONT_DISTANCE;
+    const distance = Math.max(min, Math.min(reculVoulu, max));
 
     k.cameraTween = null;
     k.viewMode = 'front';
     k.autoFit = false;
     k.zoomDistance = distance;
 
-    if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, .22, .18);
+    /* HAUTEUR VISÉE — le réglage de cadrage le plus rentable de la scène.
+       Viser le plateau lui-même (y = .22) le plaçait au centre de l'image, et laissait
+       la moitié haute quasi vide pendant que le soleil, ses rayons et l'archipel
+       lointain se retrouvaient hors champ ou masqués derrière le plateau.
+       Viser AU-DESSUS de lui le fait descendre dans le cadre. L'inclinaison et la
+       distance ne changent pas : la lisibilité du plateau est donc strictement
+       identique, on ne fait qu'ouvrir les deux tiers supérieurs sur le décor.
+       Ajustable à chaud par ILYOS_SKY.cadrage({ hauteur }). */
+    const hauteurVisee = Number.isFinite(window.ILYOS_FRONT_VIEW_HEIGHT)
+      ? window.ILYOS_FRONT_VIEW_HEIGHT
+      : -0.5;
+    if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, hauteurVisee, .18);
     const target = k.viewTarget;
+    const pitch = (Number.isFinite(window.ILYOS_FRONT_PITCH_DEG)
+      ? window.ILYOS_FRONT_PITCH_DEG : FRONT_PITCH_DEG) * Math.PI / 180;
     k.camera.position.set(
       target.x,
-      target.y + distance * FRONT_Y,
-      target.z + distance * FRONT_Z
+      target.y + distance * Math.sin(pitch),
+      target.z + distance * Math.cos(pitch)
     );
     k.camera.lookAt(target);
 

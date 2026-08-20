@@ -223,3 +223,24 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.card-cycle-v10-draw
   .card-cycle-v10-origin { display: none !important; }
   .card-cycle-v10-backface { transition: none !important; }
 }
+
+/* ============================================================
+   LISIBILITÉ DES CARTES ANIMÉES
+   Les chiffres ayant disparu du balisage, la place libérée revient à ce qui se lit
+   vraiment en mouvement : l'icône et le verbe. L'icône gagne en taille, le libellé en
+   graisse et en contraste, et un halo sombre le décolle du fond clair du plateau.
+   ============================================================ */
+.card-cycle-v10-card .card-cycle-v7-icon {
+  transform: scale(1.28);
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .55));
+}
+
+.card-cycle-v10-card b {
+  font-size: 1.14em;
+  letter-spacing: .04em;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, .78), 0 0 10px rgba(0, 0, 0, .45);
+}
+
+.card-cycle-v10-card .card-cycle-v7-kicker {
+  opacity: .72;
+}

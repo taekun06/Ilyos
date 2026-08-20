@@ -154,3 +154,27 @@ body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit[dat
 @media (prefers-reduced-motion: reduce) {
   .v13-reserve-progress.is-step { animation: none !important; }
 }
+
+
+/* ============================================================
+   QUOTA DU TIROIR D'ÎLES — SORTI DE L'APERÇU
+   La pastille était posée en absolu par-dessus la forme (mesuré : badge à 620,600 pour
+   un aperçu à 628,606), et elle en masquait les cases. Comme les formes se distinguent
+   uniquement par leur silhouette, la rendre illisible revient à rendre le choix impossible.
+   On réserve donc une bande en haut du bouton et on y centre le quota : plus aucun
+   recouvrement, et le chiffre reste au même endroit d'une tuile à l'autre, donc comparable.
+   ============================================================ */
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice {
+  padding-top: 26px !important;
+}
+
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit {
+  top: 4px !important;
+  right: auto !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  min-width: 30px !important;
+  padding: 2px 7px !important;
+  font-size: 12px !important;
+  line-height: 1.15 !important;
+}

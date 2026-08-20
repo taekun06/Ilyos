@@ -130,6 +130,11 @@
     };
   }
 
+  /* Les cartes de l'animation ne portent plus de chiffres : ni l'index « 01/05 » ni le
+     « ×N » d'empilement. Elles défilent en moins d'une seconde, souvent superposées et
+     en rotation — un chiffre n'y est pas lisible, il ne fait qu'encombrer la carte et
+     brouiller son icône, qui est la seule information réellement utile à cette vitesse.
+     Le compte exact reste affiché en permanence sur les boutons d'action du HUD. */
   function makeCard(type, extraClass = '', count = 1, drawIndex = 0, drawTotal = 0) {
     const meta = META[type] || META.MOVE;
     const isDraw = drawIndex > 0 && drawTotal > 0;
@@ -138,13 +143,13 @@
     el.setAttribute('aria-hidden', 'true');
     el.innerHTML = `
       ${isDraw ? `<span class="card-cycle-v10-backface"><i>✦</i><b>ILYOS</b><small>PIOCHE</small></span>` : ''}
-      ${isDraw ? `<span class="card-cycle-v10-index">${String(drawIndex).padStart(2, '0')}/${String(drawTotal).padStart(2, '0')}</span>` : ''}
+
       <span class="card-cycle-v7-kicker">${isDraw ? 'CARTE ACTION' : 'ACTION'}</span>
       <span class="card-cycle-v7-icon">${meta.icon}</span>
       <b>${meta.label}</b>
       <i class="card-cycle-v7-rune"></i>
       ${isDraw ? `<span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>` : ''}
-      ${count > 1 ? `<em>×${count}</em>` : ''}`;
+`;
     document.body.appendChild(el);
     return el;
   }

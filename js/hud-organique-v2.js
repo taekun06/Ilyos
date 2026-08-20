@@ -171,6 +171,21 @@
     legacy('ov2End').addEventListener('click',()=>{ const b=legacy('endTurnBtn'); if(b && !b.disabled) b.click(); });
     legacy('ov2Undo').addEventListener('click',()=>{ const b=legacy('cancelCardBtn'); if(b && !b.disabled) b.click(); });
     legacy('ov2Gear').addEventListener('click',()=>legacy('hudV2GearBtn')?.click());
+    /* La roue crantée d'origine reste dans le DOM — c'est elle qui porte la logique du
+       popover, et ov2Gear ne fait que lui relayer le clic — mais elle ne doit plus se
+       VOIR : les deux boutons se superposaient à quelques pixels près (x 786 contre 805),
+       ce qui donnait l'impression d'un bouton menu décalé sur la gauche de la roue.
+       opacity + pointer-events plutôt que display:none, pour que le .click() programmé
+       ci-dessus continue de fonctionner. */
+    const rouePrecedente = legacy('hudV2GearBtn');
+    if (rouePrecedente) {
+      rouePrecedente.style.opacity = '0';
+      rouePrecedente.style.pointerEvents = 'none';
+    }
+    /* Panneau gardien masqué : il s'ouvrait en surimpression sur le bord gauche et
+       recouvrait la scène sans apporter d'information que le HUD ne donne pas déjà. */
+    const panneauGardien = legacy('ov2Guardian');
+    if (panneauGardien) panneauGardien.style.display = 'none';
     legacy('ov2ToastClose').addEventListener('click',()=>{
       toastDismissedText = (legacy('hudV2Toast')?.textContent || '').trim();
       legacy('ov2Toast')?.classList.add('ov2-off');
@@ -220,14 +235,37 @@
     timer.textContent = timerText ? `◷ ${timerText.replace(/^◷\s*/,'')}` : '';
     timer.classList.toggle('ov2-off',!timerText);
 
-    const leftActive = !!legacy('hudV2ActivePortrait')?.classList.contains('hud-v2-portrait-active');
-    const rightActive = !!legacy('hudV2OpponentPortrait')?.classList.contains('hud-v2-portrait-active');
+    /* QUI JOUE — deux sources, la seconde en repli.
+       La première lit une classe posée sur les portraits du HUD d'origine. Elle est
+       parfois absente alors que c'est bien le tour du joueur : constaté en partie solo,
+       instruction « Choisissez une action » affichée et pourtant les deux côtés marqués
+       inactifs. L'étiquette « À VOUS » disparaissait alors, et avec elle l'anneau.
+       Le repli lit `data-player` sur #gameScreen, que le rendu d'en-tête tient à jour
+       (voir renderHeader) : c'est la même donnée que le moteur, sans intermédiaire. */
+    const portraitGauche = !!legacy('hudV2ActivePortrait')?.classList.contains('hud-v2-portrait-active');
+    const portraitDroite = !!legacy('hudV2OpponentPortrait')?.classList.contains('hud-v2-portrait-active');
+    let leftActive = portraitGauche;
+    let rightActive = portraitDroite;
+    if (!portraitGauche && !portraitDroite) {
+      const joueur = legacy('gameScreen')?.dataset.player;
+      if (joueur !== undefined && joueur !== '') {
+        leftActive = String(joueur) === '0';
+        rightActive = !leftActive;
+      }
+    }
     const leftTag = legacy('ov2LeftActive');
     const rightTag = legacy('ov2RightActive');
     leftTag.textContent = /\bIA\b|ordinateur/i.test(leftName) ? 'À L’IA' : 'À VOUS';
     rightTag.textContent = /\bIA\b|ordinateur/i.test(rightName) ? 'À L’IA' : 'À VOUS';
     leftTag.classList.toggle('ov2-off',!leftActive);
     rightTag.classList.toggle('ov2-off',!rightActive);
+    /* Marqueur du joueur actif, posé ICI et non ailleurs. `hud-polish-targeted-v1.js`
+       pose déjà une classe `is-active` équivalente, mais par un rendu différé qui peut
+       ne pas s'être exécuté : constaté sur une partie fraîche, aucun des deux côtés ne
+       la portait. Ce marqueur-ci est écrit dans la même fonction, juste après l'étiquette
+       « À VOUS » et à partir de la même donnée — il ne peut donc pas se désynchroniser. */
+    leftTag.closest('.ov2-side')?.classList.toggle('ov2-side-active', !!leftActive);
+    rightTag.closest('.ov2-side')?.classList.toggle('ov2-side-active', !!rightActive);
   }
 
   function syncActions(){
