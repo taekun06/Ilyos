@@ -1,17 +1,3 @@
-);
-            break;
-          case "turn":
-            playTone(246.94, .18, .30, "triangle");
-            playTone(369.99, .26, .30, "triangle", .10);
-            break;
-          case "victory":
-            [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => playTone(frequency, .55, .36, "sine", index * .14));
-            break;
-          default:
-            playTone(520, .12, .28, "sine");
-        }
-      }
-
       function drawCards(player, count) {
         while (player.hand.length < count) {
           if (player.deck.length === 0) {
@@ -1432,7 +1418,7 @@
           state.phase = "ACTION_SELECT";
           renderAll();
           animateCellPulse(claimer.r, claimer.c, "crown-burst");
-          playSfx("crown");
+          playSfx("crownTake");   // Ramassage, pas un point marqué.
           showToast(singleMessage || `${currentPlayer().name} récupère la couronne !`);
           return true;
         }
@@ -1570,7 +1556,7 @@
               state.phase = "ACTION_SELECT";
               renderAll();
               animateCellPulse(clickedAlly.r, clickedAlly.c, "crown-burst");
-              playSfx("crown");
+              playSfx("crownTake");   // L'allié reçoit la couronne : c'est une prise.
               showToast(`${currentPlayer().name} transmet gratuitement la couronne.`);
               return;
             }
@@ -1592,7 +1578,7 @@
             state.phase = "ACTION_SELECT";
             renderAll();
             animateCellPulse(r, c, "crown-burst");
-            playSfx("crown");
+            playSfx("crownDrop");   // Pose au sol.
             showToast("Couronne posée gratuitement.");
           } else {
             showToast("Choisissez un allié adjacent ou une case libre adjacente.");
@@ -1622,7 +1608,7 @@
             state.phase = "ACTION_SELECT";
             renderAll();
             animateCellPulse(pickedChar.r, pickedChar.c, "crown-burst");
-            playSfx("crown");
+            playSfx("crownTake");   // Ramassage, éventuellement volé à l'adversaire.
             showToast(stolenFrom ? `${currentPlayer().name} récupère la couronne à l’adversaire !` : "Couronne récupérée.");
           } else {
             showToast("Choisissez un de vos gardiens adjacents.");
@@ -2496,6 +2482,11 @@
         // pour la séquence 3D "move" (walkDuration, inchangée) : aucun
         // changement de durée perceptible. Le fallback HTML (hors 3D) garde
         // animateToken() tel quel.
+        /* Un pas par case traversée, joué PENDANT la marche et non plus une
+           seule fois à l'arrivée : le trajet dure walkDuration, et n'entendre
+           qu'un bruit au bout donnait un gardien qui marche en silence. */
+        playMovePath(path, walkDuration);
+
         if (state.visualMode === "alternative") {
           state.inputLocked = true;
           queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
@@ -2504,7 +2495,6 @@
             char.c = c;
             resolveArtifactForCharacter(char);
             triggerFx("move", [from, ...path]);
-            playSfx("move");
             useSelectedCard(cost);
           });
         } else {
@@ -2514,7 +2504,6 @@
             char.c = c;
             resolveArtifactForCharacter(char);
             triggerFx("move", [from, ...path]);
-            playSfx("move");
             useSelectedCard(cost);
           }, false, path);
         }
@@ -2590,6 +2579,16 @@
         // centaines de millisecondes, le temps de le montrer tomber vers les
         // nuages au lieu de disparaître d'un coup (voir playCharacterFall).
         queueKayKitCharacterFall(char.id, fallDirection);
+        // fallDirection n'est renseigné que par une vraie chute hors du plateau
+        // (voir l'appelant dans resolvePush) — jamais quand un gardien quitte le
+        // jeu après avoir validé une couronne, qui a déjà son propre son.
+        /* La chute est désormais le SEUL son d'une poussée qui éjecte (voir
+           le garde !result.fell côté poussée). Le décalage de 230 ms ne servait
+           qu'à laisser passer l'impact du coup : sans ce coup, il ne produisait
+           plus qu'un blanc au moment précis de l'action. Réduit à 80 ms, la
+           chute démarre pendant la réaction HIT du gardien et se déroule sur
+           toute l'éjection puis la descente. */
+        if (fallDirection) playSfx("fall", { c: char.c, delay: .08 });
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
       }
@@ -2820,18 +2819,27 @@
         // après le MÊME délai qu'animateToken() utilisait pour push/chute
         // (360/520 ms) : aucun changement de durée perceptible. Le fallback
         // HTML (hors 3D) garde animateToken() tel quel.
+        /* Le son du coup part MAINTENANT, pas à la fin de l'animation : il y
+           était joué 360 à 520 ms après le son de chute, lequel est déclenché
+           en amont pendant pushCharacter(). On entendait donc tomber avant
+           d'entendre frapper.
+
+           Et quand la poussée fait tomber quelqu'un, le coup n'est PAS joué :
+           la chute raconte déjà l'action à elle seule, et les deux sons
+           empilés donnaient exactement la superposition que ce correctif
+           cherche à supprimer. */
+        if (!result.fell) playSfx("push", { c: impactCell[1] });
+
         if (state.visualMode === "alternative") {
           state.inputLocked = true;
           queueKayKitActionAnimation(`__push-complete-${pusher.id}__`, "none", result.fell ? 520 : 360, null, null, () => {
             state.inputLocked = false;
             triggerFx("push", [result.from, result.to]);
-            playSfx("push");
             useSelectedCard();
           });
         } else {
           animateToken(result.from, result.to, result.icon, result.color, "push", () => {
             triggerFx("push", [result.from, result.to]);
-            playSfx("push");
             useSelectedCard();
           }, result.fell);
         }

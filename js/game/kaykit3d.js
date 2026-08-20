@@ -174,7 +174,6 @@
         barbarian: KAYKIT_CDN.adventurerTextures + "barbarian_texture.png"
       };
       const MEDIEVAL_ATLAS = KAYKIT_CDN.medievalTextures + "hexagons_medieval.png";
-      const SKELETON_ATLAS = KAYKIT_CDN.skeletonCharacters + "skeleton_texture.png";
 
       const KAYKIT_ASSETS = {
         // Personnages gratuits officiels : plus de 75 clips intégrés.
@@ -184,11 +183,15 @@
         hero2Hooded: kaykitAssetSpec("characters", "Rogue_Hooded.glb", KAYKIT_CDN.characters + "rogue_texture.png"),
         hero3: kaykitAssetSpec("characters", "Barbarian.glb", KAYKIT_CDN.characters + "barbarian_texture.png"),
 
-        // Squelettes gratuits : plus de 90 clips intégrés.
-        skeletonWarrior: kaykitAssetSpec("skeletonCharacters", "Skeleton_Warrior.glb", SKELETON_ATLAS),
-        skeletonMage: kaykitAssetSpec("skeletonCharacters", "Skeleton_Mage.glb", SKELETON_ATLAS),
-        skeletonRogue: kaykitAssetSpec("skeletonCharacters", "Skeleton_Rogue.glb", SKELETON_ATLAS),
-        skeletonMinion: kaykitAssetSpec("skeletonCharacters", "Skeleton_Minion.glb", SKELETON_ATLAS),
+        /* Le pack Squelettes (4 GLB, 18,4 Mo) était chargé ici avec tout le
+           reste au démarrage de la scène. Il ne servait qu'au navigateur de
+           packs décoratif, lui-même hors service depuis la V45 :
+           registerKayKitPackRepresentative() n'a plus d'appelant, donc
+           packRepresentatives reste vide et renderKayKitOfficialPackDecor()
+           sort immédiatement. Aucun chemin de jeu ne référençait ces modèles.
+           Les fichiers restent dans assets/kaykit/skeletonCharacters/ si le
+           navigateur de packs revient un jour — mais ils devront alors être
+           chargés à la demande, pas dans cette liste eager. */
 
         // Accessoires Aventuriers.
         sword: kaykitAssetSpec("adventurerAssets", "sword_1handed.gltf", ADVENTURER_TEXTURES.knight),

@@ -344,7 +344,30 @@
         stopAutoplay: stopIlyosAutoplay,
         report: collectIlyosDiagnosticReport,
         refresh: showIlyosDiagnosticPanel,
-        autoplay: ILYOS_AUTOPLAY
+        autoplay: ILYOS_AUTOPLAY,
+        /* Audition des bruitages sans avoir à provoquer la situation de jeu
+           correspondante — indispensable pour régler un son : une chute ou une
+           victoire sont autrement pénibles à déclencher à volonté.
+           ILYOS_TEST.sfx("island") joue le son ; sans argument, la liste des
+           types disponibles est renvoyée. */
+        // ILYOS_TEST.sfx("spawn", "lumiere") pour auditionner une variante.
+        sfx: (type, variant) => {
+          const types = ["card", "island", "spawn", "move", "push", "rotate", "magic",
+            "crownTake", "crownDrop", "crown", "turn", "victory", "fall", "error", "undo"];
+          if (!type) return types;
+          playSfx(type, variant ? { variant } : undefined);
+          return variant ? `${type} · ${variant}` : type;
+        },
+        /* Marche complète : ILYOS_TEST.walk(4) joue les quatre pas d'un trajet
+           de quatre cases, à la cadence réelle de l'animation. Un pas isolé ne
+           dit rien de la marche — c'est la répétition qu'il faut juger. */
+        walk: (cells = 3) => {
+          const count = Math.max(1, Math.min(12, Math.round(cells)));
+          const startColumn = Math.max(0, Math.round((GRID - count) / 2));
+          const path = Array.from({ length: count }, (unused, index) => [5, startColumn + index]);
+          playMovePath(path, 140 + count * 340);
+          return { cases: count, dureeMs: 140 + count * 340 };
+        }
       };
 
       els.ilyosSpiralTestBtn?.addEventListener('click', launchIlyosSpiralDiagnostic);
@@ -504,6 +527,27 @@
       els.effectsVolumeSlider.addEventListener("input", event => setSoundSetting("effects", Number(event.target.value)));
       els.effectsVolumeSlider.addEventListener("change", () => playSfx("magic"));
       els.musicTrackSelect.addEventListener("change", event => setMusicTrack(event.target.value));
+      /* Banc d'écoute (#sfxLab dans index.html) : un clic joue le bruitage
+         correspondant. Délégation plutôt qu'un écouteur par bouton, pour que
+         l'ajout d'un son dans le HTML suffise.
+         Le son est joué même si le joueur a coupé le son général — sinon le
+         banc ne sert à rien précisément quand on veut vérifier un réglage. */
+      document.getElementById("sfxLab")?.addEventListener("click", event => {
+        const button = event.target.closest("[data-sfx], [data-walk]");
+        if (!button) return;
+        event.stopPropagation();
+
+        // ambientEnabled ne suffit pas : c'est updateSoundLevels() qui remonte
+        // réellement masterGain, mis à zéro quand le son est coupé.
+        const restoreMuted = !ambientEnabled;
+        if (restoreMuted) { ambientEnabled = true; updateSoundLevels(); }
+        if (button.dataset.walk) window.ILYOS_TEST.walk(Number(button.dataset.walk));
+        else playSfx(button.dataset.sfx, button.dataset.variant ? { variant: button.dataset.variant } : undefined);
+        if (restoreMuted) setTimeout(() => { ambientEnabled = false; updateSoundLevels(); }, 2600);
+
+        button.classList.add("ilyos-sfx-playing");
+        setTimeout(() => button.classList.remove("ilyos-sfx-playing"), 320);
+      });
       els.kaykitCacheBtn?.addEventListener("click", event => {
         event.stopPropagation();
         verifyAndCacheKayKit();

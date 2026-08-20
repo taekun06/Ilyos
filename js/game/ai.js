@@ -212,7 +212,7 @@
         state.phase = "ACTION_SELECT";
         renderAll();
         animateCellPulse(option.char.r, option.char.c, "crown-burst");
-        playSfx("crown");
+        playSfx("crownTake");   // Ramassage libre par l'IA.
         showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
         await sleep(520);
         resolveArtifactForCharacter(option.char);
@@ -294,7 +294,7 @@
           state.selectedCharId = option.ally.id;
           renderAll();
           animateCellPulse(option.ally.r, option.ally.c, "crown-burst");
-          playSfx("crown");
+          playSfx("crownTake");   // Transmission : l'allié prend la couronne.
           showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
@@ -323,7 +323,7 @@
         state.selectedCharId = option.ally.id;
         renderAll();
         animateCellPulse(option.ally.r, option.ally.c, "crown-burst");
-        playSfx("crown");
+        playSfx("crownTake");   // L'allié prend la couronne.
         showToast("L’allié récupère immédiatement la couronne.");
         await sleep(340);
         resolveArtifactForCharacter(option.ally);
@@ -557,7 +557,7 @@
             state.selectedCharId = ally.id;
             renderAll();
             animateCellPulse(ally.r, ally.c, "crown-burst");
-            playSfx("crown");
+            playSfx("crownTake");   // Prise après poussée.
             showToast("Après la poussée, un allié récupère gratuitement la couronne.");
             await sleep(440);
             resolveArtifactForCharacter(ally);

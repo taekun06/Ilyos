@@ -1,0 +1,116 @@
+/* ILYOS — banc d'écoute des bruitages.
+   Chargé en dernier par js/version-bootstrap.js.
+
+   Deux précautions, tirées du README de js/game/ :
+   1. Tous les sélecteurs sont ancrés sur #soundMenu. Un id bat n'importe quel
+      empilement de classes, donc ces règles gagnent par construction et non
+      par ordre de chargement — ce qui évite d'ajouter encore des !important.
+   2. Aucune classe existante n'est réutilisée. En particulier .sound-test-btn
+      est neutralisée par un « display:none !important » resté dans base.css
+      (~ligne 8812) : tout élément qui la porte est invisible, quoi qu'on
+      écrive ensuite. C'est ce qui rendait le bouton « Tester le son »
+      introuvable. */
+
+#soundMenu .ilyos-sfx-lab {
+  margin: 10px 0 4px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .04);
+  overflow: hidden;
+}
+
+#soundMenu .ilyos-sfx-summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  list-style: none;
+  user-select: none;
+}
+
+#soundMenu .ilyos-sfx-summary::-webkit-details-marker {
+  display: none;
+}
+
+#soundMenu .ilyos-sfx-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 7px;
+  transition: transform .18s ease;
+}
+
+#soundMenu .ilyos-sfx-lab[open] .ilyos-sfx-summary::before {
+  transform: rotate(90deg);
+}
+
+#soundMenu .ilyos-sfx-summary:hover,
+#soundMenu .ilyos-sfx-summary:focus-visible {
+  background: rgba(255, 255, 255, .07);
+  outline: none;
+}
+
+#soundMenu .ilyos-sfx-hint {
+  margin: 0 12px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: .72;
+}
+
+#soundMenu .ilyos-sfx-group {
+  padding: 0 12px 10px;
+}
+
+#soundMenu .ilyos-sfx-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  opacity: .58;
+}
+
+#soundMenu .ilyos-sfx-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+#soundMenu .ilyos-sfx-grid button {
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .05);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease;
+}
+
+#soundMenu .ilyos-sfx-grid button:hover {
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .3);
+}
+
+#soundMenu .ilyos-sfx-grid button:focus-visible {
+  outline: 2px solid #ddb653;
+  outline-offset: 1px;
+}
+
+/* Retour visuel au clic : confirme que le son est bien parti, même quand le
+   volume est au minimum ou le son coupé. */
+#soundMenu .ilyos-sfx-grid button.ilyos-sfx-playing {
+  background: rgba(221, 182, 83, .26);
+  border-color: rgba(221, 182, 83, .6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  #soundMenu .ilyos-sfx-summary::before,
+  #soundMenu .ilyos-sfx-grid button {
+    transition: none;
+  }
+}
