@@ -1186,10 +1186,14 @@
 
     <label class="music-track-choice">
       <span><b>Ambiance musicale</b></span>
+      <!-- Liste reconstruite au vol par refreshMusicTrackOptions() (js/game/audio.js) :
+           déclarer une piste dans MUSIC_FILES suffit à la faire apparaître ici.
+           Ces options ne sont que le repli avant le premier rendu du menu. -->
       <select id="musicTrackSelect">
-        <option value="alternate">Alternance des deux musiques</option>
-        <option value="sky">Îles célestes</option>
-        <option value="mystic">Sanctuaire mystique</option>
+        <option value="auto">Alternance des ambiances</option>
+        <option value="ciel">Ciel clair</option>
+        <option value="brume">Brume</option>
+        <option value="nuit">Nuit</option>
       </select>
     </label>
 
@@ -1199,8 +1203,8 @@
     </label>
 
     <label class="sound-slider">
-      <span><b>Musique</b><output id="musicVolumeValue">10 %</output></span>
-      <input id="musicVolumeSlider" type="range" min="0" max="100" value="10">
+      <span><b>Musique</b><output id="musicVolumeValue">34 %</output></span>
+      <input id="musicVolumeSlider" type="range" min="0" max="100" value="34">
     </label>
 
     <label class="sound-slider">
@@ -1208,10 +1212,74 @@
       <input id="effectsVolumeSlider" type="range" min="0" max="160" value="140">
     </label>
 
+    <!-- Banc d'écoute. Classes volontairement préfixées ilyos-sfx- : la classe
+         .sound-test-btn utilisée par les boutons voisins est neutralisée par un
+         « display:none !important » resté dans css/base.css (ligne ~8812), donc
+         tout élément qui la porte est invisible. Les styles vivent dans
+         css/sound-lab.css, chargé en dernier et ancré sur #soundMenu. -->
+    <details id="sfxLab" class="ilyos-sfx-lab">
+      <summary class="ilyos-sfx-summary">Écouter les sons du jeu</summary>
+      <p class="ilyos-sfx-hint">Les sons sont regroupés par famille : c'est à l'intérieur d'une même famille que la
+        distinction compte le plus.</p>
+
+      <div class="ilyos-sfx-group">
+        <span class="ilyos-sfx-label">Construction</span>
+        <div class="ilyos-sfx-grid">
+          <button type="button" data-sfx="island">Poser une île</button>
+          <button type="button" data-sfx="move">Un pas</button>
+          <!-- Un pas isolé ne dit rien de la marche : c'est la répétition qu'il
+               faut pouvoir juger, d'où ce trajet de quatre cases. -->
+          <button type="button" data-walk="4">Marche de 4 cases</button>
+          <button type="button" data-sfx="push">Pousser</button>
+          <button type="button" data-sfx="rotate">Faire pivoter</button>
+        </div>
+      </div>
+
+      <div class="ilyos-sfx-group">
+        <span class="ilyos-sfx-label">Magie</span>
+        <div class="ilyos-sfx-grid">
+          <button type="button" data-sfx="magic">Lancer la magie</button>
+        </div>
+      </div>
+
+      <div class="ilyos-sfx-group">
+        <!-- Choix arrêté : « arrivée physique » (SPAWN_VARIANT dans
+             js/game/audio.js). Les deux autres pistes restent dans le code et
+             s'écoutent encore par ILYOS_TEST.sfx("spawn", "souffle") ou
+             ("spawn", "lumiere") si la question se rouvre un jour. -->
+        <span class="ilyos-sfx-label">Invocation</span>
+        <div class="ilyos-sfx-grid">
+          <button type="button" data-sfx="spawn">Gardien qui apparaît</button>
+        </div>
+      </div>
+
+      <div class="ilyos-sfx-group">
+        <span class="ilyos-sfx-label">Couronne</span>
+        <div class="ilyos-sfx-grid">
+          <button type="button" data-sfx="crownTake">Récupérer la couronne</button>
+          <button type="button" data-sfx="crownDrop">Poser la couronne</button>
+          <button type="button" data-sfx="crown">Point marqué</button>
+          <button type="button" data-sfx="victory">Victoire</button>
+        </div>
+      </div>
+
+      <div class="ilyos-sfx-group">
+        <span class="ilyos-sfx-label">Interface</span>
+        <div class="ilyos-sfx-grid">
+          <button type="button" data-sfx="fall">Chute d'un gardien</button>
+          <button type="button" data-sfx="turn">Fin de tour</button>
+          <button type="button" data-sfx="card">Carte</button>
+          <button type="button" data-sfx="undo">Annuler</button>
+          <button type="button" data-sfx="error">Action impossible</button>
+        </div>
+      </div>
+    </details>
+
     <button id="kaykitCacheBtn" type="button" class="sound-test-btn">Vérifier les ressources 3D</button>
     <small id="kaykitCacheStatus">Aucune installation locale n’est nécessaire. Le cache accélère les prochains
       lancements.</small>
-    <small>La musique est volontairement douce. Les actions restent plus fortes et plus nettes.</small>
+    <small>La musique est générée en direct : elle ne se répète jamais et se tend quand une couronne est en jeu. Les
+      actions restent plus fortes et plus nettes.</small>
   </div>
 
   <div id="rulesModal" class="modal hidden">

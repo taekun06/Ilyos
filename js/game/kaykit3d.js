@@ -174,7 +174,6 @@
         barbarian: KAYKIT_CDN.adventurerTextures + "barbarian_texture.png"
       };
       const MEDIEVAL_ATLAS = KAYKIT_CDN.medievalTextures + "hexagons_medieval.png";
-      const SKELETON_ATLAS = KAYKIT_CDN.skeletonCharacters + "skeleton_texture.png";
 
       const KAYKIT_ASSETS = {
         // Personnages gratuits officiels : plus de 75 clips intégrés.
@@ -184,11 +183,15 @@
         hero2Hooded: kaykitAssetSpec("characters", "Rogue_Hooded.glb", KAYKIT_CDN.characters + "rogue_texture.png"),
         hero3: kaykitAssetSpec("characters", "Barbarian.glb", KAYKIT_CDN.characters + "barbarian_texture.png"),
 
-        // Squelettes gratuits : plus de 90 clips intégrés.
-        skeletonWarrior: kaykitAssetSpec("skeletonCharacters", "Skeleton_Warrior.glb", SKELETON_ATLAS),
-        skeletonMage: kaykitAssetSpec("skeletonCharacters", "Skeleton_Mage.glb", SKELETON_ATLAS),
-        skeletonRogue: kaykitAssetSpec("skeletonCharacters", "Skeleton_Rogue.glb", SKELETON_ATLAS),
-        skeletonMinion: kaykitAssetSpec("skeletonCharacters", "Skeleton_Minion.glb", SKELETON_ATLAS),
+        /* Le pack Squelettes (4 GLB, 18,4 Mo) était chargé ici avec tout le
+           reste au démarrage de la scène. Il ne servait qu'au navigateur de
+           packs décoratif, lui-même hors service depuis la V45 :
+           registerKayKitPackRepresentative() n'a plus d'appelant, donc
+           packRepresentatives reste vide et renderKayKitOfficialPackDecor()
+           sort immédiatement. Aucun chemin de jeu ne référençait ces modèles.
+           Les fichiers restent dans assets/kaykit/skeletonCharacters/ si le
+           navigateur de packs revient un jour — mais ils devront alors être
+           chargés à la demande, pas dans cette liste eager. */
 
         // Accessoires Aventuriers.
         sword: kaykitAssetSpec("adventurerAssets", "sword_1handed.gltf", ADVENTURER_TEXTURES.knight),
@@ -256,7 +259,13 @@
         flag0: kaykitAssetSpec("medieval", "decoration/props/flag_blue.gltf", MEDIEVAL_ATLAS),
         flag1: kaykitAssetSpec("medieval", "decoration/props/flag_red.gltf", MEDIEVAL_ATLAS),
         flag2: kaykitAssetSpec("medieval", "decoration/props/flag_green.gltf", MEDIEVAL_ATLAS),
-        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS)
+        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS),
+
+        // Nuages KayKit réels (voir buildKayKitBoardClouds) : dérivent juste hors
+        // du rayon de sécurité de l'archipel, à hauteur du plateau — lecture
+        // "on est dans le ciel, il y a du vent" depuis la vue "front".
+        cloudSmall: kaykitAssetSpec("medieval", "decoration/nature/cloud_small.gltf", MEDIEVAL_ATLAS),
+        cloudBig: kaykitAssetSpec("medieval", "decoration/nature/cloud_big.gltf", MEDIEVAL_ATLAS)
       };
 
 
@@ -658,6 +667,7 @@
           // ce qui a réellement changé. Voir syncKayKitScene pour le détail.
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
+          boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -1318,31 +1328,42 @@
           });
         }
 
-        // COUCHE 3 — cinq silhouettes lointaines seulement : « ILYOS fait partie d'un
-        // immense archipel », pas « il y a d'autres objets à cliquer ». Elles flottent
-        // entre le plateau et la mer de nuages, hors du cylindre de sécurité, et à un
-        // rayon supérieur à la distance orbitale maximale : la caméra reste donc
-        // toujours à l'intérieur de leur anneau et aucune ne peut passer devant le jeu.
-        // Altitudes toutes sous le niveau du plateau : l'archipel lointain se lit
-        // « plus bas et plus loin », il ne vient jamais flotter à hauteur de jeu.
-        // Deux rapprochés (30/32, juste au-dessus de `farRing` et `orbit.maxDistance`
-        // = 25 : 5-7 unités de marge, la caméra ne peut donc jamais les atteindre) pour
-        // qu'ils se distinguent déjà au zoom de jeu normal ; les deux autres restent
-        // très loin, pour la profondeur en zoom éloigné.
-        [
+        // COUCHE 3 — îlots lointains : « ILYOS fait partie d'un immense
+        // archipel », pas « il y a d'autres objets à cliquer ». Toutes sûres
+        // PAR CONSTRUCTION (hors du cylindre de sécurité — voir
+        // kaykitSkyPlacementAllowed — jamais par masquage conditionnel).
+        // Deux groupes :
+        //  - "horizon" (rayon 30-49, très sous le niveau du plateau) : la
+        //    silhouette d'archipel lointain, surtout lisible en isométrique/
+        //    zoom arrière — la caméra (maxDistance 25) reste toujours à
+        //    l'intérieur de leur anneau, aucune ne peut passer devant le jeu.
+        //  - "proches" (rayon ≈9.8, hauteur ≈1.3) : calées au plus près du
+        //    rayon de sécurité pour dépasser dans le cadrage "front" par
+        //    défaut (vérifié par projection caméra réelle, azimuths repris
+        //    de l'arc déjà validé pour les nuages proches ci-dessus) — ce
+        //    sont elles qui portent "une île → falaise → ciel" en vue de
+        //    face, pas les lointaines qui restent hors cadre à cette
+        //    distance.
+        // Densité pilotée par kaykit3D.qualityMode (desktop ~5, mobile ~3).
+        const isletEconomy = kaykit3D.qualityMode === "performance";
+        const horizonIslets = [
           { azimuth: .62, radius: 30, y: -5.8, scale: 1.5, tower: true },
           { azimuth: 1.94, radius: 49, y: -4.4, scale: 1.9, tower: false },
-          { azimuth: 3.05, radius: 32, y: -8.4, scale: 1.3, tower: false },
-          { azimuth: 4.36, radius: 62, y: -6.0, scale: 2.2, tower: true }
-        ].forEach((spec, index) => {
-          const x = Math.cos(spec.azimuth) * spec.radius;
-          const z = Math.sin(spec.azimuth) * spec.radius;
-          if (spec.radius < KAYKIT_SKY.farRing) return;
-          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
-          const islet = makeKayKitDistantIslet(spec.scale, spec.tower, index / 4);
-          islet.position.set(x, spec.y, z);
-          sky.add(islet);
-        });
+          { azimuth: 3.05, radius: 32, y: -8.4, scale: 1.3, tower: false }
+        ];
+        const nearIslets = [
+          { azimuth: 3.93, radius: 9.8, y: 1.3, scale: 1.6, tower: false },
+          { azimuth: 5.5, radius: 9.9, y: 1.5, scale: 1.9, tower: true }
+        ];
+        [...(isletEconomy ? horizonIslets.slice(0, 1) : horizonIslets), ...nearIslets]
+          .forEach((spec, index) => {
+            const x = Math.cos(spec.azimuth) * spec.radius;
+            const z = Math.sin(spec.azimuth) * spec.radius;
+            if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.scale * 1.2)) return;
+            const islet = makeKayKitDistantIslet(spec.scale, spec.tower, index / 5);
+            islet.position.set(x, spec.y, z);
+            sky.add(islet);
+          });
 
         // Îlots SOUS l'archipel, aperçus par les interstices entre les îles. Ils sont
         // à l'intérieur du rayon de sécurité, ce qui est autorisé ici parce qu'ils
@@ -1365,6 +1386,114 @@
 
         parent.add(sky);
         kaykit3D.skyGroup = sky;
+      }
+
+      /**
+       * Nuages KayKit réels, en DEUX niveaux d'altitude tous deux sûrs PAR
+       * CONSTRUCTION (jamais de masquage conditionnel selon le mode de
+       * caméra — voir cahier des charges "environnement céleste léger",
+       * 2026-08-19) :
+       *
+       *  - BAS (mer de nuages sous le plateau, y ≈ -1.8 à -2.5) : rayon
+       *    libre, y compris proche du centre. Sûr à TOUT angle/zoom parce
+       *    que la caméra elle-même ne descend jamais sous y≈4 (vue "front",
+       *    zoom minimal 6.4) ni y≈4.5 (orbite/isométrique, même zoom) — une
+       *    caméra qui ne peut pas être en dessous de y=4 ne peut pas non
+       *    plus regarder VERS une case (toutes à y∈[0, 1.3]) EN PASSANT par
+       *    y=-2 : ces nuages ne peuvent donc géométriquement jamais finir
+       *    entre l'œil et une case. C'est ce niveau, proche et large, qui
+       *    porte l'essentiel de la lecture "on est haut dans le ciel" en vue
+       *    "front" (le mockup de référence : îles → nuages en contrebas).
+       *  - LOINTAIN, hors du rayon de sécurité de l'archipel
+       *    (kaykitSkyPlacementAllowed, même garantie que
+       *    buildKayKitSkyEnvironment — sûr à tout angle par construction,
+       *    pas par masquage), calé au plus près de ce rayon pour rester
+       *    visible en bordure du cadrage "front" par défaut (vérifié par
+       *    projection caméra réelle).
+       *
+       * Densité pilotée par kaykit3D.qualityMode (mobile = moins d'instances,
+       * jamais moins de sécurité géométrique).
+       */
+      function buildKayKitBoardClouds(parent) {
+        if (!kaykit3D) return;
+        const seeded = (i, salt = 0) => {
+          const x = Math.sin((i + 1) * 71.31 + salt * 19.71) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const group = new THREE.Group();
+        group.name = "ilyos-board-clouds";
+        const economy = kaykit3D.qualityMode === "performance";
+
+        const addCloud = (spec, index) => {
+          const x = Math.cos(spec.azimuth) * spec.radius;
+          const z = Math.sin(spec.azimuth) * spec.radius;
+          const cloud = cloneKayKitAsset(spec.key, { maxWidth: spec.scale, maxHeight: spec.scale * .6, targetFloor: 0 });
+          if (!cloud) return;
+          cloud.position.set(x, spec.y, z);
+          cloud.rotation.y = seeded(index, 1) * Math.PI * 2;
+          cloud.traverse(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; } });
+          group.add(cloud);
+          kaykit3D.skyLayers.push({
+            object: cloud, base: cloud.position.clone(),
+            // Même mécanisme de dérive que buildKayKitSkyEnvironment (voir la
+            // boucle d'animation dans animateKayKit3D) : aucun code d'animation
+            // supplémentaire nécessaire.
+            drift: {
+              x: 1.1 + seeded(index, 2) * 1.0, z: .9 + seeded(index, 3) * .8,
+              sx: .006 + seeded(index, 4) * .004, sz: .005 + seeded(index, 5) * .003
+            }
+          });
+        };
+
+        // BAS — mer de nuages proche, sous le plateau (sécurité : voir
+        // docstring). Desktop 4, mobile 3 — grandes masses, pas une nuée.
+        const lowSpecs = [
+          { key: "cloudBig", azimuth: .6, radius: 2.4, y: -1.8, scale: 2.6 },
+          { key: "cloudSmall", azimuth: 2.4, radius: 3.6, y: -2.3, scale: 2.1 },
+          { key: "cloudBig", azimuth: 4.1, radius: 2.8, y: -2.0, scale: 2.5 },
+          { key: "cloudSmall", azimuth: 5.3, radius: 4.2, y: -2.5, scale: 2.2 }
+        ];
+        (economy ? lowSpecs.slice(0, 3) : lowSpecs).forEach((spec, index) => addCloud(spec, index));
+
+        // LOINTAIN — hors du rayon de sécurité, calé pour dépasser dans le
+        // cadrage "front" (azimuth 3.93/5.5 : même arc que les îlots proches
+        // ci-dessous, vérifié par projection caméra). Desktop 3, mobile 2.
+        const farSpecs = [
+          { key: "cloudSmall", azimuth: 1.3, radius: 12.5, y: 1.8, scale: 1.4 },
+          { key: "cloudBig", azimuth: 2.6, radius: 14, y: 2.4, scale: 2.0 },
+          { key: "cloudBig", azimuth: 4.7, radius: 9.6, y: .6, scale: 1.6 }
+        ];
+        (economy ? farSpecs.slice(0, 2) : farSpecs).forEach((spec, index) => addCloud(spec, index + 10));
+
+        // Ombres de nuages : décalques doux au ras du plateau (alpha faible,
+        // même texture que les amas du ciel), pas de vrais objets shadow-caster
+        // — assombrissent légèrement le terrain sous leur passage sans toucher
+        // au shadow-mapping (coût quasi nul, y compris sur mobile).
+        const shadowTexture = kaykitCloudTexture();
+        [
+          { x: -2.5, z: 1.5, scale: 9, opacity: .15 },
+          { x: 3, z: -2, scale: 7, opacity: .11 }
+        ].forEach((spec, index) => {
+          const decal = new THREE.Mesh(
+            kaykitGeometry("cloud-shadow-decal-v1", () => new THREE.PlaneGeometry(1, .625)),
+            new THREE.MeshBasicMaterial({
+              map: shadowTexture, color: 0x27384a, transparent: true, opacity: spec.opacity,
+              depthWrite: false, fog: false, toneMapped: false
+            })
+          );
+          decal.rotation.x = -Math.PI / 2;
+          decal.scale.set(spec.scale, spec.scale, 1);
+          decal.position.set(spec.x, KAYKIT_LEVELS.islandTop + .03, spec.z);
+          decal.renderOrder = 6;
+          group.add(decal);
+          kaykit3D.skyLayers.push({
+            object: decal, base: decal.position.clone(),
+            drift: { x: 3.2 + index, z: 2.4 + index * .6, sx: .004 + index * .001, sz: .003 + index * .001 }
+          });
+        });
+
+        parent.add(group);
+        kaykit3D.boardCloudsGroup = group;
       }
 
       function buildKayKitStaticScene() {
@@ -1429,10 +1558,30 @@
             color, transparent: true, opacity, vertexColors: true, depthWrite: false, depthTest: true
           }));
         };
-        const grid = buildFadedGrid(gridPoints, gridAlphas, 0xf3fbff, .74);
-        const majorGrid = buildFadedGrid(majorGridPoints, majorGridAlphas, 0xe9c877, .86);
+        // Passe "environnement céleste léger" (visual-island-relief-v2, v3) :
+        // grille beaucoup plus translucide (0.74/0.86 → 0.20/0.24) pour lire
+        // comme une trame magique suspendue plutôt qu'un sol plein — le ciel
+        // et les nuages doivent transparaître au travers. gridFade() garde son
+        // dégradé radial existant, juste appliqué à une base plus basse.
+        const grid = buildFadedGrid(gridPoints, gridAlphas, 0xf3fbff, .20);
+        const majorGrid = buildFadedGrid(majorGridPoints, majorGridAlphas, 0xe9c877, .24);
         grid.renderOrder = 2; majorGrid.renderOrder = 3;
         staticGroup.add(grid, majorGrid);
+
+        // Fond de grille très ténu : un simple aplat sous les lignes, pour que
+        // les cases vides se lisent comme une trame de lumière posée dans le
+        // ciel plutôt que comme des trous — jamais un sol, juste assez pour
+        // ancrer visuellement la grille. Un seul plan, une seule couleur.
+        const gridFill = new THREE.Mesh(
+          kaykitGeometry("grid-fill-plane-v1", () => new THREE.PlaneGeometry(KAYKIT_BOARD_SPAN, KAYKIT_BOARD_SPAN)),
+          new THREE.MeshBasicMaterial({
+            color: 0xdcefff, transparent: true, opacity: .06, depthWrite: false, fog: true, toneMapped: false
+          })
+        );
+        gridFill.rotation.x = -Math.PI / 2;
+        gridFill.position.y = .04;
+        gridFill.renderOrder = 1;
+        staticGroup.add(gridFill);
 
         const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
         for (let r = 0; r < GRID; r++) {
@@ -3267,6 +3416,34 @@
             new THREE.LineBasicMaterial({ color: ownerColor, transparent: true, opacity: .95, depthWrite: false })
           );
           outline.position.y = .012; group.add(outline);
+
+          // Dessous rocheux simple pour les 4 plateformes de château (brief
+          // "environnement céleste", section 7) : un bloc carré posé dans le
+          // vide se lisait comme un simple socle, pas comme un fragment d'île.
+          // Même direction artistique que les coques d'île jouables (roche,
+          // pointes) mais géométrie de coût "îlot lointain" — cône + pointes
+          // partagés (kaykitGeometry), jamais reconstruits par instance, pas
+          // le système de coque V2 complet pour 4 éléments aussi éloignés de
+          // la caméra. Pas d'ombre dynamique : cohérent avec le reste du
+          // décor d'ambiance (voir le brief mobile-first).
+          const underRock = new THREE.Mesh(
+            kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
+            new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
+          );
+          underRock.rotation.x = Math.PI;
+          underRock.position.y = -.36;
+          underRock.castShadow = false; underRock.receiveShadow = false;
+          group.add(underRock);
+          [.9, 2.4, 4.1].forEach((angle, i) => {
+            const spike = new THREE.Mesh(
+              kaykitGeometry(`pedestal-underside-spike-v1-${i}`, () => new THREE.ConeGeometry(.09, .3, 5)),
+              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_BOTTOM.getHex(), roughness: .95 })
+            );
+            spike.position.set(Math.cos(angle) * .32, -.62, Math.sin(angle) * .32);
+            spike.rotation.x = Math.PI * .92;
+            spike.castShadow = false; spike.receiveShadow = false;
+            group.add(spike);
+          });
         }
         return group;
       }
@@ -7052,6 +7229,14 @@
           if (!kaykit3D.crownCrossGroundBuilt) {
             dynamic.add(makeCrownCrossGround());
             kaykit3D.crownCrossGroundBuilt = true;
+          }
+          // Nuages du plateau : statiques (comme le sol en croix), construits une
+          // seule fois — mais seulement une fois les deux assets KayKit chargés
+          // (même principe que châteaux/gardiens : jamais de secours à remplacer
+          // à chaud, on attend juste que l'asset soit prêt).
+          if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
+            buildKayKitBoardClouds(dynamic);
+            kaykit3D.boardCloudsBuilt = true;
           }
 
           // Couche île (blocs fusionnés + coutures + décor forestier + les
