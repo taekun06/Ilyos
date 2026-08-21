@@ -2300,6 +2300,8 @@
             "ilots({ teinte: 0x93a9c6 })   silhouettes d'archipel lointain",
             "horizon({ force, elevation, epaisseur })  bande d'horizon peinte dans le ciel :",
             "                      elevation en p (.611 = 20° sous l'horizontale), epaisseur en degrés",
+            "bloom({ actif, force, seuil, rayon })   éblouissement autour des hautes",
+            "                      lumières. seuil = luminance de déclenchement (0..1).",
             "cadrage({ hauteur, recul, inclinaison })   recul = distance caméra (17) ;",
             "                      inclinaison en degrés sous l'horizontale (37.2) : le haut",
             "                      du cadre est à (inclinaison - 16,5°). 30 fait entrer l'horizon.",
@@ -2387,6 +2389,15 @@
             force: +champ.object.material.opacity.toFixed(3)
           }));
         },
+        bloom(opts = {}) {
+          if (opts.actif !== undefined) KAYKIT_BLOOM.actif = !!opts.actif;
+          if (opts.force !== undefined) KAYKIT_BLOOM.force = opts.force;
+          if (opts.seuil !== undefined) KAYKIT_BLOOM.seuil = opts.seuil;
+          if (opts.douceur !== undefined) KAYKIT_BLOOM.douceur = opts.douceur;
+          if (opts.rayon !== undefined) KAYKIT_BLOOM.rayon = opts.rayon;
+          if (opts.reprendre) { kaykitBloom.coupeAuto = false; kaykitBloom.imagesBasses = 0; }
+          return Object.assign({}, KAYKIT_BLOOM, { coupeAutomatique: kaykitBloom.coupeAuto });
+        },
         cadrage(opts = {}) {
           if (opts.hauteur !== undefined) window.ILYOS_FRONT_VIEW_HEIGHT = opts.hauteur;
           if (opts.recul !== undefined) window.ILYOS_FRONT_DISTANCE = opts.recul;
@@ -2444,6 +2455,40 @@
       // les modèles KayKit disponibles — sinon cloneKayKitAsset renvoie null et rien n'est
       // construit. Même principe que buildKayKitBoardClouds : on attend l'asset, jamais de
       // pièce de secours à remplacer à chaud.
+      /** Remplace le cône de repli des plateformes de château par la montagne
+       *  retournée, une fois les modèles KayKit disponibles. Les plateformes sont
+       *  construites très tôt — avant la fin du chargement — et ne seraient sinon
+       *  reconstruites qu'au premier changement de couche d'île. */
+      function kaykitReprendreSoclesRocheux() {
+        const registre = kaykit3D?.pedestalRegistry;
+        if (!registre || !registre.size) return false;
+        let reprises = 0;
+        registre.forEach(socle => {
+          if (socle.userData.ilyosSocleRocheux !== false) return;
+          const couleur = socle.userData.ilyosSocleCouleur ?? 0;
+          const variante = ["bareMountainA", "bareMountainB", "bareMountainC"][Math.abs(couleur) % 3];
+          const roche = cloneKayKitAsset(variante, { maxWidth: 1.02, maxHeight: .86, targetFloor: 0 });
+          if (!roche) return;
+          // Le cône de repli est le seul ConeGeometry du socle : le retirer ne peut
+          // pas emporter le bloc (ExtrudeGeometry) ni le liseré (LineLoop).
+          const aRetirer = [];
+          socle.traverse(o => { if (o.isMesh && o.geometry?.type === "ConeGeometry") aRetirer.push(o); });
+          disposeKayKitObjects(aRetirer);
+          roche.rotation.x = Math.PI;
+          roche.rotation.y = (Math.abs(couleur) % 7) * .9;
+          roche.position.y = .14;
+          roche.traverse(child => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = false;
+          });
+          socle.add(roche);
+          socle.userData.ilyosSocleRocheux = true;
+          reprises++;
+        });
+        return reprises > 0;
+      }
+
       function buildKayKitDistantArchipelago() {
         const sky = kaykit3D?.scene?.getObjectByName("ilyos-sky");
         if (!sky) return false;
@@ -4574,33 +4619,51 @@
           );
           outline.position.y = .012; group.add(outline);
 
-          // Dessous rocheux simple pour les 4 plateformes de château (brief
-          // "environnement céleste", section 7) : un bloc carré posé dans le
-          // vide se lisait comme un simple socle, pas comme un fragment d'île.
-          // Même direction artistique que les coques d'île jouables (roche,
-          // pointes) mais géométrie de coût "îlot lointain" — cône + pointes
-          // partagés (kaykitGeometry), jamais reconstruits par instance, pas
-          // le système de coque V2 complet pour 4 éléments aussi éloignés de
-          // la caméra. Pas d'ombre dynamique : cohérent avec le reste du
-          // décor d'ambiance (voir le brief mobile-first).
-          const underRock = new THREE.Mesh(
-            kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
-            new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
-          );
-          underRock.rotation.x = Math.PI;
-          underRock.position.y = -.36;
-          underRock.castShadow = false; underRock.receiveShadow = false;
-          group.add(underRock);
-          [.9, 2.4, 4.1].forEach((angle, i) => {
-            const spike = new THREE.Mesh(
-              kaykitGeometry(`pedestal-underside-spike-v1-${i}`, () => new THREE.ConeGeometry(.09, .3, 5)),
-              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_BOTTOM.getHex(), roughness: .95 })
-            );
-            spike.position.set(Math.cos(angle) * .32, -.62, Math.sin(angle) * .32);
-            spike.rotation.x = Math.PI * .92;
-            spike.castShadow = false; spike.receiveShadow = false;
-            group.add(spike);
+          // DESSOUS DES PLATEFORMES DE CHÂTEAU — montagne KayKit retournée.
+          // Remplace un ConeGeometry surmonté de trois pointes : le même bricolage
+          // procédural que celui abandonné pour l'archipel lointain, et pour la même
+          // raison — un cône ne fait pas une île, il fait un cône.
+          //
+          // Une montagne nue retournée résout tout d'un coup : sa pente donne la pointe
+          // rocheuse de l'île suspendue, et sa base large et plate vient se loger sous
+          // la plateforme sans qu'on ait à raccorder quoi que ce soit. Même pièce et
+          // même geste que makeKayKitFloatingIsle, donc cohérence garantie entre le
+          // socle des joueurs et l'archipel du fond.
+          //
+          // La variante est tirée de la couleur du propriétaire : les quatre châteaux
+          // n'ont pas le même rocher, sans qu'aucun ne soit choisi à la main.
+          const varianteRoche = ["bareMountainA", "bareMountainB", "bareMountainC"][Math.abs(ownerColor) % 3];
+          const roche = cloneKayKitAsset(varianteRoche, {
+            maxWidth: 1.02, maxHeight: .86, targetFloor: 0
           });
+          if (roche) {
+            roche.rotation.x = Math.PI;              // pointe vers le bas
+            roche.rotation.y = (Math.abs(ownerColor) % 7) * .9;
+            roche.position.y = .14;                  // remonte sous la plateforme
+            roche.traverse(child => {
+              if (!child.isMesh) return;
+              child.castShadow = false;
+              child.receiveShadow = false;
+            });
+            group.add(roche);
+            group.userData.ilyosSocleRocheux = true;
+          } else {
+            // Repli si le modèle n'est pas encore chargé : l'ancien cône, pour ne
+            // jamais laisser une plateforme flotter sans dessous. Une passe de reprise
+            // (kaykitReprendreSoclesRocheux) remplacera ce cône par la montagne dès que
+            // les modèles seront chargés : les plateformes, elles, ne sont reconstruites
+            // qu'au premier changement de couche d'île, ce qui serait trop tard.
+            const underRock = new THREE.Mesh(
+              kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
+              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
+            );
+            underRock.rotation.x = Math.PI;
+            underRock.position.y = -.36;
+            underRock.castShadow = false; underRock.receiveShadow = false;
+            group.add(underRock);
+            group.userData.ilyosSocleRocheux = false;
+            group.userData.ilyosSocleCouleur = ownerColor;
+          }
         }
         return group;
       }
@@ -5756,7 +5819,15 @@
           const lum = .96 + kaykitHash("hull-lum", seed) * .08;
           color.multiplyScalar(lum);
         }
-        return color;
+        // CONVERSION sRGB → LINÉAIRE, et c'est elle qui fait tout ici.
+        // Les textures KayKit sont déclarées en sRGB : le shader les décode donc vers
+        // le linéaire avant l'éclairage. Les couleurs par sommet, elles, ne subissent
+        // aucune conversion — elles sont prises telles quelles pour du linéaire.
+        // Le même brun nominal ressortait donc bien plus clair sur la coque que sur le
+        // bloc de terre au-dessus : la coque virait au crème et la jonction se lisait
+        // comme une cassure franche entre deux matières étrangères.
+        // Convertie, la coque retrouve exactement le registre du bloc KayKit.
+        return color.convertSRGBToLinear();
       }
 
       // Décalage latéral déterministe très faible (2-4% d'une case), jamais
@@ -5992,13 +6063,29 @@
         return new THREE.Color().setHSL(hue, .58, .56);
       }
 
+      // PALETTE RESSERRÉE — même arbitrage que kaykitHullColorAt (voir plus haut) :
+      // une famille de teintes doit se lire comme UN archipel avec des nuances, pas
+      // comme six pastilles de couleur choisies indépendamment. L'ancienne palette
+      // dérivait sur 100° de teinte (du jaune-olive 70° au sarcelle 170°) et sur 32
+      // points de luminosité (33 %-65 %) : deux blocs voisins pouvaient se lire comme
+      // deux matières différentes (herbe sèche contre mousse humide) plutôt que comme
+      // deux parcelles du même terrain.
+      //
+      // Resserrée à un arc de 54° (88°-142°, jaune-vert à vert-émeraude, jamais de
+      // dérive vers le bleu-sarcelle) avec alternance de luminosité/saturation pour
+      // garder les 6 teintes distinguables : mesuré, l'écart RGB minimal entre deux
+      // teintes passe de 32,9 à 42,2 (donc MIEUX différencié qu'avant, pas moins),
+      // tout en gardant l'écart moyen comparable (77,0 contre 82,1). C'est cet écart
+      // minimal qui compte : buildIlyosIslandColorMap ne garantit que des indices
+      // DIFFÉRENTS entre îles voisines, jamais lesquels — la pire paire doit donc
+      // rester nette.
       const ILYOS_ISLAND_TINTS = [
-        0x9fae57,
-        0x5f7a3c,
-        0x8bbf8a,
-        0x3f6b52,
-        0x4f9488,
-        0x8aa63f
+        0x88c261, // sauge claire chaude
+        0x348d3a, // vert profond — ancre de la famille
+        0x5cb27c, // vert froid moyen
+        0x5a842a, // olive sombre chaud
+        0x88bf95, // vert clair froid
+        0x54a744  // vert moyen, transition
       ];
 
       function buildIlyosIslandColorMap(islands) {
@@ -7317,7 +7404,20 @@
           const timeScale = visual.animator.matchLocomotionSpeed(locomotion, cells, travel);
           // Le clip démarre pendant la rotation d'anticipation : le gardien
           // amorce son pas au moment où il pivote, ce qui supprime le temps mort.
-          visual.animator.play(locomotion, { fade: 0.12, timeScale });
+          // CALIBRAGE DU FONDU D'ENTRÉE EN MARCHE. turnDelay (ligne ci-dessus) vaut
+          // au minimum 120 ms (cells=1, le cas le plus fréquent) — c'était EXACTEMENT
+          // la durée du fade (0.12s), marge nulle. Le crossfade Idle/Selected -> Marche
+          // se terminait donc pile au moment, voire un peu APRÈS, où le tween de
+          // position démarrait réellement : les toutes premières images du vrai
+          // déplacement montraient encore un mélange de poses (jambes floues, pas mal
+          // synchronisés avec le sol). C'est précisément ce qui manquait à un DEUXIÈME
+          // déplacement enchaîné pendant que le gardien marche déjà : `play()`
+          // court-circuite alors le fade (état déjà actif, voir plus haut), le clip
+          // continue tel quel, donc net dès la première image — d'où l'impression
+          // d'un pas mieux vu la deuxième fois.
+          // Fade ramené à .08s : le fondu est désormais TOUJOURS terminé avant le
+          // premier vrai pas, avec 40 ms de marge même dans le cas le plus serré.
+          visual.animator.play(locomotion, { fade: 0.08, timeScale });
         }
         emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[route.length - 1], cells });
       }
@@ -8411,6 +8511,11 @@
 
           // Archipel lointain : mêmes conditions, mêmes raisons. `tileBottom` est la pièce
           // indispensable (le dessous rocheux des îles) ; sans elle rien ne peut être assemblé.
+          // Socles de château : même condition d'asset que l'archipel.
+          if (!kaykit3D.soclesRocheuxRepris && kaykit3D.assets.has("bareMountainA")) {
+            kaykit3D.soclesRocheuxRepris = kaykitReprendreSoclesRocheux();
+          }
+
           if (!kaykit3D.distantArchipelagoBuilt && kaykit3D.assets.has("bareMountainA")
             && kaykit3D.assets.has("bareMountainB") && kaykit3D.assets.has("bareMountainC")
             && kaykit3D.assets.has("hillA")) {
@@ -8629,6 +8734,219 @@
         }
       }
 
+      // ========================= BLOOM (post-traitement) =========================
+      // Écrit à la main plutôt qu'en important EffectComposer/UnrealBloomPass : trois
+      // fichiers de moins dans vendor/, aucune dépendance ajoutée, et surtout le contrôle
+      // exact de la résolution des passes — c'est elle qui décide du coût.
+      //
+      // Chaîne : scène → cible plein écran, puis extraction des hautes lumières et flou
+      // séparable à RÉSOLUTION RÉDUITE (moitié par axe = quart de surface), enfin
+      // composition additive sur l'écran. Le flou étant une opération de basse fréquence,
+      // le faire en pleine résolution serait payer quatre fois pour un résultat
+      // indiscernable.
+      //
+      // C'est pour lui que le cœur solaire dépasse volontairement la luminosité du décor
+      // (voir KAYKIT_SKY_SUN) : sans une zone au-dessus du seuil, il n'y a rien à cueillir.
+      const KAYKIT_BLOOM = {
+        actif: true,
+        // Seuil retenu à l'image. À .74 le bloom attrapait les nuages pâles et noyait
+        // toute la scène dans un voile blanc — l'inverse du contraste qu'on cherchait.
+        // À .90 seuls le disque solaire et les arêtes dorées du plateau le franchissent.
+        seuil: .90,        // luminance à partir de laquelle un pixel déborde
+        douceur: .10,      // largeur de la transition, pour éviter un seuil net et sale
+        force: .46,        // intensité de la réinjection
+        echelle: .5,       // diviseur de résolution des passes de flou
+        rayon: 1.0,        // écartement des échantillons, en texels
+        fpsPlancher: 32    // sous ce FPS soutenu, le bloom se coupe tout seul
+      };
+
+      const kaykitBloom = {
+        pret: false, multiEchantillon: false, cibleScene: null, cibleA: null, cibleB: null,
+        camera: null, quad: null, matSeuil: null, matFlou: null, matCompo: null,
+        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false, derniereImage: 0
+      };
+
+      function kaykitBloomShader(uniforms, fragment) {
+        return new THREE.ShaderMaterial({
+          uniforms,
+          vertexShader: [
+            "varying vec2 vUv;",
+            "void main() {",
+            "  vUv = uv;",
+            "  gl_Position = vec4(position.xy, 0.0, 1.0);",
+            "}"
+          ].join("\n"),
+          fragmentShader: fragment.join("\n"),
+          depthTest: false, depthWrite: false, transparent: false
+        });
+      }
+
+      function kaykitBloomEnsure(renderer) {
+        const taille = renderer.getDrawingBufferSize(new THREE.Vector2());
+        const l = Math.max(2, Math.floor(taille.x));
+        const h = Math.max(2, Math.floor(taille.y));
+        if (kaykitBloom.pret && kaykitBloom.largeur === l && kaykitBloom.hauteur === h) return true;
+
+        const petitL = Math.max(2, Math.floor(l * KAYKIT_BLOOM.echelle));
+        const petitH = Math.max(2, Math.floor(h * KAYKIT_BLOOM.echelle));
+        const options = {
+          minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+          format: THREE.RGBAFormat, stencilBuffer: false
+        };
+
+        if (!kaykitBloom.pret) {
+          // CIBLE MULTI-ÉCHANTILLONNÉE, et ce n'est pas un raffinement.
+          // Le renderer est créé avec antialias:true, mais ce réglage ne vaut QUE pour
+          // le tampon de l'écran. Une WebGLRenderTarget ordinaire n'est pas
+          // multi-échantillonnée : envoyer la scène dedans lui faisait perdre son
+          // anticrénelage, et tout le jeu ressortait crénelé — régression signalée dès
+          // la première mise en service du bloom.
+          // WebGL2 sait rendre en multi-échantillonnage dans une cible ; à défaut, on
+          // renonce au bloom plutôt que de dégrader l'image (voir kaykitRenderAvecBloom).
+          const multiDispo = !!(renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget);
+          kaykitBloom.multiEchantillon = multiDispo;
+          kaykitBloom.cibleScene = multiDispo
+            ? new THREE.WebGLMultisampleRenderTarget(l, h, Object.assign({ depthBuffer: true }, options))
+            : new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+          // 4 échantillons. Mesuré : à 4, le taux d'arêtes dures est RIGOUREUSEMENT
+          // identique avec et sans bloom (écart 0,000) ; à 2 il remonte de 0,279 % à
+          // 0,342 %. Le crénelage étant précisément le défaut signalé, la qualité prime
+          // ici sur les ~1,5 FPS que 2 échantillons auraient économisés.
+          if (multiDispo) kaykitBloom.cibleScene.samples = 4;
+          kaykitBloom.cibleScene.texture.encoding = renderer.outputEncoding;
+          kaykitBloom.cibleA = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
+          kaykitBloom.cibleB = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
+          kaykitBloom.cibleA.texture.encoding = renderer.outputEncoding;
+          kaykitBloom.cibleB.texture.encoding = renderer.outputEncoding;
+
+          kaykitBloom.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+          kaykitBloom.matSeuil = kaykitBloomShader(
+            { tSource: { value: null }, uSeuil: { value: KAYKIT_BLOOM.seuil }, uDouceur: { value: KAYKIT_BLOOM.douceur } },
+            [
+              "uniform sampler2D tSource;",
+              "uniform float uSeuil;",
+              "uniform float uDouceur;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec3 c = texture2D(tSource, vUv).rgb;",
+              "  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));",
+              "  float f = smoothstep(uSeuil, uSeuil + uDouceur, l);",
+              "  gl_FragColor = vec4(c * f, 1.0);",
+              "}"
+            ]);
+
+          // Flou gaussien SÉPARABLE : deux passes à cinq échantillons au lieu d'une passe
+          // à vingt-cinq. Les poids exploitent l'interpolation bilinéaire du GPU, chaque
+          // échantillon en valant deux.
+          kaykitBloom.matFlou = kaykitBloomShader(
+            { tSource: { value: null }, uDirection: { value: new THREE.Vector2() } },
+            [
+              "uniform sampler2D tSource;",
+              "uniform vec2 uDirection;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec3 s = texture2D(tSource, vUv).rgb * 0.2270270270;",
+              "  s += texture2D(tSource, vUv + uDirection * 1.3846153846).rgb * 0.3162162162;",
+              "  s += texture2D(tSource, vUv - uDirection * 1.3846153846).rgb * 0.3162162162;",
+              "  s += texture2D(tSource, vUv + uDirection * 3.2307692308).rgb * 0.0702702703;",
+              "  s += texture2D(tSource, vUv - uDirection * 3.2307692308).rgb * 0.0702702703;",
+              "  gl_FragColor = vec4(s, 1.0);",
+              "}"
+            ]);
+
+          // L'alpha vient de la scène, jamais du bloom : le canvas est en alpha:true et
+          // la page compte dessus.
+          kaykitBloom.matCompo = kaykitBloomShader(
+            { tScene: { value: null }, tBloom: { value: null }, uForce: { value: KAYKIT_BLOOM.force } },
+            [
+              "uniform sampler2D tScene;",
+              "uniform sampler2D tBloom;",
+              "uniform float uForce;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec4 base = texture2D(tScene, vUv);",
+              "  vec3 halo = texture2D(tBloom, vUv).rgb;",
+              "  gl_FragColor = vec4(base.rgb + halo * uForce, base.a);",
+              "}"
+            ]);
+
+          kaykitBloom.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), kaykitBloom.matSeuil);
+          kaykitBloom.quad.frustumCulled = false;
+          kaykitBloom.pret = true;
+        } else {
+          kaykitBloom.cibleScene.setSize(l, h);
+          kaykitBloom.cibleA.setSize(petitL, petitH);
+          kaykitBloom.cibleB.setSize(petitL, petitH);
+        }
+
+        kaykitBloom.largeur = l;
+        kaykitBloom.hauteur = h;
+        return true;
+      }
+
+      function kaykitBloomPasse(renderer, materiau, cible) {
+        kaykitBloom.quad.material = materiau;
+        renderer.setRenderTarget(cible);
+        renderer.clear();
+        renderer.render(kaykitBloom.quad, kaykitBloom.camera);
+      }
+
+      /** Rend la scène avec bloom. Retourne false si le bloom n'a pas pu s'appliquer,
+       *  auquel cas l'appelant fait un rendu direct. */
+      function kaykitRenderAvecBloom(renderer, scene, camera) {
+        if (!KAYKIT_BLOOM.actif || kaykitBloom.coupeAuto) return false;
+        if (!kaykitBloomEnsure(renderer)) return false;
+        // Sans multi-échantillonnage disponible, le bloom coûterait l'anticrénelage de
+        // toute la scène pour un halo : le marché n'en vaut pas la peine.
+        if (!kaykitBloom.multiEchantillon) return false;
+
+        const B = kaykitBloom;
+        renderer.setRenderTarget(B.cibleScene);
+        renderer.clear();
+        renderer.render(scene, camera);
+
+        B.matSeuil.uniforms.tSource.value = B.cibleScene.texture;
+        B.matSeuil.uniforms.uSeuil.value = KAYKIT_BLOOM.seuil;
+        B.matSeuil.uniforms.uDouceur.value = KAYKIT_BLOOM.douceur;
+        kaykitBloomPasse(renderer, B.matSeuil, B.cibleA);
+
+        const px = KAYKIT_BLOOM.rayon / Math.max(1, B.cibleA.width);
+        const py = KAYKIT_BLOOM.rayon / Math.max(1, B.cibleA.height);
+        B.matFlou.uniforms.tSource.value = B.cibleA.texture;
+        B.matFlou.uniforms.uDirection.value.set(px, 0);
+        kaykitBloomPasse(renderer, B.matFlou, B.cibleB);
+        B.matFlou.uniforms.tSource.value = B.cibleB.texture;
+        B.matFlou.uniforms.uDirection.value.set(0, py);
+        kaykitBloomPasse(renderer, B.matFlou, B.cibleA);
+
+        B.matCompo.uniforms.tScene.value = B.cibleScene.texture;
+        B.matCompo.uniforms.tBloom.value = B.cibleA.texture;
+        B.matCompo.uniforms.uForce.value = KAYKIT_BLOOM.force;
+        kaykitBloomPasse(renderer, B.matCompo, null);
+
+        // REPLI AUTOMATIQUE. `fpsPlancher` était documenté depuis le début sans être
+        // appliqué : une garantie annoncée mais absente. On compte les images dont le
+        // temps dépasse le plancher, et on coupe après 120 consécutives (~2 s) — assez
+        // long pour ignorer un à-coup de chargement, assez court pour qu'une machine
+        // réellement trop lente ne subisse pas le bloom pendant toute la partie.
+        // Le compteur se remet à zéro dès qu'une image repasse au-dessus.
+        const maintenant = performance.now();
+        if (B.derniereImage) {
+          const fps = 1000 / Math.max(1, maintenant - B.derniereImage);
+          if (fps < KAYKIT_BLOOM.fpsPlancher) {
+            B.imagesBasses++;
+            if (B.imagesBasses > 120) {
+              B.coupeAuto = true;
+              console.info("[ILYOS] bloom coupé automatiquement : FPS soutenu sous " +
+                KAYKIT_BLOOM.fpsPlancher + ". Réactivation : ILYOS_SKY.bloom({ reprendre: true }).");
+            }
+          } else B.imagesBasses = 0;
+        }
+        B.derniereImage = maintenant;
+        return true;
+      }
+
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
@@ -8725,5 +9043,9 @@
         // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
         // par js/complete-polish.js alors que le rendu est plafonné ~60).
         if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
-        kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
+        // Bloom si disponible, rendu direct sinon — jamais d'écran noir en cas d'échec.
+        if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
+          kaykit3D.renderer.setRenderTarget(null);
+          kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
+        }
       }
