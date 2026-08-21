@@ -1,8 +1,23 @@
 (() => {
       "use strict";
 
-      const GRID = 11;
-      const CENTER = { r: 5, c: 5 };
+      /* Taille du plateau. Variable, pas constante : le joueur peut choisir
+         11×11 ou 13×13 au menu. GRID, CENTER et CORNERS sont recalculés
+         ensemble par setBoardSize(), avant toute création de partie.
+
+         Deux règles à respecter pour toute nouvelle valeur dérivée :
+           — ne jamais la figer dans un `const` de module, elle serait périmée
+             au premier changement de taille (c'était le cas de
+             KAYKIT_BOARD_SPAN, devenu une fonction) ;
+           — passer par CENTER/CORNERS plutôt que par des coordonnées écrites
+             à la main, sinon la logique reste clouée au 11×11.
+
+         La taille doit rester IMPAIRE : le sanctuaire et la couronne occupent
+         la case centrale, qui n'existe que sur une grille impaire. */
+      const BOARD_SIZES = [11, 13];
+      const DEFAULT_BOARD_SIZE = 11;
+      let GRID = DEFAULT_BOARD_SIZE;
+      let CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
       const MAX_GUARDIANS_PER_PLAYER = 6;
       // Joueur 0 (Chevalier) et 1 (Mage) alignés sur les couleurs déjà
       // utilisées pour leur armure/robe (character-materials-v1.js) et leur
@@ -11,12 +26,46 @@
       // de l'identité visuelle du joueur.
       const PLAYER_COLORS = ["#ddb653", "#8052bc", "#62e36b", "#bb7cff"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
-      const CORNERS = [
+      let CORNERS = [
         { r: 0, c: 0 },
-        { r: 0, c: 10 },
-        { r: 10, c: 10 },
-        { r: 10, c: 0 }
+        { r: 0, c: GRID - 1 },
+        { r: GRID - 1, c: GRID - 1 },
+        { r: GRID - 1, c: 0 }
       ];
+
+      function normalizeBoardSize(taille) {
+        const n = Number(taille);
+        return BOARD_SIZES.includes(n) ? n : DEFAULT_BOARD_SIZE;
+      }
+
+      /* Point d'entrée unique pour changer la taille du plateau. Appelé avant
+         la construction d'une partie, jamais pendant. */
+      function setBoardSize(taille) {
+        GRID = normalizeBoardSize(taille);
+        CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
+        CORNERS = [
+          { r: 0, c: 0 },
+          { r: 0, c: GRID - 1 },
+          { r: GRID - 1, c: GRID - 1 },
+          { r: GRID - 1, c: 0 }
+        ];
+
+        /* La scène 3D n'est construite qu'une fois par session : ses bornes de
+           caméra gardaient sinon les valeurs de la PREMIÈRE partie, et un
+           passage 11×11 → 13×13 se retrouvait cadré pour l'ancienne taille —
+           sans erreur, juste un plateau qui déborde. */
+        if (typeof kaykit3D !== "undefined" && kaykit3D) {
+          kaykit3D.gridSize = GRID;
+          kaykit3D.minZoom = 6.4 * (GRID / 11);
+          kaykit3D.maxZoom = 25 * (GRID / 11);
+          kaykit3D.zoomDistance = 12.4 * (GRID / 11);
+          if (kaykit3D.orbit) {
+            kaykit3D.orbit.minDistance = kaykit3D.minZoom;
+            kaykit3D.orbit.maxDistance = kaykit3D.maxZoom;
+          }
+        }
+        return GRID;
+      }
       const SHAPES = {
         domino: { name: "Domino", cells: [[0, 0], [1, 1]] },
         line3: { name: "Passerelle", cells: [[0, 0], [0, 1], [0, 2]] },
@@ -28,10 +77,18 @@
         crossHollow: { name: "Croix creuse", cells: [[0, 1], [1, 0], [1, 2], [2, 1]] },
         v3: { name: "V", cells: [[0, 0], [1, 1], [0, 2]] }
       };
-      // Test : limite le nombre de fois qu'une même forme peut être posée par
-      // équipe (owner) sur toute la partie. À 0/false, aucune limite — permet
-      // de désactiver l'essai sans toucher au reste du code.
-      const SHAPE_LIMIT_PER_OWNER = 2;
+      /* Nombre d'exemplaires de CHAQUE forme dont dispose une équipe sur toute
+         la partie. Ce n'est pas un plafond du nombre d'îles possédées : c'est un
+         stock de pièces, forme par forme. 0 = illimité.
+
+         Valeur par défaut seulement : le duel symétrique la fait choisir au
+         joueur (voir shapeLimitPerOwner dans state.rules). Passer par
+         shapeLimitPerOwner() plutôt que par cette constante. */
+      const SHAPE_LIMIT_PER_OWNER_DEFAULT = 2;
+      function shapeLimitPerOwner() {
+        const limite = state?.rules?.shapeLimitPerOwner;
+        return Number.isFinite(limite) ? limite : SHAPE_LIMIT_PER_OWNER_DEFAULT;
+      }
       const ACTIONS = {
         MOVE: { name: "Déplacement", icon: "🥾", desc: "1 action = 1 case. 2 actions permettent une diagonale.", bg: "#0d84c9" },
         PUSH: { name: "Poussée", icon: "💥", desc: "Poussez une cible adjacente.", bg: "#b33d32" },
@@ -455,7 +512,11 @@
       // réelle des Block Bits, sans modifier les règles ni les coordonnées.
       const KAYKIT_CELL_SPACING = .925;
       const KAYKIT_BLOCK_SIZE = .932;
-      const KAYKIT_BOARD_SPAN = GRID * KAYKIT_CELL_SPACING;
+      /* Fonction et non constante : figée au chargement, elle gardait la
+         valeur du 11×11 après un passage en 13×13, et tout ce qui en dépend —
+         cadrage caméra, volume de sécurité du ciel, anneau décoratif — se
+         retrouvait calibré sur un plateau qui n'existait plus. */
+      function kaykitBoardSpan() { return GRID * KAYKIT_CELL_SPACING; }
 
       // ===================== CIEL ILYOS — PROFONDEUR PAR COUCHES =====================
       // L'impression d'altitude ne vient PAS de nuages proches (essayé : ils voilaient
@@ -476,7 +537,9 @@
       // « zéro nuage devant le plateau » est donc garantie par construction, quel que
       // soit l'angle de vue, et pas seulement depuis la caméra initiale.
       const KAYKIT_SKY = {
-        safeRadius: KAYKIT_BOARD_SPAN / 2 + 4.2,  // ≈ 9.3 : grille + marge d'extension
+        // Accesseur, pas valeur : le rayon doit suivre la taille du plateau.
+        // ≈ 9.3 en 11×11, ≈ 10.2 en 13×13 — grille + marge d'extension.
+        get safeRadius() { return kaykitBoardSpan() / 2 + 4.2; },
         safeFloor: -9,                            // vide obligatoire sous les îles
         domeRadius: 170,
         cameraFar: 460,
@@ -896,7 +959,15 @@
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
           textureCache: new Map(), islandTintTextures: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
           mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
-          zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
+          /* Distances de caméra proportionnelles à la taille du plateau : les
+             valeurs d'origine (12.4 / 6.4 / 25) étaient calibrées sur le 11×11,
+             et cadraient le 13×13 trop serré — les villages des coins
+             débordaient de l'image. Le rapport GRID/11 les fait suivre. */
+          // Exposée pour les passes externes qui cadrent la caméra
+          // (voir reculPourPlateau, js/version-bootstrap.js).
+          gridSize: GRID,
+          zoomDistance: 12.4 * (GRID / 11), minZoom: 6.4 * (GRID / 11), maxZoom: 25 * (GRID / 11),
+          viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0,
           // Compte ce qui est REELLEMENT lance : sinon la barre reste bloquee a
           // 64/67 pour des modeles que personne n'a demandes. ensureKayKitAsset()
@@ -2876,7 +2947,7 @@
         // tout le tracé. Objectif : la grille reste franche là où l'on joue,
         // mais son périmètre carré disparaît — c'était lui qui recréait
         // visuellement « un immense sol bleu invisible » sous l'archipel.
-        const half = KAYKIT_BOARD_SPAN / 2;
+        const half = kaykitBoardSpan() / 2;
         // Vue de FACE, une grille plane qui garde de la matière jusqu'à son bord franc
         // se lit en perspective comme un SOL qui fuit vers un horizon — contraire au
         // ciel. Mais l'éteindre trop tôt rend les cases de bordure inutilisables pour
@@ -2934,7 +3005,9 @@
         // ciel plutôt que comme des trous — jamais un sol, juste assez pour
         // ancrer visuellement la grille. Un seul plan, une seule couleur.
         const gridFill = new THREE.Mesh(
-          kaykitGeometry("grid-fill-plane-v1", () => new THREE.PlaneGeometry(KAYKIT_BOARD_SPAN, KAYKIT_BOARD_SPAN)),
+          // La taille entre dans la clé : sans elle, le plan mis en cache pour
+          // le 11×11 serait resservi tel quel sur un plateau 13×13.
+          kaykitGeometry(`grid-fill-plane-v2-${GRID}`, () => new THREE.PlaneGeometry(kaykitBoardSpan(), kaykitBoardSpan())),
           new THREE.MeshBasicMaterial({
             color: 0xdcefff, transparent: true, opacity: .06, depthWrite: false, fog: true, toneMapped: false
           })
@@ -4323,7 +4396,7 @@
         if (!kaykit3D) return 14.6;
         const verticalFov = THREE.MathUtils.degToRad(kaykit3D.camera.fov);
         const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(.25, aspect));
-        const boardSize = KAYKIT_BOARD_SPAN + .35;
+        const boardSize = kaykitBoardSpan() + .35;
         const heightDistance = (boardSize / 2) / Math.tan(verticalFov / 2);
         const widthDistance = (boardSize / 2) / Math.tan(horizontalFov / 2);
         const base = Math.max(heightDistance, widthDistance);
@@ -9792,8 +9865,9 @@
 
 
       function symmetricSetupOptionsHTML() {
-        return Object.entries(SYMMETRIC_DUEL_SETUPS)
-          .map(([id, setup]) => {
+        return Object.keys(SYMMETRIC_DUEL_SETUPS)
+          .map(id => {
+            const setup = symmetricSetup(id);
             const guardiansPerTeam = setup.characters.filter(
               character => character.player === 0
             ).length;
@@ -9812,6 +9886,16 @@
           <select id="startingBoardSelect">
             <option value="classic" selected>Classique — plateau vide</option>
             <option value="symmetric">Duel symétrique — plateau préparé</option>
+          </select>
+        </label>
+        <label class="mode-option-row board-size-row" for="boardSizeSelect">
+          <span>
+            <b>Taille du plateau</b>
+            <small>Le 13×13 élargit le centre : les villages restent à leurs coins, les trajets vers la couronne s’allongent.</small>
+          </span>
+          <select id="boardSizeSelect">
+            <option value="11" selected>11 × 11 — standard</option>
+            <option value="13">13 × 13 — élargi</option>
           </select>
         </label>
         ${turnTimerControlsHTML()}
@@ -9845,8 +9929,7 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const setup = SYMMETRIC_DUEL_SETUPS[setupId]
-          || SYMMETRIC_DUEL_SETUPS.open;
+        const setup = symmetricSetup(setupId);
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -11297,6 +11380,31 @@
         });
       }
 
+      /* Les dispositions symétriques sont écrites en coordonnées absolues pour
+         un plateau 11×11. Sur une grille plus large, une cellule comme [10, 9]
+         — collée au coin opposé — se retrouverait au milieu de nulle part.
+
+         La conversion préserve donc la DISTANCE AU BORD le plus proche, axe par
+         axe : ce qui touchait un bord y reste collé, et l'anneau supplémentaire
+         s'ajoute au centre. C'est le choix retenu pour le 13×13 — les ouvertures
+         restent celles qu'on connaît, le milieu devient plus ouvert.
+
+         Une cellule strictement au centre du 11×11 (indice 5) reste au centre.
+         Entre les deux, l'écart est réparti vers le centre, donc deux pièces
+         voisines peuvent se séparer d'une case : c'est voulu, c'est ce qui
+         élargit le plateau plutôt que de l'étirer. */
+      const SYMMETRIC_PRESET_SOURCE_GRID = 11;
+      function scalePresetIndex(index) {
+        if (GRID === SYMMETRIC_PRESET_SOURCE_GRID) return index;
+        const milieu = (SYMMETRIC_PRESET_SOURCE_GRID - 1) / 2;
+        if (index === milieu) return (GRID - 1) / 2;
+        if (index < milieu) return index;                          // ancré au bord haut/gauche
+        return GRID - 1 - (SYMMETRIC_PRESET_SOURCE_GRID - 1 - index); // ancré au bord bas/droit
+      }
+      function scalePresetCell([r, c]) {
+        return [scalePresetIndex(r), scalePresetIndex(c)];
+      }
+
       function makeSymmetricPresetIsland(id, owner, cells) {
         const minR = Math.min(...cells.map(([r]) => r));
         const minC = Math.min(...cells.map(([, c]) => c));
@@ -11317,28 +11425,28 @@
         const islands = [];
         let id = 1;
 
-        baseIslands.forEach(cells => {
+        // Conversion à la taille réelle du plateau avant tout le reste : le
+        // miroir doit opérer sur les coordonnées finales, pas sur celles du 11×11.
+        const ajustees = baseIslands.map(cells => cells.map(scalePresetCell));
+
+        ajustees.forEach(cells => {
           islands.push(makeSymmetricPresetIsland(id++, 0, cells));
         });
-        baseIslands.forEach(cells => {
+        ajustees.forEach(cells => {
           islands.push(makeSymmetricPresetIsland(id++, 1, mirrorPresetCells(cells)));
         });
 
         return {
           islands,
           characters: [
-            ...characters.map((position, index) => ({
-              id: `char-0-symmetric-${index}`,
-              player: 0,
-              r: position[0],
-              c: position[1]
-            })),
-            ...characters.map((position, index) => ({
-              id: `char-1-symmetric-${index}`,
-              player: 1,
-              r: position[0],
-              c: GRID - 1 - position[1]
-            }))
+            ...characters.map((position, index) => {
+              const [r, c] = scalePresetCell(position);
+              return { id: `char-0-symmetric-${index}`, player: 0, r, c };
+            }),
+            ...characters.map((position, index) => {
+              const [r, c] = scalePresetCell(position);
+              return { id: `char-1-symmetric-${index}`, player: 1, r, c: GRID - 1 - c };
+            })
           ]
         };
       }
@@ -11439,24 +11547,42 @@
           }
         };
 
+        /* Les îles ne sont PLUS construites ici. Cette IIFE s'exécute au
+            chargement du module, quand GRID vaut encore sa valeur par défaut :
+            un plateau 13×13 choisi plus tard héritait alors de positions
+            calculées pour le 11×11. Seules les définitions brutes sont
+            conservées ; symmetricSetup() les convertit à la taille réelle au
+            moment de construire la partie. */
         const setups = {};
         Object.entries(definitions).forEach(([id, definition]) => {
-          const built = buildSymmetricPreset(
-            definition.baseIslands,
-            definition.characters
-          );
-
           setups[id] = {
             id,
             name: definition.name,
             description: definition.description,
             style: definition.style,
-            islands: built.islands,
-            characters: built.characters
+            baseIslands: definition.baseIslands,
+            characters: definition.characters
           };
         });
         return setups;
       })();
+      /* Construit une disposition à la taille COURANTE du plateau.
+         Mémoïsé par (identifiant, taille) : l'aperçu du menu la demande à
+         chaque survol, et rien ne justifie de la recalculer.
+         Passer systématiquement par cette fonction — SYMMETRIC_DUEL_SETUPS ne
+         contient plus que les définitions brutes en 11×11. */
+      const symmetricSetupCache = new Map();
+      function symmetricSetup(setupId) {
+        const id = resolveSymmetricSetupId(setupId);
+        const cle = `${id}@${GRID}`;
+        if (symmetricSetupCache.has(cle)) return symmetricSetupCache.get(cle);
+        const definition = SYMMETRIC_DUEL_SETUPS[id];
+        const construit = buildSymmetricPreset(definition.baseIslands, definition.characters);
+        const setup = { ...definition, islands: construit.islands, characters: construit.characters };
+        symmetricSetupCache.set(cle, setup);
+        return setup;
+      }
+
       function resolveSymmetricSetupId(setupId) {
         return SYMMETRIC_DUEL_SETUPS[setupId] ? setupId : "open";
       }
@@ -11528,7 +11654,13 @@
         // valeur par défaut posée à la création de state).
         state.rules = {
           allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
-          islandLimitPerPlayer: Number(els.symmetricIslandLimitSelect?.value || 0) || 0
+          /* Le sélecteur du duel symétrique pilote désormais le stock de
+              CHAQUE forme, et non plus un total d'îles. islandLimitPerPlayer
+              reste à 0 : la règle du plafond total existe toujours dans le
+              moteur (islandLimitReachedForPlayer) mais plus aucun écran ne la
+              règle — la retirer serait un chantier séparé. */
+          islandLimitPerPlayer: 0,
+          shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
         };
         state.setupSelectionPending = false;
         state.inputLocked = false;
@@ -11553,7 +11685,7 @@
         }
 
         const resolvedId = resolveSymmetricSetupId(setupId);
-        const setup = SYMMETRIC_DUEL_SETUPS[resolvedId];
+        const setup = symmetricSetup(resolvedId);
 
         state.startingBoardMode = "symmetric";
         state.startingBoardPreset = resolvedId;
@@ -11765,6 +11897,12 @@
         clearLocalSession();
         stopTurnTimer();
         aiRunToken++;
+
+        /* La taille du plateau est fixée AVANT tout le reste : getVillageAssignments,
+           les coins, le sanctuaire et la scène 3D lisent tous GRID/CENTER/CORNERS
+           pendant la construction qui suit. La déplacer plus bas produirait une
+           partie mi-11×11 mi-13×13, sans erreur visible. */
+        setBoardSize(document.getElementById("boardSizeSelect")?.value);
 
         const selectedMode = Number(els.playerCount.value);
         const soloMode = selectedMode === 1;
@@ -12174,10 +12312,11 @@
         const candidates = [];
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
-          // Test SHAPE_LIMIT_PER_OWNER (voir js/game/bootstrap.js) : l'IA
+          // Stock par forme (voir shapeLimitPerOwner, js/game/bootstrap.js) : l'IA
           // respecte la même limite que le joueur humain, sinon elle
           // continuerait à spammer sa forme préférée sans restriction.
-          if (SHAPE_LIMIT_PER_OWNER && shapeUsageCountForOwner(playerId, shapeKey) >= SHAPE_LIMIT_PER_OWNER) return;
+          const limiteForme = shapeLimitPerOwner();
+          if (limiteForme && shapeUsageCountForOwner(playerId, shapeKey) >= limiteForme) return;
           let rotated = normalizeShape(shape.cells);
           const seen = new Set();
 
@@ -15507,14 +15646,15 @@
 
       // Test : nombre d'îles d'une forme donnée déjà posées par ce
       // propriétaire (owner d'île = state.currentPlayer côté joueur humain)
-      // sur toute la partie. SHAPE_LIMIT_PER_OWNER=0 désactive la limite.
+      // sur toute la partie. shapeLimitPerOwner() renvoie 0 pour « illimité ».
       function shapeUsageCountForOwner(ownerId, shapeKey) {
         return state.islands.filter(island => island.owner === ownerId && island.shapeKey === shapeKey).length;
       }
 
       function shapeLimitReached(shapeKey) {
-        if (!SHAPE_LIMIT_PER_OWNER) return false;
-        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= SHAPE_LIMIT_PER_OWNER;
+        const limite = shapeLimitPerOwner();
+        if (!limite) return false;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= limite;
       }
 
       function renderIslandSelector() {
@@ -15535,11 +15675,12 @@
           const flipBadge = shape.flippable
             ? `<span class="island-choice-flip" aria-hidden="true" title="Peut être retournée (miroir)">⇄</span>`
             : "";
-          const limitBadge = SHAPE_LIMIT_PER_OWNER
-            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${SHAPE_LIMIT_PER_OWNER}</span>`
+          const limite = shapeLimitPerOwner();
+          const limitBadge = limite
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${limite}</span>`
             : "";
           button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
-          const limitSuffix = SHAPE_LIMIT_PER_OWNER ? ` (${used}/${SHAPE_LIMIT_PER_OWNER} posées)` : "";
+          const limitSuffix = limite ? ` (${used}/${limite} posées)` : "";
           button.title = (shape.flippable ? `${shape.name} (peut être retournée en miroir)` : shape.name)
             + (maxedOut ? " — limite atteinte" : limitSuffix);
           button.setAttribute("aria-label", (shape.flippable ? `Choisir l’île ${shape.name}, peut être retournée en miroir` : `Choisir l’île ${shape.name}`) + limitSuffix);
@@ -15553,7 +15694,7 @@
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
         if (shapeLimitReached(shapeKey)) {
-          showToast(`Limite atteinte : ${SHAPE_LIMIT_PER_OWNER} îles « ${SHAPES[shapeKey].name} » maximum.`);
+          showToast(`Limite atteinte : ${shapeLimitPerOwner()} île${shapeLimitPerOwner() > 1 ? "s" : ""} « ${SHAPES[shapeKey].name} » maximum.`);
           return;
         }
         state.selectedIslandShape = shapeKey;
@@ -19440,13 +19581,15 @@
       }
 
       window.ILYOS_API = {
-        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, autoplay = false } = {}) {
+        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, boardSize = DEFAULT_BOARD_SIZE, autoplay = false } = {}) {
           try {
             pendingVisualMode = "alternative";
             els.playerCount.value = String(opponent);
             els.playerCount.dispatchEvent(new Event("change", { bubbles: true }));
             const boardSelect = document.getElementById("startingBoardSelect");
             if (boardSelect) boardSelect.value = board === "classic" ? "classic" : "symmetric";
+            const boardSizeSelect = document.getElementById("boardSizeSelect");
+            if (boardSizeSelect) boardSizeSelect.value = String(normalizeBoardSize(boardSize));
             const difficultySelect = document.getElementById("aiDifficultySelect");
             if (difficultySelect) difficultySelect.value = difficulty;
             // Comme les deux précédents : le changement de mode ci-dessus a

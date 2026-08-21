@@ -314,7 +314,11 @@
       // réelle des Block Bits, sans modifier les règles ni les coordonnées.
       const KAYKIT_CELL_SPACING = .925;
       const KAYKIT_BLOCK_SIZE = .932;
-      const KAYKIT_BOARD_SPAN = GRID * KAYKIT_CELL_SPACING;
+      /* Fonction et non constante : figée au chargement, elle gardait la
+         valeur du 11×11 après un passage en 13×13, et tout ce qui en dépend —
+         cadrage caméra, volume de sécurité du ciel, anneau décoratif — se
+         retrouvait calibré sur un plateau qui n'existait plus. */
+      function kaykitBoardSpan() { return GRID * KAYKIT_CELL_SPACING; }
 
       // ===================== CIEL ILYOS — PROFONDEUR PAR COUCHES =====================
       // L'impression d'altitude ne vient PAS de nuages proches (essayé : ils voilaient
@@ -335,7 +339,9 @@
       // « zéro nuage devant le plateau » est donc garantie par construction, quel que
       // soit l'angle de vue, et pas seulement depuis la caméra initiale.
       const KAYKIT_SKY = {
-        safeRadius: KAYKIT_BOARD_SPAN / 2 + 4.2,  // ≈ 9.3 : grille + marge d'extension
+        // Accesseur, pas valeur : le rayon doit suivre la taille du plateau.
+        // ≈ 9.3 en 11×11, ≈ 10.2 en 13×13 — grille + marge d'extension.
+        get safeRadius() { return kaykitBoardSpan() / 2 + 4.2; },
         safeFloor: -9,                            // vide obligatoire sous les îles
         domeRadius: 170,
         cameraFar: 460,
@@ -755,7 +761,15 @@
           hitMeshes: [], assets: new Map(), assetAnimations: new Map(), assetPromises: new Map(), failedAssets: new Set(), assetSources: new Map(), assetTextureUrls: new Map(),
           textureCache: new Map(), islandTintTextures: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
           mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
-          zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
+          /* Distances de caméra proportionnelles à la taille du plateau : les
+             valeurs d'origine (12.4 / 6.4 / 25) étaient calibrées sur le 11×11,
+             et cadraient le 13×13 trop serré — les villages des coins
+             débordaient de l'image. Le rapport GRID/11 les fait suivre. */
+          // Exposée pour les passes externes qui cadrent la caméra
+          // (voir reculPourPlateau, js/version-bootstrap.js).
+          gridSize: GRID,
+          zoomDistance: 12.4 * (GRID / 11), minZoom: 6.4 * (GRID / 11), maxZoom: 25 * (GRID / 11),
+          viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0,
           // Compte ce qui est REELLEMENT lance : sinon la barre reste bloquee a
           // 64/67 pour des modeles que personne n'a demandes. ensureKayKitAsset()
@@ -2735,7 +2749,7 @@
         // tout le tracé. Objectif : la grille reste franche là où l'on joue,
         // mais son périmètre carré disparaît — c'était lui qui recréait
         // visuellement « un immense sol bleu invisible » sous l'archipel.
-        const half = KAYKIT_BOARD_SPAN / 2;
+        const half = kaykitBoardSpan() / 2;
         // Vue de FACE, une grille plane qui garde de la matière jusqu'à son bord franc
         // se lit en perspective comme un SOL qui fuit vers un horizon — contraire au
         // ciel. Mais l'éteindre trop tôt rend les cases de bordure inutilisables pour
@@ -2793,7 +2807,9 @@
         // ciel plutôt que comme des trous — jamais un sol, juste assez pour
         // ancrer visuellement la grille. Un seul plan, une seule couleur.
         const gridFill = new THREE.Mesh(
-          kaykitGeometry("grid-fill-plane-v1", () => new THREE.PlaneGeometry(KAYKIT_BOARD_SPAN, KAYKIT_BOARD_SPAN)),
+          // La taille entre dans la clé : sans elle, le plan mis en cache pour
+          // le 11×11 serait resservi tel quel sur un plateau 13×13.
+          kaykitGeometry(`grid-fill-plane-v2-${GRID}`, () => new THREE.PlaneGeometry(kaykitBoardSpan(), kaykitBoardSpan())),
           new THREE.MeshBasicMaterial({
             color: 0xdcefff, transparent: true, opacity: .06, depthWrite: false, fog: true, toneMapped: false
           })
@@ -4182,7 +4198,7 @@
         if (!kaykit3D) return 14.6;
         const verticalFov = THREE.MathUtils.degToRad(kaykit3D.camera.fov);
         const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(.25, aspect));
-        const boardSize = KAYKIT_BOARD_SPAN + .35;
+        const boardSize = kaykitBoardSpan() + .35;
         const heightDistance = (boardSize / 2) / Math.tan(verticalFov / 2);
         const widthDistance = (boardSize / 2) / Math.tan(horizontalFov / 2);
         const base = Math.max(heightDistance, widthDistance);

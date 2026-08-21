@@ -1,8 +1,23 @@
 (() => {
       "use strict";
 
-      const GRID = 11;
-      const CENTER = { r: 5, c: 5 };
+      /* Taille du plateau. Variable, pas constante : le joueur peut choisir
+         11×11 ou 13×13 au menu. GRID, CENTER et CORNERS sont recalculés
+         ensemble par setBoardSize(), avant toute création de partie.
+
+         Deux règles à respecter pour toute nouvelle valeur dérivée :
+           — ne jamais la figer dans un `const` de module, elle serait périmée
+             au premier changement de taille (c'était le cas de
+             KAYKIT_BOARD_SPAN, devenu une fonction) ;
+           — passer par CENTER/CORNERS plutôt que par des coordonnées écrites
+             à la main, sinon la logique reste clouée au 11×11.
+
+         La taille doit rester IMPAIRE : le sanctuaire et la couronne occupent
+         la case centrale, qui n'existe que sur une grille impaire. */
+      const BOARD_SIZES = [11, 13];
+      const DEFAULT_BOARD_SIZE = 11;
+      let GRID = DEFAULT_BOARD_SIZE;
+      let CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
       const MAX_GUARDIANS_PER_PLAYER = 6;
       // Joueur 0 (Chevalier) et 1 (Mage) alignés sur les couleurs déjà
       // utilisées pour leur armure/robe (character-materials-v1.js) et leur
@@ -11,12 +26,46 @@
       // de l'identité visuelle du joueur.
       const PLAYER_COLORS = ["#ddb653", "#8052bc", "#62e36b", "#bb7cff"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
-      const CORNERS = [
+      let CORNERS = [
         { r: 0, c: 0 },
-        { r: 0, c: 10 },
-        { r: 10, c: 10 },
-        { r: 10, c: 0 }
+        { r: 0, c: GRID - 1 },
+        { r: GRID - 1, c: GRID - 1 },
+        { r: GRID - 1, c: 0 }
       ];
+
+      function normalizeBoardSize(taille) {
+        const n = Number(taille);
+        return BOARD_SIZES.includes(n) ? n : DEFAULT_BOARD_SIZE;
+      }
+
+      /* Point d'entrée unique pour changer la taille du plateau. Appelé avant
+         la construction d'une partie, jamais pendant. */
+      function setBoardSize(taille) {
+        GRID = normalizeBoardSize(taille);
+        CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
+        CORNERS = [
+          { r: 0, c: 0 },
+          { r: 0, c: GRID - 1 },
+          { r: GRID - 1, c: GRID - 1 },
+          { r: GRID - 1, c: 0 }
+        ];
+
+        /* La scène 3D n'est construite qu'une fois par session : ses bornes de
+           caméra gardaient sinon les valeurs de la PREMIÈRE partie, et un
+           passage 11×11 → 13×13 se retrouvait cadré pour l'ancienne taille —
+           sans erreur, juste un plateau qui déborde. */
+        if (typeof kaykit3D !== "undefined" && kaykit3D) {
+          kaykit3D.gridSize = GRID;
+          kaykit3D.minZoom = 6.4 * (GRID / 11);
+          kaykit3D.maxZoom = 25 * (GRID / 11);
+          kaykit3D.zoomDistance = 12.4 * (GRID / 11);
+          if (kaykit3D.orbit) {
+            kaykit3D.orbit.minDistance = kaykit3D.minZoom;
+            kaykit3D.orbit.maxDistance = kaykit3D.maxZoom;
+          }
+        }
+        return GRID;
+      }
       const SHAPES = {
         domino: { name: "Domino", cells: [[0, 0], [1, 1]] },
         line3: { name: "Passerelle", cells: [[0, 0], [0, 1], [0, 2]] },
@@ -28,10 +77,18 @@
         crossHollow: { name: "Croix creuse", cells: [[0, 1], [1, 0], [1, 2], [2, 1]] },
         v3: { name: "V", cells: [[0, 0], [1, 1], [0, 2]] }
       };
-      // Test : limite le nombre de fois qu'une même forme peut être posée par
-      // équipe (owner) sur toute la partie. À 0/false, aucune limite — permet
-      // de désactiver l'essai sans toucher au reste du code.
-      const SHAPE_LIMIT_PER_OWNER = 2;
+      /* Nombre d'exemplaires de CHAQUE forme dont dispose une équipe sur toute
+         la partie. Ce n'est pas un plafond du nombre d'îles possédées : c'est un
+         stock de pièces, forme par forme. 0 = illimité.
+
+         Valeur par défaut seulement : le duel symétrique la fait choisir au
+         joueur (voir shapeLimitPerOwner dans state.rules). Passer par
+         shapeLimitPerOwner() plutôt que par cette constante. */
+      const SHAPE_LIMIT_PER_OWNER_DEFAULT = 2;
+      function shapeLimitPerOwner() {
+        const limite = state?.rules?.shapeLimitPerOwner;
+        return Number.isFinite(limite) ? limite : SHAPE_LIMIT_PER_OWNER_DEFAULT;
+      }
       const ACTIONS = {
         MOVE: { name: "Déplacement", icon: "🥾", desc: "1 action = 1 case. 2 actions permettent une diagonale.", bg: "#0d84c9" },
         PUSH: { name: "Poussée", icon: "💥", desc: "Poussez une cible adjacente.", bg: "#b33d32" },
