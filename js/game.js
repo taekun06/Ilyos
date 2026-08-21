@@ -2596,6 +2596,40 @@
       // les modèles KayKit disponibles — sinon cloneKayKitAsset renvoie null et rien n'est
       // construit. Même principe que buildKayKitBoardClouds : on attend l'asset, jamais de
       // pièce de secours à remplacer à chaud.
+      /** Remplace le cône de repli des plateformes de château par la montagne
+       *  retournée, une fois les modèles KayKit disponibles. Les plateformes sont
+       *  construites très tôt — avant la fin du chargement — et ne seraient sinon
+       *  reconstruites qu'au premier changement de couche d'île. */
+      function kaykitReprendreSoclesRocheux() {
+        const registre = kaykit3D?.pedestalRegistry;
+        if (!registre || !registre.size) return false;
+        let reprises = 0;
+        registre.forEach(socle => {
+          if (socle.userData.ilyosSocleRocheux !== false) return;
+          const couleur = socle.userData.ilyosSocleCouleur ?? 0;
+          const variante = ["bareMountainA", "bareMountainB", "bareMountainC"][Math.abs(couleur) % 3];
+          const roche = cloneKayKitAsset(variante, { maxWidth: 1.02, maxHeight: .86, targetFloor: 0 });
+          if (!roche) return;
+          // Le cône de repli est le seul ConeGeometry du socle : le retirer ne peut
+          // pas emporter le bloc (ExtrudeGeometry) ni le liseré (LineLoop).
+          const aRetirer = [];
+          socle.traverse(o => { if (o.isMesh && o.geometry?.type === "ConeGeometry") aRetirer.push(o); });
+          disposeKayKitObjects(aRetirer);
+          roche.rotation.x = Math.PI;
+          roche.rotation.y = (Math.abs(couleur) % 7) * .9;
+          roche.position.y = .14;
+          roche.traverse(child => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = false;
+          });
+          socle.add(roche);
+          socle.userData.ilyosSocleRocheux = true;
+          reprises++;
+        });
+        return reprises > 0;
+      }
+
       function buildKayKitDistantArchipelago() {
         const sky = kaykit3D?.scene?.getObjectByName("ilyos-sky");
         if (!sky) return false;
@@ -4726,33 +4760,51 @@
           );
           outline.position.y = .012; group.add(outline);
 
-          // Dessous rocheux simple pour les 4 plateformes de château (brief
-          // "environnement céleste", section 7) : un bloc carré posé dans le
-          // vide se lisait comme un simple socle, pas comme un fragment d'île.
-          // Même direction artistique que les coques d'île jouables (roche,
-          // pointes) mais géométrie de coût "îlot lointain" — cône + pointes
-          // partagés (kaykitGeometry), jamais reconstruits par instance, pas
-          // le système de coque V2 complet pour 4 éléments aussi éloignés de
-          // la caméra. Pas d'ombre dynamique : cohérent avec le reste du
-          // décor d'ambiance (voir le brief mobile-first).
-          const underRock = new THREE.Mesh(
-            kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
-            new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
-          );
-          underRock.rotation.x = Math.PI;
-          underRock.position.y = -.36;
-          underRock.castShadow = false; underRock.receiveShadow = false;
-          group.add(underRock);
-          [.9, 2.4, 4.1].forEach((angle, i) => {
-            const spike = new THREE.Mesh(
-              kaykitGeometry(`pedestal-underside-spike-v1-${i}`, () => new THREE.ConeGeometry(.09, .3, 5)),
-              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_BOTTOM.getHex(), roughness: .95 })
-            );
-            spike.position.set(Math.cos(angle) * .32, -.62, Math.sin(angle) * .32);
-            spike.rotation.x = Math.PI * .92;
-            spike.castShadow = false; spike.receiveShadow = false;
-            group.add(spike);
+          // DESSOUS DES PLATEFORMES DE CHÂTEAU — montagne KayKit retournée.
+          // Remplace un ConeGeometry surmonté de trois pointes : le même bricolage
+          // procédural que celui abandonné pour l'archipel lointain, et pour la même
+          // raison — un cône ne fait pas une île, il fait un cône.
+          //
+          // Une montagne nue retournée résout tout d'un coup : sa pente donne la pointe
+          // rocheuse de l'île suspendue, et sa base large et plate vient se loger sous
+          // la plateforme sans qu'on ait à raccorder quoi que ce soit. Même pièce et
+          // même geste que makeKayKitFloatingIsle, donc cohérence garantie entre le
+          // socle des joueurs et l'archipel du fond.
+          //
+          // La variante est tirée de la couleur du propriétaire : les quatre châteaux
+          // n'ont pas le même rocher, sans qu'aucun ne soit choisi à la main.
+          const varianteRoche = ["bareMountainA", "bareMountainB", "bareMountainC"][Math.abs(ownerColor) % 3];
+          const roche = cloneKayKitAsset(varianteRoche, {
+            maxWidth: 1.02, maxHeight: .86, targetFloor: 0
           });
+          if (roche) {
+            roche.rotation.x = Math.PI;              // pointe vers le bas
+            roche.rotation.y = (Math.abs(ownerColor) % 7) * .9;
+            roche.position.y = .14;                  // remonte sous la plateforme
+            roche.traverse(child => {
+              if (!child.isMesh) return;
+              child.castShadow = false;
+              child.receiveShadow = false;
+            });
+            group.add(roche);
+            group.userData.ilyosSocleRocheux = true;
+          } else {
+            // Repli si le modèle n'est pas encore chargé : l'ancien cône, pour ne
+            // jamais laisser une plateforme flotter sans dessous. Une passe de reprise
+            // (kaykitReprendreSoclesRocheux) remplacera ce cône par la montagne dès que
+            // les modèles seront chargés : les plateformes, elles, ne sont reconstruites
+            // qu'au premier changement de couche d'île, ce qui serait trop tard.
+            const underRock = new THREE.Mesh(
+              kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
+              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
+            );
+            underRock.rotation.x = Math.PI;
+            underRock.position.y = -.36;
+            underRock.castShadow = false; underRock.receiveShadow = false;
+            group.add(underRock);
+            group.userData.ilyosSocleRocheux = false;
+            group.userData.ilyosSocleCouleur = ownerColor;
+          }
         }
         return group;
       }
@@ -8563,6 +8615,11 @@
 
           // Archipel lointain : mêmes conditions, mêmes raisons. `tileBottom` est la pièce
           // indispensable (le dessous rocheux des îles) ; sans elle rien ne peut être assemblé.
+          // Socles de château : même condition d'asset que l'archipel.
+          if (!kaykit3D.soclesRocheuxRepris && kaykit3D.assets.has("bareMountainA")) {
+            kaykit3D.soclesRocheuxRepris = kaykitReprendreSoclesRocheux();
+          }
+
           if (!kaykit3D.distantArchipelagoBuilt && kaykit3D.assets.has("bareMountainA")
             && kaykit3D.assets.has("bareMountainB") && kaykit3D.assets.has("bareMountainC")
             && kaykit3D.assets.has("hillA")) {
