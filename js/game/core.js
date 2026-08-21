@@ -540,8 +540,9 @@
 
 
       function symmetricSetupOptionsHTML() {
-        return Object.entries(SYMMETRIC_DUEL_SETUPS)
-          .map(([id, setup]) => {
+        return Object.keys(SYMMETRIC_DUEL_SETUPS)
+          .map(id => {
+            const setup = symmetricSetup(id);
             const guardiansPerTeam = setup.characters.filter(
               character => character.player === 0
             ).length;
@@ -560,6 +561,16 @@
           <select id="startingBoardSelect">
             <option value="classic" selected>Classique — plateau vide</option>
             <option value="symmetric">Duel symétrique — plateau préparé</option>
+          </select>
+        </label>
+        <label class="mode-option-row board-size-row" for="boardSizeSelect">
+          <span>
+            <b>Taille du plateau</b>
+            <small>Le 13×13 élargit le centre : les villages restent à leurs coins, les trajets vers la couronne s’allongent.</small>
+          </span>
+          <select id="boardSizeSelect">
+            <option value="11" selected>11 × 11 — standard</option>
+            <option value="13">13 × 13 — élargi</option>
           </select>
         </label>
         ${turnTimerControlsHTML()}
@@ -593,8 +604,7 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const setup = SYMMETRIC_DUEL_SETUPS[setupId]
-          || SYMMETRIC_DUEL_SETUPS.open;
+        const setup = symmetricSetup(setupId);
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -2045,6 +2055,31 @@
         });
       }
 
+      /* Les dispositions symétriques sont écrites en coordonnées absolues pour
+         un plateau 11×11. Sur une grille plus large, une cellule comme [10, 9]
+         — collée au coin opposé — se retrouverait au milieu de nulle part.
+
+         La conversion préserve donc la DISTANCE AU BORD le plus proche, axe par
+         axe : ce qui touchait un bord y reste collé, et l'anneau supplémentaire
+         s'ajoute au centre. C'est le choix retenu pour le 13×13 — les ouvertures
+         restent celles qu'on connaît, le milieu devient plus ouvert.
+
+         Une cellule strictement au centre du 11×11 (indice 5) reste au centre.
+         Entre les deux, l'écart est réparti vers le centre, donc deux pièces
+         voisines peuvent se séparer d'une case : c'est voulu, c'est ce qui
+         élargit le plateau plutôt que de l'étirer. */
+      const SYMMETRIC_PRESET_SOURCE_GRID = 11;
+      function scalePresetIndex(index) {
+        if (GRID === SYMMETRIC_PRESET_SOURCE_GRID) return index;
+        const milieu = (SYMMETRIC_PRESET_SOURCE_GRID - 1) / 2;
+        if (index === milieu) return (GRID - 1) / 2;
+        if (index < milieu) return index;                          // ancré au bord haut/gauche
+        return GRID - 1 - (SYMMETRIC_PRESET_SOURCE_GRID - 1 - index); // ancré au bord bas/droit
+      }
+      function scalePresetCell([r, c]) {
+        return [scalePresetIndex(r), scalePresetIndex(c)];
+      }
+
       function makeSymmetricPresetIsland(id, owner, cells) {
         const minR = Math.min(...cells.map(([r]) => r));
         const minC = Math.min(...cells.map(([, c]) => c));
@@ -2065,28 +2100,28 @@
         const islands = [];
         let id = 1;
 
-        baseIslands.forEach(cells => {
+        // Conversion à la taille réelle du plateau avant tout le reste : le
+        // miroir doit opérer sur les coordonnées finales, pas sur celles du 11×11.
+        const ajustees = baseIslands.map(cells => cells.map(scalePresetCell));
+
+        ajustees.forEach(cells => {
           islands.push(makeSymmetricPresetIsland(id++, 0, cells));
         });
-        baseIslands.forEach(cells => {
+        ajustees.forEach(cells => {
           islands.push(makeSymmetricPresetIsland(id++, 1, mirrorPresetCells(cells)));
         });
 
         return {
           islands,
           characters: [
-            ...characters.map((position, index) => ({
-              id: `char-0-symmetric-${index}`,
-              player: 0,
-              r: position[0],
-              c: position[1]
-            })),
-            ...characters.map((position, index) => ({
-              id: `char-1-symmetric-${index}`,
-              player: 1,
-              r: position[0],
-              c: GRID - 1 - position[1]
-            }))
+            ...characters.map((position, index) => {
+              const [r, c] = scalePresetCell(position);
+              return { id: `char-0-symmetric-${index}`, player: 0, r, c };
+            }),
+            ...characters.map((position, index) => {
+              const [r, c] = scalePresetCell(position);
+              return { id: `char-1-symmetric-${index}`, player: 1, r, c: GRID - 1 - c };
+            })
           ]
         };
       }
@@ -2187,24 +2222,42 @@
           }
         };
 
+        /* Les îles ne sont PLUS construites ici. Cette IIFE s'exécute au
+            chargement du module, quand GRID vaut encore sa valeur par défaut :
+            un plateau 13×13 choisi plus tard héritait alors de positions
+            calculées pour le 11×11. Seules les définitions brutes sont
+            conservées ; symmetricSetup() les convertit à la taille réelle au
+            moment de construire la partie. */
         const setups = {};
         Object.entries(definitions).forEach(([id, definition]) => {
-          const built = buildSymmetricPreset(
-            definition.baseIslands,
-            definition.characters
-          );
-
           setups[id] = {
             id,
             name: definition.name,
             description: definition.description,
             style: definition.style,
-            islands: built.islands,
-            characters: built.characters
+            baseIslands: definition.baseIslands,
+            characters: definition.characters
           };
         });
         return setups;
       })();
+      /* Construit une disposition à la taille COURANTE du plateau.
+         Mémoïsé par (identifiant, taille) : l'aperçu du menu la demande à
+         chaque survol, et rien ne justifie de la recalculer.
+         Passer systématiquement par cette fonction — SYMMETRIC_DUEL_SETUPS ne
+         contient plus que les définitions brutes en 11×11. */
+      const symmetricSetupCache = new Map();
+      function symmetricSetup(setupId) {
+        const id = resolveSymmetricSetupId(setupId);
+        const cle = `${id}@${GRID}`;
+        if (symmetricSetupCache.has(cle)) return symmetricSetupCache.get(cle);
+        const definition = SYMMETRIC_DUEL_SETUPS[id];
+        const construit = buildSymmetricPreset(definition.baseIslands, definition.characters);
+        const setup = { ...definition, islands: construit.islands, characters: construit.characters };
+        symmetricSetupCache.set(cle, setup);
+        return setup;
+      }
+
       function resolveSymmetricSetupId(setupId) {
         return SYMMETRIC_DUEL_SETUPS[setupId] ? setupId : "open";
       }
@@ -2307,7 +2360,7 @@
         }
 
         const resolvedId = resolveSymmetricSetupId(setupId);
-        const setup = SYMMETRIC_DUEL_SETUPS[resolvedId];
+        const setup = symmetricSetup(resolvedId);
 
         state.startingBoardMode = "symmetric";
         state.startingBoardPreset = resolvedId;
@@ -2519,6 +2572,12 @@
         clearLocalSession();
         stopTurnTimer();
         aiRunToken++;
+
+        /* La taille du plateau est fixée AVANT tout le reste : getVillageAssignments,
+           les coins, le sanctuaire et la scène 3D lisent tous GRID/CENTER/CORNERS
+           pendant la construction qui suit. La déplacer plus bas produirait une
+           partie mi-11×11 mi-13×13, sans erreur visible. */
+        setBoardSize(document.getElementById("boardSizeSelect")?.value);
 
         const selectedMode = Number(els.playerCount.value);
         const soloMode = selectedMode === 1;

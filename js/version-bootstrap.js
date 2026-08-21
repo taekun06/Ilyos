@@ -40,11 +40,19 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   if (window.__ILYOS_FRONT_CAMERA_PRESET__) return;
   window.__ILYOS_FRONT_CAMERA_PRESET__ = true;
 
-  /* Recul porté de 13,8 à 20 : à 13,8 le plateau remplissait le cadre et l'atmosphère
-     construite autour (soleil, godrays, archipel, horizon) restait hors champ ou
-     tronquée. À 20 la scène respire sans que les pièces deviennent illisibles.
-     Ajustable à chaud par ILYOS_SKY.cadrage({ recul }). */
+  /* Recul de la vue FACE. À 13,8 le plateau remplissait le cadre et l'atmosphère
+     construite autour (soleil, godrays, archipel, horizon) restait hors champ.
+     À 17 la scène respire sans que les pièces deviennent illisibles.
+     Ajustable à chaud par ILYOS_SKY.cadrage({ recul }).
+
+     Cette valeur est calibrée sur le plateau 11×11 : un 13×13 cadré au même
+     recul déborde de l'image, villages des coins compris. Le facteur suit donc
+     la taille réelle, exposée par le moteur via kaykit3D.gridSize. */
   const FRONT_DISTANCE = 17;
+  function reculPourPlateau(k) {
+    const taille = Number(k?.gridSize) || 11;
+    return FRONT_DISTANCE * (taille / 11);
+  }
   /* INCLINAISON DE LA VUE FACE, en degrés sous l'horizontale.
      Elle décide seule de ce qui entre dans le cadre : le haut de l'image se situe à
      (inclinaison − 16,5°), la moitié du champ vertical de 33°. À 37,2° — la valeur
@@ -80,7 +88,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     const min = Number.isFinite(k.minZoom) ? k.minZoom : 6.4;
     const max = Number.isFinite(k.maxZoom) ? k.maxZoom : 25;
     const reculVoulu = Number.isFinite(window.ILYOS_FRONT_DISTANCE)
-      ? window.ILYOS_FRONT_DISTANCE : FRONT_DISTANCE;
+      ? window.ILYOS_FRONT_DISTANCE : reculPourPlateau(k);
     const distance = Math.max(min, Math.min(reculVoulu, max));
 
     k.cameraTween = null;

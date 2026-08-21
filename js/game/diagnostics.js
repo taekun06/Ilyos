@@ -286,13 +286,15 @@
       }
 
       window.ILYOS_API = {
-        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, autoplay = false } = {}) {
+        launchConfiguredGame({ opponent = "1", board = "spiral", difficulty = "normal", turnTime = 0, boardSize = DEFAULT_BOARD_SIZE, autoplay = false } = {}) {
           try {
             pendingVisualMode = "alternative";
             els.playerCount.value = String(opponent);
             els.playerCount.dispatchEvent(new Event("change", { bubbles: true }));
             const boardSelect = document.getElementById("startingBoardSelect");
             if (boardSelect) boardSelect.value = board === "classic" ? "classic" : "symmetric";
+            const boardSizeSelect = document.getElementById("boardSizeSelect");
+            if (boardSizeSelect) boardSizeSelect.value = String(normalizeBoardSize(boardSize));
             const difficultySelect = document.getElementById("aiDifficultySelect");
             if (difficultySelect) difficultySelect.value = difficulty;
             // Comme les deux précédents : le changement de mode ci-dessus a
