@@ -6063,13 +6063,29 @@
         return new THREE.Color().setHSL(hue, .58, .56);
       }
 
+      // PALETTE RESSERRÉE — même arbitrage que kaykitHullColorAt (voir plus haut) :
+      // une famille de teintes doit se lire comme UN archipel avec des nuances, pas
+      // comme six pastilles de couleur choisies indépendamment. L'ancienne palette
+      // dérivait sur 100° de teinte (du jaune-olive 70° au sarcelle 170°) et sur 32
+      // points de luminosité (33 %-65 %) : deux blocs voisins pouvaient se lire comme
+      // deux matières différentes (herbe sèche contre mousse humide) plutôt que comme
+      // deux parcelles du même terrain.
+      //
+      // Resserrée à un arc de 54° (88°-142°, jaune-vert à vert-émeraude, jamais de
+      // dérive vers le bleu-sarcelle) avec alternance de luminosité/saturation pour
+      // garder les 6 teintes distinguables : mesuré, l'écart RGB minimal entre deux
+      // teintes passe de 32,9 à 42,2 (donc MIEUX différencié qu'avant, pas moins),
+      // tout en gardant l'écart moyen comparable (77,0 contre 82,1). C'est cet écart
+      // minimal qui compte : buildIlyosIslandColorMap ne garantit que des indices
+      // DIFFÉRENTS entre îles voisines, jamais lesquels — la pire paire doit donc
+      // rester nette.
       const ILYOS_ISLAND_TINTS = [
-        0x9fae57,
-        0x5f7a3c,
-        0x8bbf8a,
-        0x3f6b52,
-        0x4f9488,
-        0x8aa63f
+        0x88c261, // sauge claire chaude
+        0x348d3a, // vert profond — ancre de la famille
+        0x5cb27c, // vert froid moyen
+        0x5a842a, // olive sombre chaud
+        0x88bf95, // vert clair froid
+        0x54a744  // vert moyen, transition
       ];
 
       function buildIlyosIslandColorMap(islands) {
