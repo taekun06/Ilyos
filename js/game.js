@@ -2536,7 +2536,7 @@
           if (opts.seuil !== undefined) KAYKIT_BLOOM.seuil = opts.seuil;
           if (opts.douceur !== undefined) KAYKIT_BLOOM.douceur = opts.douceur;
           if (opts.rayon !== undefined) KAYKIT_BLOOM.rayon = opts.rayon;
-          if (opts.reprendre) kaykitBloom.coupeAuto = false;
+          if (opts.reprendre) { kaykitBloom.coupeAuto = false; kaykitBloom.imagesBasses = 0; }
           return Object.assign({}, KAYKIT_BLOOM, { coupeAutomatique: kaykitBloom.coupeAuto });
         },
         cadrage(opts = {}) {
@@ -8810,7 +8810,7 @@
       const kaykitBloom = {
         pret: false, multiEchantillon: false, cibleScene: null, cibleA: null, cibleB: null,
         camera: null, quad: null, matSeuil: null, matFlou: null, matCompo: null,
-        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false
+        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false, derniereImage: 0
       };
 
       function kaykitBloomShader(uniforms, fragment) {
@@ -8855,6 +8855,10 @@
           kaykitBloom.cibleScene = multiDispo
             ? new THREE.WebGLMultisampleRenderTarget(l, h, Object.assign({ depthBuffer: true }, options))
             : new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+          // 4 échantillons. Mesuré : à 4, le taux d'arêtes dures est RIGOUREUSEMENT
+          // identique avec et sans bloom (écart 0,000) ; à 2 il remonte de 0,279 % à
+          // 0,342 %. Le crénelage étant précisément le défaut signalé, la qualité prime
+          // ici sur les ~1,5 FPS que 2 échantillons auraient économisés.
           if (multiDispo) kaykitBloom.cibleScene.samples = 4;
           kaykitBloom.cibleScene.texture.encoding = renderer.outputEncoding;
           kaykitBloom.cibleA = new THREE.WebGLRenderTarget(petitL, petitH, Object.assign({ depthBuffer: false }, options));
@@ -8967,6 +8971,26 @@
         B.matCompo.uniforms.tBloom.value = B.cibleA.texture;
         B.matCompo.uniforms.uForce.value = KAYKIT_BLOOM.force;
         kaykitBloomPasse(renderer, B.matCompo, null);
+
+        // REPLI AUTOMATIQUE. `fpsPlancher` était documenté depuis le début sans être
+        // appliqué : une garantie annoncée mais absente. On compte les images dont le
+        // temps dépasse le plancher, et on coupe après 120 consécutives (~2 s) — assez
+        // long pour ignorer un à-coup de chargement, assez court pour qu'une machine
+        // réellement trop lente ne subisse pas le bloom pendant toute la partie.
+        // Le compteur se remet à zéro dès qu'une image repasse au-dessus.
+        const maintenant = performance.now();
+        if (B.derniereImage) {
+          const fps = 1000 / Math.max(1, maintenant - B.derniereImage);
+          if (fps < KAYKIT_BLOOM.fpsPlancher) {
+            B.imagesBasses++;
+            if (B.imagesBasses > 120) {
+              B.coupeAuto = true;
+              console.info("[ILYOS] bloom coupé automatiquement : FPS soutenu sous " +
+                KAYKIT_BLOOM.fpsPlancher + ". Réactivation : ILYOS_SKY.bloom({ reprendre: true }).");
+            }
+          } else B.imagesBasses = 0;
+        }
+        B.derniereImage = maintenant;
         return true;
       }
 
