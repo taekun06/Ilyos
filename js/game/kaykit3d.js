@@ -7404,7 +7404,20 @@
           const timeScale = visual.animator.matchLocomotionSpeed(locomotion, cells, travel);
           // Le clip démarre pendant la rotation d'anticipation : le gardien
           // amorce son pas au moment où il pivote, ce qui supprime le temps mort.
-          visual.animator.play(locomotion, { fade: 0.12, timeScale });
+          // CALIBRAGE DU FONDU D'ENTRÉE EN MARCHE. turnDelay (ligne ci-dessus) vaut
+          // au minimum 120 ms (cells=1, le cas le plus fréquent) — c'était EXACTEMENT
+          // la durée du fade (0.12s), marge nulle. Le crossfade Idle/Selected -> Marche
+          // se terminait donc pile au moment, voire un peu APRÈS, où le tween de
+          // position démarrait réellement : les toutes premières images du vrai
+          // déplacement montraient encore un mélange de poses (jambes floues, pas mal
+          // synchronisés avec le sol). C'est précisément ce qui manquait à un DEUXIÈME
+          // déplacement enchaîné pendant que le gardien marche déjà : `play()`
+          // court-circuite alors le fade (état déjà actif, voir plus haut), le clip
+          // continue tel quel, donc net dès la première image — d'où l'impression
+          // d'un pas mieux vu la deuxième fois.
+          // Fade ramené à .08s : le fondu est désormais TOUJOURS terminé avant le
+          // premier vrai pas, avec 40 ms de marge même dans le cas le plus serré.
+          visual.animator.play(locomotion, { fade: 0.08, timeScale });
         }
         emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[route.length - 1], cells });
       }
