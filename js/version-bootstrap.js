@@ -249,6 +249,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     body.ilyos-menu-v11-active > #setupScreen{visibility:hidden!important;pointer-events:none!important}
     #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:2147483000;background:#040a11;display:block}
     #ilyos-menu-v11-frame[hidden]{display:none!important}
+    .online-menu-back{margin-top:14px;display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:10px;border:1px solid rgba(216,170,76,.45);background:rgba(216,170,76,.12);color:#f4d28e;font:inherit;font-weight:600;cursor:pointer}
+    .online-menu-back:hover{background:rgba(216,170,76,.22)}
   `;
   document.head.appendChild(guardStyle);
 
@@ -317,6 +319,37 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     });
   }
 
+  /* Mode EN LIGNE : contrairement aux autres modes, JOUER ne fait pas
+     apparaître #gameScreen tout de suite — l'hôte doit d'abord voir son code
+     de salon et attendre l'invité (ou l'invité doit se connecter). Cet écran
+     d'attente n'existe que dans l'ancien #setupScreen (#onlineSetupStatus,
+     code généré, etc.) : sans ce bridge, la partie EN LIGNE se lance bien en
+     coulisses mais reste invisible sous l'iframe du menu, qui elle ne se
+     cache que quand #gameScreen devient visible. On révèle donc l'ancien
+     écran dès que le panneau EN LIGNE existe, avec un bouton de retour. */
+  function revealOnlineSetup(frame) {
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts++;
+      const panel = document.querySelector('.online-setup-panel');
+      if (panel) {
+        clearInterval(timer);
+        frame.hidden = true;
+        document.body.classList.remove('ilyos-menu-v11-active');
+        if (!panel.querySelector('.online-menu-back')) {
+          const back = document.createElement('button');
+          back.type = 'button';
+          back.className = 'online-menu-back';
+          back.textContent = '← Retour au menu';
+          back.addEventListener('click', () => location.reload());
+          panel.appendChild(back);
+        }
+      } else if (attempts >= 25) {
+        clearInterval(timer);
+      }
+    }, 40);
+  }
+
   function syncFrame(frame) {
     const setup = document.getElementById('setupScreen');
     const game = document.getElementById('gameScreen');
@@ -350,8 +383,12 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
       if (msg.type === 'settings') applySettings(msg.detail?.mode, msg.detail?.values || {});
       if (msg.type === 'play') {
         launchGame(msg.detail?.mode, msg.detail?.values || {});
-        setTimeout(() => syncFrame(frame), 100);
-        setTimeout(() => syncFrame(frame), 700);
+        if (msg.detail?.mode === 'online') {
+          revealOnlineSetup(frame);
+        } else {
+          setTimeout(() => syncFrame(frame), 100);
+          setTimeout(() => syncFrame(frame), 700);
+        }
       }
       if (msg.type === 'action') {
         const action = msg.detail?.action;
