@@ -5819,7 +5819,15 @@
           const lum = .96 + kaykitHash("hull-lum", seed) * .08;
           color.multiplyScalar(lum);
         }
-        return color;
+        // CONVERSION sRGB → LINÉAIRE, et c'est elle qui fait tout ici.
+        // Les textures KayKit sont déclarées en sRGB : le shader les décode donc vers
+        // le linéaire avant l'éclairage. Les couleurs par sommet, elles, ne subissent
+        // aucune conversion — elles sont prises telles quelles pour du linéaire.
+        // Le même brun nominal ressortait donc bien plus clair sur la coque que sur le
+        // bloc de terre au-dessus : la coque virait au crème et la jonction se lisait
+        // comme une cassure franche entre deux matières étrangères.
+        // Convertie, la coque retrouve exactement le registre du bloc KayKit.
+        return color.convertSRGBToLinear();
       }
 
       // Décalage latéral déterministe très faible (2-4% d'une case), jamais
