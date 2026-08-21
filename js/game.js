@@ -7268,29 +7268,33 @@
         if (!visual || visual.selected === selected) return;
         visual.selected = selected;
 
-        // Or établi ailleurs dans le jeu pour tout ce qui est précieux/important
-        // (couronnes, halo de score, victoire — voir 0xffcf52 plus bas). Le
-        // mélanger à 15% avec la couleur d'équipe donnait un or vif pour les
-        // équipes chaudes (rouge, vert, violet) mais un kaki terne pour l'équipe
-        // bleu cyan (#deaf3f) — le bleu et l'or sont proches en teinte inversée,
-        // le mélange désature au lieu d'enrichir. Un seul gardien est sélectionné
-        // à la fois, tous joueurs confondus : rien n'exige que cette couleur
-        // varie par équipe, donc plus de mélange — un or constant et vif pour
-        // tout le monde, cohérent avec le reste du langage visuel doré du jeu.
-        const glowColor = selected
-          ? new THREE.Color(0xffcf52)
-          : visual.teamColor;
-        // À .22 (respirant jusqu'à .36), cet émissif s'appliquait à TOUT le
-        // matériau du gardien (armure, peau, tissu confondus) et le noyait dans
-        // un blanc doré translucide au lieu de se lire comme un simple reflet
-        // chaud. Le halo au sol et la colonne portent déjà la lisibilité de la
-        // sélection ; ce glin ne doit être qu'un appoint discret.
-        const glowIntensity = selected ? .09 : .075;
-        visual.glowBase = glowIntensity;
-        visual.glowMaterials.forEach(mat => {
-          mat.emissive = glowColor.clone();
-          mat.emissiveIntensity = glowIntensity;
-        });
+        /* Or de sélection, réservé au HALO — anneau, colonne, particules.
+           Un seul gardien est sélectionné à la fois, tous joueurs confondus :
+           rien n'exige que cette couleur varie par équipe. */
+        const glowColor = new THREE.Color(0xffcf52);
+
+        /* Le MODÈLE n'est plus touché du tout par la sélection.
+           Mesuré avant correctif, sur un chevalier de duel symétrique :
+             au repos        3 émissifs distincts (#15191a@.015, #3a2a0d@.025…)
+             sélectionné     1 seul (#ffcf52@.062) — armure, peau et tissu confondus
+             désélectionné   1 seul — les valeurs d'origine n'étaient JAMAIS rendues
+           Le lavage doré était donc définitif : un gardien sélectionné une fois
+           restait différent pour le reste de la partie. Deux passes avaient déjà
+           réduit son intensité (.22 → .09) puis son amplitude (±.14 → ±.045)
+           sans traiter la cause, qui est le remplacement de la couleur.
+
+           Ne pas essayer de « mémoriser puis restaurer » ces émissifs : l'état
+           des matériaux d'un gardien est écrit en DEUX temps — d'abord
+           styleKnightMetalArmor / styleMagePalette à la création, puis
+           character-materials-v1.js qui restaure les vrais matériaux du GLB une
+           fois ce script chargé. Une capture faite à la création fige donc le
+           métal gris intermédiaire (#182028), pas le rendu final. Le seul état
+           juste est celui que porte le matériau à l'instant présent : on n'y
+           touche pas.
+
+           La lisibilité de la sélection est entièrement portée par le halo —
+           anneau au sol, colonne de lumière, particules. C'était déjà écrit
+           ici ; il suffisait d'en tirer la conséquence. */
 
         if (!selected) {
           if (visual.halo) {
@@ -8462,7 +8466,10 @@
             // faisait passer TOUT le matériau du gardien par un pic à .36, ce
             // qui le blanchissait à chaque respiration au lieu de simplement
             // le teinter d'un reflet doré discret.
-            visual.glowMaterials.forEach(mat => { mat.emissiveIntensity = (visual.glowBase ?? .09) + breathe * .045; });
+            /* La respiration ne touche plus l'émissif du gardien, pour la
+               même raison : elle écrivait une intensité unique sur les quinze
+               matériaux et effaçait la hiérarchie du GLB. Seul le halo pulse
+               désormais — c'est lui qui porte la sélection. */
             halo.ring.rotation.z = elapsed * .16;
             // Le halo respire en phase avec l'émissif du modèle (même onde) :
             // les deux se lisent comme une seule source de lumière qui pulse
