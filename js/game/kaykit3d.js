@@ -149,6 +149,18 @@
         { id: "prototype", label: "Prototype", repo: "KayKit-Prototype-Bits-1.0", keywords: ["gem", "star", "flag", "coin", "chest", "sphere", "cube"] },
         { id: "blockBits", label: "Block Bits", repo: "KayKit_BlockBits_1.0_FREE", keywords: ["dirt_with_grass", "dirt", "grass", "stone"] }
       ];
+      /* Héros chargés seulement quand une partie en a besoin.
+         resolveHeroAssetKey() n'utilise que hero0 et hero1 à deux joueurs ; les
+         trois autres ne servent qu'aux parties à trois ou quatre. Ils pèsent
+         10,3 Mo sur les 19,9 Mo téléchargés à l'ouverture de la scène, soit la
+         moitié du chargement initial pour des modèles que la majorité des
+         parties n'affiche jamais.
+
+         Ils restent déclarés dans KAYKIT_ASSETS : seul le lancement groupé les
+         ignore. Toute demande ultérieure passe par ensureKayKitAsset(), qui
+         mémoïse via kaykit3D.assetPromises. */
+      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3"]);
+
       const KAYKIT_CATALOG_CACHE_VERSION = "v45-local-2026-08";
       const KAYKIT_ASSET_MODE = "local-verified";
       const KAYKIT_USE_LOCAL = true;
@@ -744,7 +756,11 @@
           textureCache: new Map(), islandTintTextures: new Map(), islandTintMaterials: new Map(), texturedMaterials: 0, untexturedMaterials: 0, repairedMaterials: 0, failedTextureAssets: new Set(), missingTexture: null,
           mixers: [], heroAnimators: [], proceduralHeroes: [], animatedObjects: [], skyLayers: [], hoverCell: null, hoverMarker: null, actionPreviewGroup: null, actionPreviewKey: null, viewMode: "front", disposed: false,
           zoomDistance: 12.4, minZoom: 6.4, maxZoom: 25, viewTarget: new THREE.Vector3(0, .22, .18),
-          materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0, totalAssets: Object.keys(KAYKIT_ASSETS).length,
+          materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0,
+          // Compte ce qui est REELLEMENT lance : sinon la barre reste bloquee a
+          // 64/67 pour des modeles que personne n'a demandes. ensureKayKitAsset()
+          // incremente ce total quand un differe est finalement charge.
+          totalAssets: Object.keys(KAYKIT_ASSETS).filter(key => !KAYKIT_DEFERRED_ASSETS.has(key)).length,
           packCatalog: new Map(), packRepresentatives: new Map(), packReady: new Set(), packErrors: new Set(),
           animationClipNames: new Set(), pendingActionAnimations: new Map(), activeMovementTweens: new Map(), characterHistory: new Map(), characterFacing: new Map(), cellVisuals: new Map(), hoveredVisuals: [], hoveredVisualKey: null, interactiveMeshes: [], universeSeed: Date.now(),
           // Registre persistant des gardiens : characterId -> CharacterVisual.
@@ -851,7 +867,9 @@
         buildKayKitStaticScene();
         bindKayKitInteractions();
         if (loader) {
-          Object.entries(KAYKIT_ASSETS).forEach(([assetKey, spec]) => loadKayKitAsset(assetKey, spec));
+          Object.entries(KAYKIT_ASSETS)
+            .filter(([assetKey]) => !KAYKIT_DEFERRED_ASSETS.has(assetKey))
+            .forEach(([assetKey, spec]) => loadKayKitAsset(assetKey, spec));
           setTimeout(() => initKayKitOfficialUniverse(), 100);
         } else {
           status.textContent = "Mode 3D de secours · chargeur KayKit indisponible";
@@ -3281,6 +3299,29 @@
         return group;
       }
 
+      /* Demande un asset qui n'a pas été lancé au démarrage.
+         Idempotent : loadKayKitAsset() mémoïse par kaykit3D.assetPromises, donc
+         les appels répétés — un par gardien, un par fantôme de pose — ne
+         déclenchent qu'un seul téléchargement.
+
+         À l'arrivée du GLB, loadKayKitAsset() appelle scheduleKayKitSync() : le
+         gardien apparaît tout seul à la synchronisation suivante, sans qu'aucun
+         appelant n'ait à attendre la promesse. C'est le même mécanisme qui
+         permet déjà à createCharacterVisual() de ne rien poser tant que le
+         modèle n'est pas là. */
+      function ensureKayKitAsset(assetKey) {
+        if (!assetKey || !kaykit3D || kaykit3D.disposed) return;
+        if (kaykit3D.assets.has(assetKey) || kaykit3D.failedAssets.has(assetKey)) return;
+        if (kaykit3D.assetPromises.has(assetKey)) return;
+        const spec = KAYKIT_ASSETS[assetKey];
+        if (!spec) return;
+        // Le total n'incluait pas les différés : il monte au moment où l'un
+        // d'eux est réellement demandé, pour que l'état de chargement reste juste.
+        kaykit3D.totalAssets++;
+        updateKayKitLoadStatus();
+        loadKayKitAsset(assetKey, spec);
+      }
+
       function loadKayKitAsset(assetKey, spec) {
         if (!kaykit3D?.loader) return Promise.resolve(null);
         if (kaykit3D.assetPromises.has(assetKey)) return kaykit3D.assetPromises.get(assetKey);
@@ -5221,6 +5262,11 @@
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
         const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
+        // Le fantôme de pose peut réclamer un héros avant qu'aucun gardien de
+        // ce joueur n'existe : il doit donc pouvoir déclencher le chargement
+        // lui aussi, sinon il resterait sur le modèle de secours pendant toute
+        // la phase de placement d'une partie à trois ou quatre.
+        ensureKayKitAsset(assetKey);
         let hero = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
         if (!hero) hero = makeFallbackHero(playerId);
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
@@ -7020,7 +7066,14 @@
         // de secours qu'il faudrait ensuite remplacer à chaud — l'attente est
         // très brève (assets locaux). Le modèle de secours ne reste utilisé
         // que si l'asset a réellement échoué (kaykit3D.failedAssets).
-        if (!kaykit3D.assets.has(assetKey) && !kaykit3D.failedAssets.has(assetKey)) return null;
+        if (!kaykit3D.assets.has(assetKey) && !kaykit3D.failedAssets.has(assetKey)) {
+          // Point de passage obligé de tout gardien affiché : c'est ici qu'un
+          // héros différé est réclamé, quelle que soit la façon dont la partie
+          // a commencé — duel local, partie en ligne, sauvegarde reprise,
+          // rejouée par l'IA. Aucun appelant n'a besoin de connaître la liste.
+          ensureKayKitAsset(assetKey);
+          return null;
+        }
         const clips = kaykit3D?.assetAnimations.get(assetKey) || [];
         let wrapper = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
         const usesFallback = !wrapper;
