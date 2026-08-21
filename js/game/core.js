@@ -2276,7 +2276,13 @@
         // valeur par défaut posée à la création de state).
         state.rules = {
           allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
-          islandLimitPerPlayer: Number(els.symmetricIslandLimitSelect?.value || 0) || 0
+          /* Le sélecteur du duel symétrique pilote désormais le stock de
+              CHAQUE forme, et non plus un total d'îles. islandLimitPerPlayer
+              reste à 0 : la règle du plafond total existe toujours dans le
+              moteur (islandLimitReachedForPlayer) mais plus aucun écran ne la
+              règle — la retirer serait un chantier séparé. */
+          islandLimitPerPlayer: 0,
+          shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
         };
         state.setupSelectionPending = false;
         state.inputLocked = false;
@@ -2922,10 +2928,11 @@
         const candidates = [];
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
-          // Test SHAPE_LIMIT_PER_OWNER (voir js/game/bootstrap.js) : l'IA
+          // Stock par forme (voir shapeLimitPerOwner, js/game/bootstrap.js) : l'IA
           // respecte la même limite que le joueur humain, sinon elle
           // continuerait à spammer sa forme préférée sans restriction.
-          if (SHAPE_LIMIT_PER_OWNER && shapeUsageCountForOwner(playerId, shapeKey) >= SHAPE_LIMIT_PER_OWNER) return;
+          const limiteForme = shapeLimitPerOwner();
+          if (limiteForme && shapeUsageCountForOwner(playerId, shapeKey) >= limiteForme) return;
           let rotated = normalizeShape(shape.cells);
           const seen = new Set();
 

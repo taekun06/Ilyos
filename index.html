@@ -1111,15 +1111,16 @@
 
         <div class="symmetric-setup-custom">
           <strong class="symmetric-setup-custom-title">Personnaliser</strong>
+          <!-- Stock de CHAQUE forme, pas un total d'îles : avec 3, une équipe
+               peut poser trois Dominos, trois Passerelles, trois Carrés, etc.
+               Le compteur du tiroir d'îles (posées/limite) suit ce réglage. -->
           <label for="symmetricIslandLimitSelect">
-            <span>Îles par équipe</span>
+            <span>Exemplaires par forme</span>
             <select id="symmetricIslandLimitSelect">
+              <option value="2" selected>2 de chaque</option>
+              <option value="3">3 de chaque</option>
+              <option value="4">4 de chaque</option>
               <option value="0">Illimité</option>
-              <option value="6">6</option>
-              <option value="8">8</option>
-              <option value="10">10</option>
-              <option value="12">12</option>
-              <option value="15">15</option>
             </select>
           </label>
           <label class="symmetric-setup-toggle" for="symmetricAllowDissolveCheckbox">

@@ -28,10 +28,18 @@
         crossHollow: { name: "Croix creuse", cells: [[0, 1], [1, 0], [1, 2], [2, 1]] },
         v3: { name: "V", cells: [[0, 0], [1, 1], [0, 2]] }
       };
-      // Test : limite le nombre de fois qu'une même forme peut être posée par
-      // équipe (owner) sur toute la partie. À 0/false, aucune limite — permet
-      // de désactiver l'essai sans toucher au reste du code.
-      const SHAPE_LIMIT_PER_OWNER = 2;
+      /* Nombre d'exemplaires de CHAQUE forme dont dispose une équipe sur toute
+         la partie. Ce n'est pas un plafond du nombre d'îles possédées : c'est un
+         stock de pièces, forme par forme. 0 = illimité.
+
+         Valeur par défaut seulement : le duel symétrique la fait choisir au
+         joueur (voir shapeLimitPerOwner dans state.rules). Passer par
+         shapeLimitPerOwner() plutôt que par cette constante. */
+      const SHAPE_LIMIT_PER_OWNER_DEFAULT = 2;
+      function shapeLimitPerOwner() {
+        const limite = state?.rules?.shapeLimitPerOwner;
+        return Number.isFinite(limite) ? limite : SHAPE_LIMIT_PER_OWNER_DEFAULT;
+      }
       const ACTIONS = {
         MOVE: { name: "Déplacement", icon: "🥾", desc: "1 action = 1 case. 2 actions permettent une diagonale.", bg: "#0d84c9" },
         PUSH: { name: "Poussée", icon: "💥", desc: "Poussez une cible adjacente.", bg: "#b33d32" },
@@ -11521,7 +11529,13 @@
         // valeur par défaut posée à la création de state).
         state.rules = {
           allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
-          islandLimitPerPlayer: Number(els.symmetricIslandLimitSelect?.value || 0) || 0
+          /* Le sélecteur du duel symétrique pilote désormais le stock de
+              CHAQUE forme, et non plus un total d'îles. islandLimitPerPlayer
+              reste à 0 : la règle du plafond total existe toujours dans le
+              moteur (islandLimitReachedForPlayer) mais plus aucun écran ne la
+              règle — la retirer serait un chantier séparé. */
+          islandLimitPerPlayer: 0,
+          shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
         };
         state.setupSelectionPending = false;
         state.inputLocked = false;
@@ -12167,10 +12181,11 @@
         const candidates = [];
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
-          // Test SHAPE_LIMIT_PER_OWNER (voir js/game/bootstrap.js) : l'IA
+          // Stock par forme (voir shapeLimitPerOwner, js/game/bootstrap.js) : l'IA
           // respecte la même limite que le joueur humain, sinon elle
           // continuerait à spammer sa forme préférée sans restriction.
-          if (SHAPE_LIMIT_PER_OWNER && shapeUsageCountForOwner(playerId, shapeKey) >= SHAPE_LIMIT_PER_OWNER) return;
+          const limiteForme = shapeLimitPerOwner();
+          if (limiteForme && shapeUsageCountForOwner(playerId, shapeKey) >= limiteForme) return;
           let rotated = normalizeShape(shape.cells);
           const seen = new Set();
 
@@ -15500,14 +15515,15 @@
 
       // Test : nombre d'îles d'une forme donnée déjà posées par ce
       // propriétaire (owner d'île = state.currentPlayer côté joueur humain)
-      // sur toute la partie. SHAPE_LIMIT_PER_OWNER=0 désactive la limite.
+      // sur toute la partie. shapeLimitPerOwner() renvoie 0 pour « illimité ».
       function shapeUsageCountForOwner(ownerId, shapeKey) {
         return state.islands.filter(island => island.owner === ownerId && island.shapeKey === shapeKey).length;
       }
 
       function shapeLimitReached(shapeKey) {
-        if (!SHAPE_LIMIT_PER_OWNER) return false;
-        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= SHAPE_LIMIT_PER_OWNER;
+        const limite = shapeLimitPerOwner();
+        if (!limite) return false;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= limite;
       }
 
       function renderIslandSelector() {
@@ -15528,11 +15544,12 @@
           const flipBadge = shape.flippable
             ? `<span class="island-choice-flip" aria-hidden="true" title="Peut être retournée (miroir)">⇄</span>`
             : "";
-          const limitBadge = SHAPE_LIMIT_PER_OWNER
-            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${SHAPE_LIMIT_PER_OWNER}</span>`
+          const limite = shapeLimitPerOwner();
+          const limitBadge = limite
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${limite}</span>`
             : "";
           button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
-          const limitSuffix = SHAPE_LIMIT_PER_OWNER ? ` (${used}/${SHAPE_LIMIT_PER_OWNER} posées)` : "";
+          const limitSuffix = limite ? ` (${used}/${limite} posées)` : "";
           button.title = (shape.flippable ? `${shape.name} (peut être retournée en miroir)` : shape.name)
             + (maxedOut ? " — limite atteinte" : limitSuffix);
           button.setAttribute("aria-label", (shape.flippable ? `Choisir l’île ${shape.name}, peut être retournée en miroir` : `Choisir l’île ${shape.name}`) + limitSuffix);
@@ -15546,7 +15563,7 @@
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
         if (shapeLimitReached(shapeKey)) {
-          showToast(`Limite atteinte : ${SHAPE_LIMIT_PER_OWNER} îles « ${SHAPES[shapeKey].name} » maximum.`);
+          showToast(`Limite atteinte : ${shapeLimitPerOwner()} île${shapeLimitPerOwner() > 1 ? "s" : ""} « ${SHAPES[shapeKey].name} » maximum.`);
           return;
         }
         state.selectedIslandShape = shapeKey;
