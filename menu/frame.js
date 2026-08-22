@@ -128,6 +128,7 @@
   function recap(mode,values){
     const items=[];
     if(values.board!=null && mode!=='team') items.push(['PLATEAU',labelFor(mode,'board',values.board)]);
+    if(values.size!=null) items.push(['TAILLE',labelFor(mode,'size',values.size)]);
     if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
     if(mode==='solo') items.push(['CPU',labelFor(mode,'difficulty',values.difficulty)]);
     if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);

@@ -9396,6 +9396,7 @@
       let onlineLocalName = "";
       let pendingOnlineStartingBoard = "classic";
       let pendingOnlineStartingPreset = "open";
+      let pendingOnlineBoardSize = DEFAULT_BOARD_SIZE;
       // 0 = aucune limite de temps (défaut). L'hôte seul décide de la valeur.
       let pendingOnlineTurnDuration = 0;
       let localPlayerIndex = null;
@@ -9870,6 +9871,21 @@
           .join("");
       }
 
+      function boardSizeControlHTML() {
+        return `
+        <label class="mode-option-row board-size-row" for="boardSizeSelect">
+          <span>
+            <b>Taille du plateau</b>
+            <small>Le 13×13 élargit le centre : les villages restent à leurs coins, les trajets vers la couronne s’allongent.</small>
+          </span>
+          <select id="boardSizeSelect">
+            <option value="11" selected>11 × 11 — standard</option>
+            <option value="13">13 × 13 — élargi</option>
+          </select>
+        </label>
+      `;
+      }
+
       function startingBoardControlsHTML({ online = false } = {}) {
         return `
         <label class="mode-option-row starting-board-row" for="startingBoardSelect">
@@ -9882,16 +9898,7 @@
             <option value="symmetric">Duel symétrique — plateau préparé</option>
           </select>
         </label>
-        <label class="mode-option-row board-size-row" for="boardSizeSelect">
-          <span>
-            <b>Taille du plateau</b>
-            <small>Le 13×13 élargit le centre : les villages restent à leurs coins, les trajets vers la couronne s’allongent.</small>
-          </span>
-          <select id="boardSizeSelect">
-            <option value="11" selected>11 × 11 — standard</option>
-            <option value="13">13 × 13 — élargi</option>
-          </select>
-        </label>
+        ${boardSizeControlHTML()}
         ${turnTimerControlsHTML()}
       `;
       }
@@ -10113,6 +10120,14 @@
           ${startingBoardControlsHTML()}
         `;
           wireStartingBoardControls();
+        }
+
+        // Équipes : le plateau de départ reste classique (setupSelectionPending
+        // suppose 2 camps, pas 2 équipes de 2), mais la taille reste un choix
+        // valide — getVillageAssignments et le reste de la construction ne
+        // dépendent pas du preset.
+        if (selectedMode === "3" || selectedMode === "4") {
+          els.modeOptions.innerHTML = boardSizeControlHTML();
         }
 
         els.startBtn.textContent = "Lancer ILYOS — KayKit Edition";
@@ -11182,6 +11197,12 @@
         stopTurnTimer();
         aiRunToken++;
 
+        // L'invité ne choisit pas la taille du plateau : sans ce recalage,
+        // son GRID/CENTER/CORNERS locaux restent sur le défaut (ou une
+        // partie précédente) alors que les positions reçues sont celles de
+        // l'hôte — décalage silencieux du rendu et des cases cliquables.
+        setBoardSize(incoming.boardSize);
+
         state = incoming;
         state.onlineMode = true;
         state.soloMode = false;
@@ -11744,6 +11765,12 @@
         stopTurnTimer();
         aiRunToken++;
 
+        /* Même règle que startLocalGame() : la taille du plateau doit être
+           fixée AVANT getVillageAssignments et le reste de la construction.
+           C'est l'hôte qui décide (pendingOnlineBoardSize) ; l'invité recevra
+           la vraie taille via l'état synchronisé, voir applyOnlineState(). */
+        setBoardSize(pendingOnlineBoardSize);
+
         const names = [
           String(hostName || "JOUEUR 1").toLocaleUpperCase("fr-FR"),
           String(guestName || "JOUEUR 2").toLocaleUpperCase("fr-FR")
@@ -11776,6 +11803,7 @@
           visualMode: pendingVisualMode,
           startingBoardMode: pendingOnlineStartingBoard,
           startingBoardPreset: null,
+          boardSize: GRID,
           turnDurationSeconds: pendingOnlineTurnDuration,
           setupSelectionPending: pendingOnlineStartingBoard === "symmetric",
           aiDifficulty: null,
@@ -11895,6 +11923,11 @@
         pendingOnlineStartingBoard = role === "host"
           ? (document.getElementById("startingBoardSelect")?.value || "classic")
           : "classic";
+        // Comme pour startingBoardMode : seul l'hôte décide, l'invité reçoit
+        // la vraie taille via l'état synchronisé (voir applyOnlineState).
+        pendingOnlineBoardSize = role === "host"
+          ? (document.getElementById("boardSizeSelect")?.value || DEFAULT_BOARD_SIZE)
+          : DEFAULT_BOARD_SIZE;
         // L'invité reçoit l'état complet de l'hôte : il n'impose pas sa propre
         // durée de tour, sinon les deux camps décompteraient différemment.
         pendingOnlineTurnDuration = role === "host" ? selectedTurnDurationSeconds() : 0;
