@@ -32,6 +32,28 @@
           return { label: "Choisir le gardien", instruction: "Cliquez l’un des gardiens éclairés pour rejoindre le sanctuaire." };
         }
 
+        // Mise en place personnalisée : les phases réutilisées ci-dessous
+        // (CHOOSE_ISLAND_SHAPE / PLACE_ISLAND / PLACE_SPAWN) parleraient
+        // sinon d'« étape obligatoire » et d'invocation, hors sujet ici.
+        if (state.draft) {
+          const pick = draftCurrentPick();
+          const reste = pick ? draftPicksRemainingFor(pick.player) : null;
+          if (pick?.kind === "island") {
+            return {
+              label: `Formation · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
+              instruction: state.phase === "PLACE_ISLAND"
+                ? "Prochain clic : une zone verte du plateau."
+                : "Choisissez une forme d’île dans le panneau de gauche."
+            };
+          }
+          if (pick?.kind === "guardian") {
+            return {
+              label: `Formation · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
+              instruction: "Prochain clic : une case libre de vos îles ou de votre village."
+            };
+          }
+        }
+
         switch (state.phase) {
           case "SETUP_SELECT":
             return { label: "Choisir le setup", instruction: "Sélectionnez la configuration du Duel symétrique." };
@@ -87,6 +109,30 @@
 
         if (state.pendingDirectMoveTarget) {
           return { kind: "move", kicker: "CHOISISSEZ LE GARDIEN", title: "Accès au sanctuaire", next: "Cliquez l’un des gardiens éclairés." };
+        }
+
+        if (state.draft) {
+          const pick = draftCurrentPick();
+          const reste = pick ? draftPicksRemainingFor(pick.player) : null;
+          if (pick?.kind === "island") {
+            const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
+            return {
+              kind: "build",
+              kicker: "MISE EN PLACE",
+              title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
+              next: state.phase === "PLACE_ISLAND"
+                ? `Rotation ${degrees}° — Q/E pour tourner, clic pour poser.`
+                : "Choisissez une forme d’île."
+            };
+          }
+          if (pick?.kind === "guardian") {
+            return {
+              kind: "build",
+              kicker: "MISE EN PLACE",
+              title: `${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""} à placer`,
+              next: "Cliquez une case libre de vos îles ou votre village."
+            };
+          }
         }
 
         if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
@@ -571,7 +617,14 @@
       // propriétaire (owner d'île = state.currentPlayer côté joueur humain)
       // sur toute la partie. shapeLimitPerOwner() renvoie 0 pour « illimité ».
       function shapeUsageCountForOwner(ownerId, shapeKey) {
-        return state.islands.filter(island => island.owner === ownerId && island.shapeKey === shapeKey).length;
+        // Les îles de formation (fromSetup) sont hors stock, comme pour
+        // islandCountForOwner : elles n'ont pas été « posées pendant la
+        // partie ». Sans cette exclusion, une mise en place personnalisée de
+        // 4 îles épuiserait d'avance plusieurs formes du stock de jeu, alors
+        // que le duel symétrique, lui, n'en consomme aucune.
+        return state.islands.filter(island =>
+          island.owner === ownerId && island.shapeKey === shapeKey && !island.fromSetup
+        ).length;
       }
 
       function shapeLimitReached(shapeKey) {
@@ -846,7 +899,11 @@
             }
             if (state.selectedMagicPivot && state.selectedMagicPivot[0] === r && state.selectedMagicPivot[1] === c) classes.push("magic-pivot");
 
-            const spawnAllowed = spawnIsland && spawnIsland.cells.some(([ir, ic]) => ir === r && ic === c) && !char;
+            // En mise en place personnalisée le gardien n'est pas lié à une île
+            // fraîchement posée : toutes les cases libres du joueur sont ouvertes.
+            const spawnAllowed = state.draft
+              ? state.phase === "PLACE_SPAWN" && draftGuardianCellAllowed(state.currentPlayer, r, c)
+              : spawnIsland && spawnIsland.cells.some(([ir, ic]) => ir === r && ic === c) && !char;
             if (spawnAllowed) classes.push("spawn-choice");
 
             const cellKey = key(r, c);
@@ -1482,6 +1539,14 @@
         }
 
         if (state.phase === "PLACE_SPAWN") {
+          /* Pendant la mise en place personnalisée, le gardien ne naît pas sur
+             l'île qu'on vient de poser : le joueur le place librement sur
+             n'importe laquelle de ses îles ou sur son village. */
+          if (state.draft) {
+            draftPlaceGuardian(r, c);
+            return;
+          }
+
           if (!canCreateGuardian(state.currentPlayer)) {
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
@@ -1823,10 +1888,30 @@
           cells: absCells,
           visualVariant: chooseIslandVisualVariant(absCells, islandId, state.islands)
         };
+        /* Mise en place personnalisée : les îles de formation sont marquées
+           fromSetup, comme celles du duel symétrique, pour ne pas être
+           décomptées des stocks de pose de la partie (voir
+           islandCountForOwner). Le tour du draft passe au joueur suivant au
+           lieu d'enchaîner sur l'invocation obligatoire. */
+        if (state.draft) island.fromSetup = true;
+
         state.islands.push(island);
         // L'île se matérialise : elle descend depuis quelques centimètres
         // au-dessus de sa position finale au lieu d'apparaître d'un coup.
         playIslandDrop(island.id);
+
+        if (state.draft) {
+          state.draft.placedIslands[island.owner]++;
+          state.selectedIslandShape = null;
+          state.placementCells = null;
+          state.placementOriginIndex = 0;
+          state.hoverAnchor = null;
+          resetKayKitPointerFeedback();
+          animateIslandArrival(island);
+          playSfx("island");
+          advanceDraft();
+          return;
+        }
 
         state.islandPlacedThisTurn = true;
 
@@ -3589,7 +3674,9 @@
         // toujours "Fin du tour" (voir title pour la raison d'un blocage).
         els.endTurnBtn.classList.toggle("end-turn-ready", canEnd && state.phase === "ACTION_SELECT");
         els.endTurnBtn.textContent = "Fin du tour";
-        if (!state.islandPlacedThisTurn) {
+        if (state.draft) {
+          els.endTurnBtn.title = "La partie commence une fois la mise en place terminée.";
+        } else if (!state.islandPlacedThisTurn) {
           els.endTurnBtn.title = "Posez d’abord une île.";
         } else if (state.phase === "PLACE_SPAWN") {
           els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire.";

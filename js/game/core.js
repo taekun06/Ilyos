@@ -573,11 +573,12 @@
         <label class="mode-option-row starting-board-row" for="startingBoardSelect">
           <span>
             <b>Plateau de départ</b>
-            <small>Le setup précis du Duel symétrique sera choisi sur l’écran du plateau.</small>
+            <small>Le setup précis du Duel symétrique et du Personnalisé sera choisi sur l’écran du plateau.</small>
           </span>
           <select id="startingBoardSelect">
             <option value="classic" selected>Classique — plateau vide</option>
             <option value="symmetric">Duel symétrique — plateau préparé</option>
+            <option value="custom">Personnalisé — formation posée par les joueurs</option>
           </select>
         </label>
         ${boardSizeControlHTML()}
@@ -976,13 +977,17 @@
           restored.characters.length + 100
         );
         restored.winner = restored.winner ?? null;
-        restored.startingBoardMode = restored.startingBoardMode === "symmetric"
-          ? "symmetric"
+        restored.startingBoardMode = ["symmetric", "custom"].includes(restored.startingBoardMode)
+          ? restored.startingBoardMode
           : "classic";
         restored.startingBoardPreset = restored.startingBoardMode === "symmetric"
           ? resolveSymmetricSetupId(restored.startingBoardPreset)
           : null;
         restored.setupSelectionPending = !!restored.setupSelectionPending;
+        /* Mise en place personnalisée interrompue : on ne restaure le draft que
+           s'il est cohérent, sinon la partie repartirait sur un compteur de
+           pioches faussé (index hors bornes = plus aucun joueur au trait). */
+        restored.draft = normalizeRestoredDraft(restored.draft, restored.players.length);
 
         if (!restored.artifact) {
           restored.artifact = { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true };
@@ -1133,7 +1138,20 @@
           openSymmetricSetupOverlay({
             selectedId: state.startingBoardPreset || "open"
           });
-          showToast("Choisissez le setup du Duel symétrique.");
+          showToast(setupOverlayIsCustom()
+            ? "Choisissez les quantités de votre formation."
+            : "Choisissez le setup du Duel symétrique.");
+          return;
+        }
+
+        /* Mise en place personnalisée interrompue : la phase et le joueur au
+           trait sont sauvegardés, mais rien ne relancerait l'IA si c'était à
+           elle de poser. enterDraftPick() rétablit les deux. */
+        if (state.draft) {
+          stopTurnTimer();
+          state.inputLocked = false;
+          enterDraftPick();
+          showToast("Mise en place reprise.");
           return;
         }
 
@@ -2330,16 +2348,52 @@
         renderSymmetricSetupPreview(els.symmetricSetupSelect.value);
       }
 
+      /* Le même overlay sert aux deux plateaux préparés : le Duel symétrique
+         (choix d'un préréglage figé) et le Personnalisé (choix des quantités,
+         le placement se faisant ensuite sur le plateau). Réutiliser cet écran
+         plutôt qu'en créer un second fait hériter gratuitement de toute la
+         plomberie déjà en place autour de setupSelectionPending : attente de
+         l'invité en ligne, resynchronisation et reprise de sauvegarde. */
+      function setupOverlayIsCustom() {
+        return state?.startingBoardMode === "custom";
+      }
+
       function openSymmetricSetupOverlay({ waiting = false, selectedId = "open" } = {}) {
         if (!els.symmetricSetupOverlay) return;
 
-        populateSymmetricSetupOverlay(selectedId);
-        els.symmetricSetupSelect.disabled = waiting;
-        els.randomSymmetricSetupBtn.disabled = waiting;
+        const custom = setupOverlayIsCustom();
+
+        els.symmetricPresetControls?.classList.toggle("hidden", custom);
+        els.symmetricPresetContent?.classList.toggle("hidden", custom);
+        els.customSetupControls?.classList.toggle("hidden", !custom);
+
+        if (els.setupOverlayKicker) {
+          els.setupOverlayKicker.textContent = custom ? "PERSONNALISÉ" : "DUEL SYMÉTRIQUE";
+        }
+        if (els.setupOverlayTitle) {
+          els.setupOverlayTitle.textContent = custom
+            ? "Composez votre formation"
+            : "Choisissez le plateau de départ";
+        }
+        if (els.setupOverlayIntro) {
+          els.setupOverlayIntro.textContent = custom
+            ? "Chaque joueur pose lui-même ses îles puis ses gardiens, à tour de rôle, avant le premier tour."
+            : "Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le même nombre de gardiens.";
+        }
+
+        if (custom) {
+          if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
+          if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
+        } else {
+          populateSymmetricSetupOverlay(selectedId);
+          if (els.symmetricSetupSelect) els.symmetricSetupSelect.disabled = waiting;
+          if (els.randomSymmetricSetupBtn) els.randomSymmetricSetupBtn.disabled = waiting;
+        }
+
         els.confirmSymmetricSetupBtn.disabled = waiting;
         els.confirmSymmetricSetupBtn.textContent = waiting
           ? "En attente du créateur"
-          : "Lancer ce setup";
+          : (custom ? "Commencer la mise en place" : "Lancer ce setup");
         els.symmetricSetupWaiting.classList.toggle("hidden", !waiting);
 
         els.symmetricSetupOverlay.classList.remove("hidden");
@@ -2378,6 +2432,24 @@
         if (!state || !state.setupSelectionPending) return;
         if (state.onlineMode && onlineRole === "guest") return;
 
+        if (setupOverlayIsCustom()) {
+          state.rules = {
+            allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
+            islandLimitPerPlayer: 0,
+            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
+          };
+          state.setupSelectionPending = false;
+          state.inputLocked = false;
+          closeSymmetricSetupOverlay();
+          startCustomDraft(
+            Number(els.customIslandCountSelect?.value),
+            Number(els.customGuardianCountSelect?.value)
+          );
+          startAmbient();
+          if (state.onlineMode) forceOnlineSync();
+          return;
+        }
+
         const setupId = resolveSymmetricSetupId(
           els.symmetricSetupSelect?.value || "open"
         );
@@ -2408,6 +2480,233 @@
         if (state.onlineMode) {
           forceOnlineSync();
         }
+      }
+
+      /* ---------------------------------------------------------------------
+         MODE PERSONNALISÉ — mise en place jouée par les joueurs
+
+         Avant le premier tour, chacun pose sa propre formation : d'abord ses
+         îles, puis ses gardiens. L'ordre est un SERPENTIN (0,1,1,0,0,1,…) :
+         inverser l'ordre à chaque manche compense l'avantage de celui qui pose
+         en premier, sans qu'aucune règle de compensation n'ait à être
+         expliquée au joueur.
+
+         Le draft réutilise volontairement les phases existantes
+         (CHOOSE_ISLAND_SHAPE / PLACE_ISLAND / PLACE_SPAWN) plutôt que d'en
+         introduire de nouvelles : tout le rendu, les aperçus 3D, la rotation à
+         la molette et la validation de placement fonctionnent alors sans y
+         toucher. C'est `state.draft` qui distingue le contexte, pas la phase.
+         --------------------------------------------------------------------- */
+      function normalizeRestoredDraft(draft, playerCount) {
+        if (!draft || !Array.isArray(draft.order) || !draft.order.length) return null;
+        const iles = Math.max(1, Math.min(6, Number(draft.islandsPerPlayer) || 4));
+        const gardiens = Math.max(
+          1,
+          Math.min(MAX_GUARDIANS_PER_PLAYER, Number(draft.guardiansPerPlayer) || 2)
+        );
+        const order = draft.order.filter(id => Number.isInteger(id) && id >= 0 && id < playerCount);
+        if (order.length !== draft.order.length) return null;
+
+        const compteur = source => Array.from(
+          { length: playerCount },
+          (unused, index) => Math.max(0, Number(source?.[index]) || 0)
+        );
+        const index = Math.max(0, Math.min(Number(draft.index) || 0, order.length));
+        return {
+          islandsPerPlayer: iles,
+          guardiansPerPlayer: gardiens,
+          order,
+          index,
+          placedIslands: compteur(draft.placedIslands),
+          placedGuardians: compteur(draft.placedGuardians)
+        };
+      }
+
+      function buildDraftOrder(playerCount, picksPerPlayer) {
+        const order = [];
+        for (let manche = 0; manche < picksPerPlayer; manche++) {
+          const tour = [...Array(playerCount).keys()];
+          if (manche % 2 === 1) tour.reverse();
+          order.push(...tour);
+        }
+        return order;
+      }
+
+      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer) {
+        if (!state) return;
+        const playerCount = state.players.length;
+        const iles = Math.max(1, Math.min(6, Math.round(Number(islandsPerPlayer)) || 4));
+        const gardiens = Math.max(
+          1,
+          Math.min(MAX_GUARDIANS_PER_PLAYER, Math.round(Number(guardiansPerPlayer)) || 2)
+        );
+
+        state.draft = {
+          islandsPerPlayer: iles,
+          guardiansPerPlayer: gardiens,
+          order: buildDraftOrder(playerCount, iles + gardiens),
+          index: 0,
+          placedIslands: new Array(playerCount).fill(0),
+          placedGuardians: new Array(playerCount).fill(0)
+        };
+
+        /* Le plateau personnalisé démarre nu. startLocalGame place d'office un
+           gardien par village pour tout mode non classique : ici ces gardiens
+           font justement partie de ce que le joueur va poser lui-même. */
+        state.characters = [];
+        state.islands = [];
+        state.nextIslandId = 1;
+        state.nextCharId = 100;
+        state.inputLocked = false;
+        enterDraftPick();
+      }
+
+      function draftCurrentPick() {
+        const draft = state?.draft;
+        if (!draft || draft.index >= draft.order.length) return null;
+        const player = draft.order[draft.index];
+        const kind = draft.placedIslands[player] < draft.islandsPerPlayer ? "island" : "guardian";
+        return { player, kind };
+      }
+
+      function draftPicksRemainingFor(playerId) {
+        const draft = state?.draft;
+        if (!draft) return { islands: 0, guardians: 0 };
+        return {
+          islands: Math.max(0, draft.islandsPerPlayer - draft.placedIslands[playerId]),
+          guardians: Math.max(0, draft.guardiansPerPlayer - draft.placedGuardians[playerId])
+        };
+      }
+
+      function enterDraftPick() {
+        const pick = draftCurrentPick();
+        if (!pick) {
+          finishCustomDraft();
+          return;
+        }
+
+        /* currentPlayer est piloté par le draft : c'est la condition pour que
+           scheduleOnlineSync() émette (sa garde est
+           state.currentPlayer === localPlayerIndex). */
+        state.currentPlayer = pick.player;
+        state.phase = pick.kind === "island" ? "CHOOSE_ISLAND_SHAPE" : "PLACE_SPAWN";
+        state.islandPlacedThisTurn = false;
+        state.pendingSpawnIslandId = null;
+        state.selectedIslandShape = null;
+        state.placementCells = null;
+        state.placementOriginIndex = 0;
+        state.placementRotationSteps = 0;
+        state.hoverAnchor = null;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        state.reachable = new Set();
+        renderAll();
+
+        if (state.players[pick.player]?.isAI) {
+          setTimeout(() => runDraftAI(), 460);
+        }
+      }
+
+      function advanceDraft() {
+        if (!state?.draft) return;
+        state.draft.index++;
+        enterDraftPick();
+      }
+
+      function finishCustomDraft() {
+        if (!state) return;
+        state.draft = null;
+        state.phase = "ACTION_SELECT";
+        // Celui qui a posé en premier ouvre la partie : le serpentin lui a
+        // déjà fait payer le fait de poser à l'aveugle.
+        state.currentPlayer = 0;
+        state.turn = 1;
+        state.round = 1;
+        beginTurn();
+        playSfx("turn");
+        if (state.onlineMode) forceOnlineSync();
+      }
+
+      /* Placement d'un gardien pendant le draft : n'importe quelle case libre
+         d'une île appartenant au joueur, ou sa case de village. */
+      function draftGuardianCellAllowed(playerId, r, c) {
+        if (!inside(r, c) || characterAt(r, c)) return false;
+        const village = villageAt(r, c);
+        if (village !== undefined && village === playerId) return true;
+        const island = islandAt(r, c);
+        return !!island && island.owner === playerId;
+      }
+
+      function draftPlaceGuardian(r, c) {
+        const pick = draftCurrentPick();
+        if (!pick || pick.kind !== "guardian") return false;
+        if (!draftGuardianCellAllowed(pick.player, r, c)) {
+          showToast("Placez le gardien sur une de vos îles ou sur votre village.");
+          return false;
+        }
+
+        const char = { id: `char-${state.nextCharId++}`, player: pick.player, r, c };
+        state.characters.push(char);
+        state.draft.placedGuardians[pick.player]++;
+        playSfx("spawn");
+        animateCellPulse(r, c, "spawn-arrival");
+        advanceDraft();
+        return true;
+      }
+
+      /* IA de draft : réutilise le placement automatique d'île du jeu normal
+         (findAutomaticIslandPlacement, qui respecte déjà le stock par forme)
+         puis pose ses gardiens au plus près du sanctuaire. */
+      function runDraftAI() {
+        const pick = draftCurrentPick();
+        if (!pick || !state?.players[pick.player]?.isAI) return;
+
+        if (pick.kind === "island") {
+          const placement = findAutomaticIslandPlacement(pick.player);
+          if (!placement) {
+            advanceDraft();
+            return;
+          }
+          const island = {
+            id: state.nextIslandId++,
+            owner: pick.player,
+            shapeKey: placement.shapeKey,
+            anchor: { ...placement.anchor },
+            relCells: cloneCells(placement.relCells),
+            cells: cloneCells(placement.cells),
+            visualVariant: chooseIslandVisualVariant(placement.cells, state.nextIslandId, state.islands),
+            fromSetup: true
+          };
+          state.islands.push(island);
+          state.draft.placedIslands[pick.player]++;
+          playSfx("island");
+          animateIslandArrival(island);
+          advanceDraft();
+          return;
+        }
+
+        const candidates = [];
+        state.islands
+          .filter(island => island.owner === pick.player)
+          .forEach(island => island.cells.forEach(([r, c]) => {
+            if (draftGuardianCellAllowed(pick.player, r, c)) candidates.push([r, c]);
+          }));
+        state.players[pick.player].villages?.forEach(village => {
+          if (draftGuardianCellAllowed(pick.player, village.r, village.c)) {
+            candidates.push([village.r, village.c]);
+          }
+        });
+
+        if (!candidates.length) {
+          advanceDraft();
+          return;
+        }
+        candidates.sort((a, b) =>
+          (Math.abs(a[0] - CENTER.r) + Math.abs(a[1] - CENTER.c))
+          - (Math.abs(b[0] - CENTER.r) + Math.abs(b[1] - CENTER.c))
+        );
+        const [r, c] = candidates[0];
+        draftPlaceGuardian(r, c);
       }
 
       function applyStartingBoardMode(mode, setupId = "open") {
@@ -2487,7 +2786,9 @@
           startingBoardPreset: null,
           boardSize: GRID,
           turnDurationSeconds: pendingOnlineTurnDuration,
-          setupSelectionPending: pendingOnlineStartingBoard === "symmetric",
+          setupSelectionPending: pendingOnlineStartingBoard === "symmetric"
+            || pendingOnlineStartingBoard === "custom",
+          draft: null,
           aiDifficulty: null,
           networkRevision: 0,
           currentPlayer: 0,
@@ -2496,7 +2797,8 @@
           islands: [],
           // Même règle qu'en local (voir startGame) : plateau classique = aucun
           // gardien de départ, le premier est invoqué avec la première île.
-          characters: pendingOnlineStartingBoard === "classic"
+          // Personnalisé : les gardiens sont posés par les joueurs au draft.
+          characters: (pendingOnlineStartingBoard === "classic" || pendingOnlineStartingBoard === "custom")
             ? []
             : players.map((player, index) => ({
               id: `char-${index}-start`,
@@ -2564,7 +2866,7 @@
         startAmbient();
         showAlternativeIntro();
 
-        if (pendingOnlineStartingBoard === "symmetric") {
+        if (pendingOnlineStartingBoard === "symmetric" || pendingOnlineStartingBoard === "custom") {
           state.phase = "SETUP_SELECT";
           state.inputLocked = true;
           renderAll();
@@ -2688,8 +2990,10 @@
         // équipe obtient donc son premier gardien dès son premier tour, à
         // l'endroit qu'elle choisit plutôt que d'office sur son village.
         // Le mode symétrique, lui, remplace entièrement state.characters via
-        // confirmSymmetricSetup() : il n'est pas concerné.
-        const characters = startingBoardMode === "classic"
+        // confirmSymmetricSetup() ; le mode personnalisé les fait poser par les
+        // joueurs eux-mêmes (startCustomDraft) : ni l'un ni l'autre n'est
+        // concerné par cette invocation d'office.
+        const characters = (startingBoardMode === "classic" || startingBoardMode === "custom")
           ? []
           : players.map((p, i) => ({
             id: `char-${i}-start`,
@@ -2706,7 +3010,8 @@
           startingBoardMode,
           startingBoardPreset,
           turnDurationSeconds: turnDurationChoice,
-          setupSelectionPending: startingBoardMode === "symmetric",
+          setupSelectionPending: startingBoardMode === "symmetric" || startingBoardMode === "custom",
+          draft: null,
           aiDifficulty,
           currentPlayer: startingPlayerIndex,
           round: 1,
@@ -2775,7 +3080,7 @@
         startAmbient();
         showAlternativeIntro();
 
-        if (startingBoardMode === "symmetric") {
+        if (startingBoardMode === "symmetric" || startingBoardMode === "custom") {
           state.phase = "SETUP_SELECT";
           state.inputLocked = true;
           renderAll();

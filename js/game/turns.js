@@ -263,7 +263,10 @@
         if (state?.phase === "ACTION" && state?.selectedActionType) {
           cancelSelectedCard();
         } else if (state?.phase === "PLACE_ISLAND") {
-          state.phase = "ACTION_SELECT";
+          // Pendant la mise en place personnalisée, abandonner la forme en
+          // cours ne rend pas la main au tour de jeu (il n'a pas commencé) :
+          // on revient au choix de forme du même placement.
+          state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
           state.selectedIslandShape = null;
           state.placementCells = null;
           state.placementOriginIndex = 0;

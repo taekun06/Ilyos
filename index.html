@@ -1080,15 +1080,42 @@
       <div class="symmetric-board-card">
         <div class="symmetric-board-heading">
           <div>
-            <small>DUEL SYMÉTRIQUE</small>
-            <h2>Choisissez le plateau de départ</h2>
-            <p>Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le même nombre de gardiens.
+            <small id="setupOverlayKicker">DUEL SYMÉTRIQUE</small>
+            <h2 id="setupOverlayTitle">Choisissez le plateau de départ</h2>
+            <p id="setupOverlayIntro">Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le
+              même nombre de gardiens.
             </p>
           </div>
           <span class="symmetric-board-emblem"><i class="v64-balance-icon" aria-hidden="true"></i></span>
         </div>
 
-        <div class="symmetric-board-controls">
+        <!-- Mode Personnalisé : au lieu d'un préréglage figé, chaque joueur pose
+             lui-même sa formation avant le premier tour. Ces deux sélecteurs ne
+             fixent que les quantités ; le placement se fait ensuite sur le
+             plateau, en serpentin (voir buildDraftOrder / startCustomDraft). -->
+        <div id="customSetupControls" class="symmetric-board-controls hidden">
+          <label for="customIslandCountSelect">
+            <span>Îles par joueur</span>
+            <select id="customIslandCountSelect">
+              <option value="2">2 îles</option>
+              <option value="3">3 îles</option>
+              <option value="4" selected>4 îles</option>
+              <option value="5">5 îles</option>
+              <option value="6">6 îles</option>
+            </select>
+          </label>
+          <label for="customGuardianCountSelect">
+            <span>Gardiens par joueur</span>
+            <select id="customGuardianCountSelect">
+              <option value="1">1 gardien</option>
+              <option value="2" selected>2 gardiens</option>
+              <option value="3">3 gardiens</option>
+              <option value="4">4 gardiens</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="symmetricPresetControls" class="symmetric-board-controls">
           <label for="symmetricSetupSelect">
             <span>Configuration</span>
             <select id="symmetricSetupSelect"></select>
@@ -1096,7 +1123,7 @@
           <button id="randomSymmetricSetupBtn" type="button" class="random-setup-btn">Configuration aléatoire</button>
         </div>
 
-        <div class="symmetric-board-content">
+        <div id="symmetricPresetContent" class="symmetric-board-content">
           <div id="symmetricSetupPreview" class="symmetric-setup-preview board-setup-preview" aria-hidden="true"></div>
           <div class="symmetric-setup-description board-setup-description">
             <strong id="symmetricSetupName">Archipels ouverts</strong>

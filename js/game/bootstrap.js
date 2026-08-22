@@ -125,6 +125,16 @@
         symmetricSetupWaiting: document.getElementById("symmetricSetupWaiting"),
         symmetricIslandLimitSelect: document.getElementById("symmetricIslandLimitSelect"),
         symmetricAllowDissolveCheckbox: document.getElementById("symmetricAllowDissolveCheckbox"),
+        // Mode Personnalisé : sections de l'overlay de mise en place et
+        // quantités de la formation à poser (voir startCustomDraft).
+        symmetricPresetControls: document.getElementById("symmetricPresetControls"),
+        symmetricPresetContent: document.getElementById("symmetricPresetContent"),
+        customSetupControls: document.getElementById("customSetupControls"),
+        customIslandCountSelect: document.getElementById("customIslandCountSelect"),
+        customGuardianCountSelect: document.getElementById("customGuardianCountSelect"),
+        setupOverlayKicker: document.getElementById("setupOverlayKicker"),
+        setupOverlayTitle: document.getElementById("setupOverlayTitle"),
+        setupOverlayIntro: document.getElementById("setupOverlayIntro"),
         phaseLabel: document.getElementById("phaseLabel"),
         turnLabel: document.getElementById("turnLabel"),
         turnTimer: document.getElementById("turnTimer"),
