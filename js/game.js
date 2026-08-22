@@ -9403,11 +9403,13 @@
       let onlineLocalName = "";
       let pendingOnlineStartingBoard = "classic";
       let pendingOnlineStartingPreset = "open";
+      let pendingOnlineBoardSize = DEFAULT_BOARD_SIZE;
       // 0 = aucune limite de temps (défaut). L'hôte seul décide de la valeur.
       let pendingOnlineTurnDuration = 0;
       let localPlayerIndex = null;
       let onlineConnected = false;
       let onlineReconnectTimer = null;
+      let onlineConnectTimeoutTimer = null;
       let onlineSyncTimer = null;
       let networkApplyingState = false;
       let networkRevision = 0;
@@ -9876,6 +9878,21 @@
           .join("");
       }
 
+      function boardSizeControlHTML() {
+        return `
+        <label class="mode-option-row board-size-row" for="boardSizeSelect">
+          <span>
+            <b>Taille du plateau</b>
+            <small>Le 13×13 élargit le centre : les villages restent à leurs coins, les trajets vers la couronne s’allongent.</small>
+          </span>
+          <select id="boardSizeSelect">
+            <option value="11" selected>11 × 11 — standard</option>
+            <option value="13">13 × 13 — élargi</option>
+          </select>
+        </label>
+      `;
+      }
+
       function startingBoardControlsHTML({ online = false } = {}) {
         return `
         <label class="mode-option-row starting-board-row" for="startingBoardSelect">
@@ -9888,16 +9905,7 @@
             <option value="symmetric">Duel symétrique — plateau préparé</option>
           </select>
         </label>
-        <label class="mode-option-row board-size-row" for="boardSizeSelect">
-          <span>
-            <b>Taille du plateau</b>
-            <small>Le 13×13 élargit le centre : les villages restent à leurs coins, les trajets vers la couronne s’allongent.</small>
-          </span>
-          <select id="boardSizeSelect">
-            <option value="11" selected>11 × 11 — standard</option>
-            <option value="13">13 × 13 — élargi</option>
-          </select>
-        </label>
+        ${boardSizeControlHTML()}
         ${turnTimerControlsHTML()}
       `;
       }
@@ -10119,6 +10127,14 @@
           ${startingBoardControlsHTML()}
         `;
           wireStartingBoardControls();
+        }
+
+        // Équipes : le plateau de départ reste classique (setupSelectionPending
+        // suppose 2 camps, pas 2 équipes de 2), mais la taille reste un choix
+        // valide — getVillageAssignments et le reste de la construction ne
+        // dépendent pas du preset.
+        if (selectedMode === "3" || selectedMode === "4") {
+          els.modeOptions.innerHTML = boardSizeControlHTML();
         }
 
         els.startBtn.textContent = "Lancer ILYOS — KayKit Edition";
@@ -11119,6 +11135,10 @@
           clearTimeout(onlineReconnectTimer);
           onlineReconnectTimer = null;
         }
+        if (onlineConnectTimeoutTimer) {
+          clearTimeout(onlineConnectTimeoutTimer);
+          onlineConnectTimeoutTimer = null;
+        }
         if (onlineSyncTimer) {
           clearTimeout(onlineSyncTimer);
           onlineSyncTimer = null;
@@ -11184,6 +11204,12 @@
         stopTurnTimer();
         aiRunToken++;
 
+        // L'invité ne choisit pas la taille du plateau : sans ce recalage,
+        // son GRID/CENTER/CORNERS locaux restent sur le défaut (ou une
+        // partie précédente) alors que les positions reçues sont celles de
+        // l'hôte — décalage silencieux du rendu et des cases cliquables.
+        setBoardSize(incoming.boardSize);
+
         state = incoming;
         state.onlineMode = true;
         state.soloMode = false;
@@ -11236,6 +11262,8 @@
         onlineConnection = connection;
 
         connection.on("open", () => {
+          clearTimeout(onlineConnectTimeoutTimer);
+          onlineConnectTimeoutTimer = null;
           onlineConnected = true;
           updateOnlineBadge();
 
@@ -11329,6 +11357,20 @@
           metadata: { roomCode: onlineRoomCode, role: "guest", name: onlineLocalName }
         });
         attachOnlineConnection(connection);
+
+        // Le SDK ne signale ni erreur ni "close" quand l'offre WebRTC ne reçoit
+        // jamais de réponse (hôte injoignable en pair-à-pair malgré la
+        // signalisation OK) : ça reste bloqué sur "Connexion…" indéfiniment.
+        // Ce filet transforme ce silence en échec explicite, avec reprise
+        // automatique comme les autres cas d'erreur.
+        clearTimeout(onlineConnectTimeoutTimer);
+        onlineConnectTimeoutTimer = setTimeout(() => {
+          onlineConnectTimeoutTimer = null;
+          if (onlineConnection !== connection || connection.open) return;
+          try { connection.close(); } catch (error) { }
+          setOnlineSetupStatus("Connexion impossible : l’hôte est injoignable. Nouvelle tentative…", "error");
+          scheduleGuestReconnect();
+        }, 12000);
       }
 
       function initializeOnlinePeer(role, roomCode) {
@@ -11343,7 +11385,25 @@
         localPlayerIndex = role === "host" ? 0 : 1;
         const peerId = role === "host" ? `ilyos-${roomCode.toLowerCase()}-host` : undefined;
 
-        onlinePeer = new Peer(peerId, { debug: 1 });
+        // PeerJS ne fournit qu'un unique serveur STUN par défaut. Sur certains
+        // réseaux (isolation Wi-Fi, NAT restrictif, 4G), la négociation directe
+        // échoue silencieusement et la connexion reste bloquée sans jamais
+        // déclencher d'erreur. Plusieurs STUN redondants + un relais TURN
+        // public (OpenRelay, gratuit et sans clé) donnent une vraie chance de
+        // réussir même quand le pair-à-pair direct est impossible.
+        onlinePeer = new Peer(peerId, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:global.stun.twilio.com:3478" },
+              { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+              { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+              { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+            ]
+          }
+        });
 
         onlinePeer.on("open", () => {
           if (role === "host") {
@@ -11712,6 +11772,12 @@
         stopTurnTimer();
         aiRunToken++;
 
+        /* Même règle que startLocalGame() : la taille du plateau doit être
+           fixée AVANT getVillageAssignments et le reste de la construction.
+           C'est l'hôte qui décide (pendingOnlineBoardSize) ; l'invité recevra
+           la vraie taille via l'état synchronisé, voir applyOnlineState(). */
+        setBoardSize(pendingOnlineBoardSize);
+
         const names = [
           String(hostName || "JOUEUR 1").toLocaleUpperCase("fr-FR"),
           String(guestName || "JOUEUR 2").toLocaleUpperCase("fr-FR")
@@ -11744,6 +11810,7 @@
           visualMode: pendingVisualMode,
           startingBoardMode: pendingOnlineStartingBoard,
           startingBoardPreset: null,
+          boardSize: GRID,
           turnDurationSeconds: pendingOnlineTurnDuration,
           setupSelectionPending: pendingOnlineStartingBoard === "symmetric",
           aiDifficulty: null,
@@ -11863,6 +11930,11 @@
         pendingOnlineStartingBoard = role === "host"
           ? (document.getElementById("startingBoardSelect")?.value || "classic")
           : "classic";
+        // Comme pour startingBoardMode : seul l'hôte décide, l'invité reçoit
+        // la vraie taille via l'état synchronisé (voir applyOnlineState).
+        pendingOnlineBoardSize = role === "host"
+          ? (document.getElementById("boardSizeSelect")?.value || DEFAULT_BOARD_SIZE)
+          : DEFAULT_BOARD_SIZE;
         // L'invité reçoit l'état complet de l'hôte : il n'impose pas sa propre
         // durée de tour, sinon les deux camps décompteraient différemment.
         pendingOnlineTurnDuration = role === "host" ? selectedTurnDurationSeconds() : 0;

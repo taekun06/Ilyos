@@ -291,19 +291,22 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
 
     if (mode === 'solo') {
       setSelect('startingBoardSelect', values.board || 'classic');
+      setSelect('boardSizeSelect', values.size || '11');
       setSelect('turnTimerSelect', values.timer || '0');
       setSelect('aiDifficultySelect', values.difficulty || 'normal');
     } else if (mode === 'duel') {
       setSelect('startingBoardSelect', values.board || 'classic');
+      setSelect('boardSizeSelect', values.size || '11');
       setSelect('turnTimerSelect', values.timer || '0');
       setPlayerNames(values);
     } else if (mode === 'team') {
-      setSelect('startingBoardSelect', values.board || 'classic');
+      setSelect('boardSizeSelect', values.size || '11');
       setPlayerNames(values);
     } else if (mode === 'online') {
       setSelect('onlineRoleSelect', values.role || 'host');
       setInput('onlineRoomInput', values.roomCode || 'AUTO');
       setSelect('startingBoardSelect', values.board || 'classic');
+      setSelect('boardSizeSelect', values.size || '11');
       setSelect('turnTimerSelect', values.timer || '0');
       setPlayerNames(values);
     }
