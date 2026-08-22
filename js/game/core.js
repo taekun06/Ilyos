@@ -83,6 +83,7 @@
       let localPlayerIndex = null;
       let onlineConnected = false;
       let onlineReconnectTimer = null;
+      let onlineConnectTimeoutTimer = null;
       let onlineSyncTimer = null;
       let networkApplyingState = false;
       let networkRevision = 0;
@@ -1794,6 +1795,10 @@
           clearTimeout(onlineReconnectTimer);
           onlineReconnectTimer = null;
         }
+        if (onlineConnectTimeoutTimer) {
+          clearTimeout(onlineConnectTimeoutTimer);
+          onlineConnectTimeoutTimer = null;
+        }
         if (onlineSyncTimer) {
           clearTimeout(onlineSyncTimer);
           onlineSyncTimer = null;
@@ -1911,6 +1916,8 @@
         onlineConnection = connection;
 
         connection.on("open", () => {
+          clearTimeout(onlineConnectTimeoutTimer);
+          onlineConnectTimeoutTimer = null;
           onlineConnected = true;
           updateOnlineBadge();
 
@@ -2004,6 +2011,20 @@
           metadata: { roomCode: onlineRoomCode, role: "guest", name: onlineLocalName }
         });
         attachOnlineConnection(connection);
+
+        // Le SDK ne signale ni erreur ni "close" quand l'offre WebRTC ne reçoit
+        // jamais de réponse (hôte injoignable en pair-à-pair malgré la
+        // signalisation OK) : ça reste bloqué sur "Connexion…" indéfiniment.
+        // Ce filet transforme ce silence en échec explicite, avec reprise
+        // automatique comme les autres cas d'erreur.
+        clearTimeout(onlineConnectTimeoutTimer);
+        onlineConnectTimeoutTimer = setTimeout(() => {
+          onlineConnectTimeoutTimer = null;
+          if (onlineConnection !== connection || connection.open) return;
+          try { connection.close(); } catch (error) { }
+          setOnlineSetupStatus("Connexion impossible : l’hôte est injoignable. Nouvelle tentative…", "error");
+          scheduleGuestReconnect();
+        }, 12000);
       }
 
       function initializeOnlinePeer(role, roomCode) {
@@ -2018,7 +2039,25 @@
         localPlayerIndex = role === "host" ? 0 : 1;
         const peerId = role === "host" ? `ilyos-${roomCode.toLowerCase()}-host` : undefined;
 
-        onlinePeer = new Peer(peerId, { debug: 1 });
+        // PeerJS ne fournit qu'un unique serveur STUN par défaut. Sur certains
+        // réseaux (isolation Wi-Fi, NAT restrictif, 4G), la négociation directe
+        // échoue silencieusement et la connexion reste bloquée sans jamais
+        // déclencher d'erreur. Plusieurs STUN redondants + un relais TURN
+        // public (OpenRelay, gratuit et sans clé) donnent une vraie chance de
+        // réussir même quand le pair-à-pair direct est impossible.
+        onlinePeer = new Peer(peerId, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:global.stun.twilio.com:3478" },
+              { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+              { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+              { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+            ]
+          }
+        });
 
         onlinePeer.on("open", () => {
           if (role === "host") {
