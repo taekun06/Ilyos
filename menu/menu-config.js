@@ -6,7 +6,7 @@ window.ILYOS_MENU_CONFIG = {
       label: 'SOLO', subtitle: 'Affrontez le CPU', playerCount: '1', playLabel: "AFFRONTER LE CPU",
       description: "Affrontez le CPU dans un duel stratégique sur les îles du ciel.", dot: 1,
       controls: [
-        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
+        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE'],['custom','PERSONNALISÉ']] },
         { key:'size', label:'TAILLE', default:'11', options:[['11','11×11'],['13','13×13']] },
         { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] },
         { key:'difficulty', label:'DIFFICULTÉ CPU', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] }
@@ -16,7 +16,7 @@ window.ILYOS_MENU_CONFIG = {
       label: 'DUEL LOCAL', subtitle: '2 joueurs', playerCount: '2', playLabel: 'LANCER LE DUEL',
       description: "Deux joueurs s’affrontent sur le même appareil.", dot: 0,
       controls: [
-        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
+        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE'],['custom','PERSONNALISÉ']] },
         { key:'size', label:'TAILLE', default:'11', options:[['11','11×11'],['13','13×13']] },
         { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] },
         { key:'name1', label:'JOUEUR 1', default:'JOUEUR 1', editable:true, kind:'name' },
@@ -42,7 +42,7 @@ window.ILYOS_MENU_CONFIG = {
         { key:'role', label:'SESSION', default:'host', options:[['host','CRÉER'],['guest','REJOINDRE']] },
         { key:'name1', label:'VOTRE NOM', default:'JOUEUR 1', editable:true, kind:'name' },
         { key:'roomCode', label:'CODE', default:'AUTO', editable:true, kind:'code' },
-        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE']] },
+        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE'],['custom','PERSONNALISÉ']] },
         { key:'size', label:'TAILLE', default:'11', options:[['11','11×11'],['13','13×13']] },
         { key:'timer', label:'TEMPS PAR TOUR', default:'0', options:[['0','SANS LIMITE'],['60','1 MINUTE'],['120','2 MINUTES'],['180','3 MINUTES'],['300','5 MINUTES']] }
       ]

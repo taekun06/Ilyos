@@ -5428,7 +5428,13 @@
           pushOptions: unifiedPushActive ? state.pushOptions.map(option => option.id) : null,
           pushHover: state.pushHoverOptionId,
           resting: smartResting ? [...(state.reachable || [])] : null,
-          spawnHover: state.phase === "PLACE_SPAWN" ? [state.pendingSpawnIslandId, state.hoverAnchor] : null
+          spawnHover: state.phase === "PLACE_SPAWN" ? [state.pendingSpawnIslandId, state.hoverAnchor] : null,
+          /* Mise en place personnalisée : deux placements de gardiens
+             consécutifs partagent phase ET pendingSpawnIslandId (toujours
+             null), donc sans le rang du draft la clé serait identique d'un
+             joueur à l'autre — les cases éclairées du précédent resteraient
+             affichées pour le suivant. */
+          draftPick: state.draft ? [state.draft.index, state.currentPlayer] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
@@ -5436,18 +5442,35 @@
         kaykit3D.interactiveMeshes = (kaykit3D.interactiveMeshes || []).filter(object => !!object?.parent);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
 
-        if (state.phase === "PLACE_SPAWN" && state.pendingSpawnIslandId) {
-          const spawnIsland = state.islands.find(is => is.id === state.pendingSpawnIslandId);
+        if (state.phase === "PLACE_SPAWN" && (state.pendingSpawnIslandId || state.draft)) {
+          /* Mise en place personnalisée : le gardien n'est pas rattaché à une
+             île fraîchement posée, les cases ouvertes sont toutes celles du
+             joueur (voir draftGuardianCellAllowed). */
+          const spawnIsland = state.pendingSpawnIslandId
+            ? state.islands.find(is => is.id === state.pendingSpawnIslandId)
+            : null;
+          const cellAllowed = state.draft
+            ? (r, c) => draftGuardianCellAllowed(state.currentPlayer, r, c)
+            : (r, c) => !!spawnIsland?.cells?.some(([ir, ic]) => ir === r && ic === c) && !characterAt(r, c);
+
+          const spawnCells = state.draft
+            ? [
+              ...state.islands
+                .filter(island => island.owner === state.currentPlayer)
+                .flatMap(island => island.cells),
+              ...(state.players[state.currentPlayer]?.villages || []).map(village => [village.r, village.c])
+            ]
+            : (spawnIsland?.cells || []);
+
           const hoverKey = state.hoverAnchor ? key(state.hoverAnchor[0], state.hoverAnchor[1]) : null;
-          (spawnIsland?.cells || []).forEach(([r, c]) => {
-            if (characterAt(r, c)) return;
+          spawnCells.forEach(([r, c]) => {
+            if (!cellAllowed(r, c)) return;
             if (key(r, c) === hoverKey) return;
             addKayKitSpawnAffordance(r, c);
           });
           if (state.hoverAnchor) {
             const [hr, hc] = state.hoverAnchor;
-            const allowed = !!spawnIsland?.cells?.some(([ir, ic]) => ir === hr && ic === hc) && !characterAt(hr, hc);
-            if (allowed) addKayKitSpawnGuardianGhost(hr, hc, state.currentPlayer);
+            if (cellAllowed(hr, hc)) addKayKitSpawnGuardianGhost(hr, hc, state.currentPlayer);
           }
           return;
         }
