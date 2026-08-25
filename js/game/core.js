@@ -1320,13 +1320,19 @@
           state.artifact = { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true };
         }
         state.artifact.id ||= "crown-1";
-        state.artifact.active = true;
+        /* Remise active par précaution — sauf si elle attend son entrée en jeu
+           au prochain tour, auquel cas elle doit rester hors du terrain. */
+        state.artifact.active = !(state.couronnesEnAttente || []).includes(state.artifact.id);
 
         if (!state.secondArtifact) {
           state.secondArtifact = { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         }
         state.secondArtifact.id ||= "crown-2";
         if (state.secondArtifact.active === undefined) state.secondArtifact.active = false;
+
+        /* Couronnes qui doivent entrer en jeu à l'ouverture du prochain tour.
+           Une partie enregistrée avant cette règle n'a pas le champ. */
+        if (!Array.isArray(state.couronnesEnAttente)) state.couronnesEnAttente = [];
       }
 
       function artifactSlots() {
@@ -1385,9 +1391,53 @@
         return cells[0] || { r: CENTER.r, c: CENTER.c };
       }
 
+      /* LE VERROU DES COURONNES.
+
+         Règle du jeu : il ne peut y avoir que deux couronnes sur le terrain, et
+         une couronne n'entre en jeu que si aucune n'a quitté la case de base du
+         sanctuaire pendant ce tour. Sinon elle attend l'ouverture du tour
+         suivant — c'est ce qui empêche d'enchaîner deux prises au sanctuaire
+         dans le même tour.
+
+         `centerCrownTakenThisTurn` porte cette information et se remet à zéro à
+         chaque début de tour (js/game/turns.js). Il est posé dans
+         giveArtifactToCharacter, donc sur TOUS les chemins de ramassage —
+         adjacent, en marchant sur la case, ou joué par l'IA. */
+      function couronnePeutEntrerMaintenant() {
+        return !state.centerCrownTakenThisTurn;
+      }
+
+      function differerEntreeCouronne(artifact) {
+        if (!artifact) return;
+        ensureArtifactState();
+        artifact.active = false;
+        artifact.carrierId = null;
+        if (!state.couronnesEnAttente.includes(artifact.id)) state.couronnesEnAttente.push(artifact.id);
+      }
+
+      /* Appelée à l'ouverture de chaque tour, une fois le verrou relâché. */
+      function faireEntrerCouronnesEnAttente() {
+        ensureArtifactState();
+        const enAttente = state.couronnesEnAttente;
+        if (!enAttente.length) return;
+        state.couronnesEnAttente = [];
+        for (const id of enAttente) {
+          const artifact = artifactSlots().find(slot => slot.id === id);
+          if (!artifact) continue;
+          // La seconde couronne garde son annonce propre ; les autres se
+          // reposent simplement sur le terrain.
+          if (artifact === state.secondArtifact && !artifact.active) activateSecondCrownIfNeeded();
+          else resetArtifactObject(artifact);
+        }
+      }
+
       function activateSecondCrownIfNeeded() {
         ensureArtifactState();
         if (state.secondArtifact.active || !state.artifact.carrierId) return false;
+        if (!couronnePeutEntrerMaintenant()) {
+          differerEntreeCouronne(state.secondArtifact);
+          return false;
+        }
         const spawn = findCrownSpawnCell(state.secondArtifact.id);
         state.secondArtifact.active = true;
         state.secondArtifact.carrierId = null;
@@ -1411,8 +1461,16 @@
         const previousCarrierId = artifact.carrierId;
         const fromR = artifact.r;
         const fromC = artifact.c;
+        /* Une couronne libre posée sur la case de base du sanctuaire : la
+           prendre ferme le verrou pour le reste du tour. Le test est ici et non
+           sur chaque appelant, parce que tous passent par cette fonction —
+           ramassage adjacent, arrivée sur la case en marchant, coups de l'IA. */
+        const priseAuSanctuaire = previousCarrierId === null
+          && artifact.r === CENTER.r
+          && artifact.c === CENTER.c;
         artifact.active = true;
         artifact.carrierId = char.id;
+        if (priseAuSanctuaire) state.centerCrownTakenThisTurn = true;
         activateSecondCrownIfNeeded();
         if (previousCarrierId != null && previousCarrierId !== char.id) {
           const previous = characterById(previousCarrierId);
@@ -1424,6 +1482,14 @@
 
       function resetArtifactObject(artifact) {
         if (!artifact) return;
+        /* Une couronne validée, ou lâchée par un gardien qui quitte le jeu,
+           revient au sanctuaire — immédiatement si aucune couronne n'en est
+           partie ce tour-ci, sinon à l'ouverture du tour suivant. */
+        if (!couronnePeutEntrerMaintenant()) {
+          differerEntreeCouronne(artifact);
+          oublierMemoireCouronne(artifact);
+          return;
+        }
         artifact.active = true;
         artifact.carrierId = null;
         const spawn = findCrownSpawnCell(artifact.id);
@@ -1434,17 +1500,19 @@
           artifact.carrierId = occupant.id;
           activateSecondCrownIfNeeded();
         }
-        // aiCrownMemory (voir aiCrownActionUsed/markAICrownAction, js/game/ai.js)
-        // marque "passe gratuite déjà faite" / "pose+poussée déjà faite" par
-        // identifiant de couronne, sans jamais s'effacer — un jeton ne
-        // pouvait donc bénéficier de ces tactiques gratuites qu'une seule
-        // fois sur TOUTE la partie. Une couronne qui repart de zéro après
-        // avoir été validée mérite un nouveau trajet, donc un nouveau droit
-        // à ces tactiques.
-        if (state.aiCrownMemory) {
-          delete state.aiCrownMemory[`${artifact.id}:handoff`];
-          delete state.aiCrownMemory[`${artifact.id}:drop-push`];
-        }
+        oublierMemoireCouronne(artifact);
+      }
+
+      // aiCrownMemory (voir aiCrownActionUsed/markAICrownAction, js/game/ai.js)
+      // marque "passe gratuite déjà faite" / "pose+poussée déjà faite" par
+      // identifiant de couronne, sans jamais s'effacer — un jeton ne pouvait
+      // donc bénéficier de ces tactiques gratuites qu'une seule fois sur TOUTE
+      // la partie. Une couronne qui repart de zéro après avoir été validée
+      // mérite un nouveau trajet, donc un nouveau droit à ces tactiques.
+      function oublierMemoireCouronne(artifact) {
+        if (!artifact || !state.aiCrownMemory) return;
+        delete state.aiCrownMemory[`${artifact.id}:handoff`];
+        delete state.aiCrownMemory[`${artifact.id}:drop-push`];
       }
 
       function playerShortName(player) {
@@ -2812,6 +2880,7 @@
           rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
+          couronnesEnAttente: [],
           treasureDropFromId: null,
           crownPickupCell: null,
           crownStealTargetId: null,
@@ -3026,6 +3095,7 @@
           rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
+          couronnesEnAttente: [],
           treasureDropFromId: null,
           crownPickupCell: null,
           selectedIslandShape: null,
