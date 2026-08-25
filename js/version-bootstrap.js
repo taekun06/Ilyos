@@ -235,7 +235,13 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   scripts.forEach(src=>{
     const script=document.createElement('script');
     script.src=src;
-    script.defer=true;
+    /* `async = false` est ce qui ordonne réellement l'exécution. Un script créé
+       par script est asynchrone par défaut : `defer` n'a aucun effet sur lui, et
+       la liste ci-dessus s'exécutait donc dans l'ordre d'arrivée du réseau. Les
+       passes V10 et V12 construisent toutes deux le bandeau d'instruction du
+       HUD — la dernière arrivée gagnait, d'un chargement à l'autre, et le
+       bandeau changeait de typographie tout seul (Almendra ou Georgia). */
+    script.async=false;
     document.head.appendChild(script);
   });
 })();
