@@ -392,6 +392,9 @@
       els.hand.addEventListener("wheel", handleActionWheel, { passive: false });
       els.boardWrap.addEventListener("click", cancelFromBackdrop);
       document.addEventListener("keydown", handleRotateKey);
+      // Après handleRotateKey, qui garde la priorité sur les flèches quand une
+      // île ou une rotation magique est en cours (voir handleCameraKey).
+      document.addEventListener("keydown", handleCameraKey);
       // Échap : ferme d'abord une éventuelle fenêtre ouverte (règles, menu son) —
       // sans quoi Échap déclencherait une annulation de coup EN PLUS de fermer la
       // fenêtre au clic suivant, un comportement surprenant. Sinon, même geste que
