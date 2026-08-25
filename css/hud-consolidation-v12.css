@@ -47,7 +47,7 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve
   color:#f0d68e;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.74);flex:none
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{color:#d8b5ff!important;border:0!important;background:transparent!important;box-shadow:none!important}
-body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-label{display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-label{display:none}
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{
   position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:46px;height:28px;padding:0 11px!important;
   border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important

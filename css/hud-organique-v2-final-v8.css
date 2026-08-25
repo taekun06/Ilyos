@@ -13,8 +13,8 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-guardian{
   backdrop-filter:blur(6px) saturate(.92)!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action::before{
-  -webkit-backdrop-filter:blur(4px) saturate(.88)!important;
-  backdrop-filter:blur(4px) saturate(.88)!important;
+  -webkit-backdrop-filter:blur(4px) saturate(.88);
+  backdrop-filter:blur(4px) saturate(.88);
 }
 
 /* ===== Portraits : image fournie, recadrée dans le cercle d'origine ===== */
@@ -37,11 +37,11 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
   filter:drop-shadow(0 1px 2px rgba(0,0,0,.62))!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty path{
-  fill:transparent!important;
-  stroke:currentColor!important;
-  stroke-width:1.65!important;
-  stroke-linejoin:round!important;
-  vector-effect:non-scaling-stroke!important;
+  fill:transparent;
+  stroke:currentColor;
+  stroke-width:1.65;
+  stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
 }
 
 /* ===== Actions : disponible / indisponible / sélectionnée ===== */
@@ -118,15 +118,15 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
   overflow:visible!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo .ov2-undo-svg{
-  display:block!important;
-  width:27px!important;
-  height:27px!important;
-  fill:none!important;
-  stroke:currentColor!important;
-  stroke-width:3!important;
-  stroke-linecap:round!important;
-  stroke-linejoin:round!important;
-  pointer-events:none!important;
+  display:block;
+  width:27px;
+  height:27px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  pointer-events:none;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo::after{
   content:"ANNULER";

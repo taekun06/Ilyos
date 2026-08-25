@@ -102,3 +102,53 @@ créé par script est asynchrone par défaut — `defer` n'a aucun effet sur lui
 bien que l'ordre d'exécution suivait l'ordre d'arrivée du réseau. Le bandeau
 changeait donc de typographie d'un chargement à l'autre, Almendra ou Georgia
 selon la course. Corrigé dans les deux injecteurs.
+
+---
+
+# Audit des `!important`
+
+`scripts/audit-important.js` répond à la question qui bloque la mise en couches :
+sur les 10 186 déclarations prioritaires du dépôt, **lesquelles arbitrent
+réellement un conflit ?**
+
+Pour chaque règle et chaque propriété déclarée en `!important`, le script compte
+combien de règles déclarent cette même propriété sur les mêmes éléments. Une
+seule : le drapeau n'arbitre rien. Plusieurs : il porte peut-être quelque chose.
+
+```
+npm run audit:important
+npm run audit:important -- --corriger css/base.css
+```
+
+## L'état des lieux, mesuré le 25 août 2026
+
+| | |
+|---|---|
+| Règles | 2 619 |
+| Déclarations `!important` | 10 186 |
+| Sans aucun concurrent | **4 070 (40 %)** |
+| Règles n'atteignant aucun élément | 1 044 |
+
+## Pourquoi `--corriger` n'en retire que 86
+
+Il ne touche qu'aux règles dont **toutes** les déclarations prioritaires sont
+sans concurrent, et qui atteignent au moins un élément. Deux conditions, deux
+raisons :
+
+- **Tout ou rien**, parce qu'un raccourci comme `margin: 0 !important` s'écrit
+  une fois mais produit quatre déclarations longues. Si l'une est contestée et
+  pas les autres, retirer le drapeau du raccourci changerait le rendu.
+- **Règle vivante**, parce qu'une règle qui n'atteint rien ressort
+  mécaniquement « sans concurrent » faute de concurrent observable. C'est une
+  absence de preuve, pas une preuve d'absence — et l'empreinte ne pourrait pas
+  l'infirmer, puisqu'elle mesure les mêmes états.
+
+Résultat : 86 déclarations sur 10 186, soit 0,8 %. Presque chaque règle mélange
+du contesté et du non contesté, donc le tout-ou-rien ne se déclenche presque
+jamais.
+
+**Pour aller plus loin, il faut travailler déclaration par déclaration**, ce qui
+suppose de savoir en quelles propriétés longues chaque raccourci se développe.
+Le moteur sait le faire — `element.style.setProperty(raccourci, valeur)` puis
+énumération — mais ce n'est pas encore branché ici. C'est le prochain pas, et
+c'est lui qui ouvre les 40 %.
