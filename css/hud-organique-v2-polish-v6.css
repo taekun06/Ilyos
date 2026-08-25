@@ -28,16 +28,22 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon{
   border-bottom-color:rgba(230,183,75,.30)!important;
   backdrop-filter:blur(5px)!important;
 }
+/* La gouttière droite était de 8% du côté — 44px inutilisés à 1440px, juste à
+   côté d'un nom tronqué. Elle reste assez large pour que le dégradé de fond
+   s'éteigne avant le bord, et le ruban demeure dans sa propre colonne de la
+   grille : aucun risque de toucher l'indicateur de tour, séparé par le gap. */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-left .ov2-ribbon{
   left:86px!important;
-  right:8%!important;
+  right:2%!important;
   padding-left:18px!important;
+  padding-right:18px!important;
   background:linear-gradient(90deg,rgba(5,17,28,.72),rgba(5,17,28,.38) 62%,transparent)!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-ribbon{
-  left:8%!important;
+  left:2%!important;
   right:86px!important;
   padding-right:18px!important;
+  padding-left:18px!important;
   background:linear-gradient(-90deg,rgba(24,10,39,.74),rgba(24,10,39,.38) 62%,transparent)!important;
   border-color:rgba(168,109,242,.30)!important;
 }
