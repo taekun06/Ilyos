@@ -907,9 +907,9 @@
         //
         // Passe éclairage/volume (visual-lighting-materials-v1) : ces valeurs
         // étaient auparavant re-clampées au runtime par deux scripts nommés
-        // "HUD" (js/hud-organique-v2-depth-v9.js et -v10.js) qui ne touchaient
+        // "HUD" (hud-organique-v2-depth-v9.js et -v10.js) qui ne touchaient
         // en réalité qu'à ces mêmes 3 lumières — source de vérité désormais
-        // consolidée ici, ces deux fichiers sont neutralisés. Le ratio
+        // consolidée ici, ces deux fichiers ayant depuis été supprimés. Le ratio
         // ambient+hémisphère/soleil était trop favorable aux lumières
         // omnidirectionnelles (elles éclairent toutes les faces quasi
         // uniformément, quel que soit leur angle par rapport au soleil), ce
