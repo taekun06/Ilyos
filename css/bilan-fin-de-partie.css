@@ -1,0 +1,105 @@
+/* ILYOS — BILAN DE FIN DE PARTIE
+   Le tableau récapitulatif affiché sous l'annonce du vainqueur : une ligne par
+   joueur, une colonne par grandeur.
+
+   Feuille chargée en dernier dans index.html, et tous les sélecteurs ancrés sur
+   #victoryModal — un identifiant l'emporte sur n'importe quel empilement de
+   classes, quelle que soit la longueur du sélecteur adverse. C'est le motif
+   recommandé par js/game/README.md, et il évite d'avoir à poser un seul
+   !important : rien ici ne se bat avec les huit passes du HUD, qui ne visent
+   pas cette fenêtre.
+
+   Les couleurs ne sont pas choisies mais relevées sur la carte de victoire
+   elle-même, au getComputedStyle : fond crème rgb(251,248,238), encre
+   rgb(23,56,74), texte adouci rgb(79,111,125), or de la bordure
+   rgb(201,164,93). Une première version avait supposé un fond sombre et
+   produisait un tableau presque illisible. */
+
+#victoryModal .victory-recap {
+  --bilan-encre: #17384a;
+  --bilan-adouci: #4f6f7d;
+  --bilan-or: #c9a45d;
+  --bilan-trait: rgba(201, 164, 93, .34);
+  --bilan-trait-fin: rgba(23, 56, 74, .10);
+
+  width: min(100%, 30rem);
+  margin: 14px auto 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--bilan-trait);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+/* Le tableau défile latéralement plutôt que de déborder la carte : à six
+   colonnes sur un téléphone, il n'y a pas d'autre issue honnête. */
+#victoryModal .victory-recap-defilement {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#victoryModal .victory-recap table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+#victoryModal .victory-recap th,
+#victoryModal .victory-recap td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--bilan-trait-fin);
+}
+
+#victoryModal .victory-recap thead th {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--bilan-adouci);
+  border-bottom-color: var(--bilan-trait);
+}
+
+#victoryModal .victory-recap thead th:not(:first-child),
+#victoryModal .victory-recap tbody td:not(:first-child) {
+  text-align: center;
+}
+
+#victoryModal .victory-recap tbody td {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--bilan-encre);
+}
+
+/* Le nom du joueur prend la couleur qu'il porte sur le plateau : la ligne se
+   rattache d'un coup d'œil au camp, sans légende. Aucune largeur maximale — un
+   nom coupé dans un bilan de fin de partie serait une drôle de façon de célébrer
+   une victoire. C'est le tableau qui défile si besoin, pas le nom qui cède. */
+#victoryModal .victory-recap .bilan-joueur {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--bilan-couleur, var(--bilan-encre));
+}
+
+#victoryModal .victory-recap tr[data-vainqueur] .bilan-joueur::before {
+  content: "✦ ";
+  color: var(--bilan-or);
+}
+
+#victoryModal .victory-recap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Un zéro ne mérite pas le même poids qu'un résultat : il s'efface. */
+#victoryModal .victory-recap .bilan-zero {
+  color: var(--bilan-adouci);
+  font-weight: 500;
+  opacity: .62;
+}
+
+@media (max-width: 560px) {
+  #victoryModal .victory-recap th,
+  #victoryModal .victory-recap td { padding: 6px 7px; }
+  #victoryModal .victory-recap tbody td { font-size: 14px; }
+}

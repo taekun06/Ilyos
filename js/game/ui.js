@@ -2675,7 +2675,12 @@
            plus qu'un blanc au moment précis de l'action. Réduit à 80 ms, la
            chute démarre pendant la réaction HIT du gardien et se déroule sur
            toute l'éjection puis la descente. */
-        if (fallDirection) playSfx("fall", { c: char.c, delay: .08 });
+        if (fallDirection) {
+          playSfx("fall", { c: char.c, delay: .08 });
+          // fallDirection ne vaut que pour une vraie chute hors du plateau : un
+          // gardien retiré après avoir validé une couronne n'en est pas une.
+          compterStatistique(char.player, "chutes");
+        }
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
       }
@@ -2993,6 +2998,10 @@
         } else {
           showToast(`${impacted} gardien${impacted > 1 ? "s" : ""} repoussé${impacted > 1 ? "s" : ""} de ${pushDistance} case${pushDistance > 1 ? "s" : ""}.`);
         }
+
+        // Comptée ici et non à l'entrée : la fonction sort plus haut quand la
+        // force est insuffisante, et une poussée refusée n'est pas une poussée.
+        compterStatistique(state.currentPlayer, "poussees");
 
         return {
           from: leadFrom,
@@ -3949,6 +3958,66 @@
         beginTurn();
         forceOnlineSync();
       }
+      /* Le bilan de fin de partie : une ligne par joueur, une colonne par
+         grandeur. Rien n'est calculé ici qui ne soit déjà dans l'état — les
+         poussées, chutes et couronnes ramassées viennent des compteurs tenus
+         pendant la partie, les îles et le score se lisent directement.
+
+         Construit par le DOM plutôt que par innerHTML : le nom d'un joueur est
+         une saisie libre, et textContent règle la question de l'échappement une
+         fois pour toutes au lieu d'ajouter un utilitaire qu'on oubliera
+         d'appeler la prochaine fois. */
+      const BILAN_COLONNES = [
+        { titre: "Couronnes", valeur: (joueur) => joueur.score || 0 },
+        { titre: "Ramassées", valeur: (joueur, i) => statistiquesDuJoueur(i).couronnes },
+        { titre: "Îles posées", valeur: (joueur, i) => ilesPoseesPar(i) },
+        { titre: "Poussées", valeur: (joueur, i) => statistiquesDuJoueur(i).poussees },
+        { titre: "Chutes", valeur: (joueur, i) => statistiquesDuJoueur(i).chutes }
+      ];
+
+      function renderVictoryRecap(vainqueur) {
+        if (!els.victoryRecap || !state) return;
+        els.victoryRecap.textContent = "";
+
+        const creer = (balise, classe, texte) => {
+          const noeud = document.createElement(balise);
+          if (classe) noeud.className = classe;
+          if (texte !== undefined) noeud.textContent = texte;
+          return noeud;
+        };
+
+        const table = creer("table");
+        const enTete = creer("tr");
+        enTete.appendChild(creer("th", null, "Joueur"));
+        BILAN_COLONNES.forEach(colonne => enTete.appendChild(creer("th", null, colonne.titre)));
+        const thead = creer("thead");
+        thead.appendChild(enTete);
+        table.appendChild(thead);
+
+        const corps = creer("tbody");
+        (state.players || []).forEach((joueur, index) => {
+          const ligne = creer("tr");
+          if (vainqueur && joueur === vainqueur) ligne.dataset.vainqueur = "";
+
+          const cellNom = creer("td", "bilan-joueur", joueur.name || "Joueur");
+          if (joueur.color) cellNom.style.setProperty("--bilan-couleur", joueur.color);
+          ligne.appendChild(cellNom);
+
+          BILAN_COLONNES.forEach(colonne => {
+            const valeur = colonne.valeur(joueur, index);
+            ligne.appendChild(creer("td", valeur ? null : "bilan-zero", String(valeur)));
+          });
+          corps.appendChild(ligne);
+        });
+        table.appendChild(corps);
+
+        const defilement = creer("div", "victory-recap-defilement");
+        defilement.appendChild(table);
+        els.victoryRecap.appendChild(defilement);
+        // Pas de ligne de durée ici : la pastille #victoryStats juste au-dessus
+        // annonce déjà les tours et les manches.
+      }
+
       function showVictory(player) {
         stopTurnTimer();
         aiRunToken++;
@@ -3960,6 +4029,7 @@
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
+        renderVictoryRecap(player);
 
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;

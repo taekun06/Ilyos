@@ -252,6 +252,23 @@
     modalBody.innerHTML=`<div class="rules-grid"><section><b>OBJECTIF</b><p>Validez 3 couronnes avant votre adversaire.</p></section><section><b>VOTRE TOUR</b><p>Posez une île, puis utilisez vos actions de déplacement, poussée et magie.</p></section><section><b>COURONNES</b><p>Récupérez, transmettez et ramenez les couronnes jusqu’à votre zone de validation.</p></section><section><b>2 CONTRE 2</b><p>Les deux partenaires partagent le même score. La première équipe à 3 couronnes gagne.</p></section></div>`;
     modal.classList.add('open');
   }
+  /* Les crédits. Les packs KayKit sont libres d'usage mais leur auteur mérite
+     d'être nommé, et les trois bibliothèques qui font tourner le jeu aussi.
+     Même structure que les règles, donc même mise en forme sans une ligne de
+     CSS supplémentaire. */
+  function openCredits(){
+    modalTitle.textContent='CRÉDITS';
+    modalBody.innerHTML=`<div class="rules-grid">`
+      +`<section><b>MODÈLES 3D</b><p>KayKit — Medieval Builder, Adventurers et Dungeon Remastered, par Kay Lousberg. Packs libres d’usage.</p></section>`
+      +`<section><b>MOTEUR 3D</b><p>Three.js, avec GLTFLoader, SkeletonUtils et OrbitControls.</p></section>`
+      +`<section><b>PARTIES EN LIGNE</b><p>PeerJS, pour la connexion directe entre deux navigateurs.</p></section>`
+      +`<section><b>TYPOGRAPHIE</b><p>Cinzel Decorative, Almendra, Nunito Sans et Inter.</p></section>`
+      +`<section><b>SON</b><p>Musique et bruitages entièrement synthétisés dans le navigateur, sans aucun fichier audio.</p></section>`
+      +`<section><b>JEU</b><p>ILYOS — règles, développement et direction artistique par taekun06.</p></section>`
+      +`</div>`;
+    modal.classList.add('open');
+  }
+
   function openComingSoon(label){modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
@@ -265,7 +282,7 @@
     if(action==='fullscreen') return toggleFullscreen();
     if(action==='rules'||action==='help') return openRules();
     if(action==='tutorial') return openComingSoon('TUTORIEL');
-    if(action==='credits') return openComingSoon('CRÉDITS');
+    if(action==='credits') return openCredits();
     send('action',{action});
   }));
   syncFullscreenButtons();

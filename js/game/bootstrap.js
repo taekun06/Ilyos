@@ -191,6 +191,7 @@
         closeRulesBtn: document.getElementById("closeRulesBtn"),
 
         victoryModal: document.getElementById("victoryModal"),
+        victoryRecap: document.getElementById("victoryRecap"),
         victoryTitle: document.getElementById("victoryTitle"),
         victoryText: document.getElementById("victoryText"),
         victoryPortrait: document.getElementById("victoryPortrait"),

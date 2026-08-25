@@ -3,9 +3,16 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ILYOS V76 — Animations</title>
-  <link rel="icon" href="data:,">
+  <!-- L'onglet et le favori avaient une icône explicitement vide (data:,).
+       L'icône SVG couvre les navigateurs modernes, les PNG servent au manifeste
+       et à l'écran d'accueil iOS, qui ne lit pas le SVG. -->
+  <link rel="icon" type="image/svg+xml" href="./assets/icone.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icone-192.png">
+  <link rel="apple-touch-icon" href="./assets/icone-192.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#0a1722">
   
   <link rel="stylesheet" href="./css/base.css?v=20260815-gameplay-fixes2">
   <link rel="stylesheet" href="./css/turn-flow-ux.css?v=20260815-gameplay-fixes2">
@@ -1375,6 +1382,7 @@
       <h2 id="victoryTitle">Victoire !</h2>
       <p id="victoryText" class="victory-text"></p>
       <div id="victoryStats" class="victory-stats"></div>
+      <div id="victoryRecap" class="victory-recap"></div>
       <div class="modal-actions">
         <button id="replayBtn" class="primary-btn">Rejouer</button>
         <button id="backSetupBtn" class="secondary-btn">Configuration</button>
@@ -5182,6 +5190,7 @@
   <link rel="stylesheet" href="./css/sanctuary-celeste.css?v=20260815-gameplay-fixes2">
   <link rel="stylesheet" href="./css/fluidity.css?v=20260815-gameplay-fixes2">
   <link rel="stylesheet" href="./css/hud-v2.css?v=20260816-natural-islands2">
+  <link rel="stylesheet" href="./css/bilan-fin-de-partie.css?v=20260826-bilan1">
   <script id="v75-1-version-authority" src="./js/version-authority.js?v=20260815-gameplay-fixes2"></script>
 </body>
 
