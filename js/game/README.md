@@ -108,3 +108,23 @@ established a few reusable patterns — look for these before writing a new one:
   `css/sanctuary-celeste.css`, `css/fluidity.css`) is still the right
   pattern for a whole pass — just apply the two defaults above within it
   from the start.
+  3. **Before and after any cascade change, take a computed-style
+     fingerprint**: `npm run empreinte -- .empreintes/avant.json`, make the
+     change, take another, then
+     `npm run empreinte:comparer -- .empreintes/avant.json .empreintes/apres.json`.
+     It walks every element in four game states and diffs 55 computed
+     properties plus the bounding rect, so a rule that silently stops
+     applying shows up as an explicit before/after line instead of being
+     noticed three passes later. See `scripts/empreinte-css.js` — its header
+     explains what is and is not reproducible, and why.
+
+  Measured 25/08/2026, and worth knowing before trusting any of this: the
+  cascade is **39 sources deep at runtime** (26 stylesheets, 13 inline
+  `<style>` blocks), 2 619 rules, **10 186 resolved `!important`
+  declarations** — far more than the 3 860 the source-level grep suggests,
+  because a shorthand like `margin: 0 !important` resolves into four
+  important longhands. This is why `@layer` cannot simply be dropped on top:
+  among `!important` declarations the layer order **inverts** (earliest layer
+  wins, and unlayered `!important` loses to any layered one), so layering
+  `base.css` alone would push its 3 224 important declarations ahead of every
+  later pass. The `!important` count has to come down first.
