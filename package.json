@@ -1,0 +1,18 @@
+{
+  "name": "ilyos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ILYOS — jeu de plateau 3D dans le navigateur. Le jeu lui-même est un site statique sans dépendance : ce package.json ne sert qu'à l'outillage (serveur de développement, build des fragments, tests de bout en bout).",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "node scripts/dev-server.js",
+    "build": "node scripts/build-game.js --write",
+    "build:check": "node scripts/build-game.js",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:install": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

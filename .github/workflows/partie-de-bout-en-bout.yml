@@ -1,0 +1,54 @@
+# Le harnais de test du jeu existait déjà — `window.ILYOS_TEST`, le mode IA
+# contre IA, `ILYOS_API.launchConfiguredGame()` — mais rien ne l'exécutait :
+# une régression qui casse une partie ne se voyait qu'en jouant, donc tard.
+#
+# Ce workflow joue une partie entière dans un vrai navigateur et échoue sur la
+# moindre exception, le moindre `console.error` ou la moindre ressource
+# manquante. Il complète « Intégrité du build », qui vérifie le fichier servi
+# mais ne l'exécute jamais.
+#
+# Déclenchement : sur chaque pull request et sur `main`, pas sur chaque push de
+# branche — la partie dure quelques minutes, et « Intégrité du build » tient
+# déjà le rôle de contrôle instantané.
+name: Partie de bout en bout
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  partie:
+    name: une partie IA contre IA va jusqu'à la victoire
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Installer l'outillage de test
+        run: npm ci
+
+      # --with-deps ajoute les bibliothèques système dont Chromium a besoin sur
+      # un runner nu ; sans elles le navigateur ne démarre tout simplement pas.
+      - name: Installer Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Jouer la partie
+        run: npx playwright test
+
+      # En cas d'échec, la trace Playwright rejoue la partie pas à pas, avec le
+      # DOM, la console et le réseau de chaque instant — nettement plus utile
+      # qu'une ligne d'erreur pour comprendre où la partie a déraillé.
+      - name: Conserver la trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-playwright
+          path: test-results/
+          retention-days: 7

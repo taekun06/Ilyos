@@ -1,2 +1,10 @@
 # Préférences locales de l'outillage (propres à chaque machine).
 .claude/settings.local.json
+
+# Outillage de test : dépendances et sorties de Playwright. Le jeu servi, lui,
+# ne dépend d'aucun paquet npm — rien de tout cela n'est publié.
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
