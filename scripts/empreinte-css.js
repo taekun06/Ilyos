@@ -40,6 +40,12 @@
    l'IA. Si un état de mi-partie devient nécessaire un jour, il faudra le
    construire par une suite de coups scriptée, pas en laissant l'IA jouer.
 
+   Une contrainte d'usage, apprise à la dure : **relever sur une machine au
+   repos**. Une paire de relevés prise pendant qu'un test de bout en bout
+   tournait à côté a produit 93 écarts sur un code pourtant identique — hauteurs
+   de texte, disposition du menu, joueur actif. Les mêmes deux relevés, machine
+   libre, en donnent zéro. Ne pas lancer `npm test` en parallèle.
+
    Pour vérifier que l'outil lui-même est fiable : relever deux fois de suite
    sans rien changer, puis comparer. La sortie doit être vide.
 

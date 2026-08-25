@@ -13,6 +13,16 @@
   function ensureInstructionMarkup(){
     const instruction = byId('ov2Instruction');
     if (!instruction || instruction.dataset.v10Instruction === '1') return;
+    /* La V12 s'efface devant personne : si elle a déjà bâti le bandeau, on la
+       laisse. Sa typographie — Almendra, l'interlettrage, la triple ombre —
+       s'accorde au reste du jeu, là où la reprise ci-dessous retombe sur
+       Georgia. Même idiome que pour le panneau de rotation (PR #44).
+
+       Passer par l'ordre de chargement plutôt que par ce garde-fou serait plus
+       court, mais coûte cher : mesuré à l'empreinte, remonter ce script avant
+       la V12 rend le HUD instable d'un chargement à l'autre — joueur actif,
+       panneaux latéraux et ordre des cartes changent alors sans raison. */
+    if (instruction.dataset.v12Instruction === '1') return;
     const line = instruction.querySelector('.ov2-instruction-line');
     const text = [...instruction.childNodes]
       .filter(node => node.nodeType === Node.TEXT_NODE)

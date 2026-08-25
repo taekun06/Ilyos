@@ -73,6 +73,11 @@ Le serveur doit tourner sur le port 8126 (`node scripts/dev-server.js 8126`),
 ou passer `--port`. Les sorties vont dans `.empreintes/`, qui n'est pas
 versionné.
 
+> **Relever sur une machine au repos.** Une paire de relevés prise pendant qu'un
+> `npm test` tournait à côté a donné 93 écarts sur un code identique — hauteurs
+> de texte, disposition du menu, joueur actif. Les mêmes deux relevés, machine
+> libre : zéro.
+
 ## Ce que l'outil garantit, et ce qu'il ne garantit pas
 
 Le déterminisme a coûté quatre itérations, et chacune a appris quelque chose —
