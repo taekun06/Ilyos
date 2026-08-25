@@ -68,7 +68,11 @@
         // atteinte, la pose d'île redevient facultative au lieu de rester
         // obligatoire sans qu'aucune forme ne puisse plus être choisie.
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id);
+        /* Le verrou du sanctuaire se relâche ici, et les couronnes qui
+           attendaient leur entrée en jeu arrivent alors — dans cet ordre, sans
+           quoi elles se remettraient aussitôt en attente. */
         state.centerCrownTakenThisTurn = false;
+        faireEntrerCouronnesEnAttente();
         state.treasureDropFromId = null;
         state.crownPickupCell = null;
         state.selectedIslandShape = null;
@@ -147,6 +151,7 @@
           characters: state.characters,
           artifact: state.artifact,
           secondArtifact: state.secondArtifact,
+          couronnesEnAttente: [...(state.couronnesEnAttente || [])],
           phase: state.phase,
           islandPlacedThisTurn: state.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!state.centerCrownTakenThisTurn,
@@ -211,6 +216,7 @@
         state.characters = snap.characters;
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
+        state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;
