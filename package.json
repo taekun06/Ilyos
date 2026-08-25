@@ -12,6 +12,7 @@
     "test:headed": "playwright test --headed",
     "empreinte": "node scripts/empreinte-css.js relever",
     "empreinte:comparer": "node scripts/empreinte-css.js comparer",
+    "audit:important": "node scripts/audit-important.js",
     "test:install": "playwright install --with-deps chromium"
   },
   "devDependencies": {
