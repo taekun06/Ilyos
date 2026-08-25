@@ -4,8 +4,9 @@
     {
       "name": "ilyos",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/dev-server.js", "8123"],
-      "port": 8123
+      "runtimeArgs": ["scripts/dev-server.js"],
+      "port": 8123,
+      "autoPort": true
     }
   ]
 }
