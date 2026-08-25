@@ -1335,6 +1335,37 @@
         if (!Array.isArray(state.couronnesEnAttente)) state.couronnesEnAttente = [];
       }
 
+      /* STATISTIQUES DE PARTIE, pour le bilan de fin.
+
+         Trois grandeurs seulement sont comptées ici — poussées, gardiens
+         tombés, couronnes ramassées — parce qu'elles sont historiques et ne se
+         lisent nulle part dans l'état final. Les îles posées, elles, se
+         déduisent de state.islands : inutile de les instrumenter, et le compte
+         reste juste à travers les annulations sans effort particulier.
+
+         Créées à la demande : une partie enregistrée avant cette version n'a
+         pas le champ, et les deux chemins de création de partie n'ont pas à
+         s'en soucier. L'instantané d'annulation passe par JSON.stringify, donc
+         les compteurs y sont copiés en profondeur et reviennent correctement. */
+      function statistiquesDuJoueur(indexJoueur) {
+        const joueur = state && state.players && state.players[indexJoueur];
+        if (!joueur) return null;
+        if (!joueur.stats) joueur.stats = { poussees: 0, chutes: 0, couronnes: 0 };
+        return joueur.stats;
+      }
+
+      function compterStatistique(indexJoueur, cle) {
+        const stats = statistiquesDuJoueur(indexJoueur);
+        if (stats) stats[cle] = (stats[cle] || 0) + 1;
+      }
+
+      /* Îles réellement posées pendant la partie : celles de la mise en place
+         (duel symétrique, formation personnalisée) portent fromSetup et ne
+         comptent pas — elles n'ont été jouées par personne. */
+      function ilesPoseesPar(indexJoueur) {
+        return (state.islands || []).filter(ile => ile.owner === indexJoueur && !ile.fromSetup).length;
+      }
+
       function artifactSlots() {
         ensureArtifactState();
         return [state.artifact, state.secondArtifact];
@@ -1471,6 +1502,9 @@
         artifact.active = true;
         artifact.carrierId = char.id;
         if (priseAuSanctuaire) state.centerCrownTakenThisTurn = true;
+        // Ramassage au sol : une passe d'un gardien à un autre n'est pas une
+        // prise, et ne doit donc pas gonfler le compte du receveur.
+        if (previousCarrierId === null) compterStatistique(char.player, "couronnes");
         activateSecondCrownIfNeeded();
         if (previousCarrierId != null && previousCarrierId !== char.id) {
           const previous = characterById(previousCarrierId);

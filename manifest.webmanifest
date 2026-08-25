@@ -1,0 +1,34 @@
+{
+  "name": "ILYOS — le jeu des îles suspendues",
+  "short_name": "ILYOS",
+  "description": "Posez des îles, déplacez vos gardiens et rapportez trois couronnes dans votre coin avant votre adversaire.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0a1722",
+  "theme_color": "#0a1722",
+  "categories": ["games", "board"],
+  "icons": [
+    {
+      "src": "./assets/icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icone.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
