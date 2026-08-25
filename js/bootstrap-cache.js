@@ -44,6 +44,9 @@ function ilyosLoadScriptOnce(marker, src) {
   if (document.querySelector(`script[data-ilyos-loader="${marker}"]`)) return;
   const node = document.createElement('script');
   node.src = src;
+  // Même raison que dans js/version-bootstrap.js : sans `async = false`, ces
+  // scripts s'exécutent dans leur ordre d'arrivée, pas dans celui des appels.
+  node.async = false;
   node.dataset.ilyosLoader = marker;
   document.head.appendChild(node);
 }

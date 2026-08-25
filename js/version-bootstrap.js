@@ -223,8 +223,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   const scripts = [
     './js/hud-organique-v2.js?v=12.7',
     './js/hud-organique-v2-final-v8.js?v=12.7',
-    './js/hud-organique-v2-depth-v9.js?v=12.7',
-    './js/hud-organique-v2-depth-v10.js?v=12.7',
+    /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
+       les lumières de scène, jamais le HUD malgré leur nom, et ces réglages
+       vivent depuis dans js/game/kaykit3d.js. Ils ne contenaient plus qu'un
+       commentaire mais partaient quand même sur le réseau. Leurs feuilles CSS
+       homonymes, elles, sont bien vivantes et restent chargées plus haut. */
     './js/hud-consolidation-v12.js?v=12.7',
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1'
@@ -232,7 +235,13 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   scripts.forEach(src=>{
     const script=document.createElement('script');
     script.src=src;
-    script.defer=true;
+    /* `async = false` est ce qui ordonne réellement l'exécution. Un script créé
+       par script est asynchrone par défaut : `defer` n'a aucun effet sur lui, et
+       la liste ci-dessus s'exécutait donc dans l'ordre d'arrivée du réseau. Les
+       passes V10 et V12 construisent toutes deux le bandeau d'instruction du
+       HUD — la dernière arrivée gagnait, d'un chargement à l'autre, et le
+       bandeau changeait de typographie tout seul (Almendra ou Georgia). */
+    script.async=false;
     document.head.appendChild(script);
   });
 })();

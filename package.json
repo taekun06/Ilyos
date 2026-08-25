@@ -10,6 +10,8 @@
     "build:check": "node scripts/build-game.js",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
+    "empreinte": "node scripts/empreinte-css.js relever",
+    "empreinte:comparer": "node scripts/empreinte-css.js comparer",
     "test:install": "playwright install --with-deps chromium"
   },
   "devDependencies": {
