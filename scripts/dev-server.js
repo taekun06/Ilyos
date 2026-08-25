@@ -18,7 +18,7 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const PORT = Number(process.argv[2]) || 8123;
+const PORT = Number(process.argv[2]) || Number(process.env.PORT) || 8123;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
