@@ -38,8 +38,13 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-ins
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{left:50%!important;right:auto!important;width:min(360px,70%)!important;transform:translateX(-50%)!important}
 
 /* Réserve V12.6 : au même niveau que le nom, sans libellé ni capsule. */
+/* Cette passe a ajouté le bloc réserve dans la rangée du nom ET élargi l'écart
+   de 18px à 24-34px, sans compenser au-dessus de 1100px. Le nom, seul élément
+   élastique de la rangée, encaissait toute la différence : mesuré à 1440px, il
+   recevait 51px pour 96px nécessaires, et 0px à 1280px. L'écart revient donc à
+   une valeur qui laisse le nom entier. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-player-main{
-  gap:clamp(24px,1.9vw,34px)!important
+  gap:clamp(14px,1.1vw,24px)!important
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
   display:inline-flex;align-items:center;justify-content:center;gap:0;height:32px;padding:0!important;
@@ -89,8 +94,7 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.o
 /* Retour à la taille/orientation précédente des empreintes. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-footprints{overflow:visible;transform:scale(.92)!important;transform-origin:center;filter:drop-shadow(0 3px 5px rgba(0,0,0,.36))}
 
-@media(max-width:1100px){
-  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-player-main{gap:18px!important}
+@media(max-width:1400px){
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{min-width:39px;padding:0 8px!important}
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{width:17px;height:17px}
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{font-size:14px}
