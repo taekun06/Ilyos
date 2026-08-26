@@ -3449,6 +3449,14 @@
         state.magicPreviewSteps = nextSteps;
         updateMagicPreview();
         renderAll();
+        /* renderAll() ne redessine que le HTML/HUD — jamais la scène 3D, qui
+           n'est resynchronisée que par un appel explicite à ce planificateur.
+           La branche île de cette même fonction l'appelle ; celle-ci ne le
+           faisait pas, donc la rotation changeait bien l'état (magicPreviewCells)
+           mais le fantôme 3D restait figé jusqu'à ce qu'un tout autre événement
+           (un survol du plateau) déclenche un sync — d'où l'impression qu'il
+           fallait cliquer deux fois pour voir tourner l'île. */
+        if (kaykit3D) scheduleKayKitSync();
         playSfx("rotate");
 
         if (!nextSteps) {

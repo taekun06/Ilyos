@@ -5034,42 +5034,64 @@
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
-        // Bronze ambré (0xd9922f), même identité que le surlignage "case atteignable"
-        // (move-target-preview/reachable dans addCellHighlight). Un premier essai en
-        // marron désaturé (0x9c6b3f) se délavait en gris une fois mélangé en
-        // transparence au vert saturé du plateau — même hue, valeur trop proche. Le
-        // contraste vient maintenant de la VALEUR autant que de la teinte : liseré
-        // sombre (quasi opaque) juste sous l'anneau clair, comme un contour de bande
-        // dessinée — la combinaison reste lisible sur n'importe quel fond, pas
-        // seulement celui-ci.
-        const outerStroke = new THREE.Mesh(
-          kaykitGeometry("smart-move-ring-stroke-v1", () => new THREE.TorusGeometry(.165, .040, 8, 28)),
-          new THREE.MeshBasicMaterial({ color: 0x3d2408, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+        /* Zone pleine plutôt qu'un anneau : demandé après coup — un petit rond
+           au centre de la case dit moins clairement "vous pouvez marcher ici"
+           qu'une case teintée dans son ensemble, surtout en visée de biais ou
+           zoomée. Même identité de couleur qu'avant (bronze ambré 0xd9922f,
+           même contraste par la valeur que par la teinte — un marron désaturé
+           se délavait en gris une fois mélangé au vert du plateau).
+           Même trio structurel qu'avant (contour sombre + remplissage clair +
+           marqueur central pour les cases à coût ≥ 2), seule la géométrie
+           change : un plan carré calé sur KAYKIT_CELL_SPACING au lieu d'un
+           tore, pour couvrir la case plutôt qu'en marquer le centre. */
+        const taille = KAYKIT_CELL_SPACING * .86;
+        /* depthTest:false, contrairement à l'ancien anneau (qui s'en passait) :
+           un plan couvrant presque toute la case touche le relief du terrain
+           en plusieurs points (le sol n'est pas parfaitement plat — bosses de
+           l'herbe, biseaux), et le test de profondeur par défaut le faisait
+           disparaître par endroits, invisible sur la majeure partie de la
+           case. Un fin anneau ne touchait jamais assez de relief pour que ça
+           se voie ; un plan plein, si — vérifié à l'écran. */
+        const stroke = new THREE.Mesh(
+          kaykitGeometry("smart-move-zone-stroke-v1", () => new THREE.PlaneGeometry(taille + .07, taille + .07)),
+          new THREE.MeshBasicMaterial({ color: 0x3d2408, transparent: true, opacity: .62, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
         );
-        outerStroke.rotation.x = -Math.PI / 2;
-        outerStroke.position.set(p.x, p.y - .002, p.z);
-        outerStroke.renderOrder = 19;
-        group.add(outerStroke);
-        registerKayKitFadeIn(outerStroke);
-        const outer = new THREE.Mesh(
-          kaykitGeometry("smart-move-ring-outer-v1", () => new THREE.TorusGeometry(.16, .026, 8, 28)),
-          new THREE.MeshBasicMaterial({ color: 0xd9922f, transparent: true, opacity: .94, depthWrite: false, side: THREE.DoubleSide })
+        stroke.rotation.x = -Math.PI / 2;
+        stroke.position.set(p.x, p.y - .002, p.z);
+        stroke.renderOrder = 19;
+        group.add(stroke);
+        registerKayKitFadeIn(stroke);
+        /* Opacité réglée à l'écran, pas au jugé : .24/.30 (un premier essai,
+           cohérent avec un "ton" plutôt qu'un aplat) se noyait presque
+           entièrement dans le vert de l'herbe des îles — la même teinte sous
+           un éclairage proche produit deux couleurs trop voisines pour que
+           l'œil les sépare, même en zoomant. Vérifié en poussant le test à
+           l'absurde (rouge vif à .95 : parfaitement visible, donc le maillage
+           et sa position étaient corrects depuis le début) avant de revenir à
+           la couleur bronze prévue avec une opacité qui, elle, se voit
+           vraiment sur l'herbe. */
+        const fill = new THREE.Mesh(
+          kaykitGeometry("smart-move-zone-fill-v1", () => new THREE.PlaneGeometry(taille, taille)),
+          new THREE.MeshBasicMaterial({ color: 0xd9922f, transparent: true, opacity: costTier >= 2 ? .62 : .55, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
         );
-        outer.rotation.x = -Math.PI / 2;
-        outer.position.set(p.x, p.y, p.z);
-        outer.renderOrder = 20;
-        group.add(outer);
-        registerKayKitFadeIn(outer);
+        fill.rotation.x = -Math.PI / 2;
+        fill.position.set(p.x, p.y, p.z);
+        fill.renderOrder = 20;
+        group.add(fill);
+        registerKayKitFadeIn(fill);
         if (costTier >= 2) {
-          const inner = new THREE.Mesh(
-            kaykitGeometry("smart-move-ring-inner-v1", () => new THREE.TorusGeometry(.095, .020, 8, 24)),
-            new THREE.MeshBasicMaterial({ color: 0xd9922f, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide })
+          // Repère central discret : la case reste franchement identifiée par
+          // sa teinte pleine, ce point ne fait qu'indiquer "plus loin, coûte
+          // plus cher" — l'information que portait l'ancien anneau intérieur.
+          const pip = new THREE.Mesh(
+            kaykitGeometry("smart-move-zone-pip-v1", () => new THREE.CircleGeometry(.05, 16)),
+            new THREE.MeshBasicMaterial({ color: 0xfff0c6, transparent: true, opacity: .8, depthWrite: false, depthTest: false })
           );
-          inner.rotation.x = -Math.PI / 2;
-          inner.position.set(p.x, p.y + .003, p.z);
-          inner.renderOrder = 21;
-          group.add(inner);
-          registerKayKitFadeIn(inner);
+          pip.rotation.x = -Math.PI / 2;
+          pip.position.set(p.x, p.y + .003, p.z);
+          pip.renderOrder = 21;
+          group.add(pip);
+          registerKayKitFadeIn(pip);
         }
       }
 
@@ -5175,8 +5197,15 @@
         sprite.renderOrder = 59;
         group.add(sprite);
 
+        /* Rayon élargi (.36 → .56) : c'est la seule cible de toute l'action
+           poussée qui se trouve DANS LE VIDE, hors de la trame du plateau — sans
+           la case elle-même pour rattraper un clic légèrement décalé, comme le
+           fait la moindre autre destination (la sphère invisible EST toute la
+           zone cliquable). Signalé injouable « quelquefois » : à un rayon aussi
+           serré, un clic à peine excentré sur l'icône ☠ manquait sa cible. La
+           sphère reste invisible (opacity .001) — seul son rayon change. */
         const hit = new THREE.Mesh(
-          kaykitGeometry("unified-push-death-hit-v1", () => new THREE.SphereGeometry(.36, 12, 8)),
+          kaykitGeometry("unified-push-death-hit-v1", () => new THREE.SphereGeometry(.56, 12, 8)),
           new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false })
         );
         hit.position.copy(position);
