@@ -1241,6 +1241,38 @@
         [.56, "haze"], [.62, "abyss"], [.72, "midDeep"], [.82, "deep"], [1, "nadir"]
       ];
 
+      // Image source de la bande : une vraie mer de nuages équirectangulaire (CC0, voir
+      // assets/sky/LICENSE.txt), déjà recadrée sur les bornes exactes de KAYKIT_SKY_BAND
+      // (10°-62° sous l'horizontale) et suréchantillonnée à 4096×512. Remplace le
+      // dégradé + les amas peints, mais PAS le contre-jour : celui-ci reste peint par
+      // dessus à chaque appel, dynamique (azimut du soleil réglable en jeu).
+      //
+      // Chargée à part du pipeline THREE (textureLoader / configureKayKitTexture) car
+      // elle est dessinée dans un canvas 2D avant de devenir une CanvasTexture — un
+      // HTMLImageElement suffit, pas besoin des réglages de mapping GPU tant qu'on ne
+      // fait que la lire au pixel.
+      //
+      // Pas de placeholder à remplacer à chaud : tant qu'elle n'est pas prête, la bande
+      // continue de fonctionner sur son rendu peint existant (gradient + amas), qui est
+      // un ciel complet en soi. Une passe de reprise (voir kaykitReprendreCielImage)
+      // purge le cache et redessine la bande dès que l'image arrive.
+      const KAYKIT_SKY_BAND_IMAGE_URL = "./assets/sky/sky-band-cloudsea.webp";
+      const kaykitSkyBandSource = { img: null, ready: false, requested: false };
+
+      function kaykitSkyBandSourceEnsure() {
+        if (kaykitSkyBandSource.requested) return kaykitSkyBandSource;
+        kaykitSkyBandSource.requested = true;
+        const img = new Image();
+        img.decoding = "async";
+        img.onload = () => { kaykitSkyBandSource.ready = true; };
+        img.onerror = () => {
+          console.warn("[ILYOS] image de ciel introuvable, bande peinte conservée :", KAYKIT_SKY_BAND_IMAGE_URL);
+        };
+        img.src = KAYKIT_SKY_BAND_IMAGE_URL;
+        kaykitSkyBandSource.img = img;
+        return kaykitSkyBandSource;
+      }
+
       function kaykitSkyColorAt(p) {
         const t = THREE.MathUtils.clamp(p, 0, 1);
         for (let i = 1; i < KAYKIT_SKY_STOPS.length; i++) {
@@ -1278,16 +1310,24 @@
         const vRatio = pxPerDegV / pxPerDegH;
         const rowOf = p => ((p - pTop) / pSpan) * H;
 
-        // Dégradé échantillonné ligne à ligne depuis la table partagée plutôt que via
-        // createLinearGradient : égalité exacte avec le dôme à toute élévation, y
-        // compris si les stops changent un jour.
-        for (let y = 0; y < H; y++) {
-          const c = kaykitSkyColorAt(pTop + (y / H) * pSpan);
-          ctx.fillStyle = "#" + c.getHexString();
-          ctx.fillRect(0, y, W, 1);
-          const noise = (Math.sin(y * 12.9898) * .5 + .5) * .012;
-          ctx.fillStyle = "rgba(255,255,255," + noise.toFixed(4) + ")";
-          ctx.fillRect(0, y, W, 1);
+        const skySource = kaykitSkyBandSourceEnsure();
+        if (skySource.ready) {
+          // L'image couvre déjà exactement 360°×(top-bottom) : un simple étirement
+          // plein cadre suffit, aucun recadrage à refaire ici.
+          ctx.drawImage(skySource.img, 0, 0, W, H);
+        } else {
+          // Repli tant que l'image n'est pas arrivée : dégradé échantillonné ligne à
+          // ligne depuis la table partagée, égalité exacte avec le dôme à toute
+          // élévation. Une passe de reprise redessinera avec l'image dès qu'elle sera
+          // prête (voir kaykitReprendreCielImage).
+          for (let y = 0; y < H; y++) {
+            const c = kaykitSkyColorAt(pTop + (y / H) * pSpan);
+            ctx.fillStyle = "#" + c.getHexString();
+            ctx.fillRect(0, y, W, 1);
+            const noise = (Math.sin(y * 12.9898) * .5 + .5) * .012;
+            ctx.fillStyle = "rgba(255,255,255," + noise.toFixed(4) + ")";
+            ctx.fillRect(0, y, W, 1);
+          }
         }
 
         const seeded = (i, salt = 0) => {
@@ -1446,37 +1486,42 @@
           });
         };
 
-        const cloudTopRow = rowOf(.572), cloudBottomRow = rowOf(.745);
-        const farCloudCount = 9;
-        const farSpacingDeg = 360 / farCloudCount;
-        for (let i = 0; i < farCloudCount; i++) {
-          const cxDeg = (i + .5) * farSpacingDeg + (seeded(i, 1) - .5) * farSpacingDeg * .45;
-          const cx = cxDeg * pxPerDegH;
-          const cy = cloudTopRow + seeded(i, 2) * (cloudBottomRow - cloudTopRow);
-          const scale = (farSpacingDeg * (.30 + seeded(i, 3) * .12)) * pxPerDegH;
-          const alpha = .40 + seeded(i, 4) * .22;
-          // Dupliqué à ±W : le raccord (wrapS = Repeat) doit rester invisible quel que
-          // soit l'azimut, puisque la caméra tourne.
-          drawCloud(cx - W, cy, scale, alpha);
-          drawCloud(cx, cy, scale, alpha);
-          drawCloud(cx + W, cy, scale, alpha);
-        }
+        // Amas peints : uniquement en repli. L'image contient déjà ses propres nuages
+        // photographiques ; les superposer par-dessus doublerait la lecture et
+        // trahirait le raccord peint/photo.
+        if (!skySource.ready) {
+          const cloudTopRow = rowOf(.572), cloudBottomRow = rowOf(.745);
+          const farCloudCount = 9;
+          const farSpacingDeg = 360 / farCloudCount;
+          for (let i = 0; i < farCloudCount; i++) {
+            const cxDeg = (i + .5) * farSpacingDeg + (seeded(i, 1) - .5) * farSpacingDeg * .45;
+            const cx = cxDeg * pxPerDegH;
+            const cy = cloudTopRow + seeded(i, 2) * (cloudBottomRow - cloudTopRow);
+            const scale = (farSpacingDeg * (.30 + seeded(i, 3) * .12)) * pxPerDegH;
+            const alpha = .40 + seeded(i, 4) * .22;
+            // Dupliqué à ±W : le raccord (wrapS = Repeat) doit rester invisible quel que
+            // soit l'azimut, puisque la caméra tourne.
+            drawCloud(cx - W, cy, scale, alpha);
+            drawCloud(cx, cy, scale, alpha);
+            drawCloud(cx + W, cy, scale, alpha);
+          }
 
-        // Passe de détail : IMPOSSIBLE auparavant. Un amas de 4° occupait 11 px sur le
-        // dôme et disparaissait entièrement dans le filtrage ; il en occupe 46 ici.
-        // C'est exactement ce que la densité achète — une seconde échelle de lecture,
-        // qui fait que le ciel supporte le zoom avant au lieu de s'aplatir.
-        const wispCount = 22;
-        const wispSpacingDeg = 360 / wispCount;
-        for (let i = 0; i < wispCount; i++) {
-          const cxDeg = (i + .5) * wispSpacingDeg + (seeded(i, 7) - .5) * wispSpacingDeg * .8;
-          const cx = cxDeg * pxPerDegH;
-          const cy = cloudTopRow + seeded(i, 8) * (cloudBottomRow - cloudTopRow) * 1.05;
-          const scale = (wispSpacingDeg * (.22 + seeded(i, 9) * .16)) * pxPerDegH;
-          const alpha = .13 + seeded(i, 10) * .11;
-          drawCloud(cx - W, cy, scale, alpha, .8);
-          drawCloud(cx, cy, scale, alpha, .8);
-          drawCloud(cx + W, cy, scale, alpha, .8);
+          // Passe de détail : IMPOSSIBLE auparavant. Un amas de 4° occupait 11 px sur le
+          // dôme et disparaissait entièrement dans le filtrage ; il en occupe 46 ici.
+          // C'est exactement ce que la densité achète — une seconde échelle de lecture,
+          // qui fait que le ciel supporte le zoom avant au lieu de s'aplatir.
+          const wispCount = 22;
+          const wispSpacingDeg = 360 / wispCount;
+          for (let i = 0; i < wispCount; i++) {
+            const cxDeg = (i + .5) * wispSpacingDeg + (seeded(i, 7) - .5) * wispSpacingDeg * .8;
+            const cx = cxDeg * pxPerDegH;
+            const cy = cloudTopRow + seeded(i, 8) * (cloudBottomRow - cloudTopRow) * 1.05;
+            const scale = (wispSpacingDeg * (.22 + seeded(i, 9) * .16)) * pxPerDegH;
+            const alpha = .13 + seeded(i, 10) * .11;
+            drawCloud(cx - W, cy, scale, alpha, .8);
+            drawCloud(cx, cy, scale, alpha, .8);
+            drawCloud(cx + W, cy, scale, alpha, .8);
+          }
         }
 
         // Fondu des bords vers le dôme. destination-out : on retire de l'alpha, on ne
@@ -2482,6 +2527,25 @@
           return this.valeurs().nuages;
         }
       };
+
+      /** Redessine la bande de ciel dès que l'image équirectangulaire est arrivée,
+       *  pour remplacer le repli peint (gradient + amas procéduraux) posé en attendant.
+       *  Même principe que kaykitReprendreSoclesRocheux : purge le cache par clé puis
+       *  reconstruit, plutôt que de retoucher la texture déjà posée sur le matériau. */
+      function kaykitReprendreCielImage() {
+        const src = kaykitSkyBandSourceEnsure();
+        if (!src.ready) return false;
+        const sky = kaykit3D?.scene?.getObjectByName("ilyos-sky");
+        if (!sky) return false;
+        const band = sky.children.find(c => c.geometry?.type === "SphereGeometry"
+          && c.geometry.parameters?.thetaStart > 0);
+        if (!band) return false;
+        kaykit3D.materials.delete("sky-band-hd-v1");
+        if (band.material.map) band.material.map.dispose();
+        band.material.map = kaykitSkyBandTexture();
+        band.material.needsUpdate = true;
+        return true;
+      }
 
       // Archipel lointain. Séparé de buildKayKitSkyEnvironment et appelé seulement une fois
       // les modèles KayKit disponibles — sinon cloneKayKitAsset renvoie null et rien n'est
@@ -9013,6 +9077,12 @@
           if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
             buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
+          }
+
+          // Ciel : bascule vers l'image équirectangulaire dès qu'elle a fini de charger
+          // (réseau, pas un asset KayKit — condition indépendante des autres reprises).
+          if (!kaykit3D.cielImageRepris) {
+            kaykit3D.cielImageRepris = kaykitReprendreCielImage();
           }
 
           // Archipel lointain : mêmes conditions, mêmes raisons. `tileBottom` est la pièce

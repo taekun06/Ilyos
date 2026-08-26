@@ -1,0 +1,15 @@
+sky-band-cloudsea.webp
+======================
+
+Source : "Cloudy Skyboxes - Panorama" (Panorama_Sky_05), par Screaming Brain Studios
+https://screamingbrainstudios.itch.io/cloudy-skyboxes-pack
+
+(Sky_21 essayé en premier, écarté : entièrement brun-orangé même loin du soleil,
+donc aucun bleu à aucun azimut — tuait le contraste chaud/froid par direction.)
+
+Licence : CC0 (domaine public) — utilisation libre, attribution non requise mais
+créditée ici par courtoisie.
+
+Traitement appliqué (voir scripts d'extraction de la session) : recadrage sur la
+bande 10°-62° sous l'horizon (bornes de KAYKIT_SKY_BAND dans kaykit3d.js),
+suréchantillonnage Lanczos3 à 4096×512, export .webp qualité 88 (~43 Ko).
