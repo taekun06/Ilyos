@@ -69,6 +69,21 @@
          et vitesse accélérée. 1 = rythme normal du jeu. */
       let benchSpeedFactor = 1;
 
+      /* Mode simulation : les noyaux de règles s'exécutent sur un état cloné,
+         sans rien raconter. Tous les points d'entrée de présentation — rendu,
+         toasts, sons, animations, effets, sauvegarde d'annulation, statistiques
+         — s'effacent quand ce drapeau est levé.
+
+         C'est ce qui permet au planner d'utiliser LES MÊMES fonctions de règles
+         que le jeu réel plutôt qu'une seconde implémentation : une règle qui
+         change plus tard change pour les deux à la fois, et aucune divergence
+         silencieuse ne peut s'installer entre ce que l'IA prévoit et ce que le
+         jeu applique.
+
+         Toujours faux en jeu normal. */
+      let ilyosSimulationActive = false;
+      function enSimulation() { return ilyosSimulationActive; }
+
       /* Taille du plateau. Variable, pas constante : le joueur peut choisir
          11×11 ou 13×13 au menu. GRID, CENTER et CORNERS sont recalculés
          ensemble par setBoardSize(), avant toute création de partie.

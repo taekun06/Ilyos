@@ -42,8 +42,14 @@ async function ouvrirPartie(page) {
   await page.waitForFunction(() => window.ILYOS_TEST.autoplay?.active === true, null, { timeout: 60000 });
   await page.waitForTimeout(2500);
   await page.evaluate(() => window.ILYOS_TEST.stopAutoplay?.());
-  await page.waitForTimeout(1200);
   await page.waitForFunction(() => typeof window.ILYOS_BENCH?.run === 'function', null, { timeout: 15000 });
+  /* Tuer tout de suite le tour d'IA de la partie de préchauffage, PUIS le
+     laisser se vider. Diagnostiqué : sans cela, sa queue asynchrone venait
+     jouer une action pendant la première position mesurée (un gardien
+     char-100 étranger au puzzle) et faussait la première séquence. */
+  await page.evaluate(() => window.ILYOS_BENCH.reinitialiser());
+  await page.waitForTimeout(3000);
+  await page.evaluate(() => window.ILYOS_BENCH.reinitialiser());
 
   /* Délibérément AUCUN tour de chauffe. Un premier passage jeté rendrait les
      séquences plus homogènes entre elles, mais masquerait une limitation réelle

@@ -87,6 +87,121 @@
         };
       }
 
+      /** Poussée : la ligne était déjà déplacée de façon synchrone par
+       *  pushCharacter()/pushLooseArtifact(), seule la consommation de carte
+       *  restait différée dans le callback d'animation. Le noyau ferme ce
+       *  dernier écart. */
+      function applyPushCore(pusherId, r, c, force) {
+        const pousseur = characterById(pusherId);
+        if (!pousseur) return null;
+        const dr = r - pousseur.r;
+        const dc = c - pousseur.c;
+        if (Math.abs(dr) + Math.abs(dc) !== 1) return null;
+
+        const cible = characterAt(r, c);
+        const couronne = cible ? null : looseArtifactAt(r, c);
+        if (!cible && !couronne) return null;
+
+        const resultat = cible
+          ? pushCharacter(cible, dr, dc, force, r, c)
+          : pushLooseArtifact(couronne, dr, dc, force, r, c);
+        if (!resultat) return null;
+
+        const depense = consumeSelectedActionCore("PUSH", force);
+        return { type: "PUSH", pusherId, vers: [r, c], force: depense, resultat };
+      }
+
+      /** Rotation d'île : applique la transformation déjà calculée par
+       *  calculateIslandRotationAroundPivot(), y compris le déplacement des
+       *  gardiens et des couronnes portés par l'île.
+       *
+       *  Comme pour le déplacement, la mutation vivait dans le callback de fin
+       *  d'animation. Elle est désormais immédiate ; c'est l'appelant qui doit
+       *  empêcher la scène de reconstruire le calque d'îles pendant que
+       *  l'animation raconte encore la rotation (voir islandRotationEnCours). */
+      function applyMagicRotationCore(islandId, rotation) {
+        const ile = state.islands.find(is => is.id === islandId);
+        if (!ile || !rotation?.valid) return null;
+
+        const avant = ile.cells.map(([r, c]) => [r, c]);
+        ile.cells = rotation.absCells;
+        ile.relCells = rotation.relCells;
+        ile.anchor = rotation.anchor;
+
+        for (const deplacement of rotation.characterMoves || []) {
+          deplacement.char.r = deplacement.r;
+          deplacement.char.c = deplacement.c;
+        }
+        for (const deplacement of rotation.artifactMoves || []) {
+          deplacement.artifact.r = deplacement.r;
+          deplacement.artifact.c = deplacement.c;
+        }
+
+        const depense = consumeSelectedActionCore("MAGIC", 1);
+        return { type: "MAGIC", islandId, cellulesAvant: avant, cout: depense };
+      }
+
+      /** Pose d'île — macro-action COMPLÈTE.
+       *
+       *  Une pose n'est pas seulement du terrain. Selon les règles elle
+       *  entraîne aussi l'apparition d'un gardien, le choix de sa case, et la
+       *  résolution éventuelle d'une couronne si ce gardien apparaît dessus.
+       *  Un planner qui ne modéliserait que le terrain sous-évaluerait
+       *  systématiquement la pose précoce, alors qu'elle offre une pièce
+       *  jouable immédiatement.
+       *
+       *  Le choix de la case de spawn reprend exactement celui de
+       *  createAutomaticIslandAndSpawn : la case libre la plus proche de la
+       *  cible de placement automatique. */
+      function applyIslandPlacementCore(shapeKey, cells, ownerId, relCells = null, anchor = null) {
+        if (!state || !Array.isArray(cells) || !cells.length) return null;
+
+        const cellules = cloneCells(cells);
+        const identifiant = state.nextIslandId++;
+        const ile = {
+          id: identifiant,
+          owner: ownerId,
+          shapeKey,
+          anchor: anchor ? { ...anchor } : { r: cellules[0][0], c: cellules[0][1] },
+          relCells: cloneCells(relCells || cellules.map(([r, c]) => [r - cellules[0][0], c - cellules[0][1]])),
+          cells: cellules,
+          visualVariant: chooseIslandVisualVariant(cellules, identifiant, state.islands)
+        };
+        state.islands.push(ile);
+        state.islandPlacedThisTurn = true;
+
+        let gardien = null;
+        let couronneRamassee = null;
+        if (canCreateGuardian(ownerId)) {
+          const cible = automaticPlacementTarget(ownerId);
+          const libres = ile.cells.filter(([r, c]) => !characterAt(r, c));
+          libres.sort((a, b) =>
+            (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
+            (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
+          const [sr, sc] = libres[0] || ile.cells[0];
+          gardien = { id: `char-${state.nextCharId++}`, player: ownerId, r: sr, c: sc };
+          state.characters.push(gardien);
+          couronneRamassee = resolveArtifactCore(gardien);
+        }
+
+        state.phase = "ACTION_SELECT";
+        state.pendingSpawnIslandId = null;
+        state.selectedIslandShape = null;
+        state.placementCells = null;
+        state.placementOriginIndex = 0;
+        state.hoverAnchor = null;
+
+        return {
+          type: "POSE",
+          ileId: ile.id,
+          forme: shapeKey,
+          cellules: ile.cells.map(([r, c]) => [r, c]),
+          gardienId: gardien ? gardien.id : null,
+          gardienCase: gardien ? [gardien.r, gardien.c] : null,
+          couronneRamassee: couronneRamassee ? couronneRamassee.id : null
+        };
+      }
+
       /* ---------------------------------------------------------------------
          ÉTAT STRATÉGIQUE CANONIQUE
 
@@ -167,4 +282,109 @@
        *  interne des tableaux. */
       function strategicStateFingerprint(source = state) {
         return JSON.stringify(canonicalStrategicState(source));
+      }
+
+      /* ---------------------------------------------------------------------
+         SIMULATION
+
+         Exécute une fonction sur un CLONE de l'état, présentation coupée, puis
+         restaure tout. C'est ce qui permet au planner d'appeler exactement les
+         mêmes fonctions de règles que le jeu réel au lieu d'en réimplémenter
+         une seconde version — le risque principal de toute cette refonte.
+
+         Deux conditions strictes, l'une et l'autre indispensables :
+
+         — SYNCHRONE de bout en bout. Aucun `await`, aucun timer, aucun callback
+           différé pendant que la globale `state` désigne le clone : le premier
+           retour à la boucle d'événements exposerait le clone au reste du jeu.
+           C'est possible précisément parce que les noyaux de règles n'attendent
+           plus rien.
+         — RESTAURATION EN `finally`. Une exception au milieu d'une simulation
+           laisserait sinon le jeu réel branché sur un état de travail.
+         ------------------------------------------------------------------- */
+      function cloneStateForSimulation(source = state) {
+        // structuredClone plutôt que JSON : `state` contient des Set (reachable,
+        // smartPushTargets) qu'un aller-retour JSON transformerait silencieusement
+        // en objets vides. Les champs non clonables (aucun aujourd'hui, mais la
+        // garde évite une régression sournoise) feraient échouer bruyamment.
+        const clone = structuredClone({
+          players: source.players,
+          currentPlayer: source.currentPlayer,
+          round: source.round,
+          turn: source.turn,
+          islands: source.islands,
+          characters: source.characters,
+          artifact: source.artifact,
+          secondArtifact: source.secondArtifact,
+          couronnesEnAttente: source.couronnesEnAttente || [],
+          phase: source.phase,
+          islandPlacedThisTurn: !!source.islandPlacedThisTurn,
+          centerCrownTakenThisTurn: !!source.centerCrownTakenThisTurn,
+          rules: source.rules || {},
+          nextIslandId: source.nextIslandId,
+          nextCharId: source.nextCharId,
+          winner: source.winner ?? null,
+          selectedActionType: source.selectedActionType,
+          selectedActionCount: source.selectedActionCount,
+          selectedCharId: source.selectedCharId,
+          selectedIslandId: source.selectedIslandId,
+          pushForceChoice: source.pushForceChoice || 1
+        });
+        // Champs attendus par les fonctions de règles, reconstruits vides : ils
+        // ne portent aucune information de jeu.
+        clone.reachable = new Set();
+        clone.undoHistory = [];
+        clone.fxCells = [];
+        clone.crownTransferTargetIds = [];
+        clone.smartHoverPath = [];
+        clone.smartPushTargets = new Set();
+        clone.inputLocked = false;
+        clone.soloMode = !!source.soloMode;
+        clone.onlineMode = false;
+        return clone;
+      }
+
+      function withSimulatedState(clone, fn) {
+        const etatReel = state;
+        const simulationPrecedente = ilyosSimulationActive;
+        state = clone;
+        ilyosSimulationActive = true;
+        try {
+          return fn(clone);
+        } finally {
+          ilyosSimulationActive = simulationPrecedente;
+          state = etatReel;
+        }
+      }
+
+      /** Simule une action sur une copie et rend l'empreinte de l'état obtenu,
+       *  sans toucher à la partie en cours. */
+      function simulateActionFingerprint(action) {
+        const clone = cloneStateForSimulation();
+        return withSimulatedState(clone, () => {
+          appliquerActionNoyau(action);
+          return strategicStateFingerprint(clone);
+        });
+      }
+
+      /** Point d'entrée unique des noyaux, utilisé par la simulation comme par
+       *  les tests de fidélité. Une action est une donnée, pas un appel. */
+      function appliquerActionNoyau(action) {
+        if (!action) return null;
+        switch (action.type) {
+          case "MOVE": return applyMoveCore(action.charId, action.r, action.c, action.cost);
+          case "PUSH": return applyPushCore(action.pusherId, action.r, action.c, action.force);
+          case "MAGIC": {
+            const ile = state.islands.find(is => is.id === action.islandId);
+            if (!ile) return null;
+            const rotation = calculateIslandRotationAroundPivot(
+              ile, action.pivot[0], action.pivot[1], action.direction, action.turns
+            );
+            return applyMagicRotationCore(action.islandId, rotation);
+          }
+          case "POSE": return applyIslandPlacementCore(
+            action.shapeKey, action.cells, action.owner, action.relCells, action.anchor
+          );
+          default: return null;
+        }
       }

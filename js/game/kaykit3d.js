@@ -3633,6 +3633,9 @@
          donnée, la marche partirait de la case d'arrivée. Les autres intentions
          (poussée, magie, chute) n'en ont pas besoin et l'omettent. */
       function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null, onComplete = null, origine = null) {
+        // En simulation, onComplete n'est volontairement PAS appelé : il ne
+        // porte plus que de la présentation depuis l'extraction des noyaux.
+        if (ilyosSimulationActive) return;
         if (!kaykit3D || characterId === null || characterId === undefined) {
           if (typeof onComplete === "function") onComplete();
           return;
@@ -4498,6 +4501,7 @@
       // Recadre en douceur sur une case précise (action de l'IA, poussée, chute…).
       // `force` outrepasse le mode LIBRE (utilisé par le bouton AUTO lui-même).
       function kaykitFollowCell(r, c, { duration = 620, force = false, zoomBoost = 0 } = {}) {
+        if (ilyosSimulationActive) return;
         if (!kaykit3D || !Number.isFinite(r) || !Number.isFinite(c)) return;
         // En mode LIBRE, aucune animation de jeu ne reprend la main sur la
         // caméra : le joueur garde son cadrage.
@@ -8211,7 +8215,22 @@
        *
        * @param {number} signedDegrees rotation réelle, signée (+90, +180, -90…)
        */
+      /** Gèle ou dégèle la reconstruction du calque d'îles. Appelé autour d'une
+       *  rotation de magie, dont le résultat logique est appliqué avant que
+       *  l'animation ne commence à le raconter. Au dégel, la signature est
+       *  invalidée pour forcer une reconstruction : l'état a changé pendant le
+       *  gel, et sans cela la scène resterait sur l'ancienne orientation. */
+      function kaykitGelerCalqueIles(gele) {
+        if (!kaykit3D) return;
+        kaykit3D.calqueIlesGele = !!gele;
+        if (!gele) {
+          kaykit3D.islandsSignature = null;
+          scheduleKayKitSync();
+        }
+      }
+
       function playIslandMagicRotation(islandId, signedDegrees, pivotR, pivotC, duration = 500) {
+        if (ilyosSimulationActive) return;
         if (!kaykit3D || !Number.isFinite(pivotR) || !Number.isFinite(pivotC)) return;
         if (kaykitReducedMotion()) return;
 
@@ -9167,7 +9186,14 @@
           // state.islands a réellement changé (pose, retrait, rotation) — pas
           // sur un survol, une sélection ou un changement de tour.
           const islandsSig = kaykitIslandsSignature(state.islands);
-          const rebuildIslandLayer = islandsSig !== kaykit3D.islandsSignature;
+          /* Calque gelé : une rotation de magie applique désormais son
+             résultat logique immédiatement (voir applyMagicRotationCore), mais
+             l'animation fait encore tourner les anciens blocs. Reconstruire
+             pendant ce temps ferait apparaître l'île déjà tournée par-dessus
+             les blocs en mouvement. Même principe que pour un gardien, dont le
+             visuel n'est pas recalé tant que son déplacement joue. */
+          const rebuildIslandLayer = !kaykit3D.calqueIlesGele
+            && islandsSig !== kaykit3D.islandsSignature;
           if (rebuildIslandLayer) {
             // INCRÉMENTAL PAR ÎLE : ne reconstruit que l'île dont la
             // signature a changé (pose, retrait, rotation), pas tout le

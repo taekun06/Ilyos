@@ -192,6 +192,7 @@
       const UNDO_HISTORY_LIMIT = 20;
 
       function saveUndoSnapshot() {
+        if (ilyosSimulationActive) return;
         state.undoHistory ||= [];
         state.undoHistory.push(snapshotState());
         if (state.undoHistory.length > UNDO_HISTORY_LIMIT) state.undoHistory.shift();

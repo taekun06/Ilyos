@@ -553,10 +553,39 @@
         const joueurIA = spec.aiPlayer ?? 0;
         const graine = spec.seed ?? 1;
 
+        /* ISOLER la position de tout ce qui traîne encore.
+
+           Sans cette précaution, la première position jouée après le lancement
+           héritait du travail asynchrone de la partie de préchauffage : un
+           gardien qui n'appartenait pas au puzzle (char-100 en (6,5), observé
+           au diagnostic) surgissait en cours de tour et jouait une action.
+           C'était du BRUIT D'INSTRUMENT, et non le non-déterminisme du moteur
+           auquel on l'avait d'abord attribué.
+
+           Incrémenter aiRunToken invalide immédiatement tout tour d'IA encore
+           en vol : chaque étape de runAITurn et de ses exécuteurs teste
+           `token !== aiRunToken` et abandonne. Vider les animations en attente
+           empêche leurs callbacks de rejouer une conséquence sur la nouvelle
+           position. */
+        aiRunToken++;
+        if (kaykit3D?.pendingActionAnimations) kaykit3D.pendingActionAnimations.clear();
+        for (let attente = 0; attente < 40 && state?.turnTransitioning; attente++) {
+          await sleep(50);
+        }
+
         setTestRandomSeed(graine);
         benchJournal = [];
 
         const instantane = benchBuildSnapshot(spec);
+        /* Double chargement encadrant une courte pause. Le premier pose la
+           position ; la pause laisse s'exécuter tout ce qui restait en vol
+           (callbacks d'animation, fin de tour différée) ; le second efface ce
+           que cela aurait pu écrire. Sans cela, la première position jouée
+           après le lancement héritait d'un gardien de la partie de
+           préchauffage, qui surgissait en cours de tour et jouait une action —
+           du bruit d'instrument, pas du non-déterminisme moteur. */
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        await sleep(180);
         applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
         state.rules = Object.assign(
           { allowDissolve: false, islandLimitPerPlayer: 0 },
@@ -586,8 +615,301 @@
         return { depart, arrivee, journal, joueurIA, graine };
       }
 
+      /** Tue immédiatement tout tour d'IA en vol et vide les animations en
+       *  attente. À appeler dès l'arrêt de la partie de préchauffage : sans
+       *  cela, la queue de ce tour continue de s'exécuter et vient jouer une
+       *  action pendant la première position mesurée. */
+      function benchReinitialiser() {
+        aiRunToken++;
+        benchJournal = null;
+        if (kaykit3D?.pendingActionAnimations) kaykit3D.pendingActionAnimations.clear();
+        if (state) {
+          state.aiThinking = false;
+          state.inputLocked = false;
+        }
+        return true;
+      }
+
+      /* ------------------------------------------------------------------
+         TESTS DE FIDÉLITÉ — la simulation dit-elle la vérité ?
+
+         Pour une même position de départ et une même action, deux chemins sont
+         comparés :
+
+           SIMULÉ : le noyau de règle, sur un clone, présentation coupée.
+           RÉEL   : le chemin complet du jeu, animations comprises, joué jusqu'à
+                    son terme.
+
+         Les deux doivent aboutir au MÊME état stratégique canonique. C'est la
+         garantie qu'un plan calculé par l'IA correspondra à ce que le jeu
+         appliquera réellement — et donc qu'aucune seconde implémentation des
+         règles ne s'est glissée quelque part.
+
+         Ce contrôle passe AVANT tout évaluateur et tout planner : une
+         divergence ici invaliderait silencieusement tout ce qui serait
+         construit au-dessus.
+         ------------------------------------------------------------------ */
+      /* Positions minimales, chacune isolant une conséquence de règle précise.
+         Repères : sanctuaire (5,5) ; villages J0 (0,0) et (10,10) ; J1 (0,10)
+         et (10,0). */
+      const BENCH_BLOC = (r0, c0, h, l) => {
+        const cellules = [];
+        for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + l; c++) cellules.push([r, c]);
+        return cellules;
+      };
+
+      const BENCH_CAS_FIDELITE = [
+        {
+          nom: "MOVE orthogonal",
+          position: {
+            seed: 201, islandPlacedThisTurn: true, hands: { 0: ["MOVE", "MOVE"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(4, 4, 2, 3) }],
+            characters: [{ id: "g1", player: 0, r: 4, c: 4 }],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          action: { type: "MOVE", charId: "g1", r: 4, c: 5, cost: 1 }
+        },
+        {
+          nom: "MOVE diagonal (coût 2)",
+          position: {
+            seed: 202, islandPlacedThisTurn: true, hands: { 0: ["MOVE", "MOVE"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(4, 4, 2, 3) }],
+            characters: [{ id: "g1", player: 0, r: 4, c: 4 }],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          action: { type: "MOVE", charId: "g1", r: 5, c: 5, cost: 2 }
+        },
+        {
+          nom: "MOVE en portant une couronne",
+          position: {
+            seed: 203, islandPlacedThisTurn: true, hands: { 0: ["MOVE", "MOVE"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(1, 0, 2, 3) }],
+            characters: [{ id: "g1", player: 0, r: 1, c: 1 }],
+            crowns: [{ r: 1, c: 1, carrierId: "g1", active: true }]
+          },
+          action: { type: "MOVE", charId: "g1", r: 1, c: 0, cost: 1 }
+        },
+        {
+          nom: "MOVE ramassant une couronne libre",
+          position: {
+            seed: 204, islandPlacedThisTurn: true, hands: { 0: ["MOVE", "MOVE"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(4, 4, 2, 3) }],
+            characters: [{ id: "g1", player: 0, r: 4, c: 4 }],
+            crowns: [{ r: 4, c: 5, active: true }]
+          },
+          action: { type: "MOVE", charId: "g1", r: 4, c: 5, cost: 1 }
+        },
+        {
+          nom: "PUSH simple",
+          position: {
+            seed: 205, islandPlacedThisTurn: true, hands: { 0: ["PUSH", "PUSH"], 1: [] },
+            islands: [{ shapeKey: "line3", owner: 0, cells: [[6, 4], [6, 5], [6, 6], [6, 7]] }],
+            characters: [
+              { id: "g1", player: 0, r: 6, c: 4 },
+              { id: "e1", player: 1, r: 6, c: 5 }
+            ],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          action: { type: "PUSH", pusherId: "g1", r: 6, c: 5, force: 1 }
+        },
+        {
+          nom: "PUSH provoquant une chute",
+          position: {
+            seed: 206, islandPlacedThisTurn: true, hands: { 0: ["PUSH", "PUSH"], 1: [] },
+            islands: [{ shapeKey: "line3", owner: 0, cells: [[6, 4], [6, 5], [6, 6]] }],
+            characters: [
+              { id: "g1", player: 0, r: 6, c: 5 },
+              { id: "e1", player: 1, r: 6, c: 6 }
+            ],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          action: { type: "PUSH", pusherId: "g1", r: 6, c: 6, force: 1 }
+        },
+        {
+          nom: "PUSH d'un porteur (chute + couronne lâchée)",
+          position: {
+            seed: 207, islandPlacedThisTurn: true, hands: { 0: ["PUSH", "PUSH"], 1: [] },
+            islands: [{ shapeKey: "line3", owner: 0, cells: [[6, 4], [6, 5], [6, 6]] }],
+            characters: [
+              { id: "g1", player: 0, r: 6, c: 5 },
+              { id: "e1", player: 1, r: 6, c: 6 }
+            ],
+            crowns: [{ r: 6, c: 6, carrierId: "e1", active: true }]
+          },
+          action: { type: "PUSH", pusherId: "g1", r: 6, c: 6, force: 1 }
+        },
+        {
+          nom: "PUSH d'une couronne libre",
+          position: {
+            seed: 208, islandPlacedThisTurn: true, hands: { 0: ["PUSH", "PUSH"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(2, 2, 2, 4) }],
+            characters: [{ id: "g1", player: 0, r: 2, c: 2 }],
+            crowns: [{ r: 2, c: 3, active: true }]
+          },
+          action: { type: "PUSH", pusherId: "g1", r: 2, c: 3, force: 1 }
+        },
+        {
+          nom: "MAGIC — rotation d'île",
+          position: {
+            seed: 209, islandPlacedThisTurn: true, hands: { 0: ["MAGIC", "MAGIC"], 1: [] },
+            islands: [{ shapeKey: "line3", owner: 0, cells: [[3, 3], [3, 4], [3, 5]] }],
+            characters: [{ id: "g1", player: 0, r: 7, c: 7 }],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          action: { type: "MAGIC", islandId: 1, pivot: [3, 4], direction: 1, turns: 1 }
+        },
+        {
+          nom: "MAGIC — rotation portant un gardien",
+          position: {
+            seed: 210, islandPlacedThisTurn: true, hands: { 0: ["MAGIC", "MAGIC"], 1: [] },
+            islands: [{ shapeKey: "line3", owner: 0, cells: [[3, 3], [3, 4], [3, 5]] }],
+            characters: [{ id: "g1", player: 0, r: 3, c: 5 }],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          action: { type: "MAGIC", islandId: 1, pivot: [3, 4], direction: 1, turns: 1 }
+        },
+        {
+          nom: "POSE — terrain + spawn",
+          position: {
+            seed: 211, islandPlacedThisTurn: false, hands: { 0: ["MOVE"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(4, 4, 2, 2) }],
+            characters: [{ id: "g1", player: 0, r: 4, c: 4 }],
+            crowns: [{ r: 0, c: 0, active: true }]
+          },
+          /* Le placement n'est pas imposé : les deux chemins doivent viser le
+             MÊME emplacement, sinon on comparerait deux poses différentes. On
+             interroge donc le moteur — findAutomaticIslandPlacement, celui-là
+             même que le chemin réel utilisera. */
+          action: () => {
+            const choix = findAutomaticIslandPlacement(state.currentPlayer);
+            return choix && {
+              type: "POSE", shapeKey: choix.shapeKey, cells: choix.cells,
+              owner: state.currentPlayer, relCells: choix.relCells, anchor: choix.anchor
+            };
+          }
+        },
+        {
+          nom: "POSE — spawn ramassant une couronne",
+          position: {
+            seed: 212, islandPlacedThisTurn: false, hands: { 0: ["MOVE"], 1: [] },
+            islands: [{ shapeKey: "square", owner: 0, cells: BENCH_BLOC(4, 4, 2, 2) }],
+            characters: [{ id: "g1", player: 0, r: 4, c: 4 }],
+            // La couronne repose sur le sanctuaire ; l'île posée le recouvre,
+            // et le gardien qui y apparaît doit la ramasser.
+            crowns: [{ r: 5, c: 5, active: true }]
+          },
+          action: () => {
+            const choix = findAutomaticIslandPlacement(state.currentPlayer);
+            return choix && {
+              type: "POSE", shapeKey: choix.shapeKey, cells: choix.cells,
+              owner: state.currentPlayer, relCells: choix.relCells, anchor: choix.anchor
+            };
+          }
+        }
+      ];
+
+      /* Rejoue une action par le chemin ordinaire du jeu : mise en place de la
+         sélection exactement comme le font les exécuteurs de l'IA, puis appel
+         du gestionnaire réel. Aucune règle n'est réécrite ici. */
+      function benchExecuterCheminReel(action) {
+        switch (action.type) {
+          case "MOVE": {
+            const gardien = characterById(action.charId);
+            if (!gardien) return null;
+            state.phase = "ACTION";
+            state.selectedActionType = "MOVE";
+            state.selectedActionCount = action.cost;
+            state.selectedCharId = gardien.id;
+            state.selectedIslandId = null;
+            state.reachable = movementRange(gardien, action.cost);
+            return handleMoveClick(action.r, action.c);
+          }
+          case "PUSH": {
+            const pousseur = characterById(action.pusherId);
+            if (!pousseur) return null;
+            state.phase = "ACTION";
+            state.selectedActionType = "PUSH";
+            state.selectedActionCount = action.force;
+            state.selectedCharId = pousseur.id;
+            state.selectedIslandId = null;
+            state.reachable = new Set(
+              orthogonalNeighbors(pousseur.r, pousseur.c).map(([r, c]) => key(r, c))
+            );
+            return handlePushClick(action.r, action.c);
+          }
+          case "MAGIC": {
+            state.phase = "ACTION";
+            state.selectedActionType = "MAGIC";
+            state.selectedActionCount = 1;
+            state.selectedIslandId = action.islandId;
+            state.selectedMagicPivot = [...action.pivot];
+            // confirmMagicRotation lit des crans : 3 vaut un quart de tour en
+            // arrière, sinon le nombre de quarts de tour en avant.
+            state.magicPreviewSteps = action.direction === -1 ? 3 : action.turns;
+            return confirmMagicRotation();
+          }
+          case "POSE":
+            return createAutomaticIslandAndSpawn(state.currentPlayer, false);
+          default:
+            return null;
+        }
+      }
+
+      async function benchTesterFidelite(cas) {
+        const instantane = benchBuildSnapshot(cas.position);
+        const charger = () => {
+          applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+          state.rules = Object.assign(
+            { allowDissolve: false, islandLimitPerPlayer: 0 },
+            cas.position.rules || {}
+          );
+          state.undoHistory = [];
+          state.inputLocked = false;
+        };
+
+        // 1. Chemin simulé.
+        setTestRandomSeed(cas.position.seed ?? 1);
+        charger();
+        const action = typeof cas.action === "function" ? cas.action() : cas.action;
+        const empreinteSimulee = simulateActionFingerprint(action);
+
+        // 2. Chemin réel : les VRAIES fonctions déclenchées par un clic de
+        //    joueur ou par l'IA, pas le noyau. C'est tout l'intérêt du test —
+        //    comparer le noyau au chemin complet, et non le noyau à lui-même.
+        setTestRandomSeed(cas.position.seed ?? 1);
+        charger();
+        benchExecuterCheminReel(action);
+        // Laisser retomber la présentation (animations, callbacks) : elle ne
+        // doit RIEN changer à l'état logique. Si l'empreinte bouge pendant
+        // cette attente, c'est précisément le défaut que l'on traque.
+        await sleep(900);
+        const empreinteReelle = strategicStateFingerprint();
+        setTestRandomSeed(null);
+
+        return {
+          nom: cas.nom,
+          ok: empreinteSimulee === empreinteReelle,
+          simule: empreinteSimulee,
+          reel: empreinteReelle
+        };
+      }
+
+      async function benchFidelite() {
+        const resultats = [];
+        for (const cas of BENCH_CAS_FIDELITE) {
+          try {
+            resultats.push(await benchTesterFidelite(cas));
+          } catch (erreur) {
+            resultats.push({ nom: cas.nom, ok: false, erreur: String(erreur && erreur.message || erreur) });
+          }
+        }
+        return resultats;
+      }
+
       window.ILYOS_BENCH = {
         run: benchRunPuzzle,
+        reinitialiser: benchReinitialiser,
+        fidelite: benchFidelite,
         build: benchBuildSnapshot,
         observe: benchObserveState,
         seed: setTestRandomSeed,

@@ -323,6 +323,7 @@
       }
 
       function triggerFx(type, cells) {
+        if (ilyosSimulationActive) return;
         if (type === "move" && isCurrentPlayerAI()) {
           state.fxCells = [];
           return;
@@ -352,6 +353,7 @@
       }
 
       function animateToken(from, to, icon, color, kind, done, fall = false, path = null) {
+        if (ilyosSimulationActive) return;
         const fromCell = els.board.querySelector(`[data-r="${from[0]}"][data-c="${from[1]}"]`);
         const toCell = els.board.querySelector(`[data-r="${to[0]}"][data-c="${to[1]}"]`);
         if (!fromCell || !toCell) { done(); return; }
@@ -473,6 +475,7 @@
 
 
       function animateCellPulse(r, c, className) {
+        if (ilyosSimulationActive) return;
         if (isCurrentPlayerAI() && ["crown-burst", "spawn-arrival"].includes(className)) return;
         // V78 (passe fluidité) : en mode 3D, cette pulsation CSS sur la
         // cellule DOM (couche interaction/accessibilité, jamais affichée) n'a
@@ -514,6 +517,7 @@
       }
 
       function animateIslandLiftRotation(islandId, degrees, callback) {
+        if (ilyosSimulationActive) return;
         const group = els.board.querySelector(`.island-art[data-island-id="${islandId}"]`);
         const island = state.islands.find(item => item.id === islandId);
         const cells = island
@@ -526,6 +530,7 @@
       }
 
       function animateBoardMagic() {
+        if (ilyosSimulationActive) return;
         // V78 : le pulse magique 3D (playIslandMagicRotation, kaykit3d.js)
         // porte déjà l'effet visuel réel en mode alternative — ce pulse CSS
         // sur #board (couche interaction, invisible dans ce mode) n'apportait
@@ -569,6 +574,7 @@
       }
 
       function showToast(message) {
+        if (ilyosSimulationActive) return;
         els.toast.textContent = message;
         els.toast.classList.add("show");
         clearTimeout(toastTimer);
@@ -1401,6 +1407,7 @@
       }
 
       function compterStatistique(indexJoueur, cle) {
+        if (ilyosSimulationActive) return;
         const stats = statistiquesDuJoueur(indexJoueur);
         if (stats) stats[cle] = (stats[cle] || 0) + 1;
       }
@@ -3625,40 +3632,25 @@
           return null;
         }
 
-        const islandId = state.nextIslandId++;
-        const island = {
-          id: islandId,
-          owner: playerId,
-          shapeKey: placement.shapeKey,
-          anchor: { ...placement.anchor },
-          relCells: cloneCells(placement.relCells),
-          cells: cloneCells(placement.cells),
-          visualVariant: chooseIslandVisualVariant(placement.cells, islandId, state.islands)
-        };
-        state.islands.push(island);
+        /* Toute la conséquence de règle — terrain, apparition du gardien,
+           choix de sa case, ramassage éventuel d'une couronne — passe par le
+           noyau partagé avec la simulation du planner. C'est ce qui garantit
+           qu'une pose envisagée par l'IA produit exactement l'état qu'une pose
+           réellement jouée produirait, spawn compris. */
+        const applique = applyIslandPlacementCore(
+          placement.shapeKey,
+          placement.cells,
+          playerId,
+          placement.relCells,
+          placement.anchor
+        );
+        if (!applique) return null;
+        const island = state.islands.find(is => is.id === applique.ileId);
+        const spawn = applique.gardienCase;
         // Même matérialisation pour les poses de l'IA que pour celles du joueur.
         playIslandDrop(island.id);
-        state.islandPlacedThisTurn = true;
-
-        let spawn = null;
-
-        if (canCreateGuardian(playerId)) {
-          const target = automaticPlacementTarget(playerId);
-          const freeCells = island.cells.filter(([r, c]) => !characterAt(r, c));
-          freeCells.sort((a, b) =>
-            (Math.abs(a[0] - target[0]) + Math.abs(a[1] - target[1])) -
-            (Math.abs(b[0] - target[0]) + Math.abs(b[1] - target[1]))
-          );
-          spawn = freeCells[0] || island.cells[0];
-
-          const char = {
-            id: `char-${state.nextCharId++}`,
-            player: playerId,
-            r: spawn[0],
-            c: spawn[1]
-          };
-          state.characters.push(char);
-          resolveArtifactForCharacter(char);
+        if (applique.couronneRamassee) {
+          showToast(`${state.players[playerId].name} récupère une couronne !`);
         }
 
         state.phase = "ACTION_SELECT";
