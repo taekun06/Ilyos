@@ -1471,11 +1471,19 @@
         const num = String(n).padStart(2, "0");
         KAYKIT_SKY_BAND_VARIANTS["sky" + num] = { url: `./assets/sky/sky-band-${num}.webp`, label: "Sky_" + num };
       }
-      // Repérage manuel de deux variantes déjà comparées en jeu (voir LICENSE.txt) —
-      // n'empêche pas de choisir les 23 autres, juste une indication dans l'aide.
-      KAYKIT_SKY_BAND_VARIANTS.sky05.label = "Sky_05 — bleu profond (base)";
+      // Repérage manuel de variantes déjà comparées en jeu (voir LICENSE.txt) —
+      // n'empêche pas de choisir les autres, juste une indication dans l'aide.
+      KAYKIT_SKY_BAND_VARIANTS.sky05.label = "Sky_05 — bleu profond";
       KAYKIT_SKY_BAND_VARIANTS.sky11.label = "Sky_11 — violet nocturne, étoilé";
-      const KAYKIT_SKY_BAND_DEFAULT_VARIANT = "sky05";
+      // Composites Sky_02 + Sky_23 demandés en session (voir assets/sky/LICENSE.txt
+      // pour le détail des calculs) — pas des fichiers du pack d'origine, donc en
+      // dehors de la boucle sky01..sky25 ci-dessus.
+      KAYKIT_SKY_BAND_VARIANTS.blend0223 = { url: "./assets/sky/sky-band-blend-02-23.webp", label: "Mélange 02+23 — or proche, rose lointain (BASE)" };
+      KAYKIT_SKY_BAND_VARIANTS.blend0223v2 = { url: "./assets/sky/sky-band-blend-02-23-v2.webp", label: "Mélange 02+23 — coupure plus basse, rose plus présent" };
+      KAYKIT_SKY_BAND_VARIANTS.blend0223azimut = { url: "./assets/sky/sky-band-blend-02-23-azimut.webp", label: "Mélange 02+23 — par azimut (rose loin du soleil)" };
+      // Base du jeu : le mélange vertical d'origine (coupure à 35%), validé après
+      // comparaison des 25 variantes individuelles + de plusieurs mélanges 02/23.
+      const KAYKIT_SKY_BAND_DEFAULT_VARIANT = "blend0223";
       const kaykitSkyBandVariantStates = new Map();
       let kaykitSkyBandActiveVariant = KAYKIT_SKY_BAND_DEFAULT_VARIANT;
 

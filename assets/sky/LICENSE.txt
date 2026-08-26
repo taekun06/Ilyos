@@ -16,14 +16,36 @@ Chargement à la demande : chaque variante n'est téléchargée que si elle est
 sélectionnée (voir window.ILYOS_SKY.variante dans kaykit3d.js). Avoir les 25
 fichiers dans le dépôt n'ajoute donc aucun poids au chargement initial du jeu.
 
-Deux variantes déjà comparées en jeu :
-  sky05 — bleu profond net côté opposé au soleil, BASE PAR DÉFAUT.
+Variantes individuelles déjà comparées en jeu :
+  sky05 — bleu profond net côté opposé au soleil.
   sky11 — ambiance violet-bleu nocturne, étoiles visibles, nuages avec du relief.
 
-Deux variantes essayées puis écartées comme base par défaut (restent
-disponibles, juste pas retenues) :
+Deux variantes individuelles essayées puis écartées (restent disponibles,
+juste pas retenues) :
   sky21 — entièrement brun-orangé même loin du soleil, aucun bleu à aucun azimut.
   sky09 — gris-anthracite plat côté froid, moins de relief.
 
-Sélection en jeu : console, window.ILYOS_SKY.variante("sky01".."sky25"),
-ou sans argument pour lister les 25 options et voir laquelle est active.
+Sélection en jeu : console, window.ILYOS_SKY.variante("sky01".."sky25", ou
+un des trois mélanges ci-dessous), ou sans argument pour lister les options
+et voir laquelle est active. Même chose depuis le menu ⚙ en jeu, section
+"Ciel ›".
+
+Mélanges Sky_02 + Sky_23 (composites demandés en session, pas des fichiers
+du pack d'origine — générés depuis sky-band-02.webp et sky-band-23.webp,
+mêmes droits CC0 que le reste) :
+
+sky-band-blend-02-23.webp — variante "blend0223", BASE PAR DÉFAUT DU JEU.
+  Sky_02 (or, dominant en bas de bande = proche caméra) et Sky_23 (rose,
+  dominant en haut de bande = près de l'horizon = loin), mélange vertical
+  par élévation, transition en sigmoïde centrée à 35% de la hauteur
+  (largeur de fondu ~18%).
+
+sky-band-blend-02-23-v2.webp — variante "blend0223v2". Même principe,
+  coupure remontée à 52% (largeur ~20%) : le rose de Sky_23 occupe une
+  portion nettement plus large de l'écran visible.
+
+sky-band-blend-02-23-azimut.webp — variante "blend0223azimut". Coupure par
+  AZIMUT plutôt que par élévation : poids en cosinus (période 360°, raccord
+  garanti), Sky_23 domine à l'azimut opposé au soleil (KAYKIT_SKY_SUN.u=.75
+  → pic à .25), Sky_02 domine côté soleil — même logique chaud/froid que le
+  contre-jour peint, appliquée cette fois à l'image de fond elle-même.
