@@ -5325,20 +5325,32 @@
           registerKayKitFadeIn(ruban);
         };
 
-        /* Couleur et épaisseur réglées à l'écran, pas au jugé — deuxième
-           itération après le remplissage plein (déjà retouché une fois pour
-           la même raison). Le bronze ambré (0xd9922f) prévu à l'origine, à
-           l'épaisseur d'un simple trait, restait quasiment invisible sur
-           l'herbe : sa VALEUR (luminosité) est trop proche de celle du vert
-           du plateau, même à pleine opacité — deux couleurs de teinte
-           différente mais de clarté voisine se distinguent mal l'une de
-           l'autre en fine ligne, alors qu'un aplat plus large s'en sortait
-           un peu mieux. Le petit repère central des essais précédents
-           (0xfff0c6, un blanc doré) restait lui parfaitement visible même
-           minuscule (rayon .05) : c'est LUI qui porte le contraste de valeur
-           qui manquait, pas le bronze. Contour repris dans cette teinte. */
-        for (const segment of segments) ajouterRuban(segment, -.002, 0x3d2408, .82, .16);
-        for (const segment of segments) ajouterRuban(segment, .002, 0xfff0c6, 1, .10);
+        /* Couleur et épaisseur réglées à l'écran, pas au jugé — troisième
+           itération. La première (remplissage plein) et la deuxième (contour
+           en bronze ambré) se sont révélées trop discrètes en jeu réel : au
+           zoom par défaut, une ligne pensée pour un gros plan devient large
+           de quelques pixels à peine, sous le seuil où l'œil la remarque sans
+           la chercher. Le blanc doré (0xfff0c6) reste la bonne teinte — c'est
+           lui qui portait déjà le contraste de valeur qui manquait au bronze
+           — mais il lui fallait plus d'épaisseur ET une lueur qui reste
+           perceptible même quand le trait lui-même tombe sous le pixel. */
+        /* Épaisseur calée sur DEUX vues, pas une seule : la vue large du tout
+           premier tour (avant que la caméra n'ait de gardien à suivre, donc
+           tout le plateau tient à l'écran) ET un gros plan (caméra suivant le
+           joueur en cours de partie). .16 passait inaperçu dans la première ;
+           .30 débordait franchement de la case dans le second — un cadre plus
+           grand que la tuile qu'il entoure. .21 est le compromis retenu,
+           vérifié aux deux échelles. */
+        const epaisseurClaire = .21;
+        const epaisseurSombre = epaisseurClaire + .09;
+        const epaisseurLueur = epaisseurClaire + .30;
+        // Lueur large et très diluée en dessous de tout : à distance, c'est
+        // elle qui reste visible quand le trait net se perd dans la
+        // compression/l'anticrénelage — le même principe qu'un halo autour
+        // d'un phare, qui porte plus loin que le point source.
+        for (const segment of segments) ajouterRuban(segment, -.006, 0xffdd7a, .30, epaisseurLueur);
+        for (const segment of segments) ajouterRuban(segment, -.002, 0x2a1806, .95, epaisseurSombre);
+        for (const segment of segments) ajouterRuban(segment, .002, 0xfff3d2, 1, epaisseurClaire);
       }
 
       // Anneau orange compact directement sous le personnage/couronne poussable
