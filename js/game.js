@@ -860,7 +860,7 @@
 
         const cameraHint = document.createElement("div");
         cameraHint.className = "kaykit-camera-hint";
-        cameraHint.textContent = "GLISSER : TOURNER · MOLETTE : ZOOM · CLIC : JOUER";
+        cameraHint.textContent = "← → TOURNER · ESPACE : VUE DE FACE · MOLETTE : ZOOM · CLIC : JOUER";
         els.boardWrap.appendChild(cameraHint);
 
         let renderer;
@@ -4469,6 +4469,66 @@
         };
       }
 
+      /* Rotation de la caméra par paliers, autour du point qu'elle regarde.
+
+         Un huitième de tour : assez pour changer franchement d'angle en une
+         frappe, assez peu pour ne pas perdre ses repères. Quatre frappes font
+         un demi-tour, huit un tour complet.
+
+         La hauteur et la distance sont conservées telles quelles — on tourne
+         autour du plateau, on ne recadre pas. Le mouvement passe par le même
+         tween que le reste, qui sait déjà cohabiter avec OrbitControls : il
+         écrit à la fois la position de la caméra et celle de l'orbite, et
+         `orbit.update()` s'exécute derrière sans se battre avec lui. */
+      const PAS_ROTATION_CAMERA = Math.PI / 4;
+
+      function tournerKayKitCamera(sens) {
+        if (!kaykit3D || !kaykit3D.camera) return false;
+        const cible = kaykit3D.orbit ? kaykit3D.orbit.target.clone() : kaykit3D.viewTarget.clone();
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, cible);
+        const rayon = Math.hypot(ecart.x, ecart.z);
+        if (rayon < 1e-3) return false;
+
+        const azimut = Math.atan2(ecart.x, ecart.z) + sens * PAS_ROTATION_CAMERA;
+        const arrivee = new THREE.Vector3(
+          cible.x + Math.sin(azimut) * rayon,
+          kaykit3D.camera.position.y,
+          cible.z + Math.cos(azimut) * rayon
+        );
+
+        /* Tourner à la main, c'est reprendre la main : on passe en LIBRE, comme
+           le ferait un glissé. Sans quoi le prochain recadrage automatique
+           annulerait l'angle qu'on vient de choisir. ESPACE rend l'automatique. */
+        kaykit3D.autoFit = false;
+        kaykit3D.userRotated = true;
+        if (kaykit3D.cameraMode !== "free") { kaykit3D.cameraMode = "free"; updateKayKitCameraModeUI(); }
+        kaykit3D.cameraHint?.classList.add("hidden");
+
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 90 : 300,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: arrivee,
+          startTarget: cible.clone(),
+          endTarget: cible
+        };
+        return true;
+      }
+
+      /* ESPACE : retour à la vue de face, et retour à la caméra assistée.
+
+         Les deux vont ensemble. Jusqu'ici, un simple glissé faisait basculer en
+         LIBRE définitivement, et il fallait rouvrir le menu ⚙ pour retrouver
+         l'automatique — autant dire que personne ne le retrouvait. Une touche
+         qui remet la vue d'aplomb doit aussi remettre l'assistance. */
+      function reprendreKayKitVueDeFace() {
+        if (!kaykit3D) return false;
+        snapKayKitView("front");
+        kaykit3D.cameraMode = "auto";
+        updateKayKitCameraModeUI();
+        return true;
+      }
+
       function snapKayKitView(mode = "isometric") {
         if (!kaykit3D) return;
         kaykit3D.viewMode = mode;
@@ -4525,15 +4585,49 @@
         animateKayKitCameraTo(kaykit3D.viewMode, distance, duration);
       }
 
-      // Recadre vers le centre des gardiens du joueur dont c'est le tour.
+      /* Recadre au début du tour sur ce qui compte : les gardiens du joueur ET
+         la couronne libre la plus proche d'eux.
+
+         Auparavant la caméra ne visait que le barycentre des gardiens. On
+         voyait donc ses pièces sans voir l'objectif — or à ILYOS l'objectif se
+         déplace, et savoir où est la couronne est la première question qu'on se
+         pose en début de tour.
+
+         Le cadre s'élargit avec l'étalement des points d'intérêt : deux gardiens
+         voisins d'une couronne tiennent dans un plan serré, des gardiens
+         dispersés aux quatre coins demandent du recul. Sans cela, élargir le
+         point visé sans reculer la caméra ne ferait que sortir tout le monde du
+         champ. */
       function kaykitFollowCurrentPlayer(force = false) {
         if (!kaykit3D || !state?.characters?.length) return;
         if (!force && kaykit3D.cameraMode !== "auto") return;
         const mine = state.characters.filter(ch => ch.player === state.currentPlayer);
         if (!mine.length) return;
-        const avgR = mine.reduce((sum, ch) => sum + ch.r, 0) / mine.length;
-        const avgC = mine.reduce((sum, ch) => sum + ch.c, 0) / mine.length;
-        kaykitFollowCell(avgR, avgC, { duration: 720, force });
+
+        const centreR = mine.reduce((somme, ch) => somme + ch.r, 0) / mine.length;
+        const centreC = mine.reduce((somme, ch) => somme + ch.c, 0) / mine.length;
+
+        const interets = mine.map(ch => ({ r: ch.r, c: ch.c }));
+        const couronne = [state.artifact, state.secondArtifact]
+          .filter(item => item?.active && !item.carrierId && Number.isFinite(item.r) && Number.isFinite(item.c))
+          .sort((a, b) =>
+            (Math.abs(a.r - centreR) + Math.abs(a.c - centreC))
+            - (Math.abs(b.r - centreR) + Math.abs(b.c - centreC))
+          )[0];
+        if (couronne) interets.push({ r: couronne.r, c: couronne.c });
+
+        const rs = interets.map(p => p.r);
+        const cs = interets.map(p => p.c);
+        const viseR = (Math.min(...rs) + Math.max(...rs)) / 2;
+        const viseC = (Math.min(...cs) + Math.max(...cs)) / 2;
+
+        /* Recul proportionnel à l'étalement, plafonné : au-delà, on ne lirait
+           plus les gardiens. Le signe est négatif parce que kaykitFollowCell
+           SOUSTRAIT le zoomBoost de la distance — un boost positif rapproche. */
+        const etalement = Math.max(Math.max(...rs) - Math.min(...rs), Math.max(...cs) - Math.min(...cs));
+        const recul = -Math.min(2.6, Math.max(0, etalement - 2) * .42);
+
+        kaykitFollowCell(viseR, viseC, { duration: 720, force, zoomBoost: recul });
       }
 
       // Tout premier tour de la partie : on montre l'objectif (la couronne)
@@ -9633,6 +9727,52 @@
 
         const direction = (key === "q" || key === "arrowleft") ? -1 : 1;
         rotateSelectedIsland(direction);
+      }
+
+      /* RACCOURCIS DE CAMÉRA.
+
+         Séparés de handleRotateKey, qui sort d'emblée quand ce n'est pas au
+         joueur d'agir : regarder le plateau pendant le tour de l'adversaire est
+         précisément un moment où l'on veut tourner la vue.
+
+         Trois précautions, chacune pour une raison précise :
+
+         • handleRotateKey garde la priorité sur les flèches pendant la pose
+           d'une île ou une rotation magique. Il appelle preventDefault quand il
+           les consomme, donc `defaultPrevented` suffit à s'effacer devant lui,
+           sans dupliquer ses conditions.
+
+         • ESPACE actionne l'élément qui a le focus. Les cases du plateau sont
+           de vrais <button> : détourner ESPACE sans regarder le focus casserait
+           le jeu au clavier, qui est aujourd'hui le seul chemin accessible. Les
+           flèches, elles, n'actionnent rien — elles restent disponibles même
+           quand un bouton a le focus.
+
+         • Une fenêtre ouverte (règles, son, victoire) prend le dessus : on ne
+           fait pas pivoter un plateau que le joueur ne regarde pas. */
+      function fenetreOuverte() {
+        const visible = element => !!element && !element.classList.contains("hidden");
+        return visible(els.rulesModal) || visible(els.soundMenu) || visible(els.victoryModal);
+      }
+
+      function handleCameraKey(event) {
+        if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return;
+        if (!kaykit3D || fenetreOuverte()) return;
+
+        const cible = event.target;
+        const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
+        const saisie = ["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable);
+        if (saisie) return;
+
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          if (tournerKayKitCamera(event.key === "ArrowLeft" ? -1 : 1)) event.preventDefault();
+          return;
+        }
+
+        if (event.key === " " || event.key === "Spacebar") {
+          if (balise === "BUTTON" || balise === "A") return;
+          if (reprendreKayKitVueDeFace()) event.preventDefault();
+        }
       }
 
       function triggerFx(type, cells) {
@@ -20368,6 +20508,9 @@
       els.hand.addEventListener("wheel", handleActionWheel, { passive: false });
       els.boardWrap.addEventListener("click", cancelFromBackdrop);
       document.addEventListener("keydown", handleRotateKey);
+      // Après handleRotateKey, qui garde la priorité sur les flèches quand une
+      // île ou une rotation magique est en cours (voir handleCameraKey).
+      document.addEventListener("keydown", handleCameraKey);
       // Échap : ferme d'abord une éventuelle fenêtre ouverte (règles, menu son) —
       // sans quoi Échap déclencherait une annulation de coup EN PLUS de fermer la
       // fenêtre au clic suivant, un comportement surprenant. Sinon, même geste que

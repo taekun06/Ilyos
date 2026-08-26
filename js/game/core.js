@@ -276,6 +276,52 @@
         rotateSelectedIsland(direction);
       }
 
+      /* RACCOURCIS DE CAMÉRA.
+
+         Séparés de handleRotateKey, qui sort d'emblée quand ce n'est pas au
+         joueur d'agir : regarder le plateau pendant le tour de l'adversaire est
+         précisément un moment où l'on veut tourner la vue.
+
+         Trois précautions, chacune pour une raison précise :
+
+         • handleRotateKey garde la priorité sur les flèches pendant la pose
+           d'une île ou une rotation magique. Il appelle preventDefault quand il
+           les consomme, donc `defaultPrevented` suffit à s'effacer devant lui,
+           sans dupliquer ses conditions.
+
+         • ESPACE actionne l'élément qui a le focus. Les cases du plateau sont
+           de vrais <button> : détourner ESPACE sans regarder le focus casserait
+           le jeu au clavier, qui est aujourd'hui le seul chemin accessible. Les
+           flèches, elles, n'actionnent rien — elles restent disponibles même
+           quand un bouton a le focus.
+
+         • Une fenêtre ouverte (règles, son, victoire) prend le dessus : on ne
+           fait pas pivoter un plateau que le joueur ne regarde pas. */
+      function fenetreOuverte() {
+        const visible = element => !!element && !element.classList.contains("hidden");
+        return visible(els.rulesModal) || visible(els.soundMenu) || visible(els.victoryModal);
+      }
+
+      function handleCameraKey(event) {
+        if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return;
+        if (!kaykit3D || fenetreOuverte()) return;
+
+        const cible = event.target;
+        const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
+        const saisie = ["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable);
+        if (saisie) return;
+
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          if (tournerKayKitCamera(event.key === "ArrowLeft" ? -1 : 1)) event.preventDefault();
+          return;
+        }
+
+        if (event.key === " " || event.key === "Spacebar") {
+          if (balise === "BUTTON" || balise === "A") return;
+          if (reprendreKayKitVueDeFace()) event.preventDefault();
+        }
+      }
+
       function triggerFx(type, cells) {
         if (type === "move" && isCurrentPlayerAI()) {
           state.fxCells = [];
