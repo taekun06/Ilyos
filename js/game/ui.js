@@ -2574,25 +2574,40 @@
            qu'un bruit au bout donnait un gardien qui marche en silence. */
         playMovePath(path, walkDuration);
 
+        /* La règle s'applique MAINTENANT, plus à la fin de l'animation.
+           Auparavant `char.r = r` vivait dans le callback de fin de marche : le
+           gardien restait logiquement sur sa case de départ pendant toute la
+           durée du trajet, si bien que l'IA — qui enchaîne ses décisions au
+           rythme de ses propres temporisations — pouvait relire une position
+           périmée et rejouer le même coup. Sa séquence dépendait donc du temps
+           réel (voir BASELINE-IA.md, limitation du puzzle 07).
+
+           Le visuel n'en souffre pas : syncKayKitCharacters() ne recale un
+           gardien que si aucune animation n'est en cours, et l'animation reçoit
+           désormais sa case de départ explicitement, puisqu'elle ne peut plus
+           la relire depuis un état déjà à jour. */
+        const resultat = applyMoveCore(char.id, r, c, cost);
+        if (resultat?.couronneRamassee) {
+          showToast(`${state.players[char.player].name} récupère une couronne !`);
+        }
+
+        const presentation = () => {
+          triggerFx("move", [from, ...path]);
+          resetKayKitPointerFeedback();
+          renderAll();
+          showActionConsumption("MOVE", resultat?.cout ?? cost, availableActionCount("MOVE"));
+          if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
+        };
+
         if (state.visualMode === "alternative") {
           state.inputLocked = true;
           queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
             state.inputLocked = false;
-            char.r = r;
-            char.c = c;
-            resolveArtifactForCharacter(char);
-            triggerFx("move", [from, ...path]);
-            useSelectedCard(cost);
-          });
+            presentation();
+          }, from);
         } else {
-          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
-          animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
-            char.r = r;
-            char.c = c;
-            resolveArtifactForCharacter(char);
-            triggerFx("move", [from, ...path]);
-            useSelectedCard(cost);
-          }, false, path);
+          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, null, from);
+          animateToken(from, [r, c], owner.icon, owner.color, "move", presentation, false, path);
         }
         return true;
       }

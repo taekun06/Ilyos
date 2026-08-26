@@ -3626,15 +3626,24 @@
       // ne réinvente aucun calcul de durée, elle réutilise le même minuteur
       // (setTimeout(duration + 80)) qui pilotait déjà le nettoyage interne de
       // pendingActionAnimations, en y accrochant simplement ce callback.
-      function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null, onComplete = null) {
+      /* `origine` : case de départ imposée, indispensable depuis que la règle
+         de déplacement s'applique immédiatement (voir applyMoveCore). Le
+         gardien étant déjà logiquement arrivé quand l'animation démarre, sa
+         position ne peut plus servir de point de départ au trajet — sans cette
+         donnée, la marche partirait de la case d'arrivée. Les autres intentions
+         (poussée, magie, chute) n'en ont pas besoin et l'omettent. */
+      function queueKayKitActionAnimation(characterId, intent = "move", duration = 950, target = null, path = null, onComplete = null, origine = null) {
         if (!kaykit3D || characterId === null || characterId === undefined) {
           if (typeof onComplete === "function") onComplete();
           return;
         }
         const id = String(characterId);
         const character = state?.characters?.find(item => String(item.id) === id);
-        if (character && target && Number.isFinite(target.r) && Number.isFinite(target.c)) {
-          kaykit3D.characterFacing.set(id, kaykitFacingRotation(character.r, character.c, target.r, target.c));
+        const depart = Array.isArray(origine) && origine.length === 2
+          ? { r: origine[0], c: origine[1] }
+          : character;
+        if (depart && target && Number.isFinite(target.r) && Number.isFinite(target.c)) {
+          kaykit3D.characterFacing.set(id, kaykitFacingRotation(depart.r, depart.c, target.r, target.c));
         }
 
         const startedAt = performance.now();
@@ -3659,8 +3668,8 @@
         if (visual) {
           switch (intent) {
             case "move": {
-              const route = Array.isArray(path) && path.length && character
-                ? [[character.r, character.c], ...path.map(step => [step[0], step[1]])]
+              const route = Array.isArray(path) && path.length && depart
+                ? [[depart.r, depart.c], ...path.map(step => [step[0], step[1]])]
                 : null;
               if (route) playCharacterMove(visual, route, duration);
               break;
