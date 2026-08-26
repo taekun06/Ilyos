@@ -5051,6 +5051,7 @@
         const demi = KAYKIT_CELL_SPACING / 2;
         const cle = (r, c) => r + "," + c;
         const ensemble = new Set(cellules.map(([r, c]) => cle(r, c)));
+        const dedans = (r, c) => ensemble.has(cle(r, c));
 
         // Hauteur commune à tout le contour : celle de la case la plus haute
         // du groupe, pour que la ligne reste au-dessus du relief partout où
@@ -5059,32 +5060,102 @@
         for (const [r, c] of cellules) y = Math.max(y, kaykitCellSurfaceY(r, c));
         y += .03;
 
-        // Un bord par direction (nord/sud/est/ouest), en écart au centre de la
-        // case — nord/sud jouent sur Z (l'axe de la rangée r), est/ouest sur X
-        // (l'axe de la colonne c), voir kaykitCellPosition().
+        /* Chaque bord est identifié par les DEUX SOMMETS qu'il relie, en
+           indices de sommet — le sommet (i,j) est le coin nord-ouest de la
+           case (i,j), donc (r,c)/(r,c+1)/(r+1,c)/(r+1,c+1) sont les quatre
+           coins de la case (r,c). Garder ces indices (plutôt que directement
+           des coordonnées monde) permet de repérer ensuite, par un simple
+           test d'égalité d'indices, tous les segments qui passent par un
+           même sommet — nécessaire pour la correction du coin en diagonale
+           ci-dessous. */
         const bords = [
-          { dr: -1, dc: 0, segment: [[-demi, -demi], [demi, -demi]] },
-          { dr: 1, dc: 0, segment: [[-demi, demi], [demi, demi]] },
-          { dr: 0, dc: -1, segment: [[-demi, -demi], [-demi, demi]] },
-          { dr: 0, dc: 1, segment: [[demi, -demi], [demi, demi]] }
+          { dr: -1, dc: 0, sommets: [[0, 0], [0, 1]] },
+          { dr: 1, dc: 0, sommets: [[1, 0], [1, 1]] },
+          { dr: 0, dc: -1, sommets: [[0, 0], [1, 0]] },
+          { dr: 0, dc: 1, sommets: [[0, 1], [1, 1]] }
         ];
+        const pointSommet = (i, j) => {
+          const centre = kaykitCellPosition(i, j, y);
+          return { x: centre.x - demi, z: centre.z - demi };
+        };
 
-        const segments = [];
+        let segments = [];
         for (const [r, c] of cellules) {
-          const centre = kaykitCellPosition(r, c, y);
           for (const bord of bords) {
             // Un voisin dans l'ensemble : ce bord est un mur interne, partagé
             // entre deux cases atteignables — pas un bord du périmètre.
-            if (ensemble.has(cle(r + bord.dr, c + bord.dc))) continue;
-            const debut = bord.segment[0];
-            const fin = bord.segment[1];
-            segments.push({
-              x1: centre.x + debut[0], z1: centre.z + debut[1],
-              x2: centre.x + fin[0], z2: centre.z + fin[1]
-            });
+            if (dedans(r + bord.dr, c + bord.dc)) continue;
+            const [s1, s2] = bord.sommets;
+            const i1 = r + s1[0], j1 = c + s1[1], i2 = r + s2[0], j2 = c + s2[1];
+            const p1 = pointSommet(i1, j1);
+            const p2 = pointSommet(i2, j2);
+            // Les indices de sommet (i1/j1/i2/j2) servent à repérer les
+            // segments qui se rencontrent, les coordonnées (x1/z1/x2/z2) à
+            // les dessiner — un même objet porte les deux dès sa création.
+            segments.push({ i1, j1, i2, j2, x1: p1.x, z1: p1.z, x2: p2.x, z2: p2.z });
           }
         }
         if (!segments.length) return;
+
+        /* Le déplacement diagonal coûte 2, l'orthogonal 1 (movementEdges,
+           core.js) : deux cases peuvent donc être toutes deux atteignables
+           en ne se touchant QUE par un coin, sans que la case orthogonale
+           entre elles ne le soit — elle peut tout simplement ne pas exister
+           à cet endroit précis de l'île (une marche d'escalier). Signalé en
+           jeu : le tracé bord par bord ci-dessus fait alors converger QUATRE
+           demi-segments au même sommet, visible à l'écran comme un petit
+           croisement en X.
+
+           Correction, au sommet concerné : retirer les quatre demi-segments
+           et les remplacer par deux courtes diagonales qui contournent le
+           sommet par l'intérieur plutôt que de s'y croiser — la même levée
+           d'ambiguïté qu'un marching squares sur un point-selle. */
+        const sommetsCandidats = new Set();
+        for (const s of segments) {
+          sommetsCandidats.add(s.i1 + "," + s.j1);
+          sommetsCandidats.add(s.i2 + "," + s.j2);
+        }
+        const coupe = demi * .45;
+        for (const cleSommet of sommetsCandidats) {
+          const [i, j] = cleSommet.split(",").map(Number);
+          // Quatre cases autour du sommet (i,j) : NO=(i-1,j-1), NE=(i-1,j),
+          // SO=(i,j-1), SE=(i,j).
+          const no = dedans(i - 1, j - 1);
+          const ne = dedans(i - 1, j);
+          const so = dedans(i, j - 1);
+          const se = dedans(i, j);
+          const diagNoSe = no && se && !ne && !so;
+          const diagNeSo = ne && so && !no && !se;
+          if (!diagNoSe && !diagNeSo) continue;
+
+          const toucheCeSommet = seg => (seg.i1 === i && seg.j1 === j) || (seg.i2 === i && seg.j2 === j);
+          const concernes = segments.filter(toucheCeSommet);
+          // Configuration attendue : exactement quatre demi-segments se
+          // rencontrent ici. Un autre compte signale un cas non prévu (bord
+          // du plateau, forme d'île inhabituelle) — mieux vaut laisser le
+          // croisement d'origine que de couper des segments au hasard.
+          if (concernes.length !== 4) continue;
+          segments = segments.filter(seg => !toucheCeSommet(seg));
+
+          const p = pointSommet(i, j);
+          // Points coupés à distance `coupe` du sommet, sur chacun des
+          // quatre demi-segments qui s'y rejoignaient.
+          const nord = { x: p.x, z: p.z - coupe };
+          const sud = { x: p.x, z: p.z + coupe };
+          const ouest = { x: p.x - coupe, z: p.z };
+          const est = { x: p.x + coupe, z: p.z };
+          if (diagNoSe) {
+            // NO et SE dans la zone : relier ouest↔sud (referme le coin
+            // sud-ouest) et nord↔est (referme le coin nord-est) — les deux
+            // diagonales encadrent le sommet sans s'y toucher.
+            segments.push({ x1: ouest.x, z1: ouest.z, x2: sud.x, z2: sud.z });
+            segments.push({ x1: nord.x, z1: nord.z, x2: est.x, z2: est.z });
+          } else {
+            // NE et SO dans la zone : symétrique, nord↔ouest et sud↔est.
+            segments.push({ x1: nord.x, z1: nord.z, x2: ouest.x, z2: ouest.z });
+            segments.push({ x1: sud.x, z1: sud.z, x2: est.x, z2: est.z });
+          }
+        }
 
         /* Des rubans, pas des THREE.Line : `linewidth` sur LineBasicMaterial
            est ignoré par la quasi-totalité des pilotes desktop (limitation
@@ -5133,7 +5204,10 @@
            grand que la tuile qu'il entoure. .21 est le compromis retenu,
            vérifié aux deux échelles. */
         const epaisseurClaire = .21;
-        const epaisseurSombre = epaisseurClaire + .09;
+        // Surplus du liseré sombre réduit de moitié (.09 → .045) : signalé
+        // trop large, il dominait visuellement au lieu de simplement border
+        // la ligne claire.
+        const epaisseurSombre = epaisseurClaire + .045;
         const epaisseurLueur = epaisseurClaire + .30;
         // Lueur large et très diluée en dessous de tout : à distance, c'est
         // elle qui reste visible quand le trait net se perd dans la
