@@ -156,3 +156,32 @@ Conséquence pour la suite : le coût d'opportunité des formes est un terme
 d'évaluation valable dans TOUS les modes, et non une règle marginale. Il doit
 tout de même lire `shapeLimitPerOwner()` plutôt que la constante, la valeur 0
 signifiant « illimité ».
+
+---
+
+# Référence corrigée (puzzle 15 durci) — 12 / 16
+
+Le puzzle 15 était un **faux positif** : il passait sans que l'IA consulte
+jamais `couronnesEnAttente`. Une couronne libre traînait au nord-ouest, l'IA
+courait dessus, et sa trajectoire frôlait le sanctuaire par accident.
+
+Version durcie : plus aucune couronne libre, la seule couronne active est
+portée par l'adversaire — ce qui envoie explicitement le comportement actuel
+dans la direction opposée. Le gardien démarre à distance 2 du sanctuaire sur un
+couloir fermé, donc l'immobilité échoue aussi. Seule une approche délibérée
+réussit. L'assertion reste formulée en termes de règles.
+
+L'Expert corrigé (distances) y échoue désormais, en restant immobile.
+
+| Version | Score |
+|---|---|
+| Legacy (avant tout) | 11/16 |
+| Après correction des distances | 13/16 |
+| **Référence corrigée, puzzle 15 durci** | **12/16** |
+
+C'est **12/16** qui sert de point de comparaison à Expert V2, l'ancien 13/16
+comptant un puzzle réussi pour la mauvaise raison.
+
+Échecs restants : **04** (aucune comparaison entre agir et rester), **09**
+(magie non comprise comme transformation du graphe), **11** (pose automatique
+en début de tour), **15** (aucune anticipation de la couronne à venir).

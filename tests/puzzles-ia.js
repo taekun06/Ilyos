@@ -495,28 +495,50 @@ const PUZZLES = [
   {
     id: "15",
     nom: "Préparer une couronne en attente",
-    /* ÉCHEC ATTENDU EN BASELINE. La seconde couronne est en attente : elle
-       s'activera au sanctuaire au prochain tour. Une IA qui ne raisonne que sur
-       activeArtifacts() l'ignore complètement. Réussite = un gardien de l'IA
-       finit le tour à deux cases ou moins du sanctuaire. */
+    /* Durci après le Prompt 1, où ce puzzle était un FAUX POSITIF : il passait
+       sans que l'IA consulte jamais `couronnesEnAttente`. Une couronne libre
+       traînait au nord-ouest, l'IA courait dessus, et sa trajectoire frôlait le
+       sanctuaire par accident — le test validait donc un résultat obtenu pour
+       une tout autre raison.
+
+       Version durcie : plus aucune couronne libre. La seule couronne active est
+       PORTÉE PAR L'ADVERSAIRE, ce qui envoie explicitement le comportement
+       actuel dans la direction opposée — quand aucune couronne n'est libre,
+       aiStrategicTargetsForCharacter() vise les cases autour du porteur
+       adverse. Rester immobile échoue aussi (le gardien démarre à distance 2).
+       Seule une approche délibérée du sanctuaire, là où la couronne en attente
+       apparaîtra au prochain tour, satisfait la condition.
+
+       Le gardien évolue sur un couloir fermé (5,6)-(5,8) relié au sanctuaire :
+       s'approcher de l'adversaire et s'approcher du sanctuaire sont deux
+       directions strictement opposées, sans échappatoire. */
     spec: {
       seed: 115,
       islandPlacedThisTurn: true,
-      hands: { 0: ["MOVE", "MOVE", "MOVE", "MOVE"], 1: [] },
-      islands: [{ shapeKey: "square", owner: 0, cells: bloc(5, 6, 3, 3) }],
-      characters: [{ id: "ia-1", player: 0, r: 7, c: 8 }],
+      hands: { 0: ["MOVE", "MOVE", "MOVE"], 1: [] },
+      islands: [
+        { shapeKey: "line3", owner: 0, cells: [[5, 6], [5, 7], [5, 8]] },
+        { shapeKey: "line3", owner: 1, cells: [[1, 8], [1, 9], [1, 10]] }
+      ],
+      characters: [
+        { id: "ia-1", player: 0, r: 5, c: 7 },
+        { id: "adv-1", player: 1, r: 1, c: 9 }
+      ],
       crowns: [
-        { r: 0, c: 0, active: true },
+        { r: 1, c: 9, carrierId: "adv-1", active: true },
         { r: 5, c: 5, active: false }
       ],
       couronnesEnAttente: ["crown-2"]
     },
     attendu(obs) {
-      const proche = obs.gardiensIA.some(g => manhattan([g.r, g.c], SANCTUAIRE) <= 2);
+      /* Distance 1 ou 0 : le gardien doit pouvoir prendre la couronne dès son
+         apparition. Le départ est à 2, donc l'immobilité échoue, et s'éloigner
+         vers l'adversaire échoue davantage. */
       const distances = obs.gardiensIA.map(g => manhattan([g.r, g.c], SANCTUAIRE));
+      const enPosition = distances.some(d => d <= 1);
       return {
-        ok: proche,
-        raison: `distance(s) au sanctuaire : ${distances.join(", ") || "aucun gardien"}`
+        ok: enPosition,
+        raison: `distance(s) au sanctuaire : ${distances.join(", ") || "aucun gardien"} (départ : 2)`
       };
     }
   },
