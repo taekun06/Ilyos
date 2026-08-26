@@ -988,6 +988,22 @@ body[data-visual-mode="alternative"] .hud-v2-tech-info.hidden {
   display: none;
 }
 
+/* Sélecteur de variante de ciel : même conteneur .hud-v2-tech-info (replié par
+   défaut) que Infos techniques, un <select> natif dedans plutôt que des boutons
+   — 25 options ne tiennent pas dans une grille sans scroller sans fin. */
+body[data-visual-mode="alternative"] .hud-v2-popover-select {
+  width: 100%;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--hud-v2-text);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 body[data-visual-mode="alternative"] .hud-v2-tech-info .kaykit-status,
 body[data-visual-mode="alternative"] .hud-v2-tech-info .v69-quality-pill {
   position: static !important;

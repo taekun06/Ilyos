@@ -1450,6 +1450,69 @@
         [.56, "haze"], [.62, "abyss"], [.72, "midDeep"], [.82, "deep"], [1, "nadir"]
       ];
 
+      // Images source de la bande : de vraies mers de nuages équirectangulaires (CC0,
+      // voir assets/sky/LICENSE.txt), déjà recadrées sur les bornes exactes de
+      // KAYKIT_SKY_BAND (10°-62° sous l'horizontale) et suréchantillonnées à 4096×512.
+      // Remplacent le dégradé + les amas peints, mais PAS le contre-jour : celui-ci
+      // reste peint par dessus à chaque appel, dynamique (azimut du soleil réglable).
+      //
+      // Chargées à part du pipeline THREE (textureLoader / configureKayKitTexture) car
+      // elles sont dessinées dans un canvas 2D avant de devenir une CanvasTexture — un
+      // HTMLImageElement suffit, pas besoin des réglages de mapping GPU tant qu'on ne
+      // fait que les lire au pixel.
+      //
+      // Les 25 variantes du pack (voir assets/sky/LICENSE.txt), au choix via
+      // window.ILYOS_SKY.variante — chacune chargée à la demande et mise en cache :
+      // passer d'une variante à l'autre ne retélécharge jamais celle déjà vue, et
+      // n'en télécharge aucune tant qu'on ne l'a pas choisie (aucun coût au démarrage
+      // au-delà de la variante par défaut).
+      const KAYKIT_SKY_BAND_VARIANTS = {};
+      for (let n = 1; n <= 25; n++) {
+        const num = String(n).padStart(2, "0");
+        KAYKIT_SKY_BAND_VARIANTS["sky" + num] = { url: `./assets/sky/sky-band-${num}.webp`, label: "Sky_" + num };
+      }
+      // Repérage manuel de variantes déjà comparées en jeu (voir LICENSE.txt) —
+      // n'empêche pas de choisir les autres, juste une indication dans l'aide.
+      KAYKIT_SKY_BAND_VARIANTS.sky05.label = "Sky_05 — bleu profond";
+      KAYKIT_SKY_BAND_VARIANTS.sky11.label = "Sky_11 — violet nocturne, étoilé";
+      // Composites Sky_02 + Sky_23 demandés en session (voir assets/sky/LICENSE.txt
+      // pour le détail des calculs) — pas des fichiers du pack d'origine, donc en
+      // dehors de la boucle sky01..sky25 ci-dessus.
+      KAYKIT_SKY_BAND_VARIANTS.blend0223 = { url: "./assets/sky/sky-band-blend-02-23.webp", label: "Mélange 02+23 — or proche, rose lointain (BASE)" };
+      KAYKIT_SKY_BAND_VARIANTS.blend0223v2 = { url: "./assets/sky/sky-band-blend-02-23-v2.webp", label: "Mélange 02+23 — coupure plus basse, rose plus présent" };
+      KAYKIT_SKY_BAND_VARIANTS.blend0223azimut = { url: "./assets/sky/sky-band-blend-02-23-azimut.webp", label: "Mélange 02+23 — par azimut (rose loin du soleil)" };
+      // Base du jeu : le mélange vertical d'origine (coupure à 35%), validé après
+      // comparaison des 25 variantes individuelles + de plusieurs mélanges 02/23.
+      const KAYKIT_SKY_BAND_DEFAULT_VARIANT = "blend0223";
+      const kaykitSkyBandVariantStates = new Map();
+      let kaykitSkyBandActiveVariant = KAYKIT_SKY_BAND_DEFAULT_VARIANT;
+
+      // Pas de placeholder à remplacer à chaud : tant que l'image d'une variante n'est
+      // pas prête, la bande continue de fonctionner sur son rendu peint existant
+      // (gradient + amas), qui est un ciel complet en soi. Une passe de reprise (voir
+      // kaykitReprendreCielImage) purge le cache et redessine dès que l'image arrive.
+      function kaykitSkyBandSourceEnsure(nom = kaykitSkyBandActiveVariant) {
+        const spec = KAYKIT_SKY_BAND_VARIANTS[nom];
+        if (!spec) return { img: null, ready: false, requested: true };
+        let state = kaykitSkyBandVariantStates.get(nom);
+        if (!state) {
+          state = { img: null, ready: false, requested: false };
+          kaykitSkyBandVariantStates.set(nom, state);
+        }
+        if (!state.requested) {
+          state.requested = true;
+          const img = new Image();
+          img.decoding = "async";
+          img.onload = () => { state.ready = true; };
+          img.onerror = () => {
+            console.warn("[ILYOS] image de ciel introuvable, bande peinte conservée :", spec.url);
+          };
+          img.src = spec.url;
+          state.img = img;
+        }
+        return state;
+      }
+
       function kaykitSkyColorAt(p) {
         const t = THREE.MathUtils.clamp(p, 0, 1);
         for (let i = 1; i < KAYKIT_SKY_STOPS.length; i++) {
@@ -1487,16 +1550,24 @@
         const vRatio = pxPerDegV / pxPerDegH;
         const rowOf = p => ((p - pTop) / pSpan) * H;
 
-        // Dégradé échantillonné ligne à ligne depuis la table partagée plutôt que via
-        // createLinearGradient : égalité exacte avec le dôme à toute élévation, y
-        // compris si les stops changent un jour.
-        for (let y = 0; y < H; y++) {
-          const c = kaykitSkyColorAt(pTop + (y / H) * pSpan);
-          ctx.fillStyle = "#" + c.getHexString();
-          ctx.fillRect(0, y, W, 1);
-          const noise = (Math.sin(y * 12.9898) * .5 + .5) * .012;
-          ctx.fillStyle = "rgba(255,255,255," + noise.toFixed(4) + ")";
-          ctx.fillRect(0, y, W, 1);
+        const skySource = kaykitSkyBandSourceEnsure();
+        if (skySource.ready) {
+          // L'image couvre déjà exactement 360°×(top-bottom) : un simple étirement
+          // plein cadre suffit, aucun recadrage à refaire ici.
+          ctx.drawImage(skySource.img, 0, 0, W, H);
+        } else {
+          // Repli tant que l'image n'est pas arrivée : dégradé échantillonné ligne à
+          // ligne depuis la table partagée, égalité exacte avec le dôme à toute
+          // élévation. Une passe de reprise redessinera avec l'image dès qu'elle sera
+          // prête (voir kaykitReprendreCielImage).
+          for (let y = 0; y < H; y++) {
+            const c = kaykitSkyColorAt(pTop + (y / H) * pSpan);
+            ctx.fillStyle = "#" + c.getHexString();
+            ctx.fillRect(0, y, W, 1);
+            const noise = (Math.sin(y * 12.9898) * .5 + .5) * .012;
+            ctx.fillStyle = "rgba(255,255,255," + noise.toFixed(4) + ")";
+            ctx.fillRect(0, y, W, 1);
+          }
         }
 
         const seeded = (i, salt = 0) => {
@@ -1655,37 +1726,42 @@
           });
         };
 
-        const cloudTopRow = rowOf(.572), cloudBottomRow = rowOf(.745);
-        const farCloudCount = 9;
-        const farSpacingDeg = 360 / farCloudCount;
-        for (let i = 0; i < farCloudCount; i++) {
-          const cxDeg = (i + .5) * farSpacingDeg + (seeded(i, 1) - .5) * farSpacingDeg * .45;
-          const cx = cxDeg * pxPerDegH;
-          const cy = cloudTopRow + seeded(i, 2) * (cloudBottomRow - cloudTopRow);
-          const scale = (farSpacingDeg * (.30 + seeded(i, 3) * .12)) * pxPerDegH;
-          const alpha = .40 + seeded(i, 4) * .22;
-          // Dupliqué à ±W : le raccord (wrapS = Repeat) doit rester invisible quel que
-          // soit l'azimut, puisque la caméra tourne.
-          drawCloud(cx - W, cy, scale, alpha);
-          drawCloud(cx, cy, scale, alpha);
-          drawCloud(cx + W, cy, scale, alpha);
-        }
+        // Amas peints : uniquement en repli. L'image contient déjà ses propres nuages
+        // photographiques ; les superposer par-dessus doublerait la lecture et
+        // trahirait le raccord peint/photo.
+        if (!skySource.ready) {
+          const cloudTopRow = rowOf(.572), cloudBottomRow = rowOf(.745);
+          const farCloudCount = 9;
+          const farSpacingDeg = 360 / farCloudCount;
+          for (let i = 0; i < farCloudCount; i++) {
+            const cxDeg = (i + .5) * farSpacingDeg + (seeded(i, 1) - .5) * farSpacingDeg * .45;
+            const cx = cxDeg * pxPerDegH;
+            const cy = cloudTopRow + seeded(i, 2) * (cloudBottomRow - cloudTopRow);
+            const scale = (farSpacingDeg * (.30 + seeded(i, 3) * .12)) * pxPerDegH;
+            const alpha = .40 + seeded(i, 4) * .22;
+            // Dupliqué à ±W : le raccord (wrapS = Repeat) doit rester invisible quel que
+            // soit l'azimut, puisque la caméra tourne.
+            drawCloud(cx - W, cy, scale, alpha);
+            drawCloud(cx, cy, scale, alpha);
+            drawCloud(cx + W, cy, scale, alpha);
+          }
 
-        // Passe de détail : IMPOSSIBLE auparavant. Un amas de 4° occupait 11 px sur le
-        // dôme et disparaissait entièrement dans le filtrage ; il en occupe 46 ici.
-        // C'est exactement ce que la densité achète — une seconde échelle de lecture,
-        // qui fait que le ciel supporte le zoom avant au lieu de s'aplatir.
-        const wispCount = 22;
-        const wispSpacingDeg = 360 / wispCount;
-        for (let i = 0; i < wispCount; i++) {
-          const cxDeg = (i + .5) * wispSpacingDeg + (seeded(i, 7) - .5) * wispSpacingDeg * .8;
-          const cx = cxDeg * pxPerDegH;
-          const cy = cloudTopRow + seeded(i, 8) * (cloudBottomRow - cloudTopRow) * 1.05;
-          const scale = (wispSpacingDeg * (.22 + seeded(i, 9) * .16)) * pxPerDegH;
-          const alpha = .13 + seeded(i, 10) * .11;
-          drawCloud(cx - W, cy, scale, alpha, .8);
-          drawCloud(cx, cy, scale, alpha, .8);
-          drawCloud(cx + W, cy, scale, alpha, .8);
+          // Passe de détail : IMPOSSIBLE auparavant. Un amas de 4° occupait 11 px sur le
+          // dôme et disparaissait entièrement dans le filtrage ; il en occupe 46 ici.
+          // C'est exactement ce que la densité achète — une seconde échelle de lecture,
+          // qui fait que le ciel supporte le zoom avant au lieu de s'aplatir.
+          const wispCount = 22;
+          const wispSpacingDeg = 360 / wispCount;
+          for (let i = 0; i < wispCount; i++) {
+            const cxDeg = (i + .5) * wispSpacingDeg + (seeded(i, 7) - .5) * wispSpacingDeg * .8;
+            const cx = cxDeg * pxPerDegH;
+            const cy = cloudTopRow + seeded(i, 8) * (cloudBottomRow - cloudTopRow) * 1.05;
+            const scale = (wispSpacingDeg * (.22 + seeded(i, 9) * .16)) * pxPerDegH;
+            const alpha = .13 + seeded(i, 10) * .11;
+            drawCloud(cx - W, cy, scale, alpha, .8);
+            drawCloud(cx, cy, scale, alpha, .8);
+            drawCloud(cx + W, cy, scale, alpha, .8);
+          }
         }
 
         // Fondu des bords vers le dôme. destination-out : on retire de l'alpha, on ne
@@ -2551,7 +2627,9 @@
             "                      plateau plus bas dans le cadre, plus de ciel visible",
             "nuages({ corps: 0x5a6b90 })   couleur du corps des nuages",
             "valeurs()             réglages courants",
-            "regenerer()           reconstruit la texture de ciel"
+            "regenerer()           reconstruit la texture de ciel",
+            "variante(nom)         change l'image de fond de la bande de ciel",
+            "                      (sky01..sky25) — sans argument, liste les 25 options"
           ].join("\n");
         },
         valeurs() {
@@ -2575,6 +2653,28 @@
           band.material.map = kaykitSkyBandTexture();
           band.material.needsUpdate = true;
           return "ciel régénéré";
+        },
+        variante(nom) {
+          if (!nom) {
+            return Object.entries(KAYKIT_SKY_BAND_VARIANTS)
+              .map(([cle, spec]) => (cle === kaykitSkyBandActiveVariant ? "→ " : "  ") + cle + " : " + spec.label)
+              .join("\n");
+          }
+          if (!KAYKIT_SKY_BAND_VARIANTS[nom]) {
+            return "variante inconnue : " + nom + " (options : " + Object.keys(KAYKIT_SKY_BAND_VARIANTS).join(", ") + ")";
+          }
+          kaykitSkyBandActiveVariant = nom;
+          // Démarre le chargement s'il n'a jamais eu lieu ; si l'image de cette variante
+          // est déjà en cache (vue précédemment), rien à retélécharger.
+          const source = kaykitSkyBandSourceEnsure(nom);
+          // Autorise la passe de reprise à ré-agir : sans cette remise à zéro, elle
+          // considérerait le ciel comme déjà « repris » depuis le chargement initial
+          // et n'upgraderait jamais cette nouvelle variante une fois prête.
+          kaykit3D.cielImageRepris = false;
+          const rendu = this.regenerer();
+          return source.ready
+            ? rendu + " (variante « " + nom + " » appliquée)"
+            : rendu + " (variante « " + nom + " » en cours de chargement — reprise automatique dès qu'elle est prête)";
         },
         soleil(opts = {}) {
           if (opts.p !== undefined) KAYKIT_SKY_SUN.p = opts.p;
@@ -2691,6 +2791,25 @@
           return this.valeurs().nuages;
         }
       };
+
+      /** Redessine la bande de ciel dès que l'image équirectangulaire est arrivée,
+       *  pour remplacer le repli peint (gradient + amas procéduraux) posé en attendant.
+       *  Même principe que kaykitReprendreSoclesRocheux : purge le cache par clé puis
+       *  reconstruit, plutôt que de retoucher la texture déjà posée sur le matériau. */
+      function kaykitReprendreCielImage() {
+        const src = kaykitSkyBandSourceEnsure();
+        if (!src.ready) return false;
+        const sky = kaykit3D?.scene?.getObjectByName("ilyos-sky");
+        if (!sky) return false;
+        const band = sky.children.find(c => c.geometry?.type === "SphereGeometry"
+          && c.geometry.parameters?.thetaStart > 0);
+        if (!band) return false;
+        kaykit3D.materials.delete("sky-band-hd-v1");
+        if (band.material.map) band.material.map.dispose();
+        band.material.map = kaykitSkyBandTexture();
+        band.material.needsUpdate = true;
+        return true;
+      }
 
       // Archipel lointain. Séparé de buildKayKitSkyEnvironment et appelé seulement une fois
       // les modèles KayKit disponibles — sinon cloneKayKitAsset renvoie null et rien n'est
@@ -9222,6 +9341,12 @@
           if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
             buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
+          }
+
+          // Ciel : bascule vers l'image équirectangulaire dès qu'elle a fini de charger
+          // (réseau, pas un asset KayKit — condition indépendante des autres reprises).
+          if (!kaykit3D.cielImageRepris) {
+            kaykit3D.cielImageRepris = kaykitReprendreCielImage();
           }
 
           // Archipel lointain : mêmes conditions, mêmes raisons. `tileBottom` est la pièce
@@ -20930,6 +21055,19 @@
           techToggle.setAttribute("aria-expanded", String(!!willOpen));
           return;
         }
+        // Ciel : même repli/dépli que Infos techniques, indépendant. Peuple le
+        // menu déroulant à la première ouverture seulement (KAYKIT_SKY_BAND_VARIANTS
+        // ne change jamais en cours de partie, inutile de le refaire à chaque clic).
+        const skyToggle = event.target.closest("#hudV2SkyToggle");
+        if (skyToggle) {
+          const skyPanel = document.getElementById("hudV2SkyPanel");
+          const willOpen = skyPanel?.classList.contains("hidden");
+          if (willOpen) renderHudV2SkyOptions();
+          skyPanel?.classList.toggle("hidden", !willOpen);
+          skyPanel?.setAttribute("aria-hidden", String(!willOpen));
+          skyToggle.setAttribute("aria-expanded", String(!!willOpen));
+          return;
+        }
         // #soundBtn est volontairement exclu : openSoundMenu() positionne le
         // panneau son via getBoundingClientRect() du bouton dans un rAF
         // différé (audio.js) — fermer le popover ⚙ tout de suite le
@@ -20940,6 +21078,25 @@
 
       document.getElementById("hudV2HandCount")?.addEventListener("click", () => {
         toggleHudV2Drawer("hudV2HandPopover", "hudV2HandCount");
+      });
+
+      // Sélecteur de ciel : liste construite depuis KAYKIT_SKY_BAND_VARIANTS
+      // (kaykit3d.js, même IIFE) — une seule source, jamais dupliquée en dur ici.
+      // Peuplé à la première ouverture du panneau (voir le toggle ci-dessus).
+      function renderHudV2SkyOptions() {
+        const select = document.getElementById("hudV2SkyVariant");
+        if (!select || select.dataset.peuple === "1") {
+          if (select) select.value = kaykitSkyBandActiveVariant;
+          return;
+        }
+        select.dataset.peuple = "1";
+        select.innerHTML = Object.entries(KAYKIT_SKY_BAND_VARIANTS)
+          .map(([cle, spec]) => `<option value="${cle}">${spec.label}</option>`)
+          .join("");
+        select.value = kaykitSkyBandActiveVariant;
+      }
+      document.getElementById("hudV2SkyVariant")?.addEventListener("change", event => {
+        window.ILYOS_SKY?.variante(event.target.value);
       });
 
       document.addEventListener("click", event => {
