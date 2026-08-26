@@ -1,5 +1,5 @@
-Bande de ciel — variantes
-=========================
+Bande de ciel — 25 variantes (sky-band-01.webp à sky-band-25.webp)
+===================================================================
 
 Source (toutes) : "Cloudy Skyboxes - Panorama", par Screaming Brain Studios
 https://screamingbrainstudios.itch.io/cloudy-skyboxes-pack
@@ -8,17 +8,22 @@ créditée ici par courtoisie.
 
 Traitement appliqué à chacune (voir scripts d'extraction de la session) :
 recadrage sur la bande 10°-62° sous l'horizon (bornes de KAYKIT_SKY_BAND dans
-kaykit3d.js), suréchantillonnage Lanczos3 à 4096×512, export .webp qualité 88.
+kaykit3d.js), suréchantillonnage Lanczos3 à 4096×512, export .webp qualité 88
+(19 à 71 Ko selon la variante). Numérotation alignée sur le pack d'origine :
+sky-band-05.webp = Panorama_Sky_05, etc.
 
-sky-band-cloudsea.webp — Panorama_Sky_05 — variante "sky05", BASE PAR DÉFAUT.
-  Bleu profond net sur le côté opposé au soleil, meilleur contraste chaud/froid
-  par azimut des candidats essayés.
+Chargement à la demande : chaque variante n'est téléchargée que si elle est
+sélectionnée (voir window.ILYOS_SKY.variante dans kaykit3d.js). Avoir les 25
+fichiers dans le dépôt n'ajoute donc aucun poids au chargement initial du jeu.
 
-sky-band-sky11.webp — Panorama_Sky_11 — variante "sky11".
-  Ambiance violet-bleu nocturne, étoiles visibles, nuages avec du relief.
+Deux variantes déjà comparées en jeu :
+  sky05 — bleu profond net côté opposé au soleil, BASE PAR DÉFAUT.
+  sky11 — ambiance violet-bleu nocturne, étoiles visibles, nuages avec du relief.
 
-(Sky_21 essayé et écarté : entièrement brun-orangé même loin du soleil, donc
-aucun bleu à aucun azimut. Sky_09 essayé et écarté : gris-anthracite plat côté
-froid, moins de relief. Ni l'un ni l'autre n'a été gardé comme variante.)
+Deux variantes essayées puis écartées comme base par défaut (restent
+disponibles, juste pas retenues) :
+  sky21 — entièrement brun-orangé même loin du soleil, aucun bleu à aucun azimut.
+  sky09 — gris-anthracite plat côté froid, moins de relief.
 
-Sélection en jeu : console, window.ILYOS_SKY.variante("sky05" | "sky11").
+Sélection en jeu : console, window.ILYOS_SKY.variante("sky01".."sky25"),
+ou sans argument pour lister les 25 options et voir laquelle est active.

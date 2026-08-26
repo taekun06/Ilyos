@@ -489,6 +489,19 @@
           techToggle.setAttribute("aria-expanded", String(!!willOpen));
           return;
         }
+        // Ciel : même repli/dépli que Infos techniques, indépendant. Peuple le
+        // menu déroulant à la première ouverture seulement (KAYKIT_SKY_BAND_VARIANTS
+        // ne change jamais en cours de partie, inutile de le refaire à chaque clic).
+        const skyToggle = event.target.closest("#hudV2SkyToggle");
+        if (skyToggle) {
+          const skyPanel = document.getElementById("hudV2SkyPanel");
+          const willOpen = skyPanel?.classList.contains("hidden");
+          if (willOpen) renderHudV2SkyOptions();
+          skyPanel?.classList.toggle("hidden", !willOpen);
+          skyPanel?.setAttribute("aria-hidden", String(!willOpen));
+          skyToggle.setAttribute("aria-expanded", String(!!willOpen));
+          return;
+        }
         // #soundBtn est volontairement exclu : openSoundMenu() positionne le
         // panneau son via getBoundingClientRect() du bouton dans un rAF
         // différé (audio.js) — fermer le popover ⚙ tout de suite le
@@ -499,6 +512,25 @@
 
       document.getElementById("hudV2HandCount")?.addEventListener("click", () => {
         toggleHudV2Drawer("hudV2HandPopover", "hudV2HandCount");
+      });
+
+      // Sélecteur de ciel : liste construite depuis KAYKIT_SKY_BAND_VARIANTS
+      // (kaykit3d.js, même IIFE) — une seule source, jamais dupliquée en dur ici.
+      // Peuplé à la première ouverture du panneau (voir le toggle ci-dessus).
+      function renderHudV2SkyOptions() {
+        const select = document.getElementById("hudV2SkyVariant");
+        if (!select || select.dataset.peuple === "1") {
+          if (select) select.value = kaykitSkyBandActiveVariant;
+          return;
+        }
+        select.dataset.peuple = "1";
+        select.innerHTML = Object.entries(KAYKIT_SKY_BAND_VARIANTS)
+          .map(([cle, spec]) => `<option value="${cle}">${spec.label}</option>`)
+          .join("");
+        select.value = kaykitSkyBandActiveVariant;
+      }
+      document.getElementById("hudV2SkyVariant")?.addEventListener("change", event => {
+        window.ILYOS_SKY?.variante(event.target.value);
       });
 
       document.addEventListener("click", event => {

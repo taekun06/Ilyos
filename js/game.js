@@ -1461,13 +1461,20 @@
       // HTMLImageElement suffit, pas besoin des réglages de mapping GPU tant qu'on ne
       // fait que les lire au pixel.
       //
-      // Plusieurs variantes au choix (basculées via window.ILYOS_SKY.variante), chacune
-      // chargée à la demande et mise en cache : passer d'une variante à l'autre ne
-      // retélécharge jamais celle déjà vue.
-      const KAYKIT_SKY_BAND_VARIANTS = {
-        sky05: { url: "./assets/sky/sky-band-cloudsea.webp", label: "Sky_05 — bleu profond (base)" },
-        sky11: { url: "./assets/sky/sky-band-sky11.webp", label: "Sky_11 — violet nocturne, étoilé" }
-      };
+      // Les 25 variantes du pack (voir assets/sky/LICENSE.txt), au choix via
+      // window.ILYOS_SKY.variante — chacune chargée à la demande et mise en cache :
+      // passer d'une variante à l'autre ne retélécharge jamais celle déjà vue, et
+      // n'en télécharge aucune tant qu'on ne l'a pas choisie (aucun coût au démarrage
+      // au-delà de la variante par défaut).
+      const KAYKIT_SKY_BAND_VARIANTS = {};
+      for (let n = 1; n <= 25; n++) {
+        const num = String(n).padStart(2, "0");
+        KAYKIT_SKY_BAND_VARIANTS["sky" + num] = { url: `./assets/sky/sky-band-${num}.webp`, label: "Sky_" + num };
+      }
+      // Repérage manuel de deux variantes déjà comparées en jeu (voir LICENSE.txt) —
+      // n'empêche pas de choisir les 23 autres, juste une indication dans l'aide.
+      KAYKIT_SKY_BAND_VARIANTS.sky05.label = "Sky_05 — bleu profond (base)";
+      KAYKIT_SKY_BAND_VARIANTS.sky11.label = "Sky_11 — violet nocturne, étoilé";
       const KAYKIT_SKY_BAND_DEFAULT_VARIANT = "sky05";
       const kaykitSkyBandVariantStates = new Map();
       let kaykitSkyBandActiveVariant = KAYKIT_SKY_BAND_DEFAULT_VARIANT;
@@ -2613,8 +2620,8 @@
             "nuages({ corps: 0x5a6b90 })   couleur du corps des nuages",
             "valeurs()             réglages courants",
             "regenerer()           reconstruit la texture de ciel",
-            "variante(nom)         change l'image de fond de la bande de ciel :",
-            "                      " + Object.keys(KAYKIT_SKY_BAND_VARIANTS).join(", ") + " — sans argument, liste les options"
+            "variante(nom)         change l'image de fond de la bande de ciel",
+            "                      (sky01..sky25) — sans argument, liste les 25 options"
           ].join("\n");
         },
         valeurs() {
@@ -21040,6 +21047,19 @@
           techToggle.setAttribute("aria-expanded", String(!!willOpen));
           return;
         }
+        // Ciel : même repli/dépli que Infos techniques, indépendant. Peuple le
+        // menu déroulant à la première ouverture seulement (KAYKIT_SKY_BAND_VARIANTS
+        // ne change jamais en cours de partie, inutile de le refaire à chaque clic).
+        const skyToggle = event.target.closest("#hudV2SkyToggle");
+        if (skyToggle) {
+          const skyPanel = document.getElementById("hudV2SkyPanel");
+          const willOpen = skyPanel?.classList.contains("hidden");
+          if (willOpen) renderHudV2SkyOptions();
+          skyPanel?.classList.toggle("hidden", !willOpen);
+          skyPanel?.setAttribute("aria-hidden", String(!willOpen));
+          skyToggle.setAttribute("aria-expanded", String(!!willOpen));
+          return;
+        }
         // #soundBtn est volontairement exclu : openSoundMenu() positionne le
         // panneau son via getBoundingClientRect() du bouton dans un rAF
         // différé (audio.js) — fermer le popover ⚙ tout de suite le
@@ -21050,6 +21070,25 @@
 
       document.getElementById("hudV2HandCount")?.addEventListener("click", () => {
         toggleHudV2Drawer("hudV2HandPopover", "hudV2HandCount");
+      });
+
+      // Sélecteur de ciel : liste construite depuis KAYKIT_SKY_BAND_VARIANTS
+      // (kaykit3d.js, même IIFE) — une seule source, jamais dupliquée en dur ici.
+      // Peuplé à la première ouverture du panneau (voir le toggle ci-dessus).
+      function renderHudV2SkyOptions() {
+        const select = document.getElementById("hudV2SkyVariant");
+        if (!select || select.dataset.peuple === "1") {
+          if (select) select.value = kaykitSkyBandActiveVariant;
+          return;
+        }
+        select.dataset.peuple = "1";
+        select.innerHTML = Object.entries(KAYKIT_SKY_BAND_VARIANTS)
+          .map(([cle, spec]) => `<option value="${cle}">${spec.label}</option>`)
+          .join("");
+        select.value = kaykitSkyBandActiveVariant;
+      }
+      document.getElementById("hudV2SkyVariant")?.addEventListener("change", event => {
+        window.ILYOS_SKY?.variante(event.target.value);
       });
 
       document.addEventListener("click", event => {

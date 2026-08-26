@@ -1252,13 +1252,20 @@
       // HTMLImageElement suffit, pas besoin des réglages de mapping GPU tant qu'on ne
       // fait que les lire au pixel.
       //
-      // Plusieurs variantes au choix (basculées via window.ILYOS_SKY.variante), chacune
-      // chargée à la demande et mise en cache : passer d'une variante à l'autre ne
-      // retélécharge jamais celle déjà vue.
-      const KAYKIT_SKY_BAND_VARIANTS = {
-        sky05: { url: "./assets/sky/sky-band-cloudsea.webp", label: "Sky_05 — bleu profond (base)" },
-        sky11: { url: "./assets/sky/sky-band-sky11.webp", label: "Sky_11 — violet nocturne, étoilé" }
-      };
+      // Les 25 variantes du pack (voir assets/sky/LICENSE.txt), au choix via
+      // window.ILYOS_SKY.variante — chacune chargée à la demande et mise en cache :
+      // passer d'une variante à l'autre ne retélécharge jamais celle déjà vue, et
+      // n'en télécharge aucune tant qu'on ne l'a pas choisie (aucun coût au démarrage
+      // au-delà de la variante par défaut).
+      const KAYKIT_SKY_BAND_VARIANTS = {};
+      for (let n = 1; n <= 25; n++) {
+        const num = String(n).padStart(2, "0");
+        KAYKIT_SKY_BAND_VARIANTS["sky" + num] = { url: `./assets/sky/sky-band-${num}.webp`, label: "Sky_" + num };
+      }
+      // Repérage manuel de deux variantes déjà comparées en jeu (voir LICENSE.txt) —
+      // n'empêche pas de choisir les 23 autres, juste une indication dans l'aide.
+      KAYKIT_SKY_BAND_VARIANTS.sky05.label = "Sky_05 — bleu profond (base)";
+      KAYKIT_SKY_BAND_VARIANTS.sky11.label = "Sky_11 — violet nocturne, étoilé";
       const KAYKIT_SKY_BAND_DEFAULT_VARIANT = "sky05";
       const kaykitSkyBandVariantStates = new Map();
       let kaykitSkyBandActiveVariant = KAYKIT_SKY_BAND_DEFAULT_VARIANT;
@@ -2404,8 +2411,8 @@
             "nuages({ corps: 0x5a6b90 })   couleur du corps des nuages",
             "valeurs()             réglages courants",
             "regenerer()           reconstruit la texture de ciel",
-            "variante(nom)         change l'image de fond de la bande de ciel :",
-            "                      " + Object.keys(KAYKIT_SKY_BAND_VARIANTS).join(", ") + " — sans argument, liste les options"
+            "variante(nom)         change l'image de fond de la bande de ciel",
+            "                      (sky01..sky25) — sans argument, liste les 25 options"
           ].join("\n");
         },
         valeurs() {

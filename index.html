@@ -966,6 +966,12 @@
             <div class="hud-v2-popover-divider" aria-hidden="true"></div>
             <button id="hudV2TechToggle" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Infos techniques ›</button>
             <div id="hudV2TechInfo" class="hud-v2-tech-info hidden" aria-hidden="true"></div>
+            <button id="hudV2SkyToggle" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Ciel ›</button>
+            <div id="hudV2SkyPanel" class="hud-v2-tech-info hidden" aria-hidden="true">
+              <!-- Options peuplées par renderHudV2SkyOptions() depuis KAYKIT_SKY_BAND_VARIANTS
+                   (kaykit3d.js) : une seule liste source, jamais dupliquée ici en dur. -->
+              <select id="hudV2SkyVariant" class="hud-v2-popover-select" aria-label="Variante de ciel"></select>
+            </div>
           </div>
         </div>
 
