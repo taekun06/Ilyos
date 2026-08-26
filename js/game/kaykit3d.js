@@ -5044,21 +5044,43 @@
          case : la ligne dit "vous pouvez atteindre jusqu'ici", pas "cette
          case-ci coûte plus cher que celle-là" — l'information que portait
          l'ancien anneau intérieur disparaît avec lui. */
-      function addKayKitMoveZoneOutline(cellules) {
+      function addKayKitMoveZoneOutline(cellulesAtteignables) {
         const group = kaykit3D?.actionPreviewGroup;
-        if (!group || !cellules || !cellules.length) return;
+        if (!group || !cellulesAtteignables || !cellulesAtteignables.length) return;
 
         const demi = KAYKIT_CELL_SPACING / 2;
         const cle = (r, c) => r + "," + c;
-        const ensemble = new Set(cellules.map(([r, c]) => cle(r, c)));
-        const dedans = (r, c) => ensemble.has(cle(r, c));
+        const ensembleAtteignable = new Set(cellulesAtteignables.map(([r, c]) => cle(r, c)));
 
-        // Hauteur commune à tout le contour : celle de la case la plus haute
-        // du groupe, pour que la ligne reste au-dessus du relief partout où
-        // elle passe plutôt que de plonger sous une île plus basse du lot.
-        let y = -Infinity;
-        for (const [r, c] of cellules) y = Math.max(y, kaykitCellSurfaceY(r, c));
-        y += .03;
+        /* Une case occupée (gardien, couronne) au milieu de la zone n'est
+           pas "atteignable" au sens des règles (movementRange l'exclut via
+           characterAt), mais l'exclure du CONTOUR créait un petit anneau
+           autour de chaque obstacle — signalé comme un trait intérieur
+           superflu : la ligne doit dire "jusqu'où on peut aller", pas
+           "cette case précise est prise". On la réintègre ici pour le seul
+           TRACÉ (jamais dans l'ensemble atteignable réel, qui ne change
+           pas) si elle est entourée sur ses 4 côtés par la zone — un vrai
+           renfoncement du contour, lui, communique avec l'extérieur de la
+           zone et reste donc creusé. */
+        const cellules = cellulesAtteignables.map(([r, c]) => [r, c]);
+        const dansContour = new Set(ensembleAtteignable);
+        const candidatsTrou = new Set();
+        for (const [r, c] of cellulesAtteignables) {
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const k = cle(r + dr, c + dc);
+            if (!ensembleAtteignable.has(k)) candidatsTrou.add(k);
+          }
+        }
+        for (const k of candidatsTrou) {
+          const [r, c] = k.split(",").map(Number);
+          if (!isLand(r, c)) continue;
+          const entoure = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+            .every(([dr, dc]) => ensembleAtteignable.has(cle(r + dr, c + dc)));
+          if (!entoure) continue;
+          dansContour.add(k);
+          cellules.push([r, c]);
+        }
+        const dedans = (r, c) => dansContour.has(cle(r, c));
 
         /* Chaque bord est identifié par les DEUX SOMMETS qu'il relie, en
            indices de sommet — le sommet (i,j) est le coin nord-ouest de la
@@ -5074,25 +5096,32 @@
           { dr: 0, dc: -1, sommets: [[0, 0], [1, 0]] },
           { dr: 0, dc: 1, sommets: [[0, 1], [1, 1]] }
         ];
-        const pointSommet = (i, j) => {
-          const centre = kaykitCellPosition(i, j, y);
+        // Hauteur PAR CASE (pas une hauteur commune au groupe) : chaque bord
+        // suit la surface réelle de la case dont il vient. Un contour à
+        // hauteur unique (la plus haute du lot) faisait flotter la ligne
+        // au-dessus des cases plus basses dès que la zone mélangeait des
+        // reliefs différents (un socle de sanctuaire à côté d'une île
+        // ordinaire) — visuellement, il semblait "dépasser" ces cases-là.
+        const pointSommet = (i, j, yLocal) => {
+          const centre = kaykitCellPosition(i, j, yLocal);
           return { x: centre.x - demi, z: centre.z - demi };
         };
 
         let segments = [];
         for (const [r, c] of cellules) {
+          const yCase = kaykitCellSurfaceY(r, c) + .03;
           for (const bord of bords) {
             // Un voisin dans l'ensemble : ce bord est un mur interne, partagé
             // entre deux cases atteignables — pas un bord du périmètre.
             if (dedans(r + bord.dr, c + bord.dc)) continue;
             const [s1, s2] = bord.sommets;
             const i1 = r + s1[0], j1 = c + s1[1], i2 = r + s2[0], j2 = c + s2[1];
-            const p1 = pointSommet(i1, j1);
-            const p2 = pointSommet(i2, j2);
+            const p1 = pointSommet(i1, j1, yCase);
+            const p2 = pointSommet(i2, j2, yCase);
             // Les indices de sommet (i1/j1/i2/j2) servent à repérer les
-            // segments qui se rencontrent, les coordonnées (x1/z1/x2/z2) à
-            // les dessiner — un même objet porte les deux dès sa création.
-            segments.push({ i1, j1, i2, j2, x1: p1.x, z1: p1.z, x2: p2.x, z2: p2.z });
+            // segments qui se rencontrent, les coordonnées (x1/y1/z1/x2/y2/z2)
+            // à les dessiner — un même objet porte les deux dès sa création.
+            segments.push({ i1, j1, i2, j2, x1: p1.x, y1: yCase, z1: p1.z, x2: p2.x, y2: yCase, z2: p2.z });
           }
         }
         if (!segments.length) return;
@@ -5106,10 +5135,19 @@
            demi-segments au même sommet, visible à l'écran comme un petit
            croisement en X.
 
-           Correction, au sommet concerné : retirer les quatre demi-segments
-           et les remplacer par deux courtes diagonales qui contournent le
-           sommet par l'intérieur plutôt que de s'y croiser — la même levée
-           d'ambiguïté qu'un marching squares sur un point-selle. */
+           Correction, au sommet concerné : RACCOURCIR les quatre demi-
+           segments qui s'y rejoignent (déplacer seulement l'extrémité qui
+           touchait le sommet, garder l'autre bout intact) et relier les
+           quatre points ainsi dégagés par deux courtes diagonales qui
+           contournent le sommet par l'intérieur plutôt que de s'y croiser —
+           la même levée d'ambiguïté qu'un marching squares sur un point-
+           selle.
+
+           Le premier essai SUPPRIMAIT les quatre segments entiers plutôt que
+           de les raccourcir — perdant du même coup leur extrémité éloignée,
+           qui continue le contour ailleurs. Signalé en jeu : la forme
+           n'était plus fermée, avec des pans entiers du tracé disparus
+           autour de chaque coin corrigé. */
         const sommetsCandidats = new Set();
         for (const s of segments) {
           sommetsCandidats.add(s.i1 + "," + s.j1);
@@ -5128,32 +5166,49 @@
           const diagNeSo = ne && so && !no && !se;
           if (!diagNoSe && !diagNeSo) continue;
 
-          const toucheCeSommet = seg => (seg.i1 === i && seg.j1 === j) || (seg.i2 === i && seg.j2 === j);
-          const concernes = segments.filter(toucheCeSommet);
+          const concernes = segments.filter(seg => (seg.i1 === i && seg.j1 === j) || (seg.i2 === i && seg.j2 === j));
           // Configuration attendue : exactement quatre demi-segments se
           // rencontrent ici. Un autre compte signale un cas non prévu (bord
           // du plateau, forme d'île inhabituelle) — mieux vaut laisser le
-          // croisement d'origine que de couper des segments au hasard.
+          // croisement d'origine que de raccourcir des segments au hasard.
           if (concernes.length !== 4) continue;
-          segments = segments.filter(seg => !toucheCeSommet(seg));
 
-          const p = pointSommet(i, j);
-          // Points coupés à distance `coupe` du sommet, sur chacun des
-          // quatre demi-segments qui s'y rejoignaient.
-          const nord = { x: p.x, z: p.z - coupe };
-          const sud = { x: p.x, z: p.z + coupe };
-          const ouest = { x: p.x - coupe, z: p.z };
-          const est = { x: p.x + coupe, z: p.z };
+          const yVertex = concernes[0].y1;
+          const p = pointSommet(i, j, yVertex);
+          // Points coupés à distance `coupe` du sommet, dans chacune des
+          // quatre directions cardinales — un seul de ces points sert par
+          // segment concerné, selon lequel de ses deux bouts touchait p.
+          const coupes = {
+            nord: { x: p.x, z: p.z - coupe },
+            sud: { x: p.x, z: p.z + coupe },
+            ouest: { x: p.x - coupe, z: p.z },
+            est: { x: p.x + coupe, z: p.z }
+          };
+          for (const seg of concernes) {
+            const surI1 = seg.i1 === i && seg.j1 === j;
+            const autre = surI1 ? { x: seg.x2, z: seg.z2 } : { x: seg.x1, z: seg.z1 };
+            const dx = autre.x - p.x, dz = autre.z - p.z;
+            // Direction dans laquelle ce segment s'éloigne de p — sert à
+            // choisir le point coupé qui lui correspond.
+            const direction = Math.abs(dx) > Math.abs(dz)
+              ? (dx > 0 ? "est" : "ouest")
+              : (dz > 0 ? "sud" : "nord");
+            const point = coupes[direction];
+            if (surI1) { seg.x1 = point.x; seg.z1 = point.z; }
+            else { seg.x2 = point.x; seg.z2 = point.z; }
+          }
+
+          const yLiaison = concernes[0].y1;
           if (diagNoSe) {
             // NO et SE dans la zone : relier ouest↔sud (referme le coin
             // sud-ouest) et nord↔est (referme le coin nord-est) — les deux
             // diagonales encadrent le sommet sans s'y toucher.
-            segments.push({ x1: ouest.x, z1: ouest.z, x2: sud.x, z2: sud.z });
-            segments.push({ x1: nord.x, z1: nord.z, x2: est.x, z2: est.z });
+            segments.push({ x1: coupes.ouest.x, y1: yLiaison, z1: coupes.ouest.z, x2: coupes.sud.x, y2: yLiaison, z2: coupes.sud.z });
+            segments.push({ x1: coupes.nord.x, y1: yLiaison, z1: coupes.nord.z, x2: coupes.est.x, y2: yLiaison, z2: coupes.est.z });
           } else {
             // NE et SO dans la zone : symétrique, nord↔ouest et sud↔est.
-            segments.push({ x1: nord.x, z1: nord.z, x2: ouest.x, z2: ouest.z });
-            segments.push({ x1: sud.x, z1: sud.z, x2: est.x, z2: est.z });
+            segments.push({ x1: coupes.nord.x, y1: yLiaison, z1: coupes.nord.z, x2: coupes.ouest.x, y2: yLiaison, z2: coupes.ouest.z });
+            segments.push({ x1: coupes.sud.x, y1: yLiaison, z1: coupes.sud.z, x2: coupes.est.x, y2: yLiaison, z2: coupes.est.z });
           }
         }
 
@@ -5181,7 +5236,13 @@
           );
           ruban.rotation.x = -Math.PI / 2;
           ruban.rotation.z = -Math.atan2(dz, dx);
-          ruban.position.set((segment.x1 + segment.x2) / 2, y + decalageY, (segment.z1 + segment.z2) / 2);
+          // Hauteur du ruban = celle du segment lui-même (par case, pas un
+          // niveau unique pour tout le contour) : y1/y2 valent la même chose
+          // pour tout segment issu du tracé bord par bord, et l'un des deux
+          // pour les diagonales de raccord (posées à la hauteur de la case
+          // qu'elles referment).
+          const yRuban = (segment.y1 !== undefined ? segment.y1 : segment.y2);
+          ruban.position.set((segment.x1 + segment.x2) / 2, yRuban + decalageY, (segment.z1 + segment.z2) / 2);
           ruban.renderOrder = decalageY > 0 ? 20 : 19;
           group.add(ruban);
           registerKayKitFadeIn(ruban);
@@ -5196,19 +5257,28 @@
            lui qui portait déjà le contraste de valeur qui manquait au bronze
            — mais il lui fallait plus d'épaisseur ET une lueur qui reste
            perceptible même quand le trait lui-même tombe sous le pixel. */
-        /* Épaisseur calée sur DEUX vues, pas une seule : la vue large du tout
-           premier tour (avant que la caméra n'ait de gardien à suivre, donc
-           tout le plateau tient à l'écran) ET un gros plan (caméra suivant le
-           joueur en cours de partie). .16 passait inaperçu dans la première ;
-           .30 débordait franchement de la case dans le second — un cadre plus
-           grand que la tuile qu'il entoure. .21 est le compromis retenu,
-           vérifié aux deux échelles. */
-        const epaisseurClaire = .21;
+        /* Une épaisseur FIXE en unités de scène ne peut pas convenir à tous
+           les niveaux de zoom : calée sur une vue large (.16 y passait
+           inaperçu) et un premier gros plan (.30 y débordait déjà de la
+           case), le compromis à .21 restait encore "beaucoup trop large" au
+           gros plan réel du joueur — la caméra peut zoomer bien plus près
+           que les deux vues testées. La bonne grandeur à garder constante
+           est la largeur À L'ÉCRAN, pas en unités de scène : on met donc
+           l'épaisseur à l'échelle de kaykit3D.zoomDistance (la distance
+           caméra↔cible, seule variable qui change vraiment la taille
+           apparente d'un objet à cette distance) plutôt que de figer une
+           valeur unique. */
+        const zoomReference = 12.4 * (GRID / 11);
+        const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
+        const epaisseurClaire = .15 * echelleZoom;
         // Surplus du liseré sombre réduit de moitié (.09 → .045) : signalé
         // trop large, il dominait visuellement au lieu de simplement border
         // la ligne claire.
-        const epaisseurSombre = epaisseurClaire + .045;
-        const epaisseurLueur = epaisseurClaire + .30;
+        const epaisseurSombre = epaisseurClaire + .045 * echelleZoom;
+        // Lueur resserrée (+.30 → +.12) : le halo dominait la ligne nette au
+        // lieu de simplement la prolonger, ce qui se lisait comme "une bande
+        // large" plutôt que "un contour fin".
+        const epaisseurLueur = epaisseurClaire + .12 * echelleZoom;
         // Lueur large et très diluée en dessous de tout : à distance, c'est
         // elle qui reste visible quand le trait net se perd dans la
         // compression/l'anticrénelage — le même principe qu'un halo autour
