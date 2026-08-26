@@ -5239,69 +5239,106 @@
       // un anneau à vraie épaisseur (Torus), ~35% de la largeur de case, pas un
       // point plat. Coût 1 = anneau simple ; coût 2+ = second anneau concentrique,
       // pour distinguer une diagonale au repos sans avoir à la survoler.
-      function addKayKitMoveAffordance(r, c, costTier) {
+      /* Deuxième passe, après un premier retour en jeu : teindre chaque case
+         atteignable (essayé ci-dessus, capture à l'appui) rendait bien la
+         zone lisible, mais chargeait le plateau d'autant de tuiles que de
+         cases atteignables. Ce qui manquait vraiment, c'était de voir d'un
+         coup d'œil jusqu'où on peut aller — un contour, pas un pavage.
+
+         `cellules` est l'ensemble complet des cases atteignables (tableau de
+         [r, c]) ; la fonction ne dessine que les arêtes qui séparent une case
+         du groupe d'une case qui n'y est pas, c'est-à-dire le périmètre
+         extérieur — quelle que soit la forme de la zone (un carré plein, un
+         U, deux îles disjointes...). Il n'y a plus de notion de coût par
+         case : la ligne dit "vous pouvez atteindre jusqu'ici", pas "cette
+         case-ci coûte plus cher que celle-là" — l'information que portait
+         l'ancien anneau intérieur disparaît avec lui. */
+      function addKayKitMoveZoneOutline(cellules) {
         const group = kaykit3D?.actionPreviewGroup;
-        if (!group) return;
-        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
-        /* Zone pleine plutôt qu'un anneau : demandé après coup — un petit rond
-           au centre de la case dit moins clairement "vous pouvez marcher ici"
-           qu'une case teintée dans son ensemble, surtout en visée de biais ou
-           zoomée. Même identité de couleur qu'avant (bronze ambré 0xd9922f,
-           même contraste par la valeur que par la teinte — un marron désaturé
-           se délavait en gris une fois mélangé au vert du plateau).
-           Même trio structurel qu'avant (contour sombre + remplissage clair +
-           marqueur central pour les cases à coût ≥ 2), seule la géométrie
-           change : un plan carré calé sur KAYKIT_CELL_SPACING au lieu d'un
-           tore, pour couvrir la case plutôt qu'en marquer le centre. */
-        const taille = KAYKIT_CELL_SPACING * .86;
-        /* depthTest:false, contrairement à l'ancien anneau (qui s'en passait) :
-           un plan couvrant presque toute la case touche le relief du terrain
-           en plusieurs points (le sol n'est pas parfaitement plat — bosses de
-           l'herbe, biseaux), et le test de profondeur par défaut le faisait
-           disparaître par endroits, invisible sur la majeure partie de la
-           case. Un fin anneau ne touchait jamais assez de relief pour que ça
-           se voie ; un plan plein, si — vérifié à l'écran. */
-        const stroke = new THREE.Mesh(
-          kaykitGeometry("smart-move-zone-stroke-v1", () => new THREE.PlaneGeometry(taille + .07, taille + .07)),
-          new THREE.MeshBasicMaterial({ color: 0x3d2408, transparent: true, opacity: .62, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
-        );
-        stroke.rotation.x = -Math.PI / 2;
-        stroke.position.set(p.x, p.y - .002, p.z);
-        stroke.renderOrder = 19;
-        group.add(stroke);
-        registerKayKitFadeIn(stroke);
-        /* Opacité réglée à l'écran, pas au jugé : .24/.30 (un premier essai,
-           cohérent avec un "ton" plutôt qu'un aplat) se noyait presque
-           entièrement dans le vert de l'herbe des îles — la même teinte sous
-           un éclairage proche produit deux couleurs trop voisines pour que
-           l'œil les sépare, même en zoomant. Vérifié en poussant le test à
-           l'absurde (rouge vif à .95 : parfaitement visible, donc le maillage
-           et sa position étaient corrects depuis le début) avant de revenir à
-           la couleur bronze prévue avec une opacité qui, elle, se voit
-           vraiment sur l'herbe. */
-        const fill = new THREE.Mesh(
-          kaykitGeometry("smart-move-zone-fill-v1", () => new THREE.PlaneGeometry(taille, taille)),
-          new THREE.MeshBasicMaterial({ color: 0xd9922f, transparent: true, opacity: costTier >= 2 ? .62 : .55, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
-        );
-        fill.rotation.x = -Math.PI / 2;
-        fill.position.set(p.x, p.y, p.z);
-        fill.renderOrder = 20;
-        group.add(fill);
-        registerKayKitFadeIn(fill);
-        if (costTier >= 2) {
-          // Repère central discret : la case reste franchement identifiée par
-          // sa teinte pleine, ce point ne fait qu'indiquer "plus loin, coûte
-          // plus cher" — l'information que portait l'ancien anneau intérieur.
-          const pip = new THREE.Mesh(
-            kaykitGeometry("smart-move-zone-pip-v1", () => new THREE.CircleGeometry(.05, 16)),
-            new THREE.MeshBasicMaterial({ color: 0xfff0c6, transparent: true, opacity: .8, depthWrite: false, depthTest: false })
-          );
-          pip.rotation.x = -Math.PI / 2;
-          pip.position.set(p.x, p.y + .003, p.z);
-          pip.renderOrder = 21;
-          group.add(pip);
-          registerKayKitFadeIn(pip);
+        if (!group || !cellules || !cellules.length) return;
+
+        const demi = KAYKIT_CELL_SPACING / 2;
+        const cle = (r, c) => r + "," + c;
+        const ensemble = new Set(cellules.map(([r, c]) => cle(r, c)));
+
+        // Hauteur commune à tout le contour : celle de la case la plus haute
+        // du groupe, pour que la ligne reste au-dessus du relief partout où
+        // elle passe plutôt que de plonger sous une île plus basse du lot.
+        let y = -Infinity;
+        for (const [r, c] of cellules) y = Math.max(y, kaykitCellSurfaceY(r, c));
+        y += .03;
+
+        // Un bord par direction (nord/sud/est/ouest), en écart au centre de la
+        // case — nord/sud jouent sur Z (l'axe de la rangée r), est/ouest sur X
+        // (l'axe de la colonne c), voir kaykitCellPosition().
+        const bords = [
+          { dr: -1, dc: 0, segment: [[-demi, -demi], [demi, -demi]] },
+          { dr: 1, dc: 0, segment: [[-demi, demi], [demi, demi]] },
+          { dr: 0, dc: -1, segment: [[-demi, -demi], [-demi, demi]] },
+          { dr: 0, dc: 1, segment: [[demi, -demi], [demi, demi]] }
+        ];
+
+        const segments = [];
+        for (const [r, c] of cellules) {
+          const centre = kaykitCellPosition(r, c, y);
+          for (const bord of bords) {
+            // Un voisin dans l'ensemble : ce bord est un mur interne, partagé
+            // entre deux cases atteignables — pas un bord du périmètre.
+            if (ensemble.has(cle(r + bord.dr, c + bord.dc))) continue;
+            const debut = bord.segment[0];
+            const fin = bord.segment[1];
+            segments.push({
+              x1: centre.x + debut[0], z1: centre.z + debut[1],
+              x2: centre.x + fin[0], z2: centre.z + fin[1]
+            });
+          }
         }
+        if (!segments.length) return;
+
+        /* Des rubans, pas des THREE.Line : `linewidth` sur LineBasicMaterial
+           est ignoré par la quasi-totalité des pilotes desktop (limitation
+           WebGL/ANGLE documentée, pas un oubli). Vérifié à l'écran — un vrai
+           LineSegments à cette épaisseur logicielle était invisible sur
+           l'herbe des îles, même en zoomant. Un ruban (un rectangle fin par
+           segment, orienté par sa rotation Y) a une épaisseur RÉELLE en
+           unités de scène, donc un rendu garanti quel que soit le pilote —
+           c'est déjà la solution du reste du fichier pour tout trait "épais"
+           (les anneaux ci-dessous sont des tores, pas des cercles filaires). */
+        const ajouterRuban = (segment, decalageY, couleur, opacite, epaisseur) => {
+          const dx = segment.x2 - segment.x1;
+          const dz = segment.z2 - segment.z1;
+          const longueur = Math.hypot(dx, dz);
+          if (longueur < 1e-4) return;
+          const ruban = new THREE.Mesh(
+            // +epaisseur en longueur : les bouts des rubans se rejoignent au
+            // coin de la case sans laisser de brèche entre deux segments
+            // perpendiculaires (un rectangle pile à la longueur du bord
+            // s'arrête net à l'arête, l'angle du coin restait alors ouvert).
+            new THREE.PlaneGeometry(longueur + epaisseur, epaisseur),
+            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          );
+          ruban.rotation.x = -Math.PI / 2;
+          ruban.rotation.z = -Math.atan2(dz, dx);
+          ruban.position.set((segment.x1 + segment.x2) / 2, y + decalageY, (segment.z1 + segment.z2) / 2);
+          ruban.renderOrder = decalageY > 0 ? 20 : 19;
+          group.add(ruban);
+          registerKayKitFadeIn(ruban);
+        };
+
+        /* Couleur et épaisseur réglées à l'écran, pas au jugé — deuxième
+           itération après le remplissage plein (déjà retouché une fois pour
+           la même raison). Le bronze ambré (0xd9922f) prévu à l'origine, à
+           l'épaisseur d'un simple trait, restait quasiment invisible sur
+           l'herbe : sa VALEUR (luminosité) est trop proche de celle du vert
+           du plateau, même à pleine opacité — deux couleurs de teinte
+           différente mais de clarté voisine se distinguent mal l'une de
+           l'autre en fine ligne, alors qu'un aplat plus large s'en sortait
+           un peu mieux. Le petit repère central des essais précédents
+           (0xfff0c6, un blanc doré) restait lui parfaitement visible même
+           minuscule (rayon .05) : c'est LUI qui porte le contraste de valeur
+           qui manquait, pas le bronze. Contour repris dans cette teinte. */
+        for (const segment of segments) ajouterRuban(segment, -.002, 0x3d2408, .82, .16);
+        for (const segment of segments) ajouterRuban(segment, .002, 0xfff0c6, 1, .10);
       }
 
       // Anneau orange compact directement sous le personnage/couronne poussable
@@ -5714,13 +5751,11 @@
         }
 
         if (smartResting) {
-          const hoverKey = state.actionHoverCell ? key(state.actionHoverCell[0], state.actionHoverCell[1]) : null;
-          const costs = state.reachable?.costs;
-          (state.reachable || new Set()).forEach(cellKey => {
-            if (cellKey === hoverKey) return;
-            const [r, c] = cellKey.split(",").map(Number);
-            addKayKitMoveAffordance(r, c, costs?.get(cellKey) || 1);
-          });
+          // Le contour se calcule sur TOUT l'ensemble atteignable, hover compris
+          // — l'exclure ferait apparaître un créneau au bord de la case
+          // survolée, comme si elle n'en faisait pas partie.
+          const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
+          addKayKitMoveZoneOutline(cellules);
         }
 
         if (unifiedPushActive) {
@@ -15651,7 +15686,7 @@
 
       function phaseInfo() {
         const amount = state.selectedActionType ? selectedBatchSize() : 1;
-        const magicDegrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
+        const magicDegrees = ((state.magicPreviewSteps || 0) % 4 + 4) % 4 * 90;
         const player = currentPlayer();
 
         if (player?.isAI || state.aiThinking) {
@@ -15800,7 +15835,7 @@
             }
             return { kind: "push", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name} · force ${amount}`, next: state.selectedCharId ? "Cliquez une cible adjacente éclairée." : "Cliquez votre gardien pousseur." };
           }
-          const degrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
+          const degrees = ((state.magicPreviewSteps || 0) % 4 + 4) % 4 * 90;
           return { kind: "magic", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name}${degrees ? ` · ${degrees}°` : ""}`, next: state.selectedIslandId ? (degrees ? "Cliquez l’aperçu pour valider." : "Tournez avec ↺, ↻ ou la molette.") : "Cliquez une case pivot sur une île." };
         }
         if (state.islandPlacedThisTurn) {
@@ -18813,13 +18848,17 @@
         const island = state.islands.find(is => is.id === state.selectedIslandId);
         if (!island) return;
 
-        const steps = ((state.magicPreviewSteps || 0) % 5 + 5) % 5;
+        /* Cycle sur 4 états (0°/90°/180°/270°), pas 5. C'était le vrai bug
+           derrière "au bout d'un tour complet, il faut recliquer deux fois" :
+           avec un cycle de 5 valeurs, l'état 4 ET l'état 0 affichaient tous
+           deux la forme non tournée (deux valeurs distinctes pour UN seul
+           rendu visuel). Le clic qui faisait passer de 4 à 0 (un tour complet
+           bouclé) ne changeait donc rien à l'écran — d'où l'impression qu'il
+           ne se passait rien, alors que l'état interne avançait bel et bien.
+           Avec 4 états, chaque incrément produit un rendu réellement distinct :
+           plus de palier "mort". */
+        const steps = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
         if (steps === 0) {
-          state.magicPreviewCells = island.cells.map(([r, c]) => [r, c]);
-          state.magicPreviewValid = true;
-          return;
-        }
-        if (steps === 4) {
           state.magicPreviewCells = island.cells.map(([r, c]) => [r, c]);
           state.magicPreviewValid = true;
           return;
@@ -18849,7 +18888,7 @@
         if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
 
         const island = state.islands.find(is => is.id === state.selectedIslandId);
-        const steps = ((state.magicPreviewSteps % 5) + 5) % 5;
+        const steps = ((state.magicPreviewSteps % 4) + 4) % 4;
 
         if (!island || !state.selectedMagicPivot || !steps) {
           showToast("Choisissez une case pivot puis utilisez la roulette.");
@@ -19073,8 +19112,8 @@
           return;
         }
 
-        let nextSteps = ((state.magicPreviewSteps || 0) + direction) % 5;
-        if (nextSteps < 0) nextSteps = 4;
+        let nextSteps = ((state.magicPreviewSteps || 0) + direction) % 4;
+        if (nextSteps < 0) nextSteps = 3;
 
         state.magicPreviewSteps = nextSteps;
         updateMagicPreview();

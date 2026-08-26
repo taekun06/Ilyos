@@ -21,7 +21,7 @@
 
       function phaseInfo() {
         const amount = state.selectedActionType ? selectedBatchSize() : 1;
-        const magicDegrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
+        const magicDegrees = ((state.magicPreviewSteps || 0) % 4 + 4) % 4 * 90;
         const player = currentPlayer();
 
         if (player?.isAI || state.aiThinking) {
@@ -170,7 +170,7 @@
             }
             return { kind: "push", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name} · force ${amount}`, next: state.selectedCharId ? "Cliquez une cible adjacente éclairée." : "Cliquez votre gardien pousseur." };
           }
-          const degrees = ((state.magicPreviewSteps || 0) % 5 + 5) % 5 * 90;
+          const degrees = ((state.magicPreviewSteps || 0) % 4 + 4) % 4 * 90;
           return { kind: "magic", kicker: "ACTION ACTIVE", title: `${action.icon} ${action.name}${degrees ? ` · ${degrees}°` : ""}`, next: state.selectedIslandId ? (degrees ? "Cliquez l’aperçu pour valider." : "Tournez avec ↺, ↻ ou la molette.") : "Cliquez une case pivot sur une île." };
         }
         if (state.islandPlacedThisTurn) {
@@ -3183,13 +3183,17 @@
         const island = state.islands.find(is => is.id === state.selectedIslandId);
         if (!island) return;
 
-        const steps = ((state.magicPreviewSteps || 0) % 5 + 5) % 5;
+        /* Cycle sur 4 états (0°/90°/180°/270°), pas 5. C'était le vrai bug
+           derrière "au bout d'un tour complet, il faut recliquer deux fois" :
+           avec un cycle de 5 valeurs, l'état 4 ET l'état 0 affichaient tous
+           deux la forme non tournée (deux valeurs distinctes pour UN seul
+           rendu visuel). Le clic qui faisait passer de 4 à 0 (un tour complet
+           bouclé) ne changeait donc rien à l'écran — d'où l'impression qu'il
+           ne se passait rien, alors que l'état interne avançait bel et bien.
+           Avec 4 états, chaque incrément produit un rendu réellement distinct :
+           plus de palier "mort". */
+        const steps = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
         if (steps === 0) {
-          state.magicPreviewCells = island.cells.map(([r, c]) => [r, c]);
-          state.magicPreviewValid = true;
-          return;
-        }
-        if (steps === 4) {
           state.magicPreviewCells = island.cells.map(([r, c]) => [r, c]);
           state.magicPreviewValid = true;
           return;
@@ -3219,7 +3223,7 @@
         if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
 
         const island = state.islands.find(is => is.id === state.selectedIslandId);
-        const steps = ((state.magicPreviewSteps % 5) + 5) % 5;
+        const steps = ((state.magicPreviewSteps % 4) + 4) % 4;
 
         if (!island || !state.selectedMagicPivot || !steps) {
           showToast("Choisissez une case pivot puis utilisez la roulette.");
@@ -3443,8 +3447,8 @@
           return;
         }
 
-        let nextSteps = ((state.magicPreviewSteps || 0) + direction) % 5;
-        if (nextSteps < 0) nextSteps = 4;
+        let nextSteps = ((state.magicPreviewSteps || 0) + direction) % 4;
+        if (nextSteps < 0) nextSteps = 3;
 
         state.magicPreviewSteps = nextSteps;
         updateMagicPreview();
