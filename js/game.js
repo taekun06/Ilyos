@@ -1450,36 +1450,52 @@
         [.56, "haze"], [.62, "abyss"], [.72, "midDeep"], [.82, "deep"], [1, "nadir"]
       ];
 
-      // Image source de la bande : une vraie mer de nuages équirectangulaire (CC0, voir
-      // assets/sky/LICENSE.txt), déjà recadrée sur les bornes exactes de KAYKIT_SKY_BAND
-      // (10°-62° sous l'horizontale) et suréchantillonnée à 4096×512. Remplace le
-      // dégradé + les amas peints, mais PAS le contre-jour : celui-ci reste peint par
-      // dessus à chaque appel, dynamique (azimut du soleil réglable en jeu).
+      // Images source de la bande : de vraies mers de nuages équirectangulaires (CC0,
+      // voir assets/sky/LICENSE.txt), déjà recadrées sur les bornes exactes de
+      // KAYKIT_SKY_BAND (10°-62° sous l'horizontale) et suréchantillonnées à 4096×512.
+      // Remplacent le dégradé + les amas peints, mais PAS le contre-jour : celui-ci
+      // reste peint par dessus à chaque appel, dynamique (azimut du soleil réglable).
       //
-      // Chargée à part du pipeline THREE (textureLoader / configureKayKitTexture) car
-      // elle est dessinée dans un canvas 2D avant de devenir une CanvasTexture — un
+      // Chargées à part du pipeline THREE (textureLoader / configureKayKitTexture) car
+      // elles sont dessinées dans un canvas 2D avant de devenir une CanvasTexture — un
       // HTMLImageElement suffit, pas besoin des réglages de mapping GPU tant qu'on ne
-      // fait que la lire au pixel.
+      // fait que les lire au pixel.
       //
-      // Pas de placeholder à remplacer à chaud : tant qu'elle n'est pas prête, la bande
-      // continue de fonctionner sur son rendu peint existant (gradient + amas), qui est
-      // un ciel complet en soi. Une passe de reprise (voir kaykitReprendreCielImage)
-      // purge le cache et redessine la bande dès que l'image arrive.
-      const KAYKIT_SKY_BAND_IMAGE_URL = "./assets/sky/sky-band-cloudsea.webp";
-      const kaykitSkyBandSource = { img: null, ready: false, requested: false };
+      // Plusieurs variantes au choix (basculées via window.ILYOS_SKY.variante), chacune
+      // chargée à la demande et mise en cache : passer d'une variante à l'autre ne
+      // retélécharge jamais celle déjà vue.
+      const KAYKIT_SKY_BAND_VARIANTS = {
+        sky05: { url: "./assets/sky/sky-band-cloudsea.webp", label: "Sky_05 — bleu profond (base)" },
+        sky11: { url: "./assets/sky/sky-band-sky11.webp", label: "Sky_11 — violet nocturne, étoilé" }
+      };
+      const KAYKIT_SKY_BAND_DEFAULT_VARIANT = "sky05";
+      const kaykitSkyBandVariantStates = new Map();
+      let kaykitSkyBandActiveVariant = KAYKIT_SKY_BAND_DEFAULT_VARIANT;
 
-      function kaykitSkyBandSourceEnsure() {
-        if (kaykitSkyBandSource.requested) return kaykitSkyBandSource;
-        kaykitSkyBandSource.requested = true;
-        const img = new Image();
-        img.decoding = "async";
-        img.onload = () => { kaykitSkyBandSource.ready = true; };
-        img.onerror = () => {
-          console.warn("[ILYOS] image de ciel introuvable, bande peinte conservée :", KAYKIT_SKY_BAND_IMAGE_URL);
-        };
-        img.src = KAYKIT_SKY_BAND_IMAGE_URL;
-        kaykitSkyBandSource.img = img;
-        return kaykitSkyBandSource;
+      // Pas de placeholder à remplacer à chaud : tant que l'image d'une variante n'est
+      // pas prête, la bande continue de fonctionner sur son rendu peint existant
+      // (gradient + amas), qui est un ciel complet en soi. Une passe de reprise (voir
+      // kaykitReprendreCielImage) purge le cache et redessine dès que l'image arrive.
+      function kaykitSkyBandSourceEnsure(nom = kaykitSkyBandActiveVariant) {
+        const spec = KAYKIT_SKY_BAND_VARIANTS[nom];
+        if (!spec) return { img: null, ready: false, requested: true };
+        let state = kaykitSkyBandVariantStates.get(nom);
+        if (!state) {
+          state = { img: null, ready: false, requested: false };
+          kaykitSkyBandVariantStates.set(nom, state);
+        }
+        if (!state.requested) {
+          state.requested = true;
+          const img = new Image();
+          img.decoding = "async";
+          img.onload = () => { state.ready = true; };
+          img.onerror = () => {
+            console.warn("[ILYOS] image de ciel introuvable, bande peinte conservée :", spec.url);
+          };
+          img.src = spec.url;
+          state.img = img;
+        }
+        return state;
       }
 
       function kaykitSkyColorAt(p) {
@@ -2596,7 +2612,9 @@
             "                      plateau plus bas dans le cadre, plus de ciel visible",
             "nuages({ corps: 0x5a6b90 })   couleur du corps des nuages",
             "valeurs()             réglages courants",
-            "regenerer()           reconstruit la texture de ciel"
+            "regenerer()           reconstruit la texture de ciel",
+            "variante(nom)         change l'image de fond de la bande de ciel :",
+            "                      " + Object.keys(KAYKIT_SKY_BAND_VARIANTS).join(", ") + " — sans argument, liste les options"
           ].join("\n");
         },
         valeurs() {
@@ -2620,6 +2638,28 @@
           band.material.map = kaykitSkyBandTexture();
           band.material.needsUpdate = true;
           return "ciel régénéré";
+        },
+        variante(nom) {
+          if (!nom) {
+            return Object.entries(KAYKIT_SKY_BAND_VARIANTS)
+              .map(([cle, spec]) => (cle === kaykitSkyBandActiveVariant ? "→ " : "  ") + cle + " : " + spec.label)
+              .join("\n");
+          }
+          if (!KAYKIT_SKY_BAND_VARIANTS[nom]) {
+            return "variante inconnue : " + nom + " (options : " + Object.keys(KAYKIT_SKY_BAND_VARIANTS).join(", ") + ")";
+          }
+          kaykitSkyBandActiveVariant = nom;
+          // Démarre le chargement s'il n'a jamais eu lieu ; si l'image de cette variante
+          // est déjà en cache (vue précédemment), rien à retélécharger.
+          const source = kaykitSkyBandSourceEnsure(nom);
+          // Autorise la passe de reprise à ré-agir : sans cette remise à zéro, elle
+          // considérerait le ciel comme déjà « repris » depuis le chargement initial
+          // et n'upgraderait jamais cette nouvelle variante une fois prête.
+          kaykit3D.cielImageRepris = false;
+          const rendu = this.regenerer();
+          return source.ready
+            ? rendu + " (variante « " + nom + " » appliquée)"
+            : rendu + " (variante « " + nom + " » en cours de chargement — reprise automatique dès qu'elle est prête)";
         },
         soleil(opts = {}) {
           if (opts.p !== undefined) KAYKIT_SKY_SUN.p = opts.p;
