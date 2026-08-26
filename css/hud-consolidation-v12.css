@@ -20,8 +20,18 @@ body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v12-rota
 
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
   display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 10px;border-radius:16px;background:rgba(18,22,30,.72);
-  border:1px solid rgba(226,200,138,.34);-webkit-backdrop-filter:blur(14px) saturate(.95);backdrop-filter:blur(14px) saturate(.95);box-shadow:0 12px 30px rgba(0,0,0,.32)
+  border:1px solid rgba(226,200,138,.34);-webkit-backdrop-filter:blur(14px) saturate(.95);backdrop-filter:blur(14px) saturate(.95);box-shadow:0 12px 30px rgba(0,0,0,.32);
+  /* Ce panneau est fixe, au centre bas de l'écran — exactement où passe l'aperçu
+     3D de l'île quand on vise une case proche de la caméra (les rangées basses
+     du plateau, ou après avoir tourné la vue au clavier). Signalé : la pose
+     devient invisible tant que le panneau est dessus. Il s'estompe donc au
+     repos et ne redevient net qu'au survol — ce qui est justement le moment où
+     on n'a plus besoin de voir l'aperçu à travers, puisqu'on est en train de
+     cliquer un bouton de rotation. */
+  opacity:.38;transition:opacity 140ms ease
 }
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12:hover,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12:focus-within{opacity:1}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12.hidden{display:none!important}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label{margin-right:3px;color:#f5dfaa;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.12em;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-magic-btn{min-height:32px}
