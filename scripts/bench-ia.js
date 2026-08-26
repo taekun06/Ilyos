@@ -44,6 +44,13 @@ async function ouvrirPartie(page) {
   await page.evaluate(() => window.ILYOS_TEST.stopAutoplay?.());
   await page.waitForTimeout(1200);
   await page.waitForFunction(() => typeof window.ILYOS_BENCH?.run === 'function', null, { timeout: 15000 });
+
+  /* Délibérément AUCUN tour de chauffe. Un premier passage jeté rendrait les
+     séquences plus homogènes entre elles, mais masquerait une limitation réelle
+     du moteur au lieu de la mesurer : l'IA lit des positions de gardiens que
+     les animations mettent à jour de façon asynchrone, donc son enchaînement
+     dépend du temps réel. Le banc doit exposer ce fait, pas le lisser. Voir la
+     distinction verdict / séquence plus bas. */
 }
 
 async function jouerPuzzle(page, puzzle) {
@@ -87,11 +94,30 @@ async function main() {
     const passages = [];
     for (let i = 0; i < repetitions; i++) passages.push(await jouerPuzzle(page, puzzle));
     const premier = passages[0];
-    // Reproductibilité : à graine fixe, tous les passages doivent conclure
-    // pareil ET jouer exactement la même séquence.
-    const stable = passages.every(p =>
-      p.ok === premier.ok && resumeJournal(p.journal) === resumeJournal(premier.journal));
-    resultats.push({ ...premier, passages: passages.length, stable });
+    /* Deux niveaux de reproductibilité, à distinguer soigneusement.
+
+       VERDICT : tous les passages concluent-ils pareil ? C'est ce que le banc
+       mesure, et ce qui doit être stable pour que le total ait un sens.
+
+       SÉQUENCE : l'IA joue-t-elle exactement les mêmes coups ? Ce niveau plus
+       exigeant n'est PAS atteint aujourd'hui, et le hasard n'y est pour rien :
+       il est figé par la graine. La cause est que l'IA lit des positions que
+       les animations mettent à jour de façon asynchrone, si bien que son
+       enchaînement dépend du temps réel. C'est une faiblesse d'architecture,
+       pas un défaut du banc — et un argument de plus pour la couche de
+       simulation pure prévue ensuite. */
+    const verdictStable = passages.every(p => p.ok === premier.ok);
+    const sequenceStable = passages.every(p =>
+      resumeJournal(p.journal) === resumeJournal(premier.journal));
+    resultats.push({
+      ...premier,
+      passages: passages.length,
+      verdictStable,
+      sequenceStable,
+      // Conservé seulement en cas d'écart : c'est la différence entre les
+      // séquences qui montre d'où vient le non-déterminisme.
+      journaux: sequenceStable ? null : passages.map(p => resumeJournal(p.journal))
+    });
   }
 
   const total = resultats.filter(r => r.ok).length;
@@ -104,16 +130,19 @@ async function main() {
     console.log('='.repeat(72));
     resultats.forEach(r => {
       const etiquette = `${r.id} ${r.nom}`.padEnd(42, '.');
-      const stabilite = r.passages > 1 ? (r.stable ? ' [stable]' : ' [INSTABLE]') : '';
+      const stabilite = r.passages > 1 ? (r.verdictStable ? (r.sequenceStable ? ' [stable]' : ' [verdict stable, séquence variable]') : ' [VERDICT INSTABLE]') : '';
       console.log(`${etiquette} ${r.ok ? 'PASS' : 'FAIL'}${stabilite}`);
       console.log(`      ${r.raison}`);
       if (!r.ok) console.log(`      joué : ${resumeJournal(r.journal)}`);
+      if (r.journaux) r.journaux.forEach((j, i) => console.log(`      passage ${i + 1} : ${j}`));
     });
     console.log('='.repeat(72));
     console.log(`TOTAL : ${total} / ${resultats.length}`);
     if (repetitions > 1) {
-      const instables = resultats.filter(r => !r.stable).map(r => r.id);
-      console.log(`Reproductibilité (${repetitions} passages) : ${instables.length ? 'INSTABLES → ' + instables.join(', ') : 'tous stables'}`);
+      const verdictsInstables = resultats.filter(r => !r.verdictStable).map(r => r.id);
+      const sequencesVariables = resultats.filter(r => r.verdictStable && !r.sequenceStable).map(r => r.id);
+      console.log(`Verdicts (${repetitions} passages) : ${verdictsInstables.length ? 'INSTABLES → ' + verdictsInstables.join(', ') : 'tous stables'}`);
+      console.log(`Séquences               : ${sequencesVariables.length ? 'variables → ' + sequencesVariables.join(', ') + ' (voir note sur les animations)' : 'toutes identiques'}`);
     }
     console.log(`Incidents console : ${incidents.length ? incidents.join(' | ') : 'aucun'}`);
     console.log('');
