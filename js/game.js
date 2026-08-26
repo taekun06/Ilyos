@@ -4255,7 +4255,7 @@
             clearKayKitGroup(kaykit3D.actionPreviewGroup);
             kaykit3D.actionPreviewKey = null;
             clearKayKitGroup(kaykit3D.moveZoneGroup);
-            kaykit3D.moveZoneKey = null;
+            kaykit3D.moveZoneRef = null;
             return null;
           }
           if (dragMoved) {
@@ -5266,51 +5266,187 @@
          case : la ligne dit "vous pouvez atteindre jusqu'ici", pas "cette
          case-ci coûte plus cher que celle-là" — l'information que portait
          l'ancien anneau intérieur disparaît avec lui. */
+      /* Troisième formule pour la zone de déplacement, après l'aplat plein
+         (jugé "toutes les cases colorées en bleu", pas voulu) : un simple
+         CONTOUR, bleu (même famille que la flèche de trajet), sans lueur ni
+         remplissage. Reprend l'algorithme déjà validé pour le contour
+         précédent — hauteur par case, comblement des trous d'obstacle,
+         correction des coins en diagonale — avant qu'il ne soit remplacé
+         par l'aplat ; seules la couleur et l'épaisseur changent ici.
+
+         Le déplacement diagonal coûte 2, l'orthogonal 1 (movementEdges,
+         core.js) : deux cases atteignables ne se touchent donc souvent que
+         par un coin, sans case intermédiaire. Un contour naïf border alors
+         chacune séparément — l'effet "grille de petites boîtes" signalé en
+         jeu. Choix confirmé : PONTER ces coins pour ne former qu'une seule
+         forme continue, plutôt que de laisser chaque case isolée avec son
+         propre contour. */
       function addKayKitMoveZone(cellulesAtteignables) {
         const group = kaykit3D?.moveZoneGroup;
         if (!group || !cellulesAtteignables || !cellulesAtteignables.length) return;
 
-        /* Aplat translucide par case, SEUL SIGNAL — comme dans les tactical
-           de référence (Fire Emblem, Advance Wars, Into the Breach), qui
-           teintent chaque case atteignable plutôt que de faire deviner la
-           forme via un contour. Un contour a été essayé puis abandonné : en
-           coûtant 2 à la diagonale contre 1 à l'orthogonal (movementEdges,
-           core.js), les cases atteignables d'ILYOS se touchent SOUVENT
-           uniquement par un coin plutôt que par un côté plein — un contour
-           qui borde chaque case sans voisin orthogonal produit alors un
-           encadrement individuel par case, lu comme "une grille de petites
-           boîtes" plutôt qu'une zone. Un aplat, lui, n'a pas ce problème :
-           deux cases qui ne se touchent qu'en diagonale restent lisibles
-           comme deux cases de la même zone, sans ligne parasite entre elles.
-           Teinte bleue choisie pour ne collisionner avec AUCUNE couleur déjà
-           prise ailleurs dans le jeu : cyan vif du curseur de survol
-           (0x00e5ff), ambre des cibles poussables, or/violet des couleurs
-           de joueur. */
-        // Couleur ET opacité relevées : à .32, l'aplat se perdait contre
-        // l'herbe pâle (ou le sable doré du sanctuaire) sous le halo/glare
-        // du ciel — signalé "illisible" une fois la bordure retirée, qui
-        // avant compensait à elle seule le manque de contraste du remplissage.
-        // Plus le compromis n'a de bordure pour se rattraper, il faut que le
-        // remplissage porte TOUT le contraste à lui seul.
-        const COULEUR_ZONE = 0x1f8fe0;
+        const demi = KAYKIT_CELL_SPACING / 2;
+        const cle = (r, c) => r + "," + c;
+        const ensembleAtteignable = new Set(cellulesAtteignables.map(([r, c]) => cle(r, c)));
+
+        /* Une case occupée (gardien, couronne) au milieu de la zone n'est
+           pas "atteignable" au sens des règles (movementRange l'exclut via
+           characterAt), mais l'exclure du CONTOUR créait un petit anneau
+           autour de chaque obstacle. On la réintègre ici pour le seul TRACÉ
+           (jamais dans l'ensemble atteignable réel) si elle est entourée
+           sur ses 4 côtés par la zone — un vrai renfoncement du contour,
+           lui, communique avec l'extérieur de la zone et reste donc creusé. */
+        const cellules = cellulesAtteignables.map(([r, c]) => [r, c]);
+        const dansContour = new Set(ensembleAtteignable);
+        const candidatsTrou = new Set();
         for (const [r, c] of cellulesAtteignables) {
-          const yTuile = kaykitCellSurfaceY(r, c) + .022;
-          const centre = kaykitCellPosition(r, c, yTuile);
-          const tuile = new THREE.Mesh(
-            // .98 et non .94 : presque bord à bord, pour que deux cases
-            // orthogonalement voisines fusionnent visuellement en une seule
-            // tache continue au lieu de laisser un mince liseré d'herbe
-            // entre elles (qui, répété sur toute la zone, ressemblait lui
-            // aussi à une grille).
-            kaykitGeometry("move-zone-tile-v2", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .98, KAYKIT_CELL_SPACING * .98)),
-            new THREE.MeshBasicMaterial({ color: COULEUR_ZONE, transparent: true, opacity: .58, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
-          );
-          tuile.rotation.x = -Math.PI / 2;
-          tuile.position.set(centre.x, centre.y, centre.z);
-          tuile.renderOrder = 18;
-          group.add(tuile);
-          registerKayKitFadeIn(tuile);
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const k = cle(r + dr, c + dc);
+            if (!ensembleAtteignable.has(k)) candidatsTrou.add(k);
+          }
         }
+        for (const k of candidatsTrou) {
+          const [r, c] = k.split(",").map(Number);
+          if (!isLand(r, c)) continue;
+          const entoure = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+            .every(([dr, dc]) => ensembleAtteignable.has(cle(r + dr, c + dc)));
+          if (!entoure) continue;
+          dansContour.add(k);
+          cellules.push([r, c]);
+        }
+        const dedans = (r, c) => dansContour.has(cle(r, c));
+
+        /* Chaque bord est identifié par les DEUX SOMMETS qu'il relie, en
+           indices de sommet — le sommet (i,j) est le coin nord-ouest de la
+           case (i,j). Garder ces indices (plutôt que directement des
+           coordonnées monde) permet de repérer, par simple égalité, tous
+           les segments qui passent par un même sommet — nécessaire pour la
+           correction du coin en diagonale ci-dessous. */
+        const bords = [
+          { dr: -1, dc: 0, sommets: [[0, 0], [0, 1]] },
+          { dr: 1, dc: 0, sommets: [[1, 0], [1, 1]] },
+          { dr: 0, dc: -1, sommets: [[0, 0], [1, 0]] },
+          { dr: 0, dc: 1, sommets: [[0, 1], [1, 1]] }
+        ];
+        // Hauteur PAR CASE (pas une hauteur commune au groupe) : chaque bord
+        // suit la surface réelle de la case dont il vient, pour ne jamais
+        // flotter au-dessus d'une case plus basse quand la zone mélange des
+        // reliefs différents (sanctuaire surélevé + île ordinaire).
+        const pointSommet = (i, j, yLocal) => {
+          const centre = kaykitCellPosition(i, j, yLocal);
+          return { x: centre.x - demi, z: centre.z - demi };
+        };
+
+        let segments = [];
+        for (const [r, c] of cellules) {
+          const yCase = kaykitCellSurfaceY(r, c) + .03;
+          for (const bord of bords) {
+            // Un voisin dans l'ensemble : ce bord est un mur interne, partagé
+            // entre deux cases atteignables — pas un bord du périmètre.
+            if (dedans(r + bord.dr, c + bord.dc)) continue;
+            const [s1, s2] = bord.sommets;
+            const i1 = r + s1[0], j1 = c + s1[1], i2 = r + s2[0], j2 = c + s2[1];
+            const p1 = pointSommet(i1, j1, yCase);
+            const p2 = pointSommet(i2, j2, yCase);
+            segments.push({ i1, j1, i2, j2, x1: p1.x, y1: yCase, z1: p1.z, x2: p2.x, y2: yCase, z2: p2.z });
+          }
+        }
+        if (!segments.length) return;
+
+        /* Correction du coin en diagonale : quand exactement 4 demi-
+           segments se rencontrent à un sommet (diagonale opposée "dedans",
+           orthogonale opposée "dehors" — une marche d'escalier), on
+           RACCOURCIT les 4 segments (jamais on ne les supprime — ça rouvrait
+           le périmètre) et on les relie par deux courtes diagonales qui
+           pontent le sommet au lieu de s'y croiser en X. C'est ce pontage,
+           précisément, qui fait qu'une zone en marches d'escalier se lit
+           comme UNE forme plutôt que comme des cases isolées. */
+        const sommetsCandidats = new Set();
+        for (const s of segments) {
+          sommetsCandidats.add(s.i1 + "," + s.j1);
+          sommetsCandidats.add(s.i2 + "," + s.j2);
+        }
+        const coupe = demi * .45;
+        for (const cleSommet of sommetsCandidats) {
+          const [i, j] = cleSommet.split(",").map(Number);
+          const no = dedans(i - 1, j - 1);
+          const ne = dedans(i - 1, j);
+          const so = dedans(i, j - 1);
+          const se = dedans(i, j);
+          const diagNoSe = no && se && !ne && !so;
+          const diagNeSo = ne && so && !no && !se;
+          if (!diagNoSe && !diagNeSo) continue;
+
+          const concernes = segments.filter(seg => (seg.i1 === i && seg.j1 === j) || (seg.i2 === i && seg.j2 === j));
+          if (concernes.length !== 4) continue;
+
+          const yVertex = concernes[0].y1;
+          const p = pointSommet(i, j, yVertex);
+          const coupes = {
+            nord: { x: p.x, z: p.z - coupe },
+            sud: { x: p.x, z: p.z + coupe },
+            ouest: { x: p.x - coupe, z: p.z },
+            est: { x: p.x + coupe, z: p.z }
+          };
+          for (const seg of concernes) {
+            const surI1 = seg.i1 === i && seg.j1 === j;
+            const autre = surI1 ? { x: seg.x2, z: seg.z2 } : { x: seg.x1, z: seg.z1 };
+            const dx = autre.x - p.x, dz = autre.z - p.z;
+            const direction = Math.abs(dx) > Math.abs(dz)
+              ? (dx > 0 ? "est" : "ouest")
+              : (dz > 0 ? "sud" : "nord");
+            const point = coupes[direction];
+            if (surI1) { seg.x1 = point.x; seg.z1 = point.z; }
+            else { seg.x2 = point.x; seg.z2 = point.z; }
+          }
+
+          const yLiaison = concernes[0].y1;
+          if (diagNoSe) {
+            segments.push({ x1: coupes.ouest.x, y1: yLiaison, z1: coupes.ouest.z, x2: coupes.sud.x, y2: yLiaison, z2: coupes.sud.z });
+            segments.push({ x1: coupes.nord.x, y1: yLiaison, z1: coupes.nord.z, x2: coupes.est.x, y2: yLiaison, z2: coupes.est.z });
+          } else {
+            segments.push({ x1: coupes.nord.x, y1: yLiaison, z1: coupes.nord.z, x2: coupes.ouest.x, y2: yLiaison, z2: coupes.ouest.z });
+            segments.push({ x1: coupes.sud.x, y1: yLiaison, z1: coupes.sud.z, x2: coupes.est.x, y2: yLiaison, z2: coupes.est.z });
+          }
+        }
+
+        /* Des rubans, pas des THREE.Line : `linewidth` sur LineBasicMaterial
+           est ignoré par la quasi-totalité des pilotes desktop. Un ruban (un
+           rectangle fin, orienté par sa rotation Y) a une épaisseur RÉELLE
+           en unités de scène, donc un rendu garanti quel que soit le pilote. */
+        const ajouterRuban = (segment, decalageY, couleur, opacite, epaisseur) => {
+          const dx = segment.x2 - segment.x1;
+          const dz = segment.z2 - segment.z1;
+          const longueur = Math.hypot(dx, dz);
+          if (longueur < 1e-4) return;
+          const ruban = new THREE.Mesh(
+            // +epaisseur en longueur : les bouts des rubans se rejoignent au
+            // coin de la case sans laisser de brèche entre deux segments
+            // perpendiculaires.
+            new THREE.PlaneGeometry(longueur + epaisseur, epaisseur),
+            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          );
+          ruban.rotation.x = -Math.PI / 2;
+          ruban.rotation.z = -Math.atan2(dz, dx);
+          const yRuban = (segment.y1 !== undefined ? segment.y1 : segment.y2);
+          ruban.position.set((segment.x1 + segment.x2) / 2, yRuban + decalageY, (segment.z1 + segment.z2) / 2);
+          ruban.renderOrder = decalageY > 0 ? 20 : 19;
+          group.add(ruban);
+          registerKayKitFadeIn(ruban);
+        };
+
+        // Bleu (même famille que la flèche de trajet) plutôt que l'or/blanc
+        // des essais précédents — un seul ensemble visuel cohérent avec la
+        // flèche. Deux couches seulement (foncée dessous, claire dessus),
+        // sans troisième couche de lueur : la lueur avait fini, à elle
+        // seule, par former "une bande beaucoup trop large". Épaisseur mise
+        // à l'échelle du zoom pour rester constante à l'écran.
+        const zoomReference = 12.4 * (GRID / 11);
+        const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
+        const epaisseurClaire = .12 * echelleZoom;
+        const epaisseurSombre = epaisseurClaire + .045 * echelleZoom;
+        for (const segment of segments) ajouterRuban(segment, -.002, 0x0d3a56, .85, epaisseurSombre);
+        for (const segment of segments) ajouterRuban(segment, .002, 0x7fd8ff, 1, epaisseurClaire);
       }
 
       // Anneau orange compact directement sous le personnage/couronne poussable
@@ -5627,8 +5763,13 @@
          matériau par mesh (nécessaire un temps pour contourner un bug de
          registerKayKitFadeIn sur matériau partagé) coûtait une allocation
          GPU à chaque survol pour un résultat identique à un matériau fixe. */
-      const KAYKIT_MOVE_PATH_SOMBRE = { couleur: 0x2a1806, opacite: .85 };
-      const KAYKIT_MOVE_PATH_CLAIRE = { couleur: 0xffce6b, opacite: 1 };
+      // Bleu (même famille que l'aplat de zone, pour un seul ensemble
+      // visuel cohérent) et nettement plus fine : signalé "plus belle, plus
+      // fine et de couleur bleue" une fois l'or/marron jugé correct mais pas
+      // assez soigné. Rayons quasiment divisés par deux par rapport à la
+      // version précédente (.075/.05 → .045/.028 pour les tiges).
+      const KAYKIT_MOVE_PATH_SOMBRE = { couleur: 0x0d3a56, opacite: .8 };
+      const KAYKIT_MOVE_PATH_CLAIRE = { couleur: 0x7fd8ff, opacite: 1 };
       let kaykitMovePathMateriaux = null;
       function kaykitMovePathRessources() {
         if (kaykitMovePathMateriaux) return kaykitMovePathMateriaux;
@@ -5636,18 +5777,18 @@
         kaykitMovePathMateriaux = {
           matSombre: mat(KAYKIT_MOVE_PATH_SOMBRE.couleur, KAYKIT_MOVE_PATH_SOMBRE.opacite),
           matClair: mat(KAYKIT_MOVE_PATH_CLAIRE.couleur, KAYKIT_MOVE_PATH_CLAIRE.opacite),
-          jointSombre: kaykitGeometry("move-path-joint-dark-v1", () => new THREE.SphereGeometry(.075, 10, 8)),
-          jointClair: kaykitGeometry("move-path-joint-light-v1", () => new THREE.SphereGeometry(.055, 10, 8)),
-          teteSombre: kaykitGeometry("move-path-head-dark-v1", () => new THREE.ConeGeometry(.19, .32, 12)),
-          teteClaire: kaykitGeometry("move-path-head-light-v1", () => new THREE.ConeGeometry(.14, .27, 12)),
+          jointSombre: kaykitGeometry("move-path-joint-dark-v2", () => new THREE.SphereGeometry(.05, 10, 8)),
+          jointClair: kaykitGeometry("move-path-joint-light-v2", () => new THREE.SphereGeometry(.032, 10, 8)),
+          teteSombre: kaykitGeometry("move-path-head-dark-v2", () => new THREE.ConeGeometry(.13, .24, 12)),
+          teteClaire: kaykitGeometry("move-path-head-light-v2", () => new THREE.ConeGeometry(.09, .2, 12)),
           // Longueur d'un pas droit = KAYKIT_CELL_SPACING, d'un pas en
           // diagonale = KAYKIT_CELL_SPACING·√2 — les deux seules valeurs
           // possibles sur un trajet en grille, donc les deux seules tiges à
           // mettre en cache (une par épaisseur).
-          tigeSombreDroite: kaykitGeometry("move-path-shaft-dark-ortho-v1", () => new THREE.CylinderGeometry(.075, .075, KAYKIT_CELL_SPACING, 10)),
-          tigeSombreDiagonale: kaykitGeometry("move-path-shaft-dark-diag-v1", () => new THREE.CylinderGeometry(.075, .075, KAYKIT_CELL_SPACING * Math.SQRT2, 10)),
-          tigeClaireDroite: kaykitGeometry("move-path-shaft-light-ortho-v1", () => new THREE.CylinderGeometry(.05, .05, KAYKIT_CELL_SPACING, 10)),
-          tigeClaireDiagonale: kaykitGeometry("move-path-shaft-light-diag-v1", () => new THREE.CylinderGeometry(.05, .05, KAYKIT_CELL_SPACING * Math.SQRT2, 10))
+          tigeSombreDroite: kaykitGeometry("move-path-shaft-dark-ortho-v2", () => new THREE.CylinderGeometry(.045, .045, KAYKIT_CELL_SPACING, 10)),
+          tigeSombreDiagonale: kaykitGeometry("move-path-shaft-dark-diag-v2", () => new THREE.CylinderGeometry(.045, .045, KAYKIT_CELL_SPACING * Math.SQRT2, 10)),
+          tigeClaireDroite: kaykitGeometry("move-path-shaft-light-ortho-v2", () => new THREE.CylinderGeometry(.028, .028, KAYKIT_CELL_SPACING, 10)),
+          tigeClaireDiagonale: kaykitGeometry("move-path-shaft-light-diag-v2", () => new THREE.CylinderGeometry(.028, .028, KAYKIT_CELL_SPACING * Math.SQRT2, 10))
         };
         return kaykitMovePathMateriaux;
       }
@@ -5784,10 +5925,20 @@
            FONDU la zone entière à chaque survol, un clignotement disgracieux
            signalé en jeu ; ici, la zone ne bouge que lorsque l'ensemble
            atteignable lui-même change (sélection d'un autre gardien, fin de
-           l'action). */
-        const zoneKey = smartResting ? JSON.stringify([...(state.reachable || [])].sort()) : null;
-        if (zoneKey !== kaykit3D.moveZoneKey) {
-          kaykit3D.moveZoneKey = zoneKey;
+           l'action).
+
+           Clé = la RÉFÉRENCE de state.reachable, pas son contenu trié et
+           sérialisé en JSON. `state.reachable` est TOUJOURS réaffecté à un
+           Set neuf (jamais muté en place — vérifié sur tous les points
+           d'affectation du fichier), donc comparer les références suffit à
+           détecter un vrai changement, pour un coût nul. Le tri + JSON.
+           stringify tournait, lui, à CHAQUE case survolée (cette fonction
+           est appelée à chaque mousemove) — un vrai coût CPU répété pour ne
+           produire, la plupart du temps, que la même clé. Signalé en jeu
+           comme un ralentissement. */
+        const zoneRef = smartResting ? state.reachable : null;
+        if (zoneRef !== kaykit3D.moveZoneRef) {
+          kaykit3D.moveZoneRef = zoneRef;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
           if (smartResting) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
@@ -5934,7 +6085,7 @@
           clearKayKitGroup(kaykit3D.actionPreviewGroup);
           kaykit3D.actionPreviewKey = null;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
-          kaykit3D.moveZoneKey = null;
+          kaykit3D.moveZoneRef = null;
           return;
         }
 
@@ -5984,7 +6135,7 @@
         // ui.js) — la zone de déplacement doit disparaître avec le reste,
         // pas seulement au prochain survol.
         clearKayKitGroup(kaykit3D.moveZoneGroup);
-        kaykit3D.moveZoneKey = null;
+        kaykit3D.moveZoneRef = null;
       }
 
 
