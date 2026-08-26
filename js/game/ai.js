@@ -189,7 +189,12 @@
             options.push({
               char,
               artifact,
-              score: distanceToNearestOwnVillage(char.r, char.c) + Math.random() * .08
+              // Départage volontairement minuscule entre porteurs équidistants.
+              // Passé par gameRandom() : c'était le SEUL tirage de l'IA qu'aucun
+              // réglage de difficulté ne neutralisait (cfg.randomness vaut 0 à
+              // l'Expert mais ne s'applique pas ici), donc la seule source de
+              // non-déterminisme restante de l'Expert.
+              score: distanceToNearestOwnVillage(char.r, char.c) + gameRandom() * .08
             });
           }
         }
@@ -216,6 +221,7 @@
         showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
         await sleep(520);
         resolveArtifactForCharacter(option.char);
+        benchJournaliser({ type: "RAMASSAGE", gardien: option.char.id, case: [option.char.r, option.char.c] });
         return true;
       }
 
@@ -298,6 +304,7 @@
           showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
+          benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: true });
           return true;
         }
 
@@ -327,6 +334,7 @@
         showToast("L’allié récupère immédiatement la couronne.");
         await sleep(340);
         resolveArtifactForCharacter(option.ally);
+        benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: false, depot: [option.dropR, option.dropC] });
         return true;
       }
 
@@ -480,7 +488,7 @@
                 - force * .35
                 - (receivingAlly ? 7 : 0)
                 - (simulation.crossedVoid ? .8 : 0)
-                + Math.random() * cfg.randomness;
+                + gameRandom() * cfg.randomness;
 
               options.push({
                 carrier,
@@ -811,8 +819,22 @@
         renderAll();
         await sleep(260);
         if (token !== aiRunToken || !state) return false;
+        // Position réelle relevée avant/après le clic : l'IA peut demander un
+        // déplacement que le moteur refuse, et un journal qui enregistrerait
+        // l'intention plutôt que l'effet rendrait un échec de puzzle
+        // indéchiffrable.
+        const avant = [option.char.r, option.char.c];
         handleMoveClick(option.r, option.c);
         await sleep(650);
+        // Relevé APRÈS l'attente : le déplacement se matérialise pendant
+        // l'animation, pas au moment du clic. Mesuré juste après handleMoveClick,
+        // `applique` aurait été faux même pour un déplacement parfaitement valide.
+        benchJournaliser({
+          type: "MOVE", gardien: option.char.id, depuis: avant,
+          vers: [option.r, option.c], cout: option.cost, porte: !!option.carrying,
+          arrivee: [option.char.r, option.char.c],
+          applique: option.char.r !== avant[0] || option.char.c !== avant[1]
+        });
         return true;
       }
 
@@ -828,6 +850,7 @@
         await sleep(260);
         if (token !== aiRunToken || !state) return false;
         handlePushClick(option.r, option.c);
+        benchJournaliser({ type: "PUSH", pousseur: option.pusher.id, vers: [option.r, option.c], force: option.count });
         await sleep(650);
         return true;
       }
@@ -845,6 +868,7 @@
         await sleep(380);
         if (token !== aiRunToken || !state) return false;
         confirmMagicRotation();
+        benchJournaliser({ type: "MAGIC", ile: option.island.id, pivot: [...option.pivot], pas: option.steps });
         await sleep(620);
         return true;
       }
@@ -923,6 +947,7 @@
 
         if (!state.islandPlacedThisTurn) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);
+          benchJournaliser({ type: "POSE", automatique: true, avantActions: true });
           await sleep(760);
         }
 
@@ -1009,7 +1034,7 @@
               !acted
               && magic
               && magic.score < strongMagicThreshold
-              && Math.random() < cfg.magicProbability
+              && gameRandom() < cfg.magicProbability
             ) {
               acted = await aiPerformMagic(magic, token);
               consumedAction = acted;
@@ -1019,7 +1044,7 @@
               !acted
               && push
               && (aiOpponentCarrier() || !carrier || push.priority < 0)
-              && Math.random() < cfg.pushProbability
+              && gameRandom() < cfg.pushProbability
             ) {
               acted = await aiPerformPush(push, token);
               consumedAction = acted;
@@ -1030,7 +1055,7 @@
               consumedAction = acted;
             }
 
-            if (!acted && magic && Math.random() < cfg.magicProbability) {
+            if (!acted && magic && gameRandom() < cfg.magicProbability) {
               acted = await aiPerformMagic(magic, token);
               consumedAction = acted;
             }

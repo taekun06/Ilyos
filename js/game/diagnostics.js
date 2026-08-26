@@ -338,6 +338,270 @@
         }
       };
 
+      /* ==================================================================
+         BANC D'ESSAI STRATÉGIQUE — window.ILYOS_BENCH
+
+         Sert à mesurer la FORCE de l'IA, là où ILYOS_TEST mesure sa survie
+         (le smoke test vérifie qu'une partie se termine, pas qu'elle soit
+         bien jouée).
+
+         Principe : une position de test est un instantané snapshotState(),
+         rechargé par applyStateSnapshot() — exactement le chemin de
+         l'annulation. Aucune seconde représentation du plateau n'est
+         inventée ici, donc un puzzle ne peut pas diverger des règles.
+
+         Le tour joué est le VRAI runAITurn(), avec ses vraies fonctions de
+         décision et d'exécution : ce qui est mesuré est bien l'IA du jeu.
+         ================================================================== */
+
+      /* Construit un instantané complet à partir d'une description compacte.
+         Les puzzles décrivent ce qui compte (îles, gardiens, couronnes, mains,
+         réserve) ; tout le reste reçoit un défaut neutre de début de tour. */
+      function benchBuildSnapshot(spec = {}) {
+        const taille = spec.boardSize || 11;
+        if (GRID !== taille) setBoardSize(taille);
+
+        const attributions = getVillageAssignments(2);
+        const joueurs = [0, 1].map(index => {
+          const villages = attributions[index].map(v => ({ ...v }));
+          const main = (spec.hands?.[index] || []).map((action, i) => ({
+            id: `bench-P${index}-C${i}`,
+            action,
+            used: false
+          }));
+          return {
+            id: index,
+            name: index === 0 ? "BENCH IA" : "BENCH ADVERSAIRE",
+            color: PLAYER_COLORS[index],
+            icon: PLAYER_ICONS[index],
+            // Seul le joueur testé est piloté par l'IA : l'adversaire reste
+            // humain pour que la partie s'arrête à la fin du tour mesuré.
+            isAI: index === (spec.aiPlayer ?? 0),
+            aiDifficulty: index === (spec.aiPlayer ?? 0) ? (spec.difficulty || "expert") : null,
+            village: { ...villages[0] },
+            villages,
+            score: spec.scores?.[index] || 0,
+            // Pioche vide : un puzzle ne doit jamais dépendre d'un tirage.
+            deck: [],
+            discard: [],
+            hand: main,
+            stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {})
+          };
+        });
+
+        let prochaineIle = 1;
+        const iles = (spec.islands || []).map(ile => {
+          const cellules = cloneCells(ile.cells);
+          return {
+            id: prochaineIle++,
+            owner: ile.owner ?? 0,
+            shapeKey: ile.shapeKey || "square",
+            anchor: { r: cellules[0][0], c: cellules[0][1] },
+            relCells: cloneCells(cellules.map(([r, c]) => [r - cellules[0][0], c - cellules[0][1]])),
+            cells: cellules,
+            // fromSetup marque les îles de décor : elles ne consomment pas le
+            // stock de formes (voir shapeUsageCountForOwner). Un puzzle qui
+            // teste le stock doit donc poser fromSetup: false explicitement.
+            fromSetup: ile.fromSetup !== false,
+            visualVariant: 0
+          };
+        });
+
+        let prochainPerso = 1;
+        const persos = (spec.characters || []).map(perso => ({
+          id: perso.id || `bench-char-${prochainPerso++}`,
+          player: perso.player ?? 0,
+          r: perso.r,
+          c: perso.c
+        }));
+
+        const couronne = (index, defaut) => {
+          const spec1 = spec.crowns?.[index];
+          if (spec1 === null) return { id: `crown-${index + 1}`, r: defaut.r, c: defaut.c, carrierId: null, active: false };
+          const c = spec1 || {};
+          return {
+            id: `crown-${index + 1}`,
+            r: c.r ?? defaut.r,
+            c: c.c ?? defaut.c,
+            carrierId: c.carrierId ?? null,
+            active: c.active !== false
+          };
+        };
+
+        return {
+          players: joueurs,
+          currentPlayer: spec.aiPlayer ?? 0,
+          round: 1,
+          turn: spec.turn ?? 3,
+          islands: iles,
+          characters: persos,
+          artifact: couronne(0, CENTER),
+          secondArtifact: spec.crowns?.[1] === undefined
+            ? { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false }
+            : couronne(1, CENTER),
+          couronnesEnAttente: spec.couronnesEnAttente || [],
+          phase: "ACTION_SELECT",
+          islandPlacedThisTurn: !!spec.islandPlacedThisTurn,
+          centerCrownTakenThisTurn: false,
+          treasureDropFromId: null,
+          crownPickupCell: null,
+          selectedIslandShape: null,
+          placementCells: null,
+          placementOriginIndex: 0,
+          hoverAnchor: null,
+          pendingSpawnIslandId: null,
+          selectedActionCardId: null,
+          selectedActionType: null,
+          selectedActionCount: 1,
+          pushForceChoice: 1,
+          crownStealTargetId: null,
+          crownPickupArtifactId: null,
+          treasureDropArtifactId: null,
+          crownTransferTargetIds: [],
+          selectedCharId: null,
+          selectedIslandId: null,
+          selectedMagicPivot: null,
+          magicPreviewDirection: 0,
+          magicPreviewSteps: 0,
+          magicPreviewCells: null,
+          magicPreviewValid: false,
+          reachable: [],
+          nextIslandId: prochaineIle,
+          nextCharId: prochainPerso + 100,
+          winner: null
+        };
+      }
+
+      /* Photographie de l'état en termes de RÈGLES, pas de score interne.
+         C'est sur cet objet que les puzzles écrivent leurs conditions de
+         réussite : « le porteur est sur une case de validation », jamais
+         « l'évaluation dépasse 120 ». */
+      function benchObserveState(joueurIA) {
+        const moi = state.players[joueurIA];
+        const adverse = state.players.find(p => p.id !== joueurIA);
+        const porteurs = (state.characters || []).map(char => ({
+          id: char.id,
+          player: char.player,
+          r: char.r,
+          c: char.c,
+          porte: !!artifactCarriedBy(char.id),
+          surCaseValidation: isCrownValidationCell(state.players[char.player], char.r, char.c)
+        }));
+
+        return {
+          tour: state.turn,
+          vainqueur: state.winner,
+          scores: state.players.map(p => p.score),
+          gardiens: porteurs,
+          gardiensIA: porteurs.filter(g => g.player === joueurIA),
+          gardiensAdverses: porteurs.filter(g => g.player !== joueurIA),
+          couronnes: [state.artifact, state.secondArtifact].filter(Boolean).map(a => {
+            // Une couronne portée ne met pas à jour ses propres r/c : sa position
+            // réelle est celle de son porteur. Sans cette résolution, un puzzle
+            // qui teste « la couronne a-t-elle atteint le village » lirait la
+            // case de ramassage, pas la case d'arrivée.
+            const porteur = a.carrierId ? state.characters.find(ch => ch.id === a.carrierId) : null;
+            return {
+              id: a.id,
+              r: porteur ? porteur.r : a.r,
+              c: porteur ? porteur.c : a.c,
+              active: a.active,
+              carrierId: a.carrierId,
+              porteePar: porteur ? porteur.player : null
+            };
+          }),
+          couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          reserve: { ...(moi?.stash || {}) },
+          reserveAdverse: { ...(adverse?.stash || {}) },
+          mainRestante: (moi?.hand || []).filter(c => !c.used).map(c => c.action),
+          iles: (state.islands || []).map(i => ({
+            id: i.id, owner: i.owner, shapeKey: i.shapeKey, fromSetup: !!i.fromSetup,
+            cells: i.cells.map(([r, c]) => [r, c])
+          })),
+          ilePoseeCeTour: !!state.islandPlacedThisTurn,
+          /* Terrain et cases de validation relevés tels que le moteur les voit
+             (isLand fait autorité). Les conditions de réussite des puzzles se
+             calculent ensuite dessus, hors du jeu : un puzzle juge donc l'état
+             obtenu avec son propre oracle, sans jamais réutiliser une fonction
+             de décision de l'IA — c'est ce qui l'empêche de se contenter de
+             confirmer ce que l'IA croit déjà. */
+          terrain: (() => {
+            const cases = [];
+            for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+              if (isLand(r, c)) cases.push([r, c]);
+            }
+            return cases;
+          })(),
+          casesValidation: state.players.map(p => crownValidationCellsForPlayer(p)),
+          sanctuaire: [CENTER.r, CENTER.c],
+          taillePlateau: GRID
+        };
+      }
+
+      /* Journal des actions réellement exécutées pendant le tour mesuré.
+         Rempli par les fonctions d'exécution de l'IA (voir benchJournaliser),
+         il sert à expliquer POURQUOI un puzzle échoue, pas seulement qu'il
+         échoue. */
+      let benchJournal = null;
+      function benchJournaliser(entree) {
+        if (benchJournal) benchJournal.push(entree);
+      }
+
+      /** Joue exactement un tour d'IA sur une position donnée et rend le
+       *  résultat observé. Ne touche à rien si aucune partie n'est en cours. */
+      async function benchRunPuzzle(spec = {}) {
+        const joueurIA = spec.aiPlayer ?? 0;
+        const graine = spec.seed ?? 1;
+
+        setTestRandomSeed(graine);
+        benchJournal = [];
+
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign(
+          { allowDissolve: false, islandLimitPerPlayer: 0 },
+          spec.rules || {}
+        );
+        state.soloMode = true;
+        state.onlineMode = false;
+        state.undoHistory = [];
+        state.aiThinking = false;
+        state.inputLocked = false;
+        renderAll();
+
+        const depart = benchObserveState(joueurIA);
+        const token = ++aiRunToken;
+        await runAITurn(token);
+
+        // runAITurn se termine par endTurn(true), qui est asynchrone et n'est
+        // pas attendu : c'est lui qui range les cartes non jouées dans la
+        // réserve physique. Sans cette pause, un puzzle sur la réserve lirait
+        // l'état d'avant le rangement.
+        await sleep(900);
+        const arrivee = benchObserveState(joueurIA);
+        const journal = benchJournal ? [...benchJournal] : [];
+        benchJournal = null;
+        setTestRandomSeed(null);
+
+        return { depart, arrivee, journal, joueurIA, graine };
+      }
+
+      window.ILYOS_BENCH = {
+        run: benchRunPuzzle,
+        build: benchBuildSnapshot,
+        observe: benchObserveState,
+        seed: setTestRandomSeed,
+        seeded: isTestRandomSeeded,
+        /* Tirage brut, pour vérifier le générateur lui-même : c'est
+           exactement la fonction que consomment shuffle(), createDeck() et les
+           départages de l'IA. */
+        tirage: () => gameRandom(),
+        /* Contrôle du rythme : les temporisations de l'IA sont cosmétiques
+           (lisibilité du tour pour un spectateur humain). Les réduire pendant
+           le banc d'essai ne change aucune décision, seulement la durée. */
+        vitesse: (facteur = 1) => { benchSpeedFactor = Math.max(0, Number(facteur) || 0); return benchSpeedFactor; }
+      };
+
       window.ILYOS_TEST = {
         launchSpiral: launchIlyosSpiralDiagnostic,
         playSpiral: launchIlyosSpiralAutoplay,

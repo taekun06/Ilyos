@@ -1,6 +1,74 @@
 (() => {
       "use strict";
 
+      /* ------------------------------------------------------------------
+         HASARD DE JEU — point de passage unique, déterministe sur demande.
+
+         Motif : le banc d'essai stratégique (window.ILYOS_BENCH) doit pouvoir
+         rejouer exactement la même position et obtenir exactement la même
+         décision de l'IA. Or plusieurs chemins de règles et de décision
+         tiraient directement Math.random() — notamment un départage de ±.08
+         dans aiAdjacentCrownPickup() qui n'était filtré par AUCUN réglage de
+         difficulté, et rendait donc l'Expert non déterministe même à
+         randomness: 0.
+
+         Règle d'usage : gameRandom() remplace Math.random() UNIQUEMENT sur
+         les chemins qui influencent l'état de jeu ou une décision d'IA. Le
+         hasard purement visuel (particules, variantes de décor, variations
+         sonores dans audio.js et kaykit3d.js) garde Math.random() : nous
+         voulons un déterminisme stratégique, pas un déterminisme de chaque
+         nuage.
+
+         Sans graine posée, gameRandom() EST Math.random() : une partie
+         normale reste exactement aussi aléatoire qu'avant. Le mode
+         déterministe ne s'active que par setTestRandomSeed(n) explicite.
+
+         Le générateur est délibérément gardé hors de `state` : y placer une
+         fonction casserait structuredClone(), la sauvegarde locale et la
+         synchronisation en ligne — et gênerait la future simulation du
+         planner, qui doit pouvoir cloner l'état librement. */
+      let ilyosSeededRandom = null;
+
+      /* mulberry32 : 32 bits d'état, une seule multiplication imul par tirage,
+         période 2^32. Largement suffisant pour départager des coups et battre
+         un paquet de 13 cartes, et surtout reproductible à l'identique. */
+      function ilyosMakeSeededRandom(seed) {
+        let a = seed >>> 0;
+        return function () {
+          a = (a + 0x6D2B79F5) >>> 0;
+          let t = a;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function gameRandom() {
+        return ilyosSeededRandom ? ilyosSeededRandom() : Math.random();
+      }
+
+      /** Pose (nombre) ou retire (null/undefined) la graine déterministe.
+       *  Réservé au banc d'essai : une vraie partie ne doit jamais l'appeler. */
+      function setTestRandomSeed(seed) {
+        ilyosSeededRandom = (seed === null || seed === undefined)
+          ? null
+          : ilyosMakeSeededRandom(Number(seed));
+        return ilyosSeededRandom !== null;
+      }
+
+      function isTestRandomSeeded() {
+        return ilyosSeededRandom !== null;
+      }
+
+      /* Facteur d'accélération des temporisations, réservé au banc d'essai.
+         Les pauses de l'IA (thinkDelay, actionDelay, attentes d'animation) sont
+         purement cosmétiques : elles rendent le tour lisible pour un spectateur
+         et n'entrent dans aucune décision. Les compresser pendant une mesure ne
+         change donc que la durée du banc, jamais son résultat — ce que le test
+         de reproductibilité vérifie explicitement en comparant vitesse normale
+         et vitesse accélérée. 1 = rythme normal du jeu. */
+      let benchSpeedFactor = 1;
+
       /* Taille du plateau. Variable, pas constante : le joueur peut choisir
          11×11 ou 13×13 au menu. GRID, CENTER et CORNERS sont recalculés
          ensemble par setBoardSize(), avant toute création de partie.
@@ -10024,7 +10092,7 @@
       function shuffle(arr) {
         const a = [...arr];
         for (let i = a.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
+          const j = Math.floor(gameRandom() * (i + 1));
           [a[i], a[j]] = [a[j], a[i]];
         }
         return a;
@@ -11111,7 +11179,7 @@
 
       function createDeck(playerIndex) {
         return shuffle(CARD_BLUEPRINTS.map((action, i) => ({
-          id: `P${playerIndex}-C${i}-${Math.random().toString(36).slice(2, 7)}`,
+          id: `P${playerIndex}-C${i}-${gameRandom().toString(36).slice(2, 7)}`,
           action,
           used: false
         })));
@@ -13004,7 +13072,7 @@
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
         const villageAssignments = getVillageAssignments(count);
-        const startingPlayerIndex = Math.floor(Math.random() * count);
+        const startingPlayerIndex = Math.floor(gameRandom() * count);
 
         const players = names.map((name, i) => {
           const villages = villageAssignments[i].map(village => ({ ...village }));
@@ -13170,7 +13238,10 @@
       }
 
       function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        // benchSpeedFactor vaut 1 en jeu normal : aucun changement de rythme
+        // hors banc d'essai (voir sa déclaration dans bootstrap.js).
+        const duree = benchSpeedFactor === 1 ? ms : Math.round(ms * benchSpeedFactor);
+        return new Promise(resolve => setTimeout(resolve, duree));
       }
 
       function showTurnRibbon(player) {
@@ -13474,7 +13545,7 @@
                     - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
                     + enemyZoneCells * 4.4
-                    + Math.random() * aiConfig().randomness;
+                    + gameRandom() * aiConfig().randomness;
 
                   candidates.push({
                     shapeKey,
@@ -13499,7 +13570,7 @@
         );
 
         return shortlist.length
-          ? shortlist[Math.floor(Math.random() * shortlist.length)]
+          ? shortlist[Math.floor(gameRandom() * shortlist.length)]
           : null;
       }
 
@@ -13759,7 +13830,12 @@
             options.push({
               char,
               artifact,
-              score: distanceToNearestOwnVillage(char.r, char.c) + Math.random() * .08
+              // Départage volontairement minuscule entre porteurs équidistants.
+              // Passé par gameRandom() : c'était le SEUL tirage de l'IA qu'aucun
+              // réglage de difficulté ne neutralisait (cfg.randomness vaut 0 à
+              // l'Expert mais ne s'applique pas ici), donc la seule source de
+              // non-déterminisme restante de l'Expert.
+              score: distanceToNearestOwnVillage(char.r, char.c) + gameRandom() * .08
             });
           }
         }
@@ -13786,6 +13862,7 @@
         showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
         await sleep(520);
         resolveArtifactForCharacter(option.char);
+        benchJournaliser({ type: "RAMASSAGE", gardien: option.char.id, case: [option.char.r, option.char.c] });
         return true;
       }
 
@@ -13868,6 +13945,7 @@
           showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
+          benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: true });
           return true;
         }
 
@@ -13897,6 +13975,7 @@
         showToast("L’allié récupère immédiatement la couronne.");
         await sleep(340);
         resolveArtifactForCharacter(option.ally);
+        benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: false, depot: [option.dropR, option.dropC] });
         return true;
       }
 
@@ -14050,7 +14129,7 @@
                 - force * .35
                 - (receivingAlly ? 7 : 0)
                 - (simulation.crossedVoid ? .8 : 0)
-                + Math.random() * cfg.randomness;
+                + gameRandom() * cfg.randomness;
 
               options.push({
                 carrier,
@@ -14381,8 +14460,22 @@
         renderAll();
         await sleep(260);
         if (token !== aiRunToken || !state) return false;
+        // Position réelle relevée avant/après le clic : l'IA peut demander un
+        // déplacement que le moteur refuse, et un journal qui enregistrerait
+        // l'intention plutôt que l'effet rendrait un échec de puzzle
+        // indéchiffrable.
+        const avant = [option.char.r, option.char.c];
         handleMoveClick(option.r, option.c);
         await sleep(650);
+        // Relevé APRÈS l'attente : le déplacement se matérialise pendant
+        // l'animation, pas au moment du clic. Mesuré juste après handleMoveClick,
+        // `applique` aurait été faux même pour un déplacement parfaitement valide.
+        benchJournaliser({
+          type: "MOVE", gardien: option.char.id, depuis: avant,
+          vers: [option.r, option.c], cout: option.cost, porte: !!option.carrying,
+          arrivee: [option.char.r, option.char.c],
+          applique: option.char.r !== avant[0] || option.char.c !== avant[1]
+        });
         return true;
       }
 
@@ -14398,6 +14491,7 @@
         await sleep(260);
         if (token !== aiRunToken || !state) return false;
         handlePushClick(option.r, option.c);
+        benchJournaliser({ type: "PUSH", pousseur: option.pusher.id, vers: [option.r, option.c], force: option.count });
         await sleep(650);
         return true;
       }
@@ -14415,6 +14509,7 @@
         await sleep(380);
         if (token !== aiRunToken || !state) return false;
         confirmMagicRotation();
+        benchJournaliser({ type: "MAGIC", ile: option.island.id, pivot: [...option.pivot], pas: option.steps });
         await sleep(620);
         return true;
       }
@@ -14493,6 +14588,7 @@
 
         if (!state.islandPlacedThisTurn) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);
+          benchJournaliser({ type: "POSE", automatique: true, avantActions: true });
           await sleep(760);
         }
 
@@ -14579,7 +14675,7 @@
               !acted
               && magic
               && magic.score < strongMagicThreshold
-              && Math.random() < cfg.magicProbability
+              && gameRandom() < cfg.magicProbability
             ) {
               acted = await aiPerformMagic(magic, token);
               consumedAction = acted;
@@ -14589,7 +14685,7 @@
               !acted
               && push
               && (aiOpponentCarrier() || !carrier || push.priority < 0)
-              && Math.random() < cfg.pushProbability
+              && gameRandom() < cfg.pushProbability
             ) {
               acted = await aiPerformPush(push, token);
               consumedAction = acted;
@@ -14600,7 +14696,7 @@
               consumedAction = acted;
             }
 
-            if (!acted && magic && Math.random() < cfg.magicProbability) {
+            if (!acted && magic && gameRandom() < cfg.magicProbability) {
               acted = await aiPerformMagic(magic, token);
               consumedAction = acted;
             }
@@ -14824,9 +14920,17 @@
         state.undoHistory?.pop();
       }
 
-      function restoreUndoSnapshot() {
-        if (!state?.undoHistory?.length) return false;
-        const snap = JSON.parse(state.undoHistory.pop());
+      /* Réécrit l'état de jeu depuis un instantané produit par snapshotState().
+         Extrait de restoreUndoSnapshot() pour être réutilisable tel quel par le
+         banc d'essai stratégique (window.ILYOS_BENCH), qui charge ses positions
+         de test par ce même chemin : une seule définition de « recharger une
+         position », donc aucun risque qu'un puzzle soit monté différemment
+         d'une annulation réelle.
+
+         Ne fait QUE poser l'état — ni rendu, ni toast, ni pile d'annulation :
+         c'est l'appelant qui décide de la suite. */
+      function applyStateSnapshot(snap) {
+        if (!state || !snap) return false;
         state.players = snap.players;
         state.currentPlayer = snap.currentPlayer;
         state.round = snap.round;
@@ -14874,6 +14978,12 @@
         state.actionHoverCell = null;
         clearUnifiedPushOptions();
         state.pendingDirectMoveTarget = null;
+        return true;
+      }
+
+      function restoreUndoSnapshot() {
+        if (!state?.undoHistory?.length) return false;
+        if (!applyStateSnapshot(JSON.parse(state.undoHistory.pop()))) return false;
         renderAll();
         showToast(state.undoHistory.length
           ? `Action annulée · ${state.undoHistory.length} de plus possible${state.undoHistory.length > 1 ? "s" : ""}.`
@@ -20902,6 +21012,270 @@
             return false;
           }
         }
+      };
+
+      /* ==================================================================
+         BANC D'ESSAI STRATÉGIQUE — window.ILYOS_BENCH
+
+         Sert à mesurer la FORCE de l'IA, là où ILYOS_TEST mesure sa survie
+         (le smoke test vérifie qu'une partie se termine, pas qu'elle soit
+         bien jouée).
+
+         Principe : une position de test est un instantané snapshotState(),
+         rechargé par applyStateSnapshot() — exactement le chemin de
+         l'annulation. Aucune seconde représentation du plateau n'est
+         inventée ici, donc un puzzle ne peut pas diverger des règles.
+
+         Le tour joué est le VRAI runAITurn(), avec ses vraies fonctions de
+         décision et d'exécution : ce qui est mesuré est bien l'IA du jeu.
+         ================================================================== */
+
+      /* Construit un instantané complet à partir d'une description compacte.
+         Les puzzles décrivent ce qui compte (îles, gardiens, couronnes, mains,
+         réserve) ; tout le reste reçoit un défaut neutre de début de tour. */
+      function benchBuildSnapshot(spec = {}) {
+        const taille = spec.boardSize || 11;
+        if (GRID !== taille) setBoardSize(taille);
+
+        const attributions = getVillageAssignments(2);
+        const joueurs = [0, 1].map(index => {
+          const villages = attributions[index].map(v => ({ ...v }));
+          const main = (spec.hands?.[index] || []).map((action, i) => ({
+            id: `bench-P${index}-C${i}`,
+            action,
+            used: false
+          }));
+          return {
+            id: index,
+            name: index === 0 ? "BENCH IA" : "BENCH ADVERSAIRE",
+            color: PLAYER_COLORS[index],
+            icon: PLAYER_ICONS[index],
+            // Seul le joueur testé est piloté par l'IA : l'adversaire reste
+            // humain pour que la partie s'arrête à la fin du tour mesuré.
+            isAI: index === (spec.aiPlayer ?? 0),
+            aiDifficulty: index === (spec.aiPlayer ?? 0) ? (spec.difficulty || "expert") : null,
+            village: { ...villages[0] },
+            villages,
+            score: spec.scores?.[index] || 0,
+            // Pioche vide : un puzzle ne doit jamais dépendre d'un tirage.
+            deck: [],
+            discard: [],
+            hand: main,
+            stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {})
+          };
+        });
+
+        let prochaineIle = 1;
+        const iles = (spec.islands || []).map(ile => {
+          const cellules = cloneCells(ile.cells);
+          return {
+            id: prochaineIle++,
+            owner: ile.owner ?? 0,
+            shapeKey: ile.shapeKey || "square",
+            anchor: { r: cellules[0][0], c: cellules[0][1] },
+            relCells: cloneCells(cellules.map(([r, c]) => [r - cellules[0][0], c - cellules[0][1]])),
+            cells: cellules,
+            // fromSetup marque les îles de décor : elles ne consomment pas le
+            // stock de formes (voir shapeUsageCountForOwner). Un puzzle qui
+            // teste le stock doit donc poser fromSetup: false explicitement.
+            fromSetup: ile.fromSetup !== false,
+            visualVariant: 0
+          };
+        });
+
+        let prochainPerso = 1;
+        const persos = (spec.characters || []).map(perso => ({
+          id: perso.id || `bench-char-${prochainPerso++}`,
+          player: perso.player ?? 0,
+          r: perso.r,
+          c: perso.c
+        }));
+
+        const couronne = (index, defaut) => {
+          const spec1 = spec.crowns?.[index];
+          if (spec1 === null) return { id: `crown-${index + 1}`, r: defaut.r, c: defaut.c, carrierId: null, active: false };
+          const c = spec1 || {};
+          return {
+            id: `crown-${index + 1}`,
+            r: c.r ?? defaut.r,
+            c: c.c ?? defaut.c,
+            carrierId: c.carrierId ?? null,
+            active: c.active !== false
+          };
+        };
+
+        return {
+          players: joueurs,
+          currentPlayer: spec.aiPlayer ?? 0,
+          round: 1,
+          turn: spec.turn ?? 3,
+          islands: iles,
+          characters: persos,
+          artifact: couronne(0, CENTER),
+          secondArtifact: spec.crowns?.[1] === undefined
+            ? { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false }
+            : couronne(1, CENTER),
+          couronnesEnAttente: spec.couronnesEnAttente || [],
+          phase: "ACTION_SELECT",
+          islandPlacedThisTurn: !!spec.islandPlacedThisTurn,
+          centerCrownTakenThisTurn: false,
+          treasureDropFromId: null,
+          crownPickupCell: null,
+          selectedIslandShape: null,
+          placementCells: null,
+          placementOriginIndex: 0,
+          hoverAnchor: null,
+          pendingSpawnIslandId: null,
+          selectedActionCardId: null,
+          selectedActionType: null,
+          selectedActionCount: 1,
+          pushForceChoice: 1,
+          crownStealTargetId: null,
+          crownPickupArtifactId: null,
+          treasureDropArtifactId: null,
+          crownTransferTargetIds: [],
+          selectedCharId: null,
+          selectedIslandId: null,
+          selectedMagicPivot: null,
+          magicPreviewDirection: 0,
+          magicPreviewSteps: 0,
+          magicPreviewCells: null,
+          magicPreviewValid: false,
+          reachable: [],
+          nextIslandId: prochaineIle,
+          nextCharId: prochainPerso + 100,
+          winner: null
+        };
+      }
+
+      /* Photographie de l'état en termes de RÈGLES, pas de score interne.
+         C'est sur cet objet que les puzzles écrivent leurs conditions de
+         réussite : « le porteur est sur une case de validation », jamais
+         « l'évaluation dépasse 120 ». */
+      function benchObserveState(joueurIA) {
+        const moi = state.players[joueurIA];
+        const adverse = state.players.find(p => p.id !== joueurIA);
+        const porteurs = (state.characters || []).map(char => ({
+          id: char.id,
+          player: char.player,
+          r: char.r,
+          c: char.c,
+          porte: !!artifactCarriedBy(char.id),
+          surCaseValidation: isCrownValidationCell(state.players[char.player], char.r, char.c)
+        }));
+
+        return {
+          tour: state.turn,
+          vainqueur: state.winner,
+          scores: state.players.map(p => p.score),
+          gardiens: porteurs,
+          gardiensIA: porteurs.filter(g => g.player === joueurIA),
+          gardiensAdverses: porteurs.filter(g => g.player !== joueurIA),
+          couronnes: [state.artifact, state.secondArtifact].filter(Boolean).map(a => {
+            // Une couronne portée ne met pas à jour ses propres r/c : sa position
+            // réelle est celle de son porteur. Sans cette résolution, un puzzle
+            // qui teste « la couronne a-t-elle atteint le village » lirait la
+            // case de ramassage, pas la case d'arrivée.
+            const porteur = a.carrierId ? state.characters.find(ch => ch.id === a.carrierId) : null;
+            return {
+              id: a.id,
+              r: porteur ? porteur.r : a.r,
+              c: porteur ? porteur.c : a.c,
+              active: a.active,
+              carrierId: a.carrierId,
+              porteePar: porteur ? porteur.player : null
+            };
+          }),
+          couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          reserve: { ...(moi?.stash || {}) },
+          reserveAdverse: { ...(adverse?.stash || {}) },
+          mainRestante: (moi?.hand || []).filter(c => !c.used).map(c => c.action),
+          iles: (state.islands || []).map(i => ({
+            id: i.id, owner: i.owner, shapeKey: i.shapeKey, fromSetup: !!i.fromSetup,
+            cells: i.cells.map(([r, c]) => [r, c])
+          })),
+          ilePoseeCeTour: !!state.islandPlacedThisTurn,
+          /* Terrain et cases de validation relevés tels que le moteur les voit
+             (isLand fait autorité). Les conditions de réussite des puzzles se
+             calculent ensuite dessus, hors du jeu : un puzzle juge donc l'état
+             obtenu avec son propre oracle, sans jamais réutiliser une fonction
+             de décision de l'IA — c'est ce qui l'empêche de se contenter de
+             confirmer ce que l'IA croit déjà. */
+          terrain: (() => {
+            const cases = [];
+            for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+              if (isLand(r, c)) cases.push([r, c]);
+            }
+            return cases;
+          })(),
+          casesValidation: state.players.map(p => crownValidationCellsForPlayer(p)),
+          sanctuaire: [CENTER.r, CENTER.c],
+          taillePlateau: GRID
+        };
+      }
+
+      /* Journal des actions réellement exécutées pendant le tour mesuré.
+         Rempli par les fonctions d'exécution de l'IA (voir benchJournaliser),
+         il sert à expliquer POURQUOI un puzzle échoue, pas seulement qu'il
+         échoue. */
+      let benchJournal = null;
+      function benchJournaliser(entree) {
+        if (benchJournal) benchJournal.push(entree);
+      }
+
+      /** Joue exactement un tour d'IA sur une position donnée et rend le
+       *  résultat observé. Ne touche à rien si aucune partie n'est en cours. */
+      async function benchRunPuzzle(spec = {}) {
+        const joueurIA = spec.aiPlayer ?? 0;
+        const graine = spec.seed ?? 1;
+
+        setTestRandomSeed(graine);
+        benchJournal = [];
+
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign(
+          { allowDissolve: false, islandLimitPerPlayer: 0 },
+          spec.rules || {}
+        );
+        state.soloMode = true;
+        state.onlineMode = false;
+        state.undoHistory = [];
+        state.aiThinking = false;
+        state.inputLocked = false;
+        renderAll();
+
+        const depart = benchObserveState(joueurIA);
+        const token = ++aiRunToken;
+        await runAITurn(token);
+
+        // runAITurn se termine par endTurn(true), qui est asynchrone et n'est
+        // pas attendu : c'est lui qui range les cartes non jouées dans la
+        // réserve physique. Sans cette pause, un puzzle sur la réserve lirait
+        // l'état d'avant le rangement.
+        await sleep(900);
+        const arrivee = benchObserveState(joueurIA);
+        const journal = benchJournal ? [...benchJournal] : [];
+        benchJournal = null;
+        setTestRandomSeed(null);
+
+        return { depart, arrivee, journal, joueurIA, graine };
+      }
+
+      window.ILYOS_BENCH = {
+        run: benchRunPuzzle,
+        build: benchBuildSnapshot,
+        observe: benchObserveState,
+        seed: setTestRandomSeed,
+        seeded: isTestRandomSeeded,
+        /* Tirage brut, pour vérifier le générateur lui-même : c'est
+           exactement la fonction que consomment shuffle(), createDeck() et les
+           départages de l'IA. */
+        tirage: () => gameRandom(),
+        /* Contrôle du rythme : les temporisations de l'IA sont cosmétiques
+           (lisibilité du tour pour un spectateur humain). Les réduire pendant
+           le banc d'essai ne change aucune décision, seulement la durée. */
+        vitesse: (facteur = 1) => { benchSpeedFactor = Math.max(0, Number(facteur) || 0); return benchSpeedFactor; }
       };
 
       window.ILYOS_TEST = {

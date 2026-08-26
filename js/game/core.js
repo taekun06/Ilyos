@@ -133,7 +133,7 @@
       function shuffle(arr) {
         const a = [...arr];
         for (let i = a.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
+          const j = Math.floor(gameRandom() * (i + 1));
           [a[i], a[j]] = [a[j], a[i]];
         }
         return a;
@@ -1220,7 +1220,7 @@
 
       function createDeck(playerIndex) {
         return shuffle(CARD_BLUEPRINTS.map((action, i) => ({
-          id: `P${playerIndex}-C${i}-${Math.random().toString(36).slice(2, 7)}`,
+          id: `P${playerIndex}-C${i}-${gameRandom().toString(36).slice(2, 7)}`,
           action,
           used: false
         })));
@@ -3113,7 +3113,7 @@
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
         const villageAssignments = getVillageAssignments(count);
-        const startingPlayerIndex = Math.floor(Math.random() * count);
+        const startingPlayerIndex = Math.floor(gameRandom() * count);
 
         const players = names.map((name, i) => {
           const villages = villageAssignments[i].map(village => ({ ...village }));
@@ -3279,7 +3279,10 @@
       }
 
       function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        // benchSpeedFactor vaut 1 en jeu normal : aucun changement de rythme
+        // hors banc d'essai (voir sa déclaration dans bootstrap.js).
+        const duree = benchSpeedFactor === 1 ? ms : Math.round(ms * benchSpeedFactor);
+        return new Promise(resolve => setTimeout(resolve, duree));
       }
 
       function showTurnRibbon(player) {
@@ -3583,7 +3586,7 @@
                     - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
                     + enemyZoneCells * 4.4
-                    + Math.random() * aiConfig().randomness;
+                    + gameRandom() * aiConfig().randomness;
 
                   candidates.push({
                     shapeKey,
@@ -3608,7 +3611,7 @@
         );
 
         return shortlist.length
-          ? shortlist[Math.floor(Math.random() * shortlist.length)]
+          ? shortlist[Math.floor(gameRandom() * shortlist.length)]
           : null;
       }
 
