@@ -13649,6 +13649,38 @@
         return island;
       }
 
+      /* Distance STRATÉGIQUE d'une case vers un jeu de cibles, exprimée dans la
+       * même unité que les cartes Déplacement.
+       *
+       * Topologie : celle des vraies règles, orthogonal = 1, diagonale = 2 (voir
+       * movementEdges). Elle ne l'était pas : le parcours se faisait en largeur
+       * sur les seuls voisins orthogonaux, à coût uniforme 1. Deux conséquences,
+       * toutes deux mesurées au banc d'essai.
+       *
+       *   — Sous-estimation. Une diagonale était comptée comme un pas alors
+       *     qu'elle en coûte deux.
+       *   — Bien pire : deux terrains qui ne se touchent QUE par un coin étaient
+       *     déclarés non reliés. Le parcours échouait, le repli « 30 + Manhattan »
+       *     s'appliquait, et l'IA croyait à plus de 30 points de déplacement une
+       *     case qu'elle pouvait atteindre pour 2. Comme la valeur nourrit
+       *     ensuite `- targetDistance * 1.2` dans aiBestMove(), la pénalité
+       *     dépassait 40 et écrasait tout le reste du calcul : l'IA restait
+       *     immobile plutôt que de faire un pas manifestement bon (puzzles 01,
+       *     07 et 09 du banc d'essai).
+       *
+       * Occupation : volontairement IGNORÉE, comme dans la version précédente.
+       * Cette fonction mesure l'accès TERRITORIAL — « à quelle distance ce coin
+       * du plateau se trouve-t-il ? » — et non un trajet immédiatement jouable.
+       * Un gardien de passage ne doit pas faire croire qu'une région est coupée
+       * du monde. Les appelants qui ont besoin d'un chemin réellement praticable
+       * ne passent pas par ici : ils utilisent shortestMovementPath(), qui
+       * respecte les occupants et le budget de déplacement. Ne pas fusionner les
+       * deux notions sans revoir tous les appelants.
+       *
+       * Le repli « 30 + Manhattan » est conservé à l'identique pour les cibles
+       * réellement inatteignables : il donne encore une direction quand aucune
+       * route n'existe, en attendant qu'une île fasse le pont. La correction ne
+       * change donc que les cas où une route existait bel et bien. */
       function aiLandDistanceToTargets(startR, startC, targets) {
         const validTargets = (targets || []).filter(([r, c]) => inside(r, c) && isLand(r, c));
         if (!validTargets.length) return 99;
@@ -13658,24 +13690,31 @@
         if (targetSet.has(startKey)) return 0;
         if (!inside(startR, startC) || !isLand(startR, startC)) return 99;
 
-        const queue = [[startR, startC, 0]];
-        const seen = new Set([startKey]);
+        // Dijkstra : les arêtes n'ayant pas toutes le même poids, un parcours en
+        // largeur donnerait un résultat faux dès la première diagonale.
+        const meilleur = new Map([[startKey, 0]]);
+        const file = [{ r: startR, c: startC, cout: 0 }];
 
-        for (let index = 0; index < queue.length; index++) {
-          const [r, c, distance] = queue[index];
-          for (const [nr, nc] of orthogonalNeighbors(r, c)) {
-            const nextKey = key(nr, nc);
-            if (seen.has(nextKey) || !isLand(nr, nc)) continue;
-            if (targetSet.has(nextKey)) return distance + 1;
-            seen.add(nextKey);
-            queue.push([nr, nc, distance + 1]);
+        while (file.length) {
+          let indexMin = 0;
+          for (let i = 1; i < file.length; i++) {
+            if (file[i].cout < file[indexMin].cout) indexMin = i;
+          }
+          const actuel = file.splice(indexMin, 1)[0];
+          const actuelKey = key(actuel.r, actuel.c);
+          if (actuel.cout > (meilleur.get(actuelKey) ?? Infinity)) continue;
+          if (targetSet.has(actuelKey)) return actuel.cout;
+
+          for (const arete of movementEdges(actuel.r, actuel.c)) {
+            if (!isLand(arete.r, arete.c)) continue;
+            const suivantKey = key(arete.r, arete.c);
+            const suivantCout = actuel.cout + arete.cost;
+            if (suivantCout >= (meilleur.get(suivantKey) ?? Infinity)) continue;
+            meilleur.set(suivantKey, suivantCout);
+            file.push({ r: arete.r, c: arete.c, cout: suivantCout });
           }
         }
-        /*
-         * Si les terrains ne sont pas encore reliés, l'IA conserve une notion
-         * de direction grâce à la distance de Manhattan. Elle se rapproche donc
-         * du bord utile en attendant qu'une future île crée le pont.
-         */
+
         const fallback = Math.min(
           ...validTargets.map(([r, c]) => Math.abs(startR - r) + Math.abs(startC - c))
         );
