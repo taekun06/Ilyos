@@ -263,3 +263,61 @@ Elle venait des actions gratuites, jouées par des scripts avant le cerveau ;
 devenues des transitions de la recherche, elles sont décidées avec le reste du
 plan. Cinq passages, séquences identiques. Aucun correctif ne visait ce
 symptôme.
+
+---
+
+# Expert V3 — anticipation adverse
+
+| Banc | V2 | V3 |
+|---|---|---|
+| Historique (16 puzzles) | 15/16 | **15/16** |
+| Adversarial (8 scénarios) | 7/8 | **8/8** |
+| Self-play, 6 parties côtés alternés | 0 | **6** |
+
+## Ce que V3 ajoute
+
+Les meilleurs plans terminaux de la recherche V2 (4 finalistes) sont soumis à
+une réplique adverse courte, puis reclassés sur leur valeur APRÈS cette
+réplique. Pas de minimax : le coût est proportionnel au nombre de finalistes,
+pas à la taille de l'arbre, et la réplique n'en déclenche jamais elle-même.
+
+La transition de tour est reproduite par `applyTurnTransitionCore`, qui suit
+l'ordre réel du moteur. C'est essentiel : `scoreCrownsAtTurnStart` s'exécute au
+début du tour de son propriétaire, donc les couronnes ne se valident qu'APRÈS
+un tour adverse complet. Un porteur garé sur une case de validation reste
+expulsable pendant toute cette fenêtre.
+
+## Deux corrections révélées par la mesure
+
+**Paranoïa.** Le premier jet prêtait à l'adversaire une main plausible
+contenant une MAGIE garantie. Il faisait alors tourner l'île sous les pieds du
+porteur, aucune case de validation ne paraissait tenable, et Expert renonçait à
+marquer — P02 est passé en échec. Or la magie est UNE carte sur treize. La main
+plausible suit désormais l'espérance réelle (3 MOVE, 2 PUSH, 0 MAGIC) ; les
+menaces de magie restent modélisées quand l'adversaire en a une en réserve,
+information connue.
+
+**Explosion de coût.** Une partie complète se figeait au tour 28.
+`plannerCandidatsMagic` clone et simule chaque rotation pour la pré-classer,
+soit île × case × 3, et le plafond de temps n'était vérifié qu'ENTRE les nœuds.
+La génération dépassait à elle seule le budget de toute la recherche. Bornée à
+36 rotations et 25 ms, îles triées par proximité de l'action.
+
+## Performance (22 positions des deux bancs)
+
+| Mesure | p50 | p95 | max |
+|---|---|---|---|
+| Recherche principale | 5 ms | 50 ms | 137 ms |
+| Anticipation adverse | 124 ms | 266 ms | 314 ms |
+| **Total** | **148 ms** | **270 ms** | **322 ms** |
+
+États principaux : 36 en moyenne, 251 au maximum. Finalistes examinés : 3,9.
+
+## Limites de la mesure
+
+Le banc adversarial discrimine peu : V2 y obtenait déjà 7/8, seul A2 (menace en
+deux temps) lui échappait. V2 gérait donc déjà bien les menaces immédiates.
+
+Le self-play porte sur 6 parties seulement — l'onglet sature après deux ou trois
+parties complètes, limite du harnais et non du jeu. 6-0 côtés alternés est
+encourageant mais reste un petit échantillon.

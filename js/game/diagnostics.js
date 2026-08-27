@@ -160,6 +160,12 @@
         renderIlyosAutoplayPanel();
       }
 
+      /* Au-delà de ce délai sans changement de tour, la partie automatique
+         est considérée comme figée. Les tours mesurés durent 5 à 9 s, p95
+         16 s, maximum observé 26 s : 35 s laisse de la marge tout en
+         restant bien sous le seuil de blocage du test de bout en bout. */
+      const AUTOPLAY_TOUR_BLOQUE_MS = 35000;
+
       function startIlyosAutoplay({ maxTurns = 16, difficulty = 'normal' } = {}) {
         if (!state) return false;
         ILYOS_AUTOPLAY.active = true;
@@ -179,6 +185,8 @@
         clearInterval(ILYOS_AUTOPLAY.monitor);
         let lastTurn = state.turn;
         let lastPhase = state.phase;
+        let dernierChangement = Date.now();
+        ILYOS_AUTOPLAY.forcages = 0;
         ILYOS_AUTOPLAY.monitor = setInterval(() => {
           if (!ILYOS_AUTOPLAY.active || !state) { clearInterval(ILYOS_AUTOPLAY.monitor); return; }
           if (state.winner !== null) {
@@ -190,6 +198,34 @@
             const previous = state.players[(state.currentPlayer - 1 + state.players.length) % state.players.length];
             ilyosAutoplayLog(`${previous?.name || 'Bot'} a terminé son tour`, 'ok');
             lastTurn = state.turn;
+            dernierChangement = Date.now();
+          } else if (Date.now() - dernierChangement > AUTOPLAY_TOUR_BLOQUE_MS) {
+            /* FORÇAGE DE FIN DE TOUR — uniquement en partie automatique.
+
+               Un tour d'IA peut se figer sans exception ni message : le
+               tour ne se termine jamais et la partie s'arrête là. Le
+               minuteur retiré aux tours d'IA a supprimé une cause, mais il
+               en subsiste au moins une autre, non identifiée à ce jour.
+
+               Ce forçage vit dans le harnais d'autoplay, PAS dans le
+               moteur : il ne s'applique donc qu'aux parties IA contre IA,
+               jamais à une partie réelle ni aux bancs de puzzles, qui
+               n'empruntent pas ce chemin. Une tentative précédente placée
+               dans runAITurn faussait le scénario adversarial A7.
+
+               Il est délibérément BRUYANT : chaque déclenchement est
+               journalisé et compté, pour qu'on n'oublie pas qu'un défaut
+               reste à corriger sous ce pansement. */
+            ILYOS_AUTOPLAY.forcages++;
+            ilyosAutoplayLog(`Tour ${state.turn} figé depuis ${Math.round((Date.now() - dernierChangement) / 1000)} s — fin de tour forcée`, 'warn');
+            console.warn('[ILYOS] tour figé, fin forcée par le harnais autoplay', { tour: state.turn, joueur: state.currentPlayer });
+            aiRunToken++;
+            state.turnTransitioning = false;
+            state.timerExpiring = false;
+            state.aiThinking = false;
+            state.inputLocked = false;
+            dernierChangement = Date.now();
+            endTurn(true);
           }
           if (state.phase !== lastPhase) {
             ilyosAutoplayLog(`Phase ${lastPhase || '—'} → ${state.phase}`, 'info');
@@ -906,8 +942,72 @@
         return resultats;
       }
 
+      /* Inspection d'une décision SANS la jouer : charge la position et rend le
+         rapport complet du planner — plan retenu, notes avant et après riposte,
+         plans rejetés et la punition qui les a écartés. C'est l'outil demandé
+         pour comprendre pourquoi Expert abandonne une ligne brillante. */
+      function benchInspecterPlan(spec = {}) {
+        const joueurIA = spec.aiPlayer ?? 0;
+        setTestRandomSeed(spec.seed ?? 1);
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign(
+          { allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
+        state.undoHistory = [];
+        const rapport = plannerChercherPlanRobuste(joueurIA);
+        setTestRandomSeed(null);
+        return {
+          plan: rapport.plan.map(a => a.type),
+          detail: rapport.plan,
+          noteDepart: Math.round(rapport.noteDepart),
+          noteArrivee: Math.round(rapport.noteArrivee),
+          etatsExplores: rapport.etatsExplores,
+          dureeMs: rapport.dureeMs,
+          dureeTotaleMs: rapport.dureeTotaleMs,
+          anticipation: rapport.anticipation,
+          finalistes: (rapport.finalistes || []).map(n => ({
+            plan: n.plan.map(a => a.type), note: Math.round(n.note)
+          }))
+        };
+      }
+
       window.ILYOS_BENCH = {
         run: benchRunPuzzle,
+        /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
+
+           Une partie fait jouer les deux IA dans la MÊME page : impossible d'y
+           opposer deux versions du jeu. Le relais contourne cela en transportant
+           l'état d'un build à l'autre entre chaque tour, chaque camp jouant
+           toujours dans le build qui l'incarne.
+
+           Réservé à la comparaison de versions. Ne sert jamais en jeu. */
+        etatComplet: () => snapshotState(),
+        jouerUnTour: async (json) => {
+          if (json) applyStateSnapshot(JSON.parse(json));
+          state.undoHistory = [];
+          state.inputLocked = false;
+          state.aiThinking = false;
+          state.turnTransitioning = false;
+          // Seul le joueur au trait est piloté : sinon beginTurn() enchaînerait
+          // aussitôt le tour suivant dans ce build-ci, alors qu'il appartient à
+          // l'autre.
+          state.players.forEach((p, i) => {
+            p.isAI = i === state.currentPlayer;
+            p.aiDifficulty = i === state.currentPlayer ? "expert" : null;
+          });
+          const token = ++aiRunToken;
+          await runAITurn(token);
+          await sleep(700);
+          return { etat: snapshotState(), vainqueur: state.winner ?? null, tour: state.turn };
+        },
+        plan: benchInspecterPlan,
+        /* Coupe l'anticipation adverse pour un camp : ce camp joue alors
+           exactement comme Expert V2. Réservé au self-play comparatif. */
+        anticipation: (joueur, actif) => {
+          if (actif === false) plannerSansAnticipation.add(joueur);
+          else plannerSansAnticipation.delete(joueur);
+          return [...plannerSansAnticipation];
+        },
         reinitialiser: benchReinitialiser,
         fidelite: benchFidelite,
         build: benchBuildSnapshot,

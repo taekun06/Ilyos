@@ -981,7 +981,20 @@
        *  en silence — elle signifierait un défaut du simulateur. */
       async function runExpertPlannedTurn(token) {
         const joueur = state.currentPlayer;
-        const rapport = plannerChercherPlan(joueur);
+        /* V3 : le plan retenu est celui qui résiste le mieux à la riposte
+           adverse, pas nécessairement celui qui note le mieux en fin de tour.
+
+           Sous garde : une exception du planner laissait le tour en suspens,
+           sans jamais appeler endTurn — la partie se figeait (observé au tour
+           28 d'une partie complète). Un cerveau qui échoue doit rendre la main
+           à la logique historique, jamais bloquer le jeu. */
+        let rapport = null;
+        try {
+          rapport = plannerChercherPlanRobuste(joueur);
+        } catch (erreur) {
+          console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
+          return false;
+        }
         if (!rapport || !rapport.plan.length) {
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
@@ -994,12 +1007,19 @@
           actions: rapport.plan.map(a => a.type),
           note: Math.round(rapport.noteArrivee - rapport.noteDepart),
           etats: rapport.etatsExplores,
-          ms: rapport.dureeMs
+          ms: rapport.dureeMs,
+          msTotal: rapport.dureeTotaleMs,
+          anticipation: rapport.anticipation || null
         });
 
         for (const action of rapport.plan) {
           if (token !== aiRunToken || !state || state.winner !== null) return true;
-          const applique = await executerActionPlanifiee(action, token);
+          let applique = false;
+          try {
+            applique = await executerActionPlanifiee(action, token);
+          } catch (erreur) {
+            console.error("[ILYOS] action planifiée en échec", action, erreur);
+          }
           if (!applique) {
             // Le plan est devenu inapplicable : cela ne devrait pas arriver
             // puisque la simulation partage les noyaux du jeu. On le signale.

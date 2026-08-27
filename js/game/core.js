@@ -3347,7 +3347,26 @@
         return Number.isFinite(value) && value > 0 ? value : 0;
       }
 
+      /* Le minuteur ne s'applique JAMAIS à un tour d'IA.
+
+         Il existe pour empêcher un joueur humain de bloquer la partie en ne
+         jouant pas. Une IA qui réfléchit n'est pas dans ce cas : elle finira
+         son tour, et l'interrompre ne fait qu'abîmer la partie.
+
+         Mesuré : quand le minuteur expirait pendant une réflexion, il appelait
+         handleTurnTimeout(), qui fait aiRunToken++ pour invalider le tour en
+         cours. Le tour d'IA devenait alors orphelin — toutes ses étapes se
+         contentent de rendre la main sur jeton périmé — et plus personne
+         n'appelait endTurn(). state.turnTransitioning restait à vrai, donc tout
+         endTurn ultérieur sortait immédiatement : la partie se figeait sans
+         exception ni message. Observé sur une partie complète, 25 tours
+         réguliers à 5 s puis arrêt total, jeton passé de 36 à 40 pendant la
+         réflexion.
+
+         Couper le minuteur pour l'IA supprime la cause plutôt que le symptôme,
+         et ne retire rien au joueur humain, pour qui la limite reste entière. */
       function isTurnTimerEnabled() {
+        if (state && isCurrentPlayerAI()) return false;
         return turnDurationSeconds() > 0;
       }
 
