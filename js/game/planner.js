@@ -273,7 +273,12 @@
             const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesMoi);
             valeur += PLAN_POIDS.couronnePortee;
             valeur += PLAN_POIDS.progressionPorteur * plannerProximite(d);
-            if (isCrownValidationCell(moi, porteur.r, porteur.c)) valeur += PLAN_POIDS.surCaseValidation;
+            // Se tenir sur une case de validation ne vaut que si l'adversaire
+            // n'occupe aucune des trois cases du village (blocage de zone V67).
+            if (isCrownValidationCell(moi, porteur.r, porteur.c)
+              && !validationBloqueeParAdversaire(moi, porteur.r, porteur.c)) {
+              valeur += PLAN_POIDS.surCaseValidation;
+            }
             // Un porteur qu'une seule poussée jette dans le vide n'est pas un
             // porteur : la couronne est perdue dès le tour adverse.
             // Menace élargie aux combinaisons courtes (déplacement puis
@@ -286,10 +291,14 @@
             // Sert à pondérer la défense : plus l'adversaire est près de
             // marquer, plus contester ses cases de validation compte.
             menaceAdverse = Math.max(menaceAdverse, plannerProximite(d));
-            if (isCrownValidationCell(adverse, porteur.r, porteur.c)) menaceAdverse = 1;
+            // Un porteur posté sur une case de validation est à un souffle de
+            // marquer — sauf si l'un de mes gardiens tient déjà le village.
+            const surCaseAdverse = isCrownValidationCell(adverse, porteur.r, porteur.c)
+              && !validationBloqueeParAdversaire(adverse, porteur.r, porteur.c);
+            if (surCaseAdverse) menaceAdverse = 1;
             valeur -= PLAN_POIDS.couronnePortee;
             valeur -= PLAN_POIDS.progressionPorteur * plannerProximite(d);
-            if (isCrownValidationCell(adverse, porteur.r, porteur.c)) valeur -= PLAN_POIDS.surCaseValidation;
+            if (surCaseAdverse) valeur -= PLAN_POIDS.surCaseValidation;
             if (aiPushOffRisk(adverse.id, porteur.r, porteur.c)) valeur += PLAN_POIDS.porteurExpose * 0.5;
 
           } else {
@@ -321,19 +330,29 @@
            temps. Entièrement pondéré par menaceAdverse : sans porteur adverse,
            ce terme vaut zéro et l'IA ne campe pas pour rien. */
         if (adverse && menaceAdverse > 0) {
-          const casesAdverses = crownValidationCellsForPlayer(adverse);
-          let occupees = 0;
-          for (const [vr, vc] of casesAdverses) {
-            const occupant = characterAt(vr, vc);
-            if (occupant && occupant.player === playerId) occupees++;
+          /* Le blocage se joue village par village : un seul gardien posté sur
+             l'une des trois cases neutralise tout le village. Compter les cases
+             occupées récompenserait un empilement sans valeur défensive. */
+          let neutralises = 0;
+          let total = 0;
+          const aDefendre = [];
+          for (const village of villagesForPlayer(adverse)) {
+            total++;
+            const cells = cornerCrownCellsForVillage(village);
+            const tenu = cells.some(([vr, vc]) => {
+              const occupant = characterAt(vr, vc);
+              return occupant && occupant.player === playerId;
+            });
+            if (tenu) neutralises++;
+            else cells.filter(([r, cc]) => isLand(r, cc)).forEach(cell => aDefendre.push(cell));
           }
-          const accessibles = casesAdverses.filter(([r, c]) => isLand(r, c));
-          const dDefense = accessibles.length
-            ? plannerDistanceEquipe(playerId, accessibles) : Infinity;
-          valeur += menaceAdverse * (
-            PLAN_POIDS.contesteValidation * occupees
-            + PLAN_POIDS.presenceDefensive * plannerProximite(dDefense)
-          );
+          const dDefense = aDefendre.length
+            ? plannerDistanceEquipe(playerId, aDefendre) : Infinity;
+          valeur += menaceAdverse * PLAN_POIDS.contesteValidation * neutralises;
+          // Rester à portée n'a de sens que s'il reste un village à couvrir.
+          if (neutralises < total) {
+            valeur += menaceAdverse * PLAN_POIDS.presenceDefensive * plannerProximite(dDefense);
+          }
         }
 
         // E. Gardiens : nombre et capacité à agir.
@@ -485,15 +504,34 @@
             if (!cible && !couronne) continue;
             if (cible && cible.player === playerId) continue;
 
-            const requise = cible ? collectPushLine(r, c, r - pousseur.r, c - pousseur.c).length : 1;
-            for (let force = requise; force <= budget; force++) {
+            /* Règle V67 : aucune force n'est refusée, elle règle seulement la
+               distance parcourue par le bloc. Toutes les forces ne produisent
+               pas pour autant des positions différentes — une fois la cible
+               jetée hors du plateau, pousser plus fort ne change rien qu'une
+               carte dépensée en trop.
+
+               On ne retient donc que la plus PETITE force menant à chaque
+               résultat distinct. La recherche y gagne deux fois : moins de
+               branches à explorer, et jamais de gaspillage de cartes. */
+            const dr = r - pousseur.r;
+            const dc = c - pousseur.c;
+            const dejaVus = new Set();
+            for (let force = 1; force <= budget; force++) {
+              const plan = resoudrePousseeBloc(r, c, dr, dc, force);
+              if (!plan) continue;
+              const empreinte = plan.mouvements
+                .map(mv => `${mv.kind}:${mv.id}:${mv.to}:${mv.chute ? 1 : 0}`)
+                .join('|');
+              if (dejaVus.has(empreinte)) continue;
+              dejaVus.add(empreinte);
+
               // Indice grossier : viser un porteur, ou une couronne, compte plus.
               let indice = 10 - force;
               if (cible && characterCarriesCrown(cible.id)) indice += 70;
               if (couronne) indice += 40;
-              // Une cible adossée au vide part du plateau.
-              const derriere = [r + (r - pousseur.r), c + (c - pousseur.c)];
-              if (!inside(derriere[0], derriere[1]) || !isLand(derriere[0], derriere[1])) indice += 90;
+              // Une poussée qui retire réellement un gardien vaut mieux qu'un
+              // simple décalage : c'est le résultat qui le dit, pas la position.
+              if (plan.chutes) indice += 90;
               options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice });
             }
           }
@@ -591,7 +629,7 @@
 
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
-        const placements = findAutomaticIslandPlacement(playerId, PLAN_CANDIDATS.pose);
+        const placements = findAutomaticIslandPlacement(playerId, PLAN_CANDIDATS.pose, true);
         if (!Array.isArray(placements)) return [];
         return placements.map(p => ({
           type: "POSE",

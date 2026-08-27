@@ -388,3 +388,178 @@
           default: return null;
         }
       }
+
+      /* ==================================================================
+         POUSSÉE UNIFIÉE (règle V67)
+
+         La poussée déplace tout le bloc collé au pousseur du nombre de cases
+         de la force employée. La notion de « force requise » n'existe plus :
+         une force 1 recule un bloc de quatre gardiens d'une case.
+
+         - Le bloc mélange gardiens et couronnes au sol, sans trou.
+         - Un obstacle — une pièce séparée du bloc par un trou — arrête le bloc
+           juste avant lui. Le vide n'est pas un obstacle.
+         - Un gardien qui entre dans le vide ou hors du plateau tombe et quitte
+           le jeu, en lâchant sa couronne sur sa dernière case valide.
+         - Une couronne ne tombe jamais : elle survole le vide et se pose sur sa
+           case d'arrivée, ou à défaut sur la dernière case d'île libre
+           franchie. Elle plafonne du même coup tout ce qui la suit dans le bloc.
+      ================================================================== */
+
+      function occupantPoussable(r, c) {
+        const gardien = characterAt(r, c);
+        if (gardien) return { kind: "char", ref: gardien };
+        const couronne = looseArtifactAt(r, c);
+        if (couronne) return { kind: "crown", ref: couronne };
+        return null;
+      }
+
+      function collectPushBlock(startR, startC, dr, dc) {
+        const bloc = [];
+        let r = startR;
+        let c = startC;
+        while (inside(r, c)) {
+          const occupant = occupantPoussable(r, c);
+          if (!occupant) break;
+          bloc.push({ kind: occupant.kind, ref: occupant.ref, r, c });
+          r += dr;
+          c += dc;
+        }
+        return bloc;
+      }
+
+      /** Calcule, sans rien modifier, ce que produirait la poussée.
+       *  Renvoie null si rien ne peut bouger. */
+      function resoudrePousseeBloc(startR, startC, dr, dc, force) {
+        const bloc = collectPushBlock(startR, startC, dr, dc);
+        if (!bloc.length) return null;
+
+        const demande = Math.max(1, Math.floor(force || 1));
+        const tete = bloc[bloc.length - 1];
+
+        // Le premier obstacle hors bloc plafonne la poussée. Sortir du plateau
+        // n'arrête personne : c'est une chute, pas un blocage.
+        let distance = demande;
+        for (let pas = 1; pas <= demande; pas++) {
+          const r = tete.r + dr * pas;
+          const c = tete.c + dc * pas;
+          if (!inside(r, c)) break;
+          if (occupantPoussable(r, c)) { distance = pas - 1; break; }
+        }
+        if (distance <= 0) return null;
+
+        // Vue d'occupation locale : le bloc se retire, puis chaque pièce
+        // réserve sa case d'arrivée au fur et à mesure.
+        const occupees = new Set();
+        (state.characters || []).forEach(ch => occupees.add(key(ch.r, ch.c)));
+        activeArtifacts().forEach(a => {
+          if (!a.carrierId && Number.isFinite(a.r)) occupees.add(key(a.r, a.c));
+        });
+        bloc.forEach(m => occupees.delete(key(m.r, m.c)));
+
+        const mouvements = [];
+        let plafond = distance;
+
+        // De la tête vers la queue : une pièce arrêtée plafonne ses suivantes.
+        for (let i = bloc.length - 1; i >= 0; i--) {
+          const m = bloc[i];
+          if (plafond <= 0) break;
+
+          if (m.kind === "crown") {
+            let d = 0;
+            for (let pas = plafond; pas >= 1; pas--) {
+              const r = m.r + dr * pas;
+              const c = m.c + dc * pas;
+              if (!inside(r, c) || !isLand(r, c) || occupees.has(key(r, c))) continue;
+              d = pas;
+              break;
+            }
+            if (d <= 0) { plafond = 0; break; }
+            const to = [m.r + dr * d, m.c + dc * d];
+            occupees.add(key(to[0], to[1]));
+            mouvements.push({ kind: "crown", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+            plafond = d;
+            continue;
+          }
+
+          // Gardien : il avance pas à pas et tombe au premier vide rencontré.
+          let vide = null;
+          let d = plafond;
+          for (let pas = 1; pas <= plafond; pas++) {
+            const r = m.r + dr * pas;
+            const c = m.c + dc * pas;
+            if (!inside(r, c) || !isLand(r, c)) { vide = [r, c]; d = pas - 1; break; }
+          }
+          const to = [m.r + dr * d, m.c + dc * d];
+          if (vide) {
+            // Il quitte le jeu : il ne réserve aucune case et ne plafonne rien.
+            mouvements.push({ kind: "char", id: m.ref.id, from: [m.r, m.c], to, chute: true, vide });
+            continue;
+          }
+          occupees.add(key(to[0], to[1]));
+          mouvements.push({ kind: "char", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+        }
+
+        if (!mouvements.length) return null;
+        const bouge = mouvements.some(mv => mv.chute || mv.from[0] !== mv.to[0] || mv.from[1] !== mv.to[1]);
+        if (!bouge) return null;
+
+        return {
+          distance,
+          mouvements,
+          chutes: mouvements.filter(mv => mv.chute).length,
+          deplaces: mouvements.filter(mv => !mv.chute).length
+        };
+      }
+
+      /** Applique un plan produit par resoudrePousseeBloc(). */
+      function appliquerPousseeBloc(plan, dr, dc) {
+        if (!plan) return false;
+        for (const mv of plan.mouvements) {
+          if (mv.kind === "crown") {
+            const couronne = artifactById(mv.id);
+            if (!couronne) continue;
+            couronne.r = mv.to[0];
+            couronne.c = mv.to[1];
+            continue;
+          }
+          const gardien = characterById(mv.id);
+          if (!gardien) continue;
+          if (mv.chute) {
+            // La dernière case valide reçoit la couronne éventuellement portée.
+            removeCharacterFromGame(gardien, mv.to[0], mv.to[1], {
+              dr, dc, toR: mv.vide[0], toC: mv.vide[1]
+            });
+            continue;
+          }
+          gardien.r = mv.to[0];
+          gardien.c = mv.to[1];
+          resolveArtifactForCharacter(gardien);
+        }
+        return true;
+      }
+
+      /* ==================================================================
+         BLOCAGE DE ZONE (règle V67)
+
+         Un gardien adverse posté sur l'une des trois cases d'un village y
+         interdit toute validation, même si le porteur se tient sur une autre
+         case de ce village. Le blocage est propre à chaque village : occuper
+         un village ne neutralise pas le second, à l'opposé du plateau.
+      ================================================================== */
+      function villageCellsContaining(player, r, c) {
+        for (const village of villagesForPlayer(player)) {
+          const cells = cornerCrownCellsForVillage(village);
+          if (cells.some(([vr, vc]) => vr === r && vc === c)) return cells;
+        }
+        return null;
+      }
+
+      function validationBloqueeParAdversaire(player, r, c) {
+        const cells = villageCellsContaining(player, r, c);
+        if (!cells) return false;
+        return cells.some(([vr, vc]) => {
+          const occupant = characterAt(vr, vc);
+          return !!occupant && occupant.player !== player.id;
+        });
+      }

@@ -15,10 +15,15 @@
         if (!state || !player || state.winner !== null) return 0;
         let scored = 0;
 
+        // Un gardien est indispensable pour marquer : une couronne posée au
+        // sol sur une case de village ne vaut plus rien (la règle V66, qui la
+        // validait sans porteur, est abandonnée). Et un gardien adverse posté
+        // dans les trois cases du village y interdit toute validation.
         const eligibleCarriers = (state.characters || []).filter(char =>
           char.player === player.id
           && !!artifactCarriedBy(char.id)
           && isCrownValidationCell(player, char.r, char.c)
+          && !validationBloqueeParAdversaire(player, char.r, char.c)
         );
 
         eligibleCarriers.forEach(char => {
@@ -29,18 +34,6 @@
           animateCellPulse(char.r, char.c, "crown-burst");
           playSfx("crown");
           scoreCrownForPlayer(player, char, false, artifact);
-          scored++;
-        });
-
-        // Une couronne déposée directement sur une des trois cases du village
-        // est également validée au début du tour, conformément à la règle V66.
-        [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
-          if (state.winner !== null || !artifact.active || artifact.carrierId) return;
-          if (!Number.isFinite(artifact.r) || !Number.isFinite(artifact.c)) return;
-          if (!isCrownValidationCell(player, artifact.r, artifact.c)) return;
-          animateCellPulse(artifact.r, artifact.c, "crown-burst");
-          playSfx("crown");
-          scoreCrownForPlayer(player, null, false, artifact);
           scored++;
         });
 

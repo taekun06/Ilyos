@@ -321,3 +321,94 @@ deux temps) lui échappait. V2 gérait donc déjà bien les menaces immédiates.
 Le self-play porte sur 6 parties seulement — l'onglet sature après deux ou trois
 parties complètes, limite du harnais et non du jeu. 6-0 côtés alternés est
 encourageant mais reste un petit échantillon.
+
+---
+
+# Refonte des règles V67
+
+Quatre règles ont été corrigées avec l'auteur du jeu, après qu'une lecture du
+code a révélé que l'IA raisonnait sur des règles fausses. Elles sont mesurées
+par deux bancs neufs, `verif-poussee.js` et `verif-validation.js`, qui testent
+la RÈGLE elle-même et non une décision d'IA.
+
+## Ce qui change
+
+**Poussée unifiée.** La notion de « force requise » disparaît. La poussée
+déplace tout le bloc collé au pousseur du nombre de cases de la force employée :
+une force 1 recule désormais un bloc de quatre gardiens d'une case, là où il en
+fallait quatre. Un obstacle séparé du bloc par un trou l'arrête juste avant lui.
+Un gardien qui entre dans le vide tombe ; une couronne ne tombe jamais — elle
+survole le vide et se pose sur sa case d'arrivée, ou à défaut sur la dernière
+case d'île libre franchie, plafonnant du même coup tout ce qui la suit.
+
+La règle vivait auparavant en **quatre copies** : le moteur, l'aperçu de
+l'interface, le simulateur des IA historiques et le générateur du planner. Elles
+tiennent maintenant dans un seul résolveur pur, `resoudrePousseeBloc()`, que
+tous lisent.
+
+**Le gardien devient obligatoire pour marquer.** La règle V66, qui validait une
+couronne posée seule sur une case de village, est abandonnée. Elle produisait
+une conséquence que personne ne voulait : éjecter un porteur adverse hors du
+plateau déposait sa couronne sur la case de validation, et lui donnait le point
+malgré tout. La poussée faible refusait le point, la poussée mortelle l'offrait.
+
+**Blocage de zone.** Un gardien adverse posté sur l'une des trois cases d'un
+village y interdit toute validation, même si le porteur se tient sur une autre
+case. Le blocage est propre à chaque village.
+
+**Le gardien qui apparaît agit immédiatement.** Aucun verrou n'existait dans le
+code ; c'est le raisonnement de l'IA qui l'ignorait.
+
+## Ce que l'IA ignorait
+
+Trois défauts mesurés, tous génériques, aucun taillé pour un puzzle.
+
+**La pose d'île fuyait la zone adverse.** `findAutomaticIslandPlacement` notait
+`+ enemyZoneCells * 4.4` avec un tri croissant : couvrir une case de validation
+adverse rendait la pose PIRE. Le coup défensif le plus fort du jeu n'était
+jamais proposé comme candidat. Le planner demande désormais des candidates avec
+le biais inversé ; les IA Easy / Normal / Hard appellent sans l'option et
+conservent exactement leur comportement.
+
+**L'évaluateur ignorait le blocage de zone.** Se tenir sur une case de
+validation ne vaut plus rien si l'adversaire tient le village, et un porteur
+adverse posté sur un village déjà bloqué ne compte plus comme une menace. La
+défense se compte par village et non par case : un seul gardien suffit, en
+empiler deux n'apporte rien.
+
+**Toutes les forces de poussée étaient explorées.** Une fois la cible jetée hors
+du plateau, pousser plus fort ne change rien qu'une carte dépensée en trop. Le
+générateur ne retient plus que la plus PETITE force menant à chaque résultat
+distinct — moins de branches, et jamais de gaspillage.
+
+Sans cette déduplication, la charge supplémentaire saturait le harnais : A11
+échouait dans le banc complet tout en réussissant 6 fois sur 6 en isolation. Le
+symptôme était une saturation de l'instrument, pas une faiblesse de l'IA.
+
+## Mesures après refonte
+
+| Banc | Avant V67 | Après V67 |
+|---|---|---|
+| Règle de poussée (`verif-poussee`) | — | **10 / 10** |
+| Règles de validation (`verif-validation`) | — | **5 / 5** |
+| Fidélité simulation ↔ jeu | 12 / 12 | **12 / 12** |
+| Puzzles historiques | 15 / 16 | **15 / 16** |
+| Banc adversarial | 11 / 11 | **12 / 12** |
+| RNG déterministe | 6 / 6 | **6 / 6** |
+| Playwright bout en bout | 2 / 2 | **2 / 2** |
+
+P13 reste le seul échec historique, inchangé et volontairement conservé.
+
+A12 est le scénario neuf : le point adverse est imminent et aucun gardien n'est
+à portée. La seule parade est de POSER une île sur les cases vides du village
+adverse et d'utiliser le gardien qui y apparaît, dans le même tour. L'IA la
+trouve et condamne le village en (0,9).
+
+## Ce qui n'a pas été fait
+
+Le **dépôt gratuit** (poser la couronne sur une case adjacente) n'a pas été
+ajouté au planner. Il était justifié tant que V66 permettait de marquer sans
+porteur : c'était alors un point gratuit qui économisait un gardien. Le gardien
+étant devenu obligatoire, ce coup ne sert plus qu'à des relais marginaux, et
+ajouter un générateur élargirait une recherche déjà contrainte par le temps.
+À reconsidérer si une position réelle en montre le besoin.

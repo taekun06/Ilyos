@@ -971,7 +971,49 @@
         };
       }
 
+      /* Contrôle de la règle de poussée elle-même (V67), indépendant de toute
+         décision d'IA. On pose une position, on demande au résolveur ce qu'il
+         ferait, et on compare les arrivées à ce que la règle exige.
+
+         resoudrePousseeBloc() ne modifie rien : la position n'a pas besoin
+         d'être rejouée entre deux cas. */
+      function benchPoussee(cas = {}) {
+        const instantane = benchBuildSnapshot(cas.spec || {});
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+
+        const [dr, dc] = cas.direction;
+        const [sr, sc] = cas.depart;
+        const plan = resoudrePousseeBloc(sr, sc, dr, dc, cas.force);
+
+        // Arrivées exprimées en termes de jeu : qui finit où, et qui tombe.
+        const arrivees = (plan ? plan.mouvements : []).map(mv => ({
+          genre: mv.kind,
+          id: mv.id,
+          de: mv.from,
+          vers: mv.to,
+          chute: !!mv.chute
+        }));
+        return { distance: plan ? plan.distance : 0, arrivees };
+      }
+
+      /* Contrôle des règles de VALIDATION (V67) : le porteur est obligatoire,
+         et un gardien adverse posté dans les trois cases d'un village y
+         interdit tout point. On pose une position, on déclenche le décompte de
+         début de tour, et on lit combien de points ont réellement été marqués. */
+      function benchValidation(cas = {}) {
+        const instantane = benchBuildSnapshot(cas.spec || {});
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+        const joueur = state.players[cas.joueur ?? 0];
+        const avant = joueur.score;
+        const marques = scoreCrownsAtTurnStart(joueur);
+        return { marques, gain: joueur.score - avant };
+      }
+
       window.ILYOS_BENCH = {
+        poussee: benchPoussee,
+        validation: benchValidation,
         run: benchRunPuzzle,
         /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
 

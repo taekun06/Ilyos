@@ -13537,7 +13537,12 @@
         return [village.r, village.c];
       }
 
-      function findAutomaticIslandPlacement(playerId, combien = 0) {
+      /* zoneAdverseAttractive inverse le biais historique sur les cases de
+         validation adverses. Depuis le blocage de zone (V67), s'y poser est le
+         coup défensif le plus fort du jeu : le cerveau Expert doit donc voir
+         ces poses parmi ses candidates. Les IA Easy / Normal / Hard appellent
+         sans l'option et conservent exactement leur comportement. */
+      function findAutomaticIslandPlacement(playerId, combien = 0, zoneAdverseAttractive = false) {
         const player = state.players[playerId];
         const target = automaticPlacementTarget(playerId);
         const ownCharacters = state.characters.filter(char => char.player === playerId);
@@ -13620,7 +13625,7 @@
                     + (ownCarrier ? carrierBridge * .52 : 0)
                     - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
-                    + enemyZoneCells * 4.4
+                    + enemyZoneCells * (zoneAdverseAttractive ? -5.0 : 4.4)
                     + gameRandom() * aiConfig().randomness;
 
                   candidates.push({
@@ -13835,50 +13840,15 @@
       }
 
       function simulateCharacterPushForAI(startR, startC, dr, dc, force) {
-        const line = collectPushLine(startR, startC, dr, dc);
-        const simulated = line.map(char => ({
-          char,
-          r: char.r,
-          c: char.c,
-          alive: true
-        }));
-
-        const movingIds = new Set(line.map(char => char.id));
-        const fixedOccupants = new Set(
-          state.characters
-            .filter(char => !movingIds.has(char.id))
-            .map(char => key(char.r, char.c))
-        );
-
-        const requiredForce = line.length;
-        if (force < requiredForce) return simulated;
-        const pushDistance = Math.max(1, force - requiredForce + 1);
-        for (let step = 0; step < pushDistance; step++) {
-          for (let i = simulated.length - 1; i >= 0; i--) {
-            const item = simulated[i];
-            if (!item.alive) continue;
-
-            const nr = item.r + dr;
-            const nc = item.c + dc;
-
-            if (!inside(nr, nc) || !isLand(nr, nc)) {
-              item.alive = false;
-              continue;
-            }
-
-            const blockedByFixed = fixedOccupants.has(key(nr, nc));
-            const blockedByLine = simulated.some((other, index) =>
-              index !== i && other.alive && other.r === nr && other.c === nc
-            );
-            const blockedByCrown = !!looseArtifactAt(nr, nc);
-
-            if (blockedByFixed || blockedByLine || blockedByCrown) continue;
-            item.r = nr;
-            item.c = nc;
-          }
-        }
-
-        return simulated;
+        const gardiens = collectPushBlock(startR, startC, dr, dc).filter(m => m.kind === "char");
+        const plan = resoudrePousseeBloc(startR, startC, dr, dc, force);
+        const parId = new Map();
+        (plan ? plan.mouvements : []).forEach(mv => parId.set(mv.id, mv));
+        return gardiens.map(m => {
+          const mv = parId.get(m.ref.id);
+          if (!mv) return { char: m.ref, r: m.r, c: m.c, alive: true };
+          return { char: m.ref, r: mv.to[0], c: mv.to[1], alive: !mv.chute };
+        });
       }
 
       function aiExternalLandContacts(cells, ignoredIslandId = null) {
@@ -14088,83 +14058,35 @@
       }
 
       function simulateLooseCrownPush(artifact, dr, dc, force, startR = artifact.r, startC = artifact.c) {
-        const exactForce = Math.max(1, Math.floor(force || 1));
-        let crossedVoid = false;
-
-        for (let step = 1; step <= exactForce; step++) {
-          const r = startR + dr * step;
-          const c = startC + dc * step;
-
-          if (!inside(r, c)) {
-            return {
-              r: startR,
-              c: startC,
-              moved: 0,
-              valid: false,
-              crossedVoid,
-              reason: "outside"
-            };
-          }
-
-          const otherCrown = looseArtifactAt(r, c);
-          const obstacle =
-            characterAt(r, c)
-            || (otherCrown && otherCrown.id !== artifact.id);
-
-          /*
-           * La trajectoire peut passer au-dessus du vide, mais pas traverser
-           * un gardien ni une autre couronne.
-           */
-          if (obstacle) {
-            return {
-              r: startR,
-              c: startC,
-              moved: 0,
-              valid: false,
-              crossedVoid,
-              reason: "blocked"
-            };
-          }
-
-          if (step < exactForce) {
-            if (!isLand(r, c)) crossedVoid = true;
-            continue;
-          }
-
-          /*
-           * La force choisie doit faire atterrir exactement la couronne
-           * sur une case de terrain. Une force trop faible ou trop forte
-           * ne permet donc pas la poussée.
-           */
-          if (!isLand(r, c)) {
-            return {
-              r: startR,
-              c: startC,
-              moved: 0,
-              valid: false,
-              crossedVoid: true,
-              reason: "no-landing"
-            };
-          }
-
-          return {
-            r,
-            c,
-            moved: exactForce,
-            valid: true,
-            crossedVoid,
-            reason: null
-          };
+        // Le point de départ peut être hypothétique — une couronne encore
+        // portée que l'IA envisage de poser puis de pousser. On la place le
+        // temps de la résolution, puis on restaure l'état exact.
+        const memoR = artifact.r;
+        const memoC = artifact.c;
+        const memoPorteur = artifact.carrierId;
+        let plan = null;
+        try {
+          artifact.r = startR;
+          artifact.c = startC;
+          artifact.carrierId = null;
+          plan = resoudrePousseeBloc(startR, startC, dr, dc, force);
+        } finally {
+          artifact.r = memoR;
+          artifact.c = memoC;
+          artifact.carrierId = memoPorteur;
         }
 
-        return {
-          r: startR,
-          c: startC,
-          moved: 0,
-          valid: false,
-          crossedVoid,
-          reason: "no-landing"
-        };
+        const mv = plan && plan.mouvements.find(m => m.kind === "crown" && m.id === artifact.id);
+        if (!mv) {
+          return { r: startR, c: startC, moved: 0, valid: false, crossedVoid: false, reason: "blocked" };
+        }
+
+        const moved = Math.abs(mv.to[0] - mv.from[0]) + Math.abs(mv.to[1] - mv.from[1]);
+        let crossedVoid = false;
+        for (let i = 1; i < moved; i++) {
+          if (!isLand(mv.from[0] + dr * i, mv.from[1] + dc * i)) { crossedVoid = true; break; }
+        }
+        return { r: mv.to[0], c: mv.to[1], moved, valid: moved > 0, crossedVoid, reason: null };
       }
 
       function adjacentFreeAllyForCrown(r, c, excludedIds = []) {
@@ -14459,10 +14381,10 @@
               return;
             }
 
-            const line = collectPushLine(r, c, dr, dc);
-            const requiredForce = line.length;
-            if (requiredForce < 1 || requiredForce > maxForce) return;
-            for (let force = requiredForce; force <= maxForce; force++) {
+            // Règle V67 : toute force est jouable et pousse le bloc d'autant
+            // de cases. L'énumération part donc de 1, sans plancher aligné.
+            if (!collectPushBlock(r, c, dr, dc).length) return;
+            for (let force = 1; force <= maxForce; force++) {
               const simulation = simulateCharacterPushForAI(r, c, dr, dc, force);
               let utility = -force * 7;
               for (const item of simulation) {
@@ -14500,7 +14422,7 @@
                   utility -= 22;
                 }
               }
-              if (utility > 10) options.push({ pusher, r, c, count: force, priority: -utility, utility, targetType: "character", requiredForce });
+              if (utility > 10) options.push({ pusher, r, c, count: force, priority: -utility, utility, targetType: "character", requiredForce: 1 });
             }
           });
         });
@@ -15000,10 +14922,15 @@
         if (!state || !player || state.winner !== null) return 0;
         let scored = 0;
 
+        // Un gardien est indispensable pour marquer : une couronne posée au
+        // sol sur une case de village ne vaut plus rien (la règle V66, qui la
+        // validait sans porteur, est abandonnée). Et un gardien adverse posté
+        // dans les trois cases du village y interdit toute validation.
         const eligibleCarriers = (state.characters || []).filter(char =>
           char.player === player.id
           && !!artifactCarriedBy(char.id)
           && isCrownValidationCell(player, char.r, char.c)
+          && !validationBloqueeParAdversaire(player, char.r, char.c)
         );
 
         eligibleCarriers.forEach(char => {
@@ -15014,18 +14941,6 @@
           animateCellPulse(char.r, char.c, "crown-burst");
           playSfx("crown");
           scoreCrownForPlayer(player, char, false, artifact);
-          scored++;
-        });
-
-        // Une couronne déposée directement sur une des trois cases du village
-        // est également validée au début du tour, conformément à la règle V66.
-        [state.artifact, state.secondArtifact].filter(Boolean).forEach(artifact => {
-          if (state.winner !== null || !artifact.active || artifact.carrierId) return;
-          if (!Number.isFinite(artifact.r) || !Number.isFinite(artifact.c)) return;
-          if (!isCrownValidationCell(player, artifact.r, artifact.c)) return;
-          animateCellPulse(artifact.r, artifact.c, "crown-burst");
-          playSfx("crown");
-          scoreCrownForPlayer(player, null, false, artifact);
           scored++;
         });
 
@@ -18840,10 +18755,9 @@
         pushers.forEach(pusher => {
           const dr = target.r - pusher.r;
           const dc = target.c - pusher.c;
-          const requiredForce = targetsCrown ? 1 : collectPushLine(target.r, target.c, dr, dc).length;
-          for (let force = Math.max(1, requiredForce); force <= maxForce; force++) {
+          for (let force = 1; force <= maxForce; force++) {
             const preview = getPushHoverPreview({ pusher, target, force });
-            if (!preview || force < preview.requiredForce) continue;
+            if (!preview) continue;
             const lead = preview.impacts?.[0];
             if (targetsCrown && !lead?.to) continue;
             options.push({
@@ -19049,14 +18963,11 @@
         return pushersForTarget(r, c)[0] || null;
       }
 
-      // Force minimale légale pour que `pusher` pousse la cible (r, c) — même
-      // règle que dans getPushHoverPreview() (une couronne libre n'impose pas
-      // d'alignement, une ligne de gardiens exige au moins sa longueur), utile
-      // ici où aucune preview n'existe encore (le pousseur n'est pas déterminé).
-      function requiredPushForce(pusherR, pusherC, targetR, targetC) {
-        if (!characterAt(targetR, targetC)) return 1;
-        const dr = targetR - pusherR, dc = targetC - pusherC;
-        return Math.max(1, collectPushLine(targetR, targetC, dr, dc).length);
+      // Depuis la règle V67, toute force est légale : le bloc avance du nombre
+      // de cases de la force employée. La fonction reste pour ses appelants,
+      // mais n'a plus de minimum à calculer.
+      function requiredPushForce() {
+        return 1;
       }
 
       function handleMoveClick(r, c) {
@@ -19299,92 +19210,65 @@
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
-        // La force minimale légale se calcule avant tout : une couronne libre
-        // n'impose pas d'alignement (1 suffit toujours), une ligne de gardiens
-        // exige au moins sa longueur — c'est la même règle qu'ailleurs, jamais
-        // dupliquée, juste lue plus tôt pour pouvoir en faire le plancher.
-        // Même précédence que la branche plus bas (if targetCrown … else …) :
-        // une case avec à la fois un gardien et une couronne libre (cas limite)
-        // suit la couronne, donc pas d'alignement à exiger.
-        const line = targetCrown ? [] : collectPushLine(targetR, targetC, dr, dc);
-        const requiredForce = targetCrown ? 1 : line.length;
-        // Hors action manuelle, aucun sélecteur de force n'est affiché par défaut :
-        // state.smartPushForce porte le choix explicite du joueur pour CETTE cible
-        // (survolée), sinon on retombe sur le minimum légal plutôt que sur le
-        // dernier choix global (qui pouvait être insuffisant pour cette cible-ci).
+        // Depuis la règle V67 toute force est légale : le plancher vaut 1, et
+        // le sélecteur de force n'a plus de minimum à calculer.
+        const requiredForce = 1;
         const force = context
-          ? Math.max(1, Math.min(availableActionCount("PUSH"), context.force || requiredForce))
+          ? Math.max(1, Math.min(availableActionCount("PUSH"), context.force || 1))
           : smartPush
-            ? Math.min(availableActionCount("PUSH"), Math.max(requiredForce, state.smartPushForce || requiredForce))
+            ? Math.max(1, Math.min(availableActionCount("PUSH"), state.smartPushForce || 1))
             : selectedBatchSize();
+
+        // L'aperçu lit exactement le même résolveur que l'exécution : la règle
+        // de poussée n'est jamais dupliquée ici.
+        const plan = resoudrePousseeBloc(targetR, targetC, dr, dc, force);
         const impacts = [];
-
-        if (targetCrown) {
-          const simulation = simulateLooseCrownPush(targetCrown, dr, dc, force);
-          impacts.push({
-            type: "crown",
-            id: targetCrown.id,
-            from: [targetR, targetC],
-            to: simulation.moved ? [simulation.r, simulation.c] : null,
-            fell: false,
-            icon: "👑",
-            color: "#ffd76a",
-            carrying: false
-          });
-        } else {
-          const simulated = line.map(char => ({
-            char,
-            r: char.r,
-            c: char.c,
-            alive: true,
-            lastLand: [char.r, char.c]
-          }));
-          const fixedOccupants = new Set(
-            state.characters
-              .filter(char => !line.some(item => item.id === char.id))
-              .map(char => key(char.r, char.c))
-          );
-
-          const previewDistance = force < requiredForce ? 0 : Math.max(1, force - requiredForce + 1);
-          for (let step = 0; step < previewDistance; step++) {
-            for (let i = simulated.length - 1; i >= 0; i--) {
-              const item = simulated[i];
-              if (!item.alive) continue;
-              const nr = item.r + dr;
-              const nc = item.c + dc;
-
-              if (!inside(nr, nc) || !isLand(nr, nc)) {
-                item.lastLand = [item.r, item.c];
-                item.alive = false;
-                continue;
-              }
-
-              const blockedByFixed = fixedOccupants.has(key(nr, nc));
-              const blockedByLine = simulated.some((other, index) =>
-                index !== i && other.alive && other.r === nr && other.c === nc
-              );
-              const blockedByCrown = !!looseArtifactAt(nr, nc);
-              if (blockedByFixed || blockedByLine || blockedByCrown) continue;
-
-              item.r = nr;
-              item.c = nc;
-              item.lastLand = [nr, nc];
-            }
-          }
-
-          simulated.forEach(item => {
-            const owner = state.players[item.char.player];
+        // resoudrePousseeBloc() ordonne de la tête vers la queue ; l'aperçu
+        // attend la pièce visée — la queue du bloc — en premier.
+        [...(plan ? plan.mouvements : [])].reverse().forEach(mv => {
+          if (mv.kind === "crown") {
             impacts.push({
-              type: "character",
-              id: item.char.id,
-              from: [item.char.r, item.char.c],
-              to: item.alive ? [item.r, item.c] : null,
-              fell: !item.alive,
-              lastLand: item.lastLand,
-              icon: owner.icon,
-              color: owner.color,
-              carrying: characterCarriesCrown(item.char.id)
+              type: "crown",
+              id: mv.id,
+              from: mv.from,
+              to: mv.to,
+              fell: false,
+              icon: "👑",
+              color: "#ffd76a",
+              carrying: false
             });
+            return;
+          }
+          const char = characterById(mv.id);
+          const owner = char ? state.players[char.player] : null;
+          impacts.push({
+            type: "character",
+            id: mv.id,
+            from: mv.from,
+            to: mv.chute ? null : mv.to,
+            fell: mv.chute,
+            lastLand: mv.to,
+            icon: owner ? owner.icon : "👑",
+            color: owner ? owner.color : "#ffd76a",
+            carrying: characterCarriesCrown(mv.id)
+          });
+        });
+
+        // Cas limite : une couronne bloquée en milieu de bloc peut immobiliser
+        // la pièce visée sans l'inscrire au plan. On la montre alors immobile,
+        // plutôt que de désigner une autre pièce comme tête de l'aperçu.
+        if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
+          const owner = targetChar ? state.players[targetChar.player] : null;
+          impacts.unshift({
+            type: targetChar ? "character" : "crown",
+            id: targetChar ? targetChar.id : targetCrown.id,
+            from: [targetR, targetC],
+            to: null,
+            fell: false,
+            lastLand: [targetR, targetC],
+            icon: owner ? owner.icon : "👑",
+            color: owner ? owner.color : "#ffd76a",
+            carrying: targetChar ? characterCarriesCrown(targetChar.id) : false
           });
         }
 
@@ -19463,13 +19347,6 @@
         const dr = r - pusher.r;
         const dc = c - pusher.c;
         const force = selectedBatchSize();
-        if (targetChar) {
-          const requiredForce = collectPushLine(r, c, dr, dc).length;
-          if (force < requiredForce) {
-            showToast(`Force ${requiredForce} requise pour pousser ${requiredForce} personnage${requiredForce > 1 ? "s" : ""} aligné${requiredForce > 1 ? "s" : ""}.`);
-            return;
-          }
-        }
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
@@ -19528,127 +19405,60 @@
         }
       }
 
-      function pushCharacter(target, dr, dc, force, originR, originC) {
-        const line = collectPushLine(target.r, target.c, dr, dc);
-        if (!line.length) return false;
+      function pushCharacter(target, dr, dc, force) {
+        return appliquerPousseeDepuis(target.r, target.c, dr, dc, force);
+      }
 
-        const leadFrom = [target.r, target.c];
-        const leadOwner = state.players[target.player];
-        let anyMoved = false;
-        let anyFell = false;
-        let removedCount = 0;
-        const movedIds = new Set();
+      function pushLooseArtifact(artifact, dr, dc, force) {
+        return appliquerPousseeDepuis(artifact.r, artifact.c, dr, dc, force);
+      }
 
-        const requiredForce = line.length;
-        if (force < requiredForce) {
-          showToast(`Force ${requiredForce} requise pour pousser cette ligne.`);
-          return false;
-        }
-        const pushDistance = Math.max(1, force - requiredForce + 1);
-        for (let step = 0; step < pushDistance; step++) {
-          for (let i = line.length - 1; i >= 0; i--) {
-            const ch = line[i];
-            if (!state.characters.some(existing => existing.id === ch.id)) continue;
-
-            const nextR = ch.r + dr;
-            const nextC = ch.c + dc;
-
-            if (!inside(nextR, nextC) || !isLand(nextR, nextC)) {
-              anyFell = true;
-              removedCount++;
-              // La case du vide visée est transmise au visuel : le gardien la
-              // rejoint d'abord, puis tombe DEPUIS elle. Sans cette destination,
-              // il s'enfonçait à la verticale depuis sa case actuelle et
-              // traversait l'île sur laquelle il se tenait encore.
-              removeCharacterFromGame(ch, ch.r, ch.c, { dr, dc, toR: nextR, toC: nextC });
-              continue;
-            }
-
-            const blocker = characterAt(nextR, nextC);
-            if (blocker) continue;
-
-            ch.r = nextR;
-            ch.c = nextC;
-            anyMoved = true;
-            movedIds.add(ch.id);
-            resolveArtifactForCharacter(ch);
-          }
-        }
-
-        if (!anyMoved && !anyFell) {
+      /* Exécute la poussée unifiée (V67) et renvoie la charge utile d'animation
+         attendue par les appelants : la pièce de tête, sa destination, et si
+         elle est tombée. Toute la règle vit dans resoudrePousseeBloc(). */
+      function appliquerPousseeDepuis(startR, startC, dr, dc, force) {
+        const plan = resoudrePousseeBloc(startR, startC, dr, dc, force);
+        if (!plan) {
           showToast("La poussée est bloquée.");
           return false;
         }
 
-        const leadStillThere = state.characters.find(existing => existing.id === target.id);
-        const impacted = movedIds.size + removedCount;
-        if (removedCount && movedIds.size) {
-          showToast(`${impacted} gardien${impacted > 1 ? "s" : ""} décalé${impacted > 1 ? "s" : ""}, dont ${removedCount} retiré${removedCount > 1 ? "s" : ""} du jeu.`);
-        } else if (removedCount) {
-          showToast(`${removedCount} gardien${removedCount > 1 ? "s" : ""} retiré${removedCount > 1 ? "s" : ""} du jeu.`);
+        // Tout est relevé AVANT l'application : les positions changent ensuite.
+        const menee = plan.mouvements.find(mv => mv.from[0] === startR && mv.from[1] === startC);
+        const meneeChar = menee && menee.kind === "char" ? characterById(menee.id) : null;
+        const proprietaire = meneeChar ? state.players[meneeChar.player] : null;
+        const couronneVolante = plan.mouvements.some(mv => {
+          if (mv.kind !== "crown") return false;
+          const pas = Math.abs(mv.to[0] - mv.from[0]) + Math.abs(mv.to[1] - mv.from[1]);
+          for (let i = 1; i < pas; i++) {
+            if (!isLand(mv.from[0] + dr * i, mv.from[1] + dc * i)) return true;
+          }
+          return false;
+        });
+
+        appliquerPousseeBloc(plan, dr, dc);
+
+        const chutes = plan.chutes;
+        const deplaces = plan.deplaces;
+        if (chutes && deplaces) {
+          showToast(`${deplaces + chutes} pièces déplacées, dont ${chutes} gardien${chutes > 1 ? "s" : ""} retiré${chutes > 1 ? "s" : ""} du jeu.`);
+        } else if (chutes) {
+          showToast(`${chutes} gardien${chutes > 1 ? "s" : ""} retiré${chutes > 1 ? "s" : ""} du jeu.`);
+        } else if (couronneVolante) {
+          showToast(`La couronne survole le vide et se pose ${plan.distance} case${plan.distance > 1 ? "s" : ""} plus loin.`);
         } else {
-          showToast(`${impacted} gardien${impacted > 1 ? "s" : ""} repoussé${impacted > 1 ? "s" : ""} de ${pushDistance} case${pushDistance > 1 ? "s" : ""}.`);
+          showToast(`${deplaces} pièce${deplaces > 1 ? "s" : ""} repoussée${deplaces > 1 ? "s" : ""} de ${plan.distance} case${plan.distance > 1 ? "s" : ""}.`);
         }
 
-        // Comptée ici et non à l'entrée : la fonction sort plus haut quand la
-        // force est insuffisante, et une poussée refusée n'est pas une poussée.
+        // Comptée ici et non à l'entrée : une poussée refusée n'est pas une poussée.
         compterStatistique(state.currentPlayer, "poussees");
 
         return {
-          from: leadFrom,
-          to: leadStillThere ? [leadStillThere.r, leadStillThere.c] : leadFrom,
-          icon: leadOwner.icon,
-          color: leadOwner.color,
-          fell: !leadStillThere || anyFell
-        };
-      }
-
-      function pushLooseArtifact(artifact, dr, dc, force, originR, originC) {
-        if (!artifact) return false;
-
-        const from = [artifact.r, artifact.c];
-        const simulation = simulateLooseCrownPush(
-          artifact,
-          dr,
-          dc,
-          force,
-          artifact.r,
-          artifact.c
-        );
-
-        if (!simulation.valid) {
-          artifact.r = originR;
-          artifact.c = originC;
-
-          if (simulation.reason === "blocked") {
-            showToast("La trajectoire de la couronne est bloquée.");
-          } else if (simulation.reason === "outside") {
-            showToast("La force choisie envoie la couronne hors du plateau.");
-          } else {
-            showToast("Choisissez une force qui fait atterrir la couronne sur une île.");
-          }
-          return false;
-        }
-
-        artifact.r = simulation.r;
-        artifact.c = simulation.c;
-
-        if (simulation.crossedVoid) {
-          showToast(
-            `La couronne survole le vide et atterrit à ${simulation.moved} case${simulation.moved > 1 ? "s" : ""}.`
-          );
-        } else {
-          showToast(
-            `Couronne repoussée de ${simulation.moved} case${simulation.moved > 1 ? "s" : ""}.`
-          );
-        }
-
-        return {
-          from,
-          to: [artifact.r, artifact.c],
-          icon: "👑",
-          color: "#ffd76a",
-          fell: false
+          from: [startR, startC],
+          to: menee ? menee.to : [startR, startC],
+          icon: proprietaire ? proprietaire.icon : "👑",
+          color: proprietaire ? proprietaire.color : "#ffd76a",
+          fell: !!(menee && menee.chute)
         };
       }
 
@@ -21371,6 +21181,181 @@
           default: return null;
         }
       }
+
+      /* ==================================================================
+         POUSSÉE UNIFIÉE (règle V67)
+
+         La poussée déplace tout le bloc collé au pousseur du nombre de cases
+         de la force employée. La notion de « force requise » n'existe plus :
+         une force 1 recule un bloc de quatre gardiens d'une case.
+
+         - Le bloc mélange gardiens et couronnes au sol, sans trou.
+         - Un obstacle — une pièce séparée du bloc par un trou — arrête le bloc
+           juste avant lui. Le vide n'est pas un obstacle.
+         - Un gardien qui entre dans le vide ou hors du plateau tombe et quitte
+           le jeu, en lâchant sa couronne sur sa dernière case valide.
+         - Une couronne ne tombe jamais : elle survole le vide et se pose sur sa
+           case d'arrivée, ou à défaut sur la dernière case d'île libre
+           franchie. Elle plafonne du même coup tout ce qui la suit dans le bloc.
+      ================================================================== */
+
+      function occupantPoussable(r, c) {
+        const gardien = characterAt(r, c);
+        if (gardien) return { kind: "char", ref: gardien };
+        const couronne = looseArtifactAt(r, c);
+        if (couronne) return { kind: "crown", ref: couronne };
+        return null;
+      }
+
+      function collectPushBlock(startR, startC, dr, dc) {
+        const bloc = [];
+        let r = startR;
+        let c = startC;
+        while (inside(r, c)) {
+          const occupant = occupantPoussable(r, c);
+          if (!occupant) break;
+          bloc.push({ kind: occupant.kind, ref: occupant.ref, r, c });
+          r += dr;
+          c += dc;
+        }
+        return bloc;
+      }
+
+      /** Calcule, sans rien modifier, ce que produirait la poussée.
+       *  Renvoie null si rien ne peut bouger. */
+      function resoudrePousseeBloc(startR, startC, dr, dc, force) {
+        const bloc = collectPushBlock(startR, startC, dr, dc);
+        if (!bloc.length) return null;
+
+        const demande = Math.max(1, Math.floor(force || 1));
+        const tete = bloc[bloc.length - 1];
+
+        // Le premier obstacle hors bloc plafonne la poussée. Sortir du plateau
+        // n'arrête personne : c'est une chute, pas un blocage.
+        let distance = demande;
+        for (let pas = 1; pas <= demande; pas++) {
+          const r = tete.r + dr * pas;
+          const c = tete.c + dc * pas;
+          if (!inside(r, c)) break;
+          if (occupantPoussable(r, c)) { distance = pas - 1; break; }
+        }
+        if (distance <= 0) return null;
+
+        // Vue d'occupation locale : le bloc se retire, puis chaque pièce
+        // réserve sa case d'arrivée au fur et à mesure.
+        const occupees = new Set();
+        (state.characters || []).forEach(ch => occupees.add(key(ch.r, ch.c)));
+        activeArtifacts().forEach(a => {
+          if (!a.carrierId && Number.isFinite(a.r)) occupees.add(key(a.r, a.c));
+        });
+        bloc.forEach(m => occupees.delete(key(m.r, m.c)));
+
+        const mouvements = [];
+        let plafond = distance;
+
+        // De la tête vers la queue : une pièce arrêtée plafonne ses suivantes.
+        for (let i = bloc.length - 1; i >= 0; i--) {
+          const m = bloc[i];
+          if (plafond <= 0) break;
+
+          if (m.kind === "crown") {
+            let d = 0;
+            for (let pas = plafond; pas >= 1; pas--) {
+              const r = m.r + dr * pas;
+              const c = m.c + dc * pas;
+              if (!inside(r, c) || !isLand(r, c) || occupees.has(key(r, c))) continue;
+              d = pas;
+              break;
+            }
+            if (d <= 0) { plafond = 0; break; }
+            const to = [m.r + dr * d, m.c + dc * d];
+            occupees.add(key(to[0], to[1]));
+            mouvements.push({ kind: "crown", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+            plafond = d;
+            continue;
+          }
+
+          // Gardien : il avance pas à pas et tombe au premier vide rencontré.
+          let vide = null;
+          let d = plafond;
+          for (let pas = 1; pas <= plafond; pas++) {
+            const r = m.r + dr * pas;
+            const c = m.c + dc * pas;
+            if (!inside(r, c) || !isLand(r, c)) { vide = [r, c]; d = pas - 1; break; }
+          }
+          const to = [m.r + dr * d, m.c + dc * d];
+          if (vide) {
+            // Il quitte le jeu : il ne réserve aucune case et ne plafonne rien.
+            mouvements.push({ kind: "char", id: m.ref.id, from: [m.r, m.c], to, chute: true, vide });
+            continue;
+          }
+          occupees.add(key(to[0], to[1]));
+          mouvements.push({ kind: "char", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+        }
+
+        if (!mouvements.length) return null;
+        const bouge = mouvements.some(mv => mv.chute || mv.from[0] !== mv.to[0] || mv.from[1] !== mv.to[1]);
+        if (!bouge) return null;
+
+        return {
+          distance,
+          mouvements,
+          chutes: mouvements.filter(mv => mv.chute).length,
+          deplaces: mouvements.filter(mv => !mv.chute).length
+        };
+      }
+
+      /** Applique un plan produit par resoudrePousseeBloc(). */
+      function appliquerPousseeBloc(plan, dr, dc) {
+        if (!plan) return false;
+        for (const mv of plan.mouvements) {
+          if (mv.kind === "crown") {
+            const couronne = artifactById(mv.id);
+            if (!couronne) continue;
+            couronne.r = mv.to[0];
+            couronne.c = mv.to[1];
+            continue;
+          }
+          const gardien = characterById(mv.id);
+          if (!gardien) continue;
+          if (mv.chute) {
+            // La dernière case valide reçoit la couronne éventuellement portée.
+            removeCharacterFromGame(gardien, mv.to[0], mv.to[1], {
+              dr, dc, toR: mv.vide[0], toC: mv.vide[1]
+            });
+            continue;
+          }
+          gardien.r = mv.to[0];
+          gardien.c = mv.to[1];
+          resolveArtifactForCharacter(gardien);
+        }
+        return true;
+      }
+
+      /* ==================================================================
+         BLOCAGE DE ZONE (règle V67)
+
+         Un gardien adverse posté sur l'une des trois cases d'un village y
+         interdit toute validation, même si le porteur se tient sur une autre
+         case de ce village. Le blocage est propre à chaque village : occuper
+         un village ne neutralise pas le second, à l'opposé du plateau.
+      ================================================================== */
+      function villageCellsContaining(player, r, c) {
+        for (const village of villagesForPlayer(player)) {
+          const cells = cornerCrownCellsForVillage(village);
+          if (cells.some(([vr, vc]) => vr === r && vc === c)) return cells;
+        }
+        return null;
+      }
+
+      function validationBloqueeParAdversaire(player, r, c) {
+        const cells = villageCellsContaining(player, r, c);
+        if (!cells) return false;
+        return cells.some(([vr, vc]) => {
+          const occupant = characterAt(vr, vc);
+          return !!occupant && occupant.player !== player.id;
+        });
+      }
       /* =====================================================================
          CERVEAU EXPERT V2 — évaluateur, candidats, recherche de plan de tour.
 
@@ -21646,7 +21631,12 @@
             const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesMoi);
             valeur += PLAN_POIDS.couronnePortee;
             valeur += PLAN_POIDS.progressionPorteur * plannerProximite(d);
-            if (isCrownValidationCell(moi, porteur.r, porteur.c)) valeur += PLAN_POIDS.surCaseValidation;
+            // Se tenir sur une case de validation ne vaut que si l'adversaire
+            // n'occupe aucune des trois cases du village (blocage de zone V67).
+            if (isCrownValidationCell(moi, porteur.r, porteur.c)
+              && !validationBloqueeParAdversaire(moi, porteur.r, porteur.c)) {
+              valeur += PLAN_POIDS.surCaseValidation;
+            }
             // Un porteur qu'une seule poussée jette dans le vide n'est pas un
             // porteur : la couronne est perdue dès le tour adverse.
             // Menace élargie aux combinaisons courtes (déplacement puis
@@ -21659,10 +21649,14 @@
             // Sert à pondérer la défense : plus l'adversaire est près de
             // marquer, plus contester ses cases de validation compte.
             menaceAdverse = Math.max(menaceAdverse, plannerProximite(d));
-            if (isCrownValidationCell(adverse, porteur.r, porteur.c)) menaceAdverse = 1;
+            // Un porteur posté sur une case de validation est à un souffle de
+            // marquer — sauf si l'un de mes gardiens tient déjà le village.
+            const surCaseAdverse = isCrownValidationCell(adverse, porteur.r, porteur.c)
+              && !validationBloqueeParAdversaire(adverse, porteur.r, porteur.c);
+            if (surCaseAdverse) menaceAdverse = 1;
             valeur -= PLAN_POIDS.couronnePortee;
             valeur -= PLAN_POIDS.progressionPorteur * plannerProximite(d);
-            if (isCrownValidationCell(adverse, porteur.r, porteur.c)) valeur -= PLAN_POIDS.surCaseValidation;
+            if (surCaseAdverse) valeur -= PLAN_POIDS.surCaseValidation;
             if (aiPushOffRisk(adverse.id, porteur.r, porteur.c)) valeur += PLAN_POIDS.porteurExpose * 0.5;
 
           } else {
@@ -21694,19 +21688,29 @@
            temps. Entièrement pondéré par menaceAdverse : sans porteur adverse,
            ce terme vaut zéro et l'IA ne campe pas pour rien. */
         if (adverse && menaceAdverse > 0) {
-          const casesAdverses = crownValidationCellsForPlayer(adverse);
-          let occupees = 0;
-          for (const [vr, vc] of casesAdverses) {
-            const occupant = characterAt(vr, vc);
-            if (occupant && occupant.player === playerId) occupees++;
+          /* Le blocage se joue village par village : un seul gardien posté sur
+             l'une des trois cases neutralise tout le village. Compter les cases
+             occupées récompenserait un empilement sans valeur défensive. */
+          let neutralises = 0;
+          let total = 0;
+          const aDefendre = [];
+          for (const village of villagesForPlayer(adverse)) {
+            total++;
+            const cells = cornerCrownCellsForVillage(village);
+            const tenu = cells.some(([vr, vc]) => {
+              const occupant = characterAt(vr, vc);
+              return occupant && occupant.player === playerId;
+            });
+            if (tenu) neutralises++;
+            else cells.filter(([r, cc]) => isLand(r, cc)).forEach(cell => aDefendre.push(cell));
           }
-          const accessibles = casesAdverses.filter(([r, c]) => isLand(r, c));
-          const dDefense = accessibles.length
-            ? plannerDistanceEquipe(playerId, accessibles) : Infinity;
-          valeur += menaceAdverse * (
-            PLAN_POIDS.contesteValidation * occupees
-            + PLAN_POIDS.presenceDefensive * plannerProximite(dDefense)
-          );
+          const dDefense = aDefendre.length
+            ? plannerDistanceEquipe(playerId, aDefendre) : Infinity;
+          valeur += menaceAdverse * PLAN_POIDS.contesteValidation * neutralises;
+          // Rester à portée n'a de sens que s'il reste un village à couvrir.
+          if (neutralises < total) {
+            valeur += menaceAdverse * PLAN_POIDS.presenceDefensive * plannerProximite(dDefense);
+          }
         }
 
         // E. Gardiens : nombre et capacité à agir.
@@ -21858,15 +21862,34 @@
             if (!cible && !couronne) continue;
             if (cible && cible.player === playerId) continue;
 
-            const requise = cible ? collectPushLine(r, c, r - pousseur.r, c - pousseur.c).length : 1;
-            for (let force = requise; force <= budget; force++) {
+            /* Règle V67 : aucune force n'est refusée, elle règle seulement la
+               distance parcourue par le bloc. Toutes les forces ne produisent
+               pas pour autant des positions différentes — une fois la cible
+               jetée hors du plateau, pousser plus fort ne change rien qu'une
+               carte dépensée en trop.
+
+               On ne retient donc que la plus PETITE force menant à chaque
+               résultat distinct. La recherche y gagne deux fois : moins de
+               branches à explorer, et jamais de gaspillage de cartes. */
+            const dr = r - pousseur.r;
+            const dc = c - pousseur.c;
+            const dejaVus = new Set();
+            for (let force = 1; force <= budget; force++) {
+              const plan = resoudrePousseeBloc(r, c, dr, dc, force);
+              if (!plan) continue;
+              const empreinte = plan.mouvements
+                .map(mv => `${mv.kind}:${mv.id}:${mv.to}:${mv.chute ? 1 : 0}`)
+                .join('|');
+              if (dejaVus.has(empreinte)) continue;
+              dejaVus.add(empreinte);
+
               // Indice grossier : viser un porteur, ou une couronne, compte plus.
               let indice = 10 - force;
               if (cible && characterCarriesCrown(cible.id)) indice += 70;
               if (couronne) indice += 40;
-              // Une cible adossée au vide part du plateau.
-              const derriere = [r + (r - pousseur.r), c + (c - pousseur.c)];
-              if (!inside(derriere[0], derriere[1]) || !isLand(derriere[0], derriere[1])) indice += 90;
+              // Une poussée qui retire réellement un gardien vaut mieux qu'un
+              // simple décalage : c'est le résultat qui le dit, pas la position.
+              if (plan.chutes) indice += 90;
               options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice });
             }
           }
@@ -21964,7 +21987,7 @@
 
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
-        const placements = findAutomaticIslandPlacement(playerId, PLAN_CANDIDATS.pose);
+        const placements = findAutomaticIslandPlacement(playerId, PLAN_CANDIDATS.pose, true);
         if (!Array.isArray(placements)) return [];
         return placements.map(p => ({
           type: "POSE",
@@ -23357,7 +23380,49 @@
         };
       }
 
+      /* Contrôle de la règle de poussée elle-même (V67), indépendant de toute
+         décision d'IA. On pose une position, on demande au résolveur ce qu'il
+         ferait, et on compare les arrivées à ce que la règle exige.
+
+         resoudrePousseeBloc() ne modifie rien : la position n'a pas besoin
+         d'être rejouée entre deux cas. */
+      function benchPoussee(cas = {}) {
+        const instantane = benchBuildSnapshot(cas.spec || {});
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+
+        const [dr, dc] = cas.direction;
+        const [sr, sc] = cas.depart;
+        const plan = resoudrePousseeBloc(sr, sc, dr, dc, cas.force);
+
+        // Arrivées exprimées en termes de jeu : qui finit où, et qui tombe.
+        const arrivees = (plan ? plan.mouvements : []).map(mv => ({
+          genre: mv.kind,
+          id: mv.id,
+          de: mv.from,
+          vers: mv.to,
+          chute: !!mv.chute
+        }));
+        return { distance: plan ? plan.distance : 0, arrivees };
+      }
+
+      /* Contrôle des règles de VALIDATION (V67) : le porteur est obligatoire,
+         et un gardien adverse posté dans les trois cases d'un village y
+         interdit tout point. On pose une position, on déclenche le décompte de
+         début de tour, et on lit combien de points ont réellement été marqués. */
+      function benchValidation(cas = {}) {
+        const instantane = benchBuildSnapshot(cas.spec || {});
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+        const joueur = state.players[cas.joueur ?? 0];
+        const avant = joueur.score;
+        const marques = scoreCrownsAtTurnStart(joueur);
+        return { marques, gain: joueur.score - avant };
+      }
+
       window.ILYOS_BENCH = {
+        poussee: benchPoussee,
+        validation: benchValidation,
         run: benchRunPuzzle,
         /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
 

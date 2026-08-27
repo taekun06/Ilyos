@@ -465,6 +465,54 @@ const SCENARIOS = [
           : `aucun gardien IA sur les cases de validation adverses (gardiens en ${obs.gardiensIA.map(g => "(" + g.r + "," + g.c + ")").join(" ")})`
       };
     }
+  },
+
+  {
+    id: "A12",
+    nom: "Poser l ile et defendre avec le gardien qui apparait",
+    /* Le point adverse est IMMINENT — le porteur se tient deja sur la case de
+       son village — et aucun gardien de l IA n est a portee : le plus proche
+       est a l autre bout du plateau. Une IA qui ne defend qu avec les gardiens
+       deja poses conclut qu il n y a rien a faire.
+
+       Or il reste un coup. Poser une ile sur les cases vides du village adverse
+       y fait APPARAITRE un gardien, et ce gardien agit des le tour ou il est
+       pose. Occuper l une des trois cases du village suffit alors a interdire
+       le point (blocage de zone V67).
+
+       Ce scenario mesure donc une chose que ni A9 ni A11 ne mesurent : savoir
+       que la POSE elle-meme est une arme defensive, disponible immediatement.
+
+       Reussite : un gardien de l IA occupe une des trois cases du village
+       menace, ou le porteur adverse est neutralise. */
+    spec: {
+      seed: 312, islandPlacedThisTurn: false,
+      hands: { 0: ["MOVE", "MOVE"], 1: [] },
+      stash: { 1: RESERVE(0, 0) },
+      islands: [
+        { shapeKey: "square", owner: 0, cells: [[7, 1], [7, 2], [8, 1], [8, 2]] }
+      ],
+      characters: [
+        { id: "adv-p", player: 1, r: 0, c: 10 },
+        { id: "ia-1", player: 0, r: 8, c: 1 }
+      ],
+      crowns: [{ r: 0, c: 10, carrierId: "adv-p", active: true }]
+    },
+    attendu(obs) {
+      const adv = obs.gardiensAdverses.find(g => g.porte);
+      if (!adv) return { ok: true, raison: "porteur adverse neutralise" };
+      // Le village menace est celui du porteur : tenir l autre, a l oppose du
+      // plateau, ne defend rien.
+      const villageMenace = [[0, 10], [1, 10], [0, 9]];
+      const occupant = obs.gardiensIA.find(g =>
+        villageMenace.some(([r, c]) => r === g.r && c === g.c));
+      return {
+        ok: !!occupant,
+        raison: occupant
+          ? `gardien IA en (${occupant.r},${occupant.c}) : village adverse condamne`
+          : `village adverse libre (gardiens IA en ${obs.gardiensIA.map(g => "(" + g.r + "," + g.c + ")").join(" ")})`
+      };
+    }
   }
 
 ];

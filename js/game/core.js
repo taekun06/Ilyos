@@ -3528,7 +3528,12 @@
         return [village.r, village.c];
       }
 
-      function findAutomaticIslandPlacement(playerId, combien = 0) {
+      /* zoneAdverseAttractive inverse le biais historique sur les cases de
+         validation adverses. Depuis le blocage de zone (V67), s'y poser est le
+         coup défensif le plus fort du jeu : le cerveau Expert doit donc voir
+         ces poses parmi ses candidates. Les IA Easy / Normal / Hard appellent
+         sans l'option et conservent exactement leur comportement. */
+      function findAutomaticIslandPlacement(playerId, combien = 0, zoneAdverseAttractive = false) {
         const player = state.players[playerId];
         const target = automaticPlacementTarget(playerId);
         const ownCharacters = state.characters.filter(char => char.player === playerId);
@@ -3611,7 +3616,7 @@
                     + (ownCarrier ? carrierBridge * .52 : 0)
                     - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
-                    + enemyZoneCells * 4.4
+                    + enemyZoneCells * (zoneAdverseAttractive ? -5.0 : 4.4)
                     + gameRandom() * aiConfig().randomness;
 
                   candidates.push({
