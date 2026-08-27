@@ -267,6 +267,11 @@
       // la partie exactement où elle en était malgré les retours en arrière.
       let autopsieEtatVivant = null;
       let autopsieCurseur = -1;
+      /* Suivi de la partie automatique mis de côté pendant la revue. Sans lui,
+         reprendre relançait l'autoplay à zéro : compteur de tours, journal et
+         minuteur réinitialisés — autrement dit, la revue CHANGEAIT la partie
+         qu'elle était censée seulement observer. */
+      let autopsieSuiviAutoplay = null;
 
       function autopsieIndexReel(index) {
         const n = ILYOS_AUTOPSIE_JOURNAL.length;
@@ -282,6 +287,14 @@
           autopsieEtatVivant = null;
           console.warn("[ILYOS] revue : position vivante non conservée", erreur);
         }
+        autopsieSuiviAutoplay = (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY)
+          ? {
+            startedTurn: ILYOS_AUTOPLAY.startedTurn,
+            maxTurns: ILYOS_AUTOPLAY.maxTurns,
+            logs: ILYOS_AUTOPLAY.logs,
+            difficulte: (state && state.aiDifficulty) || "expert"
+          }
+          : null;
         if (typeof stopIlyosAutoplay === "function") stopIlyosAutoplay("Pause pour revue");
         autopsieCurseur = ILYOS_AUTOPSIE_JOURNAL.length - 1;
         console.log(`Partie en pause. ${ILYOS_AUTOPSIE_JOURNAL.length} décision(s) enregistrée(s).`);
@@ -299,9 +312,21 @@
         state.inputLocked = false;
         state.aiThinking = false;
         state.turnTransitioning = false;
+        /* La partie reprend EXACTEMENT où elle en était. On relance la
+           surveillance, puis on lui rend son compteur de tours et son journal :
+           sans cette restitution, la partie repartait « du tour 1 » et le
+           récapitulatif ne correspondait plus à ce qui s'était joué. */
         if (typeof startIlyosAutoplay === "function") {
-          startIlyosAutoplay({ maxTurns: 60, difficulty: "expert" });
+          startIlyosAutoplay({
+            maxTurns: autopsieSuiviAutoplay ? autopsieSuiviAutoplay.maxTurns : 60,
+            difficulty: autopsieSuiviAutoplay ? autopsieSuiviAutoplay.difficulte : "expert"
+          });
+          if (autopsieSuiviAutoplay && typeof ILYOS_AUTOPLAY === "object") {
+            ILYOS_AUTOPLAY.startedTurn = autopsieSuiviAutoplay.startedTurn;
+            ILYOS_AUTOPLAY.logs = autopsieSuiviAutoplay.logs;
+          }
         }
+        autopsieSuiviAutoplay = null;
         // Le tour en cours doit être relancé : l'arrêt l'avait interrompu.
         if (typeof runAITurn === "function") {
           aiRunToken++;
@@ -315,6 +340,10 @@
       function autopsieAller(index) {
         const i = autopsieIndexReel(index);
         if (i < 0 || i >= ILYOS_AUTOPSIE_JOURNAL.length) { console.log("Décision hors journal."); return null; }
+        /* Remonter le temps repose le plateau : si la partie tournait encore,
+           l'IA repartirait de la position d'AVANT et la partie serait changée.
+           On met donc systématiquement en pause d'abord. */
+        if (!autopsieEtatVivant) autopsiePause();
         autopsieCurseur = i;
         autopsieRejouer(i);
         const e = ILYOS_AUTOPSIE_JOURNAL[i];
@@ -360,7 +389,7 @@
       function autopsieRecap() {
         const notes = ILYOS_AUTOPSIE_JOURNAL
           .map((e, i) => ({ i, e }))
-          .filter(x => x.e.annotation);
+          .filter(x => x.e.annotation || x.e.demonstration);
         console.log("");
         console.log("REVUE DE PARTIE");
         console.log("=".repeat(78));
@@ -392,7 +421,7 @@
          conversation. L'export complet embarque les positions rejouables et
          tous les candidats : précieux pour rejouer, illisible à transmettre. */
       function autopsieResumeRevue() {
-        const notes = ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation);
+        const notes = ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation || e.demonstration);
         if (!notes.length) return "Aucune erreur signalée.";
         const lignes = [`REVUE ILYOS — ${notes.length} erreur(s) sur ${ILYOS_AUTOPSIE_JOURNAL.length} décisions`, ""];
         notes.forEach(e => {
@@ -401,8 +430,16 @@
             .map(f => `${f.note} ${f.planLisible}`).join("  |  ");
           lignes.push(`--- tour ${e.tour} · ${e.nomJoueur}`);
           lignes.push(`IA a joué  : ${e.planLisible}`);
-          lignes.push(`vous auriez: ${e.annotation.coupAttendu}`);
-          if (e.annotation.pourquoi) lignes.push(`parce que  : ${e.annotation.pourquoi}`);
+          if (e.demonstration) {
+            lignes.push(`vous auriez: ${e.demonstration.coups.join(" · ")}`);
+            lignes.push(`votre note : ${e.demonstration.noteVous} contre ${e.demonstration.noteIA} pour l'IA`);
+            /* L'écart terme à terme : ce que l'évaluateur a mal jugé. */
+            const ecarts = (e.demonstration.ecart || []).slice(0, 5)
+              .map(x => `${x.terme} ${x.delta > 0 ? "+" : ""}${x.delta} (IA ${x.ia}, vous ${x.vous})`);
+            if (ecarts.length) lignes.push(`écart      : ${ecarts.join(" · ")}`);
+          }
+          if (e.annotation) lignes.push(`vous auriez: ${e.annotation.coupAttendu}`);
+          if (e.annotation?.pourquoi) lignes.push(`parce que  : ${e.annotation.pourquoi}`);
           lignes.push(`calcul     : note ${e.noteDepart} → ${e.noteArrivee}, ${e.etatsExplores} états, ${ecartes} candidats écartés${e.repli ? ", REPLI: " + e.repli : ""}`);
           if (tetes) lignes.push(`finalistes : ${tetes}`);
           // Les trois termes qui ont le plus pesé : souvent l'explication.
@@ -418,10 +455,151 @@
          rejouable et le raisonnement complet de l'IA. */
       function autopsieExporterRevue() {
         return JSON.stringify(
-          ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation),
+          ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation || e.demonstration),
           null,
           1
         );
+      }
+
+      /* =====================================================================
+         DÉMONSTRATION — jouer soi-même le tour que l'IA aurait dû jouer
+
+         Décrire un coup en mots laisse toute la place à l'interprétation.
+         Le JOUER ne laisse aucune ambiguïté : on repose la position d'avant la
+         décision, on prend la main, on joue son tour, et les deux positions
+         d'arrivée sont comparées terme à terme par l'évaluateur de l'IA.
+
+         C'est cette comparaison qui a de la valeur : elle ne dit pas seulement
+         « l'humain a mieux joué », elle dit QUEL TERME de l'évaluateur s'est
+         trompé, et de combien. Un banc d'essai ne peut pas produire ça.
+         ===================================================================== */
+
+      let revueDemo = null;   // { index, joueur, avant }
+
+      /** Différence lisible entre deux positions, en termes de jeu. */
+      function autopsieDiffPositions(avant, apres) {
+        const a = typeof avant === "string" ? JSON.parse(avant) : avant;
+        const b = typeof apres === "string" ? JSON.parse(apres) : apres;
+        const lignes = [];
+
+        const posA = new Map((a.characters || []).map(c => [c.id, c]));
+        const posB = new Map((b.characters || []).map(c => [c.id, c]));
+        for (const [id, cb] of posB) {
+          const ca = posA.get(id);
+          if (!ca) { lignes.push(`gardien ${id} apparaît en (${cb.r},${cb.c})`); continue; }
+          if (ca.r !== cb.r || ca.c !== cb.c) {
+            lignes.push(`gardien ${id} : (${ca.r},${ca.c}) → (${cb.r},${cb.c})`);
+          }
+        }
+        for (const [id, ca] of posA) {
+          if (!posB.has(id)) lignes.push(`gardien ${id} quitte le jeu (était en ${ca.r},${ca.c})`);
+        }
+
+        const ilesA = (a.islands || []).length;
+        const ilesB = (b.islands || []).length;
+        if (ilesB > ilesA) {
+          (b.islands || []).slice(ilesA).forEach(i =>
+            lignes.push(`île ${i.shapeKey} posée en ${JSON.stringify(i.cells)}`));
+        }
+
+        const couronne = (etat, index) => {
+          const art = index === 0 ? etat.artifact : etat.secondArtifact;
+          if (!art || !art.active) return null;
+          return art.carrierId ? `portée par ${art.carrierId}` : `au sol (${art.r},${art.c})`;
+        };
+        [0, 1].forEach(k => {
+          const ca = couronne(a, k), cb = couronne(b, k);
+          if (ca !== cb) lignes.push(`couronne ${k + 1} : ${ca || "absente"} → ${cb || "absente"}`);
+        });
+
+        return lignes.length ? lignes : ["aucun changement"];
+      }
+
+      /* Rend la main au joueur sur la position d'avant la décision. */
+      function autopsieDemontrer(index) {
+        const i = autopsieIndexReel(index);
+        const e = ILYOS_AUTOPSIE_JOURNAL[i];
+        if (!e || !e.instantane) { console.log("Position indisponible."); return false; }
+        // La position vivante doit être mise de côté si ce n'est pas déjà fait.
+        if (!autopsieEtatVivant) autopsiePause();
+
+        applyStateSnapshot(JSON.parse(e.instantane));
+        revueDemo = { index: i, joueur: e.joueur, avant: e.instantane };
+
+        /* Aucun camp n'est piloté : la démonstration est jouée à la main, et
+           un tour d'IA lancé au même moment écraserait la position. */
+        aiRunToken++;
+        state.players.forEach(j => { j.isAI = false; });
+        state.undoHistory = [];
+        state.inputLocked = false;
+        state.aiThinking = false;
+        state.turnTransitioning = false;
+        renderAll();
+        console.log(`Position du tour ${e.tour} reposée. À vous de jouer ce tour.`);
+        console.log("Quand vous avez fini, cliquez « ✓ Terminer » — n'appuyez pas sur FIN DU TOUR.");
+        return true;
+      }
+
+      /* Capture le tour joué et le compare, terme à terme, à celui de l'IA. */
+      function autopsieTerminerDemonstration() {
+        if (!revueDemo) { console.log("Aucune démonstration en cours."); return null; }
+        const e = ILYOS_AUTOPSIE_JOURNAL[revueDemo.index];
+        const apres = snapshotState();
+
+        // Évaluation de VOTRE position d'arrivée, avec le même évaluateur.
+        let detail = null;
+        try {
+          detail = evaluerAvecDetail(revueDemo.joueur);
+        } catch (erreur) {
+          console.warn("[ILYOS] démonstration : évaluation impossible", erreur);
+        }
+
+        /* L'écart terme à terme est le cœur de l'exercice : il désigne ce que
+           l'évaluateur a sur- ou sous-estimé, et de combien. */
+        const ecart = [];
+        if (detail && e.detailArrivee) {
+          const noms = new Set([
+            ...detail.termes.map(t => t.terme),
+            ...e.detailArrivee.termes.map(t => t.terme)
+          ]);
+          for (const nom of noms) {
+            const vous = detail.termes.find(t => t.terme === nom)?.montant || 0;
+            const ia = e.detailArrivee.termes.find(t => t.terme === nom)?.montant || 0;
+            if (vous !== ia) ecart.push({ terme: nom, ia, vous, delta: vous - ia });
+          }
+          ecart.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+        }
+
+        e.demonstration = {
+          coups: autopsieDiffPositions(revueDemo.avant, apres),
+          etatApres: apres,
+          detail,
+          ecart,
+          noteIA: e.detailArrivee ? e.detailArrivee.note : e.noteArrivee,
+          noteVous: detail ? detail.note : null,
+          horodatage: new Date().toISOString()
+        };
+
+        console.log(`Tour démontré et enregistré (décision ${revueDemo.index}, tour ${e.tour}).`);
+        console.log(`   votre note : ${e.demonstration.noteVous} · celle de l'IA : ${e.demonstration.noteIA}`);
+        e.demonstration.coups.forEach(l => console.log("   " + l));
+
+        revueDemo = null;
+        // La partie retrouve sa position réelle ; elle reste en pause.
+        if (autopsieEtatVivant) {
+          applyStateSnapshot(JSON.parse(autopsieEtatVivant));
+          renderAll();
+        }
+        return e.demonstration;
+      }
+
+      function autopsieAnnulerDemonstration() {
+        revueDemo = null;
+        if (autopsieEtatVivant) {
+          applyStateSnapshot(JSON.parse(autopsieEtatVivant));
+          renderAll();
+        }
+        return true;
       }
 
       /* =====================================================================
@@ -475,9 +653,19 @@
         const i = autopsieIndexReel();
         const e = journal[i];
         const annotees = journal.filter(x => x.annotation).length;
+        const demontrees = journal.filter(x => x.demonstration).length;
 
         let corps;
-        if (revueVueRecap) {
+        if (revueDemo) {
+          const d = ILYOS_AUTOPSIE_JOURNAL[revueDemo.index];
+          corps = `<p style="margin:6px 0;padding:8px;background:#2a2416;border-radius:6px">
+              <b style="color:#e8c46a">DÉMONSTRATION EN COURS</b><br>
+              Position du tour ${d.tour} reposée. Jouez le tour comme vous l'auriez joué,
+              puis cliquez <b>✓ Terminer</b>.<br>
+              <span style="color:#8f9ab8">N'utilisez pas FIN DU TOUR : la position serait perdue.</span>
+            </p>
+            <p style="margin:0;color:#8f9ab8">l'IA avait joué : ${revueEchapper(d.planLisible)}</p>`;
+        } else if (revueVueRecap) {
           const notes = journal.map((x, k) => ({ x, k })).filter(o => o.x.annotation);
           corps = notes.length
             ? notes.map(o => `<div style="margin:0 0 10px;padding:8px;background:#1a2136;border-radius:6px">
@@ -495,6 +683,10 @@
             <p style="margin:0 0 6px"><b>l'IA a joué</b><br>${revueEchapper(e.planLisible)}</p>
             <p style="margin:0 0 6px;color:#8f9ab8">note ${e.noteDepart} → ${e.noteArrivee}
               · ${e.etatsExplores} états${e.repli ? " · <span style='color:#e6a15c'>REPLI</span>" : ""}</p>
+            ${e.demonstration ? `<p style="margin:0 0 6px;padding:6px;background:#1c2740;border-radius:6px">
+                 <span style="color:#8ab6e8">votre tour :</span> ${revueEchapper(e.demonstration.coups.join(" · "))}<br>
+                 <span style="color:#8f9ab8">note</span> ${e.demonstration.noteVous} <span style="color:#8f9ab8">contre</span> ${e.demonstration.noteIA} <span style="color:#8f9ab8">pour l'IA</span>
+               </p>` : ""}
             ${e.annotation ? `<p style="margin:0 0 6px;padding:6px;background:#17301f;border-radius:6px">
                  <span style="color:#7ee0a0">vous auriez :</span> ${revueEchapper(e.annotation.coupAttendu)}
                  ${e.annotation.pourquoi ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(e.annotation.pourquoi)}` : ""}
@@ -504,18 +696,22 @@
         panneau.innerHTML =
           `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
              <b style="letter-spacing:.06em">REVUE IA</b>
-             <span style="color:#8f9ab8">${annotees} note(s)</span>
+             <span style="color:#8f9ab8">${annotees} note(s) · ${demontrees} démo(s)</span>
            </div>
            ${corps}
            <div style="margin-top:10px;border-top:1px solid #2a3352;padding-top:8px">
-             ${revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
-             ${revueBouton("◀", "precedent", journal.length > 0)}
-             ${revueBouton("▶", "suivant", journal.length > 0)}
-             ${revueBouton("✎ Annoter", "noter", !!e)}
-             ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
-             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees > 0) : ""}
+             ${revueDemo
+               ? revueBouton("✓ Terminer", "finDemo") + revueBouton("✗ Annuler", "annuleDemo")
+               : revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")
+                 + revueBouton("◀", "precedent", journal.length > 0)
+                 + revueBouton("▶", "suivant", journal.length > 0)
+                 + revueBouton("🎮 Jouer ce tour", "demontrer", !!e)
+                 + revueBouton("✎ Annoter", "noter", !!e)
+                 + revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")
+                 + (revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees + demontrees > 0) : "")}
            </div>`;
 
+        // Un même coup peut avoir été noté ET démontré : les deux coexistent.
         panneau.querySelectorAll("[data-revue]").forEach(bouton => {
           bouton.addEventListener("click", () => {
             const quoi = bouton.getAttribute("data-revue");
@@ -524,6 +720,9 @@
             else if (quoi === "precedent") { revueVueRecap = false; autopsiePrecedent(); }
             else if (quoi === "suivant") { revueVueRecap = false; autopsieSuivant(); }
             else if (quoi === "recap") { revueVueRecap = !revueVueRecap; if (revueVueRecap) autopsieRecap(); }
+            else if (quoi === "demontrer") { revueVueRecap = false; autopsieDemontrer(); }
+            else if (quoi === "finDemo") autopsieTerminerDemonstration();
+            else if (quoi === "annuleDemo") autopsieAnnulerDemonstration();
             else if (quoi === "copier") {
               /* Copié dans le presse-papier : le résumé n'a de valeur que s'il
                  peut être collé sans passer par la console. */
@@ -577,6 +776,10 @@
         precedent: autopsiePrecedent,
         suivant: autopsieSuivant,
         noter: autopsieNoter,
+        /* --- Démonstration : jouer soi-même le tour --- */
+        demontrer: autopsieDemontrer,
+        terminerDemonstration: autopsieTerminerDemonstration,
+        annulerDemonstration: autopsieAnnulerDemonstration,
         oublier: autopsieOublier,
         recap: autopsieRecap,
         exporterRevue: autopsieExporterRevue,
