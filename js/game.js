@@ -21470,7 +21470,26 @@
         presenceDefensive: 500,
 
         // Consommer une forme rare a un coût, proportionnel à sa raréfaction.
-        formeConsommee: 90
+        formeConsommee: 90,
+
+        /* TERRAIN. Poser une île est obligatoire à chaque tour — c'est la
+           décision la plus fréquente du jeu — et rien ne la jugeait : une île
+           n'entrait dans le calcul que si elle changeait une distance. Deux
+           poses sans effet sur les distances étaient donc rigoureusement
+           indiscernables, et l'IA en prenait une au hasard. Mesuré : 16
+           décisions sur 31 avaient TOUS leurs finalistes à la même note.
+
+           Ces trois termes donnent une valeur au plateau lui-même.
+
+           Leur poids est délibérément MODESTE : ils servent à départager des
+           coups par ailleurs équivalents, pas à décider de la partie. À 700,
+           routeUtile pesait plus qu'une couronne portée — l'adversaire pouvant
+           modifier le terrain dans sa riposte, l'IA préférait alors ne rien
+           faire plutôt que de s'exposer à ce basculement, et refusait de
+           ramasser une couronne à sa portée (P07 et P08 échouaient ainsi). */
+        routeUtile: 240,       // route du sanctuaire vers MES cases de validation
+        controleSpatial: 150,  // part du terrain plus proche de mon but que du sien
+        routeFragile: 5       // case tenue mais bordée de vide : on en tombe
       };
 
       /** Proximité décroissante et bornée, tirée d'une distance de déplacement
@@ -21575,10 +21594,35 @@
        *  movementRange rend l'ensemble des cases joignables en une seule
        *  recherche par gardien. La menace se réduit alors à une consultation
        *  d'ensemble, et le coût passe de « milliers » à « un par adversaire ». */
+      /* Portées adverses : où l'adversaire pourrait aller. Un Dijkstra par
+         gardien adverse — et l'adversaire NE BOUGE PAS pendant mon tour.
+
+         Ce calcul était refait à chaque nœud de la recherche : avec six
+         gardiens adverses et une centaine de nœuds, plusieurs centaines de
+         recherches pour le même résultat. L'anticipation de la riposte y
+         passait 46 SECONDES.
+
+         Il ne dépend que du terrain, de la position des gardiens adverses et
+         du budget supposé : la clé est faite de ces trois éléments, si bien
+         qu'une pose ou une rotation l'invalide, mais rien d'autre. */
+      const PLAN_CACHE_PORTEES_MAX = 64;
+      const plannerCachePortees = new Map();
+
       function plannerPorteesAdverses(playerId, budgetMove) {
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return [];
-        return plannerGardiensDe(adverse.id).map(ennemi => movementRange(ennemi, budgetMove));
+        const ennemis = plannerGardiensDe(adverse.id);
+        const cle = plannerEmpreinteTerrain() + ':' + budgetMove + ':'
+          + ennemis.map(e => e.r + ',' + e.c).sort().join('|');
+        let portees = plannerCachePortees.get(cle);
+        if (!portees) {
+          portees = ennemis.map(ennemi => movementRange(ennemi, budgetMove));
+          if (plannerCachePortees.size >= PLAN_CACHE_PORTEES_MAX) {
+            plannerCachePortees.delete(plannerCachePortees.keys().next().value);
+          }
+          plannerCachePortees.set(cle, portees);
+        }
+        return portees;
       }
 
       function plannerMenaceExpulsion(playerId, r, c, budget) {
@@ -21635,6 +21679,95 @@
       function plannerActiverAutopsie(actif) {
         plannerAutopsie = actif !== false;
         return plannerAutopsie;
+      }
+
+      /* =====================================================================
+         VALEUR DU TERRAIN, ET SON CACHE
+
+         Deux champs de distance suffisent à tout : la distance de chaque case
+         à MES cases de validation, et la même vers celles de l'adversaire. On
+         en tire l'accès aux objectifs, le contrôle spatial et la fragilité des
+         routes, sans heuristique particulière à telle ou telle position.
+
+         Ces champs ne dépendent QUE du terrain. Ils sont donc calculés une fois
+         par forme de plateau et réutilisés pour tous les nœuds de la recherche
+         — sans quoi le coût serait rédhibitoire, l'évaluateur tournant à chaque
+         nœud. L'empreinte ne change qu'à la POSE et à la MAGIE, exactement les
+         deux actions qui modifient le terrain.
+         ===================================================================== */
+      /* Le cache retient PLUSIEURS formes de plateau, pas une seule.
+
+         Avec une seule entrée, la recherche alternait entre nœuds avec et sans
+         île posée, et vidait le cache à chaque alternance : l'analyse complète
+         repartait à chaque nœud. Mesuré, l'anticipation adverse passait de
+         360 ms à 40 SECONDES. */
+      const PLAN_CACHE_TERRAIN_MAX = 48;
+      const plannerCacheTerrain = new Map();
+
+      function plannerEmpreinteTerrain() {
+        let h = (state.islands || []).length * 1000003;
+        for (const ile of state.islands || []) {
+          for (const [r, c] of ile.cells) {
+            h = (h * 31 + (r * GRID + c) + 1) % 2147483647;
+          }
+        }
+        return h;
+      }
+
+      function plannerAnalyseTerrain(playerId) {
+        const moi = state.players[playerId];
+        const adverse = plannerAdversaire(playerId);
+        const surTerre = cells => (cells || []).filter(([r, c]) => isLand(r, c));
+
+        const champMoi = plannerChampDistance(surTerre(crownValidationCellsForPlayer(moi)));
+        const champAdverse = adverse
+          ? plannerChampDistance(surTerre(crownValidationCellsForPlayer(adverse)))
+          : new Map();
+
+        let terrainTotal = 0;
+        let controle = 0;
+        let fragiles = 0;
+
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            if (!isLand(r, c)) continue;
+            terrainTotal++;
+            const dMoi = champMoi.get(key(r, c));
+            const dAdv = champAdverse.get(key(r, c));
+            const mienne = Number.isFinite(dMoi) && (!Number.isFinite(dAdv) || dMoi < dAdv);
+            if (!mienne) continue;
+            controle++;
+            /* Une case bordée de vide est une case d'où l'on tombe : contrôler
+               un couloir d'une case de large ne vaut pas contrôler une place. */
+            let vide = 0;
+            for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+              if (!isLand(r + dr, c + dc)) vide++;
+            }
+            if (vide >= 2) fragiles++;
+          }
+        }
+
+        /* Longueur de la route depuis le sanctuaire — l'origine des couronnes
+           — vers les cases de validation de chacun. Ne dépend que du terrain,
+           donc calculée ici et mise en cache avec le reste. */
+        const routeMoi = champMoi.get(key(CENTER.r, CENTER.c)) ?? 99;
+        const routeAdverse = champAdverse.get(key(CENTER.r, CENTER.c)) ?? 99;
+
+        return { champMoi, champAdverse, controle, fragiles, terrainTotal, routeMoi, routeAdverse };
+      }
+
+      function plannerTerrain(playerId) {
+        const cle = plannerEmpreinteTerrain() + ':' + playerId;
+        let analyse = plannerCacheTerrain.get(cle);
+        if (!analyse) {
+          analyse = plannerAnalyseTerrain(playerId);
+          // Rotation simple : la forme la plus anciennement vue sort.
+          if (plannerCacheTerrain.size >= PLAN_CACHE_TERRAIN_MAX) {
+            plannerCacheTerrain.delete(plannerCacheTerrain.keys().next().value);
+          }
+          plannerCacheTerrain.set(cle, analyse);
+        }
+        return analyse;
       }
 
       /* AUTOPSIE — trace des termes d'évaluation.
@@ -21828,6 +21961,39 @@
         const cartes = plannerTotalRessources(playerId);
         ajouter("cartesConservees", cartes * PLAN_POIDS.carteConservee, `${cartes} carte(s)`);
 
+        /* G bis. TERRAIN. Ce que vaut le plateau, indépendamment des pièces
+           qui s'y trouvent — donc ce que vaut la pose d'île qui vient de le
+           modifier. Sans ces termes, poser ici ou là revenait au même. */
+        const terrain = plannerTerrain(playerId);
+
+        /* Accès aux objectifs : la longueur du chemin de terrain entre le
+           SANCTUAIRE — d'où les couronnes viennent — et mes cases de
+           validation, comparée à celle de l'adversaire. Une pose qui raccourcit
+           ma route compte ; une pose qui raccourcit la sienne est une offrande,
+           et se paie du même terme.
+
+           Volontairement mesuré depuis le sanctuaire et non depuis la couronne
+           du moment : la position des couronnes est DÉJÀ comptée trois fois
+           (couronnePortee, progressionPorteur, couronneLibre). L'y remettre
+           faisait basculer 700 points de plus à chaque couronne perdue, et
+           l'IA n'osait plus la ramasser — P08 échouait ainsi. Ce terme décrit
+           le plateau, pas les pièces. */
+        ajouter("routeUtile",
+          PLAN_POIDS.routeUtile * (plannerProximite(terrain.routeMoi) - plannerProximite(terrain.routeAdverse)),
+          `route ${terrain.routeMoi} contre ${terrain.routeAdverse}`);
+
+        /* Contrôle spatial : la part du terrain plus proche de mon but que du
+           sien. Normalisée, donc insensible à la taille du plateau. */
+        if (terrain.terrainTotal > 0) {
+          const part = (2 * terrain.controle - terrain.terrainTotal) / terrain.terrainTotal;
+          ajouter("controleSpatial", PLAN_POIDS.controleSpatial * part,
+            `${terrain.controle}/${terrain.terrainTotal} cases`);
+        }
+
+        // Sécurité des routes : ce que je tiens mais d'où l'on me pousse.
+        ajouter("routesFragiles", -PLAN_POIDS.routeFragile * terrain.fragiles,
+          `${terrain.fragiles} case(s) bordée(s) de vide`);
+
         // G. Formes consommées.
         ajouter("formesConsommees", -plannerCoutFormes(playerId));
 
@@ -21853,14 +22019,35 @@
       }
 
       const PLAN_CANDIDATS = {
-        move: 8, push: 5, magic: 4, pose: 6,
-        // Cases d'apparition envisagées par pose, et plafond de POSE au total.
-        poseSpawns: 3, poseTotal: 12,
+        /* Larges À LA RACINE, serrés ensuite.
+
+           La racine est la décision réelle : c'est là qu'une idée différente
+           doit pouvoir entrer, et c'est à l'évaluateur de la départager, pas
+           au pré-filtre. En profondeur, l'essentiel est déjà tranché et
+           l'ouverture ne sert plus qu'à brûler du temps.
+
+           move est le plafond TOTAL, moveParIntention celui de CHAQUE
+           intention : c'est le second qui empêche dix variantes du même coup
+           d'évincer une idée d'une autre nature. */
+        racine: { move: 16, moveParIntention: 3, push: 8, magic: 8, pose: 6, poseSpawns: 2, poseTotal: 12 },
+        /* En profondeur on resserre, mais jamais en dessous de ce que le
+           planner avait avant l'ouverture de la racine : les enchaînements
+           utiles — se placer puis transmettre, préparer puis pousser — se
+           construisent au deuxième et au troisième niveau. Trop serrer ici
+           coûte plus que ce que l'ouverture de la racine rapporte. */
+        profond: { move: 10, moveParIntention: 2, push: 5, magic: 4, pose: 4, poseSpawns: 1, poseTotal: 6 },
         // Plafonds de la génération de candidats MAGIC, la seule qui simule
         // réellement chaque option pour la pré-classer (voir plus bas).
         magicRotationsMax: 36,
         magicMsMax: 25
       };
+
+      /* Niveau courant de la recherche : 0 à la racine. Les générateurs y
+         lisent quel jeu de plafonds appliquer. */
+      let plannerNiveau = 0;
+      function plafonds() {
+        return plannerNiveau === 0 ? PLAN_CANDIDATS.racine : PLAN_CANDIDATS.profond;
+      }
 
       /** Îles triées par intérêt tactique : celles qui portent un gardien ou
        *  une couronne, puis les plus proches du centre de l'action. Une
@@ -21884,6 +22071,61 @@
         return meilleure;
       }
 
+      /* CHAMP DE DISTANCE depuis un jeu de cibles.
+
+         aiLandDistanceToTargets relance un Dijkstra COMPLET à chaque
+         interrogation. L'interroger pour chaque case atteignable et chaque
+         intention revenait à plusieurs centaines de recherches par tour :
+         mesuré sur une partie réelle, la médiane de décision était passée de
+         814 à 2345 ms, et 14 tours sur 40 partaient en repli.
+
+         Une seule propagation, depuis toutes les cibles à la fois, donne la
+         distance de TOUTES les cases. Le graphe étant non orienté et de coûts
+         symétriques, la distance case → cibles est celle que l'on propage
+         cibles → case. Cinq propagations par tour remplacent donc les
+         centaines de recherches — c'est moins cher que le code d'origine, qui
+         en faisait déjà une par case. */
+      function plannerChampDistance(cibles) {
+        const champ = new Map();
+        const file = [];
+        for (const [r, c] of cibles || []) {
+          if (!inside(r, c) || !isLand(r, c)) continue;
+          const k = key(r, c);
+          if (champ.has(k)) continue;
+          champ.set(k, 0);
+          file.push({ r, c, cout: 0 });
+        }
+
+        while (file.length) {
+          let min = 0;
+          for (let i = 1; i < file.length; i++) {
+            if (file[i].cout < file[min].cout) min = i;
+          }
+          const actuel = file.splice(min, 1)[0];
+          if (actuel.cout > (champ.get(key(actuel.r, actuel.c)) ?? Infinity)) continue;
+
+          for (const arete of movementEdges(actuel.r, actuel.c)) {
+            if (!isLand(arete.r, arete.c)) continue;
+            const k = key(arete.r, arete.c);
+            const cout = actuel.cout + arete.cost;
+            if (cout >= (champ.get(k) ?? Infinity)) continue;
+            champ.set(k, cout);
+            file.push({ r: arete.r, c: arete.c, cout });
+          }
+        }
+        return champ;
+      }
+
+      /** Lecture d'un champ, avec le même repli qu'aiLandDistanceToTargets pour
+       *  une case injoignable — sans quoi les indices ne seraient plus
+       *  comparables entre intentions. */
+      function plannerLireChamp(champ, cibles, r, c) {
+        const valeur = champ.get(key(r, c));
+        if (valeur !== undefined) return valeur;
+        if (!cibles.length) return 99;
+        return 30 + Math.min(...cibles.map(([tr, tc]) => Math.abs(r - tr) + Math.abs(c - tc)));
+      }
+
       function plannerCandidatsMove(playerId) {
         const budget = availableActionCount("MOVE", state.players[playerId]);
         if (budget < 1) return [];
@@ -21900,62 +22142,210 @@
           }
           return menaceCache.get(k);
         };
+        // Deux gardiens partagent souvent une intention : le champ est calculé
+        // une fois par jeu de cibles, pas une fois par gardien.
+        const champs = new Map();
+        const champPour = intention => {
+          const signature = intention.cibles.map(([r, c]) => key(r, c)).sort().join("|");
+          if (!champs.has(signature)) champs.set(signature, plannerChampDistance(intention.cibles));
+          return champs.get(signature);
+        };
 
         for (const gardien of plannerGardiensDe(playerId)) {
           const porte = characterCarriesCrown(gardien.id);
-          const cibles = porte
-            ? aiValidationTargetsForPlayer(state.players[playerId])
-            : plannerObjectifsGardien(playerId);
-          const depart = aiLandDistanceToTargets(gardien.r, gardien.c, cibles);
+          const intentions = plannerIntentionsGardien(playerId, gardien);
+
+          /* Les chemins ne dépendent pas de l'intention : ils sont calculés une
+             seule fois, puis notés autant de fois qu'il y a d'intentions. */
+          /* movementRange fait DÉJÀ un Dijkstra et accroche le coût de chaque
+             case à son résultat. Rappeler shortestMovementPath case par case
+             relançait donc un Dijkstra COMPLET — avec un tri dans sa boucle —
+             pour un coût déjà connu : plusieurs centaines de recherches par
+             génération, mesurées à 360 ms quand le budget entier vaut 350.
+
+             Le planner n'a besoin que du coût, jamais du tracé : le chemin est
+             recalculé à l'exécution, une seule fois, par aiPerformMove. */
           const portee = movementRange(gardien, budget);
-
+          const couts = portee.costs || new Map();
+          const atteignables = [];
           for (const cle of portee) {
-            const [r, c] = cle.split(",").map(Number);
-            const chemin = shortestMovementPath(gardien, r, c, budget);
-            if (!chemin?.length) continue;
-            const cout = chemin.cost ?? chemin.length;
+            const cout = couts.get(cle);
+            if (!Number.isFinite(cout) || cout <= 0) continue;
+            const [r, c] = cle.split(',').map(Number);
+            atteignables.push({ r, c, cout });
+          }
+          if (!atteignables.length) continue;
 
-            /* Indice de pré-tri seulement : progression vers l'objectif,
-               capture immédiate, mise en sécurité. Volontairement grossier —
-               il ne fait que décider quels coups méritent d'être simulés. */
-            const arrivee = aiLandDistanceToTargets(r, c, cibles);
-            let indice = (depart - arrivee) * 10 - cout;
-            if (looseArtifactAt(r, c) && !porte) indice += 60;
-            if (porte && isCrownValidationCell(state.players[playerId], r, c)) indice += 120;
-            /* Un repli doit pouvoir être PROPOSÉ, sinon l'anticipation
-               adverse n'aura rien à départager : on ne peut pas choisir un
-               coup qui n'a jamais été généré. La menace est ici la version
-               élargie, qui voit venir une poussée préparée. */
-            if (porte) {
-              const menaceDepart = menaceEn(gardien.r, gardien.c);
-              const menaceArrivee = menaceEn(r, c);
-              if (menaceDepart && !menaceArrivee) indice += 140;
-              else if (!menaceDepart && menaceArrivee) indice -= 140;
+          /* Un seul tri global gardait les huit meilleurs coups toutes
+             intentions confondues : ils partaient donc tous au même endroit, et
+             92 % des déplacements mouraient là — mesuré sur une partie réelle.
+
+             Chaque intention garde désormais ses propres places. La recherche
+             se voit ainsi toujours proposer au moins un coup pour chaque
+             capacité que la position offre, et c'est l'évaluateur qui tranche
+             — ce qu'il ne pouvait pas faire sur un coup jamais généré. */
+          for (const intention of intentions) {
+            const champ = champPour(intention);
+            const depart = plannerLireChamp(champ, intention.cibles, gardien.r, gardien.c);
+            const parIntention = [];
+
+            for (const { r, c, cout } of atteignables) {
+              /* Indice de pré-tri seulement : progression vers l'intention,
+                 capture immédiate, mise en sécurité. Volontairement grossier —
+                 il ne fait que décider quels coups méritent d'être simulés. */
+              const arrivee = plannerLireChamp(champ, intention.cibles, r, c);
+              let indice = (depart - arrivee) * 10 - cout;
+              if (looseArtifactAt(r, c) && !porte) indice += 60;
+              if (porte && isCrownValidationCell(state.players[playerId], r, c)) indice += 120;
+              // Atteindre la case visée, et pas seulement s'en rapprocher.
+              if (arrivee === 0) indice += 80;
+              /* Un repli doit pouvoir être PROPOSÉ, sinon l'anticipation
+                 adverse n'aura rien à départager : on ne peut pas choisir un
+                 coup qui n'a jamais été généré. La menace est ici la version
+                 élargie, qui voit venir une poussée préparée. */
+              if (porte) {
+                const menaceDepart = menaceEn(gardien.r, gardien.c);
+                const menaceArrivee = menaceEn(r, c);
+                if (menaceDepart && !menaceArrivee) indice += 140;
+                else if (!menaceDepart && menaceArrivee) indice -= 140;
+              }
+
+              parIntention.push({ type: "MOVE", charId: gardien.id, r, c, cost: cout, indice, but: intention.but });
             }
 
-            options.push({ type: "MOVE", charId: gardien.id, r, c, cost: cout, indice });
+            parIntention.sort((a, b) => b.indice - a.indice);
+            options.push(...plannerRetenir(parIntention, plafonds().moveParIntention, "MOVE"));
           }
         }
 
-        options.sort((a, b) => b.indice - a.indice);
-        return plannerRetenir(options, PLAN_CANDIDATS.move, "MOVE");
+        /* Un même coup peut servir deux intentions : on ne le simule qu'une
+           fois, en lui laissant sa meilleure justification. */
+        const parCase = new Map();
+        for (const o of options) {
+          const k = `${o.charId}:${o.r},${o.c}`;
+          const connu = parCase.get(k);
+          if (!connu || o.indice > connu.indice) parCase.set(k, o);
+        }
+        const uniques = [...parCase.values()];
+        uniques.sort((a, b) => b.indice - a.indice);
+        return plannerRetenir(uniques, plafonds().move, "MOVE");
       }
 
-      /** Objectifs d'un gardien qui ne porte pas : couronnes libres, sanctuaire
-       *  si une couronne y est attendue, sinon le porteur adverse à intercepter. */
-      function plannerObjectifsGardien(playerId) {
-        const libres = activeArtifacts()
-          .filter(a => a.carrierId === null)
-          .map(a => [a.r, a.c]);
+
+      /* INTENTIONS D'UN GARDIEN.
+
+         Cette fonction décidait auparavant d'un objectif UNIQUE par cascade de
+         retours : dès qu'une couronne libre traînait quelque part, elle était
+         la seule destination de tous les gardiens. Les cases de validation
+         adverses n'y figuraient dans aucune branche, et se poster à côté de son
+         propre porteur non plus.
+
+         Conséquence mesurée sur une partie réelle : le blocage d'un village
+         adverse n'a jamais été proposé une seule fois, et une seule passe a été
+         jouée en vingt-deux tours. Ce n'était pas l'évaluateur qui refusait ces
+         coups — il ne les voyait jamais, faute d'être générés.
+
+         On renvoie donc l'UNION des intentions que la position rend
+         pertinentes. Chacune recevra ses propres candidats, si bien qu'aucune
+         ne peut plus étouffer les autres. */
+      function plannerIntentionsGardien(playerId, gardien) {
+        const intentions = [];
+        const moi = state.players[playerId];
+        const adverse = plannerAdversaire(playerId);
+        const porte = characterCarriesCrown(gardien.id);
+        const ajouter = (but, cibles) => {
+          const utiles = (cibles || []).filter(([r, c]) => Number.isFinite(r) && Number.isFinite(c));
+          if (utiles.length) intentions.push({ but, cibles: utiles });
+        };
+
+        if (porte) {
+          // Porter, c'est aller marquer.
+          ajouter("validation", aiValidationTargetsForPlayer(moi));
+        } else {
+          const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
+          ajouter("couronne", libres);
+          if ((state.couronnesEnAttente || []).length) ajouter("sanctuaire", [[CENTER.r, CENTER.c]]);
+        }
+
+        const porteurAdverse = adverse && activeArtifacts()
+          .map(a => a.carrierId ? characterById(a.carrierId) : null)
+          .find(pt => pt && pt.player !== playerId);
+
+        if (porteurAdverse) {
+          // Intercepter : se mettre en position de pousser le porteur adverse.
+          ajouter("interception", orthogonalNeighbors(porteurAdverse.r, porteurAdverse.c)
+            .filter(([r, c]) => isLand(r, c)));
+          /* BLOQUER : occuper une des trois cases du village adverse y interdit
+             toute validation (règle V67). C'est le coup défensif le plus fort
+             du jeu, et il n'était jamais généré. */
+          ajouter("blocage", crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c)));
+        }
+
+        /* RELAIS : se porter à côté d'un allié pour que la couronne passe de
+           main en main — gratuitement. Sans cette intention, la configuration
+           ne se formait que par accident. */
+        const allies = plannerGardiensDe(playerId).filter(g => g.id !== gardien.id);
+        const partenaires = porte
+          ? allies.filter(g => !characterCarriesCrown(g.id))
+          : allies.filter(g => characterCarriesCrown(g.id));
+        const casesRelais = [];
+        partenaires.forEach(g => orthogonalNeighbors(g.r, g.c)
+          .filter(([r, c]) => isLand(r, c))
+          .forEach(cell => casesRelais.push(cell)));
+        ajouter("relais", casesRelais);
+
+        /* PRÉPARER UNE POUSSÉE : se poster face à un gardien adverse adossé
+           au vide. Sans cette intention, l'IA ne se met en position d'éjecter
+           que par hasard, en poursuivant un autre but. */
+        if (adverse) {
+          const postes = [];
+          for (const ennemi of plannerGardiensDe(adverse.id)) {
+            for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+              // Se placer du côté opposé au vide : c'est de là qu'on pousse.
+              if (isLand(ennemi.r + dr, ennemi.c + dc)) continue;
+              const poste = [ennemi.r - dr, ennemi.c - dc];
+              if (isLand(poste[0], poste[1])) postes.push(poste);
+            }
+          }
+          ajouter("poussee", postes);
+        }
+
+        /* SÉCURISER LE PORTEUR : s'éloigner de toute portée adverse. Le bonus
+           de repli existant ne joue qu'à l'intérieur d'une autre intention, et
+           pouvait donc ne jamais entrer dans ses places. */
+        if (porte && adverse) {
+          const ennemis = plannerGardiensDe(adverse.id);
+          const sures = [];
+          for (let r = 0; r < GRID; r++) {
+            for (let c = 0; c < GRID; c++) {
+              if (!isLand(r, c) || characterAt(r, c)) continue;
+              if (ennemis.some(e => Math.abs(e.r - r) + Math.abs(e.c - c) <= 2)) continue;
+              sures.push([r, c]);
+            }
+          }
+          ajouter("securite", sures);
+        }
+
+        // Filet : un gardien sans intention dérive vers le centre.
+        if (!intentions.length) ajouter("centre", [[CENTER.r, CENTER.c]]);
+        return intentions;
+      }
+
+      /* Repère de DISTANCE pour classer les rotations de magie — pas une
+         décision. Volontairement bon marché et en cascade : mesurer() est
+         rappelé à chaque rotation simulée, et il ne s'agit ici que de savoir si
+         une rotation rapproche l'équipe de ce qui compte, non de choisir un
+         coup. Les intentions, elles, servent à générer des coups.  */
+      function plannerCiblesReference(playerId) {
+        const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
         if (libres.length) return libres;
         if ((state.couronnesEnAttente || []).length) return [[CENTER.r, CENTER.c]];
         const adverse = plannerAdversaire(playerId);
         const porteurAdverse = adverse && activeArtifacts()
           .map(a => a.carrierId ? characterById(a.carrierId) : null)
-          .find(p => p && p.player !== playerId);
+          .find(pt => pt && pt.player !== playerId);
         if (porteurAdverse) {
-          const autour = orthogonalNeighbors(porteurAdverse.r, porteurAdverse.c)
-            .filter(([r, c]) => isLand(r, c));
+          const autour = orthogonalNeighbors(porteurAdverse.r, porteurAdverse.c).filter(([r, c]) => isLand(r, c));
           if (autour.length) return autour;
         }
         return [[CENTER.r, CENTER.c]];
@@ -22007,7 +22397,7 @@
         }
 
         options.sort((a, b) => b.indice - a.indice);
-        return plannerRetenir(options, PLAN_CANDIDATS.push, "PUSH");
+        return plannerRetenir(options, plafonds().push, "PUSH");
       }
 
       /* La magie est une TRANSFORMATION DU GRAPHE, pas un bonus local de
@@ -22027,7 +22417,7 @@
           const porteurAdverse = adverse
             ? plannerGardiensDe(adverse.id).find(g => characterCarriesCrown(g.id))
             : null;
-          const objectifs = plannerObjectifsGardien(playerId);
+          const objectifs = plannerCiblesReference(playerId);
           return {
             moi: monPorteur
               ? aiLandDistanceToTargets(monPorteur.r, monPorteur.c, aiValidationTargetsForPlayer(state.players[playerId]))
@@ -22093,7 +22483,7 @@
         }
 
         options.sort((a, b) => b.indice - a.indice);
-        return plannerRetenir(options, PLAN_CANDIDATS.magic, "MAGIC");
+        return plannerRetenir(options, plafonds().magic, "MAGIC");
       }
 
       /* L'adversaire est-il assez près de marquer pour que se poser sur son
@@ -22116,7 +22506,7 @@
            Permanent, il détournait la pose de l'action : l'IA allait camper au
            village adverse pendant qu'une couronne libre attendait ailleurs. */
         const placements = findAutomaticIslandPlacement(
-          playerId, PLAN_CANDIDATS.pose, plannerMenaceValidationAdverse(playerId)
+          playerId, plafonds().pose, plannerMenaceValidationAdverse(playerId)
         );
         if (!Array.isArray(placements)) return [];
 
@@ -22131,7 +22521,7 @@
           libres.sort((a, b) =>
             (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
             (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
-          return { pose: p, spawns: libres.slice(0, PLAN_CANDIDATS.poseSpawns) };
+          return { pose: p, spawns: libres.slice(0, plafonds().poseSpawns) };
         });
 
         /* Entrelacé : le premier choix de CHAQUE pose avant le deuxième choix
@@ -22139,7 +22529,7 @@
            d'une ou deux poses, et la diversité des emplacements — le point
            vraiment décisif — serait perdue. */
         const options = [];
-        for (let rang = 0; rang < PLAN_CANDIDATS.poseSpawns; rang++) {
+        for (let rang = 0; rang < plafonds().poseSpawns; rang++) {
           for (const { pose, spawns } of parPose) {
             if (rang >= spawns.length) continue;
             options.push({
@@ -22153,7 +22543,7 @@
             });
           }
         }
-        return plannerRetenir(options, PLAN_CANDIDATS.poseTotal, "POSE");
+        return plannerRetenir(options, plafonds().poseTotal, "POSE");
       }
 
       /* Transitions GRATUITES : elles ne consomment aucune carte et ne comptent
@@ -22354,6 +22744,7 @@
         let releveCandidats = null;
         let coutObservation = 0;
         if (plannerAutopsieActive()) {
+          plannerNiveau = 0;
           const debutReleve = performance.now();
           releveCandidats = withSimulatedState(racine.etat, () => plannerReleverCandidats(playerId));
           coutObservation = performance.now() - debutReleve;
@@ -22371,6 +22762,8 @@
         let profondeurAtteinte = 0;
 
         for (let niveau = 0; niveau < budget.decisionsMax; niveau++) {
+          // Les générateurs s'ouvrent à la racine et se resserrent ensuite.
+          plannerNiveau = niveau;
           const suivants = [];
 
           for (const noeud of faisceau) {
@@ -22783,6 +23176,8 @@
         }
 
         ILYOS_AUTOPSIE_JOURNAL.push(entree);
+        // Le panneau suit la partie sans qu'on ait à le rafraîchir soi-même.
+        try { revueRendre(); } catch (erreur) { /* jamais bloquer une décision */ }
         // Tampon circulaire : une longue partie ne doit pas gonfler sans fin.
         while (ILYOS_AUTOPSIE_JOURNAL.length > AUTOPSIE_MAX_DECISIONS) {
           ILYOS_AUTOPSIE_JOURNAL.shift();
@@ -22910,10 +23305,271 @@
         return true;
       }
 
+      /* =====================================================================
+         REVUE DE PARTIE
+
+         Mettre en pause, remonter les derniers coups, désigner l'erreur et dire
+         quel coup aurait été juste. Les annotations s'accumulent et ressortent
+         en fin de partie.
+
+         C'est le complément indispensable du reste de ce module : l'autopsie
+         dit ce que l'IA a calculé, la revue dit ce qu'elle AURAIT DÛ jouer. La
+         seconde information ne peut venir que d'un humain qui regarde la
+         partie ; aucun banc d'essai ne la produira.
+         ===================================================================== */
+
+      // Position vivante mise de côté pendant la revue, pour pouvoir reprendre
+      // la partie exactement où elle en était malgré les retours en arrière.
+      let autopsieEtatVivant = null;
+      let autopsieCurseur = -1;
+
+      function autopsieIndexReel(index) {
+        const n = ILYOS_AUTOPSIE_JOURNAL.length;
+        if (!n) return -1;
+        if (index === undefined || index === null) return autopsieCurseur >= 0 ? autopsieCurseur : n - 1;
+        return index < 0 ? n + index : index;
+      }
+
+      function autopsiePause() {
+        try {
+          autopsieEtatVivant = snapshotState();
+        } catch (erreur) {
+          autopsieEtatVivant = null;
+          console.warn("[ILYOS] revue : position vivante non conservée", erreur);
+        }
+        if (typeof stopIlyosAutoplay === "function") stopIlyosAutoplay("Pause pour revue");
+        autopsieCurseur = ILYOS_AUTOPSIE_JOURNAL.length - 1;
+        console.log(`Partie en pause. ${ILYOS_AUTOPSIE_JOURNAL.length} décision(s) enregistrée(s).`);
+        console.log("  .precedent() / .suivant() pour parcourir · .noter(\"coup\", \"pourquoi\") pour annoter");
+        console.log("  .reprendre() pour relancer la partie où elle en était");
+        return autopsieCurseur;
+      }
+
+      function autopsieReprendre() {
+        if (!autopsieEtatVivant) { console.log("Aucune position en attente."); return false; }
+        applyStateSnapshot(JSON.parse(autopsieEtatVivant));
+        autopsieEtatVivant = null;
+        autopsieCurseur = -1;
+        state.undoHistory = [];
+        state.inputLocked = false;
+        state.aiThinking = false;
+        state.turnTransitioning = false;
+        if (typeof startIlyosAutoplay === "function") {
+          startIlyosAutoplay({ maxTurns: 60, difficulty: "expert" });
+        }
+        // Le tour en cours doit être relancé : l'arrêt l'avait interrompu.
+        if (typeof runAITurn === "function") {
+          aiRunToken++;
+          runAITurn(aiRunToken);
+        }
+        console.log("Partie reprise.");
+        return true;
+      }
+
+      /** Repose la position d'une décision et l'affiche, sans perdre le fil. */
+      function autopsieAller(index) {
+        const i = autopsieIndexReel(index);
+        if (i < 0 || i >= ILYOS_AUTOPSIE_JOURNAL.length) { console.log("Décision hors journal."); return null; }
+        autopsieCurseur = i;
+        autopsieRejouer(i);
+        const e = ILYOS_AUTOPSIE_JOURNAL[i];
+        const note = e.annotation;
+        console.log(`[${i}] tour ${e.tour} · ${e.nomJoueur} a joué : ${e.planLisible}`);
+        if (note) console.log(`      VOTRE NOTE : ${note.coupAttendu}${note.pourquoi ? " — " + note.pourquoi : ""}`);
+        console.log("      .detail() pour le raisonnement · .noter(\"coup\", \"pourquoi\") pour annoter");
+        return e;
+      }
+
+      function autopsiePrecedent() { return autopsieAller(autopsieIndexReel() - 1); }
+      function autopsieSuivant() { return autopsieAller(autopsieIndexReel() + 1); }
+
+      /* Annote la décision en cours de revue. coupAttendu est libre : « poser
+         l'île en 2,5 », « bloquer le village », « ne pas lâcher la couronne » —
+         c'est le sens qui compte, pas une syntaxe. */
+      function autopsieNoter(coupAttendu, pourquoi = "") {
+        const i = autopsieIndexReel();
+        const e = ILYOS_AUTOPSIE_JOURNAL[i];
+        if (!e) { console.log("Aucune décision à annoter."); return null; }
+        if (!coupAttendu) { console.log('Précisez le coup attendu : .noter("bloquer le village", "il marquait au tour suivant")'); return null; }
+        e.annotation = {
+          coupAttendu: String(coupAttendu),
+          pourquoi: String(pourquoi || ""),
+          horodatage: new Date().toISOString()
+        };
+        console.log(`Décision [${i}], tour ${e.tour} : annotée.`);
+        console.log(`   l'IA a joué  : ${e.planLisible}`);
+        console.log(`   vous auriez  : ${e.annotation.coupAttendu}`);
+        if (e.annotation.pourquoi) console.log(`   parce que    : ${e.annotation.pourquoi}`);
+        return e.annotation;
+      }
+
+      function autopsieOublier(index) {
+        const e = ILYOS_AUTOPSIE_JOURNAL[autopsieIndexReel(index)];
+        if (e) delete e.annotation;
+        return !!e;
+      }
+
+      /* Récapitulatif de fin de partie : uniquement les décisions annotées,
+         chacune avec ce que l'IA a calculé en face. C'est ce bloc qui se
+         transmet pour analyse. */
+      function autopsieRecap() {
+        const notes = ILYOS_AUTOPSIE_JOURNAL
+          .map((e, i) => ({ i, e }))
+          .filter(x => x.e.annotation);
+        console.log("");
+        console.log("REVUE DE PARTIE");
+        console.log("=".repeat(78));
+        if (!notes.length) {
+          console.log("Aucune erreur signalée. .pause() puis .precedent() pour en marquer une.");
+          console.log("=".repeat(78));
+          return [];
+        }
+        notes.forEach(({ i, e }) => {
+          console.log(`[${i}] tour ${e.tour} · ${e.nomJoueur}`);
+          console.log(`   l'IA a joué : ${e.planLisible}`);
+          console.log(`   vous auriez : ${e.annotation.coupAttendu}`);
+          if (e.annotation.pourquoi) console.log(`   parce que   : ${e.annotation.pourquoi}`);
+          console.log(`   son calcul  : note ${e.noteDepart} → ${e.noteArrivee},`
+            + ` ${e.etatsExplores} états, ${e.candidats.filter(c => !c.retenu).length} candidats écartés`
+            + (e.repli ? ` · REPLI : ${e.repli}` : ""));
+          const tetes = (e.finalistes || []).slice(0, 3)
+            .map(f => `${f.note} ${f.planLisible}`).join("  |  ");
+          if (tetes) console.log(`   finalistes  : ${tetes}`);
+          console.log("");
+        });
+        console.log(`${notes.length} erreur(s) signalée(s) sur ${ILYOS_AUTOPSIE_JOURNAL.length} décision(s).`);
+        console.log(".exporterRevue() pour transmettre le tout");
+        console.log("=".repeat(78));
+        return notes.map(x => x.i);
+      }
+
+      /* Export destiné à l'analyse : les décisions annotées, avec la position
+         rejouable et le raisonnement complet de l'IA. */
+      function autopsieExporterRevue() {
+        return JSON.stringify(
+          ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation),
+          null,
+          1
+        );
+      }
+
+      /* =====================================================================
+         PANNEAU DE REVUE
+
+         La revue ne sert à rien si elle oblige à taper dans une console pendant
+         qu'on regarde une partie. Ces boutons donnent accès aux mêmes fonctions
+         que l'API : pause, retour arrière, annotation, récapitulatif, reprise.
+         ===================================================================== */
+
+      let revueVueRecap = false;
+
+      function revuePanneau() {
+        let panneau = document.querySelector(".ilyos-revue-panneau");
+        if (!panneau) {
+          panneau = document.createElement("aside");
+          panneau.className = "ilyos-revue-panneau";
+          panneau.style.cssText = [
+            "position:fixed", "right:12px", "bottom:12px", "z-index:9999",
+            "width:330px", "max-height:60vh", "overflow:auto",
+            "background:rgba(14,18,32,.94)", "color:#e8ecf8",
+            "border:1px solid #3a4straight", "border-radius:10px",
+            "padding:12px 14px", "font:12px/1.45 ui-monospace,Menlo,Consolas,monospace",
+            "box-shadow:0 10px 30px rgba(0,0,0,.45)"
+          ].join(";").replace("#3a4straight", "#3a4568");
+          document.body.appendChild(panneau);
+        }
+        return panneau;
+      }
+
+      function revueBouton(libelle, action, actif = true) {
+        return `<button data-revue="${action}" ${actif ? "" : "disabled"} style="
+          background:${actif ? "#243055" : "#1a2033"};color:${actif ? "#e8ecf8" : "#5d6580"};
+          border:1px solid #3a4568;border-radius:6px;padding:5px 9px;margin:2px 3px 2px 0;
+          font:inherit;cursor:${actif ? "pointer" : "default"};">${libelle}</button>`;
+      }
+
+      function revueEchapper(texte) {
+        return String(texte == null ? "" : texte)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function revueRendre() {
+        if (!plannerAutopsieActive()) {
+          document.querySelector(".ilyos-revue-panneau")?.remove();
+          return;
+        }
+        const panneau = revuePanneau();
+        const journal = ILYOS_AUTOPSIE_JOURNAL;
+        const enPause = !!autopsieEtatVivant;
+        const i = autopsieIndexReel();
+        const e = journal[i];
+        const annotees = journal.filter(x => x.annotation).length;
+
+        let corps;
+        if (revueVueRecap) {
+          const notes = journal.map((x, k) => ({ x, k })).filter(o => o.x.annotation);
+          corps = notes.length
+            ? notes.map(o => `<div style="margin:0 0 10px;padding:8px;background:#1a2136;border-radius:6px">
+                 <b>tour ${o.x.tour}</b> · ${revueEchapper(o.x.nomJoueur)}<br>
+                 <span style="color:#8f9ab8">l'IA :</span> ${revueEchapper(o.x.planLisible)}<br>
+                 <span style="color:#7ee0a0">vous :</span> ${revueEchapper(o.x.annotation.coupAttendu)}
+                 ${o.x.annotation.pourquoi ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(o.x.annotation.pourquoi)}` : ""}
+               </div>`).join("")
+            : `<p style="color:#8f9ab8">Aucune erreur signalée pour l'instant.</p>`;
+        } else if (!e) {
+          corps = `<p style="color:#8f9ab8">Aucune décision enregistrée. Lancez une partie.</p>`;
+        } else {
+          corps = `<p style="margin:6px 0 4px;color:#8f9ab8">décision ${i + 1} / ${journal.length}
+              · tour ${e.tour} · ${revueEchapper(e.nomJoueur)}</p>
+            <p style="margin:0 0 6px"><b>l'IA a joué</b><br>${revueEchapper(e.planLisible)}</p>
+            <p style="margin:0 0 6px;color:#8f9ab8">note ${e.noteDepart} → ${e.noteArrivee}
+              · ${e.etatsExplores} états${e.repli ? " · <span style='color:#e6a15c'>REPLI</span>" : ""}</p>
+            ${e.annotation ? `<p style="margin:0 0 6px;padding:6px;background:#17301f;border-radius:6px">
+                 <span style="color:#7ee0a0">vous auriez :</span> ${revueEchapper(e.annotation.coupAttendu)}
+                 ${e.annotation.pourquoi ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(e.annotation.pourquoi)}` : ""}
+               </p>` : ""}`;
+        }
+
+        panneau.innerHTML =
+          `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+             <b style="letter-spacing:.06em">REVUE IA</b>
+             <span style="color:#8f9ab8">${annotees} note(s)</span>
+           </div>
+           ${corps}
+           <div style="margin-top:10px;border-top:1px solid #2a3352;padding-top:8px">
+             ${revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
+             ${revueBouton("◀", "precedent", journal.length > 0)}
+             ${revueBouton("▶", "suivant", journal.length > 0)}
+             ${revueBouton("✎ Annoter", "noter", !!e)}
+             ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
+           </div>`;
+
+        panneau.querySelectorAll("[data-revue]").forEach(bouton => {
+          bouton.addEventListener("click", () => {
+            const quoi = bouton.getAttribute("data-revue");
+            if (quoi === "pause") autopsiePause();
+            else if (quoi === "reprendre") autopsieReprendre();
+            else if (quoi === "precedent") { revueVueRecap = false; autopsiePrecedent(); }
+            else if (quoi === "suivant") { revueVueRecap = false; autopsieSuivant(); }
+            else if (quoi === "recap") { revueVueRecap = !revueVueRecap; if (revueVueRecap) autopsieRecap(); }
+            else if (quoi === "noter") {
+              /* Deux questions, volontairement libres : ce qui compte est le
+                 sens du coup, pas une syntaxe à respecter. */
+              const coup = window.prompt("Quel coup auriez-vous joué ?", e?.annotation?.coupAttendu || "");
+              if (coup === null) return;
+              const pourquoi = window.prompt("Pourquoi ? (facultatif)", e?.annotation?.pourquoi || "");
+              autopsieNoter(coup, pourquoi || "");
+            }
+            revueRendre();
+          });
+        });
+      }
+
       window.ILYOS_AUTOPSIE = {
         /* Sans argument, l'autopsie s'active : c'est l'usage courant. */
         activer: (actif = true) => {
           plannerActiverAutopsie(actif);
+          revueRendre();
           console.log(actif
             ? "Autopsie ACTIVE : chaque décision Expert sera enregistrée."
             : "Autopsie arrêtée.");
@@ -22929,6 +23585,19 @@
           return e ? e.candidats : [];
         },
         journal: () => ILYOS_AUTOPSIE_JOURNAL,
+        // Réaffiche le panneau s'il a été fermé.
+        panneau: revueRendre,
+
+        /* --- Revue de partie : pause, retour arrière, annotations --- */
+        pause: autopsiePause,
+        reprendre: autopsieReprendre,
+        aller: autopsieAller,
+        precedent: autopsiePrecedent,
+        suivant: autopsieSuivant,
+        noter: autopsieNoter,
+        oublier: autopsieOublier,
+        recap: autopsieRecap,
+        exporterRevue: autopsieExporterRevue,
         vider: () => { ILYOS_AUTOPSIE_JOURNAL.length = 0; return 0; },
         /* Export JSON : une position litigieuse doit pouvoir quitter le
            navigateur pour devenir un cas d'étude reproductible. */
