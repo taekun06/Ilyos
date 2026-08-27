@@ -185,3 +185,81 @@ comptant un puzzle réussi pour la mauvaise raison.
 Échecs restants : **04** (aucune comparaison entre agir et rester), **09**
 (magie non comprise comme transformation du graphe), **11** (pose automatique
 en début de tour), **15** (aucune anticipation de la couronne à venir).
+
+---
+
+# Expert V2 — planner de tour — 15 / 16
+
+| Version | Score |
+|---|---|
+| Legacy | 11/16 |
+| + distances corrigées | 13/16 |
+| référence (puzzle 15 durci) | 12/16 |
+| **Expert V2 — planner** | **15/16** |
+
+Les quatre échecs de la référence passent, chacun par la capacité générale
+qu'il désignait — aucun code ne mentionne un numéro de puzzle :
+
+- **04** l'arrêt est devenu un coup comparable aux autres, donc un porteur
+  menacé compare enfin « fuir » à « rester » ;
+- **09** la magie est pré-classée par son effet mesuré sur les distances
+  stratégiques, pas par une géométrie locale ;
+- **11** la pose est une action candidate, plus un préambule imposé ;
+- **15** `couronnesEnAttente` est un terme explicite de l'évaluateur.
+
+## Seul échec restant : P13
+
+**Sa prémisse est désormais fausse.** Le puzzle suppose qu'aucun gain n'est
+disponible et attend donc que l'IA conserve ses cartes. Le planner démontre le
+contraire : il tourne une île pour ouvrir une route, puis amène son gardien de
+(7,7) à (6,5), soit à une case de la seule couronne du plateau. Se placer pour
+prendre une couronne vaut mieux que thésauriser cinq cartes.
+
+Le puzzle n'a PAS été modifié. Il ne mesure simplement plus ce qu'il annonce, et
+c'est à arbitrer : soit on le rebâtit sur une position réellement stérile, soit
+on accepte 15/16 comme plafond de ce banc.
+
+## Recalibrage effectué
+
+Premier jet à 14/16 avec une régression sur P01 : l'IA refusait d'avancer vers
+une couronne à sa portée. Cause générale — `carteConservee` (22) dépassait le
+gain d'approche `couronneLibre` × écart de proximité (20,3 pour 44 de cartes
+dépensées). Le gradient d'approche était plus faible que la valeur de
+thésaurisation. Corrigé en portant `couronneLibre` à 900 et `carteConservee` à
+12, ce qui rétablit P01 sans toucher au reste.
+
+## Séquences réellement trouvées
+
+```
+P11  MOVE -> PUSH -> MOVE -> POSE     gain 1604, 156 ms, 251 états
+P09  MAGIC -> MOVE                    gain  426,   6 ms,   7 états
+P05  PUSH -> RAMASSAGE                gain  968,   1 ms,   5 états
+P12  MOVE -> POSE                     gain  346,  81 ms,  81 états
+P13  MAGIC -> MOVE                    gain  552,  14 ms,  76 états
+```
+
+P11 est la démonstration la plus nette : quatre actions, la pose placée en
+DERNIER, ce qui était structurellement impossible auparavant.
+
+## Performance (16 positions du banc)
+
+| Mesure | Valeur |
+|---|---|
+| Temps de recherche p50 | 3 ms |
+| p95 | 156 ms |
+| max | 156 ms |
+| États explorés, moyenne | 39 |
+| États explorés, max | 251 |
+| Longueur moyenne de plan | 1,5 |
+| Longueur maximale | 4 |
+
+Budget : faisceau 10, 6 décisions coûteuses, 900 états, 350 ms. Jamais atteint
+sur ces positions.
+
+## Effet secondaire : P07 est devenu reproductible
+
+La variance de séquence documentée aux Prompts 1 et 2 a disparu d'elle-même.
+Elle venait des actions gratuites, jouées par des scripts avant le cerveau ;
+devenues des transitions de la recherche, elles sont décidées avec le reste du
+plan. Cinq passages, séquences identiques. Aucun correctif ne visait ce
+symptôme.

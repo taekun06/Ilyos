@@ -971,6 +971,133 @@
         return choices.find(choice => choice.value > 12) || null;
       }
 
+      /* Exécute la séquence trouvée par le planner. Rend true si le tour a été
+       *  entièrement pris en charge, false si le planner n'a rien produit et
+       *  qu'il faut retomber sur la logique historique.
+       *
+       *  Le plan n'est PAS recalculé entre deux actions : c'est tout l'intérêt
+       *  d'un plan. Le socle de simulation garantit que l'état réel suit l'état
+       *  prévu, et une divergence est signalée bruyamment plutôt que rattrapée
+       *  en silence — elle signifierait un défaut du simulateur. */
+      async function runExpertPlannedTurn(token) {
+        const joueur = state.currentPlayer;
+        const rapport = plannerChercherPlan(joueur);
+        if (!rapport || !rapport.plan.length) {
+          // Aucune action ne vaut mieux que la position actuelle : s'arrêter
+          // est une décision légitime, à condition que la pose obligatoire
+          // soit faite. Sinon on laisse la voie historique s'en charger.
+          return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
+        }
+
+        benchJournaliser({
+          type: "PLAN",
+          actions: rapport.plan.map(a => a.type),
+          note: Math.round(rapport.noteArrivee - rapport.noteDepart),
+          etats: rapport.etatsExplores,
+          ms: rapport.dureeMs
+        });
+
+        for (const action of rapport.plan) {
+          if (token !== aiRunToken || !state || state.winner !== null) return true;
+          const applique = await executerActionPlanifiee(action, token);
+          if (!applique) {
+            // Le plan est devenu inapplicable : cela ne devrait pas arriver
+            // puisque la simulation partage les noyaux du jeu. On le signale.
+            console.warn("[ILYOS] action planifiée refusée par le jeu :", action);
+            break;
+          }
+        }
+
+        if (token !== aiRunToken || !state || state.winner !== null) return true;
+
+        // Contrôle de fidélité : l'état réel doit correspondre à l'état prévu.
+        if (rapport.empreinteAttendue) {
+          const reel = strategicStateFingerprint();
+          if (reel !== rapport.empreinteAttendue) {
+            console.warn("[ILYOS] état réel différent de l'état prévu par le planner",
+              { plan: rapport.plan.map(a => a.type) });
+          }
+        }
+
+        return await terminerTourExpert(token);
+      }
+
+      async function executerActionPlanifiee(action, token) {
+        switch (action.type) {
+          case "MOVE": {
+            const gardien = characterById(action.charId);
+            if (!gardien) return false;
+            return await aiPerformMove({
+              char: gardien, r: action.r, c: action.c, cost: action.cost,
+              carrying: characterCarriesCrown(gardien.id)
+            }, token);
+          }
+          case "PUSH": {
+            const pousseur = characterById(action.pusherId);
+            if (!pousseur) return false;
+            return await aiPerformPush({
+              pusher: pousseur, r: action.r, c: action.c, count: action.force
+            }, token);
+          }
+          case "MAGIC": {
+            const ile = state.islands.find(i => i.id === action.islandId);
+            if (!ile) return false;
+            return await aiPerformMagic({
+              island: ile, pivot: action.pivot,
+              steps: action.direction === -1 ? 3 : action.turns
+            }, token);
+          }
+          case "POSE": {
+            const applique = applyIslandPlacementCore(
+              action.shapeKey, action.cells, action.owner, action.relCells, action.anchor
+            );
+            if (!applique) return false;
+            playIslandDrop(applique.ileId);
+            benchJournaliser({ type: "POSE", automatique: false, case: applique.gardienCase });
+            renderAll();
+            await sleep(620);
+            return true;
+          }
+          case "RAMASSAGE": {
+            const applique = applyFreePickupCore(action.charId, action.artifactId);
+            if (!applique) return false;
+            benchJournaliser({ type: "RAMASSAGE", gardien: action.charId });
+            renderAll();
+            await sleep(320);
+            return true;
+          }
+          case "TRANSMISSION": {
+            const applique = applyFreeHandoffCore(action.deId, action.versId);
+            if (!applique) return false;
+            benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId });
+            renderAll();
+            await sleep(360);
+            return true;
+          }
+          default:
+            return false;
+        }
+      }
+
+      async function terminerTourExpert(token) {
+        if (token !== aiRunToken || !state) return true;
+        state.aiThinking = false;
+        state.inputLocked = false;
+        els.gameScreen.classList.remove("ai-turn");
+        state.phase = "ACTION_SELECT";
+        state.selectedActionType = null;
+        state.selectedActionCount = 1;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        clearMagicPreview();
+        state.reachable = new Set();
+        renderAll();
+        showToast("ORDINATEUR termine son tour.");
+        await sleep(700);
+        if (token === aiRunToken && state && state.winner === null) endTurn(true);
+        return true;
+      }
+
       async function runAITurn(token) {
         if (!state || token !== aiRunToken || !isCurrentPlayerAI()) return;
 
@@ -983,6 +1110,21 @@
         await sleep(cfg.thinkDelay);
 
         if (token !== aiRunToken || !state) return;
+
+        /* EXPERT V2 — voie principale. Le planner construit une séquence pour
+           le tour ENTIER puis l'exécute, au lieu de rechoisir gloutonnement
+           après chaque action.
+
+           La pose n'est plus imposée avant la réflexion : elle est devenue une
+           action candidate parmi les autres, de sorte que l'ordre pose/actions
+           est décidé et non subi. Les difficultés inférieures conservent
+           exactement leur comportement, y compris la pose automatique. */
+        if (cfg.globalPlanning) {
+          const joue = await runExpertPlannedTurn(token);
+          if (joue) return;
+          // Repli : si le planner n'a rien produit (échec technique), on
+          // retombe sur la logique historique plutôt que de passer le tour.
+        }
 
         if (!state.islandPlacedThisTurn) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);

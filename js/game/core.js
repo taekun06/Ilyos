@@ -3509,7 +3509,7 @@
         return [village.r, village.c];
       }
 
-      function findAutomaticIslandPlacement(playerId) {
+      function findAutomaticIslandPlacement(playerId, combien = 0) {
         const player = state.players[playerId];
         const target = automaticPlacementTarget(playerId);
         const ownCharacters = state.characters.filter(char => char.player === playerId);
@@ -3611,6 +3611,14 @@
         });
 
         candidates.sort((a, b) => a.score - b.score);
+
+        /* `combien` > 0 : rendre les N meilleurs placements au lieu d'en tirer
+           un. Le planner a besoin de COMPARER plusieurs poses par l'état
+           qu'elles produisent, et non d'en recevoir une choisie d'avance selon
+           une heuristique locale. Une seule implémentation du score de
+           placement continue de servir les deux usages. */
+        if (combien > 0) return candidates.slice(0, Math.min(combien, candidates.length));
+
         const cfg = aiConfig();
         const shortlist = candidates.slice(
           0,
