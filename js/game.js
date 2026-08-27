@@ -14672,7 +14672,20 @@
        *  en silence — elle signifierait un défaut du simulateur. */
       async function runExpertPlannedTurn(token) {
         const joueur = state.currentPlayer;
-        const rapport = plannerChercherPlan(joueur);
+        /* V3 : le plan retenu est celui qui résiste le mieux à la riposte
+           adverse, pas nécessairement celui qui note le mieux en fin de tour.
+
+           Sous garde : une exception du planner laissait le tour en suspens,
+           sans jamais appeler endTurn — la partie se figeait (observé au tour
+           28 d'une partie complète). Un cerveau qui échoue doit rendre la main
+           à la logique historique, jamais bloquer le jeu. */
+        let rapport = null;
+        try {
+          rapport = plannerChercherPlanRobuste(joueur);
+        } catch (erreur) {
+          console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
+          return false;
+        }
         if (!rapport || !rapport.plan.length) {
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
@@ -14685,12 +14698,19 @@
           actions: rapport.plan.map(a => a.type),
           note: Math.round(rapport.noteArrivee - rapport.noteDepart),
           etats: rapport.etatsExplores,
-          ms: rapport.dureeMs
+          ms: rapport.dureeMs,
+          msTotal: rapport.dureeTotaleMs,
+          anticipation: rapport.anticipation || null
         });
 
         for (const action of rapport.plan) {
           if (token !== aiRunToken || !state || state.winner !== null) return true;
-          const applique = await executerActionPlanifiee(action, token);
+          let applique = false;
+          try {
+            applique = await executerActionPlanifiee(action, token);
+          } catch (erreur) {
+            console.error("[ILYOS] action planifiée en échec", action, erreur);
+          }
           if (!applique) {
             // Le plan est devenu inapplicable : cela ne devrait pas arriver
             // puisque la simulation partage les noyaux du jeu. On le signale.
@@ -21462,6 +21482,63 @@
         return cout;
       }
 
+
+      /* ---------------------------------------------------------------------
+         MENACE D'EXPULSION À COURTE PORTÉE
+
+         aiPushOffRisk ne voit qu'un adversaire DÉJÀ adjacent. Or une poussée se
+         prépare : l'adversaire se déplace, puis pousse. Une case peut donc être
+         parfaitement sûre à l'instant t et parfaitement perdante au tour
+         suivant, ce qu'aucune évaluation purement locale ne peut distinguer.
+
+         Cette fonction généralise la notion : existe-t-il un gardien adverse
+         capable, dans le budget qu'on lui suppose, d'atteindre une case d'où il
+         expulserait la victime hors du plateau ?
+
+         Un seul concept, deux usages — l'évaluateur s'en sert pour noter la
+         sécurité d'un porteur, le générateur de déplacements pour proposer des
+         replis. Sans cela, une retraite salvatrice ne serait même pas produite
+         comme candidate, et l'anticipation adverse n'aurait rien à départager.
+
+         Le budget prêté à l'adversaire mélange sa RÉSERVE (connue avec
+         certitude) et la main plausible tirée de la composition publique du
+         paquet — jamais ses vraies cartes futures. */
+      function plannerMenaceExpulsion(playerId, r, c, budget) {
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return false;
+
+        const reserve = state.players[adverse.id] && state.players[adverse.id].stash || {};
+        const plausibleMove = PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
+        const plausiblePush = PLAN_MAIN_PLAUSIBLE.filter(a => a === "PUSH").length;
+        const budgetMove = budget && budget.move !== undefined
+          ? budget.move : (reserve.MOVE || 0) + plausibleMove;
+        const budgetPush = budget && budget.push !== undefined
+          ? budget.push : (reserve.PUSH || 0) + plausiblePush;
+        if (budgetPush < 1) return false;
+
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          // La victime ne tombe que si la case DERRIÈRE elle n'est pas du terrain.
+          const derriereR = r + dr, derriereC = c + dc;
+          if (inside(derriereR, derriereC) && isLand(derriereR, derriereC)) continue;
+          // Case d'où pousser, du côté opposé au vide.
+          const posteR = r - dr, posteC = c - dc;
+          if (!inside(posteR, posteC) || !isLand(posteR, posteC)) continue;
+
+          const occupant = characterAt(posteR, posteC);
+          if (occupant) {
+            // Déjà en place : menace immédiate.
+            if (occupant.player !== playerId) return true;
+            continue;
+          }
+          // Sinon, un gardien adverse peut-il rejoindre ce poste à temps ?
+          for (const ennemi of plannerGardiensDe(adverse.id)) {
+            const chemin = shortestMovementPath(ennemi, posteR, posteC, budgetMove);
+            if (chemin && chemin.length) return true;
+          }
+        }
+        return false;
+      }
+
       /* ---------------------------------------------------------------------
          ÉVALUATEUR STRATÉGIQUE UNIQUE
 
@@ -21499,7 +21576,10 @@
             if (isCrownValidationCell(moi, porteur.r, porteur.c)) valeur += PLAN_POIDS.surCaseValidation;
             // Un porteur qu'une seule poussée jette dans le vide n'est pas un
             // porteur : la couronne est perdue dès le tour adverse.
-            if (aiPushOffRisk(playerId, porteur.r, porteur.c)) valeur -= PLAN_POIDS.porteurExpose;
+            // Menace élargie aux combinaisons courtes (déplacement puis
+            // poussée) : une case sûre à l'instant t peut être perdante au
+            // tour suivant, et c'est là que se joue le sort d'une couronne.
+            if (plannerMenaceExpulsion(playerId, porteur.r, porteur.c)) valeur -= PLAN_POIDS.porteurExpose;
 
           } else if (porteur && adverse) {
             const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesAdverse);
@@ -21561,7 +21641,35 @@
          milliers de coups sans intérêt, jamais à décider.
          ------------------------------------------------------------------- */
 
-      const PLAN_CANDIDATS = { move: 8, push: 5, magic: 4, pose: 6 };
+      const PLAN_CANDIDATS = {
+        move: 8, push: 5, magic: 4, pose: 6,
+        // Plafonds de la génération de candidats MAGIC, la seule qui simule
+        // réellement chaque option pour la pré-classer (voir plus bas).
+        magicRotationsMax: 36,
+        magicMsMax: 25
+      };
+
+      /** Îles triées par intérêt tactique : celles qui portent un gardien ou
+       *  une couronne, puis les plus proches du centre de l'action. Une
+       *  rotation loin de tout ne change aucune distance utile. */
+      function plannerIlesParInteret(playerId) {
+        const points = [];
+        state.characters.forEach(ch => points.push([ch.r, ch.c]));
+        activeArtifacts().forEach(a => points.push([a.r, a.c]));
+        if (!points.length) points.push([CENTER.r, CENTER.c]);
+        return [...state.islands].sort((a, b) => plannerDistanceIle(a, points) - plannerDistanceIle(b, points));
+      }
+
+      function plannerDistanceIle(ile, points) {
+        let meilleure = Infinity;
+        for (const [cr, cc] of ile.cells) {
+          for (const [pr, pc] of points) {
+            const d = Math.abs(cr - pr) + Math.abs(cc - pc);
+            if (d < meilleure) meilleure = d;
+          }
+        }
+        return meilleure;
+      }
 
       function plannerCandidatsMove(playerId) {
         const budget = availableActionCount("MOVE", state.players[playerId]);
@@ -21589,8 +21697,16 @@
             let indice = (depart - arrivee) * 10 - cout;
             if (looseArtifactAt(r, c) && !porte) indice += 60;
             if (porte && isCrownValidationCell(state.players[playerId], r, c)) indice += 120;
-            if (porte && aiPushOffRisk(playerId, gardien.r, gardien.c)
-              && !aiPushOffRisk(playerId, r, c)) indice += 80;
+            /* Un repli doit pouvoir être PROPOSÉ, sinon l'anticipation
+               adverse n'aura rien à départager : on ne peut pas choisir un
+               coup qui n'a jamais été généré. La menace est ici la version
+               élargie, qui voit venir une poussée préparée. */
+            if (porte) {
+              const menaceDepart = plannerMenaceExpulsion(playerId, gardien.r, gardien.c);
+              const menaceArrivee = plannerMenaceExpulsion(playerId, r, c);
+              if (menaceDepart && !menaceArrivee) indice += 140;
+              else if (!menaceDepart && menaceArrivee) indice -= 140;
+            }
 
             options.push({ type: "MOVE", charId: gardien.id, r, c, cost: cout, indice });
           }
@@ -21679,10 +21795,28 @@
         };
 
         const avant = mesurer();
+        /* Borne DURE. Chaque rotation candidate est évaluée en clonant l'état
+           et en la simulant : sans plafond, le coût est île × case × 3, et il
+           explose dès que le plateau se remplit. Mesuré : une partie complète
+           se figeait au tour 28, la génération de candidats dépassant à elle
+           seule le budget de toute la recherche — le plafond de temps n'était
+           vérifié qu'ENTRE les nœuds, jamais à l'intérieur.
 
-        for (const ile of state.islands) {
+           On limite donc le nombre de rotations examinées et on relit l'heure
+           en cours de route. Les îles proches de l'action sont examinées
+           d'abord : une rotation lointaine ne change presque jamais une
+           distance utile. */
+        const echeance = performance.now() + PLAN_CANDIDATS.magicMsMax;
+        let examinees = 0;
+        const ilesTriees = plannerIlesParInteret(playerId);
+
+        for (const ile of ilesTriees) {
+          if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
           for (const [pr, pc] of ile.cells) {
+            if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
             for (const pas of [1, 2, 3]) {
+              if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
+              examinees++;
               const direction = pas === 3 ? -1 : 1;
               const tours = pas === 3 ? 1 : pas;
               const rotation = calculateIslandRotationAroundPivot(ile, pr, pc, direction, tours);
@@ -21852,6 +21986,11 @@
         racine.terminal = racine.etat.islandPlacedThisTurn;
 
         let meilleur = racine.terminal ? racine : null;
+        /* Tous les états terminaux rencontrés, pas seulement le meilleur :
+           l'anticipation adverse a besoin de plusieurs finalistes à
+           départager selon leur robustesse, et le meilleur avant riposte
+           n'est pas forcément le meilleur après. */
+        const terminaux = racine.terminal ? [racine] : [];
         let faisceau = [racine];
         const vus = new Set();
         let profondeurAtteinte = 0;
@@ -21905,8 +22044,9 @@
               suivants.push(enfant);
 
               // « S'arrêter ici » entre en concurrence avec toute continuation.
-              if (enfant.terminal && (!meilleur || enfant.note > meilleur.note)) {
-                meilleur = enfant;
+              if (enfant.terminal) {
+                terminaux.push(enfant);
+                if (!meilleur || enfant.note > meilleur.note) meilleur = enfant;
               }
             }
           }
@@ -21932,9 +22072,207 @@
           dureeMs: Math.round(duree),
           // Empreinte attendue après exécution : sert au contrôle de fidélité
           // entre l'état prévu et l'état réellement obtenu.
-          empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null
+          empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,
+          // Finalistes triés, prêts pour l'anticipation adverse (V3).
+          finalistes: terminaux.sort((a, b) => b.note - a.note).slice(0, 8)
         };
         return plannerDernierRapport;
+      }
+
+      /* =====================================================================
+         EXPERT V3 — ANTICIPATION ADVERSE TACTIQUE
+
+         V2 répond « quel est mon meilleur plan ? ». V3 ajoute « et comment
+         l'adversaire peut-il le punir ? ».
+
+         Pas de minimax : la recherche principale reste celle de V2. Seuls les
+         quelques MEILLEURS plans terminaux sont soumis à une réplique adverse
+         courte, puis reclassés selon ce qu'ils valent APRÈS cette réplique. Le
+         coût reste donc proportionnel au nombre de finalistes, pas à la taille
+         de l'arbre.
+
+         Aucune récursion : la réplique adverse utilise le planner V2 tel quel,
+         lequel ne déclenche jamais d'anticipation de son côté.
+         ===================================================================== */
+
+      const PLAN_RIPOSTE = {
+        finalistes: 4,
+        largeurFaisceau: 5,
+        decisionsMax: 3,
+        etatsMax: 250,
+        tempsMaxMs: 90,
+        /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
+           Une menace qui a besoin de cartes encore à piocher n'est que
+           plausible et pèse moins — sans quoi l'IA se paralyserait devant des
+           combinaisons hypothétiques. */
+        poidsMenacePlausible: 0.65
+      };
+
+      /* Main plausible prêtée à l'adversaire pour la simulation. Ce n'est PAS
+         sa vraie main future : `player.deck` est un tableau ordonné et
+         mélangé, le consulter serait tricher. On part de la composition
+         PUBLIQUE du paquet (CARD_BLUEPRINTS : 8 MOVE, 4 PUSH, 1 MAGIC sur 13),
+         arrondie sur cinq cartes en gardant les trois types représentés — un
+         adversaire dont on ne simulerait jamais la magie serait sous-estimé. */
+      /* Espérance arrondie d'un tirage de cinq cartes : 8/13 MOVE, 4/13 PUSH,
+         1/13 MAGIC donnent 3,1 / 1,5 / 0,4. D'où trois MOVE, deux PUSH, et
+         AUCUNE magie.
+
+         Ce dernier point a été mesuré. Prêter une magie garantie à chaque main
+         simulée rendait l'IA paranoïaque : l'adversaire faisait tourner l'île
+         sous les pieds du porteur, si bien qu'aucune case de validation ne
+         paraissait jamais tenable et qu'Expert renonçait à marquer. Or la magie
+         est UNE carte sur treize. Les menaces de magie restent modélisées quand
+         l'adversaire en a réellement une en RÉSERVE — information connue — mais
+         on ne lui suppose plus une pioche chanceuse. */
+      const PLAN_MAIN_PLAUSIBLE = ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"];
+
+      /** Transition de fin de tour réduite à ses effets de RÈGLE.
+       *  Reproduit l'ordre réel du moteur — mise en réserve des cartes non
+       *  jouées, passage au joueur suivant, validation des couronnes au DÉBUT
+       *  du tour, entrée des couronnes en attente. C'est ce timing qui crée la
+       *  fenêtre de punition : les couronnes d'un joueur ne se valident qu'au
+       *  début de SON tour suivant, donc après un tour adverse complet. */
+      function applyTurnTransitionCore() {
+        const sortant = state.players[state.currentPlayer];
+        if (!sortant) return null;
+
+        sortant.stash = sortant.stash || { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        ["MOVE", "PUSH", "MAGIC"].forEach(type => {
+          const fraiches = (sortant.hand || []).filter(c => !c.used && c.action === type).length;
+          sortant.stash[type] = Math.min(5, (sortant.stash[type] || 0) + fraiches);
+        });
+        sortant.hand = [];
+
+        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+        state.turn++;
+
+        const entrant = state.players[state.currentPlayer];
+        scoreCrownsAtTurnStart(entrant);
+        if (state.winner !== null && state.winner !== undefined) {
+          return { vainqueur: state.winner };
+        }
+
+        entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
+          id: "plausible-" + state.turn + "-" + i, action, used: false
+        }));
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.centerCrownTakenThisTurn = false;
+        faireEntrerCouronnesEnAttente();
+        state.phase = "ACTION_SELECT";
+        state.selectedActionType = null;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        state.reachable = new Set();
+        return { vainqueur: null };
+      }
+
+      /** Ce que vaut un plan APRÈS la meilleure réplique adverse courte. */
+      function plannerEvaluerRobustesse(noeudFinal, playerId) {
+        const apres = structuredClone(noeudFinal.etat);
+        return withSimulatedState(apres, () => {
+          const adverse = plannerAdversaire(playerId);
+          if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
+
+          const reserveGarantie = Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 },
+            state.players[adverse.id] && state.players[adverse.id].stash);
+
+          const transition = applyTurnTransitionCore();
+          if (transition && transition.vainqueur !== null && transition.vainqueur !== undefined) {
+            return {
+              note: evaluateStrategicState(playerId),
+              riposte: ["FIN DE PARTIE"], menace: 0, garantie: true
+            };
+          }
+
+          const avantRiposte = evaluateStrategicState(playerId);
+          const ressourcesAvant = plannerRessources(adverse.id);
+
+          const reponse = plannerChercherPlan(adverse.id, {
+            largeurFaisceau: PLAN_RIPOSTE.largeurFaisceau,
+            decisionsMax: PLAN_RIPOSTE.decisionsMax,
+            etatsMax: PLAN_RIPOSTE.etatsMax,
+            tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs
+          });
+          for (const action of reponse.plan) plannerAppliquerAction(action);
+
+          const apresRiposte = evaluateStrategicState(playerId);
+          const degat = Math.max(0, avantRiposte - apresRiposte);
+
+          const ressourcesApres = plannerRessources(adverse.id);
+          const garantie = ["MOVE", "PUSH", "MAGIC"].every(type =>
+            (ressourcesAvant[type] - ressourcesApres[type]) <= reserveGarantie[type]);
+          const poids = garantie ? 1 : PLAN_RIPOSTE.poidsMenacePlausible;
+
+          return {
+            note: noeudFinal.note - degat * poids,
+            riposte: reponse.plan.map(a => a.type),
+            menace: Math.round(degat * poids),
+            garantie: garantie
+          };
+        });
+      }
+
+      /** Point d'entrée d'Expert V3 : plan de tour V2, puis reclassement des
+       *  meilleurs candidats selon leur résistance à la riposte adverse. */
+      /* Joueurs pour lesquels l'anticipation est désactivée. Sert au self-play
+         V3 contre V2 : V3 étant exactement V2 plus cette couche, il suffit de
+         la couper pour un camp pour obtenir le comportement V2 — inutile de
+         dupliquer l'ancien planner dans le bundle livré. Vide en jeu normal. */
+      const plannerSansAnticipation = new Set();
+
+      function plannerChercherPlanRobuste(playerId, options) {
+        if (plannerSansAnticipation.has(playerId)) return plannerChercherPlan(playerId, options || {});
+        const debutTotal = performance.now();
+        const principal = plannerChercherPlan(playerId, options || {});
+        const finalistes = (principal.finalistes || []).slice(0, PLAN_RIPOSTE.finalistes);
+
+        if (finalistes.length < 2) {
+          principal.anticipation = { examines: finalistes.length, dureeMs: 0, rejets: [] };
+          principal.dureeTotaleMs = Math.round(performance.now() - debutTotal);
+          return principal;
+        }
+
+        const debutRiposte = performance.now();
+        const examines = finalistes.map(noeud => ({
+          noeud: noeud,
+          robustesse: plannerEvaluerRobustesse(noeud, playerId)
+        }));
+        examines.sort((a, b) => b.robustesse.note - a.robustesse.note);
+        const dureeRiposte = performance.now() - debutRiposte;
+        const retenu = examines[0];
+
+        /* Sont consignés comme « rejetés » les plans qui notaient MIEUX que le
+           retenu avant riposte : c'est précisément la décision qu'on veut
+           pouvoir inspecter — un plan brillant abandonné parce qu'il se fait
+           punir. */
+        const rejets = examines.slice(1)
+          .filter(e => e.noeud.note > retenu.noeud.note)
+          .map(e => ({
+            plan: e.noeud.plan.map(a => a.type),
+            noteFinTour: Math.round(e.noeud.note),
+            riposte: e.robustesse.riposte,
+            menace: e.robustesse.menace,
+            garantie: e.robustesse.garantie,
+            noteRobuste: Math.round(e.robustesse.note)
+          }));
+
+        principal.plan = retenu.noeud.plan;
+        principal.noteArrivee = retenu.noeud.note;
+        principal.empreinteAttendue = strategicStateFingerprint(retenu.noeud.etat);
+        principal.anticipation = {
+          examines: examines.length,
+          dureeMs: Math.round(dureeRiposte),
+          noteFinTour: Math.round(retenu.noeud.note),
+          noteRobuste: Math.round(retenu.robustesse.note),
+          riposte: retenu.robustesse.riposte,
+          menace: retenu.robustesse.menace,
+          garantie: retenu.robustesse.garantie,
+          rejets: rejets
+        };
+        principal.dureeTotaleMs = Math.round(performance.now() - debutTotal);
+        plannerDernierRapport = principal;
+        return principal;
       }
  function replay() {
         els.victoryModal.classList.add("hidden");
@@ -22844,8 +23182,45 @@
         return resultats;
       }
 
+      /* Inspection d'une décision SANS la jouer : charge la position et rend le
+         rapport complet du planner — plan retenu, notes avant et après riposte,
+         plans rejetés et la punition qui les a écartés. C'est l'outil demandé
+         pour comprendre pourquoi Expert abandonne une ligne brillante. */
+      function benchInspecterPlan(spec = {}) {
+        const joueurIA = spec.aiPlayer ?? 0;
+        setTestRandomSeed(spec.seed ?? 1);
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign(
+          { allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
+        state.undoHistory = [];
+        const rapport = plannerChercherPlanRobuste(joueurIA);
+        setTestRandomSeed(null);
+        return {
+          plan: rapport.plan.map(a => a.type),
+          detail: rapport.plan,
+          noteDepart: Math.round(rapport.noteDepart),
+          noteArrivee: Math.round(rapport.noteArrivee),
+          etatsExplores: rapport.etatsExplores,
+          dureeMs: rapport.dureeMs,
+          dureeTotaleMs: rapport.dureeTotaleMs,
+          anticipation: rapport.anticipation,
+          finalistes: (rapport.finalistes || []).map(n => ({
+            plan: n.plan.map(a => a.type), note: Math.round(n.note)
+          }))
+        };
+      }
+
       window.ILYOS_BENCH = {
         run: benchRunPuzzle,
+        plan: benchInspecterPlan,
+        /* Coupe l'anticipation adverse pour un camp : ce camp joue alors
+           exactement comme Expert V2. Réservé au self-play comparatif. */
+        anticipation: (joueur, actif) => {
+          if (actif === false) plannerSansAnticipation.add(joueur);
+          else plannerSansAnticipation.delete(joueur);
+          return [...plannerSansAnticipation];
+        },
         reinitialiser: benchReinitialiser,
         fidelite: benchFidelite,
         build: benchBuildSnapshot,

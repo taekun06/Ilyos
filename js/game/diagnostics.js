@@ -906,8 +906,45 @@
         return resultats;
       }
 
+      /* Inspection d'une décision SANS la jouer : charge la position et rend le
+         rapport complet du planner — plan retenu, notes avant et après riposte,
+         plans rejetés et la punition qui les a écartés. C'est l'outil demandé
+         pour comprendre pourquoi Expert abandonne une ligne brillante. */
+      function benchInspecterPlan(spec = {}) {
+        const joueurIA = spec.aiPlayer ?? 0;
+        setTestRandomSeed(spec.seed ?? 1);
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign(
+          { allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
+        state.undoHistory = [];
+        const rapport = plannerChercherPlanRobuste(joueurIA);
+        setTestRandomSeed(null);
+        return {
+          plan: rapport.plan.map(a => a.type),
+          detail: rapport.plan,
+          noteDepart: Math.round(rapport.noteDepart),
+          noteArrivee: Math.round(rapport.noteArrivee),
+          etatsExplores: rapport.etatsExplores,
+          dureeMs: rapport.dureeMs,
+          dureeTotaleMs: rapport.dureeTotaleMs,
+          anticipation: rapport.anticipation,
+          finalistes: (rapport.finalistes || []).map(n => ({
+            plan: n.plan.map(a => a.type), note: Math.round(n.note)
+          }))
+        };
+      }
+
       window.ILYOS_BENCH = {
         run: benchRunPuzzle,
+        plan: benchInspecterPlan,
+        /* Coupe l'anticipation adverse pour un camp : ce camp joue alors
+           exactement comme Expert V2. Réservé au self-play comparatif. */
+        anticipation: (joueur, actif) => {
+          if (actif === false) plannerSansAnticipation.add(joueur);
+          else plannerSansAnticipation.delete(joueur);
+          return [...plannerSansAnticipation];
+        },
         reinitialiser: benchReinitialiser,
         fidelite: benchFidelite,
         build: benchBuildSnapshot,
