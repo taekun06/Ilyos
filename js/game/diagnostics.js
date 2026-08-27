@@ -160,6 +160,12 @@
         renderIlyosAutoplayPanel();
       }
 
+      /* Au-delà de ce délai sans changement de tour, la partie automatique
+         est considérée comme figée. Les tours mesurés durent 5 à 9 s, p95
+         16 s, maximum observé 26 s : 35 s laisse de la marge tout en
+         restant bien sous le seuil de blocage du test de bout en bout. */
+      const AUTOPLAY_TOUR_BLOQUE_MS = 35000;
+
       function startIlyosAutoplay({ maxTurns = 16, difficulty = 'normal' } = {}) {
         if (!state) return false;
         ILYOS_AUTOPLAY.active = true;
@@ -179,6 +185,8 @@
         clearInterval(ILYOS_AUTOPLAY.monitor);
         let lastTurn = state.turn;
         let lastPhase = state.phase;
+        let dernierChangement = Date.now();
+        ILYOS_AUTOPLAY.forcages = 0;
         ILYOS_AUTOPLAY.monitor = setInterval(() => {
           if (!ILYOS_AUTOPLAY.active || !state) { clearInterval(ILYOS_AUTOPLAY.monitor); return; }
           if (state.winner !== null) {
@@ -190,6 +198,34 @@
             const previous = state.players[(state.currentPlayer - 1 + state.players.length) % state.players.length];
             ilyosAutoplayLog(`${previous?.name || 'Bot'} a terminé son tour`, 'ok');
             lastTurn = state.turn;
+            dernierChangement = Date.now();
+          } else if (Date.now() - dernierChangement > AUTOPLAY_TOUR_BLOQUE_MS) {
+            /* FORÇAGE DE FIN DE TOUR — uniquement en partie automatique.
+
+               Un tour d'IA peut se figer sans exception ni message : le
+               tour ne se termine jamais et la partie s'arrête là. Le
+               minuteur retiré aux tours d'IA a supprimé une cause, mais il
+               en subsiste au moins une autre, non identifiée à ce jour.
+
+               Ce forçage vit dans le harnais d'autoplay, PAS dans le
+               moteur : il ne s'applique donc qu'aux parties IA contre IA,
+               jamais à une partie réelle ni aux bancs de puzzles, qui
+               n'empruntent pas ce chemin. Une tentative précédente placée
+               dans runAITurn faussait le scénario adversarial A7.
+
+               Il est délibérément BRUYANT : chaque déclenchement est
+               journalisé et compté, pour qu'on n'oublie pas qu'un défaut
+               reste à corriger sous ce pansement. */
+            ILYOS_AUTOPLAY.forcages++;
+            ilyosAutoplayLog(`Tour ${state.turn} figé depuis ${Math.round((Date.now() - dernierChangement) / 1000)} s — fin de tour forcée`, 'warn');
+            console.warn('[ILYOS] tour figé, fin forcée par le harnais autoplay', { tour: state.turn, joueur: state.currentPlayer });
+            aiRunToken++;
+            state.turnTransitioning = false;
+            state.timerExpiring = false;
+            state.aiThinking = false;
+            state.inputLocked = false;
+            dernierChangement = Date.now();
+            endTurn(true);
           }
           if (state.phase !== lastPhase) {
             ilyosAutoplayLog(`Phase ${lastPhase || '—'} → ${state.phase}`, 'info');
