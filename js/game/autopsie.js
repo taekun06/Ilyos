@@ -388,6 +388,32 @@
         return notes.map(x => x.i);
       }
 
+      /* Résumé COMPACT des annotations, fait pour être collé dans une
+         conversation. L'export complet embarque les positions rejouables et
+         tous les candidats : précieux pour rejouer, illisible à transmettre. */
+      function autopsieResumeRevue() {
+        const notes = ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation);
+        if (!notes.length) return "Aucune erreur signalée.";
+        const lignes = [`REVUE ILYOS — ${notes.length} erreur(s) sur ${ILYOS_AUTOPSIE_JOURNAL.length} décisions`, ""];
+        notes.forEach(e => {
+          const ecartes = (e.candidats || []).filter(c => !c.retenu).length;
+          const tetes = (e.finalistes || []).slice(0, 3)
+            .map(f => `${f.note} ${f.planLisible}`).join("  |  ");
+          lignes.push(`--- tour ${e.tour} · ${e.nomJoueur}`);
+          lignes.push(`IA a joué  : ${e.planLisible}`);
+          lignes.push(`vous auriez: ${e.annotation.coupAttendu}`);
+          if (e.annotation.pourquoi) lignes.push(`parce que  : ${e.annotation.pourquoi}`);
+          lignes.push(`calcul     : note ${e.noteDepart} → ${e.noteArrivee}, ${e.etatsExplores} états, ${ecartes} candidats écartés${e.repli ? ", REPLI: " + e.repli : ""}`);
+          if (tetes) lignes.push(`finalistes : ${tetes}`);
+          // Les trois termes qui ont le plus pesé : souvent l'explication.
+          const termes = (e.detailArrivee?.termes || []).slice(0, 3)
+            .map(t => `${t.terme} ${t.montant > 0 ? "+" : ""}${t.montant}`).join(", ");
+          if (termes) lignes.push(`a pesé     : ${termes}`);
+          lignes.push("");
+        });
+        return lignes.join("\n");
+      }
+
       /* Export destiné à l'analyse : les décisions annotées, avec la position
          rejouable et le raisonnement complet de l'IA. */
       function autopsieExporterRevue() {
@@ -487,6 +513,7 @@
              ${revueBouton("▶", "suivant", journal.length > 0)}
              ${revueBouton("✎ Annoter", "noter", !!e)}
              ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
+             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees > 0) : ""}
            </div>`;
 
         panneau.querySelectorAll("[data-revue]").forEach(bouton => {
@@ -497,6 +524,16 @@
             else if (quoi === "precedent") { revueVueRecap = false; autopsiePrecedent(); }
             else if (quoi === "suivant") { revueVueRecap = false; autopsieSuivant(); }
             else if (quoi === "recap") { revueVueRecap = !revueVueRecap; if (revueVueRecap) autopsieRecap(); }
+            else if (quoi === "copier") {
+              /* Copié dans le presse-papier : le résumé n'a de valeur que s'il
+                 peut être collé sans passer par la console. */
+              const texte = autopsieResumeRevue();
+              navigator.clipboard?.writeText(texte).then(
+                () => { bouton.textContent = "✓ Copié"; },
+                () => { console.log(texte); bouton.textContent = "→ console"; }
+              );
+              return;
+            }
             else if (quoi === "noter") {
               /* Deux questions, volontairement libres : ce qui compte est le
                  sens du coup, pas une syntaxe à respecter. */
@@ -543,6 +580,8 @@
         oublier: autopsieOublier,
         recap: autopsieRecap,
         exporterRevue: autopsieExporterRevue,
+        // Version courte, faite pour être collée telle quelle.
+        resumeRevue: autopsieResumeRevue,
         vider: () => { ILYOS_AUTOPSIE_JOURNAL.length = 0; return 0; },
         /* Export JSON : une position litigieuse doit pouvoir quitter le
            navigateur pour devenir un cas d'étude reproductible. */
