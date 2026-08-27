@@ -21439,6 +21439,27 @@
            pèsent des ordres de grandeur au-dessus. */
         carteConservee: 12,
 
+        /* DÉFENSE DU POINT ADVERSE.
+
+           Marquer exige que le porteur SOIT sur une de ses trois cases de
+           validation. Deux conséquences que l'IA ignorait :
+
+             — occuper une de ces cases la rend inatteignable, donc prive
+               l'adversaire d'un point sans avoir à toucher à son porteur ;
+             — toutes ces cases sont éjectables, villages en coin obligent : il
+               existe toujours une poussée qui jette le porteur hors du plateau.
+
+           Défendre est donc toujours possible — encore faut-il être là. Or
+           l'évaluateur ne notait que la progression vers SES propres couronnes :
+           approcher un gardien du village adverse alors que rien ne se passe
+           encore ne valait rien, et l'IA arrivait systématiquement trop tard.
+
+           Ces deux termes sont pondérés par la menace réelle (voir plus bas) :
+           camper devant un village quand l'adversaire ne porte rien ne vaut
+           rien non plus. */
+        contesteValidation: 700,
+        presenceDefensive: 500,
+
         // Consommer une forme rare a un coût, proportionnel à sa raréfaction.
         formeConsommee: 90
       };
@@ -21613,6 +21634,7 @@
         valeur += (moi.score || 0) * PLAN_POIDS.pointValide;
         if (adverse) valeur -= (adverse.score || 0) * PLAN_POIDS.pointValide;
 
+        let menaceAdverse = 0;
         const ciblesMoi = aiValidationTargetsForPlayer(moi);
         const ciblesAdverse = adverse ? aiValidationTargetsForPlayer(adverse) : [];
 
@@ -21634,6 +21656,10 @@
 
           } else if (porteur && adverse) {
             const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesAdverse);
+            // Sert à pondérer la défense : plus l'adversaire est près de
+            // marquer, plus contester ses cases de validation compte.
+            menaceAdverse = Math.max(menaceAdverse, plannerProximite(d));
+            if (isCrownValidationCell(adverse, porteur.r, porteur.c)) menaceAdverse = 1;
             valeur -= PLAN_POIDS.couronnePortee;
             valeur -= PLAN_POIDS.progressionPorteur * plannerProximite(d);
             if (isCrownValidationCell(adverse, porteur.r, porteur.c)) valeur -= PLAN_POIDS.surCaseValidation;
@@ -21660,6 +21686,27 @@
           const dAdv = adverse ? plannerDistanceEquipe(adverse.id, sanctuaire) : Infinity;
           valeur += enAttente * PLAN_POIDS.couronneEnAttente
             * (plannerProximite(dMoi) - plannerProximite(dAdv));
+        }
+
+        /* D bis. DÉFENSE DU POINT ADVERSE. Contester les cases où
+           l'adversaire doit se tenir pour marquer — en les occupant, ce qui les
+           rend inatteignables, ou en restant assez près pour intervenir à
+           temps. Entièrement pondéré par menaceAdverse : sans porteur adverse,
+           ce terme vaut zéro et l'IA ne campe pas pour rien. */
+        if (adverse && menaceAdverse > 0) {
+          const casesAdverses = crownValidationCellsForPlayer(adverse);
+          let occupees = 0;
+          for (const [vr, vc] of casesAdverses) {
+            const occupant = characterAt(vr, vc);
+            if (occupant && occupant.player === playerId) occupees++;
+          }
+          const accessibles = casesAdverses.filter(([r, c]) => isLand(r, c));
+          const dDefense = accessibles.length
+            ? plannerDistanceEquipe(playerId, accessibles) : Infinity;
+          valeur += menaceAdverse * (
+            PLAN_POIDS.contesteValidation * occupees
+            + PLAN_POIDS.presenceDefensive * plannerProximite(dDefense)
+          );
         }
 
         // E. Gardiens : nombre et capacité à agir.
