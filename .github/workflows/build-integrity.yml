@@ -36,7 +36,12 @@ jobs:
           listes=$(node -e "
             const fs = require('fs');
             const source = fs.readFileSync('scripts/build-game.js', 'utf8');
-            const bloc = source.match(/fragmentNames = \[([^\]]*)\]/s)[1];
+            // Les commentaires sont retirés AVANT d'extraire les noms. Sans
+            // cela, une simple apostrophe française dans un commentaire — « de
+            // l'IA », « s'appuie » — décale l'appariement des quotes et fait
+            // disparaître le fragment qui suit : le contrôle signalait alors un
+            // fragment « absent de la liste » qui y figurait bel et bien.
+            const bloc = source.match(/fragmentNames = \[([^\]]*)\]/s)[1].replace(/\/\/[^\n]*/g, '');
             const declares = [...bloc.matchAll(/'([^']+)'/g)].map(m => m[1]).sort();
             const presents = fs.readdirSync('js/game').filter(f => f.endsWith('.js')).sort();
             const oublies = presents.filter(f => !declares.includes(f));
