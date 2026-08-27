@@ -8,6 +8,38 @@
         return island;
       }
 
+      /* Distance STRATÉGIQUE d'une case vers un jeu de cibles, exprimée dans la
+       * même unité que les cartes Déplacement.
+       *
+       * Topologie : celle des vraies règles, orthogonal = 1, diagonale = 2 (voir
+       * movementEdges). Elle ne l'était pas : le parcours se faisait en largeur
+       * sur les seuls voisins orthogonaux, à coût uniforme 1. Deux conséquences,
+       * toutes deux mesurées au banc d'essai.
+       *
+       *   — Sous-estimation. Une diagonale était comptée comme un pas alors
+       *     qu'elle en coûte deux.
+       *   — Bien pire : deux terrains qui ne se touchent QUE par un coin étaient
+       *     déclarés non reliés. Le parcours échouait, le repli « 30 + Manhattan »
+       *     s'appliquait, et l'IA croyait à plus de 30 points de déplacement une
+       *     case qu'elle pouvait atteindre pour 2. Comme la valeur nourrit
+       *     ensuite `- targetDistance * 1.2` dans aiBestMove(), la pénalité
+       *     dépassait 40 et écrasait tout le reste du calcul : l'IA restait
+       *     immobile plutôt que de faire un pas manifestement bon (puzzles 01,
+       *     07 et 09 du banc d'essai).
+       *
+       * Occupation : volontairement IGNORÉE, comme dans la version précédente.
+       * Cette fonction mesure l'accès TERRITORIAL — « à quelle distance ce coin
+       * du plateau se trouve-t-il ? » — et non un trajet immédiatement jouable.
+       * Un gardien de passage ne doit pas faire croire qu'une région est coupée
+       * du monde. Les appelants qui ont besoin d'un chemin réellement praticable
+       * ne passent pas par ici : ils utilisent shortestMovementPath(), qui
+       * respecte les occupants et le budget de déplacement. Ne pas fusionner les
+       * deux notions sans revoir tous les appelants.
+       *
+       * Le repli « 30 + Manhattan » est conservé à l'identique pour les cibles
+       * réellement inatteignables : il donne encore une direction quand aucune
+       * route n'existe, en attendant qu'une île fasse le pont. La correction ne
+       * change donc que les cas où une route existait bel et bien. */
       function aiLandDistanceToTargets(startR, startC, targets) {
         const validTargets = (targets || []).filter(([r, c]) => inside(r, c) && isLand(r, c));
         if (!validTargets.length) return 99;
@@ -17,24 +49,31 @@
         if (targetSet.has(startKey)) return 0;
         if (!inside(startR, startC) || !isLand(startR, startC)) return 99;
 
-        const queue = [[startR, startC, 0]];
-        const seen = new Set([startKey]);
+        // Dijkstra : les arêtes n'ayant pas toutes le même poids, un parcours en
+        // largeur donnerait un résultat faux dès la première diagonale.
+        const meilleur = new Map([[startKey, 0]]);
+        const file = [{ r: startR, c: startC, cout: 0 }];
 
-        for (let index = 0; index < queue.length; index++) {
-          const [r, c, distance] = queue[index];
-          for (const [nr, nc] of orthogonalNeighbors(r, c)) {
-            const nextKey = key(nr, nc);
-            if (seen.has(nextKey) || !isLand(nr, nc)) continue;
-            if (targetSet.has(nextKey)) return distance + 1;
-            seen.add(nextKey);
-            queue.push([nr, nc, distance + 1]);
+        while (file.length) {
+          let indexMin = 0;
+          for (let i = 1; i < file.length; i++) {
+            if (file[i].cout < file[indexMin].cout) indexMin = i;
+          }
+          const actuel = file.splice(indexMin, 1)[0];
+          const actuelKey = key(actuel.r, actuel.c);
+          if (actuel.cout > (meilleur.get(actuelKey) ?? Infinity)) continue;
+          if (targetSet.has(actuelKey)) return actuel.cout;
+
+          for (const arete of movementEdges(actuel.r, actuel.c)) {
+            if (!isLand(arete.r, arete.c)) continue;
+            const suivantKey = key(arete.r, arete.c);
+            const suivantCout = actuel.cout + arete.cost;
+            if (suivantCout >= (meilleur.get(suivantKey) ?? Infinity)) continue;
+            meilleur.set(suivantKey, suivantCout);
+            file.push({ r: arete.r, c: arete.c, cout: suivantCout });
           }
         }
-        /*
-         * Si les terrains ne sont pas encore reliés, l'IA conserve une notion
-         * de direction grâce à la distance de Manhattan. Elle se rapproche donc
-         * du bord utile en attendant qu'une future île crée le pont.
-         */
+
         const fallback = Math.min(
           ...validTargets.map(([r, c]) => Math.abs(startR - r) + Math.abs(startC - c))
         );
@@ -189,7 +228,12 @@
             options.push({
               char,
               artifact,
-              score: distanceToNearestOwnVillage(char.r, char.c) + Math.random() * .08
+              // Départage volontairement minuscule entre porteurs équidistants.
+              // Passé par gameRandom() : c'était le SEUL tirage de l'IA qu'aucun
+              // réglage de difficulté ne neutralisait (cfg.randomness vaut 0 à
+              // l'Expert mais ne s'applique pas ici), donc la seule source de
+              // non-déterminisme restante de l'Expert.
+              score: distanceToNearestOwnVillage(char.r, char.c) + gameRandom() * .08
             });
           }
         }
@@ -216,6 +260,7 @@
         showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
         await sleep(520);
         resolveArtifactForCharacter(option.char);
+        benchJournaliser({ type: "RAMASSAGE", gardien: option.char.id, case: [option.char.r, option.char.c] });
         return true;
       }
 
@@ -298,6 +343,7 @@
           showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
+          benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: true });
           return true;
         }
 
@@ -327,6 +373,7 @@
         showToast("L’allié récupère immédiatement la couronne.");
         await sleep(340);
         resolveArtifactForCharacter(option.ally);
+        benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: false, depot: [option.dropR, option.dropC] });
         return true;
       }
 
@@ -480,7 +527,7 @@
                 - force * .35
                 - (receivingAlly ? 7 : 0)
                 - (simulation.crossedVoid ? .8 : 0)
-                + Math.random() * cfg.randomness;
+                + gameRandom() * cfg.randomness;
 
               options.push({
                 carrier,
@@ -811,8 +858,22 @@
         renderAll();
         await sleep(260);
         if (token !== aiRunToken || !state) return false;
+        // Position réelle relevée avant/après le clic : l'IA peut demander un
+        // déplacement que le moteur refuse, et un journal qui enregistrerait
+        // l'intention plutôt que l'effet rendrait un échec de puzzle
+        // indéchiffrable.
+        const avant = [option.char.r, option.char.c];
         handleMoveClick(option.r, option.c);
         await sleep(650);
+        // Relevé APRÈS l'attente : le déplacement se matérialise pendant
+        // l'animation, pas au moment du clic. Mesuré juste après handleMoveClick,
+        // `applique` aurait été faux même pour un déplacement parfaitement valide.
+        benchJournaliser({
+          type: "MOVE", gardien: option.char.id, depuis: avant,
+          vers: [option.r, option.c], cout: option.cost, porte: !!option.carrying,
+          arrivee: [option.char.r, option.char.c],
+          applique: option.char.r !== avant[0] || option.char.c !== avant[1]
+        });
         return true;
       }
 
@@ -828,6 +889,7 @@
         await sleep(260);
         if (token !== aiRunToken || !state) return false;
         handlePushClick(option.r, option.c);
+        benchJournaliser({ type: "PUSH", pousseur: option.pusher.id, vers: [option.r, option.c], force: option.count });
         await sleep(650);
         return true;
       }
@@ -845,6 +907,7 @@
         await sleep(380);
         if (token !== aiRunToken || !state) return false;
         confirmMagicRotation();
+        benchJournaliser({ type: "MAGIC", ile: option.island.id, pivot: [...option.pivot], pas: option.steps });
         await sleep(620);
         return true;
       }
@@ -908,6 +971,133 @@
         return choices.find(choice => choice.value > 12) || null;
       }
 
+      /* Exécute la séquence trouvée par le planner. Rend true si le tour a été
+       *  entièrement pris en charge, false si le planner n'a rien produit et
+       *  qu'il faut retomber sur la logique historique.
+       *
+       *  Le plan n'est PAS recalculé entre deux actions : c'est tout l'intérêt
+       *  d'un plan. Le socle de simulation garantit que l'état réel suit l'état
+       *  prévu, et une divergence est signalée bruyamment plutôt que rattrapée
+       *  en silence — elle signifierait un défaut du simulateur. */
+      async function runExpertPlannedTurn(token) {
+        const joueur = state.currentPlayer;
+        const rapport = plannerChercherPlan(joueur);
+        if (!rapport || !rapport.plan.length) {
+          // Aucune action ne vaut mieux que la position actuelle : s'arrêter
+          // est une décision légitime, à condition que la pose obligatoire
+          // soit faite. Sinon on laisse la voie historique s'en charger.
+          return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
+        }
+
+        benchJournaliser({
+          type: "PLAN",
+          actions: rapport.plan.map(a => a.type),
+          note: Math.round(rapport.noteArrivee - rapport.noteDepart),
+          etats: rapport.etatsExplores,
+          ms: rapport.dureeMs
+        });
+
+        for (const action of rapport.plan) {
+          if (token !== aiRunToken || !state || state.winner !== null) return true;
+          const applique = await executerActionPlanifiee(action, token);
+          if (!applique) {
+            // Le plan est devenu inapplicable : cela ne devrait pas arriver
+            // puisque la simulation partage les noyaux du jeu. On le signale.
+            console.warn("[ILYOS] action planifiée refusée par le jeu :", action);
+            break;
+          }
+        }
+
+        if (token !== aiRunToken || !state || state.winner !== null) return true;
+
+        // Contrôle de fidélité : l'état réel doit correspondre à l'état prévu.
+        if (rapport.empreinteAttendue) {
+          const reel = strategicStateFingerprint();
+          if (reel !== rapport.empreinteAttendue) {
+            console.warn("[ILYOS] état réel différent de l'état prévu par le planner",
+              { plan: rapport.plan.map(a => a.type) });
+          }
+        }
+
+        return await terminerTourExpert(token);
+      }
+
+      async function executerActionPlanifiee(action, token) {
+        switch (action.type) {
+          case "MOVE": {
+            const gardien = characterById(action.charId);
+            if (!gardien) return false;
+            return await aiPerformMove({
+              char: gardien, r: action.r, c: action.c, cost: action.cost,
+              carrying: characterCarriesCrown(gardien.id)
+            }, token);
+          }
+          case "PUSH": {
+            const pousseur = characterById(action.pusherId);
+            if (!pousseur) return false;
+            return await aiPerformPush({
+              pusher: pousseur, r: action.r, c: action.c, count: action.force
+            }, token);
+          }
+          case "MAGIC": {
+            const ile = state.islands.find(i => i.id === action.islandId);
+            if (!ile) return false;
+            return await aiPerformMagic({
+              island: ile, pivot: action.pivot,
+              steps: action.direction === -1 ? 3 : action.turns
+            }, token);
+          }
+          case "POSE": {
+            const applique = applyIslandPlacementCore(
+              action.shapeKey, action.cells, action.owner, action.relCells, action.anchor
+            );
+            if (!applique) return false;
+            playIslandDrop(applique.ileId);
+            benchJournaliser({ type: "POSE", automatique: false, case: applique.gardienCase });
+            renderAll();
+            await sleep(620);
+            return true;
+          }
+          case "RAMASSAGE": {
+            const applique = applyFreePickupCore(action.charId, action.artifactId);
+            if (!applique) return false;
+            benchJournaliser({ type: "RAMASSAGE", gardien: action.charId });
+            renderAll();
+            await sleep(320);
+            return true;
+          }
+          case "TRANSMISSION": {
+            const applique = applyFreeHandoffCore(action.deId, action.versId);
+            if (!applique) return false;
+            benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId });
+            renderAll();
+            await sleep(360);
+            return true;
+          }
+          default:
+            return false;
+        }
+      }
+
+      async function terminerTourExpert(token) {
+        if (token !== aiRunToken || !state) return true;
+        state.aiThinking = false;
+        state.inputLocked = false;
+        els.gameScreen.classList.remove("ai-turn");
+        state.phase = "ACTION_SELECT";
+        state.selectedActionType = null;
+        state.selectedActionCount = 1;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        clearMagicPreview();
+        state.reachable = new Set();
+        renderAll();
+        showToast("ORDINATEUR termine son tour.");
+        await sleep(700);
+        if (token === aiRunToken && state && state.winner === null) endTurn(true);
+        return true;
+      }
+
       async function runAITurn(token) {
         if (!state || token !== aiRunToken || !isCurrentPlayerAI()) return;
 
@@ -921,8 +1111,24 @@
 
         if (token !== aiRunToken || !state) return;
 
+        /* EXPERT V2 — voie principale. Le planner construit une séquence pour
+           le tour ENTIER puis l'exécute, au lieu de rechoisir gloutonnement
+           après chaque action.
+
+           La pose n'est plus imposée avant la réflexion : elle est devenue une
+           action candidate parmi les autres, de sorte que l'ordre pose/actions
+           est décidé et non subi. Les difficultés inférieures conservent
+           exactement leur comportement, y compris la pose automatique. */
+        if (cfg.globalPlanning) {
+          const joue = await runExpertPlannedTurn(token);
+          if (joue) return;
+          // Repli : si le planner n'a rien produit (échec technique), on
+          // retombe sur la logique historique plutôt que de passer le tour.
+        }
+
         if (!state.islandPlacedThisTurn) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);
+          benchJournaliser({ type: "POSE", automatique: true, avantActions: true });
           await sleep(760);
         }
 
@@ -1009,7 +1215,7 @@
               !acted
               && magic
               && magic.score < strongMagicThreshold
-              && Math.random() < cfg.magicProbability
+              && gameRandom() < cfg.magicProbability
             ) {
               acted = await aiPerformMagic(magic, token);
               consumedAction = acted;
@@ -1019,7 +1225,7 @@
               !acted
               && push
               && (aiOpponentCarrier() || !carrier || push.priority < 0)
-              && Math.random() < cfg.pushProbability
+              && gameRandom() < cfg.pushProbability
             ) {
               acted = await aiPerformPush(push, token);
               consumedAction = acted;
@@ -1030,7 +1236,7 @@
               consumedAction = acted;
             }
 
-            if (!acted && magic && Math.random() < cfg.magicProbability) {
+            if (!acted && magic && gameRandom() < cfg.magicProbability) {
               acted = await aiPerformMagic(magic, token);
               consumedAction = acted;
             }

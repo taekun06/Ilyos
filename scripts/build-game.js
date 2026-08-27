@@ -14,6 +14,13 @@ const fragmentNames = [
   'audio.js',
   'ui.js',
   'card-rules-physical-reserve.js',
+  // Noyaux de règles purs, partagés par le jeu réel et la simulation de l'IA.
+  // Placé après card-rules-physical-reserve.js : consumeAvailableActions y est
+  // réassigné, et les noyaux doivent appeler la version en vigueur.
+  'rules-core.js',
+  // Cerveau Expert V2 : s'appuie sur les noyaux de rules-core.js et sur
+  // withSimulatedState, donc placé juste après.
+  'planner.js',
   'diagnostics.js',
 ];
 

@@ -192,6 +192,7 @@
       const UNDO_HISTORY_LIMIT = 20;
 
       function saveUndoSnapshot() {
+        if (ilyosSimulationActive) return;
         state.undoHistory ||= [];
         state.undoHistory.push(snapshotState());
         if (state.undoHistory.length > UNDO_HISTORY_LIMIT) state.undoHistory.shift();
@@ -205,9 +206,17 @@
         state.undoHistory?.pop();
       }
 
-      function restoreUndoSnapshot() {
-        if (!state?.undoHistory?.length) return false;
-        const snap = JSON.parse(state.undoHistory.pop());
+      /* Réécrit l'état de jeu depuis un instantané produit par snapshotState().
+         Extrait de restoreUndoSnapshot() pour être réutilisable tel quel par le
+         banc d'essai stratégique (window.ILYOS_BENCH), qui charge ses positions
+         de test par ce même chemin : une seule définition de « recharger une
+         position », donc aucun risque qu'un puzzle soit monté différemment
+         d'une annulation réelle.
+
+         Ne fait QUE poser l'état — ni rendu, ni toast, ni pile d'annulation :
+         c'est l'appelant qui décide de la suite. */
+      function applyStateSnapshot(snap) {
+        if (!state || !snap) return false;
         state.players = snap.players;
         state.currentPlayer = snap.currentPlayer;
         state.round = snap.round;
@@ -255,6 +264,12 @@
         state.actionHoverCell = null;
         clearUnifiedPushOptions();
         state.pendingDirectMoveTarget = null;
+        return true;
+      }
+
+      function restoreUndoSnapshot() {
+        if (!state?.undoHistory?.length) return false;
+        if (!applyStateSnapshot(JSON.parse(state.undoHistory.pop()))) return false;
         renderAll();
         showToast(state.undoHistory.length
           ? `Action annulée · ${state.undoHistory.length} de plus possible${state.undoHistory.length > 1 ? "s" : ""}.`

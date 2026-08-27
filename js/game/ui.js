@@ -239,6 +239,7 @@
       }
 
       function renderAll() {
+        if (ilyosSimulationActive) return;
         ensureArtifactState();
         renderHeader();
         renderTurnContext();
@@ -2080,6 +2081,7 @@
       }
 
       function showActionConsumption(type, spent, remaining) {
+        if (ilyosSimulationActive) return;
         const feedback = document.getElementById("actionFeedback");
         const action = ACTIONS[type];
         if (!feedback || !action || spent < 1) return;
@@ -2574,25 +2576,40 @@
            qu'un bruit au bout donnait un gardien qui marche en silence. */
         playMovePath(path, walkDuration);
 
+        /* La règle s'applique MAINTENANT, plus à la fin de l'animation.
+           Auparavant `char.r = r` vivait dans le callback de fin de marche : le
+           gardien restait logiquement sur sa case de départ pendant toute la
+           durée du trajet, si bien que l'IA — qui enchaîne ses décisions au
+           rythme de ses propres temporisations — pouvait relire une position
+           périmée et rejouer le même coup. Sa séquence dépendait donc du temps
+           réel (voir BASELINE-IA.md, limitation du puzzle 07).
+
+           Le visuel n'en souffre pas : syncKayKitCharacters() ne recale un
+           gardien que si aucune animation n'est en cours, et l'animation reçoit
+           désormais sa case de départ explicitement, puisqu'elle ne peut plus
+           la relire depuis un état déjà à jour. */
+        const resultat = applyMoveCore(char.id, r, c, cost);
+        if (resultat?.couronneRamassee) {
+          showToast(`${state.players[char.player].name} récupère une couronne !`);
+        }
+
+        const presentation = () => {
+          triggerFx("move", [from, ...path]);
+          resetKayKitPointerFeedback();
+          renderAll();
+          showActionConsumption("MOVE", resultat?.cout ?? cost, availableActionCount("MOVE"));
+          if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
+        };
+
         if (state.visualMode === "alternative") {
           state.inputLocked = true;
           queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
             state.inputLocked = false;
-            char.r = r;
-            char.c = c;
-            resolveArtifactForCharacter(char);
-            triggerFx("move", [from, ...path]);
-            useSelectedCard(cost);
-          });
+            presentation();
+          }, from);
         } else {
-          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path);
-          animateToken(from, [r, c], owner.icon, owner.color, "move", () => {
-            char.r = r;
-            char.c = c;
-            resolveArtifactForCharacter(char);
-            triggerFx("move", [from, ...path]);
-            useSelectedCard(cost);
-          }, false, path);
+          queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, null, from);
+          animateToken(from, [r, c], owner.icon, owner.color, "move", presentation, false, path);
         }
         return true;
       }
@@ -2894,9 +2911,15 @@
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
-        const result = targetChar ? pushCharacter(targetChar, dr, dc, force, r, c) : pushLooseArtifact(targetArtifact, dr, dc, force, r, c);
-        if (!result) discardLastUndoSnapshot();
-        if (!result) return;
+        /* Toute la conséquence de règle — ligne poussée, chutes, couronnes
+           déplacées ET carte consommée — est appliquée ici, avant que quoi que
+           ce soit ne soit raconté. La consommation traînait auparavant dans le
+           callback d'animation : entre les deux, l'IA pouvait relire un compte
+           d'actions encore intact et décider sur une base périmée. */
+        const applique = applyPushCore(pusher.id, r, c, force);
+        if (!applique) discardLastUndoSnapshot();
+        if (!applique) return;
+        const result = applique.resultat;
 
         // Une poussée (surtout une chute) mérite d'être vue même par le joueur
         // qui vient de cliquer : impact souvent hors de son cadrage actuel.
@@ -2922,18 +2945,24 @@
            cherche à supprimer. */
         if (!result.fell) playSfx("push", { c: impactCell[1] });
 
+        // Ne reste ici que la mise en scène : la règle est déjà entièrement
+        // appliquée par applyPushCore ci-dessus.
+        const presentationPoussee = () => {
+          triggerFx("push", [result.from, result.to]);
+          resetKayKitPointerFeedback();
+          renderAll();
+          showActionConsumption("PUSH", applique.force, availableActionCount("PUSH"));
+          if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
+        };
+
         if (state.visualMode === "alternative") {
           state.inputLocked = true;
           queueKayKitActionAnimation(`__push-complete-${pusher.id}__`, "none", result.fell ? 520 : 360, null, null, () => {
             state.inputLocked = false;
-            triggerFx("push", [result.from, result.to]);
-            useSelectedCard();
+            presentationPoussee();
           });
         } else {
-          animateToken(result.from, result.to, result.icon, result.color, "push", () => {
-            triggerFx("push", [result.from, result.to]);
-            useSelectedCard();
-          }, result.fell);
+          animateToken(result.from, result.to, result.icon, result.color, "push", presentationPoussee, result.fell);
         }
       }
 
@@ -3272,25 +3301,30 @@
         showToast("L’île se soulève avant de tourner…");
         playSfx("magic");
 
+        /* La rotation s'applique MAINTENANT. Elle vivait auparavant dans le
+           callback de fin d'animation, ce qui laissait l'île, les gardiens
+           qu'elle porte et les couronnes posées dessus à leur ancienne place
+           pendant toute la durée du soulèvement.
+
+           Conséquence visuelle à neutraliser : le calque d'îles se reconstruit
+           dès que la signature de state.islands change, et il reconstruirait
+           donc l'île à sa nouvelle orientation pendant que playIslandMagicRotation
+           fait encore tourner les anciens blocs. On gèle ce calque le temps de
+           l'animation — même principe que pour les gardiens, dont le visuel
+           n'est pas recalé tant qu'un déplacement est en cours. */
+        const applique = applyMagicRotationCore(island.id, rotation);
+        kaykitGelerCalqueIles(true);
+
         animateIslandLiftRotation(island.id, steps * 90, () => {
+          kaykitGelerCalqueIles(false);
           if (!state || state.winner !== null) return;
-          island.cells = rotation.absCells;
-          island.relCells = rotation.relCells;
-          island.anchor = rotation.anchor;
-
-          for (const move of rotation.characterMoves) {
-            move.char.r = move.r;
-            move.char.c = move.c;
-          }
-          for (const move of rotation.artifactMoves || []) {
-            move.artifact.r = move.r;
-            move.artifact.c = move.c;
-          }
-
           state.inputLocked = false;
           animateBoardMagic();
           showToast(`Île tournée de ${steps * 90}° pour 1 magie : seule l’arrivée doit être libre.`);
-          useSelectedCard(1);
+          resetKayKitPointerFeedback();
+          renderAll();
+          showActionConsumption("MAGIC", applique?.cout ?? 1, availableActionCount("MAGIC"));
+          if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
         });
       }
 

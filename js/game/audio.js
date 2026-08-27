@@ -1042,6 +1042,7 @@
       }
 
       function playSfx(type, options = {}) {
+        if (ilyosSimulationActive) return;
         if (!ambientEnabled) return;
         const pan = panForCell(options.c);
         const at = {};
@@ -1253,6 +1254,7 @@
          case), et le panoramique suit la colonne réellement traversée : une
          marche vers la gauche du plateau se déplace vers la gauche. */
       function playMovePath(path, walkDuration) {
+        if (ilyosSimulationActive) return;
         if (!ambientEnabled) return;
         const steps = Array.isArray(path) ? path.filter(cell => Array.isArray(cell)) : [];
         if (!steps.length) { playSfx("move"); return; }

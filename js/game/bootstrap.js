@@ -1,6 +1,89 @@
 (() => {
       "use strict";
 
+      /* ------------------------------------------------------------------
+         HASARD DE JEU — point de passage unique, déterministe sur demande.
+
+         Motif : le banc d'essai stratégique (window.ILYOS_BENCH) doit pouvoir
+         rejouer exactement la même position et obtenir exactement la même
+         décision de l'IA. Or plusieurs chemins de règles et de décision
+         tiraient directement Math.random() — notamment un départage de ±.08
+         dans aiAdjacentCrownPickup() qui n'était filtré par AUCUN réglage de
+         difficulté, et rendait donc l'Expert non déterministe même à
+         randomness: 0.
+
+         Règle d'usage : gameRandom() remplace Math.random() UNIQUEMENT sur
+         les chemins qui influencent l'état de jeu ou une décision d'IA. Le
+         hasard purement visuel (particules, variantes de décor, variations
+         sonores dans audio.js et kaykit3d.js) garde Math.random() : nous
+         voulons un déterminisme stratégique, pas un déterminisme de chaque
+         nuage.
+
+         Sans graine posée, gameRandom() EST Math.random() : une partie
+         normale reste exactement aussi aléatoire qu'avant. Le mode
+         déterministe ne s'active que par setTestRandomSeed(n) explicite.
+
+         Le générateur est délibérément gardé hors de `state` : y placer une
+         fonction casserait structuredClone(), la sauvegarde locale et la
+         synchronisation en ligne — et gênerait la future simulation du
+         planner, qui doit pouvoir cloner l'état librement. */
+      let ilyosSeededRandom = null;
+
+      /* mulberry32 : 32 bits d'état, une seule multiplication imul par tirage,
+         période 2^32. Largement suffisant pour départager des coups et battre
+         un paquet de 13 cartes, et surtout reproductible à l'identique. */
+      function ilyosMakeSeededRandom(seed) {
+        let a = seed >>> 0;
+        return function () {
+          a = (a + 0x6D2B79F5) >>> 0;
+          let t = a;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function gameRandom() {
+        return ilyosSeededRandom ? ilyosSeededRandom() : Math.random();
+      }
+
+      /** Pose (nombre) ou retire (null/undefined) la graine déterministe.
+       *  Réservé au banc d'essai : une vraie partie ne doit jamais l'appeler. */
+      function setTestRandomSeed(seed) {
+        ilyosSeededRandom = (seed === null || seed === undefined)
+          ? null
+          : ilyosMakeSeededRandom(Number(seed));
+        return ilyosSeededRandom !== null;
+      }
+
+      function isTestRandomSeeded() {
+        return ilyosSeededRandom !== null;
+      }
+
+      /* Facteur d'accélération des temporisations, réservé au banc d'essai.
+         Les pauses de l'IA (thinkDelay, actionDelay, attentes d'animation) sont
+         purement cosmétiques : elles rendent le tour lisible pour un spectateur
+         et n'entrent dans aucune décision. Les compresser pendant une mesure ne
+         change donc que la durée du banc, jamais son résultat — ce que le test
+         de reproductibilité vérifie explicitement en comparant vitesse normale
+         et vitesse accélérée. 1 = rythme normal du jeu. */
+      let benchSpeedFactor = 1;
+
+      /* Mode simulation : les noyaux de règles s'exécutent sur un état cloné,
+         sans rien raconter. Tous les points d'entrée de présentation — rendu,
+         toasts, sons, animations, effets, sauvegarde d'annulation, statistiques
+         — s'effacent quand ce drapeau est levé.
+
+         C'est ce qui permet au planner d'utiliser LES MÊMES fonctions de règles
+         que le jeu réel plutôt qu'une seconde implémentation : une règle qui
+         change plus tard change pour les deux à la fois, et aucune divergence
+         silencieuse ne peut s'installer entre ce que l'IA prévoit et ce que le
+         jeu applique.
+
+         Toujours faux en jeu normal. */
+      let ilyosSimulationActive = false;
+      function enSimulation() { return ilyosSimulationActive; }
+
       /* Taille du plateau. Variable, pas constante : le joueur peut choisir
          11×11 ou 13×13 au menu. GRID, CENTER et CORNERS sont recalculés
          ensemble par setBoardSize(), avant toute création de partie.
