@@ -464,3 +464,73 @@ où le meilleur plan précédent plafonnait à 209.
 
 La défense ne régresse pas : A11 et A12 passent toujours, la menace y étant
 réelle et le biais donc actif.
+
+---
+
+# Mode autopsie — comprendre les décisions, pas les noter
+
+Les bancs d'essai jugent des positions choisies d'avance. Ils ne peuvent donc
+pas montrer ce qu'un adversaire humain repère en jouant, et c'est bien un humain
+qui a trouvé les deux faiblesses les plus coûteuses de cette IA.
+
+L'autopsie enregistre chaque décision Expert d'une VRAIE partie, avec de quoi
+répondre à une seule question : « pourquoi l'IA n'a-t-elle pas vu ce que j'ai
+vu ? ». Le relevé permet de distinguer quatre causes sans les deviner :
+
+| Où se trouve le bon coup | Cause |
+|---|---|
+| nulle part dans le relevé | générateurs de candidats |
+| parmi les **écartés** | pré-filtre, avant tout évaluateur |
+| présent, bien noté, non retenu | recherche ou anticipation de riposte |
+| présent, mal noté | évaluateur |
+
+## Usage
+
+```js
+ILYOS_AUTOPSIE.activer();   // avant de commencer la partie
+// ... on joue contre Expert ...
+ILYOS_AUTOPSIE.liste();     // toutes les décisions, une ligne chacune
+ILYOS_AUTOPSIE.detail(4);   // la décision suspecte, en entier
+ILYOS_AUTOPSIE.rejouer(4);  // repose la position telle qu'AVANT la décision
+ILYOS_AUTOPSIE.exporter(4); // JSON, pour en faire un cas d'étude reproductible
+```
+
+`rejouer` rend la main sur la position exacte : on peut y essayer soi-même le
+coup qu'on avait vu, ou relancer le planner après avoir modifié un poids.
+
+## Ce qui est conservé par décision
+
+Instantané d'avant décision (rejouable), plan retenu, cinq plans finalistes avec
+leur décomposition, tous les candidats de la racine — retenus ET écartés par les
+plafonds, chacun noté à un coup de profondeur —, décomposition de score terme à
+terme, riposte adverse anticipée avec la menace chiffrée, temps de recherche et
+de riposte, nombre d'états explorés, et le drapeau de repli sur la logique
+historique.
+
+Ce dernier point compte : un journal qui n'enregistrerait que les décisions
+réussies rendrait invisibles les tours où le cerveau Expert n'a pas décidé du
+tout.
+
+## Deux garde-fous
+
+**La décomposition doit être celle qui a décidé.** Toute contribution passe par
+une fonction unique, et `verif-autopsie` contrôle que la somme des termes
+retombe exactement sur la note du planner. Sans ce contrôle, la trace pourrait
+décrire un évaluateur imaginaire et orienter les corrections à côté.
+
+**Une note identique chez tous les finalistes est signalée.** C'est le symptôme
+d'une décision jouée AVANT l'évaluateur : le pré-filtre n'a proposé que des
+variantes équivalentes. Il est apparu dès la première partie observée — cinq
+finalistes à −2066 ne différant que par la forme de l'île posée.
+
+## Coût
+
+Inactive par défaut. Hors autopsie, le surcoût se limite à un test de drapeau
+par terme d'évaluation et par décision : les relevés de candidats et les
+décompositions ne sont calculés que si l'enregistrement est levé, et les états
+nécessaires ne sont même pas conservés. Les bancs le confirment — aucun score ne
+bouge, dans aucun sens.
+
+L'autopsie vit dans son propre fragment, `js/game/autopsie.js`, et non dans
+`diagnostics.js` : elle doit fonctionner en partie réelle, alors que
+l'outillage de banc a vocation à sortir du bundle en fin de chantier.

@@ -898,6 +898,8 @@
        *  en silence — elle signifierait un défaut du simulateur. */
       async function runExpertPlannedTurn(token) {
         const joueur = state.currentPlayer;
+        // Pris AVANT toute décision : c'est ce qui rend la position rejouable.
+        const instantaneAutopsie = autopsieInstantaneAvant();
         /* V3 : le plan retenu est celui qui résiste le mieux à la riposte
            adverse, pas nécessairement celui qui note le mieux en fin de tour.
 
@@ -910,14 +912,21 @@
           rapport = plannerChercherPlanRobuste(joueur);
         } catch (erreur) {
           console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
+          autopsieConsigner(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);
           return false;
         }
         if (!rapport || !rapport.plan.length) {
+          autopsieConsigner(joueur, instantaneAutopsie, rapport,
+            state.islandPlacedThisTurn
+              ? "aucune action jugée meilleure que l'arrêt"
+              : "plan vide et île non posée : main rendue à la logique historique");
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
           // soit faite. Sinon on laisse la voie historique s'en charger.
           return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
         }
+
+        autopsieConsigner(joueur, instantaneAutopsie, rapport, null);
 
         benchJournaliser({
           type: "PLAN",
