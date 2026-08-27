@@ -23753,11 +23753,19 @@
           `<p><strong>Scores :</strong> ${(state?.players || []).map(p => `${p.name} ${p.score || 0}/3`).join(' · ') || '—'}</p>` +
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
-          `<button data-autoplay-report>DIAGNOSTIC</button>`;
+          `<button data-autoplay-report>DIAGNOSTIC</button> ` +
+          /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
+             la réserver à qui pense à la taper. */
+          `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>`;
         panel.querySelector('[data-autoplay-stop]')?.addEventListener('click', () => {
           if (ILYOS_AUTOPLAY.active) stopIlyosAutoplay('Arrêt manuel'); else panel.remove();
         });
         panel.querySelector('[data-autoplay-report]')?.addEventListener('click', showIlyosDiagnosticPanel);
+        panel.querySelector('[data-autoplay-revue]')?.addEventListener('click', () => {
+          const actif = !window.ILYOS_AUTOPSIE?.active?.();
+          window.ILYOS_AUTOPSIE?.activer(actif);
+          renderIlyosAutoplayPanel();
+        });
       }
 
       function stopIlyosAutoplay(reason = 'Test terminé') {
