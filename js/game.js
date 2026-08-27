@@ -23213,6 +23213,33 @@
 
       window.ILYOS_BENCH = {
         run: benchRunPuzzle,
+        /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
+
+           Une partie fait jouer les deux IA dans la MÊME page : impossible d'y
+           opposer deux versions du jeu. Le relais contourne cela en transportant
+           l'état d'un build à l'autre entre chaque tour, chaque camp jouant
+           toujours dans le build qui l'incarne.
+
+           Réservé à la comparaison de versions. Ne sert jamais en jeu. */
+        etatComplet: () => snapshotState(),
+        jouerUnTour: async (json) => {
+          if (json) applyStateSnapshot(JSON.parse(json));
+          state.undoHistory = [];
+          state.inputLocked = false;
+          state.aiThinking = false;
+          state.turnTransitioning = false;
+          // Seul le joueur au trait est piloté : sinon beginTurn() enchaînerait
+          // aussitôt le tour suivant dans ce build-ci, alors qu'il appartient à
+          // l'autre.
+          state.players.forEach((p, i) => {
+            p.isAI = i === state.currentPlayer;
+            p.aiDifficulty = i === state.currentPlayer ? "expert" : null;
+          });
+          const token = ++aiRunToken;
+          await runAITurn(token);
+          await sleep(700);
+          return { etat: snapshotState(), vainqueur: state.winner ?? null, tour: state.turn };
+        },
         plan: benchInspecterPlan,
         /* Coupe l'anticipation adverse pour un camp : ce camp joue alors
            exactement comme Expert V2. Réservé au self-play comparatif. */
