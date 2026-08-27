@@ -892,14 +892,21 @@
         const ecartesMemoire = plannerCandidatsEcartes;
         const ecartes = [];
         plannerCandidatsEcartes = ecartes;
+        const chronos = {};
+        const chronometrer = (nom, fn) => {
+          const t0 = performance.now();
+          const r = fn();
+          chronos[nom] = Math.round(performance.now() - t0);
+          return r;
+        };
         let retenus;
         try {
           retenus = [
-            ...plannerTransitionsGratuites(playerId),
-            ...plannerCandidatsMove(playerId),
-            ...plannerCandidatsPush(playerId),
-            ...plannerCandidatsMagic(playerId),
-            ...plannerCandidatsPose(playerId)
+            ...chronometrer("gratuites", () => plannerTransitionsGratuites(playerId)),
+            ...chronometrer("move", () => plannerCandidatsMove(playerId)),
+            ...chronometrer("push", () => plannerCandidatsPush(playerId)),
+            ...chronometrer("magic", () => plannerCandidatsMagic(playerId)),
+            ...chronometrer("pose", () => plannerCandidatsPose(playerId))
           ];
         } finally {
           plannerCandidatsEcartes = ecartesMemoire;
@@ -929,12 +936,15 @@
           ...ecartes.map(e => decrire(e.action, false))
         ];
         tous.sort((a, b) => (b.note ?? -Infinity) - (a.note ?? -Infinity));
+        // Le coût de génération est porté par le relevé : sans lui, une
+        // recherche qui n'explore rien reste inexplicable.
+        tous.chronos = chronos;
         return tous;
       }
 
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
-        const debut = performance.now();
+        let debut = performance.now();
         let etatsExplores = 0;
         let candidatsGeneres = 0;
 
@@ -948,10 +958,25 @@
 
         /* Sous autopsie, on relève AVANT la recherche : la position de départ
            est alors intacte, et le relevé décrit exactement ce que la
-           recherche s'apprêtait à explorer. */
-        const releveCandidats = plannerAutopsieActive()
-          ? withSimulatedState(racine.etat, () => plannerReleverCandidats(playerId))
-          : null;
+           recherche s'apprêtait à explorer.
+
+           SON COÛT EST RENDU AU BUDGET. Le relevé clone et évalue chaque
+           candidat : il dépasse à lui seul les 350 ms de la recherche sur un
+           plateau développé. Sans cette restitution, lever l'autopsie suffisait
+           à faire échouer la décision qu'elle observait — la recherche partait
+           hors budget avant sa première itération, ne générait aucun candidat,
+           et rendait la main à la logique historique. Observé sur une vraie
+           partie : 7 tours sur 23 en repli, dont 5 sans un seul état exploré.
+
+           Un instrument qui change ce qu'il mesure ne mesure rien. */
+        let releveCandidats = null;
+        let coutObservation = 0;
+        if (plannerAutopsieActive()) {
+          const debutReleve = performance.now();
+          releveCandidats = withSimulatedState(racine.etat, () => plannerReleverCandidats(playerId));
+          coutObservation = performance.now() - debutReleve;
+          debut += coutObservation;
+        }
 
         let meilleur = racine.terminal ? racine : null;
         /* Tous les états terminaux rencontrés, pas seulement le meilleur :
@@ -1038,6 +1063,8 @@
           profondeurAtteinte,
           largeurFaisceau: budget.largeurFaisceau,
           dureeMs: Math.round(duree),
+          // Temps passé à observer, exclu du budget de décision ci-dessus.
+          coutObservationMs: Math.round(coutObservation),
           // Empreinte attendue après exécution : sert au contrôle de fidélité
           // entre l'état prévu et l'état réellement obtenu.
           empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,

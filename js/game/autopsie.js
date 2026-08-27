@@ -87,10 +87,16 @@
           profondeurAtteinte: rapport ? rapport.profondeurAtteinte : null,
           largeurFaisceau: rapport ? rapport.largeurFaisceau : null,
           dureeMs: rapport ? rapport.dureeMs : null,
+          coutObservationMs: rapport ? rapport.coutObservationMs ?? 0 : null,
           dureeTotaleMs: rapport ? rapport.dureeTotaleMs : null,
           anticipation: rapport ? rapport.anticipation || null : null,
           finalistes: [],
           candidats: rapport ? rapport.releveCandidats || [] : [],
+          // Coût de génération par générateur : la recherche peut échouer non
+          // parce qu'elle cherche mal, mais parce que produire les candidats a
+          // déjà épuisé son budget.
+          chronosGeneration: rapport && rapport.releveCandidats
+            ? rapport.releveCandidats.chronos || null : null,
           detailDepart: null,
           detailArrivee: null
         };
