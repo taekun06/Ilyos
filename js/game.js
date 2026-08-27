@@ -23097,24 +23097,58 @@
         }
       }
 
-      /** Décrit une action de façon lisible en termes de jeu, pas de structure. */
-      function autopsieDecrireAction(action) {
-        if (!action) return "—";
-        switch (action.type) {
-          case "MOVE": return `MOVE ${action.charId} → (${action.r},${action.c}) coût ${action.cost}`;
-          case "PUSH": return `PUSH ${action.pusherId} → (${action.r},${action.c}) force ${action.force}`;
-          case "MAGIC": return `MAGIC île ${action.islandId} pivot (${action.pivot}) ${action.turns} pas`;
-          case "POSE": return `POSE ${action.shapeKey} en ${JSON.stringify(action.cells)}`
-            + (action.spawn ? ` gardien en (${action.spawn})` : "");
-          case "RAMASSAGE": return `RAMASSAGE ${action.charId} prend ${action.artifactId}`;
-          case "TRANSMISSION": return `TRANSMISSION ${action.deId} → ${action.versId}`;
-          default: return action.type;
-        }
-      }
+      /* Décrit un plan en langage de jeu.
 
-      function autopsieDecrirePlan(plan) {
+         Les identifiants internes (char-102) ne disent rien à qui regarde le
+         plateau. On suit donc la position de chaque gardien au fil du plan, de
+         façon à parler en CASES — comme on lirait la partie. */
+      function autopsieDecrirePlan(plan, instantane) {
         if (!plan || !plan.length) return "aucune action";
-        return plan.map(autopsieDecrireAction).join(" · ");
+
+        const ou = new Map();
+        try {
+          const depart = typeof instantane === "string" ? JSON.parse(instantane) : instantane;
+          (depart && depart.characters || []).forEach(c => ou.set(c.id, [c.r, c.c]));
+        } catch (erreur) { /* description dégradée, jamais bloquante */ }
+
+        const casePlateau = cell => `(${cell[0]},${cell[1]})`;
+        // Le gardien qui vient d'apparaître n'a pas encore d'identifiant connu :
+        // c'est lui qu'on désigne quand un ordre porte sur un inconnu.
+        let dernierApparu = null;
+        const depuis = id => {
+          if (ou.has(id)) return casePlateau(ou.get(id));
+          if (dernierApparu) return casePlateau(dernierApparu) + " (nouveau)";
+          return "?";
+        };
+        const noter = (id, cell) => { if (!ou.has(id) && dernierApparu) ou.set(id, dernierApparu); ou.set(id, cell); };
+
+        const morceaux = plan.map(a => {
+          switch (a.type) {
+            case "POSE": {
+              if (a.spawn) dernierApparu = a.spawn;
+              return `pose une île de ${(a.cells || []).length} cases`
+                + (a.spawn ? `, un gardien apparaît en ${casePlateau(a.spawn)}` : "");
+            }
+            case "MOVE": {
+              const de = depuis(a.charId);
+              noter(a.charId, [a.r, a.c]);
+              return `déplace le gardien ${de} vers ${casePlateau([a.r, a.c])}`
+                + ` (${a.cost} carte${a.cost > 1 ? "s" : ""})`;
+            }
+            case "PUSH":
+              return `pousse ${casePlateau([a.r, a.c])} depuis ${depuis(a.pusherId)}, force ${a.force}`;
+            case "MAGIC":
+              return `fait pivoter une île autour de ${casePlateau(a.pivot)}`
+                + ` (${a.turns} quart${a.turns > 1 ? "s" : ""} de tour)`;
+            case "RAMASSAGE":
+              return `ramasse la couronne avec le gardien ${depuis(a.charId)}`;
+            case "TRANSMISSION":
+              return `passe la couronne de ${depuis(a.deId)} à ${depuis(a.versId)}`;
+            default:
+              return a.type;
+          }
+        });
+        return morceaux.join(" · ");
       }
 
       /* Enregistre une décision. `repli` est renseigné quand le cerveau Expert
@@ -23132,7 +23166,7 @@
           instantane: instantaneAvant,
           repli,
           plan: rapport && rapport.plan ? rapport.plan.map(a => ({ ...a })) : [],
-          planLisible: rapport ? autopsieDecrirePlan(rapport.plan) : null,
+          planLisible: rapport ? autopsieDecrirePlan(rapport.plan, instantaneAvant) : null,
           // Arrondies dès l enregistrement : une note au millionième de point
           // n a aucun sens de jeu et rend le journal illisible.
           noteDepart: rapport ? Math.round(rapport.noteDepart) : null,
@@ -23167,7 +23201,7 @@
           }
           entree.finalistes = ((rapport && rapport.finalistes) || []).slice(0, 5).map(noeud => ({
             plan: noeud.plan.map(a => ({ ...a })),
-            planLisible: autopsieDecrirePlan(noeud.plan),
+            planLisible: autopsieDecrirePlan(noeud.plan, instantaneAvant),
             note: Math.round(noeud.note),
             detail: withSimulatedState(noeud.etat, () => evaluerAvecDetail(joueurId))
           }));
@@ -23260,7 +23294,7 @@
         console.log(`  Candidats à la racine : ${retenus.length} retenus, ${ecartes.length} écartés par les plafonds`);
         e.candidats.slice(0, 15).forEach(c => {
           console.log(`     ${c.retenu ? "  retenu" : "  ÉCARTÉ"}  ${String(c.note).padStart(7)}  `
-            + `${autopsieDecrireAction(c.action)}`);
+            + `${autopsieDecrirePlan([c.action], e.instantane)}`);
         });
         if (e.candidats.length > 15) {
           console.log(`     … ${e.candidats.length - 15} autres (voir ILYOS_AUTOPSIE.candidats())`);
@@ -23334,7 +23368,19 @@
 
       /* Arrête l'IA, rien de plus : aucun instantané, aucune restauration. */
       function autopsiePause() {
+        /* Le tour d'IA en cours doit être ANNULÉ, pas seulement ignoré : sans
+           cela il continuait à s'exécuter pendant la pause, et la reprise en
+           lançait un second par-dessus — deux tours simultanés, d'où les
+           animations incohérentes. Chaque étape de runAITurn compare son jeton
+           à aiRunToken et abandonne dès qu'il a changé. */
+        aiRunToken++;
+        autopsieViderAnimations();
         if (typeof stopIlyosAutoplay === "function") stopIlyosAutoplay("Pause pour revue");
+        if (state) {
+          state.aiThinking = false;
+          state.inputLocked = false;
+          state.turnTransitioning = false;
+        }
         autopsieCurseur = ILYOS_AUTOPSIE_JOURNAL.length - 1;
         console.log(`Partie en pause. ${ILYOS_AUTOPSIE_JOURNAL.length} décision(s) enregistrée(s).`);
         return autopsieCurseur;
@@ -23342,8 +23388,27 @@
 
       /* Rend la main aux IA sur la position ACTUELLE — laquelle n'a pas bougé,
          puisque la revue ne la touche pas. */
+      /* Les animations en attente désignent des pièces et des cases telles
+         qu'elles étaient au moment où elles ont été mises en file. Les laisser
+         courir après une interruption les fait jouer sur une position qui a
+         changé — c'est exactement ce qui produisait les gardiens fantômes. */
+      function autopsieViderAnimations() {
+        try {
+          if (typeof kaykit3D === "object" && kaykit3D && kaykit3D.pendingActionAnimations) {
+            kaykit3D.pendingActionAnimations.clear();
+          }
+        } catch (erreur) { /* le visuel ne doit jamais bloquer la revue */ }
+      }
+
       function autopsieReprendre() {
         if (!state) { console.log("Aucune partie en cours."); return false; }
+        if (state.winner !== null && state.winner !== undefined) {
+          console.log("La partie est terminée.");
+          return false;
+        }
+        // Repartir sur une file d'animations vide, sinon celles de l'ancien
+        // tour se rejouent par-dessus le nouveau.
+        autopsieViderAnimations();
         state.players.forEach(j => { j.isAI = true; });
         state.inputLocked = false;
         state.aiThinking = false;
