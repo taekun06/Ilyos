@@ -21503,6 +21503,35 @@
          Le budget prêté à l'adversaire mélange sa RÉSERVE (connue avec
          certitude) et la main plausible tirée de la composition publique du
          paquet — jamais ses vraies cartes futures. */
+      /** Budget de déplacement et de poussée prêté à l'adversaire : sa réserve,
+       *  connue avec certitude, plus la main plausible. */
+      function plannerBudgetAdverse(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        const reserve = (adverse && state.players[adverse.id] && state.players[adverse.id].stash) || {};
+        return {
+          move: (reserve.MOVE || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length,
+          push: (reserve.PUSH || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "PUSH").length
+        };
+      }
+
+      /** Cases atteignables par CHAQUE gardien adverse, calculées une fois.
+       *
+       *  C'est le remède à une explosion de coût mesurée en intégration
+       *  continue : plannerMenaceExpulsion interrogeait shortestMovementPath
+       *  pour chaque direction, chaque ennemi et CHAQUE case candidate, soit
+       *  des milliers de recherches de chemin par génération de candidats. Une
+       *  partie complète se figeait sur une machine plus lente que le poste de
+       *  développement.
+       *
+       *  movementRange rend l'ensemble des cases joignables en une seule
+       *  recherche par gardien. La menace se réduit alors à une consultation
+       *  d'ensemble, et le coût passe de « milliers » à « un par adversaire ». */
+      function plannerPorteesAdverses(playerId, budgetMove) {
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return [];
+        return plannerGardiensDe(adverse.id).map(ennemi => movementRange(ennemi, budgetMove));
+      }
+
       function plannerMenaceExpulsion(playerId, r, c, budget) {
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return false;
@@ -21515,6 +21544,9 @@
         const budgetPush = budget && budget.push !== undefined
           ? budget.push : (reserve.PUSH || 0) + plausiblePush;
         if (budgetPush < 1) return false;
+        // Fournies par l'appelant quand il enchaîne beaucoup de cases,
+        // calculées ici sinon. Dans les deux cas, une seule fois.
+        const portees = (budget && budget.portees) || plannerPorteesAdverses(playerId, budgetMove);
 
         for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
           // La victime ne tombe que si la case DERRIÈRE elle n'est pas du terrain.
@@ -21531,9 +21563,9 @@
             continue;
           }
           // Sinon, un gardien adverse peut-il rejoindre ce poste à temps ?
-          for (const ennemi of plannerGardiensDe(adverse.id)) {
-            const chemin = shortestMovementPath(ennemi, posteR, posteC, budgetMove);
-            if (chemin && chemin.length) return true;
+          const postePorte = key(posteR, posteC);
+          for (const portee of portees) {
+            if (portee.has(postePorte)) return true;
           }
         }
         return false;
@@ -21675,6 +21707,18 @@
         const budget = availableActionCount("MOVE", state.players[playerId]);
         if (budget < 1) return [];
         const options = [];
+        // Une seule fois pour toute la passe, et non par case examinée.
+        const budgetAdverse = plannerBudgetAdverse(playerId);
+        const porteesAdverses = plannerPorteesAdverses(playerId, budgetAdverse.move);
+        const menaceCache = new Map();
+        const menaceEn = (mr, mc) => {
+          const k = key(mr, mc);
+          if (!menaceCache.has(k)) {
+            menaceCache.set(k, plannerMenaceExpulsion(playerId, mr, mc,
+              { move: budgetAdverse.move, push: budgetAdverse.push, portees: porteesAdverses }));
+          }
+          return menaceCache.get(k);
+        };
 
         for (const gardien of plannerGardiensDe(playerId)) {
           const porte = characterCarriesCrown(gardien.id);
@@ -21702,8 +21746,8 @@
                coup qui n'a jamais été généré. La menace est ici la version
                élargie, qui voit venir une poussée préparée. */
             if (porte) {
-              const menaceDepart = plannerMenaceExpulsion(playerId, gardien.r, gardien.c);
-              const menaceArrivee = plannerMenaceExpulsion(playerId, r, c);
+              const menaceDepart = menaceEn(gardien.r, gardien.c);
+              const menaceArrivee = menaceEn(r, c);
               if (menaceDepart && !menaceArrivee) indice += 140;
               else if (!menaceDepart && menaceArrivee) indice -= 140;
             }
