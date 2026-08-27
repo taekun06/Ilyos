@@ -3959,7 +3959,42 @@
         // annonce déjà les tours et les manches.
       }
 
-      function showVictory(player) {
+      /* Fin par plateau saturé : personne n'a atteint trois couronnes, on
+         départage au décompte. L'écran de victoire est réutilisé tel quel, avec
+         un texte qui dit d'où vient la fin — sans quoi le joueur croirait à un
+         bug. */
+      function terminerPartiePlateauPlein() {
+        stopTurnTimer();
+        const nul = state.winner === MATCH_NUL;
+        const gagnant = nul ? null : state.players[state.winner];
+        const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+        showToast(nul
+          ? `Plateau saturé : match nul (${scores}).`
+          : `Plateau saturé : ${gagnant.name} l'emporte au décompte (${scores}).`);
+        setTimeout(() => {
+          if (nul) showEgalite(scores);
+          else showVictory(gagnant, `Plus aucune île ne peut être posée. ${gagnant.name} l'emporte au décompte des couronnes.`);
+        }, 450);
+      }
+
+      function showEgalite(scores) {
+        stopTurnTimer();
+        aiRunToken++;
+        els.gameScreen.classList.remove("ai-turn");
+        els.victoryPortrait.textContent = "⚖️";
+        els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
+        els.victoryTitle.textContent = "Match nul";
+        els.victoryTitle.style.color = "#cfd6ea";
+        els.victoryText.textContent = "Plus aucune île ne peut être posée, et les couronnes sont à égalité.";
+        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
+        els.victoryModal.classList.remove("hidden");
+        void els.victoryModal.offsetWidth;
+        els.victoryModal.classList.add("victory-visible");
+        if (!state.onlineMode) clearLocalSession();
+        playSfx("victory");
+      }
+
+      function showVictory(player, texte = null) {
         stopTurnTimer();
         aiRunToken++;
         els.gameScreen.classList.remove("ai-turn");
@@ -3968,7 +4003,8 @@
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = player.name;
         els.victoryTitle.style.color = player.color;
-        els.victoryText.textContent = `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
+        els.victoryText.textContent = texte
+          || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
         renderVictoryRecap(player);
 

@@ -577,3 +577,48 @@
           return !!occupant && occupant.player !== player.id;
         });
       }
+
+      /* ==================================================================
+         PLATEAU SATURÉ — fin de partie (règle V68)
+
+         Poser une île est obligatoire à chaque tour. Quand plus aucune forme
+         ne trouve où se poser, la partie ne peut plus avancer : elle s'arrête
+         et le joueur qui a validé le plus de couronnes l'emporte, à égalité
+         c'est un match nul.
+
+         On raisonne sur le PLATEAU, pas sur les stocks : « il n'y a plus de
+         place » veut dire qu'aucune forme du jeu ne tient nulle part, quel que
+         soit ce qu'il reste en réserve. Un stock épuisé rend seulement la pose
+         facultative — c'est une autre règle, déjà en vigueur.
+      ================================================================== */
+      function plateauSansPlace() {
+        if (!state) return false;
+        for (const shape of Object.values(SHAPES)) {
+          let rotated = normalizeShape(shape.cells);
+          const vues = new Set();
+          for (let rotation = 0; rotation < 4; rotation++) {
+            const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
+            if (!vues.has(signature)) {
+              vues.add(signature);
+              const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
+              const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
+              for (let r = 0; r <= GRID - hauteur; r++) {
+                for (let c = 0; c <= GRID - largeur; c++) {
+                  // Une seule place suffit à prouver que la partie continue.
+                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return false;
+                }
+              }
+            }
+            rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
+          }
+        }
+        return true;
+      }
+
+      /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
+      function vainqueurAuxCouronnes() {
+        const scores = (state.players || []).map(p => p.score || 0);
+        const meilleur = Math.max(...scores);
+        const exaequo = scores.filter(s => s === meilleur).length;
+        return exaequo > 1 ? null : scores.indexOf(meilleur);
+      }

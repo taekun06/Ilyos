@@ -290,3 +290,8 @@
 
       let state = null;
       let pendingVisualMode = "alternative";
+
+      /* Valeur de state.winner désignant un MATCH NUL. Distincte de null, qui
+         signifie « partie en cours » : tout le code teste winner === null pour
+         savoir si la partie continue, et doit continuer à le faire. */
+      const MATCH_NUL = -1;

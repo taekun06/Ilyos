@@ -301,6 +301,10 @@
          ===================================================================== */
 
       let autopsieCurseur = -1;
+      /* Suivi de la partie automatique mis de côté pendant la pause. Sans lui,
+         la reprise repartait « du tour 1 » : le panneau affichait ARRÊTÉE et un
+         compteur périmé pendant que la partie tournait. */
+      let autopsieSuivi = null;
 
       function autopsieIndexReel(index) {
         const n = ILYOS_AUTOPSIE_JOURNAL.length;
@@ -320,7 +324,20 @@
            à aiRunToken et abandonne dès qu'il a changé. */
         aiRunToken++;
         autopsieViderAnimations();
-        if (typeof stopIlyosAutoplay === "function") stopIlyosAutoplay("Pause pour revue");
+        if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) {
+          autopsieSuivi = {
+            startedTurn: ILYOS_AUTOPLAY.startedTurn,
+            maxTurns: ILYOS_AUTOPLAY.maxTurns,
+            logs: ILYOS_AUTOPLAY.logs,
+            difficulte: (state && state.aiDifficulty) || "expert"
+          };
+          // Ne pas rejournaliser une pause déjà en cours.
+          if (ILYOS_AUTOPLAY.active && typeof stopIlyosAutoplay === "function") {
+            stopIlyosAutoplay("Pause pour revue");
+          }
+        } else if (typeof stopIlyosAutoplay === "function") {
+          stopIlyosAutoplay("Pause pour revue");
+        }
         if (state) {
           state.aiThinking = false;
           state.inputLocked = false;
@@ -354,11 +371,35 @@
         // Repartir sur une file d'animations vide, sinon celles de l'ancien
         // tour se rejouent par-dessus le nouveau.
         autopsieViderAnimations();
-        state.players.forEach(j => { j.isAI = true; });
         state.inputLocked = false;
         state.aiThinking = false;
         state.turnTransitioning = false;
-        if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) ILYOS_AUTOPLAY.active = true;
+
+        /* Relancer la partie automatique pour retrouver sa SURVEILLANCE : sans
+           elle, plus rien ne détecte une victoire ni un tour figé, et le
+           panneau reste bloqué sur « ARRÊTÉE ». On lui restitue ensuite son
+           compteur de tours et son journal, faute de quoi elle repartirait du
+           tour où l'on a repris — ce qui ferait mentir l'affichage. */
+        if (typeof startIlyosAutoplay === "function") {
+          startIlyosAutoplay({
+            maxTurns: autopsieSuivi ? autopsieSuivi.maxTurns : 60,
+            difficulty: autopsieSuivi ? autopsieSuivi.difficulte : "expert"
+          });
+          if (autopsieSuivi && typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) {
+            ILYOS_AUTOPLAY.startedTurn = autopsieSuivi.startedTurn;
+            ILYOS_AUTOPLAY.logs = autopsieSuivi.logs;
+            // startIlyosAutoplay a déjà redessiné le panneau : il faut le
+            // refaire APRÈS restitution, sinon il garde le compteur du moment
+            // de la reprise et non celui de la partie.
+            if (typeof renderIlyosAutoplayPanel === "function") renderIlyosAutoplayPanel();
+          }
+        } else {
+          state.players.forEach(j => { j.isAI = true; });
+        }
+        autopsieSuivi = null;
+
+        // Le visuel est resynchronisé sur l'état logique avant de repartir.
+        if (typeof syncKayKitScene === "function") syncKayKitScene();
         renderAll();
         aiRunToken++;
         if (typeof runAITurn === "function") runAITurn(aiRunToken);

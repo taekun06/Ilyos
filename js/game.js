@@ -290,6 +290,11 @@
 
       let state = null;
       let pendingVisualMode = "alternative";
+
+      /* Valeur de state.winner désignant un MATCH NUL. Distincte de null, qui
+         signifie « partie en cours » : tout le code teste winner === null pour
+         savoir si la partie continue, et doit continuer à le faire. */
+      const MATCH_NUL = -1;
       /* =====================================================================
          ILYOS — KAYKIT EDITION / moteur visuel Three.js
          Le modèle de jeu reste dans le DOM. Cette scène 3D reflète l'état et
@@ -13591,7 +13596,7 @@
                   const centerDistance = Math.min(
                     ...cells.map(([cr, cc]) => Math.abs(cr - CENTER.r) + Math.abs(cc - CENTER.c))
                   );
-                  const contacts = aiExternalLandContacts(cells);
+                  // (la connectivité n'entre plus dans le score : voir plus bas)
                   const ownZoneCells = cells.filter(([cr, cc]) =>
                     ownValidationCells.some(([vr, vc]) => vr === cr && vc === cc)
                   ).length;
@@ -13612,18 +13617,18 @@
                     carrierBridge = nearCarrier + nearValidation;
                   }
 
-                  // La connectivité au reste du terrain (contacts) n'a plus
-                  // qu'un poids mineur : combler systématiquement les trous
-                  // n'apporte rien de tactique en soi, et un terrain plus
-                  // morcelé peut même gêner l'adversaire (accès imprévisible,
-                  // moins de raccourcis). Seul un très léger tiebreaker
-                  // subsiste pour éviter un semis totalement erratique.
+                  /* AUCUNE préférence pour le contact avec le terrain existant.
+                     La règle est explicite : une île se pose n'importe où sur
+                     le plateau tant qu'elle y tient, sans aucune restriction
+                     d'adjacence. Le bonus de connectivité qui figurait ici
+                     n'avait donc pas de fondement, et il suffisait à écarter
+                     les poses isolées — pourtant décisives, notamment pour
+                     aller bloquer un village adverse hors d'atteinte. */
                   let score =
                     targetDistance * 1.55
                     + characterDistance * .38
                     + centerDistance * .10
                     + (ownCarrier ? carrierBridge * .52 : 0)
-                    - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
                     + enemyZoneCells * (zoneAdverseAttractive ? -5.0 : 4.4)
                     + gameRandom() * aiConfig().randomness;
@@ -14968,6 +14973,17 @@
           renderAll();
           return;
         }
+        /* Plus aucune île ne peut être posée : la partie s'arrête ici (V68).
+           Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
+           tombe au même endroit qu'une victoire aux trois couronnes. */
+        if (plateauSansPlace()) {
+          state.winner = vainqueurAuxCouronnes();
+          if (state.winner === null) state.winner = MATCH_NUL;
+          terminerPartiePlateauPlein();
+          renderAll();
+          return;
+        }
+
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
@@ -20446,7 +20462,42 @@
         // annonce déjà les tours et les manches.
       }
 
-      function showVictory(player) {
+      /* Fin par plateau saturé : personne n'a atteint trois couronnes, on
+         départage au décompte. L'écran de victoire est réutilisé tel quel, avec
+         un texte qui dit d'où vient la fin — sans quoi le joueur croirait à un
+         bug. */
+      function terminerPartiePlateauPlein() {
+        stopTurnTimer();
+        const nul = state.winner === MATCH_NUL;
+        const gagnant = nul ? null : state.players[state.winner];
+        const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+        showToast(nul
+          ? `Plateau saturé : match nul (${scores}).`
+          : `Plateau saturé : ${gagnant.name} l'emporte au décompte (${scores}).`);
+        setTimeout(() => {
+          if (nul) showEgalite(scores);
+          else showVictory(gagnant, `Plus aucune île ne peut être posée. ${gagnant.name} l'emporte au décompte des couronnes.`);
+        }, 450);
+      }
+
+      function showEgalite(scores) {
+        stopTurnTimer();
+        aiRunToken++;
+        els.gameScreen.classList.remove("ai-turn");
+        els.victoryPortrait.textContent = "⚖️";
+        els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
+        els.victoryTitle.textContent = "Match nul";
+        els.victoryTitle.style.color = "#cfd6ea";
+        els.victoryText.textContent = "Plus aucune île ne peut être posée, et les couronnes sont à égalité.";
+        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
+        els.victoryModal.classList.remove("hidden");
+        void els.victoryModal.offsetWidth;
+        els.victoryModal.classList.add("victory-visible");
+        if (!state.onlineMode) clearLocalSession();
+        playSfx("victory");
+      }
+
+      function showVictory(player, texte = null) {
         stopTurnTimer();
         aiRunToken++;
         els.gameScreen.classList.remove("ai-turn");
@@ -20455,7 +20506,8 @@
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = player.name;
         els.victoryTitle.style.color = player.color;
-        els.victoryText.textContent = `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
+        els.victoryText.textContent = texte
+          || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
         renderVictoryRecap(player);
 
@@ -21380,6 +21432,51 @@
           return !!occupant && occupant.player !== player.id;
         });
       }
+
+      /* ==================================================================
+         PLATEAU SATURÉ — fin de partie (règle V68)
+
+         Poser une île est obligatoire à chaque tour. Quand plus aucune forme
+         ne trouve où se poser, la partie ne peut plus avancer : elle s'arrête
+         et le joueur qui a validé le plus de couronnes l'emporte, à égalité
+         c'est un match nul.
+
+         On raisonne sur le PLATEAU, pas sur les stocks : « il n'y a plus de
+         place » veut dire qu'aucune forme du jeu ne tient nulle part, quel que
+         soit ce qu'il reste en réserve. Un stock épuisé rend seulement la pose
+         facultative — c'est une autre règle, déjà en vigueur.
+      ================================================================== */
+      function plateauSansPlace() {
+        if (!state) return false;
+        for (const shape of Object.values(SHAPES)) {
+          let rotated = normalizeShape(shape.cells);
+          const vues = new Set();
+          for (let rotation = 0; rotation < 4; rotation++) {
+            const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
+            if (!vues.has(signature)) {
+              vues.add(signature);
+              const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
+              const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
+              for (let r = 0; r <= GRID - hauteur; r++) {
+                for (let c = 0; c <= GRID - largeur; c++) {
+                  // Une seule place suffit à prouver que la partie continue.
+                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return false;
+                }
+              }
+            }
+            rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
+          }
+        }
+        return true;
+      }
+
+      /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
+      function vainqueurAuxCouronnes() {
+        const scores = (state.players || []).map(p => p.score || 0);
+        const meilleur = Math.max(...scores);
+        const exaequo = scores.filter(s => s === meilleur).length;
+        return exaequo > 1 ? null : scores.indexOf(meilleur);
+      }
       /* =====================================================================
          CERVEAU EXPERT V2 — évaluateur, candidats, recherche de plan de tour.
 
@@ -21489,6 +21586,7 @@
            ramasser une couronne à sa portée (P07 et P08 échouaient ainsi). */
         routeUtile: 240,       // route du sanctuaire vers MES cases de validation
         controleSpatial: 150,  // part du terrain plus proche de mon but que du sien
+        tempoPerdu: 300,      // passer son tour : cinq cartes et un tempo
         routeFragile: 5       // case tenue mais bordée de vide : on en tombe
       };
 
@@ -21612,8 +21710,14 @@
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return [];
         const ennemis = plannerGardiensDe(adverse.id);
+        /* La clé retient TOUTE l'occupation, pas seulement les gardiens
+           adverses : mes propres gardiens bloquent aussi leurs déplacements.
+           Sans cela, une case que je viens de libérer restait « occupée » dans
+           le cache, et la menace qui en venait devenait invisible — A8, où le
+           porteur fuit vers une case tout aussi expulsable, échouait pour
+           cette seule raison. */
         const cle = plannerEmpreinteTerrain() + ':' + budgetMove + ':'
-          + ennemis.map(e => e.r + ',' + e.c).sort().join('|');
+          + (state.characters || []).map(c => c.r + ',' + c.c).sort().join('|');
         let portees = plannerCachePortees.get(cle);
         if (!portees) {
           portees = ennemis.map(ennemi => movementRange(ennemi, budgetMove));
@@ -21731,10 +21835,19 @@
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
             if (!isLand(r, c)) continue;
-            terrainTotal++;
             const dMoi = champMoi.get(key(r, c));
             const dAdv = champAdverse.get(key(r, c));
-            const mienne = Number.isFinite(dMoi) && (!Number.isFinite(dAdv) || dMoi < dAdv);
+            /* Une case qu'AUCUN camp ne peut rejoindre est neutre : elle ne
+               compte ni pour moi ni pour lui. La compter dans le total revenait
+               à la créditer à l'adversaire — et donc à faire BAISSER ma note
+               chaque fois que je posais une île isolée. L'IA s'interdisait
+               ainsi la pose dans le vide, pourtant parfaitement légale et
+               souvent décisive près du village adverse. */
+            const joignableMoi = Number.isFinite(dMoi);
+            const joignableAdverse = Number.isFinite(dAdv);
+            if (!joignableMoi && !joignableAdverse) continue;
+            terrainTotal++;
+            const mienne = joignableMoi && (!joignableAdverse || dMoi < dAdv);
             if (!mienne) continue;
             controle++;
             /* Une case bordée de vide est une case d'où l'on tombe : contrôler
@@ -21825,6 +21938,12 @@
 
         // A. Terminal : domine absolument.
         if (state.winner !== null && state.winner !== undefined) {
+          // Un match nul ne vaut ni la victoire ni la défaite : sans ce cas,
+          // l'IA le lisait comme une défaite et fuyait des positions neutres.
+          if (state.winner === MATCH_NUL) {
+            if (plannerTraceEval) plannerTraceEval.push({ terme: "matchNul", montant: 0, note: null });
+            return 0;
+          }
           const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
           if (trace) trace.push({ terme: "victoire", montant: terminal, note: null });
           return terminal;
@@ -22029,7 +22148,7 @@
            move est le plafond TOTAL, moveParIntention celui de CHAQUE
            intention : c'est le second qui empêche dix variantes du même coup
            d'évincer une idée d'une autre nature. */
-        racine: { move: 16, moveParIntention: 3, push: 8, magic: 8, pose: 6, poseSpawns: 2, poseTotal: 12 },
+        racine: { move: 16, moveParIntention: 3, push: 8, magic: 8, pose: 10, poseSpawns: 3, poseTotal: 18 },
         /* En profondeur on resserre, mais jamais en dessous de ce que le
            planner avait avant l'ouverture de la racine : les enchaînements
            utiles — se placer puis transmettre, préparer puis pousser — se
@@ -22604,6 +22723,39 @@
       }
 
       /** Applique n'importe quelle action du planner, gratuite ou non. */
+      /* Faisceau DIVERSIFIÉ : le meilleur de chaque nature d'abord.
+
+         Trier par note et couper au plafond laissait une seule idée occuper
+         toutes les places — dix poses d'île presque identiques évinçaient la
+         parade qui répondait à deux menaces (A8 échouait ainsi). On sert donc
+         chaque type d'action à tour de rôle avant de compléter par les
+         meilleurs restants : aucune nature de coup ne peut plus disparaître du
+         faisceau tant qu'il y reste de la place. */
+      function plannerFaisceauDiversifie(candidats, largeur) {
+        if (candidats.length <= largeur) return candidats;
+        const parNature = new Map();
+        for (const noeud of candidats) {
+          const derniere = noeud.plan[noeud.plan.length - 1];
+          const nature = derniere ? derniere.type : "RIEN";
+          if (!parNature.has(nature)) parNature.set(nature, []);
+          parNature.get(nature).push(noeud);
+        }
+        const retenus = [];
+        const vus = new Set();
+        const files = [...parNature.values()];
+        let rang = 0;
+        // Tour de rôle : une place à chaque nature, puis on recommence.
+        while (retenus.length < largeur && files.some(f => rang < f.length)) {
+          for (const file of files) {
+            if (retenus.length >= largeur) break;
+            const noeud = file[rang];
+            if (noeud && !vus.has(noeud)) { vus.add(noeud); retenus.push(noeud); }
+          }
+          rang++;
+        }
+        return retenus;
+      }
+
       function plannerAppliquerAction(action) {
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
@@ -22641,10 +22793,15 @@
          ------------------------------------------------------------------- */
 
       const PLAN_BUDGET = {
-        largeurFaisceau: 10,
+        /* Le faisceau suit l'ouverture de la racine. Élargir les candidats sans
+           élargir le faisceau est contre-productif : les variantes d'une même
+           idée — dix poses d'île presque identiques — remplissent les places et
+           évincent les lignes d'une autre nature. Mesuré : A8, qui demande une
+           parade précise, échouait pour cette seule raison. */
+        largeurFaisceau: 14,
         decisionsMax: 6,
-        etatsMax: 900,
-        tempsMaxMs: 350
+        etatsMax: 1200,
+        tempsMaxMs: 500
       };
 
       // Dernier plan calculé — lu par l'outillage de diagnostic et par
@@ -22821,7 +22978,7 @@
 
           if (!suivants.length) break;
           suivants.sort((a, b) => b.note - a.note);
-          faisceau = suivants.slice(0, budget.largeurFaisceau);
+          faisceau = plannerFaisceauDiversifie(suivants, budget.largeurFaisceau);
           profondeurAtteinte = niveau + 1;
           if (performance.now() - debut > budget.tempsMaxMs) break;
           if (etatsExplores > budget.etatsMax) break;
@@ -23010,10 +23167,23 @@
         }
 
         const debutRiposte = performance.now();
+        /* NE RIEN FAIRE COÛTE UN TOUR.
+
+           Le classement par robustesse récompense ce qui ne risque rien — et
+           rien ne risque moins que l'immobilité. L'IA renonçait ainsi à
+           ramasser une couronne à sa portée parce que la porter l'exposait
+           (P08 échouait : « aucune action »).
+
+           Passer son tour n'est pourtant pas gratuit : c'est cinq cartes
+           perdues et un tempo offert. Le plan vide se voit donc appliquer ce
+           coût, comme n'importe quel autre coup a le sien. */
         const examines = finalistes.map(noeud => ({
           noeud: noeud,
           robustesse: plannerEvaluerRobustesse(noeud, playerId)
         }));
+        examines.forEach(e => {
+          if (!e.noeud.plan.length) e.robustesse.note -= PLAN_POIDS.tempoPerdu;
+        });
         examines.sort((a, b) => b.robustesse.note - a.robustesse.note);
         const dureeRiposte = performance.now() - debutRiposte;
         const retenu = examines[0];
@@ -23356,6 +23526,10 @@
          ===================================================================== */
 
       let autopsieCurseur = -1;
+      /* Suivi de la partie automatique mis de côté pendant la pause. Sans lui,
+         la reprise repartait « du tour 1 » : le panneau affichait ARRÊTÉE et un
+         compteur périmé pendant que la partie tournait. */
+      let autopsieSuivi = null;
 
       function autopsieIndexReel(index) {
         const n = ILYOS_AUTOPSIE_JOURNAL.length;
@@ -23375,7 +23549,20 @@
            à aiRunToken et abandonne dès qu'il a changé. */
         aiRunToken++;
         autopsieViderAnimations();
-        if (typeof stopIlyosAutoplay === "function") stopIlyosAutoplay("Pause pour revue");
+        if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) {
+          autopsieSuivi = {
+            startedTurn: ILYOS_AUTOPLAY.startedTurn,
+            maxTurns: ILYOS_AUTOPLAY.maxTurns,
+            logs: ILYOS_AUTOPLAY.logs,
+            difficulte: (state && state.aiDifficulty) || "expert"
+          };
+          // Ne pas rejournaliser une pause déjà en cours.
+          if (ILYOS_AUTOPLAY.active && typeof stopIlyosAutoplay === "function") {
+            stopIlyosAutoplay("Pause pour revue");
+          }
+        } else if (typeof stopIlyosAutoplay === "function") {
+          stopIlyosAutoplay("Pause pour revue");
+        }
         if (state) {
           state.aiThinking = false;
           state.inputLocked = false;
@@ -23409,11 +23596,35 @@
         // Repartir sur une file d'animations vide, sinon celles de l'ancien
         // tour se rejouent par-dessus le nouveau.
         autopsieViderAnimations();
-        state.players.forEach(j => { j.isAI = true; });
         state.inputLocked = false;
         state.aiThinking = false;
         state.turnTransitioning = false;
-        if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) ILYOS_AUTOPLAY.active = true;
+
+        /* Relancer la partie automatique pour retrouver sa SURVEILLANCE : sans
+           elle, plus rien ne détecte une victoire ni un tour figé, et le
+           panneau reste bloqué sur « ARRÊTÉE ». On lui restitue ensuite son
+           compteur de tours et son journal, faute de quoi elle repartirait du
+           tour où l'on a repris — ce qui ferait mentir l'affichage. */
+        if (typeof startIlyosAutoplay === "function") {
+          startIlyosAutoplay({
+            maxTurns: autopsieSuivi ? autopsieSuivi.maxTurns : 60,
+            difficulty: autopsieSuivi ? autopsieSuivi.difficulte : "expert"
+          });
+          if (autopsieSuivi && typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) {
+            ILYOS_AUTOPLAY.startedTurn = autopsieSuivi.startedTurn;
+            ILYOS_AUTOPLAY.logs = autopsieSuivi.logs;
+            // startIlyosAutoplay a déjà redessiné le panneau : il faut le
+            // refaire APRÈS restitution, sinon il garde le compteur du moment
+            // de la reprise et non celui de la partie.
+            if (typeof renderIlyosAutoplayPanel === "function") renderIlyosAutoplayPanel();
+          }
+        } else {
+          state.players.forEach(j => { j.isAI = true; });
+        }
+        autopsieSuivi = null;
+
+        // Le visuel est resynchronisé sur l'état logique avant de repartir.
+        if (typeof syncKayKitScene === "function") syncKayKitScene();
         renderAll();
         aiRunToken++;
         if (typeof runAITurn === "function") runAITurn(aiRunToken);

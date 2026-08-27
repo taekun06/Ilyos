@@ -51,6 +51,17 @@
           renderAll();
           return;
         }
+        /* Plus aucune île ne peut être posée : la partie s'arrête ici (V68).
+           Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
+           tombe au même endroit qu'une victoire aux trois couronnes. */
+        if (plateauSansPlace()) {
+          state.winner = vainqueurAuxCouronnes();
+          if (state.winner === null) state.winner = MATCH_NUL;
+          terminerPartiePlateauPlein();
+          renderAll();
+          return;
+        }
+
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
