@@ -153,7 +153,14 @@
        *  Le choix de la case de spawn reprend exactement celui de
        *  createAutomaticIslandAndSpawn : la case libre la plus proche de la
        *  cible de placement automatique. */
-      function applyIslandPlacementCore(shapeKey, cells, ownerId, relCells = null, anchor = null) {
+      /* spawnCell rend au gardien qui apparaît le statut de DÉCISION. Un joueur
+         humain choisit sa case (phase PLACE_SPAWN) ; sans ce paramètre l'IA
+         subissait une heuristique, et poser l'île près de l'action ne servait à
+         rien si le gardien surgissait à l'autre bout de la forme.
+
+         Omis, le comportement historique est conservé à l'identique : la case
+         libre la plus proche de la cible automatique. */
+      function applyIslandPlacementCore(shapeKey, cells, ownerId, relCells = null, anchor = null, spawnCell = null) {
         if (!state || !Array.isArray(cells) || !cells.length) return null;
 
         const cellules = cloneCells(cells);
@@ -173,12 +180,18 @@
         let gardien = null;
         let couronneRamassee = null;
         if (canCreateGuardian(ownerId)) {
-          const cible = automaticPlacementTarget(ownerId);
           const libres = ile.cells.filter(([r, c]) => !characterAt(r, c));
-          libres.sort((a, b) =>
-            (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
-            (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
-          const [sr, sc] = libres[0] || ile.cells[0];
+          let choisie = Array.isArray(spawnCell)
+            ? libres.find(([r, c]) => r === spawnCell[0] && c === spawnCell[1]) || null
+            : null;
+          if (!choisie) {
+            const cible = automaticPlacementTarget(ownerId);
+            libres.sort((a, b) =>
+              (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
+              (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
+            choisie = libres[0] || ile.cells[0];
+          }
+          const [sr, sc] = choisie;
           gardien = { id: `char-${state.nextCharId++}`, player: ownerId, r: sr, c: sc };
           state.characters.push(gardien);
           couronneRamassee = resolveArtifactCore(gardien);
@@ -383,7 +396,8 @@
             return applyMagicRotationCore(action.islandId, rotation);
           }
           case "POSE": return applyIslandPlacementCore(
-            action.shapeKey, action.cells, action.owner, action.relCells, action.anchor
+            action.shapeKey, action.cells, action.owner, action.relCells, action.anchor,
+            action.spawn || null
           );
           default: return null;
         }

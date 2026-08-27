@@ -387,6 +387,8 @@
 
       const PLAN_CANDIDATS = {
         move: 8, push: 5, magic: 4, pose: 6,
+        // Cases d'apparition envisagées par pose, et plafond de POSE au total.
+        poseSpawns: 3, poseTotal: 12,
         // Plafonds de la génération de candidats MAGIC, la seule qui simule
         // réellement chaque option pour la pré-classer (voir plus bas).
         magicRotationsMax: 36,
@@ -627,18 +629,64 @@
         return options.slice(0, PLAN_CANDIDATS.magic);
       }
 
+      /* L'adversaire est-il assez près de marquer pour que se poser sur son
+         village vaille mieux que suivre l'action ? Même signal que celui qui
+         pondère la défense dans l'évaluateur : sans porteur adverse proche de
+         SES cases de validation, il n'y a rien à contester. */
+      function plannerMenaceValidationAdverse(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return false;
+        return (state.characters || []).some(char =>
+          char.player === adverse.id
+          && characterCarriesCrown(char.id)
+          && aiValidationDistanceForPlayer(adverse, char.r, char.c) <= 3
+        );
+      }
+
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
-        const placements = findAutomaticIslandPlacement(playerId, PLAN_CANDIDATS.pose, true);
+        /* Le biais vers la zone adverse ne s'active que sous menace réelle.
+           Permanent, il détournait la pose de l'action : l'IA allait camper au
+           village adverse pendant qu'une couronne libre attendait ailleurs. */
+        const placements = findAutomaticIslandPlacement(
+          playerId, PLAN_CANDIDATS.pose, plannerMenaceValidationAdverse(playerId)
+        );
         if (!Array.isArray(placements)) return [];
-        return placements.map(p => ({
-          type: "POSE",
-          shapeKey: p.shapeKey,
-          cells: p.cells,
-          relCells: p.relCells,
-          anchor: p.anchor,
-          owner: playerId
-        }));
+
+        /* La case d'apparition fait partie de la décision, comme pour un joueur
+           humain. Les cases sont classées par proximité de la cible automatique,
+           si bien que la première reste EXACTEMENT celle que le jeu choisirait
+           seul : l'ancien comportement demeure candidat, on lui ajoute des
+           alternatives. */
+        const cible = automaticPlacementTarget(playerId);
+        const parPose = placements.map(p => {
+          const libres = p.cells.filter(([r, c]) => !characterAt(r, c));
+          libres.sort((a, b) =>
+            (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
+            (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
+          return { pose: p, spawns: libres.slice(0, PLAN_CANDIDATS.poseSpawns) };
+        });
+
+        /* Entrelacé : le premier choix de CHAQUE pose avant le deuxième choix
+           de la première. Sans cela le plafond ne retiendrait que les variantes
+           d'une ou deux poses, et la diversité des emplacements — le point
+           vraiment décisif — serait perdue. */
+        const options = [];
+        for (let rang = 0; rang < PLAN_CANDIDATS.poseSpawns; rang++) {
+          for (const { pose, spawns } of parPose) {
+            if (rang >= spawns.length) continue;
+            options.push({
+              type: "POSE",
+              shapeKey: pose.shapeKey,
+              cells: pose.cells,
+              relCells: pose.relCells,
+              anchor: pose.anchor,
+              owner: playerId,
+              spawn: spawns[rang]
+            });
+          }
+        }
+        return options.slice(0, PLAN_CANDIDATS.poseTotal);
       }
 
       /* Transitions GRATUITES : elles ne consomment aucune carte et ne comptent

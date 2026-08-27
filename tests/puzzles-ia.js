@@ -572,6 +572,55 @@ const PUZZLES = [
         raison: `île posée : ${posee ? "oui" : "non"}, croix de partie ${croixAvant}→${croix}`
       };
     }
+  },
+
+  {
+    id: "17",
+    nom: "Poser près de l'action plutôt que marcher",
+    /* La couronne libre est à l'autre bout du plateau et AUCUN chemin de terrain
+       n'y mène : marcher est impossible, pas seulement coûteux. Une IA qui ne
+       considère la pose que comme une obligation à expédier finit son tour les
+       mains vides.
+
+       Or la pose est un moyen de transport. Poser l'île contre la couronne y
+       fait apparaître un gardien, et un gardien adjacent à une couronne la
+       ramasse GRATUITEMENT — la couronne est prise sans dépenser une carte.
+
+       Deux capacités sont mesurées ensemble : choisir l'emplacement de l'île en
+       fonction de l'action, et choisir la case d'apparition du gardien sur cette
+       île. Poser au bon endroit ne sert à rien si le gardien surgit à l'autre
+       bout de la forme.
+
+       Réussite = l'IA porte la couronne en fin de tour. */
+    spec: {
+      seed: 117,
+      islandPlacedThisTurn: false,
+      hands: { 0: ["MOVE", "MOVE"], 1: [] },
+      islands: [
+        { shapeKey: "domino", owner: 1, cells: [[1, 5], [2, 5]] },
+        { shapeKey: "line3", owner: 0, cells: [[9, 1], [9, 2], [9, 3]] },
+        { shapeKey: "domino", owner: 1, cells: [[8, 8], [8, 9]] }
+      ],
+      characters: [
+        { id: "ia-1", player: 0, r: 9, c: 2 },
+        { id: "adv-1", player: 1, r: 8, c: 8 }
+      ],
+      crowns: [{ r: 2, c: 5, active: true }]
+    },
+    attendu(obs) {
+      const p = porteurDe(obs, 0);
+      if (p) {
+        return { ok: true, raison: `l'IA porte la couronne (gardien en ${p.r},${p.c})` };
+      }
+      const cr = obs.couronnes.find(c => c.active);
+      const proche = obs.gardiensIA
+        .map(g => manhattan([g.r, g.c], [cr.r, cr.c]))
+        .sort((a, b) => a - b)[0];
+      return {
+        ok: false,
+        raison: `couronne toujours libre en (${cr.r},${cr.c}) ; gardien IA le plus proche à ${proche ?? "∞"}`
+      };
+    }
   }
 ];
 

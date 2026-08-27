@@ -986,7 +986,8 @@
           }
           case "POSE": {
             const applique = applyIslandPlacementCore(
-              action.shapeKey, action.cells, action.owner, action.relCells, action.anchor
+              action.shapeKey, action.cells, action.owner, action.relCells, action.anchor,
+              action.spawn || null
             );
             if (!applique) return false;
             playIslandDrop(applique.ileId);

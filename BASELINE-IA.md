@@ -412,3 +412,55 @@ porteur : c'était alors un point gratuit qui économisait un gardien. Le gardie
 étant devenu obligatoire, ce coup ne sert plus qu'à des relais marginaux, et
 ajouter un générateur élargirait une recherche déjà contrainte par le temps.
 À reconsidérer si une position réelle en montre le besoin.
+
+---
+
+# La pose comme moyen de transport
+
+Deuxième plainte de l'auteur : « je ne comprends pas pourquoi il gaspille des
+actions alors qu'il suffit plein de fois de placer son île et son gardien plus
+proche de l'action ». Deux causes distinctes, mesurées par le puzzle P17.
+
+## La case d'apparition n'était pas une décision
+
+Un joueur humain qui pose une île CHOISIT la case où son gardien apparaît :
+c'est la phase `PLACE_SPAWN`. L'IA, elle, subissait une heuristique —
+`applyIslandPlacementCore` prenait la case libre la plus proche d'une cible
+calculée ailleurs, hors de toute planification.
+
+L'asymétrie coûtait cher : poser l'île contre la couronne ne sert à rien si le
+gardien surgit à l'autre bout de la forme. `applyIslandPlacementCore` accepte
+désormais une case explicite, et le planner en propose plusieurs par pose,
+entrelacées pour ne pas sacrifier la diversité des emplacements. Sans case
+explicite, le comportement historique est conservé au bit près.
+
+## Un biais défensif que j'avais rendu permanent
+
+En corrigeant la fuite de la zone adverse (V67), j'avais rendu ces cases
+attractives SANS CONDITION. Le résultat se lit dans le premier passage de P17 :
+la couronne libre attendait en (2,5), et le planner posait une croix en
+(0,9)–(1,10), au village adverse, sans aucun porteur adverse en jeu.
+
+Les huit finalistes portaient alors **la même note, 209** : le pré-filtre ne
+proposait que des poses du même coin, et l'évaluateur n'avait plus rien à
+départager. Une note uniforme entre finalistes est le symptôme à surveiller —
+elle signale que la décision s'est jouée AVANT l'évaluateur.
+
+Le biais est maintenant conditionné au même signal que la défense dans
+l'évaluateur : un porteur adverse à 3 cases ou moins de SES cases de validation.
+Sans menace réelle, la pose suit l'action.
+
+## Mesure
+
+| Banc | Avant | Après |
+|---|---|---|
+| Puzzles historiques | 15 / 17 | **16 / 17** |
+| Banc adversarial | 12 / 12 | **12 / 12** |
+
+P17 : la couronne est hors d'atteinte à pied — aucun chemin de terrain n'y mène.
+L'IA pose une île en (3,4)(3,5)(4,3)(4,4), fait apparaître son gardien en (3,5)
+juste sous la couronne, la RAMASSE gratuitement puis avance. Note 49 → 1485, là
+où le meilleur plan précédent plafonnait à 209.
+
+La défense ne régresse pas : A11 et A12 passent toujours, la menace y étant
+réelle et le biais donc actif.
