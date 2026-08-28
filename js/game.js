@@ -23804,8 +23804,8 @@
 
       /* Signale un tour raté. Le coup attendu est libre : « bloquer le
          village », « ne pas lâcher la couronne » — c'est le sens qui compte. */
-      function autopsieNoter(coupAttendu, pourquoi = "") {
-        const i = autopsieIndexReel();
+      function autopsieNoter(coupAttendu, pourquoi = "", index = null) {
+        const i = index === null || index < 0 ? autopsieIndexReel() : index;
         const e = ILYOS_AUTOPSIE_JOURNAL[i];
         if (!e) { console.log("Aucune décision à annoter."); return null; }
         if (!coupAttendu) { console.log('Précisez le coup attendu.'); return null; }
@@ -23877,6 +23877,20 @@
          ------------------------------------------------------------------- */
 
       let revueVueRecap = false;
+      /* Saisie EN LIGNE plutôt que window.prompt().
+
+         Les boîtes natives figent le rendu de la page : le jeu se bloquait
+         le temps de la saisie, et il en fallait deux par annotation. Un champ
+         dans le panneau ne bloque rien et laisse le plateau sous les yeux —
+         justement au moment où l'on veut décrire le coup qu'on aurait joué.
+
+         Un seul champ : la raison tient dans la même phrase, et deux champs
+         doublaient la manipulation pour rien. */
+      let revueSaisieOuverte = false;
+      /* Décision VISÉE par la saisie, figée à l ouverture du champ. La partie
+         continue pendant qu on tape : sans ce gel, l annotation atterrissait
+         sur le tour courant et non sur celui qu on regardait. */
+      let revueSaisieIndex = -1;
 
       function revueEchapper(texte) {
         return String(texte == null ? "" : texte)
@@ -23913,7 +23927,7 @@
         const panneau = revuePanneau();
         const journal = ILYOS_AUTOPSIE_JOURNAL;
         const enPause = !(typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active);
-        const i = autopsieIndexReel();
+        const i = revueSaisieOuverte && revueSaisieIndex >= 0 ? revueSaisieIndex : autopsieIndexReel();
         const e = journal[i];
         const annotees = journal.filter(x => x.annotation).length;
 
@@ -23936,7 +23950,14 @@
             <p style="margin:0 0 6px">${revueEchapper(e.planLisible)}</p>
             ${e.annotation ? `<p style="margin:0 0 6px;padding:6px;background:#17301f;border-radius:6px">
                  <span style="color:#7ee0a0">vous auriez :</span> ${revueEchapper(e.annotation.coupAttendu)}
-               </p>` : ""}`;
+               </p>` : ""}
+            ${revueSaisieOuverte ? `<div style="margin:6px 0;padding:8px;background:#1a2136;border-radius:6px">
+                 <div style="color:#8f9ab8;margin-bottom:4px">Quel coup auriez-vous joué ?</div>
+                 <input data-revue-coup type="text" placeholder="bloquer le village, il marquait au tour suivant"
+                   value="${revueEchapper(e.annotation ? e.annotation.coupAttendu : '')}"
+                   style="width:100%;box-sizing:border-box;background:#0e1220;color:#e8ecf8;
+                          border:1px solid #3a4568;border-radius:5px;padding:5px;font:inherit">
+               </div>` : ""}`;
         }
 
         panneau.innerHTML =
@@ -23949,10 +23970,29 @@
              ${revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
              ${revueBouton("◀", "precedent", journal.length > 0)}
              ${revueBouton("▶", "suivant", journal.length > 0)}
-             ${revueBouton("⚠ Tour raté", "noter", !!e)}
+             ${revueSaisieOuverte
+               ? revueBouton("✓ Valider", "valider") + revueBouton("✗ Annuler", "annuler")
+               : revueBouton("⚠ Tour raté", "noter", !!e)}
              ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
              ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees > 0) : ""}
            </div>`;
+
+        // Entrée valide, Échap annule : on ne quitte pas le clavier pour rien.
+        const champSaisie = panneau.querySelector("[data-revue-coup]");
+        if (champSaisie) {
+          champSaisie.addEventListener("keydown", evenement => {
+            if (evenement.key === "Enter") {
+              const coup = champSaisie.value.trim();
+              if (coup) autopsieNoter(coup, "", revueSaisieIndex);
+              revueSaisieOuverte = false;
+              revueRendre();
+            } else if (evenement.key === "Escape") {
+              revueSaisieOuverte = false;
+              revueRendre();
+            }
+          });
+          if (document.activeElement !== champSaisie) champSaisie.focus();
+        }
 
         panneau.querySelectorAll("[data-revue]").forEach(bouton => {
           bouton.addEventListener("click", () => {
@@ -23970,10 +24010,15 @@
               );
               return;
             } else if (quoi === "noter") {
-              const coup = window.prompt("Qu'auriez-vous joué à ce tour ?", e?.annotation?.coupAttendu || "");
-              if (coup === null) return;
-              const pourquoi = window.prompt("Pourquoi ? (facultatif)", e?.annotation?.pourquoi || "");
-              autopsieNoter(coup, pourquoi || "");
+              revueSaisieOuverte = true;
+              revueSaisieIndex = i;
+            } else if (quoi === "annuler") {
+              revueSaisieOuverte = false;
+            } else if (quoi === "valider") {
+              const champ = panneau.querySelector("[data-revue-coup]");
+              const coup = champ ? champ.value.trim() : "";
+              if (coup) autopsieNoter(coup, "", revueSaisieIndex);
+              revueSaisieOuverte = false;
             }
             revueRendre();
           });
@@ -24168,11 +24213,13 @@
           `<p><strong>Phase :</strong> ${state?.phase || '—'} · Îles ${state?.islands?.length || 0}</p>` +
           `<p><strong>Scores :</strong> ${(state?.players || []).map(p => `${p.name} ${p.score || 0}/3`).join(' · ') || '—'}</p>` +
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
+          `<div class="ilyos-autoplay-actions">` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
           `<button data-autoplay-report>DIAGNOSTIC</button> ` +
           /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
              la réserver à qui pense à la taper. */
-          `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>`;
+          `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>` +
+          `</div>`;
         panel.querySelector('[data-autoplay-stop]')?.addEventListener('click', () => {
           if (ILYOS_AUTOPLAY.active) stopIlyosAutoplay('Arrêt manuel'); else panel.remove();
         });
