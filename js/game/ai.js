@@ -125,50 +125,15 @@
       }
 
       function simulateCharacterPushForAI(startR, startC, dr, dc, force) {
-        const line = collectPushLine(startR, startC, dr, dc);
-        const simulated = line.map(char => ({
-          char,
-          r: char.r,
-          c: char.c,
-          alive: true
-        }));
-
-        const movingIds = new Set(line.map(char => char.id));
-        const fixedOccupants = new Set(
-          state.characters
-            .filter(char => !movingIds.has(char.id))
-            .map(char => key(char.r, char.c))
-        );
-
-        const requiredForce = line.length;
-        if (force < requiredForce) return simulated;
-        const pushDistance = Math.max(1, force - requiredForce + 1);
-        for (let step = 0; step < pushDistance; step++) {
-          for (let i = simulated.length - 1; i >= 0; i--) {
-            const item = simulated[i];
-            if (!item.alive) continue;
-
-            const nr = item.r + dr;
-            const nc = item.c + dc;
-
-            if (!inside(nr, nc) || !isLand(nr, nc)) {
-              item.alive = false;
-              continue;
-            }
-
-            const blockedByFixed = fixedOccupants.has(key(nr, nc));
-            const blockedByLine = simulated.some((other, index) =>
-              index !== i && other.alive && other.r === nr && other.c === nc
-            );
-            const blockedByCrown = !!looseArtifactAt(nr, nc);
-
-            if (blockedByFixed || blockedByLine || blockedByCrown) continue;
-            item.r = nr;
-            item.c = nc;
-          }
-        }
-
-        return simulated;
+        const gardiens = collectPushBlock(startR, startC, dr, dc).filter(m => m.kind === "char");
+        const plan = resoudrePousseeBloc(startR, startC, dr, dc, force);
+        const parId = new Map();
+        (plan ? plan.mouvements : []).forEach(mv => parId.set(mv.id, mv));
+        return gardiens.map(m => {
+          const mv = parId.get(m.ref.id);
+          if (!mv) return { char: m.ref, r: m.r, c: m.c, alive: true };
+          return { char: m.ref, r: mv.to[0], c: mv.to[1], alive: !mv.chute };
+        });
       }
 
       function aiExternalLandContacts(cells, ignoredIslandId = null) {
@@ -378,83 +343,35 @@
       }
 
       function simulateLooseCrownPush(artifact, dr, dc, force, startR = artifact.r, startC = artifact.c) {
-        const exactForce = Math.max(1, Math.floor(force || 1));
-        let crossedVoid = false;
-
-        for (let step = 1; step <= exactForce; step++) {
-          const r = startR + dr * step;
-          const c = startC + dc * step;
-
-          if (!inside(r, c)) {
-            return {
-              r: startR,
-              c: startC,
-              moved: 0,
-              valid: false,
-              crossedVoid,
-              reason: "outside"
-            };
-          }
-
-          const otherCrown = looseArtifactAt(r, c);
-          const obstacle =
-            characterAt(r, c)
-            || (otherCrown && otherCrown.id !== artifact.id);
-
-          /*
-           * La trajectoire peut passer au-dessus du vide, mais pas traverser
-           * un gardien ni une autre couronne.
-           */
-          if (obstacle) {
-            return {
-              r: startR,
-              c: startC,
-              moved: 0,
-              valid: false,
-              crossedVoid,
-              reason: "blocked"
-            };
-          }
-
-          if (step < exactForce) {
-            if (!isLand(r, c)) crossedVoid = true;
-            continue;
-          }
-
-          /*
-           * La force choisie doit faire atterrir exactement la couronne
-           * sur une case de terrain. Une force trop faible ou trop forte
-           * ne permet donc pas la poussée.
-           */
-          if (!isLand(r, c)) {
-            return {
-              r: startR,
-              c: startC,
-              moved: 0,
-              valid: false,
-              crossedVoid: true,
-              reason: "no-landing"
-            };
-          }
-
-          return {
-            r,
-            c,
-            moved: exactForce,
-            valid: true,
-            crossedVoid,
-            reason: null
-          };
+        // Le point de départ peut être hypothétique — une couronne encore
+        // portée que l'IA envisage de poser puis de pousser. On la place le
+        // temps de la résolution, puis on restaure l'état exact.
+        const memoR = artifact.r;
+        const memoC = artifact.c;
+        const memoPorteur = artifact.carrierId;
+        let plan = null;
+        try {
+          artifact.r = startR;
+          artifact.c = startC;
+          artifact.carrierId = null;
+          plan = resoudrePousseeBloc(startR, startC, dr, dc, force);
+        } finally {
+          artifact.r = memoR;
+          artifact.c = memoC;
+          artifact.carrierId = memoPorteur;
         }
 
-        return {
-          r: startR,
-          c: startC,
-          moved: 0,
-          valid: false,
-          crossedVoid,
-          reason: "no-landing"
-        };
+        const mv = plan && plan.mouvements.find(m => m.kind === "crown" && m.id === artifact.id);
+        if (!mv) {
+          return { r: startR, c: startC, moved: 0, valid: false, crossedVoid: false, reason: "blocked" };
+        }
+
+        const moved = Math.abs(mv.to[0] - mv.from[0]) + Math.abs(mv.to[1] - mv.from[1]);
+        let crossedVoid = false;
+        for (let i = 1; i < moved; i++) {
+          if (!isLand(mv.from[0] + dr * i, mv.from[1] + dc * i)) { crossedVoid = true; break; }
+        }
+        return { r: mv.to[0], c: mv.to[1], moved, valid: moved > 0, crossedVoid, reason: null };
       }
 
       function adjacentFreeAllyForCrown(r, c, excludedIds = []) {
@@ -749,10 +666,10 @@
               return;
             }
 
-            const line = collectPushLine(r, c, dr, dc);
-            const requiredForce = line.length;
-            if (requiredForce < 1 || requiredForce > maxForce) return;
-            for (let force = requiredForce; force <= maxForce; force++) {
+            // Règle V67 : toute force est jouable et pousse le bloc d'autant
+            // de cases. L'énumération part donc de 1, sans plancher aligné.
+            if (!collectPushBlock(r, c, dr, dc).length) return;
+            for (let force = 1; force <= maxForce; force++) {
               const simulation = simulateCharacterPushForAI(r, c, dr, dc, force);
               let utility = -force * 7;
               for (const item of simulation) {
@@ -790,7 +707,7 @@
                   utility -= 22;
                 }
               }
-              if (utility > 10) options.push({ pusher, r, c, count: force, priority: -utility, utility, targetType: "character", requiredForce });
+              if (utility > 10) options.push({ pusher, r, c, count: force, priority: -utility, utility, targetType: "character", requiredForce: 1 });
             }
           });
         });
@@ -981,6 +898,8 @@
        *  en silence — elle signifierait un défaut du simulateur. */
       async function runExpertPlannedTurn(token) {
         const joueur = state.currentPlayer;
+        // Pris AVANT toute décision : c'est ce qui rend la position rejouable.
+        const instantaneAutopsie = autopsieInstantaneAvant();
         /* V3 : le plan retenu est celui qui résiste le mieux à la riposte
            adverse, pas nécessairement celui qui note le mieux en fin de tour.
 
@@ -993,14 +912,21 @@
           rapport = plannerChercherPlanRobuste(joueur);
         } catch (erreur) {
           console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
+          autopsieConsigner(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);
           return false;
         }
         if (!rapport || !rapport.plan.length) {
+          autopsieConsigner(joueur, instantaneAutopsie, rapport,
+            state.islandPlacedThisTurn
+              ? "aucune action jugée meilleure que l'arrêt"
+              : "plan vide et île non posée : main rendue à la logique historique");
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
           // soit faite. Sinon on laisse la voie historique s'en charger.
           return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
         }
+
+        autopsieConsigner(joueur, instantaneAutopsie, rapport, null);
 
         benchJournaliser({
           type: "PLAN",
@@ -1069,7 +995,8 @@
           }
           case "POSE": {
             const applique = applyIslandPlacementCore(
-              action.shapeKey, action.cells, action.owner, action.relCells, action.anchor
+              action.shapeKey, action.cells, action.owner, action.relCells, action.anchor,
+              action.spawn || null
             );
             if (!applique) return false;
             playIslandDrop(applique.ileId);

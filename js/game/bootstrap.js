@@ -290,3 +290,18 @@
 
       let state = null;
       let pendingVisualMode = "alternative";
+
+      /* Valeur de state.winner désignant un MATCH NUL. Distincte de null, qui
+         signifie « partie en cours » : tout le code teste winner === null pour
+         savoir si la partie continue, et doit continuer à le faire. */
+      const MATCH_NUL = -1;
+
+      /* Rangement des cartes en fin de tour. Déclaré ici pour être visible de
+         tous les fragments ; l'implémentation est fournie par le module de
+         réserve physique, exactement comme consumeAvailableActions. Un seul
+         corps de règle, deux appelants : la vraie fin de tour et le self-play. */
+      let rangerCartesFinDeTour = function (player) {
+        if (!player) return { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        player.hand = [];
+        return { MOVE: 0, PUSH: 0, MAGIC: 0 };
+      };

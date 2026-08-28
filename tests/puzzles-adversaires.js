@@ -340,7 +340,181 @@ const SCENARIOS = [
           : `porteur en (${p.r},${p.c}), tient contre les deux gardiens`
       };
     }
+  },
+  {
+    id: "A9",
+    nom: "Empecher un point imminent",
+    /* LE cas le plus important du jeu, signale en jouant : le porteur adverse
+       est POSE sur une de ses cases de validation. Il marquera au DEBUT de son
+       prochain tour — l IA a donc exactement un tour pour l en empecher, et
+       c est sa derniere occasion.
+
+       Elle dispose d un gardien a deux pas et de quoi le rejoindre puis le
+       pousser hors du plateau. Rien d autre sur le plateau ne vaut un point.
+
+       Reussite : l adversaire ne porte plus de couronne sur une case de
+       validation a la fin du tour. */
+    spec: {
+      seed: 309, islandPlacedThisTurn: true,
+      hands: { 0: ["MOVE", "MOVE", "PUSH", "PUSH"], 1: [] },
+      stash: { 1: RESERVE(0, 0) },
+      islands: [
+        { shapeKey: "square", owner: 1, cells: [[0, 9], [1, 9], [1, 10], [2, 9], [2, 10]] }
+      ],
+      characters: [
+        { id: "adv-p", player: 1, r: 1, c: 10 },
+        { id: "ia-1", player: 0, r: 2, c: 9 }
+      ],
+      crowns: [{ r: 1, c: 10, carrierId: "adv-p", active: true }]
+    },
+    attendu(obs) {
+      const adv = obs.gardiensAdverses.find(g => g.porte);
+      if (!adv) return { ok: true, raison: "porteur adverse neutralise" };
+      return {
+        ok: !adv.surCaseValidation,
+        raison: adv.surCaseValidation
+          ? `porteur adverse toujours en (${adv.r},${adv.c}) : il marque au prochain tour`
+          : `porteur adverse ecarte en (${adv.r},${adv.c})`
+      };
+    }
   }
+,
+  {
+    id: "A10",
+    nom: "Defendre plutot que courir apres une couronne libre",
+    /* Le cas realiste signale en jouant. Le porteur adverse est POSE sur une
+       case de validation et marquera au debut de son prochain tour. Il n est
+       PAS ejectable : la case derriere lui est du terrain. Le priver du point
+       demande donc simplement de le DEPLACER hors de sa case, pas de le tuer.
+
+       Et pendant ce temps une couronne libre traine ailleurs. Une IA dont les
+       objectifs de deplacement visent les couronnes libres avant tout ira la
+       chercher et laissera passer le point — un point vaut bien plus qu une
+       couronne a ramasser.
+
+       Reussite : l adversaire ne finit pas le tour porteur sur une case de
+       validation. */
+    spec: {
+      seed: 310, islandPlacedThisTurn: true,
+      hands: { 0: ["MOVE", "MOVE", "PUSH", "PUSH"], 1: [] },
+      stash: { 1: RESERVE(0, 0) },
+      islands: [
+        { shapeKey: "square", owner: 1, cells: [[0, 9], [1, 9], [1, 10], [2, 9], [2, 10], [3, 9], [3, 10]] },
+        { shapeKey: "square", owner: 0, cells: [[5, 4], [5, 5], [5, 6], [6, 4], [6, 5], [6, 6]] }
+      ],
+      characters: [
+        { id: "adv-p", player: 1, r: 1, c: 10 },
+        { id: "ia-1", player: 0, r: 3, c: 10 }
+      ],
+      crowns: [
+        { r: 1, c: 10, carrierId: "adv-p", active: true },
+        { r: 5, c: 5, active: true }
+      ]
+    },
+    attendu(obs) {
+      const adv = obs.gardiensAdverses.find(g => g.porte);
+      if (!adv) return { ok: true, raison: "porteur adverse neutralise" };
+      return {
+        ok: !adv.surCaseValidation,
+        raison: adv.surCaseValidation
+          ? `porteur adverse toujours en (${adv.r},${adv.c}) : le point est concede`
+          : `porteur adverse ecarte en (${adv.r},${adv.c})`
+      };
+    }
+  }
+,
+  {
+    id: "A11",
+    nom: "Se placer AVANT que le point ne devienne imminent",
+    /* Le defaut signale en jouant : l IA sait ejecter un porteur pose sur une
+       case de validation, mais elle n y est jamais a temps. Ici le porteur
+       adverse est encore a deux pas de ses cases de validation — rien n est
+       imminent, et une IA qui ne note que sa propre progression ne voit aucune
+       raison de bouger vers le village adverse.
+
+       Or occuper une des trois cases suffit a interdire le point : marquer
+       exige que le porteur SOIT dessus, et une case occupee est inatteignable.
+       L IA dispose d un gardien capable d en rejoindre une ce tour-ci.
+
+       Reussite : un gardien de l IA occupe une case de validation adverse, ou
+       le porteur adverse est neutralise. */
+    spec: {
+      seed: 311, islandPlacedThisTurn: true,
+      hands: { 0: ["MOVE", "MOVE", "MOVE", "MOVE"], 1: [] },
+      stash: { 1: RESERVE(0, 0) },
+      islands: [
+        { shapeKey: "square", owner: 1,
+          cells: [[0, 9], [1, 9], [1, 10], [2, 9], [2, 10], [3, 9], [3, 10], [4, 9], [4, 10]] }
+      ],
+      characters: [
+        { id: "adv-p", player: 1, r: 3, c: 10 },
+        { id: "ia-1", player: 0, r: 4, c: 9 }
+      ],
+      crowns: [{ r: 3, c: 10, carrierId: "adv-p", active: true }]
+    },
+    attendu(obs) {
+      const adv = obs.gardiensAdverses.find(g => g.porte);
+      if (!adv) return { ok: true, raison: "porteur adverse neutralise" };
+      const casesJ1 = obs.casesValidation[1] || [];
+      const occupant = obs.gardiensIA.find(g =>
+        casesJ1.some(([r, c]) => r === g.r && c === g.c));
+      return {
+        ok: !!occupant,
+        raison: occupant
+          ? `gardien IA en (${occupant.r},${occupant.c}) : case de validation adverse condamnee`
+          : `aucun gardien IA sur les cases de validation adverses (gardiens en ${obs.gardiensIA.map(g => "(" + g.r + "," + g.c + ")").join(" ")})`
+      };
+    }
+  },
+
+  {
+    id: "A12",
+    nom: "Poser l ile et defendre avec le gardien qui apparait",
+    /* Le point adverse est IMMINENT — le porteur se tient deja sur la case de
+       son village — et aucun gardien de l IA n est a portee : le plus proche
+       est a l autre bout du plateau. Une IA qui ne defend qu avec les gardiens
+       deja poses conclut qu il n y a rien a faire.
+
+       Or il reste un coup. Poser une ile sur les cases vides du village adverse
+       y fait APPARAITRE un gardien, et ce gardien agit des le tour ou il est
+       pose. Occuper l une des trois cases du village suffit alors a interdire
+       le point (blocage de zone V67).
+
+       Ce scenario mesure donc une chose que ni A9 ni A11 ne mesurent : savoir
+       que la POSE elle-meme est une arme defensive, disponible immediatement.
+
+       Reussite : un gardien de l IA occupe une des trois cases du village
+       menace, ou le porteur adverse est neutralise. */
+    spec: {
+      seed: 312, islandPlacedThisTurn: false,
+      hands: { 0: ["MOVE", "MOVE"], 1: [] },
+      stash: { 1: RESERVE(0, 0) },
+      islands: [
+        { shapeKey: "square", owner: 0, cells: [[7, 1], [7, 2], [8, 1], [8, 2]] }
+      ],
+      characters: [
+        { id: "adv-p", player: 1, r: 0, c: 10 },
+        { id: "ia-1", player: 0, r: 8, c: 1 }
+      ],
+      crowns: [{ r: 0, c: 10, carrierId: "adv-p", active: true }]
+    },
+    attendu(obs) {
+      const adv = obs.gardiensAdverses.find(g => g.porte);
+      if (!adv) return { ok: true, raison: "porteur adverse neutralise" };
+      // Le village menace est celui du porteur : tenir l autre, a l oppose du
+      // plateau, ne defend rien.
+      const villageMenace = [[0, 10], [1, 10], [0, 9]];
+      const occupant = obs.gardiensIA.find(g =>
+        villageMenace.some(([r, c]) => r === g.r && c === g.c));
+      return {
+        ok: !!occupant,
+        raison: occupant
+          ? `gardien IA en (${occupant.r},${occupant.c}) : village adverse condamne`
+          : `village adverse libre (gardiens IA en ${obs.gardiensIA.map(g => "(" + g.r + "," + g.c + ")").join(" ")})`
+      };
+    }
+  }
+
 ];
 
 module.exports = { SCENARIOS, expulsablePar, portee, bloc };

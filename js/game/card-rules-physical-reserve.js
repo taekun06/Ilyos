@@ -194,6 +194,38 @@
          * l'envoie normalement à la défausse. Une carte réservée n'y va pas.
          * ------------------------------------------------------------------ */
         const endTurnBeforePhysicalReserve = endTurn;
+        /* Rangement de fin de tour, corps unique. Ce qui tient en réserve y
+           va physiquement ; le reste part à la défausse, d'où la pioche se
+           reconstitue. Le self-play appelle exactement cette fonction : une
+           seconde implémentation, même fidèle au départ, finit toujours par
+           diverger — c'est arrivé dès le premier essai. */
+        rangerCartesFinDeTour = function rangerCartesReservePhysique(player) {
+          const range = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          if (!player) return range;
+          ensurePhysicalReserve(player);
+          player.hand = Array.isArray(player.hand) ? player.hand : [];
+          player.discard = Array.isArray(player.discard) ? player.discard : [];
+          const comptes = physicalReserveCounts(player);
+          const gardees = [];
+
+          player.hand.forEach(carte => {
+            const type = carte?.action;
+            const rangeable = !carte?.used
+              && PHYSICAL_RESERVE_TYPES.includes(type)
+              && comptes[type] < PHYSICAL_RESERVE_LIMIT_PER_TYPE;
+            if (rangeable) {
+              comptes[type]++;
+              range[type]++;
+              player.reserveCards.push({ ...carte, used: false, fromStash: false, fromReserve: true });
+            } else {
+              gardees.push(carte);
+            }
+          });
+          player.hand = gardees;
+          syncPhysicalReserveStash(player);
+          return range;
+        };
+
         endTurn = async function endTurnPhysicalReserve(force = false) {
           if (!state || state.winner !== null || state.turnTransitioning) return;
 
@@ -210,34 +242,7 @@
           }
 
           const player = currentPlayer();
-          ensurePhysicalReserve(player);
-          player.hand = Array.isArray(player.hand) ? player.hand : [];
-
-          const counts = physicalReserveCounts(player);
-          const keepInHand = [];
-          const banked = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-
-          player.hand.forEach(card => {
-            const type = card?.action;
-            const canBank = !card?.used
-              && PHYSICAL_RESERVE_TYPES.includes(type)
-              && counts[type] < PHYSICAL_RESERVE_LIMIT_PER_TYPE;
-
-            if (canBank) {
-              counts[type]++;
-              banked[type]++;
-              player.reserveCards.push({
-                ...card,
-                used: false,
-                fromStash: false,
-                fromReserve: true
-              });
-            } else {
-              keepInHand.push(card);
-            }
-          });
-          player.hand = keepInHand;
-          syncPhysicalReserveStash(player);
+          const banked = rangerCartesFinDeTour(player);
 
           if (banked.MOVE || banked.PUSH || banked.MAGIC) {
             window.dispatchEvent(new CustomEvent("ilyos:cards-banked", { detail: { ...banked } }));

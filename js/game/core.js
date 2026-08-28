@@ -3528,7 +3528,12 @@
         return [village.r, village.c];
       }
 
-      function findAutomaticIslandPlacement(playerId, combien = 0) {
+      /* zoneAdverseAttractive inverse le biais historique sur les cases de
+         validation adverses. Depuis le blocage de zone (V67), s'y poser est le
+         coup défensif le plus fort du jeu : le cerveau Expert doit donc voir
+         ces poses parmi ses candidates. Les IA Easy / Normal / Hard appellent
+         sans l'option et conservent exactement leur comportement. */
+      function findAutomaticIslandPlacement(playerId, combien = 0, zoneAdverseAttractive = false) {
         const player = state.players[playerId];
         const target = automaticPlacementTarget(playerId);
         const ownCharacters = state.characters.filter(char => char.player === playerId);
@@ -3577,7 +3582,7 @@
                   const centerDistance = Math.min(
                     ...cells.map(([cr, cc]) => Math.abs(cr - CENTER.r) + Math.abs(cc - CENTER.c))
                   );
-                  const contacts = aiExternalLandContacts(cells);
+                  // (la connectivité n'entre plus dans le score : voir plus bas)
                   const ownZoneCells = cells.filter(([cr, cc]) =>
                     ownValidationCells.some(([vr, vc]) => vr === cr && vc === cc)
                   ).length;
@@ -3598,20 +3603,20 @@
                     carrierBridge = nearCarrier + nearValidation;
                   }
 
-                  // La connectivité au reste du terrain (contacts) n'a plus
-                  // qu'un poids mineur : combler systématiquement les trous
-                  // n'apporte rien de tactique en soi, et un terrain plus
-                  // morcelé peut même gêner l'adversaire (accès imprévisible,
-                  // moins de raccourcis). Seul un très léger tiebreaker
-                  // subsiste pour éviter un semis totalement erratique.
+                  /* AUCUNE préférence pour le contact avec le terrain existant.
+                     La règle est explicite : une île se pose n'importe où sur
+                     le plateau tant qu'elle y tient, sans aucune restriction
+                     d'adjacence. Le bonus de connectivité qui figurait ici
+                     n'avait donc pas de fondement, et il suffisait à écarter
+                     les poses isolées — pourtant décisives, notamment pour
+                     aller bloquer un village adverse hors d'atteinte. */
                   let score =
                     targetDistance * 1.55
                     + characterDistance * .38
                     + centerDistance * .10
                     + (ownCarrier ? carrierBridge * .52 : 0)
-                    - Math.min(contacts, 3) * .4
                     - ownZoneCells * (ownCarrier ? 7.5 : 3.2)
-                    + enemyZoneCells * 4.4
+                    + enemyZoneCells * (zoneAdverseAttractive ? -5.0 : 4.4)
                     + gameRandom() * aiConfig().randomness;
 
                   candidates.push({

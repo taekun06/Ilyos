@@ -66,8 +66,49 @@
            pèsent des ordres de grandeur au-dessus. */
         carteConservee: 12,
 
+        /* DÉFENSE DU POINT ADVERSE.
+
+           Marquer exige que le porteur SOIT sur une de ses trois cases de
+           validation. Deux conséquences que l'IA ignorait :
+
+             — occuper une de ces cases la rend inatteignable, donc prive
+               l'adversaire d'un point sans avoir à toucher à son porteur ;
+             — toutes ces cases sont éjectables, villages en coin obligent : il
+               existe toujours une poussée qui jette le porteur hors du plateau.
+
+           Défendre est donc toujours possible — encore faut-il être là. Or
+           l'évaluateur ne notait que la progression vers SES propres couronnes :
+           approcher un gardien du village adverse alors que rien ne se passe
+           encore ne valait rien, et l'IA arrivait systématiquement trop tard.
+
+           Ces deux termes sont pondérés par la menace réelle (voir plus bas) :
+           camper devant un village quand l'adversaire ne porte rien ne vaut
+           rien non plus. */
+        contesteValidation: 700,
+        presenceDefensive: 500,
+
         // Consommer une forme rare a un coût, proportionnel à sa raréfaction.
-        formeConsommee: 90
+        formeConsommee: 90,
+
+        /* TERRAIN. Poser une île est obligatoire à chaque tour — c'est la
+           décision la plus fréquente du jeu — et rien ne la jugeait : une île
+           n'entrait dans le calcul que si elle changeait une distance. Deux
+           poses sans effet sur les distances étaient donc rigoureusement
+           indiscernables, et l'IA en prenait une au hasard. Mesuré : 16
+           décisions sur 31 avaient TOUS leurs finalistes à la même note.
+
+           Ces trois termes donnent une valeur au plateau lui-même.
+
+           Leur poids est délibérément MODESTE : ils servent à départager des
+           coups par ailleurs équivalents, pas à décider de la partie. À 700,
+           routeUtile pesait plus qu'une couronne portée — l'adversaire pouvant
+           modifier le terrain dans sa riposte, l'IA préférait alors ne rien
+           faire plutôt que de s'exposer à ce basculement, et refusait de
+           ramasser une couronne à sa portée (P07 et P08 échouaient ainsi). */
+        routeUtile: 240,       // route du sanctuaire vers MES cases de validation
+        controleSpatial: 150,  // part du terrain plus proche de mon but que du sien
+        tempoPerdu: 300,      // passer son tour : cinq cartes et un tempo
+        routeFragile: 5       // case tenue mais bordée de vide : on en tombe
       };
 
       /** Proximité décroissante et bornée, tirée d'une distance de déplacement
@@ -172,10 +213,41 @@
        *  movementRange rend l'ensemble des cases joignables en une seule
        *  recherche par gardien. La menace se réduit alors à une consultation
        *  d'ensemble, et le coût passe de « milliers » à « un par adversaire ». */
+      /* Portées adverses : où l'adversaire pourrait aller. Un Dijkstra par
+         gardien adverse — et l'adversaire NE BOUGE PAS pendant mon tour.
+
+         Ce calcul était refait à chaque nœud de la recherche : avec six
+         gardiens adverses et une centaine de nœuds, plusieurs centaines de
+         recherches pour le même résultat. L'anticipation de la riposte y
+         passait 46 SECONDES.
+
+         Il ne dépend que du terrain, de la position des gardiens adverses et
+         du budget supposé : la clé est faite de ces trois éléments, si bien
+         qu'une pose ou une rotation l'invalide, mais rien d'autre. */
+      const PLAN_CACHE_PORTEES_MAX = 64;
+      const plannerCachePortees = new Map();
+
       function plannerPorteesAdverses(playerId, budgetMove) {
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return [];
-        return plannerGardiensDe(adverse.id).map(ennemi => movementRange(ennemi, budgetMove));
+        const ennemis = plannerGardiensDe(adverse.id);
+        /* La clé retient TOUTE l'occupation, pas seulement les gardiens
+           adverses : mes propres gardiens bloquent aussi leurs déplacements.
+           Sans cela, une case que je viens de libérer restait « occupée » dans
+           le cache, et la menace qui en venait devenait invisible — A8, où le
+           porteur fuit vers une case tout aussi expulsable, échouait pour
+           cette seule raison. */
+        const cle = plannerEmpreinteTerrain() + ':' + budgetMove + ':'
+          + (state.characters || []).map(c => c.r + ',' + c.c).sort().join('|');
+        let portees = plannerCachePortees.get(cle);
+        if (!portees) {
+          portees = ennemis.map(ennemi => movementRange(ennemi, budgetMove));
+          if (plannerCachePortees.size >= PLAN_CACHE_PORTEES_MAX) {
+            plannerCachePortees.delete(plannerCachePortees.keys().next().value);
+          }
+          plannerCachePortees.set(cle, portees);
+        }
+        return portees;
       }
 
       function plannerMenaceExpulsion(playerId, r, c, budget) {
@@ -224,22 +296,187 @@
          sont comparées à travers lui, jamais entre elles : c'est ce qui rend
          un déplacement, une poussée, une rotation et une pose commensurables.
          ------------------------------------------------------------------- */
+      /* Interrupteur de l'autopsie. Le cerveau ne connaît que ce drapeau :
+         la console d'analyse vit dans autopsie.js et se contente de le lever.
+         Retirer l'outillage ne peut donc pas casser la décision. */
+      let plannerAutopsie = false;
+      function plannerAutopsieActive() { return plannerAutopsie; }
+      function plannerActiverAutopsie(actif) {
+        plannerAutopsie = actif !== false;
+        return plannerAutopsie;
+      }
+
+      /* =====================================================================
+         VALEUR DU TERRAIN, ET SON CACHE
+
+         Deux champs de distance suffisent à tout : la distance de chaque case
+         à MES cases de validation, et la même vers celles de l'adversaire. On
+         en tire l'accès aux objectifs, le contrôle spatial et la fragilité des
+         routes, sans heuristique particulière à telle ou telle position.
+
+         Ces champs ne dépendent QUE du terrain. Ils sont donc calculés une fois
+         par forme de plateau et réutilisés pour tous les nœuds de la recherche
+         — sans quoi le coût serait rédhibitoire, l'évaluateur tournant à chaque
+         nœud. L'empreinte ne change qu'à la POSE et à la MAGIE, exactement les
+         deux actions qui modifient le terrain.
+         ===================================================================== */
+      /* Le cache retient PLUSIEURS formes de plateau, pas une seule.
+
+         Avec une seule entrée, la recherche alternait entre nœuds avec et sans
+         île posée, et vidait le cache à chaque alternance : l'analyse complète
+         repartait à chaque nœud. Mesuré, l'anticipation adverse passait de
+         360 ms à 40 SECONDES. */
+      const PLAN_CACHE_TERRAIN_MAX = 48;
+      const plannerCacheTerrain = new Map();
+
+      function plannerEmpreinteTerrain() {
+        let h = (state.islands || []).length * 1000003;
+        for (const ile of state.islands || []) {
+          for (const [r, c] of ile.cells) {
+            h = (h * 31 + (r * GRID + c) + 1) % 2147483647;
+          }
+        }
+        return h;
+      }
+
+      function plannerAnalyseTerrain(playerId) {
+        const moi = state.players[playerId];
+        const adverse = plannerAdversaire(playerId);
+        const surTerre = cells => (cells || []).filter(([r, c]) => isLand(r, c));
+
+        const champMoi = plannerChampDistance(surTerre(crownValidationCellsForPlayer(moi)));
+        const champAdverse = adverse
+          ? plannerChampDistance(surTerre(crownValidationCellsForPlayer(adverse)))
+          : new Map();
+
+        let terrainTotal = 0;
+        let controle = 0;
+        let fragiles = 0;
+
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            if (!isLand(r, c)) continue;
+            const dMoi = champMoi.get(key(r, c));
+            const dAdv = champAdverse.get(key(r, c));
+            /* Une case qu'AUCUN camp ne peut rejoindre est neutre : elle ne
+               compte ni pour moi ni pour lui. La compter dans le total revenait
+               à la créditer à l'adversaire — et donc à faire BAISSER ma note
+               chaque fois que je posais une île isolée. L'IA s'interdisait
+               ainsi la pose dans le vide, pourtant parfaitement légale et
+               souvent décisive près du village adverse. */
+            const joignableMoi = Number.isFinite(dMoi);
+            const joignableAdverse = Number.isFinite(dAdv);
+            if (!joignableMoi && !joignableAdverse) continue;
+            terrainTotal++;
+            const mienne = joignableMoi && (!joignableAdverse || dMoi < dAdv);
+            if (!mienne) continue;
+            controle++;
+            /* Une case bordée de vide est une case d'où l'on tombe : contrôler
+               un couloir d'une case de large ne vaut pas contrôler une place. */
+            let vide = 0;
+            for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+              if (!isLand(r + dr, c + dc)) vide++;
+            }
+            if (vide >= 2) fragiles++;
+          }
+        }
+
+        /* Longueur de la route depuis le sanctuaire — l'origine des couronnes
+           — vers les cases de validation de chacun. Ne dépend que du terrain,
+           donc calculée ici et mise en cache avec le reste. */
+        const routeMoi = champMoi.get(key(CENTER.r, CENTER.c)) ?? 99;
+        const routeAdverse = champAdverse.get(key(CENTER.r, CENTER.c)) ?? 99;
+
+        return { champMoi, champAdverse, controle, fragiles, terrainTotal, routeMoi, routeAdverse };
+      }
+
+      function plannerTerrain(playerId) {
+        const cle = plannerEmpreinteTerrain() + ':' + playerId;
+        let analyse = plannerCacheTerrain.get(cle);
+        if (!analyse) {
+          analyse = plannerAnalyseTerrain(playerId);
+          // Rotation simple : la forme la plus anciennement vue sort.
+          if (plannerCacheTerrain.size >= PLAN_CACHE_TERRAIN_MAX) {
+            plannerCacheTerrain.delete(plannerCacheTerrain.keys().next().value);
+          }
+          plannerCacheTerrain.set(cle, analyse);
+        }
+        return analyse;
+      }
+
+      /* AUTOPSIE — trace des termes d'évaluation.
+
+         Renseignée, chaque terme y dépose sa contribution : c'est ce qui permet
+         de répondre « pourquoi l'IA n'a-t-elle pas vu ce que j'ai vu ? » en
+         lisant la décomposition plutôt qu'en la devinant.
+
+         Hors autopsie, le surcoût se réduit à un test de nullité par terme. */
+      let plannerTraceEval = null;
+
+      /** Évalue une position en conservant le détail des termes. */
+      function evaluerAvecDetail(playerId) {
+        const trace = [];
+        const memoire = plannerTraceEval;
+        plannerTraceEval = trace;
+        let note;
+        try {
+          note = evaluateStrategicState(playerId);
+        } finally {
+          plannerTraceEval = memoire;
+        }
+        // Regroupé par terme : un même terme peut être crédité plusieurs fois
+        // (deux couronnes en jeu, plusieurs gardiens).
+        const parTerme = new Map();
+        for (const e of trace) {
+          const cumul = parTerme.get(e.terme) || { terme: e.terme, montant: 0, fois: 0, notes: [] };
+          cumul.montant += e.montant;
+          cumul.fois++;
+          if (e.note) cumul.notes.push(e.note);
+          parTerme.set(e.terme, cumul);
+        }
+        const termes = [...parTerme.values()]
+          .map(t => ({ terme: t.terme, montant: Math.round(t.montant), fois: t.fois, notes: t.notes }))
+          .filter(t => t.montant !== 0)
+          .sort((a, b) => Math.abs(b.montant) - Math.abs(a.montant));
+        return { note: Math.round(note), termes };
+      }
+
       function evaluateStrategicState(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
         const adverse = plannerAdversaire(playerId);
 
+        let valeur = 0;
+        const trace = plannerTraceEval;
+        /* Toute contribution passe par ici : c'est la garantie que la
+           décomposition affichée est bien celle qui a décidé, et non une
+           reconstruction approchée faite après coup. */
+        const ajouter = (terme, montant, note) => {
+          if (!montant) return;
+          valeur += montant;
+          if (trace) trace.push({ terme, montant, note: note || null });
+        };
+
         // A. Terminal : domine absolument.
         if (state.winner !== null && state.winner !== undefined) {
-          return state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
+          // Un match nul ne vaut ni la victoire ni la défaite : sans ce cas,
+          // l'IA le lisait comme une défaite et fuyait des positions neutres.
+          if (state.winner === MATCH_NUL) {
+            if (plannerTraceEval) plannerTraceEval.push({ terme: "matchNul", montant: 0, note: null });
+            return 0;
+          }
+          const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
+          if (trace) trace.push({ terme: "victoire", montant: terminal, note: null });
+          return terminal;
         }
 
-        let valeur = 0;
-
         // B. Points déjà marqués.
-        valeur += (moi.score || 0) * PLAN_POIDS.pointValide;
-        if (adverse) valeur -= (adverse.score || 0) * PLAN_POIDS.pointValide;
+        ajouter("pointsMarques", (moi.score || 0) * PLAN_POIDS.pointValide, `score ${moi.score || 0}`);
+        if (adverse) {
+          ajouter("pointsAdverses", -(adverse.score || 0) * PLAN_POIDS.pointValide, `score ${adverse.score || 0}`);
+        }
 
+        let menaceAdverse = 0;
         const ciblesMoi = aiValidationTargetsForPlayer(moi);
         const ciblesAdverse = adverse ? aiValidationTargetsForPlayer(adverse) : [];
 
@@ -249,29 +486,50 @@
 
           if (porteur && porteur.player === playerId) {
             const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesMoi);
-            valeur += PLAN_POIDS.couronnePortee;
-            valeur += PLAN_POIDS.progressionPorteur * plannerProximite(d);
-            if (isCrownValidationCell(moi, porteur.r, porteur.c)) valeur += PLAN_POIDS.surCaseValidation;
+            ajouter("couronnePortee", PLAN_POIDS.couronnePortee, `${porteur.id} en (${porteur.r},${porteur.c})`);
+            ajouter("progressionPorteur", PLAN_POIDS.progressionPorteur * plannerProximite(d), `distance ${d}`);
+            // Se tenir sur une case de validation ne vaut que si l'adversaire
+            // n'occupe aucune des trois cases du village (blocage de zone V67).
+            if (isCrownValidationCell(moi, porteur.r, porteur.c)
+              && !validationBloqueeParAdversaire(moi, porteur.r, porteur.c)) {
+              ajouter("surCaseValidation", PLAN_POIDS.surCaseValidation, `(${porteur.r},${porteur.c})`);
+            }
             // Un porteur qu'une seule poussée jette dans le vide n'est pas un
             // porteur : la couronne est perdue dès le tour adverse.
             // Menace élargie aux combinaisons courtes (déplacement puis
             // poussée) : une case sûre à l'instant t peut être perdante au
             // tour suivant, et c'est là que se joue le sort d'une couronne.
-            if (plannerMenaceExpulsion(playerId, porteur.r, porteur.c)) valeur -= PLAN_POIDS.porteurExpose;
+            if (plannerMenaceExpulsion(playerId, porteur.r, porteur.c)) {
+              ajouter("porteurExpose", -PLAN_POIDS.porteurExpose, `(${porteur.r},${porteur.c}) expulsable`);
+            }
 
           } else if (porteur && adverse) {
             const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesAdverse);
-            valeur -= PLAN_POIDS.couronnePortee;
-            valeur -= PLAN_POIDS.progressionPorteur * plannerProximite(d);
-            if (isCrownValidationCell(adverse, porteur.r, porteur.c)) valeur -= PLAN_POIDS.surCaseValidation;
-            if (aiPushOffRisk(adverse.id, porteur.r, porteur.c)) valeur += PLAN_POIDS.porteurExpose * 0.5;
+            // Sert à pondérer la défense : plus l'adversaire est près de
+            // marquer, plus contester ses cases de validation compte.
+            menaceAdverse = Math.max(menaceAdverse, plannerProximite(d));
+            // Un porteur posté sur une case de validation est à un souffle de
+            // marquer — sauf si l'un de mes gardiens tient déjà le village.
+            const surCaseAdverse = isCrownValidationCell(adverse, porteur.r, porteur.c)
+              && !validationBloqueeParAdversaire(adverse, porteur.r, porteur.c);
+            if (surCaseAdverse) menaceAdverse = 1;
+            ajouter("couronneAdverse", -PLAN_POIDS.couronnePortee, `${porteur.id} en (${porteur.r},${porteur.c})`);
+            ajouter("progressionAdverse", -PLAN_POIDS.progressionPorteur * plannerProximite(d), `distance ${d}`);
+            if (surCaseAdverse) {
+              ajouter("adverseSurValidation", -PLAN_POIDS.surCaseValidation, `(${porteur.r},${porteur.c})`);
+            }
+            if (aiPushOffRisk(adverse.id, porteur.r, porteur.c)) {
+              ajouter("adverseExpulsable", PLAN_POIDS.porteurExpose * 0.5, `(${porteur.r},${porteur.c})`);
+            }
 
           } else {
             // Libre : elle revient à qui peut l'atteindre le plus vite.
             const cible = [[couronne.r, couronne.c]];
             const dMoi = plannerDistanceEquipe(playerId, cible);
             const dAdv = adverse ? plannerDistanceEquipe(adverse.id, cible) : Infinity;
-            valeur += PLAN_POIDS.couronneLibre * (plannerProximite(dMoi) - plannerProximite(dAdv));
+            ajouter("couronneLibre",
+              PLAN_POIDS.couronneLibre * (plannerProximite(dMoi) - plannerProximite(dAdv)),
+              `(${couronne.r},${couronne.c}) — moi ${dMoi}, adverse ${dAdv}`);
           }
         }
 
@@ -285,47 +543,151 @@
           const sanctuaire = [[CENTER.r, CENTER.c]];
           const dMoi = plannerDistanceEquipe(playerId, sanctuaire);
           const dAdv = adverse ? plannerDistanceEquipe(adverse.id, sanctuaire) : Infinity;
-          valeur += enAttente * PLAN_POIDS.couronneEnAttente
-            * (plannerProximite(dMoi) - plannerProximite(dAdv));
+          ajouter("couronneEnAttente",
+            enAttente * PLAN_POIDS.couronneEnAttente * (plannerProximite(dMoi) - plannerProximite(dAdv)),
+            `${enAttente} en attente — moi ${dMoi}, adverse ${dAdv}`);
+        }
+
+        /* D bis. DÉFENSE DU POINT ADVERSE. Contester les cases où
+           l'adversaire doit se tenir pour marquer — en les occupant, ce qui les
+           rend inatteignables, ou en restant assez près pour intervenir à
+           temps. Entièrement pondéré par menaceAdverse : sans porteur adverse,
+           ce terme vaut zéro et l'IA ne campe pas pour rien. */
+        if (adverse && menaceAdverse > 0) {
+          /* Le blocage se joue village par village : un seul gardien posté sur
+             l'une des trois cases neutralise tout le village. Compter les cases
+             occupées récompenserait un empilement sans valeur défensive. */
+          let neutralises = 0;
+          let total = 0;
+          const aDefendre = [];
+          for (const village of villagesForPlayer(adverse)) {
+            total++;
+            const cells = cornerCrownCellsForVillage(village);
+            const tenu = cells.some(([vr, vc]) => {
+              const occupant = characterAt(vr, vc);
+              return occupant && occupant.player === playerId;
+            });
+            if (tenu) neutralises++;
+            else cells.filter(([r, cc]) => isLand(r, cc)).forEach(cell => aDefendre.push(cell));
+          }
+          const dDefense = aDefendre.length
+            ? plannerDistanceEquipe(playerId, aDefendre) : Infinity;
+          ajouter("villagesNeutralises",
+            menaceAdverse * PLAN_POIDS.contesteValidation * neutralises,
+            `${neutralises}/${total} village(s), menace ${menaceAdverse.toFixed(2)}`);
+          // Rester à portée n'a de sens que s'il reste un village à couvrir.
+          if (neutralises < total) {
+            ajouter("presenceDefensive",
+              menaceAdverse * PLAN_POIDS.presenceDefensive * plannerProximite(dDefense),
+              `distance ${dDefense}, menace ${menaceAdverse.toFixed(2)}`);
+          }
         }
 
         // E. Gardiens : nombre et capacité à agir.
         const miens = plannerGardiensDe(playerId);
-        valeur += miens.length * PLAN_POIDS.gardien;
-        if (adverse) valeur -= plannerGardiensDe(adverse.id).length * PLAN_POIDS.gardien;
-        // Un gardien qui ne peut aller nulle part ne vaut pas un gardien libre.
-        for (const g of miens) {
-          if (movementEdges(g.r, g.c).some(e => isLand(e.r, e.c) && !characterAt(e.r, e.c))) {
-            valeur += PLAN_POIDS.gardienMobile;
-          }
+        ajouter("gardiens", miens.length * PLAN_POIDS.gardien, `${miens.length}`);
+        if (adverse) {
+          const nb = plannerGardiensDe(adverse.id).length;
+          ajouter("gardiensAdverses", -nb * PLAN_POIDS.gardien, `${nb}`);
         }
+        // Un gardien qui ne peut aller nulle part ne vaut pas un gardien libre.
+        let mobiles = 0;
+        for (const g of miens) {
+          if (movementEdges(g.r, g.c).some(e => isLand(e.r, e.c) && !characterAt(e.r, e.c))) mobiles++;
+        }
+        ajouter("gardiensMobiles", mobiles * PLAN_POIDS.gardienMobile, `${mobiles}/${miens.length}`);
 
         // F. Ressources conservées : voir PLAN_POIDS.carteConservee.
-        valeur += plannerTotalRessources(playerId) * PLAN_POIDS.carteConservee;
+        const cartes = plannerTotalRessources(playerId);
+        ajouter("cartesConservees", cartes * PLAN_POIDS.carteConservee, `${cartes} carte(s)`);
+
+        /* G bis. TERRAIN. Ce que vaut le plateau, indépendamment des pièces
+           qui s'y trouvent — donc ce que vaut la pose d'île qui vient de le
+           modifier. Sans ces termes, poser ici ou là revenait au même. */
+        const terrain = plannerTerrain(playerId);
+
+        /* Accès aux objectifs : la longueur du chemin de terrain entre le
+           SANCTUAIRE — d'où les couronnes viennent — et mes cases de
+           validation, comparée à celle de l'adversaire. Une pose qui raccourcit
+           ma route compte ; une pose qui raccourcit la sienne est une offrande,
+           et se paie du même terme.
+
+           Volontairement mesuré depuis le sanctuaire et non depuis la couronne
+           du moment : la position des couronnes est DÉJÀ comptée trois fois
+           (couronnePortee, progressionPorteur, couronneLibre). L'y remettre
+           faisait basculer 700 points de plus à chaque couronne perdue, et
+           l'IA n'osait plus la ramasser — P08 échouait ainsi. Ce terme décrit
+           le plateau, pas les pièces. */
+        ajouter("routeUtile",
+          PLAN_POIDS.routeUtile * (plannerProximite(terrain.routeMoi) - plannerProximite(terrain.routeAdverse)),
+          `route ${terrain.routeMoi} contre ${terrain.routeAdverse}`);
+
+        /* Contrôle spatial : la part du terrain plus proche de mon but que du
+           sien. Normalisée, donc insensible à la taille du plateau. */
+        if (terrain.terrainTotal > 0) {
+          const part = (2 * terrain.controle - terrain.terrainTotal) / terrain.terrainTotal;
+          ajouter("controleSpatial", PLAN_POIDS.controleSpatial * part,
+            `${terrain.controle}/${terrain.terrainTotal} cases`);
+        }
+
+        // Sécurité des routes : ce que je tiens mais d'où l'on me pousse.
+        ajouter("routesFragiles", -PLAN_POIDS.routeFragile * terrain.fragiles,
+          `${terrain.fragiles} case(s) bordée(s) de vide`);
 
         // G. Formes consommées.
-        valeur -= plannerCoutFormes(playerId);
+        ajouter("formesConsommees", -plannerCoutFormes(playerId));
 
         return valeur;
       }
 
-      /* ---------------------------------------------------------------------
-         GÉNÉRATEURS DE CANDIDATS
+      /* AUTOPSIE — candidats écartés par les plafonds de génération.
 
-         Aucune recherche exhaustive : le facteur de branchement exploserait.
-         Chaque générateur propose une liste courte mais diverse, pré-classée
-         par un indice bon marché ; c'est ensuite l'évaluateur qui tranche sur
-         l'état obtenu. Le pré-classement ne sert qu'à ne pas simuler des
-         milliers de coups sans intérêt, jamais à décider.
-         ------------------------------------------------------------------- */
+         Ce sont les coups que la recherche n'a JAMAIS vus : ils meurent dans
+         le pré-filtre, avant tout évaluateur. P17 a montré que c'est là que se
+         joue une part des mauvaises décisions, pas dans la profondeur du
+         faisceau. Renseigné uniquement sous autopsie. */
+      let plannerCandidatsEcartes = null;
+
+      /** Applique le plafond d'un générateur en relevant ce qu'il sacrifie. */
+      function plannerRetenir(options, plafond, categorie) {
+        if (plannerCandidatsEcartes && options.length > plafond) {
+          for (const rejete of options.slice(plafond)) {
+            plannerCandidatsEcartes.push({ categorie, action: rejete });
+          }
+        }
+        return options.slice(0, plafond);
+      }
 
       const PLAN_CANDIDATS = {
-        move: 8, push: 5, magic: 4, pose: 6,
+        /* Larges À LA RACINE, serrés ensuite.
+
+           La racine est la décision réelle : c'est là qu'une idée différente
+           doit pouvoir entrer, et c'est à l'évaluateur de la départager, pas
+           au pré-filtre. En profondeur, l'essentiel est déjà tranché et
+           l'ouverture ne sert plus qu'à brûler du temps.
+
+           move est le plafond TOTAL, moveParIntention celui de CHAQUE
+           intention : c'est le second qui empêche dix variantes du même coup
+           d'évincer une idée d'une autre nature. */
+        racine: { move: 16, moveParIntention: 3, push: 8, magic: 8, pose: 10, poseSpawns: 3, poseTotal: 18 },
+        /* En profondeur on resserre, mais jamais en dessous de ce que le
+           planner avait avant l'ouverture de la racine : les enchaînements
+           utiles — se placer puis transmettre, préparer puis pousser — se
+           construisent au deuxième et au troisième niveau. Trop serrer ici
+           coûte plus que ce que l'ouverture de la racine rapporte. */
+        profond: { move: 10, moveParIntention: 2, push: 5, magic: 4, pose: 4, poseSpawns: 1, poseTotal: 6 },
         // Plafonds de la génération de candidats MAGIC, la seule qui simule
         // réellement chaque option pour la pré-classer (voir plus bas).
         magicRotationsMax: 36,
         magicMsMax: 25
       };
+
+      /* Niveau courant de la recherche : 0 à la racine. Les générateurs y
+         lisent quel jeu de plafonds appliquer. */
+      let plannerNiveau = 0;
+      function plafonds() {
+        return plannerNiveau === 0 ? PLAN_CANDIDATS.racine : PLAN_CANDIDATS.profond;
+      }
 
       /** Îles triées par intérêt tactique : celles qui portent un gardien ou
        *  une couronne, puis les plus proches du centre de l'action. Une
@@ -349,6 +711,61 @@
         return meilleure;
       }
 
+      /* CHAMP DE DISTANCE depuis un jeu de cibles.
+
+         aiLandDistanceToTargets relance un Dijkstra COMPLET à chaque
+         interrogation. L'interroger pour chaque case atteignable et chaque
+         intention revenait à plusieurs centaines de recherches par tour :
+         mesuré sur une partie réelle, la médiane de décision était passée de
+         814 à 2345 ms, et 14 tours sur 40 partaient en repli.
+
+         Une seule propagation, depuis toutes les cibles à la fois, donne la
+         distance de TOUTES les cases. Le graphe étant non orienté et de coûts
+         symétriques, la distance case → cibles est celle que l'on propage
+         cibles → case. Cinq propagations par tour remplacent donc les
+         centaines de recherches — c'est moins cher que le code d'origine, qui
+         en faisait déjà une par case. */
+      function plannerChampDistance(cibles) {
+        const champ = new Map();
+        const file = [];
+        for (const [r, c] of cibles || []) {
+          if (!inside(r, c) || !isLand(r, c)) continue;
+          const k = key(r, c);
+          if (champ.has(k)) continue;
+          champ.set(k, 0);
+          file.push({ r, c, cout: 0 });
+        }
+
+        while (file.length) {
+          let min = 0;
+          for (let i = 1; i < file.length; i++) {
+            if (file[i].cout < file[min].cout) min = i;
+          }
+          const actuel = file.splice(min, 1)[0];
+          if (actuel.cout > (champ.get(key(actuel.r, actuel.c)) ?? Infinity)) continue;
+
+          for (const arete of movementEdges(actuel.r, actuel.c)) {
+            if (!isLand(arete.r, arete.c)) continue;
+            const k = key(arete.r, arete.c);
+            const cout = actuel.cout + arete.cost;
+            if (cout >= (champ.get(k) ?? Infinity)) continue;
+            champ.set(k, cout);
+            file.push({ r: arete.r, c: arete.c, cout });
+          }
+        }
+        return champ;
+      }
+
+      /** Lecture d'un champ, avec le même repli qu'aiLandDistanceToTargets pour
+       *  une case injoignable — sans quoi les indices ne seraient plus
+       *  comparables entre intentions. */
+      function plannerLireChamp(champ, cibles, r, c) {
+        const valeur = champ.get(key(r, c));
+        if (valeur !== undefined) return valeur;
+        if (!cibles.length) return 99;
+        return 30 + Math.min(...cibles.map(([tr, tc]) => Math.abs(r - tr) + Math.abs(c - tc)));
+      }
+
       function plannerCandidatsMove(playerId) {
         const budget = availableActionCount("MOVE", state.players[playerId]);
         if (budget < 1) return [];
@@ -365,62 +782,210 @@
           }
           return menaceCache.get(k);
         };
+        // Deux gardiens partagent souvent une intention : le champ est calculé
+        // une fois par jeu de cibles, pas une fois par gardien.
+        const champs = new Map();
+        const champPour = intention => {
+          const signature = intention.cibles.map(([r, c]) => key(r, c)).sort().join("|");
+          if (!champs.has(signature)) champs.set(signature, plannerChampDistance(intention.cibles));
+          return champs.get(signature);
+        };
 
         for (const gardien of plannerGardiensDe(playerId)) {
           const porte = characterCarriesCrown(gardien.id);
-          const cibles = porte
-            ? aiValidationTargetsForPlayer(state.players[playerId])
-            : plannerObjectifsGardien(playerId);
-          const depart = aiLandDistanceToTargets(gardien.r, gardien.c, cibles);
+          const intentions = plannerIntentionsGardien(playerId, gardien);
+
+          /* Les chemins ne dépendent pas de l'intention : ils sont calculés une
+             seule fois, puis notés autant de fois qu'il y a d'intentions. */
+          /* movementRange fait DÉJÀ un Dijkstra et accroche le coût de chaque
+             case à son résultat. Rappeler shortestMovementPath case par case
+             relançait donc un Dijkstra COMPLET — avec un tri dans sa boucle —
+             pour un coût déjà connu : plusieurs centaines de recherches par
+             génération, mesurées à 360 ms quand le budget entier vaut 350.
+
+             Le planner n'a besoin que du coût, jamais du tracé : le chemin est
+             recalculé à l'exécution, une seule fois, par aiPerformMove. */
           const portee = movementRange(gardien, budget);
-
+          const couts = portee.costs || new Map();
+          const atteignables = [];
           for (const cle of portee) {
-            const [r, c] = cle.split(",").map(Number);
-            const chemin = shortestMovementPath(gardien, r, c, budget);
-            if (!chemin?.length) continue;
-            const cout = chemin.cost ?? chemin.length;
+            const cout = couts.get(cle);
+            if (!Number.isFinite(cout) || cout <= 0) continue;
+            const [r, c] = cle.split(',').map(Number);
+            atteignables.push({ r, c, cout });
+          }
+          if (!atteignables.length) continue;
 
-            /* Indice de pré-tri seulement : progression vers l'objectif,
-               capture immédiate, mise en sécurité. Volontairement grossier —
-               il ne fait que décider quels coups méritent d'être simulés. */
-            const arrivee = aiLandDistanceToTargets(r, c, cibles);
-            let indice = (depart - arrivee) * 10 - cout;
-            if (looseArtifactAt(r, c) && !porte) indice += 60;
-            if (porte && isCrownValidationCell(state.players[playerId], r, c)) indice += 120;
-            /* Un repli doit pouvoir être PROPOSÉ, sinon l'anticipation
-               adverse n'aura rien à départager : on ne peut pas choisir un
-               coup qui n'a jamais été généré. La menace est ici la version
-               élargie, qui voit venir une poussée préparée. */
-            if (porte) {
-              const menaceDepart = menaceEn(gardien.r, gardien.c);
-              const menaceArrivee = menaceEn(r, c);
-              if (menaceDepart && !menaceArrivee) indice += 140;
-              else if (!menaceDepart && menaceArrivee) indice -= 140;
+          /* Un seul tri global gardait les huit meilleurs coups toutes
+             intentions confondues : ils partaient donc tous au même endroit, et
+             92 % des déplacements mouraient là — mesuré sur une partie réelle.
+
+             Chaque intention garde désormais ses propres places. La recherche
+             se voit ainsi toujours proposer au moins un coup pour chaque
+             capacité que la position offre, et c'est l'évaluateur qui tranche
+             — ce qu'il ne pouvait pas faire sur un coup jamais généré. */
+          for (const intention of intentions) {
+            const champ = champPour(intention);
+            const depart = plannerLireChamp(champ, intention.cibles, gardien.r, gardien.c);
+            const parIntention = [];
+
+            for (const { r, c, cout } of atteignables) {
+              /* Indice de pré-tri seulement : progression vers l'intention,
+                 capture immédiate, mise en sécurité. Volontairement grossier —
+                 il ne fait que décider quels coups méritent d'être simulés. */
+              const arrivee = plannerLireChamp(champ, intention.cibles, r, c);
+              let indice = (depart - arrivee) * 10 - cout;
+              if (looseArtifactAt(r, c) && !porte) indice += 60;
+              if (porte && isCrownValidationCell(state.players[playerId], r, c)) indice += 120;
+              // Atteindre la case visée, et pas seulement s'en rapprocher.
+              if (arrivee === 0) indice += 80;
+              /* Un repli doit pouvoir être PROPOSÉ, sinon l'anticipation
+                 adverse n'aura rien à départager : on ne peut pas choisir un
+                 coup qui n'a jamais été généré. La menace est ici la version
+                 élargie, qui voit venir une poussée préparée. */
+              if (porte) {
+                const menaceDepart = menaceEn(gardien.r, gardien.c);
+                const menaceArrivee = menaceEn(r, c);
+                if (menaceDepart && !menaceArrivee) indice += 140;
+                else if (!menaceDepart && menaceArrivee) indice -= 140;
+              }
+
+              parIntention.push({ type: "MOVE", charId: gardien.id, r, c, cost: cout, indice, but: intention.but });
             }
 
-            options.push({ type: "MOVE", charId: gardien.id, r, c, cost: cout, indice });
+            parIntention.sort((a, b) => b.indice - a.indice);
+            options.push(...plannerRetenir(parIntention, plafonds().moveParIntention, "MOVE"));
           }
         }
 
-        options.sort((a, b) => b.indice - a.indice);
-        return options.slice(0, PLAN_CANDIDATS.move);
+        /* Un même coup peut servir deux intentions : on ne le simule qu'une
+           fois, en lui laissant sa meilleure justification. */
+        const parCase = new Map();
+        for (const o of options) {
+          const k = `${o.charId}:${o.r},${o.c}`;
+          const connu = parCase.get(k);
+          if (!connu || o.indice > connu.indice) parCase.set(k, o);
+        }
+        const uniques = [...parCase.values()];
+        uniques.sort((a, b) => b.indice - a.indice);
+        return plannerRetenir(uniques, plafonds().move, "MOVE");
       }
 
-      /** Objectifs d'un gardien qui ne porte pas : couronnes libres, sanctuaire
-       *  si une couronne y est attendue, sinon le porteur adverse à intercepter. */
-      function plannerObjectifsGardien(playerId) {
-        const libres = activeArtifacts()
-          .filter(a => a.carrierId === null)
-          .map(a => [a.r, a.c]);
+
+      /* INTENTIONS D'UN GARDIEN.
+
+         Cette fonction décidait auparavant d'un objectif UNIQUE par cascade de
+         retours : dès qu'une couronne libre traînait quelque part, elle était
+         la seule destination de tous les gardiens. Les cases de validation
+         adverses n'y figuraient dans aucune branche, et se poster à côté de son
+         propre porteur non plus.
+
+         Conséquence mesurée sur une partie réelle : le blocage d'un village
+         adverse n'a jamais été proposé une seule fois, et une seule passe a été
+         jouée en vingt-deux tours. Ce n'était pas l'évaluateur qui refusait ces
+         coups — il ne les voyait jamais, faute d'être générés.
+
+         On renvoie donc l'UNION des intentions que la position rend
+         pertinentes. Chacune recevra ses propres candidats, si bien qu'aucune
+         ne peut plus étouffer les autres. */
+      function plannerIntentionsGardien(playerId, gardien) {
+        const intentions = [];
+        const moi = state.players[playerId];
+        const adverse = plannerAdversaire(playerId);
+        const porte = characterCarriesCrown(gardien.id);
+        const ajouter = (but, cibles) => {
+          const utiles = (cibles || []).filter(([r, c]) => Number.isFinite(r) && Number.isFinite(c));
+          if (utiles.length) intentions.push({ but, cibles: utiles });
+        };
+
+        if (porte) {
+          // Porter, c'est aller marquer.
+          ajouter("validation", aiValidationTargetsForPlayer(moi));
+        } else {
+          const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
+          ajouter("couronne", libres);
+          if ((state.couronnesEnAttente || []).length) ajouter("sanctuaire", [[CENTER.r, CENTER.c]]);
+        }
+
+        const porteurAdverse = adverse && activeArtifacts()
+          .map(a => a.carrierId ? characterById(a.carrierId) : null)
+          .find(pt => pt && pt.player !== playerId);
+
+        if (porteurAdverse) {
+          // Intercepter : se mettre en position de pousser le porteur adverse.
+          ajouter("interception", orthogonalNeighbors(porteurAdverse.r, porteurAdverse.c)
+            .filter(([r, c]) => isLand(r, c)));
+          /* BLOQUER : occuper une des trois cases du village adverse y interdit
+             toute validation (règle V67). C'est le coup défensif le plus fort
+             du jeu, et il n'était jamais généré. */
+          ajouter("blocage", crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c)));
+        }
+
+        /* RELAIS : se porter à côté d'un allié pour que la couronne passe de
+           main en main — gratuitement. Sans cette intention, la configuration
+           ne se formait que par accident. */
+        const allies = plannerGardiensDe(playerId).filter(g => g.id !== gardien.id);
+        const partenaires = porte
+          ? allies.filter(g => !characterCarriesCrown(g.id))
+          : allies.filter(g => characterCarriesCrown(g.id));
+        const casesRelais = [];
+        partenaires.forEach(g => orthogonalNeighbors(g.r, g.c)
+          .filter(([r, c]) => isLand(r, c))
+          .forEach(cell => casesRelais.push(cell)));
+        ajouter("relais", casesRelais);
+
+        /* PRÉPARER UNE POUSSÉE : se poster face à un gardien adverse adossé
+           au vide. Sans cette intention, l'IA ne se met en position d'éjecter
+           que par hasard, en poursuivant un autre but. */
+        if (adverse) {
+          const postes = [];
+          for (const ennemi of plannerGardiensDe(adverse.id)) {
+            for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+              // Se placer du côté opposé au vide : c'est de là qu'on pousse.
+              if (isLand(ennemi.r + dr, ennemi.c + dc)) continue;
+              const poste = [ennemi.r - dr, ennemi.c - dc];
+              if (isLand(poste[0], poste[1])) postes.push(poste);
+            }
+          }
+          ajouter("poussee", postes);
+        }
+
+        /* SÉCURISER LE PORTEUR : s'éloigner de toute portée adverse. Le bonus
+           de repli existant ne joue qu'à l'intérieur d'une autre intention, et
+           pouvait donc ne jamais entrer dans ses places. */
+        if (porte && adverse) {
+          const ennemis = plannerGardiensDe(adverse.id);
+          const sures = [];
+          for (let r = 0; r < GRID; r++) {
+            for (let c = 0; c < GRID; c++) {
+              if (!isLand(r, c) || characterAt(r, c)) continue;
+              if (ennemis.some(e => Math.abs(e.r - r) + Math.abs(e.c - c) <= 2)) continue;
+              sures.push([r, c]);
+            }
+          }
+          ajouter("securite", sures);
+        }
+
+        // Filet : un gardien sans intention dérive vers le centre.
+        if (!intentions.length) ajouter("centre", [[CENTER.r, CENTER.c]]);
+        return intentions;
+      }
+
+      /* Repère de DISTANCE pour classer les rotations de magie — pas une
+         décision. Volontairement bon marché et en cascade : mesurer() est
+         rappelé à chaque rotation simulée, et il ne s'agit ici que de savoir si
+         une rotation rapproche l'équipe de ce qui compte, non de choisir un
+         coup. Les intentions, elles, servent à générer des coups.  */
+      function plannerCiblesReference(playerId) {
+        const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
         if (libres.length) return libres;
         if ((state.couronnesEnAttente || []).length) return [[CENTER.r, CENTER.c]];
         const adverse = plannerAdversaire(playerId);
         const porteurAdverse = adverse && activeArtifacts()
           .map(a => a.carrierId ? characterById(a.carrierId) : null)
-          .find(p => p && p.player !== playerId);
+          .find(pt => pt && pt.player !== playerId);
         if (porteurAdverse) {
-          const autour = orthogonalNeighbors(porteurAdverse.r, porteurAdverse.c)
-            .filter(([r, c]) => isLand(r, c));
+          const autour = orthogonalNeighbors(porteurAdverse.r, porteurAdverse.c).filter(([r, c]) => isLand(r, c));
           if (autour.length) return autour;
         }
         return [[CENTER.r, CENTER.c]];
@@ -438,22 +1003,41 @@
             if (!cible && !couronne) continue;
             if (cible && cible.player === playerId) continue;
 
-            const requise = cible ? collectPushLine(r, c, r - pousseur.r, c - pousseur.c).length : 1;
-            for (let force = requise; force <= budget; force++) {
+            /* Règle V67 : aucune force n'est refusée, elle règle seulement la
+               distance parcourue par le bloc. Toutes les forces ne produisent
+               pas pour autant des positions différentes — une fois la cible
+               jetée hors du plateau, pousser plus fort ne change rien qu'une
+               carte dépensée en trop.
+
+               On ne retient donc que la plus PETITE force menant à chaque
+               résultat distinct. La recherche y gagne deux fois : moins de
+               branches à explorer, et jamais de gaspillage de cartes. */
+            const dr = r - pousseur.r;
+            const dc = c - pousseur.c;
+            const dejaVus = new Set();
+            for (let force = 1; force <= budget; force++) {
+              const plan = resoudrePousseeBloc(r, c, dr, dc, force);
+              if (!plan) continue;
+              const empreinte = plan.mouvements
+                .map(mv => `${mv.kind}:${mv.id}:${mv.to}:${mv.chute ? 1 : 0}`)
+                .join('|');
+              if (dejaVus.has(empreinte)) continue;
+              dejaVus.add(empreinte);
+
               // Indice grossier : viser un porteur, ou une couronne, compte plus.
               let indice = 10 - force;
               if (cible && characterCarriesCrown(cible.id)) indice += 70;
               if (couronne) indice += 40;
-              // Une cible adossée au vide part du plateau.
-              const derriere = [r + (r - pousseur.r), c + (c - pousseur.c)];
-              if (!inside(derriere[0], derriere[1]) || !isLand(derriere[0], derriere[1])) indice += 90;
+              // Une poussée qui retire réellement un gardien vaut mieux qu'un
+              // simple décalage : c'est le résultat qui le dit, pas la position.
+              if (plan.chutes) indice += 90;
               options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice });
             }
           }
         }
 
         options.sort((a, b) => b.indice - a.indice);
-        return options.slice(0, PLAN_CANDIDATS.push);
+        return plannerRetenir(options, plafonds().push, "PUSH");
       }
 
       /* La magie est une TRANSFORMATION DU GRAPHE, pas un bonus local de
@@ -473,7 +1057,7 @@
           const porteurAdverse = adverse
             ? plannerGardiensDe(adverse.id).find(g => characterCarriesCrown(g.id))
             : null;
-          const objectifs = plannerObjectifsGardien(playerId);
+          const objectifs = plannerCiblesReference(playerId);
           return {
             moi: monPorteur
               ? aiLandDistanceToTargets(monPorteur.r, monPorteur.c, aiValidationTargetsForPlayer(state.players[playerId]))
@@ -539,21 +1123,67 @@
         }
 
         options.sort((a, b) => b.indice - a.indice);
-        return options.slice(0, PLAN_CANDIDATS.magic);
+        return plannerRetenir(options, plafonds().magic, "MAGIC");
+      }
+
+      /* L'adversaire est-il assez près de marquer pour que se poser sur son
+         village vaille mieux que suivre l'action ? Même signal que celui qui
+         pondère la défense dans l'évaluateur : sans porteur adverse proche de
+         SES cases de validation, il n'y a rien à contester. */
+      function plannerMenaceValidationAdverse(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return false;
+        return (state.characters || []).some(char =>
+          char.player === adverse.id
+          && characterCarriesCrown(char.id)
+          && aiValidationDistanceForPlayer(adverse, char.r, char.c) <= 3
+        );
       }
 
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
-        const placements = findAutomaticIslandPlacement(playerId, PLAN_CANDIDATS.pose);
+        /* Le biais vers la zone adverse ne s'active que sous menace réelle.
+           Permanent, il détournait la pose de l'action : l'IA allait camper au
+           village adverse pendant qu'une couronne libre attendait ailleurs. */
+        const placements = findAutomaticIslandPlacement(
+          playerId, plafonds().pose, plannerMenaceValidationAdverse(playerId)
+        );
         if (!Array.isArray(placements)) return [];
-        return placements.map(p => ({
-          type: "POSE",
-          shapeKey: p.shapeKey,
-          cells: p.cells,
-          relCells: p.relCells,
-          anchor: p.anchor,
-          owner: playerId
-        }));
+
+        /* La case d'apparition fait partie de la décision, comme pour un joueur
+           humain. Les cases sont classées par proximité de la cible automatique,
+           si bien que la première reste EXACTEMENT celle que le jeu choisirait
+           seul : l'ancien comportement demeure candidat, on lui ajoute des
+           alternatives. */
+        const cible = automaticPlacementTarget(playerId);
+        const parPose = placements.map(p => {
+          const libres = p.cells.filter(([r, c]) => !characterAt(r, c));
+          libres.sort((a, b) =>
+            (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
+            (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
+          return { pose: p, spawns: libres.slice(0, plafonds().poseSpawns) };
+        });
+
+        /* Entrelacé : le premier choix de CHAQUE pose avant le deuxième choix
+           de la première. Sans cela le plafond ne retiendrait que les variantes
+           d'une ou deux poses, et la diversité des emplacements — le point
+           vraiment décisif — serait perdue. */
+        const options = [];
+        for (let rang = 0; rang < plafonds().poseSpawns; rang++) {
+          for (const { pose, spawns } of parPose) {
+            if (rang >= spawns.length) continue;
+            options.push({
+              type: "POSE",
+              shapeKey: pose.shapeKey,
+              cells: pose.cells,
+              relCells: pose.relCells,
+              anchor: pose.anchor,
+              owner: playerId,
+              spawn: spawns[rang]
+            });
+          }
+        }
+        return plannerRetenir(options, plafonds().poseTotal, "POSE");
       }
 
       /* Transitions GRATUITES : elles ne consomment aucune carte et ne comptent
@@ -614,6 +1244,39 @@
       }
 
       /** Applique n'importe quelle action du planner, gratuite ou non. */
+      /* Faisceau DIVERSIFIÉ : le meilleur de chaque nature d'abord.
+
+         Trier par note et couper au plafond laissait une seule idée occuper
+         toutes les places — dix poses d'île presque identiques évinçaient la
+         parade qui répondait à deux menaces (A8 échouait ainsi). On sert donc
+         chaque type d'action à tour de rôle avant de compléter par les
+         meilleurs restants : aucune nature de coup ne peut plus disparaître du
+         faisceau tant qu'il y reste de la place. */
+      function plannerFaisceauDiversifie(candidats, largeur) {
+        if (candidats.length <= largeur) return candidats;
+        const parNature = new Map();
+        for (const noeud of candidats) {
+          const derniere = noeud.plan[noeud.plan.length - 1];
+          const nature = derniere ? derniere.type : "RIEN";
+          if (!parNature.has(nature)) parNature.set(nature, []);
+          parNature.get(nature).push(noeud);
+        }
+        const retenus = [];
+        const vus = new Set();
+        const files = [...parNature.values()];
+        let rang = 0;
+        // Tour de rôle : une place à chaque nature, puis on recommence.
+        while (retenus.length < largeur && files.some(f => rang < f.length)) {
+          for (const file of files) {
+            if (retenus.length >= largeur) break;
+            const noeud = file[rang];
+            if (noeud && !vus.has(noeud)) { vus.add(noeud); retenus.push(noeud); }
+          }
+          rang++;
+        }
+        return retenus;
+      }
+
       function plannerAppliquerAction(action) {
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
@@ -651,19 +1314,87 @@
          ------------------------------------------------------------------- */
 
       const PLAN_BUDGET = {
-        largeurFaisceau: 10,
+        /* Le faisceau suit l'ouverture de la racine. Élargir les candidats sans
+           élargir le faisceau est contre-productif : les variantes d'une même
+           idée — dix poses d'île presque identiques — remplissent les places et
+           évincent les lignes d'une autre nature. Mesuré : A8, qui demande une
+           parade précise, échouait pour cette seule raison. */
+        largeurFaisceau: 14,
         decisionsMax: 6,
-        etatsMax: 900,
-        tempsMaxMs: 350
+        etatsMax: 1200,
+        tempsMaxMs: 500
       };
 
       // Dernier plan calculé — lu par l'outillage de diagnostic et par
       // l'exécution du tour. Jamais utilisé comme mémoire entre deux tours.
       let plannerDernierRapport = null;
 
+      /* AUTOPSIE — relevé exhaustif des candidats depuis la position de départ.
+
+         Chaque candidat est évalué à un coup de profondeur : c'est la réponse
+         directe à « pourquoi l'IA n'a-t-elle pas vu ce que j'ai vu ? ». Si le
+         bon coup figure ici avec une note faible, le défaut est dans
+         l'évaluateur ; s'il figure parmi les écartés, il est dans le
+         pré-filtre ; s'il n'y figure pas du tout, il est dans les générateurs.
+
+         Exécuté hors de la boucle de recherche : coût nul hors autopsie. */
+      function plannerReleverCandidats(playerId) {
+        const ecartesMemoire = plannerCandidatsEcartes;
+        const ecartes = [];
+        plannerCandidatsEcartes = ecartes;
+        const chronos = {};
+        const chronometrer = (nom, fn) => {
+          const t0 = performance.now();
+          const r = fn();
+          chronos[nom] = Math.round(performance.now() - t0);
+          return r;
+        };
+        let retenus;
+        try {
+          retenus = [
+            ...chronometrer("gratuites", () => plannerTransitionsGratuites(playerId)),
+            ...chronometrer("move", () => plannerCandidatsMove(playerId)),
+            ...chronometrer("push", () => plannerCandidatsPush(playerId)),
+            ...chronometrer("magic", () => plannerCandidatsMagic(playerId)),
+            ...chronometrer("pose", () => plannerCandidatsPose(playerId))
+          ];
+        } finally {
+          plannerCandidatsEcartes = ecartesMemoire;
+        }
+
+        const noter = action => {
+          const clone = cloneStateForSimulation();
+          return withSimulatedState(clone, () => {
+            if (!plannerAppliquerAction(action)) return null;
+            return evaluateStrategicState(playerId);
+          });
+        };
+
+        const decrire = (action, retenu) => {
+          const note = noter(action);
+          return {
+            retenu,
+            type: action.type,
+            note: note === null ? null : Math.round(note),
+            legal: note !== null,
+            action
+          };
+        };
+
+        const tous = [
+          ...retenus.map(a => decrire(a, true)),
+          ...ecartes.map(e => decrire(e.action, false))
+        ];
+        tous.sort((a, b) => (b.note ?? -Infinity) - (a.note ?? -Infinity));
+        // Le coût de génération est porté par le relevé : sans lui, une
+        // recherche qui n'explore rien reste inexplicable.
+        tous.chronos = chronos;
+        return tous;
+      }
+
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
-        const debut = performance.now();
+        let debut = performance.now();
         let etatsExplores = 0;
         let candidatsGeneres = 0;
 
@@ -674,6 +1405,29 @@
         };
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
         racine.terminal = racine.etat.islandPlacedThisTurn;
+
+        /* Sous autopsie, on relève AVANT la recherche : la position de départ
+           est alors intacte, et le relevé décrit exactement ce que la
+           recherche s'apprêtait à explorer.
+
+           SON COÛT EST RENDU AU BUDGET. Le relevé clone et évalue chaque
+           candidat : il dépasse à lui seul les 350 ms de la recherche sur un
+           plateau développé. Sans cette restitution, lever l'autopsie suffisait
+           à faire échouer la décision qu'elle observait — la recherche partait
+           hors budget avant sa première itération, ne générait aucun candidat,
+           et rendait la main à la logique historique. Observé sur une vraie
+           partie : 7 tours sur 23 en repli, dont 5 sans un seul état exploré.
+
+           Un instrument qui change ce qu'il mesure ne mesure rien. */
+        let releveCandidats = null;
+        let coutObservation = 0;
+        if (plannerAutopsieActive()) {
+          plannerNiveau = 0;
+          const debutReleve = performance.now();
+          releveCandidats = withSimulatedState(racine.etat, () => plannerReleverCandidats(playerId));
+          coutObservation = performance.now() - debutReleve;
+          debut += coutObservation;
+        }
 
         let meilleur = racine.terminal ? racine : null;
         /* Tous les états terminaux rencontrés, pas seulement le meilleur :
@@ -686,6 +1440,8 @@
         let profondeurAtteinte = 0;
 
         for (let niveau = 0; niveau < budget.decisionsMax; niveau++) {
+          // Les générateurs s'ouvrent à la racine et se resserrent ensuite.
+          plannerNiveau = niveau;
           const suivants = [];
 
           for (const noeud of faisceau) {
@@ -743,7 +1499,7 @@
 
           if (!suivants.length) break;
           suivants.sort((a, b) => b.note - a.note);
-          faisceau = suivants.slice(0, budget.largeurFaisceau);
+          faisceau = plannerFaisceauDiversifie(suivants, budget.largeurFaisceau);
           profondeurAtteinte = niveau + 1;
           if (performance.now() - debut > budget.tempsMaxMs) break;
           if (etatsExplores > budget.etatsMax) break;
@@ -760,11 +1516,19 @@
           profondeurAtteinte,
           largeurFaisceau: budget.largeurFaisceau,
           dureeMs: Math.round(duree),
+          // Temps passé à observer, exclu du budget de décision ci-dessus.
+          coutObservationMs: Math.round(coutObservation),
           // Empreinte attendue après exécution : sert au contrôle de fidélité
           // entre l'état prévu et l'état réellement obtenu.
           empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,
           // Finalistes triés, prêts pour l'anticipation adverse (V3).
-          finalistes: terminaux.sort((a, b) => b.note - a.note).slice(0, 8)
+          finalistes: terminaux.sort((a, b) => b.note - a.note).slice(0, 8),
+          releveCandidats,
+          /* Conservés pour la décomposition de score de l'autopsie. Hors
+             autopsie ils restent nuls : garder des clones d'état complets à
+             chaque décision coûterait de la mémoire pour rien. */
+          etatDepart: releveCandidats ? racine.etat : null,
+          etatRetenu: releveCandidats && meilleur ? meilleur.etat : null
         };
         return plannerDernierRapport;
       }
@@ -924,10 +1688,23 @@
         }
 
         const debutRiposte = performance.now();
+        /* NE RIEN FAIRE COÛTE UN TOUR.
+
+           Le classement par robustesse récompense ce qui ne risque rien — et
+           rien ne risque moins que l'immobilité. L'IA renonçait ainsi à
+           ramasser une couronne à sa portée parce que la porter l'exposait
+           (P08 échouait : « aucune action »).
+
+           Passer son tour n'est pourtant pas gratuit : c'est cinq cartes
+           perdues et un tempo offert. Le plan vide se voit donc appliquer ce
+           coût, comme n'importe quel autre coup a le sien. */
         const examines = finalistes.map(noeud => ({
           noeud: noeud,
           robustesse: plannerEvaluerRobustesse(noeud, playerId)
         }));
+        examines.forEach(e => {
+          if (!e.noeud.plan.length) e.robustesse.note -= PLAN_POIDS.tempoPerdu;
+        });
         examines.sort((a, b) => b.robustesse.note - a.robustesse.note);
         const dureeRiposte = performance.now() - debutRiposte;
         const retenu = examines[0];
@@ -949,6 +1726,9 @@
 
         principal.plan = retenu.noeud.plan;
         principal.noteArrivee = retenu.noeud.note;
+        // La riposte peut changer le plan retenu : la décomposition doit
+        // décrire l'état RÉELLEMENT choisi, pas le meilleur avant riposte.
+        if (principal.etatDepart) principal.etatRetenu = retenu.noeud.etat;
         principal.empreinteAttendue = strategicStateFingerprint(retenu.noeud.etat);
         principal.anticipation = {
           examines: examines.length,

@@ -21,6 +21,11 @@ const fragmentNames = [
   // Cerveau Expert V2 : s'appuie sur les noyaux de rules-core.js et sur
   // withSimulatedState, donc placé juste après.
   'planner.js',
+  // Autopsie des décisions IA : doit fonctionner en PARTIE RÉELLE, elle ne
+  // peut donc pas vivre dans diagnostics.js, qui a vocation à sortir du
+  // bundle en fin de chantier. Placée après planner.js, dont elle lit les
+  // rapports et l'évaluateur détaillé.
+  'autopsie.js',
   'diagnostics.js',
 ];
 

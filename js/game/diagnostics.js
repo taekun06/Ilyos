@@ -143,11 +143,19 @@
           `<p><strong>Scores :</strong> ${(state?.players || []).map(p => `${p.name} ${p.score || 0}/3`).join(' · ') || '—'}</p>` +
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
-          `<button data-autoplay-report>DIAGNOSTIC</button>`;
+          `<button data-autoplay-report>DIAGNOSTIC</button> ` +
+          /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
+             la réserver à qui pense à la taper. */
+          `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>`;
         panel.querySelector('[data-autoplay-stop]')?.addEventListener('click', () => {
           if (ILYOS_AUTOPLAY.active) stopIlyosAutoplay('Arrêt manuel'); else panel.remove();
         });
         panel.querySelector('[data-autoplay-report]')?.addEventListener('click', showIlyosDiagnosticPanel);
+        panel.querySelector('[data-autoplay-revue]')?.addEventListener('click', () => {
+          const actif = !window.ILYOS_AUTOPSIE?.active?.();
+          window.ILYOS_AUTOPSIE?.activer(actif);
+          renderIlyosAutoplayPanel();
+        });
       }
 
       function stopIlyosAutoplay(reason = 'Test terminé') {
@@ -971,7 +979,354 @@
         };
       }
 
+      /* Contrôle de la règle de poussée elle-même (V67), indépendant de toute
+         décision d'IA. On pose une position, on demande au résolveur ce qu'il
+         ferait, et on compare les arrivées à ce que la règle exige.
+
+         resoudrePousseeBloc() ne modifie rien : la position n'a pas besoin
+         d'être rejouée entre deux cas. */
+      function benchPoussee(cas = {}) {
+        const instantane = benchBuildSnapshot(cas.spec || {});
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+
+        const [dr, dc] = cas.direction;
+        const [sr, sc] = cas.depart;
+        const plan = resoudrePousseeBloc(sr, sc, dr, dc, cas.force);
+
+        // Arrivées exprimées en termes de jeu : qui finit où, et qui tombe.
+        const arrivees = (plan ? plan.mouvements : []).map(mv => ({
+          genre: mv.kind,
+          id: mv.id,
+          de: mv.from,
+          vers: mv.to,
+          chute: !!mv.chute
+        }));
+        return { distance: plan ? plan.distance : 0, arrivees };
+      }
+
+      /* Contrôle des règles de VALIDATION (V67) : le porteur est obligatoire,
+         et un gardien adverse posté dans les trois cases d'un village y
+         interdit tout point. On pose une position, on déclenche le décompte de
+         début de tour, et on lit combien de points ont réellement été marqués. */
+      function benchValidation(cas = {}) {
+        const instantane = benchBuildSnapshot(cas.spec || {});
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+        const joueur = state.players[cas.joueur ?? 0];
+        const avant = joueur.score;
+        const marques = scoreCrownsAtTurnStart(joueur);
+        return { marques, gain: joueur.score - avant };
+      }
+
+      /* =====================================================================
+         SELF-PLAY SANS RENDU
+
+         Une partie affichée dure trois à cinq minutes, presque entièrement
+         passées en animations. Or les noyaux de règle sont purs et
+         synchrones — c'est ce que prouve le banc de fidélité. On peut donc
+         jouer des parties ENTIÈRES sans rien afficher, à une vitesse sans
+         rapport avec le temps réel.
+
+         C'est l'instrument qui manquait. Les douze poids de l'évaluateur ont
+         été posés à la main et jamais vérifiés ; chaque correction faite « au
+         jugé » en cassait une autre. Faire s'affronter deux jeux de poids sur
+         des dizaines de parties remplace l'opinion par un résultat.
+
+         Le harnais joue la MÊME position de départ pour tous, et alterne les
+         camps : une différence de résultat vient alors des poids, pas du
+         hasard des positions.
+         ===================================================================== */
+
+      /* Transition de tour d'une VRAIE partie : contrairement à
+         applyTurnTransitionCore, qui distribue la main plausible utilisée par
+         l'anticipation, celle-ci pioche réellement. */
+      function selfplayTransitionTour() {
+        const sortant = state.players[state.currentPlayer];
+
+        /* Rangement des cartes : MÊME fonction que la vraie fin de tour.
+           Une première version recopiait la logique et divergeait aussitôt —
+           les cartes jouées n'allaient plus à la défausse, la pioche se vidait
+           et une partie simulée durait 121 tours sans un seul point. */
+        rangerCartesFinDeTour(sortant);
+        // Ce qui n'a pas pu être rangé quitte la main par la défausse.
+        sortant.discard = Array.isArray(sortant.discard) ? sortant.discard : [];
+        (sortant.hand || []).forEach(carte => {
+          sortant.discard.push({ ...carte, used: false, fromStash: false, fromReserve: false });
+        });
+        sortant.hand = [];
+
+        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+        state.turn++;
+
+        const entrant = state.players[state.currentPlayer];
+        scoreCrownsAtTurnStart(entrant);
+        if (state.winner !== null && state.winner !== undefined) return false;
+
+        // Règle V68 : plus de place pour poser, la partie s'arrête.
+        if (plateauSansPlace()) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
+          return false;
+        }
+
+        entrant.hand = [];
+        drawCards(entrant, 5);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.centerCrownTakenThisTurn = false;
+        faireEntrerCouronnesEnAttente();
+        state.phase = "ACTION_SELECT";
+        state.selectedActionType = null;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        state.reachable = new Set();
+        return true;
+      }
+
+      /* Joue un tour complet pour le joueur au trait. Renvoie le nombre
+         d'actions appliquées — zéro signifie que le cerveau n'a rien trouvé. */
+      function selfplayJouerTour(playerId, budget) {
+        let rapport = null;
+        try {
+          rapport = plannerChercherPlanRobuste(playerId, budget);
+        } catch (erreur) {
+          console.warn("[ILYOS] self-play : planner en échec", erreur);
+          return 0;
+        }
+        if (!rapport || !rapport.plan.length) return 0;
+        let appliquees = 0;
+        for (const action of rapport.plan) {
+          if (!plannerAppliquerAction(action)) break;
+          appliquees++;
+        }
+        /* La pose est obligatoire : si le plan ne l'a pas faite, on retombe sur
+           la pose automatique, exactement comme le jeu réel le fait. */
+        if (!state.islandPlacedThisTurn) {
+          const pose = findAutomaticIslandPlacement(playerId);
+          if (pose) {
+            applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor);
+            appliquees++;
+          }
+        }
+        return appliquees;
+      }
+
+      /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
+         rend. Sans restitution, un tournoi laisserait le jeu réel avec les
+         poids du dernier candidat testé. */
+      function selfplayAppliquerPoids(poids) {
+        if (!poids) return null;
+        const memoire = {};
+        Object.keys(poids).forEach(cle => {
+          memoire[cle] = PLAN_POIDS[cle];
+          PLAN_POIDS[cle] = poids[cle];
+        });
+        return memoire;
+      }
+
+      /** Une partie complète, sans rien afficher. */
+      /* budget : plafonds de recherche du planner.
+
+         Contre-intuitivement, ce n'est pas l'affichage qui coûte cher dans une
+         partie, c'est la réflexion : 500 ms par décision, soit une quarantaine
+         de secondes par partie. Un tournoi de mille parties y passerait la
+         nuit.
+
+         On réduit donc le temps de réflexion. La force ABSOLUE baisse, mais la
+         comparaison entre deux jeux de poids reste valable puisque les deux
+         camps réfléchissent autant — c'est un classement, pas une mesure. */
+      function selfplayPartie({ depart, graine = 1, poids = [null, null], toursMax = 120,
+                                budget = { tempsMaxMs: 150, etatsMax: 600 } } = {}) {
+        const debut = performance.now();
+        setTestRandomSeed(graine);
+        const clone = structuredClone(depart);
+
+        const resultat = withSimulatedState(clone, () => {
+          let tours = 0;
+          while (state.winner === null && tours < toursMax) {
+            const joueur = state.currentPlayer;
+            const memoire = selfplayAppliquerPoids(poids[joueur]);
+            try {
+              selfplayJouerTour(joueur, budget);
+            } finally {
+              selfplayAppliquerPoids(memoire);
+            }
+            tours++;
+            if (!selfplayTransitionTour()) break;
+          }
+          return {
+            vainqueur: state.winner,
+            tours: state.turn,
+            scores: state.players.map(p => p.score || 0),
+            interrompue: tours >= toursMax,
+            // Position finale : indispensable pour diagnostiquer une partie
+            // simulée qui ne ressemble pas à une vraie.
+            etatFinal: snapshotState()
+          };
+        });
+
+        setTestRandomSeed(null);
+        resultat.dureeMs = Math.round(performance.now() - debut);
+        return resultat;
+      }
+
+      /* Tournoi entre deux jeux de poids, camps alternés. Chaque paire de
+         parties joue la même graine des deux côtés : une différence ne peut
+         alors pas venir du tirage. */
+      function selfplayTournoi({ parties = 20, poidsA = null, poidsB = null, toursMax = 120,
+                                budget = { tempsMaxMs: 150, etatsMax: 600 } } = {}) {
+        if (!state) return { erreur: "lancez d'abord une partie pour disposer d'une position de départ" };
+        const depart = structuredClone(canonicalDepart());
+        const debut = performance.now();
+        let gagneA = 0, gagneB = 0, nuls = 0, interrompues = 0;
+        /* Couronnes cumulées : un verdict par partie discrimine mal — le
+           tournoi témoin donnait 10 nuls sur 12. Le total des couronnes
+           marquées de chaque côté reste informatif même quand personne ne
+           gagne, et c'est lui qu'on regarde en premier. */
+        let couronnesA = 0, couronnesB = 0;
+        const durees = [];
+
+        for (let i = 0; i < parties; i++) {
+          const graine = 1000 + Math.floor(i / 2);
+          // Camps alternés : A joue le joueur 0 une fois sur deux.
+          const aEstJoueur0 = i % 2 === 0;
+          const poids = aEstJoueur0 ? [poidsA, poidsB] : [poidsB, poidsA];
+          const r = selfplayPartie({ depart, graine, poids, toursMax, budget });
+          durees.push(r.dureeMs);
+          if (r.interrompue) interrompues++;
+
+          /* Une partie coupée au plafond de tours n'est pas un nul : on la
+             départage aux couronnes, comme la règle du plateau saturé. Sans
+             cela un tournoi court ne mesurait rien — huit parties, huit nuls. */
+          let vainqueur = r.vainqueur;
+          if (vainqueur === null || vainqueur === MATCH_NUL) {
+            const [s0, s1] = r.scores;
+            vainqueur = s0 === s1 ? null : (s0 > s1 ? 0 : 1);
+          }
+
+          couronnesA += aEstJoueur0 ? r.scores[0] : r.scores[1];
+          couronnesB += aEstJoueur0 ? r.scores[1] : r.scores[0];
+
+          if (vainqueur === null) nuls++;
+          else if ((vainqueur === 0) === aEstJoueur0) gagneA++;
+          else gagneB++;
+        }
+
+        durees.sort((x, y) => x - y);
+        return {
+          parties, gagneA, gagneB, nuls, interrompues,
+          couronnesA, couronnesB,
+          dureeTotaleMs: Math.round(performance.now() - debut),
+          dureeMedianeMs: durees[Math.floor(durees.length / 2)],
+          dureeMaxMs: durees[durees.length - 1]
+        };
+      }
+
+      /* Position de départ : celle de la partie en cours, ramenée à son tour 1.
+         On ne rejoue pas la création d'une partie — elle passe par l'interface
+         — on repart de l'état actuel remis à zéro côté score et couronnes. */
+      function canonicalDepart() {
+        return JSON.parse(snapshotState());
+      }
+
+      /* =====================================================================
+         FIDÉLITÉ D'UNE PARTIE ENTIÈRE
+
+         Le banc de fidélité vérifie douze transitions ISOLÉES : une action,
+         appliquée des deux façons, doit donner le même état. Il n'aurait pas vu
+         le défaut qui a fait échouer le premier self-play — les cartes jouées
+         n'allant plus à la défausse, c'est l'ACCUMULATION sur une partie qui
+         révélait le problème, pas une transition prise seule.
+
+         Ce contrôle-ci compare une partie complète. Il ne rejoue pas les
+         DÉCISIONS — elles dépendent du temps de réflexion et du hasard, deux
+         choses qu'on ne peut pas reproduire à l'identique. Il rejoue les
+         ACTIONS que le jeu réel a effectivement jouées, et vérifie qu'elles
+         produisent le même plateau. C'est exactement ce que veut dire fidélité.
+
+         La matière vient du journal d'autopsie : position d'avant chaque
+         décision, et plan joué. Il suffit de les enchaîner.
+         ===================================================================== */
+
+      /* Empreinte de PLATEAU : ce qui doit se reproduire à l'identique. La main
+         et l'ordre de la pioche en sont exclus — ils dépendent d'un tirage
+         aléatoire que la simulation ne peut pas rejouer, et ne décrivent aucune
+         règle. */
+      function empreintePlateau(etat) {
+        const e = typeof etat === "string" ? JSON.parse(etat) : etat;
+        const iles = (e.islands || [])
+          .map(i => i.cells.map(c => c.join(",")).sort().join("|"))
+          .sort().join(" / ");
+        const gardiens = (e.characters || [])
+          .map(c => `${c.player}:${c.r},${c.c}`).sort().join(" ");
+        const couronnes = [e.artifact, e.secondArtifact]
+          .map(a => a && a.active ? `${a.carrierId || "sol"}@${a.r},${a.c}` : "-")
+          .join(" ");
+        const scores = (e.players || []).map(j => j.score || 0).join("-");
+        return `T${e.turn} J${e.currentPlayer} | ${scores} | ${couronnes} | ${gardiens} | ${iles}`;
+      }
+
+      /* Rejoue le journal d'autopsie en simulation et compare tour par tour. */
+      function benchFidelitePartie() {
+        const journal = (window.ILYOS_AUTOPSIE && window.ILYOS_AUTOPSIE.journal()) || [];
+        if (journal.length < 2) {
+          return { erreur: "journal trop court : jouez une partie avec la revue active" };
+        }
+
+        const etapes = [];
+        for (let i = 0; i < journal.length - 1; i++) {
+          const avant = journal[i];
+          const apres = journal[i + 1];
+          if (!avant.instantane || !apres.instantane) continue;
+
+          const clone = JSON.parse(avant.instantane);
+          const attendu = empreintePlateau(apres.instantane);
+
+          const obtenu = withSimulatedState(clone, () => {
+            for (const action of (avant.plan || [])) {
+              if (!plannerAppliquerAction(action)) return "ACTION REFUSÉE : " + action.type;
+            }
+            /* Le jeu réel pose l'île automatiquement quand le plan ne l'a pas
+               fait. Cette pose-là est choisie par une heuristique et n'est pas
+               dans le journal : on ne peut donc pas la reproduire, et on le dit
+               au lieu de compter une fausse divergence. */
+            if (!state.islandPlacedThisTurn) return "POSE AUTOMATIQUE";
+            selfplayTransitionTour();
+            return empreintePlateau(snapshotState());
+          });
+
+          etapes.push({
+            tour: avant.tour,
+            joueur: avant.nomJoueur,
+            comparable: obtenu !== "POSE AUTOMATIQUE" && !String(obtenu).startsWith("ACTION REFUSÉE"),
+            fidele: obtenu === attendu,
+            obtenu,
+            attendu
+          });
+        }
+
+        const comparables = etapes.filter(e => e.comparable);
+        const fideles = comparables.filter(e => e.fidele);
+        return {
+          tours: etapes.length,
+          comparables: comparables.length,
+          fideles: fideles.length,
+          nonComparables: etapes.filter(e => !e.comparable).map(e => ({ tour: e.tour, raison: e.obtenu })),
+          divergences: comparables.filter(e => !e.fidele).slice(0, 3)
+        };
+      }
+
+      window.ILYOS_SELFPLAY = {
+        fidelitePartie: benchFidelitePartie,
+        empreintePlateau,
+        partie: selfplayPartie,
+        tournoi: selfplayTournoi,
+        depart: canonicalDepart
+      };
+
       window.ILYOS_BENCH = {
+        poussee: benchPoussee,
+        validation: benchValidation,
         run: benchRunPuzzle,
         /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
 
