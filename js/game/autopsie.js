@@ -370,13 +370,18 @@
 
       /* Arrête l'IA, rien de plus : aucun instantané, aucune restauration. */
       function autopsiePause() {
-        /* Le tour d'IA en cours doit être ANNULÉ, pas seulement ignoré : sans
-           cela il continuait à s'exécuter pendant la pause, et la reprise en
-           lançait un second par-dessus — deux tours simultanés, d'où les
-           animations incohérentes. Chaque étape de runAITurn compare son jeton
-           à aiRunToken et abandonne dès qu'il a changé. */
-        aiRunToken++;
-        autopsieViderAnimations();
+        /* La pause s'applique à la FIN DU TOUR EN COURS, jamais au milieu.
+
+           Interrompre un tour laissait une position à moitié jouée — cartes
+           déjà dépensées, pièces déjà déplacées. À la reprise, l'IA replanifiait
+           depuis cet état bâtard et REJOUAIT le tour : le journal montrait deux
+           décisions pour le même tour, et des gardiens tombaient sans raison
+           apparente, poussés par un plan calculé sur une autre position.
+
+           On laisse donc le tour se terminer. Les deux camps passant en manuel,
+           beginTurn ne relance rien ensuite : l'arrêt tombe proprement entre
+           deux tours. La pause n'est donc pas instantanée — sans commune mesure
+           avec une partie faussée. */
         if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) {
           autopsieSuivi = {
             startedTurn: ILYOS_AUTOPLAY.startedTurn,
@@ -386,18 +391,14 @@
           };
           // Ne pas rejournaliser une pause déjà en cours.
           if (ILYOS_AUTOPLAY.active && typeof stopIlyosAutoplay === "function") {
-            stopIlyosAutoplay("Pause pour revue");
+            stopIlyosAutoplay("Pause à la fin du tour");
           }
         } else if (typeof stopIlyosAutoplay === "function") {
-          stopIlyosAutoplay("Pause pour revue");
+          stopIlyosAutoplay("Pause à la fin du tour");
         }
-        if (state) {
-          state.aiThinking = false;
-          state.inputLocked = false;
-          state.turnTransitioning = false;
-        }
+        if (state) state.inputLocked = false;
         autopsieCurseur = ILYOS_AUTOPSIE_JOURNAL.length - 1;
-        console.log(`Partie en pause. ${ILYOS_AUTOPSIE_JOURNAL.length} décision(s) enregistrée(s).`);
+        console.log(`Pause demandée. Le tour en cours se termine d'abord.`);
         return autopsieCurseur;
       }
 
