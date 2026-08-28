@@ -1179,6 +1179,11 @@
         const depart = structuredClone(canonicalDepart());
         const debut = performance.now();
         let gagneA = 0, gagneB = 0, nuls = 0, interrompues = 0;
+        /* Couronnes cumulées : un verdict par partie discrimine mal — le
+           tournoi témoin donnait 10 nuls sur 12. Le total des couronnes
+           marquées de chaque côté reste informatif même quand personne ne
+           gagne, et c'est lui qu'on regarde en premier. */
+        let couronnesA = 0, couronnesB = 0;
         const durees = [];
 
         for (let i = 0; i < parties; i++) {
@@ -1189,14 +1194,28 @@
           const r = selfplayPartie({ depart, graine, poids, toursMax, budget });
           durees.push(r.dureeMs);
           if (r.interrompue) interrompues++;
-          if (r.vainqueur === null || r.vainqueur === MATCH_NUL) nuls++;
-          else if ((r.vainqueur === 0) === aEstJoueur0) gagneA++;
+
+          /* Une partie coupée au plafond de tours n'est pas un nul : on la
+             départage aux couronnes, comme la règle du plateau saturé. Sans
+             cela un tournoi court ne mesurait rien — huit parties, huit nuls. */
+          let vainqueur = r.vainqueur;
+          if (vainqueur === null || vainqueur === MATCH_NUL) {
+            const [s0, s1] = r.scores;
+            vainqueur = s0 === s1 ? null : (s0 > s1 ? 0 : 1);
+          }
+
+          couronnesA += aEstJoueur0 ? r.scores[0] : r.scores[1];
+          couronnesB += aEstJoueur0 ? r.scores[1] : r.scores[0];
+
+          if (vainqueur === null) nuls++;
+          else if ((vainqueur === 0) === aEstJoueur0) gagneA++;
           else gagneB++;
         }
 
         durees.sort((x, y) => x - y);
         return {
           parties, gagneA, gagneB, nuls, interrompues,
+          couronnesA, couronnesB,
           dureeTotaleMs: Math.round(performance.now() - debut),
           dureeMedianeMs: durees[Math.floor(durees.length / 2)],
           dureeMaxMs: durees[durees.length - 1]
