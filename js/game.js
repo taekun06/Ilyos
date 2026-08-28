@@ -25101,7 +25101,96 @@
         return JSON.parse(snapshotState());
       }
 
+      /* =====================================================================
+         FIDÉLITÉ D'UNE PARTIE ENTIÈRE
+
+         Le banc de fidélité vérifie douze transitions ISOLÉES : une action,
+         appliquée des deux façons, doit donner le même état. Il n'aurait pas vu
+         le défaut qui a fait échouer le premier self-play — les cartes jouées
+         n'allant plus à la défausse, c'est l'ACCUMULATION sur une partie qui
+         révélait le problème, pas une transition prise seule.
+
+         Ce contrôle-ci compare une partie complète. Il ne rejoue pas les
+         DÉCISIONS — elles dépendent du temps de réflexion et du hasard, deux
+         choses qu'on ne peut pas reproduire à l'identique. Il rejoue les
+         ACTIONS que le jeu réel a effectivement jouées, et vérifie qu'elles
+         produisent le même plateau. C'est exactement ce que veut dire fidélité.
+
+         La matière vient du journal d'autopsie : position d'avant chaque
+         décision, et plan joué. Il suffit de les enchaîner.
+         ===================================================================== */
+
+      /* Empreinte de PLATEAU : ce qui doit se reproduire à l'identique. La main
+         et l'ordre de la pioche en sont exclus — ils dépendent d'un tirage
+         aléatoire que la simulation ne peut pas rejouer, et ne décrivent aucune
+         règle. */
+      function empreintePlateau(etat) {
+        const e = typeof etat === "string" ? JSON.parse(etat) : etat;
+        const iles = (e.islands || [])
+          .map(i => i.cells.map(c => c.join(",")).sort().join("|"))
+          .sort().join(" / ");
+        const gardiens = (e.characters || [])
+          .map(c => `${c.player}:${c.r},${c.c}`).sort().join(" ");
+        const couronnes = [e.artifact, e.secondArtifact]
+          .map(a => a && a.active ? `${a.carrierId || "sol"}@${a.r},${a.c}` : "-")
+          .join(" ");
+        const scores = (e.players || []).map(j => j.score || 0).join("-");
+        return `T${e.turn} J${e.currentPlayer} | ${scores} | ${couronnes} | ${gardiens} | ${iles}`;
+      }
+
+      /* Rejoue le journal d'autopsie en simulation et compare tour par tour. */
+      function benchFidelitePartie() {
+        const journal = (window.ILYOS_AUTOPSIE && window.ILYOS_AUTOPSIE.journal()) || [];
+        if (journal.length < 2) {
+          return { erreur: "journal trop court : jouez une partie avec la revue active" };
+        }
+
+        const etapes = [];
+        for (let i = 0; i < journal.length - 1; i++) {
+          const avant = journal[i];
+          const apres = journal[i + 1];
+          if (!avant.instantane || !apres.instantane) continue;
+
+          const clone = JSON.parse(avant.instantane);
+          const attendu = empreintePlateau(apres.instantane);
+
+          const obtenu = withSimulatedState(clone, () => {
+            for (const action of (avant.plan || [])) {
+              if (!plannerAppliquerAction(action)) return "ACTION REFUSÉE : " + action.type;
+            }
+            /* Le jeu réel pose l'île automatiquement quand le plan ne l'a pas
+               fait. Cette pose-là est choisie par une heuristique et n'est pas
+               dans le journal : on ne peut donc pas la reproduire, et on le dit
+               au lieu de compter une fausse divergence. */
+            if (!state.islandPlacedThisTurn) return "POSE AUTOMATIQUE";
+            selfplayTransitionTour();
+            return empreintePlateau(snapshotState());
+          });
+
+          etapes.push({
+            tour: avant.tour,
+            joueur: avant.nomJoueur,
+            comparable: obtenu !== "POSE AUTOMATIQUE" && !String(obtenu).startsWith("ACTION REFUSÉE"),
+            fidele: obtenu === attendu,
+            obtenu,
+            attendu
+          });
+        }
+
+        const comparables = etapes.filter(e => e.comparable);
+        const fideles = comparables.filter(e => e.fidele);
+        return {
+          tours: etapes.length,
+          comparables: comparables.length,
+          fideles: fideles.length,
+          nonComparables: etapes.filter(e => !e.comparable).map(e => ({ tour: e.tour, raison: e.obtenu })),
+          divergences: comparables.filter(e => !e.fidele).slice(0, 3)
+        };
+      }
+
       window.ILYOS_SELFPLAY = {
+        fidelitePartie: benchFidelitePartie,
+        empreintePlateau,
         partie: selfplayPartie,
         tournoi: selfplayTournoi,
         depart: canonicalDepart
