@@ -530,6 +530,7 @@
         aiRunToken++;
         state.players.forEach(j => { j.isAI = false; });
         revueCorrection = { index: i, tour: e.tour, avant: e.instantane };
+        autopsieEnregistrerActions(true);
         /* La classe « l'ordinateur joue » désactive le sélecteur de formes
            (pointer-events: none sur .island-choice). Restée en place, elle
            rendait la pose d'île impossible pendant la correction — le tour
@@ -558,6 +559,10 @@
           termesIA: e && e.detailArrivee ? e.detailArrivee.termes.slice(0, 4) : [],
           candidatsEcartes: e ? (e.candidats || []).filter(c => !c.retenu).length : null,
           votreCoup: autopsieDiffPositions(revueCorrection.avant, snapshotState()),
+          // Séquence exacte, et position rejouable après votre variante.
+          vosActions: (revueActionsJouees || []).slice(),
+          etatAvant: revueCorrection.avant,
+          etatApres: snapshotState(),
           /* Ce que VOTRE position vaut, mesuré par l'évaluateur de l'IA.
 
              C'est le coeur de l'exercice : sans cette comparaison, une
@@ -584,6 +589,8 @@
           }).filter(x => x.delta !== 0)
             .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
         }
+        autopsieEnregistrerActions(false);
+        revueActionsJouees = null;
         ILYOS_CORRECTIONS.push(correction);
 
         // Les tours suivants de l ancienne ligne n existent plus.
@@ -602,6 +609,8 @@
       }
 
       function autopsieAnnulerCoup() {
+        autopsieEnregistrerActions(false);
+        revueActionsJouees = null;
         revueCorrection = null;
         console.log("Correction abandonnée. La partie reste en pause sur cette position.");
         revueRendre();
@@ -639,7 +648,11 @@
         ILYOS_CORRECTIONS.forEach(c => {
           lignes.push(`=== CORRECTION · tour ${c.tour} · ${c.nomJoueur || ""}`);
           lignes.push(`IA a joué  : ${c.planIA || "—"}`);
-          lignes.push(`vous avez  : ${c.votreCoup.join(" · ")}`);
+          if ((c.vosActions || []).length) {
+            lignes.push(`vous avez  : ${c.vosActions.map(x => x.texte).join(" · ")}`);
+          } else {
+            lignes.push(`vous avez  : ${c.votreCoup.join(" · ")}`);
+          }
           if (c.note) lignes.push(`parce que  : ${c.note}`);
           if (c.votreEvaluation) {
             lignes.push(`votre note : ${c.votreEvaluation.note} — l'IA se donnait ${c.noteIA}`);
@@ -667,6 +680,51 @@
           lignes.push("");
         });
         return lignes.join("\n");
+      }
+
+      /* Fichier de revue COMPLET : les positions y sont rejouables, ce qui
+         vaut infiniment mieux qu'une capture d'écran. Chaque tour signalé ou
+         corrigé y va avec son état d'avant décision, le plan de l'IA, son
+         raisonnement, votre variante et son évaluation.
+
+         C'est ce qui permet de recharger exactement la position, relancer le
+         planner dessus, modifier un poids et rejouer le même tour. */
+      function autopsieDossierRevue() {
+        return {
+          jeu: "ILYOS",
+          version: window.ILYOS_BUILD || null,
+          horodatage: new Date().toISOString(),
+          poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
+          corrections: ILYOS_CORRECTIONS.map(c => ({ ...c })),
+          toursSignales: ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation).map(e => ({
+            tour: e.tour, joueur: e.nomJoueur, annotation: e.annotation,
+            planIA: e.planLisible, plan: e.plan,
+            noteDepart: e.noteDepart, noteArrivee: e.noteArrivee,
+            detailDepart: e.detailDepart, detailArrivee: e.detailArrivee,
+            finalistes: e.finalistes, anticipation: e.anticipation,
+            candidats: e.candidats, etatAvant: e.instantane
+          }))
+        };
+      }
+
+      /* Téléchargement : le fichier doit pouvoir quitter le navigateur. */
+      function autopsieTelechargerRevue() {
+        const dossier = autopsieDossierRevue();
+        if (!dossier.corrections.length && !dossier.toursSignales.length) {
+          console.log("Rien à exporter : signalez ou corrigez d'abord un tour.");
+          return null;
+        }
+        const contenu = JSON.stringify(dossier, null, 1);
+        const jour = new Date().toISOString().slice(0, 10);
+        const lien = document.createElement("a");
+        lien.href = URL.createObjectURL(new Blob([contenu], { type: "application/json" }));
+        lien.download = `ilyos-revue-${jour}.json`;
+        document.body.appendChild(lien);
+        lien.click();
+        setTimeout(() => { URL.revokeObjectURL(lien.href); lien.remove(); }, 1000);
+        console.log(`Revue exportée : ${dossier.corrections.length} correction(s),`
+          + ` ${dossier.toursSignales.length} tour(s) signalé(s), ${contenu.length} octets.`);
+        return dossier;
       }
 
       function autopsieExporterRevue() {
@@ -709,6 +767,83 @@
       const ILYOS_CORRECTIONS = [];
       // Correction en cours : { index, tour, avant }
       let revueCorrection = null;
+
+      /* Séquence exacte des actions jouées pendant une correction.
+
+         Comparer deux positions ne dit pas COMMENT on y est allé : une même
+         arrivée peut venir d'un déplacement ou d'une poussée, et le sens du
+         coup se perd. On enveloppe donc les noyaux de règle le temps de la
+         correction — le même procédé que le module de réserve physique
+         emploie pour endTurn — et chaque action se consigne d'elle-même.
+
+         Le joueur n'a donc plus à décrire ses coups en toutes lettres : il
+         lui reste seulement à dire POURQUOI ils sont meilleurs. */
+      let revueActionsJouees = null;
+      let revueNoyauxDorigine = null;
+
+      function autopsieEnregistrerActions(actif) {
+        if (actif) {
+          if (revueNoyauxDorigine) return;
+          revueActionsJouees = [];
+          revueNoyauxDorigine = {
+            move: applyMoveCore, push: applyPushCore,
+            magic: applyMagicRotationCore, pose: applyIslandPlacementCore,
+            // Le joueur humain ne passe PAS par applyIslandPlacementCore : la
+            // pose à la souris a son propre chemin dans l interface.
+            poseHumaine: placeIsland
+          };
+          const noter = (texte, details) => {
+            if (revueActionsJouees) revueActionsJouees.push({ texte, ...details });
+          };
+          applyMoveCore = function (charId, r, c, cout) {
+            const g = characterById(charId);
+            const de = g ? `(${g.r},${g.c})` : "?";
+            const resultat = revueNoyauxDorigine.move.apply(null, arguments);
+            if (resultat) noter(`MOVE ${de} → (${r},${c})`, { type: "MOVE", de, vers: [r, c], cout });
+            return resultat;
+          };
+          applyPushCore = function (pusherId, r, c, force) {
+            const g = characterById(pusherId);
+            const de = g ? `(${g.r},${g.c})` : "?";
+            const resultat = revueNoyauxDorigine.push.apply(null, arguments);
+            if (resultat) noter(`PUSH ${de} → (${r},${c}) force ${force}`,
+              { type: "PUSH", de, vers: [r, c], force });
+            return resultat;
+          };
+          applyMagicRotationCore = function (islandId, rotation) {
+            const resultat = revueNoyauxDorigine.magic.apply(null, arguments);
+            if (resultat) noter(`MAGIC île ${islandId}`, { type: "MAGIC", islandId });
+            return resultat;
+          };
+          applyIslandPlacementCore = function (shapeKey, cells) {
+            const resultat = revueNoyauxDorigine.pose.apply(null, arguments);
+            if (resultat) {
+              noter(`POSE ${shapeKey} en ${JSON.stringify(cells)}`
+                + (resultat.gardienCase ? ` · gardien en (${resultat.gardienCase})` : ""),
+                { type: "POSE", shapeKey, cells, spawn: resultat.gardienCase || null });
+            }
+            return resultat;
+          };
+          placeIsland = function (ancreR, ancreC) {
+            const avant = (state.islands || []).length;
+            const resultat = revueNoyauxDorigine.poseHumaine.apply(null, arguments);
+            const ile = (state.islands || [])[avant];
+            if (ile) {
+              noter(`POSE ${ile.shapeKey} en ${JSON.stringify(ile.cells)}`,
+                { type: "POSE", shapeKey: ile.shapeKey, cells: ile.cells });
+            }
+            return resultat;
+          };
+          return;
+        }
+        if (!revueNoyauxDorigine) return;
+        placeIsland = revueNoyauxDorigine.poseHumaine;
+        applyMoveCore = revueNoyauxDorigine.move;
+        applyPushCore = revueNoyauxDorigine.push;
+        applyMagicRotationCore = revueNoyauxDorigine.magic;
+        applyIslandPlacementCore = revueNoyauxDorigine.pose;
+        revueNoyauxDorigine = null;
+      }
 
       function revueEchapper(texte) {
         return String(texte == null ? "" : texte)
@@ -833,7 +968,8 @@
                  + revueBouton(e ? `🎮 Jouer le tour ${e.tour}` : "🎮 Jouer ce coup", "jouer", !!e)
                : ""}
              ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
-             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees + ILYOS_CORRECTIONS.length > 0) : ""}
+             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees + ILYOS_CORRECTIONS.length > 0)
+               + revueBouton("⤓ Exporter", "exporter", annotees + ILYOS_CORRECTIONS.length > 0) : ""}
            </div>`;
 
         // Entrée valide, Échap annule : on ne quitte pas le clavier pour rien.
@@ -862,6 +998,7 @@
             else if (quoi === "precedent") { revueVueRecap = false; autopsiePrecedent(); }
             else if (quoi === "suivant") { revueVueRecap = false; autopsieSuivant(); }
             else if (quoi === "recap") { revueTexteBrut = null; revueVueRecap = !revueVueRecap; }
+            else if (quoi === "exporter") { autopsieTelechargerRevue(); }
             else if (quoi === "copier") {
               /* navigator.clipboard échoue silencieusement quand le document
                  n'a pas le focus. On retombe donc sur une zone de texte
@@ -945,6 +1082,8 @@
         oublier: autopsieOublier,
         recap: autopsieRecap,
         exporterRevue: autopsieExporterRevue,
+        dossierRevue: autopsieDossierRevue,
+        telechargerRevue: autopsieTelechargerRevue,
         resumeRevue: autopsieResumeRevue,
                 vider: () => { ILYOS_AUTOPSIE_JOURNAL.length = 0; return 0; },
         /* Export JSON : une position litigieuse doit pouvoir quitter le
