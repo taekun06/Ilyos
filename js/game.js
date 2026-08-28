@@ -21530,86 +21530,95 @@
             chaque sous-système, donc incomparables entre eux.
          ===================================================================== */
 
-      const PLAN_POIDS = {
-        // Terminal : rien ne doit pouvoir rivaliser.
-        victoire: 1e6,
+      /* BARÈME. Hiérarchie voulue : gagner ou empêcher de perdre, puis la
+         POSITION des couronnes, puis ce que les gardiens permettent vraiment,
+         et le terrain en dernier comme support et non comme objectif.
 
-        // Un point marqué domine tout avantage de position.
+         Les bonus forfaitaires ont disparu : porter une couronne, exister en
+         tant que gardien, conserver une carte ne valent plus rien en soi. */
+      /* BARÈME V1.
+
+         Hiérarchie voulue : position des deux couronnes, double pression,
+         relais, gardiens réellement utiles, défense ou attaque décisive,
+         terrain en dernier, réserve contextuelle.
+
+         Le principe qui change tout : une couronne est un OBJET COMMUN jugé par
+         sa position, pas par qui la porte ; et un gardien vaut ce qu'il fait,
+         pas d'exister. Les bonus forfaitaires ont donc quasiment disparu. */
+      const PLAN_POIDS = {
+        victoire: 1e6,
         pointValide: 4000,
 
-        // Porter une couronne, et la rapprocher de sa validation.
-        couronnePortee: 400,
-        progressionPorteur: 900,
-        surCaseValidation: 1500,
-        porteurExpose: 1200,
+        /* Position physique d'une couronne, par distance au village. Non
+           linéaire à dessein : deux cases valent bien plus que le double de
+           quatre. C'est ce que la proximité linéaire d'avant ne savait pas
+           dire. */
+        couronneParDistance: [2600, 2100, 1700, 1150, 700, 400, 200],
+        couronnePortee: 75,
+        /* Une couronne encore en attente entrera au sanctuaire au prochain
+           tour : elle vaut déjà sa position future, à moitié prix. */
+        couronneEnAttenteFacteur: 0.5,
 
-        /* Une couronne libre appartient à qui peut l'atteindre le premier.
-           Ce poids porte tout le GRADIENT d'approche : c'est lui qui doit
-           rendre rentable un déplacement qui ne fait que se rapprocher, sans
-           rien conclure. Calibré à 320, il était plus faible que la valeur
-           des cartes dépensées pour l'approche, et l'IA préférait garder ses
-           cartes plutôt que d'avancer vers une couronne à sa portée. */
-        couronneLibre: 900,
+        /* Double pression : on prend le MEILLEUR bonus applicable, jamais la
+           somme. Deux couronnes à deux cases (1700+1700+1200) passent devant
+           une seule dans la zone (2600) et devant un point non terminal
+           (4000) — c'est voulu. */
+        doubleDeuxCases: 1200,
+        doubleZoneEtDeux: 1000,
+        doubleTroisCases: 650,
 
-        // Une couronne encore en attente vaut déjà quelque chose : elle
-        // arrivera au sanctuaire au prochain tour.
-        couronneEnAttente: 260,
+        // Relais : environ 300 par action réellement économisée.
+        relaisParAction: 300,
+        relaisMaxParCouronne: 1000,
 
-        // Un gardien de plus, c'est une action de plus chaque tour.
-        gardien: 180,
-        gardienMobile: 25,
+        /* Exposition du porteur, jugée par la position où la couronne
+           RESTERAIT. Les règles la font tomber sur la dernière case valide. */
+        exposeCouronneSure: 400,
+        exposeCouronneContestee: 900,
+        exposeCouronneFavorableAdverse: 1600,
+        exposeCatastrophe: 2400,
 
-        /* Valeur d'une carte NON dépensée. Délibérément faible : elle ne doit
-           jamais rivaliser avec un vrai gain, seulement rendre perdant le fait
-           de jouer un coup qui n'apporte rien. C'est ce qui produit
-           naturellement l'arrêt volontaire — sans bonus d'économie arbitraire,
-           et sans jamais empêcher une victoire ou une défense urgente, qui
-           pèsent des ordres de grandeur au-dessus. */
-        carteConservee: 12,
+        // Gardien : présence faible, utilité positionnelle décisive.
+        gardien: 200,
+        utiliteGardienMax: 1800,
+        utiliteRamassage: 300,
+        utiliteRelais: 400,
+        utiliteDefense: 500,
+        utiliteInterception: 600,
+        utiliteMenace: 450,
+        utiliteMenaceMultiple: 900,
+        blocageValidation: 900,
 
-        /* DÉFENSE DU POINT ADVERSE.
+        /* Urgence à deux points. Grands nombres, mais jamais terminaux : une
+           menace n'est pas une défaite. */
+        urgenceDefaitePresqueForcee: 20000,
+        urgenceDefaiteForte: 12000,
+        urgenceVictoirePresquePrete: 15000,
+        urgenceVictoireForte: 8000,
 
-           Marquer exige que le porteur SOIT sur une de ses trois cases de
-           validation. Deux conséquences que l'IA ignorait :
+        /* TERRAIN FONCTIONNEL. Les anciens critères — route abstraite,
+             contrôle de surface, bordure de vide — sont abandonnés : ils ne
+             décrivaient pas la stratégie réelle du jeu. Une bordure de vide
+             n'est ni bonne ni mauvaise en soi, tout dépend de qui peut y être
+             poussé.
 
-             — occuper une de ces cases la rend inatteignable, donc prive
-               l'adversaire d'un point sans avoir à toucher à son porteur ;
-             — toutes ces cases sont éjectables, villages en coin obligent : il
-               existe toujours une poussée qui jette le porteur hors du plateau.
+             Ce terme ne mesure que des conséquences concrètes : mes gardiens
+             atteignent-ils mieux les couronnes, et bougent-ils plus librement
+             que les siens. Il reste secondaire quand la pose fait apparaître un
+             gardien — l'utilité de ce gardien domine — mais devient le critère
+             principal quand le plafond de gardiens est atteint, et c'est lui
+             qui empêche alors le retour des égalités massives entre poses. */
+        terrainFonctionnel: 600,
+        accesCouronne: 400,
 
-           Défendre est donc toujours possible — encore faut-il être là. Or
-           l'évaluateur ne notait que la progression vers SES propres couronnes :
-           approcher un gardien du village adverse alors que rien ne se passe
-           encore ne valait rien, et l'IA arrivait systématiquement trop tard.
-
-           Ces deux termes sont pondérés par la menace réelle (voir plus bas) :
-           camper devant un village quand l'adversaire ne porte rien ne vaut
-           rien non plus. */
-        contesteValidation: 700,
-        presenceDefensive: 500,
-
-        // Consommer une forme rare a un coût, proportionnel à sa raréfaction.
+        // Réserve : faible, plus un potentiel futur plafonné.
+        carteConservee: 5,
+        potentielReserveMax: 400,
         formeConsommee: 90,
 
-        /* TERRAIN. Poser une île est obligatoire à chaque tour — c'est la
-           décision la plus fréquente du jeu — et rien ne la jugeait : une île
-           n'entrait dans le calcul que si elle changeait une distance. Deux
-           poses sans effet sur les distances étaient donc rigoureusement
-           indiscernables, et l'IA en prenait une au hasard. Mesuré : 16
-           décisions sur 31 avaient TOUS leurs finalistes à la même note.
-
-           Ces trois termes donnent une valeur au plateau lui-même.
-
-           Leur poids est délibérément MODESTE : ils servent à départager des
-           coups par ailleurs équivalents, pas à décider de la partie. À 700,
-           routeUtile pesait plus qu'une couronne portée — l'adversaire pouvant
-           modifier le terrain dans sa riposte, l'IA préférait alors ne rien
-           faire plutôt que de s'exposer à ce basculement, et refusait de
-           ramasser une couronne à sa portée (P07 et P08 échouaient ainsi). */
-        routeUtile: 240,       // route du sanctuaire vers MES cases de validation
-        controleSpatial: 150,  // part du terrain plus proche de mon but que du sien
-        tempoPerdu: 300,      // passer son tour : cinq cartes et un tempo
-        routeFragile: 5       // case tenue mais bordée de vide : on en tombe
+        // Passer son tour n'est presque plus pénalisé : ce peut être un bon
+        // choix. On garde un départage négligeable contre la passivité pure.
+        tempoPerdu: 20
       };
 
       /** Proximité décroissante et bornée, tirée d'une distance de déplacement
@@ -21942,6 +21951,93 @@
         return { note: Math.round(note), termes };
       }
 
+      /* =====================================================================
+         ÉVALUATEUR — ce qui fait une bonne position dans ILYOS
+
+         Réécrit autour de trois idées qui manquaient, et que l'ancien barème
+         contredisait :
+
+         1. UNE COURONNE EST UN OBJET COMMUN. Il n'y a pas « ma couronne » et
+            « la sienne » : il y a une couronne quelque part, plus ou moins
+            proche de chaque village, plus ou moins accessible à chaque camp.
+            La porter n'est qu'un moyen. Une couronne libre posée dans ma zone
+            de validation vaut souvent mieux qu'une couronne portée au milieu
+            du plateau — l'adversaire devra dépenser pour l'atteindre, puis
+            encore pour l'éloigner.
+
+         2. LES DEUX COURONNES SE JUGENT ENSEMBLE. Deux menaces à deux cases
+            valent plus que leur somme : l'adversaire ne peut pas défendre les
+            deux, et défendre l'une laisse avancer l'autre.
+
+         3. UN GARDIEN VAUT CE QU'IL FAIT, pas d'être là. Bloquer un village,
+            pouvoir ramasser une couronne, servir de relais, menacer une
+            expulsion — c'est cela qui compte. Un gardien isolé et inutile ne
+            vaut presque rien, et le perdre n'est pas un drame.
+
+         Corollaire sur le danger : une expulsion se juge par sa CONSÉQUENCE.
+         Les règles font tomber la couronne sur la dernière case valide du
+         porteur : si cette case est dans ma zone, je perds un gardien mais la
+         couronne reste excellente. Le malus forfaitaire d'avant ignorait cela.
+         ===================================================================== */
+
+      /* Urgence : à deux points, le prochain termine la partie. Tout ce qui
+         empêche ou produit un point pèse alors bien plus lourd. */
+      function plannerUrgence(moi, adverse) {
+        const monScore = (moi && moi.score) || 0;
+        const sonScore = (adverse && adverse.score) || 0;
+        return {
+          attaque: monScore >= 2 ? 2 : 1,
+          defense: sonScore >= 2 ? 3 : (sonScore >= 1 ? 1.4 : 1)
+        };
+      }
+
+      /** Coût, pour un camp, d'aller agir sur une case — 0 si un gardien y est
+       *  déjà adjacent, ce qui vaut ramassage ou poussée GRATUITE. */
+      function plannerCoutInterventionEquipe(playerId, r, c) {
+        let meilleur = Infinity;
+        for (const g of plannerGardiensDe(playerId)) {
+          const d = Math.abs(g.r - r) + Math.abs(g.c - c);
+          if (d <= 1) return 0;
+          const cout = aiLandDistanceToTargets(g.r, g.c, [[r, c]]);
+          if (cout < meilleur) meilleur = cout;
+        }
+        return meilleur;
+      }
+
+      /** Valeur d'une couronne selon sa distance au village. */
+      function valeurCouronneADistance(d) {
+        const table = PLAN_POIDS.couronneParDistance;
+        if (!Number.isFinite(d) || d < 0) return 0;
+        const rang = Math.round(d);
+        return rang < table.length ? table[rang] : 0;
+      }
+
+      /* Urgence de fin de partie. Une menace n'est pas une défaite : ces
+         valeurs sont grandes mais restent très loin de victoire. */
+      function plannerUrgenceScore(playerId, moi, adverse, positions) {
+        let bonus = 0;
+        const noteMoi = (moi && moi.score) || 0;
+        const noteLui = (adverse && adverse.score) || 0;
+
+        if (noteLui >= 2) {
+          if (positions.dansSaZone) bonus -= PLAN_POIDS.urgenceDefaitePresqueForcee;
+          else if (positions.prochesDeLui) bonus -= PLAN_POIDS.urgenceDefaiteForte;
+        }
+        if (noteMoi >= 2) {
+          if (positions.dansMaZone) bonus += PLAN_POIDS.urgenceVictoirePresquePrete;
+          else if (positions.prochesDeMoi) bonus += PLAN_POIDS.urgenceVictoireForte;
+        }
+        return bonus;
+      }
+
+      /* Un gardien peut-il agir sur cette case sans dépenser de carte ?
+         L'adjacence orthogonale suffit : ramassage, dépôt et poussée y sont
+         gratuits, et c'est le coeur du jeu de relais. */
+      function plannerGardienAdjacent(playerId, r, c, filtre) {
+        return plannerGardiensDe(playerId).find(g =>
+          Math.abs(g.r - r) + Math.abs(g.c - c) === 1 && (!filtre || filtre(g))) || null;
+      }
+
       function evaluateStrategicState(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
@@ -21949,21 +22045,15 @@
 
         let valeur = 0;
         const trace = plannerTraceEval;
-        /* Toute contribution passe par ici : c'est la garantie que la
-           décomposition affichée est bien celle qui a décidé, et non une
-           reconstruction approchée faite après coup. */
         const ajouter = (terme, montant, note) => {
           if (!montant) return;
           valeur += montant;
           if (trace) trace.push({ terme, montant, note: note || null });
         };
 
-        // A. Terminal : domine absolument.
         if (state.winner !== null && state.winner !== undefined) {
-          // Un match nul ne vaut ni la victoire ni la défaite : sans ce cas,
-          // l'IA le lisait comme une défaite et fuyait des positions neutres.
           if (state.winner === MATCH_NUL) {
-            if (plannerTraceEval) plannerTraceEval.push({ terme: "matchNul", montant: 0, note: null });
+            if (trace) trace.push({ terme: "matchNul", montant: 0, note: null });
             return 0;
           }
           const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
@@ -21971,185 +22061,230 @@
           return terminal;
         }
 
-        // B. Points déjà marqués.
         ajouter("pointsMarques", (moi.score || 0) * PLAN_POIDS.pointValide, `score ${moi.score || 0}`);
-        if (adverse) {
-          ajouter("pointsAdverses", -(adverse.score || 0) * PLAN_POIDS.pointValide, `score ${adverse.score || 0}`);
-        }
+        if (adverse) ajouter("pointsAdverses", -(adverse.score || 0) * PLAN_POIDS.pointValide, `score ${adverse.score || 0}`);
 
-        let menaceAdverse = 0;
-        const ciblesMoi = aiValidationTargetsForPlayer(moi);
-        const ciblesAdverse = adverse ? aiValidationTargetsForPlayer(adverse) : [];
+        const terrain = plannerTerrain(playerId);
+        /* Une case non reliée aux villages n'a pas d'entrée dans le champ. Lui
+           donner une valeur plate supprimerait tout DÉGRADÉ : deux cases
+           également injoignables se vaudraient, et l'IA n'aurait plus de raison
+           d'avancer vers l'une plutôt que l'autre. */
+        const casesMoi = crownValidationCellsForPlayer(moi).filter(([r, c]) => isLand(r, c));
+        const casesLui = adverse
+          ? crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c)) : [];
+        const distMoi = (r, c) => plannerLireChamp(terrain.champMoi, casesMoi, r, c);
+        const distLui = (r, c) => plannerLireChamp(terrain.champAdverse, casesLui, r, c);
 
-        // C. Couronnes actives : portées ou libres.
+        const dMoiParCouronne = [];
+        const dLuiParCouronne = [];
+        let exploitablesMoi = 0, exploitablesLui = 0;
+
         for (const couronne of activeArtifacts()) {
           const porteur = couronne.carrierId ? characterById(couronne.carrierId) : null;
+          const r = porteur ? porteur.r : couronne.r;
+          const c = porteur ? porteur.c : couronne.c;
+          if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
 
-          if (porteur && porteur.player === playerId) {
-            const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesMoi);
-            ajouter("couronnePortee", PLAN_POIDS.couronnePortee, `${porteur.id} en (${porteur.r},${porteur.c})`);
-            ajouter("progressionPorteur", PLAN_POIDS.progressionPorteur * plannerProximite(d), `distance ${d}`);
-            // Se tenir sur une case de validation ne vaut que si l'adversaire
-            // n'occupe aucune des trois cases du village (blocage de zone V67).
-            if (isCrownValidationCell(moi, porteur.r, porteur.c)
-              && !validationBloqueeParAdversaire(moi, porteur.r, porteur.c)) {
-              ajouter("surCaseValidation", PLAN_POIDS.surCaseValidation, `(${porteur.r},${porteur.c})`);
-            }
-            // Un porteur qu'une seule poussée jette dans le vide n'est pas un
-            // porteur : la couronne est perdue dès le tour adverse.
-            // Menace élargie aux combinaisons courtes (déplacement puis
-            // poussée) : une case sûre à l'instant t peut être perdante au
-            // tour suivant, et c'est là que se joue le sort d'une couronne.
-            if (plannerMenaceExpulsion(playerId, porteur.r, porteur.c)) {
-              ajouter("porteurExpose", -PLAN_POIDS.porteurExpose, `(${porteur.r},${porteur.c}) expulsable`);
-            }
+          const dm = distMoi(r, c);
+          const dl = distLui(r, c);
+          dMoiParCouronne.push(dm);
+          dLuiParCouronne.push(dl);
 
-          } else if (porteur && adverse) {
-            const d = aiLandDistanceToTargets(porteur.r, porteur.c, ciblesAdverse);
-            // Sert à pondérer la défense : plus l'adversaire est près de
-            // marquer, plus contester ses cases de validation compte.
-            menaceAdverse = Math.max(menaceAdverse, plannerProximite(d));
-            // Un porteur posté sur une case de validation est à un souffle de
-            // marquer — sauf si l'un de mes gardiens tient déjà le village.
-            const surCaseAdverse = isCrownValidationCell(adverse, porteur.r, porteur.c)
-              && !validationBloqueeParAdversaire(adverse, porteur.r, porteur.c);
-            if (surCaseAdverse) menaceAdverse = 1;
-            ajouter("couronneAdverse", -PLAN_POIDS.couronnePortee, `${porteur.id} en (${porteur.r},${porteur.c})`);
-            ajouter("progressionAdverse", -PLAN_POIDS.progressionPorteur * plannerProximite(d), `distance ${d}`);
-            if (surCaseAdverse) {
-              ajouter("adverseSurValidation", -PLAN_POIDS.surCaseValidation, `(${porteur.r},${porteur.c})`);
-            }
-            if (aiPushOffRisk(adverse.id, porteur.r, porteur.c)) {
-              ajouter("adverseExpulsable", PLAN_POIDS.porteurExpose * 0.5, `(${porteur.r},${porteur.c})`);
-            }
+          /* POSITION : ce qui compte d'abord. Qui la porte n'entre pas ici —
+             une couronne est un objet commun. */
+          ajouter("positionCouronne",
+            valeurCouronneADistance(dm) - valeurCouronneADistance(dl),
+            `(${r},${c}) — moi ${dm}, lui ${dl}`);
 
-          } else {
-            // Libre : elle revient à qui peut l'atteindre le plus vite.
-            const cible = [[couronne.r, couronne.c]];
-            const dMoi = plannerDistanceEquipe(playerId, cible);
-            const dAdv = adverse ? plannerDistanceEquipe(adverse.id, cible) : Infinity;
-            ajouter("couronneLibre",
-              PLAN_POIDS.couronneLibre * (plannerProximite(dMoi) - plannerProximite(dAdv)),
-              `(${couronne.r},${couronne.c}) — moi ${dMoi}, adverse ${dAdv}`);
+          // Porter n'est plus qu'un petit avantage pratique.
+          if (porteur) {
+            ajouter("couronnePortee",
+              porteur.player === playerId ? PLAN_POIDS.couronnePortee : -PLAN_POIDS.couronnePortee,
+              porteur.id);
+          }
+
+          /* RELAIS : ce qu'on économise réellement pour améliorer la position.
+             Un gardien adjacent agit GRATUITEMENT ; s'il est mieux placé que le
+             porteur actuel, la couronne progresse sans dépenser de carte. */
+          const aidant = plannerGardienAdjacent(playerId, r, c,
+            g => !porteur || g.id !== porteur.id);
+          if (aidant) {
+            exploitablesMoi++;
+            const gain = dm - distMoi(aidant.r, aidant.c);
+            if (gain > 0) {
+              ajouter("relaisUtile",
+                Math.min(gain * PLAN_POIDS.relaisParAction, PLAN_POIDS.relaisMaxParCouronne),
+                `gardien en (${aidant.r},${aidant.c}) gagne ${gain}`);
+            }
+          }
+          if (adverse && plannerGardienAdjacent(adverse.id, r, c)) exploitablesLui++;
+
+          /* ACCÈS : à quel prix chaque camp peut agir sur cette couronne.
+             Sans ce dégradé, seule l'adjacence comptait — un gardien n'avait
+             donc aucune raison de MARCHER vers une couronne encore hors de
+             portée, et l'IA restait sur place. */
+          const accesMoi = plannerDistanceEquipe(playerId, [[r, c]]);
+          const accesLui = adverse ? plannerDistanceEquipe(adverse.id, [[r, c]]) : Infinity;
+          ajouter("accesCouronne",
+            PLAN_POIDS.accesCouronne * (plannerProximite(accesMoi) - plannerProximite(accesLui)),
+            `accès moi ${accesMoi}, lui ${accesLui}`);
+
+          /* EXPOSITION DU PORTEUR, jugée par la position où la couronne
+             RESTERAIT : les règles la font tomber sur sa case actuelle. */
+          if (porteur && porteur.player === playerId && plannerMenaceExpulsion(playerId, r, c)) {
+            let cout;
+            if (isCrownValidationCell(moi, r, c) || dm <= 1) cout = PLAN_POIDS.exposeCouronneSure;
+            else if (dm <= dl) cout = PLAN_POIDS.exposeCouronneContestee;
+            else if (dl <= 2) cout = PLAN_POIDS.exposeCatastrophe;
+            else cout = PLAN_POIDS.exposeCouronneFavorableAdverse;
+            ajouter("porteurExpose", -cout, `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
           }
         }
 
-        /* D. Couronnes en attente. Elles n'existent pas encore sur le plateau,
-           mais entreront au sanctuaire au prochain tour : être déjà placé pour
-           les prendre a une valeur réelle. Sans ce terme, l'IA ne peut au mieux
-           que dériver vers le centre par défaut — ce qui n'est pas la même
-           chose que d'anticiper. */
-        const enAttente = (state.couronnesEnAttente || []).length;
-        if (enAttente > 0) {
-          const sanctuaire = [[CENTER.r, CENTER.c]];
-          const dMoi = plannerDistanceEquipe(playerId, sanctuaire);
-          const dAdv = adverse ? plannerDistanceEquipe(adverse.id, sanctuaire) : Infinity;
+        /* COURONNES EN ATTENTE : elles entreront au sanctuaire au prochain
+           tour. Être déjà placé pour les prendre a une valeur réelle — sans ce
+           terme, l'IA ne peut au mieux que dériver vers le centre par hasard. */
+        for (const _ of (state.couronnesEnAttente || [])) {
+          const dm = distMoi(CENTER.r, CENTER.c);
+          const dl = distLui(CENTER.r, CENTER.c);
+          const acces = plannerDistanceEquipe(playerId, [[CENTER.r, CENTER.c]]);
+          const accesLui = adverse ? plannerDistanceEquipe(adverse.id, [[CENTER.r, CENTER.c]]) : Infinity;
           ajouter("couronneEnAttente",
-            enAttente * PLAN_POIDS.couronneEnAttente * (plannerProximite(dMoi) - plannerProximite(dAdv)),
-            `${enAttente} en attente — moi ${dMoi}, adverse ${dAdv}`);
+            PLAN_POIDS.couronneEnAttenteFacteur
+              * ((valeurCouronneADistance(dm) - valeurCouronneADistance(dl))
+                 + PLAN_POIDS.accesCouronne * (plannerProximite(acces) - plannerProximite(accesLui))),
+            `sanctuaire — accès moi ${acces}, lui ${accesLui}`);
         }
 
-        /* D bis. DÉFENSE DU POINT ADVERSE. Contester les cases où
-           l'adversaire doit se tenir pour marquer — en les occupant, ce qui les
-           rend inatteignables, ou en restant assez près pour intervenir à
-           temps. Entièrement pondéré par menaceAdverse : sans porteur adverse,
-           ce terme vaut zéro et l'IA ne campe pas pour rien. */
-        if (adverse && menaceAdverse > 0) {
-          /* Le blocage se joue village par village : un seul gardien posté sur
-             l'une des trois cases neutralise tout le village. Compter les cases
-             occupées récompenserait un empilement sans valeur défensive. */
-          let neutralises = 0;
-          let total = 0;
-          const aDefendre = [];
-          for (const village of villagesForPlayer(adverse)) {
-            total++;
-            const cells = cornerCrownCellsForVillage(village);
-            const tenu = cells.some(([vr, vc]) => {
-              const occupant = characterAt(vr, vc);
-              return occupant && occupant.player === playerId;
-            });
-            if (tenu) neutralises++;
-            else cells.filter(([r, cc]) => isLand(r, cc)).forEach(cell => aDefendre.push(cell));
-          }
-          const dDefense = aDefendre.length
-            ? plannerDistanceEquipe(playerId, aDefendre) : Infinity;
-          ajouter("villagesNeutralises",
-            menaceAdverse * PLAN_POIDS.contesteValidation * neutralises,
-            `${neutralises}/${total} village(s), menace ${menaceAdverse.toFixed(2)}`);
-          // Rester à portée n'a de sens que s'il reste un village à couvrir.
-          if (neutralises < total) {
-            ajouter("presenceDefensive",
-              menaceAdverse * PLAN_POIDS.presenceDefensive * plannerProximite(dDefense),
-              `distance ${dDefense}, menace ${menaceAdverse.toFixed(2)}`);
-          }
-        }
+        /* DOUBLE PRESSION : le MEILLEUR bonus applicable, jamais la somme.
+           Réduit de moitié si la proximité est purement géométrique et
+           qu'aucun gardien ne peut exploiter les couronnes. */
+        const pression = (distances, exploitables, signe, terme) => {
+          if (distances.length < 2) return;
+          const tri = [...distances].sort((a, b) => a - b);
+          let bonus = 0;
+          if (tri[1] <= 2) bonus = PLAN_POIDS.doubleDeuxCases;
+          else if (tri[0] === 0 && tri[1] <= 2) bonus = PLAN_POIDS.doubleZoneEtDeux;
+          else if (tri[1] <= 3) bonus = PLAN_POIDS.doubleTroisCases;
+          if (!bonus) return;
+          if (exploitables === 0) bonus *= 0.5;
+          ajouter(terme, signe * bonus, `couronnes à ${tri[0]} et ${tri[1]}`);
+        };
+        pression(dMoiParCouronne, exploitablesMoi, 1, "doublePression");
+        if (adverse) pression(dLuiParCouronne, exploitablesLui, -1, "doublePressionAdverse");
 
-        // E. Gardiens : nombre et capacité à agir.
+        /* URGENCE quand un camp est à deux points. */
+        const minMoi = dMoiParCouronne.length ? Math.min(...dMoiParCouronne) : 99;
+        const minLui = dLuiParCouronne.length ? Math.min(...dLuiParCouronne) : 99;
+        const urgence = plannerUrgenceScore(playerId, moi, adverse, {
+          dansMaZone: minMoi === 0, prochesDeMoi: minMoi <= 2,
+          dansSaZone: minLui === 0, prochesDeLui: minLui <= 2
+        });
+        ajouter("urgenceScore", urgence, `${moi.score || 0}-${adverse ? adverse.score || 0 : 0}`);
+
+        /* GARDIENS : présence faible, utilité positionnelle décisive, le tout
+           pondéré par la capacité à SURVIVRE là où ils sont. */
         const miens = plannerGardiensDe(playerId);
-        ajouter("gardiens", miens.length * PLAN_POIDS.gardien, `${miens.length}`);
-        if (adverse) {
-          const nb = plannerGardiensDe(adverse.id).length;
-          ajouter("gardiensAdverses", -nb * PLAN_POIDS.gardien, `${nb}`);
-        }
-        // Un gardien qui ne peut aller nulle part ne vaut pas un gardien libre.
-        let mobiles = 0;
+        const siens = adverse ? plannerGardiensDe(adverse.id) : [];
+        ajouter("gardiensPresents", (miens.length - siens.length) * PLAN_POIDS.gardien,
+          `${miens.length} contre ${siens.length}`);
+
+        const couronnesLibres = activeArtifacts().filter(a => !a.carrierId && Number.isFinite(a.r));
+        const porteursAmis = miens.filter(g => characterCarriesCrown(g.id));
+        const menaceReelle = minLui <= 2 ? (minLui === 0 ? 1.5 : 1) : (minLui <= 4 ? 0.6 : 0.3);
+
+        let utiliteTotale = 0;
+        let blocageTotal = 0;
         for (const g of miens) {
-          if (movementEdges(g.r, g.c).some(e => isLand(e.r, e.c) && !characterAt(e.r, e.c))) mobiles++;
-        }
-        ajouter("gardiensMobiles", mobiles * PLAN_POIDS.gardienMobile, `${mobiles}/${miens.length}`);
+          let u = 0;
+          /* Le blocage est tenu HORS de la pondération par survivabilité qui
+             suit. Occuper une case de validation interdit le point dès
+             maintenant, même si l adversaire éjecte ensuite le gardien — et
+             l en chasser lui coûte une action. Pondérer ce terme par la
+             fragilité revenait à renoncer au blocage précisément là où il est
+             le plus utile : seul, en zone adverse. */
+          if (adverse && isCrownValidationCell(adverse, g.r, g.c)) {
+            blocageTotal += PLAN_POIDS.blocageValidation * menaceReelle;
+          }
+          if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)) {
+            u += PLAN_POIDS.utiliteRamassage;
+          }
+          if (!characterCarriesCrown(g.id)
+            && porteursAmis.some(pg => Math.abs(pg.r - g.r) + Math.abs(pg.c - g.c) === 1)) {
+            u += PLAN_POIDS.utiliteRelais;
+          }
+          let menaces = 0;
+          for (const e of siens) {
+            if (Math.abs(e.r - g.r) + Math.abs(e.c - g.c) !== 1) continue;
+            const derriere = [e.r + (e.r - g.r), e.c + (e.c - g.c)];
+            if (!isLand(derriere[0], derriere[1])) menaces++;
+            if (characterCarriesCrown(e.id)) u += PLAN_POIDS.utiliteInterception;
+          }
+          if (menaces === 1) u += PLAN_POIDS.utiliteMenace;
+          else if (menaces > 1) u += PLAN_POIDS.utiliteMenaceMultiple;
 
-        // F. Ressources conservées : voir PLAN_POIDS.carteConservee.
+          u = Math.min(u, PLAN_POIDS.utiliteGardienMax);
+          /* SURVIVABILITÉ : elle ne pondère que l'utilité, jamais la présence.
+             Un infiltré qui tient vraiment vaut bien plus qu'un infiltré qu'une
+             poussée renvoie aussitôt. */
+          u *= plannerMenaceExpulsion(playerId, g.r, g.c) ? 0.35 : 1;
+          utiliteTotale += u;
+        }
+        ajouter("utiliteGardiens", utiliteTotale, `${miens.length} gardien(s)`);
+        ajouter("blocageValidation", blocageTotal, `menace ${menaceReelle}`);
+
+        /* Défense de repli : être à portée du village menacé quand on ne le
+           tient pas encore. */
+        if (adverse && minLui <= 4 && !miens.some(g => isCrownValidationCell(adverse, g.r, g.c))) {
+          const aTenir = crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c));
+          if (aTenir.length) {
+            const d = plannerDistanceEquipe(playerId, aTenir);
+            ajouter("presenceDefensive",
+              menaceReelle * PLAN_POIDS.utiliteDefense * plannerProximite(d), `distance ${d}`);
+          }
+        }
+
+        /* RESSOURCES : faibles, et à potentiel plafonné. Une carte doit être
+           dépensée dès qu'elle crée plus de valeur que ce potentiel. */
         const cartes = plannerTotalRessources(playerId);
-        ajouter("cartesConservees", cartes * PLAN_POIDS.carteConservee, `${cartes} carte(s)`);
-
-        /* G bis. TERRAIN. Ce que vaut le plateau, indépendamment des pièces
-           qui s'y trouvent — donc ce que vaut la pose d'île qui vient de le
-           modifier. Sans ces termes, poser ici ou là revenait au même. */
-        const terrain = plannerTerrain(playerId);
-
-        /* Accès aux objectifs : la longueur du chemin de terrain entre le
-           SANCTUAIRE — d'où les couronnes viennent — et mes cases de
-           validation, comparée à celle de l'adversaire. Une pose qui raccourcit
-           ma route compte ; une pose qui raccourcit la sienne est une offrande,
-           et se paie du même terme.
-
-           Volontairement mesuré depuis le sanctuaire et non depuis la couronne
-           du moment : la position des couronnes est DÉJÀ comptée trois fois
-           (couronnePortee, progressionPorteur, couronneLibre). L'y remettre
-           faisait basculer 700 points de plus à chaque couronne perdue, et
-           l'IA n'osait plus la ramasser — P08 échouait ainsi. Ce terme décrit
-           le plateau, pas les pièces. */
-        ajouter("routeUtile",
-          PLAN_POIDS.routeUtile * (plannerProximite(terrain.routeMoi) - plannerProximite(terrain.routeAdverse)),
-          `route ${terrain.routeMoi} contre ${terrain.routeAdverse}`);
-
-        /* Contrôle spatial : la part du terrain plus proche de mon but que du
-           sien. Normalisée, donc insensible à la taille du plateau. */
-        if (terrain.terrainTotal > 0) {
-          const part = (2 * terrain.controle - terrain.terrainTotal) / terrain.terrainTotal;
-          ajouter("controleSpatial", PLAN_POIDS.controleSpatial * part,
-            `${terrain.controle}/${terrain.terrainTotal} cases`);
-        }
-
-        // Sécurité des routes : ce que je tiens mais d'où l'on me pousse.
-        ajouter("routesFragiles", -PLAN_POIDS.routeFragile * terrain.fragiles,
-          `${terrain.fragiles} case(s) bordée(s) de vide`);
-
-        // G. Formes consommées.
+        ajouter("reserve", cartes * PLAN_POIDS.carteConservee, `${cartes} carte(s)`);
+        /* Pas de bonus de potentiel proportionnel au NOMBRE de cartes : ce
+           serait le bonus forfaitaire que le barème dénonce, et il récompense
+           la thésaurisation. Le potentiel d une réserve, c est le plan qu elle
+           permet — la recherche le trouve d elle-même en simulant les tours où
+           ces cartes sont dépensées. Mesuré : avec ce bonus, l IA refusait de
+           dépenser une grosse réserve pour aller valider. */
         ajouter("formesConsommees", -plannerCoutFormes(playerId));
+
+        /* TERRAIN FONCTIONNEL : uniquement l'impact tactique de la géométrie,
+           jamais la quantité de terrain. Deux conséquences concrètes suffisent
+           — mes gardiens bougent-ils plus librement que les siens, et le
+           plateau les rapproche-t-il des couronnes. */
+        const mobilite = equipe => equipe.reduce((total, g) => {
+          let libres = 0;
+          for (const e of movementEdges(g.r, g.c)) {
+            if (isLand(e.r, e.c) && !characterAt(e.r, e.c)) libres++;
+          }
+          return total + Math.min(libres, 4);
+        }, 0);
+        const mienne = miens.length ? mobilite(miens) / (miens.length * 4) : 0;
+        const sienne = siens.length ? mobilite(siens) / (siens.length * 4) : 0;
+        const fonctionnel = Math.max(-1, Math.min(1, mienne - sienne));
+        ajouter("terrainFonctionnel", PLAN_POIDS.terrainFonctionnel * fonctionnel,
+          `mobilité ${mienne.toFixed(2)} contre ${sienne.toFixed(2)}`);
 
         return valeur;
       }
 
       /* AUTOPSIE — candidats écartés par les plafonds de génération.
 
-         Ce sont les coups que la recherche n'a JAMAIS vus : ils meurent dans
-         le pré-filtre, avant tout évaluateur. P17 a montré que c'est là que se
-         joue une part des mauvaises décisions, pas dans la profondeur du
-         faisceau. Renseigné uniquement sous autopsie. */
+         Ce sont les coups que la recherche n a JAMAIS vus : ils meurent dans
+         le pré-filtre, avant tout évaluateur. C est là que se joue une part des
+         mauvaises décisions, pas dans la profondeur du faisceau. Renseigné
+         uniquement sous autopsie. */
       let plannerCandidatsEcartes = null;
 
-      /** Applique le plafond d'un générateur en relevant ce qu'il sacrifie. */
+      /** Applique le plafond d un générateur en relevant ce quil sacrifie. */
       function plannerRetenir(options, plafond, categorie) {
         if (plannerCandidatsEcartes && options.length > plafond) {
           for (const rejete of options.slice(plafond)) {
@@ -23669,8 +23804,8 @@
 
       /* Signale un tour raté. Le coup attendu est libre : « bloquer le
          village », « ne pas lâcher la couronne » — c'est le sens qui compte. */
-      function autopsieNoter(coupAttendu, pourquoi = "") {
-        const i = autopsieIndexReel();
+      function autopsieNoter(coupAttendu, pourquoi = "", index = null) {
+        const i = index === null || index < 0 ? autopsieIndexReel() : index;
         const e = ILYOS_AUTOPSIE_JOURNAL[i];
         if (!e) { console.log("Aucune décision à annoter."); return null; }
         if (!coupAttendu) { console.log('Précisez le coup attendu.'); return null; }
@@ -23742,6 +23877,20 @@
          ------------------------------------------------------------------- */
 
       let revueVueRecap = false;
+      /* Saisie EN LIGNE plutôt que window.prompt().
+
+         Les boîtes natives figent le rendu de la page : le jeu se bloquait
+         le temps de la saisie, et il en fallait deux par annotation. Un champ
+         dans le panneau ne bloque rien et laisse le plateau sous les yeux —
+         justement au moment où l'on veut décrire le coup qu'on aurait joué.
+
+         Un seul champ : la raison tient dans la même phrase, et deux champs
+         doublaient la manipulation pour rien. */
+      let revueSaisieOuverte = false;
+      /* Décision VISÉE par la saisie, figée à l ouverture du champ. La partie
+         continue pendant qu on tape : sans ce gel, l annotation atterrissait
+         sur le tour courant et non sur celui qu on regardait. */
+      let revueSaisieIndex = -1;
 
       function revueEchapper(texte) {
         return String(texte == null ? "" : texte)
@@ -23778,7 +23927,7 @@
         const panneau = revuePanneau();
         const journal = ILYOS_AUTOPSIE_JOURNAL;
         const enPause = !(typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active);
-        const i = autopsieIndexReel();
+        const i = revueSaisieOuverte && revueSaisieIndex >= 0 ? revueSaisieIndex : autopsieIndexReel();
         const e = journal[i];
         const annotees = journal.filter(x => x.annotation).length;
 
@@ -23801,7 +23950,14 @@
             <p style="margin:0 0 6px">${revueEchapper(e.planLisible)}</p>
             ${e.annotation ? `<p style="margin:0 0 6px;padding:6px;background:#17301f;border-radius:6px">
                  <span style="color:#7ee0a0">vous auriez :</span> ${revueEchapper(e.annotation.coupAttendu)}
-               </p>` : ""}`;
+               </p>` : ""}
+            ${revueSaisieOuverte ? `<div style="margin:6px 0;padding:8px;background:#1a2136;border-radius:6px">
+                 <div style="color:#8f9ab8;margin-bottom:4px">Quel coup auriez-vous joué ?</div>
+                 <input data-revue-coup type="text" placeholder="bloquer le village, il marquait au tour suivant"
+                   value="${revueEchapper(e.annotation ? e.annotation.coupAttendu : '')}"
+                   style="width:100%;box-sizing:border-box;background:#0e1220;color:#e8ecf8;
+                          border:1px solid #3a4568;border-radius:5px;padding:5px;font:inherit">
+               </div>` : ""}`;
         }
 
         panneau.innerHTML =
@@ -23814,10 +23970,29 @@
              ${revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
              ${revueBouton("◀", "precedent", journal.length > 0)}
              ${revueBouton("▶", "suivant", journal.length > 0)}
-             ${revueBouton("⚠ Tour raté", "noter", !!e)}
+             ${revueSaisieOuverte
+               ? revueBouton("✓ Valider", "valider") + revueBouton("✗ Annuler", "annuler")
+               : revueBouton("⚠ Tour raté", "noter", !!e)}
              ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
              ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees > 0) : ""}
            </div>`;
+
+        // Entrée valide, Échap annule : on ne quitte pas le clavier pour rien.
+        const champSaisie = panneau.querySelector("[data-revue-coup]");
+        if (champSaisie) {
+          champSaisie.addEventListener("keydown", evenement => {
+            if (evenement.key === "Enter") {
+              const coup = champSaisie.value.trim();
+              if (coup) autopsieNoter(coup, "", revueSaisieIndex);
+              revueSaisieOuverte = false;
+              revueRendre();
+            } else if (evenement.key === "Escape") {
+              revueSaisieOuverte = false;
+              revueRendre();
+            }
+          });
+          if (document.activeElement !== champSaisie) champSaisie.focus();
+        }
 
         panneau.querySelectorAll("[data-revue]").forEach(bouton => {
           bouton.addEventListener("click", () => {
@@ -23835,10 +24010,15 @@
               );
               return;
             } else if (quoi === "noter") {
-              const coup = window.prompt("Qu'auriez-vous joué à ce tour ?", e?.annotation?.coupAttendu || "");
-              if (coup === null) return;
-              const pourquoi = window.prompt("Pourquoi ? (facultatif)", e?.annotation?.pourquoi || "");
-              autopsieNoter(coup, pourquoi || "");
+              revueSaisieOuverte = true;
+              revueSaisieIndex = i;
+            } else if (quoi === "annuler") {
+              revueSaisieOuverte = false;
+            } else if (quoi === "valider") {
+              const champ = panneau.querySelector("[data-revue-coup]");
+              const coup = champ ? champ.value.trim() : "";
+              if (coup) autopsieNoter(coup, "", revueSaisieIndex);
+              revueSaisieOuverte = false;
             }
             revueRendre();
           });
@@ -24033,11 +24213,13 @@
           `<p><strong>Phase :</strong> ${state?.phase || '—'} · Îles ${state?.islands?.length || 0}</p>` +
           `<p><strong>Scores :</strong> ${(state?.players || []).map(p => `${p.name} ${p.score || 0}/3`).join(' · ') || '—'}</p>` +
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
+          `<div class="ilyos-autoplay-actions">` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
           `<button data-autoplay-report>DIAGNOSTIC</button> ` +
           /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
              la réserver à qui pense à la taper. */
-          `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>`;
+          `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>` +
+          `</div>`;
         panel.querySelector('[data-autoplay-stop]')?.addEventListener('click', () => {
           if (ILYOS_AUTOPLAY.active) stopIlyosAutoplay('Arrêt manuel'); else panel.remove();
         });

@@ -98,7 +98,13 @@
       z-index: 100002;
       width: min(390px, calc(100vw - 24px));
       max-height: 50vh;
-      overflow: auto;
+      /* Colonne flex : le journal absorbe la place disponible et défile seul,
+         les boutons restent TOUJOURS visibles. Avant, le panneau défilait en
+         entier et ses boutons passaient sous le pli — inatteignables à la
+         souris, ce qui rendait la revue inutilisable. */
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       padding: 12px 14px;
       border: 1px solid rgba(113, 245, 174, .72);
       border-radius: 15px;
@@ -135,8 +141,17 @@
       padding: 8px;
       border-radius: 10px;
       background: rgba(0, 0, 0, .24);
-      max-height: 150px;
+      flex: 1 1 auto;
+      min-height: 0;
       overflow: auto
+    }
+
+    /* Barre d'actions épinglée sous le journal, jamais rognée. */
+    .ilyos-autoplay-actions {
+      flex: 0 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px
     }
 
     .ilyos-autoplay-log div {
