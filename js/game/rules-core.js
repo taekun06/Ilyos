@@ -622,3 +622,4 @@
         const exaequo = scores.filter(s => s === meilleur).length;
         return exaequo > 1 ? null : scores.indexOf(meilleur);
       }
+

@@ -3797,8 +3797,13 @@
           state.winner = player.id;
           // Célébration sur le plateau AVANT l'écran de victoire : les gardiens
           // gagnants fêtent le résultat pendant que l'interface se prépare.
-          playVictoryCelebration(player.id);
-          setTimeout(() => showVictory(player), 450);
+          /* Une victoire SIMULÉE ne doit rien montrer : le self-play joue des
+             milliers de parties dans l'ombre, et chacune ouvrirait sinon
+             l'écran de fin du jeu réel. */
+          if (!ilyosSimulationActive) {
+            playVictoryCelebration(player.id);
+            setTimeout(() => showVictory(player), 450);
+          }
         } else {
           // Un gardien qui valide une couronne (dépôt au village, hors sortie
           // par une porte — mécanique historique déjà désactivée) est retiré
@@ -3964,6 +3969,7 @@
          un texte qui dit d'où vient la fin — sans quoi le joueur croirait à un
          bug. */
       function terminerPartiePlateauPlein() {
+        if (ilyosSimulationActive) return;
         stopTurnTimer();
         const nul = state.winner === MATCH_NUL;
         const gagnant = nul ? null : state.players[state.winner];

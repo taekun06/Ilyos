@@ -295,6 +295,16 @@
          signifie « partie en cours » : tout le code teste winner === null pour
          savoir si la partie continue, et doit continuer à le faire. */
       const MATCH_NUL = -1;
+
+      /* Rangement des cartes en fin de tour. Déclaré ici pour être visible de
+         tous les fragments ; l'implémentation est fournie par le module de
+         réserve physique, exactement comme consumeAvailableActions. Un seul
+         corps de règle, deux appelants : la vraie fin de tour et le self-play. */
+      let rangerCartesFinDeTour = function (player) {
+        if (!player) return { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        player.hand = [];
+        return { MOVE: 0, PUSH: 0, MAGIC: 0 };
+      };
       /* =====================================================================
          ILYOS — KAYKIT EDITION / moteur visuel Three.js
          Le modèle de jeu reste dans le DOM. Cette scène 3D reflète l'état et
@@ -20300,8 +20310,13 @@
           state.winner = player.id;
           // Célébration sur le plateau AVANT l'écran de victoire : les gardiens
           // gagnants fêtent le résultat pendant que l'interface se prépare.
-          playVictoryCelebration(player.id);
-          setTimeout(() => showVictory(player), 450);
+          /* Une victoire SIMULÉE ne doit rien montrer : le self-play joue des
+             milliers de parties dans l'ombre, et chacune ouvrirait sinon
+             l'écran de fin du jeu réel. */
+          if (!ilyosSimulationActive) {
+            playVictoryCelebration(player.id);
+            setTimeout(() => showVictory(player), 450);
+          }
         } else {
           // Un gardien qui valide une couronne (dépôt au village, hors sortie
           // par une porte — mécanique historique déjà désactivée) est retiré
@@ -20467,6 +20482,7 @@
          un texte qui dit d'où vient la fin — sans quoi le joueur croirait à un
          bug. */
       function terminerPartiePlateauPlein() {
+        if (ilyosSimulationActive) return;
         stopTurnTimer();
         const nul = state.winner === MATCH_NUL;
         const gagnant = nul ? null : state.players[state.winner];
@@ -20731,6 +20747,38 @@
          * l'envoie normalement à la défausse. Une carte réservée n'y va pas.
          * ------------------------------------------------------------------ */
         const endTurnBeforePhysicalReserve = endTurn;
+        /* Rangement de fin de tour, corps unique. Ce qui tient en réserve y
+           va physiquement ; le reste part à la défausse, d'où la pioche se
+           reconstitue. Le self-play appelle exactement cette fonction : une
+           seconde implémentation, même fidèle au départ, finit toujours par
+           diverger — c'est arrivé dès le premier essai. */
+        rangerCartesFinDeTour = function rangerCartesReservePhysique(player) {
+          const range = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          if (!player) return range;
+          ensurePhysicalReserve(player);
+          player.hand = Array.isArray(player.hand) ? player.hand : [];
+          player.discard = Array.isArray(player.discard) ? player.discard : [];
+          const comptes = physicalReserveCounts(player);
+          const gardees = [];
+
+          player.hand.forEach(carte => {
+            const type = carte?.action;
+            const rangeable = !carte?.used
+              && PHYSICAL_RESERVE_TYPES.includes(type)
+              && comptes[type] < PHYSICAL_RESERVE_LIMIT_PER_TYPE;
+            if (rangeable) {
+              comptes[type]++;
+              range[type]++;
+              player.reserveCards.push({ ...carte, used: false, fromStash: false, fromReserve: true });
+            } else {
+              gardees.push(carte);
+            }
+          });
+          player.hand = gardees;
+          syncPhysicalReserveStash(player);
+          return range;
+        };
+
         endTurn = async function endTurnPhysicalReserve(force = false) {
           if (!state || state.winner !== null || state.turnTransitioning) return;
 
@@ -20747,34 +20795,7 @@
           }
 
           const player = currentPlayer();
-          ensurePhysicalReserve(player);
-          player.hand = Array.isArray(player.hand) ? player.hand : [];
-
-          const counts = physicalReserveCounts(player);
-          const keepInHand = [];
-          const banked = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-
-          player.hand.forEach(card => {
-            const type = card?.action;
-            const canBank = !card?.used
-              && PHYSICAL_RESERVE_TYPES.includes(type)
-              && counts[type] < PHYSICAL_RESERVE_LIMIT_PER_TYPE;
-
-            if (canBank) {
-              counts[type]++;
-              banked[type]++;
-              player.reserveCards.push({
-                ...card,
-                used: false,
-                fromStash: false,
-                fromReserve: true
-              });
-            } else {
-              keepInHand.push(card);
-            }
-          });
-          player.hand = keepInHand;
-          syncPhysicalReserveStash(player);
+          const banked = rangerCartesFinDeTour(player);
 
           if (banked.MOVE || banked.PUSH || banked.MAGIC) {
             window.dispatchEvent(new CustomEvent("ilyos:cards-banked", { detail: { ...banked } }));
@@ -21477,6 +21498,7 @@
         const exaequo = scores.filter(s => s === meilleur).length;
         return exaequo > 1 ? null : scores.indexOf(meilleur);
       }
+
       /* =====================================================================
          CERVEAU EXPERT V2 — évaluateur, candidats, recherche de plan de tour.
 
@@ -24887,6 +24909,203 @@
         const marques = scoreCrownsAtTurnStart(joueur);
         return { marques, gain: joueur.score - avant };
       }
+
+      /* =====================================================================
+         SELF-PLAY SANS RENDU
+
+         Une partie affichée dure trois à cinq minutes, presque entièrement
+         passées en animations. Or les noyaux de règle sont purs et
+         synchrones — c'est ce que prouve le banc de fidélité. On peut donc
+         jouer des parties ENTIÈRES sans rien afficher, à une vitesse sans
+         rapport avec le temps réel.
+
+         C'est l'instrument qui manquait. Les douze poids de l'évaluateur ont
+         été posés à la main et jamais vérifiés ; chaque correction faite « au
+         jugé » en cassait une autre. Faire s'affronter deux jeux de poids sur
+         des dizaines de parties remplace l'opinion par un résultat.
+
+         Le harnais joue la MÊME position de départ pour tous, et alterne les
+         camps : une différence de résultat vient alors des poids, pas du
+         hasard des positions.
+         ===================================================================== */
+
+      /* Transition de tour d'une VRAIE partie : contrairement à
+         applyTurnTransitionCore, qui distribue la main plausible utilisée par
+         l'anticipation, celle-ci pioche réellement. */
+      function selfplayTransitionTour() {
+        const sortant = state.players[state.currentPlayer];
+
+        /* Rangement des cartes : MÊME fonction que la vraie fin de tour.
+           Une première version recopiait la logique et divergeait aussitôt —
+           les cartes jouées n'allaient plus à la défausse, la pioche se vidait
+           et une partie simulée durait 121 tours sans un seul point. */
+        rangerCartesFinDeTour(sortant);
+        // Ce qui n'a pas pu être rangé quitte la main par la défausse.
+        sortant.discard = Array.isArray(sortant.discard) ? sortant.discard : [];
+        (sortant.hand || []).forEach(carte => {
+          sortant.discard.push({ ...carte, used: false, fromStash: false, fromReserve: false });
+        });
+        sortant.hand = [];
+
+        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+        state.turn++;
+
+        const entrant = state.players[state.currentPlayer];
+        scoreCrownsAtTurnStart(entrant);
+        if (state.winner !== null && state.winner !== undefined) return false;
+
+        // Règle V68 : plus de place pour poser, la partie s'arrête.
+        if (plateauSansPlace()) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
+          return false;
+        }
+
+        entrant.hand = [];
+        drawCards(entrant, 5);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.centerCrownTakenThisTurn = false;
+        faireEntrerCouronnesEnAttente();
+        state.phase = "ACTION_SELECT";
+        state.selectedActionType = null;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        state.reachable = new Set();
+        return true;
+      }
+
+      /* Joue un tour complet pour le joueur au trait. Renvoie le nombre
+         d'actions appliquées — zéro signifie que le cerveau n'a rien trouvé. */
+      function selfplayJouerTour(playerId, budget) {
+        let rapport = null;
+        try {
+          rapport = plannerChercherPlanRobuste(playerId, budget);
+        } catch (erreur) {
+          console.warn("[ILYOS] self-play : planner en échec", erreur);
+          return 0;
+        }
+        if (!rapport || !rapport.plan.length) return 0;
+        let appliquees = 0;
+        for (const action of rapport.plan) {
+          if (!plannerAppliquerAction(action)) break;
+          appliquees++;
+        }
+        /* La pose est obligatoire : si le plan ne l'a pas faite, on retombe sur
+           la pose automatique, exactement comme le jeu réel le fait. */
+        if (!state.islandPlacedThisTurn) {
+          const pose = findAutomaticIslandPlacement(playerId);
+          if (pose) {
+            applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor);
+            appliquees++;
+          }
+        }
+        return appliquees;
+      }
+
+      /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
+         rend. Sans restitution, un tournoi laisserait le jeu réel avec les
+         poids du dernier candidat testé. */
+      function selfplayAppliquerPoids(poids) {
+        if (!poids) return null;
+        const memoire = {};
+        Object.keys(poids).forEach(cle => {
+          memoire[cle] = PLAN_POIDS[cle];
+          PLAN_POIDS[cle] = poids[cle];
+        });
+        return memoire;
+      }
+
+      /** Une partie complète, sans rien afficher. */
+      /* budget : plafonds de recherche du planner.
+
+         Contre-intuitivement, ce n'est pas l'affichage qui coûte cher dans une
+         partie, c'est la réflexion : 500 ms par décision, soit une quarantaine
+         de secondes par partie. Un tournoi de mille parties y passerait la
+         nuit.
+
+         On réduit donc le temps de réflexion. La force ABSOLUE baisse, mais la
+         comparaison entre deux jeux de poids reste valable puisque les deux
+         camps réfléchissent autant — c'est un classement, pas une mesure. */
+      function selfplayPartie({ depart, graine = 1, poids = [null, null], toursMax = 120,
+                                budget = { tempsMaxMs: 150, etatsMax: 600 } } = {}) {
+        const debut = performance.now();
+        setTestRandomSeed(graine);
+        const clone = structuredClone(depart);
+
+        const resultat = withSimulatedState(clone, () => {
+          let tours = 0;
+          while (state.winner === null && tours < toursMax) {
+            const joueur = state.currentPlayer;
+            const memoire = selfplayAppliquerPoids(poids[joueur]);
+            try {
+              selfplayJouerTour(joueur, budget);
+            } finally {
+              selfplayAppliquerPoids(memoire);
+            }
+            tours++;
+            if (!selfplayTransitionTour()) break;
+          }
+          return {
+            vainqueur: state.winner,
+            tours: state.turn,
+            scores: state.players.map(p => p.score || 0),
+            interrompue: tours >= toursMax,
+            // Position finale : indispensable pour diagnostiquer une partie
+            // simulée qui ne ressemble pas à une vraie.
+            etatFinal: snapshotState()
+          };
+        });
+
+        setTestRandomSeed(null);
+        resultat.dureeMs = Math.round(performance.now() - debut);
+        return resultat;
+      }
+
+      /* Tournoi entre deux jeux de poids, camps alternés. Chaque paire de
+         parties joue la même graine des deux côtés : une différence ne peut
+         alors pas venir du tirage. */
+      function selfplayTournoi({ parties = 20, poidsA = null, poidsB = null, toursMax = 120,
+                                budget = { tempsMaxMs: 150, etatsMax: 600 } } = {}) {
+        if (!state) return { erreur: "lancez d'abord une partie pour disposer d'une position de départ" };
+        const depart = structuredClone(canonicalDepart());
+        const debut = performance.now();
+        let gagneA = 0, gagneB = 0, nuls = 0, interrompues = 0;
+        const durees = [];
+
+        for (let i = 0; i < parties; i++) {
+          const graine = 1000 + Math.floor(i / 2);
+          // Camps alternés : A joue le joueur 0 une fois sur deux.
+          const aEstJoueur0 = i % 2 === 0;
+          const poids = aEstJoueur0 ? [poidsA, poidsB] : [poidsB, poidsA];
+          const r = selfplayPartie({ depart, graine, poids, toursMax, budget });
+          durees.push(r.dureeMs);
+          if (r.interrompue) interrompues++;
+          if (r.vainqueur === null || r.vainqueur === MATCH_NUL) nuls++;
+          else if ((r.vainqueur === 0) === aEstJoueur0) gagneA++;
+          else gagneB++;
+        }
+
+        durees.sort((x, y) => x - y);
+        return {
+          parties, gagneA, gagneB, nuls, interrompues,
+          dureeTotaleMs: Math.round(performance.now() - debut),
+          dureeMedianeMs: durees[Math.floor(durees.length / 2)],
+          dureeMaxMs: durees[durees.length - 1]
+        };
+      }
+
+      /* Position de départ : celle de la partie en cours, ramenée à son tour 1.
+         On ne rejoue pas la création d'une partie — elle passe par l'interface
+         — on repart de l'état actuel remis à zéro côté score et couronnes. */
+      function canonicalDepart() {
+        return JSON.parse(snapshotState());
+      }
+
+      window.ILYOS_SELFPLAY = {
+        partie: selfplayPartie,
+        tournoi: selfplayTournoi,
+        depart: canonicalDepart
+      };
 
       window.ILYOS_BENCH = {
         poussee: benchPoussee,
