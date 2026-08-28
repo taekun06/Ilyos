@@ -23718,6 +23718,26 @@
           const x = ou(A, k), y = ou(B, k);
           if (x !== y) lignes.push(`couronne ${k + 1} : ${x || "absente"} vers ${y || "absente"}`);
         });
+
+        /* Cartes dépensées : un tour peut être excellent sans rien déplacer
+           de visible — une rotation, une poussée bloquée, un dépôt. Sans ce
+           relevé, la correction affichait « aucun changement » et perdait le
+           sens du coup. */
+        const compte = (etat, joueur) => {
+          const j = (etat.players || [])[joueur] || {};
+          return ((j.deck || []).length + (j.hand || []).length);
+        };
+        (A.players || []).forEach((_, k) => {
+          const perdu = compte(A, k) - compte(B, k);
+          if (perdu > 0) lignes.push(`${A.players[k].name} dépense ${perdu} carte(s)`);
+        });
+        // Rotation d'île : mêmes îles, cases différentes.
+        const forme = etat => (etat.islands || [])
+          .map(i => i.cells.map(c => c.join(",")).sort().join("|")).sort().join(" / ");
+        if ((A.islands || []).length === (B.islands || []).length && forme(A) !== forme(B)) {
+          lignes.push("une île a pivoté");
+        }
+
         return lignes.length ? lignes : ["aucun changement"];
       }
 
@@ -23887,7 +23907,16 @@
         aiRunToken++;
         state.players.forEach(j => { j.isAI = false; });
         revueCorrection = { index: i, tour: e.tour, avant: e.instantane };
+        /* La classe « l'ordinateur joue » désactive le sélecteur de formes
+           (pointer-events: none sur .island-choice). Restée en place, elle
+           rendait la pose d'île impossible pendant la correction — le tour
+           ne pouvait donc pas être joué du tout. */
+        els.gameScreen?.classList.remove("ai-turn");
         renderAll();
+        els.gameScreen?.classList.remove("ai-turn");
+        // Le panneau doit basculer en mode correction même si l appel ne vient
+        // pas d un bouton : sinon il propose encore « Jouer ce coup ».
+        revueRendre();
         console.log(`À vous de jouer le tour ${e.tour}. « ✓ C est mon coup » quand vous avez fini.`);
         return true;
       }
@@ -23922,12 +23951,14 @@
         state.players.forEach(j => { j.isAI = true; });
         autopsieReprendre();
         if (typeof endTurn === "function") endTurn(true);
+        revueRendre();
         return correction;
       }
 
       function autopsieAnnulerCoup() {
         revueCorrection = null;
         console.log("Correction abandonnée. La partie reste en pause sur cette position.");
+        revueRendre();
         return true;
       }
 
@@ -24009,6 +24040,12 @@
          continue pendant qu on tape : sans ce gel, l annotation atterrissait
          sur le tour courant et non sur celui qu on regardait. */
       let revueSaisieIndex = -1;
+      // Résumé affiché en clair quand la copie automatique est refusée.
+      let revueTexteBrut = null;
+      /* Confirmation de copie. Écrire dans le bouton ne servait à rien : la
+         partie continue, le panneau se redessine, et le bouton modifié est déjà
+         détaché du document. Le message doit vivre dans l état du panneau. */
+      let revueCopieFaite = false;
 
       /* CORRECTIONS — les coups que le joueur a joués À LA PLACE de l IA.
 
@@ -24061,7 +24098,13 @@
         const annotees = journal.filter(x => x.annotation).length;
 
         let corps;
-        if (revueCorrection) {
+        if (revueTexteBrut) {
+          corps = `<p style="margin:0 0 6px;color:#8f9ab8">Copie refusée par le navigateur.
+              Sélectionnez le texte ci-dessous.</p>
+            <textarea readonly style="width:100%;box-sizing:border-box;height:160px;
+              background:#0e1220;color:#e8ecf8;border:1px solid #3a4568;border-radius:5px;
+              padding:6px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace">${revueEchapper(revueTexteBrut)}</textarea>`;
+        } else if (revueCorrection) {
           const d = ILYOS_AUTOPSIE_JOURNAL[revueCorrection.index];
           corps = `<p style="margin:6px 0;padding:8px;background:#2a2416;border-radius:6px">
               <b style="color:#e8c46a">À VOUS DE JOUER — tour ${revueCorrection.tour}</b><br>
@@ -24112,6 +24155,8 @@
              <span style="color:#8f9ab8">${annotees} signalé(s) · ${ILYOS_CORRECTIONS.length} corrigé(s)</span>
            </div>
            ${corps}
+           ${revueCopieFaite ? `<p style="margin:6px 0;padding:6px;background:#17301f;border-radius:6px;color:#7ee0a0">
+                ✓ Résumé copié — collez-le où vous voulez.</p>` : ""}
            <div style="margin-top:10px;border-top:1px solid #2a3352;padding-top:8px">
              ${revueCorrection
                ? revueBouton("✓ C'est mon coup", "validerCoup") + revueBouton("✗ Abandonner", "annulerCoup")
@@ -24148,17 +24193,34 @@
         panneau.querySelectorAll("[data-revue]").forEach(bouton => {
           bouton.addEventListener("click", () => {
             const quoi = bouton.getAttribute("data-revue");
+            if (quoi !== "copier") revueCopieFaite = false;
             if (quoi === "pause") autopsiePause();
             else if (quoi === "reprendre") autopsieReprendre();
             else if (quoi === "precedent") { revueVueRecap = false; autopsiePrecedent(); }
             else if (quoi === "suivant") { revueVueRecap = false; autopsieSuivant(); }
-            else if (quoi === "recap") { revueVueRecap = !revueVueRecap; }
+            else if (quoi === "recap") { revueTexteBrut = null; revueVueRecap = !revueVueRecap; }
             else if (quoi === "copier") {
+              /* navigator.clipboard échoue silencieusement quand le document
+                 n'a pas le focus. On retombe donc sur une zone de texte
+                 sélectionnée, et en dernier recours on AFFICHE le résumé
+                 dans le panneau : il doit toujours être récupérable. */
               const texte = autopsieResumeRevue();
-              navigator.clipboard?.writeText(texte).then(
-                () => { bouton.textContent = "✓ Copié"; },
-                () => { console.log(texte); bouton.textContent = "→ console"; }
-              );
+              const secours = () => {
+                const zone = document.createElement("textarea");
+                zone.value = texte;
+                zone.style.cssText = "position:fixed;left:-9999px;top:0";
+                document.body.appendChild(zone);
+                zone.select();
+                let copie = false;
+                try { copie = document.execCommand("copy"); } catch (erreur) { copie = false; }
+                zone.remove();
+                if (copie) { revueCopieFaite = true; revueRendre(); }
+                else { revueTexteBrut = texte; revueRendre(); }
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(texte)
+                  .then(() => { revueCopieFaite = true; revueRendre(); }, secours);
+              } else secours();
               return;
             } else if (quoi === "revenir") { autopsieRevenirIci(i);
             } else if (quoi === "jouer") { revueVueRecap = false; autopsieJouerCoup(i);
