@@ -213,7 +213,14 @@
             ilyosAutoplayLog(`${previous?.name || 'Bot'} a terminé son tour`, 'ok');
             lastTurn = state.turn;
             dernierChangement = Date.now();
-          } else if (Date.now() - dernierChangement > AUTOPLAY_TOUR_BLOQUE_MS) {
+          } else if (Date.now() - dernierChangement > AUTOPLAY_TOUR_BLOQUE_MS
+            && !(typeof autopsieCorrectionEnCours === "function" && autopsieCorrectionEnCours())) {
+            /* Jamais pendant une correction : un humain qui réfléchit et
+               clique lentement ressemble trait pour trait à un tour figé.
+               Le forçage terminait donc son tour à sa place, effaçait la
+               variante en cours de saisie et faisait avancer la partie
+               toute seule — la correction enregistrée ne contenait plus
+               rien. Le pansement ne doit couvrir que les tours d'IA. */
             /* FORÇAGE DE FIN DE TOUR — uniquement en partie automatique.
 
                Un tour d'IA peut se figer sans exception ni message : le

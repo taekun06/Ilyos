@@ -15,6 +15,13 @@
       {
         const PHYSICAL_RESERVE_LIMIT_PER_TYPE = 5;
         const PHYSICAL_RESERVE_TYPES = ["MOVE", "PUSH", "MAGIC"];
+        /* Publié pour les archives de revue : une partie exportée sans sa
+           limite de réserve n'est pas rejouable à l'identique. La constante
+           vit dans ce bloc et n'est visible de nulle part ailleurs. */
+        window.ILYOS_REGLES_RESERVE = {
+          parType: PHYSICAL_RESERVE_LIMIT_PER_TYPE,
+          types: PHYSICAL_RESERVE_TYPES.slice()
+        };
 
         function physicalReserveCounts(player) {
           const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
