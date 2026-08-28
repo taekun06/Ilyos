@@ -110,7 +110,10 @@
         terrainFonctionnel: 600,
         accesCouronne: 400,
 
-        // Réserve : faible, plus un potentiel futur plafonné.
+        /* Réserve : valeur intrinsèque faible, et UNIQUEMENT pour les cartes
+           réellement conservables après le plafond de 5 par type. Une carte
+           qui sera défaussée en fin de tour ne vaut rien à garder — voir
+           plannerRessourcesConservables. */
         carteConservee: 5,
         potentielReserveMax: 400,
         formeConsommee: 90,
@@ -149,7 +152,9 @@
         return meilleure;
       }
 
-      /** Ressources encore disponibles, main et réserve confondues. */
+      /** Ce que le joueur peut JOUER maintenant : main et réserve confondues.
+       *  Sert à savoir ce qui est faisable ce tour-ci — jamais à estimer ce
+       *  qu'il aura ensuite. */
       function plannerRessources(playerId) {
         const joueur = state.players[playerId];
         return {
@@ -161,6 +166,18 @@
 
       function plannerTotalRessources(playerId) {
         const r = plannerRessources(playerId);
+        return r.MOVE + r.PUSH + r.MAGIC;
+      }
+
+      /** Ce que le joueur CONSERVERA après la fin du tour : plafonné à 5 par
+       *  type, projeté par le noyau de règle lui-même. Seules ces cartes-là
+       *  ont une valeur pour la suite. */
+      function plannerRessourcesConservables(playerId) {
+        return projeterReserveFinDeTour(state.players[playerId]);
+      }
+
+      function plannerTotalConservable(playerId) {
+        const r = plannerRessourcesConservables(playerId);
         return r.MOVE + r.PUSH + r.MAGIC;
       }
 
@@ -744,9 +761,22 @@
         }
 
         /* RESSOURCES : faibles, et à potentiel plafonné. Une carte doit être
-           dépensée dès qu'elle crée plus de valeur que ce potentiel. */
-        const cartes = plannerTotalRessources(playerId);
-        ajouter("reserve", cartes * PLAN_POIDS.carteConservee, `${cartes} carte(s)`);
+           dépensée dès qu'elle crée plus de valeur que ce potentiel.
+
+           On ne compte QUE les cartes réellement conservables après le
+           plafond de 5 par type. Une sixième MOVE ne verra jamais le tour
+           suivant : lui donner une valeur de conservation revenait à payer
+           l'IA pour garder une carte qui allait être défaussée de toute
+           façon, et la dissuadait donc de s'en servir alors qu'elle ne
+           coûtait rien. Cela ne l'oblige pas à la dépenser : si le seul
+           usage possible abîme la position, la recherche préférera toujours
+           terminer le tour et la perdre. */
+        const cartes = plannerTotalConservable(playerId);
+        const jouables = plannerTotalRessources(playerId);
+        ajouter("reserve", cartes * PLAN_POIDS.carteConservee,
+          cartes === jouables
+            ? `${cartes} carte(s) conservable(s)`
+            : `${cartes} conservable(s) sur ${jouables} jouable(s)`);
         /* Pas de bonus de potentiel proportionnel au NOMBRE de cartes : ce
            serait le bonus forfaitaire que le barème dénonce, et il récompense
            la thésaurisation. Le potentiel d une réserve, c est le plan qu elle
@@ -1726,12 +1756,14 @@
         const sortant = state.players[state.currentPlayer];
         if (!sortant) return null;
 
-        sortant.stash = sortant.stash || { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        ["MOVE", "PUSH", "MAGIC"].forEach(type => {
-          const fraiches = (sortant.hand || []).filter(c => !c.used && c.action === type).length;
-          sortant.stash[type] = Math.min(5, (sortant.stash[type] || 0) + fraiches);
-        });
-        sortant.hand = [];
+        /* MÊME rangement que la vraie fin de tour et que le self-play.
+
+           Ces six lignes recopiaient la règle sur le seul `stash`, qui n'est
+           qu'un miroir : la réserve physique restait inchangée. Or c'est elle
+           que lit availableActionCount. L'anticipation voyait donc, au tour
+           suivant, une réserve différente de celle que la partie aurait
+           réellement eue — et le surplus ne partait jamais à la défausse. */
+        rangerEtDefausserFinDeTour(sortant);
 
         state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
         state.turn++;
