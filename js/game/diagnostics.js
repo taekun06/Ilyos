@@ -144,7 +144,7 @@
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
           `<div class="ilyos-autoplay-actions">` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
-          `<button data-autoplay-report>DIAGNOSTIC</button> ` +
+          `<button data-autoplay-report>AFFICHAGE</button> ` +
           /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
              la réserver à qui pense à la taper. */
           `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>` +
