@@ -28,6 +28,9 @@
          synchronisation en ligne — et gênerait la future simulation du
          planner, qui doit pouvoir cloner l'état librement. */
       let ilyosSeededRandom = null;
+      /* Graine en vigueur, conservée pour l archivage : une revue sans sa
+         graine ne se rejoue pas à l identique. null = hasard normal. */
+      let ilyosGraineActive = null;
 
       /* mulberry32 : 32 bits d'état, une seule multiplication imul par tirage,
          période 2^32. Largement suffisant pour départager des coups et battre
@@ -50,6 +53,7 @@
       /** Pose (nombre) ou retire (null/undefined) la graine déterministe.
        *  Réservé au banc d'essai : une vraie partie ne doit jamais l'appeler. */
       function setTestRandomSeed(seed) {
+        ilyosGraineActive = (seed === null || seed === undefined) ? null : seed;
         ilyosSeededRandom = (seed === null || seed === undefined)
           ? null
           : ilyosMakeSeededRandom(Number(seed));

@@ -28,6 +28,9 @@
          synchronisation en ligne — et gênerait la future simulation du
          planner, qui doit pouvoir cloner l'état librement. */
       let ilyosSeededRandom = null;
+      /* Graine en vigueur, conservée pour l archivage : une revue sans sa
+         graine ne se rejoue pas à l identique. null = hasard normal. */
+      let ilyosGraineActive = null;
 
       /* mulberry32 : 32 bits d'état, une seule multiplication imul par tirage,
          période 2^32. Largement suffisant pour départager des coups et battre
@@ -50,6 +53,7 @@
       /** Pose (nombre) ou retire (null/undefined) la graine déterministe.
        *  Réservé au banc d'essai : une vraie partie ne doit jamais l'appeler. */
       function setTestRandomSeed(seed) {
+        ilyosGraineActive = (seed === null || seed === undefined) ? null : seed;
         ilyosSeededRandom = (seed === null || seed === undefined)
           ? null
           : ilyosMakeSeededRandom(Number(seed));
@@ -20568,6 +20572,13 @@
       {
         const PHYSICAL_RESERVE_LIMIT_PER_TYPE = 5;
         const PHYSICAL_RESERVE_TYPES = ["MOVE", "PUSH", "MAGIC"];
+        /* Publié pour les archives de revue : une partie exportée sans sa
+           limite de réserve n'est pas rejouable à l'identique. La constante
+           vit dans ce bloc et n'est visible de nulle part ailleurs. */
+        window.ILYOS_REGLES_RESERVE = {
+          parType: PHYSICAL_RESERVE_LIMIT_PER_TYPE,
+          types: PHYSICAL_RESERVE_TYPES.slice()
+        };
 
         function physicalReserveCounts(player) {
           const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
@@ -23905,12 +23916,22 @@
 
       /* Vous rend la main sur cette position : les deux camps passent en
          manuel et vous jouez le tour à la souris, normalement. */
+      /* Vrai tant que VOUS jouez votre variante à la main. Le harnais
+         d'autoplay s'en sert pour ne pas prendre votre réflexion pour un
+         tour figé et vous couper la parole. */
+      function autopsieCorrectionEnCours() {
+        return !!revueCorrection;
+      }
+
       function autopsieJouerCoup(index) {
         const i = index === undefined ? autopsieIndexReel() : index;
         const e = ILYOS_AUTOPSIE_JOURNAL[i];
         if (!e || !autopsieRevenirIci(i)) return false;
         aiRunToken++;
         state.players.forEach(j => { j.isAI = false; });
+        /* Couper le harnais AVANT de rendre la main : sa surveillance
+           continuait sinon de tourner pendant que vous jouiez. */
+        if (typeof stopIlyosAutoplay === "function") stopIlyosAutoplay("Correction manuelle");
         revueCorrection = { index: i, tour: e.tour, avant: e.instantane };
         autopsieEnregistrerActions(true);
         /* La classe « l'ordinateur joue » désactive le sélecteur de formes
@@ -23930,7 +23951,15 @@
       /* Enregistre le coup joué et RELANCE la partie depuis là. La suite de
          l ancienne partie n a plus eu lieu : le journal est tronqué, mais la
          correction, elle, est conservée à part. */
-      function autopsieValiderCoup(note = "") {
+      /* verdict : VOTRE jugement, tenu à part de la note de l'évaluateur.
+
+         Ces deux appréciations ne doivent surtout pas être confondues. Si
+         vous jugez votre variante meilleure et que l'évaluateur la note plus
+         bas, ce désaccord est le signal le plus intéressant de toute la
+         revue : c'est là que le barème se trompe. Écraser votre avis par le
+         score reviendrait à effacer la seule information que la machine ne
+         sait pas produire. */
+      function autopsieValiderCoup(note = "", verdict = "meilleur") {
         if (!revueCorrection) { console.log("Aucune correction en cours."); return null; }
         const e = ILYOS_AUTOPSIE_JOURNAL[revueCorrection.index];
         const correction = {
@@ -23942,7 +23971,23 @@
           candidatsEcartes: e ? (e.candidats || []).filter(c => !c.retenu).length : null,
           votreCoup: autopsieDiffPositions(revueCorrection.avant, snapshotState()),
           // Séquence exacte, et position rejouable après votre variante.
-          vosActions: (revueActionsJouees || []).slice(),
+          /* Le dépôt d'une couronne et l'invocation d'un gardien sont du
+             code EN LIGNE dans l'interface, pas des fonctions : impossible
+             de les envelopper. On complète donc la séquence par ce que la
+             comparaison des positions révèle, pour que rien ne manque. */
+          vosActions: (() => {
+            const captees = (revueActionsJouees || []).slice();
+            const dejaDit = captees.map(x => x.type);
+            autopsieDiffPositions(revueCorrection.avant, snapshotState()).forEach(ligne => {
+              if (/apparaît/.test(ligne) && !dejaDit.includes("SPAWN")) {
+                captees.push({ type: "SPAWN", texte: ligne, sourceDiff: true });
+              } else if (/couronne/.test(ligne) && /au sol/.test(ligne)
+                && !dejaDit.includes("DEPOT")) {
+                captees.push({ type: "DEPOT", texte: ligne, sourceDiff: true });
+              }
+            });
+            return captees;
+          })(),
           etatAvant: revueCorrection.avant,
           etatApres: snapshotState(),
           /* Ce que VOTRE position vaut, mesuré par l'évaluateur de l'IA.
@@ -23956,6 +24001,7 @@
             try { return evaluerAvecDetail(state.currentPlayer); }
             catch (erreur) { return null; }
           })(),
+          verdictHumain: verdict,
           note: String(note || ""),
           horodatage: new Date().toISOString()
         };
@@ -24045,6 +24091,7 @@
           + `, ${notes.length} tour(s) signalé(s)`, ""];
         ILYOS_CORRECTIONS.forEach(c => {
           lignes.push(`=== CORRECTION · tour ${c.tour} · ${c.nomJoueur || ""}`);
+          lignes.push(`votre avis : ${c.verdictHumain || "meilleur"}`);
           lignes.push(`IA a joué  : ${c.planIA || "—"}`);
           if ((c.vosActions || []).length) {
             lignes.push(`vous avez  : ${c.vosActions.map(x => x.texte).join(" · ")}`);
@@ -24090,8 +24137,26 @@
       function autopsieDossierRevue() {
         return {
           jeu: "ILYOS",
+          /* Tout ce qu'il faut pour REPRODUIRE. Une archive sans sa version
+             de règles ni son barème ne vaut rien : les mêmes coordonnées
+             n'y décrivent plus la même partie. */
+          schema: 1,
           version: window.ILYOS_BUILD || null,
+          bundle: (document.querySelector('script[src*="game.js"]') || {}).src || null,
           horodatage: new Date().toISOString(),
+          regles: {
+            grille: typeof GRID === "number" ? GRID : null,
+            formesParJoueur: typeof shapeLimitPerOwner === "function" ? shapeLimitPerOwner() : null,
+            reserveParType: (window.ILYOS_REGLES_RESERVE || {}).parType ?? null,
+            optionsPartie: state && state.rules ? { ...state.rules } : null
+          },
+          partie: state ? {
+            tour: state.turn, manche: state.round,
+            difficulte: state.aiDifficulty || null,
+            joueurs: (state.players || []).map(j => ({ nom: j.name, score: j.score || 0 })),
+            graine: typeof ilyosGraineActive !== "undefined" ? ilyosGraineActive : null
+          } : null,
+          budgetRecherche: typeof PLAN_BUDGET === "object" ? { ...PLAN_BUDGET } : null,
           poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
           corrections: ILYOS_CORRECTIONS.map(c => ({ ...c })),
           toursSignales: ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation).map(e => ({
@@ -24188,9 +24253,19 @@
             magic: applyMagicRotationCore, pose: applyIslandPlacementCore,
             // Le joueur humain ne passe PAS par applyIslandPlacementCore : la
             // pose à la souris a son propre chemin dans l interface.
-            poseHumaine: placeIsland
+            poseHumaine: placeIsland,
+            // Ramassage gratuit ET transmission passent tous deux par là.
+            couronne: giveArtifactToCharacter
           };
+          /* Ne consigner QUE ce qui arrive pour de bon.
+
+             Le planner explore ses candidats en appelant ces mêmes noyaux
+             dans un état simulé : sans ce filtre, la variante humaine se
+             retrouvait noyée sous les dizaines de poses que l'IA avait
+             seulement imaginées. Une correction doit contenir vos coups,
+             pas les brouillons de la machine. */
           const noter = (texte, details) => {
+            if (typeof ilyosSimulationActive !== "undefined" && ilyosSimulationActive) return;
             if (revueActionsJouees) revueActionsJouees.push({ texte, ...details });
           };
           applyMoveCore = function (charId, r, c, cout) {
@@ -24222,6 +24297,18 @@
             }
             return resultat;
           };
+          giveArtifactToCharacter = function (artifact, char) {
+            const porteurAvant = artifact ? artifact.carrierId : null;
+            const resultat = revueNoyauxDorigine.couronne.apply(null, arguments);
+            if (resultat && char) {
+              noter(porteurAvant
+                ? `TRANSMISSION vers (${char.r},${char.c})`
+                : `RAMASSAGE par (${char.r},${char.c})`,
+                { type: porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
+            }
+            return resultat;
+          };
+
           placeIsland = function (ancreR, ancreC) {
             const avant = (state.islands || []).length;
             const resultat = revueNoyauxDorigine.poseHumaine.apply(null, arguments);
@@ -24236,6 +24323,7 @@
         }
         if (!revueNoyauxDorigine) return;
         placeIsland = revueNoyauxDorigine.poseHumaine;
+        giveArtifactToCharacter = revueNoyauxDorigine.couronne;
         applyMoveCore = revueNoyauxDorigine.move;
         applyPushCore = revueNoyauxDorigine.push;
         applyMagicRotationCore = revueNoyauxDorigine.magic;
@@ -24307,7 +24395,8 @@
           const corrections = ILYOS_CORRECTIONS.map(c => `<div style="margin:0 0 8px;padding:8px;background:#1c2740;border-radius:6px">
                  <b>tour ${c.tour}</b> · ${revueEchapper(c.nomJoueur || "")}<br>
                  <span style="color:#8f9ab8">l'IA :</span> ${revueEchapper(c.planIA || "—")}<br>
-                 <span style="color:#8ab6e8">vous :</span> ${revueEchapper(c.votreCoup.join(" · "))}
+                 <span style="color:#8ab6e8">vous (${revueEchapper(c.verdictHumain || "meilleur")}) :</span>
+                 ${revueEchapper((c.vosActions || []).map(x => x.texte).join(" · ") || c.votreCoup.join(" · "))}
                  ${c.note ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(c.note)}` : ""}
                  ${c.votreEvaluation ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a3352">
                     <span style="color:#8f9ab8">évaluation :</span> vous ${c.votreEvaluation.note}
@@ -24354,7 +24443,10 @@
                 ✓ Résumé copié — collez-le où vous voulez.</p>` : ""}
            <div style="margin-top:10px;border-top:1px solid #2a3352;padding-top:8px">
              ${revueCorrection
-               ? revueBouton("✓ C'est mon coup", "validerCoup") + revueBouton("✗ Abandonner", "annulerCoup")
+               ? revueBouton("✓ Meilleur", "validerMeilleur")
+                 + revueBouton("≈ Incertain", "validerIncertain")
+                 + revueBouton("✗ Moins bon", "validerMoinsBon")
+                 + revueBouton("Abandonner", "annulerCoup")
                : revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
              ${revueBouton("◀", "precedent", journal.length > 0)}
              ${revueBouton("▶", "suivant", journal.length > 0)}
@@ -24422,9 +24514,14 @@
               return;
             } else if (quoi === "revenir") { autopsieRevenirIci(i);
             } else if (quoi === "jouer") { revueVueRecap = false; autopsieJouerCoup(i);
-            } else if (quoi === "validerCoup") {
+            } else if (quoi.startsWith("valider") && quoi !== "valider") {
               const champ = panneau.querySelector("[data-revue-coup]");
-              autopsieValiderCoup(champ ? champ.value.trim() : "");
+              const verdicts = {
+                validerMeilleur: "meilleur",
+                validerIncertain: "incertain",
+                validerMoinsBon: "moins bon"
+              };
+              autopsieValiderCoup(champ ? champ.value.trim() : "", verdicts[quoi] || "meilleur");
             } else if (quoi === "annulerCoup") { autopsieAnnulerCoup();
             } else if (quoi === "noter") {
               revueSaisieOuverte = true;
@@ -24708,7 +24805,14 @@
             ilyosAutoplayLog(`${previous?.name || 'Bot'} a terminé son tour`, 'ok');
             lastTurn = state.turn;
             dernierChangement = Date.now();
-          } else if (Date.now() - dernierChangement > AUTOPLAY_TOUR_BLOQUE_MS) {
+          } else if (Date.now() - dernierChangement > AUTOPLAY_TOUR_BLOQUE_MS
+            && !(typeof autopsieCorrectionEnCours === "function" && autopsieCorrectionEnCours())) {
+            /* Jamais pendant une correction : un humain qui réfléchit et
+               clique lentement ressemble trait pour trait à un tour figé.
+               Le forçage terminait donc son tour à sa place, effaçait la
+               variante en cours de saisie et faisait avancer la partie
+               toute seule — la correction enregistrée ne contenait plus
+               rien. Le pansement ne doit couvrir que les tours d'IA. */
             /* FORÇAGE DE FIN DE TOUR — uniquement en partie automatique.
 
                Un tour d'IA peut se figer sans exception ni message : le
