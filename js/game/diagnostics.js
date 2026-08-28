@@ -144,7 +144,7 @@
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
           `<div class="ilyos-autoplay-actions">` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
-          `<button data-autoplay-report>DIAGNOSTIC</button> ` +
+          `<button data-autoplay-report>AFFICHAGE</button> ` +
           /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
              la réserver à qui pense à la taper. */
           `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>` +
@@ -190,6 +190,10 @@
         stopTurnTimer();
         startTurnTimer(true);
         ilyosAutoplayLog(`Duel Spirale lancé · difficulté ${difficulty}`, 'ok');
+        /* Revue active dès le premier tour : l'activer en cours de partie
+           laissait les premiers tours hors du journal, donc impossibles à
+           revoir ou corriger. */
+        try { window.ILYOS_AUTOPSIE?.activer(true); } catch (erreur) { /* jamais bloquant */ }
         renderAll();
 
         clearInterval(ILYOS_AUTOPLAY.monitor);
@@ -666,6 +670,11 @@
        *  cela, la queue de ce tour continue de s'exécuter et vient jouer une
        *  action pendant la première position mesurée. */
       function benchReinitialiser() {
+        /* Les bancs passent par playAIvsAI pour se préchauffer, ce qui lève
+           l autopsie. Elle n a rien à y faire : son relevé ralentit chaque
+           décision et fausserait les mesures de temps. */
+        try { if (window.ILYOS_AUTOPSIE) window.ILYOS_AUTOPSIE.activer(false); }
+        catch (erreur) { /* jamais bloquant */ }
         aiRunToken++;
         benchJournal = null;
         if (kaykit3D?.pendingActionAnimations) kaykit3D.pendingActionAnimations.clear();

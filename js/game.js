@@ -23688,6 +23688,59 @@
          compteur périmé pendant que la partie tournait. */
       let autopsieSuivi = null;
 
+      /* Différence lisible entre deux positions, en termes de jeu : c est
+         ainsi qu on relit un coup, pas en comparant des structures. */
+      function autopsieDiffPositions(avant, apres) {
+        const A = typeof avant === "string" ? JSON.parse(avant) : avant;
+        const B = typeof apres === "string" ? JSON.parse(apres) : apres;
+        const lignes = [];
+        const posA = new Map((A.characters || []).map(c => [c.id, c]));
+        const posB = new Map((B.characters || []).map(c => [c.id, c]));
+        for (const [id, cb] of posB) {
+          const ca = posA.get(id);
+          if (!ca) { lignes.push(`un gardien apparaît en (${cb.r},${cb.c})`); continue; }
+          if (ca.r !== cb.r || ca.c !== cb.c) {
+            lignes.push(`gardien (${ca.r},${ca.c}) vers (${cb.r},${cb.c})`);
+          }
+        }
+        for (const [id, ca] of posA) {
+          if (!posB.has(id)) lignes.push(`gardien (${ca.r},${ca.c}) quitte le jeu`);
+        }
+        const ilesA = (A.islands || []).length;
+        (B.islands || []).slice(ilesA).forEach(i =>
+          lignes.push(`île de ${i.cells.length} cases posée en (${i.cells[0]})`));
+        const ou = (etat, k) => {
+          const art = k === 0 ? etat.artifact : etat.secondArtifact;
+          if (!art || !art.active) return null;
+          return art.carrierId ? `portée par ${art.carrierId}` : `au sol (${art.r},${art.c})`;
+        };
+        [0, 1].forEach(k => {
+          const x = ou(A, k), y = ou(B, k);
+          if (x !== y) lignes.push(`couronne ${k + 1} : ${x || "absente"} vers ${y || "absente"}`);
+        });
+
+        /* Cartes dépensées : un tour peut être excellent sans rien déplacer
+           de visible — une rotation, une poussée bloquée, un dépôt. Sans ce
+           relevé, la correction affichait « aucun changement » et perdait le
+           sens du coup. */
+        const compte = (etat, joueur) => {
+          const j = (etat.players || [])[joueur] || {};
+          return ((j.deck || []).length + (j.hand || []).length);
+        };
+        (A.players || []).forEach((_, k) => {
+          const perdu = compte(A, k) - compte(B, k);
+          if (perdu > 0) lignes.push(`${A.players[k].name} dépense ${perdu} carte(s)`);
+        });
+        // Rotation d'île : mêmes îles, cases différentes.
+        const forme = etat => (etat.islands || [])
+          .map(i => i.cells.map(c => c.join(",")).sort().join("|")).sort().join(" / ");
+        if ((A.islands || []).length === (B.islands || []).length && forme(A) !== forme(B)) {
+          lignes.push("une île a pivoté");
+        }
+
+        return lignes.length ? lignes : ["aucun changement"];
+      }
+
       function autopsieIndexReel(index) {
         const n = ILYOS_AUTOPSIE_JOURNAL.length;
         if (!n) return -1;
@@ -23699,13 +23752,18 @@
 
       /* Arrête l'IA, rien de plus : aucun instantané, aucune restauration. */
       function autopsiePause() {
-        /* Le tour d'IA en cours doit être ANNULÉ, pas seulement ignoré : sans
-           cela il continuait à s'exécuter pendant la pause, et la reprise en
-           lançait un second par-dessus — deux tours simultanés, d'où les
-           animations incohérentes. Chaque étape de runAITurn compare son jeton
-           à aiRunToken et abandonne dès qu'il a changé. */
-        aiRunToken++;
-        autopsieViderAnimations();
+        /* La pause s'applique à la FIN DU TOUR EN COURS, jamais au milieu.
+
+           Interrompre un tour laissait une position à moitié jouée — cartes
+           déjà dépensées, pièces déjà déplacées. À la reprise, l'IA replanifiait
+           depuis cet état bâtard et REJOUAIT le tour : le journal montrait deux
+           décisions pour le même tour, et des gardiens tombaient sans raison
+           apparente, poussés par un plan calculé sur une autre position.
+
+           On laisse donc le tour se terminer. Les deux camps passant en manuel,
+           beginTurn ne relance rien ensuite : l'arrêt tombe proprement entre
+           deux tours. La pause n'est donc pas instantanée — sans commune mesure
+           avec une partie faussée. */
         if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) {
           autopsieSuivi = {
             startedTurn: ILYOS_AUTOPLAY.startedTurn,
@@ -23715,18 +23773,18 @@
           };
           // Ne pas rejournaliser une pause déjà en cours.
           if (ILYOS_AUTOPLAY.active && typeof stopIlyosAutoplay === "function") {
-            stopIlyosAutoplay("Pause pour revue");
+            stopIlyosAutoplay("Pause à la fin du tour");
           }
         } else if (typeof stopIlyosAutoplay === "function") {
-          stopIlyosAutoplay("Pause pour revue");
+          stopIlyosAutoplay("Pause à la fin du tour");
         }
-        if (state) {
-          state.aiThinking = false;
-          state.inputLocked = false;
-          state.turnTransitioning = false;
-        }
-        autopsieCurseur = ILYOS_AUTOPSIE_JOURNAL.length - 1;
-        console.log(`Partie en pause. ${ILYOS_AUTOPSIE_JOURNAL.length} décision(s) enregistrée(s).`);
+        if (state) state.inputLocked = false;
+        /* On ne fige PAS le curseur ici : le tour en cours va encore ajouter
+           sa décision. Le laisser libre fait pointer l'affichage sur la
+           dernière décision réellement enregistrée — sans quoi « Jouer ce
+           coup » rejouait un tour de retard. */
+        autopsieCurseur = -1;
+        console.log(`Pause demandée. Le tour en cours se termine d'abord.`);
         return autopsieCurseur;
       }
 
@@ -23824,6 +23882,139 @@
         return !!e;
       }
 
+      /* Repose le plateau à l instant d AVANT une décision. Action
+         explicite, jamais un effet de bord de la navigation : parcourir le
+         journal doit rester sans conséquence. */
+      function autopsieRevenirIci(index) {
+        const i = index === undefined ? autopsieIndexReel() : index;
+        const e = ILYOS_AUTOPSIE_JOURNAL[i];
+        if (!e || !e.instantane) { console.log("Position indisponible."); return false; }
+        autopsiePause();
+        autopsieViderAnimations();
+        applyStateSnapshot(JSON.parse(e.instantane));
+        state.undoHistory = [];
+        state.inputLocked = false;
+        state.aiThinking = false;
+        state.turnTransitioning = false;
+        autopsieCurseur = i;
+        if (typeof syncKayKitScene === "function") syncKayKitScene();
+        renderAll();
+        console.log(`Plateau reposé au tour ${e.tour}.`);
+        return true;
+      }
+
+      /* Vous rend la main sur cette position : les deux camps passent en
+         manuel et vous jouez le tour à la souris, normalement. */
+      function autopsieJouerCoup(index) {
+        const i = index === undefined ? autopsieIndexReel() : index;
+        const e = ILYOS_AUTOPSIE_JOURNAL[i];
+        if (!e || !autopsieRevenirIci(i)) return false;
+        aiRunToken++;
+        state.players.forEach(j => { j.isAI = false; });
+        revueCorrection = { index: i, tour: e.tour, avant: e.instantane };
+        autopsieEnregistrerActions(true);
+        /* La classe « l'ordinateur joue » désactive le sélecteur de formes
+           (pointer-events: none sur .island-choice). Restée en place, elle
+           rendait la pose d'île impossible pendant la correction — le tour
+           ne pouvait donc pas être joué du tout. */
+        els.gameScreen?.classList.remove("ai-turn");
+        renderAll();
+        els.gameScreen?.classList.remove("ai-turn");
+        // Le panneau doit basculer en mode correction même si l appel ne vient
+        // pas d un bouton : sinon il propose encore « Jouer ce coup ».
+        revueRendre();
+        console.log(`À vous de jouer le tour ${e.tour}. « ✓ C est mon coup » quand vous avez fini.`);
+        return true;
+      }
+
+      /* Enregistre le coup joué et RELANCE la partie depuis là. La suite de
+         l ancienne partie n a plus eu lieu : le journal est tronqué, mais la
+         correction, elle, est conservée à part. */
+      function autopsieValiderCoup(note = "") {
+        if (!revueCorrection) { console.log("Aucune correction en cours."); return null; }
+        const e = ILYOS_AUTOPSIE_JOURNAL[revueCorrection.index];
+        const correction = {
+          tour: revueCorrection.tour,
+          nomJoueur: e ? e.nomJoueur : null,
+          planIA: e ? e.planLisible : null,
+          noteIA: e ? `${e.noteDepart} → ${e.noteArrivee}` : null,
+          termesIA: e && e.detailArrivee ? e.detailArrivee.termes.slice(0, 4) : [],
+          candidatsEcartes: e ? (e.candidats || []).filter(c => !c.retenu).length : null,
+          votreCoup: autopsieDiffPositions(revueCorrection.avant, snapshotState()),
+          // Séquence exacte, et position rejouable après votre variante.
+          vosActions: (revueActionsJouees || []).slice(),
+          etatAvant: revueCorrection.avant,
+          etatApres: snapshotState(),
+          /* Ce que VOTRE position vaut, mesuré par l'évaluateur de l'IA.
+
+             C'est le coeur de l'exercice : sans cette comparaison, une
+             correction dit « j'aurais joué autrement » et n'apprend rien.
+             Avec elle, on voit terme à terme ce que l'IA a sur- ou
+             sous-estimé — et si elle continue de préférer son propre coup,
+             c'est précisément le défaut à corriger. */
+          votreEvaluation: (() => {
+            try { return evaluerAvecDetail(state.currentPlayer); }
+            catch (erreur) { return null; }
+          })(),
+          note: String(note || ""),
+          horodatage: new Date().toISOString()
+        };
+        if (correction.votreEvaluation && e && e.detailArrivee) {
+          const noms = new Set([
+            ...correction.votreEvaluation.termes.map(t => t.terme),
+            ...e.detailArrivee.termes.map(t => t.terme)
+          ]);
+          correction.ecart = [...noms].map(nom => {
+            const vous = correction.votreEvaluation.termes.find(t => t.terme === nom)?.montant || 0;
+            const ia = e.detailArrivee.termes.find(t => t.terme === nom)?.montant || 0;
+            return { terme: nom, ia, vous, delta: vous - ia };
+          }).filter(x => x.delta !== 0)
+            .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+        }
+        autopsieEnregistrerActions(false);
+        revueActionsJouees = null;
+        ILYOS_CORRECTIONS.push(correction);
+
+        // Les tours suivants de l ancienne ligne n existent plus.
+        ILYOS_AUTOPSIE_JOURNAL.length = revueCorrection.index;
+        revueCorrection = null;
+        autopsieCurseur = -1;
+
+        console.log(`Correction enregistrée au tour ${correction.tour} :`);
+        correction.votreCoup.forEach(l => console.log("   " + l));
+        /* La partie repart de votre coup — en TERMINANT votre tour, sans
+           lancer de tour d IA ici.
+
+           Appeler reprendre() démarrait un tour pour le joueur dont on venait
+           justement de jouer le tour, pendant que endTurn faisait passer au
+           suivant. Ce tour fantôme continuait alors de s exécuter sur la
+           position du joueur d après et y appliquait des poussées calculées
+           ailleurs : des gardiens tombaient sans raison visible.
+
+           endTurn suffit : beginTurn enchaînera de lui-même sur l IA, comme à
+           chaque fin de tour ordinaire. */
+        state.players.forEach(j => { j.isAI = true; });
+        if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) ILYOS_AUTOPLAY.active = true;
+        if (typeof startIlyosAutoplay === "function" && autopsieSuivi) {
+          startIlyosAutoplay({ maxTurns: autopsieSuivi.maxTurns, difficulty: autopsieSuivi.difficulte });
+          ILYOS_AUTOPLAY.startedTurn = autopsieSuivi.startedTurn;
+          ILYOS_AUTOPLAY.logs = autopsieSuivi.logs;
+          if (typeof renderIlyosAutoplayPanel === "function") renderIlyosAutoplayPanel();
+        }
+        if (typeof endTurn === "function") endTurn(true);
+        revueRendre();
+        return correction;
+      }
+
+      function autopsieAnnulerCoup() {
+        autopsieEnregistrerActions(false);
+        revueActionsJouees = null;
+        revueCorrection = null;
+        console.log("Correction abandonnée. La partie reste en pause sur cette position.");
+        revueRendre();
+        return true;
+      }
+
       function autopsieRecap() {
         const notes = ILYOS_AUTOPSIE_JOURNAL.map((e, i) => ({ i, e })).filter(x => x.e.annotation);
         console.log("");
@@ -23849,8 +24040,29 @@
          rejouer, illisible à transmettre. */
       function autopsieResumeRevue() {
         const notes = ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation);
-        if (!notes.length) return "Aucun tour signalé.";
-        const lignes = [`REVUE ILYOS — ${notes.length} tour(s) signalé(s) sur ${ILYOS_AUTOPSIE_JOURNAL.length}`, ""];
+        if (!notes.length && !ILYOS_CORRECTIONS.length) return "Aucun tour signalé.";
+        const lignes = [`REVUE ILYOS — ${ILYOS_CORRECTIONS.length} correction(s) jouée(s)`
+          + `, ${notes.length} tour(s) signalé(s)`, ""];
+        ILYOS_CORRECTIONS.forEach(c => {
+          lignes.push(`=== CORRECTION · tour ${c.tour} · ${c.nomJoueur || ""}`);
+          lignes.push(`IA a joué  : ${c.planIA || "—"}`);
+          if ((c.vosActions || []).length) {
+            lignes.push(`vous avez  : ${c.vosActions.map(x => x.texte).join(" · ")}`);
+          } else {
+            lignes.push(`vous avez  : ${c.votreCoup.join(" · ")}`);
+          }
+          if (c.note) lignes.push(`parce que  : ${c.note}`);
+          if (c.votreEvaluation) {
+            lignes.push(`votre note : ${c.votreEvaluation.note} — l'IA se donnait ${c.noteIA}`);
+          }
+          const ec = (c.ecart || []).slice(0, 6)
+            .map(x => `${x.terme} ${x.delta > 0 ? "+" : ""}${x.delta} (IA ${x.ia}, vous ${x.vous})`);
+          if (ec.length) lignes.push(`écart      : ${ec.join(" · ")}`);
+          if (c.noteIA) lignes.push(`son calcul : note ${c.noteIA}, ${c.candidatsEcartes} candidats écartés`);
+          const t = (c.termesIA || []).map(x => `${x.terme} ${x.montant > 0 ? "+" : ""}${x.montant}`).join(", ");
+          if (t) lignes.push(`a pesé     : ${t}`);
+          lignes.push("");
+        });
         notes.forEach(e => {
           const ecartes = (e.candidats || []).filter(c => !c.retenu).length;
           const tetes = (e.finalistes || []).slice(0, 3).map(f => `${f.note} ${f.planLisible}`).join("  |  ");
@@ -23866,6 +24078,51 @@
           lignes.push("");
         });
         return lignes.join("\n");
+      }
+
+      /* Fichier de revue COMPLET : les positions y sont rejouables, ce qui
+         vaut infiniment mieux qu'une capture d'écran. Chaque tour signalé ou
+         corrigé y va avec son état d'avant décision, le plan de l'IA, son
+         raisonnement, votre variante et son évaluation.
+
+         C'est ce qui permet de recharger exactement la position, relancer le
+         planner dessus, modifier un poids et rejouer le même tour. */
+      function autopsieDossierRevue() {
+        return {
+          jeu: "ILYOS",
+          version: window.ILYOS_BUILD || null,
+          horodatage: new Date().toISOString(),
+          poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
+          corrections: ILYOS_CORRECTIONS.map(c => ({ ...c })),
+          toursSignales: ILYOS_AUTOPSIE_JOURNAL.filter(e => e.annotation).map(e => ({
+            tour: e.tour, joueur: e.nomJoueur, annotation: e.annotation,
+            planIA: e.planLisible, plan: e.plan,
+            noteDepart: e.noteDepart, noteArrivee: e.noteArrivee,
+            detailDepart: e.detailDepart, detailArrivee: e.detailArrivee,
+            finalistes: e.finalistes, anticipation: e.anticipation,
+            candidats: e.candidats, etatAvant: e.instantane
+          }))
+        };
+      }
+
+      /* Téléchargement : le fichier doit pouvoir quitter le navigateur. */
+      function autopsieTelechargerRevue() {
+        const dossier = autopsieDossierRevue();
+        if (!dossier.corrections.length && !dossier.toursSignales.length) {
+          console.log("Rien à exporter : signalez ou corrigez d'abord un tour.");
+          return null;
+        }
+        const contenu = JSON.stringify(dossier, null, 1);
+        const jour = new Date().toISOString().slice(0, 10);
+        const lien = document.createElement("a");
+        lien.href = URL.createObjectURL(new Blob([contenu], { type: "application/json" }));
+        lien.download = `ilyos-revue-${jour}.json`;
+        document.body.appendChild(lien);
+        lien.click();
+        setTimeout(() => { URL.revokeObjectURL(lien.href); lien.remove(); }, 1000);
+        console.log(`Revue exportée : ${dossier.corrections.length} correction(s),`
+          + ` ${dossier.toursSignales.length} tour(s) signalé(s), ${contenu.length} octets.`);
+        return dossier;
       }
 
       function autopsieExporterRevue() {
@@ -23891,6 +24148,100 @@
          continue pendant qu on tape : sans ce gel, l annotation atterrissait
          sur le tour courant et non sur celui qu on regardait. */
       let revueSaisieIndex = -1;
+      // Résumé affiché en clair quand la copie automatique est refusée.
+      let revueTexteBrut = null;
+      /* Confirmation de copie. Écrire dans le bouton ne servait à rien : la
+         partie continue, le panneau se redessine, et le bouton modifié est déjà
+         détaché du document. Le message doit vivre dans l état du panneau. */
+      let revueCopieFaite = false;
+
+      /* CORRECTIONS — les coups que le joueur a joués À LA PLACE de l IA.
+
+         Conservées à part du journal : corriger un tour efface la suite de
+         la partie, puisque celle-ci repart de la correction. Une liste
+         séparée survit à ces coupes, et le récapitulatif accumule donc
+         toutes les erreurs relevées au fil de la session, même à travers
+         plusieurs bifurcations. */
+      const ILYOS_CORRECTIONS = [];
+      // Correction en cours : { index, tour, avant }
+      let revueCorrection = null;
+
+      /* Séquence exacte des actions jouées pendant une correction.
+
+         Comparer deux positions ne dit pas COMMENT on y est allé : une même
+         arrivée peut venir d'un déplacement ou d'une poussée, et le sens du
+         coup se perd. On enveloppe donc les noyaux de règle le temps de la
+         correction — le même procédé que le module de réserve physique
+         emploie pour endTurn — et chaque action se consigne d'elle-même.
+
+         Le joueur n'a donc plus à décrire ses coups en toutes lettres : il
+         lui reste seulement à dire POURQUOI ils sont meilleurs. */
+      let revueActionsJouees = null;
+      let revueNoyauxDorigine = null;
+
+      function autopsieEnregistrerActions(actif) {
+        if (actif) {
+          if (revueNoyauxDorigine) return;
+          revueActionsJouees = [];
+          revueNoyauxDorigine = {
+            move: applyMoveCore, push: applyPushCore,
+            magic: applyMagicRotationCore, pose: applyIslandPlacementCore,
+            // Le joueur humain ne passe PAS par applyIslandPlacementCore : la
+            // pose à la souris a son propre chemin dans l interface.
+            poseHumaine: placeIsland
+          };
+          const noter = (texte, details) => {
+            if (revueActionsJouees) revueActionsJouees.push({ texte, ...details });
+          };
+          applyMoveCore = function (charId, r, c, cout) {
+            const g = characterById(charId);
+            const de = g ? `(${g.r},${g.c})` : "?";
+            const resultat = revueNoyauxDorigine.move.apply(null, arguments);
+            if (resultat) noter(`MOVE ${de} → (${r},${c})`, { type: "MOVE", de, vers: [r, c], cout });
+            return resultat;
+          };
+          applyPushCore = function (pusherId, r, c, force) {
+            const g = characterById(pusherId);
+            const de = g ? `(${g.r},${g.c})` : "?";
+            const resultat = revueNoyauxDorigine.push.apply(null, arguments);
+            if (resultat) noter(`PUSH ${de} → (${r},${c}) force ${force}`,
+              { type: "PUSH", de, vers: [r, c], force });
+            return resultat;
+          };
+          applyMagicRotationCore = function (islandId, rotation) {
+            const resultat = revueNoyauxDorigine.magic.apply(null, arguments);
+            if (resultat) noter(`MAGIC île ${islandId}`, { type: "MAGIC", islandId });
+            return resultat;
+          };
+          applyIslandPlacementCore = function (shapeKey, cells) {
+            const resultat = revueNoyauxDorigine.pose.apply(null, arguments);
+            if (resultat) {
+              noter(`POSE ${shapeKey} en ${JSON.stringify(cells)}`
+                + (resultat.gardienCase ? ` · gardien en (${resultat.gardienCase})` : ""),
+                { type: "POSE", shapeKey, cells, spawn: resultat.gardienCase || null });
+            }
+            return resultat;
+          };
+          placeIsland = function (ancreR, ancreC) {
+            const avant = (state.islands || []).length;
+            const resultat = revueNoyauxDorigine.poseHumaine.apply(null, arguments);
+            const ile = (state.islands || [])[avant];
+            if (ile) {
+              noter(`POSE ${ile.shapeKey} en ${JSON.stringify(ile.cells)}`,
+                { type: "POSE", shapeKey: ile.shapeKey, cells: ile.cells });
+            }
+            return resultat;
+          };
+          return;
+        }
+        if (!revueNoyauxDorigine) return;
+        placeIsland = revueNoyauxDorigine.poseHumaine;
+        applyMoveCore = revueNoyauxDorigine.move;
+        applyPushCore = revueNoyauxDorigine.push;
+        applyMagicRotationCore = revueNoyauxDorigine.magic;
+        applyIslandPlacementCore = revueNoyauxDorigine.pose;
+        revueNoyauxDorigine = null;
+      }
 
       function revueEchapper(texte) {
         return String(texte == null ? "" : texte)
@@ -23932,16 +24283,49 @@
         const annotees = journal.filter(x => x.annotation).length;
 
         let corps;
-        if (revueVueRecap) {
+        if (revueTexteBrut) {
+          corps = `<p style="margin:0 0 6px;color:#8f9ab8">Copie refusée par le navigateur.
+              Sélectionnez le texte ci-dessous.</p>
+            <textarea readonly style="width:100%;box-sizing:border-box;height:160px;
+              background:#0e1220;color:#e8ecf8;border:1px solid #3a4568;border-radius:5px;
+              padding:6px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace">${revueEchapper(revueTexteBrut)}</textarea>`;
+        } else if (revueCorrection) {
+          const d = ILYOS_AUTOPSIE_JOURNAL[revueCorrection.index];
+          corps = `<p style="margin:6px 0;padding:8px;background:#2a2416;border-radius:6px">
+              <b style="color:#e8c46a">À VOUS DE JOUER — tour ${revueCorrection.tour}</b><br>
+              Jouez ce tour comme vous l'auriez joué, puis <b>✓ C'est mon coup</b>.<br>
+              <span style="color:#8f9ab8">La partie repartira de votre coup.</span>
+            </p>
+            <p style="margin:0;color:#8f9ab8">l'IA avait joué : ${revueEchapper(d ? d.planLisible : "—")}</p>
+            <input data-revue-coup type="text" placeholder="pourquoi votre coup est meilleur (facultatif)"
+              style="width:100%;box-sizing:border-box;margin-top:6px;background:#0e1220;color:#e8ecf8;
+                     border:1px solid #3a4568;border-radius:5px;padding:5px;font:inherit">`;
+        } else if (revueVueRecap) {
+          // En récapitulatif, revenir en arrière viserait la dernière décision
+          // et non celle qu on lit : on masque ces boutons plus bas.
           const notes = journal.filter(x => x.annotation);
-          corps = notes.length
+          const corrections = ILYOS_CORRECTIONS.map(c => `<div style="margin:0 0 8px;padding:8px;background:#1c2740;border-radius:6px">
+                 <b>tour ${c.tour}</b> · ${revueEchapper(c.nomJoueur || "")}<br>
+                 <span style="color:#8f9ab8">l'IA :</span> ${revueEchapper(c.planIA || "—")}<br>
+                 <span style="color:#8ab6e8">vous :</span> ${revueEchapper(c.votreCoup.join(" · "))}
+                 ${c.note ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(c.note)}` : ""}
+                 ${c.votreEvaluation ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a3352">
+                    <span style="color:#8f9ab8">évaluation :</span> vous ${c.votreEvaluation.note}
+                    · l IA se donnait ${revueEchapper(c.noteIA || "—")}
+                    ${(c.ecart || []).length ? `<br><span style="color:#8f9ab8">écart :</span> `
+                      + c.ecart.slice(0, 4).map(x =>
+                          `${revueEchapper(x.terme)} <b style="color:${x.delta > 0 ? "#7ee0a0" : "#e88a8a"}">${x.delta > 0 ? "+" : ""}${x.delta}</b>`
+                        ).join(", ") : ""}
+                  </div>` : ""}
+               </div>`).join("");
+          corps = corrections + (notes.length
             ? notes.map(x => `<div style="margin:0 0 8px;padding:8px;background:#1a2136;border-radius:6px">
                  <b>tour ${x.tour}</b> · ${revueEchapper(x.nomJoueur)}<br>
                  <span style="color:#8f9ab8">l'IA :</span> ${revueEchapper(x.planLisible)}<br>
                  <span style="color:#7ee0a0">vous :</span> ${revueEchapper(x.annotation.coupAttendu)}
                  ${x.annotation.pourquoi ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(x.annotation.pourquoi)}` : ""}
                </div>`).join("")
-            : `<p style="color:#8f9ab8">Aucun tour signalé.</p>`;
+            : (corrections ? "" : `<p style="color:#8f9ab8">Aucun tour signalé.</p>`));
         } else if (!e) {
           corps = `<p style="color:#8f9ab8">Aucune décision enregistrée. Lancez une partie.</p>`;
         } else {
@@ -23963,18 +24347,27 @@
         panneau.innerHTML =
           `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
              <b style="letter-spacing:.06em">REVUE IA</b>
-             <span style="color:#8f9ab8">${annotees} signalé(s)</span>
+             <span style="color:#8f9ab8">${annotees} signalé(s) · ${ILYOS_CORRECTIONS.length} corrigé(s)</span>
            </div>
            ${corps}
+           ${revueCopieFaite ? `<p style="margin:6px 0;padding:6px;background:#17301f;border-radius:6px;color:#7ee0a0">
+                ✓ Résumé copié — collez-le où vous voulez.</p>` : ""}
            <div style="margin-top:10px;border-top:1px solid #2a3352;padding-top:8px">
-             ${revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
+             ${revueCorrection
+               ? revueBouton("✓ C'est mon coup", "validerCoup") + revueBouton("✗ Abandonner", "annulerCoup")
+               : revueBouton(enPause ? "▶ Reprendre" : "⏸ Pause", enPause ? "reprendre" : "pause")}
              ${revueBouton("◀", "precedent", journal.length > 0)}
              ${revueBouton("▶", "suivant", journal.length > 0)}
              ${revueSaisieOuverte
                ? revueBouton("✓ Valider", "valider") + revueBouton("✗ Annuler", "annuler")
                : revueBouton("⚠ Tour raté", "noter", !!e)}
+             ${!revueCorrection && !revueSaisieOuverte && !revueVueRecap
+               ? revueBouton(e ? `↺ Revenir au tour ${e.tour}` : "↺ Revenir ici", "revenir", !!e)
+                 + revueBouton(e ? `🎮 Jouer le tour ${e.tour}` : "🎮 Jouer ce coup", "jouer", !!e)
+               : ""}
              ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
-             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees > 0) : ""}
+             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees + ILYOS_CORRECTIONS.length > 0)
+               + revueBouton("⤓ Exporter", "exporter", annotees + ILYOS_CORRECTIONS.length > 0) : ""}
            </div>`;
 
         // Entrée valide, Échap annule : on ne quitte pas le clavier pour rien.
@@ -23997,18 +24390,42 @@
         panneau.querySelectorAll("[data-revue]").forEach(bouton => {
           bouton.addEventListener("click", () => {
             const quoi = bouton.getAttribute("data-revue");
+            if (quoi !== "copier") revueCopieFaite = false;
             if (quoi === "pause") autopsiePause();
             else if (quoi === "reprendre") autopsieReprendre();
             else if (quoi === "precedent") { revueVueRecap = false; autopsiePrecedent(); }
             else if (quoi === "suivant") { revueVueRecap = false; autopsieSuivant(); }
-            else if (quoi === "recap") { revueVueRecap = !revueVueRecap; }
+            else if (quoi === "recap") { revueTexteBrut = null; revueVueRecap = !revueVueRecap; }
+            else if (quoi === "exporter") { autopsieTelechargerRevue(); }
             else if (quoi === "copier") {
+              /* navigator.clipboard échoue silencieusement quand le document
+                 n'a pas le focus. On retombe donc sur une zone de texte
+                 sélectionnée, et en dernier recours on AFFICHE le résumé
+                 dans le panneau : il doit toujours être récupérable. */
               const texte = autopsieResumeRevue();
-              navigator.clipboard?.writeText(texte).then(
-                () => { bouton.textContent = "✓ Copié"; },
-                () => { console.log(texte); bouton.textContent = "→ console"; }
-              );
+              const secours = () => {
+                const zone = document.createElement("textarea");
+                zone.value = texte;
+                zone.style.cssText = "position:fixed;left:-9999px;top:0";
+                document.body.appendChild(zone);
+                zone.select();
+                let copie = false;
+                try { copie = document.execCommand("copy"); } catch (erreur) { copie = false; }
+                zone.remove();
+                if (copie) { revueCopieFaite = true; revueRendre(); }
+                else { revueTexteBrut = texte; revueRendre(); }
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(texte)
+                  .then(() => { revueCopieFaite = true; revueRendre(); }, secours);
+              } else secours();
               return;
+            } else if (quoi === "revenir") { autopsieRevenirIci(i);
+            } else if (quoi === "jouer") { revueVueRecap = false; autopsieJouerCoup(i);
+            } else if (quoi === "validerCoup") {
+              const champ = panneau.querySelector("[data-revue-coup]");
+              autopsieValiderCoup(champ ? champ.value.trim() : "");
+            } else if (quoi === "annulerCoup") { autopsieAnnulerCoup();
             } else if (quoi === "noter") {
               revueSaisieOuverte = true;
               revueSaisieIndex = i;
@@ -24055,9 +24472,16 @@
         precedent: autopsiePrecedent,
         suivant: autopsieSuivant,
         noter: autopsieNoter,
+        revenirIci: autopsieRevenirIci,
+        jouerCoup: autopsieJouerCoup,
+        validerCoup: autopsieValiderCoup,
+        annulerCoup: autopsieAnnulerCoup,
+        corrections: () => ILYOS_CORRECTIONS,
         oublier: autopsieOublier,
         recap: autopsieRecap,
         exporterRevue: autopsieExporterRevue,
+        dossierRevue: autopsieDossierRevue,
+        telechargerRevue: autopsieTelechargerRevue,
         resumeRevue: autopsieResumeRevue,
                 vider: () => { ILYOS_AUTOPSIE_JOURNAL.length = 0; return 0; },
         /* Export JSON : une position litigieuse doit pouvoir quitter le
@@ -24215,7 +24639,7 @@
           `<div class="ilyos-autoplay-log">${recent.map(item => `<div class="${item.type}"><b>T${item.turn}</b> ${item.message}</div>`).join('') || '<div>En attente…</div>'}</div>` +
           `<div class="ilyos-autoplay-actions">` +
           `<button data-autoplay-stop>${ILYOS_AUTOPLAY.active ? 'ARRÊTER' : 'FERMER'}</button> ` +
-          `<button data-autoplay-report>DIAGNOSTIC</button> ` +
+          `<button data-autoplay-report>AFFICHAGE</button> ` +
           /* La revue s'ouvre d'un clic : l'exiger depuis la console revenait à
              la réserver à qui pense à la taper. */
           `<button data-autoplay-revue>${window.ILYOS_AUTOPSIE?.active?.() ? 'REVUE ✓' : 'REVUE IA'}</button>` +
@@ -24261,6 +24685,10 @@
         stopTurnTimer();
         startTurnTimer(true);
         ilyosAutoplayLog(`Duel Spirale lancé · difficulté ${difficulty}`, 'ok');
+        /* Revue active dès le premier tour : l'activer en cours de partie
+           laissait les premiers tours hors du journal, donc impossibles à
+           revoir ou corriger. */
+        try { window.ILYOS_AUTOPSIE?.activer(true); } catch (erreur) { /* jamais bloquant */ }
         renderAll();
 
         clearInterval(ILYOS_AUTOPLAY.monitor);
@@ -24737,6 +25165,11 @@
        *  cela, la queue de ce tour continue de s'exécuter et vient jouer une
        *  action pendant la première position mesurée. */
       function benchReinitialiser() {
+        /* Les bancs passent par playAIvsAI pour se préchauffer, ce qui lève
+           l autopsie. Elle n a rien à y faire : son relevé ralentit chaque
+           décision et fausserait les mesures de temps. */
+        try { if (window.ILYOS_AUTOPSIE) window.ILYOS_AUTOPSIE.activer(false); }
+        catch (erreur) { /* jamais bloquant */ }
         aiRunToken++;
         benchJournal = null;
         if (kaykit3D?.pendingActionAnimations) kaykit3D.pendingActionAnimations.clear();
