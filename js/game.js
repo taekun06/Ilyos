@@ -23982,9 +23982,25 @@
 
         console.log(`Correction enregistrée au tour ${correction.tour} :`);
         correction.votreCoup.forEach(l => console.log("   " + l));
-        // La partie repart de votre coup.
+        /* La partie repart de votre coup — en TERMINANT votre tour, sans
+           lancer de tour d IA ici.
+
+           Appeler reprendre() démarrait un tour pour le joueur dont on venait
+           justement de jouer le tour, pendant que endTurn faisait passer au
+           suivant. Ce tour fantôme continuait alors de s exécuter sur la
+           position du joueur d après et y appliquait des poussées calculées
+           ailleurs : des gardiens tombaient sans raison visible.
+
+           endTurn suffit : beginTurn enchaînera de lui-même sur l IA, comme à
+           chaque fin de tour ordinaire. */
         state.players.forEach(j => { j.isAI = true; });
-        autopsieReprendre();
+        if (typeof ILYOS_AUTOPLAY === "object" && ILYOS_AUTOPLAY) ILYOS_AUTOPLAY.active = true;
+        if (typeof startIlyosAutoplay === "function" && autopsieSuivi) {
+          startIlyosAutoplay({ maxTurns: autopsieSuivi.maxTurns, difficulty: autopsieSuivi.difficulte });
+          ILYOS_AUTOPLAY.startedTurn = autopsieSuivi.startedTurn;
+          ILYOS_AUTOPLAY.logs = autopsieSuivi.logs;
+          if (typeof renderIlyosAutoplayPanel === "function") renderIlyosAutoplayPanel();
+        }
         if (typeof endTurn === "function") endTurn(true);
         revueRendre();
         return correction;
