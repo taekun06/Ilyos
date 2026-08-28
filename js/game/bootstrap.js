@@ -303,9 +303,35 @@
       /* Rangement des cartes en fin de tour. Déclaré ici pour être visible de
          tous les fragments ; l'implémentation est fournie par le module de
          réserve physique, exactement comme consumeAvailableActions. Un seul
-         corps de règle, deux appelants : la vraie fin de tour et le self-play. */
+         corps de règle, plusieurs appelants : la vraie fin de tour, le
+         self-play et la transition simulée du planner. */
       let rangerCartesFinDeTour = function (player) {
         if (!player) return { MOVE: 0, PUSH: 0, MAGIC: 0 };
         player.hand = [];
+        return { MOVE: 0, PUSH: 0, MAGIC: 0 };
+      };
+
+      /* Fin de tour complète : ce qui tient en réserve y va, TOUT le reste
+         part à la défausse. Deuxième moitié indissociable de la règle — sans
+         elle, le surplus disparaissait du jeu et la pioche ne se
+         reconstituait plus. */
+      let rangerEtDefausserFinDeTour = function (player) {
+        if (!player) return { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        const range = rangerCartesFinDeTour(player);
+        player.discard = Array.isArray(player.discard) ? player.discard : [];
+        (player.hand || []).forEach(carte => {
+          player.discard.push({ ...carte, used: false, fromStash: false, fromReserve: false });
+        });
+        player.hand = [];
+        return range;
+      };
+
+      /* Ce que la réserve CONTIENDRA au prochain tour, sans rien modifier.
+
+         À distinguer soigneusement de ce qui est jouable maintenant : une
+         carte au-dessus du plafond de son type ne survivra pas à la fin du
+         tour. Elle n'a donc aucune valeur de conservation — et lui en donner
+         une pousse l'IA à thésauriser des ressources qui n'existeront plus. */
+      let projeterReserveFinDeTour = function (player) {
         return { MOVE: 0, PUSH: 0, MAGIC: 0 };
       };
