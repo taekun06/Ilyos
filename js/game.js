@@ -23779,7 +23779,11 @@
           stopIlyosAutoplay("Pause à la fin du tour");
         }
         if (state) state.inputLocked = false;
-        autopsieCurseur = ILYOS_AUTOPSIE_JOURNAL.length - 1;
+        /* On ne fige PAS le curseur ici : le tour en cours va encore ajouter
+           sa décision. Le laisser libre fait pointer l'affichage sur la
+           dernière décision réellement enregistrée — sans quoi « Jouer ce
+           coup » rejouait un tour de retard. */
+        autopsieCurseur = -1;
         console.log(`Pause demandée. Le tour en cours se termine d'abord.`);
         return autopsieCurseur;
       }
@@ -23936,9 +23940,32 @@
           termesIA: e && e.detailArrivee ? e.detailArrivee.termes.slice(0, 4) : [],
           candidatsEcartes: e ? (e.candidats || []).filter(c => !c.retenu).length : null,
           votreCoup: autopsieDiffPositions(revueCorrection.avant, snapshotState()),
+          /* Ce que VOTRE position vaut, mesuré par l'évaluateur de l'IA.
+
+             C'est le coeur de l'exercice : sans cette comparaison, une
+             correction dit « j'aurais joué autrement » et n'apprend rien.
+             Avec elle, on voit terme à terme ce que l'IA a sur- ou
+             sous-estimé — et si elle continue de préférer son propre coup,
+             c'est précisément le défaut à corriger. */
+          votreEvaluation: (() => {
+            try { return evaluerAvecDetail(state.currentPlayer); }
+            catch (erreur) { return null; }
+          })(),
           note: String(note || ""),
           horodatage: new Date().toISOString()
         };
+        if (correction.votreEvaluation && e && e.detailArrivee) {
+          const noms = new Set([
+            ...correction.votreEvaluation.termes.map(t => t.terme),
+            ...e.detailArrivee.termes.map(t => t.terme)
+          ]);
+          correction.ecart = [...noms].map(nom => {
+            const vous = correction.votreEvaluation.termes.find(t => t.terme === nom)?.montant || 0;
+            const ia = e.detailArrivee.termes.find(t => t.terme === nom)?.montant || 0;
+            return { terme: nom, ia, vous, delta: vous - ia };
+          }).filter(x => x.delta !== 0)
+            .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+        }
         ILYOS_CORRECTIONS.push(correction);
 
         // Les tours suivants de l ancienne ligne n existent plus.
@@ -23996,6 +24023,12 @@
           lignes.push(`IA a joué  : ${c.planIA || "—"}`);
           lignes.push(`vous avez  : ${c.votreCoup.join(" · ")}`);
           if (c.note) lignes.push(`parce que  : ${c.note}`);
+          if (c.votreEvaluation) {
+            lignes.push(`votre note : ${c.votreEvaluation.note} — l'IA se donnait ${c.noteIA}`);
+          }
+          const ec = (c.ecart || []).slice(0, 6)
+            .map(x => `${x.terme} ${x.delta > 0 ? "+" : ""}${x.delta} (IA ${x.ia}, vous ${x.vous})`);
+          if (ec.length) lignes.push(`écart      : ${ec.join(" · ")}`);
           if (c.noteIA) lignes.push(`son calcul : note ${c.noteIA}, ${c.candidatsEcartes} candidats écartés`);
           const t = (c.termesIA || []).map(x => `${x.terme} ${x.montant > 0 ? "+" : ""}${x.montant}`).join(", ");
           if (t) lignes.push(`a pesé     : ${t}`);
@@ -24117,6 +24150,8 @@
               style="width:100%;box-sizing:border-box;margin-top:6px;background:#0e1220;color:#e8ecf8;
                      border:1px solid #3a4568;border-radius:5px;padding:5px;font:inherit">`;
         } else if (revueVueRecap) {
+          // En récapitulatif, revenir en arrière viserait la dernière décision
+          // et non celle qu on lit : on masque ces boutons plus bas.
           const notes = journal.filter(x => x.annotation);
           const corrections = ILYOS_CORRECTIONS.map(c => `<div style="margin:0 0 8px;padding:8px;background:#1c2740;border-radius:6px">
                  <b>tour ${c.tour}</b> · ${revueEchapper(c.nomJoueur || "")}<br>
@@ -24167,11 +24202,12 @@
              ${revueSaisieOuverte
                ? revueBouton("✓ Valider", "valider") + revueBouton("✗ Annuler", "annuler")
                : revueBouton("⚠ Tour raté", "noter", !!e)}
-             ${!revueCorrection && !revueSaisieOuverte
-               ? revueBouton("↺ Revenir ici", "revenir", !!e) + revueBouton("🎮 Jouer ce coup", "jouer", !!e)
+             ${!revueCorrection && !revueSaisieOuverte && !revueVueRecap
+               ? revueBouton(e ? `↺ Revenir au tour ${e.tour}` : "↺ Revenir ici", "revenir", !!e)
+                 + revueBouton(e ? `🎮 Jouer le tour ${e.tour}` : "🎮 Jouer ce coup", "jouer", !!e)
                : ""}
              ${revueBouton(revueVueRecap ? "← Décision" : "📋 Récap", "recap")}
-             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees > 0) : ""}
+             ${revueVueRecap ? revueBouton("⧉ Copier", "copier", annotees + ILYOS_CORRECTIONS.length > 0) : ""}
            </div>`;
 
         // Entrée valide, Échap annule : on ne quitte pas le clavier pour rien.
@@ -24486,6 +24522,10 @@
         stopTurnTimer();
         startTurnTimer(true);
         ilyosAutoplayLog(`Duel Spirale lancé · difficulté ${difficulty}`, 'ok');
+        /* Revue active dès le premier tour : l'activer en cours de partie
+           laissait les premiers tours hors du journal, donc impossibles à
+           revoir ou corriger. */
+        try { window.ILYOS_AUTOPSIE?.activer(true); } catch (erreur) { /* jamais bloquant */ }
         renderAll();
 
         clearInterval(ILYOS_AUTOPLAY.monitor);
@@ -24962,6 +25002,11 @@
        *  cela, la queue de ce tour continue de s'exécuter et vient jouer une
        *  action pendant la première position mesurée. */
       function benchReinitialiser() {
+        /* Les bancs passent par playAIvsAI pour se préchauffer, ce qui lève
+           l autopsie. Elle n a rien à y faire : son relevé ralentit chaque
+           décision et fausserait les mesures de temps. */
+        try { if (window.ILYOS_AUTOPSIE) window.ILYOS_AUTOPSIE.activer(false); }
+        catch (erreur) { /* jamais bloquant */ }
         aiRunToken++;
         benchJournal = null;
         if (kaykit3D?.pendingActionAnimations) kaykit3D.pendingActionAnimations.clear();
