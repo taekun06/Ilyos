@@ -24158,6 +24158,14 @@
                  <span style="color:#8f9ab8">l'IA :</span> ${revueEchapper(c.planIA || "—")}<br>
                  <span style="color:#8ab6e8">vous :</span> ${revueEchapper(c.votreCoup.join(" · "))}
                  ${c.note ? `<br><span style="color:#8f9ab8">car :</span> ${revueEchapper(c.note)}` : ""}
+                 ${c.votreEvaluation ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a3352">
+                    <span style="color:#8f9ab8">évaluation :</span> vous ${c.votreEvaluation.note}
+                    · l IA se donnait ${revueEchapper(c.noteIA || "—")}
+                    ${(c.ecart || []).length ? `<br><span style="color:#8f9ab8">écart :</span> `
+                      + c.ecart.slice(0, 4).map(x =>
+                          `${revueEchapper(x.terme)} <b style="color:${x.delta > 0 ? "#7ee0a0" : "#e88a8a"}">${x.delta > 0 ? "+" : ""}${x.delta}</b>`
+                        ).join(", ") : ""}
+                  </div>` : ""}
                </div>`).join("");
           corps = corrections + (notes.length
             ? notes.map(x => `<div style="margin:0 0 8px;padding:8px;background:#1a2136;border-radius:6px">
