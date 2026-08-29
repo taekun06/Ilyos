@@ -53,8 +53,8 @@ sky-band-blend-02-23-azimut.webp — variante "blend0223azimut". Coupure par
 Panorama d'archipel ILYOS
 =========================
 
-ilyos-horizon-archipelago-v2.png — création originale générée spécifiquement
-pour ILYOS le 28/08/2026. Aucun asset, modèle ou panorama tiers n'a été utilisé
-dans cette texture. Le shader `buildKayKitHorizonPanorama()` extrait son fond
-clair et applique le dégradé alpha inférieur au rendu ; l'image n'est jamais
-utilisée comme skybox complète.
+ilyos-horizon-north-v1.png, ilyos-horizon-east-v1.png,
+ilyos-horizon-south-v1.png, ilyos-horizon-west-v1.png — quatre plaques
+directionnelles originales générées spécifiquement pour ILYOS le 29/08/2026.
+Elles forment un environnement à quatre secteurs sans projection cylindrique ;
+aucun asset ou panorama tiers n'est redistribué.
