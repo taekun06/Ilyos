@@ -260,16 +260,72 @@
       ctx.stroke();
     });
 
-    /* 6. L'APERÇU DE POSE D'ÎLE, quand une forme est en main. */
-    (etat.placementCells || []).forEach(([r, c]) => {
-      if (r < 0 || c < 0 || r >= GRILLE || c >= GRILLE) return;
-      const x = m.x0 + c * cote, y = m.y0 + r * cote;
-      ctx.fillStyle = C.jouable;
-      ctx.globalAlpha = 0.35;
-      rectangleArrondi(x + 2, y + 2, cote - 4, cote - 4, cote * 0.14);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    });
+    /* 6. APERÇU DE POSE D'ÎLE — la forme entière suit la souris.
+
+       `placementCells` contient la forme en coordonnées RELATIVES, pas des
+       cases du plateau : les dessiner telles quelles ne montrait rien
+       d'utilisable. On refait donc le même calcul que le jeu — origine, puis
+       décalage jusqu'à l'ancre survolée — et on colore selon que la forme
+       TIENT ou non. Sans cette distinction, on ne découvre qu'au clic qu'une
+       pose était impossible. */
+    if (etat.phase === "PLACE_ISLAND" && (etat.placementCells || []).length && survol) {
+      const forme = etat.placementCells;
+      const origine = forme[etat.placementOriginIndex] || forme[0] || [0, 0];
+      const absolues = forme.map(([dr, dc]) => [
+        survol[0] + (dr - origine[0]),
+        survol[1] + (dc - origine[1])
+      ]);
+      const tient = absolues.every(([r, c]) =>
+        r >= 0 && c >= 0 && r < GRILLE && c < GRILLE && !terrain.get(cle(r, c)));
+      const teinte = tient ? C.jouable : C.cible;
+
+      absolues.forEach(([r, c]) => {
+        if (r < 0 || c < 0 || r >= GRILLE || c >= GRILLE) return;
+        const x = m.x0 + c * cote, y = m.y0 + r * cote;
+        rectangleArrondi(x + 2, y + 2, cote - 4, cote - 4, cote * 0.16);
+        ctx.fillStyle = teinte;
+        ctx.globalAlpha = tient ? 0.55 : 0.40;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = teinte;
+        ctx.lineWidth = Math.max(2, cote * 0.08);
+        ctx.stroke();
+      });
+
+      // Un mot sous la forme : la couleur seule laisse un doute.
+      const bas = Math.max(...absolues.map(([r]) => r));
+      const gauche = absolues.reduce((min, cel) => Math.min(min, cel[1]), GRILLE);
+      const droite = absolues.reduce((max, cel) => Math.max(max, cel[1]), 0);
+      const cx = m.x0 + ((gauche + droite) / 2 + 0.5) * cote;
+      const cy = m.y0 + (bas + 1) * cote + cote * 0.34;
+      ctx.font = `700 ${Math.round(cote * 0.26)}px ui-monospace, monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = teinte;
+      ctx.fillText(tient ? "POSER ICI" : "NE TIENT PAS", cx, cy);
+    }
+
+    /* 6 bis. CHOIX DE LA CASE D'APPARITION du gardien : les cases libres de
+       l'île qui vient d'être posée. Sans repère, ce choix — qui est une vraie
+       décision — se faisait à l'aveugle. */
+    if (etat.phase === "PLACE_SPAWN" && etat.pendingSpawnIslandId) {
+      const ile = (etat.islands || []).find(i => i.id === etat.pendingSpawnIslandId);
+      const occupees = new Set((etat.characters || []).map(g => cle(g.r, g.c)));
+      (ile && ile.cells || []).forEach(([r, c]) => {
+        if (occupees.has(cle(r, c))) return;
+        const x = m.x0 + c * cote, y = m.y0 + r * cote;
+        const vise = survol && survol[0] === r && survol[1] === c;
+        ctx.beginPath();
+        ctx.arc(x + cote / 2, y + cote / 2, cote * (vise ? 0.32 : 0.22), 0, Math.PI * 2);
+        ctx.fillStyle = C.jouable;
+        ctx.globalAlpha = vise ? 0.75 : 0.40;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = Math.max(2, cote * 0.06);
+        ctx.strokeStyle = C.jouable;
+        ctx.stroke();
+      });
+    }
 
     /* 7. LES COURONNES POSÉES AU SOL. */
     [etat.artifact, etat.secondArtifact].forEach(a => {
@@ -408,12 +464,20 @@
     /* Le conteneur peut être plus haut que l'écran : sans borne, le plateau
        débordait par le bas et les dernières rangées devenaient inatteignables.
        On se limite donc AUSSI à ce que la fenêtre montre réellement. */
-    const cote = Math.max(240, Math.floor(Math.min(
-      rect.width || Infinity,
-      rect.height || Infinity,
-      window.innerWidth * 0.72,
-      window.innerHeight * 0.84
-    )));
+    /* La barre de cartes et les commandes occupent le bas de l'écran, et elles
+       flottent PAR-DESSUS le plateau. Sans marge réservée, les dernières
+       rangées se retrouvaient dessous : visibles, mais impossibles à cliquer.
+       On garde donc le plateau au-dessus d'elles plutôt que d'espérer qu'il
+       passe. */
+    const RESERVE_BASSE = 150;
+    /* Une fenêtre masquée annonce une taille NULLE. Prise au mot, la formule
+       repliait le plateau sur son minimum — et il y restait au retour, faute
+       d'une nouvelle mesure. On n'accepte donc que des dimensions positives,
+       et on remesure quand l'onglet redevient visible. */
+    const bornes = [rect.width, window.innerWidth * 0.70, window.innerHeight - RESERVE_BASSE - 90]
+      .filter(v => Number.isFinite(v) && v > 0);
+    if (!bornes.length) return;
+    const cote = Math.max(240, Math.floor(Math.min(...bornes)));
     canvas.style.width = cote + "px";
     canvas.style.height = cote + "px";
     canvas.width = Math.floor(cote * ratio);
@@ -449,6 +513,9 @@
         .observe(plateau, { childList: true, subtree: true, attributes: true });
     }
     window.addEventListener("resize", dimensionner);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) dimensionner();
+    });
   }
 
   function basculer(vers) {

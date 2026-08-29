@@ -20,7 +20,13 @@
 
 body[data-plateau-tactique="on"] #plateauTactique {
   display: block;
-  margin: auto;
+  /* Collé en haut, pas centré verticalement : le bas de l'écran appartient à
+     la main de cartes et aux commandes, qui flottent au-dessus du plateau. */
+  margin: 0 auto auto;
+}
+
+body[data-plateau-tactique="on"] .board-wrap {
+  align-items: start;
 }
 
 /* Le plateau d'origine reste dans le DOM — c'est lui qui reçoit les clics
@@ -81,5 +87,28 @@ body[data-plateau-tactique="on"] #plateauTactiqueBtn {
     bottom: 10px;
     padding: 7px 11px;
     font-size: 11px;
+  }
+}
+
+/* PANNEAU « REVUE IA » — remonté
+   ------------------------------
+   Il était fixé en bas à droite, par-dessus « FIN DU TOUR » et la défausse :
+   deux commandes qu'on doit pouvoir atteindre à tout moment. Un panneau
+   d'analyse ne doit jamais couvrir une commande de jeu.
+
+   Sa position est écrite en style en ligne dans autopsie.js — d'où le
+   `!important`. On le corrige depuis ce fichier plutôt que dans le sien :
+   le module d'autopsie évolue sur une autre branche, et une règle ajoutée
+   ici ne peut entrer en conflit avec rien. */
+.ilyos-revue-panneau {
+  top: 92px !important;
+  bottom: auto !important;
+  max-height: calc(100vh - 300px) !important;
+}
+
+@media (max-height: 780px) {
+  .ilyos-revue-panneau {
+    top: 76px !important;
+    max-height: calc(100vh - 250px) !important;
   }
 }
