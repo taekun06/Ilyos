@@ -15,6 +15,8 @@
   <meta name="theme-color" content="#0a1722">
   
   <link rel="stylesheet" href="./css/base.css?v=20260815-gameplay-fixes2">
+  <!-- Plateau tactique 2D : additif, sans effet tant que le mode est éteint. -->
+  <link rel="stylesheet" href="./css/plateau-tactique.css?v=20260829-plateau2d">
   <link rel="stylesheet" href="./css/turn-flow-ux.css?v=20260815-gameplay-fixes2">
 
   <script src="./js/bootstrap-cache.js?v=20260815-gameplay-fixes2"></script>
@@ -1445,6 +1447,9 @@
        première synchronisation de scène. -->
   <script id="v76-animation-system" src="./js/animation-system.js?v=20260815-gameplay-fixes2"></script>
     <script src="./js/game.js?v=20260828-revue-ia"></script>
+  <!-- Plateau tactique 2D : lit l'état, dessine, et relaie les clics aux vraies
+       cases. Chargé APRÈS game.js, dont il utilise le plateau et l'état. -->
+  <script src="./js/plateau-tactique.js?v=20260829-plateau2d"></script>
   <!-- HUD V2 (correction post-Passe 3) : ui-layout.js ne fait que créer les
        flèches ‹›  qui replient/déplient .left-panel/.right-panel — panneaux
        désormais toujours masqués (.hud-v1-legacy). Script devenu sans objet,
