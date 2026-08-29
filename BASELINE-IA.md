@@ -606,3 +606,101 @@ de tour ↔ transition simulée, 3 mesures du terme d'évaluation.
 Le terme est mesuré directement, et non par le comportement : à 5 points la
 carte, une IA réglée sur des ressources fictives jouerait presque toujours
 pareil. Le défaut serait resté invisible jusqu'à une position serrée.
+
+---
+
+# La pose n'est pas une extension du territoire
+
+Une île se pose n'importe où sur le plateau : elle n'a pas à prolonger une île
+existante et peut rester entièrement isolée au milieu du vide. Tant qu'on est
+sous le plafond de gardiens, la question d'une POSE n'est donc pas « où
+agrandir » mais « quel gardien puis-je créer, où, et que pourra-t-il faire ? ».
+
+## Ce qui tuait l'idée
+
+`findAutomaticIslandPlacement` note chaque emplacement légal par une question
+unique : la distance à UNE cible automatique, plus la distance à mes propres
+gardiens. Ses dix meilleures poses se regroupent donc autour du même point, tout
+près de là où je suis déjà — mes gardiens étant sur mes îles. Une pose isolée à
+l'autre bout du plateau mourait avant d'atteindre l'évaluateur, et aucune note
+ne pouvait le signaler : un coup jamais généré ne peut pas être choisi.
+
+Le classement reste inchangé — Easy, Normal et Hard l'utilisent — mais il n'est
+plus le seul juge. La liste entière des poses légales est bucketisée par
+INTENTION, chaque famille recevant ses propres places : couronne, sanctuaire,
+blocage de village, interception, préparation de poussée, relais, défense, plus
+la famille « terrain » qui n'est autre que le classement historique.
+
+Demander la liste entière ne coûte rien : `findAutomaticIslandPlacement` énumère
+et trie déjà TOUS les emplacements à chaque appel, seule la coupe changeait.
+
+Mesuré, familles coupées puis rétablies, sur `verif-pose-isolee` :
+
+| capacité | sans familles | avec |
+|---|---|---|
+| apparition sur une case de validation adverse | 0 pose | 1 pose |
+| familles distinctes proposées | 1 (terrain) | 4 |
+
+Le premier scénario du banc, lui, passe dans les deux cas : la couronne libre
+EST la cible automatique, le classement historique vise donc juste. Il est
+conservé comme non-régression, pas comme preuve.
+
+## Ce qui a été mesuré puis retiré
+
+Quatre autres capacités ont été implémentées, mesurées, et retirées parce
+qu'elles dégradaient les puzzles historiques. Elles sont documentées ici pour
+que la prochaine passe reparte des mesures plutôt que de l'intuition.
+
+**Le dépôt volontaire.** La règle existe bel et bien — phase `DROP_TREASURE`,
+« Couronne posée gratuitement » — et l'IA Legacy l'emploie déjà
+(`ai.js`, transmission indirecte avec dépôt). Le planner Expert ne la connaissait
+pas. Ajoutée comme arête gratuite du graphe, elle a immédiatement servi à
+TRICHER : `porteurExpose` ne juge que le porteur, si bien que lâcher la couronne
+faisait disparaître jusqu'à 1600 points de pénalité sans rien changer à la
+situation. Un gardien posant la couronne à ses pieds gagnait en outre 300 points
+d'`utiliteRamassage` que le porteur ne touchait pas.
+
+Ce n'est pas le dépôt qui est mauvais : c'est l'évaluateur qui juge le porteur
+au lieu de juger le sort de la couronne. Les deux correctifs — parité
+porteur/voisin, et péril suivant la couronne plutôt que son porteur — font
+retomber les puzzles de 16/17 à 14/17, par un effet de second ordre dans
+l'anticipation : l'adversaire, valorisant lui aussi la prise de couronne,
+préfère désormais s'en emparer plutôt que pousser, et sa riposte devient moins
+punitive. Une position passive paraît alors sûre, et l'IA se fige.
+
+**La projection par pose.** « Aucun gardien adverse n'est proche, donc la
+couronne est sûre » est faux tant que l'adversaire peut poser une île contre
+elle. Implémentée (plafond de gardiens, stock de formes, pose légale couvrant
+une case voisine), elle rend l'élimination du dernier gardien adverse presque
+sans valeur : son accès retombe à une proximité de 0,40 au lieu de 0. Coût
+mesuré : 160 points par couronne, assez pour que l'IA renonce à éjecter.
+
+**`terrainFonctionnel` enrichi.** Deux tentatives, deux échecs mesurés.
+« Qui se tient au bord du vide face à un adversaire » double-compte
+`utiliteMenace` : l'IA préférait MENACER un gardien plutôt que l'éliminer.
+« Mes gardiens sont-ils reliés à mes cases de validation » est resté à −1,00 —
+le plancher — dans les deux puzzles témoins : un gardien coupé de son propre
+village est la situation NORMALE en début de partie, pas un défaut de terrain.
+Le terme ne portait aucune information et écrasait la mobilité de 337 points.
+
+**Le préfiltre de poussée par position de couronne.** Retiré faute d'avoir pu
+l'isoler proprement : il coûte un puzzle en combinaison, sans que la cause soit
+établie.
+
+## Ce qui reste
+
+Deux corrections conservées, indépendantes de tout cela.
+
+`doublePression` : la branche « une couronne en zone + une seconde à deux
+cases » était placée APRÈS le cas générique « deux couronnes à deux cases »,
+dont elle est un sous-cas. Elle était donc inatteignable. Remise en tête, et
+volontairement moins généreuse — la couronne déjà en zone est largement comptée
+par `positionCouronne`.
+
+Une troisième correction a été tentée puis annulée : ne compter qu'une fois
+ramassage et relais, qui décrivent la même conséquence — ce gardien peut agir
+gratuitement sur une couronne — vue depuis la couronne libre puis depuis le
+porteur ami. Le double comptage est réel, mais le retirer fait tomber le
+scénario adverse A10, où l'IA cesse de défendre et pousse le porteur adverse
+DANS sa case de validation. Conservé tel quel faute de pouvoir le corriger sans
+casser une défense.
