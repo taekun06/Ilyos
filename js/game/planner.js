@@ -678,9 +678,15 @@
         const pression = (distances, exploitables, signe, terme) => {
           if (distances.length < 2) return;
           const tri = [...distances].sort((a, b) => a - b);
+          /* ORDRE IMPORTANT. « Une couronne en zone de validation + une seconde
+             à deux cases » est un SOUS-CAS de « deux couronnes à deux cases » :
+             placée en second, sa branche ne pouvait jamais être atteinte. Elle
+             passe donc d'abord, et vaut moins — la couronne déjà en zone est
+             largement comptée par positionCouronne, la re-payer ici serait un
+             double comptage. */
           let bonus = 0;
-          if (tri[1] <= 2) bonus = PLAN_POIDS.doubleDeuxCases;
-          else if (tri[0] === 0 && tri[1] <= 2) bonus = PLAN_POIDS.doubleZoneEtDeux;
+          if (tri[0] === 0 && tri[1] <= 2) bonus = PLAN_POIDS.doubleZoneEtDeux;
+          else if (tri[1] <= 2) bonus = PLAN_POIDS.doubleDeuxCases;
           else if (tri[1] <= 3) bonus = PLAN_POIDS.doubleTroisCases;
           if (!bonus) return;
           if (exploitables === 0) bonus *= 0.5;
@@ -834,13 +840,15 @@
            move est le plafond TOTAL, moveParIntention celui de CHAQUE
            intention : c'est le second qui empêche dix variantes du même coup
            d'évincer une idée d'une autre nature. */
-        racine: { move: 16, moveParIntention: 3, push: 8, magic: 8, pose: 10, poseSpawns: 3, poseTotal: 18 },
+        racine: { move: 16, moveParIntention: 3, push: 8, magic: 8, pose: 10, poseSpawns: 3,
+          poseTotal: 20, poseParIntention: 2 },
         /* En profondeur on resserre, mais jamais en dessous de ce que le
            planner avait avant l'ouverture de la racine : les enchaînements
            utiles — se placer puis transmettre, préparer puis pousser — se
            construisent au deuxième et au troisième niveau. Trop serrer ici
            coûte plus que ce que l'ouverture de la racine rapporte. */
-        profond: { move: 10, moveParIntention: 2, push: 5, magic: 4, pose: 4, poseSpawns: 1, poseTotal: 6 },
+        profond: { move: 10, moveParIntention: 2, push: 5, magic: 4, pose: 4, poseSpawns: 1,
+          poseTotal: 8, poseParIntention: 1 },
         // Plafonds de la génération de candidats MAGIC, la seule qui simule
         // réellement chaque option pour la pré-classer (voir plus bas).
         magicRotationsMax: 36,
@@ -1305,49 +1313,153 @@
         );
       }
 
+      /* INTENTIONS D'UNE POSE.
+
+         Une pose n'est pas l'extension du territoire déjà construit : la
+         règle autorise une forme n'importe où sur le plateau, entièrement
+         isolée au milieu du vide. Tant qu'on est sous le plafond de gardiens,
+         la vraie question n'est donc pas « où agrandir » mais « quel gardien
+         puis-je créer, où, et que pourra-t-il faire ? ».
+
+         Le pré-classement historique répond à une question unique — la
+         distance à UNE cible automatique, plus la distance à mes propres
+         gardiens. Ses dix meilleures poses se regroupent donc autour du même
+         point, tout près de là où je suis déjà. Une pose isolée à l'autre
+         bout du plateau, fût-elle décisive, mourait avant d'atteindre
+         l'évaluateur.
+
+         On garde ce classement — il reste une famille parmi d'autres — et on
+         lui adjoint une famille par capacité que la position rend
+         pertinente, chacune avec ses propres places. */
+      function plannerIntentionsPose(playerId) {
+        const intentions = [];
+        const moi = state.players[playerId];
+        const adverse = plannerAdversaire(playerId);
+        const ajouter = (but, cibles, contact) => {
+          const utiles = (cibles || []).filter(([r, c]) => Number.isFinite(r) && Number.isFinite(c));
+          if (utiles.length) intentions.push({ but, cibles: utiles, contact: contact || 0 });
+        };
+
+        /* `contact` = distance IDÉALE entre la case d'apparition et la cible.
+           Ramasser une couronne veut un gardien À CÔTÉ d'elle (1) ; bloquer
+           un village veut un gardien DESSUS (0). */
+        const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
+        ajouter("couronne", libres, 1);
+        if ((state.couronnesEnAttente || []).length) ajouter("sanctuaire", [[CENTER.r, CENTER.c]], 1);
+
+        if (adverse) {
+          ajouter("blocage", crownValidationCellsForPlayer(adverse), 0);
+          const porteurAdverse = activeArtifacts()
+            .map(a => a.carrierId ? characterById(a.carrierId) : null)
+            .find(pt => pt && pt.player !== playerId);
+          if (porteurAdverse) ajouter("interception", [[porteurAdverse.r, porteurAdverse.c]], 1);
+
+          /* PRÉPARER UNE POUSSÉE : faire apparaître un gardien du côté opposé
+             au vide, face à un gardien adverse adossé au bord. */
+          const postes = [];
+          for (const ennemi of plannerGardiensDe(adverse.id)) {
+            for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+              if (isLand(ennemi.r + dr, ennemi.c + dc)) continue;
+              postes.push([ennemi.r - dr, ennemi.c - dc]);
+            }
+          }
+          ajouter("poussee", postes, 0);
+        }
+
+        /* RELAIS et DÉFENSE de mon propre porteur : un gardien qui surgit à
+           côté de lui reprend la couronne gratuitement, ou la relaie. */
+        const porteurAmi = plannerGardiensDe(playerId).find(g => characterCarriesCrown(g.id));
+        if (porteurAmi) {
+          ajouter("relais", [[porteurAmi.r, porteurAmi.c]], 1);
+          ajouter("defense", crownValidationCellsForPlayer(moi), 0);
+        }
+
+        return intentions;
+      }
+
+      /* Toutes les poses légales, sans coupe. findAutomaticIslandPlacement les
+         énumère et les trie DÉJÀ intégralement à chaque appel : demander la
+         liste entière ne coûte donc rien de plus que d'en demander dix. */
+      const PLAN_POSE_ENUM_MAX = 100000;
+
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
         /* Le biais vers la zone adverse ne s'active que sous menace réelle.
            Permanent, il détournait la pose de l'action : l'IA allait camper au
            village adverse pendant qu'une couronne libre attendait ailleurs. */
-        const placements = findAutomaticIslandPlacement(
-          playerId, plafonds().pose, plannerMenaceValidationAdverse(playerId)
-        );
-        if (!Array.isArray(placements)) return [];
+        const biais = plannerMenaceValidationAdverse(playerId);
+        const toutes = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX, biais);
+        if (!Array.isArray(toutes) || !toutes.length) return [];
 
-        /* La case d'apparition fait partie de la décision, comme pour un joueur
-           humain. Les cases sont classées par proximité de la cible automatique,
-           si bien que la première reste EXACTEMENT celle que le jeu choisirait
-           seul : l'ancien comportement demeure candidat, on lui ajoute des
-           alternatives. */
+        const options = [];
+        const vues = new Set();
+        const empreinte = (pose, spawn) =>
+          `${pose.shapeKey}|${pose.anchor.r},${pose.anchor.c}|${pose.cells.length}|${spawn[0]},${spawn[1]}`;
+        const proposer = (pose, spawn, but, indice) => {
+          const k = empreinte(pose, spawn);
+          if (vues.has(k)) return false;
+          vues.add(k);
+          options.push({
+            type: "POSE",
+            shapeKey: pose.shapeKey,
+            cells: pose.cells,
+            relCells: pose.relCells,
+            anchor: pose.anchor,
+            owner: playerId,
+            spawn,
+            but,
+            indice
+          });
+          return true;
+        };
+
+        /* UNE FAMILLE PAR INTENTION, chacune avec ses propres places.
+
+           La case d'apparition fait partie de la décision : on retient, pour
+           chaque pose, celle qui sert le mieux l'intention examinée. Une même
+           pose peut servir deux familles — elle n'est alors proposée qu'une
+           fois, avec la première justification trouvée. */
+        for (const intention of plannerIntentionsPose(playerId)) {
+          const notees = [];
+          for (const pose of toutes) {
+            let meilleurSpawn = null;
+            let meilleurEcart = Infinity;
+            for (const cellule of pose.cells) {
+              if (characterAt(cellule[0], cellule[1])) continue;
+              let d = Infinity;
+              for (const [tr, tc] of intention.cibles) {
+                const m = Math.abs(cellule[0] - tr) + Math.abs(cellule[1] - tc);
+                if (m < d) d = m;
+              }
+              const ecart = Math.abs(d - intention.contact);
+              if (ecart < meilleurEcart) { meilleurEcart = ecart; meilleurSpawn = cellule; }
+            }
+            if (!meilleurSpawn || meilleurEcart > 3) continue;
+            notees.push({ pose, spawn: meilleurSpawn, indice: 100 - meilleurEcart * 25 });
+          }
+          notees.sort((a, b) => b.indice - a.indice);
+          let places = 0;
+          for (const n of notees) {
+            if (places >= plafonds().poseParIntention) break;
+            if (proposer(n.pose, n.spawn, intention.but, n.indice)) places++;
+          }
+        }
+
+        /* FAMILLE « TERRAIN » : le classement historique, conservé tel quel.
+           C'est lui qui répond quand le plafond de gardiens est atteint ou
+           qu'aucune intention ne s'applique, et il garantit que le coup que le
+           jeu choisirait seul reste toujours candidat. */
         const cible = automaticPlacementTarget(playerId);
-        const parPose = placements.map(p => {
-          const libres = p.cells.filter(([r, c]) => !characterAt(r, c));
+        for (const pose of toutes.slice(0, plafonds().pose)) {
+          const libres = pose.cells.filter(([r, c]) => !characterAt(r, c));
           libres.sort((a, b) =>
             (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
             (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
-          return { pose: p, spawns: libres.slice(0, plafonds().poseSpawns) };
-        });
-
-        /* Entrelacé : le premier choix de CHAQUE pose avant le deuxième choix
-           de la première. Sans cela le plafond ne retiendrait que les variantes
-           d'une ou deux poses, et la diversité des emplacements — le point
-           vraiment décisif — serait perdue. */
-        const options = [];
-        for (let rang = 0; rang < plafonds().poseSpawns; rang++) {
-          for (const { pose, spawns } of parPose) {
-            if (rang >= spawns.length) continue;
-            options.push({
-              type: "POSE",
-              shapeKey: pose.shapeKey,
-              cells: pose.cells,
-              relCells: pose.relCells,
-              anchor: pose.anchor,
-              owner: playerId,
-              spawn: spawns[rang]
-            });
+          for (const spawn of libres.slice(0, plafonds().poseSpawns)) {
+            proposer(pose, spawn, "terrain", 10);
           }
         }
+
         return plannerRetenir(options, plafonds().poseTotal, "POSE");
       }
 

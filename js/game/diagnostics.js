@@ -1101,6 +1101,59 @@
         };
       }
 
+      /* Position chargée, prête à être interrogée. Facteur commun des sondes
+         qui suivent : elles ne jouent rien, elles regardent. */
+      function benchPoserPosition(spec = {}) {
+        setTestRandomSeed(spec.seed ?? 1);
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
+        state.undoHistory = [];
+        return spec.aiPlayer ?? 0;
+      }
+
+      /* Les POSES que la recherche se voit RÉELLEMENT proposer.
+
+         C'est le seul moyen de contrôler qu'une idée n'est pas morte avant
+         l'évaluateur : un coup jamais généré ne peut pas être choisi, et
+         aucune note ne le signalera. */
+      function benchCandidatsPose(spec = {}) {
+        const joueur = benchPoserPosition(spec);
+        const candidats = plannerCandidatsPose(joueur);
+        setTestRandomSeed(null);
+        return candidats.map(c => ({
+          shapeKey: c.shapeKey,
+          cells: c.cells,
+          spawn: c.spawn,
+          but: c.but || null,
+          // Distance de la pose au terrain existant : 1 = collée, ∞ = isolée.
+          distanceTerrain: Math.min(...c.cells.map(([r, cc]) => {
+            let d = 99;
+            for (const ile of state.islands || []) {
+              for (const [ir, ic] of ile.cells) {
+                const m = Math.abs(r - ir) + Math.abs(cc - ic);
+                if (m < d) d = m;
+              }
+            }
+            return d;
+          }))
+        }));
+      }
+
+      /* Décomposition complète de l'évaluateur sur une position. */
+      function benchEvaluation(spec = {}) {
+        const joueur = benchPoserPosition(spec);
+        const detail = evaluerAvecDetail(joueur);
+        setTestRandomSeed(null);
+        const parTerme = {};
+        detail.termes.forEach(t => { parTerme[t.terme] = t.montant; });
+        return {
+          note: Math.round(detail.note),
+          termes: parTerme,
+          notes: detail.termes.map(t => `${t.terme}: ${t.montant} — ${(t.notes || []).join(" ")}`)
+        };
+      }
+
       /* Ce que l'évaluateur accorde à la RÉSERVE sur une position donnée.
 
          Le comportement ne suffit pas à contrôler ce point : le poids d'une
@@ -1512,6 +1565,8 @@
         reserve: benchReserve,
         transitionReserve: benchTransitionReserve,
         termeReserve: benchTermeReserve,
+        candidatsPose: benchCandidatsPose,
+        evaluation: benchEvaluation,
         run: benchRunPuzzle,
         /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
 
