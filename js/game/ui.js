@@ -191,7 +191,7 @@
 
 
       function scheduleBoardRender() {
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         if (boardRenderFrame || !state) return;
         boardRenderFrame = requestAnimationFrame(() => {
           boardRenderFrame = 0;
@@ -746,6 +746,7 @@
             cell.className = "cell";
             cell.dataset.r = r;
             cell.dataset.c = c;
+            cell.title = `Coordonnées IA : [${r}, ${c}] — ligne ${r}, colonne ${c}`;
             cell.addEventListener("mouseenter", onCellEnter);
             cell.addEventListener("mousemove", onCellEnter);
             cell.addEventListener("mouseleave", onCellLeave);
@@ -1079,7 +1080,7 @@
         // de cette couche décorative SVG — en mode "alternative", les îles
         // sont déjà représentées par la scène Three.js, cette génération est
         // une seconde représentation visuelle inutile.
-        if (document.body.dataset.visualMode !== "alternative") renderIslandArtLayer();
+        if (!isKayKitBoardActive()) renderIslandArtLayer();
         if (window.ILYOS_PERF) {
           window.ILYOS_PERF.recordBoardCellsTouched(cellsTouched);
           window.ILYOS_PERF.recordBoardRender(performance.now() - __perfStart);
@@ -2597,7 +2598,7 @@
           if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
         };
 
-        if (state.visualMode === "alternative") {
+        if (isKayKitBoardActive()) {
           state.inputLocked = true;
           queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
             state.inputLocked = false;
@@ -2917,7 +2918,7 @@
           if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
         };
 
-        if (state.visualMode === "alternative") {
+        if (isKayKitBoardActive()) {
           state.inputLocked = true;
           queueKayKitActionAnimation(`__push-complete-${pusher.id}__`, "none", result.fell ? 520 : 360, null, null, () => {
             state.inputLocked = false;

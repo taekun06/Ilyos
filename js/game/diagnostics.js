@@ -1520,6 +1520,12 @@
         toggleHudV2Drawer("hudV2GearPopover", "hudV2GearBtn");
       });
       document.getElementById("hudV2GearPopover")?.addEventListener("click", event => {
+        const renderTarget = event.target.closest("[data-hud-render]");
+        if (renderTarget) {
+          applyBoardRenderMode(renderTarget.dataset.hudRender);
+          closeHudV2Drawer();
+          return;
+        }
         const cameraTarget = event.target.closest("[data-hud-camera]");
         if (cameraTarget) {
           const mode = cameraTarget.dataset.hudCamera;

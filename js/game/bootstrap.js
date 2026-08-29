@@ -291,6 +291,26 @@
       let state = null;
       let pendingVisualMode = "alternative";
 
+      /* Le HUD professionnel reste le même dans les deux rendus. Seule la
+         représentation du plateau change : Three.js en 3D, ou le plateau DOM
+         historique en 2D. Ce choix est volontairement local à l'appareil : il
+         ne fait pas partie des règles, des sauvegardes ni de la synchro réseau. */
+      const BOARD_RENDER_MODE_STORAGE_KEY = "ilyos-board-render-mode-v1";
+
+      function readPreferredBoardRenderMode() {
+        try {
+          return localStorage.getItem(BOARD_RENDER_MODE_STORAGE_KEY) === "2d" ? "2d" : "3d";
+        } catch (_) {
+          return "3d";
+        }
+      }
+
+      let boardRenderMode = readPreferredBoardRenderMode();
+
+      function isKayKitBoardActive() {
+        return boardRenderMode !== "2d";
+      }
+
       /* Valeur de state.winner désignant un MATCH NUL. Distincte de null, qui
          signifie « partie en cours » : tout le code teste winner === null pour
          savoir si la partie continue, et doit continuer à le faire. */
