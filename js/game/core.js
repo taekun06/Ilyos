@@ -337,7 +337,7 @@
         // sans rien à montrer. On se contente de faire suivre l'état à la
         // synchronisation 3D existante ; le fallback HTML (hors mode 3D)
         // garde son comportement d'origine, seul endroit où fx-* est visible.
-        if (document.body.dataset.visualMode === "alternative") {
+        if (isKayKitBoardActive()) {
           scheduleKayKitSync();
           setTimeout(() => {
             state.fxCells = [];
@@ -362,7 +362,7 @@
         const a = fromCell.getBoundingClientRect();
         const b = toCell.getBoundingClientRect();
         const ghost = document.createElement("div");
-        const alternative = state?.visualMode === "alternative";
+        const alternative = isKayKitBoardActive();
         ghost.className = `moving-token moving-${kind}${alternative ? " alt-moving-token" : ""}`;
 
         if (alternative) {
@@ -484,7 +484,7 @@
         // /"magic" à proximité de chaque appel de cette fonction). Aucun
         // intérêt à forcer un reflow (void cell.offsetWidth) pour un effet
         // invisible.
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
           const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
           if (!cell) return;
@@ -501,7 +501,7 @@
         // changement de state.islands) — ce pulse DOM (couche interaction/
         // accessibilité, invisible en mode 3D) serait une seconde
         // représentation visuelle pour rien.
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
           island.cells.forEach(([r, c], index) => {
             const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
@@ -535,7 +535,7 @@
         // porte déjà l'effet visuel réel en mode alternative — ce pulse CSS
         // sur #board (couche interaction, invisible dans ce mode) n'apportait
         // rien et forçait un reflow (void offsetWidth) pour rien.
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         els.board.classList.remove("magic-board-pulse");
         void els.board.offsetWidth;
         els.board.classList.add("magic-board-pulse");
@@ -3264,9 +3264,50 @@
         document.body.dataset.visualMode = resolved;
         els.gameScreen.dataset.visualMode = resolved;
         if (state) state.visualMode = resolved;
+        applyBoardRenderMode(boardRenderMode, { persist: false });
+      }
+
+      function updateBoardRenderModeUI() {
+        document.querySelectorAll("[data-hud-render]").forEach(button => {
+          const active = button.dataset.hudRender === boardRenderMode;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-pressed", String(active));
+        });
+
+        document.querySelectorAll("[data-hud-camera]").forEach(button => {
+          button.disabled = !isKayKitBoardActive();
+          button.setAttribute(
+            "title",
+            isKayKitBoardActive() ? "" : "Disponible uniquement en rendu 3D"
+          );
+        });
+      }
+
+      function applyBoardRenderMode(mode = "3d", { persist = true } = {}) {
+        boardRenderMode = mode === "2d" ? "2d" : "3d";
+        document.body.dataset.boardRender = boardRenderMode;
+        els.gameScreen.dataset.boardRender = boardRenderMode;
+
+        if (persist) {
+          try {
+            localStorage.setItem(BOARD_RENDER_MODE_STORAGE_KEY, boardRenderMode);
+          } catch (_) {
+            // Le rendu reste actif pour la session si le stockage est bloqué.
+          }
+        }
+
+        updateBoardRenderModeUI();
+        if (!isKayKitBoardActive()) {
+          hideKayKit3D();
+          requestAnimationFrame(() => {
+            if (state) renderBoard();
+          });
+          return;
+        }
+
         requestAnimationFrame(() => {
           initKayKit3D();
-          resizeKayKit3D();
+          resizeKayKit3D(true);
           scheduleKayKitSync();
         });
       }
