@@ -112,3 +112,18 @@ body[data-plateau-tactique="on"] #plateauTactiqueBtn {
     max-height: calc(100vh - 250px) !important;
   }
 }
+
+/* ANIMATIONS DE CARTES — décoratives, donc transparentes au clic
+   -------------------------------------------------------------
+   Les cartes qui volent de la pioche vers la main traversent le centre du
+   plateau. Elles sont purement décoratives, mais elles interceptaient les
+   clics : pendant une seconde ou deux, les cases sous leur trajectoire ne
+   répondaient plus. `pointer-events:none` règle le problème sans rien
+   déplacer, et surtout sans rapetisser le plateau. */
+body[data-plateau-tactique="on"] .card-cycle-v10-card,
+body[data-plateau-tactique="on"] .card-cycle-v10-source,
+body[data-plateau-tactique="on"] .deck-fly-card,
+body[data-plateau-tactique="on"] .island-art-layer,
+body[data-plateau-tactique="on"] .fx-layer {
+  pointer-events: none !important;
+}
