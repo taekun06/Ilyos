@@ -534,3 +534,75 @@ bouge, dans aucun sens.
 L'autopsie vit dans son propre fragment, `js/game/autopsie.js`, et non dans
 `diagnostics.js` : elle doit fonctionner en partie réelle, alors que
 l'outillage de banc a vocation à sortir du bundle en fin de chantier.
+
+---
+
+# Fidélité de la réserve — trois écritures d'une même règle
+
+La règle tient en une phrase : réserve + cartes inutilisées de la main, jusqu'à
+**5 par type**, tout surplus à la défausse. Elle était écrite à trois endroits.
+
+## Ce que la troisième écriture faisait
+
+`applyTurnTransitionCore`, la transition utilisée par l'anticipation V3,
+recopiait la règle sur le seul `stash` :
+
+```js
+stash[type] = Math.min(5, stash[type] + fraîches);
+hand = [];
+```
+
+`stash` n'est qu'un miroir. La réserve réelle est faite de cartes, et c'est elle
+que lit `availableActionCount`. L'anticipation voyait donc, au tour suivant, une
+réserve qui n'était pas celle que la partie aurait eue — et le surplus ne
+partait jamais à la défausse, d'où la pioche se reconstitue.
+
+Mesuré en remettant l'ancien code une minute, sur trois positions :
+
+| position | actions vues au tour suivant | réellement |
+|---|---|---|
+| réserve 4 MOVE + main 3 MOVE | 4 / 0 / 0 | 5 / 0 / 0 |
+| réserve pleine, main débordante | 5 / 5 / 0 | 5 / 5 / 1 |
+| réserve vide, main ordinaire | **0 / 0 / 0** | 2 / 1 / 0 |
+
+Le dernier cas est le plus parlant : l'IA anticipait un adversaire **sans une
+seule action**. Elle sous-estimait donc systématiquement les ripostes.
+
+Il n'y a plus qu'un corps, `rangerEtDefausserFinDeTour`, appelé par la vraie fin
+de tour, le self-play et la transition simulée. Le prédicat « cette carte
+survit-elle ? » est écrit une fois, et la projection pure lue par l'IA le
+partage avec le rangement qui l'applique.
+
+## Ce qui est jouable n'est pas ce qui est conservable
+
+Le terme `reserve` comptait les cartes **disponibles maintenant**. Une sixième
+MOVE ne verra jamais le tour suivant : lui donner une valeur de conservation
+revenait à payer l'IA pour garder une carte qui allait être défaussée de toute
+façon. `plannerRessourcesConservables` projette le plafond par type ; seules ces
+cartes-là comptent.
+
+Cela ne force rien : l'IA n'est pas poussée à dépenser son surplus. Une carte
+qui ne peut plus être conservée ne vaut simplement plus rien à garder — si son
+seul usage abîme la position, la recherche préfère toujours finir le tour et la
+perdre.
+
+## Le banc des scénarios adverses ne testait pas ce qu'il annonçait
+
+Trouvé en écrivant les contrôles : `benchBuildSnapshot` posait `stash`, et la
+migration qui fabrique les vraies cartes de réserve les puise dans la pioche —
+que le banc laisse vide pour ne dépendre d'aucun tirage. **La réserve demandée
+par un puzzle restait donc à zéro.** Les douze scénarios adverses, dont l'objet
+même est d'anticiper ce que l'adversaire peut faire avec sa réserve, mesuraient
+un adversaire sans moyens.
+
+La réserve du banc est maintenant posée directement. Les douze scénarios passent
+toujours — cette fois contre un adversaire réellement armé.
+
+## Contrôles
+
+`node scripts/verif-reserve.js` — 5 cas de rangement, 3 comparaisons vraie fin
+de tour ↔ transition simulée, 3 mesures du terme d'évaluation.
+
+Le terme est mesuré directement, et non par le comportement : à 5 points la
+carte, une IA réglée sur des ressources fictives jouerait presque toujours
+pareil. Le défaut serait resté invisible jusqu'à une position serrée.

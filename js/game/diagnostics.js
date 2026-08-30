@@ -426,6 +426,16 @@
             action,
             used: false
           }));
+          const reserveDemandee = [];
+          ["MOVE", "PUSH", "MAGIC"].forEach(type => {
+            const voulu = Math.min(5, Math.max(0, Number(spec.stash?.[index]?.[type]) || 0));
+            for (let i = 0; i < voulu; i++) {
+              reserveDemandee.push({
+                id: `bench-P${index}-R${type}${i}`,
+                action: type, used: false, fromStash: false, fromReserve: true
+              });
+            }
+          });
           return {
             id: index,
             name: index === 0 ? "BENCH IA" : "BENCH ADVERSAIRE",
@@ -442,7 +452,16 @@
             deck: [],
             discard: [],
             hand: main,
-            stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {})
+            stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {}),
+            /* La réserve du banc est POSÉE, pas migrée.
+
+               `stash` n'est qu'un miroir : la réserve réelle est faite de
+               cartes, et la migration qui les fabrique les puise dans la
+               pioche — que le banc laisse justement vide pour ne dépendre
+               d'aucun tirage. Une réserve demandée par un puzzle restait donc
+               silencieusement à zéro, et les scénarios adverses mesuraient un
+               adversaire sans moyens. */
+            reserveCards: reserveDemandee
           };
         });
 
@@ -1038,6 +1057,157 @@
       }
 
       /* =====================================================================
+         RÉSERVE : LA PROJECTION ET LA VRAIE FIN DE TOUR DISENT-ELLES PAREIL ?
+
+         La règle tient en une phrase — réserve + main inutilisée, jusqu'à 5
+         par type, le surplus à la défausse — mais elle était écrite à trois
+         endroits. Ce banc vérifie que la projection lue par l'IA et le
+         rangement réellement appliqué donnent le même résultat, y compris
+         quand la main déborde.
+         ===================================================================== */
+
+      function benchReserveJoueur(reserve = {}, main = []) {
+        const joueur = {
+          id: 0, hand: [], discard: [], deck: [],
+          reserveCards: [], stash: { MOVE: 0, PUSH: 0, MAGIC: 0 }
+        };
+        ["MOVE", "PUSH", "MAGIC"].forEach(type => {
+          for (let i = 0; i < (reserve[type] || 0); i++) {
+            joueur.reserveCards.push({ id: `r-${type}-${i}`, action: type, used: false, fromReserve: true });
+          }
+        });
+        main.forEach((type, i) => {
+          joueur.hand.push({ id: `m-${type}-${i}`, action: type, used: false });
+        });
+        return joueur;
+      }
+
+      /* Un cas : projection annoncée, puis rangement réel sur le même joueur. */
+      function benchReserve(cas = {}) {
+        const joueur = benchReserveJoueur(cas.reserve, cas.main);
+        const projete = projeterReserveFinDeTour(joueur);
+        rangerEtDefausserFinDeTour(joueur);
+        const reel = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        (joueur.reserveCards || []).forEach(c => { if (c.action in reel) reel[c.action]++; });
+        return {
+          projete,
+          reel,
+          mainRestante: (joueur.hand || []).length,
+          defausse: (joueur.discard || []).length,
+          stash: { ...joueur.stash },
+          jouablesApres: {
+            MOVE: reel.MOVE, PUSH: reel.PUSH, MAGIC: reel.MAGIC
+          }
+        };
+      }
+
+      /* Ce que l'évaluateur accorde à la RÉSERVE sur une position donnée.
+
+         Le comportement ne suffit pas à contrôler ce point : le poids d'une
+         carte conservée vaut 5, soit trois fois rien face à une couronne à
+         plusieurs milliers. Une IA réglée sur des ressources fictives jouerait
+         donc presque toujours pareil — et le défaut passerait inaperçu jusqu'à
+         une position serrée. On mesure donc le terme lui-même. */
+      function benchTermeReserve(spec = {}) {
+        const joueurIA = spec.aiPlayer ?? 0;
+        setTestRandomSeed(spec.seed ?? 1);
+        const instantane = benchBuildSnapshot(spec);
+        applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+        state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
+        const joueur = state.players[joueurIA];
+        const detail = evaluerAvecDetail(joueurIA);
+        const terme = detail.termes.find(t => t.terme === "reserve");
+        setTestRandomSeed(null);
+        return {
+          montant: terme ? terme.montant : 0,
+          libelle: terme && terme.notes ? terme.notes.join(" ") : "",
+          poidsUnitaire: PLAN_POIDS.carteConservee,
+          jouables: plannerTotalRessources(joueurIA),
+          conservables: plannerTotalConservable(joueurIA),
+          detailConservable: plannerRessourcesConservables(joueurIA),
+          disponibles: {
+            MOVE: availableActionCount("MOVE", joueur),
+            PUSH: availableActionCount("PUSH", joueur),
+            MAGIC: availableActionCount("MAGIC", joueur)
+          }
+        };
+      }
+
+      /* Lecture normalisée de tout ce qui décrit les ressources d'un joueur.
+         La réserve physique fait autorité ; `stash` n'est qu'un miroir, et
+         c'est justement quand les deux se contredisent que l'IA se trompe. */
+      function benchLireRessources(joueur) {
+        const compter = liste => {
+          const c = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          (liste || []).forEach(x => { if (x && x.action in c) c[x.action]++; });
+          return c;
+        };
+        return {
+          reserve: compter(joueur.reserveCards),
+          stash: {
+            MOVE: joueur.stash?.MOVE || 0,
+            PUSH: joueur.stash?.PUSH || 0,
+            MAGIC: joueur.stash?.MAGIC || 0
+          },
+          main: (joueur.hand || []).length,
+          defausse: (joueur.discard || []).length,
+          disponibles: {
+            MOVE: availableActionCount("MOVE", joueur),
+            PUSH: availableActionCount("PUSH", joueur),
+            MAGIC: availableActionCount("MAGIC", joueur)
+          }
+        };
+      }
+
+      /* La VRAIE fin de tour et la transition simulée du planner, sur la même
+         position, comparées sur le joueur sortant. Les mains diffèrent par
+         construction — l'anticipation distribue une main plausible au joueur
+         entrant — mais tout ce qui décrit les ressources du sortant doit
+         coïncider, sans quoi l'IA anticipe une réserve qui n'existera pas. */
+      async function benchTransitionReserve(cas = {}) {
+        const preparer = () => {
+          setTestRandomSeed(cas.seed ?? 1);
+          const instantane = benchBuildSnapshot(cas.spec || {});
+          applyStateSnapshot(JSON.parse(JSON.stringify(instantane)));
+          state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
+          state.players.forEach(j => { j.isAI = false; });
+          state.islandPlacedThisTurn = true;
+          state.phase = "ACTION_SELECT";
+          const joueur = state.players[state.currentPlayer];
+          joueur.reserveCards = [];
+          ["MOVE", "PUSH", "MAGIC"].forEach(type => {
+            for (let i = 0; i < ((cas.reserve || {})[type] || 0); i++) {
+              joueur.reserveCards.push({ id: `r-${type}-${i}`, action: type, used: false, fromReserve: true });
+            }
+          });
+          joueur.hand = (cas.main || []).map((type, i) => ({ id: `m-${type}-${i}`, action: type, used: false }));
+          joueur.discard = [];
+          joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          // Miroir aligné sur l'autorité, par la lecture publique.
+          ["MOVE", "PUSH", "MAGIC"].forEach(type => {
+            joueur.stash[type] = storedActionCount(type, joueur);
+          });
+          return state.currentPlayer;
+        };
+
+        // 1. Transition simulée, sur un clone, présentation coupée.
+        const sortantId = preparer();
+        const clone = cloneStateForSimulation();
+        const simule = withSimulatedState(clone, () => {
+          applyTurnTransitionCore();
+          return benchLireRessources(state.players[sortantId]);
+        });
+
+        // 2. Chemin réel : la fin de tour que déclenche un joueur.
+        preparer();
+        await endTurn(true);
+        await sleep(900);
+        const reel = benchLireRessources(state.players[sortantId]);
+        setTestRandomSeed(null);
+        return { simule, reel };
+      }
+
+      /* =====================================================================
          SELF-PLAY SANS RENDU
 
          Une partie affichée dure trois à cinq minutes, presque entièrement
@@ -1066,13 +1236,7 @@
            Une première version recopiait la logique et divergeait aussitôt —
            les cartes jouées n'allaient plus à la défausse, la pioche se vidait
            et une partie simulée durait 121 tours sans un seul point. */
-        rangerCartesFinDeTour(sortant);
-        // Ce qui n'a pas pu être rangé quitte la main par la défausse.
-        sortant.discard = Array.isArray(sortant.discard) ? sortant.discard : [];
-        (sortant.hand || []).forEach(carte => {
-          sortant.discard.push({ ...carte, used: false, fromStash: false, fromReserve: false });
-        });
-        sortant.hand = [];
+        rangerEtDefausserFinDeTour(sortant);
 
         state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
         state.turn++;
@@ -1345,6 +1509,9 @@
       window.ILYOS_BENCH = {
         poussee: benchPoussee,
         validation: benchValidation,
+        reserve: benchReserve,
+        transitionReserve: benchTransitionReserve,
+        termeReserve: benchTermeReserve,
         run: benchRunPuzzle,
         /* RELAIS ENTRE DEUX BUILDS — self-play croisé.
 

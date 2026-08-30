@@ -201,6 +201,33 @@
          * l'envoie normalement à la défausse. Une carte réservée n'y va pas.
          * ------------------------------------------------------------------ */
         const endTurnBeforePhysicalReserve = endTurn;
+        /* LE prédicat de rangement, écrit une seule fois.
+
+           Le rangement réel et la projection utilisée par l'IA doivent
+           répondre à la même question : cette carte survivra-t-elle à la fin
+           du tour ? Deux formulations, même équivalentes au départ, finissent
+           par diverger — et l'IA se règlerait alors sur des ressources qui
+           n'existent pas. */
+        function carteRangeable(carte, comptes) {
+          const type = carte?.action;
+          return !carte?.used
+            && PHYSICAL_RESERVE_TYPES.includes(type)
+            && comptes[type] < PHYSICAL_RESERVE_LIMIT_PER_TYPE;
+        }
+
+        /* Projection PURE : ce que la réserve contiendra, sans rien toucher. */
+        projeterReserveFinDeTour = function projeterReservePhysique(player) {
+          const futur = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          if (!player) return futur;
+          ensurePhysicalReserve(player);
+          const comptes = physicalReserveCounts(player);
+          PHYSICAL_RESERVE_TYPES.forEach(type => { futur[type] = comptes[type]; });
+          (player.hand || []).forEach(carte => {
+            if (carteRangeable(carte, futur)) futur[carte.action]++;
+          });
+          return futur;
+        };
+
         /* Rangement de fin de tour, corps unique. Ce qui tient en réserve y
            va physiquement ; le reste part à la défausse, d'où la pioche se
            reconstitue. Le self-play appelle exactement cette fonction : une
@@ -217,10 +244,7 @@
 
           player.hand.forEach(carte => {
             const type = carte?.action;
-            const rangeable = !carte?.used
-              && PHYSICAL_RESERVE_TYPES.includes(type)
-              && comptes[type] < PHYSICAL_RESERVE_LIMIT_PER_TYPE;
-            if (rangeable) {
+            if (carteRangeable(carte, comptes)) {
               comptes[type]++;
               range[type]++;
               player.reserveCards.push({ ...carte, used: false, fromStash: false, fromReserve: true });
@@ -228,6 +252,8 @@
               gardees.push(carte);
             }
           });
+          /* `gardees` n'est pas un stock : c'est le surplus, qui part à la
+             défausse juste après par le chemin appelant. */
           player.hand = gardees;
           syncPhysicalReserveStash(player);
           return range;
