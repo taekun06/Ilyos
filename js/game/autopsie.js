@@ -89,6 +89,8 @@
               return `ramasse la couronne avec le gardien ${depuis(a.charId)}`;
             case "TRANSMISSION":
               return `passe la couronne de ${depuis(a.deId)} à ${depuis(a.versId)}`;
+            case "DEPOT":
+              return `dépose la couronne en ${casePlateau([a.r, a.c])} depuis ${depuis(a.charId)}`;
             default:
               return a.type;
           }
