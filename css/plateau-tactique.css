@@ -1,0 +1,129 @@
+/* PLATEAU TACTIQUE 2D — habillage
+   ===============================
+
+   Tout est porté par `body[data-plateau-tactique="on"]`. Tant que le mode est
+   éteint, ce fichier n'a strictement aucun effet sur le jeu : il ne redéfinit
+   aucune règle existante et ne peut donc pas entrer en conflit avec le reste
+   de la feuille de style, ni avec une autre branche en cours.               */
+
+#plateauTactique {
+  display: none;
+  border-radius: 18px;
+  background: #0e1a24;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 0 0 1px rgba(140, 190, 230, .18);
+  cursor: pointer;
+  touch-action: manipulation;
+  /* Le canvas se dessine à la résolution de l'écran : aucun lissage ne doit
+     venir brouiller les liserés d'un pixel. */
+  image-rendering: auto;
+}
+
+body[data-plateau-tactique="on"] #plateauTactique {
+  display: block;
+  /* Collé en haut, pas centré verticalement : le bas de l'écran appartient à
+     la main de cartes et aux commandes, qui flottent au-dessus du plateau. */
+  margin: 0 auto auto;
+}
+
+body[data-plateau-tactique="on"] .board-wrap {
+  align-items: start;
+}
+
+/* Le plateau d'origine reste dans le DOM — c'est lui qui reçoit les clics
+   relayés — mais il ne se voit plus. `visibility` plutôt que `display:none` :
+   un élément retiré du flux ne recevrait plus certains événements de souris. */
+body[data-plateau-tactique="on"] #board {
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* La scène 3D et ses décors s'effacent : la vue tactique doit être calme. */
+body[data-plateau-tactique="on"] .kaykit-canvas,
+body[data-plateau-tactique="on"] .island-art-layer,
+body[data-plateau-tactique="on"] .kaykit-controls {
+  display: none !important;
+}
+
+body[data-plateau-tactique="on"] .board-wrap {
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+
+/* Bascule. Discrète, toujours au même endroit, jamais dans le chemin du
+   plateau. */
+#plateauTactiqueBtn {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 60;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(160, 210, 240, .45);
+  background: rgba(12, 26, 36, .88);
+  color: #eaf4fb;
+  font: 600 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: .08em;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background .15s ease, transform .15s ease;
+}
+
+#plateauTactiqueBtn:hover {
+  background: rgba(24, 48, 64, .95);
+  transform: translateY(-1px);
+}
+
+body[data-plateau-tactique="on"] #plateauTactiqueBtn {
+  border-color: rgba(55, 214, 168, .65);
+  color: #37d6a8;
+}
+
+@media (max-width: 720px) {
+  #plateauTactiqueBtn {
+    right: 10px;
+    bottom: 10px;
+    padding: 7px 11px;
+    font-size: 11px;
+  }
+}
+
+/* PANNEAU « REVUE IA » — remonté
+   ------------------------------
+   Il était fixé en bas à droite, par-dessus « FIN DU TOUR » et la défausse :
+   deux commandes qu'on doit pouvoir atteindre à tout moment. Un panneau
+   d'analyse ne doit jamais couvrir une commande de jeu.
+
+   Sa position est écrite en style en ligne dans autopsie.js — d'où le
+   `!important`. On le corrige depuis ce fichier plutôt que dans le sien :
+   le module d'autopsie évolue sur une autre branche, et une règle ajoutée
+   ici ne peut entrer en conflit avec rien. */
+.ilyos-revue-panneau {
+  top: 92px !important;
+  bottom: auto !important;
+  max-height: calc(100vh - 300px) !important;
+}
+
+@media (max-height: 780px) {
+  .ilyos-revue-panneau {
+    top: 76px !important;
+    max-height: calc(100vh - 250px) !important;
+  }
+}
+
+/* ANIMATIONS DE CARTES — décoratives, donc transparentes au clic
+   -------------------------------------------------------------
+   Les cartes qui volent de la pioche vers la main traversent le centre du
+   plateau. Elles sont purement décoratives, mais elles interceptaient les
+   clics : pendant une seconde ou deux, les cases sous leur trajectoire ne
+   répondaient plus. `pointer-events:none` règle le problème sans rien
+   déplacer, et surtout sans rapetisser le plateau. */
+body[data-plateau-tactique="on"] .card-cycle-v10-card,
+body[data-plateau-tactique="on"] .card-cycle-v10-source,
+body[data-plateau-tactique="on"] .deck-fly-card,
+body[data-plateau-tactique="on"] .island-art-layer,
+body[data-plateau-tactique="on"] .fx-layer {
+  pointer-events: none !important;
+}
