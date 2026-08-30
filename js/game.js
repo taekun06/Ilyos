@@ -295,6 +295,26 @@
       let state = null;
       let pendingVisualMode = "alternative";
 
+      /* Le HUD professionnel reste le même dans les deux rendus. Seule la
+         représentation du plateau change : Three.js en 3D, ou le plateau DOM
+         historique en 2D. Ce choix est volontairement local à l'appareil : il
+         ne fait pas partie des règles, des sauvegardes ni de la synchro réseau. */
+      const BOARD_RENDER_MODE_STORAGE_KEY = "ilyos-board-render-mode-v1";
+
+      function readPreferredBoardRenderMode() {
+        try {
+          return localStorage.getItem(BOARD_RENDER_MODE_STORAGE_KEY) === "2d" ? "2d" : "3d";
+        } catch (_) {
+          return "3d";
+        }
+      }
+
+      let boardRenderMode = readPreferredBoardRenderMode();
+
+      function isKayKitBoardActive() {
+        return boardRenderMode !== "2d";
+      }
+
       /* Valeur de state.winner désignant un MATCH NUL. Distincte de null, qui
          signifie « partie en cours » : tout le code teste winner === null pour
          savoir si la partie continue, et doit continuer à le faire. */
@@ -936,7 +956,7 @@
       }
 
       function initKayKit3D() {
-        if (document.body.dataset.visualMode !== "alternative") return;
+        if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
           kaykit3D.canvas.style.display = "block";
           kaykit3D.uiNodes.forEach(node => node.style.display = "flex");
@@ -1277,10 +1297,10 @@
       }
 
       function hideKayKit3D() {
+        document.body.classList.remove("kaykit-ready");
         if (!kaykit3D) return;
         kaykit3D.canvas.style.display = "none";
         kaykit3D.uiNodes.forEach(node => node.style.display = "none");
-        document.body.classList.remove("kaykit-ready");
       }
 
       function kaykitGeometry(name, factory) {
@@ -4943,7 +4963,7 @@
       }
 
       function resizeKayKit3D(forceFit = false) {
-        if (!kaykit3D || document.body.dataset.visualMode !== "alternative") return;
+        if (!kaykit3D || !isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
           if (!kaykit3D) return;
           const wrapRect = els.boardWrap.getBoundingClientRect();
@@ -4973,7 +4993,7 @@
       }
 
       function scheduleKayKitSync() {
-        if (document.body.dataset.visualMode != "alternative") return;
+        if (!isKayKitBoardActive()) return;
         const now = performance.now();
         if (kaykit3D?.syncInProgress) {
           kaykit3D.syncPending = true;
@@ -6255,7 +6275,7 @@
       }
 
       function refreshKayKitHoverPreviews() {
-        if (!kaykit3D?.actionPreviewGroup || !state || document.body.dataset.visualMode !== "alternative") return;
+        if (!kaykit3D?.actionPreviewGroup || !state || !isKayKitBoardActive()) return;
         // Le gardien sélectionné via SMART_CHAR (clic direct) doit produire le même
         // aperçu 3D que l'action MOVE/PUSH classique : on couvre les deux chemins
         // ici plutôt que de dupliquer la simulation ou le rendu plus bas.
@@ -9439,7 +9459,7 @@
       }
 
       function syncKayKitScene() {
-        if (!kaykit3D || !state || document.body.dataset.visualMode !== "alternative") return;
+        if (!kaykit3D || !state || !isKayKitBoardActive()) return;
         if (kaykit3D.syncInProgress) {
           kaykit3D.syncPending = true;
           return;
@@ -9960,7 +9980,7 @@
         // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
         // delta géant n'arrive d'un coup au retour. La boucle rAF continue
         // d'être programmée, mais chaque tick ne coûte alors presque rien.
-        const gameHidden = document.body.dataset.visualMode !== "alternative"
+        const gameHidden = !isKayKitBoardActive()
           || !els.gameScreen
           || els.gameScreen.classList.contains("hidden");
         if (document.hidden || gameHidden) {
@@ -10391,7 +10411,7 @@
         // sans rien à montrer. On se contente de faire suivre l'état à la
         // synchronisation 3D existante ; le fallback HTML (hors mode 3D)
         // garde son comportement d'origine, seul endroit où fx-* est visible.
-        if (document.body.dataset.visualMode === "alternative") {
+        if (isKayKitBoardActive()) {
           scheduleKayKitSync();
           setTimeout(() => {
             state.fxCells = [];
@@ -10416,7 +10436,7 @@
         const a = fromCell.getBoundingClientRect();
         const b = toCell.getBoundingClientRect();
         const ghost = document.createElement("div");
-        const alternative = state?.visualMode === "alternative";
+        const alternative = isKayKitBoardActive();
         ghost.className = `moving-token moving-${kind}${alternative ? " alt-moving-token" : ""}`;
 
         if (alternative) {
@@ -10538,7 +10558,7 @@
         // /"magic" à proximité de chaque appel de cette fonction). Aucun
         // intérêt à forcer un reflow (void cell.offsetWidth) pour un effet
         // invisible.
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
           const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
           if (!cell) return;
@@ -10555,7 +10575,7 @@
         // changement de state.islands) — ce pulse DOM (couche interaction/
         // accessibilité, invisible en mode 3D) serait une seconde
         // représentation visuelle pour rien.
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
           island.cells.forEach(([r, c], index) => {
             const cell = els.board.querySelector(`[data-r="${r}"][data-c="${c}"]`);
@@ -10589,7 +10609,7 @@
         // porte déjà l'effet visuel réel en mode alternative — ce pulse CSS
         // sur #board (couche interaction, invisible dans ce mode) n'apportait
         // rien et forçait un reflow (void offsetWidth) pour rien.
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         els.board.classList.remove("magic-board-pulse");
         void els.board.offsetWidth;
         els.board.classList.add("magic-board-pulse");
@@ -13318,9 +13338,50 @@
         document.body.dataset.visualMode = resolved;
         els.gameScreen.dataset.visualMode = resolved;
         if (state) state.visualMode = resolved;
+        applyBoardRenderMode(boardRenderMode, { persist: false });
+      }
+
+      function updateBoardRenderModeUI() {
+        document.querySelectorAll("[data-hud-render]").forEach(button => {
+          const active = button.dataset.hudRender === boardRenderMode;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-pressed", String(active));
+        });
+
+        document.querySelectorAll("[data-hud-camera]").forEach(button => {
+          button.disabled = !isKayKitBoardActive();
+          button.setAttribute(
+            "title",
+            isKayKitBoardActive() ? "" : "Disponible uniquement en rendu 3D"
+          );
+        });
+      }
+
+      function applyBoardRenderMode(mode = "3d", { persist = true } = {}) {
+        boardRenderMode = mode === "2d" ? "2d" : "3d";
+        document.body.dataset.boardRender = boardRenderMode;
+        els.gameScreen.dataset.boardRender = boardRenderMode;
+
+        if (persist) {
+          try {
+            localStorage.setItem(BOARD_RENDER_MODE_STORAGE_KEY, boardRenderMode);
+          } catch (_) {
+            // Le rendu reste actif pour la session si le stockage est bloqué.
+          }
+        }
+
+        updateBoardRenderModeUI();
+        if (!isKayKitBoardActive()) {
+          hideKayKit3D();
+          requestAnimationFrame(() => {
+            if (state) renderBoard();
+          });
+          return;
+        }
+
         requestAnimationFrame(() => {
           initKayKit3D();
-          resizeKayKit3D();
+          resizeKayKit3D(true);
           scheduleKayKitSync();
         });
       }
@@ -16734,7 +16795,7 @@
 
 
       function scheduleBoardRender() {
-        if (document.body.dataset.visualMode === "alternative") return;
+        if (isKayKitBoardActive()) return;
         if (boardRenderFrame || !state) return;
         boardRenderFrame = requestAnimationFrame(() => {
           boardRenderFrame = 0;
@@ -17289,6 +17350,7 @@
             cell.className = "cell";
             cell.dataset.r = r;
             cell.dataset.c = c;
+            cell.title = `Coordonnées IA : [${r}, ${c}] — ligne ${r}, colonne ${c}`;
             cell.addEventListener("mouseenter", onCellEnter);
             cell.addEventListener("mousemove", onCellEnter);
             cell.addEventListener("mouseleave", onCellLeave);
@@ -17622,7 +17684,7 @@
         // de cette couche décorative SVG — en mode "alternative", les îles
         // sont déjà représentées par la scène Three.js, cette génération est
         // une seconde représentation visuelle inutile.
-        if (document.body.dataset.visualMode !== "alternative") renderIslandArtLayer();
+        if (!isKayKitBoardActive()) renderIslandArtLayer();
         if (window.ILYOS_PERF) {
           window.ILYOS_PERF.recordBoardCellsTouched(cellsTouched);
           window.ILYOS_PERF.recordBoardRender(performance.now() - __perfStart);
@@ -19140,7 +19202,7 @@
           if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
         };
 
-        if (state.visualMode === "alternative") {
+        if (isKayKitBoardActive()) {
           state.inputLocked = true;
           queueKayKitActionAnimation(char.id, "move", walkDuration, { r, c }, path, () => {
             state.inputLocked = false;
@@ -19460,7 +19522,7 @@
           if (allCardsUsed()) showToast("Toutes les actions disponibles ont été utilisées.");
         };
 
-        if (state.visualMode === "alternative") {
+        if (isKayKitBoardActive()) {
           state.inputLocked = true;
           queueKayKitActionAnimation(`__push-complete-${pusher.id}__`, "none", result.fell ? 520 : 360, null, null, () => {
             state.inputLocked = false;
@@ -26539,6 +26601,12 @@
         toggleHudV2Drawer("hudV2GearPopover", "hudV2GearBtn");
       });
       document.getElementById("hudV2GearPopover")?.addEventListener("click", event => {
+        const renderTarget = event.target.closest("[data-hud-render]");
+        if (renderTarget) {
+          applyBoardRenderMode(renderTarget.dataset.hudRender);
+          closeHudV2Drawer();
+          return;
+        }
         const cameraTarget = event.target.closest("[data-hud-camera]");
         if (cameraTarget) {
           const mode = cameraTarget.dataset.hudCamera;

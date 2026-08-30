@@ -599,7 +599,7 @@
       }
 
       function initKayKit3D() {
-        if (document.body.dataset.visualMode !== "alternative") return;
+        if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
           kaykit3D.canvas.style.display = "block";
           kaykit3D.uiNodes.forEach(node => node.style.display = "flex");
@@ -940,10 +940,10 @@
       }
 
       function hideKayKit3D() {
+        document.body.classList.remove("kaykit-ready");
         if (!kaykit3D) return;
         kaykit3D.canvas.style.display = "none";
         kaykit3D.uiNodes.forEach(node => node.style.display = "none");
-        document.body.classList.remove("kaykit-ready");
       }
 
       function kaykitGeometry(name, factory) {
@@ -4606,7 +4606,7 @@
       }
 
       function resizeKayKit3D(forceFit = false) {
-        if (!kaykit3D || document.body.dataset.visualMode !== "alternative") return;
+        if (!kaykit3D || !isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
           if (!kaykit3D) return;
           const wrapRect = els.boardWrap.getBoundingClientRect();
@@ -4636,7 +4636,7 @@
       }
 
       function scheduleKayKitSync() {
-        if (document.body.dataset.visualMode != "alternative") return;
+        if (!isKayKitBoardActive()) return;
         const now = performance.now();
         if (kaykit3D?.syncInProgress) {
           kaykit3D.syncPending = true;
@@ -5918,7 +5918,7 @@
       }
 
       function refreshKayKitHoverPreviews() {
-        if (!kaykit3D?.actionPreviewGroup || !state || document.body.dataset.visualMode !== "alternative") return;
+        if (!kaykit3D?.actionPreviewGroup || !state || !isKayKitBoardActive()) return;
         // Le gardien sélectionné via SMART_CHAR (clic direct) doit produire le même
         // aperçu 3D que l'action MOVE/PUSH classique : on couvre les deux chemins
         // ici plutôt que de dupliquer la simulation ou le rendu plus bas.
@@ -9102,7 +9102,7 @@
       }
 
       function syncKayKitScene() {
-        if (!kaykit3D || !state || document.body.dataset.visualMode !== "alternative") return;
+        if (!kaykit3D || !state || !isKayKitBoardActive()) return;
         if (kaykit3D.syncInProgress) {
           kaykit3D.syncPending = true;
           return;
@@ -9623,7 +9623,7 @@
         // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
         // delta géant n'arrive d'un coup au retour. La boucle rAF continue
         // d'être programmée, mais chaque tick ne coûte alors presque rien.
-        const gameHidden = document.body.dataset.visualMode !== "alternative"
+        const gameHidden = !isKayKitBoardActive()
           || !els.gameScreen
           || els.gameScreen.classList.contains("hidden");
         if (document.hidden || gameHidden) {

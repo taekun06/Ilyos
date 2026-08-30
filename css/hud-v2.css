@@ -908,6 +908,18 @@ body[data-visual-mode="alternative"] .hud-v2-popover-btn:hover {
   background: rgba(255, 255, 255, .12);
 }
 
+body[data-visual-mode="alternative"] .hud-v2-popover-btn.is-active {
+  color: #fff4c3;
+  background: rgba(216, 177, 78, .22);
+  border-color: rgba(244, 207, 111, .62);
+  box-shadow: 0 0 0 1px rgba(244, 207, 111, .12) inset;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-btn:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
 body[data-visual-mode="alternative"] .hud-v2-hand-popover {
   position: absolute;
   bottom: calc(100% + 10px);
@@ -951,10 +963,22 @@ body[data-visual-mode="alternative"] .hud-v2-popover-section-label {
   padding: 2px 6px;
 }
 
-body[data-visual-mode="alternative"] .hud-v2-popover-camera-grid {
+body[data-visual-mode="alternative"] .hud-v2-popover-camera-grid,
+body[data-visual-mode="alternative"] .hud-v2-popover-render-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-popover-render-grid {
+  grid-template-columns: 1fr;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-coordinate-help {
+  margin: 2px 6px 0;
+  font-size: 9px;
+  line-height: 1.35;
+  color: var(--hud-v2-text-dim);
 }
 
 body[data-visual-mode="alternative"] .hud-v2-popover-divider {
