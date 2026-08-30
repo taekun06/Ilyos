@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260820_HUD_V13";
+  const VERSION = "ILYOS_20260830_PUBLIC_FIRSTLOAD_1";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -12,19 +12,19 @@
     if (!('serviceWorker' in navigator)) return;
     if (!/\.github\.io$/i.test(location.hostname)) return;
 
-    let reloadStarted = false;
+    /* IMPORTANT : ne jamais recharger automatiquement la toute première visite.
+       Sur une machine neuve, le Service Worker s'installe pendant que le menu,
+       Three.js et les modèles commencent à charger. L'ancien controllerchange
+       faisait alors location.reload() au milieu de ce premier chargement : sur
+       une connexion lente ou une machine moins rapide, cela pouvait donner un
+       écran interrompu / un lancement incomplet. Le premier chargement est déjà
+       frais puisqu'il n'a encore aucun cache ; le worker prendra naturellement
+       la main pour les requêtes suivantes. */
     navigator.serviceWorker.register('./sw.js', {
       scope: './',
       updateViaCache: 'none'
     }).then(registration => {
       registration.update().catch(() => {});
-      if (!navigator.serviceWorker.controller) {
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (reloadStarted) return;
-          reloadStarted = true;
-          location.reload();
-        }, { once: true });
-      }
     }).catch(error => {
       console.warn('[ILYOS] freshness worker indisponible', error);
     });
