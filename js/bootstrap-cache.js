@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260830_MOBILE_INPUT_1";
+  const VERSION = "ILYOS_20260830_MOBILE_INPUT_2";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -52,7 +52,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20260830-mobile-input-v1';
+  const VERSION = '20260830-mobile-input-v2';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
@@ -76,9 +76,9 @@ function ilyosLoadScriptOnce(marker, src) {
     /* Départ de partie en VUE FACE + caméra AUTO — inchangé. */
     ilyosLoadScriptOnce('camera-start-face-auto-v10', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);
 
-    /* Fiabilisation tactile : fallback tap→click pour le canvas 3D, sans
-       double déclenchement, et vrai comportement du bouton Confirmer d'île. */
-    ilyosLoadScriptOnce('mobile-input-v1', `./js/mobile-input-v1.js?v=${VERSION}`);
+    /* Fiabilisation tactile : V2 neutralise le click natif du canvas après un
+       touch et le rejoue une fois le drag OrbitControls stabilisé. */
+    ilyosLoadScriptOnce('mobile-input-v2', `./js/mobile-input-v1.js?v=${VERSION}`);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
