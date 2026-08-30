@@ -49,3 +49,12 @@ sky-band-blend-02-23-azimut.webp — variante "blend0223azimut". Coupure par
   garanti), Sky_23 domine à l'azimut opposé au soleil (KAYKIT_SKY_SUN.u=.75
   → pic à .25), Sky_02 domine côté soleil — même logique chaud/froid que le
   contre-jour peint, appliquée cette fois à l'image de fond elle-même.
+
+Panorama d'archipel ILYOS
+=========================
+
+ilyos-horizon-north-v1.png, ilyos-horizon-east-v1.png,
+ilyos-horizon-south-v1.png, ilyos-horizon-west-v1.png — quatre plaques
+directionnelles originales générées spécifiquement pour ILYOS le 29/08/2026.
+Elles forment un environnement à quatre secteurs sans projection cylindrique ;
+aucun asset ou panorama tiers n'est redistribué.
