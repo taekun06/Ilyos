@@ -716,6 +716,28 @@
         farRing: 30                               // rayon minimal des silhouettes lointaines
       };
 
+      // Quatre plaques directionnelles remplacent le cylindre : chaque quart de
+      // tour dispose ainsi de sa propre image haute définition et reste parfaitement
+      // rectiligne. La plaque visible accompagne seulement la caméra, tandis que le
+      // choix des deux textures et leur décalage horizontal dépendent de l'azimut du
+      // monde. Le décor paraît donc ancré à 360° sans aucune courbure géométrique.
+      const KAYKIT_HORIZON_PANORAMA = {
+        urls: [
+          "./assets/sky/ilyos-horizon-north-v1.png",
+          "./assets/sky/ilyos-horizon-east-v1.png",
+          "./assets/sky/ilyos-horizon-south-v1.png",
+          "./assets/sky/ilyos-horizon-west-v1.png"
+        ],
+        radius: 92,
+        width: 138,
+        height: 77.625,
+        verticalOffset: 0,
+        opacity: .90,
+        blendStart: .36,
+        blendEnd: .64,
+        panAmount: .22
+      };
+
       // Palette « sanctuaire céleste lumineux » : bleu soutenu au zénith, bande
       // d'horizon ivoire, jamais de cyan saturé ni de ciel dramatique.
       //
@@ -1154,6 +1176,7 @@
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
+          horizonPanorama: null,        // plaque directionnelle : images indexées sur l'azimut du monde
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -2317,6 +2340,139 @@
         return geometry;
       }
 
+      function updateKayKitHorizonPanorama() {
+        const panorama = kaykit3D?.horizonPanorama;
+        const camera = kaykit3D?.camera;
+        const material = panorama?.material;
+        const textures = panorama?.userData?.directionalTextures;
+        if (!panorama?.parent || !camera || !material?.uniforms || !textures?.length) return;
+
+        // La plaque reste perpendiculaire au regard pour conserver des lignes droites.
+        // Son contenu, lui, est indexé sur l'azimut opposé à la caméra : tourner le
+        // plateau révèle bien les quatre directions du monde au lieu de faire suivre
+        // une image unique collée à l'écran.
+        const target = kaykit3D.viewTarget || { x: 0, z: 0 };
+        const dx = camera.position.x - target.x;
+        const dy = camera.position.y - (target.y || 0);
+        const dz = camera.position.z - target.z;
+        const horizontalLength = Math.hypot(dx, dz) || 1;
+        const fullLength = Math.hypot(dx, dy, dz) || 1;
+        const backgroundX = -dx / horizontalLength;
+        const backgroundZ = -dz / horizontalLength;
+        panorama.position.set(
+          target.x - (dx / fullLength) * KAYKIT_HORIZON_PANORAMA.radius,
+          (target.y || 0) - (dy / fullLength) * KAYKIT_HORIZON_PANORAMA.radius + KAYKIT_HORIZON_PANORAMA.verticalOffset,
+          target.z - (dz / fullLength) * KAYKIT_HORIZON_PANORAMA.radius
+        );
+        panorama.lookAt(camera.position.x, camera.position.y, camera.position.z);
+
+        const count = textures.length;
+        const angle = Math.atan2(backgroundX, backgroundZ);
+        const sector = ((angle / (Math.PI * 2)) * count + count) % count;
+        const indexA = Math.floor(sector) % count;
+        const indexB = (indexA + 1) % count;
+        const local = sector - Math.floor(sector);
+        const span = Math.max(.001, KAYKIT_HORIZON_PANORAMA.blendEnd - KAYKIT_HORIZON_PANORAMA.blendStart);
+        let mix = Math.max(0, Math.min(1, (local - KAYKIT_HORIZON_PANORAMA.blendStart) / span));
+        mix = mix * mix * (3 - 2 * mix);
+
+        material.uniforms.panoramaMapA.value = textures[indexA];
+        material.uniforms.panoramaMapB.value = textures[indexB];
+        material.uniforms.panoramaMix.value = mix;
+        material.uniforms.panoramaOffsetA.value = local * KAYKIT_HORIZON_PANORAMA.panAmount;
+        material.uniforms.panoramaOffsetB.value = (local - 1) * KAYKIT_HORIZON_PANORAMA.panAmount;
+      }
+
+      function buildKayKitHorizonPanorama(parent) {
+        if (!kaykit3D?.textureLoader || !parent) return false;
+        const loads = KAYKIT_HORIZON_PANORAMA.urls.map(url => new Promise((resolve, reject) => {
+          kaykit3D.textureLoader.load(url, resolve, undefined, reject);
+        }));
+
+        Promise.all(loads).then(textures => {
+            if (!kaykit3D || kaykit3D.disposed || !parent.parent) {
+              textures.forEach(texture => texture.dispose());
+              return;
+            }
+
+            textures.forEach(texture => {
+              texture.encoding = THREE.sRGBEncoding;
+              texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+              texture.minFilter = THREE.LinearMipmapLinearFilter;
+              texture.magFilter = THREE.LinearFilter;
+              texture.generateMipmaps = true;
+              texture.anisotropy = Math.min(16, kaykit3D.renderer.capabilities.getMaxAnisotropy?.() || 1);
+              texture.needsUpdate = true;
+            });
+
+            // Deux vues voisines sont fondues uniquement près de leur frontière.
+            // Le léger glissement UV compense l'angle intermédiaire, sans étirer ni
+            // enrouler l'architecture comme le faisait le cylindre.
+            const material = new THREE.ShaderMaterial({
+              uniforms: {
+                panoramaMapA: { value: textures[0] },
+                panoramaMapB: { value: textures[1] },
+                panoramaMix: { value: 0 },
+                panoramaOffsetA: { value: 0 },
+                panoramaOffsetB: { value: 0 },
+                panoramaOpacity: { value: KAYKIT_HORIZON_PANORAMA.opacity }
+              },
+              vertexShader: [
+                "varying vec2 vUv;",
+                "void main() {",
+                "  vUv = uv;",
+                "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+                "}"
+              ].join("\n"),
+              fragmentShader: [
+                "uniform sampler2D panoramaMapA;",
+                "uniform sampler2D panoramaMapB;",
+                "uniform float panoramaMix;",
+                "uniform float panoramaOffsetA;",
+                "uniform float panoramaOffsetB;",
+                "uniform float panoramaOpacity;",
+                "varying vec2 vUv;",
+                "void main() {",
+                "  vec2 uvA = vec2(clamp(vUv.x + panoramaOffsetA, 0.002, 0.998), vUv.y);",
+                "  vec2 uvB = vec2(clamp(vUv.x + panoramaOffsetB, 0.002, 0.998), vUv.y);",
+                "  vec4 texelA = texture2D(panoramaMapA, uvA);",
+                "  vec4 texelB = texture2D(panoramaMapB, uvB);",
+                "  vec4 texel = mix(texelA, texelB, panoramaMix);",
+                "  float lowerFade = smoothstep(0.02, 0.30, vUv.y);",
+                "  float upperFade = 1.0 - smoothstep(0.985, 1.0, vUv.y);",
+                "  float alpha = lowerFade * upperFade * panoramaOpacity;",
+                "  if (alpha < 0.003) discard;",
+                "  float luminance = dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722));",
+                "  vec3 distant = mix(vec3(luminance), texel.rgb, 0.96);",
+                "  gl_FragColor = vec4(distant, alpha);",
+                "}"
+              ].join("\n"),
+              transparent: true,
+              depthTest: true,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+              fog: false,
+              toneMapped: false
+            });
+
+            const panorama = new THREE.Mesh(
+              kaykitGeometry("horizon-directional-plate-v7", () => new THREE.PlaneGeometry(
+                KAYKIT_HORIZON_PANORAMA.width,
+                KAYKIT_HORIZON_PANORAMA.height
+              )),
+              material
+            );
+            panorama.name = "ilyos-horizon-panorama";
+            panorama.renderOrder = -950; // dôme/bande, panorama, puis nuages
+            panorama.frustumCulled = false;
+            panorama.userData.directionalTextures = textures;
+            parent.add(panorama);
+            kaykit3D.horizonPanorama = panorama;
+            updateKayKitHorizonPanorama();
+          }).catch(error => console.warn("[ILYOS] plaques d'horizon indisponibles :", error));
+        return true;
+      }
+
       // Construit les couches 1, 2, 3 et 5 (voir KAYKIT_SKY). La couche 4 — la zone
       // jouable — reste vide par construction : chaque élément procédural est validé
       // par kaykitSkyPlacementAllowed avant d'être ajouté.
@@ -2362,6 +2518,10 @@
         band.renderOrder = -999;
         band.frustumCulled = false;
         sky.add(band);
+
+        // COUCHE 2 — panorama lointain. Il est ajouté avant les nuages afin que
+        // leurs vraies géométries restent toujours la couche visuelle principale.
+        buildKayKitHorizonPanorama(sky);
 
         // COUCHE 5 — mer de nuages, très bas sous les îles. Deux nappes seulement :
         // la haute donne la lecture « îles ↓ vide ↓ nuages », la basse ajoute du
@@ -2997,6 +3157,24 @@
         return reprises > 0;
       }
 
+      function makeKayKitHorizonRockFragment(seed, width, haze) {
+        const index = Math.abs(Math.floor(seed)) % 3;
+        const rock = cloneKayKitAsset(
+          ["bareMountainA", "bareMountainB", "bareMountainC"][index],
+          { maxWidth: width, maxHeight: width * (1.0 + (index * .12)), targetFloor: 0 }
+        );
+        if (!rock) return null;
+        rock.rotation.x = Math.PI;
+        rock.rotation.y = seed * .91;
+        rock.traverse(child => {
+          if (!child.isMesh) return;
+          child.castShadow = false;
+          child.receiveShadow = false;
+        });
+        kaykitHazeObject(rock, haze);
+        return rock;
+      }
+
       function buildKayKitDistantArchipelago() {
         const sky = kaykit3D?.scene?.getObjectByName("ilyos-sky");
         if (!sky) return false;
@@ -3005,107 +3183,31 @@
           return x - Math.floor(x);
         };
 
-        // COUCHE 3 — ARCHIPEL LOINTAIN. « ILYOS fait partie d'un immense archipel »,
-        // pas « il y a d'autres objets à cliquer ».
-        //
-        // Les îles sont désormais de vraies pièces KayKit assemblées (voir
-        // makeKayKitFloatingIsle), et non plus des cônes procéduraux.
-        //
-        // ALTITUDE DÉDUITE, JAMAIS POSÉE À LA MAIN : y = hauteurCaméra − rayon × tan(angle).
-        // Un placement manuel avait produit un îlot à 15° sous l'horizontale, hors du cadre
-        // FACE qui commence à 20,7°. L'angle est tiré entre 21° et 32° : au-delà de ~33°
-        // l'île passerait sous la mer de nuages (seaHigh = -11,5) et disparaîtrait.
-        //
-        // TAILLE PROPORTIONNELLE AU RAYON : sans cela les lointaines deviennent des miettes
-        // et les proches des monstres. La variation restante (×0,7 à ×1,5) fait le relief.
-        const ISLET_CAM_Y = 8.7;   // hauteur caméra du preset FACE (version-bootstrap.js)
-        const isleCount = kaykit3D.qualityMode === "performance" ? 13 : 26;
-        for (let i = 0; i < isleCount; i++) {
-          // Secteurs réguliers + gigue : un semis libre laisse de grands vides, or la
-          // caméra tourne et doit trouver de la matière dans toutes les directions.
-          const azimuth = (i / isleCount) * Math.PI * 2 + (seeded(i, 61) - .5) * .40;
-          // RAYON MINIMAL 28, ET CE N'EST PAS UN CHOIX ESTHÉTIQUE. La caméra orbite à
-          // 13,8 du centre (jusqu'à 25 au zoom arrière) : une île posée à 13 se retrouve
-          // littéralement à côté de l'objectif et remplit la moitié de l'écran. Elle doit
-          // rester franchement au-delà de l'orbite pour lire comme un fond.
-          const radius = 28 + seeded(i, 62) * 7;
+        // COUCHE 3 — TRANSITION 3D. Le panorama porte désormais l'archipel et son
+        // architecture ; cette couche ne contient plus que 10 à 14 fragments rocheux
+        // simples, sans végétation ni bâtiment. Ils suffisent à relier le plateau au
+        // fond avec un peu de parallaxe, pour un coût et une densité visuelle faibles.
+        const cameraY = 8.7;
+        const fragmentCount = kaykit3D.qualityMode === "performance" ? 10 : 14;
+        for (let i = 0; i < fragmentCount; i++) {
+          const azimuth = (i / fragmentCount) * Math.PI * 2 + (seeded(i, 61) - .5) * .42;
+          const radius = 29 + seeded(i, 62) * 11;
           const x = Math.cos(azimuth) * radius;
           const z = Math.sin(azimuth) * radius;
-          // ALTITUDE PRISE DANS UNE FENÊTRE, pas tirée librement. Deux bornes opposées :
-          //   · assez BAS pour entrer dans le cadre FACE, qui commence à 20,7° sous
-          //     l'horizontale — d'où y <= hauteurCaméra - rayon × tan(22,5°) ;
-          //   · assez HAUT pour rester au-dessus de la mer de nuages (seaHigh = -11,5),
-          //     sous laquelle l'île serait purement masquée — d'où y >= -10,5.
-          // Ces deux bornes se referment l'une sur l'autre : au-delà du rayon ~47 la
-          // fenêtre est vide, ce qui borne l'archipel bien plus que le goût.
-          // Angle vise entre 24 et 29 deg : a 22,5 les iles se collaient au bord
-          // superieur du cadre et se lisaient comme un bandeau. Plus bas serait mieux
-          // encore, mais au-dela de 30 deg elles passent sous la mer de nuages — c est
-          // cette collision qui borne aussi le rayon a 35.
-          // Fenêtre rouverte à 24-42° maintenant que la mer est à -18 : les îles
-          // descendent au milieu du cadre au lieu de s'aligner sur son bord supérieur.
-          // Le plancher -17 les garde juste au-dessus de la nappe haute.
-          const angle = THREE.MathUtils.degToRad(24 + seeded(i, 63) * 18);
-          const y = Math.max(-17, ISLET_CAM_Y - radius * Math.tan(angle));
-          const width = radius * .11 * (.7 + seeded(i, 64) * .8);
+          const angle = THREE.MathUtils.degToRad(27 + seeded(i, 63) * 12);
+          const y = Math.max(-17.2, cameraY - radius * Math.tan(angle));
+          const width = .9 + seeded(i, 64) * 1.55;
           if (!kaykitSkyPlacementAllowed(x, y, z, width * .8)) continue;
-          // Brume croissante avec la distance. Relevée (0,45 mini) : à 0,22 le vert des
-          // prairies KayKit restait saturé et les îles se lisaient comme des blocs posés
-          // devant la scène au lieu de s'enfoncer dans le lointain.
-          const haze = THREE.MathUtils.mapLinear(radius, 28, 35, .64, .88);
-          const isle = makeKayKitFloatingIsle(i, width, haze);
-          if (!isle) continue;
-          isle.position.set(x, y, z);
-          sky.add(isle);
+          const fragment = makeKayKitHorizonRockFragment(
+            i,
+            width,
+            THREE.MathUtils.mapLinear(radius, 29, 40, .74, .91)
+          );
+          if (!fragment) continue;
+          fragment.name = `ilyos-horizon-fragment-${i}`;
+          fragment.position.set(x, y, z);
+          sky.add(fragment);
         }
-
-        // SEMIS DE PETITES ÎLES — leur rôle est la PROFONDEUR, pas le décor. Plus loin,
-        // plus bas et nettement plus petites que l'anneau principal : c'est l'échelonnement
-        // des TAILLES qui fait lire la distance, bien plus que la brume seule.
-        //
-        // Elles descendent sous la nappe haute (-18), qui est semi-transparente : on les
-        // devine au travers, ce qui donne la sensation d'un gouffre habité plutôt que d'un
-        // fond vide. Rayon tiré en racine carrée, donc uniforme en aire.
-        const petitesCount = kaykit3D.qualityMode === "performance" ? 12 : 24;
-        for (let i = 0; i < petitesCount; i++) {
-          const azimuth = (i / petitesCount) * Math.PI * 2 + (seeded(i, 91) - .5) * .55;
-          const radius = 26 + Math.sqrt(seeded(i, 92)) * 46;
-          const x = Math.cos(azimuth) * radius;
-          const z = Math.sin(azimuth) * radius;
-          const y = -7 - seeded(i, 93) * 30;
-          const width = radius * .045 * (.6 + seeded(i, 94) * .9);
-          if (!kaykitSkyPlacementAllowed(x, y, z, width * .8)) continue;
-          const petite = makeKayKitFloatingIsle(300 + i, width,
-            THREE.MathUtils.mapLinear(radius, 26, 72, .58, .9));
-          if (!petite) continue;
-          petite.position.set(x, y, z);
-          sky.add(petite);
-        }
-
-        // Îles SOUS l'archipel, aperçues par les interstices. Autorisées à l'intérieur du
-        // rayon de sécurité parce qu'elles passent par l'autre branche de
-        // kaykitSkyPlacementAllowed : entièrement sous `safeFloor`. La caméra restant
-        // toujours au-dessus du plateau, un rayon œil → case ne descend jamais à ces
-        // altitudes. C'est le repère de profondeur le plus efficace pour « on joue dans le
-        // ciel » : on voit qu'il y a un dessous, et qu'il est vide.
-        [
-          // Abaissées avec la mer : à -14/-16 elles se retrouveraient maintenant
-          // AU-DESSUS de la nappe haute, alors que leur rôle est d'être aperçues
-          // au travers des interstices, bien plus bas que le plateau.
-          { azimuth: 1.15, radius: 5.5, y: -21.5, width: 2.6 },
-          { azimuth: 4.02, radius: 7.5, y: -24.5, width: 3.2 }
-        ].forEach((spec, index) => {
-          const x = Math.cos(spec.azimuth) * spec.radius;
-          const z = Math.sin(spec.azimuth) * spec.radius;
-          if (!kaykitSkyPlacementAllowed(x, spec.y, z, spec.width * .8)) return;
-          const isle = makeKayKitFloatingIsle(90 + index, spec.width, .58);
-          if (!isle) return;
-          isle.position.set(x, spec.y, z);
-          sky.add(isle);
-        });
-        // INDISPENSABLE : sans cette valeur de retour, l appelant stockait `undefined`,
-        // le drapeau restait faux et l archipel se reconstruisait A CHAQUE IMAGE —
-        // 26 iles ajoutees par frame, jusqu au gel du moteur.
         return true;
       }
 
@@ -9525,16 +9627,15 @@
             kaykit3D.cielImageRepris = kaykitReprendreCielImage();
           }
 
-          // Archipel lointain : mêmes conditions, mêmes raisons. `tileBottom` est la pièce
-          // indispensable (le dessous rocheux des îles) ; sans elle rien ne peut être assemblé.
-          // Socles de château : même condition d'asset que l'archipel.
+          // Fragments de transition : ils n'attendent que les trois montagnes nues.
+          // Aucun bâtiment, arbre ou mesh d'île jouable n'est utilisé par cette couche.
+          // Socles de château : même famille d'asset rocheux.
           if (!kaykit3D.soclesRocheuxRepris && kaykit3D.assets.has("bareMountainA")) {
             kaykit3D.soclesRocheuxRepris = kaykitReprendreSoclesRocheux();
           }
 
           if (!kaykit3D.distantArchipelagoBuilt && kaykit3D.assets.has("bareMountainA")
-            && kaykit3D.assets.has("bareMountainB") && kaykit3D.assets.has("bareMountainC")
-            && kaykit3D.assets.has("hillA")) {
+            && kaykit3D.assets.has("bareMountainB") && kaykit3D.assets.has("bareMountainC")) {
             kaykit3D.distantArchipelagoBuilt = buildKayKitDistantArchipelago();
           }
 
@@ -10057,6 +10158,7 @@
         // persistant (visual.move, voir updateKayKitCharacters) : il survit aux
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
+        updateKayKitHorizonPanorama();
         // gameHidden garantit déjà ici visualMode==="alternative" et
         // #gameScreen visible (voir le retour anticipé en tête de fonction) :
         // plus besoin de revérifier avant de rendre.
