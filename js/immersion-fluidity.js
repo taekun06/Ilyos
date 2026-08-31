@@ -107,3 +107,19 @@
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
     })();
+
+    /* Passe visuelle Éther temporaire. Le fichier dédié ne modifie aucune règle
+       et ne crée aucun mesh : il retune les objets Three.js déjà produits par
+       kaykit3d.js avec les valeurs validées dans le laboratoire. */
+    (() => {
+      if (window.__ILYOS_ETHER_THEME_LOADER__) return;
+      window.__ILYOS_ETHER_THEME_LOADER__ = true;
+      const current = document.currentScript?.src || '';
+      const script = document.createElement('script');
+      script.src = current
+        ? new URL('./ether-game-theme.js', current).href
+        : './js/ether-game-theme.js';
+      script.async = true;
+      script.dataset.ilyosEtherTheme = 'true';
+      document.head.appendChild(script);
+    })();
