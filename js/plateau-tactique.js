@@ -262,20 +262,29 @@
        présence de terre le faisait disparaître exactement quand on avait le
        plus besoin de savoir où viser. */
     const centre = Math.floor(GRILLE / 2);
-    const xs = m.x0 + centre * cote, ys = m.y0 + centre * cote;
-    const surTerre = !!terrain.get(cle(centre, centre));
-    rectangleArrondi(xs + 3, ys + 3, cote - 6, cote - 6, cote * 0.14);
-    ctx.fillStyle = C.sanctuaire;
-    ctx.globalAlpha = surTerre ? 0.28 : 0.12;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = C.sanctuaire;
-    ctx.lineWidth = Math.max(2, cote * 0.08);
-    ctx.globalAlpha = surTerre ? 1 : 0.75;
-    if (!surTerre) ctx.setLineDash([cote * 0.14, cote * 0.10]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
+    /* LES CINQ CASES DU SANCTUAIRE. C'est l'île de départ, une croix : le
+       centre et ses quatre voisines. N'en marquer qu'une donnait une idée
+       fausse de la zone, et la faire dépendre de la présence de terre la
+       faisait disparaître exactement quand on cherchait où viser. */
+    const SANCTUAIRE = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]
+      .map(([dr, dc]) => [centre + dr, centre + dc])
+      .filter(([r, c]) => r >= 0 && c >= 0 && r < GRILLE && c < GRILLE);
+
+    SANCTUAIRE.forEach(([r, c], rang) => {
+      const x = m.x0 + c * cote, y = m.y0 + r * cote;
+      const surTerre = !!terrain.get(cle(r, c));
+      rectangleArrondi(x + 3, y + 3, cote - 6, cote - 6, cote * 0.14);
+      ctx.fillStyle = C.sanctuaire;
+      ctx.globalAlpha = surTerre ? (rang === 0 ? 0.30 : 0.18) : 0.10;
+      ctx.fill();
+      ctx.globalAlpha = surTerre ? 1 : 0.7;
+      ctx.strokeStyle = C.sanctuaire;
+      ctx.lineWidth = Math.max(2, cote * (rang === 0 ? 0.08 : 0.05));
+      if (!surTerre) ctx.setLineDash([cote * 0.14, cote * 0.10]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    });
 
     /* 5. TOUTES LES MARQUES DU MOTEUR, traduites en couleurs.
 
@@ -386,33 +395,60 @@
         const a = [etat.artifact, etat.secondArtifact].find(x => x && x.id === id);
         return a ? [a.r, a.c] : null;
       };
-      // Une seule option par cible : la moins coûteuse, celle que le moteur
-      // retiendra par défaut. Les autres forces restent réglables au HUD.
-      const parCible = new Map();
+      /* TOUTES les destinations distinctes, pas seulement la moins chère.
+
+         N'afficher qu'une option par cible masquait précisément la plus
+         intéressante : faire tomber un gardien demande souvent une force
+         SUPÉRIEURE au minimum, donc la chute n'apparaissait jamais. On
+         regroupe par case d'arrivée et on garde la force la plus faible qui y
+         mène — celle que le moteur appliquera au clic.
+
+         Une chute n'a pas de case d'arrivée : `r`/`c` sont nuls. Son repère
+         est la case qui suit la dernière terre dans le sens de la poussée,
+         seul point cliquable sur une grille. */
+      const caseOption = o => o.fell
+        ? [o.lastLandR + o.dr, o.lastLandC + o.dc]
+        : [o.r, o.c];
+
+      const cibles = new Set();
+      const parDestination = new Map();
       options.forEach(o => {
-        const connue = parCible.get(o.targetId);
-        if (!connue || o.force < connue.force) parCible.set(o.targetId, o);
+        cibles.add(o.targetId);
+        const [dr, dc] = caseOption(o);
+        if (!Number.isFinite(dr) || !Number.isFinite(dc)) return;
+        if (dr < 0 || dc < 0 || dr >= GRILLE || dc >= GRILLE) return;
+        const k = cle(dr, dc);
+        const connue = parDestination.get(k);
+        if (!connue || o.force < connue.force) parDestination.set(k, o);
       });
 
-      parCible.forEach((o, targetId) => {
-        const cible = posDe(targetId);
-        if (!cible) return;
-        const [tr, tc] = cible;
-        const x = m.x0 + tc * cote, y = m.y0 + tr * cote;
-        const vise = survol && survol[0] === tr && survol[1] === tc;
+      // Les cibles : ce sur quoi on pousse.
+      cibles.forEach(id => {
+        const pos = posDe(id);
+        if (!pos) return;
+        const x = m.x0 + pos[1] * cote, y = m.y0 + pos[0] * cote;
+        const vise = survol && survol[0] === pos[0] && survol[1] === pos[1];
+        teinter(x, y, cote, C.rouge, vise ? 0.55 : 0.30, 0.08);
+      });
 
-        teinter(x, y, cote, C.rouge, vise ? 0.60 : 0.34, 0.09);
-
-        if (!Number.isFinite(o.r) || !Number.isFinite(o.c)) return;
-        const ax = x + cote / 2, ay = y + cote / 2;
-        const bx = m.x0 + o.c * cote + cote / 2, by = m.y0 + o.r * cote + cote / 2;
+      // Les destinations : ce qu'on clique pour conclure.
+      parDestination.forEach((o, k) => {
+        const [dr, dc] = k.split(",").map(Number);
+        const depart = posDe(o.targetId);
+        if (!depart) return;
+        const ax = m.x0 + depart[1] * cote + cote / 2;
+        const ay = m.y0 + depart[0] * cote + cote / 2;
+        const bx = m.x0 + dc * cote + cote / 2;
+        const by = m.y0 + dr * cote + cote / 2;
+        const vise = survol && survol[0] === dr && survol[1] === dc;
         const teinte = o.fell ? C.rouge : C.accent;
-        ctx.globalAlpha = vise ? 1 : 0.75;
+
+        ctx.globalAlpha = vise ? 1 : 0.7;
         ctx.strokeStyle = teinte;
-        ctx.lineWidth = Math.max(3, cote * (vise ? 0.12 : 0.09));
+        ctx.lineWidth = Math.max(3, cote * (vise ? 0.12 : 0.08));
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
         const angle = Math.atan2(by - ay, bx - ax);
-        const pointe = cote * 0.28;
+        const pointe = cote * 0.26;
         ctx.beginPath();
         ctx.moveTo(bx, by);
         ctx.lineTo(bx - pointe * Math.cos(angle - 0.5), by - pointe * Math.sin(angle - 0.5));
@@ -422,22 +458,30 @@
         ctx.fill();
         ctx.globalAlpha = 1;
 
-        // Destination : un cercle qu'on vise, ou une tête de mort si ça tombe.
         ctx.beginPath();
-        ctx.arc(bx, by, cote * 0.20, 0, Math.PI * 2);
+        ctx.arc(bx, by, cote * (vise ? 0.28 : 0.22), 0, Math.PI * 2);
         ctx.fillStyle = teinte;
-        ctx.globalAlpha = vise ? 0.55 : 0.30;
+        ctx.globalAlpha = vise ? 0.60 : 0.32;
         ctx.fill();
         ctx.globalAlpha = 1;
-        ctx.lineWidth = Math.max(2, cote * 0.06);
+        ctx.lineWidth = Math.max(2, cote * 0.07);
         ctx.strokeStyle = teinte;
         ctx.stroke();
 
-        ctx.font = `800 ${Math.round(cote * 0.22)}px ui-monospace, monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
+        if (o.fell) {
+          ctx.font = `700 ${Math.round(cote * 0.40)}px serif`;
+          ctx.fillStyle = C.blanc;
+          ctx.fillText("☠", bx, by);
+        } else {
+          ctx.font = `800 ${Math.round(cote * 0.26)}px ui-monospace, monospace`;
+          ctx.fillStyle = C.blanc;
+          ctx.fillText(String(o.force), bx, by);
+        }
+        ctx.font = `800 ${Math.round(cote * 0.19)}px ui-monospace, monospace`;
         ctx.fillStyle = teinte;
-        ctx.fillText(o.fell ? "CHUTE" : `×${o.force}`, bx, by + cote * 0.46);
+        ctx.fillText(o.fell ? `CHUTE ×${o.force}` : `×${o.force}`, bx, by + cote * 0.44);
       });
     }
 
