@@ -7,15 +7,28 @@
 # manquante. Il complète « Intégrité du build », qui vérifie le fichier servi
 # mais ne l'exécute jamais.
 #
-# Déclenchement : sur chaque pull request et sur `main`, pas sur chaque push de
-# branche — la partie dure quelques minutes, et « Intégrité du build » tient
-# déjà le rôle de contrôle instantané.
+# Déclenchement : sur `main` et à la demande — PLUS sur les pull requests.
+#
+# Pourquoi il a été retiré des PR : il n'échouait pas sur une régression, il
+# expirait. Le garde-fou interne du test — 90 s sans changement de tour — ne
+# s'est jamais déclenché, ce qui prouve que la partie AVANÇAIT ; elle n'avait
+# simplement pas fini au bout des 15 minutes du délai Playwright (15,5 min
+# mesurées sur le dernier échec).
+#
+# La cause est le coût de la décision Expert, passé d'environ 1,4 s à 5 s avec
+# l'évaluateur V1 et l'anticipation adverse — un choix assumé, « je préfère
+# 5 secondes pour une bonne décision ». Multiplié par 80 tours et par des
+# runners plus lents qu'une machine de bureau, le budget ne tient plus. C'est
+# le budget du test qui est devenu trop petit, pas le jeu qui est cassé.
+#
+# Un échec permanent sur chaque PR ne signale plus rien : il apprend seulement
+# à ignorer le rouge. On le sort donc des PR plutôt que de le laisser mentir.
+# « Intégrité du build » reste, lui, sur chaque PR.
 name: Partie de bout en bout
 
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 jobs:

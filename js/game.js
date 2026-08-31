@@ -15295,6 +15295,17 @@
           selectedActionType: state.selectedActionType,
           selectedActionCount: state.selectedActionCount,
           pushForceChoice: state.pushForceChoice,
+          /* Options de poussée : le plateau 2D en a besoin pour AFFICHER les
+             cibles et leurs destinations. Elles étaient calculées puis
+             visibles nulle part ailleurs que sur des marqueurs 3D, si bien
+             qu'en 2D rien ne montrait où pousser. Ajout en lecture seule :
+             le moteur reste seul à les produire et à les appliquer. */
+          pushOptions: (state.pushOptions || []).map(o => ({
+            id: o.id, pusherId: o.pusherId, targetId: o.targetId, targetType: o.targetType,
+            dr: o.dr, dc: o.dc, force: o.force, r: o.r, c: o.c, fell: !!o.fell,
+            lastLandR: o.lastLandR, lastLandC: o.lastLandC
+          })),
+          pushHoverOptionId: state.pushHoverOptionId ?? null,
           crownStealTargetId: state.crownStealTargetId,
           crownPickupArtifactId: state.crownPickupArtifactId,
           treasureDropArtifactId: state.treasureDropArtifactId,
@@ -18400,6 +18411,33 @@
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
           else if (action === "PUSH" && state.pushOptions?.length) {
+            /* CLIQUER LA DESTINATION EXÉCUTE LA POUSSÉE.
+
+               Les destinations n'existaient que comme marqueurs 3D : hors de
+               la scène — plateau DOM ou vue 2D — la poussée unifiée se
+               choisissait sans jamais pouvoir se conclure. On réutilise le
+               MÊME exécuteur que la 3D, sans recalculer quoi que ce soit ;
+               seule la façon de désigner l'option change. À force égale, la
+               moins chère, comme le fait déjà le HUD. */
+            /* Une chute n'a PAS de case d'arrivée : `r`/`c` valent null, la
+               victime quitte le plateau. La 3D pose son ☠ dans le vide ; sur
+               une grille, la case qui suit la dernière terre dans le sens de
+               la poussée est le seul repère cliquable. Sans elle, aucune
+               poussée mortelle n'était sélectionnable hors 3D. */
+            const caseOption = option => option.fell
+              ? [option.lastLandR + option.dr, option.lastLandC + option.dc]
+              : [option.r, option.c];
+            const surDestination = state.pushOptions
+              .filter(option => {
+                const [orr, occ] = caseOption(option);
+                return orr === r && occ === c;
+              })
+              .sort((a, b) => a.force - b.force)[0];
+            if (surDestination) {
+              executeUnifiedPushOption(surDestination.id);
+              return;
+            }
+
             const target = characterAt(r, c) || looseArtifactAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
@@ -26519,6 +26557,24 @@
         reserve: benchReserve,
         transitionReserve: benchTransitionReserve,
         termeReserve: benchTermeReserve,
+        /* Rendre la main à un HUMAIN sur la position courante.
+
+           Charger une position de banc laisse toujours le trait à l'IA :
+           `canLocalPlayerAct()` refuse alors le moindre clic, et il devient
+           impossible de vérifier à la souris ce qu'on vient de corriger. Ce
+           n'est pas une règle du jeu, c'est l'interrupteur qui manquait pour
+           pouvoir tester. */
+        mainAuJoueur: (id = 0) => {
+          if (!state) return null;
+          state.players.forEach(j => { j.isAI = false; });
+          state.currentPlayer = Math.max(0, Math.min(id, state.players.length - 1));
+          state.inputLocked = false;
+          state.aiThinking = false;
+          state.winner = state.winner ?? null;
+          aiRunToken++;
+          renderAll();
+          return { joueur: state.currentPlayer, phase: state.phase };
+        },
         candidatsPose: benchCandidatsPose,
         evaluation: benchEvaluation,
         run: benchRunPuzzle,

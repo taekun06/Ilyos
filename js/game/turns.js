@@ -170,6 +170,17 @@
           selectedActionType: state.selectedActionType,
           selectedActionCount: state.selectedActionCount,
           pushForceChoice: state.pushForceChoice,
+          /* Options de poussée : le plateau 2D en a besoin pour AFFICHER les
+             cibles et leurs destinations. Elles étaient calculées puis
+             visibles nulle part ailleurs que sur des marqueurs 3D, si bien
+             qu'en 2D rien ne montrait où pousser. Ajout en lecture seule :
+             le moteur reste seul à les produire et à les appliquer. */
+          pushOptions: (state.pushOptions || []).map(o => ({
+            id: o.id, pusherId: o.pusherId, targetId: o.targetId, targetType: o.targetType,
+            dr: o.dr, dc: o.dc, force: o.force, r: o.r, c: o.c, fell: !!o.fell,
+            lastLandR: o.lastLandR, lastLandC: o.lastLandC
+          })),
+          pushHoverOptionId: state.pushHoverOptionId ?? null,
           crownStealTargetId: state.crownStealTargetId,
           crownPickupArtifactId: state.crownPickupArtifactId,
           treasureDropArtifactId: state.treasureDropArtifactId,

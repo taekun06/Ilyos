@@ -1694,6 +1694,33 @@
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
           else if (action === "PUSH" && state.pushOptions?.length) {
+            /* CLIQUER LA DESTINATION EXÉCUTE LA POUSSÉE.
+
+               Les destinations n'existaient que comme marqueurs 3D : hors de
+               la scène — plateau DOM ou vue 2D — la poussée unifiée se
+               choisissait sans jamais pouvoir se conclure. On réutilise le
+               MÊME exécuteur que la 3D, sans recalculer quoi que ce soit ;
+               seule la façon de désigner l'option change. À force égale, la
+               moins chère, comme le fait déjà le HUD. */
+            /* Une chute n'a PAS de case d'arrivée : `r`/`c` valent null, la
+               victime quitte le plateau. La 3D pose son ☠ dans le vide ; sur
+               une grille, la case qui suit la dernière terre dans le sens de
+               la poussée est le seul repère cliquable. Sans elle, aucune
+               poussée mortelle n'était sélectionnable hors 3D. */
+            const caseOption = option => option.fell
+              ? [option.lastLandR + option.dr, option.lastLandC + option.dc]
+              : [option.r, option.c];
+            const surDestination = state.pushOptions
+              .filter(option => {
+                const [orr, occ] = caseOption(option);
+                return orr === r && occ === c;
+              })
+              .sort((a, b) => a.force - b.force)[0];
+            if (surDestination) {
+              executeUnifiedPushOption(surDestination.id);
+              return;
+            }
+
             const target = characterAt(r, c) || looseArtifactAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({

@@ -1565,6 +1565,24 @@
         reserve: benchReserve,
         transitionReserve: benchTransitionReserve,
         termeReserve: benchTermeReserve,
+        /* Rendre la main à un HUMAIN sur la position courante.
+
+           Charger une position de banc laisse toujours le trait à l'IA :
+           `canLocalPlayerAct()` refuse alors le moindre clic, et il devient
+           impossible de vérifier à la souris ce qu'on vient de corriger. Ce
+           n'est pas une règle du jeu, c'est l'interrupteur qui manquait pour
+           pouvoir tester. */
+        mainAuJoueur: (id = 0) => {
+          if (!state) return null;
+          state.players.forEach(j => { j.isAI = false; });
+          state.currentPlayer = Math.max(0, Math.min(id, state.players.length - 1));
+          state.inputLocked = false;
+          state.aiThinking = false;
+          state.winner = state.winner ?? null;
+          aiRunToken++;
+          renderAll();
+          return { joueur: state.currentPlayer, phase: state.phase };
+        },
         candidatsPose: benchCandidatsPose,
         evaluation: benchEvaluation,
         run: benchRunPuzzle,

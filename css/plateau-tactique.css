@@ -22,7 +22,8 @@ body[data-plateau-tactique="on"] #plateauTactique {
   display: block;
   /* Collé en haut, pas centré verticalement : le bas de l'écran appartient à
      la main de cartes et aux commandes, qui flottent au-dessus du plateau. */
-  margin: 0 auto auto;
+  /* Sous le bandeau des joueurs, au-dessus de la main de cartes. */
+  margin: 96px auto auto;
 }
 
 body[data-plateau-tactique="on"] .board-wrap {
@@ -56,8 +57,10 @@ body[data-plateau-tactique="on"] .board-wrap {
    plateau. */
 #plateauTactiqueBtn {
   position: fixed;
+  /* En HAUT à droite : en bas, il se posait sur « FIN DU TOUR ». Une bascule
+     d'affichage ne doit jamais recouvrir une commande de jeu. */
   right: 14px;
-  bottom: 14px;
+  top: 14px;
   z-index: 60;
   padding: 8px 14px;
   border-radius: 999px;
@@ -84,7 +87,7 @@ body[data-plateau-tactique="on"] #plateauTactiqueBtn {
 @media (max-width: 720px) {
   #plateauTactiqueBtn {
     right: 10px;
-    bottom: 10px;
+    top: 10px;
     padding: 7px 11px;
     font-size: 11px;
   }
