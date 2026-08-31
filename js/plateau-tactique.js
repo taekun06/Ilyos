@@ -366,6 +366,81 @@
       }
     }
 
+    /* 5 ter. LES POUSSÉES DISPONIBLES — enfin visibles.
+
+       Le bouton POUSSER lance le flux « unifié » : on ne choisit pas son
+       pousseur, on choisit une CIBLE, et le moteur en déduit qui pousse et
+       avec quelle force. Il calcule donc `pushOptions` dès la sélection de la
+       carte… mais ne les montrait que sur des marqueurs 3D. En 2D, rien ne
+       s'affichait : impossible de deviner où cliquer.
+
+       Le clic, lui, fonctionnait déjà — `onCellClick` recalcule les options
+       pour la case cliquée et exécute. Il ne manquait que l'affichage. On se
+       contente donc de dessiner ce que le moteur a déjà décidé : cible en
+       rouge, flèche vers la destination, « CHUTE » quand il l'annonce. */
+    const options = etat.pushOptions || [];
+    if (options.length) {
+      const posDe = id => {
+        const g = (etat.characters || []).find(x => x.id === id);
+        if (g) return [g.r, g.c];
+        const a = [etat.artifact, etat.secondArtifact].find(x => x && x.id === id);
+        return a ? [a.r, a.c] : null;
+      };
+      // Une seule option par cible : la moins coûteuse, celle que le moteur
+      // retiendra par défaut. Les autres forces restent réglables au HUD.
+      const parCible = new Map();
+      options.forEach(o => {
+        const connue = parCible.get(o.targetId);
+        if (!connue || o.force < connue.force) parCible.set(o.targetId, o);
+      });
+
+      parCible.forEach((o, targetId) => {
+        const cible = posDe(targetId);
+        if (!cible) return;
+        const [tr, tc] = cible;
+        const x = m.x0 + tc * cote, y = m.y0 + tr * cote;
+        const vise = survol && survol[0] === tr && survol[1] === tc;
+
+        teinter(x, y, cote, C.rouge, vise ? 0.60 : 0.34, 0.09);
+
+        if (!Number.isFinite(o.r) || !Number.isFinite(o.c)) return;
+        const ax = x + cote / 2, ay = y + cote / 2;
+        const bx = m.x0 + o.c * cote + cote / 2, by = m.y0 + o.r * cote + cote / 2;
+        const teinte = o.fell ? C.rouge : C.accent;
+        ctx.globalAlpha = vise ? 1 : 0.75;
+        ctx.strokeStyle = teinte;
+        ctx.lineWidth = Math.max(3, cote * (vise ? 0.12 : 0.09));
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+        const angle = Math.atan2(by - ay, bx - ax);
+        const pointe = cote * 0.28;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx - pointe * Math.cos(angle - 0.5), by - pointe * Math.sin(angle - 0.5));
+        ctx.lineTo(bx - pointe * Math.cos(angle + 0.5), by - pointe * Math.sin(angle + 0.5));
+        ctx.closePath();
+        ctx.fillStyle = teinte;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Destination : un cercle qu'on vise, ou une tête de mort si ça tombe.
+        ctx.beginPath();
+        ctx.arc(bx, by, cote * 0.20, 0, Math.PI * 2);
+        ctx.fillStyle = teinte;
+        ctx.globalAlpha = vise ? 0.55 : 0.30;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = Math.max(2, cote * 0.06);
+        ctx.strokeStyle = teinte;
+        ctx.stroke();
+
+        ctx.font = `800 ${Math.round(cote * 0.22)}px ui-monospace, monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = teinte;
+        ctx.fillText(o.fell ? "CHUTE" : `×${o.force}`, bx, by + cote * 0.46);
+      });
+    }
+
     /* 6. LES COURONNES AU SOL. */
     [etat.artifact, etat.secondArtifact].forEach(a => {
       if (!a || !a.active || a.carrierId) return;

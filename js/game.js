@@ -15295,6 +15295,17 @@
           selectedActionType: state.selectedActionType,
           selectedActionCount: state.selectedActionCount,
           pushForceChoice: state.pushForceChoice,
+          /* Options de poussée : le plateau 2D en a besoin pour AFFICHER les
+             cibles et leurs destinations. Elles étaient calculées puis
+             visibles nulle part ailleurs que sur des marqueurs 3D, si bien
+             qu'en 2D rien ne montrait où pousser. Ajout en lecture seule :
+             le moteur reste seul à les produire et à les appliquer. */
+          pushOptions: (state.pushOptions || []).map(o => ({
+            id: o.id, pusherId: o.pusherId, targetId: o.targetId, targetType: o.targetType,
+            dr: o.dr, dc: o.dc, force: o.force, r: o.r, c: o.c, fell: !!o.fell,
+            lastLandR: o.lastLandR, lastLandC: o.lastLandC
+          })),
+          pushHoverOptionId: state.pushHoverOptionId ?? null,
           crownStealTargetId: state.crownStealTargetId,
           crownPickupArtifactId: state.crownPickupArtifactId,
           treasureDropArtifactId: state.treasureDropArtifactId,
@@ -18400,6 +18411,22 @@
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
           else if (action === "PUSH" && state.pushOptions?.length) {
+            /* CLIQUER LA DESTINATION EXÉCUTE LA POUSSÉE.
+
+               Les destinations n'existaient que comme marqueurs 3D : hors de
+               la scène — plateau DOM ou vue 2D — la poussée unifiée se
+               choisissait sans jamais pouvoir se conclure. On réutilise le
+               MÊME exécuteur que la 3D, sans recalculer quoi que ce soit ;
+               seule la façon de désigner l'option change. À force égale, la
+               moins chère, comme le fait déjà le HUD. */
+            const surDestination = state.pushOptions
+              .filter(option => option.r === r && option.c === c)
+              .sort((a, b) => a.force - b.force)[0];
+            if (surDestination) {
+              executeUnifiedPushOption(surDestination.id);
+              return;
+            }
+
             const target = characterAt(r, c) || looseArtifactAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({

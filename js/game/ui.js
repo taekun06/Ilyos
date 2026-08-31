@@ -1694,6 +1694,22 @@
           const action = state.selectedActionType;
           if (action === "MOVE") handleMoveClick(r, c);
           else if (action === "PUSH" && state.pushOptions?.length) {
+            /* CLIQUER LA DESTINATION EXÉCUTE LA POUSSÉE.
+
+               Les destinations n'existaient que comme marqueurs 3D : hors de
+               la scène — plateau DOM ou vue 2D — la poussée unifiée se
+               choisissait sans jamais pouvoir se conclure. On réutilise le
+               MÊME exécuteur que la 3D, sans recalculer quoi que ce soit ;
+               seule la façon de désigner l'option change. À force égale, la
+               moins chère, comme le fait déjà le HUD. */
+            const surDestination = state.pushOptions
+              .filter(option => option.r === r && option.c === c)
+              .sort((a, b) => a.force - b.force)[0];
+            if (surDestination) {
+              executeUnifiedPushOption(surDestination.id);
+              return;
+            }
+
             const target = characterAt(r, c) || looseArtifactAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
