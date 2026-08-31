@@ -257,18 +257,25 @@
     }
 
     /* 4. LE SANCTUAIRE. */
+    /* Le sanctuaire est un REPÈRE DE PLATEAU, pas une propriété du terrain :
+       il se voit même quand la case centrale est vide. Le conditionner à la
+       présence de terre le faisait disparaître exactement quand on avait le
+       plus besoin de savoir où viser. */
     const centre = Math.floor(GRILLE / 2);
-    if (terrain.get(cle(centre, centre))) {
-      const x = m.x0 + centre * cote, y = m.y0 + centre * cote;
-      rectangleArrondi(x + 3, y + 3, cote - 6, cote - 6, cote * 0.14);
-      ctx.fillStyle = C.sanctuaire;
-      ctx.globalAlpha = 0.28;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = C.sanctuaire;
-      ctx.lineWidth = Math.max(2, cote * 0.08);
-      ctx.stroke();
-    }
+    const xs = m.x0 + centre * cote, ys = m.y0 + centre * cote;
+    const surTerre = !!terrain.get(cle(centre, centre));
+    rectangleArrondi(xs + 3, ys + 3, cote - 6, cote - 6, cote * 0.14);
+    ctx.fillStyle = C.sanctuaire;
+    ctx.globalAlpha = surTerre ? 0.28 : 0.12;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = C.sanctuaire;
+    ctx.lineWidth = Math.max(2, cote * 0.08);
+    ctx.globalAlpha = surTerre ? 1 : 0.75;
+    if (!surTerre) ctx.setLineDash([cote * 0.14, cote * 0.10]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
 
     /* 5. TOUTES LES MARQUES DU MOTEUR, traduites en couleurs.
 
@@ -478,6 +485,16 @@
     if (!cellule) return null;
     const info = cellules && cellules.get(cle(r, c));
     if (!info) return cellule;
+
+    /* SEULEMENT hors action engagée.
+
+       Ces raccourcis n'ont de sens que dans `ACTION_SELECT`, la phase où le
+       jeu attend qu'on choisisse quoi faire. Dès qu'une action est en cours —
+       PUSH, MOVE, MAGIC, pose d'île, ramassage, dépôt — le moteur n'attend
+       plus qu'une CASE, et détourner le clic vers la couronne rendait la
+       poussée impossible : cliquer un porteur pour le désigner comme pousseur
+       ouvrait le dépôt à la place. */
+    if (etat && etat.phase !== "ACTION_SELECT") return cellule;
     if (info.optionScore) return info.optionScore;
     if (info.badgeCouronne && dansZoneCouronne(py, r)) return info.badgeCouronne;
     return cellule;
@@ -580,8 +597,14 @@
        cliquables. Une fenêtre masquée annonce par ailleurs une taille NULLE —
        prise au mot, la formule repliait le plateau sur son minimum, où il
        restait au retour faute d'une nouvelle mesure. */
-    const RESERVE_BASSE = 150;
-    const bornes = [rect.width, window.innerWidth * 0.70, window.innerHeight - RESERVE_BASSE - 90]
+    /* Deux barres flottent PAR-DESSUS le plateau : celle des scores en haut,
+       celle des cartes en bas. Sans marge réservée des deux côtés, la première
+       rangée passait sous le bandeau des joueurs et la dernière sous la main :
+       visibles, mais impossibles à cliquer. */
+    const RESERVE_HAUTE = 96;
+    const RESERVE_BASSE = 172;
+    const bornes = [rect.width, window.innerWidth * 0.70,
+      window.innerHeight - RESERVE_HAUTE - RESERVE_BASSE]
       .filter(v => Number.isFinite(v) && v > 0);
     if (!bornes.length) return;
     const cote = Math.max(240, Math.floor(Math.min(...bornes)));

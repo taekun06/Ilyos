@@ -22,7 +22,8 @@ body[data-plateau-tactique="on"] #plateauTactique {
   display: block;
   /* Collé en haut, pas centré verticalement : le bas de l'écran appartient à
      la main de cartes et aux commandes, qui flottent au-dessus du plateau. */
-  margin: 0 auto auto;
+  /* Sous le bandeau des joueurs, au-dessus de la main de cartes. */
+  margin: 96px auto auto;
 }
 
 body[data-plateau-tactique="on"] .board-wrap {
