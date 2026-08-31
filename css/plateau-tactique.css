@@ -57,8 +57,10 @@ body[data-plateau-tactique="on"] .board-wrap {
    plateau. */
 #plateauTactiqueBtn {
   position: fixed;
+  /* En HAUT à droite : en bas, il se posait sur « FIN DU TOUR ». Une bascule
+     d'affichage ne doit jamais recouvrir une commande de jeu. */
   right: 14px;
-  bottom: 14px;
+  top: 14px;
   z-index: 60;
   padding: 8px 14px;
   border-radius: 999px;
@@ -85,7 +87,7 @@ body[data-plateau-tactique="on"] #plateauTactiqueBtn {
 @media (max-width: 720px) {
   #plateauTactiqueBtn {
     right: 10px;
-    bottom: 10px;
+    top: 10px;
     padding: 7px 11px;
     font-size: 11px;
   }
