@@ -58,3 +58,7 @@ ilyos-horizon-south-v1.png, ilyos-horizon-west-v1.png — quatre plaques
 directionnelles originales générées spécifiquement pour ILYOS le 29/08/2026.
 Elles forment un environnement à quatre secteurs sans projection cylindrique ;
 aucun asset ou panorama tiers n'est redistribué.
+
+ilyos-skybox-360-v1.png — panorama équirectangulaire original 2:1 généré
+spécifiquement pour ILYOS le 01/09/2026. Il forme un unique archipel céleste
+continu projeté à l'intérieur d'une sphère ; aucun asset tiers n'est redistribué.

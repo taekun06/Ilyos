@@ -359,26 +359,20 @@
         farRing: 30                               // rayon minimal des silhouettes lointaines
       };
 
-      // Quatre plaques directionnelles remplacent le cylindre : chaque quart de
-      // tour dispose ainsi de sa propre image haute définition et reste parfaitement
-      // rectiligne. La plaque visible accompagne seulement la caméra, tandis que le
-      // choix des deux textures et leur décalage horizontal dépendent de l'azimut du
-      // monde. Le décor paraît donc ancré à 360° sans aucune courbure géométrique.
+      // Une seule texture équirectangulaire 2:1 tapisse l'intérieur d'une sphère qui
+      // suit la position de la caméra sans suivre sa rotation. Le décor reste ainsi
+      // ancré dans le monde à 360° : tourner révèle une autre longitude, monter ou
+      // descendre révèle une autre latitude. Un petit fondu dans le shader absorbe la
+      // couture 0°/360° sans demander quatre images impossibles à raccorder.
       const KAYKIT_HORIZON_PANORAMA = {
-        urls: [
-          "./assets/sky/ilyos-horizon-north-v1.png",
-          "./assets/sky/ilyos-horizon-east-v1.png",
-          "./assets/sky/ilyos-horizon-south-v1.png",
-          "./assets/sky/ilyos-horizon-west-v1.png"
-        ],
-        radius: 92,
-        width: 138,
-        height: 77.625,
-        verticalOffset: 0,
-        opacity: .90,
-        blendStart: .36,
-        blendEnd: .64,
-        panAmount: .22
+        url: "./assets/sky/ilyos-skybox-360-v1.png",
+        radius: 158,
+        opacity: .92,
+        // La caméra de jeu regarde fortement vers le bas. Ce décalage descend la
+        // ligne d'archipel dans son cadrage usuel tout en conservant la parallaxe
+        // verticale lorsque le joueur change l'inclinaison.
+        verticalUvOffset: .20,
+        seamWidth: .045
       };
 
       // Palette « sanctuaire céleste lumineux » : bleu soutenu au zénith, bande
@@ -2015,79 +2009,38 @@
       function updateKayKitHorizonPanorama() {
         const panorama = kaykit3D?.horizonPanorama;
         const camera = kaykit3D?.camera;
-        const material = panorama?.material;
-        const textures = panorama?.userData?.directionalTextures;
-        if (!panorama?.parent || !camera || !material?.uniforms || !textures?.length) return;
+        if (!panorama?.parent || !camera) return;
 
-        // La plaque reste perpendiculaire au regard pour conserver des lignes droites.
-        // Son contenu, lui, est indexé sur l'azimut opposé à la caméra : tourner le
-        // plateau révèle bien les quatre directions du monde au lieu de faire suivre
-        // une image unique collée à l'écran.
-        const target = kaykit3D.viewTarget || { x: 0, z: 0 };
-        const dx = camera.position.x - target.x;
-        const dy = camera.position.y - (target.y || 0);
-        const dz = camera.position.z - target.z;
-        const horizontalLength = Math.hypot(dx, dz) || 1;
-        const fullLength = Math.hypot(dx, dy, dz) || 1;
-        const backgroundX = -dx / horizontalLength;
-        const backgroundZ = -dz / horizontalLength;
-        panorama.position.set(
-          target.x - (dx / fullLength) * KAYKIT_HORIZON_PANORAMA.radius,
-          (target.y || 0) - (dy / fullLength) * KAYKIT_HORIZON_PANORAMA.radius + KAYKIT_HORIZON_PANORAMA.verticalOffset,
-          target.z - (dz / fullLength) * KAYKIT_HORIZON_PANORAMA.radius
-        );
-        panorama.lookAt(camera.position.x, camera.position.y, camera.position.z);
-
-        const count = textures.length;
-        const angle = Math.atan2(backgroundX, backgroundZ);
-        const sector = ((angle / (Math.PI * 2)) * count + count) % count;
-        const indexA = Math.floor(sector) % count;
-        const indexB = (indexA + 1) % count;
-        const local = sector - Math.floor(sector);
-        const span = Math.max(.001, KAYKIT_HORIZON_PANORAMA.blendEnd - KAYKIT_HORIZON_PANORAMA.blendStart);
-        let mix = Math.max(0, Math.min(1, (local - KAYKIT_HORIZON_PANORAMA.blendStart) / span));
-        mix = mix * mix * (3 - 2 * mix);
-
-        material.uniforms.panoramaMapA.value = textures[indexA];
-        material.uniforms.panoramaMapB.value = textures[indexB];
-        material.uniforms.panoramaMix.value = mix;
-        material.uniforms.panoramaOffsetA.value = local * KAYKIT_HORIZON_PANORAMA.panAmount;
-        material.uniforms.panoramaOffsetB.value = (local - 1) * KAYKIT_HORIZON_PANORAMA.panAmount;
+        // Un ciel infiniment lointain ne doit produire aucune parallaxe de translation.
+        // La sphère accompagne donc la caméra, mais sa rotation reste volontairement
+        // fixe : c'est ce qui donne au panorama sa direction dans le monde.
+        panorama.position.copy(camera.position);
       }
 
       function buildKayKitHorizonPanorama(parent) {
         if (!kaykit3D?.textureLoader || !parent) return false;
-        const loads = KAYKIT_HORIZON_PANORAMA.urls.map(url => new Promise((resolve, reject) => {
-          kaykit3D.textureLoader.load(url, resolve, undefined, reject);
-        }));
-
-        Promise.all(loads).then(textures => {
+        new Promise((resolve, reject) => {
+          kaykit3D.textureLoader.load(KAYKIT_HORIZON_PANORAMA.url, resolve, undefined, reject);
+        }).then(texture => {
             if (!kaykit3D || kaykit3D.disposed || !parent.parent) {
-              textures.forEach(texture => texture.dispose());
+              texture.dispose();
               return;
             }
 
-            textures.forEach(texture => {
-              texture.encoding = THREE.sRGBEncoding;
-              texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-              texture.minFilter = THREE.LinearMipmapLinearFilter;
-              texture.magFilter = THREE.LinearFilter;
-              texture.generateMipmaps = true;
-              texture.anisotropy = Math.min(16, kaykit3D.renderer.capabilities.getMaxAnisotropy?.() || 1);
-              texture.needsUpdate = true;
-            });
+            texture.encoding = THREE.sRGBEncoding;
+            texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.generateMipmaps = true;
+            texture.anisotropy = Math.min(16, kaykit3D.renderer.capabilities.getMaxAnisotropy?.() || 1);
+            texture.needsUpdate = true;
 
-            // Deux vues voisines sont fondues uniquement près de leur frontière.
-            // Le léger glissement UV compense l'angle intermédiaire, sans étirer ni
-            // enrouler l'architecture comme le faisait le cylindre.
             const material = new THREE.ShaderMaterial({
               uniforms: {
-                panoramaMapA: { value: textures[0] },
-                panoramaMapB: { value: textures[1] },
-                panoramaMix: { value: 0 },
-                panoramaOffsetA: { value: 0 },
-                panoramaOffsetB: { value: 0 },
-                panoramaOpacity: { value: KAYKIT_HORIZON_PANORAMA.opacity }
+                panoramaMap: { value: texture },
+                panoramaOpacity: { value: KAYKIT_HORIZON_PANORAMA.opacity },
+                verticalUvOffset: { value: KAYKIT_HORIZON_PANORAMA.verticalUvOffset },
+                seamWidth: { value: KAYKIT_HORIZON_PANORAMA.seamWidth }
               },
               vertexShader: [
                 "varying vec2 vUv;",
@@ -2097,51 +2050,50 @@
                 "}"
               ].join("\n"),
               fragmentShader: [
-                "uniform sampler2D panoramaMapA;",
-                "uniform sampler2D panoramaMapB;",
-                "uniform float panoramaMix;",
-                "uniform float panoramaOffsetA;",
-                "uniform float panoramaOffsetB;",
+                "uniform sampler2D panoramaMap;",
                 "uniform float panoramaOpacity;",
+                "uniform float verticalUvOffset;",
+                "uniform float seamWidth;",
                 "varying vec2 vUv;",
                 "void main() {",
-                "  vec2 uvA = vec2(clamp(vUv.x + panoramaOffsetA, 0.002, 0.998), vUv.y);",
-                "  vec2 uvB = vec2(clamp(vUv.x + panoramaOffsetB, 0.002, 0.998), vUv.y);",
-                "  vec4 texelA = texture2D(panoramaMapA, uvA);",
-                "  vec4 texelB = texture2D(panoramaMapB, uvB);",
-                "  vec4 texel = mix(texelA, texelB, panoramaMix);",
-                "  float lowerFade = smoothstep(0.02, 0.30, vUv.y);",
-                "  float upperFade = 1.0 - smoothstep(0.985, 1.0, vUv.y);",
-                "  float alpha = lowerFade * upperFade * panoramaOpacity;",
-                "  if (alpha < 0.003) discard;",
+                "  float sampleV = clamp(vUv.y + verticalUvOffset, 0.002, 0.998);",
+                "  vec4 texel = texture2D(panoramaMap, vec2(vUv.x, sampleV));",
+                "  if (vUv.x < seamWidth || vUv.x > 1.0 - seamWidth) {",
+                "    vec4 beforeSeam = texture2D(panoramaMap, vec2(1.0 - seamWidth, sampleV));",
+                "    vec4 afterSeam = texture2D(panoramaMap, vec2(seamWidth, sampleV));",
+                "    float seamT = vUv.x < seamWidth",
+                "      ? (vUv.x + seamWidth) / (2.0 * seamWidth)",
+                "      : (vUv.x - (1.0 - seamWidth)) / (2.0 * seamWidth);",
+                "    seamT = smoothstep(0.0, 1.0, seamT);",
+                "    texel = mix(beforeSeam, afterSeam, seamT);",
+                "  }",
                 "  float luminance = dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722));",
                 "  vec3 distant = mix(vec3(luminance), texel.rgb, 0.96);",
-                "  gl_FragColor = vec4(distant, alpha);",
+                "  gl_FragColor = vec4(distant, panoramaOpacity);",
                 "}"
               ].join("\n"),
               transparent: true,
               depthTest: true,
               depthWrite: false,
-              side: THREE.DoubleSide,
+              side: THREE.BackSide,
               fog: false,
               toneMapped: false
             });
 
             const panorama = new THREE.Mesh(
-              kaykitGeometry("horizon-directional-plate-v7", () => new THREE.PlaneGeometry(
-                KAYKIT_HORIZON_PANORAMA.width,
-                KAYKIT_HORIZON_PANORAMA.height
+              kaykitGeometry("horizon-equirectangular-sphere-v2", () => new THREE.SphereGeometry(
+                KAYKIT_HORIZON_PANORAMA.radius, 96, 48
               )),
               material
             );
             panorama.name = "ilyos-horizon-panorama";
             panorama.renderOrder = -950; // dôme/bande, panorama, puis nuages
             panorama.frustumCulled = false;
-            panorama.userData.directionalTextures = textures;
+            panorama.userData.panoramaTexture = texture;
             parent.add(panorama);
             kaykit3D.horizonPanorama = panorama;
             updateKayKitHorizonPanorama();
-          }).catch(error => console.warn("[ILYOS] plaques d'horizon indisponibles :", error));
+          }).catch(error => console.warn("[ILYOS] panorama 360° indisponible :", error));
         return true;
       }
 
