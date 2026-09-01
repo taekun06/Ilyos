@@ -1342,6 +1342,35 @@
         return kaykit3D.materials.get(key);
       }
 
+      /**
+       * Cache de matériaux PLATS (surbrillances de case, contours, coches) —
+       * même principe que kaykitGeometry(), et pour la même raison, mais côté
+       * matériau. Ces marqueurs étaient créés à neuf pour chaque case et
+       * détruits (material.dispose()) dès que la case changeait d'état. Or
+       * Three.js compte les matériaux qui utilisent un programme GPU : quand le
+       * dernier disparaît, il SUPPRIME le programme, et la surbrillance
+       * suivante doit le recompiler. Une compilation de shader est un
+       * aller-retour synchrone avec le pilote, sur le thread principal : c'est
+       * exactement le micro-blocage ressenti en déplaçant la souris sur le
+       * plateau (mesuré : 7 recompilations pour 17 s de survol, et une toutes
+       * les 2 à 4 secondes en cours de partie).
+       *
+       * La clé reprend les seules variables réelles (genre, couleur, taille,
+       * opacités) : l'ensemble des combinaisons possibles est petit et borné,
+       * le cache se remplit dans les premières secondes puis ne bouge plus.
+       * Ces matériaux ne portent donc PAS `ilyosTransient` — ils sont partagés
+       * et doivent survivre à la case qui les a fait naître. Corollaire à
+       * respecter : aucun appelant ne doit les modifier par instance (une
+       * opacité animée, par exemple) — voir le halo et la lueur de sélection,
+       * volontairement laissés hors cache pour cette raison.
+       */
+      function kaykitFlatMaterial(cle, fabrique) {
+        if (!kaykit3D?.materials) return fabrique();
+        const key = `plat:${cle}`;
+        if (!kaykit3D.materials.has(key)) kaykit3D.materials.set(key, fabrique());
+        return kaykit3D.materials.get(key);
+      }
+
       function configureKayKitTexture(texture) {
         if (!texture) return texture;
         texture.encoding = THREE.sRGBEncoding;
@@ -3984,6 +4013,50 @@
       }
 
 
+      /**
+       * SQUELETTES PARTAGÉS (passe fluidité) — SkeletonUtils.clone() donne UN
+       * THREE.Skeleton par mesh peaufiné, même quand toutes les pièces d'un
+       * personnage sont montées sur le MÊME rig. Un gardien KayKit est découpé
+       * en six pièces (corps, tête, deux bras, deux jambes) : le clone repartait
+       * donc avec six squelettes de 41 os au lieu d'un seul. Or Three.js
+       * recalcule les matrices d'os ET re-téléverse la texture d'os
+       * (Skeleton.update() -> boneTexture.needsUpdate) à CHAQUE image et pour
+       * CHAQUE squelette : cinq gardiens sur le plateau, c'était 30 textures
+       * d'os renvoyées à la carte graphique 60 fois par seconde (mesuré :
+       * ~75 appels texImage2D par seconde en jeu, pour un plateau immobile).
+       *
+       * Ici, on regroupe les pièces qui partagent réellement la même liste d'os
+       * ET les mêmes matrices inverses de liaison, et on les relie toutes au
+       * premier squelette du groupe. La déformation est identique — c'est
+       * littéralement le même rig — mais le travail par image est divisé par le
+       * nombre de pièces. La comparaison des boneInverses est la garantie de
+       * sûreté : deux pièces réellement liées à des rigs différents gardent
+       * chacune le leur.
+       */
+      function shareKayKitClonedSkeletons(root) {
+        if (!root?.traverse) return root;
+        const groupes = new Map();
+        const memeLiaison = (a, b) => {
+          if (a.boneInverses.length !== b.boneInverses.length) return false;
+          for (let i = 0; i < a.boneInverses.length; i++) {
+            const ea = a.boneInverses[i].elements, eb = b.boneInverses[i].elements;
+            for (let j = 0; j < 16; j++) if (ea[j] !== eb[j]) return false;
+          }
+          return true;
+        };
+        root.traverse(child => {
+          if (!child.isSkinnedMesh || !child.skeleton?.bones?.length) return;
+          const cle = child.skeleton.bones.map(bone => bone.uuid).join("|");
+          const partage = groupes.get(cle);
+          if (!partage) { groupes.set(cle, child.skeleton); return; }
+          if (!memeLiaison(partage, child.skeleton)) return;
+          const abandonne = child.skeleton;
+          child.bind(partage, child.bindMatrix);
+          abandonne.dispose?.();
+        });
+        return root;
+      }
+
       function cloneKayKitAsset(assetKey, { maxWidth = .9, maxHeight = 1, targetFloor = 0, exactWidth = null, exactDepth = null, exactHeight = null } = {}) {
         const source = kaykit3D?.assets.get(assetKey);
         if (!source) return null;
@@ -3991,6 +4064,7 @@
         try {
           clone = THREE.SkeletonUtils?.clone ? THREE.SkeletonUtils.clone(source) : source.clone(true);
         } catch (_) { clone = source.clone(true); }
+        shareKayKitClonedSkeletons(clone);
         const wrapper = new THREE.Group();
         wrapper.add(clone);
         clone.traverse?.(child => {
@@ -5504,8 +5578,8 @@
         const isSelected = kind === "selected" || kind === "direct-move";
 
         // Ombre de contraste : rend la sélection lisible sur herbe, pierre et village.
-        const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x071316, transparent: true, opacity: .62, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
-        shadowMaterial.userData.ilyosTransient = true;
+        const shadowMaterial = kaykitFlatMaterial("highlight-shadow-v1", () =>
+          new THREE.MeshBasicMaterial({ color: 0x071316, transparent: true, opacity: .62, depthWrite: false, depthTest: true, side: THREE.DoubleSide }));
         const shadow = new THREE.Mesh(
           isSelected
             ? kaykitGeometry("cell-highlight-shadow-round-v1", () => new THREE.CircleGeometry(.49, 28))
@@ -5522,8 +5596,8 @@
         // tous les cas) ; les matériaux, eux, varient réellement par instance
         // (couleur/opacité propres à cette case) et sont tagués `ilyosTransient`
         // pour être disposés par disposeKayKitObjects quand cette case change.
-        const fillMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fillOpacity, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.NormalBlending });
-        fillMaterial.userData.ilyosTransient = true;
+        const fillMaterial = kaykitFlatMaterial(`highlight-fill-${color}-${fillOpacity}`, () =>
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fillOpacity, depthWrite: false, depthTest: true, side: THREE.DoubleSide, blending: THREE.NormalBlending }));
         const fill = new THREE.Mesh(
           isSelected
             ? kaykitGeometry(`cell-highlight-fill-circle-${size}`, () => new THREE.CircleGeometry(size / 2, 28))
@@ -5536,8 +5610,8 @@
         add(fill);
 
         if (!isSelected) {
-          const outerMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true });
-          outerMaterial.userData.ilyosTransient = true;
+          const outerMaterial = kaykitFlatMaterial("highlight-outline-outer-v1", () =>
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .98, depthWrite: false, depthTest: true }));
           const outer = new THREE.LineLoop(
             kaykitGeometry(`cell-highlight-outline-outer-${size}`, () => new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(-size / 2, 0, -size / 2), new THREE.Vector3(size / 2, 0, -size / 2),
@@ -5550,8 +5624,8 @@
           add(outer);
 
           const innerSize = size - .11;
-          const innerMaterial = new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true });
-          innerMaterial.userData.ilyosTransient = true;
+          const innerMaterial = kaykitFlatMaterial(`highlight-outline-inner-${color}-${lineOpacity}`, () =>
+            new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false, depthTest: true }));
           const inner = new THREE.LineLoop(
             kaykitGeometry(`cell-highlight-outline-inner-${size}`, () => new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(-innerSize / 2, 0, -innerSize / 2), new THREE.Vector3(innerSize / 2, 0, -innerSize / 2),
@@ -5567,14 +5641,13 @@
           // Quatre barres 3D garantissent une sélection très lisible sur une île.
           const borderThickness = kind === "magic" ? .105 : (kind === "place" || kind === "invalid") ? .082 : .060;
           const borderHeight = kind === "magic" ? .042 : .030;
-          const borderMaterial = new THREE.MeshBasicMaterial({
+          const borderMaterial = kaykitFlatMaterial(`highlight-border-${color}`, () => new THREE.MeshBasicMaterial({
             color,
             transparent: true,
             opacity: 1,
             depthWrite: false,
             depthTest: true
-          });
-          borderMaterial.userData.ilyosTransient = true;
+          }));
           const borderY = y + .021;
           const horizontalGeometry = kaykitGeometry(`cell-highlight-border-h-${size}-${borderHeight}-${borderThickness}`, () => new THREE.BoxGeometry(size, borderHeight, borderThickness));
           const verticalGeometry = kaykitGeometry(`cell-highlight-border-v-${size}-${borderHeight}-${borderThickness}`, () => new THREE.BoxGeometry(borderThickness, borderHeight, size));
@@ -5590,8 +5663,8 @@
         }
 
         if (kind === "place" || kind === "invalid") {
-          const tickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
-          tickMat.userData.ilyosTransient = true;
+          const tickMat = kaykitFlatMaterial("highlight-ticks-v1", () =>
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, depthTest: true }));
           const ticksGeometry = kaykitGeometry(`cell-highlight-ticks-${size}`, () => {
             const s = size / 2, l = .18;
             const pts = [];
@@ -5667,8 +5740,8 @@
           runeGroup.rotation.x = -Math.PI / 2;
           runeGroup.renderOrder = 53;
 
-          const blueRingMaterial = new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false });
-          blueRingMaterial.userData.ilyosTransient = true;
+          const blueRingMaterial = kaykitFlatMaterial("selection-ring-blue-v1", () =>
+            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false }));
           const blueRing = new THREE.Mesh(
             kaykitGeometry("selection-ring-blue-v1", () => new THREE.RingGeometry(.43, .465, 40)),
             blueRingMaterial
@@ -5684,8 +5757,8 @@
               new THREE.Vector3(Math.cos(angle) * .475, 0, Math.sin(angle) * .475)
             );
           }
-          const runesMaterial = new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false });
-          runesMaterial.userData.ilyosTransient = true;
+          const runesMaterial = kaykitFlatMaterial("selection-runes-v1", () =>
+            new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false }));
           const runes = new THREE.LineSegments(
             kaykitGeometry("selection-runes-v1", () => new THREE.BufferGeometry().setFromPoints(runePoints)),
             runesMaterial
