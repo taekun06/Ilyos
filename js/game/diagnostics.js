@@ -1833,9 +1833,21 @@
           .map(([cle, spec]) => `<option value="${cle}">${spec.label}</option>`)
           .join("");
         select.value = kaykitSkyBandActiveVariant;
+        // Le sélecteur d'horizon reflète le choix retenu (il survit au
+        // rechargement) plutôt que le premier <option> écrit dans le HTML.
+        const horizon = document.getElementById("hudV2Horizon");
+        if (horizon) horizon.value = kaykitHorizonActif;
       }
       document.getElementById("hudV2SkyVariant")?.addEventListener("change", event => {
         window.ILYOS_SKY?.variante(event.target.value);
+      });
+
+      // Sélecteur d'horizon : les deux écoles coexistent tant que le choix
+      // artistique n'est pas tranché (voir KAYKIT_HORIZON_DEFAUT, kaykit3d.js).
+      // Les <option> sont écrites dans index.html — deux valeurs fixes, pas une
+      // liste à générer.
+      document.getElementById("hudV2Horizon")?.addEventListener("change", event => {
+        window.ILYOS_SKY?.lointain(event.target.value);
       });
 
       document.addEventListener("click", event => {

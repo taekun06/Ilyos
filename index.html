@@ -90,7 +90,7 @@
       position: relative
     }
   </style>
-  <script src="./js/version-bootstrap.js?v=20260815-gameplay-fixes2"></script>
+  <script src="./js/version-bootstrap.js?v=20260903-tutorielQ"></script>
 
   <style id="ilyos-v58-autoplay">
     .ilyos-autoplay-panel {
@@ -995,6 +995,13 @@
               <!-- Options peuplées par renderHudV2SkyOptions() depuis KAYKIT_SKY_BAND_VARIANTS
                    (kaykit3d.js) : une seule liste source, jamais dupliquée ici en dur. -->
               <select id="hudV2SkyVariant" class="hud-v2-popover-select" aria-label="Variante de ciel"></select>
+              <!-- Deux axes distincts : l'image de fond du dôme ci-dessus, et
+                   l'école d'horizon ci-dessous. Bascule à chaud, choix retenu
+                   localement (voir kaykitSetHorizon). -->
+              <select id="hudV2Horizon" class="hud-v2-popover-select" aria-label="Horizon lointain">
+                <option value="archipel">Horizon — îles découpées</option>
+                <option value="plaques">Horizon — 4 images peintes</option>
+              </select>
             </div>
           </div>
         </div>
@@ -1446,7 +1453,7 @@
        game.js, qui instancie ILYOS_ANIM.KayKitCharacterAnimator dès la
        première synchronisation de scène. -->
   <script id="v76-animation-system" src="./js/animation-system.js?v=20260815-gameplay-fixes2"></script>
-    <script src="./js/game.js?v=20260830-revue-ia-panorama"></script>
+    <script src="./js/game.js?v=20260903-tutorielQ"></script>
   <!-- Plateau tactique 2D : lit l'état, dessine, et relaie les clics aux vraies
        cases. Chargé APRÈS game.js, dont il utilise le plateau et l'état. -->
   <script src="./js/plateau-tactique.js?v=20260829-plateau2d"></script>
