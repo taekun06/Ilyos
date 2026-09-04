@@ -405,6 +405,12 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
       if (msg.type === 'action') {
         const action = msg.detail?.action;
         if (action === 'settings') document.getElementById('soundBtn')?.click();
+        if (action === 'tutorial') {
+          window.dispatchEvent(new CustomEvent('ilyos-menu-tutorial-requested'));
+          setTimeout(() => syncFrame(frame), 120);
+          setTimeout(() => syncFrame(frame), 800);
+          setTimeout(() => syncFrame(frame), 1600);
+        }
         if (action === 'resume') {
           document.getElementById('resumeLocalBtn')?.click();
           setTimeout(() => syncFrame(frame), 100);

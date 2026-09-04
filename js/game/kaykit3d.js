@@ -359,11 +359,37 @@
         farRing: 30                               // rayon minimal des silhouettes lointaines
       };
 
-      // Quatre plaques directionnelles remplacent le cylindre : chaque quart de
-      // tour dispose ainsi de sa propre image haute définition et reste parfaitement
-      // rectiligne. La plaque visible accompagne seulement la caméra, tandis que le
-      // choix des deux textures et leur décalage horizontal dépendent de l'azimut du
-      // monde. Le décor paraît donc ancré à 360° sans aucune courbure géométrique.
+      /* ===================== HORIZON : DEUX ÉCOLES, AU CHOIX =====================
+         Les deux implémentations coexistent et se choisissent à chaud (menu ⚙ →
+         « Horizon », ou window.ILYOS_SKY.horizon("plaques" | "archipel")).
+
+         — "archipel" : 64 îles découpées posées une à une autour du monde.
+         — "plaques"  : les quatre images directionnelles historiques, fondues
+                        deux à deux selon l'azimut.
+
+         Aucune des deux n'est meilleure dans l'absolu : l'archipel est net et
+         sans couture, les plaques ont une composition peinte à la main. Le
+         choix est artistique, donc il revient au joueur — et tant qu'il n'est
+         pas tranché, il ne doit surtout pas être figé dans le code.
+
+         Ce qui n'est chargé n'est jamais téléchargé : basculer d'un horizon à
+         l'autre construit le sien à la demande et démonte l'autre. */
+      const KAYKIT_HORIZON_DEFAUT = "archipel";
+      // Le choix survit au rechargement : c'est un réglage de confort local, il
+      // n'entre ni dans les règles, ni dans la sauvegarde, ni dans la synchro.
+      const KAYKIT_HORIZON_STORAGE_KEY = "ilyos-horizon-v1";
+      let kaykitHorizonActif = (() => {
+        try {
+          const v = localStorage.getItem(KAYKIT_HORIZON_STORAGE_KEY);
+          return v === "plaques" || v === "archipel" ? v : KAYKIT_HORIZON_DEFAUT;
+        } catch (_) { return KAYKIT_HORIZON_DEFAUT; }
+      })();
+
+      // Quatre plaques directionnelles : chaque quart de tour dispose de sa propre
+      // image haute définition et reste parfaitement rectiligne. La plaque visible
+      // accompagne la caméra, tandis que le choix des deux textures et leur décalage
+      // horizontal dépendent de l'azimut du monde. Le décor paraît ancré à 360° sans
+      // aucune courbure géométrique.
       const KAYKIT_HORIZON_PANORAMA = {
         urls: [
           "./assets/sky/ilyos-horizon-north-v1.png",
@@ -379,6 +405,125 @@
         blendStart: .36,
         blendEnd: .64,
         panAmount: .22
+      };
+
+      // L'archipel lointain n'est pas une image de ciel mais une collection d'îles
+      // découpées, posées une par une autour du monde (voir
+      // scripts/build-horizon-islands.js).
+      //
+      // Les trois tentatives précédentes — cylindre, sphère équirectangulaire, quatre
+      // plaques directionnelles — ont toutes échoué sur le même mur : une image qui
+      // couvre 360° doit être colossale pour rester nette. Mesure faite sur la bande
+      // d'horizon : 4,9 px par degré là où le FOV 33° du jeu en réclame ~34 sur un
+      // écran 1920. Sept fois trop peu, et 93 % de la texture n'était que du vide
+      // transparent. Aucun réglage ne rattrape ça.
+      //
+      // Une île découpée, elle, est affichée à sa résolution native quel que soit
+      // l'angle qu'elle couvre. S'ajoutent trois propriétés que la bande ne pouvait
+      // pas offrir : aucune couture possible (ce sont des objets, pas une image
+      // enroulée), une parallaxe verticale et de translation réelle (chacune est à sa
+      // propre distance), et une composition modifiable sans régénérer d'asset.
+      const KAYKIT_HORIZON_ARCHIPEL = {
+        atlas: "./assets/sky/horizon-islands-atlas.png",
+        manifeste: "./assets/sky/horizon-islands.json",
+        // Entre farRing (30) et domeRadius (170) : assez loin pour ne jamais entrer en
+        // concurrence avec le plateau, assez près pour que tourner la caméra produise
+        // un vrai glissement entre les plans.
+        rayonMin: 38,
+        // Le champ lointain sort volontairement du dôme de ciel (rayon 170). C'est
+        // sans risque : le dôme est peint en depthWrite désactivé et renderOrder
+        // -1000, donc tout ce que l'archipel dessine ensuite passe par-dessus. Et
+        // c'est indispensable — avec un maximum à 162, le rapport entre l'île la plus
+        // proche et la plus lointaine ne dépassait pas 3,7, bien trop faible pour que
+        // l'œil lise une vraie distance. À 300, il monte à 6,8.
+        rayonMax: 300,
+        // Au-delà de cette fraction de la plage, on ne pioche plus que dans les
+        // petites silhouettes : une cité entière posée à 280 unités serait
+        // parfaitement nette et grande, et détruirait l'échelle qu'on cherche.
+        seuilChampLointain: .42,
+        // Une grande cité ne descend jamais sous ce rayon : au plus près elle couvre
+        // déjà un quart du cadre et encadre la scène, la rapprocher encore
+        // l'écraserait sur le plateau.
+        rayonPlancherGrande: 62,
+        // Le placement se fait en ANGLE, pas en hauteur. C'est la correction qui a
+        // rendu l'archipel visible : toutes les caméras d'ILYOS plongent — mesuré à
+        // 37° sur la vue de face — et avec un FOV vertical de 33° le joueur ne voit
+        // que la tranche 20,5° à 53,5° SOUS l'horizontale. Un premier essai posé sur
+        // l'horizon géométrique plaçait les 64 îles à 500-1200 px au-dessus du haut
+        // de l'écran : correctement construites, jamais visibles.
+        //
+        // On vise donc la moitié haute de cette tranche, là où le décor lointain se
+        // lit, et la hauteur monde se déduit du rayon : y = hauteurCamera - r·tan(θ).
+        elevationMinDegres: 17,
+        // 60° dépasse volontairement le bas du cadre, qui est à 53,5° au centre de
+        // l'écran. Les coins, eux, portent plus loin : les îles tirées dans cette
+        // frange n'apparaissent donc qu'en bas à gauche et en bas à droite, à moitié
+        // coupées par le bord. C'est exactement ce qui donne à une peinture son
+        // premier plan et sa sensation d'enveloppement.
+        elevationMaxDegres: 60,
+        // Part de hasard pur dans l'élévation. À 0 l'élévation ne dépend que de la
+        // distance : les îles s'alignent alors sur une courbe unique et l'archipel
+        // devient une frise, ce qu'il était. À .65 elles se répartissent sur toute la
+        // hauteur du cadre — certaines frôlent le haut de l'écran, d'autres plongent
+        // près du plateau — tout en gardant la tendance « plus c'est loin, plus c'est
+        // haut » qui porte la lecture de profondeur.
+        hasardElevation: .65,
+        // Bande d'élévation qu'occupe la silhouette du plateau à l'écran, mesurée sur
+        // la vue de face. Une île qui y tombe finit tôt ou tard DERRIÈRE le plateau
+        // quand la caméra fait le tour, et vient brouiller la seule chose que le
+        // joueur doit lire. On ne peut pas réserver un secteur d'azimut — la caméra
+        // les visite tous — mais on peut vider cette bande de hauteur : l'archipel
+        // s'ouvre alors au-dessus de l'arête lointaine et sous les coins proches,
+        // exactement la composition en anneau des maquettes.
+        //
+        // La bande reste étroite volontairement. Élargie à 29°-49°, elle dégageait le
+        // centre mais vidait aussi les flancs du plateau, alors que ce sont eux qui
+        // l'encadrent. C'est le terme proportionnel à la hauteur de l'île (voir plus
+        // bas) qui fait le tri : une petite silhouette lointaine peut longer le
+        // plateau, une cité entière est repoussée bien au-delà.
+        evitementMinDegres: 33,
+        evitementMaxDegres: 45,
+        evitementForce: .88,
+        hauteurCameraReference: 10.2,
+        // Taille PHYSIQUE, en unités monde, de la plus grande île de l'atlas. C'est le
+        // point sur lequel la première version se trompait : elle fixait une taille
+        // ANGULAIRE, calculée sur la largeur en pixels dans l'atlas. Une île lointaine
+        // occupait donc exactement autant d'écran qu'une île proche — la perspective
+        // était purement et simplement annulée, et l'archipel n'avait plus ni échelle
+        // ni profondeur. Avec une taille monde, c'est la distance qui décide de la
+        // taille apparente, comme pour n'importe quel objet de la scène.
+        tailleMondeMax: 40,
+        // Exposant appliqué à la taille relative issue des planches. À 1, un fragment
+        // rocheux fait encore le tiers d'une cité ; à 1,6 l'écart se creuse et la
+        // hiérarchie cité / ruine / caillou se lit enfin.
+        exposantTaille: 1.45,
+        variationEchelle: .26,   // ± jitter par instance, casse la régularité
+        cible: 330,               // nombre d'îles posées ; les sprites sont réutilisés au besoin
+        // Le lointain se désature et se laisse manger par la brume, sinon il
+        // concurrence le plateau. C'est l'inverse de ce que faisait le shader
+        // précédent, qui rehaussait saturation et contraste.
+        // Perspective atmosphérique, interpolée sur la distance réelle à la caméra.
+        // Une valeur unique pour tout l'archipel — ce que faisait la version
+        // précédente — aplatit le lointain sur le proche aussi sûrement qu'une
+        // taille angulaire fixe.
+        opacite: 1,
+        // Voile lavande clair, et non plus bleu-gris froid. La perspective
+        // atmosphérique doit faire reculer le lointain dans la lumière, pas le
+        // décolorer : un premier réglage à 52 % de saturation et 56 % de voile
+        // rendait tout l'arrière-plan terne et éteignait la peinture des planches.
+        brume: 0xd6c9e2,
+        distanceProche: 50,
+        distanceLoin: 285,
+        saturationProche: 1,
+        saturationLoin: .78,
+        brumeProche: .02,
+        brumeLoin: .46,
+        // Fondu du bas de chaque île : sa base se dissout au lieu de s'arrêter net,
+        // et la mer de nuages 3D prend le relais.
+        fonduBas: .34,
+        deriveAmplitude: .45,    // respiration verticale très lente
+        deriveVitesse: .07,
+        graine: 20260901
       };
 
       // Palette « sanctuaire céleste lumineux » : bleu soutenu au zénith, bande
@@ -819,7 +964,9 @@
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
+          horizonArchipel: null,        // îles découpées posées autour du monde, un seul appel de rendu
           horizonPanorama: null,        // plaque directionnelle : images indexées sur l'azimut du monde
+          skyGroup: null,               // parent commun des deux horizons, pour pouvoir les échanger
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
@@ -2012,6 +2159,147 @@
         return geometry;
       }
 
+      // Générateur déterministe : la composition de l'archipel doit être identique
+      // d'une partie à l'autre. Une île mal placée se corrige en changeant la graine,
+      // pas en relançant jusqu'à tomber sur un bon tirage.
+      function kaykitHorizonHasard(graine) {
+        let etat = graine >>> 0;
+        return () => {
+          etat = (etat * 1664525 + 1013904223) >>> 0;
+          return etat / 4294967296;
+        };
+      }
+
+      // Répartit les îles du manifeste autour du monde. Sortie : un tableau de poses
+      // prêtes à être versées dans la géométrie, triées du plus lointain au plus
+      // proche pour que le mélange alpha se fasse dans le bon ordre.
+      function kaykitHorizonComposer(manifeste) {
+        const reglages = KAYKIT_HORIZON_ARCHIPEL;
+        const catalogue = (manifeste?.iles || []).filter(ile => ile.largeur > 0 && ile.hauteur > 0);
+        if (!catalogue.length) return [];
+
+        const hasard = kaykitHorizonHasard(reglages.graine);
+
+        // Mélange préalable : sans lui, parcourir le catalogue trié par aire poserait
+        // les grandes masses d'un côté et la poussière de l'autre.
+        const melanger = liste => {
+          const copie = liste.slice();
+          for (let i = copie.length - 1; i > 0; i--) {
+            const j = Math.floor(hasard() * (i + 1));
+            [copie[i], copie[j]] = [copie[j], copie[i]];
+          }
+          return copie;
+        };
+        const ordre = melanger(catalogue);
+
+        // Second catalogue, restreint aux plus petites silhouettes : c'est lui qui
+        // peuple le champ lointain. Les fragments rocheux et les ruines modestes y
+        // sont sur-représentés, exactement ce qu'on veut voir se perdre dans la brume.
+        const parTaille = catalogue.slice().sort((a, b) => a.largeur - b.largeur);
+        const ordrePetites = melanger(parTaille.slice(0, Math.max(1, Math.round(parTaille.length * .55))));
+
+        // L'échelle relative entre îles vient des planches elles-mêmes : elles sont
+        // générées avec un cadrage cohérent. On se contente de mapper la plus large
+        // sur l'angle maximal voulu.
+        const largeurMax = catalogue.reduce((max, ile) => Math.max(max, ile.largeur), 1);
+        const total = Math.max(catalogue.length, reglages.cible | 0);
+        const pas = (Math.PI * 2) / total;
+        const poses = [];
+
+        let curseurProches = 0, curseurLointaines = 0;
+
+        for (let i = 0; i < total; i++) {
+          // La DISTANCE est tirée en premier, et c'est elle qui décide du reste.
+          // Exposant < 1 : la majorité des îles part au-delà du milieu de la plage.
+          // Sans ce biais, un tirage uniforme concentre l'archipel au premier plan et
+          // le fond reste vide, alors que c'est justement lui qui donne l'immensité.
+          let rayon = reglages.rayonMin
+            + (reglages.rayonMax - reglages.rayonMin) * Math.pow(hasard(), .62);
+          let versLoin = (rayon - reglages.rayonMin)
+            / Math.max(1, reglages.rayonMax - reglages.rayonMin);
+
+          const lointaine = versLoin > reglages.seuilChampLointain;
+          const ile = lointaine
+            ? ordrePetites[curseurLointaines++ % ordrePetites.length]
+            : ordre[curseurProches++ % ordre.length];
+          const relatif = ile.largeur / largeurMax;
+
+          // Une grande cité ne descend jamais sous son plancher : au plus près elle
+          // couvre déjà un quart du cadre, la rapprocher encore l'écraserait sur le
+          // plateau.
+          const plancher = reglages.rayonMin
+            + (reglages.rayonPlancherGrande - reglages.rayonMin) * relatif;
+          if (rayon < plancher) {
+            rayon = plancher;
+            versLoin = (rayon - reglages.rayonMin)
+              / Math.max(1, reglages.rayonMax - reglages.rayonMin);
+          }
+
+          const echelle = 1 + (hasard() * 2 - 1) * reglages.variationEchelle;
+          const largeurMonde = reglages.tailleMondeMax
+            * Math.pow(relatif, reglages.exposantTaille) * echelle;
+          const hauteurMonde = largeurMonde * (ile.hauteur / ile.largeur);
+
+          // Azimut stratifié : un créneau par île, avec un débattement de 40 % à
+          // l'intérieur. Cela couvre les 360° sans jamais laisser de trou ni former
+          // de grappe, ce qu'un tirage uniforme ferait immanquablement.
+          const azimut = pas * (i + .5 + (hasard() * .8 - .4));
+
+          // L'élévation suit la DISTANCE, pas la taille : plus une île est loin, plus
+          // elle remonte vers l'horizon. C'est ce que ferait un archipel réel posé à
+          // une altitude commune, et c'est le second indice de profondeur après la
+          // taille apparente. Le jitter empêche l'alignement parfait sur une courbe.
+          const amplitude = reglages.elevationMaxDegres - reglages.elevationMinDegres;
+          const selonDistance = reglages.elevationMaxDegres - amplitude * versLoin;
+          const librement = reglages.elevationMinDegres + amplitude * hasard();
+          let elevation = selonDistance
+            + (librement - selonDistance) * reglages.hasardElevation;
+
+          // Répulsion hors de la bande du plateau. L'exposant .5 pousse d'autant plus
+          // fort qu'on est près du centre de la bande, ce qui la vide sans entasser
+          // les îles sur ses deux bords.
+          const centreBande = (reglages.evitementMinDegres + reglages.evitementMaxDegres) / 2;
+          // La bande est élargie de la demi-hauteur ANGULAIRE de l'île. Repousser son
+          // seul centre laissait les grandes cités mordre largement dans le trou
+          // central avec leurs flèches : c'est leur silhouette entière qui doit en
+          // sortir, pas leur point d'ancrage.
+          const demiHauteurAngle = Math.atan((hauteurMonde / 2) / rayon) * 180 / Math.PI;
+          const demiBande = (reglages.evitementMaxDegres - reglages.evitementMinDegres) / 2
+            + demiHauteurAngle * .95;
+          const ecart = elevation - centreBande;
+          if (demiBande > 0 && Math.abs(ecart) < demiBande) {
+            const t = Math.abs(ecart) / demiBande;
+            const pousse = demiBande * (1 - Math.sqrt(t)) * reglages.evitementForce;
+            elevation += (ecart >= 0 ? 1 : -1) * pousse;
+          }
+          const hauteurBase = reglages.hauteurCameraReference
+            - rayon * Math.tan(elevation * Math.PI / 180);
+
+
+          poses.push({
+            ile,
+            x: Math.sin(azimut) * rayon,
+            y: hauteurBase,
+            z: Math.cos(azimut) * rayon,
+            rayon,
+            demiLargeur: largeurMonde / 2,
+            demiHauteur: hauteurMonde / 2,
+            // Miroir horizontal une fois sur deux : toutes les planches sont générées
+            // sous le même angle de trois-quarts, et sans cette bascule la répétition
+            // d'orientation se voit dès qu'on tourne la caméra.
+            miroir: hasard() < .5,
+            phase: hasard() * Math.PI * 2
+          });
+        }
+
+        // Le matériau n'écrit pas dans le tampon de profondeur : l'ordre de mélange
+        // est donc celui des index. On dessine du plus lointain au plus proche.
+        poses.sort((a, b) => b.rayon - a.rayon);
+        return poses;
+      }
+
+      /* ---------- Horizon « plaques » (les quatre images directionnelles) ---------- */
+
       function updateKayKitHorizonPanorama() {
         const panorama = kaykit3D?.horizonPanorama;
         const camera = kaykit3D?.camera;
@@ -2062,61 +2350,305 @@
         }));
 
         Promise.all(loads).then(textures => {
-            if (!kaykit3D || kaykit3D.disposed || !parent.parent) {
-              textures.forEach(texture => texture.dispose());
+          // L'horizon a pu être rebasculé pendant le chargement : on ne monte rien
+          // si ce n'est plus celui qui est demandé.
+          if (!kaykit3D || kaykit3D.disposed || !parent.parent || kaykitHorizonActif !== "plaques") {
+            textures.forEach(texture => texture.dispose());
+            return;
+          }
+
+          textures.forEach(texture => {
+            texture.encoding = THREE.sRGBEncoding;
+            texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.generateMipmaps = true;
+            texture.anisotropy = Math.min(16, kaykit3D.renderer.capabilities.getMaxAnisotropy?.() || 1);
+            texture.needsUpdate = true;
+          });
+
+          // Deux vues voisines sont fondues uniquement près de leur frontière.
+          // Le léger glissement UV compense l'angle intermédiaire, sans étirer ni
+          // enrouler l'architecture comme le faisait le cylindre.
+          const material = new THREE.ShaderMaterial({
+            uniforms: {
+              panoramaMapA: { value: textures[0] },
+              panoramaMapB: { value: textures[1] },
+              panoramaMix: { value: 0 },
+              panoramaOffsetA: { value: 0 },
+              panoramaOffsetB: { value: 0 },
+              panoramaOpacity: { value: KAYKIT_HORIZON_PANORAMA.opacity }
+            },
+            vertexShader: [
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vUv = uv;",
+              "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+              "}"
+            ].join("\n"),
+            fragmentShader: [
+              "uniform sampler2D panoramaMapA;",
+              "uniform sampler2D panoramaMapB;",
+              "uniform float panoramaMix;",
+              "uniform float panoramaOffsetA;",
+              "uniform float panoramaOffsetB;",
+              "uniform float panoramaOpacity;",
+              "varying vec2 vUv;",
+              "void main() {",
+              "  vec2 uvA = vec2(clamp(vUv.x + panoramaOffsetA, 0.002, 0.998), vUv.y);",
+              "  vec2 uvB = vec2(clamp(vUv.x + panoramaOffsetB, 0.002, 0.998), vUv.y);",
+              "  vec4 texelA = texture2D(panoramaMapA, uvA);",
+              "  vec4 texelB = texture2D(panoramaMapB, uvB);",
+              "  vec4 texel = mix(texelA, texelB, panoramaMix);",
+              "  float lowerFade = smoothstep(0.02, 0.30, vUv.y);",
+              "  float upperFade = 1.0 - smoothstep(0.985, 1.0, vUv.y);",
+              "  float alpha = lowerFade * upperFade * panoramaOpacity;",
+              "  if (alpha < 0.003) discard;",
+              "  float luminance = dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722));",
+              "  vec3 distant = mix(vec3(luminance), texel.rgb, 0.96);",
+              "  gl_FragColor = vec4(distant, alpha);",
+              "}"
+            ].join("\n"),
+            transparent: true,
+            depthTest: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            fog: false,
+            toneMapped: false
+          });
+
+          const panorama = new THREE.Mesh(
+            kaykitGeometry("horizon-directional-plate-v7", () => new THREE.PlaneGeometry(
+              KAYKIT_HORIZON_PANORAMA.width,
+              KAYKIT_HORIZON_PANORAMA.height
+            )),
+            material
+          );
+          panorama.name = "ilyos-horizon-panorama";
+          panorama.renderOrder = -950; // dôme/bande, panorama, puis nuages
+          panorama.frustumCulled = false;
+          panorama.userData.directionalTextures = textures;
+          parent.add(panorama);
+          kaykit3D.horizonPanorama = panorama;
+          updateKayKitHorizonPanorama();
+        }).catch(error => console.warn("[ILYOS] plaques d'horizon indisponibles :", error));
+        return true;
+      }
+
+      /* ---------- Aiguillage entre les deux horizons ---------- */
+
+      // Démonte proprement l'horizon en place : sans ça, basculer plusieurs fois
+      // laisserait des textures et des géométries orphelines sur le GPU.
+      function kaykitDisposeHorizon() {
+        ["horizonArchipel", "horizonPanorama"].forEach(cle => {
+          const objet = kaykit3D && kaykit3D[cle];
+          if (!objet) return;
+          objet.parent && objet.parent.remove(objet);
+          (objet.userData?.directionalTextures || []).forEach(t => t.dispose && t.dispose());
+          const map = objet.material?.uniforms?.atlas?.value;
+          if (map && map.dispose) map.dispose();
+          objet.material?.dispose && objet.material.dispose();
+          kaykit3D[cle] = null;
+        });
+      }
+
+      function buildKayKitHorizon(parent) {
+        if (!parent) return false;
+        kaykit3D.skyGroup = parent;
+        kaykitDisposeHorizon();
+        return kaykitHorizonActif === "plaques"
+          ? buildKayKitHorizonPanorama(parent)
+          : buildKayKitHorizonArchipel(parent);
+      }
+
+      function updateKayKitHorizon(temps) {
+        if (kaykitHorizonActif === "plaques") updateKayKitHorizonPanorama();
+        else updateKayKitHorizonArchipel(temps);
+      }
+
+      /* Bascule à chaud, sans reconstruire la scène : c'est ce qui permet de
+         comparer les deux horizons à l'œil, sur la même partie. */
+      function kaykitSetHorizon(nom) {
+        const choisi = nom === "plaques" ? "plaques" : "archipel";
+        if (choisi === kaykitHorizonActif && (kaykit3D?.horizonArchipel || kaykit3D?.horizonPanorama)) {
+          return kaykitHorizonActif;
+        }
+        kaykitHorizonActif = choisi;
+        try { localStorage.setItem(KAYKIT_HORIZON_STORAGE_KEY, choisi); } catch (_) { }
+        if (kaykit3D?.skyGroup) buildKayKitHorizon(kaykit3D.skyGroup);
+        return kaykitHorizonActif;
+      }
+
+      function updateKayKitHorizonArchipel(temps) {
+        const archipel = kaykit3D?.horizonArchipel;
+        const uniforms = archipel?.material?.uniforms;
+        if (!archipel?.parent || !uniforms) return;
+        // Seule la respiration verticale demande une mise à jour : les îles sont de
+        // vrais objets du monde, leur orientation face caméra est calculée par le
+        // vertex shader.
+        uniforms.temps.value = temps;
+      }
+
+      function buildKayKitHorizonArchipel(parent) {
+        if (!kaykit3D?.textureLoader || !parent) return false;
+        const reglages = KAYKIT_HORIZON_ARCHIPEL;
+
+        Promise.all([
+          fetch(reglages.manifeste).then(reponse => {
+            if (!reponse.ok) throw new Error(`manifeste ${reponse.status}`);
+            return reponse.json();
+          }),
+          new Promise((resolve, reject) => {
+            kaykit3D.textureLoader.load(reglages.atlas, resolve, undefined, reject);
+          })
+        ]).then(([manifeste, atlas]) => {
+            // L'horizon a pu être rebasculé pendant le chargement : on ne monte
+            // rien si ce n'est plus celui qui est demandé.
+            if (!kaykit3D || kaykit3D.disposed || !parent.parent || kaykitHorizonActif !== "archipel") {
+              atlas.dispose();
               return;
             }
 
-            textures.forEach(texture => {
-              texture.encoding = THREE.sRGBEncoding;
-              texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-              texture.minFilter = THREE.LinearMipmapLinearFilter;
-              texture.magFilter = THREE.LinearFilter;
-              texture.generateMipmaps = true;
-              texture.anisotropy = Math.min(16, kaykit3D.renderer.capabilities.getMaxAnisotropy?.() || 1);
-              texture.needsUpdate = true;
+            const poses = kaykitHorizonComposer(manifeste);
+            if (!poses.length) {
+              atlas.dispose();
+              console.warn("[ILYOS] archipel d'horizon : manifeste vide");
+              return;
+            }
+
+            atlas.encoding = THREE.sRGBEncoding;
+            atlas.wrapS = atlas.wrapT = THREE.ClampToEdgeWrapping;
+            atlas.minFilter = THREE.LinearMipmapLinearFilter;
+            atlas.magFilter = THREE.LinearFilter;
+            atlas.generateMipmaps = true;
+            atlas.anisotropy = Math.min(16, kaykit3D.renderer.capabilities.getMaxAnisotropy?.() || 1);
+            atlas.needsUpdate = true;
+
+            const largeurAtlas = manifeste.atlas?.largeur || atlas.image?.width || 1;
+            const hauteurAtlas = manifeste.atlas?.hauteur || atlas.image?.height || 1;
+
+            // Une seule géométrie pour tout l'archipel : un appel de rendu, quel que
+            // soit le nombre d'îles. Chaque sommet porte le centre de son île, son
+            // décalage de coin et sa phase ; le reste se joue dans le vertex shader.
+            const sommets = poses.length * 4;
+            const centres = new Float32Array(sommets * 3);
+            const coins = new Float32Array(sommets * 2);
+            const uvs = new Float32Array(sommets * 2);
+            const phases = new Float32Array(sommets);
+            const index = new Uint32Array(poses.length * 6);
+
+            poses.forEach((pose, i) => {
+              const { ile } = pose;
+              const u0 = ile.x / largeurAtlas;
+              const u1 = (ile.x + ile.largeur) / largeurAtlas;
+              const v0 = 1 - (ile.y + ile.hauteur) / hauteurAtlas;
+              const v1 = 1 - ile.y / hauteurAtlas;
+              const gauche = pose.miroir ? u1 : u0;
+              const droite = pose.miroir ? u0 : u1;
+
+              // Coins dans l'ordre bas-gauche, bas-droite, haut-droite, haut-gauche.
+              const decalages = [
+                [-pose.demiLargeur, -pose.demiHauteur, gauche, v0],
+                [pose.demiLargeur, -pose.demiHauteur, droite, v0],
+                [pose.demiLargeur, pose.demiHauteur, droite, v1],
+                [-pose.demiLargeur, pose.demiHauteur, gauche, v1]
+              ];
+
+              decalages.forEach(([dx, dy, u, v], coin) => {
+                const s = i * 4 + coin;
+                centres[s * 3] = pose.x;
+                centres[s * 3 + 1] = pose.y;
+                centres[s * 3 + 2] = pose.z;
+                coins[s * 2] = dx;
+                coins[s * 2 + 1] = dy;
+                uvs[s * 2] = u;
+                uvs[s * 2 + 1] = v;
+                phases[s] = pose.phase;
+              });
+
+              const base = i * 4;
+              index.set([base, base + 1, base + 2, base, base + 2, base + 3], i * 6);
             });
 
-            // Deux vues voisines sont fondues uniquement près de leur frontière.
-            // Le léger glissement UV compense l'angle intermédiaire, sans étirer ni
-            // enrouler l'architecture comme le faisait le cylindre.
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute("position", new THREE.BufferAttribute(centres, 3));
+            geometry.setAttribute("coin", new THREE.BufferAttribute(coins, 2));
+            geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+            geometry.setAttribute("phase", new THREE.BufferAttribute(phases, 1));
+            geometry.setIndex(new THREE.BufferAttribute(index, 1));
+
+            const brume = new THREE.Color(reglages.brume);
+
             const material = new THREE.ShaderMaterial({
               uniforms: {
-                panoramaMapA: { value: textures[0] },
-                panoramaMapB: { value: textures[1] },
-                panoramaMix: { value: 0 },
-                panoramaOffsetA: { value: 0 },
-                panoramaOffsetB: { value: 0 },
-                panoramaOpacity: { value: KAYKIT_HORIZON_PANORAMA.opacity }
+                atlas: { value: atlas },
+                temps: { value: 0 },
+                deriveAmplitude: { value: reglages.deriveAmplitude },
+                deriveVitesse: { value: reglages.deriveVitesse },
+                opacite: { value: reglages.opacite },
+                brume: { value: brume },
+                distanceProche: { value: reglages.distanceProche },
+                distanceLoin: { value: reglages.distanceLoin },
+                saturationProche: { value: reglages.saturationProche },
+                saturationLoin: { value: reglages.saturationLoin },
+                brumeProche: { value: reglages.brumeProche },
+                brumeLoin: { value: reglages.brumeLoin },
+                fonduBas: { value: reglages.fonduBas }
               },
               vertexShader: [
+                "attribute vec2 coin;",
+                "attribute float phase;",
+                "uniform float temps;",
+                "uniform float deriveAmplitude;",
+                "uniform float deriveVitesse;",
+                "uniform float distanceProche;",
+                "uniform float distanceLoin;",
                 "varying vec2 vUv;",
+                "varying float vHauteurLocale;",
+                "varying float vEloignement;",
                 "void main() {",
                 "  vUv = uv;",
-                "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+                // 0 en bas de l'île, 1 en haut : sert au fondu de la base.
+                "  vHauteurLocale = step(0.0, coin.y);",
+                "  vec3 centre = (modelMatrix * vec4(position, 1.0)).xyz;",
+                "  centre.y += sin(temps * deriveVitesse + phase) * deriveAmplitude;",
+                // Panneau tenu droit : il pivote autour de l'axe vertical seulement.
+                // Un billboard complet basculerait avec la caméra plongeante du jeu et
+                // les îles pencheraient en arrière.
+                "  vec3 vue = cameraPosition - centre;",
+                "  vEloignement = smoothstep(distanceProche, distanceLoin, length(vue));",
+                "  vec3 droite = normalize(vec3(vue.z, 0.0, -vue.x));",
+                "  vec3 monde = centre + droite * coin.x + vec3(0.0, 1.0, 0.0) * coin.y;",
+                "  gl_Position = projectionMatrix * viewMatrix * vec4(monde, 1.0);",
                 "}"
               ].join("\n"),
               fragmentShader: [
-                "uniform sampler2D panoramaMapA;",
-                "uniform sampler2D panoramaMapB;",
-                "uniform float panoramaMix;",
-                "uniform float panoramaOffsetA;",
-                "uniform float panoramaOffsetB;",
-                "uniform float panoramaOpacity;",
+                "uniform sampler2D atlas;",
+                "uniform float opacite;",
+                "uniform vec3 brume;",
+                "uniform float saturationProche;",
+                "uniform float saturationLoin;",
+                "uniform float brumeProche;",
+                "uniform float brumeLoin;",
+                "uniform float fonduBas;",
                 "varying vec2 vUv;",
+                "varying float vHauteurLocale;",
+                "varying float vEloignement;",
                 "void main() {",
-                "  vec2 uvA = vec2(clamp(vUv.x + panoramaOffsetA, 0.002, 0.998), vUv.y);",
-                "  vec2 uvB = vec2(clamp(vUv.x + panoramaOffsetB, 0.002, 0.998), vUv.y);",
-                "  vec4 texelA = texture2D(panoramaMapA, uvA);",
-                "  vec4 texelB = texture2D(panoramaMapB, uvB);",
-                "  vec4 texel = mix(texelA, texelB, panoramaMix);",
-                "  float lowerFade = smoothstep(0.02, 0.30, vUv.y);",
-                "  float upperFade = 1.0 - smoothstep(0.985, 1.0, vUv.y);",
-                "  float alpha = lowerFade * upperFade * panoramaOpacity;",
-                "  if (alpha < 0.003) discard;",
+                "  vec4 texel = texture2D(atlas, vUv);",
+                "  if (texel.a < 0.004) discard;",
+                // Perspective atmosphérique : on désature puis on tire vers la brume.
+                // Sans ça, un archipel peint reste plus contrasté que le plateau et
+                // attire l'œil au mauvais endroit.
                 "  float luminance = dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722));",
-                "  vec3 distant = mix(vec3(luminance), texel.rgb, 0.96);",
-                "  gl_FragColor = vec4(distant, alpha);",
+                "  float saturation = mix(saturationProche, saturationLoin, vEloignement);",
+                "  float voile = mix(brumeProche, brumeLoin, vEloignement);",
+                "  vec3 couleur = mix(vec3(luminance), texel.rgb, saturation);",
+                "  couleur = mix(couleur, brume, voile);",
+                // La base de chaque île se dissout : la mer de nuages 3D reprend le
+                // relais et la jonction n'existe plus.
+                "  float bas = smoothstep(0.0, fonduBas, vHauteurLocale);",
+                "  gl_FragColor = vec4(couleur, texel.a * opacite * bas);",
                 "}"
               ].join("\n"),
               transparent: true,
@@ -2127,21 +2659,15 @@
               toneMapped: false
             });
 
-            const panorama = new THREE.Mesh(
-              kaykitGeometry("horizon-directional-plate-v7", () => new THREE.PlaneGeometry(
-                KAYKIT_HORIZON_PANORAMA.width,
-                KAYKIT_HORIZON_PANORAMA.height
-              )),
-              material
-            );
-            panorama.name = "ilyos-horizon-panorama";
-            panorama.renderOrder = -950; // dôme/bande, panorama, puis nuages
-            panorama.frustumCulled = false;
-            panorama.userData.directionalTextures = textures;
-            parent.add(panorama);
-            kaykit3D.horizonPanorama = panorama;
-            updateKayKitHorizonPanorama();
-          }).catch(error => console.warn("[ILYOS] plaques d'horizon indisponibles :", error));
+            const archipel = new THREE.Mesh(geometry, material);
+            archipel.name = "ilyos-horizon-archipel";
+            archipel.renderOrder = -950; // dôme/bande, archipel, puis nuages
+            archipel.frustumCulled = false;
+            archipel.userData.atlasTexture = atlas;
+            parent.add(archipel);
+            kaykit3D.horizonArchipel = archipel;
+            updateKayKitHorizonArchipel(0);
+          }).catch(error => console.warn("[ILYOS] archipel d'horizon indisponible :", error));
         return true;
       }
 
@@ -2191,9 +2717,10 @@
         band.frustumCulled = false;
         sky.add(band);
 
-        // COUCHE 2 — panorama lointain. Il est ajouté avant les nuages afin que
+        // COUCHE 2 — horizon lointain, dans l'école choisie (îles découpées ou
+        // quatre plaques directionnelles). Ajouté avant les nuages afin que
         // leurs vraies géométries restent toujours la couche visuelle principale.
-        buildKayKitHorizonPanorama(sky);
+        buildKayKitHorizon(sky);
 
         // COUCHE 5 — mer de nuages, très bas sous les îles. Deux nappes seulement :
         // la haute donne la lecture « îles ↓ vide ↓ nuages », la basse ajoute du
@@ -2609,8 +3136,15 @@
             "valeurs()             réglages courants",
             "regenerer()           reconstruit la texture de ciel",
             "variante(nom)         change l'image de fond de la bande de ciel",
-            "                      (sky01..sky25) — sans argument, liste les 25 options"
+            "                      (sky01..sky25) — sans argument, liste les 25 options",
+            "lointain(nom)         école d'horizon : \"archipel\" (îles découpées) ou",
+            "                      \"plaques\" (les 4 images directionnelles). Bascule à",
+            "                      chaud ; sans argument, rend celle en place."
           ].join("\n");
+        },
+        lointain(nom) {
+          if (!nom) return kaykitHorizonActif;
+          return kaykitSetHorizon(nom);
         },
         valeurs() {
           return {
@@ -9874,7 +10408,7 @@
         // persistant (visual.move, voir updateKayKitCharacters) : il survit aux
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
-        updateKayKitHorizonPanorama();
+        updateKayKitHorizon(elapsed);
         // gameHidden garantit déjà ici visualMode==="alternative" et
         // #gameScreen visible (voir le retour anticipé en tête de fonction) :
         // plus besoin de revérifier avant de rendre.

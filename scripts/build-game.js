@@ -26,6 +26,10 @@ const fragmentNames = [
   // bundle en fin de chantier. Placée après planner.js, dont elle lit les
   // rapports et l'évaluateur détaillé.
   'autopsie.js',
+  // Tutoriel scénarisé « La Première Ascension ». Autonome : construit un state
+  // normal, restreint les entrées et écoute les événements visuels. Placé après
+  // autopsie.js (il n'en dépend pas) et avant diagnostics.js.
+  'tutorial.js',
   'diagnostics.js',
 ];
 

@@ -11,7 +11,9 @@ The fragment order is intentional:
 5. `turns.js` — turn lifecycle and undo handling
 6. `audio.js` — embedded music, settings and sound effects
 7. `ui.js` — board rendering and player interactions
-8. `diagnostics.js` — diagnostics, public API, event wiring and closure end
+8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `autopsie.js` — rules cores, Expert planner, AI autopsy
+9. `tutorial.js` — scripted tutorial « La Première Ascension » (self-contained: builds a normal state, gates input via a capture listener on `els.board`, watches `window.ILYOS_VISUAL_EVENTS`)
+10. `diagnostics.js` — diagnostics, public API, event wiring and closure end
 
 Do not load fragments directly from `index.html`: none is a standalone script. After editing one or more fragments, rebuild and verify the browser entry point:
 

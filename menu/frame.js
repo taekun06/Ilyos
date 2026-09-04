@@ -281,7 +281,7 @@
     const action=btn.dataset.action;
     if(action==='fullscreen') return toggleFullscreen();
     if(action==='rules'||action==='help') return openRules();
-    if(action==='tutorial') return openComingSoon('TUTORIEL');
+    if(action==='tutorial'){ send('action',{action}); return; }
     if(action==='credits') return openCredits();
     send('action',{action});
   }));

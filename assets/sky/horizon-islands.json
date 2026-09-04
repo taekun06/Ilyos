@@ -1,0 +1,540 @@
+{
+  "genere": "scripts/build-horizon-islands.js",
+  "atlas": {
+    "largeur": 4096,
+    "hauteur": 975
+  },
+  "iles": [
+    {
+      "id": "sheet-a3-02",
+      "planche": "sheet-a3",
+      "x": 0,
+      "y": 0,
+      "largeur": 291,
+      "hauteur": 603,
+      "aire": 80970
+    },
+    {
+      "id": "sheet-a1-03",
+      "planche": "sheet-a1",
+      "x": 833,
+      "y": 0,
+      "largeur": 340,
+      "hauteur": 329,
+      "aire": 44209
+    },
+    {
+      "id": "sheet-a3-03",
+      "planche": "sheet-a3",
+      "x": 291,
+      "y": 0,
+      "largeur": 262,
+      "hauteur": 375,
+      "aire": 41626
+    },
+    {
+      "id": "sheet-a3-01",
+      "planche": "sheet-a3",
+      "x": 1653,
+      "y": 0,
+      "largeur": 300,
+      "hauteur": 323,
+      "aire": 41312
+    },
+    {
+      "id": "sheet-a2-03",
+      "planche": "sheet-a2",
+      "x": 553,
+      "y": 0,
+      "largeur": 280,
+      "hauteur": 367,
+      "aire": 41171
+    },
+    {
+      "id": "sheet-a3-04",
+      "planche": "sheet-a3",
+      "x": 3368,
+      "y": 0,
+      "largeur": 290,
+      "hauteur": 267,
+      "aire": 39504
+    },
+    {
+      "id": "sheet-a1-02",
+      "planche": "sheet-a1",
+      "x": 2497,
+      "y": 0,
+      "largeur": 240,
+      "hauteur": 303,
+      "aire": 38789
+    },
+    {
+      "id": "sheet-a1-05",
+      "planche": "sheet-a1",
+      "x": 3798,
+      "y": 0,
+      "largeur": 278,
+      "hauteur": 254,
+      "aire": 38195
+    },
+    {
+      "id": "sheet-a1-01",
+      "planche": "sheet-a1",
+      "x": 2158,
+      "y": 0,
+      "largeur": 339,
+      "hauteur": 304,
+      "aire": 36670
+    },
+    {
+      "id": "sheet-a2-01",
+      "planche": "sheet-a2",
+      "x": 1173,
+      "y": 0,
+      "largeur": 279,
+      "hauteur": 325,
+      "aire": 36450
+    },
+    {
+      "id": "sheet-a2-04",
+      "planche": "sheet-a2",
+      "x": 2737,
+      "y": 0,
+      "largeur": 256,
+      "hauteur": 286,
+      "aire": 29885
+    },
+    {
+      "id": "sheet-a2-05",
+      "planche": "sheet-a2",
+      "x": 3112,
+      "y": 0,
+      "largeur": 256,
+      "hauteur": 275,
+      "aire": 28433
+    },
+    {
+      "id": "sheet-a1-04",
+      "planche": "sheet-a1",
+      "x": 1452,
+      "y": 0,
+      "largeur": 201,
+      "hauteur": 323,
+      "aire": 27546
+    },
+    {
+      "id": "sheet-a2-02",
+      "planche": "sheet-a2",
+      "x": 1953,
+      "y": 0,
+      "largeur": 205,
+      "hauteur": 319,
+      "aire": 25035
+    },
+    {
+      "id": "sheet-b2-02",
+      "planche": "sheet-b2",
+      "x": 0,
+      "y": 603,
+      "largeur": 192,
+      "hauteur": 251,
+      "aire": 23005
+    },
+    {
+      "id": "sheet-b2-03",
+      "planche": "sheet-b2",
+      "x": 622,
+      "y": 603,
+      "largeur": 185,
+      "hauteur": 235,
+      "aire": 20958
+    },
+    {
+      "id": "sheet-b1-02",
+      "planche": "sheet-b1",
+      "x": 192,
+      "y": 603,
+      "largeur": 156,
+      "hauteur": 249,
+      "aire": 19478
+    },
+    {
+      "id": "sheet-b2-06",
+      "planche": "sheet-b2",
+      "x": 951,
+      "y": 603,
+      "largeur": 171,
+      "hauteur": 229,
+      "aire": 18329
+    },
+    {
+      "id": "sheet-b2-07",
+      "planche": "sheet-b2",
+      "x": 1937,
+      "y": 603,
+      "largeur": 218,
+      "hauteur": 197,
+      "aire": 18309
+    },
+    {
+      "id": "sheet-b1-03",
+      "planche": "sheet-b1",
+      "x": 1452,
+      "y": 603,
+      "largeur": 163,
+      "hauteur": 214,
+      "aire": 17922
+    },
+    {
+      "id": "sheet-b2-04",
+      "planche": "sheet-b2",
+      "x": 1122,
+      "y": 603,
+      "largeur": 168,
+      "hauteur": 216,
+      "aire": 17131
+    },
+    {
+      "id": "sheet-b2-08",
+      "planche": "sheet-b2",
+      "x": 1615,
+      "y": 603,
+      "largeur": 165,
+      "hauteur": 211,
+      "aire": 17123
+    },
+    {
+      "id": "sheet-b2-05",
+      "planche": "sheet-b2",
+      "x": 474,
+      "y": 603,
+      "largeur": 148,
+      "hauteur": 239,
+      "aire": 16771
+    },
+    {
+      "id": "sheet-b1-07",
+      "planche": "sheet-b1",
+      "x": 1780,
+      "y": 603,
+      "largeur": 157,
+      "hauteur": 210,
+      "aire": 16161
+    },
+    {
+      "id": "sheet-b1-04",
+      "planche": "sheet-b1",
+      "x": 1290,
+      "y": 603,
+      "largeur": 162,
+      "hauteur": 215,
+      "aire": 16118
+    },
+    {
+      "id": "sheet-b1-01",
+      "planche": "sheet-b1",
+      "x": 3658,
+      "y": 0,
+      "largeur": 140,
+      "hauteur": 260,
+      "aire": 16065
+    },
+    {
+      "id": "sheet-b1-06",
+      "planche": "sheet-b1",
+      "x": 807,
+      "y": 603,
+      "largeur": 144,
+      "hauteur": 230,
+      "aire": 15393
+    },
+    {
+      "id": "sheet-b1-05",
+      "planche": "sheet-b1",
+      "x": 348,
+      "y": 603,
+      "largeur": 126,
+      "hauteur": 245,
+      "aire": 15090
+    },
+    {
+      "id": "sheet-b2-01",
+      "planche": "sheet-b2",
+      "x": 2993,
+      "y": 0,
+      "largeur": 119,
+      "hauteur": 277,
+      "aire": 13532
+    },
+    {
+      "id": "sheet-b1-08",
+      "planche": "sheet-b1",
+      "x": 2588,
+      "y": 603,
+      "largeur": 204,
+      "hauteur": 163,
+      "aire": 12907
+    },
+    {
+      "id": "sheet-c2-03",
+      "planche": "sheet-c2",
+      "x": 2445,
+      "y": 603,
+      "largeur": 143,
+      "hauteur": 165,
+      "aire": 11924
+    },
+    {
+      "id": "sheet-c2-02",
+      "planche": "sheet-c2",
+      "x": 2155,
+      "y": 603,
+      "largeur": 108,
+      "hauteur": 178,
+      "aire": 10310
+    },
+    {
+      "id": "sheet-c2-07",
+      "planche": "sheet-c2",
+      "x": 2792,
+      "y": 603,
+      "largeur": 171,
+      "hauteur": 163,
+      "aire": 10139
+    },
+    {
+      "id": "sheet-c1-08",
+      "planche": "sheet-c1",
+      "x": 3613,
+      "y": 603,
+      "largeur": 141,
+      "hauteur": 130,
+      "aire": 9883
+    },
+    {
+      "id": "sheet-c2-06",
+      "planche": "sheet-c2",
+      "x": 2345,
+      "y": 603,
+      "largeur": 100,
+      "hauteur": 168,
+      "aire": 9345
+    },
+    {
+      "id": "sheet-c2-08",
+      "planche": "sheet-c2",
+      "x": 0,
+      "y": 854,
+      "largeur": 144,
+      "hauteur": 121,
+      "aire": 9058
+    },
+    {
+      "id": "sheet-c2-13",
+      "planche": "sheet-c2",
+      "x": 217,
+      "y": 854,
+      "largeur": 169,
+      "hauteur": 116,
+      "aire": 8992
+    },
+    {
+      "id": "sheet-c1-04",
+      "planche": "sheet-c1",
+      "x": 3473,
+      "y": 603,
+      "largeur": 140,
+      "hauteur": 131,
+      "aire": 8885
+    },
+    {
+      "id": "sheet-c2-05",
+      "planche": "sheet-c2",
+      "x": 3888,
+      "y": 603,
+      "largeur": 127,
+      "hauteur": 124,
+      "aire": 8420
+    },
+    {
+      "id": "sheet-c2-04",
+      "planche": "sheet-c2",
+      "x": 685,
+      "y": 854,
+      "largeur": 172,
+      "hauteur": 98,
+      "aire": 8270
+    },
+    {
+      "id": "sheet-c2-01",
+      "planche": "sheet-c2",
+      "x": 2263,
+      "y": 603,
+      "largeur": 82,
+      "hauteur": 178,
+      "aire": 8021
+    },
+    {
+      "id": "sheet-c1-07",
+      "planche": "sheet-c1",
+      "x": 3754,
+      "y": 603,
+      "largeur": 134,
+      "hauteur": 129,
+      "aire": 7652
+    },
+    {
+      "id": "sheet-c1-02",
+      "planche": "sheet-c1",
+      "x": 2963,
+      "y": 603,
+      "largeur": 88,
+      "hauteur": 156,
+      "aire": 7581
+    },
+    {
+      "id": "sheet-c2-11",
+      "planche": "sheet-c2",
+      "x": 3138,
+      "y": 603,
+      "largeur": 95,
+      "hauteur": 144,
+      "aire": 7477
+    },
+    {
+      "id": "sheet-c1-03",
+      "planche": "sheet-c1",
+      "x": 3294,
+      "y": 603,
+      "largeur": 96,
+      "hauteur": 138,
+      "aire": 6932
+    },
+    {
+      "id": "sheet-c2-12",
+      "planche": "sheet-c2",
+      "x": 3051,
+      "y": 603,
+      "largeur": 87,
+      "hauteur": 150,
+      "aire": 6828
+    },
+    {
+      "id": "sheet-c2-14",
+      "planche": "sheet-c2",
+      "x": 474,
+      "y": 854,
+      "largeur": 111,
+      "hauteur": 106,
+      "aire": 6411
+    },
+    {
+      "id": "sheet-c1-01",
+      "planche": "sheet-c1",
+      "x": 3390,
+      "y": 603,
+      "largeur": 83,
+      "hauteur": 135,
+      "aire": 5908
+    },
+    {
+      "id": "sheet-c2-10",
+      "planche": "sheet-c2",
+      "x": 585,
+      "y": 854,
+      "largeur": 100,
+      "hauteur": 102,
+      "aire": 5689
+    },
+    {
+      "id": "sheet-c1-13",
+      "planche": "sheet-c1",
+      "x": 386,
+      "y": 854,
+      "largeur": 88,
+      "hauteur": 111,
+      "aire": 5359
+    },
+    {
+      "id": "sheet-c1-09",
+      "planche": "sheet-c1",
+      "x": 857,
+      "y": 854,
+      "largeur": 93,
+      "hauteur": 95,
+      "aire": 4964
+    },
+    {
+      "id": "sheet-c1-06",
+      "planche": "sheet-c1",
+      "x": 3233,
+      "y": 603,
+      "largeur": 61,
+      "hauteur": 139,
+      "aire": 4930
+    },
+    {
+      "id": "sheet-c2-09",
+      "planche": "sheet-c2",
+      "x": 1032,
+      "y": 854,
+      "largeur": 115,
+      "hauteur": 84,
+      "aire": 4834
+    },
+    {
+      "id": "sheet-c1-11",
+      "planche": "sheet-c1",
+      "x": 144,
+      "y": 854,
+      "largeur": 73,
+      "hauteur": 120,
+      "aire": 4801
+    },
+    {
+      "id": "sheet-c1-12",
+      "planche": "sheet-c1",
+      "x": 4015,
+      "y": 603,
+      "largeur": 61,
+      "hauteur": 121,
+      "aire": 4199
+    },
+    {
+      "id": "sheet-c1-15",
+      "planche": "sheet-c1",
+      "x": 1301,
+      "y": 854,
+      "largeur": 101,
+      "hauteur": 69,
+      "aire": 3946
+    },
+    {
+      "id": "sheet-c1-10",
+      "planche": "sheet-c1",
+      "x": 950,
+      "y": 854,
+      "largeur": 82,
+      "hauteur": 92,
+      "aire": 3770
+    },
+    {
+      "id": "sheet-c1-14",
+      "planche": "sheet-c1",
+      "x": 1147,
+      "y": 854,
+      "largeur": 74,
+      "hauteur": 77,
+      "aire": 3634
+    },
+    {
+      "id": "sheet-c1-05",
+      "planche": "sheet-c1",
+      "x": 1221,
+      "y": 854,
+      "largeur": 80,
+      "hauteur": 70,
+      "aire": 3586
+    }
+  ]
+}
