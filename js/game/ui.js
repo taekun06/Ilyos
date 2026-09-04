@@ -2764,11 +2764,12 @@
         // Depuis la règle V67 toute force est légale : le plancher vaut 1, et
         // le sélecteur de force n'a plus de minimum à calculer.
         const requiredForce = 1;
+        // Une option de poussée unifiée porte sa propre force (c'est elle
+        // qu'on a choisie en cliquant sa destination) ; partout ailleurs, la
+        // source unique tranche.
         const force = context
           ? Math.max(1, Math.min(availableActionCount("PUSH"), context.force || 1))
-          : smartPush
-            ? Math.max(1, Math.min(availableActionCount("PUSH"), state.smartPushForce || 1))
-            : selectedBatchSize();
+          : forcePousseeCourante();
 
         // L'aperçu lit exactement le même résolveur que l'exécution : la règle
         // de poussée n'est jamais dupliquée ici.
@@ -2897,7 +2898,9 @@
 
         const dr = r - pusher.r;
         const dc = c - pusher.c;
-        const force = selectedBatchSize();
+        // Exactement la force qui vient d'être montrée en aperçu : sans cette
+        // égalité, le joueur jouait autre chose que ce qu'il avait sous les yeux.
+        const force = forcePousseeCourante();
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });

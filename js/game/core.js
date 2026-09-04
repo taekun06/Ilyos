@@ -206,6 +206,32 @@
         return next;
       }
 
+      /* LA force de poussée courante — source unique.
+
+         Il en existait quatre concurrentes, et elles se contredisaient :
+         `state.smartPushForce` quand on cliquait le gardien (défaut 1),
+         `selectedBatchSize()` quand on passait par la carte POUSSER,
+         `state.pushForceChoice` dans certains affichages du HUD, et la valeur
+         portée par une option de poussée unifiée. Résultat : survoler la MÊME
+         cible montrait deux aperçus différents selon le chemin emprunté, et
+         l'étiquette 3D annonçait parfois une force que l'aperçu ne simulait
+         pas.
+
+         Tout part maintenant d'ici : l'aperçu, l'étiquette 3D et l'exécution
+         lisent la même valeur, donc ce qui est montré est exactement ce qui
+         sera joué. */
+      function forcePousseeCourante() {
+        if (!state) return 1;
+        const disponible = Math.max(1, availableActionCount("PUSH"));
+        const choisie = state.phase === "SMART_CHAR"
+          // Molette sur un gardien sélectionné : smartPushForce porte le choix,
+          // et retombe sur le réglage général tant qu'on n'a rien touché.
+          ? (state.smartPushForce || state.pushForceChoice || 1)
+          // Carte POUSSER : le nombre de cartes engagées EST la force.
+          : (state.selectedActionCount || state.pushForceChoice || 1);
+        return Math.max(1, Math.min(disponible, choisie));
+      }
+
       function handleActionWheel(event) {
         const pushBanner = event.target.closest?.(".action-push");
         if (!pushBanner || !state || !canLocalPlayerAct()) return;
