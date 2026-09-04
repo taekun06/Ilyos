@@ -14,8 +14,16 @@
     return !!game && !game.classList.contains('hidden');
   }
 
+  /* La première étape du tutoriel Découverte apprend précisément au joueur à
+     observer et faire tourner le monde. Elle prend donc possession de la caméra
+     dès l'ouverture du jeu. Le preset global FACE/AUTO ne doit pas revenir la
+     recadrer quelques centaines de millisecondes plus tard. */
+  function discoveryOwnsCamera() {
+    return !!byId('gameScreen')?.classList.contains('tutorial-discovery');
+  }
+
   function applyFaceAuto(token, attempt = 0) {
-    if (token !== applyToken || !gameVisible()) return;
+    if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
     const k = window.kaykit3D;
     const controls = k?.controls;
     const face = controls?.querySelector?.('[data-kay-view-face]');
@@ -36,7 +44,7 @@
 
     face.click();
     setTimeout(() => {
-      if (token !== applyToken || !gameVisible()) return;
+      if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
       auto.click();
     }, 45);
 
@@ -45,12 +53,15 @@
        bien en VUE FACE/AUTO, sans empêcher les suivis automatiques ultérieurs. */
     if (attempt === 0) {
       setTimeout(() => {
-        if (token !== applyToken || !gameVisible()) return;
+        if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
         k.viewMode = 'front';
         k.cameraMode = 'auto';
         k.autoFit = true;
         face.click();
-        setTimeout(() => auto.click(), 35);
+        setTimeout(() => {
+          if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
+          auto.click();
+        }, 35);
       }, 520);
     }
   }
