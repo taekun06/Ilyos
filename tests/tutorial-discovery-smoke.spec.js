@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 async function startTutorial(page, method = 'start') {
   await page.goto('/');
-  await page.waitForFunction(() => typeof window.ILYOS_TUTORIAL?.[method] === 'function');
+  await page.waitForFunction(m => typeof window.ILYOS_TUTORIAL?.[m] === 'function', method);
   await page.evaluate(m => window.ILYOS_TUTORIAL[m](), method);
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 }
