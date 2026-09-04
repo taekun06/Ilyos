@@ -26,10 +26,11 @@ const fragmentNames = [
   // bundle en fin de chantier. Placée après planner.js, dont elle lit les
   // rapports et l'évaluateur détaillé.
   'autopsie.js',
-  // Tutoriel scénarisé « La Première Ascension ». Autonome : construit un state
-  // normal, restreint les entrées et écoute les événements visuels. Placé après
-  // autopsie.js (il n'en dépend pas) et avant diagnostics.js.
+  // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
+  // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
+  // l'Ascension via ILYOS_TUTORIAL.startAscension().
+  'tutorial-discovery.js',
   'diagnostics.js',
 ];
 
