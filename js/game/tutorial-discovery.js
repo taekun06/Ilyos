@@ -196,6 +196,7 @@
         state.centerCrownTakenThisTurn = false;
         state.rules.allowDissolve = false;
         state.rules.islandLimitPerPlayer = 0;
+        state.rules.disableSecondCrown = true;
 
         // Une petite terre lisible, assez proche du village pour que le voyage
         // final reste court, mais entourée de vide afin que la pose d'île ait un sens.
@@ -272,9 +273,10 @@
         if (!carrier) return;
 
         // Le retour au village devient un vrai petit problème tactique :
-        // atteindre la case (0,0), puis chasser le rival de (0,1) vers (0,2)
-        // sans chute. La destination est volontairement de la terre ferme.
-        tutoEnsurePathFrom(carrier.r, carrier.c, 0, 0);
+        // entrer par (1,0), atteindre (0,0), puis chasser le rival de (0,1)
+        // vers (0,2) sans chute. Construire directement vers (0,0) ferait
+        // passer le chemin par la case (0,1) que le rival vient bloquer.
+        tutoEnsurePathFrom(carrier.r, carrier.c, 1, 0);
         tutoEnsureLand([[0, 0], [1, 0], [0, 1], [0, 2], [1, 1], [1, 2]]);
 
         // Évite qu'un allié soit exactement sur la case réservée au rival.
@@ -287,7 +289,14 @@
 
         tutoSetEnemies([[0, 1]]);
         state.players[0].stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        tutoSetHand(["MOVE", "MOVE", "MOVE", "MOVE", "MOVE", "MOVE", "PUSH"]);
+        const returnPath = typeof shortestMovementPath === "function"
+          ? shortestMovementPath(carrier, 0, 0, GRID * GRID)
+          : null;
+        const returnMoves = Math.max(
+          6,
+          returnPath?.cost || returnPath?.length || (Math.abs(carrier.r - 1) + carrier.c + 1)
+        );
+        tutoSetHand([...Array(returnMoves).fill("MOVE"), "PUSH"]);
         state.islandPlacedThisTurn = true;
         discResetSelection();
         tutoRender();
@@ -790,6 +799,7 @@
             step: DISCOVERY.step,
             id: DISCOVERY_STEPS[DISCOVERY.step]?.id || null,
             phase: state?.phase,
+            inputLocked: !!state?.inputLocked,
             currentPlayer: state?.currentPlayer,
             score: state?.players?.[0]?.score || 0,
             chars: (state?.characters || []).map(ch => ({ id: ch.id, p: ch.player, r: ch.r, c: ch.c })),
@@ -798,6 +808,12 @@
               carrierId: state.artifact.carrierId,
               r: state.artifact.r,
               c: state.artifact.c
+            } : null,
+            secondCrown: state?.secondArtifact ? {
+              active: state.secondArtifact.active,
+              carrierId: state.secondArtifact.carrierId,
+              r: state.secondArtifact.r,
+              c: state.secondArtifact.c
             } : null,
             islandPlaced: !!state?.islandPlacedThisTurn,
             validationRunning: DISCOVERY.validationRunning

@@ -1517,6 +1517,7 @@
 
       function activateSecondCrownIfNeeded() {
         ensureArtifactState();
+        if (state.rules?.disableSecondCrown) return false;
         if (state.secondArtifact.active || !state.artifact.carrierId) return false;
         if (!couronnePeutEntrerMaintenant()) {
           differerEntreeCouronne(state.secondArtifact);
