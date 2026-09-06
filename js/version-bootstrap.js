@@ -66,13 +66,14 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   const FRONT_PITCH_DEG = 37.2;
   let initialPresetApplied = false;
 
+  /* Le joueur vient de toucher la caméra : le preset initial ne doit plus rien
+     recadrer par-dessus. On ne quitte PAS l'AUTO pour autant — c'est le rôle du
+     seul pan, voir l'écouteur 'change' d'OrbitControls dans js/game/kaykit3d.js. */
   function markManualCameraControl(){
     const k = window.kaykit3D;
     if (!k) return;
-    k.autoFit = false;
     k.userRotated = true;
     k.cameraTween = null;
-    if (k.cameraMode !== 'free') k.cameraMode = 'free';
   }
 
   function applyFrontPreset({ explicit = false } = {}){
@@ -172,8 +173,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     });
   }
 
-  /* Le moteur historique gardait AUTO lors d'un zoom molette. Pour l'utilisateur,
-     zoomer signifie qu'il a choisi son cadrage : on passe donc en LIBRE. */
+  /* Zoomer, c'est choisir sa distance de confort — pas renoncer à la caméra
+     assistée. Cette ligne faisait basculer en LIBRE au premier cran de molette,
+     ce qui suffisait à perdre l'AUTO pour le reste de la partie sans que le
+     joueur l'ait jamais demandé. Le moteur retient désormais la distance comme
+     préférence et continue de cadrer à partir d'elle. */
   document.addEventListener('wheel', event => {
     if (!event.target?.closest?.('#kaykitCanvas')) return;
     markManualCameraControl();
@@ -194,6 +198,16 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   }
 
   window.ILYOS_applyFrontCameraPreset = () => applyFrontPreset({ explicit:true });
+
+  /* Recul canonique de la VUE FACE, publié pour le moteur 3D.
+
+     kaykitFitDistance() calculait son propre recul de vue face — plus serré —
+     et l'écrasait au premier resize forcé. Le moteur lit maintenant celui-ci
+     (voir kaykitFitDistance dans js/game/kaykit3d.js) : le cadrage d'ouverture
+     et celui d'ESPACE ne peuvent plus diverger. */
+  window.ILYOS_frontCameraDistance = () => Number.isFinite(window.ILYOS_FRONT_DISTANCE)
+    ? window.ILYOS_FRONT_DISTANCE
+    : reculPourPlateau(window.kaykit3D);
 })();
 
 /* HUD Organique V2 DIRECT — overlay autonome issu du prototype validé. */
