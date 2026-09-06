@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ILYOS · Éther enchanté</title>
+  <link rel="stylesheet" href="./css/ether-preview.css">
+</head>
+<body>
+  <main class="ether-app">
+    <header class="ether-toolbar">
+      <div class="ether-title">
+        <span class="ether-kicker">ILYOS · LABORATOIRE VISUEL</span>
+        <h1>Éther enchanté</h1>
+        <p>Feedbacks gameplay · rendu Three.js et assets KayKit réels</p>
+        <p><a href="./index.html?visualEditor=1" style="color:#78fff0">Ouvrir l’atelier visuel dans le jeu →</a></p>
+      </div>
+      <div class="preset-switch" role="group" aria-label="Comparer les presets">
+        <button class="preset-button is-active" type="button" data-preset="A" aria-pressed="true">
+          <span>A</span>
+          <strong>Réglage récupéré</strong>
+          <small>Valeurs conservées</small>
+        </button>
+        <button class="preset-button" type="button" data-preset="B" aria-pressed="false">
+          <span>B</span>
+          <strong>Éther renforcé</strong>
+          <small>Présence accrue</small>
+        </button>
+      </div>
+    </header>
+
+    <section class="preview-layout">
+      <div class="viewport-card">
+        <div class="viewport-meta">
+          <span id="renderStatus" class="render-status">Chargement des assets KayKit locaux…</span>
+          <span>Glisser : orbite · Molette : zoom</span>
+        </div>
+        <div id="etherViewport" class="ether-viewport" aria-label="Scène Three.js de comparaison Éther enchanté">
+          <canvas id="etherCanvas"></canvas>
+          <div class="scene-vignette" aria-hidden="true"></div>
+          <div class="scene-label" data-anchor="selected"><i></i>Gardien sélectionné</div>
+          <div class="scene-label" data-anchor="push"><i></i>Cible poussable</div>
+          <div class="scene-label" data-anchor="normal"><i></i>Destination</div>
+          <div class="scene-label is-highlight" data-anchor="highlight"><i></i>Destination · hover</div>
+          <div class="scene-label is-danger" data-anchor="death"><i></i>Chute ☠</div>
+          <div id="protocolWarning" class="protocol-warning" hidden>
+            Les modèles 3D locaux exigent un serveur HTTP. Lancez <code>npm start</code>, puis ouvrez
+            <code>http://localhost:8123/ether-preview.html</code>.
+          </div>
+        </div>
+        <div class="scene-legend" aria-label="Légende de la scène">
+          <span><i class="legend-swatch selection"></i>Sélection</span>
+          <span><i class="legend-swatch zone"></i>Zone globale</span>
+          <span><i class="legend-swatch push"></i>Poussée</span>
+          <span><i class="legend-swatch death"></i>Chute</span>
+        </div>
+      </div>
+
+      <aside class="tuning-panel" aria-label="Réglages live">
+        <div class="tuning-heading">
+          <div>
+            <span>PRESET ACTIF</span>
+            <strong id="activePresetLabel">A · Réglage récupéré</strong>
+          </div>
+          <button id="resetCamera" class="icon-button" type="button" title="Réinitialiser la caméra">↺</button>
+        </div>
+
+        <div id="tuningGroups" class="tuning-groups"></div>
+
+        <button id="copyValues" class="copy-button" type="button">COPIER LES VALEURS</button>
+        <pre id="valuesOutput" class="values-output" tabindex="0" aria-live="polite"></pre>
+      </aside>
+    </section>
+  </main>
+
+  <script src="./vendor/three.min.js"></script>
+  <script src="./vendor/GLTFLoader.js"></script>
+  <script src="./vendor/SkeletonUtils.js"></script>
+  <script src="./vendor/OrbitControls.js"></script>
+  <script src="./js/ether-preview.js"></script>
+</body>
+</html>
