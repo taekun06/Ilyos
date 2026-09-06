@@ -4,7 +4,7 @@
    Objectifs :
    - une rotation 360° fluide autour du plateau ;
    - un zoom plus précis et moins nerveux ;
-   - empêcher les angles quasi horizontaux / quasi verticaux qui nuisent au jeu ;
+   - empêcher les angles quasi horizontaux qui nuisent au jeu ;
    - conserver AUTO/LIBRE et les presets FACE/ISO du moteur existant ;
    - ne jamais reprendre la caméra au tutoriel Découverte ;
    - fournir une petite API stable pour les futures cinématiques/tutoriels.
@@ -25,12 +25,14 @@
     zoomSpeed: 0.72,
     panSpeed: 0.58,
     // OrbitControls mesure l'angle polaire depuis le zénith.
-    // 24° conserve une vraie vue tactique ; 74° garde de la profondeur sans
-    // laisser la caméra descendre au ras du plateau.
+    // 24° reste la limite de navigation libre habituelle. La vue de dessus est
+    // un preset explicite qui ouvre temporairement la limite jusqu'à 6°.
     minPolarAngle: 24 * Math.PI / 180,
     maxPolarAngle: 74 * Math.PI / 180,
+    topPolarAngle: 6 * Math.PI / 180,
     rotateStep: Math.PI / 4,
-    rotateDuration: 300
+    rotateDuration: 300,
+    tiltDuration: 360
   });
 
   let installedOrbit = null;
@@ -49,18 +51,31 @@
     return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   }
 
+  function syncModeUI(k) {
+    const autoButton = k?.controls?.querySelector?.('[data-kay-camera-auto]');
+    const freeButton = k?.controls?.querySelector?.('[data-kay-camera-free]');
+    autoButton?.classList.toggle('kaykit-mode-active', k?.cameraMode === 'auto');
+    freeButton?.classList.toggle('kaykit-mode-active', k?.cameraMode !== 'auto');
+  }
+
   function setFreeMode(k) {
     if (!k) return;
     k.autoFit = false;
     k.userRotated = true;
     k.cameraTween = null;
+    k.cameraMode = 'free';
+    syncModeUI(k);
+  }
 
-    // Réutilise la vraie logique du moteur afin que l'état et le HUD restent
-    // synchronisés. Si le bouton n'existe pas encore, le filet de sécurité
-    // direct suffit ; apply() repassera une fois la scène totalement prête.
-    const freeButton = k.controls?.querySelector?.('[data-kay-camera-free]');
-    if (k.cameraMode !== 'free' && freeButton) freeButton.click();
-    else k.cameraMode = 'free';
+  function setAutoModeWithoutFollow(k) {
+    if (!k) return;
+    // Espace doit rendre exactement la vue FACE canonique. On ne clique pas sur
+    // le bouton AUTO car setKayKitCameraMode('auto') déclenche immédiatement
+    // kaykitFollowCurrentPlayer(true), ce qui déplacerait de nouveau la cible.
+    k.cameraMode = 'auto';
+    k.userRotated = false;
+    k.userInteracting = false;
+    syncModeUI(k);
   }
 
   function configureOrbit(k) {
@@ -136,37 +151,133 @@
     return true;
   }
 
-  function center() {
+  function polarForBaseAngle() {
+    const pitchDeg = Number.isFinite(window.ILYOS_FRONT_PITCH_DEG)
+      ? window.ILYOS_FRONT_PITCH_DEG
+      : 37.2;
+    return THREE.MathUtils.clamp(
+      Math.PI / 2 - pitchDeg * Math.PI / 180,
+      CONFIG.minPolarAngle,
+      CONFIG.maxPolarAngle
+    );
+  }
+
+  function tiltTo(polar, { top = false } = {}) {
+    const k = window.kaykit3D;
+    if (!k?.camera || discoveryOwnsCamera()) return false;
+    configureOrbit(k);
+
+    const target = k.orbit?.target?.clone?.() || k.viewTarget?.clone?.();
+    if (!target) return false;
+    const offset = new THREE.Vector3().subVectors(k.camera.position, target);
+    const distance = offset.length();
+    if (distance < 1e-3) return false;
+
+    // Conserver le sens dans lequel le joueur regardait : ↑/↓ ne font varier
+    // que l'inclinaison, jamais l'azimut, le zoom ou la cible.
+    let azimuth = Math.atan2(offset.x, offset.z);
+    if (!Number.isFinite(azimuth)) azimuth = 0;
+
+    if (k.orbit) {
+      // La vue de dessus est volontairement plus verticale que la limite de
+      // navigation libre. ↓ ou Espace restaurent immédiatement la limite 24°.
+      k.orbit.minPolarAngle = top ? CONFIG.topPolarAngle : CONFIG.minPolarAngle;
+      k.orbit.maxPolarAngle = CONFIG.maxPolarAngle;
+    }
+
+    const safePolar = THREE.MathUtils.clamp(
+      polar,
+      top ? CONFIG.topPolarAngle : CONFIG.minPolarAngle,
+      CONFIG.maxPolarAngle
+    );
+    const horizontal = Math.sin(safePolar) * distance;
+    const destination = new THREE.Vector3(
+      target.x + Math.sin(azimuth) * horizontal,
+      target.y + Math.cos(safePolar) * distance,
+      target.z + Math.cos(azimuth) * horizontal
+    );
+
+    setFreeMode(k);
+    k.cameraTween = {
+      started: performance.now(),
+      duration: reducedMotion() ? 90 : CONFIG.tiltDuration,
+      startPosition: k.camera.position.clone(),
+      endPosition: destination,
+      startTarget: target.clone(),
+      endTarget: target.clone()
+    };
+    return true;
+  }
+
+  function topView() {
+    return tiltTo(CONFIG.topPolarAngle, { top: true });
+  }
+
+  function baseAngle() {
+    return tiltTo(polarForBaseAngle(), { top: false });
+  }
+
+  function face() {
     if (discoveryOwnsCamera()) return false;
     const k = window.kaykit3D;
     if (!k?.camera) return false;
+    configureOrbit(k);
+
+    // Restaurer d'abord les limites normales si l'on vient de la vue de dessus.
+    if (k.orbit) {
+      k.orbit.minPolarAngle = CONFIG.minPolarAngle;
+      k.orbit.maxPolarAngle = CONFIG.maxPolarAngle;
+    }
 
     // Le preset canonique connaît le cadrage atmosphérique exact de la vue FACE
-    // (distance, pitch, hauteur visée). On le réutilise au lieu de le dupliquer.
-    if (typeof window.ILYOS_applyFrontCameraPreset === 'function') {
-      setFreeMode(k);
-      window.ILYOS_applyFrontCameraPreset();
-      configureOrbit(k);
-      return true;
-    }
-    return false;
+    // (distance 17 sur 11×11, pitch 37,2°, hauteur visée et centre du plateau).
+    if (typeof window.ILYOS_applyFrontCameraPreset !== 'function') return false;
+    window.ILYOS_applyFrontCameraPreset();
+    setAutoModeWithoutFollow(k);
+    configureOrbit(k);
+    return true;
+  }
+
+  function center() {
+    return face();
   }
 
   function installKeyboard() {
     if (window.__ILYOS_CAMERA_V2_KEYS__) return;
     window.__ILYOS_CAMERA_V2_KEYS__ = true;
+
+    // Capture : Espace doit passer avant le raccourci historique de core.js,
+    // qui appelle encore snapKayKitView('front') et produisait un autre cadrage.
     document.addEventListener('keydown', event => {
       if (!gameVisible() || discoveryOwnsCamera() || event.ctrlKey || event.metaKey || event.altKey) return;
       const tag = event.target?.tagName?.toLowerCase?.();
       if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) return;
 
-      const key = String(event.key || '').toLowerCase();
-      if (key === 'q') {
-        if (rotateBy(-1)) event.preventDefault();
-      } else if (key === 'e') {
-        if (rotateBy(1)) event.preventDefault();
+      // Q/E restent exclusivement au gameplay (rotation d'île). ←/→ sont déjà
+      // gérés par core.js : rotation d'île quand elle est disponible, sinon
+      // rotation caméra. Camera System V2 ne les intercepte donc pas ici.
+      if (event.key === 'ArrowUp') {
+        if (topView()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
       }
-    }, { passive: false });
+      if (event.key === 'ArrowDown') {
+        if (baseAngle()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+      if (event.key === ' ' || event.key === 'Spacebar') {
+        if (tag === 'button' || tag === 'a') return;
+        if (face()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }
+    }, { capture: true, passive: false });
   }
 
   function apply() {
@@ -212,13 +323,16 @@
   }
 
   window.ILYOS_CAMERA_V2 = {
-    version: '2.0.0',
+    version: '2.1.0',
     config: CONFIG,
     apply,
     rotateLeft: () => rotateBy(-1),
     rotateRight: () => rotateBy(1),
+    top: topView,
+    baseAngle,
+    face,
     center
   };
 
-  console.info('[ILYOS] Camera System V2 active');
+  console.info('[ILYOS] Camera System V2.1 active');
 })();
