@@ -1,0 +1,29 @@
+name: Tutoriel découverte smoke
+
+on:
+  pull_request:
+    paths:
+      - 'js/game.js'
+      - 'js/game/**'
+      - 'tests/tutorial-discovery-smoke.spec.js'
+      - '.github/workflows/tutorial-discovery-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Vérifier le build
+        run: npm run build:check
+      - name: Lancer les smoke tests tutoriel
+        run: npx playwright test tests/tutorial-discovery-smoke.spec.js --project=chromium
