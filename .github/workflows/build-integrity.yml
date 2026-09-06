@@ -18,12 +18,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       # Sort en échec si js/game.js diffère de la concaténation des fragments,
       # et affiche les deux empreintes SHA-256 pour situer l'écart.
-      - name: Vérifier la concaténation des fragments
-        run: node scripts/build-game.js
+      - name: Vérifier les fragments et la syntaxe JavaScript
+        run: npm run check
 
       # Le script parse aussi la source assemblée (new Function(...)), donc une
       # frontière de fragment cassée est déjà détectée ci-dessus. Ce second

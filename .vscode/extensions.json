@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "GitHub.copilot-chat",
+    "anthropic.claude-code",
+    "openai.chatgpt",
+    "ms-playwright.playwright",
+    "cesium.gltf-vscode"
+  ]
+}

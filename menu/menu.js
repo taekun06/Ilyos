@@ -92,7 +92,7 @@
   root.querySelectorAll('.card').forEach(card => card.addEventListener('click', () => openMode(card)));
   root.getElementById('back').addEventListener('click', () => { flash(); setTimeout(() => { duel.classList.remove('active','enter'); home.classList.add('active'); },430); });
   root.getElementById('play').addEventListener('click', () => host.dispatchEvent(new CustomEvent('ilyos-menu-play', { detail: { mode:selectedMode, config:cfg[selectedMode] }, bubbles:true })));
-  root.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', () => host.dispatchEvent(new CustomEvent('ilyos-menu-action', { detail: { action:btn.dataset.action }, bubbles:true })));
+  root.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', () => host.dispatchEvent(new CustomEvent('ilyos-menu-action', { detail: { action:btn.dataset.action }, bubbles:true }))));
 
   const canvas = root.getElementById('particles');
   const ctx = canvas.getContext('2d');
