@@ -4,7 +4,7 @@
    navigateur normal. Plus besoin de vider manuellement le stockage à chaque
    déploiement. */
 (function installIlyosFreshnessWorker() {
-  const VERSION = "ILYOS_20260830_MOBILE_INPUT_2";
+  const VERSION = "ILYOS_20260906_CAMERA_SYSTEM_V2";
   try {
     document.documentElement.dataset.ilyosBuild = VERSION;
     localStorage.setItem('ilyos-build-version', VERSION);
@@ -52,7 +52,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20260830-mobile-input-v2';
+  const VERSION = '20260906-camera-system-v2';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
@@ -73,8 +73,11 @@ function ilyosLoadScriptOnce(marker, src) {
     ilyosLoadScriptOnce('hud-polish-targeted-v1', `./js/hud-polish-targeted-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('hud-islands-reserve-discard-v13', `./js/hud-islands-reserve-discard-v13.js?v=${VERSION}`);
 
-    /* Départ de partie en VUE FACE + caméra AUTO — inchangé. */
-    ilyosLoadScriptOnce('camera-start-face-auto-v10', `./js/camera-start-face-auto-v1.js?v=${VERSION}`);
+    /* Caméra : une seule autorité d'initialisation.
+       Le preset FACE canonique reste dans version-bootstrap.js ; cette couche
+       ne fait qu'améliorer OrbitControls (360°, inertie, angles, mobile) sans
+       réappliquer FACE/AUTO et sans reprendre la main au tutoriel Découverte. */
+    ilyosLoadScriptOnce('camera-system-v2', `./js/camera-system-v2.js?v=${VERSION}`);
 
     /* Fiabilisation tactile : V2 neutralise le click natif du canvas après un
        touch et le rejoue une fois le drag OrbitControls stabilisé. */
