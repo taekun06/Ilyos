@@ -3994,12 +3994,12 @@
         const hoverHalf = KAYKIT_CELL_SPACING * .38;
         const hoverFill = new THREE.Mesh(
           kaykitGeometry("hover-fill-v57", () => new THREE.CircleGeometry(hoverHalf * .92, 28)),
-          new THREE.MeshBasicMaterial({ color: 0x00d9ff, transparent: true, opacity: .10, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
+          new THREE.MeshBasicMaterial({ color: 0xF4D28E, transparent: true, opacity: .10, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
         );
         hoverFill.rotation.x = -Math.PI / 2; hoverFill.position.y = .018; hoverFill.renderOrder = 90; hoverFill.userData.hoverRole = "fill"; hover.add(hoverFill);
         const hoverOutline = new THREE.Mesh(
           kaykitGeometry("hover-marker-ring-v57", () => new THREE.TorusGeometry(hoverHalf, .026, 8, 40)),
-          new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: .96, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0xF4D28E, transparent: true, opacity: .96, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
         );
         hoverOutline.rotation.x = -Math.PI / 2; hoverOutline.position.y = .026; hoverOutline.renderOrder = 92; hoverOutline.userData.hoverRole = "outline"; hover.add(hoverOutline);
         const hoverDot = new THREE.Mesh(kaykitGeometry("hover-dot-v18", () => new THREE.RingGeometry(.075, .145, 20)), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false, depthTest: true }));
@@ -4074,7 +4074,7 @@
         });
         const ticks = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPoints), tickMat);
         ticks.userData.hoverRole = "ticks"; hover.add(ticks);
-        const hoverLight = new THREE.PointLight(0x00e5ff, 0, 2.4, 2);
+        const hoverLight = new THREE.PointLight(0xF4D28E, 0, 2.4, 2);
         hoverLight.position.y = .65;
         hoverLight.userData.hoverRole = "light";
         hover.add(hoverLight);
@@ -4913,15 +4913,15 @@
 
         if (state?.phase === "PLACE_ISLAND") {
           const valid = isValidPlacement(r, c);
-          return { kind: valid ? "place" : "invalid", actionable: valid, color: valid ? 0x16f29a : 0xff2948, label: valid ? "POSER L’ÎLE ICI" : "POSE IMPOSSIBLE" };
+          return { kind: valid ? "place" : "invalid", actionable: valid, color: valid ? 0x5FB08C : 0xC94A44, label: valid ? "POSER L’ÎLE ICI" : "POSE IMPOSSIBLE" };
         }
         if (state?.phase === "PLACE_SPAWN") {
           const allowed = classes?.contains("spawn-choice");
-          return { kind: allowed ? "invocation" : "invalid", actionable: allowed, color: allowed ? 0x53e6d1 : 0xff4058, label: allowed ? "INVOCATION" : "CASE INDISPONIBLE" };
+          return { kind: allowed ? "invocation" : "invalid", actionable: allowed, color: allowed ? 0x5FB08C : 0xC94A44, label: allowed ? "INVOCATION" : "CASE INDISPONIBLE" };
         }
         // Pendant la transmission, une case libre signifie poser la couronne, jamais se déplacer.
         if (state?.phase === "DROP_TREASURE" && state.reachable?.has(key(r, c)) && !character) {
-          return { kind: "crown-place", actionable: true, color: 0xffc928, label: "POSER ICI" };
+          return { kind: "crown-place", actionable: true, color: 0xE8B455, label: "POSER ICI" };
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "MOVE") {
           if (character?.player === state.currentPlayer) {
@@ -4929,7 +4929,7 @@
             return {
               kind: selected ? "select" : "ally",
               actionable: true,
-              color: selected ? 0xc9a45d : 0x43e6d0,
+              color: selected ? 0xc9a45d : 0x5FB08C,
               label: selected ? "GARDIEN SÉLECTIONNÉ" : "CHOISIR CE GARDIEN"
             };
           }
@@ -4946,18 +4946,18 @@
               // coût laissait un rond cyan visible sur les diagonales, incohérent avec
               // les anneaux d'affordance persistants (déjà marron, voir
               // addKayKitMoveAffordance).
-              color: 0xd9922f,
+              color: 0xE0A33C,
               label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`,
               facing: mover ? kaykitFacingRotation(mover.r, mover.c, r, c) : null
             };
           }
-          return { kind: "invalid", actionable: false, color: 0xff4058, label: "DESTINATION IMPOSSIBLE" };
+          return { kind: "invalid", actionable: false, color: 0xC94A44, label: "DESTINATION IMPOSSIBLE" };
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "PUSH") {
           const selected = character?.id === state.selectedCharId;
           if (selected) return { kind: "select", actionable: true, color: 0xc9a45d, label: "POUSSEUR SÉLECTIONNÉ" };
           if (!state.selectedCharId && character?.player === state.currentPlayer) {
-            return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHOISIR CE GARDIEN" };
+            return { kind: "ally", actionable: true, color: 0x5FB08C, label: "CHOISIR CE GARDIEN" };
           }
           const valid = state.selectedCharId
             ? (Math.abs((characterById(state.selectedCharId)?.r ?? 99) - r) + Math.abs((characterById(state.selectedCharId)?.c ?? 99) - c) === 1 && !!(character || looseCrown))
@@ -4968,14 +4968,14 @@
             return {
               kind: "push",
               actionable: true,
-              color: falling ? 0xff5538 : 0xff8a32,
+              color: falling ? 0xC94A44 : 0xD9743A,
               label: falling ? `POUSSER · CHUTE · F${force}` : `POUSSER · FORCE ${force}`
             };
           }
           if (character?.player === state.currentPlayer) {
-            return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHOISIR CE GARDIEN" };
+            return { kind: "ally", actionable: true, color: 0x5FB08C, label: "CHOISIR CE GARDIEN" };
           }
-          return { kind: "invalid", actionable: false, color: 0xff4058, label: "CIBLE NON ADJACENTE" };
+          return { kind: "invalid", actionable: false, color: 0xC94A44, label: "CIBLE NON ADJACENTE" };
         }
         // Interaction directe gardien → destination/cible. On lit uniquement state.*
         // (jamais les classes du plateau DOM caché, qui ne sont pas rafraîchies en mode 3D).
@@ -4984,7 +4984,7 @@
             return { kind: "select", actionable: true, color: 0xc9a45d, label: "GARDIEN SÉLECTIONNÉ" };
           }
           if (character?.player === state.currentPlayer) {
-            return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHANGER DE GARDIEN" };
+            return { kind: "ally", actionable: true, color: 0x5FB08C, label: "CHANGER DE GARDIEN" };
           }
           const smartHovered = isSameCell(state.actionHoverCell, [r, c]);
           if (smartHovered && state.smartHoverType === "MOVE") {
@@ -4997,7 +4997,7 @@
               // coût laissait un rond cyan visible sur les diagonales, incohérent avec
               // les anneaux d'affordance persistants (déjà marron, voir
               // addKayKitMoveAffordance).
-              color: 0xd9922f,
+              color: 0xE0A33C,
               label: `DÉPLACER · ${moveCost} ACTION${moveCost > 1 ? "S" : ""}`,
               facing: actor ? kaykitFacingRotation(actor.r, actor.c, r, c) : null
             };
@@ -5010,45 +5010,45 @@
             return {
               kind: "push",
               actionable: !insufficient,
-              color: insufficient ? 0xff8a32 : (preview?.fell ? 0xff5538 : 0xff8a32),
+              color: insufficient ? 0xD9743A : (preview?.fell ? 0xC94A44 : 0xD9743A),
               label: insufficient
                 ? `FORCE ${required} REQUISE · VOUS AVEZ ${force}`
                 : (preview?.fell ? `POUSSER · CHUTE · F${force}` : `POUSSER · FORCE ${force}`)
             };
           }
           if (character) {
-            return { kind: "enemy", actionable: false, color: 0xff6f72, label: "CIBLE NON ATTEIGNABLE" };
+            return { kind: "enemy", actionable: false, color: 0xC94A44, label: "CIBLE NON ATTEIGNABLE" };
           }
-          return { kind: "invalid", actionable: false, color: 0xff4058, label: "DESTINATION IMPOSSIBLE" };
+          return { kind: "invalid", actionable: false, color: 0xC94A44, label: "DESTINATION IMPOSSIBLE" };
         }
         // Un objet couronne sous le pointeur garde toujours la priorité visuelle,
         // même si sa case appartient aussi à une île ciblable par la magie.
         if (hitAction === "crown-carried" || hitAction === "crown-loose" || (!character && looseCrown)) {
-          return { kind: "crown", actionable: true, color: 0xffc928, label: "COURONNE" };
+          return { kind: "crown", actionable: true, color: 0xE8B455, label: "COURONNE" };
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "MAGIC") {
-          if (classes?.contains("magic-invalid")) return { kind: "invalid", actionable: false, color: 0xff4058, label: "ROTATION IMPOSSIBLE" };
+          if (classes?.contains("magic-invalid")) return { kind: "invalid", actionable: false, color: 0xC94A44, label: "ROTATION IMPOSSIBLE" };
           if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) {
-            return { kind: "magic", actionable: true, color: 0xc36cff, label: "ÎLE CIBLÉE PAR LA MAGIE" };
+            return { kind: "magic", actionable: true, color: 0x9B7BE0, label: "ÎLE CIBLÉE PAR LA MAGIE" };
           }
-          if (island && !character) return { kind: "magic", actionable: true, color: 0xc36cff, label: "CHOISIR CETTE ÎLE" };
-          return { kind: "invalid", actionable: false, color: 0xff4058, label: character ? "CASE OCCUPÉE" : "ÎLE REQUISE" };
+          if (island && !character) return { kind: "magic", actionable: true, color: 0x9B7BE0, label: "CHOISIR CETTE ÎLE" };
+          return { kind: "invalid", actionable: false, color: 0xC94A44, label: character ? "CASE OCCUPÉE" : "ÎLE REQUISE" };
         }
-        if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) return { kind: "magic", actionable: true, color: 0xc36cff, label: "MAGIE" };
+        if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) return { kind: "magic", actionable: true, color: 0x9B7BE0, label: "MAGIE" };
         if (hitAction === "character" || character) {
           const owner = state?.players?.[character?.player]?.name;
           const ally = character?.player === state?.currentPlayer;
           return {
             kind: ally ? "ally" : "enemy",
             actionable: true,
-            color: ally ? 0x43e6d0 : 0xff6f72,
+            color: ally ? 0x5FB08C : 0xC94A44,
             label: `${ally ? "ALLIÉ" : "ADVERSAIRE"} · ${(owner || "GARDIEN").toUpperCase()}`
           };
         }
-        if (classes?.contains("push-target-preview") || classes?.contains("push-destination-preview") || classes?.contains("push-destination")) return { kind: "push", actionable: true, color: 0xff8a32, label: "POUSSER CETTE CIBLE" };
-        if (classes?.contains("reachable") || classes?.contains("move-target-preview") || classes?.contains("move-path-preview")) return { kind: "move", actionable: true, color: 0xd9922f, label: "DÉPLACER ICI" };
-        if (classes?.contains("selected") || classes?.contains("selected-character")) return { kind: "select", actionable: true, color: 0xf4c84b, label: "SÉLECTION ACTIVE" };
-        return { kind: "neutral", actionable: false, color: 0xf4c84b, label: "" };
+        if (classes?.contains("push-target-preview") || classes?.contains("push-destination-preview") || classes?.contains("push-destination")) return { kind: "push", actionable: true, color: 0xD9743A, label: "POUSSER CETTE CIBLE" };
+        if (classes?.contains("reachable") || classes?.contains("move-target-preview") || classes?.contains("move-path-preview")) return { kind: "move", actionable: true, color: 0xE0A33C, label: "DÉPLACER ICI" };
+        if (classes?.contains("selected") || classes?.contains("selected-character")) return { kind: "select", actionable: true, color: 0xC9A45D, label: "SÉLECTION ACTIVE" };
+        return { kind: "neutral", actionable: false, color: 0xC9A45D, label: "" };
       }
       function applyKayKitHoverIntent(intent) {
         if (!kaykit3D?.hoverMarker) return;
@@ -6060,27 +6060,27 @@
         // fx-push/fx-move pilotaient un anneau de "validation" affiché après coup, une
         // fois le déplacement/la poussée terminés — retiré : plus aucune trace visuelle
         // au sol une fois l'action jouée (voir le bloc resultRing, supprimé plus bas).
-        if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xff2948; fillOpacity = .64; kind = "invalid"; size = .90 }
-        else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x18ef91; fillOpacity = .62; kind = "place"; size = .90 }
-        else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0xb930ff; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
-        else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xff4058; fillOpacity = .52; kind = "invalid"; size = .90 }
+        if (!placementGhostActive && classList.contains("preview-invalid")) { color = 0xC94A44; fillOpacity = .64; kind = "invalid"; size = .90 }
+        else if (!placementGhostActive && classList.contains("preview-valid")) { color = 0x5FB08C; fillOpacity = .62; kind = "place"; size = .90 }
+        else if (!magicGhostActive && (classList.contains("magic-valid") || classList.contains("magic-selected-island"))) { color = 0x9B7BE0; fillOpacity = .58; lineOpacity = 1; kind = "magic"; size = .90 }
+        else if (!magicGhostActive && classList.contains("magic-invalid")) { color = 0xC94A44; fillOpacity = .52; kind = "invalid"; size = .90 }
         // Le gardien sélectionné (selected-character) n'a plus de marqueur au sol : il
         // brille lui-même à la place (voir la boucle de rendu des héros, plus bas, et
         // l'émissif pulsé dans animateKayKit3D). Seule une ÎLE sélectionnée (classe
         // "selected" générique, hors invocation) garde ce sceau au sol.
         else if (!islandSealSuppressed && classList.contains("selected")) { color = 0xc9a45d; fillOpacity = .64; lineOpacity = 1; kind = "selected"; size = .88 }
-        else if (!unifiedPushActive && classList.contains("push-fall-preview")) { color = 0xff3f45; fillOpacity = .58; kind = "push-danger"; size = .90 }
-        else if (!unifiedPushActive && classList.contains("push-target-preview")) { color = 0xffa044; fillOpacity = .58; kind = "push-target"; size = .90 }
-        else if (!unifiedPushActive && (classList.contains("push-destination") || classList.contains("push-destination-preview"))) { color = 0xff7442; fillOpacity = .46; kind = "push" }
-        else if (!unifiedPushActive && classList.contains("push-line-preview")) { color = 0xffb14b; fillOpacity = .34; kind = "push" }
-        else if (classList.contains("direct-move-candidate")) { color = 0x67c8ea; fillOpacity = .42; lineOpacity = 1; kind = "direct-move"; size = .88 }
-        // Marron uniforme (0xd9922f) sur tout l'identifiant "move", diagonale comprise :
+        else if (!unifiedPushActive && classList.contains("push-fall-preview")) { color = 0xC94A44; fillOpacity = .58; kind = "push-danger"; size = .90 }
+        else if (!unifiedPushActive && classList.contains("push-target-preview")) { color = 0xD9743A; fillOpacity = .58; kind = "push-target"; size = .90 }
+        else if (!unifiedPushActive && (classList.contains("push-destination") || classList.contains("push-destination-preview"))) { color = 0xD9743A; fillOpacity = .46; kind = "push" }
+        else if (!unifiedPushActive && classList.contains("push-line-preview")) { color = 0xD9743A; fillOpacity = .34; kind = "push" }
+        else if (classList.contains("direct-move-candidate")) { color = 0xE8D2A0; fillOpacity = .42; lineOpacity = 1; kind = "direct-move"; size = .88 }
+        // Marron uniforme (0xE0A33C) sur tout l'identifiant "move", diagonale comprise :
         // ces cases utilisaient encore deux bleus cyan (0x63e6ff/0x36e6a3), en décalage
         // avec le reste du déplacement déjà recoloré.
-        else if (classList.contains("diagonal-step-preview")) { color = 0xd9922f; fillOpacity = .46; kind = "move" }
-        else if (classList.contains("move-target-preview")) { color = 0xd9922f; fillOpacity = .58; kind = "move"; size = .90 }
-        else if (classList.contains("move-path-preview")) { color = 0xd9922f; fillOpacity = .34; kind = "move" }
-        else if (classList.contains("reachable")) { color = 0xd9922f; fillOpacity = .52; kind = "move" }
+        else if (classList.contains("diagonal-step-preview")) { color = 0xE0A33C; fillOpacity = .46; kind = "move" }
+        else if (classList.contains("move-target-preview")) { color = 0xE0A33C; fillOpacity = .58; kind = "move"; size = .90 }
+        else if (classList.contains("move-path-preview")) { color = 0xE0A33C; fillOpacity = .34; kind = "move" }
+        else if (classList.contains("reachable")) { color = 0xE0A33C; fillOpacity = .52; kind = "move" }
 
         // SYNCHRONISATION INCRÉMENTALE (V77) : cette fonction est appelée pour
         // les 121 cases à CHAQUE sync (survol, sélection, déplacement...), mais
@@ -6277,7 +6277,7 @@
           runeGroup.renderOrder = 53;
 
           const blueRingMaterial = kaykitFlatMaterial("selection-ring-blue-v1", () =>
-            new THREE.MeshBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false }));
+            new THREE.MeshBasicMaterial({ color: 0xE8D2A0, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, depthTest: false }));
           const blueRing = new THREE.Mesh(
             kaykitGeometry("selection-ring-blue-v1", () => new THREE.RingGeometry(.43, .465, 40)),
             blueRingMaterial
@@ -6294,7 +6294,7 @@
             );
           }
           const runesMaterial = kaykitFlatMaterial("selection-runes-v1", () =>
-            new THREE.LineBasicMaterial({ color: 0x67c8ea, transparent: true, opacity: .85, depthWrite: false, depthTest: false }));
+            new THREE.LineBasicMaterial({ color: 0xE8D2A0, transparent: true, opacity: .85, depthWrite: false, depthTest: false }));
           const runes = new THREE.LineSegments(
             kaykitGeometry("selection-runes-v1", () => new THREE.BufferGeometry().setFromPoints(runePoints)),
             runesMaterial
@@ -6565,7 +6565,7 @@
         const ring = new THREE.Mesh(
           kaykitGeometry("unified-push-destination-ring-v1", () => new THREE.TorusGeometry(.22, .035, 10, 32)),
           new THREE.MeshBasicMaterial({
-            color: emphasized ? 0xffd08a : 0xff8a32,
+            color: emphasized ? 0xffd08a : 0xD9743A,
             transparent: true,
             opacity: emphasized ? 1 : .78,
             depthWrite: false,
@@ -6617,7 +6617,7 @@
 
         const halo = new THREE.Mesh(
           kaykitGeometry("unified-push-death-halo-v1", () => new THREE.TorusGeometry(.27, .045, 10, 32)),
-          new THREE.MeshBasicMaterial({ color: 0xffa13d, transparent: true, opacity: emphasized ? .86 : .48, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0xC94A44, transparent: true, opacity: emphasized ? .86 : .48, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
         );
         halo.rotation.x = -Math.PI / 2;
         halo.position.copy(position).add(new THREE.Vector3(0, -.24, 0));
@@ -6668,13 +6668,13 @@
       function renderPushBlockPreview(impacts) {
         (impacts || []).forEach(impact => {
           addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
-            color: impact.fell ? 0xff3f45 : 0xffa044,
+            color: impact.fell ? 0xC94A44 : 0xD9743A,
             opacity: impact.fell ? .58 : .42,
             size: .84
           });
           if (impact.to) {
             addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
-              color: 0xff7442,
+              color: 0xD9743A,
               opacity: .48,
               size: .86,
               pulse: true
@@ -6763,7 +6763,7 @@
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .022);
         const ring = new THREE.Mesh(
           kaykitGeometry("spawn-ring-v1", () => new THREE.TorusGeometry(.17, .024, 8, 26)),
-          new THREE.MeshBasicMaterial({ color: 0x1fbfa6, transparent: true, opacity: .82, depthWrite: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ color: 0x5FB08C, transparent: true, opacity: .82, depthWrite: false, side: THREE.DoubleSide })
         );
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(p.x, p.y, p.z);
@@ -7055,7 +7055,7 @@
         if (length < .05) return;
         direction.normalize();
         const arrowMaterial = new THREE.MeshBasicMaterial({
-          color: 0xffa044,
+          color: 0xD9743A,
           transparent: true,
           opacity: .98,
           depthWrite: false,
@@ -7197,7 +7197,7 @@
           if (path.length) addKayKitMovePathArrow(characterById(state.selectedCharId), path);
           if (state.actionHoverCell) {
             addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
-              color: 0xd9922f,
+              color: 0xE0A33C,
               opacity: .58,
               size: .88,
               pulse: true
@@ -7211,7 +7211,7 @@
           renderPushBlockPreview(preview?.impacts);
           if (state.actionHoverCell) {
             addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
-              color: 0xffa044,
+              color: 0xD9743A,
               opacity: .58,
               size: .88
             });
@@ -7232,7 +7232,7 @@
           (island?.cells || []).forEach(([r, c]) => {
             const pivot = isSameCell(state.magicHoverPivot, [r, c]);
             addKayKitActionPreviewCell(r, c, {
-              color: 0xc36cff,
+              color: 0x9B7BE0,
               opacity: pivot ? .58 : .32,
               size: pivot ? .88 : .76,
               pulse: pivot
@@ -7828,7 +7828,7 @@
         });
       }
 
-      function kaykitIslandAccentColor(island, { preview = false, previewColor = 0x20f39a } = {}) {
+      function kaykitIslandAccentColor(island, { preview = false, previewColor = 0x5FB08C } = {}) {
         if (preview) return new THREE.Color(previewColor);
         const owner = Number.isInteger(island?.owner) ? island.owner : null;
         if (owner !== null && state?.players?.[owner]?.color) return new THREE.Color(state.players[owner].color);
@@ -7992,7 +7992,7 @@
         const cells = (island?.cells || []).slice();
         if (!cells.length) return group;
 
-        const previewColor = previewMode === "magic" ? (valid ? 0xb768ff : 0xff3158) : (valid ? 0x20f39a : 0xff2c4c);
+        const previewColor = previewMode === "magic" ? (valid ? 0x9B7BE0 : 0xC94A44) : (valid ? 0x5FB08C : 0xC94A44);
         const previewAccent = new THREE.Color(previewColor);
         // Le ghost de pose d'île doit rester "léger" (lisible sans écraser le
         // plateau) ; la rotation magique garde son opacité d'origine, inchangée.
