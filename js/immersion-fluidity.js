@@ -123,3 +123,10 @@
       script.dataset.ilyosEtherTheme = 'true';
       document.head.appendChild(script);
     })();
+
+    // Outil local opt-in : aucun panneau ni profil chargé en partie normale.
+    if (new URLSearchParams(location.search).get('visualEditor') === '1') {
+      const editor = document.createElement('script');
+      editor.src = new URL('./visual-editor.js', document.currentScript.src).href;
+      document.head.appendChild(editor);
+    }
