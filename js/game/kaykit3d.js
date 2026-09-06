@@ -6269,20 +6269,28 @@
         canvas.height = 192;
         const context = canvas.getContext("2d");
         context.clearRect(0, 0, 192, 192);
-        /* Texture NEUTRE, volontairement. Elle était peinte en crème #fff0c6
-           avec une lueur dorée rgba(255,176,70,.85) — et le sprite qui la porte
-           n'applique aucune teinte. Le glyphe restait donc doré alors que son
-           propre halo passait en braise : les deux moitiés du même signal ne
-           disaient plus la même couleur, ce qui se lisait comme un rose délavé.
-           Une texture destinée à être teintée doit être en niveaux de gris ;
-           c'est la couleur du matériau qui décide (voir la palette plus haut). */
-        context.shadowColor = "rgba(255, 255, 255, .85)";
-        context.shadowBlur = 18;
-        context.fillStyle = "#ffffff";
-        context.font = "bold 128px serif";
+        /* Texture NEUTRE, volontairement : c'est la couleur du matériau qui
+           décide (voir KAYKIT_PREVIEW_COLORS). Une texture destinée à être
+           teintée doit être en niveaux de gris — peinte en crème avec une lueur
+           dorée, elle donnait un glyphe doré sous un halo braise, soit un rose
+           délavé.
+
+           PLUS DE FLOU. `shadowBlur: 18` sur une toile de 192 px étalait le
+           glyphe sur un tiers de sa largeur : une fois teinté et réduit à
+           l'échelle du plateau, on ne voyait plus un crâne mais un nuage. Le
+           signal est maintenant net, et sa silhouette est tenue par un contour
+           sombre — le noir survit à la multiplication par la teinte, donc le
+           contour reste lisible quelle que soit la couleur choisie, et sur un
+           fond clair comme sur un fond sombre. */
+        context.font = "bold 150px serif";
         context.textAlign = "center";
         context.textBaseline = "middle";
-        context.fillText("☠", 96, 101);
+        context.lineJoin = "round";
+        context.lineWidth = 16;
+        context.strokeStyle = "rgba(0, 0, 0, .92)";
+        context.strokeText("☠", 96, 100);
+        context.fillStyle = "#ffffff";
+        context.fillText("☠", 96, 100);
         const texture = new THREE.CanvasTexture(canvas);
         texture.encoding = THREE.sRGBEncoding;
         texture.needsUpdate = true;
@@ -6294,14 +6302,11 @@
         const group = kaykit3D?.actionPreviewGroup;
         if (!group || !position) return;
 
-        const halo = new THREE.Mesh(
-          kaykitGeometry("unified-push-death-halo-v1", () => new THREE.TorusGeometry(.27, .045, 10, 32)),
-          new THREE.MeshBasicMaterial({ color: KAYKIT_PREVIEW_COLORS.refus, transparent: true, opacity: emphasized ? .86 : .48, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
-        );
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.copy(position).add(new THREE.Vector3(0, -.24, 0));
-        halo.renderOrder = 57;
-        group.add(halo);
+        /* Plus d'anneau sous le glyphe. Il doublait le signal sans rien ajouter :
+           la destination de chute est la seule qui se trouve DANS LE VIDE, hors
+           de la trame du plateau — un anneau posé à plat y flotte sans rien
+           cercler, et sa teinte diluée brouillait la lecture du crâne au lieu de
+           la soutenir. Le sprite seul suffit à dire « ici, ça tombe ». */
 
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
           map: pushDeathTexture(),
@@ -6315,7 +6320,9 @@
           depthTest: false
         }));
         sprite.position.copy(position);
-        sprite.scale.setScalar(emphasized ? .66 : .59);
+        // L'anneau ayant disparu, le glyphe reprend la place qu'il occupait :
+        // il porte désormais seul tout le signal.
+        sprite.scale.setScalar(emphasized ? .82 : .74);
         sprite.renderOrder = 59;
         group.add(sprite);
 
