@@ -127,19 +127,47 @@
     },430);
   }
 
-  /* Boîte englobante des boutons d'action réellement affichés. C'est elle qui
-     sert d'ancre aux deux piles : on veut les poser CONTRE le dock, pas dans les
-     angles de la fenêtre. */
+  /* Boîte englobante du dock d'actions. C'est elle qui sert d'ancre aux deux
+     piles : on veut les poser CONTRE le dock, pas dans les angles de la fenêtre.
+
+     On retient la boîte la PLUS LARGE observée pour la taille de fenêtre
+     courante, au lieu de mesurer les seuls boutons visibles à l'instant t. Le
+     dock n'a pas une largeur fixe : ÎLE n'apparaît que lorsqu'une île est à
+     poser, et le tutoriel « découverte » masque à dessein les boutons hors
+     propos. Mesurer l'instant présent faisait donc glisser les deux piles de
+     près de 250 px à chaque apparition ou disparition d'un bouton, puis revenir
+     — un tremblement latéral permanent, alors que la pile est justement l'objet
+     dont le joueur doit connaître la place par cœur.
+
+     La mémoire est indexée sur les dimensions de la fenêtre : un vrai
+     redimensionnement repart donc de zéro, et seule une variation de largeur du
+     dock à fenêtre constante est ignorée. */
+  let dockMemo = null;
+
   function dockBox(){
     const rects = ['ov2Island','ov2Move','ov2Push','ov2Magic']
       .map(id => byId(id)?.getBoundingClientRect())
       .filter(rect => rect && (rect.width || rect.height));
-    if (!rects.length) return null;
-    return {
+
+    const memoValide = dockMemo
+      && dockMemo.vw === window.innerWidth
+      && dockMemo.vh === window.innerHeight;
+
+    if (!rects.length) return memoValide ? dockMemo : null;
+
+    const boite = {
       left: Math.min(...rects.map(r => r.left)),
       right: Math.max(...rects.map(r => r.right)),
-      bottom: Math.max(...rects.map(r => r.bottom))
+      bottom: Math.max(...rects.map(r => r.bottom)),
+      vw: window.innerWidth,
+      vh: window.innerHeight
     };
+
+    // Plus large que ce qu'on connaissait, ou fenêtre différente : on adopte.
+    if (!memoValide || boite.right - boite.left > dockMemo.right - dockMemo.left) {
+      dockMemo = boite;
+    }
+    return dockMemo;
   }
 
   /* PIOCHE à gauche du dock, DÉFAUSSE à sa droite, sur la même ligne de base.
