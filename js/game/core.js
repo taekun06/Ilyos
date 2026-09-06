@@ -342,6 +342,20 @@
           return;
         }
 
+        /* ↑ / ↓ : le pendant vertical de ← / →. Comme les flèches horizontales,
+           elles n'actionnent aucun bouton, donc pas de garde sur le focus.
+           handleRotateKey garde la priorité : s'il a consommé la touche pour une
+           pose ou une rotation d'île, defaultPrevented nous a déjà fait sortir. */
+        if (event.key === "ArrowUp") {
+          if (inclinerKayKitCamera(0, { dessus: true })) event.preventDefault();
+          return;
+        }
+
+        if (event.key === "ArrowDown") {
+          if (inclinerKayKitCamera(polaireVueDeFace())) event.preventDefault();
+          return;
+        }
+
         if (event.key === " " || event.key === "Spacebar") {
           if (balise === "BUTTON" || balise === "A") return;
           if (reprendreKayKitVueDeFace()) event.preventDefault();

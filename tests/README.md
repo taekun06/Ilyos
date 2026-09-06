@@ -1,9 +1,11 @@
 # Tests de bout en bout
 
 Une partie entière, IA contre IA, jouée dans un vrai navigateur — du chargement
-de la page à l'écran de victoire. C'est le seul test automatisé du dépôt, et il
+de la page à l'écran de victoire. C'est le test le plus large du dépôt, et il
 couvre volontairement large plutôt que fin : pose d'île, invocation, marche,
-poussée, magie, couronnes, alternance des tours, détection du vainqueur.
+poussée, magie, couronnes, alternance des tours, détection du vainqueur. Deux
+autres l'accompagnent, plus ciblés : le tutoriel Découverte et le contrat de la
+caméra, décrits plus bas.
 
 Il ne teste aucune règle une par une. Il vérifie qu'une partie **se joue**, et
 que rien ne tombe en route : aucune exception non rattrapée, aucun
@@ -49,6 +51,31 @@ le harnais qui vit déjà dans [`js/game/diagnostics.js`](../js/game/diagnostics
 Si un test doit un jour piloter une configuration précise (nombre de joueurs,
 préréglage symétrique, taille de plateau, minuterie), c'est
 `window.ILYOS_API.launchConfiguredGame()` qu'il faut appeler — même fichier.
+
+---
+
+# Contrat de la caméra
+
+`camera-partie-solo.spec.js` vérifie une règle et une seule : **la caméra
+assistée possède le sujet, le joueur possède le point de vue**. Tourner,
+incliner et zoomer ne font donc pas sortir du mode AUTO ; seul le pan, qui
+revendique le même point visé que l'AUTO, rend la main.
+
+Il verrouille aussi le cadrage canonique de la vue de face, aux deux bouts : à
+l'ouverture de la partie et après ESPACE. C'est ce qui manquait quand trois
+fonctions différentes répondaient à « à quelle distance est la vue de face »
+— le preset à 17, `kaykitFitDistance` à 11,85, et `kaykitPositionForView` qui
+gonflait la demande de 4,2 %. La partie s'ouvrait alors sur un cadrage et
+ESPACE en rendait un autre, sans que rien ne le signale.
+
+**Il démarre une vraie partie solo, par le menu.** L'écran de configuration solo
+vit dans l'iframe du menu, pas dans la page hôte : `#setupScreen` existe mais
+n'est jamais visible, et le bouton de lancement s'appelle « AFFRONTER LE CPU ».
+`ILYOS_TEST.playAIvsAI()` ne convient pas ici — elle monte son propre duel IA
+contre IA, où le recadrage de début de tour ne se déclenche jamais (il est sous
+`if (!p.isAI)` dans `js/game/turns.js`).
+
+Durée : moins d'une minute.
 
 ---
 

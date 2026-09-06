@@ -570,7 +570,7 @@
             if (typeof kaykitFollowCell === "function" && typeof kaykit3D !== "undefined" && kaykit3D) {
               kaykit3D.autoFit = false;
               // force:true recadre même caméra verrouillée (voir kaykitFollowCurrentPlayer).
-              kaykitFollowCell(r, c, { duration: 720, force: true, zoomBoost: zoomBoost || 0 });
+              kaykitFollowCell(r, c, { duration: 720, force: true, cinematique: true, zoomBoost: zoomBoost || 0 });
               ok = true;
             }
           } catch (_) { }
@@ -620,7 +620,7 @@
         try {
           if (typeof kaykitFollowCell === "function" && typeof kaykit3D !== "undefined" && kaykit3D) {
             kaykit3D.autoFit = false;
-            kaykitFollowCell(r, c, { duration, force: true, zoomBoost: zoomBoost || 0 });
+            kaykitFollowCell(r, c, { duration, force: true, cinematique: true, zoomBoost: zoomBoost || 0 });
           }
         } catch (_) { }
         tutoLockCamera();

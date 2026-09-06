@@ -1175,6 +1175,8 @@
 
         const cameraHint = document.createElement("div");
         cameraHint.className = "kaykit-camera-hint";
+        // Volontairement inchangé : ce bandeau passe déjà derrière la barre
+        // d'actions, y ajouter « ↑ ↓ INCLINER » ne fait qu'aggraver la collision.
         cameraHint.textContent = "← → TOURNER · ESPACE : VUE DE FACE · MOLETTE : ZOOM · CLIC : JOUER";
         els.boardWrap.appendChild(cameraHint);
 
@@ -1293,6 +1295,11 @@
           // (voir reculPourPlateau, js/version-bootstrap.js).
           gridSize: GRID,
           zoomDistance: 12.4 * (GRID / 11), minZoom: 6.4 * (GRID / 11), maxZoom: 25 * (GRID / 11),
+          /* Distance de confort choisie par le joueur à la molette. La caméra
+             assistée cadre à partir d'elle et n'a le droit que de RECULER pour
+             faire tenir l'action — jamais de se rapprocher plus que ce que le
+             joueur a demandé. Nulle tant qu'il n'a pas zoomé lui-même. */
+          zoomPrefere: 0,
           viewTarget: new THREE.Vector3(0, .22, .18),
           materials: new Map(), geometries: new Map(), lastStateSignature: "", loadedCount: 0,
           // Compte ce qui est REELLEMENT lance : sinon la barre reste bloquee a
@@ -1308,7 +1315,10 @@
           // Séquences visuelles en cours (poussée, chute, magie, couronne...),
           // mises à jour dans la boucle de rendu plutôt qu'avec des setTimeout.
           visualSequences: [], fxTweens: [], crownFlights: [], islandDrops: [],
-          celebration: null, cameraFocusUntil: 0,
+          /* Verrou de cadrage : jusqu'à cameraFocusUntil, seul un recadrage de
+             priorité strictement supérieure peut voler l'image. Une chute garde
+             ainsi le cadre pendant que les gardiens continuent de bouger. */
+          celebration: null, cameraFocusUntil: 0, cameraFocusPriorite: 0,
           orbit: null, manualOrbit: { azimuth: Math.PI / 4, polar: .88 }, cameraTween: null, tmpTweenTarget: new THREE.Vector3(), autoFit: true, userRotated: false, userInteracting: false, lastAspect: 1,
           syncInProgress: false, syncPending: false, cameraMode: "auto",
           // Qualité courante ("high" | "balanced" | "performance"), pilotée par
@@ -1350,8 +1360,13 @@
         // avant le gestionnaire interne d'OrbitControls, quel que soit l'ordre
         // d'inscription des écouteurs.
         let kaykitWheelActive = false;
+        /* Fenêtre pendant laquelle un changement de distance est imputable à la
+           molette. Elle doit couvrir l'amortissement d'OrbitControls, qui étale
+           un cran de molette sur plusieurs frames après l'événement. */
+        let kaykitZoomManuelJusqua = 0;
         els.boardWrap.addEventListener('wheel', () => {
           kaykitWheelActive = true;
+          kaykitZoomManuelJusqua = performance.now() + 400;
           setTimeout(() => { kaykitWheelActive = false; }, 0);
         }, { capture: true, passive: true });
 
@@ -1362,28 +1377,43 @@
           orbit.enableRotate = true;
           orbit.enableZoom = true;
           orbit.enablePan = true;
-          orbit.screenSpacePanning = true;
-          orbit.panSpeed = .92;
-          orbit.rotateSpeed = .82;
-          orbit.zoomSpeed = .82;
+          /* Le pan suit le plan du monde, pas celui de l'écran. Sur un plateau
+             posé à plat, un pan écran fait dériver le point visé vers le haut
+             ou le bas et la caméra finit par regarder le vide au-dessus de
+             l'archipel ; un pan monde donne la sensation de glisser au-dessus
+             du plateau, qui est ce qu'on veut ici. */
+          orbit.screenSpacePanning = false;
+          /* Vitesses calmées : à .92/.82 le moindre geste envoyait la caméra à
+             l'autre bout de sa course, et le joueur passait son temps à
+             corriger. On ne perd pas d'amplitude, on gagne de la visée. */
+          orbit.panSpeed = .58;
+          orbit.rotateSpeed = .64;
+          orbit.zoomSpeed = .72;
           orbit.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
           orbit.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
           orbit.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
           orbit.minDistance = kaykit3D.minZoom;
           orbit.maxDistance = kaykit3D.maxZoom;
-          orbit.minPolarAngle = .20;
-          orbit.maxPolarAngle = Math.PI * .49;
+          /* Bornes d'inclinaison en navigation libre, mesurées depuis le zénith.
+             À .20 (11°) on tombait presque à la verticale et le plateau perdait
+             tout volume ; à .49π (88°) on rasait l'horizon et les gardiens se
+             masquaient les uns les autres. Entre 24° et 74° toute la course
+             reste jouable. La vue de dessus (flèche ↑) est un preset explicite
+             qui ouvre temporairement le plancher, voir inclinerKayKitCamera. */
+          orbit.minPolarAngle = KAYKIT_POLAIRE_MIN;
+          orbit.maxPolarAngle = KAYKIT_POLAIRE_MAX;
           orbit.target.copy(kaykit3D.viewTarget);
           // OrbitControls déclenche 'start' dès qu'on appuie le bouton, même pour un
           // simple clic de jeu (sélectionner un gardien) qui ne bouge jamais la caméra.
           // On ne bascule en LIBRE que si un vrai mouvement a lieu entre 'start' et 'end'.
           let orbitDragActive = false;
+          const cibleAvantGeste = new THREE.Vector3();
           orbit.addEventListener('start', () => {
             if (!kaykit3D) return;
             // Un 'start' venu de la molette ne doit pas compter comme une prise
             // de contrôle manuelle de la caméra (voir kaykitWheelActive plus haut).
             orbitDragActive = !kaykitWheelActive;
-            kaykit3D.autoFit = false;
+            cibleAvantGeste.copy(orbit.target);
             kaykit3D.userInteracting = true;
             kaykit3D.cameraTween = null;
             kaykit3D.cameraHint?.classList.add("hidden");
@@ -1392,13 +1422,39 @@
             orbitDragActive = false;
             if (kaykit3D) kaykit3D.userInteracting = false;
           });
+          /* Ce qu'un geste revendique décide s'il faut quitter l'AUTO.
+
+             Tourner, incliner et zoomer ne revendiquent que le POINT DE VUE :
+             d'où l'on regarde, et d'aussi loin. La caméra assistée peut très
+             bien continuer à choisir le SUJET et le cadrer sous cet angle-là
+             (voir kaykitPositionAutour) — il n'y a aucun conflit, et c'est ce
+             qui permet de jouer une partie entière en AUTO sans jamais renoncer
+             à regarder le plateau comme on veut.
+
+             Le pan, lui, revendique le POINT VISÉ. C'est exactement ce que
+             l'AUTO revendique aussi, et on ne peut pas arbitrer entre les deux :
+             lui seul rend la main au joueur. On le reconnaît sans ambiguïté —
+             c'est le seul geste d'OrbitControls qui déplace orbit.target. */
           orbit.addEventListener('change', () => {
             if (!kaykit3D) return;
-            kaykit3D.zoomDistance = orbit.object.position.distanceTo(orbit.target);
-            if (orbitDragActive) {
-              kaykit3D.userRotated = true;
-              // Mouvement réel (glissé ou molette) : le joueur reprend la main.
+            const distance = orbit.object.position.distanceTo(orbit.target);
+            const distanceAvant = kaykit3D.zoomDistance;
+            kaykit3D.zoomDistance = distance;
+
+            /* Molette : une distance de confort choisie, pas un renoncement.
+               Le test de fenêtre est indispensable — 'change' se déclenche aussi
+               à chaque frame d'un recadrage automatique, et sans lui la
+               préférence se serait alignée sur le zoom appuyé d'une chute. */
+            if (performance.now() < kaykitZoomManuelJusqua) kaykit3D.zoomPrefere = distance;
+            if (!orbitDragActive) return;
+
+            kaykit3D.userRotated = true;
+            if (orbit.target.distanceToSquared(cibleAvantGeste) > 1e-6) {
+              kaykit3D.autoFit = false;
               if (kaykit3D.cameraMode !== "free") { kaykit3D.cameraMode = "free"; updateKayKitCameraModeUI(); }
+            } else if (Math.abs(distance - distanceAvant) > 1e-3) {
+              // Pincement à deux doigts : même statut que la molette.
+              kaykit3D.zoomPrefere = distance;
             }
           });
           kaykit3D.orbit = orbit;
@@ -5348,10 +5404,13 @@
           // une bannière de statut plutôt qu'un curseur personnalisé.
           if (pointerDown && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > DRAG_THRESHOLD) {
             dragMoved = true;
-            kaykit3D.autoFit = false;
+            /* Ce glissé n'est plus une sortie de l'AUTO. Ici on ne sait pas
+               encore ce qu'il revendique — c'est l'écouteur 'change' d'orbit qui
+               tranche, en regardant si le point visé a bougé (pan) ou non
+               (rotation). Sans OrbitControls, le repli manuel plus bas ne fait
+               que tourner : rien à quitter non plus. */
             kaykit3D.userRotated = true;
             kaykit3D.cameraTween = null;
-            if (kaykit3D.cameraMode !== "free") { kaykit3D.cameraMode = "free"; updateKayKitCameraModeUI(); }
             kaykit3D.cameraHint?.classList.add("hidden");
             if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
           }
@@ -5409,6 +5468,25 @@
 
       function kaykitFitDistance(aspect = kaykit3D?.camera?.aspect || 1, mode = kaykit3D?.viewMode || "isometric") {
         if (!kaykit3D) return 14.6;
+        /* VUE FACE : le recul ne se recalcule pas ici.
+
+           Il y avait deux réponses à « à quelle distance est la vue de face ».
+           Le preset de js/version-bootstrap.js dit 17 sur un plateau 11×11,
+           calibré pour que le soleil, les godrays et l'archipel lointain entrent
+           dans le cadre. Le calcul ci-dessous, lui, remplissait l'image avec le
+           seul plateau et répondait 11,85. Les deux étaient appelés : le preset
+           au passage menu -> partie, ce calcul au premier resize forcé qui
+           suivait. Selon lequel parlait en dernier, la partie s'ouvrait sur un
+           cadrage et ESPACE en rendait un autre.
+
+           Une seule autorité désormais, celle du preset. Le calcul reste pour
+           la vue isométrique et comme secours si le preset n'est pas chargé. */
+        if (mode === "front") {
+          const canonique = window.ILYOS_frontCameraDistance?.();
+          if (Number.isFinite(canonique)) {
+            return THREE.MathUtils.clamp(canonique, kaykit3D.minZoom, kaykit3D.maxZoom);
+          }
+        }
         const verticalFov = THREE.MathUtils.degToRad(kaykit3D.camera.fov);
         const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(.25, aspect));
         const boardSize = kaykitBoardSpan() + .35;
@@ -5426,10 +5504,20 @@
         const position = new THREE.Vector3();
         if (!target) return position;
         if (mode === "front") {
-          // Angle plus plongeant qu'un vrai plan face : on garde la même distance
-          // au plateau (même magnitude que l'ancien vecteur .40/.96) mais on relève
-          // le point de vue pour mieux lire les cases et les gardiens en survol.
-          position.set(target.x, target.y + distance * .63, target.z + distance * .83);
+          /* Angle plus plongeant qu'un vrai plan face : on relève le point de vue
+             pour mieux lire les cases et les gardiens en survol.
+
+             Le couple .63/.83 décrivait le bon angle (37,2° sous l'horizontale)
+             mais sa norme vaut 1,042 : demander une distance de 17 en plaçait la
+             caméra à 17,71. C'est ce qui faisait encore diverger le cadrage
+             d'ouverture, qui passe par ici, du preset, qui utilise la trigo
+             exacte. Même angle, même source (ILYOS_FRONT_PITCH_DEG), norme 1. */
+          const polaire = polaireVueDeFace();
+          position.set(
+            target.x,
+            target.y + Math.cos(polaire) * distance,
+            target.z + Math.sin(polaire) * distance
+          );
         } else if (kaykit3D?.orbit) {
           position.set(target.x + distance * .61, target.y + distance * .70, target.z + distance * .61);
         } else {
@@ -5459,10 +5547,17 @@
         kaykit3D.camera.updateProjectionMatrix();
       }
 
-      function animateKayKitCameraTo(mode, distance, duration = 520) {
+      /* `conserverAngle` : recadrer sans replaquer l'angle canonique du mode.
+         Les presets VUE FACE / VUE ISO veulent bien leur angle en dur — c'est
+         leur raison d'être. Un simple réajustement de distance, lui, ne doit
+         pas confisquer le point de vue : sans cette option, redimensionner la
+         fenêtre ou basculer en plein écran effaçait l'angle choisi. */
+      function animateKayKitCameraTo(mode, distance, duration = 520, { conserverAngle = false } = {}) {
         if (!kaykit3D) return;
         const target = kaykit3D.viewTarget.clone();
-        const endPosition = kaykitPositionForView(mode, distance, target);
+        const endPosition = conserverAngle
+          ? kaykitPositionAutour(distance, target)
+          : kaykitPositionForView(mode, distance, target);
         const currentTarget = kaykit3D.orbit ? kaykit3D.orbit.target.clone() : target.clone();
         kaykit3D.cameraTween = {
           started: performance.now(), duration,
@@ -5486,6 +5581,15 @@
          `orbit.update()` s'exécute derrière sans se battre avec lui. */
       const PAS_ROTATION_CAMERA = Math.PI / 4;
 
+      /* Bornes d'inclinaison, en angle polaire depuis le zénith (convention
+         d'OrbitControls). MIN/MAX encadrent la navigation libre ; DESSUS est le
+         preset de la flèche ↑, volontairement plus vertical que la borne libre
+         — presque à pic, mais pas tout à fait : six degrés suffisent à garder
+         un peu de volume et à ne pas perdre le nord. */
+      const KAYKIT_POLAIRE_MIN = 24 * Math.PI / 180;
+      const KAYKIT_POLAIRE_MAX = 74 * Math.PI / 180;
+      const KAYKIT_POLAIRE_DESSUS = 6 * Math.PI / 180;
+
       function tournerKayKitCamera(sens) {
         if (!kaykit3D || !kaykit3D.camera) return false;
         const cible = kaykit3D.orbit ? kaykit3D.orbit.target.clone() : kaykit3D.viewTarget.clone();
@@ -5500,12 +5604,12 @@
           cible.z + Math.cos(azimut) * rayon
         );
 
-        /* Tourner à la main, c'est reprendre la main : on passe en LIBRE, comme
-           le ferait un glissé. Sans quoi le prochain recadrage automatique
-           annulerait l'angle qu'on vient de choisir. ESPACE rend l'automatique. */
-        kaykit3D.autoFit = false;
+        /* Tourner ne fait plus sortir de l'AUTO. Auparavant si, parce que le
+           recadrage automatique replaquait un angle en dur et aurait annulé
+           celui qu'on venait de choisir ; il conserve désormais l'angle courant
+           (voir kaykitPositionAutour), donc les deux cohabitent. userRotated
+           reste posé : c'est lui qui empêche le preset initial de recadrer. */
         kaykit3D.userRotated = true;
-        if (kaykit3D.cameraMode !== "free") { kaykit3D.cameraMode = "free"; updateKayKitCameraModeUI(); }
         kaykit3D.cameraHint?.classList.add("hidden");
 
         kaykit3D.cameraTween = {
@@ -5519,17 +5623,135 @@
         return true;
       }
 
+      /* Inclinaison de la caméra, pendant vertical de tournerKayKitCamera.
+
+         ↑ prend de la hauteur jusqu'à la quasi-verticale : c'est la vue qui
+         répond à « où sont les îles et où sont les trous », impossible à lire
+         de trois quarts. ↓ redescend à l'inclinaison de la vue de face.
+
+         On ne touche QUE l'inclinaison : l'azimut, la distance et le point visé
+         sont conservés tels quels, pour que le joueur retrouve exactement la
+         même scène vue de plus haut, et pas une autre scène. */
+      function inclinerKayKitCamera(polaireVoulu, { dessus = false } = {}) {
+        if (!kaykit3D || !kaykit3D.camera) return false;
+        const cible = kaykit3D.orbit ? kaykit3D.orbit.target.clone() : kaykit3D.viewTarget.clone();
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, cible);
+        const distance = ecart.length();
+        if (distance < 1e-3) return false;
+
+        /* La vue de dessus passe sous le plancher de la navigation libre : on
+           l'ouvre le temps du preset. ↓ et ESPACE le referment aussitôt. */
+        const plancher = dessus ? KAYKIT_POLAIRE_DESSUS : KAYKIT_POLAIRE_MIN;
+        if (kaykit3D.orbit) {
+          kaykit3D.orbit.minPolarAngle = plancher;
+          kaykit3D.orbit.maxPolarAngle = KAYKIT_POLAIRE_MAX;
+        }
+
+        const azimut = Math.atan2(ecart.x, ecart.z);
+        const polaire = THREE.MathUtils.clamp(polaireVoulu, plancher, KAYKIT_POLAIRE_MAX);
+        const horizontal = Math.sin(polaire) * distance;
+        const arrivee = new THREE.Vector3(
+          cible.x + Math.sin(azimut) * horizontal,
+          cible.y + Math.cos(polaire) * distance,
+          cible.z + Math.cos(azimut) * horizontal
+        );
+
+        // Comme tourner : on choisit le point de vue, pas le mode. L'AUTO suit.
+        kaykit3D.userRotated = true;
+        kaykit3D.cameraHint?.classList.add("hidden");
+
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 90 : 360,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: arrivee,
+          startTarget: cible.clone(),
+          endTarget: cible
+        };
+        return true;
+      }
+
+      /* Inclinaison de la vue de face, exprimée en polaire. Le preset raisonne
+         en degrés SOUS l'horizontale, OrbitControls en angle depuis le zénith :
+         les deux sont complémentaires. */
+      function polaireVueDeFace() {
+        const plongee = Number.isFinite(window.ILYOS_FRONT_PITCH_DEG) ? window.ILYOS_FRONT_PITCH_DEG : 37.2;
+        return THREE.MathUtils.clamp(Math.PI / 2 - plongee * Math.PI / 180, KAYKIT_POLAIRE_MIN, KAYKIT_POLAIRE_MAX);
+      }
+
       /* ESPACE : retour à la vue de face, et retour à la caméra assistée.
 
          Les deux vont ensemble. Jusqu'ici, un simple glissé faisait basculer en
          LIBRE définitivement, et il fallait rouvrir le menu ⚙ pour retrouver
          l'automatique — autant dire que personne ne le retrouvait. Une touche
-         qui remet la vue d'aplomb doit aussi remettre l'assistance. */
+         qui remet la vue d'aplomb doit aussi remettre l'assistance.
+
+         Le cadrage rendu est celui du preset de js/version-bootstrap.js, seul
+         propriétaire du recul et de la hauteur visée. snapKayKitView("front")
+         en produisait un second, plus rapproché et visant le plateau lui-même
+         au lieu du ciel au-dessus : ESPACE ne rendait donc pas le cadrage sur
+         lequel la partie s'était ouverte.
+
+         Le preset téléporte. On mesure son arrivée, on remet la caméra où elle
+         était, et on rejoue le trajet avec le tween habituel : même destination,
+         mais un mouvement au lieu d'un saut. */
       function reprendreKayKitVueDeFace() {
         if (!kaykit3D) return false;
-        snapKayKitView("front");
+
+        const preset = window.ILYOS_applyFrontCameraPreset;
+        if (typeof preset !== "function") {
+          snapKayKitView("front");
+          kaykit3D.cameraMode = "auto";
+          updateKayKitCameraModeUI();
+          return true;
+        }
+
+        /* Purge de l'amortissement d'OrbitControls avant de mesurer quoi que ce
+           soit. Sans elle, le reliquat du dernier glissé continuait de s'appliquer
+           pendant les frames qui suivaient et décalait la cible de quelques
+           centièmes : ESPACE ne rendait jamais deux fois le même cadre. */
+        if (kaykit3D.orbit) {
+          kaykit3D.orbit.enableDamping = false;
+          kaykit3D.orbit.update();
+          kaykit3D.orbit.enableDamping = true;
+          kaykit3D.orbit.minPolarAngle = KAYKIT_POLAIRE_MIN;
+          kaykit3D.orbit.maxPolarAngle = KAYKIT_POLAIRE_MAX;
+        }
+
+        const departPosition = kaykit3D.camera.position.clone();
+        const departCible = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone();
+
+        if (!preset()) return false;
+
+        const arriveePosition = kaykit3D.camera.position.clone();
+        const arriveeCible = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone();
+
+        kaykit3D.camera.position.copy(departPosition);
+        if (kaykit3D.orbit) kaykit3D.orbit.target.copy(departCible);
+
+        /* Le preset coupe autoFit pour se protéger des recadrages parasites.
+           ESPACE rend l'assistance complète : le suivi de partie ET le recadrage
+           sur changement de format, sans lequel une rotation d'écran ou un
+           passage en plein écran laisse le plateau rogné. */
+        kaykit3D.viewMode = "front";
+        kaykit3D.autoFit = true;
+        kaykit3D.userRotated = false;
+        kaykit3D.userInteracting = false;
         kaykit3D.cameraMode = "auto";
+        // ESPACE rend aussi la distance : la préférence de molette repart de zéro.
+        kaykit3D.zoomPrefere = 0;
+        kaykit3D.cameraFocusUntil = 0;
+        kaykit3D.cameraFocusPriorite = 0;
         updateKayKitCameraModeUI();
+
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 120 : 520,
+          startPosition: departPosition,
+          endPosition: arriveePosition,
+          startTarget: departCible,
+          endTarget: arriveeCible
+        };
         return true;
       }
 
@@ -5546,12 +5768,17 @@
         animateKayKitCameraTo(mode, kaykit3D.zoomDistance);
       }
 
-      // Bascule AUTO / LIBRE : en AUTO, la caméra recadre seule vers le début de
-      // tour du joueur humain et vers les actions de l'IA ; en LIBRE, elle reste
-      // exactement où le joueur l'a laissée.
+      /* Bascule AUTO / LIBRE. En AUTO la caméra choisit le sujet et le suit sous
+         l'angle courant ; en LIBRE elle reste exactement où le joueur l'a laissée.
+
+         On n'y arrive plus par accident : tourner, incliner et zoomer restent en
+         AUTO. Seuls un pan — qui revendique le même point visé que l'AUTO — et
+         ce bouton font passer en LIBRE. */
       function setKayKitCameraMode(mode) {
         if (!kaykit3D) return;
         kaykit3D.cameraMode = mode === "free" ? "free" : "auto";
+        kaykit3D.cameraFocusUntil = 0;
+        kaykit3D.cameraFocusPriorite = 0;
         updateKayKitCameraModeUI();
         if (kaykit3D.cameraMode === "auto") {
           kaykit3D.userRotated = false;
@@ -5567,27 +5794,387 @@
         freeBtn?.classList.toggle("kaykit-mode-active", kaykit3D.cameraMode !== "auto");
       }
 
-      // Recadre en douceur sur une case précise (action de l'IA, poussée, chute…).
-      // `force` outrepasse le mode LIBRE (utilisé par le bouton AUTO lui-même).
-      function kaykitFollowCell(r, c, { duration = 620, force = false, zoomBoost = 0 } = {}) {
+      /* Position à distance donnée autour d'une cible, EN CONSERVANT l'angle
+         sous lequel la caméra regarde déjà.
+
+         C'est la pièce qui rend l'AUTO habitable sur une partie entière.
+         kaykitPositionForView, elle, replaque l'un des deux angles en dur —
+         face ou iso — donc chaque recadrage automatique ramenait le joueur de
+         force à l'angle canonique : choisir son point de vue ET garder la caméra
+         assistée était impossible par construction. Ici l'AUTO ne décide plus
+         que du SUJET et de la DISTANCE ; l'azimut et l'inclinaison restent ceux
+         que le joueur a choisis. */
+      function kaykitPositionAutour(distance, cible) {
+        const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, origine);
+        const rayon = ecart.length();
+        if (rayon < 1e-3) return kaykitPositionForView(kaykit3D.viewMode, distance, cible);
+
+        const azimut = Math.atan2(ecart.x, ecart.z);
+        // Bornes larges : on préserve l'angle du joueur, y compris la vue de
+        // dessus. On ne se protège que de la dégénérescence au zénith exact.
+        const polaire = THREE.MathUtils.clamp(Math.acos(THREE.MathUtils.clamp(ecart.y / rayon, -1, 1)), .02, Math.PI - .02);
+        const horizontal = Math.sin(polaire) * distance;
+        return new THREE.Vector3(
+          cible.x + Math.sin(azimut) * horizontal,
+          cible.y + Math.cos(polaire) * distance,
+          cible.z + Math.cos(azimut) * horizontal
+        );
+      }
+
+      /* ===================== CADRAGE DE SÛRETÉ =====================
+
+         La caméra assistée visait UNE CASE. Une case près d'un bord, et la
+         moitié du plateau sortait du champ. Mesuré sur une partie solo entière
+         avant ce changement : 78 % du plateau visible en médiane, 44 % au pire,
+         85 % du temps sous 80 % de visibilité, un point visé jusqu'à 6,5 unités
+         du centre sur un plateau qui en fait 11,7 de côté, et une distance
+         tombée de 17 à 12,2 — parce que chaque zoom appuyé de chute était repris
+         comme nouvelle distance de référence et que rien ne remettait l'ancre.
+         Après : 99 % visible en médiane comme au pire, jamais sous 80 %.
+
+         Elle cadre désormais le CONTENU : toutes les cases qui portent quelque
+         chose — îles, gardiens, couronnes libres. Le suivi ne fait plus que
+         pencher ce cadre vers l'action, et la distance est recalculée depuis la
+         géométrie à chaque fois, donc elle ne peut plus dériver. */
+
+      /* Les points du monde qui doivent rester lisibles.
+
+         On passe par isLand(), l'autorité du moteur : une case porte de la terre
+         si elle abrite un VILLAGE, le SANCTUAIRE central, ou une île posée. Se
+         contenter de state.islands — comme le faisait la première version — en
+         oubliait les quatre villages de coin et le sanctuaire, c'est-à-dire les
+         points les plus éloignés du plateau. Le cadre se calculait alors sur une
+         poignée d'îles centrales et la caméra plongeait à 9 unités du plateau en
+         laissant un tiers du jeu hors champ. */
+      function kaykitPointsDuContenu(interet) {
+        const cases = [];
+        if (state) {
+          /* Construction ADDITIVE, pas un balayage des 121 cases.
+             Interroger isLand() case par case appelle islandAt(), qui reparcourt
+             toutes les îles à chaque fois : en fin de partie cela faisait
+             121 × îles × cases, deux fois par recadrage, et la partie type est
+             passée de 12 à 16 minutes sous les tests. Ici on énumère ce qui
+             existe — mêmes points exactement, coût proportionnel au contenu. */
+          (state.islands || []).forEach(ile => (ile.cells || []).forEach(([r, c]) => cases.push([r, c])));
+          (state.players || []).forEach(joueur => {
+            const villages = Array.isArray(joueur?.villages) && joueur.villages.length
+              ? joueur.villages
+              : (joueur?.village ? [joueur.village] : []);
+            villages.forEach(village => {
+              if (Number.isFinite(village?.r) && Number.isFinite(village?.c)) cases.push([village.r, village.c]);
+            });
+          });
+          // Sanctuaire : la croix centrale, définie par isSanctuary().
+          if (typeof CENTER === "object" && CENTER) {
+            [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dr, dc]) => {
+              cases.push([CENTER.r + dr, CENTER.c + dc]);
+            });
+          }
+          (state.characters || []).forEach(ch => {
+            if (Number.isFinite(ch.r) && Number.isFinite(ch.c)) cases.push([ch.r, ch.c]);
+          });
+        }
+        if (interet) cases.push(interet);
+        if (!cases.length) return [];
+        const hauteur = kaykit3D.viewTarget?.y ?? .22;
+        return cases.map(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          return new THREE.Vector3(p.x, hauteur, p.z);
+        });
+      }
+
+      /* Distance minimale, depuis `cible` et sous l'orientation courante, pour
+         que tous les points tiennent dans le champ.
+
+         Résolu analytiquement plutôt qu'en projetant : pour un point d'écart w,
+         la contrainte |w·droite| ≤ (d − w·u)·tan(fovH/2) donne directement
+         d ≥ w·u + |w·droite| / tan(fovH/2). On prend le maximum sur tous les
+         points et sur les deux axes. Exact, et sans dépendre d'une caméra qu'il
+         faudrait déjà avoir positionnée. */
+      function kaykitDistancePourContenir(points, cible, marge = 1.12) {
+        if (!points.length || !kaykit3D?.camera) return 0;
+        const camera = kaykit3D.camera;
+        const tanVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+        const tanHorizontal = tanVertical * Math.max(.25, camera.aspect || 1);
+
+        const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+        const u = new THREE.Vector3().subVectors(camera.position, origine);
+        if (u.lengthSq() < 1e-6) u.set(0, .6, .8);
+        u.normalize();
+        const droite = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), u);
+        if (droite.lengthSq() < 1e-6) droite.set(1, 0, 0);
+        droite.normalize();
+        const haut = new THREE.Vector3().crossVectors(u, droite).normalize();
+
+        let distance = 0;
+        const ecart = new THREE.Vector3();
+        points.forEach(point => {
+          ecart.subVectors(point, cible);
+          const profondeur = ecart.dot(u);
+          distance = Math.max(
+            distance,
+            profondeur + marge * Math.abs(ecart.dot(droite)) / tanHorizontal,
+            profondeur + marge * Math.abs(ecart.dot(haut)) / tanVertical
+          );
+        });
+        return distance;
+      }
+
+      /* Le cadre que l'AUTO doit rendre : centré sur le contenu, penché vers
+         l'action, à la distance qui garde tout à l'image.
+
+         Le penchant est volontairement faible. Il suffit à dire « c'est ici que
+         ça se passe » sans jamais rendre le reste du plateau illisible — ce que
+         faisait le recadrage plein cadre sur une case. */
+      const KAYKIT_PENCHANT_VERS_ACTION = .35;
+
+      function kaykitCadrageDeSurete(interet, pointsFournis) {
+        const points = pointsFournis || kaykitPointsDuContenu(interet);
+        if (!points.length) return null;
+
+        const centre = points
+          .reduce((somme, p) => somme.add(p), new THREE.Vector3())
+          .multiplyScalar(1 / points.length);
+        // Milieu de l'étendue, pas barycentre : une grappe d'îles d'un côté ne
+        // doit pas tirer le cadre à elle et laisser l'autre bord sortir.
+        const xs = points.map(p => p.x), zs = points.map(p => p.z);
+        centre.x = (Math.min(...xs) + Math.max(...xs)) / 2;
+        centre.z = (Math.min(...zs) + Math.max(...zs)) / 2;
+        centre.y = kaykit3D.viewTarget?.y ?? .22;
+
+        if (interet) {
+          const p = kaykitCellPosition(interet[0], interet[1], 0);
+          centre.x += (p.x - centre.x) * KAYKIT_PENCHANT_VERS_ACTION;
+          centre.z += (p.z - centre.z) * KAYKIT_PENCHANT_VERS_ACTION;
+        }
+
+        const necessaire = kaykitDistancePourContenir(points, centre);
+        /* La molette du joueur fait foi quand elle demande PLUS de recul : c'est
+           un choix de contexte. Elle ne peut pas en demander moins que ce que la
+           lisibilité exige — c'est tout l'objet de ce cadrage. */
+        const voulue = Math.max(necessaire, kaykit3D.zoomPrefere || 0);
+        return { centre, distance: THREE.MathUtils.clamp(voulue, kaykit3D.minZoom, kaykit3D.maxZoom) };
+      }
+
+      /* Zone morte : la moitié centrale de l'image.
+
+         Tant que le point d'intérêt s'y trouve déjà, la caméra ne bouge pas.
+         Recadrer sur ce qui est déjà bien visible n'apporte aucune information
+         et ne produit que du roulis — c'était le vrai coût de la caméra
+         assistée, et la raison pour laquelle elle ne suivait que l'IA. Avec
+         cette zone, suivre AUSSI le joueur devient supportable : on joue au
+         centre, rien ne bouge ; on joue au bord, la caméra accompagne. */
+      const KAYKIT_ZONE_MORTE = .5;
+
+      /* Tout le contenu du plateau tient-il déjà à l'image ? On garde une marge
+         intérieure : un gardien collé au bord du cadre est visible mais illisible,
+         et n'appelle pas moins un recadrage qu'un gardien hors champ. */
+      function kaykitContenuDejaCadre(points, marge = .94) {
+        if (!points?.length || !kaykit3D?.camera) return true;
+        kaykit3D.camera.updateMatrixWorld();
+        const projete = new THREE.Vector3();
+        return points.every(point => {
+          projete.copy(point).project(kaykit3D.camera);
+          return Number.isFinite(projete.x) && projete.z < 1
+            && Math.abs(projete.x) <= marge && Math.abs(projete.y) <= marge;
+        });
+      }
+
+      function kaykitPointDejaCadre(point) {
+        if (!kaykit3D?.camera) return false;
+        kaykit3D.camera.updateMatrixWorld();
+        const ndc = point.clone().project(kaykit3D.camera);
+        if (!Number.isFinite(ndc.x) || !Number.isFinite(ndc.y) || ndc.z >= 1) return false;
+        return Math.abs(ndc.x) <= KAYKIT_ZONE_MORTE && Math.abs(ndc.y) <= KAYKIT_ZONE_MORTE;
+      }
+
+      /* ===================== PLANS CINÉMATIQUES =====================
+
+         L'habillage des moments où l'on ne joue plus, où l'on regarde. Deux
+         effets seulement, empruntés au tutoriel qui les avait déjà : les bandes
+         noires, qui disent « laisse-toi porter », et la secousse, qui dit « ça a
+         frappé ».
+
+         Pourquoi les réécrire plutôt que réutiliser ceux du tutoriel : son
+         letterbox vit sur #tutorialLayer, une couche qui n'existe que pendant le
+         récit, et sa feuille de style n'est injectée qu'à ce moment-là. Rien de
+         tout cela n'est disponible en partie normale. On reprend donc les mêmes
+         valeurs — 14vh, #04060d, la même courbe de .8s — pour que le jeu et le
+         tutoriel aient exactement le même geste. */
+      let kaykitCalqueCinema = null;
+      let kaykitFinDesBandes = 0;
+
+      function kaykitPrepareCinema() {
+        if (kaykitCalqueCinema?.isConnected) return kaykitCalqueCinema;
+        if (!els?.boardWrap) return null;
+
+        if (!document.getElementById("kaykit-cinema-style")) {
+          const style = document.createElement("style");
+          style.id = "kaykit-cinema-style";
+          style.textContent = `
+            .kaykit-cinema{position:absolute;inset:0;z-index:8;pointer-events:none;}
+            .kaykit-cinema .kaykit-bande{position:absolute;left:0;right:0;height:0;background:#04060d;
+              transition:height .8s cubic-bezier(.65,0,.2,1);}
+            .kaykit-cinema .kaykit-bande.haut{top:0;box-shadow:0 6px 24px rgba(0,0,0,.5);}
+            .kaykit-cinema .kaykit-bande.bas{bottom:0;box-shadow:0 -6px 24px rgba(0,0,0,.5);}
+            .kaykit-cinema.bandes .kaykit-bande{height:14vh;}
+            @media (prefers-reduced-motion: reduce){
+              .kaykit-cinema .kaykit-bande{transition:none;}
+              .kaykit-cinema.bandes .kaykit-bande{height:7vh;}
+            }
+            #gameScreen.kaykit-secousse .board-wrap{animation:kaykit-secousse-k .45s ease-in-out;}
+            @keyframes kaykit-secousse-k{0%,100%{transform:translate(0,0)}
+              20%{transform:translate(-7px,4px)}40%{transform:translate(6px,-5px)}
+              60%{transform:translate(-4px,-3px)}80%{transform:translate(4px,3px)}}
+            @media (prefers-reduced-motion: reduce){
+              #gameScreen.kaykit-secousse .board-wrap{animation:none;}
+            }
+          `;
+          document.head.appendChild(style);
+        }
+
+        const calque = document.createElement("div");
+        calque.className = "kaykit-cinema";
+        calque.innerHTML = '<div class="kaykit-bande haut"></div><div class="kaykit-bande bas"></div>';
+        els.boardWrap.appendChild(calque);
+        kaykitCalqueCinema = calque;
+        return calque;
+      }
+
+      /* Bandes noires. `duree` les referme toute seule : un plan cinématique ne
+         doit jamais pouvoir laisser le joueur coincé derrière un cache si la
+         séquence est interrompue. Le jeton de fin évite qu'une bande ouverte
+         plus longtemps soit refermée prématurément par une séquence précédente. */
+      function kaykitBandesCinema(actif, duree = 0) {
+        const calque = kaykitPrepareCinema();
+        if (!calque) return;
+        if (!actif) {
+          kaykitFinDesBandes = 0;
+          calque.classList.remove("bandes");
+          return;
+        }
+        calque.classList.add("bandes");
+        if (duree > 0) {
+          const echeance = performance.now() + duree;
+          kaykitFinDesBandes = echeance;
+          setTimeout(() => {
+            if (kaykitFinDesBandes === echeance) kaykitBandesCinema(false);
+          }, duree);
+        }
+      }
+
+      function kaykitSecousse() {
+        if (!els?.gameScreen) return;
+        els.gameScreen.classList.remove("kaykit-secousse");
+        void els.gameScreen.offsetWidth;   // force le redémarrage de l'animation
+        els.gameScreen.classList.add("kaykit-secousse");
+        setTimeout(() => els.gameScreen?.classList.remove("kaykit-secousse"), 500);
+      }
+
+      /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
+         chute, qui déclenche une seconde chute, produit trois demandes en
+         quelques dizaines de millisecondes : sans ce plancher, le plateau
+         devient un manège. */
+      const KAYKIT_DELAI_RECADRAGE = 250;
+      let kaykitDernierRecadrage = 0;
+
+      /* Recadre en douceur sur une case précise (action de l'IA, poussée, chute…).
+
+         `force`     outrepasse le mode LIBRE (utilisé par le bouton AUTO lui-même)
+                     ainsi que la zone morte et la cadence.
+         `priorite`  0 = routine (déplacement, pose d'île), 1 = notable (couronne),
+                     2 = spectaculaire (chute). Une priorité ne peut voler le cadre
+                     à un maintien en cours que si elle lui est strictement
+                     supérieure.
+         `maintien`  durée en ms pendant laquelle ce cadrage est protégé.
+
+         `cinematique` renonce au cadrage de sûreté pour ce plan-là : on centre
+                     EXACTEMENT sur la case et on se rapproche. C'est ce que
+                     demandent le tutoriel et les moments forts — une chute, un
+                     vol de couronne. Le cadrage de sûreté est fait pour qu'on
+                     puisse jouer ; un gros plan est fait pour qu'on regarde. Les
+                     deux sont incompatibles par nature, d'où ce commutateur
+                     plutôt qu'un compromis qui n'aurait servi ni l'un ni
+                     l'autre. Le plan se tient le temps de `maintien`, puis le
+                     recadrage suivant rend la lisibilité complète. */
+      function kaykitFollowCell(r, c, { duration = 620, force = false, zoomBoost = 0, priorite = 0, maintien = 0, cinematique = false } = {}) {
         if (ilyosSimulationActive) return;
         if (!kaykit3D || !Number.isFinite(r) || !Number.isFinite(c)) return;
-        // En mode LIBRE, aucune animation de jeu ne reprend la main sur la
-        // caméra : le joueur garde son cadrage.
-        if (!force && kaykit3D.cameraMode !== "auto") return;
+
         const p = kaykitCellPosition(r, c, 0);
-        kaykit3D.viewTarget = new THREE.Vector3(p.x, kaykit3D.viewTarget?.y ?? .22, p.z);
+        const maintenant = performance.now();
+        /* Le contenu du plateau ne se calcule qu'UNE fois par recadrage : la
+           zone morte et le cadrage de sûreté s'en partagent le résultat. */
+        const contenu = cinematique ? null : kaykitPointsDuContenu([r, c]);
+
+        if (!force) {
+          // En mode LIBRE, aucune animation de jeu ne reprend la main sur la
+          // caméra : le joueur garde son cadrage.
+          if (kaykit3D.cameraMode !== "auto") return;
+          // Un cadrage protégé ne cède qu'à plus important que lui.
+          if (maintenant < kaykit3D.cameraFocusUntil && priorite <= kaykit3D.cameraFocusPriorite) return;
+          if (maintenant - kaykitDernierRecadrage < KAYKIT_DELAI_RECADRAGE && priorite === 0) return;
+          /* Ne rien faire seulement si DEUX conditions tiennent : l'action est
+             déjà bien en vue, ET tout le contenu du plateau l'est aussi. La
+             première seule suffisait, et c'est ainsi que la caméra restait
+             plantée sur un cadrage où 40 % du plateau était hors champ — il n'y
+             avait rien pour l'en sortir. Un zoom appuyé (chute) passe outre :
+             l'emphase est l'information. */
+          if (!cinematique && !zoomBoost
+            && kaykitPointDejaCadre(new THREE.Vector3(p.x, p.y, p.z))
+            && kaykitContenuDejaCadre(contenu)) return;
+        }
+
+        kaykitDernierRecadrage = maintenant;
+        if (maintien > 0) {
+          kaykit3D.cameraFocusUntil = maintenant + maintien;
+          kaykit3D.cameraFocusPriorite = priorite;
+        } else if (maintenant >= kaykit3D.cameraFocusUntil) {
+          kaykit3D.cameraFocusPriorite = 0;
+        }
+
+        /* Point de départ du trajet, relevé AVANT de déplacer le point visé :
+           sans orbite (repli sans OrbitControls) viewTarget est la seule source,
+           et la lire après l'écriture ferait partir le tween de son arrivée. */
+        const cibleDepart = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone();
+
+        /* Le cadre visé garde tout le contenu du plateau à l'image et penche
+           seulement vers l'action. Sans contenu connu (tout début de partie), on
+           retombe sur l'ancien comportement : viser la case. */
+        const cadrage = cinematique ? null : kaykitCadrageDeSurete([r, c], contenu);
+        kaykit3D.viewTarget = cadrage
+          ? cadrage.centre.clone()
+          : new THREE.Vector3(p.x, kaykit3D.viewTarget?.y ?? .22, p.z);
+
+        /* La distance vient de la géométrie, recalculée à chaque recadrage —
+           jamais de la dernière valeur subie. C'est ce qui empêche le zoom
+           appuyé d'une chute de devenir la nouvelle distance de référence et de
+           faire descendre la caméra de 17 à 10,6 au fil d'une partie. */
+        /* Un plan cinématique part de la distance OÙ L'ON EST, pas de la
+           distance de sûreté : les valeurs de zoomBoost du tutoriel ont été
+           réglées ainsi, et les repartir d'un cadrage plus large les aurait
+           silencieusement affadies. */
+        const base = cinematique
+          ? kaykit3D.zoomDistance
+          : (cadrage ? cadrage.distance
+            : (kaykit3D.zoomPrefere > 0 ? kaykit3D.zoomPrefere : kaykit3D.zoomDistance));
         // Mouvement réduit : on conserve le recadrage (il porte l'information
         // « c'est ici que ça se passe ») mais sans zoom appuyé ni long
         // déplacement, qui sont les composantes réellement inconfortables.
-        if (kaykitReducedMotion()) {
-          animateKayKitCameraTo(kaykit3D.viewMode, kaykit3D.zoomDistance, Math.min(200, duration));
-          return;
-        }
-        const distance = zoomBoost
-          ? THREE.MathUtils.clamp(kaykit3D.zoomDistance - zoomBoost, kaykit3D.minZoom, kaykit3D.maxZoom)
-          : kaykit3D.zoomDistance;
-        animateKayKitCameraTo(kaykit3D.viewMode, distance, duration);
+        const distance = (zoomBoost !== 0 && !kaykitReducedMotion())
+          ? THREE.MathUtils.clamp(base - zoomBoost, kaykit3D.minZoom, kaykit3D.maxZoom)
+          : base;
+        const duree = kaykitReducedMotion() ? Math.min(200, duration) : duration;
+
+        kaykit3D.cameraTween = {
+          started: maintenant,
+          duration: duree,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: kaykitPositionAutour(distance, kaykit3D.viewTarget),
+          startTarget: cibleDepart,
+          endTarget: kaykit3D.viewTarget.clone()
+        };
       }
 
       /* Recadre au début du tour sur ce qui compte : les gardiens du joueur ET
@@ -5626,13 +6213,14 @@
         const viseR = (Math.min(...rs) + Math.max(...rs)) / 2;
         const viseC = (Math.min(...cs) + Math.max(...cs)) / 2;
 
-        /* Recul proportionnel à l'étalement, plafonné : au-delà, on ne lirait
-           plus les gardiens. Le signe est négatif parce que kaykitFollowCell
-           SOUSTRAIT le zoomBoost de la distance — un boost positif rapproche. */
-        const etalement = Math.max(Math.max(...rs) - Math.min(...rs), Math.max(...cs) - Math.min(...cs));
-        const recul = -Math.min(2.6, Math.max(0, etalement - 2) * .42);
-
-        kaykitFollowCell(viseR, viseC, { duration: 720, force, zoomBoost: recul });
+        /* Plus de recul calculé ici. Il compensait à la main le fait que le
+           recadrage cadrait plein pot sur une case : des gardiens dispersés
+           sortaient du champ, donc on reculait proportionnellement à leur
+           étalement. kaykitFollowCell garde maintenant tout le contenu du
+           plateau à l'image par construction (voir kaykitCadrageDeSurete) — le
+           correctif n'a plus d'objet, et en garder un second qui tire dans le
+           même sens ne ferait qu'éloigner deux fois. */
+        kaykitFollowCell(viseR, viseC, { duration: 720, force });
       }
 
       // Tout premier tour de la partie : on montre l'objectif (la couronne)
@@ -5694,7 +6282,12 @@
           kaykit3D.camera.updateProjectionMatrix();
           if (forceFit || (kaykit3D.autoFit && aspectChanged)) {
             kaykit3D.zoomDistance = kaykitFitDistance(nextAspect, kaykit3D.viewMode);
-            animateKayKitCameraTo(kaykit3D.viewMode, kaykit3D.zoomDistance, 360);
+            /* Un changement de format ajuste la distance, pas le point de vue :
+               une rotation d'écran ou un passage en plein écran ne doit pas
+               ramener le joueur à l'angle canonique. Tant que personne n'a
+               touché à la caméra, l'angle courant EST l'angle canonique, donc
+               le cadrage d'ouverture reste identique. */
+            animateKayKitCameraTo(kaykit3D.viewMode, kaykit3D.zoomDistance, 360, { conserverAngle: true });
           }
           kaykit3D.badge.style.left = `18px`;
           kaykit3D.badge.style.top = `18px`;
@@ -6516,6 +7109,7 @@
           const yRuban = (segment.y1 !== undefined ? segment.y1 : segment.y2);
           ruban.position.set((segment.x1 + segment.x2) / 2, yRuban + decalageY, (segment.z1 + segment.z2) / 2);
           ruban.renderOrder = decalageY > 0 ? 20 : 19;
+          ruban.userData.visualRole = decalageY > 0 ? 'zone.bright' : 'zone.dark';
           group.add(ruban);
           registerKayKitFadeIn(ruban);
         };
@@ -6547,6 +7141,7 @@
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(p.x, p.y, p.z);
         ring.renderOrder = 20;
+        ring.userData.visualRole = 'push.target';
         group.add(ring);
         registerKayKitFadeIn(ring);
       }
@@ -6577,6 +7172,7 @@
         ring.position.set(p.x, p.y, p.z);
         ring.scale.setScalar(emphasized ? 1.12 : 1);
         ring.renderOrder = 58;
+        ring.userData.visualRole = emphasized ? 'push.hover' : 'push.destination';
         group.add(ring);
 
         const hit = new THREE.Mesh(
@@ -6634,6 +7230,7 @@
         sprite.position.copy(position);
         sprite.scale.setScalar(emphasized ? .66 : .59);
         sprite.renderOrder = 59;
+        sprite.userData.visualRole = 'death.sprite';
         group.add(sprite);
 
         /* Rayon élargi (.36 → .56) : c'est la seule cible de toute l'action
@@ -10872,9 +11469,16 @@
         // par js/complete-polish.js alors que le rendu est plafonné ~60).
         if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
         // Bloom si disponible, rendu direct sinon — jamais d'écran noir en cas d'échec.
-        if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
-          kaykit3D.renderer.setRenderTarget(null);
-          kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
+        // Surcharges visuelles limitées au dessin : les animations et les
+        // interactions retrouvent leurs valeurs d'origine après chaque rendu.
+        const restoreVisuals = window.ILYOS_VISUAL_EDITOR?.apply(kaykit3D);
+        try {
+          if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
+            kaykit3D.renderer.setRenderTarget(null);
+            kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
+          }
+        } finally {
+          restoreVisuals?.();
         }
       }
       let toastTimer = null;
@@ -11218,6 +11822,20 @@
 
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
           if (tournerKayKitCamera(event.key === "ArrowLeft" ? -1 : 1)) event.preventDefault();
+          return;
+        }
+
+        /* ↑ / ↓ : le pendant vertical de ← / →. Comme les flèches horizontales,
+           elles n'actionnent aucun bouton, donc pas de garde sur le focus.
+           handleRotateKey garde la priorité : s'il a consommé la touche pour une
+           pose ou une rotation d'île, defaultPrevented nous a déjà fait sortir. */
+        if (event.key === "ArrowUp") {
+          if (inclinerKayKitCamera(0, { dessus: true })) event.preventDefault();
+          return;
+        }
+
+        if (event.key === "ArrowDown") {
+          if (inclinerKayKitCamera(polaireVueDeFace())) event.preventDefault();
           return;
         }
 
@@ -19125,6 +19743,17 @@
             renderAll();
             animateCellPulse(pickedChar.r, pickedChar.c, "crown-burst");
             playSfx("crownTake");   // Ramassage, éventuellement volé à l'adversaire.
+            /* La couronne change de mains : c'est l'information la plus lourde
+               de la partie après une chute, elle mérite le cadre.
+
+               Un VOL à l'adversaire est un retournement, pas un ramassage : il
+               passe en gros plan et tient plus longtemps. Un ramassage ordinaire
+               garde le cadrage lisible — on veut voir d'où vient la menace, pas
+               seulement celui qui vient de se servir. Pas de bandes noires ici :
+               contrairement à une chute, la partie continue pendant ce plan. */
+            kaykitFollowCell(pickedChar.r, pickedChar.c, stolenFrom
+              ? { duration: 760, zoomBoost: 1.1, cinematique: true, priorite: 2, maintien: 950 }
+              : { duration: 640, priorite: 1, maintien: 600 });
             showToast(stolenFrom ? `${currentPlayer().name} récupère la couronne à l’adversaire !` : "Couronne récupérée.");
           } else {
             showToast("Choisissez un de vos gardiens adjacents.");
@@ -19375,6 +20004,20 @@
         // L'île se matérialise : elle descend depuis quelques centimètres
         // au-dessus de sa position finale au lieu d'apparaître d'un coup.
         playIslandDrop(island.id);
+
+        /* Une île qui apparaît change la carte : la caméra assistée y va, pour
+           les deux joueurs. La zone morte empêche que ça bouge quand on pose au
+           milieu de ce qu'on regarde déjà. Le centre de l'île, pas son ancre —
+           l'ancre peut être un coin de la forme. */
+        if (absCells.length) {
+          const lignes = absCells.map(([cr]) => cr);
+          const colonnes = absCells.map(([, cc]) => cc);
+          kaykitFollowCell(
+            (Math.min(...lignes) + Math.max(...lignes)) / 2,
+            (Math.min(...colonnes) + Math.max(...colonnes)) / 2,
+            { duration: 700, priorite: 1, maintien: 500 }
+          );
+        }
 
         if (state.draft) {
           state.draft.placedIslands[island.owner]++;
@@ -20032,8 +20675,12 @@
         // pour une seule case — transformait chaque pas en petite cinématique et
         // ralentissait nettement un joueur expérimenté.
         const walkDuration = Math.min(1600, 140 + path.length * 340);
-        // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
-        if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
+        /* Les deux joueurs sont suivis, désormais. La règle « le joueur humain
+           regarde déjà où il clique » était vraie du recadrage systématique
+           d'avant, qui bougeait même quand la case était déjà au centre. La zone
+           morte de kaykitFollowCell s'en charge : on joue au centre, rien ne
+           bouge ; on envoie un gardien au bord du plateau, la caméra suit. */
+        kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
         // V78 (passe fluidité) : en mode 3D, plus de animateToken() HTML
         // (getBoundingClientRect/.moving-token/element.animate invisible en
         // alt mode) — queueKayKitActionAnimation() devient l'autorité visuelle
@@ -20364,7 +21011,27 @@
         // Une poussée (surtout une chute) mérite d'être vue même par le joueur
         // qui vient de cliquer : impact souvent hors de son cadrage actuel.
         const impactCell = result.to || result.from;
-        kaykitFollowCell(impactCell[0], impactCell[1], { duration: 680, zoomBoost: result.fell ? 1.6 : 0 });
+        kaykitFollowCell(impactCell[0], impactCell[1], {
+          duration: 680,
+          zoomBoost: result.fell ? 1.6 : 0,
+          /* Une chute est le moment le plus spectaculaire du jeu : elle tient le
+             cadre le temps de l'animation, et aucun déplacement de routine ne
+             peut le lui voler entre-temps. Elle est cadrée en gros plan, donc
+             sans le cadrage de sûreté : ici on ne joue plus, on regarde.
+             Une poussée sans chute garde le cadrage lisible — c'est un coup
+             parmi d'autres, pas une scène. */
+          cinematique: !!result.fell,
+          priorite: result.fell ? 2 : 1,
+          maintien: result.fell ? 1100 : 0
+        });
+
+        /* Bandes noires et secousse, uniquement sur la chute. Les bandes se
+           referment seules après le plan : une séquence interrompue ne doit
+           jamais laisser le joueur derrière un cache. */
+        if (result.fell) {
+          kaykitBandesCinema(true, 1400);
+          kaykitSecousse();
+        }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
         // résolution logique (fx/sfx/carte consommée) est signalée par une
@@ -21465,6 +22132,21 @@
         stopTurnTimer();
         aiRunToken++;
         els.gameScreen.classList.remove("ai-turn");
+
+        /* PLAN FINAL — avant que la fenêtre ne s'ouvre.
+
+           On recule sur tout l'archipel pour que le dernier état du plateau
+           reste lisible derrière elle, et les bandes accompagnent la bascule
+           « on ne joue plus ». Priorité 3 : rien ne peut voler ce cadre.
+
+           Pas de travelling tournant, volontairement : la fenêtre de victoire
+           couvre l'écran et l'aurait masqué. Un mouvement que personne ne voit
+           n'est pas un mouvement. */
+        kaykitFollowCell(CENTER.r, CENTER.c, {
+          force: true, duration: 1200, priorite: 3, maintien: 4000
+        });
+        kaykitBandesCinema(true, 4000);
+
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -21482,6 +22164,21 @@
         stopTurnTimer();
         aiRunToken++;
         els.gameScreen.classList.remove("ai-turn");
+
+        /* PLAN FINAL — avant que la fenêtre ne s'ouvre.
+
+           On recule sur tout l'archipel pour que le dernier état du plateau
+           reste lisible derrière elle, et les bandes accompagnent la bascule
+           « on ne joue plus ». Priorité 3 : rien ne peut voler ce cadre.
+
+           Pas de travelling tournant, volontairement : la fenêtre de victoire
+           couvre l'écran et l'aurait masqué. Un mouvement que personne ne voit
+           n'est pas un mouvement. */
+        kaykitFollowCell(CENTER.r, CENTER.c, {
+          force: true, duration: 1200, priorite: 3, maintien: 4000
+        });
+        kaykitBandesCinema(true, 4000);
+
 
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
@@ -26295,7 +26992,7 @@
             if (typeof kaykitFollowCell === "function" && typeof kaykit3D !== "undefined" && kaykit3D) {
               kaykit3D.autoFit = false;
               // force:true recadre même caméra verrouillée (voir kaykitFollowCurrentPlayer).
-              kaykitFollowCell(r, c, { duration: 720, force: true, zoomBoost: zoomBoost || 0 });
+              kaykitFollowCell(r, c, { duration: 720, force: true, cinematique: true, zoomBoost: zoomBoost || 0 });
               ok = true;
             }
           } catch (_) { }
@@ -26345,7 +27042,7 @@
         try {
           if (typeof kaykitFollowCell === "function" && typeof kaykit3D !== "undefined" && kaykit3D) {
             kaykit3D.autoFit = false;
-            kaykitFollowCell(r, c, { duration, force: true, zoomBoost: zoomBoost || 0 });
+            kaykitFollowCell(r, c, { duration, force: true, cinematique: true, zoomBoost: zoomBoost || 0 });
           }
         } catch (_) { }
         tutoLockCamera();

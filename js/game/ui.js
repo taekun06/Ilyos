@@ -1678,6 +1678,17 @@
             renderAll();
             animateCellPulse(pickedChar.r, pickedChar.c, "crown-burst");
             playSfx("crownTake");   // Ramassage, éventuellement volé à l'adversaire.
+            /* La couronne change de mains : c'est l'information la plus lourde
+               de la partie après une chute, elle mérite le cadre.
+
+               Un VOL à l'adversaire est un retournement, pas un ramassage : il
+               passe en gros plan et tient plus longtemps. Un ramassage ordinaire
+               garde le cadrage lisible — on veut voir d'où vient la menace, pas
+               seulement celui qui vient de se servir. Pas de bandes noires ici :
+               contrairement à une chute, la partie continue pendant ce plan. */
+            kaykitFollowCell(pickedChar.r, pickedChar.c, stolenFrom
+              ? { duration: 760, zoomBoost: 1.1, cinematique: true, priorite: 2, maintien: 950 }
+              : { duration: 640, priorite: 1, maintien: 600 });
             showToast(stolenFrom ? `${currentPlayer().name} récupère la couronne à l’adversaire !` : "Couronne récupérée.");
           } else {
             showToast("Choisissez un de vos gardiens adjacents.");
@@ -1928,6 +1939,20 @@
         // L'île se matérialise : elle descend depuis quelques centimètres
         // au-dessus de sa position finale au lieu d'apparaître d'un coup.
         playIslandDrop(island.id);
+
+        /* Une île qui apparaît change la carte : la caméra assistée y va, pour
+           les deux joueurs. La zone morte empêche que ça bouge quand on pose au
+           milieu de ce qu'on regarde déjà. Le centre de l'île, pas son ancre —
+           l'ancre peut être un coin de la forme. */
+        if (absCells.length) {
+          const lignes = absCells.map(([cr]) => cr);
+          const colonnes = absCells.map(([, cc]) => cc);
+          kaykitFollowCell(
+            (Math.min(...lignes) + Math.max(...lignes)) / 2,
+            (Math.min(...colonnes) + Math.max(...colonnes)) / 2,
+            { duration: 700, priorite: 1, maintien: 500 }
+          );
+        }
 
         if (state.draft) {
           state.draft.placedIslands[island.owner]++;
@@ -2585,8 +2610,12 @@
         // pour une seule case — transformait chaque pas en petite cinématique et
         // ralentissait nettement un joueur expérimenté.
         const walkDuration = Math.min(1600, 140 + path.length * 340);
-        // Le joueur humain regarde déjà où il clique : ne recadrer que pour l'IA.
-        if (isCurrentPlayerAI()) kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
+        /* Les deux joueurs sont suivis, désormais. La règle « le joueur humain
+           regarde déjà où il clique » était vraie du recadrage systématique
+           d'avant, qui bougeait même quand la case était déjà au centre. La zone
+           morte de kaykitFollowCell s'en charge : on joue au centre, rien ne
+           bouge ; on envoie un gardien au bord du plateau, la caméra suit. */
+        kaykitFollowCell(r, c, { duration: Math.min(900, walkDuration) });
         // V78 (passe fluidité) : en mode 3D, plus de animateToken() HTML
         // (getBoundingClientRect/.moving-token/element.animate invisible en
         // alt mode) — queueKayKitActionAnimation() devient l'autorité visuelle
@@ -2917,7 +2946,27 @@
         // Une poussée (surtout une chute) mérite d'être vue même par le joueur
         // qui vient de cliquer : impact souvent hors de son cadrage actuel.
         const impactCell = result.to || result.from;
-        kaykitFollowCell(impactCell[0], impactCell[1], { duration: 680, zoomBoost: result.fell ? 1.6 : 0 });
+        kaykitFollowCell(impactCell[0], impactCell[1], {
+          duration: 680,
+          zoomBoost: result.fell ? 1.6 : 0,
+          /* Une chute est le moment le plus spectaculaire du jeu : elle tient le
+             cadre le temps de l'animation, et aucun déplacement de routine ne
+             peut le lui voler entre-temps. Elle est cadrée en gros plan, donc
+             sans le cadrage de sûreté : ici on ne joue plus, on regarde.
+             Une poussée sans chute garde le cadrage lisible — c'est un coup
+             parmi d'autres, pas une scène. */
+          cinematique: !!result.fell,
+          priorite: result.fell ? 2 : 1,
+          maintien: result.fell ? 1100 : 0
+        });
+
+        /* Bandes noires et secousse, uniquement sur la chute. Les bandes se
+           referment seules après le plan : une séquence interrompue ne doit
+           jamais laisser le joueur derrière un cache. */
+        if (result.fell) {
+          kaykitBandesCinema(true, 1400);
+          kaykitSecousse();
+        }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
         // résolution logique (fx/sfx/carte consommée) est signalée par une
@@ -4018,6 +4067,21 @@
         stopTurnTimer();
         aiRunToken++;
         els.gameScreen.classList.remove("ai-turn");
+
+        /* PLAN FINAL — avant que la fenêtre ne s'ouvre.
+
+           On recule sur tout l'archipel pour que le dernier état du plateau
+           reste lisible derrière elle, et les bandes accompagnent la bascule
+           « on ne joue plus ». Priorité 3 : rien ne peut voler ce cadre.
+
+           Pas de travelling tournant, volontairement : la fenêtre de victoire
+           couvre l'écran et l'aurait masqué. Un mouvement que personne ne voit
+           n'est pas un mouvement. */
+        kaykitFollowCell(CENTER.r, CENTER.c, {
+          force: true, duration: 1200, priorite: 3, maintien: 4000
+        });
+        kaykitBandesCinema(true, 4000);
+
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -4035,6 +4099,21 @@
         stopTurnTimer();
         aiRunToken++;
         els.gameScreen.classList.remove("ai-turn");
+
+        /* PLAN FINAL — avant que la fenêtre ne s'ouvre.
+
+           On recule sur tout l'archipel pour que le dernier état du plateau
+           reste lisible derrière elle, et les bandes accompagnent la bascule
+           « on ne joue plus ». Priorité 3 : rien ne peut voler ce cadre.
+
+           Pas de travelling tournant, volontairement : la fenêtre de victoire
+           couvre l'écran et l'aurait masqué. Un mouvement que personne ne voit
+           n'est pas un mouvement. */
+        kaykitFollowCell(CENTER.r, CENTER.c, {
+          force: true, duration: 1200, priorite: 3, maintien: 4000
+        });
+        kaykitBandesCinema(true, 4000);
+
 
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
