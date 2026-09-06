@@ -4786,6 +4786,7 @@
       }
 
       function queueKayKitCurrentPlayerAnimation(intent = "magic", duration = 1000, target = null) {
+        if (ilyosSimulationActive) return;
         const selected = state?.selectedCharId ? characterById(state.selectedCharId) : null;
         const actor = selected || state?.characters?.find(character => character.player === state.currentPlayer);
         // La cible sert à orienter le lanceur : sans elle, il incantait dos à
@@ -4799,6 +4800,7 @@
        * registre normal et s'anime seul jusqu'à disparaître.
        */
       function queueKayKitCharacterFall(characterId, direction = null) {
+        if (ilyosSimulationActive) return;
         const visual = kaykit3D?.characterVisuals.get(String(characterId));
         if (!visual) return;
         playCharacterFall(visual, direction);
@@ -4962,7 +4964,7 @@
             : !!nearestPusherForTarget(r, c);
           if (valid) {
             const falling = !!getPushHoverPreview()?.fell;
-            const force = Math.max(1, selectedBatchSize());
+            const force = forcePousseeCourante();
             return {
               kind: "push",
               actionable: true,
@@ -6651,6 +6653,50 @@
         registerUnifiedPushInteraction(hit, "push-death-destination", option);
       }
 
+      /* Aperçu d'une poussée : TOUT le bloc, et un fantôme par pièce.
+
+         Il existait deux rendus concurrents pour la même action — un pour la
+         carte POUSSER, un autre pour le gardien sélectionné — avec des couleurs,
+         des tailles et des opacités différentes. Survoler la même cible ne
+         montrait donc pas la même chose selon le chemin emprunté. Les deux
+         passent maintenant par ici.
+
+         Marquer les cases ne disait pas QUI atterrit où : sur un bloc de
+         plusieurs pièces, il fallait deviner. Le fantôme le montre. Une pièce
+         qui bascule dans le vide n'a pas d'arrivée : son fantôme se pose sur la
+         dernière terre franchie, en rouge et plus effacé. */
+      function renderPushBlockPreview(impacts) {
+        (impacts || []).forEach(impact => {
+          addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
+            color: impact.fell ? 0xff3f45 : 0xffa044,
+            opacity: impact.fell ? .58 : .42,
+            size: .84
+          });
+          if (impact.to) {
+            addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
+              color: 0xff7442,
+              opacity: .48,
+              size: .86,
+              pulse: true
+            });
+          }
+          /* Aucun fantôme pour une pièce qui tombe : elle ne reste NULLE PART.
+             En poser un sur la dernière terre franchie laissait croire qu'elle
+             s'y arrête — et quand deux pièces d'un même bloc chutent, leurs
+             fantômes se superposaient sur la même case. Leur sort se lit sur
+             leur case de départ, marquée en rouge ci-dessus. */
+          if (impact.fell || !impact.to) return;
+          // Inutile de fantômer une pièce qui ne bouge pas : elle est déjà là,
+          // en vrai, sous les yeux du joueur.
+          if (impact.to[0] === impact.from[0] && impact.to[1] === impact.from[1]) return;
+          const personnage = impact.type === "character" ? characterById(impact.id) : null;
+          addKayKitPushGhost(impact.to[0], impact.to[1], {
+            playerId: personnage ? personnage.player : null,
+            crown: impact.type === "crown"
+          });
+        });
+      }
+
       function renderUnifiedPushAffordances() {
         if (!kaykit3D || !state?.pushOptions?.length) return;
         const hoveredId = state.pushHoverOptionId;
@@ -6700,16 +6746,10 @@
             arrowEnd
           );
 
-          if (hovered?.preview?.impacts) {
-            hovered.preview.impacts.forEach(impact => {
-              if (!impact.to) return;
-              addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
-                color: 0xffb15c,
-                opacity: .34,
-                size: .64
-              });
-            });
-          }
+          // Même aperçu que par la carte POUSSER : c'est la seule façon que
+          // survoler une destination montre exactement ce que la carte
+          // montrerait, au lieu de deux langages visuels concurrents.
+          if (hovered?.preview?.impacts) renderPushBlockPreview(hovered.preview.impacts);
         });
       }
 
@@ -6771,6 +6811,63 @@
           child.renderOrder = 21;
         });
         group.add(hero);
+      }
+
+      /* Fantôme d'une pièce à sa destination de poussée.
+
+         Marquer les cases d'arrivée en couleur ne disait pas QUI atterrit où :
+         sur un bloc de trois pièces, il fallait deviner. Un fantôme par pièce
+         lève l'ambiguïté d'un coup d'œil — on lit le bloc entier, sa nouvelle
+         disposition, et qui bascule dans le vide.
+
+         Réutilise l'idiome de addKayKitSpawnGuardianGhost : même clonage, même
+         matériau translucide, même groupe transitoire. */
+      function addKayKitPushGhost(r, c, { playerId = null, crown = false } = {}) {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+
+        let piece = null;
+        if (crown) {
+          // La couronne n'est pas un asset KayKit mais une géométrie construite
+          // par makeCrown() — même modèle que celui posé sur le plateau.
+          piece = makeCrown();
+          if (!piece) return;
+        } else {
+          const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
+          ensureKayKitAsset(assetKey);
+          piece = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
+          if (!piece) piece = makeFallbackHero(playerId ?? 0);
+        }
+
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+        piece.position.set(p.x, p.y, p.z);
+        if (!crown) piece.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+
+        // Couleur du camp : on reconnaît d'un coup d'œil à qui appartient la
+        // pièce qui va occuper la case.
+        const accent = new THREE.Color(crown
+          ? "#ffd76a"
+          : (state.players?.[playerId]?.color || PLAYER_COLORS[playerId] || "#ffffff"));
+
+        piece.traverse?.(child => {
+          if (!child.isMesh || !child.material) return;
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          const cloned = materials.map(material => {
+            const mat = material.clone();
+            if ("emissive" in mat) {
+              mat.emissive = accent.clone();
+              mat.emissiveIntensity = .26;
+            }
+            mat.transparent = true;
+            mat.opacity = .6;
+            mat.depthWrite = false;
+            mat.needsUpdate = true;
+            return mat;
+          });
+          child.material = Array.isArray(child.material) ? cloned : cloned[0];
+          child.renderOrder = 21;
+        });
+        group.add(piece);
       }
 
       function addKayKitActionPreviewCell(r, c, {
@@ -7111,21 +7208,7 @@
 
         if (pushActive && !unifiedPushActive) {
           const preview = pushPreview;
-          (preview?.impacts || []).forEach(impact => {
-            addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
-              color: impact.fell ? 0xff3f45 : 0xffa044,
-              opacity: impact.fell ? .58 : .42,
-              size: .84
-            });
-            if (impact.to) {
-              addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
-                color: 0xff7442,
-                opacity: .48,
-                size: .86,
-                pulse: true
-              });
-            }
-          });
+          renderPushBlockPreview(preview?.impacts);
           if (state.actionHoverCell) {
             addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
               color: 0xffa044,
@@ -9067,6 +9150,7 @@
 
       /** Apparition d'un gardien : cercle au sol, montée, puis Idle. */
       function playCharacterSpawn(visual) {
+        if (ilyosSimulationActive) return;
         if (!visual) return;
         const states = ANIM_STATES();
         visual.spawn = { startedAt: performance.now(), duration: 520 };
@@ -9080,6 +9164,7 @@
 
       /** Rotation vers une cible puis marche synchronisée avec le tween. */
       function playCharacterMove(visual, route, duration) {
+        if (ilyosSimulationActive) return;
         if (!visual || !Array.isArray(route) || route.length < 2) return;
         const states = ANIM_STATES();
         const cells = route.length - 1;
@@ -9125,6 +9210,7 @@
 
       /** Poussée : anticipation, frappe, impact. */
       function playCharacterPush(visual, target, duration = 900) {
+        if (ilyosSimulationActive) return;
         if (!visual) return;
         const states = ANIM_STATES();
         if (target && Number.isFinite(target.r)) {
@@ -9173,6 +9259,7 @@
 
       /** Réaction du gardien poussé. */
       function playCharacterHit(visual, source, delay = 0) {
+        if (ilyosSimulationActive) return;
         if (!visual?.animator) return;
         const states = ANIM_STATES();
         const trigger = () => {
@@ -9191,6 +9278,7 @@
 
       /** Magie : le gardien lance réellement le sort. */
       function playCharacterMagic(visual, target) {
+        if (ilyosSimulationActive) return;
         if (!visual?.animator) return;
         const states = ANIM_STATES();
         if (target && Number.isFinite(target.r)) {
@@ -9203,6 +9291,7 @@
 
       /** Chute dans le vide : trajectoire courte vers la couche nuageuse. */
       function playCharacterFall(visual, direction = null) {
+        if (ilyosSimulationActive) return;
         if (!visual || visual.fall) return;
         const states = ANIM_STATES();
         visual.move = null;
@@ -9251,6 +9340,7 @@
 
       /** Célébration : les gardiens ne partent jamais tous sur la même image. */
       function playCharacterVictory(visual, delay = 0) {
+        if (ilyosSimulationActive) return;
         if (!visual?.animator) return;
         const states = ANIM_STATES();
         kaykit3D.visualSequences.push({
@@ -9378,6 +9468,7 @@
        * de sa tête d'une image à l'autre.
        */
       function playCrownPickup(characterId, fromR, fromC) {
+        if (ilyosSimulationActive) return;
         const visual = kaykit3D?.characterVisuals.get(String(characterId));
         if (!visual) return;
         const states = ANIM_STATES();
@@ -9404,6 +9495,7 @@
        * couronne a été téléportée ».
        */
       function playCrownFlight(fromR, fromC, toR, toC, { arc = .9, duration = 420 } = {}) {
+        if (ilyosSimulationActive) return;
         if (!kaykit3D || kaykitReducedMotion()) return;
         const crown = makeCrown();
         crown.scale.setScalar(.6);
@@ -9435,6 +9527,7 @@
 
       /** Validation au village : moment fort du jeu, halo doré et célébration. */
       function playCrownScore(characterId) {
+        if (ilyosSimulationActive) return;
         const visual = kaykit3D?.characterVisuals.get(String(characterId));
         if (!visual) return;
         const gold = new THREE.Color(0xffcf52);
@@ -9480,6 +9573,7 @@
        * simplement s'afficher.
        */
       function playIslandDrop(islandId, duration = 520) {
+        if (ilyosSimulationActive) return;
         if (!kaykit3D || kaykitReducedMotion()) return;
         // La synchronisation qui suit la pose reconstruit les blocs : on attend
         // donc une image avant de chercher le bloc à animer.
@@ -9523,6 +9617,7 @@
        * Les adversaires gardent une pose neutre — pas d'animation humiliante.
        */
       function playVictoryCelebration(playerId) {
+        if (ilyosSimulationActive) return;
         if (!kaykit3D) return;
         const gold = new THREE.Color(0xffcf52);
         let index = 0;
@@ -9775,6 +9870,7 @@
 
       /** Énergie qui apparaît autour du gardien pendant l'incantation. */
       function spawnCastAura(visual) {
+        if (ilyosSimulationActive) return;
         if (!kaykit3D || !visual || kaykitReducedMotion()) return;
         const color = new THREE.Color(0x9d7bff);
         spawnGroundBurst(visual.wrapper.position, color, { radius: .34, duration: 700 });
@@ -10987,6 +11083,32 @@
         if (state.phase === "ACTION" && state.selectedActionType === "PUSH") state.selectedActionCount = next;
         if (notify) showToast(`Force de poussée : ${next}`);
         return next;
+      }
+
+      /* LA force de poussée courante — source unique.
+
+         Il en existait quatre concurrentes, et elles se contredisaient :
+         `state.smartPushForce` quand on cliquait le gardien (défaut 1),
+         `selectedBatchSize()` quand on passait par la carte POUSSER,
+         `state.pushForceChoice` dans certains affichages du HUD, et la valeur
+         portée par une option de poussée unifiée. Résultat : survoler la MÊME
+         cible montrait deux aperçus différents selon le chemin emprunté, et
+         l'étiquette 3D annonçait parfois une force que l'aperçu ne simulait
+         pas.
+
+         Tout part maintenant d'ici : l'aperçu, l'étiquette 3D et l'exécution
+         lisent la même valeur, donc ce qui est montré est exactement ce qui
+         sera joué. */
+      function forcePousseeCourante() {
+        if (!state) return 1;
+        const disponible = Math.max(1, availableActionCount("PUSH"));
+        const choisie = state.phase === "SMART_CHAR"
+          // Molette sur un gardien sélectionné : smartPushForce porte le choix,
+          // et retombe sur le réglage général tant qu'on n'a rien touché.
+          ? (state.smartPushForce || state.pushForceChoice || 1)
+          // Carte POUSSER : le nombre de cartes engagées EST la force.
+          : (state.selectedActionCount || state.pushForceChoice || 1);
+        return Math.max(1, Math.min(disponible, choisie));
       }
 
       function handleActionWheel(event) {
@@ -20089,11 +20211,12 @@
         // Depuis la règle V67 toute force est légale : le plancher vaut 1, et
         // le sélecteur de force n'a plus de minimum à calculer.
         const requiredForce = 1;
+        // Une option de poussée unifiée porte sa propre force (c'est elle
+        // qu'on a choisie en cliquant sa destination) ; partout ailleurs, la
+        // source unique tranche.
         const force = context
           ? Math.max(1, Math.min(availableActionCount("PUSH"), context.force || 1))
-          : smartPush
-            ? Math.max(1, Math.min(availableActionCount("PUSH"), state.smartPushForce || 1))
-            : selectedBatchSize();
+          : forcePousseeCourante();
 
         // L'aperçu lit exactement le même résolveur que l'exécution : la règle
         // de poussée n'est jamais dupliquée ici.
@@ -20222,7 +20345,9 @@
 
         const dr = r - pusher.r;
         const dc = c - pusher.c;
-        const force = selectedBatchSize();
+        // Exactement la force qui vient d'être montrée en aperçu : sans cette
+        // égalité, le joueur jouait autre chose que ce qu'il avait sous les yeux.
+        const force = forcePousseeCourante();
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
