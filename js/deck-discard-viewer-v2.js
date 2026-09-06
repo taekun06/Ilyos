@@ -102,9 +102,19 @@
     if (root.parentElement !== document.body) document.body.appendChild(root);
     const rect = hud.getBoundingClientRect();
     const width = root.offsetWidth || root.getBoundingClientRect().width || 225;
-    const gap = 12;
-    const left = Math.max(8, rect.left - gap - width);
-    const top = rect.top + rect.height / 2;
+    const gap = 14;
+    /* Le panneau s'ouvre AU-DESSUS de la pile, centré sur elle.
+       Il s'ouvrait vers la gauche, ce qui était juste tant que la défausse était
+       plaquée dans l'angle inférieur droit de la fenêtre. Depuis qu'elle flanque
+       le dock (voir placeHudPair dans js/deck-discard-hud-v1.js), la même
+       ouverture viendrait recouvrir les boutons d'action. Au-dessus, le ciel est
+       libre. `top` désigne le bord BAS du panneau : la couche V11 le remonte par
+       translateY(-100%). */
+    const left = Math.max(8, Math.min(
+      rect.left + rect.width / 2 - width / 2,
+      window.innerWidth - width - 8
+    ));
+    const top = Math.max(8 + gap, rect.top - gap);
     root.style.setProperty('right', 'auto', 'important');
     root.style.setProperty('bottom', 'auto', 'important');
     root.style.setProperty('left', `${left}px`, 'important');

@@ -1,8 +1,9 @@
 /* ILYOS — cycle visuel des cartes V10
    Pure couche d'animation. Aucune règle de jeu modifiée.
    - seulement pendant le tour local
-   - cartes affichées dans la même bande verticale que le tiroir d'îles
    - les 5 cartes sortent visiblement de PIOCHE face cachée, puis se révèlent
+   - éventail ouvert AU-DESSUS de la ligne d'instruction et du dock, jamais dessus
+   - séquence bornée à ≈ 1,2 s et interruptible au premier geste du joueur
    - actions xN regroupées en une seule animation
 */
 (() => {
@@ -36,6 +37,74 @@
   let bypassEndTurn = false;
   let actionQueue = Promise.resolve();
   const pendingUsage = new Map();
+
+  /* BUDGET DE LA SÉQUENCE DE PIOCHE — total ≈ 1,2 s.
+     La version précédente en demandait près de 2,6 s (500 ms de vol, 4 × 72 ms
+     de décalage, 5 × 82 ms de révélation, 690 ms de pause, puis 410 ms de
+     retour). Cette séquence se rejoue à CHAQUE tour : passé la seconde et
+     demie, elle cesse d'être un plaisir pour devenir une attente. */
+  const DEAL = {
+    out: 340, outStagger: 40,   // sortie de la pioche vers l'éventail
+    reveal: 40,                 // cascade de retournement, par carte
+    hold: 650,                  // temps de lecture de l'éventail — voir ci-dessous
+    back: 280, backStagger: 22  // rangement dans le dock
+  };
+
+  /* POURQUOI `hold` VAUT 650 ET NON 150.
+     `hold` n'est pas le temps pendant lequel une carte est lisible : il ne
+     commence à courir qu'à la fin de la cascade de révélation, et le
+     retournement lui-même (css/card-cycle-animation-v10.css :
+     `cardCycleV10FrontReveal`, 30 ms de retard + 170 ms) mange encore ~200 ms
+     avant que la face soit à pleine opacité.
+
+     Mesuré dans le navigateur avec hold = 150 : la première carte restait
+     lisible 224 ms, la DERNIÈRE seulement 126 ms — la cascade la révèle en
+     dernier alors que le rangement les emporte presque ensemble. En pratique on
+     n'avait pas le temps de lire les cinq cartes.
+
+     Relation empirique : lisibilité de la pire carte ≈ hold − 25 ms.
+     650 donne donc ≈ 620 ms sur la dernière carte, et porte la séquence à
+     ≈ 1,75 s. C'est plus long que la cible initiale de 1,2 s, et c'est le bon
+     arbitrage : la séquence est interruptible au premier geste (139 ms de queue
+     mesurés, voir skipDeal), donc ce temps de lecture ne coûte rien au joueur
+     qui a déjà décidé de son coup. */
+
+  /* Un « ticket » par distribution : il porte les animations en cours et les
+     attentes en sommeil, ce qui permet d'abréger la séquence d'un seul geste
+     quand le joueur veut jouer tout de suite (voir skipDeal). */
+  let dealTicket = null;
+
+  function openTicket() {
+    dealTicket = { skipped: false, anims: new Set(), waiters: new Set() };
+    return dealTicket;
+  }
+
+  /* Abrège la distribution en cours. Les animations sautent à leur image finale
+     — elles sont toutes en `fill: forwards`, donc l'état d'arrivée est celui
+     qu'elles auraient atteint — et les attentes restantes se résolvent aussitôt.
+     Aucun `preventDefault` : le clic qui interrompt doit continuer sa route
+     jusqu'au jeu, sinon on volerait au joueur le coup qu'il vient de tenter. */
+  function skipDeal() {
+    const ticket = dealTicket;
+    if (!ticket || ticket.skipped) return;
+    ticket.skipped = true;
+    ticket.anims.forEach(anim => { try { anim.finish(); } catch (_) {} });
+    ticket.waiters.forEach(resume => resume());
+  }
+
+  function wait(ms, ticket) {
+    if (!ticket) return sleep(ms);
+    if (ticket.skipped) return Promise.resolve();
+    return new Promise(resolve => {
+      const resume = () => {
+        clearTimeout(timer);
+        ticket.waiters.delete(resume);
+        resolve();
+      };
+      const timer = setTimeout(resume, ms);
+      ticket.waiters.add(resume);
+    });
+  }
 
   function typeOf(card) {
     if (card?.classList.contains('action-move')) return 'MOVE';
@@ -110,24 +179,38 @@
     return rects.length ? Math.min(...rects.map(r => r.top)) : innerHeight - 120;
   }
 
-  /* Même niveau que le tiroir d'îles : on reprend son vrai bottom CSS même
-     lorsqu'il est masqué. Le bord inférieur des cartes est aligné sur cette
-     ligne, juste au-dessus du dock d'actions. */
-  function drawerLevelAnchor(cardH) {
-    let bottomOffset = innerHeight < 800 ? 105 : 126;
-    const drawer = byId('hudV2IslandDrawer');
-    if (drawer) {
-      const cssBottom = parseFloat(getComputedStyle(drawer).bottom);
-      if (Number.isFinite(cssBottom) && cssBottom >= 70 && cssBottom <= 220) bottomOffset = cssBottom;
-    }
-
-    const drawerBottomY = innerHeight - bottomOffset;
-    const safeBottomY = Math.min(drawerBottomY, actionTop() - 5);
-    const centerY = safeBottomY - cardH / 2;
+  /* Ligne de l'éventail : au-dessus de la ligne d'instruction ET du dock.
+     L'ancien repère (le bottom CSS du tiroir d'îles, ≈ innerHeight − 126) posait
+     les cinq cartes exactement sur le dock d'actions et sur la phrase
+     d'instruction — on ne lisait alors ni les cartes, ni les boutons qu'elles
+     allaient rejoindre, ni le texte qui dit au joueur quoi faire. */
+  function fanAnchor(cardH) {
+    const instruction = rectOf(byId('ov2Instruction')) || rectOf(byId('hudV2Instruction'));
+    // 22 et non 14 : la rotation de chaque carte agrandit sa boîte englobante
+    // d'une demi-douzaine de pixels, et 14 ne laissait plus que 8 px mesurés
+    // au-dessus de la ligne d'instruction.
+    const floor = Math.min(instruction ? instruction.top : Infinity, actionTop()) - 22;
     return {
       x: innerWidth / 2,
-      y: clamp(centerY, cardH / 2 + 72, innerHeight - cardH / 2 - 86)
+      y: clamp(floor - cardH / 2, cardH / 2 + 64, innerHeight - cardH / 2 - 40)
     };
+  }
+
+  /* Point de départ des cartes. Il doit être la pile PIOCHE elle-même : c'est
+     tout le propos de l'animation. Le repli n'est plus un point fixe arbitraire
+     (l'ancien `syntheticRect(72, actionTop() - 60, …)` faisait sortir les cartes
+     du bord gauche de la fenêtre, là où il n'y a rien à voir) mais le flanc
+     gauche du dock, c'est-à-dire l'endroit où la pile se trouve désormais. */
+  function deckSourceRect(cardW, cardH) {
+    const hud = rectOf(deckTarget());
+    if (hud) return hud;
+    const rects = ['MOVE', 'PUSH', 'MAGIC'].map(bottomTarget).map(rectOf).filter(Boolean);
+    const w = cardW * .62;
+    const h = cardH * .62;
+    if (!rects.length) return syntheticRect(innerWidth / 2, innerHeight - 96, w, h);
+    const left = Math.min(...rects.map(r => r.left));
+    const bottom = Math.max(...rects.map(r => r.top + r.height));
+    return syntheticRect(left - 44, bottom - h / 2 - 6, w, h);
   }
 
   /* Les cartes de l'animation ne portent plus de chiffres : ni l'index « 01/05 » ni le
@@ -141,14 +224,19 @@
     const el = document.createElement('div');
     el.className = `card-cycle-v7-card card-cycle-v10-card type-${type.toLowerCase()} ${extraClass}${count > 1 ? ' is-stack' : ''}${isDraw ? ' is-draw-back' : ''}`.trim();
     el.setAttribute('aria-hidden', 'true');
+    /* Le dos ne porte plus un mot : un dos de carte est un MOTIF, pas une
+       étiquette. « ILYOS » et « PIOCHE » y étaient gravés en 10 px et 6 px sur
+       86 px de large ; dès que deux cartes se recouvraient pendant le vol, les
+       deux textes se superposaient en bouillie illisible. Ne reste que le
+       filigrane : le losange doré et son étoile, qui se lisent à toute échelle
+       et supportent le chevauchement. Même raison pour la mention « TIRÉE DE LA
+       PIOCHE » sur la face : à cette vitesse, seuls l'icône et le verbe portent. */
     el.innerHTML = `
-      ${isDraw ? `<span class="card-cycle-v10-backface"><i>✦</i><b>ILYOS</b><small>PIOCHE</small></span>` : ''}
-
-      <span class="card-cycle-v7-kicker">${isDraw ? 'CARTE ACTION' : 'ACTION'}</span>
+      ${isDraw ? `<span class="card-cycle-v10-backface"><i>✦</i></span>` : ''}
+      <span class="card-cycle-v7-kicker">ACTION</span>
       <span class="card-cycle-v7-icon">${meta.icon}</span>
       <b>${meta.label}</b>
       <i class="card-cycle-v7-rune"></i>
-      ${isDraw ? `<span class="card-cycle-v10-source">TIRÉE DE LA PIOCHE</span>` : ''}
 `;
     document.body.appendChild(el);
     return el;
@@ -163,23 +251,42 @@
     startOpacity = 1,
     endOpacity = .05,
     startRotate = 0,
-    endRotate = 0
+    endRotate = 0,
+    ticket = null,
+    size = null
   } = {}) {
     if (!el || !fromRect || !toRect) return;
     const from = center(fromRect);
     const to = center(toRect);
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    el.style.left = `${fromRect.left}px`;
-    el.style.top = `${fromRect.top}px`;
-    el.style.width = `${fromRect.width}px`;
-    el.style.height = `${fromRect.height}px`;
+    /* `size` impose les proportions de la carte au lieu d'hériter celles du
+       rectangle de départ. Sans lui, une carte tirée de la pioche adoptait la
+       taille de la PILE — 68 × 67 px, un carré — alors que sa face est dessinée
+       pour un portrait 86 × 136 (voir css/card-art-v12.css) : l'icône, le verbe
+       et le sceau du dos étaient comprimés dans un format qui n'est pas le leur.
+       L'élément est alors posé par son CENTRE sur celui du rectangle de départ,
+       sinon changer sa taille le décalerait. */
+    const w = size ? size.width : fromRect.width;
+    const h = size ? size.height : fromRect.height;
+    el.style.left = `${size ? from.x - w / 2 : fromRect.left}px`;
+    el.style.top = `${size ? from.y - h / 2 : fromRect.top}px`;
+    el.style.width = `${w}px`;
+    el.style.height = `${h}px`;
     const anim = el.animate([
       { transform: `translate(0,0) scale(${startScale}) rotate(${startRotate}deg)`, opacity: startOpacity },
       { transform: `translate(${dx * .48}px,${dy * .47 - arc}px) scale(${(startScale + endScale) / 2 + .07}) rotate(${startRotate * -.35}deg)`, opacity: 1, offset: .50 },
       { transform: `translate(${dx}px,${dy}px) scale(${endScale}) rotate(${endRotate}deg)`, opacity: endOpacity }
     ], { duration, delay, easing: 'cubic-bezier(.18,.78,.17,1)', fill: 'forwards' });
+    /* Séquence déjà abrégée : ce vol a été créé APRÈS le geste du joueur (le
+       rangement dans le dock, typiquement). On ne le supprime pas — les cartes
+       doivent visiblement rejoindre leur bouton, sans quoi elles disparaîtraient
+       d'un coup — mais on le fait filer. Mesuré : la queue de séquence tombe de
+       ≈ 370 ms à ≈ 120 ms après le clic. */
+    if (ticket?.skipped) { try { anim.playbackRate = 3; } catch (_) {} }
+    ticket?.anims.add(anim);
     try { await anim.finished; } catch (_) {}
+    ticket?.anims.delete(anim);
   }
 
   function pulse(node, className = 'card-cycle-v7-hit') {
@@ -207,28 +314,13 @@
     anim.onfinish = () => badge.remove();
   }
 
-  function showDrawOrigin(count) {
-    const rect = rectOf(deckTarget());
-    if (!rect) return null;
-    const badge = document.createElement('div');
-    badge.className = 'card-cycle-v10-origin';
-    badge.innerHTML = `<b>PIOCHE</b><span>${count} CARTES</span>`;
-    badge.style.left = `${rect.left + rect.width / 2}px`;
-    badge.style.top = `${rect.top - 7}px`;
-    document.body.appendChild(badge);
-    badge.animate([
-      { opacity: 0, transform: 'translate(-50%,-80%) scale(.92)' },
-      { opacity: 1, transform: 'translate(-50%,-100%) scale(1)', offset: .22 },
-      { opacity: 1, transform: 'translate(-50%,-100%) scale(1)', offset: .78 },
-      { opacity: 0, transform: 'translate(-50%,-118%) scale(.96)' }
-    ], { duration: 1500, easing: 'ease-out', fill: 'forwards' }).onfinish = () => badge.remove();
-    return badge;
-  }
-
-  async function revealDrawCards(cardsGhost) {
+  /* Retournement en cascade. Le décalage descend de 82 à 40 ms : à 82 ms, la
+     dernière carte se révélait 330 ms après la première, ce qui se lisait comme
+     cinq gestes séparés au lieu d'un seul éventail qui s'ouvre. */
+  async function revealDrawCards(cardsGhost, ticket) {
     for (let i = 0; i < cardsGhost.length; i++) {
       cardsGhost[i]?.classList.add('is-revealed');
-      await sleep(82);
+      if (i < cardsGhost.length - 1) await wait(DEAL.reveal, ticket);
     }
   }
 
@@ -240,62 +332,85 @@
     const compact = innerWidth < 980 || innerHeight < 720;
     const cardW = compact ? 70 : 86;
     const cardH = compact ? 108 : 136;
-    const spacing = compact ? 78 : 98;
+    /* Écartement de l'éventail. L'ancien pas (98 pour 86 px de carte) ne laissait
+       que 12 px entre deux cartes : additionné à la rotation et aux échelles
+       inégales du vol, l'éventail se refermait sur lui-même et les cinq cartes
+       se recouvraient. Un pas au moins égal à la largeur + 26 garantit qu'on
+       voit cinq cartes distinctes, ce qui est la seule chose que cette
+       animation a à dire. */
+    const spacing = cardW + (compact ? 20 : 26);
+    const tilt = compact ? 3.5 : 4.5;
     const mid = (types.length - 1) / 2;
-    const anchor = drawerLevelAnchor(cardH);
+    const anchor = fanAnchor(cardH);
 
     const fanRects = types.map((_, index) => {
       const d = index - mid;
-      return syntheticRect(anchor.x + d * spacing, anchor.y + Math.abs(d) * 2, cardW, cardH);
+      // Courbe d'éventail : la carte centrale est la plus haute.
+      const lift = (mid - Math.abs(d)) * (compact ? 5 : 7);
+      return syntheticRect(anchor.x + d * spacing, anchor.y - lift, cardW, cardH);
     });
 
-    const source = rectOf(deckTarget()) || syntheticRect(72, actionTop() - 60, 62, 96);
+    const source = deckSourceRect(cardW, cardH);
     const sourceHud = deckTarget();
+    const ticket = openTicket();
+    const cardsGhost = types.map((type, index) => makeCard(type, 'showcase', 1, index + 1, types.length));
+
     sourceHud?.classList.add('card-cycle-v10-drawing');
     pulse(sourceHud, 'ov2-pile-hit');
     floatCount(sourceHud, `−${types.length}`);
-    showDrawOrigin(types.length);
 
-    const cardsGhost = types.map((type, index) => makeCard(type, 'showcase', 1, index + 1, types.length));
+    try {
+      /* Les cartes quittent PIOCHE encore face cachée.
+         `startScale` remonte de .38 à .62 et le décalage descend de 72 à 40 ms :
+         c'est leur combinaison qui donnait à chaque instant cinq cartes de
+         tailles franchement différentes — un défaut lu comme « cassé » plutôt
+         que comme une distribution. L'arc passe de ~40 à ~95 px : le vol
+         redevient un geste au lieu d'un glissement plat. */
+      await Promise.all(cardsGhost.map((ghost, index) => fly(ghost, source, fanRects[index], {
+        ticket,
+        size: { width: cardW, height: cardH },
+        duration: DEAL.out,
+        delay: index * DEAL.outStagger,
+        arc: 92 + index * 5,
+        // .5 ≈ largeur de la pile (68) / largeur de la carte (86) : la carte
+        // sort donc exactement à la taille du paquet dont elle est tirée.
+        startScale: .5,
+        endScale: 1,
+        startOpacity: .18,
+        endOpacity: 1,
+        startRotate: -6,
+        endRotate: (index - mid) * tilt
+      })));
 
-    /* Les cartes quittent PIOCHE encore face cachée. */
-    await Promise.all(cardsGhost.map((ghost, index) => fly(ghost, source, fanRects[index], {
-      duration: 500,
-      delay: index * 72,
-      arc: 36 + index * 4,
-      startScale: .38,
-      endScale: 1,
-      startOpacity: .10,
-      endOpacity: 1,
-      startRotate: -7 + index * 1.4,
-      endRotate: (index - mid) * 1.25
-    })));
+      await revealDrawCards(cardsGhost, ticket);
+      await wait(DEAL.hold, ticket);
 
-    await sleep(120);
-    await revealDrawCards(cardsGhost);
-    await sleep(compact ? 520 : 690);
+      await Promise.all(cardsGhost.map(async (ghost, index) => {
+        const to = rectOf(bottomTarget(types[index]));
+        if (!to) return;
+        await fly(ghost, fanRects[index], to, {
+          ticket,
+          size: { width: cardW, height: cardH },
+          duration: DEAL.back,
+          delay: index * DEAL.backStagger,
+          arc: 34,
+          startScale: 1,
+          endScale: .26,
+          endOpacity: .04,
+          startRotate: (index - mid) * tilt
+        });
+      }));
+    } finally {
+      /* Balayage inconditionnel. Une carte dont la cible avait disparu en cours
+         de route restait auparavant à l'écran indéfiniment — on en voyait
+         traîner sous forme de pastille au milieu du dock. */
+      cardsGhost.forEach(ghost => ghost.remove());
+      sourceHud?.classList.remove('card-cycle-v10-drawing');
+      if (dealTicket === ticket) dealTicket = null;
+    }
 
     const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
     types.forEach(type => counts[type]++);
-
-    await Promise.all(cardsGhost.map(async (ghost, index) => {
-      const target = bottomTarget(types[index]);
-      const to = rectOf(target);
-      if (!to) { ghost.remove(); return; }
-      await fly(ghost, fanRects[index], to, {
-        duration: 410,
-        delay: index * 38,
-        arc: 22,
-        startScale: 1,
-        endScale: .22,
-        endOpacity: .03,
-        startRotate: (index - mid) * 1.25
-      });
-      ghost.remove();
-    }));
-
-    sourceHud?.classList.remove('card-cycle-v10-drawing');
-
     Object.entries(counts).forEach(([type, count]) => {
       if (!count) return;
       const target = bottomTarget(type);
@@ -394,6 +509,15 @@
   function bindEvents() {
     window.addEventListener('ilyos:fresh-card-used', event => queueUsage(event.detail?.type, event.detail?.count));
     window.addEventListener('ilyos:reserve-card-used', event => queueUsage(event.detail?.type, event.detail?.count));
+
+    /* La distribution est interruptible. Un joueur qui a déjà décidé de son coup
+       ne doit pas attendre la fin d'une animation décorative : le premier geste
+       l'abrège. Écouteurs passifs, en phase de capture, sans `preventDefault` —
+       le geste continue sa route jusqu'au jeu et le coup tenté est bien joué. */
+    document.addEventListener('pointerdown', skipDeal, { capture: true, passive: true });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' || event.key === ' ' || event.key === 'Enter') skipDeal();
+    }, true);
 
     document.addEventListener('click', async event => {
       const button = event.target?.closest?.('#endTurnBtn');
