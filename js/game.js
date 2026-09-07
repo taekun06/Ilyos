@@ -130,6 +130,8 @@
       function setBoardSize(taille) {
         GRID = normalizeBoardSize(taille);
         CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
+        // Le plateau DOM et l'aperçu symétrique se disposent en repeat(var(--board-n), 1fr).
+        try { document.documentElement.style.setProperty("--board-n", String(GRID)); } catch (_) {}
         CORNERS = [
           { r: 0, c: 0 },
           { r: 0, c: GRID - 1 },
@@ -731,7 +733,7 @@
 
          Ce qui n'est chargé n'est jamais téléchargé : basculer d'un horizon à
          l'autre construit le sien à la demande et démonte l'autre. */
-      const KAYKIT_HORIZON_DEFAUT = "archipel";
+      const KAYKIT_HORIZON_DEFAUT = "plaques";
       // Le choix survit au rechargement : c'est un réglage de confort local, il
       // n'entre ni dans les règles, ni dans la sauvegarde, ni dans la synchro.
       const KAYKIT_HORIZON_STORAGE_KEY = "ilyos-horizon-v1";
@@ -3927,25 +3929,13 @@
         kaykit3D.boardCloudsGroup = group;
       }
 
-      function buildKayKitStaticScene() {
+      // Grille filaire + aplat de fond + cases-cibles du raycast. Tout dépend de
+      // GRID (11 ou 13) ; séparé de buildKayKitStaticScene() pour être rebâti au
+      // changement de taille via syncKayKitBoardGrid().
+      function buildKayKitBoardGrid() {
         if (!kaykit3D) return;
-        const { staticGroup, hitGroup, hitMeshes, fxGroup } = kaykit3D;
+        const { staticGroup, hitGroup, hitMeshes } = kaykit3D;
 
-        buildKayKitSkyEnvironment(staticGroup);
-
-        // Plus de socle plein, de dalles opaques ni d'ombre de plateau : seule
-        // la grille filaire reste, suspendue dans le ciel — îles et gardiens
-        // au-dessus du vide plutôt que sur un plancher. Le disque d'ombre
-        // (board-shadow-v55) a été retiré : à bords francs, il se voyait comme
-        // une tache circulaire flottante une fois le plancher disparu, au lieu
-        // de lire comme une simple ombre portée.
-        //
-        // Chaque ligne est découpée case par case et porte une alpha par sommet
-        // qui s'éteint radialement. Sans ce découpage, l'interpolation ne se
-        // ferait qu'entre les deux extrémités d'une ligne complète et fondrait
-        // tout le tracé. Objectif : la grille reste franche là où l'on joue,
-        // mais son périmètre carré disparaît — c'était lui qui recréait
-        // visuellement « un immense sol bleu invisible » sous l'archipel.
         const half = kaykitBoardSpan() / 2;
         // Vue de FACE, une grille plane qui garde de la matière jusqu'à son bord franc
         // se lit en perspective comme un SOL qui fuit vers un horizon — contraire au
@@ -4027,6 +4017,43 @@
             hitGroup.add(hit); hitMeshes.push(hit);
           }
         }
+
+        kaykit3D.boardGridObjects = { grid, majorGrid, gridFill, hitMat };
+        kaykit3D.boardGridSize = GRID;
+      }
+
+      // Rebâtit la grille et les cases-cibles quand GRID a changé (bascule
+      // 11×11 ↔ 13×13). Ne libère que les géométries des lignes filaires : l'aplat
+      // et les cases-cibles passent par le cache kaykitGeometry.
+      function syncKayKitBoardGrid() {
+        if (!kaykit3D || kaykit3D.boardGridSize === GRID) return;
+        const refs = kaykit3D.boardGridObjects;
+        if (refs) {
+          [refs.grid, refs.majorGrid, refs.gridFill].forEach(obj => {
+            obj.parent?.remove(obj);
+            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+            mats.forEach(m => m?.dispose?.());
+          });
+          refs.grid.geometry?.dispose?.();
+          refs.majorGrid.geometry?.dispose?.();
+          refs.hitMat?.dispose?.();
+        }
+        clearKayKitGroup(kaykit3D.hitGroup);
+        kaykit3D.hitMeshes.length = 0;
+        buildKayKitBoardGrid();
+      }
+
+      function buildKayKitStaticScene() {
+        if (!kaykit3D) return;
+        const { staticGroup, fxGroup } = kaykit3D;
+
+        buildKayKitSkyEnvironment(staticGroup);
+
+        // Plus de socle plein ni d'ombre de plateau : seule la grille filaire
+        // reste, suspendue dans le ciel. Chaque ligne est découpée case par case
+        // avec une alpha par sommet qui s'éteint radialement, pour casser le
+        // périmètre carré sans éteindre les cases de bord. Voir buildKayKitBoardGrid().
+        buildKayKitBoardGrid();
 
         const actionPreviewGroup = new THREE.Group();
         actionPreviewGroup.name = "ilyos-action-preview";
@@ -10870,6 +10897,8 @@
         const __perfStart = window.ILYOS_PERF ? performance.now() : 0;
         try {
           resizeKayKit3D();
+          // Rebâtit grille + cases-cibles si la taille du plateau a changé.
+          syncKayKitBoardGrid();
           // SYNCHRONISATION INCRÉMENTALE (V77) : dynamicGroup n'est plus vidé en
           // bloc à chaque appel — clearKayKitGroup(dynamicGroup) détruisait et
           // reconstruisait TOUT (îles, piédestaux, châteaux, surbrillances...)
@@ -11589,13 +11618,12 @@
       let reverbNode = null;
       let reverbDamp = null;
       let reverbReturn = null;
-      // 11 : passage au moteur génératif. Le choix de piste est migré, pas jeté.
-      const SOUND_SETTINGS_VERSION = 11;
+      // 11 : passage au moteur génératif. 12 : musique à 15 % (le bump force la
+      // nouvelle valeur chez les joueurs qui avaient déjà un réglage enregistré).
+      const SOUND_SETTINGS_VERSION = 12;
       const soundSettings = {
         master: 0.50,
-        // Le moteur génératif est bien plus présent que l'ancienne boucle :
-        // 10 % était un contournement de sa qualité, plus une préférence.
-        music: 0.34,
+        music: 0.15,
         effects: 1.40,
         track: "auto"
       };
