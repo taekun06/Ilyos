@@ -632,5 +632,144 @@
               { a: "MOVE", who: "G", to: [1, 0] }
             ]
           ]
+        },
+
+        /* =================================================================
+           LES DEUX LONGUES ÉPREUVES (15 et 16)
+
+           Plus amples que les précédentes : trois tours chacune, une dizaine
+           de coups, et deux gestes que le reste de la collection n'employait
+           pas — tous deux GRATUITS, aucune carte dépensée (voir la phase
+           DROP_TREASURE dans ui.js) :
+
+           - la TRANSMISSION d'une couronne entre deux Gardiens adjacents ;
+           - le DÉPÔT d'une couronne sur une case libre voisine.
+
+           Ce sont eux qui rendent possible ce qu'aucun Gardien ne peut faire
+           seul : confier la lumière à quelqu'un d'autre, ou la poser pour la
+           pousser plus loin qu'on ne saurait marcher.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           15 — Le relais du vide.
+
+           Trois Gardiens, deux terres, un gouffre entre elles. Aucun ne
+           traversera : c'est la COURONNE qui voyage, parce qu'elle seule ne
+           tombe pas. Encore faut-il la déposer au bord avant de la pousser,
+           et trouver la force juste — 1 et 2 ne rencontrent que du vide, le
+           moteur refuse alors la poussée sans rien dépenser.
+
+           Et à l'arrivée, le village ne s'allume pas : un rival campe sur
+           l'une de ses trois cases. Il n'a pas besoin de tomber, seulement
+           de s'écarter. */
+        {
+          id: "p15-relais-du-vide",
+          title: "Le relais du vide",
+          tagline: "Aucun Gardien ne traversera. La lumière, elle, peut voyager.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 11,
+          sanctuary: false,
+          villages: { 0: [[10, 10]] },
+          islands: [
+            [[4, 6], [5, 6], [6, 6], [7, 6], [8, 6], [8, 7]],
+            [[8, 10], [9, 10], [10, 10], [10, 9], [10, 8]]
+          ],
+          crowns: [{ slot: 1, r: 6, c: 6 }],
+          guardians: [
+            { key: "A", p: 0, r: 4, c: 6 },
+            { key: "B", p: 0, r: 8, c: 6 },
+            { key: "C", p: 0, r: 9, c: 10 },
+            { key: "R", p: 1, r: 10, c: 9 }
+          ],
+          deck: [
+            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["PUSH", "PUSH", "PUSH", "PUSH", "PUSH"],
+            ["MOVE", "MOVE", "MOVE"]
+          ],
+          par: 10,
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "Le relais est passé",
+          winLine: "Tu n'as pas franchi le vide : tu as fait voyager la lumière à ta place.",
+          failLine: "La couronne est restée du mauvais côté du gouffre.",
+          solution: [
+            [
+              { a: "MOVE", who: "A", to: [6, 6] },
+              { a: "MOVE", who: "A", to: [7, 6] },
+              { a: "TRANSFER", who: "A", to: "B" },
+              { a: "DROP", who: "B", on: [8, 7] }
+            ],
+            [
+              { a: "PUSH", who: "B", on: [8, 7], force: 3 }
+            ],
+            [
+              { a: "MOVE", who: "C", to: [8, 10] },
+              { a: "MOVE", who: "C", to: [10, 10] },
+              { a: "PUSH", who: "C", on: [10, 9], force: 1 }
+            ]
+          ]
+        },
+
+        /* -----------------------------------------------------------------
+           16 — La charnière des cieux.
+
+           L'épreuve jumelle de la précédente, et son exact contraire : ici la
+           couronne ne quitte jamais son porteur, c'est le MONDE qui bouge.
+
+           Deux rotations, deux usages opposés de la même carte. La première
+           prend la passerelle par son extrémité haute : elle se translate de
+           toute sa longueur et emporte son passager quatre lignes plus loin,
+           sans dépenser un seul déplacement. La seconde prend le bras par la
+           case OÙ SE TIENT le Gardien : il ne bouge pas d'un pouce, mais le
+           chemin, lui, se dresse et va chercher la terrasse.
+
+           Déplacer le voyageur, ou déplacer la route. */
+        {
+          id: "p16-charniere",
+          title: "La charnière des cieux",
+          tagline: "Quand la route n'existe plus, c'est le monde qu'il faut tourner.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 11,
+          sanctuary: false,
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[8, 2]],
+            { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
+            { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
+            /* La terrasse s'arrête à (1,4) : (1,5) et (2,5) doivent rester
+               VIDES, sinon la rotation du bras chevaucherait un autre terrain
+               et calculateIslandRotationAroundPivot la refuserait. */
+            [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
+            [[0, 1], [0, 2]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 2, crown: 1 },
+            { key: "R", p: 1, r: 0, c: 1 }
+          ],
+          deck: [
+            ["MOVE", "MAGIC", "MOVE", "MOVE", "MOVE"],
+            ["MAGIC", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
+            ["MOVE", "PUSH"]
+          ],
+          par: 15,
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "La charnière a tourné",
+          winLine: "Tu n'as pas trouvé de route : tu as appris à déplacer le monde.",
+          failLine: "Le chemin ne s'est pas ouvert.",
+          solution: [
+            [
+              { a: "MOVE", who: "G", to: [7, 2] },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
+              { a: "MOVE", who: "G", to: [3, 5] }
+            ],
+            [
+              { a: "MAGIC", island: "BRAS", pivot: [3, 5], turns: 1, direction: 1 },
+              { a: "MOVE", who: "G", to: [1, 3] }
+            ],
+            [
+              { a: "MOVE", who: "G", to: [0, 0] },
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 }
+            ]
+          ]
         }
       );

@@ -1260,6 +1260,42 @@
             cout: step.force
           };
         }
+        /* Transmission et dépôt sont GRATUITS : ni l'un ni l'autre ne passe
+           par consumeSelectedActionCore (voir la phase DROP_TREASURE dans
+           ui.js). L'oracle les rejoue avec les fonctions du jeu, sans coût,
+           pour que la solution de référence décrive vraiment ce que le joueur
+           fera à la souris. */
+        if (step.a === "TRANSFER") {
+          const source = characterById(charId);
+          const cible = characterById(PUZZLE.charsByKey[step.to]);
+          if (!source || !cible) return { error: `transmission : gardien introuvable` };
+          if (Math.abs(source.r - cible.r) + Math.abs(source.c - cible.c) !== 1) {
+            return { error: "transmission : gardiens non adjacents" };
+          }
+          const couronne = artifactCarriedBy(source.id);
+          if (!couronne) return { error: `${step.who} ne porte aucune couronne` };
+          if (!giveArtifactToCharacter(couronne, cible)) {
+            return { error: `${step.to} porte déjà une couronne` };
+          }
+          return { action: null, cout: 0 };
+        }
+        if (step.a === "DROP") {
+          const source = characterById(charId);
+          if (!source) return { error: "dépôt : gardien introuvable" };
+          const couronne = artifactCarriedBy(source.id);
+          if (!couronne) return { error: `${step.who} ne porte aucune couronne` };
+          const [dr, dc] = step.on;
+          if (Math.abs(source.r - dr) + Math.abs(source.c - dc) !== 1) {
+            return { error: "dépôt : case non adjacente" };
+          }
+          if (!isLand(dr, dc) || characterAt(dr, dc) || looseArtifactAt(dr, dc)) {
+            return { error: `dépôt impossible sur ${step.on}` };
+          }
+          couronne.carrierId = null;
+          couronne.r = dr;
+          couronne.c = dc;
+          return { action: null, cout: 0 };
+        }
         if (step.a === "MAGIC") {
           const islandId = PUZZLE.islandsByKey[step.island];
           if (islandId == null) return { error: `île ${step.island} introuvable` };
@@ -1296,11 +1332,13 @@
             if (resolu.error) {
               return { id: def.id, ok: false, raison: `coup ${i + 1} : ${resolu.error}`, journal };
             }
-            const resultat = appliquerActionNoyau(resolu.action);
-            if (!resultat) {
-              return { id: def.id, ok: false, raison: `coup ${i + 1} refusé par le noyau (${resolu.action.type})`, journal };
+            if (resolu.action) {
+              const resultat = appliquerActionNoyau(resolu.action);
+              if (!resultat) {
+                return { id: def.id, ok: false, raison: `coup ${i + 1} refusé par le noyau (${resolu.action.type})`, journal };
+              }
             }
-            journal.push(`${resolu.action.type} ${resolu.cout}`);
+            journal.push(`${resolu.action ? resolu.action.type : def.solution[i].a} ${resolu.cout}`);
           }
 
           const depense = puzzleCardsSpent();
@@ -1348,10 +1386,10 @@
             if (resolu.error) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} : ${resolu.error}`, journal };
             }
-            if (!appliquerActionNoyau(resolu.action)) {
+            if (resolu.action && !appliquerActionNoyau(resolu.action)) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} refusé par le noyau`, journal };
             }
-            journal.push(`T${t + 1} ${resolu.action.type} ${resolu.cout}`);
+            journal.push(`T${t + 1} ${resolu.action ? resolu.action.type : tours[t][i].a} ${resolu.cout}`);
             tutoRender();
           }
 
