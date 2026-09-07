@@ -621,8 +621,9 @@
        position: relative;
        z-index: 2;
        display: grid;
-       grid-template-columns: repeat(11, 1fr);
-       grid-template-rows: repeat(11, 1fr);
+       /* --board-n suit GRID (11 ou 13), posé par setBoardSize(). */
+       grid-template-columns: repeat(var(--board-n, 11), 1fr);
+       grid-template-rows: repeat(var(--board-n, 11), 1fr);
        gap: 0;
        padding: 8px;
        border: 5px solid #8fa9c1;
@@ -6047,8 +6048,8 @@
        width: 124px;
        aspect-ratio: 1;
        display: grid;
-       grid-template-columns: repeat(11, 1fr);
-       grid-template-rows: repeat(11, 1fr);
+       grid-template-columns: repeat(var(--board-n, 11), 1fr);
+       grid-template-rows: repeat(var(--board-n, 11), 1fr);
        gap: 1px;
        padding: 5px;
        border-radius: 13px;

@@ -130,6 +130,8 @@
       function setBoardSize(taille) {
         GRID = normalizeBoardSize(taille);
         CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
+        // Le plateau DOM et l'aperçu symétrique se disposent en repeat(var(--board-n), 1fr).
+        try { document.documentElement.style.setProperty("--board-n", String(GRID)); } catch (_) {}
         CORNERS = [
           { r: 0, c: 0 },
           { r: 0, c: GRID - 1 },
