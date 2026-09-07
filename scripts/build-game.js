@@ -31,6 +31,12 @@ const fragmentNames = [
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
   // l'Ascension via ILYOS_TUTORIAL.startAscension().
   'tutorial-discovery.js',
+  // Cabinet d'énigmes : moteur puis collection. Placé après le tutoriel, dont
+  // il réutilise les fabriques de terrain (tutoAddIsland, tutoRender) et les
+  // verrous de caméra ; puzzle-levels.js ne contient que des données et doit
+  // suivre le moteur qui déclare le tableau PUZZLES.
+  'puzzle.js',
+  'puzzle-levels.js',
   'diagnostics.js',
 ];
 

@@ -425,6 +425,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
           setTimeout(() => syncFrame(frame), 800);
           setTimeout(() => syncFrame(frame), 1600);
         }
+        if (action === 'puzzle') {
+          window.dispatchEvent(new CustomEvent('ilyos-puzzle-requested'));
+          setTimeout(() => syncFrame(frame), 120);
+          setTimeout(() => syncFrame(frame), 800);
+        }
         if (action === 'resume') {
           document.getElementById('resumeLocalBtn')?.click();
           setTimeout(() => syncFrame(frame), 100);
