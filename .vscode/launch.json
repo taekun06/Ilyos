@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ILYOS : jouer et déboguer (Edge)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:8123",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "ILYOS : développer"
+    }
+  ]
+}
