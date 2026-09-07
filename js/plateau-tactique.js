@@ -28,7 +28,11 @@
 (function () {
   "use strict";
 
-  const GRILLE = 11;
+  // Taille du plateau (11 ou 13) lue sur --board-n, réévaluée à chaque métrique.
+  let GRILLE = 11;
+  function lireGrille() {
+    return parseInt(getComputedStyle(document.documentElement).getPropertyValue("--board-n"), 10) === 13 ? 13 : 11;
+  }
 
   /* Convention de couleur, volontairement courte :
        vert   = sélectionnable
@@ -116,6 +120,7 @@
   /* -------------------------------------------------------------- GÉOMÉTRIE */
 
   function metrique() {
+    GRILLE = lireGrille();
     const taille = canvas.width;
     const marge = Math.round(taille * 0.045);
     const cote = Math.floor((taille - marge * 2) / GRILLE);
@@ -740,7 +745,7 @@
 
     canvas = document.createElement("canvas");
     canvas.id = "plateauTactique";
-    canvas.setAttribute("aria-label", "Plateau tactique 11 par 11");
+    canvas.setAttribute("aria-label", "Plateau tactique de jeu");
     conteneur.appendChild(canvas);
     ctx = canvas.getContext("2d");
 

@@ -106,13 +106,12 @@
       let reverbNode = null;
       let reverbDamp = null;
       let reverbReturn = null;
-      // 11 : passage au moteur génératif. Le choix de piste est migré, pas jeté.
-      const SOUND_SETTINGS_VERSION = 11;
+      // 11 : passage au moteur génératif. 12 : musique à 15 % (le bump force la
+      // nouvelle valeur chez les joueurs qui avaient déjà un réglage enregistré).
+      const SOUND_SETTINGS_VERSION = 12;
       const soundSettings = {
         master: 0.50,
-        // Le moteur génératif est bien plus présent que l'ancienne boucle :
-        // 10 % était un contournement de sa qualité, plus une préférence.
-        music: 0.34,
+        music: 0.15,
         effects: 1.40,
         track: "auto"
       };
