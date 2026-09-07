@@ -1,7 +1,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Onze énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
+         Quatorze énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
          moteur vit dans js/game/puzzle.js ; ce fragment ne contient que des
          données.
 
@@ -21,7 +21,12 @@
            invaliderait la moitié des rotations ;
          - les villages restent aux COINS, seuls endroits où
            cornerCrownCellsForVillage produit des cases cohérentes. Les énigmes
-           sans village n'en déclarent aucun et visent un autre objectif.
+           sans village n'en déclarent aucun et visent un autre objectif ;
+         - aucun texte lu par le joueur ne cite de COORDONNÉES. Le jeu n'en
+           affiche nulle part : un énoncé qui en donne est illisible. Les cases
+           qui comptent sont marquées sur le plateau, déduites de `goal` et de
+           `replies` par le moteur, et les textes n'y renvoient que par
+           « la case marquée ».
          ===================================================================== */
 
       PUZZLES.push(
@@ -265,7 +270,6 @@
           brief: "Fais tomber les quatre rivaux hors du plateau.",
           board: 11,
           sanctuary: false,
-          focus: [5, 4],
           islands: [
             [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]]
           ],
@@ -298,10 +302,9 @@
           id: "p08-ronde",
           title: "La ronde",
           tagline: "Trois passagers, une rotation. Reste à bien les asseoir.",
-          brief: "Place tes trois Gardiens sur les trois cases marquées : (4,4), (7,4) et (8,4).",
+          brief: "Place un Gardien sur chacune des trois cases marquées.",
           board: 11,
           sanctuary: false,
-          focus: [5, 5],
           islands: [
             { key: "A", cells: [[4, 4], [4, 5], [4, 6], [4, 7], [4, 8]] }
           ],
@@ -333,10 +336,9 @@
           id: "p09-fardeau",
           title: "Le fardeau",
           tagline: "Deux couronnes, deux façons de voyager. Aucune ne marche.",
-          brief: "Pose une couronne sur (1,5), et tiens l'autre en main sur (9,5).",
+          brief: "Pose une couronne sur la case marquée d'or, et tiens l'autre en main sur la case bleue.",
           board: 11,
           sanctuary: false,
-          focus: [5, 5],
           islands: [
             { key: "B", cells: [[3, 5], [4, 5], [5, 5]] },
             [[6, 5], [7, 5]],
@@ -379,10 +381,9 @@
           id: "p10-escalier",
           title: "L'escalier",
           tagline: "Une barre, quatre rotations, et un passager qui doit courir.",
-          brief: "Amène ton Gardien sur la case (10,8).",
+          brief: "Amène ton Gardien sur la case marquée.",
           board: 13,
           sanctuary: false,
-          focus: [6, 6],
           islands: [
             { key: "F", cells: [[6, 2], [6, 3], [6, 4]] }
           ],
@@ -505,7 +506,7 @@
             ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"]
           ],
           par: 5,
-          rivalPlan: ["il se poste sur (1,0) — une case de ton village."],
+          rivalPlan: ["il se poste sur la case marquée — une case de ton village."],
           replies: [
             [{ a: "MOVE", who: "R1", to: [1, 0] }]
           ],
@@ -554,7 +555,7 @@
             ["MOVE", "MOVE", "MOVE", "PUSH"]
           ],
           par: 12,
-          rivalPlan: ["il se poste sur (3,0), la seule case où ta couronne peut se poser."],
+          rivalPlan: ["il se poste sur la case marquée, la seule où ta couronne peut se poser."],
           replies: [
             [{ a: "MOVE", who: "R", to: [3, 0] }]
           ],
@@ -610,8 +611,8 @@
           ],
           par: 8,
           rivalPlan: [
-            "il descend en (2,1).",
-            "il se poste sur (0,1) — une case de ton village."
+            "il descend sur la case marquée.",
+            "puis il se poste sur une case de ton village."
           ],
           replies: [
             [{ a: "MOVE", who: "R", to: [2, 1] }],

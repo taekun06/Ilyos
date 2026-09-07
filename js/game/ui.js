@@ -2472,8 +2472,23 @@
           .sort((a, b) => a.cost - b.cost || String(a.char.id).localeCompare(String(b.char.id)));
       }
 
+      /* Cases qui acceptent le raccourci « clic direct » : on désigne la
+         destination, le jeu choisit le gardien le plus proche.
+
+         Le sanctuaire en était le seul bénéficiaire, ce qui laissait le geste
+         sans effet sur les trois cases d'un village — pourtant la destination
+         la plus évidente du jeu, et celle où l'on clique d'instinct (signalé
+         en jeu). Les cases marquées d'une énigme s'y ajoutent : ce sont, par
+         construction, les seules destinations qui comptent. */
+      function accepteDeplacementDirect(r, c) {
+        if (isSanctuary(r, c)) return true;
+        if ((state.players || []).some(joueur =>
+          villagesForPlayer(joueur).length && isCrownValidationCell(joueur, r, c))) return true;
+        return typeof puzzleIsMarkedCell === "function" && puzzleIsMarkedCell(r, c);
+      }
+
       function tryDirectSanctuaryMove(r, c) {
-        if (!state || state.phase !== "ACTION_SELECT" || !isSanctuary(r, c)) return false;
+        if (!state || state.phase !== "ACTION_SELECT" || !accepteDeplacementDirect(r, c)) return false;
         if (characterAt(r, c) || looseArtifactAt(r, c)) return false;
 
         const candidates = directMoveCandidatesToCell(r, c);
@@ -2941,6 +2956,12 @@
         const applique = applyPushCore(pusher.id, r, c, force);
         if (!applique) discardLastUndoSnapshot();
         if (!applique) return;
+        /* Les options de poussée décrivent un état qui vient de disparaître.
+           consumeSelectedActionCore remet la sélection à zéro mais ne les
+           touche pas : sans cette ligne, les marqueurs de destination et
+           l'aperçu restaient affichés après le coup, sur des positions
+           périmées — signalé en jeu comme une pollution visuelle. */
+        clearUnifiedPushOptions();
         const result = applique.resultat;
 
         // Une poussée (surtout une chute) mérite d'être vue même par le joueur

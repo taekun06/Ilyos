@@ -5114,8 +5114,13 @@
           if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) {
             return { kind: "magic", actionable: true, color: 0xc36cff, label: "ÎLE CIBLÉE PAR LA MAGIE" };
           }
-          if (island && !character) return { kind: "magic", actionable: true, color: 0xc36cff, label: "CHOISIR CETTE ÎLE" };
-          return { kind: "invalid", actionable: false, color: 0xff4058, label: character ? "CASE OCCUPÉE" : "ÎLE REQUISE" };
+          /* Un gardien posté sur une île n'empêche NULLEMENT de la choisir
+             comme pivot : handleMagicClick ne demande qu'islandAt(), et la
+             rotation emporte ses passagers. Le survol annonçait pourtant
+             « CASE OCCUPÉE » et affichait la croix d'interdiction sur un coup
+             que le jeu acceptait juste après — signalé en jeu. */
+          if (island) return { kind: "magic", actionable: true, color: 0xc36cff, label: "CHOISIR CETTE ÎLE" };
+          return { kind: "invalid", actionable: false, color: 0xff4058, label: "ÎLE REQUISE" };
         }
         if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) return { kind: "magic", actionable: true, color: 0xc36cff, label: "MAGIE" };
         if (hitAction === "character" || character) {
@@ -20565,8 +20570,23 @@
           .sort((a, b) => a.cost - b.cost || String(a.char.id).localeCompare(String(b.char.id)));
       }
 
+      /* Cases qui acceptent le raccourci « clic direct » : on désigne la
+         destination, le jeu choisit le gardien le plus proche.
+
+         Le sanctuaire en était le seul bénéficiaire, ce qui laissait le geste
+         sans effet sur les trois cases d'un village — pourtant la destination
+         la plus évidente du jeu, et celle où l'on clique d'instinct (signalé
+         en jeu). Les cases marquées d'une énigme s'y ajoutent : ce sont, par
+         construction, les seules destinations qui comptent. */
+      function accepteDeplacementDirect(r, c) {
+        if (isSanctuary(r, c)) return true;
+        if ((state.players || []).some(joueur =>
+          villagesForPlayer(joueur).length && isCrownValidationCell(joueur, r, c))) return true;
+        return typeof puzzleIsMarkedCell === "function" && puzzleIsMarkedCell(r, c);
+      }
+
       function tryDirectSanctuaryMove(r, c) {
-        if (!state || state.phase !== "ACTION_SELECT" || !isSanctuary(r, c)) return false;
+        if (!state || state.phase !== "ACTION_SELECT" || !accepteDeplacementDirect(r, c)) return false;
         if (characterAt(r, c) || looseArtifactAt(r, c)) return false;
 
         const candidates = directMoveCandidatesToCell(r, c);
@@ -21034,6 +21054,12 @@
         const applique = applyPushCore(pusher.id, r, c, force);
         if (!applique) discardLastUndoSnapshot();
         if (!applique) return;
+        /* Les options de poussée décrivent un état qui vient de disparaître.
+           consumeSelectedActionCore remet la sélection à zéro mais ne les
+           touche pas : sans cette ligne, les marqueurs de destination et
+           l'aperçu restaient affichés après le coup, sur des positions
+           périmées — signalé en jeu comme une pollution visuelle. */
+        clearUnifiedPushOptions();
         const result = applique.resultat;
 
         // Une poussée (surtout une chute) mérite d'être vue même par le joueur
@@ -28825,6 +28851,7 @@
         lastFrame: null,
         everStarted: false,
         spent: 0,
+        markerKey: null,
         rivalTurn: 0,
         replying: false,
         islandsByKey: {},
@@ -28859,6 +28886,30 @@
         const depense = puzzleConsumeBase(type, count, player);
         if (PUZZLE.active && player && player.id === 0) PUZZLE.spent += depense;
         return depense;
+      };
+
+      /* L'annulation rend les cartes au joueur ; le compteur doit les rendre
+         aussi. On recalcule alors la dépense par différence — exact ici, parce
+         qu'une énigme ne remélange jamais sa défausse (voir puzzlePlayRivalTurn)
+         et que l'historique d'annulation ne franchit pas les tours. */
+      function puzzlePotentialLeft() {
+        const joueur = state?.players?.[0];
+        if (!joueur) return 0;
+        try {
+          return (joueur.deck?.length || 0)
+            + availableActionCount("MOVE", joueur)
+            + availableActionCount("PUSH", joueur)
+            + availableActionCount("MAGIC", joueur);
+        } catch (_) { return 0; }
+      }
+
+      const puzzleRestoreUndoBase = restoreUndoSnapshot;
+      restoreUndoSnapshot = function restoreUndoSnapshotPuzzleAware() {
+        const restaure = puzzleRestoreUndoBase();
+        if (restaure && PUZZLE.active) {
+          PUZZLE.spent = Math.max(0, PUZZLE.budget - puzzlePotentialLeft());
+        }
+        return restaure;
       };
 
       /* ---------- Progression ------------------------------------------- */
@@ -28950,7 +29001,15 @@
           artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
           phase: "ACTION_SELECT",
-          rules: { allowDissolve: false, islandLimitPerPlayer: 0, shapeLimitPerOwner: 0 },
+          /* disableSecondCrown : sans lui, activateSecondCrownIfNeeded()
+             fait surgir une seconde couronne dès qu'un gardien ramasse la
+             première (voir core.js). Une énigme compte ses couronnes une par
+             une — signalé en jeu sur la sixième, où passer la couronne à un
+             allié en faisait apparaître une seconde. */
+          rules: {
+            allowDissolve: false, islandLimitPerPlayer: 0,
+            shapeLimitPerOwner: 0, disableSecondCrown: true
+          },
           /* La pose est neutralisée : une énigme se résout avec les cartes
              qu'on lui donne, pas en fabriquant du terrain. Une définition peut
              la rouvrir avec `placement: true`. */
@@ -29235,7 +29294,6 @@
              décide quand laisser le rival jouer sa réplique. */
           #gameScreen.puzzle-one-turn #endTurnBtn,
           #gameScreen.puzzle-one-turn #ov2End,
-          #gameScreen.puzzle-on #ov2Undo,
           #gameScreen.puzzle-on #ov2Gear,
           #gameScreen.puzzle-on #hudV2GearBtn,
           #gameScreen.puzzle-on #turnTimer,
@@ -29301,10 +29359,320 @@
         (def.islands || []).forEach(entry => {
           (Array.isArray(entry) ? entry : entry.cells).forEach(cell => cells.push(cell));
         });
+        /* Les cases MARQUÉES comptent autant que le terrain dans le cadrage :
+           plusieurs d'entre elles tombent dans le vide, hors de toute île, et
+           le centre de gravité du seul terrain les laissait au ras de l'écran
+           ou sous la barre d'action — signalé en jeu sur la neuvième. */
+        puzzleMarkedCells(def).forEach(marque => cells.push([marque.r, marque.c]));
         if (!cells.length) return [CENTER.r, CENTER.c];
         const sr = cells.reduce((total, cell) => total + cell[0], 0);
         const sc = cells.reduce((total, cell) => total + cell[1], 0);
         return [Math.round(sr / cells.length), Math.round(sc / cells.length)];
+      }
+
+      /* ---------- Marquage des cases objectif ---------------------------
+         Le joueur ne voit AUCUNE coordonnée : un énoncé qui en cite est
+         illisible. Les cases qui comptent sont donc marquées sur le plateau,
+         et les énoncés n'y renvoient plus que par « la case marquée ».
+
+         Elles sont DÉDUITES de l'objectif, jamais déclarées une seconde fois :
+         un énoncé et son marquage ne peuvent pas diverger.
+
+         Le groupe est à part. `actionPreviewGroup` est balayé à chaque case
+         survolée (voir refreshKayKitHoverPreviews) : un marqueur permanent y
+         clignoterait sans arrêt. */
+      const PUZZLE_MARKER_COLORS = {
+        /* Trois couleurs, trois sens, et rien de plus à retenir : bleu, il faut
+           un Gardien à toi ; or, il faut une couronne ; violet, le rival arrive.
+           Les teintes sont SATURÉES à dessein — un pastel posé en
+           MeshBasicMaterial sur une île vert vif ou un ciel clair vire au blanc
+           et perd son sens (vérifié à l'écran sur le premier jet). */
+        guardian: 0x1f8fff,   // amène un Gardien ici
+        carrier: 0x1f8fff,    // un Gardien PORTANT une couronne (même famille)
+        crown: 0xf0a800,      // pose une couronne ici
+        threat: 0x9a63e0      // le rival a annoncé qu'il viendrait là
+      };
+
+      function puzzleGoalCellsFrom(goal, sortie = []) {
+        if (!goal) return sortie;
+        const pousser = (cells, kind) =>
+          (cells || []).forEach(([r, c]) => sortie.push({ r, c, kind }));
+        switch (goal.type) {
+          case "occupyCells": pousser(goal.cells, "guardian"); break;
+          case "reachCell": pousser([goal.cell], "guardian"); break;
+          case "carryToCell": pousser([goal.cell], "carrier"); break;
+          case "crownAtCell": pousser([goal.cell], "crown"); break;
+          case "crownsAtCells": pousser(goal.cells, "crown"); break;
+          case "all": (goal.goals || []).forEach(sous => puzzleGoalCellsFrom(sous, sortie)); break;
+          default: break;
+        }
+        return sortie;
+      }
+
+      /* Les cases que le rival a ANNONCÉES. Son plan est public : le montrer
+         sur le plateau évite d'avoir à le décrire en coordonnées. */
+      function puzzleThreatCells(def) {
+        const tour = def.replies?.[PUZZLE.rivalTurn] || [];
+        return tour
+          .filter(step => step.a === "MOVE" && Array.isArray(step.to))
+          .map(step => ({ r: step.to[0], c: step.to[1], kind: "threat" }));
+      }
+
+      function puzzleMarkedCells(def) {
+        return [...puzzleGoalCellsFrom(def.goal), ...puzzleThreatCells(def)];
+      }
+
+      /* Interrogé par ui.js pour autoriser le clic direct sur une case marquée.
+         Rend faux hors énigme, pour ne rien changer à une partie normale. */
+      function puzzleIsMarkedCell(r, c) {
+        if (!PUZZLE.active || !PUZZLE.def) return false;
+        return puzzleMarkedCells(PUZZLE.def).some(marque => marque.r === r && marque.c === c);
+      }
+
+      function puzzleMarkerGroup() {
+        if (typeof kaykit3D === "undefined" || !kaykit3D || !kaykit3D.fxGroup) return null;
+        if (typeof THREE === "undefined") return null;
+        let groupe = kaykit3D.puzzleMarkerGroup;
+        if (!groupe || !groupe.parent) {
+          groupe = new THREE.Group();
+          groupe.name = "ilyos-puzzle-markers";
+          kaykit3D.fxGroup.add(groupe);
+          kaykit3D.puzzleMarkerGroup = groupe;
+        }
+        return groupe;
+      }
+
+      /* Le glyphe est posé AU SOL, dans le carré, et non flottant au-dessus :
+         il désigne alors la case elle-même au lieu de planer à côté d'elle.
+
+         Les glyphes d'échecs (\u265F \u265A \u265B) ont été essayés et abandonnés :
+         à la distance de caméra du jeu, une case fait une vingtaine de pixels
+         et leurs détails tournent à la bouillie. On dessine donc des marques
+         GÉOMÉTRIQUES — traits épais, silhouettes fermées — qui gardent leur
+         forme une fois réduites. Une vraie rune gravée pourra les remplacer :
+         il suffira de charger une image à la place du tracé, le reste ne
+         bouge pas. */
+      function puzzleGlyphTexture(kind, couleur) {
+        const taille = 256;
+        const canevas = document.createElement("canvas");
+        canevas.width = canevas.height = taille;
+        const ctx = canevas.getContext("2d");
+        ctx.translate(taille / 2, taille / 2);
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        const teinte = "#" + couleur.toString(16).padStart(6, "0");
+        const tracerCouronne = () => {
+          ctx.beginPath();
+          ctx.moveTo(-72, 44);
+          ctx.lineTo(-72, -26);
+          ctx.lineTo(-36, 14);
+          ctx.lineTo(0, -52);
+          ctx.lineTo(36, 14);
+          ctx.lineTo(72, -26);
+          ctx.lineTo(72, 44);
+          ctx.closePath();
+        };
+        const tracerChevron = () => {
+          ctx.beginPath();
+          ctx.moveTo(-62, -46);
+          ctx.lineTo(62, -46);
+          ctx.lineTo(0, 34);
+          ctx.closePath();
+          ctx.moveTo(-62, 52);
+          ctx.lineTo(62, 52);
+          ctx.lineTo(62, 72);
+          ctx.lineTo(-62, 72);
+          ctx.closePath();
+        };
+        const tracerCroix = () => {
+          ctx.beginPath();
+          ctx.moveTo(-56, -56); ctx.lineTo(56, 56);
+          ctx.moveTo(56, -56); ctx.lineTo(-56, 56);
+        };
+
+        // Le contour sombre est tracé d'abord, en dessous : c'est lui qui
+        // détache la marque du vert vif d'une île comme du ciel clair.
+        ctx.strokeStyle = "rgba(8,14,28,.92)";
+        ctx.fillStyle = teinte;
+
+        if (kind === "threat") {
+          tracerCroix();
+          ctx.lineWidth = 46; ctx.stroke();
+          ctx.strokeStyle = teinte;
+          ctx.lineWidth = 28; ctx.stroke();
+        } else {
+          if (kind === "guardian") tracerChevron(); else tracerCouronne();
+          ctx.lineWidth = 26; ctx.stroke();
+          ctx.fill();
+        }
+
+        const texture = new THREE.CanvasTexture(canevas);
+        texture.userData = { ilyosTransient: true };
+        return texture;
+      }
+
+      /* Cadre carré FIN. Une LineLoop ne convient pas : `linewidth` est ignoré
+         par presque tous les pilotes, le trait resterait un cheveu à toute
+         distance. On construit donc une vraie surface — un carré percé d'un
+         carré — dont l'épaisseur se maîtrise au millième. */
+      function puzzleFrameGeometry(exterieur, epaisseur) {
+        const demi = exterieur / 2;
+        const interieur = demi - epaisseur;
+        const forme = new THREE.Shape();
+        forme.moveTo(-demi, -demi);
+        forme.lineTo(demi, -demi);
+        forme.lineTo(demi, demi);
+        forme.lineTo(-demi, demi);
+        forme.closePath();
+        const trou = new THREE.Path();
+        trou.moveTo(-interieur, -interieur);
+        trou.lineTo(interieur, -interieur);
+        trou.lineTo(interieur, interieur);
+        trou.lineTo(-interieur, interieur);
+        trou.closePath();
+        forme.holes.push(trou);
+        return new THREE.ShapeGeometry(forme);
+      }
+
+      /* Équerres d'angle : quatre petits « L » qui tiennent les coins. C'est ce
+         qui donne au marqueur sa lecture de VISEUR — la case est désignée, pas
+         seulement encadrée — tout en gardant le trait fin. */
+      function puzzleCornerPieces(exterieur, epaisseur, longueur) {
+        const demi = exterieur / 2;
+        const bord = demi - epaisseur / 2;
+        const morceaux = [];
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => {
+          morceaux.push({ w: longueur, h: epaisseur, x: sx * (demi - longueur / 2), y: sy * bord });
+          morceaux.push({ w: epaisseur, h: longueur, x: sx * bord, y: sy * (demi - longueur / 2) });
+        });
+        return morceaux;
+      }
+
+      /* Cadre pointillé : la case n'est PAS encore de la terre. Tirets faits de
+         vraies petites surfaces, pour la même raison que le cadre plein. */
+      function puzzleDashedFrameGeometries(exterieur, epaisseur, tirets = 7) {
+        const demi = exterieur / 2;
+        const pas = exterieur / tirets;
+        const plein = pas * .52;
+        const morceaux = [];
+        for (let i = 0; i < tirets; i++) {
+          const centre = -demi + pas * (i + .5);
+          morceaux.push({ w: plein, h: epaisseur, x: centre, y: demi - epaisseur / 2 });
+          morceaux.push({ w: plein, h: epaisseur, x: centre, y: -demi + epaisseur / 2 });
+          morceaux.push({ w: epaisseur, h: plein, x: -demi + epaisseur / 2, y: centre });
+          morceaux.push({ w: epaisseur, h: plein, x: demi - epaisseur / 2, y: centre });
+        }
+        return morceaux;
+      }
+
+      function puzzleAddMarker(marque) {
+        const groupe = puzzleMarkerGroup();
+        if (!groupe) return;
+        const { r, c, kind } = marque;
+        const couleur = PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
+        /* Hauteur du DESSUS DES ÎLES, y compris pour une case vide.
+           kaykitCellSurfaceY() rend le niveau du plateau (.05) là où il n'y a
+           pas de terre, contre .47 pour une île : en vue inclinée, le marqueur
+           d'une case vide se retrouvait projeté nettement à côté de la grille
+           — signalé en jeu comme un décalage. Une dalle fantôme doit se tenir
+           là où le sol arrivera, pas 40 centimètres plus bas. */
+        const p = kaykitCellPosition(r, c, KAYKIT_LEVELS.islandTop + .014);
+        /* Une case sans terre reste une cible légitime — c'est même le sujet
+           des énigmes où la rotation d'une île vient créer le sol. Elle se
+           distingue par son cadre pointillé, et rien d'autre. */
+        const surTerre = isLand(r, c);
+        const cote = KAYKIT_CELL_SPACING * .9;
+        const epaisseur = .046;
+
+        const transitoire = objet => {
+          objet.userData = { ...(objet.userData || {}), ilyosTransient: true };
+          return objet;
+        };
+        const couche = (geo, mat, hauteur, ordre, dx = 0, dz = 0) => {
+          const maille = new THREE.Mesh(transitoire(geo), transitoire(mat));
+          maille.rotation.x = -Math.PI / 2;
+          maille.position.set(p.x + dx, p.y + hauteur, p.z + dz);
+          maille.renderOrder = ordre;
+          groupe.add(maille);
+          return maille;
+        };
+        const trait = (couleurTrait, opacite) => new THREE.MeshBasicMaterial({
+          color: couleurTrait, transparent: true, opacity: opacite,
+          side: THREE.DoubleSide, depthWrite: false, depthTest: false
+        });
+
+        /* L'aplat : la surface teintée qui remplit l'intérieur du carré, par
+           opposition au cadre qui n'en dessine que le contour. C'est lui qui
+           fait lire « cette CASE est une cible » plutôt que « il y a un trait
+           ici », et dans le vide c'est lui qui donne au marqueur l'épaisseur
+           d'une dalle fantôme au lieu d'un cadre suspendu. */
+        couche(
+          new THREE.PlaneGeometry(cote, cote),
+          new THREE.MeshBasicMaterial({
+            color: couleur, transparent: true, opacity: surTerre ? .34 : .24,
+            side: THREE.DoubleSide, depthWrite: false, depthTest: true
+          }),
+          .075, 44
+        );
+
+        /* Liseré sombre glissé sous le cadre : c'est lui qui garde le trait fin
+           lisible sur un ciel clair, où une couleur seule se dissoudrait. */
+        const poserMorceaux = (morceaux, materiau, hauteur, ordre) => {
+          morceaux.forEach(t => couche(
+            new THREE.PlaneGeometry(t.w, t.h), materiau.clone(), hauteur, ordre, t.x, -t.y
+          ));
+        };
+
+        if (surTerre) {
+          couche(puzzleFrameGeometry(cote + .022, epaisseur + .026), trait(0x0a1020, .45), .098, 48);
+          couche(puzzleFrameGeometry(cote, epaisseur), trait(couleur, 1), .102, 50);
+          // Les équerres ne sont posées que sur la terre : dans le vide, le
+          // pointillé porte déjà toute la lecture, en ajouter les surchargerait.
+          poserMorceaux(puzzleCornerPieces(cote + .05, epaisseur + .018, .2), trait(couleur, 1), .104, 51);
+        } else {
+          const ombre = puzzleDashedFrameGeometries(cote, epaisseur + .022);
+          poserMorceaux(ombre, trait(0x0a1020, .45), .098, 48);
+          poserMorceaux(puzzleDashedFrameGeometries(cote, epaisseur), trait(couleur, .95), .102, 50);
+        }
+
+        /* Le glyphe, à plat dans le carré. Il bat très légèrement — assez pour
+           attirer l'oeil au premier regard, pas assez pour tirer dessus pendant
+           toute la durée de l'énigme. */
+        const glyphe = couche(
+          new THREE.PlaneGeometry(cote * .74, cote * .74),
+          new THREE.MeshBasicMaterial({
+            map: puzzleGlyphTexture(kind, couleur),
+            transparent: true, opacity: surTerre ? 1 : .88,
+            depthWrite: false, depthTest: false
+          }),
+          .106, 52
+        );
+        glyphe.userData.pulse = true;
+        glyphe.userData.pulsePhase = (r * 5 + c) * .41;
+        kaykit3D.animatedObjects.push(glyphe);
+      }
+
+      /* Reconstruit seulement quand les cases marquées changent : le groupe
+         survit aux survols, et la scène ne se refait pas à chaque battement
+         d'horloge du moteur d'énigmes. */
+      function puzzleRefreshMarkers() {
+        if (!PUZZLE.active || !PUZZLE.def) return;
+        const cells = puzzleMarkedCells(PUZZLE.def);
+        const cle = JSON.stringify(cells);
+        const groupe = puzzleMarkerGroup();
+        if (!groupe) return;
+        if (cle === PUZZLE.markerKey && groupe.children.length) return;
+        PUZZLE.markerKey = cle;
+        if (typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
+        cells.forEach(puzzleAddMarker);
+      }
+
+      function puzzleClearMarkers() {
+        PUZZLE.markerKey = null;
+        const groupe = typeof kaykit3D !== "undefined" && kaykit3D
+          ? kaykit3D.puzzleMarkerGroup : null;
+        if (groupe && typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
       }
 
       /* ---------- Surcouche en jeu --------------------------------------- */
@@ -29421,6 +29789,7 @@
         if (!PUZZLE.active || PUZZLE.ended || !state) return;
         if (!PUZZLE.def.placement) state.islandPlacedThisTurn = true;
         puzzleSyncOverlay();
+        puzzleRefreshMarkers();
         if (puzzleGoalReached()) { puzzleShowEnd({ won: true }); return; }
         // C'est au rival : on joue ses coups écrits, puis on rend la main.
         if (state.currentPlayer === 1 && !PUZZLE.replying && !state.turnTransitioning) {
@@ -29591,6 +29960,7 @@
         window.removeEventListener("keydown", puzzleKeyGuard, true);
         ["contextmenu", "pointerdown", "mousedown", "mouseup", "auxclick"].forEach(type =>
           window.removeEventListener(type, puzzleRightClickGuard, true));
+        puzzleClearMarkers();
         els.gameScreen && els.gameScreen.classList.remove("puzzle-on", "puzzle-no-place", "puzzle-one-turn");
         document.body.classList.remove("puzzle-mode");
         if (PUZZLE.dom) { PUZZLE.dom.layer.remove(); PUZZLE.dom = null; }
@@ -29847,6 +30217,8 @@
           : puzzleVerify(index),
         verifyAll: puzzleVerifyAll,
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
+        /* Force un recalcul des marqueurs (mise au point du rendu). */
+        refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },
         /* Vue de l'état pour les tests : une énigme se pilote par clics
            simulés, et sans ce point d'observation il faudrait deviner où elle
            en est. N'écrit rien. */
@@ -29888,7 +30260,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Onze énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
+         Quatorze énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
          moteur vit dans js/game/puzzle.js ; ce fragment ne contient que des
          données.
 
@@ -29908,7 +30280,12 @@
            invaliderait la moitié des rotations ;
          - les villages restent aux COINS, seuls endroits où
            cornerCrownCellsForVillage produit des cases cohérentes. Les énigmes
-           sans village n'en déclarent aucun et visent un autre objectif.
+           sans village n'en déclarent aucun et visent un autre objectif ;
+         - aucun texte lu par le joueur ne cite de COORDONNÉES. Le jeu n'en
+           affiche nulle part : un énoncé qui en donne est illisible. Les cases
+           qui comptent sont marquées sur le plateau, déduites de `goal` et de
+           `replies` par le moteur, et les textes n'y renvoient que par
+           « la case marquée ».
          ===================================================================== */
 
       PUZZLES.push(
@@ -30152,7 +30529,6 @@
           brief: "Fais tomber les quatre rivaux hors du plateau.",
           board: 11,
           sanctuary: false,
-          focus: [5, 4],
           islands: [
             [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]]
           ],
@@ -30185,10 +30561,9 @@
           id: "p08-ronde",
           title: "La ronde",
           tagline: "Trois passagers, une rotation. Reste à bien les asseoir.",
-          brief: "Place tes trois Gardiens sur les trois cases marquées : (4,4), (7,4) et (8,4).",
+          brief: "Place un Gardien sur chacune des trois cases marquées.",
           board: 11,
           sanctuary: false,
-          focus: [5, 5],
           islands: [
             { key: "A", cells: [[4, 4], [4, 5], [4, 6], [4, 7], [4, 8]] }
           ],
@@ -30220,10 +30595,9 @@
           id: "p09-fardeau",
           title: "Le fardeau",
           tagline: "Deux couronnes, deux façons de voyager. Aucune ne marche.",
-          brief: "Pose une couronne sur (1,5), et tiens l'autre en main sur (9,5).",
+          brief: "Pose une couronne sur la case marquée d'or, et tiens l'autre en main sur la case bleue.",
           board: 11,
           sanctuary: false,
-          focus: [5, 5],
           islands: [
             { key: "B", cells: [[3, 5], [4, 5], [5, 5]] },
             [[6, 5], [7, 5]],
@@ -30266,10 +30640,9 @@
           id: "p10-escalier",
           title: "L'escalier",
           tagline: "Une barre, quatre rotations, et un passager qui doit courir.",
-          brief: "Amène ton Gardien sur la case (10,8).",
+          brief: "Amène ton Gardien sur la case marquée.",
           board: 13,
           sanctuary: false,
-          focus: [6, 6],
           islands: [
             { key: "F", cells: [[6, 2], [6, 3], [6, 4]] }
           ],
@@ -30392,7 +30765,7 @@
             ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"]
           ],
           par: 5,
-          rivalPlan: ["il se poste sur (1,0) — une case de ton village."],
+          rivalPlan: ["il se poste sur la case marquée — une case de ton village."],
           replies: [
             [{ a: "MOVE", who: "R1", to: [1, 0] }]
           ],
@@ -30441,7 +30814,7 @@
             ["MOVE", "MOVE", "MOVE", "PUSH"]
           ],
           par: 12,
-          rivalPlan: ["il se poste sur (3,0), la seule case où ta couronne peut se poser."],
+          rivalPlan: ["il se poste sur la case marquée, la seule où ta couronne peut se poser."],
           replies: [
             [{ a: "MOVE", who: "R", to: [3, 0] }]
           ],
@@ -30497,8 +30870,8 @@
           ],
           par: 8,
           rivalPlan: [
-            "il descend en (2,1).",
-            "il se poste sur (0,1) — une case de ton village."
+            "il descend sur la case marquée.",
+            "puis il se poste sur une case de ton village."
           ],
           replies: [
             [{ a: "MOVE", who: "R", to: [2, 1] }],

@@ -4755,8 +4755,13 @@
           if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) {
             return { kind: "magic", actionable: true, color: 0xc36cff, label: "ÎLE CIBLÉE PAR LA MAGIE" };
           }
-          if (island && !character) return { kind: "magic", actionable: true, color: 0xc36cff, label: "CHOISIR CETTE ÎLE" };
-          return { kind: "invalid", actionable: false, color: 0xff4058, label: character ? "CASE OCCUPÉE" : "ÎLE REQUISE" };
+          /* Un gardien posté sur une île n'empêche NULLEMENT de la choisir
+             comme pivot : handleMagicClick ne demande qu'islandAt(), et la
+             rotation emporte ses passagers. Le survol annonçait pourtant
+             « CASE OCCUPÉE » et affichait la croix d'interdiction sur un coup
+             que le jeu acceptait juste après — signalé en jeu. */
+          if (island) return { kind: "magic", actionable: true, color: 0xc36cff, label: "CHOISIR CETTE ÎLE" };
+          return { kind: "invalid", actionable: false, color: 0xff4058, label: "ÎLE REQUISE" };
         }
         if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) return { kind: "magic", actionable: true, color: 0xc36cff, label: "MAGIE" };
         if (hitAction === "character" || character) {
