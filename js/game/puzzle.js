@@ -1279,6 +1279,23 @@
           }
           return { action: null, cout: 0 };
         }
+        /* Ramassage d'une couronne au sol par un Gardien ADJACENT : gratuit
+           lui aussi (phase PICKUP_CROWN d'ui.js). C'est le geste qui manquait
+           au vocabulaire, et dont l'oubli a faussé plusieurs `par`. */
+        if (step.a === "PICKUP") {
+          const char = characterById(charId);
+          if (!char) return { error: "ramassage : gardien introuvable" };
+          const [cr, cc] = step.on;
+          if (Math.abs(char.r - cr) + Math.abs(char.c - cc) > 1) {
+            return { error: "ramassage : couronne non adjacente" };
+          }
+          const couronne = looseArtifactAt(cr, cc);
+          if (!couronne) return { error: `aucune couronne au sol en ${step.on}` };
+          if (!giveArtifactToCharacter(couronne, char)) {
+            return { error: `${step.who} porte déjà une couronne` };
+          }
+          return { action: null, cout: 0 };
+        }
         if (step.a === "DROP") {
           const source = characterById(charId);
           if (!source) return { error: "dépôt : gardien introuvable" };

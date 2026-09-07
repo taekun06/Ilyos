@@ -30085,6 +30085,23 @@
           }
           return { action: null, cout: 0 };
         }
+        /* Ramassage d'une couronne au sol par un Gardien ADJACENT : gratuit
+           lui aussi (phase PICKUP_CROWN d'ui.js). C'est le geste qui manquait
+           au vocabulaire, et dont l'oubli a faussé plusieurs `par`. */
+        if (step.a === "PICKUP") {
+          const char = characterById(charId);
+          if (!char) return { error: "ramassage : gardien introuvable" };
+          const [cr, cc] = step.on;
+          if (Math.abs(char.r - cr) + Math.abs(char.c - cc) > 1) {
+            return { error: "ramassage : couronne non adjacente" };
+          }
+          const couronne = looseArtifactAt(cr, cc);
+          if (!couronne) return { error: `aucune couronne au sol en ${step.on}` };
+          if (!giveArtifactToCharacter(couronne, char)) {
+            return { error: `${step.who} porte déjà une couronne` };
+          }
+          return { action: null, cout: 0 };
+        }
         if (step.a === "DROP") {
           const source = characterById(charId);
           if (!source) return { error: "dépôt : gardien introuvable" };
@@ -30560,7 +30577,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Quatorze énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
+         Seize énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
          moteur vit dans js/game/puzzle.js ; ce fragment ne contient que des
          données.
 
@@ -30788,31 +30805,36 @@
           brief: "Ramène la couronne jusqu'à ton village.",
           board: 13,
           sanctuary: false,
-          focus: [5, 0],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[1, 0], [2, 0], [3, 0], [4, 0]],
-            [[8, 0], [9, 0], [10, 0]]
+            [[1, 0], [2, 0], [3, 0]],
+            [[7, 0], [8, 0], [9, 0]],
+            [[0, 1]]
           ],
           guardians: [
             { key: "A", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "B", p: 0, r: 9, c: 0 },
             { key: "C", p: 0, r: 3, c: 0 },
-            { p: 1, r: 1, c: 0 }
+            { p: 1, r: 0, c: 1 }
           ],
-          hand: { PUSH: 8, MOVE: 5, MAGIC: 1 },
-          par: 11,
+          /* Aucune carte MAGIE. Ce n'est pas un interdit : une barre de trois
+             cases translate ses passagers de deux cases par rotation, et le
+             chercheur d'optimum a montré qu'avec une seule MAGIE on faisait
+             pivoter la corniche pour rétrécir le gouffre — la couronne n'avait
+             alors plus rien à franchir. Sans cette carte, le vide reste du
+             vide. */
+          hand: { PUSH: 6, MOVE: 4 },
+          par: 8,
           goal: { type: "crownDelivered", player: 0 },
           winTitle: "Elle a franchi le vide",
-          winLine: "Un Gardien tombe, sa couronne reste — et le vide ne la retient pas.",
+          winLine: "Une couronne ne tombe jamais : elle survole et se pose.",
           failLine: "La couronne est du mauvais côté du gouffre.",
           solution: [
-            { a: "PUSH", who: "B", on: [8, 0], force: 1 },
-            { a: "PUSH", who: "B", on: [8, 0], force: 4 },
-            { a: "MOVE", who: "C", to: [4, 0] },
             { a: "MOVE", who: "C", to: [2, 0] },
-            { a: "PUSH", who: "C", on: [1, 0], force: 2 },
-            { a: "MOVE", who: "C", to: [1, 0] }
+            { a: "DROP", who: "A", on: [7, 0] },
+            { a: "PUSH", who: "A", on: [7, 0], force: 4 },
+            { a: "PICKUP", who: "C", on: [3, 0] },
+            { a: "MOVE", who: "C", to: [0, 0] },
+            { a: "PUSH", who: "C", on: [0, 1], force: 1 }
           ]
         },
 
@@ -30950,19 +30972,22 @@
             { key: "G", p: 0, r: 6, c: 2 }
           ],
           hand: { MAGIC: 4, MOVE: 7 },
-          par: 10,
+          /* Optimum PROUVÉ par ILYOS_PUZZLE.solve : six cartes, pas dix. Les
+             rotations s'enchaînent sans les allers-retours à pied que la
+             conception croyait obligatoires — un quart de tour bien choisi
+             replace le passager du bon côté du pivot suivant. La navette reste
+             la seule route ; seule la « taxe de marche » était imaginaire. */
+          par: 6,
           goal: { type: "reachCell", player: 0, cell: [10, 8] },
           winTitle: "La barre t'a porté jusqu'au bout",
           winLine: "Toujours à l'autre bout du pivot : c'est la seule place qui avance.",
           failLine: "La barre a tourné sans t'emmener.",
           solution: [
-            { a: "MAGIC", island: "F", pivot: [6, 4], turns: 2 },
-            { a: "MOVE", who: "G", to: [6, 4] },
-            { a: "MAGIC", island: "F", pivot: [6, 6], turns: 2 },
-            { a: "MOVE", who: "G", to: [6, 6] },
-            { a: "MAGIC", island: "F", pivot: [6, 8], turns: 1, direction: -1 },
-            { a: "MOVE", who: "G", to: [6, 8] },
-            { a: "MAGIC", island: "F", pivot: [8, 8], turns: 2 }
+            { a: "MAGIC", island: "F", pivot: [6, 4], turns: 1, direction: -1 },
+            { a: "MAGIC", island: "F", pivot: [8, 4], turns: 1, direction: 1 },
+            { a: "MAGIC", island: "F", pivot: [8, 6], turns: 1, direction: -1 },
+            { a: "MAGIC", island: "F", pivot: [10, 6], turns: 1, direction: 1 },
+            { a: "MOVE", who: "G", to: [10, 8] }
           ]
         },
 
@@ -30977,38 +31002,41 @@
         {
           id: "p11-dernier-souffle",
           title: "Le dernier souffle",
-          tagline: "Douze cartes. La solution en demande douze. Aucune ne se perd.",
+          tagline: "Il est seul sur son rocher, et il ne peut rien poser.",
           brief: "Ramène la couronne jusqu'à ton village.",
           board: 13,
           sanctuary: false,
-          focus: [4, 0],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[1, 0]],
-            [[0, 1]],
-            { key: "F", cells: [[6, 0], [7, 0], [8, 0]] },
-            [[9, 0], [10, 0]]
+            [[1, 0], [2, 0]],
+            [[7, 0]],
+            [[8, 0]],
+            [[0, 1]]
           ],
           guardians: [
-            { key: "A", p: 0, r: 6, c: 0, crown: 1 },
-            { key: "B", p: 0, r: 7, c: 0 },
+            { key: "A", p: 0, r: 7, c: 0, crown: 1 },
+            { key: "B", p: 0, r: 8, c: 0 },
+            { key: "C", p: 0, r: 1, c: 0 },
             { p: 1, r: 0, c: 1 }
           ],
-          hand: { PUSH: 7, MAGIC: 2, MOVE: 3 },
-          par: 12,
+          /* Poser une couronne est GRATUIT : un sacrifice n'est donc jamais
+             nécessaire… sauf si le porteur n'a aucune case libre où poser. A
+             est seul sur son rocher — le vide de trois côtés, B sur le
+             quatrième — donc il ne peut ni marcher, ni poser. Sa couronne ne
+             touchera le sol que s'il tombe. C'est la géométrie qui force le
+             sacrifice, aucune règle. */
+          hand: { PUSH: 8, MOVE: 3 },
+          par: 8,
           goal: { type: "crownDelivered", player: 0 },
           winTitle: "Le dernier souffle",
           winLine: "Il a fallu en perdre un pour que la couronne arrive.",
-          failLine: "Une carte de trop dépensée, et le seuil reste hors d'atteinte.",
+          failLine: "La couronne est restée entre ses mains, de l'autre côté du vide.",
           solution: [
-            { a: "PUSH", who: "B", on: [6, 0], force: 1 },
-            { a: "PUSH", who: "B", on: [6, 0], force: 5 },
-            { a: "MAGIC", island: "F", pivot: [6, 0], turns: 2 },
-            { a: "MOVE", who: "B", to: [6, 0] },
-            { a: "MAGIC", island: "F", pivot: [4, 0], turns: 2 },
-            { a: "MOVE", who: "B", to: [1, 0] },
-            { a: "MOVE", who: "B", to: [0, 0] },
-            { a: "PUSH", who: "B", on: [0, 1], force: 1 }
+            { a: "PUSH", who: "B", on: [7, 0], force: 1 },
+            { a: "PUSH", who: "B", on: [7, 0], force: 5 },
+            { a: "PICKUP", who: "C", on: [2, 0] },
+            { a: "MOVE", who: "C", to: [0, 0] },
+            { a: "PUSH", who: "C", on: [0, 1], force: 1 }
           ]
         },
 
@@ -31230,38 +31258,51 @@
           sanctuary: false,
           villages: { 0: [[10, 10]] },
           islands: [
-            [[4, 6], [5, 6], [6, 6], [7, 6], [8, 6], [8, 7]],
+            [[3, 6], [4, 6], [5, 6], [6, 6], [7, 6], [8, 6], [8, 7]],
             [[8, 10], [9, 10], [10, 10], [10, 9], [10, 8]]
           ],
-          crowns: [{ slot: 1, r: 6, c: 6 }],
+          crowns: [{ slot: 1, r: 3, c: 6 }],
           guardians: [
             { key: "A", p: 0, r: 4, c: 6 },
             { key: "B", p: 0, r: 8, c: 6 },
             { key: "C", p: 0, r: 9, c: 10 },
             { key: "R", p: 1, r: 10, c: 9 }
           ],
+          /* A commence collé à la couronne : il la ramasse sans dépenser une
+             carte. B, lui, devrait descendre toute l'échine puis la remonter —
+             la même besogne lui coûte trois fois plus. Et A ne peut pas finir
+             le travail seul : la seule case d'où l'on pose sur (8,7) est celle
+             que B occupe. La transmission n'est donc pas un ornement, c'est le
+             seul pont entre les deux moitiés de la solution. */
           deck: [
             ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
             ["PUSH", "PUSH", "PUSH", "PUSH", "PUSH"],
-            ["MOVE", "MOVE", "MOVE"]
+            ["MOVE", "MOVE", "PUSH"]
           ],
-          par: 10,
+          par: 7,
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "Le relais est passé",
-          winLine: "Tu n'as pas franchi le vide : tu as fait voyager la lumière à ta place.",
+          winLine: "Une couronne se pousse aussi sur la terre ferme — et le premier tour ne servait à rien.",
           failLine: "La couronne est restée du mauvais côté du gouffre.",
+          /* L'optimum prouvé n'est pas celui qu'on avait en tête, et il est
+             meilleur : plutôt que de PORTER la couronne le long de l'échine, A
+             la pose et la POUSSE — deux cartes au lieu de trois pas. Le premier
+             tour ne sert alors qu'au ramassage, qui est gratuit : on le termine
+             sans avoir rien dépensé, et les cinq DÉPLACER non joués passent en
+             réserve. Terminer un tour les mains vides est ici le bon coup. */
           solution: [
             [
-              { a: "MOVE", who: "A", to: [6, 6] },
-              { a: "MOVE", who: "A", to: [7, 6] },
-              { a: "TRANSFER", who: "A", to: "B" },
-              { a: "DROP", who: "B", on: [8, 7] }
+              { a: "PICKUP", who: "A", on: [3, 6] }
             ],
             [
+              { a: "DROP", who: "A", on: [5, 6] },
+              { a: "PUSH", who: "A", on: [5, 6], force: 2 },
+              { a: "PICKUP", who: "B", on: [7, 6] },
+              { a: "DROP", who: "B", on: [8, 7] },
               { a: "PUSH", who: "B", on: [8, 7], force: 3 }
             ],
             [
-              { a: "MOVE", who: "C", to: [8, 10] },
+              { a: "PICKUP", who: "C", on: [8, 10] },
               { a: "MOVE", who: "C", to: [10, 10] },
               { a: "PUSH", who: "C", on: [10, 9], force: 1 }
             ]
