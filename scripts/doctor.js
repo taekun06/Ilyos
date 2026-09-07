@@ -5,11 +5,11 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 let failures = 0;
 function check(label, ok, fix) {
-  console.log(`${ok ? 'OK' : 'MANQUANT'} — ${label}${ok ? '' : ` : ${fix}`}`);
+  console.log(`${ok ? 'OK' : 'KO'} — ${label}${ok ? '' : ` : ${fix}`}`);
   if (!ok) failures++;
 }
 const major = Number(process.versions.node.split('.')[0]);
-check(`Node ${process.versions.node}`, major >= 20, 'installer Node 24 LTS');
+check(`Node ${process.versions.node}`, major === 24, 'installer Node 24 LTS');
 if (major !== 24) console.log('INFO — Node 24 est la version de référence du projet (.nvmrc).');
 const git = spawnSync('git', ['--version'], { encoding: 'utf8' });
 check('Git', git.status === 0, 'installer Git');
