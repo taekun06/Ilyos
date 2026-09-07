@@ -1431,6 +1431,265 @@
         return resultats;
       }
 
+      /* ---------- Chercheur de raccourcis --------------------------------
+         Une solution de référence qui marche ne prouve RIEN sur son coût : elle
+         dit qu'un chemin existe, pas qu'il est le moins cher. Quatre `par`
+         annoncés se sont révélés faux en jeu, tous pour la même raison — un
+         geste GRATUIT oublié : un Gardien voisin d'une couronne au sol la
+         ramasse sans dépenser de carte (voir la phase PICKUP_CROWN d'ui.js).
+
+         Ce chercheur explore l'espace des coups par coût croissant et s'arrête
+         au premier chemin qui atteint l'objectif. Il n'écrit aucune règle : il
+         énumère les coups avec les fonctions du jeu — movementRange pour les
+         déplacements, collectUnifiedPushOptions pour les poussées,
+         calculateIslandRotationAroundPivot pour les rotations — et les applique
+         par appliquerActionNoyau.
+
+         RELAXATION ASSUMÉE : la recherche donne toutes les cartes de la pioche
+         d'emblée et ne termine jamais de tour. Sur une énigme d'un seul tour
+         c'est exact ; sur une énigme multi-tours cela rend une BORNE
+         INFÉRIEURE, qu'il faut confronter au découpage des tours. Un optimum
+         trouvé sous cette borne est donc toujours un vrai problème ; l'inverse
+         demande vérification. */
+      const PUZZLE_SEARCH_MAX_NODES = 60000;
+
+      function puzzleSearchActions() {
+        const actions = [];
+        const aMoi = char => char && char.player === 0;
+
+        /* Gratuits d'abord : ramassage, transmission, dépôt. Ils ne coûtent
+           aucune carte et sont précisément ce que les `par` ignoraient. */
+        activeArtifacts().filter(a => a.carrierId === null && Number.isFinite(a.r)).forEach(couronne => {
+          orthogonalNeighbors(couronne.r, couronne.c).forEach(([r, c]) => {
+            const voisin = characterAt(r, c);
+            if (aMoi(voisin) && !artifactCarriedBy(voisin.id)) {
+              actions.push({ a: "PICKUP", charId: voisin.id, crownId: couronne.id, cout: 0 });
+            }
+          });
+        });
+
+        (state.characters || []).filter(aMoi).forEach(porteur => {
+          const couronne = artifactCarriedBy(porteur.id);
+          if (!couronne) return;
+          orthogonalNeighbors(porteur.r, porteur.c).forEach(([r, c]) => {
+            const voisin = characterAt(r, c);
+            if (aMoi(voisin) && !artifactCarriedBy(voisin.id)) {
+              actions.push({ a: "TRANSFER", fromId: porteur.id, toId: voisin.id, cout: 0 });
+            } else if (!voisin && isLand(r, c) && !looseArtifactAt(r, c)) {
+              actions.push({ a: "DROP", charId: porteur.id, r, c, cout: 0 });
+            }
+          });
+        });
+
+        const budgetMove = availableActionCount("MOVE");
+        if (budgetMove > 0) {
+          (state.characters || []).filter(aMoi).forEach(char => {
+            const portee = movementRange(char, budgetMove);
+            portee.forEach(cle => {
+              const [r, c] = cle.split(",").map(Number);
+              const cout = portee.costs?.get(cle);
+              if (Number.isFinite(cout) && cout > 0) {
+                actions.push({ a: "MOVE", charId: char.id, r, c, cout });
+              }
+            });
+          });
+        }
+
+        if (availableActionCount("PUSH") > 0) {
+          collectUnifiedPushOptions().forEach(option => {
+            const cible = option.targetType === "crown"
+              ? artifactById(option.targetId)
+              : characterById(option.targetId);
+            if (!cible) return;
+            actions.push({
+              a: "PUSH", pusherId: option.pusherId,
+              r: cible.r, c: cible.c, force: option.force, cout: option.force
+            });
+          });
+        }
+
+        if (availableActionCount("MAGIC") > 0) {
+          (state.islands || []).forEach(ile => {
+            ile.cells.forEach(([pr, pc]) => {
+              [[1, 1], [-1, 1], [1, 2]].forEach(([direction, turns]) => {
+                const rotation = calculateIslandRotationAroundPivot(ile, pr, pc, direction, turns);
+                if (rotation?.valid) {
+                  actions.push({
+                    a: "MAGIC", islandId: ile.id, pivot: [pr, pc],
+                    direction, turns, cout: 1
+                  });
+                }
+              });
+            });
+          });
+        }
+
+        return actions;
+      }
+
+      function puzzleSearchApply(action) {
+        if (action.a === "PICKUP") {
+          const char = characterById(action.charId);
+          const couronne = artifactById(action.crownId);
+          return !!(char && couronne && giveArtifactToCharacter(couronne, char));
+        }
+        if (action.a === "TRANSFER") {
+          const source = characterById(action.fromId);
+          const cible = characterById(action.toId);
+          const couronne = source ? artifactCarriedBy(source.id) : null;
+          return !!(cible && couronne && giveArtifactToCharacter(couronne, cible));
+        }
+        if (action.a === "DROP") {
+          const char = characterById(action.charId);
+          const couronne = char ? artifactCarriedBy(char.id) : null;
+          if (!couronne) return false;
+          couronne.carrierId = null;
+          couronne.r = action.r;
+          couronne.c = action.c;
+          return true;
+        }
+        /* Les coups de recherche portent `a:` (vocabulaire des définitions) ;
+           le noyau attend `type:`. Sans cette traduction, appliquerActionNoyau
+           tombait sur son `default` et rejetait TOUT en silence — la recherche
+           n'explorait qu'un seul nœud. */
+        if (action.a === "MOVE") {
+          return !!appliquerActionNoyau({
+            type: "MOVE", charId: action.charId, r: action.r, c: action.c, cost: action.cout
+          });
+        }
+        if (action.a === "PUSH") {
+          return !!appliquerActionNoyau({
+            type: "PUSH", pusherId: action.pusherId, r: action.r, c: action.c, force: action.force
+          });
+        }
+        if (action.a === "MAGIC") {
+          return !!appliquerActionNoyau({
+            type: "MAGIC", islandId: action.islandId, pivot: action.pivot,
+            direction: action.direction, turns: action.turns
+          });
+        }
+        return false;
+      }
+
+      /* Toutes les cartes en main d'emblée : c'est la relaxation décrite plus
+         haut, seule façon d'explorer sans simuler les fins de tour. */
+      function puzzleSearchBuild(def) {
+        puzzleBuildState(def);
+        const joueur = state.players[0];
+        (joueur.deck || []).forEach(carte => joueur.hand.push({ ...carte, used: false }));
+        joueur.deck = [];
+      }
+
+      function puzzleSearchReplay(def, chemin) {
+        puzzleSearchBuild(def);
+        for (const action of chemin) {
+          if (!puzzleSearchApply(action)) return false;
+        }
+        return true;
+      }
+
+      function puzzleSearchLabel(action) {
+        if (action.a === "MOVE") return `MOVE ${action.charId}->${action.r},${action.c} (${action.cout})`;
+        if (action.a === "PUSH") return `PUSH ${action.pusherId} sur ${action.r},${action.c} f${action.force}`;
+        if (action.a === "MAGIC") return `MAGIC île${action.islandId} pivot ${action.pivot} t${action.turns}d${action.direction}`;
+        if (action.a === "PICKUP") return `PICKUP ${action.charId}`;
+        if (action.a === "TRANSFER") return `TRANSFER ${action.fromId}->${action.toId}`;
+        if (action.a === "DROP") return `DROP ${action.charId} en ${action.r},${action.c}`;
+        return action.a;
+      }
+
+      /* Recherche par coût croissant (files par coût : les coûts sont de petits
+         entiers, une file à seaux suffit et évite tout tri). */
+      function puzzleSolve(index, plafond = null) {
+        const def = PUZZLES[index];
+        if (!def) return { id: null, error: "énigme inexistante" };
+
+        const etatReel = state;
+        const actifAvant = PUZZLE.active;
+        const defAvant = PUZZLE.def;
+        const depart = Date.now();
+        try {
+          PUZZLE.active = true;
+          PUZZLE.def = def;
+
+          const budget = puzzleDeckList(def.deck).length || puzzleHandList(def.hand).length;
+          const coutMax = Number.isFinite(plafond) ? plafond : budget;
+          const seaux = [];
+          const vus = new Set();
+          const pousser = (cout, chemin) => {
+            if (cout > coutMax) return;
+            (seaux[cout] ||= []).push(chemin);
+          };
+
+          /* L'objectif `scored` attend le point accordé par
+             scoreCrownsAtTurnStart, donc un changement de tour — que la
+             recherche ne simule jamais. On lui substitue l'état DEPUIS LEQUEL
+             ce point sera accordé, c'est-à-dire exactement l'éligibilité que
+             cette fonction teste : porteur vivant sur une case de validation
+             libre de tout rival. Sans cette substitution, la recherche ne
+             trouve jamais rien sur les énigmes multi-tours. */
+          const butReel = def.goal?.type === "scored"
+            ? { type: "crownDelivered", player: def.goal.player ?? 0 }
+            : def.goal;
+          const atteint = () => {
+            const predicat = PUZZLE_GOALS[butReel?.type];
+            try { return !!predicat && !!predicat(def, butReel); } catch (_) { return false; }
+          };
+
+          puzzleSearchBuild(def);
+          if (atteint()) return { id: def.id, cout: 0, chemin: [] };
+          vus.add(strategicStateFingerprint());
+          const coupsRacine = puzzleSearchActions().map(puzzleSearchLabel);
+          pousser(0, []);
+
+          let noeuds = 0;
+          for (let cout = 0; cout <= coutMax; cout++) {
+            const file = seaux[cout];
+            if (!file) continue;
+            while (file.length) {
+              const chemin = file.shift();
+              if (++noeuds > PUZZLE_SEARCH_MAX_NODES) {
+                return {
+                  id: def.id, epuise: true, noeuds, coutMax,
+                  error: `exploration interrompue à ${noeuds} nœuds`
+                };
+              }
+              if (!puzzleSearchReplay(def, chemin)) continue;
+
+              for (const action of puzzleSearchActions()) {
+                const suivant = cout + action.cout;
+                if (suivant > coutMax) continue;
+                if (!puzzleSearchReplay(def, chemin)) break;
+                if (!puzzleSearchApply(action)) continue;
+                const empreinte = strategicStateFingerprint();
+                if (vus.has(empreinte)) continue;
+                vus.add(empreinte);
+                const nouveau = [...chemin, action];
+                if (atteint()) {
+                  return {
+                    id: def.id, cout: suivant, noeuds,
+                    secondes: Math.round((Date.now() - depart) / 100) / 10,
+                    chemin: nouveau.map(puzzleSearchLabel)
+                  };
+                }
+                pousser(suivant, nouveau);
+              }
+            }
+          }
+          return {
+            id: def.id, cout: null, noeuds, coutMax, coupsRacine,
+            secondes: Math.round((Date.now() - depart) / 100) / 10,
+            message: `aucune solution à ${coutMax} cartes ou moins`
+          };
+        } catch (error) {
+          return { id: def.id, error: `exception : ${error && error.message}` };
+        } finally {
+          PUZZLE.active = actifAvant;
+          PUZZLE.def = defAvant;
+          state = etatReel;
+        }
+      }
+
       /* ---------- Câblage ---------------------------------------------------- */
       window.addEventListener("ilyos-puzzle-requested", () => puzzleOpenMenu());
 
@@ -1448,6 +1707,9 @@
           ? puzzleVerifyLive(index)
           : puzzleVerify(index),
         verifyAll: puzzleVerifyAll,
+        /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
+           `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
+        solve: puzzleSolve,
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
         /* Force un recalcul des marqueurs (mise au point du rendu). */
         refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },
