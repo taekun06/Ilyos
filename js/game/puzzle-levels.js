@@ -858,7 +858,15 @@
           islands: [
             /* Nord-ouest : le village et sa dernière serrure. */
             { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            { key: "VIRAGE", cells: [[1, 1], [2, 1], [2, 2]] },
+            /* Le Virage est reculé vers l'OUEST — (2,2) supprimé. Deux
+               rotations du sud atteignent la rangée 2 ou 3 : la Passerelle
+               dressée dépose une case en (2,3), la Croix creuse en (3,3) et
+               (2,4). Tant que le Virage occupait (2,2), (3,3) en était
+               DIAGONALEMENT voisin — et une diagonale franchit un coin. Une
+               seule Magie reliait donc le sud au village et rendait tout le
+               relais facultatif. Reculé, plus aucune de ces cases n'est à
+               portée, même en diagonale. */
+            { key: "VIRAGE", cells: [[1, 0], [1, 1], [2, 0]] },
             /* Le gouffre de la rangée 3 sépare le Virage de la Passerelle :
                aucun Gardien ne le franchit, une couronne poussée si. */
             { key: "PASSERELLE", cells: [[4, 1], [4, 2], [4, 3]] },
@@ -893,7 +901,7 @@
             { key: "A", p: 0, r: 11, c: 12, crown: 1 },
             { key: "B", p: 0, r: 8, c: 9 },
             { key: "C", p: 0, r: 5, c: 3 },
-            { key: "D", p: 0, r: 2, c: 2 },
+            { key: "D", p: 0, r: 1, c: 0 },
             { key: "R1", p: 1, r: 7, c: 6 },
             { key: "R2", p: 1, r: 6, c: 11 },
             { key: "R3", p: 1, r: 0, c: 2 }
@@ -991,13 +999,13 @@
             [
               { a: "MOVE", who: "C", to: [5, 1] },
               { a: "DROP", who: "C", on: [4, 1] },
-              { a: "PUSH", who: "C", on: [4, 1], force: 2 },
-              { a: "PICKUP", who: "D", on: [2, 1] }
+              { a: "PUSH", who: "C", on: [4, 1], force: 3 },
+              { a: "PICKUP", who: "D", on: [1, 1] }
             ],
             [
               { a: "MOVE", who: "D", to: [1, 1] },
               { a: "PUSH", who: "D", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "D", to: [0, 1] }
+              { a: "MOVE", who: "D", to: [1, 0] }
             ]
           ]
         }

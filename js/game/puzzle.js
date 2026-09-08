@@ -1788,6 +1788,29 @@
             });
           });
 
+          /* LE contrôle décisif : pour CHAQUE rotation légale, on l'applique et
+             on redemande au moteur si un Gardien du sud atteint le village à
+             pied. Vérifier les adjacences à l'œil ne marche pas — une diagonale
+             franchit un coin, et deux corrections successives m'ont échappé
+             pour cette raison. Ici c'est movementRange qui répond. */
+          const ponts = [];
+          rotations.forEach(rot => {
+            const avant = snapshotState();
+            const ile = state.islands.find(i => nom(i) === rot.ile);
+            const calc = ile && calculateIslandRotationAroundPivot(
+              ile, rot.pivot[0], rot.pivot[1],
+              rot.tour === "90-" ? -1 : 1, rot.tour === "180" ? 2 : 1);
+            if (calc?.valid) {
+              applyMagicRotationCore(ile.id, calc);
+              const ouvre = (state.characters || [])
+                .filter(ch => ch.player === 0 && ch.r >= 4)
+                .some(ch => [...movementRange(ch, 99)]
+                  .some(k => k === "0,0" || k === "1,0" || k === "0,1"));
+              if (ouvre) ponts.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} -> [${rot.cases}]`);
+            }
+            applyStateSnapshot(JSON.parse(avant));
+          });
+
           /* Régions accessibles à pied : un budget énorme révèle la topologie
              réelle, diagonales comprises. */
           const pied = (state.characters || []).filter(ch => ch.player === 0).map(ch => {
@@ -1799,7 +1822,7 @@
             };
           });
 
-          return { id: def.id, rotations, pied };
+          return { id: def.id, rotations, pied, ponts };
         } catch (error) {
           return { error: `exception : ${error && error.message}` };
         } finally {
