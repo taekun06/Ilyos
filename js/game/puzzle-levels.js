@@ -777,17 +777,14 @@
           focus: [5, 2],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[8, 2]],
+            /* Départ en Z. Aucune conséquence de règle : il brouille la
+               lecture, là où un îlot d'une seule case annonçait trop clairement
+               qu'on n'y ferait rien. */
+            { key: "DEPART", cells: [[8, 2], [8, 3], [9, 1], [9, 2]] },
             { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
-            /* Un T, plus une barre. Une barre alignée est un véhicule
-               universel — 180° autour d'une extrémité la translate de toute sa
-               longueur et emporte ses passagers. Un T, lui, ne se translate
-               pas : pivoté par son centre il ne bouge presque pas, et par une
-               pointe il part de travers. La géométrie fait le travail, sans
-               qu'aucun pivot soit interdit. */
-            { key: "BRAS", cells: [[2, 4], [3, 3], [3, 4], [4, 4]] },
+            { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
-            { key: "PERCHOIR", cells: [[0, 1], [0, 2], [0, 3], [0, 4]] }
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -811,19 +808,24 @@
           failLine: "Le chemin ne s'est pas ouvert.",
           /* Trois emplois de la MÊME carte, tous différents :
              - la passerelle TRANSPORTE le Gardien par-dessus le vide ;
-             - le T pivote alors qu'il n'est PAS dessus : ce n'est pas lui qui
-               se déplace, c'est la route qui vient le chercher ;
              - le perchoir emporte le RIVAL hors des cases du village, là où
-               l'on aurait cru devoir le pousser. */
+               l'on aurait cru devoir le pousser ;
+             - la terrasse, longue barre de cinq cases, pivote en ÉCHELLE
+               verticale : le Gardien n'est pas dessus, c'est la route qui vient
+               le chercher.
+
+             RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
+             Il reste du décor, et une pièce inutile est un défaut — le même que
+             le troisième Gardien du Relais avant sa refonte. */
           solution: [
             [
               { a: "MOVE", who: "G", to: [7, 2] },
               { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
-              { a: "MAGIC", island: "BRAS", pivot: [3, 3], turns: 1, direction: -1 }
+              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
             ],
             [
-              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 3], turns: 2 },
-              { a: "MOVE", who: "G", to: [1, 0] }
+              { a: "MAGIC", island: "TERRASSE", pivot: [1, 1], turns: 1, direction: 1 },
+              { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
         }
