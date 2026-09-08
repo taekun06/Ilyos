@@ -936,7 +936,15 @@
             { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
-            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] }
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
+            /* LE VERROU. Deux cases posées là uniquement pour interdire au
+               perchoir de tourner : sa seule rotation possible le couchait sur
+               [0,3], et emportait le Veilleur hors des cases du village. C'était
+               la solution que tout le monde voit en premier — elle est
+               maintenant impossible, et le joueur perd son temps à chercher un
+               pivot qui n'existe plus. La bonne fausse piste : celle qu'on
+               essaie longtemps avant d'y renoncer. */
+            { key: "VERROU", cells: [[0, 3], [0, 4]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -1060,11 +1068,16 @@
            carrefour, qui partirait dans le vide avec le Veilleur. Une seule
            direction convient, et elle désigne d'elle-même qui doit pousser.
 
-           Reste l'ordre, et il est cruel : les deux Gardiens du bras sud se
-           font face, chacun devant traverser l'autre. Celui de devant doit
-           donc quitter le sud pour de bon — se ranger sur un bras que les
-           autres viennent de libérer — laisser passer, puis revenir. Ce
-           détour coûte quatre cases et c'est le prix de l'énigme. */
+           ÉNIGME RATÉE, barème corrigé de 19 à 13 après playtest. On avait cru
+           y voir une contrainte d'ordre : les deux Gardiens du bras sud se
+           font face, l'un devant traverser l'autre. C'est faux, parce que RIEN
+           N'IMPOSE QUI VA OÙ. Celui du fond prend la pointe sud qui est à un
+           pas, celui de devant part vers l'ouest, et aucun croisement n'a lieu.
+           Chacun marche vers la pointe la plus proche ; il ne reste que
+           « pousser assez fort », ce qui n'est pas une énigme.
+
+           À REFONDRE en gardant sa leçon — quatre Gardiens dont aucun n'est de
+           trop — par une contrainte que l'affectation libre ne dissout pas. */
         {
           id: "p22-les-quatre-mains",
           acte: "III",
@@ -1090,7 +1103,7 @@
             { key: "R", p: 1, r: 6, c: 6 }
           ],
           hand: { MOVE: 16, PUSH: 5 },
-          par: 19,
+          par: 13,
           goal: { type: "occupyCells", player: 0, cells: [[3, 6], [9, 6], [6, 3], [6, 9]] },
           winTitle: "Les quatre mains sont posées",
           winLine: "Quatre Gardiens, quatre pointes, et un carrefour qu'il fallait vider pour de bon.",
@@ -1099,9 +1112,8 @@
             { a: "PUSH", who: "B", on: [6, 6], force: 4 },
             { a: "MOVE", who: "B", to: [6, 9] },
             { a: "MOVE", who: "A", to: [3, 6] },
-            { a: "MOVE", who: "C", to: [5, 6] },
-            { a: "MOVE", who: "D", to: [6, 3] },
-            { a: "MOVE", who: "C", to: [9, 6] }
+            { a: "MOVE", who: "D", to: [9, 6] },
+            { a: "MOVE", who: "C", to: [6, 3] }
           ]
         },
         /* =================================================================
