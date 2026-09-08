@@ -919,7 +919,7 @@
           principe: "TRACE",
           verite: "Les îles ne portent pas les chemins. Elles sont les chemins.",
           title: "La charnière des cieux",
-          tagline: "Trois rotations. Aucune ne fait la même chose.",
+          tagline: "Une passerelle qui marche, et le bord du monde au bout.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
@@ -947,16 +947,34 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum PROUVÉ : 8. Ce sont les DÉPLACER rares qui font tenir
-             l'énigme — pas un interdit. Avec une main généreuse, le chercheur
-             couchait le T en échelle et parcourait tout à pied en neuf pas,
-             sans jamais monter sur rien : les deux usages de la Magie étaient
-             contournés d'un coup. Six DÉPLACER rendent la marche impossible, et
-             la seule route passe par les trois rotations. */
+          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
+             plafond 7), puis rejoué en direct sur les trois tours réels : le
+             coût annoncé n'est plus une intention mais un fait.
+
+             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             l'objectif à la GÉNÉRATION des successeurs et rendait la main au
+             premier chemin gagnant rencontré, pas au moins cher ; il validait
+             donc la solution qu'on lui présentait au lieu de la contredire.
+
+             Ce que la vraie ligne fait, et qui n'était pas prévu : la
+             PASSERELLE pivote TROIS FOIS sur elle-même, chaque rotation la
+             reposant plus près du Sanctuaire avec son passager dessus — une
+             île de trois cases n'est pas un pont, c'est une monture. Puis la
+             couronne déposée est poussée vers le nord : le bloc poussé la
+             contient ELLE et le Veilleur collé derrière, qui sort du plateau.
+             Une seule poussée de force 1 fait le travail que trois rotations
+             faisaient dans l'ancienne solution.
+
+             DÉFAUT ASSUMÉ : la terrasse, le perchoir et le bras ne servent
+             plus à rien dans la ligne optimale. Trois pièces de décor, là où
+             une seule était déjà de trop. L'énigme reste juste et se tient,
+             mais elle n'enseigne plus les trois usages de la Magie qu'elle
+             était censée enseigner — c'est une refonte, pas une retouche, et
+             elle attend un arbitrage. */
           par: 8,
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La charnière a tourné",
-          winLine: "Trois rotations, trois usages : on t'a porté, la route est venue à toi, et le rival a tourné avec son île.",
+          winLine: "La passerelle s'est déplacée trois fois sous tes pieds, et la couronne poussée a emporté le Veilleur par-dessus bord.",
           failLine: "Le chemin ne s'est pas ouvert.",
           /* Trois emplois de la MÊME carte, tous différents :
              - la passerelle TRANSPORTE le Gardien par-dessus le vide ;
@@ -969,14 +987,19 @@
              RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
              Il reste du décor, et une pièce inutile est un défaut — le même que
              le troisième Gardien du Relais avant sa refonte. */
+          par: 7,
           solution: [
             [
-              { a: "MOVE", who: "G", to: [7, 2] },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
-              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
+              { a: "MOVE", who: "G", to: [7, 2] }
             ],
             [
-              { a: "MAGIC", island: "TERRASSE", pivot: [1, 1], turns: 1, direction: 1 },
+            ],
+            [
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 1, direction: 1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 1], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [4, 1], turns: 2, direction: 1 },
+              { a: "DROP", who: "G", on: [1, 1] },
+              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
               { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
