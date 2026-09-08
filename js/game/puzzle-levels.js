@@ -967,20 +967,26 @@
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
             { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            /* LE VERROU, accroché sous la terrasse. Il INTERDIT à celle-ci de
-               se coucher en échelle dans la colonne 0 : sa rotation par [1,0]
-               visait exactement [1,0] à [5,0], et cette échelle ouvrait une
-               route droite jusqu'au village.
+            /* TROIS PIERRES ISOLÉES. Une île d'une seule case ne pivote pas :
+               son unique pivot est elle-même, et tourner autour de son propre
+               centre la laisse en place. Ces trois-là sont donc du terrain
+               FIGÉ par construction, et c'est tout leur intérêt.
 
-               Sa POSITION a été corrigée. Posé un cran plus bas, en
-               [3,0]-[4,0], il touchait la case où la passerelle couchée dépose
-               son passager : le Gardien y montait, le faisait pivoter, et
-               gagnait une rangée gratuite. L'énigme tombait à six et la pièce
-               posée pour interdire une route devenait la clé d'une meilleure.
-               Remonté en [2,0]-[3,0], il reste hors d'atteinte de ce dépôt —
-               le vide de [4,0] l'en sépare — et redevient ce pour quoi il est
-               là. */
-            { key: "VERROU", cells: [[2, 0], [3, 0]] }
+               [3,0] est le verrou : il interdit à la terrasse de se coucher en
+               échelle dans la colonne 0 — sa rotation par [1,0] visait
+               exactement [1,0] à [5,0], et cette échelle ouvrait une route
+               droite jusqu'au village. Il a d'abord été essayé à deux cases,
+               en [3,0]-[4,0] : le Gardien y montait depuis le dépôt de la
+               passerelle, s'en servait de monture et l'énigme tombait à six.
+               Réduit à une case, il ne peut plus servir de rien.
+
+               [6,0] est un cul-de-sac. Il touche la case où la passerelle
+               couchée dépose son passager, invite à y descendre, et ne mène
+               nulle part : aucune de ses autres voisines n'est de la terre.
+
+               [5,5] verrouille le bras. Sa rotation par [3,5] vers le sud
+               visait [3,5],[4,5],[5,5] ; elle est désormais impossible. */
+            [[3, 0]], [[6, 0]], [[5, 5]]
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -994,12 +1000,19 @@
           /* Optimum 7, prouvé une première fois par recherche exhaustive
              (788 224 nœuds) puis rejoué en direct sur les trois tours réels.
 
-             Il est passé à 6 le temps que le verrou séjourne en [3,0]-[4,0],
-             où le Gardien pouvait y monter depuis le dépôt de la passerelle et
-             s'en servir de monture. Le verrou remonté en [2,0]-[3,0], cette
-             ligne n'existe plus : re-prouvé à 7 sous plafond 7 en 959 405
-             nœuds, et le chercheur retrouve la solution de référence à la
-             carte près.
+             Il est passé à 6 le temps que le verrou soit une île de DEUX cases
+             en [3,0]-[4,0] : le Gardien y montait depuis le dépôt de la
+             passerelle et s'en servait de monture. Réduit à une seule case, il
+             ne peut plus pivoter, donc plus rien porter. Re-prouvé à 7 sous
+             plafond 7 en 706 052 nœuds avec les trois pierres, et le chercheur
+             retrouve la solution de référence à la carte près.
+
+             La ligne ne touche NI [3,0] NI [6,0] NI [5,5] : elle passe par la
+             colonne 2 au départ, la colonne 0 le temps d'un pivot, puis la
+             colonne 1 pour tout le reste — et la case d'arrivée, [2,1],
+             n'existe pas au départ. C'est la passerelle qui vient se poser
+             dessous. Les trois pierres ne sont là que pour fermer des routes
+             et en faire miroiter d'autres.
 
              Il valait 8 au départ, et c'était faux. Le chercheur testait
              l'objectif à la GÉNÉRATION des successeurs et rendait la main au
