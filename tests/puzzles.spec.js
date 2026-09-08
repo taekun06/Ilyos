@@ -28,7 +28,7 @@ async function ouvrirJeu(page) {
   return erreurs;
 }
 
-test('les énigmes achevées se résolvent exactement par leur solution de référence', async ({ page }) => {
+test('les dix-sept Sanctuaires se résolvent exactement par leur solution de référence', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
   const liste = await page.evaluate(() => window.ILYOS_PUZZLE.list());
@@ -96,7 +96,7 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
 test('la neuvième énigme se résout entièrement à la souris', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
-  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.start(8); });
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p09-fardeau'); });
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p09-fardeau');
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 
@@ -154,7 +154,7 @@ test('la neuvième énigme se résout entièrement à la souris', async ({ page 
 test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
-  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.start(13); });
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p14-course'); });
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p14-course');
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 

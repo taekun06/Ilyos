@@ -23,6 +23,26 @@
          js/version-bootstrap.js au clic sur PUZZLES) ou `ILYOS_PUZZLE.open()`.
          ===================================================================== */
 
+      /* La campagne parle de SANCTUAIRES, pas d'énigmes numérotées. Le joueur
+         ne doit jamais lire « Puzzle 12/17 » : il lit un nom de lieu et l'état
+         de son réveil. Les identifiants internes (p01…p17) ne bougent pas —
+         c'est sur eux que la progression est enregistrée. */
+      const PUZZLE_ACTES = {
+        PROLOGUE: "Prologue · La première lueur",
+        I: "Acte I · Les Voies éteintes",
+        II: "Acte II · Les Îles se souviennent",
+        III: "Acte III · La Dissonance",
+        CONFLUENCE: "Confluence"
+      };
+
+      /* Les trois principes anciens ne sont JAMAIS présentés comme des
+         catégories : un symbole discret sur la fiche, rien de plus. */
+      const PUZZLE_PRINCIPES = {
+        MESURE: { signe: "◆", nom: "La Mesure" },
+        CADENCE: { signe: "◇", nom: "La Cadence" },
+        TRACE: { signe: "◈", nom: "La Trace" }
+      };
+
       const PUZZLE_STORAGE_KEY = "ilyos.puzzles.progress";
       const PUZZLE_DEV_KEY = "ilyos.puzzles.dev";
 
@@ -458,6 +478,11 @@
           #puzzleLayer .pz-end h2{font-family:'Cinzel Decorative','Almendra',serif;
             font-size:clamp(21px,3.6vw,32px);margin:0;letter-spacing:.04em;}
           #puzzleLayer .pz-end p{margin:0;max-width:460px;color:#c4d2ee;line-height:1.6;font-size:14px;}
+          #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
+            font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
+            line-height:1.6;color:#ffe3ab;letter-spacing:.02em;}
+          #puzzleLayer .pz-cout{opacity:.55;font-size:12.5px;}
+          #puzzleMenu .pz-signe{font-size:14px;color:#8fa6d2;opacity:.8;}
           #puzzleLayer .pz-stars{font-size:30px;letter-spacing:8px;
             filter:drop-shadow(0 0 10px rgba(255,205,110,.5));}
           #puzzleLayer .pz-end-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
@@ -915,7 +940,8 @@
         const dom = PUZZLE.dom;
         const def = PUZZLE.def;
         if (!dom || !def) return;
-        dom.title.textContent = `${PUZZLE.index + 1}. ${def.title}`;
+        /* Le nom du lieu, pas un numéro d'énigme. */
+        dom.title.textContent = def.title;
         dom.goal.textContent = def.brief || "";
         const restant = puzzleCardsLeft();
         const depense = puzzleCardsSpent();
@@ -956,6 +982,19 @@
         puzzleSaveProgress(progress);
       }
 
+      /* UNE seule ligne au réveil, jamais deux (charte narrative). Quand le
+         Sanctuaire porte une « vérité », c'est elle qu'on lit — une phrase
+         mythologique qui dit ce que le joueur vient de comprendre, jamais quelle
+         mécanique il a employée. Les Sanctuaires ordinaires gardent leur ligne
+         d'enseignement, plus discrète : onze des dix-sept n'ont pas de vérité,
+         et c'est ce qui donne du poids aux six autres. */
+      function puzzleFinLigne(def, depense) {
+        const compte = `<span class="pz-cout">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`;
+        return def.verite
+          ? `<span class="pz-verite">« ${def.verite} »</span><br>${compte}`
+          : `${def.winLine || ""}<br>${compte}`;
+      }
+
       function puzzleShowEnd({ won }) {
         if (!PUZZLE.dom || PUZZLE.ended) return;
         PUZZLE.ended = true;
@@ -972,11 +1011,9 @@
         const panneau = document.createElement("div");
         panneau.className = "pz-end";
         panneau.innerHTML = `
-          <h2>${won ? def.winTitle || "Résolu" : "L'énigme résiste"}</h2>
+          <h2>${won ? def.winTitle || "Sanctuaire éveillé" : "Le Sanctuaire reste éteint"}</h2>
           ${won ? `<div class="pz-stars">${"★".repeat(etoiles)}${"☆".repeat(3 - etoiles)}</div>` : ""}
-          <p>${won
-            ? `${def.winLine || ""}<br><span style="opacity:.7">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`
-            : def.failLine || "Il ne reste plus de quoi agir."}</p>
+          <p>${won ? puzzleFinLigne(def, depense) : def.failLine || "Il ne reste plus de quoi agir."}</p>
           <div class="pz-end-actions">
             <button type="button" data-pz="again">↺ Recommencer</button>
             ${won && suivant ? '<button type="button" class="primary" data-pz="next">Puzzle suivant →</button>' : ""}
@@ -1215,21 +1252,24 @@
           const ouvert = puzzleUnlocked(index);
           const fiche = progress[def.id] || {};
           const etoiles = fiche.stars || 0;
+          const signe = PUZZLE_PRINCIPES[def.principe];
           return `
             <button type="button" class="pz-card" data-index="${index}"${ouvert ? "" : " disabled"}>
-              <div class="pz-num">ÉNIGME ${String(index + 1).padStart(2, "0")}</div>
-              <div class="pz-name">${ouvert ? def.title : "· · ·"}</div>
-              <div class="pz-line">${ouvert ? (def.tagline || "") : "Résous l'énigme précédente."}</div>
+              <div class="pz-num">${PUZZLE_ACTES[def.acte] || ""}</div>
+              <div class="pz-name">${ouvert ? def.title : "Sanctuaire ignoré"}</div>
+              <div class="pz-line">${ouvert
+                ? (fiche.solved ? "Sanctuaire éveillé" : "Sanctuaire dormant")
+                : "La Voie ne mène pas encore jusqu'ici."}</div>
               <div class="pz-foot">
                 <span class="stars">${ouvert ? "★".repeat(etoiles) + "☆".repeat(3 - etoiles) : "🔒"}</span>
-                <span>${ouvert && def.par ? `optimal ${def.par}` : ""}</span>
+                <span class="pz-signe" title="${signe ? signe.nom : ""}">${ouvert && signe ? signe.signe : ""}</span>
               </div>
             </button>`;
         }).join("");
 
         menu.innerHTML = `
-          <h1>PUZZLES</h1>
-          <div class="pz-sub">${resolus} / ${PUZZLES.length} résolues — une main figée, un seul tour, aucun hasard.</div>
+          <h1>LES VOIES D'ILYOS</h1>
+          <div class="pz-sub">${resolus} / ${PUZZLES.length} Sanctuaires éveillés — réveillez les Sanctuaires oubliés.</div>
           <div class="pz-grid">${cartes}</div>
           <button type="button" class="pz-back">← Retour au menu</button>`;
         document.body.appendChild(menu);
@@ -1863,6 +1903,10 @@
       window.ILYOS_PUZZLE = {
         open: puzzleOpenMenu,
         start: index => puzzleStart(index, { force: true }),
+        /* Adressage par IDENTIFIANT : l'ordre de la campagne n'est plus celui
+           des identifiants, et un test qui vise un index vise le mauvais
+           Sanctuaire dès qu'on réordonne. */
+        startById: id => puzzleStart(PUZZLES.findIndex(def => def.id === id), { force: true }),
         restart: puzzleRestart,
         exit: puzzleQuitToHome,
         list: () => PUZZLES.map((def, index) => ({
