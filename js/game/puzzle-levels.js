@@ -516,7 +516,13 @@
             ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"],
             ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"]
           ],
-          par: 5,
+          /* Optimum réel : 4. Le `par` de cinq supposait qu'on prendrait la
+             place au rival avec le Gardien qui ne porte rien — or l'ABATTRE
+             coûte moins cher, et le second Gardien ne sert alors à rien. La
+             leçon voulue ne se produit jamais : l'énigme demande à être
+             REDESSINÉE, pas recalibrée. Le `par` dit au moins la vérité en
+             attendant. */
+          par: 4,
           rivalPlan: ["il se poste sur la case marquée — une case de ton village."],
           replies: [
             [{ a: "MOVE", who: "R1", to: [1, 0] }]
@@ -527,9 +533,12 @@
           failLine: "Il s'est installé sur ton village, et tu n'as plus de quoi l'en sortir.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "G2", to: [1, 0] }
+              { a: "MOVE", who: "G", to: [1, 0] },
+              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
+              { a: "MOVE", who: "G", to: [0, 0] }
+            ],
+            [
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 }
             ]
           ]
         },

@@ -29043,6 +29043,19 @@
           if (!Array.isArray(entry) && entry.key) PUZZLE.islandsByKey[entry.key] = id;
         });
 
+        /* Une case de village est de la TERRE au sens des règles — isLand()
+           passe par villageAt() — mais rien ne la DESSINE : le château se
+           retrouve suspendu à l'écart des îles, comme s'il flottait seul.
+           On matérialise donc chaque coin de village qu'aucune île ne couvre.
+           Sans effet sur les règles (la case était déjà praticable) ni sur les
+           rotations (villageAt les refusait déjà), et le plateau redevient
+           lisible. */
+        Object.values(def.villages || {}).forEach(coins => {
+          (coins || []).forEach(([r, c]) => {
+            if (!islandAt(r, c)) tutoAddIsland([[r, c]], 0);
+          });
+        });
+
         /* Gardiens. `crown: 1|2` fait porter la couronne correspondante. */
         PUZZLE.charsByKey = {};
         (def.guardians || []).forEach(g => {
@@ -31092,7 +31105,13 @@
             ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"],
             ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"]
           ],
-          par: 5,
+          /* Optimum réel : 4. Le `par` de cinq supposait qu'on prendrait la
+             place au rival avec le Gardien qui ne porte rien — or l'ABATTRE
+             coûte moins cher, et le second Gardien ne sert alors à rien. La
+             leçon voulue ne se produit jamais : l'énigme demande à être
+             REDESSINÉE, pas recalibrée. Le `par` dit au moins la vérité en
+             attendant. */
+          par: 4,
           rivalPlan: ["il se poste sur la case marquée — une case de ton village."],
           replies: [
             [{ a: "MOVE", who: "R1", to: [1, 0] }]
@@ -31103,9 +31122,12 @@
           failLine: "Il s'est installé sur ton village, et tu n'as plus de quoi l'en sortir.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "G2", to: [1, 0] }
+              { a: "MOVE", who: "G", to: [1, 0] },
+              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
+              { a: "MOVE", who: "G", to: [0, 0] }
+            ],
+            [
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 }
             ]
           ]
         },

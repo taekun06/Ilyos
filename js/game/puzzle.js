@@ -237,6 +237,19 @@
           if (!Array.isArray(entry) && entry.key) PUZZLE.islandsByKey[entry.key] = id;
         });
 
+        /* Une case de village est de la TERRE au sens des règles — isLand()
+           passe par villageAt() — mais rien ne la DESSINE : le château se
+           retrouve suspendu à l'écart des îles, comme s'il flottait seul.
+           On matérialise donc chaque coin de village qu'aucune île ne couvre.
+           Sans effet sur les règles (la case était déjà praticable) ni sur les
+           rotations (villageAt les refusait déjà), et le plateau redevient
+           lisible. */
+        Object.values(def.villages || {}).forEach(coins => {
+          (coins || []).forEach(([r, c]) => {
+            if (!islandAt(r, c)) tutoAddIsland([[r, c]], 0);
+          });
+        });
+
         /* Gardiens. `crown: 1|2` fait porter la couronne correspondante. */
         PUZZLE.charsByKey = {};
         (def.guardians || []).forEach(g => {
