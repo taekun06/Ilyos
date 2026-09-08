@@ -30613,6 +30613,7 @@
              franchit un coin, et deux corrections successives m'ont échappé
              pour cette raison. Ici c'est movementRange qui répond. */
           const ponts = [];
+          const convois = [];
           rotations.forEach(rot => {
             const avant = snapshotState();
             const ile = state.islands.find(i => nom(i) === rot.ile);
@@ -30626,6 +30627,15 @@
                 .some(ch => [...movementRange(ch, 99)]
                   .some(k => k === "0,0" || k === "1,0" || k === "0,1"));
               if (ouvre) ponts.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} -> [${rot.cases}]`);
+              /* Second angle mort, tout aussi coûteux : une rotation qui
+                 n'ouvre AUCUNE route mais convoie un Gardien sur une longue
+                 distance. Un trajet gratuit de quatre cases vaut quatre
+                 DÉPLACER, et peut contourner une région entière. */
+              (calc.characterMoves || []).forEach(m => {
+                if (m.char.player !== 0) return;
+                const d = Math.abs(m.char.r - m.r) + Math.abs(m.char.c - m.c);
+                if (d >= 3) convois.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : allié ${m.char.r},${m.char.c}->${m.r},${m.c} (${d} cases)`);
+              });
             }
             applyStateSnapshot(JSON.parse(avant));
           });
@@ -30641,7 +30651,7 @@
             };
           });
 
-          return { id: def.id, rotations, pied, ponts };
+          return { id: def.id, rotations, pied, ponts, convois };
         } catch (error) {
           return { error: `exception : ${error && error.message}` };
         } finally {
@@ -31590,7 +31600,14 @@
             /* Le faux chemin court : deux cases qui ne se touchent que par un
                coin. Une diagonale coûte DEUX déplacements (movementEdges), donc
                ce raccourci apparent est le plus cher du plateau. */
-            { key: "DOMINO", cells: [[5, 1], [6, 0]] },
+            /* Chaîne diagonale de trois. La troisième case, (7,1), n'est là
+               que pour COLLISIONNER : sans elle, la croix pleine pivotée à 180°
+               autour de (7,4) translatait tout le corridor de quatre colonnes
+               vers l'ouest et venait toucher cette région — un convoi gratuit
+               qui contournait la croix creuse, pourtant le cœur de l'énigme.
+               Signalé en jouant. Elle ne connecte rien de neuf : elle ne touche
+               que (6,0), en diagonale, et reste un cul-de-sac. */
+            { key: "DOMINO", cells: [[5, 1], [6, 0], [7, 1]] },
             /* Croix creuse : le cœur. Son centre (5,4) est vide, et selon son
                orientation elle relie la Passerelle, reçoit un Gardien, ou ferme
                une route. */

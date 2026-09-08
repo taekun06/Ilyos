@@ -1794,6 +1794,7 @@
              franchit un coin, et deux corrections successives m'ont échappé
              pour cette raison. Ici c'est movementRange qui répond. */
           const ponts = [];
+          const convois = [];
           rotations.forEach(rot => {
             const avant = snapshotState();
             const ile = state.islands.find(i => nom(i) === rot.ile);
@@ -1807,6 +1808,15 @@
                 .some(ch => [...movementRange(ch, 99)]
                   .some(k => k === "0,0" || k === "1,0" || k === "0,1"));
               if (ouvre) ponts.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} -> [${rot.cases}]`);
+              /* Second angle mort, tout aussi coûteux : une rotation qui
+                 n'ouvre AUCUNE route mais convoie un Gardien sur une longue
+                 distance. Un trajet gratuit de quatre cases vaut quatre
+                 DÉPLACER, et peut contourner une région entière. */
+              (calc.characterMoves || []).forEach(m => {
+                if (m.char.player !== 0) return;
+                const d = Math.abs(m.char.r - m.r) + Math.abs(m.char.c - m.c);
+                if (d >= 3) convois.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : allié ${m.char.r},${m.char.c}->${m.r},${m.c} (${d} cases)`);
+              });
             }
             applyStateSnapshot(JSON.parse(avant));
           });
@@ -1822,7 +1832,7 @@
             };
           });
 
-          return { id: def.id, rotations, pied, ponts };
+          return { id: def.id, rotations, pied, ponts, convois };
         } catch (error) {
           return { error: `exception : ${error && error.message}` };
         } finally {

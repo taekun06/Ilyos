@@ -873,7 +873,14 @@
             /* Le faux chemin court : deux cases qui ne se touchent que par un
                coin. Une diagonale coûte DEUX déplacements (movementEdges), donc
                ce raccourci apparent est le plus cher du plateau. */
-            { key: "DOMINO", cells: [[5, 1], [6, 0]] },
+            /* Chaîne diagonale de trois. La troisième case, (7,1), n'est là
+               que pour COLLISIONNER : sans elle, la croix pleine pivotée à 180°
+               autour de (7,4) translatait tout le corridor de quatre colonnes
+               vers l'ouest et venait toucher cette région — un convoi gratuit
+               qui contournait la croix creuse, pourtant le cœur de l'énigme.
+               Signalé en jouant. Elle ne connecte rien de neuf : elle ne touche
+               que (6,0), en diagonale, et reste un cul-de-sac. */
+            { key: "DOMINO", cells: [[5, 1], [6, 0], [7, 1]] },
             /* Croix creuse : le cœur. Son centre (5,4) est vide, et selon son
                orientation elle relie la Passerelle, reçoit un Gardien, ou ferme
                une route. */
