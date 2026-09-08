@@ -1630,6 +1630,9 @@
            restait accroché à la scène, flottant dans le vide au-dessus du
            nouvel archipel. Se voyait en enchaînant « Sanctuaire suivant ». */
         try { clearKayKitVillages(); } catch (_) { }
+        /* Le sol du sanctuaire aussi : une énigme n'en a jamais, mais celui de
+           la partie précédente restait accroché à la scène. */
+        try { clearKayKitCrownCross(); } catch (_) { }
 
         puzzleBuildState(def);
 

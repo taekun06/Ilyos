@@ -155,6 +155,7 @@
              défaut. */
           if (grillePrecedente !== GRID) {
             try { clearKayKitVillages(); } catch (_) {}
+            try { clearKayKitCrownCross(); } catch (_) {}
             try { kaykit3D.pedestalRegistry?.clear(); } catch (_) {}
           }
           kaykit3D.gridSize = GRID;
@@ -1344,7 +1345,8 @@
           // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
           // ce qui a réellement changé. Voir syncKayKitScene pour le détail.
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
-          crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
+          crownCrossGroundBuilt: false, // sol central : rebâti quand le sanctuaire change
+          crownCrossGroup: null,
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
           horizonArchipel: null,        // îles découpées posées autour du monde, un seul appel de rendu
           horizonPanorama: null,        // plaque directionnelle : images indexées sur l'azimut du monde
@@ -6419,6 +6421,23 @@
         registre.clear();
       }
 
+      /* Le sol du sanctuaire est bâti UNE fois par session et jamais retiré :
+         il survivait donc à une partie, et réapparaissait au milieu d'une
+         énigme — qui n'a pourtant aucun sanctuaire. Vu en enchaînant une partie
+         solo puis une énigme. Même famille que le château fantôme : un cache
+         construit une fois, avec ses positions monde. */
+      function clearKayKitCrownCross() {
+        const croix = kaykit3D?.crownCrossGroup;
+        if (croix) {
+          try { disposeKayKitTaggedResources(croix); } catch (_) { }
+          croix.parent?.remove(croix);
+        }
+        if (kaykit3D) {
+          kaykit3D.crownCrossGroup = null;
+          kaykit3D.crownCrossGroundBuilt = false;
+        }
+      }
+
       function cellClassSet(r, c) {
         const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         return cell ? cell.classList : null;
@@ -9082,6 +9101,9 @@
       function makeCrownCrossGround() {
         const crossCells = [];
         for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) if (isSanctuary(r, c)) crossCells.push([r, c]);
+        /* Aucun sanctuaire — les énigmes le désactivent toutes. Sans ce retour,
+           on posait quand même le halo central sur une partie qui n'en a pas. */
+        if (!crossCells.length) return null;
 
         const group = new THREE.Group();
         group.userData.crownCross = true;
@@ -10972,7 +10994,8 @@
           // Sol central en croix sous les couronnes : statique (dépend de
           // isSanctuary, fixe pour toute la partie), construit une seule fois.
           if (!kaykit3D.crownCrossGroundBuilt) {
-            dynamic.add(makeCrownCrossGround());
+            const croix = makeCrownCrossGround();
+            if (croix) { dynamic.add(croix); kaykit3D.crownCrossGroup = croix; }
             kaykit3D.crownCrossGroundBuilt = true;
           }
           // Nuages du plateau : statiques (comme le sol en croix), construits une
@@ -11171,7 +11194,14 @@
           [state.artifact, state.secondArtifact].filter(Boolean).forEach((artifact, idx) => {
             const slot = artifact.id != null ? String(artifact.id) : (idx === 0 ? "primary" : "secondary");
             const active = !!(artifact.active && !artifact.carrierId && Number.isFinite(artifact.r) && Number.isFinite(artifact.c));
-            const signature = active ? `${artifact.r},${artifact.c}` : "";
+            /* Le NIVEAU DU SOL fait partie de la signature. Sans lui, une
+               couronne restée sur sa case gardait la hauteur calculée à sa
+               pose : qu'une rotation amène une île sous elle et elle se
+               retrouvait incrustée dedans ; que l'île s'en aille et elle
+               flottait. La case ne changeait pas, donc rien n'était reconstruit. */
+            const signature = active
+              ? `${artifact.r},${artifact.c},${kaykitCellSurfaceY(artifact.r, artifact.c).toFixed(3)}`
+              : "";
             const existing = kaykit3D.looseCrownRegistry.get(slot);
             if (existing && existing.signature === signature) {
               if (active && existing.crown) {
@@ -30465,6 +30495,9 @@
            restait accroché à la scène, flottant dans le vide au-dessus du
            nouvel archipel. Se voyait en enchaînant « Sanctuaire suivant ». */
         try { clearKayKitVillages(); } catch (_) { }
+        /* Le sol du sanctuaire aussi : une énigme n'en a jamais, mais celui de
+           la partie précédente restait accroché à la scène. */
+        try { clearKayKitCrownCross(); } catch (_) { }
 
         puzzleBuildState(def);
 

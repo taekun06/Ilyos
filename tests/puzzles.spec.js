@@ -200,3 +200,35 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
 
   expect(erreurs).toEqual([]);
 });
+
+/* Régression : le sol du sanctuaire survivait à la partie précédente.
+
+   Bâti une seule fois par session et jamais retiré, il réapparaissait au
+   milieu d'une énigme — qui n'en a pourtant aucun, toutes déclarant
+   `sanctuary: false`. Signalé en jeu en enchaînant une partie solo puis les
+   énigmes. Même famille que le château fantôme : un cache construit une fois,
+   avec ses positions monde. */
+test("une énigme lancée après une partie n'hérite pas de son sanctuaire", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().click();
+  await menu.locator('text=AFFRONTER LE CPU').first().click();
+  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 60000 });
+  await page.waitForFunction(() => !!window.kaykit3D?.orbit, null, { timeout: 60000 });
+  // La croix du sanctuaire n'est posée qu'à la première synchronisation.
+  await page.waitForFunction(() => !!window.kaykit3D?.crownCrossGroup, null, { timeout: 30000 });
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p10-escalier'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p10-escalier');
+  await page.waitForTimeout(3000);
+
+  const reste = await page.evaluate(() => {
+    let trouves = 0;
+    window.kaykit3D.scene.traverse(o => { if (o.userData?.crownCross) trouves++; });
+    return { groupe: !!window.kaykit3D.crownCrossGroup, dansLaScene: trouves };
+  });
+  expect(reste).toEqual({ groupe: false, dansLaScene: 0 });
+
+  expect(erreurs).toEqual([]);
+});
