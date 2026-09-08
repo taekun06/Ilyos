@@ -29698,25 +29698,56 @@
           /* LE SCEAU : un losange fin, et dedans une des quatre LUMIÈRES —
              croissant, étoile, croix, anneau. Le rang ne se compte plus, il se
              reconnaît : c'est une SILHOUETTE, seule chose qui survive à vingt
-             pixels et à la vue inclinée. Les hachures essayées avant étaient
+             pixels sous une vue inclinée. Les hachures essayées avant étaient
              une texture, et une texture disparaît à cette taille. Le disque
-             plein a été écarté : à côté de l'anneau, seul le trou les
-             séparait. Le même tracé est gravé sur la case attendue et posé
-             sous le Gardien attendu ; la couleur le double pour qui la
-             distingue mal, et l'inverse est vrai aussi. */
+             plein a été écarté : à côté de l'anneau, seul le trou les séparait.
+
+             LE MOTIF EST CLAIR, PAS COLORÉ. Une forme saturée posée sur le vert
+             vif d'une île perd la moitié de son contraste ; un motif ivoire
+             cerné de sa teinte et nimbé d'un halo se détache des deux fonds du
+             jeu — l'herbe et le ciel — sans rien devoir à la couleur, qui ne
+             sert plus qu'à l'appariement. */
+          const halo = (couleurHalo, force) => {
+            ctx.shadowColor = couleurHalo;
+            ctx.shadowBlur = force;
+          };
+          const sansHalo = () => { ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; };
+
           const d = 104;
-          const losange = () => {
+          const losange = (k = 1) => {
+            const t = d * k;
             ctx.beginPath();
-            ctx.moveTo(0, -d); ctx.lineTo(d, 0); ctx.lineTo(0, d); ctx.lineTo(-d, 0);
+            ctx.moveTo(0, -t); ctx.lineTo(t, 0); ctx.lineTo(0, t); ctx.lineTo(-t, 0);
             ctx.closePath();
           };
-          losange();
-          ctx.strokeStyle = "rgba(8,14,28,.85)"; ctx.lineWidth = 15; ctx.stroke();
-          ctx.strokeStyle = teinte; ctx.lineWidth = 8; ctx.stroke();
+
+          /* LE FOND SOMBRE, et c'est lui qui fait tout. Un premier essai posait
+             un motif ivoire à même la case : sur le vert clair d'une île, clair
+             sur clair, il ne restait rien. Le sceau porte donc son propre fond
+             de nuit — le motif ne dépend plus du terrain sur lequel il tombe,
+             et c'est ce que faisait l'image de référence sans qu'on le
+             remarque. */
+          losange(.94);
+          ctx.fillStyle = "rgba(9,14,30,.88)";
+          ctx.fill();
+
+          // Cartouche : deux traits fins plutôt qu'un épais — c'est ce qui fait
+          // la différence entre une bordure et un bijou.
+          /* Halo COURT. Un halo large était superbe sur la texture et
+             catastrophique à l'écran : le rendu passe par un bloom, qui
+             ramassait ces pixels clairs et blanchissait toute la zone — îles
+             comprises. Le contraste vient désormais du fond de nuit, pas de la
+             lueur. */
+          halo(teinte, 10);
+          losange(1);
+          ctx.strokeStyle = teinte; ctx.lineWidth = 9; ctx.stroke();
+          sansHalo();
+          losange(.84);
+          ctx.strokeStyle = teinte; ctx.lineWidth = 4; ctx.stroke();
 
           /* Le motif tient dans le carré INSCRIT au losange, pas dans le
              losange : au-delà il déborderait sur les pointes. */
-          const r = 58;
+          const r = 54;
           ctx.beginPath();
           if (rang === 1) {
             // le Croissant
@@ -29727,22 +29758,26 @@
             // l'Étoile — quatre branches, pas cinq : elles restent effilées
             for (let i = 0; i < 8; i++) {
               const a = i * Math.PI / 4 - Math.PI / 2;
-              const rr = i % 2 ? r * .34 : r;
+              const rr = i % 2 ? r * .32 : r;
               ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
             }
             ctx.closePath();
           } else if (rang === 3) {
             // la Croix
-            const b = r * .34;
+            const b = r * .32;
             ctx.rect(-b, -r, b * 2, r * 2);
             ctx.rect(-r, -b, r * 2, b * 2);
           } else {
             // l'Anneau — le trou est large, c'est lui qui porte la lecture
             ctx.arc(0, 0, r, 0, Math.PI * 2);
-            ctx.arc(0, 0, r * .52, 0, Math.PI * 2, true);
+            ctx.arc(0, 0, r * .54, 0, Math.PI * 2, true);
           }
-          ctx.strokeStyle = "rgba(8,14,28,.85)"; ctx.lineWidth = 20; ctx.stroke();
+          halo(teinte, 12);
           ctx.fillStyle = teinte; ctx.fill();
+          sansHalo();
+          // Un liseré ivoire À L'INTÉRIEUR du motif : il lui donne son éclat
+          // sans lui retirer sa couleur, qui reste le signe d'appariement.
+          ctx.strokeStyle = "rgba(255,246,226,.85)"; ctx.lineWidth = 4; ctx.stroke();
 
         } else {
           if (kind === "guardian") tracerChevron(); else tracerCouronne();
@@ -29854,7 +29889,8 @@
         couche(
           new THREE.PlaneGeometry(cote, cote),
           new THREE.MeshBasicMaterial({
-            color: couleur, transparent: true, opacity: surTerre ? .34 : .24,
+            color: couleur, transparent: true,
+            opacity: kind === "sceau" ? .12 : (surTerre ? .34 : .24),
             side: THREE.DoubleSide, depthWrite: false, depthTest: true
           }),
           .075, 44
@@ -29887,9 +29923,12 @@
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
             map: puzzleGlyphTexture(kind, couleur, rang),
-            /* 80 % : le glyphe désigne la case, il ne la remplace pas — à pleine
-               opacité il écrasait la dalle qu'il est censé montrer. */
-            transparent: true, opacity: kind === "sceau" ? .8 : (surTerre ? 1 : .88),
+            /* 80 % pour les glyphes ordinaires : ils désignent la case, ils ne la
+               remplacent pas. Le SCEAU, lui, se rend plein : il porte son propre
+               fond de nuit, et le diluer rendait ce fond gris — donc le motif
+               illisible sur une île claire, ce qu'on cherchait justement à
+               éviter. */
+            transparent: true, opacity: kind === "sceau" ? 1 : (surTerre ? 1 : .88),
             depthWrite: false, depthTest: false
           }),
           .106, 52
@@ -29951,11 +29990,15 @@
              porteur, et il porte exactement le tracé gravé sur la case
              attendue : aucune traduction à faire. */
           const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
+          /* Plus petit qu'une case : à pleine taille le losange débordait sous
+             les pieds et, la vue étant inclinée, se lisait comme une dalle
+             POSÉE DEVANT le Gardien plutôt que sous lui. Resserré, il devient
+             un socle et le Gardien se tient dedans. */
           const anneau = new THREE.Mesh(
-            new THREE.PlaneGeometry(.98, .98),
+            new THREE.PlaneGeometry(.82, .82),
             new THREE.MeshBasicMaterial({
               map: puzzleGlyphTexture("sceau", teinte, index + 1),
-              transparent: true, opacity: .8,
+              transparent: true,
               side: THREE.DoubleSide, depthWrite: false, depthTest: false
             })
           );
