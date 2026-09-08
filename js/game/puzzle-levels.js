@@ -1058,35 +1058,40 @@
           ]
         },
         /* -----------------------------------------------------------------
-           22 — LES QUATRE MAINS. Le quatrième Gardien entre ici, et l'énigme
-           ne tient que parce qu'ils sont quatre : quatre extrémités à occuper
-           EN MÊME TEMPS, et un seul carrefour d'une case par où tout le monde
-           passe. Un Veilleur y est assis. Le pousser assez fort le fait tomber
-           au-delà de la dernière terre ; pas assez fort, il s'assied sur une
-           des quatre pointes et l'énigme devient impossible. Et la poussée
-           emporte le BLOC : trois bras sur quatre portent un Gardien collé au
-           carrefour, qui partirait dans le vide avec le Veilleur. Une seule
-           direction convient, et elle désigne d'elle-même qui doit pousser.
+           DESTINÉE — le quatrième Gardien entre, et l'énigme ne tient que
+           parce qu'ils sont quatre.
 
-           ÉNIGME RATÉE, barème corrigé de 19 à 13 après playtest. On avait cru
-           y voir une contrainte d'ordre : les deux Gardiens du bras sud se
-           font face, l'un devant traverser l'autre. C'est faux, parce que RIEN
-           N'IMPOSE QUI VA OÙ. Celui du fond prend la pointe sud qui est à un
-           pas, celui de devant part vers l'ouest, et aucun croisement n'a lieu.
-           Chacun marche vers la pointe la plus proche ; il ne reste que
-           « pousser assez fort », ce qui n'est pas une énigme.
+           Elle remplace « Les quatre mains », qui ne tenait pas : quatre
+           pointes interchangeables et quatre Gardiens laissaient chacun courir
+           vers la plus proche, et toute contrainte se dissolvait dans le libre
+           choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
+           et aucun ne peut prendre la place d'un autre.
 
-           À REFONDRE en gardant sa leçon — quatre Gardiens dont aucun n'est de
-           trop — par une contrainte que l'affectation libre ne dissout pas. */
+           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
+           ne font qu'une case de large : personne ne double personne. Il faut
+           GARER quelqu'un sur un bras déjà libéré, le temps que les autres
+           passent — un aller-retour qui ne rapporte rien et sans lequel rien
+           n'avance.
+
+           Le Veilleur assis au carrefour ne peut être chassé que vers l'ouest :
+           au nord comme au sud, le bloc poussé emporterait un allié dans le
+           vide, et seul le Gardien de l'est est placé pour pousser dans la
+           bonne direction. La géométrie désigne le pousseur.
+
+           PAS DE BARÈME. La solution de référence coûte 23 cartes et n'est pas
+           prouvée optimale : le chercheur n'a jamais tenu l'échelle d'une
+           énigme à quatre Gardiens. Annoncer un chiffre non prouvé, c'est
+           exactement ce qui s'est fait battre six fois. */
         {
-          id: "p22-les-quatre-mains",
+          id: "p22-destinee",
           acte: "III",
-          principe: "MESURE",
+          principe: "TRACE",
           avant: "Ils étaient trois.",
           verite: "Le carrefour en demandait quatre.",
-          title: "Les quatre mains",
-          tagline: "Quatre pointes, un seul carrefour, et quelqu'un d'assis dessus.",
-          brief: "Place un Gardien sur chacune des quatre cases marquées, en même temps.",
+          title: "Destinée",
+          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
+          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
           board: 13,
           sanctuary: false,
           focus: [6, 6],
@@ -1102,18 +1107,21 @@
             { key: "D", p: 0, r: 8, c: 6 },
             { key: "R", p: 1, r: 6, c: 6 }
           ],
-          hand: { MOVE: 16, PUSH: 5 },
-          par: 13,
-          goal: { type: "occupyCells", player: 0, cells: [[3, 6], [9, 6], [6, 3], [6, 9]] },
-          winTitle: "Les quatre mains sont posées",
-          winLine: "Quatre Gardiens, quatre pointes, et un carrefour qu'il fallait vider pour de bon.",
-          failLine: "Une pointe est restée vide.",
+          hand: { MOVE: 20, PUSH: 5 },
+          goal: {
+            type: "assignedCells", player: 0,
+            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+          },
+          winTitle: "Chacun à sa place",
+          winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
+          failLine: "Un Gardien n'est pas sur son signe.",
           solution: [
             { a: "PUSH", who: "B", on: [6, 6], force: 4 },
-            { a: "MOVE", who: "B", to: [6, 9] },
-            { a: "MOVE", who: "A", to: [3, 6] },
-            { a: "MOVE", who: "D", to: [9, 6] },
-            { a: "MOVE", who: "C", to: [6, 3] }
+            { a: "MOVE", who: "B", to: [6, 3] },
+            { a: "MOVE", who: "A", to: [6, 5] },
+            { a: "MOVE", who: "C", to: [3, 6] },
+            { a: "MOVE", who: "D", to: [6, 9] },
+            { a: "MOVE", who: "A", to: [9, 6] }
           ]
         },
         /* =================================================================

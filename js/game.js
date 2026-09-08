@@ -29174,6 +29174,21 @@
             && char.r === goal.cell[0] && char.c === goal.cell[1]);
         },
 
+        /* Chaque Gardien NOMMÉ sur SA case, en même temps. La différence avec
+           occupyCells n'est pas cosmétique : tant que n'importe qui pouvait
+           remplir n'importe quelle case, le joueur se contentait d'envoyer
+           chacun vers la plus proche et toute contrainte d'ordre se dissolvait.
+           En liant le porteur à sa destination, on rend les croisements
+           obligatoires — c'est la leçon des Quatre mains, qui n'en avait
+           aucune. */
+        assignedCells(def, goal) {
+          return Object.entries(goal.pairs || {}).every(([cle, cellule]) => {
+            const char = characterById(PUZZLE.charsByKey[cle]);
+            return !!char && char.player === (goal.player ?? 0)
+              && char.r === cellule[0] && char.c === cellule[1];
+          });
+        },
+
         /* Des gardiens du joueur sur TOUTES les cases listées, en même temps. */
         occupyCells(def, goal) {
           return (goal.cells || []).every(([r, c]) => {
@@ -29544,7 +29559,25 @@
         guardian: 0x1f8fff,   // amène un Gardien ici
         carrier: 0x1f8fff,    // un Gardien PORTANT une couronne (même famille)
         crown: 0xf0a800,      // pose une couronne ici
-        threat: 0x9a63e0      // le rival a annoncé qu'il viendrait là
+        threat: 0x9a63e0,     // le rival a annoncé qu'il viendrait là
+        /* Le sceau porte un RANG : la case et le Gardien attendu portent le
+           même signe, et c'est la seule chose qui les appareille. */
+        sceau: 0xffd98a
+      };
+
+      /* Une couleur PAR RANG. Les bâtons de comptage seuls ne suffisaient pas :
+         vus de la caméra de jeu, quatre sceaux dorés posés aux quatre bouts d'un
+         plateau se ressemblent, et les insignes portés par des Gardiens en file
+         se recouvrent. La teinte se lit d'un coup d'oeil là où le compte demande
+         qu'on s'approche ; les bâtons restent, pour qui distingue mal les
+         couleurs. Quatre teintes franches, aucune verte — le vert se perdrait
+         sur les îles. */
+      const PUZZLE_SCEAU_COLORS = {
+        1: 0x2b9dff,   // bleu
+        2: 0xff8a32,   // orange
+        3: 0xe256cf,   // magenta
+        4: 0xff4d4d    // vermillon — le jaune essayé d'abord se dissolvait
+                       //   sur le vert clair des îles comme sur le ciel
       };
 
       function puzzleGoalCellsFrom(goal, sortie = []) {
@@ -29553,6 +29586,12 @@
           (cells || []).forEach(([r, c]) => sortie.push({ r, c, kind }));
         switch (goal.type) {
           case "occupyCells": pousser(goal.cells, "guardian"); break;
+          /* Le RANG distingue les sceaux entre eux : sans lui, quatre cases
+             identiques ne diraient pas laquelle attend qui. */
+          case "assignedCells":
+            Object.values(goal.pairs || {}).forEach(([r, c], index) =>
+              sortie.push({ r, c, kind: "sceau", rang: index + 1 }));
+            break;
           case "reachCell": pousser([goal.cell], "guardian"); break;
           case "carryToCell": pousser([goal.cell], "carrier"); break;
           case "crownAtCell": pousser([goal.cell], "crown"); break;
@@ -29606,7 +29645,7 @@
          forme une fois réduites. Une vraie rune gravée pourra les remplacer :
          il suffira de charger une image à la place du tracé, le reste ne
          bouge pas. */
-      function puzzleGlyphTexture(kind, couleur) {
+      function puzzleGlyphTexture(kind, couleur, rang = 0) {
         const taille = 256;
         const canevas = document.createElement("canvas");
         canevas.width = canevas.height = taille;
@@ -29655,6 +29694,31 @@
           ctx.lineWidth = 46; ctx.stroke();
           ctx.strokeStyle = teinte;
           ctx.lineWidth = 28; ctx.stroke();
+        } else if (kind === "sceau") {
+          /* Le SCEAU : un chevron réduit, et sous lui autant de bâtons que le
+             rang. À la distance de caméra du jeu une case fait une vingtaine de
+             pixels — des chiffres ou des lettres y seraient illisibles, alors
+             que des bâtons verticaux gardent leur compte à n'importe quelle
+             taille. C'est le même signe que celui porté par le Gardien, et
+             c'est la seule chose qui dit lequel est attendu ici. */
+          ctx.save();
+          ctx.translate(0, -34);
+          ctx.scale(.62, .62);
+          tracerChevron();
+          ctx.lineWidth = 40; ctx.stroke();
+          ctx.fill();
+          ctx.restore();
+
+          const n = Math.max(1, rang || 1);
+          const pas = 34;
+          const debut = -((n - 1) * pas) / 2;
+          for (let i = 0; i < n; i++) {
+            ctx.beginPath();
+            ctx.moveTo(debut + i * pas, 22);
+            ctx.lineTo(debut + i * pas, 74);
+            ctx.lineWidth = 30; ctx.strokeStyle = "rgba(8,14,28,.92)"; ctx.stroke();
+            ctx.lineWidth = 16; ctx.strokeStyle = teinte; ctx.stroke();
+          }
         } else {
           if (kind === "guardian") tracerChevron(); else tracerCouronne();
           ctx.lineWidth = 26; ctx.stroke();
@@ -29723,8 +29787,9 @@
       function puzzleAddMarker(marque) {
         const groupe = puzzleMarkerGroup();
         if (!groupe) return;
-        const { r, c, kind } = marque;
-        const couleur = PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
+        const { r, c, kind, rang } = marque;
+        const couleur = (kind === "sceau" && PUZZLE_SCEAU_COLORS[rang])
+          || PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
         /* Hauteur du DESSUS DES ÎLES, y compris pour une case vide.
            kaykitCellSurfaceY() rend le niveau du plateau (.05) là où il n'y a
            pas de terre, contre .47 pour une île : en vue inclinée, le marqueur
@@ -29796,7 +29861,7 @@
         const glyphe = couche(
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
-            map: puzzleGlyphTexture(kind, couleur),
+            map: puzzleGlyphTexture(kind, couleur, rang),
             transparent: true, opacity: surTerre ? 1 : .88,
             depthWrite: false, depthTest: false
           }),
@@ -29822,8 +29887,65 @@
         cells.forEach(puzzleAddMarker);
       }
 
+      /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
+         alliés sont visuellement identiques, et une consigne « celui-ci va
+         là-bas » serait injouable telle quelle. On accroche donc au-dessus de
+         chacun le même sceau que celui posé au sol — un sprite enfant de son
+         wrapper, qui le suit sans qu'on ait à le repositionner. C'est la
+         solution la plus légère : des variantes de modèle seraient un chantier
+         dans kaykit3d.js, pour une énigme.
+
+         Reconstruit quand un sceau a perdu son parent : les visuels de
+         personnage sont recréés par syncKayKitCharacters, et un sprite orphelin
+         cesse silencieusement d'être rendu. */
+      function puzzleRefreshSceaux() {
+        const paires = PUZZLE.def?.goal?.type === "assignedCells"
+          ? PUZZLE.def.goal.pairs : null;
+        const poses = PUZZLE.sceaux || (PUZZLE.sceaux = []);
+        if (!paires || typeof kaykit3D === "undefined" || !kaykit3D?.characterVisuals) {
+          if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
+          return;
+        }
+        const cles = Object.keys(paires);
+        const complet = poses.length === cles.length && poses.every(sp => !!sp.parent);
+        if (complet) return;
+
+        poses.forEach(sp => sp.parent?.remove(sp));
+        poses.length = 0;
+        cles.forEach((cle, index) => {
+          const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
+          if (!visual?.wrapper) return;
+          /* UN ANNEAU AU SOL, pas un insigne flottant. Deux essais ont échoué
+             avant celui-ci : haut dans le ciel, le sprite dérivait sur la case
+             du voisin — la vue est inclinée, tout ce qui monte part vers le
+             haut de l'écran ; posé sur le casque, il se confondait avec le
+             modèle. Un anneau sous les pieds ne peut désigner que la case où se
+             tient son porteur, et se lit d'aplomb depuis la caméra de jeu.
+
+             La couleur suffit à l'appariement — quatre teintes franches ; les
+             bâtons de comptage restent au sol, sur la case attendue, pour qui
+             distingue mal les couleurs. */
+          const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
+          const anneau = new THREE.Mesh(
+            new THREE.RingGeometry(.30, .44, 40),
+            new THREE.MeshBasicMaterial({
+              color: teinte, transparent: true, opacity: .95,
+              side: THREE.DoubleSide, depthWrite: false, depthTest: false
+            })
+          );
+          anneau.rotation.x = -Math.PI / 2;
+          anneau.position.set(0, .05, 0);
+          anneau.renderOrder = 58;
+          anneau.userData = { ilyosTransient: true };
+          visual.wrapper.add(anneau);
+          poses.push(anneau);
+        });
+      }
+
       function puzzleClearMarkers() {
         PUZZLE.markerKey = null;
+        (PUZZLE.sceaux || []).forEach(sp => sp.parent?.remove(sp));
+        PUZZLE.sceaux = [];
         const groupe = typeof kaykit3D !== "undefined" && kaykit3D
           ? kaykit3D.puzzleMarkerGroup : null;
         if (groupe && typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
@@ -30136,6 +30258,7 @@
         if (!PUZZLE.def.placement) state.islandPlacedThisTurn = true;
         puzzleSyncOverlay();
         puzzleRefreshMarkers();
+        puzzleRefreshSceaux();
         if (puzzleGoalReached()) { puzzleShowEnd({ won: true }); return; }
         // C'est au rival : on joue ses coups écrits, puis on rend la main.
         if (state.currentPlayer === 1 && !PUZZLE.replying && !state.turnTransitioning) {
@@ -32161,35 +32284,40 @@
           ]
         },
         /* -----------------------------------------------------------------
-           22 — LES QUATRE MAINS. Le quatrième Gardien entre ici, et l'énigme
-           ne tient que parce qu'ils sont quatre : quatre extrémités à occuper
-           EN MÊME TEMPS, et un seul carrefour d'une case par où tout le monde
-           passe. Un Veilleur y est assis. Le pousser assez fort le fait tomber
-           au-delà de la dernière terre ; pas assez fort, il s'assied sur une
-           des quatre pointes et l'énigme devient impossible. Et la poussée
-           emporte le BLOC : trois bras sur quatre portent un Gardien collé au
-           carrefour, qui partirait dans le vide avec le Veilleur. Une seule
-           direction convient, et elle désigne d'elle-même qui doit pousser.
+           DESTINÉE — le quatrième Gardien entre, et l'énigme ne tient que
+           parce qu'ils sont quatre.
 
-           ÉNIGME RATÉE, barème corrigé de 19 à 13 après playtest. On avait cru
-           y voir une contrainte d'ordre : les deux Gardiens du bras sud se
-           font face, l'un devant traverser l'autre. C'est faux, parce que RIEN
-           N'IMPOSE QUI VA OÙ. Celui du fond prend la pointe sud qui est à un
-           pas, celui de devant part vers l'ouest, et aucun croisement n'a lieu.
-           Chacun marche vers la pointe la plus proche ; il ne reste que
-           « pousser assez fort », ce qui n'est pas une énigme.
+           Elle remplace « Les quatre mains », qui ne tenait pas : quatre
+           pointes interchangeables et quatre Gardiens laissaient chacun courir
+           vers la plus proche, et toute contrainte se dissolvait dans le libre
+           choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
+           et aucun ne peut prendre la place d'un autre.
 
-           À REFONDRE en gardant sa leçon — quatre Gardiens dont aucun n'est de
-           trop — par une contrainte que l'affectation libre ne dissout pas. */
+           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
+           ne font qu'une case de large : personne ne double personne. Il faut
+           GARER quelqu'un sur un bras déjà libéré, le temps que les autres
+           passent — un aller-retour qui ne rapporte rien et sans lequel rien
+           n'avance.
+
+           Le Veilleur assis au carrefour ne peut être chassé que vers l'ouest :
+           au nord comme au sud, le bloc poussé emporterait un allié dans le
+           vide, et seul le Gardien de l'est est placé pour pousser dans la
+           bonne direction. La géométrie désigne le pousseur.
+
+           PAS DE BARÈME. La solution de référence coûte 23 cartes et n'est pas
+           prouvée optimale : le chercheur n'a jamais tenu l'échelle d'une
+           énigme à quatre Gardiens. Annoncer un chiffre non prouvé, c'est
+           exactement ce qui s'est fait battre six fois. */
         {
-          id: "p22-les-quatre-mains",
+          id: "p22-destinee",
           acte: "III",
-          principe: "MESURE",
+          principe: "TRACE",
           avant: "Ils étaient trois.",
           verite: "Le carrefour en demandait quatre.",
-          title: "Les quatre mains",
-          tagline: "Quatre pointes, un seul carrefour, et quelqu'un d'assis dessus.",
-          brief: "Place un Gardien sur chacune des quatre cases marquées, en même temps.",
+          title: "Destinée",
+          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
+          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
           board: 13,
           sanctuary: false,
           focus: [6, 6],
@@ -32205,18 +32333,21 @@
             { key: "D", p: 0, r: 8, c: 6 },
             { key: "R", p: 1, r: 6, c: 6 }
           ],
-          hand: { MOVE: 16, PUSH: 5 },
-          par: 13,
-          goal: { type: "occupyCells", player: 0, cells: [[3, 6], [9, 6], [6, 3], [6, 9]] },
-          winTitle: "Les quatre mains sont posées",
-          winLine: "Quatre Gardiens, quatre pointes, et un carrefour qu'il fallait vider pour de bon.",
-          failLine: "Une pointe est restée vide.",
+          hand: { MOVE: 20, PUSH: 5 },
+          goal: {
+            type: "assignedCells", player: 0,
+            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+          },
+          winTitle: "Chacun à sa place",
+          winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
+          failLine: "Un Gardien n'est pas sur son signe.",
           solution: [
             { a: "PUSH", who: "B", on: [6, 6], force: 4 },
-            { a: "MOVE", who: "B", to: [6, 9] },
-            { a: "MOVE", who: "A", to: [3, 6] },
-            { a: "MOVE", who: "D", to: [9, 6] },
-            { a: "MOVE", who: "C", to: [6, 3] }
+            { a: "MOVE", who: "B", to: [6, 3] },
+            { a: "MOVE", who: "A", to: [6, 5] },
+            { a: "MOVE", who: "C", to: [3, 6] },
+            { a: "MOVE", who: "D", to: [6, 9] },
+            { a: "MOVE", who: "A", to: [9, 6] }
           ]
         },
         /* =================================================================
