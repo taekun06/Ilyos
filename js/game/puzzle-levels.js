@@ -22,6 +22,20 @@
          - les villages restent aux COINS, seuls endroits où
            cornerCrownCellsForVillage produit des cases cohérentes. Les énigmes
            sans village n'en déclarent aucun et visent un autre objectif ;
+         - UNE ÎLE D'UNE SEULE CASE NE PIVOTE PAS. Son seul pivot possible est
+           elle-même, et une rotation autour de son propre centre la laisse en
+           place : elle est immobile par construction et ne transporte
+           personne. C'est le moyen le plus simple de figer un terrain — et il
+           est INVISIBLE, puisqu'une région découpée en îles d'une case
+           ressemble à l'écran à une île entière. À préférer aux dégagements et
+           aux collisions dès qu'on veut qu'un morceau de plateau ne bouge
+           jamais ;
+         - à l'inverse, toute île de plusieurs cases alignées est un VÉHICULE :
+           pivotée par une extrémité elle se translate de sa longueur moins un,
+           et emporte ce qui se tient dessus. Une île de trois projette donc une
+           case à deux de distance, et une diagonale franchit un coin : il faut
+           trois rangées de dégagement pour qu'aucune rotation ne relie deux
+           régions censées rester séparées ;
          - aucun texte lu par le joueur ne cite de COORDONNÉES. Le jeu n'en
            affiche nulle part : un énoncé qui en donne est illisible. Les cases
            qui comptent sont marquées sur le plateau, déduites de `goal` et de
