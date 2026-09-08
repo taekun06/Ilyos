@@ -1454,6 +1454,11 @@
       async function puzzleVerifyAll() {
         const resultats = [];
         for (let index = 0; index < PUZZLES.length; index++) {
+          /* Une énigme `wip` est jouable mais n'a pas encore de solution de
+             référence vérifiée : la passer à l'oracle ne dirait rien d'utile.
+             Le marqueur rend l'inachèvement visible dans le code plutôt que de
+             le cacher derrière un `par` inventé. */
+          if (PUZZLES[index].wip) continue;
           resultats.push(puzzleIsMultiTurn(PUZZLES[index])
             ? await puzzleVerifyLive(index)
             : puzzleVerify(index));
@@ -1630,7 +1635,7 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null) {
+      function puzzleSolve(index, plafond = null, secondesMax = 60) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -1638,6 +1643,7 @@
         const actifAvant = PUZZLE.active;
         const defAvant = PUZZLE.def;
         const depart = Date.now();
+        const finAu = depart + secondesMax * 1000;
         try {
           PUZZLE.active = true;
           PUZZLE.def = def;
@@ -1678,18 +1684,31 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES) {
+              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
-                  error: `exploration interrompue à ${noeuds} nœuds`
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  error: Date.now() > finAu
+                    ? `exploration interrompue après ${secondesMax} s (${noeuds} nœuds)`
+                    : `exploration interrompue à ${noeuds} nœuds`
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
 
-              for (const action of puzzleSearchActions()) {
+              /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
+                 le restaure au lieu de reconstruire le plateau et de rejouer
+                 tout le chemin : le rejeu coûtait O(profondeur) par arête, ce
+                 qui rendait la recherche inutilisable dès qu'une énigme passait
+                 la dizaine de cartes (vingt minutes sans réponse sur le boss).
+                 snapshotState/applyStateSnapshot sont ceux du jeu, synchrones,
+                 et déjà employés par l'annulation. */
+              const instantane = snapshotState();
+              const coups = puzzleSearchActions();
+
+              for (const action of coups) {
                 const suivant = cout + action.cout;
                 if (suivant > coutMax) continue;
-                if (!puzzleSearchReplay(def, chemin)) break;
+                if (!applyStateSnapshot(JSON.parse(instantane))) break;
                 if (!puzzleSearchApply(action)) continue;
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
@@ -1739,7 +1758,7 @@
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: puzzleSolve,
+        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
         /* Force un recalcul des marqueurs (mise au point du rendu). */
         refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },

@@ -30273,6 +30273,11 @@
       async function puzzleVerifyAll() {
         const resultats = [];
         for (let index = 0; index < PUZZLES.length; index++) {
+          /* Une énigme `wip` est jouable mais n'a pas encore de solution de
+             référence vérifiée : la passer à l'oracle ne dirait rien d'utile.
+             Le marqueur rend l'inachèvement visible dans le code plutôt que de
+             le cacher derrière un `par` inventé. */
+          if (PUZZLES[index].wip) continue;
           resultats.push(puzzleIsMultiTurn(PUZZLES[index])
             ? await puzzleVerifyLive(index)
             : puzzleVerify(index));
@@ -30449,7 +30454,7 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null) {
+      function puzzleSolve(index, plafond = null, secondesMax = 60) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -30457,6 +30462,7 @@
         const actifAvant = PUZZLE.active;
         const defAvant = PUZZLE.def;
         const depart = Date.now();
+        const finAu = depart + secondesMax * 1000;
         try {
           PUZZLE.active = true;
           PUZZLE.def = def;
@@ -30497,18 +30503,31 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES) {
+              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
-                  error: `exploration interrompue à ${noeuds} nœuds`
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  error: Date.now() > finAu
+                    ? `exploration interrompue après ${secondesMax} s (${noeuds} nœuds)`
+                    : `exploration interrompue à ${noeuds} nœuds`
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
 
-              for (const action of puzzleSearchActions()) {
+              /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
+                 le restaure au lieu de reconstruire le plateau et de rejouer
+                 tout le chemin : le rejeu coûtait O(profondeur) par arête, ce
+                 qui rendait la recherche inutilisable dès qu'une énigme passait
+                 la dizaine de cartes (vingt minutes sans réponse sur le boss).
+                 snapshotState/applyStateSnapshot sont ceux du jeu, synchrones,
+                 et déjà employés par l'annulation. */
+              const instantane = snapshotState();
+              const coups = puzzleSearchActions();
+
+              for (const action of coups) {
                 const suivant = cout + action.cout;
                 if (suivant > coutMax) continue;
-                if (!puzzleSearchReplay(def, chemin)) break;
+                if (!applyStateSnapshot(JSON.parse(instantane))) break;
                 if (!puzzleSearchApply(action)) continue;
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
@@ -30558,7 +30577,7 @@
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: puzzleSolve,
+        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
         /* Force un recalcul des marqueurs (mise au point du rendu). */
         refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },
@@ -31430,6 +31449,125 @@
               { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
+        },
+
+        /* =================================================================
+           17 — L'ARCHIPEL DES NEUF MENSONGES
+
+           L'examen. Aucune règle nouvelle : tout ce que les seize précédentes
+           ont appris, et rien d'autre. Neuf îles, quatre Gardiens, quatre
+           rivaux, cinq tours de pioche écrite.
+
+           Le thème est dans le titre : ce qui semble être un bon chemin peut
+           être vrai localement sans être la bonne solution globale. Chaque île
+           est un véhicule potentiel — le chercheur d'optimum l'a assez montré —
+           et AUCUN pivot n'est interdit. Ce sont les distances, les collisions
+           et la rareté des cartes qui rendent les mauvais chemins coûteux.
+
+           Le rôle passe de main en main : A porte, B relaie, C envoie, D
+           valide. Aucun Gardien ne fait le trajet entier.
+           ================================================================= */
+        {
+          id: "p17-neuf-mensonges",
+          title: "L'archipel des neuf mensonges",
+          tagline: "Tu as appris à déplacer le monde. Maintenant le monde va te mentir.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          /* CHANTIER. Le plateau est fidèle à l'architecture voulue et il se
+             joue, mais aucune solution de référence n'a encore été vérifiée et
+             aucun `par` n'est établi : le chercheur d'optimum ne tient pas
+             cette échelle (voir la note en fin de définition). Le marqueur
+             l'exclut de l'oracle plutôt que de lui inventer un barème. */
+          wip: true,
+          focus: [8, 8],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            /* Nord-ouest : le village et sa dernière serrure. */
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
+            { key: "VIRAGE", cells: [[1, 1], [2, 1], [2, 2]] },
+            /* Le gouffre de la rangée 3 sépare le Virage de la Passerelle :
+               aucun Gardien ne le franchit, une couronne poussée si. */
+            { key: "PASSERELLE", cells: [[4, 1], [4, 2], [4, 3]] },
+            /* Le faux chemin court : deux cases qui ne se touchent que par un
+               coin. Une diagonale coûte DEUX déplacements (movementEdges), donc
+               ce raccourci apparent est le plus cher du plateau. */
+            { key: "DOMINO", cells: [[5, 1], [6, 0]] },
+            /* Croix creuse : le cœur. Son centre (5,4) est vide, et selon son
+               orientation elle relie la Passerelle, reçoit un Gardien, ou ferme
+               une route. */
+            { key: "CROIX_CREUSE", cells: [[4, 4], [5, 3], [5, 5], [6, 4]] },
+            /* Croix pleine : le problème de poussée. Le rival en occupe le
+               centre, et il faut le déloger pour traverser. */
+            /* Bras ouest allongé À DESSEIN : le rival qui en occupe le centre
+               se DÉPLACE d'une poussée de force 1, mais il faut une force 4
+               pour l'envoyer par-dessus le bord. L'élimination spectaculaire
+               coûte donc trois cartes de plus, et ce sont exactement celles
+               qui manqueront à la fin. */
+            { key: "CROIX_PLEINE", cells: [[6, 6], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7], [8, 6]] },
+            /* Carrefour : le moyeu. Trois branches en partent, toutes
+               plausibles. */
+            { key: "CARREFOUR", cells: [[8, 8], [8, 9], [8, 10], [9, 9]] },
+            /* Serpent : le faux raccourci majeur. Sa rotation ouvre une route
+               vers le nord qui gagne vraiment — mais plus cher. */
+            { key: "SERPENT", cells: [[6, 10], [6, 11], [5, 11], [5, 12]] },
+            /* La première machine : le V qui transporte le porteur. */
+            { key: "V", cells: [[10, 10], [11, 10], [11, 9]] },
+            /* Le départ. Quatre sorties, aucune évidente. */
+            { key: "CARRE", cells: [[10, 11], [10, 12], [11, 11], [11, 12]] }
+          ],
+          guardians: [
+            { key: "A", p: 0, r: 11, c: 12, crown: 1 },
+            { key: "B", p: 0, r: 8, c: 9 },
+            { key: "C", p: 0, r: 5, c: 3 },
+            { key: "D", p: 0, r: 2, c: 2 },
+            { key: "R1", p: 1, r: 7, c: 6 },
+            { key: "R2", p: 1, r: 6, c: 11 },
+            { key: "R3", p: 1, r: 0, c: 2 }
+          ],
+          /* La pioche donne cinq cartes par tour. Les cartes non jouées passent
+             en réserve : ne rien dépenser n'est pas perdre. */
+          deck: [
+            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["MAGIC", "PUSH", "PUSH", "PUSH", "PUSH"],
+            ["MOVE", "MOVE", "MAGIC", "MAGIC", "PUSH"],
+            ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"],
+            ["MOVE", "MOVE", "PUSH", "PUSH", "PUSH"]
+          ],
+          /* Pas de `par` : il sera établi quand une solution de référence
+             aura été vérifiée. Ne rien annoncer vaut mieux qu'annoncer faux —
+             cinq `par` inventés se sont déjà révélés erronés en jeu. */
+          par: null,
+          /* R3 tente CHAQUE tour d'entrer dans la zone de validation. Son coup
+             est sauté si la case est occupée : terminer son tour sans avoir
+             sécurisé le village lui ouvre la porte. */
+          rivalPlan: [
+            "il entre dans ton village si la case marquée est libre.",
+            "il y entre encore.",
+            "et encore.",
+            "et encore."
+          ],
+          replies: [
+            [{ a: "MOVE", who: "R3", to: [0, 1] }],
+            [{ a: "MOVE", who: "R3", to: [0, 1] }],
+            [{ a: "MOVE", who: "R3", to: [0, 1] }],
+            [{ a: "MOVE", who: "R3", to: [0, 1] }]
+          ],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "L'archipel s'illumine",
+          winLine: "Aucun Gardien n'a fait le trajet. La lumière, elle, l'a fait en entier.",
+          failLine: "Un chemin te semblait bon. Il l'était — mais pas jusqu'au bout.",
+          /* LIMITE CONNUE DU CHERCHEUR. Sur cette énigme il n'aboutit pas, même
+             avec un plafond de huit cartes : quatre alliés, quatre rivaux et
+             dix îles donnent un facteur de branchement — chaque Gardien vers
+             chaque case atteignable, chaque île autour de chaque case, trois
+             rotations chacune — que sa recherche par coût croissant ne peut pas
+             couvrir. Elle épuise 48 000 nœuds en deux minutes sans conclure.
+
+             Donc : ni optimum prouvé, ni raccourcis inventoriés, ni fausses
+             pistes mesurées. Tant que ce n'est pas le cas, cette énigme reste
+             un chantier. */
+          solution: []
         }
       );
  function replay() {
