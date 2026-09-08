@@ -860,30 +860,41 @@
           ctx.strokeStyle = teinte;
           ctx.lineWidth = 28; ctx.stroke();
         } else if (kind === "sceau") {
-          /* Le SCEAU : un chevron réduit, et sous lui autant de bâtons que le
-             rang. À la distance de caméra du jeu une case fait une vingtaine de
-             pixels — des chiffres ou des lettres y seraient illisibles, alors
-             que des bâtons verticaux gardent leur compte à n'importe quelle
-             taille. C'est le même signe que celui porté par le Gardien, et
-             c'est la seule chose qui dit lequel est attendu ici. */
+          /* LE SCEAU : un losange, et à l'intérieur une hachure qui appartient
+             au rang. C'est cette hachure — et non un compte de bâtons — qui
+             appareille le Gardien à sa case : elle se reconnaît d'un seul coup
+             d'oeil, là où il fallait s'approcher pour compter. La couleur reste
+             le signal premier ; la hachure la double pour qui la distingue mal.
+             Le même tracé sert au sol et sous les pieds du Gardien, sans quoi
+             l'appariement demanderait une traduction. */
+          const d = 104;
+          const losange = () => {
+            ctx.beginPath();
+            ctx.moveTo(0, -d); ctx.lineTo(d, 0); ctx.lineTo(0, d); ctx.lineTo(-d, 0);
+            ctx.closePath();
+          };
+
           ctx.save();
-          ctx.translate(0, -34);
-          ctx.scale(.62, .62);
-          tracerChevron();
-          ctx.lineWidth = 40; ctx.stroke();
-          ctx.fill();
+          losange();
+          ctx.clip();
+          ctx.strokeStyle = teinte;
+          ctx.lineWidth = 13;
+          const pas = 34;
+          const trace = (x1, y1, x2, y2) => {
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          };
+          for (let k = -d; k <= d; k += pas) {
+            if (rang === 1) trace(-d, k, d, k);                 // couché
+            else if (rang === 2) trace(k, -d, k, d);            // debout
+            else if (rang === 3) trace(k - d, -d, k + d, d);    // oblique
+            else { trace(k - d, -d, k + d, d); trace(k + d, -d, k - d, d); }
+          }
           ctx.restore();
 
-          const n = Math.max(1, rang || 1);
-          const pas = 34;
-          const debut = -((n - 1) * pas) / 2;
-          for (let i = 0; i < n; i++) {
-            ctx.beginPath();
-            ctx.moveTo(debut + i * pas, 22);
-            ctx.lineTo(debut + i * pas, 74);
-            ctx.lineWidth = 30; ctx.strokeStyle = "rgba(8,14,28,.92)"; ctx.stroke();
-            ctx.lineWidth = 16; ctx.strokeStyle = teinte; ctx.stroke();
-          }
+          // Contour FIN : le losange doit se lire sans peser sur la case.
+          losange();
+          ctx.strokeStyle = "rgba(8,14,28,.85)"; ctx.lineWidth = 16; ctx.stroke();
+          ctx.strokeStyle = teinte; ctx.lineWidth = 9; ctx.stroke();
         } else {
           if (kind === "guardian") tracerChevron(); else tracerCouronne();
           ctx.lineWidth = 26; ctx.stroke();
@@ -1027,7 +1038,9 @@
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
             map: puzzleGlyphTexture(kind, couleur, rang),
-            transparent: true, opacity: surTerre ? 1 : .88,
+            /* 80 % : le glyphe désigne la case, il ne la remplace pas — à pleine
+               opacité il écrasait la dalle qu'il est censé montrer. */
+            transparent: true, opacity: kind === "sceau" ? .8 : (surTerre ? 1 : .88),
             depthWrite: false, depthTest: false
           }),
           .106, 52
@@ -1080,21 +1093,20 @@
         cles.forEach((cle, index) => {
           const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
           if (!visual?.wrapper) return;
-          /* UN ANNEAU AU SOL, pas un insigne flottant. Deux essais ont échoué
-             avant celui-ci : haut dans le ciel, le sprite dérivait sur la case
-             du voisin — la vue est inclinée, tout ce qui monte part vers le
-             haut de l'écran ; posé sur le casque, il se confondait avec le
-             modèle. Un anneau sous les pieds ne peut désigner que la case où se
-             tient son porteur, et se lit d'aplomb depuis la caméra de jeu.
-
-             La couleur suffit à l'appariement — quatre teintes franches ; les
-             bâtons de comptage restent au sol, sur la case attendue, pour qui
-             distingue mal les couleurs. */
+          /* LE MÊME LOSANGE, à plat sous les pieds, et non un insigne flottant.
+             Deux essais ont échoué avant : haut dans le ciel, le sprite
+             dérivait sur la case du voisin — la vue est inclinée, tout ce qui
+             monte part vers le haut de l'écran, et les Gardiens se suivent en
+             file d'une case ; posé sur le casque, il se confondait avec le
+             modèle. Au sol, il ne peut désigner que la case où se tient son
+             porteur, et il porte exactement le tracé gravé sur la case
+             attendue : aucune traduction à faire. */
           const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
           const anneau = new THREE.Mesh(
-            new THREE.RingGeometry(.30, .44, 40),
+            new THREE.PlaneGeometry(.98, .98),
             new THREE.MeshBasicMaterial({
-              color: teinte, transparent: true, opacity: .95,
+              map: puzzleGlyphTexture("sceau", teinte, index + 1),
+              transparent: true, opacity: .8,
               side: THREE.DoubleSide, depthWrite: false, depthTest: false
             })
           );
