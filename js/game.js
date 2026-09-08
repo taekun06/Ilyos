@@ -29695,41 +29695,55 @@
           ctx.strokeStyle = teinte;
           ctx.lineWidth = 28; ctx.stroke();
         } else if (kind === "sceau") {
-          /* LE SCEAU : un losange, et à l'intérieur une hachure qui appartient
-             au rang. C'est cette hachure — et non un compte de bâtons — qui
-             appareille le Gardien à sa case : elle se reconnaît d'un seul coup
-             d'oeil, là où il fallait s'approcher pour compter. La couleur reste
-             le signal premier ; la hachure la double pour qui la distingue mal.
-             Le même tracé sert au sol et sous les pieds du Gardien, sans quoi
-             l'appariement demanderait une traduction. */
+          /* LE SCEAU : un losange fin, et dedans une des quatre LUMIÈRES —
+             croissant, étoile, croix, anneau. Le rang ne se compte plus, il se
+             reconnaît : c'est une SILHOUETTE, seule chose qui survive à vingt
+             pixels et à la vue inclinée. Les hachures essayées avant étaient
+             une texture, et une texture disparaît à cette taille. Le disque
+             plein a été écarté : à côté de l'anneau, seul le trou les
+             séparait. Le même tracé est gravé sur la case attendue et posé
+             sous le Gardien attendu ; la couleur le double pour qui la
+             distingue mal, et l'inverse est vrai aussi. */
           const d = 104;
           const losange = () => {
             ctx.beginPath();
             ctx.moveTo(0, -d); ctx.lineTo(d, 0); ctx.lineTo(0, d); ctx.lineTo(-d, 0);
             ctx.closePath();
           };
-
-          ctx.save();
           losange();
-          ctx.clip();
-          ctx.strokeStyle = teinte;
-          ctx.lineWidth = 13;
-          const pas = 34;
-          const trace = (x1, y1, x2, y2) => {
-            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-          };
-          for (let k = -d; k <= d; k += pas) {
-            if (rang === 1) trace(-d, k, d, k);                 // couché
-            else if (rang === 2) trace(k, -d, k, d);            // debout
-            else if (rang === 3) trace(k - d, -d, k + d, d);    // oblique
-            else { trace(k - d, -d, k + d, d); trace(k + d, -d, k - d, d); }
+          ctx.strokeStyle = "rgba(8,14,28,.85)"; ctx.lineWidth = 15; ctx.stroke();
+          ctx.strokeStyle = teinte; ctx.lineWidth = 8; ctx.stroke();
+
+          /* Le motif tient dans le carré INSCRIT au losange, pas dans le
+             losange : au-delà il déborderait sur les pointes. */
+          const r = 58;
+          ctx.beginPath();
+          if (rang === 1) {
+            // le Croissant
+            ctx.arc(0, 0, r, Math.PI * .42, Math.PI * 1.58, false);
+            ctx.arc(r * .42, 0, r * .86, Math.PI * 1.5, Math.PI * .5, true);
+            ctx.closePath();
+          } else if (rang === 2) {
+            // l'Étoile — quatre branches, pas cinq : elles restent effilées
+            for (let i = 0; i < 8; i++) {
+              const a = i * Math.PI / 4 - Math.PI / 2;
+              const rr = i % 2 ? r * .34 : r;
+              ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
+            }
+            ctx.closePath();
+          } else if (rang === 3) {
+            // la Croix
+            const b = r * .34;
+            ctx.rect(-b, -r, b * 2, r * 2);
+            ctx.rect(-r, -b, r * 2, b * 2);
+          } else {
+            // l'Anneau — le trou est large, c'est lui qui porte la lecture
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.arc(0, 0, r * .52, 0, Math.PI * 2, true);
           }
-          ctx.restore();
+          ctx.strokeStyle = "rgba(8,14,28,.85)"; ctx.lineWidth = 20; ctx.stroke();
+          ctx.fillStyle = teinte; ctx.fill();
 
-          // Contour FIN : le losange doit se lire sans peser sur la case.
-          losange();
-          ctx.strokeStyle = "rgba(8,14,28,.85)"; ctx.lineWidth = 16; ctx.stroke();
-          ctx.strokeStyle = teinte; ctx.lineWidth = 9; ctx.stroke();
         } else {
           if (kind === "guardian") tracerChevron(); else tracerCouronne();
           ctx.lineWidth = 26; ctx.stroke();
