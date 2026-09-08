@@ -1739,6 +1739,76 @@
         }
       }
 
+      /* ---------- Audit de conception -------------------------------------
+         Le chercheur d'optimum ne tient pas les grandes énigmes. Cet audit
+         répond à d'autres questions, moins ambitieuses mais décisives quand on
+         dessine un plateau :
+
+         - quelles rotations sont légales, et OÙ elles emmènent les cases ;
+         - qui elles transportent — Gardien, rival ou couronne posée ;
+         - quelles cases un Gardien peut atteindre à pied, donc quelles régions
+           sont réellement séparées ;
+         - quelles îles ne servent à rien.
+
+         Il ne prouve rien sur le coût. Il montre la topologie, ce qui suffit à
+         repérer un raccourci qui saute une moitié du puzzle. */
+      function puzzleAudit(index = PUZZLE.index) {
+        const def = PUZZLES[index];
+        if (!def) return { error: "énigme inexistante" };
+
+        const etatReel = state;
+        const actifAvant = PUZZLE.active;
+        const defAvant = PUZZLE.def;
+        try {
+          PUZZLE.active = true;
+          PUZZLE.def = def;
+          puzzleBuildState(def);
+
+          const nom = ile => Object.keys(PUZZLE.islandsByKey)
+            .find(cle => PUZZLE.islandsByKey[cle] === ile.id) || `île${ile.id}`;
+
+          /* Toutes les rotations légales, avec ce qu'elles emportent. */
+          const rotations = [];
+          (state.islands || []).forEach(ile => {
+            ile.cells.forEach(([pr, pc]) => {
+              [[1, 1], [-1, 1], [1, 2]].forEach(([direction, turns]) => {
+                const rot = calculateIslandRotationAroundPivot(ile, pr, pc, direction, turns);
+                if (!rot?.valid) return;
+                const passagers = (rot.characterMoves || [])
+                  .filter(m => m.char.r !== m.r || m.char.c !== m.c)
+                  .map(m => `${m.char.player === 0 ? "allié" : "RIVAL"} ${m.char.r},${m.char.c}->${m.r},${m.c}`);
+                rotations.push({
+                  ile: nom(ile),
+                  pivot: [pr, pc],
+                  tour: turns === 2 ? "180" : (direction === 1 ? "90+" : "90-"),
+                  cases: rot.absCells.map(([r, c]) => `${r},${c}`).join(" "),
+                  passagers
+                });
+              });
+            });
+          });
+
+          /* Régions accessibles à pied : un budget énorme révèle la topologie
+             réelle, diagonales comprises. */
+          const pied = (state.characters || []).filter(ch => ch.player === 0).map(ch => {
+            const portee = movementRange(ch, 99);
+            return {
+              gardien: `${ch.r},${ch.c}`,
+              atteint: [...portee].length,
+              village: [...portee].some(k => k === "0,0" || k === "1,0" || k === "0,1")
+            };
+          });
+
+          return { id: def.id, rotations, pied };
+        } catch (error) {
+          return { error: `exception : ${error && error.message}` };
+        } finally {
+          PUZZLE.active = actifAvant;
+          PUZZLE.def = defAvant;
+          state = etatReel;
+        }
+      }
+
       /* ---------- Câblage ---------------------------------------------------- */
       window.addEventListener("ilyos-puzzle-requested", () => puzzleOpenMenu());
 
@@ -1759,6 +1829,9 @@
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
         solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
+           et ce qu'un Gardien atteint à pied. */
+        audit: puzzleAudit,
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
         /* Force un recalcul des marqueurs (mise au point du rendu). */
         refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },

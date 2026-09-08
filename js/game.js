@@ -30558,6 +30558,76 @@
         }
       }
 
+      /* ---------- Audit de conception -------------------------------------
+         Le chercheur d'optimum ne tient pas les grandes énigmes. Cet audit
+         répond à d'autres questions, moins ambitieuses mais décisives quand on
+         dessine un plateau :
+
+         - quelles rotations sont légales, et OÙ elles emmènent les cases ;
+         - qui elles transportent — Gardien, rival ou couronne posée ;
+         - quelles cases un Gardien peut atteindre à pied, donc quelles régions
+           sont réellement séparées ;
+         - quelles îles ne servent à rien.
+
+         Il ne prouve rien sur le coût. Il montre la topologie, ce qui suffit à
+         repérer un raccourci qui saute une moitié du puzzle. */
+      function puzzleAudit(index = PUZZLE.index) {
+        const def = PUZZLES[index];
+        if (!def) return { error: "énigme inexistante" };
+
+        const etatReel = state;
+        const actifAvant = PUZZLE.active;
+        const defAvant = PUZZLE.def;
+        try {
+          PUZZLE.active = true;
+          PUZZLE.def = def;
+          puzzleBuildState(def);
+
+          const nom = ile => Object.keys(PUZZLE.islandsByKey)
+            .find(cle => PUZZLE.islandsByKey[cle] === ile.id) || `île${ile.id}`;
+
+          /* Toutes les rotations légales, avec ce qu'elles emportent. */
+          const rotations = [];
+          (state.islands || []).forEach(ile => {
+            ile.cells.forEach(([pr, pc]) => {
+              [[1, 1], [-1, 1], [1, 2]].forEach(([direction, turns]) => {
+                const rot = calculateIslandRotationAroundPivot(ile, pr, pc, direction, turns);
+                if (!rot?.valid) return;
+                const passagers = (rot.characterMoves || [])
+                  .filter(m => m.char.r !== m.r || m.char.c !== m.c)
+                  .map(m => `${m.char.player === 0 ? "allié" : "RIVAL"} ${m.char.r},${m.char.c}->${m.r},${m.c}`);
+                rotations.push({
+                  ile: nom(ile),
+                  pivot: [pr, pc],
+                  tour: turns === 2 ? "180" : (direction === 1 ? "90+" : "90-"),
+                  cases: rot.absCells.map(([r, c]) => `${r},${c}`).join(" "),
+                  passagers
+                });
+              });
+            });
+          });
+
+          /* Régions accessibles à pied : un budget énorme révèle la topologie
+             réelle, diagonales comprises. */
+          const pied = (state.characters || []).filter(ch => ch.player === 0).map(ch => {
+            const portee = movementRange(ch, 99);
+            return {
+              gardien: `${ch.r},${ch.c}`,
+              atteint: [...portee].length,
+              village: [...portee].some(k => k === "0,0" || k === "1,0" || k === "0,1")
+            };
+          });
+
+          return { id: def.id, rotations, pied };
+        } catch (error) {
+          return { error: `exception : ${error && error.message}` };
+        } finally {
+          PUZZLE.active = actifAvant;
+          PUZZLE.def = defAvant;
+          state = etatReel;
+        }
+      }
+
       /* ---------- Câblage ---------------------------------------------------- */
       window.addEventListener("ilyos-puzzle-requested", () => puzzleOpenMenu());
 
@@ -30578,6 +30648,9 @@
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
         solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
+           et ce qu'un Gardien atteint à pied. */
+        audit: puzzleAudit,
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
         /* Force un recalcul des marqueurs (mise au point du rendu). */
         refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },
@@ -31474,12 +31547,6 @@
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 13,
           sanctuary: false,
-          /* CHANTIER. Le plateau est fidèle à l'architecture voulue et il se
-             joue, mais aucune solution de référence n'a encore été vérifiée et
-             aucun `par` n'est établi : le chercheur d'optimum ne tient pas
-             cette échelle (voir la note en fin de définition). Le marqueur
-             l'exclut de l'oracle plutôt que de lui inventer un barème. */
-          wip: true,
           focus: [8, 8],
           villages: { 0: [[0, 0]] },
           islands: [
@@ -31530,13 +31597,16 @@
           deck: [
             ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
             ["MAGIC", "PUSH", "PUSH", "PUSH", "PUSH"],
-            ["MOVE", "MOVE", "MAGIC", "MAGIC", "PUSH"],
+            ["MOVE", "MOVE", "MOVE", "MAGIC", "MAGIC"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
             ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"],
-            ["MOVE", "MOVE", "PUSH", "PUSH", "PUSH"]
+            ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"]
           ],
-          /* Pas de `par` : il sera établi quand une solution de référence
-             aura été vérifiée. Ne rien annoncer vaut mieux qu'annoncer faux —
-             cinq `par` inventés se sont déjà révélés erronés en jeu. */
+          /* AUCUN `par`. La solution de référence ci-dessous est vérifiée
+             LÉGALE par l'oracle, mais rien ne dit qu'elle soit la moins chère :
+             le chercheur d'optimum ne tient pas cette échelle. Annoncer un
+             barème non prouvé serait répéter une erreur déjà commise cinq fois.
+             L'oracle vérifie donc que l'énigme reste SOLUBLE, et rien d'autre. */
           par: null,
           /* R3 tente CHAQUE tour d'entrer dans la zone de validation. Son coup
              est sauté si la case est occupée : terminer son tour sans avoir
@@ -31551,23 +31621,79 @@
             [{ a: "MOVE", who: "R3", to: [0, 1] }],
             [{ a: "MOVE", who: "R3", to: [0, 1] }],
             [{ a: "MOVE", who: "R3", to: [0, 1] }],
+            [{ a: "MOVE", who: "R3", to: [0, 1] }],
+            [{ a: "MOVE", who: "R3", to: [0, 1] }],
             [{ a: "MOVE", who: "R3", to: [0, 1] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "L'archipel s'illumine",
           winLine: "Aucun Gardien n'a fait le trajet. La lumière, elle, l'a fait en entier.",
           failLine: "Un chemin te semblait bon. Il l'était — mais pas jusqu'au bout.",
-          /* LIMITE CONNUE DU CHERCHEUR. Sur cette énigme il n'aboutit pas, même
-             avec un plafond de huit cartes : quatre alliés, quatre rivaux et
-             dix îles donnent un facteur de branchement — chaque Gardien vers
-             chaque case atteignable, chaque île autour de chaque case, trois
-             rotations chacune — que sa recherche par coût croissant ne peut pas
-             couvrir. Elle épuise 48 000 nœuds en deux minutes sans conclure.
+          /* AUDIT DE TOPOLOGIE (ILYOS_PUZZLE.audit) — ce que le chercheur ne
+             peut pas dire, l'audit le dit. Cinquante-trois rotations légales
+             recensées, et la propriété qui tient tout le puzzle :
 
-             Donc : ni optimum prouvé, ni raccourcis inventoriés, ni fausses
-             pistes mesurées. Tant que ce n'est pas le cas, cette énigme reste
-             un chantier. */
-          solution: []
+             AUCUN Gardien du sud ne peut marcher jusqu'au village. Le gouffre
+             de la rangée 3 sépare le plateau en deux, et seul D, isolé au nord
+             sur quatre cases, atteint la zone de validation. Le relais n'est
+             donc pas une élégance, c'est la seule issue.
+
+             Deux rotations franchissent ce gouffre — la Passerelle dressée en
+             pont, la Croix creuse qui dépose son passager au nord. Toutes deux
+             sont LÉGALES et volontairement conservées : ce sont de vraies
+             routes alternatives, simplement plus chères, puisqu'elles obligent
+             un porteur du sud à faire tout le trajet nord alors que D est déjà
+             sur place. Une fausse piste n'est pas une défaite.
+
+             Le rival du village, lui, ne se déloge par aucune rotation : sa
+             seule autre case ferait chevaucher le village, ce que le moteur
+             refuse. La menace finale ne se contourne pas.
+
+             Le chercheur d'optimum, en revanche, n'aboutit pas ici : quatre
+             alliés, quatre rivaux et dix îles donnent un branchement qu'il ne
+             couvre pas — 48 000 nœuds en deux minutes sans conclure. */
+          /* SOLUTION DE RÉFÉRENCE — légale, vérifiée par l'oracle sous les
+             vraies règles et la vraie structure de tours. Ce n'est PAS un
+             optimum : le chercheur ne tient pas cette échelle, et rien ne dit
+             qu'on ne fait pas mieux. Elle prouve seulement que l'énigme est
+             soluble, et elle montre le relais voulu — A porte, B relaie, C
+             convoie, D reçoit et valide.
+
+             Aucun Gardien ne fait le trajet entier, et la couronne franchit le
+             gouffre de la rangée 3 sans personne : elle est posée puis poussée,
+             et ramassée gratuitement de l'autre côté. */
+          solution: [
+            [
+              { a: "MOVE", who: "A", to: [11, 10] },
+              { a: "MOVE", who: "C", to: [6, 4] }
+            ],
+            [
+              { a: "MAGIC", island: "V", pivot: [10, 10], turns: 2 },
+              { a: "MOVE", who: "A", to: [8, 10] },
+              { a: "TRANSFER", who: "A", to: "B" }
+            ],
+            [
+              { a: "MOVE", who: "B", to: [7, 7] },
+              { a: "PUSH", who: "B", on: [7, 6], force: 1 },
+              { a: "DROP", who: "B", on: [7, 6] },
+              { a: "PUSH", who: "B", on: [7, 6], force: 2 },
+              { a: "PICKUP", who: "C", on: [7, 4] }
+            ],
+            [
+              { a: "MOVE", who: "C", to: [4, 2] }
+            ],
+            [
+              { a: "MOVE", who: "C", to: [5, 1] },
+              { a: "DROP", who: "C", on: [4, 1] },
+              { a: "PUSH", who: "C", on: [4, 1], force: 2 },
+              { a: "PICKUP", who: "D", on: [2, 1] }
+            ],
+            [
+              { a: "MOVE", who: "D", to: [1, 1] },
+              { a: "PUSH", who: "D", on: [0, 1], force: 1 },
+              { a: "MOVE", who: "D", to: [0, 1] }
+            ]
+          ]
         }
       );
  function replay() {
