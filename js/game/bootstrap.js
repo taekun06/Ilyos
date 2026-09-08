@@ -128,6 +128,7 @@
       /* Point d'entrée unique pour changer la taille du plateau. Appelé avant
          la construction d'une partie, jamais pendant. */
       function setBoardSize(taille) {
+        const grillePrecedente = GRID;
         GRID = normalizeBoardSize(taille);
         CENTER = { r: (GRID - 1) / 2, c: (GRID - 1) / 2 };
         // Le plateau DOM et l'aperçu symétrique se disposent en repeat(var(--board-n), 1fr).
@@ -144,6 +145,18 @@
            passage 11×11 → 13×13 se retrouvait cadré pour l'ancienne taille —
            sans erreur, juste un plateau qui déborde. */
         if (typeof kaykit3D !== "undefined" && kaykit3D) {
+          /* Châteaux et socles sont mis en CACHE avec leur position monde, et
+             cette position dépend de GRID (kaykitCellPosition centre le plateau
+             sur la grille). Changer de taille sans vider ces caches laissait le
+             château d'un village à sa place de l'ANCIENNE grille : il flottait
+             à l'écart des îles, dans le vide. Vu en enchaînant deux énigmes de
+             tailles différentes, mais le menu propose aussi 11×11 et 13×13 :
+             une partie lancée après une autre d'une autre taille avait le même
+             défaut. */
+          if (grillePrecedente !== GRID) {
+            try { kaykit3D.villageRegistry?.clear(); } catch (_) {}
+            try { kaykit3D.pedestalRegistry?.clear(); } catch (_) {}
+          }
           kaykit3D.gridSize = GRID;
           kaykit3D.minZoom = 6.4 * (GRID / 11);
           kaykit3D.maxZoom = 25 * (GRID / 11);

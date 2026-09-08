@@ -495,7 +495,7 @@
         {
           id: "p12-squatteur",
           title: "Le squatteur",
-          tagline: "Il annonce où il va s'asseoir. À toi d'y être avant lui.",
+          tagline: "Il annonce où il va s'asseoir. Assieds-toi, puis ne fais plus rien.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
@@ -516,28 +516,30 @@
             ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"],
             ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"]
           ],
-          /* Optimum réel : 4. Le `par` de cinq supposait qu'on prendrait la
-             place au rival avec le Gardien qui ne porte rien — or l'ABATTRE
-             coûte moins cher, et le second Gardien ne sert alors à rien. La
-             leçon voulue ne se produit jamais : l'énigme demande à être
-             REDESSINÉE, pas recalibrée. Le `par` dit au moins la vérité en
-             attendant. */
-          par: 4,
+          /* Optimum réel : 3, et c'est un vrai coup de TEMPO — le premier de
+             la collection. On monte d'une case sur le siège du rival, puis on
+             TERMINE SON TOUR avec des cartes en main. Le rival ne peut plus
+             s'y asseoir, sa case est prise ; son coup est simplement sauté. Il
+             ne reste qu'à monter et pousser le second.
+
+             Ni l'abattre (quatre cartes) ni foncer au village (le rival prend
+             le siège derrière soi) ne valent ce simple arrêt. Le bon coup est
+             de ne rien jouer de plus. */
+          par: 3,
           rivalPlan: ["il se poste sur la case marquée — une case de ton village."],
           replies: [
             [{ a: "MOVE", who: "R1", to: [1, 0] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La place était prise",
-          winLine: "Un Gardien qui ne porte rien vaut une place assise.",
+          winLine: "Prendre la place ne coûte rien. Le bon coup était de s'arrêter là.",
           failLine: "Il s'est installé sur ton village, et tu n'as plus de quoi l'en sortir.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [1, 0] },
-              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [0, 0] }
+              { a: "MOVE", who: "G", to: [1, 0] }
             ],
             [
+              { a: "MOVE", who: "G", to: [0, 0] },
               { a: "PUSH", who: "G", on: [0, 1], force: 1 }
             ]
           ]
