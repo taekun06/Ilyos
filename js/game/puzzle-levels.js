@@ -1064,8 +1064,7 @@
            terre au nord ; les cinq autres se jouent, coûtent une carte, et ne
            mènent à rien.
 
-           PAS DE BARÈME tant qu'il n'est pas prouvé. La solution de référence
-           coûte 6. */
+           Optimum 6, PROUVÉ par recherche exhaustive sous plafond 6. */
         {
           id: "p20-la-plus-courte-trace",
           acte: "III",
@@ -1090,7 +1089,15 @@
           guardians: [
             { key: "G", p: 0, r: 9, c: 2, crown: 1 }
           ],
-          hand: { MOVE: 6, PUSH: 6, MAGIC: 3 },
+          /* UNE SEULE MAGIE, et c'est le coeur de l'énigme. Avec trois, le
+             chercheur faisait MARCHER le socle vers le nord en l'enroulant sur
+             lui-même, la couronne dessus, et terminait d'une poussée de 1 :
+             quatre cartes, et la leçon contournée. C'est en outre l'idée de la
+             charnière, déjà jouée. Une carte de Magie ne donne qu'un pivot :
+             il faut choisir le bon, et la couronne doit ensuite franchir le
+             vide toute seule. */
+          hand: { MOVE: 6, PUSH: 6, MAGIC: 1 },
+          par: 6,
           goal: { type: "crownAtCell", cell: [2, 1] },
           winTitle: "La trace la plus courte",
           winLine: "Personne n'a marché jusque-là. La couronne y est allée seule.",
