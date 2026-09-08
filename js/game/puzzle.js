@@ -1795,6 +1795,7 @@
              pour cette raison. Ici c'est movementRange qui répond. */
           const ponts = [];
           const convois = [];
+          const depots = [];
           rotations.forEach(rot => {
             const avant = snapshotState();
             const ile = state.islands.find(i => nom(i) === rot.ile);
@@ -1812,10 +1813,24 @@
                  n'ouvre AUCUNE route mais convoie un Gardien sur une longue
                  distance. Un trajet gratuit de quatre cases vaut quatre
                  DÉPLACER, et peut contourner une région entière. */
-              (calc.characterMoves || []).forEach(m => {
-                if (m.char.player !== 0) return;
-                const d = Math.abs(m.char.r - m.r) + Math.abs(m.char.c - m.c);
-                if (d >= 3) convois.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : allié ${m.char.r},${m.char.c}->${m.r},${m.c} (${d} cases)`);
+              /* Indépendant des occupants : ce qui compte n'est pas qui se
+                 tient sur l'île MAINTENANT, mais où un passager SERAIT déposé
+                 s'il y montait en cours de partie. On regarde donc le trajet de
+                 chaque CASE. Ne pas le faire m'a coûté deux raccourcis : la
+                 passerelle dressée dépose son passager au pied du village, et
+                 personne n'est dessus au premier tour. */
+              ile.cells.forEach(([cr, cc], i) => {
+                const [nr, nc] = calc.absCells[i] || [];
+                if (!Number.isFinite(nr)) return;
+                const d = Math.abs(cr - nr) + Math.abs(cc - nc);
+                if (d >= 3) {
+                  convois.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : ${cr},${cc}->${nr},${nc} (${d} cases)`);
+                }
+                /* Un passager déposé au nord, ou à une diagonale du nord, a
+                   franchi le gouffre sans le franchir. */
+                if (cr >= 4 && nr <= 2) {
+                  depots.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : ${cr},${cc}->${nr},${nc} (dépose au NORD)`);
+                }
               });
             }
             applyStateSnapshot(JSON.parse(avant));
@@ -1832,7 +1847,7 @@
             };
           });
 
-          return { id: def.id, rotations, pied, ponts, convois };
+          return { id: def.id, rotations, pied, ponts, convois, depots };
         } catch (error) {
           return { error: `exception : ${error && error.message}` };
         } finally {

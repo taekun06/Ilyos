@@ -853,20 +853,18 @@
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 13,
           sanctuary: false,
-          focus: [8, 8],
+          focus: [6, 5],
           villages: { 0: [[0, 0]] },
           islands: [
             /* Nord-ouest : le village et sa dernière serrure. */
-            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            /* Le Virage est reculé vers l'OUEST — (2,2) supprimé. Deux
-               rotations du sud atteignent la rangée 2 ou 3 : la Passerelle
-               dressée dépose une case en (2,3), la Croix creuse en (3,3) et
-               (2,4). Tant que le Virage occupait (2,2), (3,3) en était
-               DIAGONALEMENT voisin — et une diagonale franchit un coin. Une
-               seule Magie reliait donc le sud au village et rendait tout le
-               relais facultatif. Reculé, plus aucune de ces cases n'est à
-               portée, même en diagonale. */
-            { key: "VIRAGE", cells: [[1, 0], [1, 1], [2, 0]] },
+            /* LE NORD TIENT SUR LA SEULE RANGÉE 0, et c'est structurel. Une
+               île de trois cases projette une case à DEUX de distance quand on
+               la pivote par une extrémité, et une diagonale franchit un coin :
+               il faut donc trois rangées de dégagement entre la terre du sud
+               (rangée 4) et celle du nord pour qu'aucune rotation ne vienne
+               déposer un passager au pied du village. Trois tentatives de
+               colmatage cas par cas ont échoué avant ce constat. */
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
             /* Le gouffre de la rangée 3 sépare le Virage de la Passerelle :
                aucun Gardien ne le franchit, une couronne poussée si. */
             { key: "PASSERELLE", cells: [[4, 1], [4, 2], [4, 3]] },
@@ -880,7 +878,11 @@
                qui contournait la croix creuse, pourtant le cœur de l'énigme.
                Signalé en jouant. Elle ne connecte rien de neuf : elle ne touche
                que (6,0), en diagonale, et reste un cul-de-sac. */
-            { key: "DOMINO", cells: [[5, 1], [6, 0], [7, 1]] },
+            /* Chaîne diagonale. (5,2) est la plate-forme d'où l'on pousse la
+               couronne vers le nord ; (7,0) n'est là que pour COLLISIONNER avec
+               l'arrivée d'une rotation de la croix pleine qui, sans elle,
+               translatait tout le corridor de quatre colonnes vers l'ouest. */
+            { key: "DOMINO", cells: [[5, 2], [6, 1], [7, 0]] },
             /* Croix creuse : le cœur. Son centre (5,4) est vide, et selon son
                orientation elle relie la Passerelle, reçoit un Gardien, ou ferme
                une route. */
@@ -908,10 +910,10 @@
             { key: "A", p: 0, r: 11, c: 12, crown: 1 },
             { key: "B", p: 0, r: 8, c: 9 },
             { key: "C", p: 0, r: 5, c: 3 },
-            { key: "D", p: 0, r: 1, c: 0 },
+            { key: "D", p: 0, r: 0, c: 3 },
             { key: "R1", p: 1, r: 7, c: 6 },
             { key: "R2", p: 1, r: 6, c: 11 },
-            { key: "R3", p: 1, r: 0, c: 2 }
+            { key: "R3", p: 1, r: 0, c: 1 }
           ],
           /* La pioche donne cinq cartes par tour. Les cartes non jouées passent
              en réserve : ne rien dépenser n'est pas perdre. */
@@ -929,23 +931,15 @@
              barème non prouvé serait répéter une erreur déjà commise cinq fois.
              L'oracle vérifie donc que l'énigme reste SOLUBLE, et rien d'autre. */
           par: null,
-          /* R3 tente CHAQUE tour d'entrer dans la zone de validation. Son coup
-             est sauté si la case est occupée : terminer son tour sans avoir
-             sécurisé le village lui ouvre la porte. */
+          /* Le nord tenant sur une seule rangée, le rival n'a aucun trajet à
+             faire : il CAMPE déjà sur la case de validation, et sa seule
+             présence verrouille le village. Il ne peut pas non plus être
+             emporté par une rotation — la seule arrivée possible de son île
+             chevaucherait le village, ce que le moteur refuse. */
           rivalPlan: [
-            "il entre dans ton village si la case marquée est libre.",
-            "il y entre encore.",
-            "et encore.",
-            "et encore."
+            "il campe déjà sur ton village. Rien ne l'en fera bouger — sauf toi."
           ],
-          replies: [
-            [{ a: "MOVE", who: "R3", to: [0, 1] }],
-            [{ a: "MOVE", who: "R3", to: [0, 1] }],
-            [{ a: "MOVE", who: "R3", to: [0, 1] }],
-            [{ a: "MOVE", who: "R3", to: [0, 1] }],
-            [{ a: "MOVE", who: "R3", to: [0, 1] }],
-            [{ a: "MOVE", who: "R3", to: [0, 1] }]
-          ],
+          replies: [],
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "L'archipel s'illumine",
           winLine: "Aucun Gardien n'a fait le trajet. La lumière, elle, l'a fait en entier.",
@@ -1004,15 +998,15 @@
               { a: "MOVE", who: "C", to: [4, 2] }
             ],
             [
-              { a: "MOVE", who: "C", to: [5, 1] },
-              { a: "DROP", who: "C", on: [4, 1] },
-              { a: "PUSH", who: "C", on: [4, 1], force: 3 },
-              { a: "PICKUP", who: "D", on: [1, 1] }
+              { a: "MOVE", who: "C", to: [5, 2] },
+              { a: "DROP", who: "C", on: [4, 2] },
+              { a: "PUSH", who: "C", on: [4, 2], force: 4 },
+              { a: "PICKUP", who: "D", on: [0, 2] }
             ],
             [
-              { a: "MOVE", who: "D", to: [1, 1] },
-              { a: "PUSH", who: "D", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "D", to: [1, 0] }
+              { a: "MOVE", who: "D", to: [0, 2] },
+              { a: "PUSH", who: "D", on: [0, 1], force: 2 },
+              { a: "MOVE", who: "D", to: [0, 1] }
             ]
           ]
         }
