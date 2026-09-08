@@ -6031,6 +6031,22 @@
         list.length = 0;
       }
 
+      /* Les châteaux de village sont ajoutés UNE seule fois à dynamicGroup et
+         mis en cache avec leur position MONDE. Vider le registre seul ne
+         suffit donc pas : l'ancien château reste accroché à la scène — il
+         flotte à l'écart des îles — et un second est construit à côté. Il faut
+         le retirer. Sert au changement de taille de plateau comme au passage
+         d'une énigme à la suivante, où le village change de case ou disparaît. */
+      function clearKayKitVillages() {
+        const registre = kaykit3D?.villageRegistry;
+        if (!registre) return;
+        registre.forEach(castle => {
+          try { disposeKayKitTaggedResources(castle); } catch (_) { }
+          castle?.parent?.remove(castle);
+        });
+        registre.clear();
+      }
+
       function cellClassSet(r, c) {
         const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         return cell ? cell.classList : null;

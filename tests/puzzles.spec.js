@@ -28,11 +28,11 @@ async function ouvrirJeu(page) {
   return erreurs;
 }
 
-test('les énigmes achevées se résolvent exactement par leur solution de référence', async ({ page }) => {
+test('les vingt-deux Sanctuaires se résolvent exactement par leur solution de référence', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
   const liste = await page.evaluate(() => window.ILYOS_PUZZLE.list());
-  expect(liste.length).toBe(17);
+  expect(liste.length).toBe(22);
 
   const resultats = await page.evaluate(() => window.ILYOS_PUZZLE.verifyAll());
 
@@ -60,9 +60,9 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   await page.waitForSelector('#puzzleMenu', { timeout: 10000 });
 
   /* Déblocage linéaire : seule la première carte est cliquable au premier
-     lancement, les dix autres restent verrouillées. */
+     lancement, les vingt et une autres restent verrouillées. */
   const cartes = page.locator('#puzzleMenu .pz-card');
-  await expect(cartes).toHaveCount(17);
+  await expect(cartes).toHaveCount(22);
   await expect(cartes.nth(0)).toBeEnabled();
   await expect(cartes.nth(1)).toBeDisabled();
 
@@ -96,7 +96,7 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
 test('la neuvième énigme se résout entièrement à la souris', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
-  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.start(8); });
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p09-fardeau'); });
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p09-fardeau');
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 
@@ -154,7 +154,7 @@ test('la neuvième énigme se résout entièrement à la souris', async ({ page 
 test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
-  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.start(13); });
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p14-course'); });
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p14-course');
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 
@@ -166,7 +166,8 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
 
   const clic = (r, c) => page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).dispatchEvent('click');
 
-  // Tour 1 : cinq cartes, cinq cases. Le Gardien s'arrête à hauteur du rival.
+  // Tour 1 : cinq cartes, cinq cases, droit vers le Sanctuaire — c'est
+  // justement la ligne qui perd, mais elle suffit à ce que le test observe.
   await page.locator('#ov2Move').click({ force: true });
   await clic(8, 0);
   await clic(3, 0);
@@ -176,10 +177,10 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
   await attendreLaMain(page);
   expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(5);
 
-  // Fin de tour : le rival descend en (2,1), comme annoncé.
+  // Fin de tour : le Veilleur monte en (1,2), comme annoncé.
   await page.locator('#ov2End').click({ force: true });
   await page.waitForFunction(() =>
-    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 1 && ch.r === 2 && ch.c === 1),
+    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 1 && ch.r === 1 && ch.c === 2),
     null, { timeout: 15000 });
   await page.waitForFunction(() => {
     const d = window.ILYOS_PUZZLE._debug();
@@ -188,8 +189,10 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
 
   const apres = await page.evaluate(() => window.ILYOS_PUZZLE._debug());
   expect(apres.rivalTurn).toBe(1);
-  // Cinq cartes fraîches au tour 2, sans que le budget dépensé bouge.
-  expect(apres.hand.length).toBe(5);
+  // La main du tour 2 est celle que le paquet annonce — quatre cartes ici,
+  // pas cinq : une énigme scriptée distribue ce qu'elle a écrit. Le budget
+  // déjà dépensé, lui, ne bouge pas.
+  expect(apres.hand.length).toBe(4);
   expect(apres.depense).toBe(5);
   // La ligne jouée s'éteint, la suivante s'allume.
   await expect(page.locator('#puzzleLayer .pz-plan-line').first()).toHaveClass(/done/);

@@ -154,7 +154,7 @@
              une partie lancée après une autre d'une autre taille avait le même
              défaut. */
           if (grillePrecedente !== GRID) {
-            try { kaykit3D.villageRegistry?.clear(); } catch (_) {}
+            try { clearKayKitVillages(); } catch (_) {}
             try { kaykit3D.pedestalRegistry?.clear(); } catch (_) {}
           }
           kaykit3D.gridSize = GRID;
@@ -6401,6 +6401,22 @@
           object.parent?.remove(object);
         });
         list.length = 0;
+      }
+
+      /* Les châteaux de village sont ajoutés UNE seule fois à dynamicGroup et
+         mis en cache avec leur position MONDE. Vider le registre seul ne
+         suffit donc pas : l'ancien château reste accroché à la scène — il
+         flotte à l'écart des îles — et un second est construit à côté. Il faut
+         le retirer. Sert au changement de taille de plateau comme au passage
+         d'une énigme à la suivante, où le village change de case ou disparaît. */
+      function clearKayKitVillages() {
+        const registre = kaykit3D?.villageRegistry;
+        if (!registre) return;
+        registre.forEach(castle => {
+          try { disposeKayKitTaggedResources(castle); } catch (_) { }
+          castle?.parent?.remove(castle);
+        });
+        registre.clear();
       }
 
       function cellClassSet(r, c) {
@@ -28842,6 +28858,26 @@
          js/version-bootstrap.js au clic sur PUZZLES) ou `ILYOS_PUZZLE.open()`.
          ===================================================================== */
 
+      /* La campagne parle de SANCTUAIRES, pas d'énigmes numérotées. Le joueur
+         ne doit jamais lire « Puzzle 12/17 » : il lit un nom de lieu et l'état
+         de son réveil. Les identifiants internes (p01…p17) ne bougent pas —
+         c'est sur eux que la progression est enregistrée. */
+      const PUZZLE_ACTES = {
+        PROLOGUE: "Prologue · La première lueur",
+        I: "Acte I · Les Voies éteintes",
+        II: "Acte II · Les Îles se souviennent",
+        III: "Acte III · La Dissonance",
+        CONFLUENCE: "Confluence"
+      };
+
+      /* Les trois principes anciens ne sont JAMAIS présentés comme des
+         catégories : un symbole discret sur la fiche, rien de plus. */
+      const PUZZLE_PRINCIPES = {
+        MESURE: { signe: "◆", nom: "La Mesure" },
+        CADENCE: { signe: "◇", nom: "La Cadence" },
+        TRACE: { signe: "◈", nom: "La Trace" }
+      };
+
       const PUZZLE_STORAGE_KEY = "ilyos.puzzles.progress";
       const PUZZLE_DEV_KEY = "ilyos.puzzles.dev";
 
@@ -29138,6 +29174,21 @@
             && char.r === goal.cell[0] && char.c === goal.cell[1]);
         },
 
+        /* Chaque Gardien NOMMÉ sur SA case, en même temps. La différence avec
+           occupyCells n'est pas cosmétique : tant que n'importe qui pouvait
+           remplir n'importe quelle case, le joueur se contentait d'envoyer
+           chacun vers la plus proche et toute contrainte d'ordre se dissolvait.
+           En liant le porteur à sa destination, on rend les croisements
+           obligatoires — c'est la leçon des Quatre mains, qui n'en avait
+           aucune. */
+        assignedCells(def, goal) {
+          return Object.entries(goal.pairs || {}).every(([cle, cellule]) => {
+            const char = characterById(PUZZLE.charsByKey[cle]);
+            return !!char && char.player === (goal.player ?? 0)
+              && char.r === cellule[0] && char.c === cellule[1];
+          });
+        },
+
         /* Des gardiens du joueur sur TOUTES les cases listées, en même temps. */
         occupyCells(def, goal) {
           return (goal.cells || []).every(([r, c]) => {
@@ -29229,6 +29280,10 @@
         const style = document.createElement("style");
         style.id = "ilyos-puzzle-style";
         style.textContent = `
+          /* Pendant une séquence, le calque CAPTE les clics : c'est ce qui
+             permet de la passer, et cela évite au passage qu'un clic destiné
+             à l'interrompre sélectionne un Gardien sur le plateau. */
+          #puzzleLayer.reveil{pointer-events:auto;}
           #puzzleLayer{position:fixed;inset:0;z-index:1500001;pointer-events:none;
             font-family:'Nunito Sans','Inter',system-ui,sans-serif;color:#eaf1ff;}
           #puzzleLayer .pz-brief{position:absolute;top:74px;left:50%;
@@ -29277,9 +29332,97 @@
           #puzzleLayer .pz-end h2{font-family:'Cinzel Decorative','Almendra',serif;
             font-size:clamp(21px,3.6vw,32px);margin:0;letter-spacing:.04em;}
           #puzzleLayer .pz-end p{margin:0;max-width:460px;color:#c4d2ee;line-height:1.6;font-size:14px;}
+          /* Le réveil du Sanctuaire. Trois calques seulement : une lueur qui
+             monte du sol, une phrase posée sur le ciel, un fondu. Le reste du
+             mouvement vient de la CAMÉRA, qui recule — c'est elle qui donne
+             l'échelle, pas un effet. */
+          #puzzleLayer .pz-bloom{position:absolute;inset:0;z-index:5;pointer-events:none;
+            opacity:0;background:radial-gradient(circle at 50% 58%,
+              rgba(255,238,190,.95),rgba(255,206,120,.35) 42%,rgba(255,200,110,0) 70%);}
+          #puzzleLayer .pz-bloom.on{animation:pz-bloom-k 2.6s ease-out;}
+          @keyframes pz-bloom-k{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+
+          /* Le ciel d'ILYOS est CLAIR : un texte doré posé dessus sans voile
+             se perd dans les nuages. Le dégradé est porté par l'élément
+             lui-même — un ::before en z-index négatif ne peint pas de façon
+             fiable sous un parent en opacité animée. */
+          #puzzleLayer .pz-caption{position:absolute;left:50%;bottom:24%;
+            transform:translateX(-50%) translateY(10px);z-index:9;
+            width:min(760px,92vw);padding:26px 40px;text-align:center;opacity:0;
+            background:radial-gradient(ellipse at center,
+              rgba(4,6,14,.72),rgba(4,6,14,.42) 52%,rgba(4,6,14,0) 78%);
+            transition:opacity 1s ease, transform 1s ease;
+            font-family:'Cinzel Decorative','Almendra',serif;
+            font-size:clamp(16px,2.2vw,22px);line-height:1.65;color:#ffeec6;
+            text-shadow:0 2px 18px rgba(0,0,0,.75),0 0 34px rgba(255,206,120,.35);}
+          #puzzleLayer .pz-caption.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+          /* LA RÉPONSE AU LOIN. Un autre Sanctuaire s'allume par-delà l'archipel
+             — le joueur n'apprend jamais lequel. Posé haut et sur le côté, à
+             hauteur d'horizon : sur le plateau, ce serait un effet de plus ;
+             au loin, c'est quelqu'un. */
+          #puzzleLayer .pz-lointain{position:absolute;left:76%;top:34%;z-index:6;
+            width:190px;height:190px;margin:-95px 0 0 -95px;pointer-events:none;opacity:0;
+            background:radial-gradient(circle at 50% 50%,
+              rgba(255,246,214,.92) 0%,rgba(255,222,150,.55) 14%,
+              rgba(255,206,120,.20) 34%,rgba(255,200,110,0) 66%);}
+          #puzzleLayer .pz-lointain.on{animation:pz-loin-k 3s ease-in-out;}
+          @keyframes pz-loin-k{0%{opacity:0;transform:scale(.55)}
+            34%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
+
+          #puzzleLayer .pz-fade{position:absolute;inset:0;z-index:11;pointer-events:none;
+            background:#04060d;opacity:0;transition:opacity .7s ease;}
+          #puzzleLayer .pz-fade.on{opacity:1;}
+
+          /* Le nom du lieu où l'on vient d'arriver, sur le noir, puis tenu
+             pendant que l'archipel se découvre dessous. */
+          /* Le nom se tient d'abord sur le noir, puis sur le ciel quand le rideau
+             se lève : il lui faut son propre voile, comme à la vérité. */
+          #puzzleLayer .pz-lieu{position:absolute;left:50%;top:44%;z-index:13;
+            transform:translate(-50%,-50%);width:min(860px,94vw);padding:40px 40px 46px;
+            text-align:center;opacity:0;pointer-events:none;transition:opacity .9s ease;
+            background:radial-gradient(ellipse at center,
+              rgba(4,6,14,.66),rgba(4,6,14,.34) 54%,rgba(4,6,14,0) 78%);}
+          #puzzleLayer .pz-lieu.show{opacity:1;}
+          #puzzleLayer .pz-lieu .acte{display:block;font-size:11.5px;letter-spacing:.24em;
+            text-transform:uppercase;color:#c3d2ee;margin-bottom:14px;
+            text-shadow:0 1px 12px rgba(0,0,0,.9);}
+          #puzzleLayer .pz-lieu .nom{display:block;font-family:'Cinzel Decorative','Almendra',serif;
+            font-size:clamp(24px,4.2vw,40px);letter-spacing:.08em;color:#ffe3ab;
+            text-shadow:0 2px 26px rgba(0,0,0,.8),0 0 46px rgba(255,206,120,.3);}
+
+          /* Pendant le réveil, le chrome de jeu s'efface : on regarde le ciel,
+             on ne joue plus. */
+          #gameScreen.puzzle-reveil #hudV2Top,
+          #gameScreen.puzzle-reveil #hudV2Dock,
+          #gameScreen.puzzle-reveil #turnRibbon,
+          #gameScreen.puzzle-reveil #ilyosHudOrganicV2,
+          #gameScreen.puzzle-reveil #hudV2Toast,
+          #gameScreen.puzzle-reveil .hud-v2-vignette,
+          body.puzzle-reveil #toast,
+          /* Les couronnes se valident AU DÉBUT du tour suivant : la distribution
+             des cartes vole donc à l'écran au moment exact où le Sanctuaire
+             s'éveille. Ces cartes vivent sur <body>, hors de #gameScreen. */
+          body.puzzle-reveil > .card-cycle-v7-card,
+          body.puzzle-reveil > .card-cycle-v7-count{opacity:0 !important;
+            transition:opacity .8s ease;pointer-events:none;}
+          #puzzleLayer.reveil .pz-brief,
+          #puzzleLayer.reveil .pz-budget,
+          #puzzleLayer.reveil .pz-plan,
+          #puzzleLayer.reveil .pz-tools{opacity:0;transition:opacity .8s ease;
+            pointer-events:none;}
+
+          #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
+            font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
+            line-height:1.6;color:#ffe3ab;letter-spacing:.02em;}
+          #puzzleLayer .pz-cout{opacity:.55;font-size:12.5px;}
+          #puzzleMenu .pz-signe{font-size:14px;color:#8fa6d2;opacity:.8;}
           #puzzleLayer .pz-stars{font-size:30px;letter-spacing:8px;
             filter:drop-shadow(0 0 10px rgba(255,205,110,.5));}
           #puzzleLayer .pz-end-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+          #puzzleLayer .pz-end-actions .primary{background:linear-gradient(180deg,#f0c273,#c98f36);
+            border-color:rgba(255,226,167,.55);color:#2a1b04;font-weight:800;
+            box-shadow:0 6px 20px rgba(201,143,54,.35);}
 
           /* Au-dessus de l'iframe du menu (z-index 2147483000, voir
              js/version-bootstrap.js) : l'écran de sélection s'ouvre alors que
@@ -29416,7 +29559,25 @@
         guardian: 0x1f8fff,   // amène un Gardien ici
         carrier: 0x1f8fff,    // un Gardien PORTANT une couronne (même famille)
         crown: 0xf0a800,      // pose une couronne ici
-        threat: 0x9a63e0      // le rival a annoncé qu'il viendrait là
+        threat: 0x9a63e0,     // le rival a annoncé qu'il viendrait là
+        /* Le sceau porte un RANG : la case et le Gardien attendu portent le
+           même signe, et c'est la seule chose qui les appareille. */
+        sceau: 0xffd98a
+      };
+
+      /* Une couleur PAR RANG. Les bâtons de comptage seuls ne suffisaient pas :
+         vus de la caméra de jeu, quatre sceaux dorés posés aux quatre bouts d'un
+         plateau se ressemblent, et les insignes portés par des Gardiens en file
+         se recouvrent. La teinte se lit d'un coup d'oeil là où le compte demande
+         qu'on s'approche ; les bâtons restent, pour qui distingue mal les
+         couleurs. Quatre teintes franches, aucune verte — le vert se perdrait
+         sur les îles. */
+      const PUZZLE_SCEAU_COLORS = {
+        1: 0x2b9dff,   // bleu
+        2: 0xff8a32,   // orange
+        3: 0xe256cf,   // magenta
+        4: 0xff4d4d    // vermillon — le jaune essayé d'abord se dissolvait
+                       //   sur le vert clair des îles comme sur le ciel
       };
 
       function puzzleGoalCellsFrom(goal, sortie = []) {
@@ -29425,6 +29586,12 @@
           (cells || []).forEach(([r, c]) => sortie.push({ r, c, kind }));
         switch (goal.type) {
           case "occupyCells": pousser(goal.cells, "guardian"); break;
+          /* Le RANG distingue les sceaux entre eux : sans lui, quatre cases
+             identiques ne diraient pas laquelle attend qui. */
+          case "assignedCells":
+            Object.values(goal.pairs || {}).forEach(([r, c], index) =>
+              sortie.push({ r, c, kind: "sceau", rang: index + 1 }));
+            break;
           case "reachCell": pousser([goal.cell], "guardian"); break;
           case "carryToCell": pousser([goal.cell], "carrier"); break;
           case "crownAtCell": pousser([goal.cell], "crown"); break;
@@ -29478,7 +29645,7 @@
          forme une fois réduites. Une vraie rune gravée pourra les remplacer :
          il suffira de charger une image à la place du tracé, le reste ne
          bouge pas. */
-      function puzzleGlyphTexture(kind, couleur) {
+      function puzzleGlyphTexture(kind, couleur, rang = 0) {
         const taille = 256;
         const canevas = document.createElement("canvas");
         canevas.width = canevas.height = taille;
@@ -29527,6 +29694,91 @@
           ctx.lineWidth = 46; ctx.stroke();
           ctx.strokeStyle = teinte;
           ctx.lineWidth = 28; ctx.stroke();
+        } else if (kind === "sceau") {
+          /* LE SCEAU : un losange fin, et dedans une des quatre LUMIÈRES —
+             croissant, étoile, croix, anneau. Le rang ne se compte plus, il se
+             reconnaît : c'est une SILHOUETTE, seule chose qui survive à vingt
+             pixels sous une vue inclinée. Les hachures essayées avant étaient
+             une texture, et une texture disparaît à cette taille. Le disque
+             plein a été écarté : à côté de l'anneau, seul le trou les séparait.
+
+             LE MOTIF EST CLAIR, PAS COLORÉ. Une forme saturée posée sur le vert
+             vif d'une île perd la moitié de son contraste ; un motif ivoire
+             cerné de sa teinte et nimbé d'un halo se détache des deux fonds du
+             jeu — l'herbe et le ciel — sans rien devoir à la couleur, qui ne
+             sert plus qu'à l'appariement. */
+          const halo = (couleurHalo, force) => {
+            ctx.shadowColor = couleurHalo;
+            ctx.shadowBlur = force;
+          };
+          const sansHalo = () => { ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; };
+
+          const d = 104;
+          const losange = (k = 1) => {
+            const t = d * k;
+            ctx.beginPath();
+            ctx.moveTo(0, -t); ctx.lineTo(t, 0); ctx.lineTo(0, t); ctx.lineTo(-t, 0);
+            ctx.closePath();
+          };
+
+          /* LE FOND SOMBRE, et c'est lui qui fait tout. Un premier essai posait
+             un motif ivoire à même la case : sur le vert clair d'une île, clair
+             sur clair, il ne restait rien. Le sceau porte donc son propre fond
+             de nuit — le motif ne dépend plus du terrain sur lequel il tombe,
+             et c'est ce que faisait l'image de référence sans qu'on le
+             remarque. */
+          losange(.94);
+          ctx.fillStyle = "rgba(9,14,30,.88)";
+          ctx.fill();
+
+          // Cartouche : deux traits fins plutôt qu'un épais — c'est ce qui fait
+          // la différence entre une bordure et un bijou.
+          /* Halo COURT. Un halo large était superbe sur la texture et
+             catastrophique à l'écran : le rendu passe par un bloom, qui
+             ramassait ces pixels clairs et blanchissait toute la zone — îles
+             comprises. Le contraste vient désormais du fond de nuit, pas de la
+             lueur. */
+          halo(teinte, 10);
+          losange(1);
+          ctx.strokeStyle = teinte; ctx.lineWidth = 9; ctx.stroke();
+          sansHalo();
+          losange(.84);
+          ctx.strokeStyle = teinte; ctx.lineWidth = 4; ctx.stroke();
+
+          /* Le motif tient dans le carré INSCRIT au losange, pas dans le
+             losange : au-delà il déborderait sur les pointes. */
+          const r = 54;
+          ctx.beginPath();
+          if (rang === 1) {
+            // le Croissant
+            ctx.arc(0, 0, r, Math.PI * .42, Math.PI * 1.58, false);
+            ctx.arc(r * .42, 0, r * .86, Math.PI * 1.5, Math.PI * .5, true);
+            ctx.closePath();
+          } else if (rang === 2) {
+            // l'Étoile — quatre branches, pas cinq : elles restent effilées
+            for (let i = 0; i < 8; i++) {
+              const a = i * Math.PI / 4 - Math.PI / 2;
+              const rr = i % 2 ? r * .32 : r;
+              ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
+            }
+            ctx.closePath();
+          } else if (rang === 3) {
+            // la Croix
+            const b = r * .32;
+            ctx.rect(-b, -r, b * 2, r * 2);
+            ctx.rect(-r, -b, r * 2, b * 2);
+          } else {
+            // l'Anneau — le trou est large, c'est lui qui porte la lecture
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.arc(0, 0, r * .54, 0, Math.PI * 2, true);
+          }
+          halo(teinte, 12);
+          ctx.fillStyle = teinte; ctx.fill();
+          sansHalo();
+          // Un liseré ivoire À L'INTÉRIEUR du motif : il lui donne son éclat
+          // sans lui retirer sa couleur, qui reste le signe d'appariement.
+          ctx.strokeStyle = "rgba(255,246,226,.85)"; ctx.lineWidth = 4; ctx.stroke();
+
         } else {
           if (kind === "guardian") tracerChevron(); else tracerCouronne();
           ctx.lineWidth = 26; ctx.stroke();
@@ -29595,8 +29847,9 @@
       function puzzleAddMarker(marque) {
         const groupe = puzzleMarkerGroup();
         if (!groupe) return;
-        const { r, c, kind } = marque;
-        const couleur = PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
+        const { r, c, kind, rang } = marque;
+        const couleur = (kind === "sceau" && PUZZLE_SCEAU_COLORS[rang])
+          || PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
         /* Hauteur du DESSUS DES ÎLES, y compris pour une case vide.
            kaykitCellSurfaceY() rend le niveau du plateau (.05) là où il n'y a
            pas de terre, contre .47 pour une île : en vue inclinée, le marqueur
@@ -29636,7 +29889,8 @@
         couche(
           new THREE.PlaneGeometry(cote, cote),
           new THREE.MeshBasicMaterial({
-            color: couleur, transparent: true, opacity: surTerre ? .34 : .24,
+            color: couleur, transparent: true,
+            opacity: kind === "sceau" ? .12 : (surTerre ? .34 : .24),
             side: THREE.DoubleSide, depthWrite: false, depthTest: true
           }),
           .075, 44
@@ -29668,8 +29922,13 @@
         const glyphe = couche(
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
-            map: puzzleGlyphTexture(kind, couleur),
-            transparent: true, opacity: surTerre ? 1 : .88,
+            map: puzzleGlyphTexture(kind, couleur, rang),
+            /* 80 % pour les glyphes ordinaires : ils désignent la case, ils ne la
+               remplacent pas. Le SCEAU, lui, se rend plein : il porte son propre
+               fond de nuit, et le diluer rendait ce fond gris — donc le motif
+               illisible sur une île claire, ce qu'on cherchait justement à
+               éviter. */
+            transparent: true, opacity: kind === "sceau" ? 1 : (surTerre ? 1 : .88),
             depthWrite: false, depthTest: false
           }),
           .106, 52
@@ -29694,8 +29953,68 @@
         cells.forEach(puzzleAddMarker);
       }
 
+      /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
+         alliés sont visuellement identiques, et une consigne « celui-ci va
+         là-bas » serait injouable telle quelle. On accroche donc au-dessus de
+         chacun le même sceau que celui posé au sol — un sprite enfant de son
+         wrapper, qui le suit sans qu'on ait à le repositionner. C'est la
+         solution la plus légère : des variantes de modèle seraient un chantier
+         dans kaykit3d.js, pour une énigme.
+
+         Reconstruit quand un sceau a perdu son parent : les visuels de
+         personnage sont recréés par syncKayKitCharacters, et un sprite orphelin
+         cesse silencieusement d'être rendu. */
+      function puzzleRefreshSceaux() {
+        const paires = PUZZLE.def?.goal?.type === "assignedCells"
+          ? PUZZLE.def.goal.pairs : null;
+        const poses = PUZZLE.sceaux || (PUZZLE.sceaux = []);
+        if (!paires || typeof kaykit3D === "undefined" || !kaykit3D?.characterVisuals) {
+          if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
+          return;
+        }
+        const cles = Object.keys(paires);
+        const complet = poses.length === cles.length && poses.every(sp => !!sp.parent);
+        if (complet) return;
+
+        poses.forEach(sp => sp.parent?.remove(sp));
+        poses.length = 0;
+        cles.forEach((cle, index) => {
+          const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
+          if (!visual?.wrapper) return;
+          /* LE MÊME LOSANGE, à plat sous les pieds, et non un insigne flottant.
+             Deux essais ont échoué avant : haut dans le ciel, le sprite
+             dérivait sur la case du voisin — la vue est inclinée, tout ce qui
+             monte part vers le haut de l'écran, et les Gardiens se suivent en
+             file d'une case ; posé sur le casque, il se confondait avec le
+             modèle. Au sol, il ne peut désigner que la case où se tient son
+             porteur, et il porte exactement le tracé gravé sur la case
+             attendue : aucune traduction à faire. */
+          const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
+          /* Plus petit qu'une case : à pleine taille le losange débordait sous
+             les pieds et, la vue étant inclinée, se lisait comme une dalle
+             POSÉE DEVANT le Gardien plutôt que sous lui. Resserré, il devient
+             un socle et le Gardien se tient dedans. */
+          const anneau = new THREE.Mesh(
+            new THREE.PlaneGeometry(.82, .82),
+            new THREE.MeshBasicMaterial({
+              map: puzzleGlyphTexture("sceau", teinte, index + 1),
+              transparent: true,
+              side: THREE.DoubleSide, depthWrite: false, depthTest: false
+            })
+          );
+          anneau.rotation.x = -Math.PI / 2;
+          anneau.position.set(0, .05, 0);
+          anneau.renderOrder = 58;
+          anneau.userData = { ilyosTransient: true };
+          visual.wrapper.add(anneau);
+          poses.push(anneau);
+        });
+      }
+
       function puzzleClearMarkers() {
         PUZZLE.markerKey = null;
+        (PUZZLE.sceaux || []).forEach(sp => sp.parent?.remove(sp));
+        PUZZLE.sceaux = [];
         const groupe = typeof kaykit3D !== "undefined" && kaykit3D
           ? kaykit3D.puzzleMarkerGroup : null;
         if (groupe && typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
@@ -29713,9 +30032,14 @@
           </div>
           <div class="pz-budget"></div>
           <div class="pz-plan" hidden></div>
+          <div class="pz-bloom"></div>
+          <div class="pz-lointain"></div>
+          <div class="pz-caption"></div>
+          <div class="pz-fade"></div>
+          <div class="pz-lieu"></div>
           <div class="pz-tools">
             <button type="button" data-pz="restart">↺ Recommencer</button>
-            <button type="button" data-pz="menu">← Puzzles</button>
+            <button type="button" data-pz="menu">← Les Voies</button>
           </div>`;
         document.body.appendChild(layer);
         layer.querySelector('[data-pz="restart"]').addEventListener("click", () => puzzleRestart());
@@ -29725,7 +30049,12 @@
           title: layer.querySelector(".pz-title"),
           goal: layer.querySelector(".pz-goal"),
           budget: layer.querySelector(".pz-budget"),
-          plan: layer.querySelector(".pz-plan")
+          plan: layer.querySelector(".pz-plan"),
+          bloom: layer.querySelector(".pz-bloom"),
+          lointain: layer.querySelector(".pz-lointain"),
+          caption: layer.querySelector(".pz-caption"),
+          fade: layer.querySelector(".pz-fade"),
+          lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
       }
@@ -29734,7 +30063,8 @@
         const dom = PUZZLE.dom;
         const def = PUZZLE.def;
         if (!dom || !def) return;
-        dom.title.textContent = `${PUZZLE.index + 1}. ${def.title}`;
+        /* Le nom du lieu, pas un numéro d'énigme. */
+        dom.title.textContent = def.title;
         dom.goal.textContent = def.brief || "";
         const restant = puzzleCardsLeft();
         const depense = puzzleCardsSpent();
@@ -29775,6 +30105,177 @@
         puzzleSaveProgress(progress);
       }
 
+      /* Où se trouve le Sanctuaire : le coin du village du joueur. Les deux
+         énigmes qui n'en ont pas — celle sans rival, celle sans couronne —
+         retombent sur le cadrage de la définition. */
+      function puzzleSanctuaireCell(def) {
+        const coins = def.villages?.[0];
+        if (coins && coins.length) return coins[0];
+        return puzzleFocusCell(def);
+      }
+
+      /* LE RÉVEIL. Version courte et volontairement sobre : la lueur monte, la
+         caméra RECULE — c'est elle qui donne l'échelle du réseau, pas un effet
+         — et la vérité s'inscrit sur le ciel. Quatre secondes, interruptibles
+         d'un clic. La carte de fin ne vient qu'après.
+
+         Les variantes annoncées (Voie qui se divise, rayon interrompu, réponse
+         au loin) attendent qu'il y ait une carte des Voies : les écrire
+         maintenant serait décorer un réseau qui n'existe pas encore. */
+      /* L'échafaudage commun aux deux séquences — l'approche et le réveil.
+         Toutes deux effacent le même chrome, se passent du même geste et
+         doivent se démonter même si un appel de caméra jette. Le corps reçoit
+         `attendre`, qui rend la main dès que le joueur veut passer. */
+      async function puzzleSequence(corps) {
+        const dom = PUZZLE.dom;
+        if (!dom || PUZZLE.sequenceEnCours) return;
+        PUZZLE.sequenceEnCours = true;
+        PUZZLE.sequenceSaute = false;
+
+        /* Le geste qui DÉCLENCHE une séquence ne doit pas l'interrompre : le
+           clic sur « Sanctuaire suivant » est encore en train de remonter le
+           DOM quand ce code s'exécute, et un écouteur posé sur le calque le
+           recevrait aussitôt — le voyage se jouait en entier en moins d'une
+           seconde. On n'arme donc la sortie qu'une fois ce clic passé. */
+        const passer = () => { PUZZLE.sequenceSaute = true; };
+        const armement = setTimeout(() => {
+          dom.layer.addEventListener("click", passer, { once: true });
+          window.addEventListener("keydown", passer, { once: true });
+        }, 260);
+        const attendre = async ms => {
+          const fin = Date.now() + ms;
+          while (Date.now() < fin && !PUZZLE.sequenceSaute) await tutoWait(60);
+        };
+
+        try {
+          dom.layer.classList.add("reveil");
+          els.gameScreen && els.gameScreen.classList.add("puzzle-reveil");
+          document.body.classList.add("puzzle-reveil");
+          await corps(dom, attendre);
+        } finally {
+          clearTimeout(armement);
+          dom.layer.removeEventListener("click", passer);
+          window.removeEventListener("keydown", passer);
+          dom.caption.classList.remove("show");
+          dom.bloom.classList.remove("on");
+          dom.lointain.classList.remove("on");
+          dom.lieu.classList.remove("show");
+          dom.fade.classList.remove("on");
+          dom.layer.classList.remove("reveil");
+          els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
+          document.body.classList.remove("puzzle-reveil");
+          PUZZLE.sequenceEnCours = false;
+        }
+      }
+
+      /* L'APPROCHE. Le pendant du réveil, à l'autre bout de l'énigme : une
+         phrase avant que le joueur ne prenne la main. Trois Sanctuaires
+         seulement en portent une — celui où quelqu'un attend déjà, celui qui
+         n'a rien à rallumer, et la Confluence. Les quatorze autres commencent
+         en silence, et c'est ce silence qui donne son poids à la phrase. */
+      function puzzleApproche(def) {
+        if (!def.avant) return;
+        return puzzleSequence(async (dom, attendre) => {
+          await attendre(500);
+          dom.caption.innerHTML = def.avant;
+          dom.caption.classList.add("show");
+          await attendre(2600);
+          dom.caption.classList.remove("show");
+          await attendre(600);
+        });
+      }
+
+      function puzzleReveil(def) {
+        return puzzleSequence(async (dom, attendre) => {
+          const [r, c] = puzzleSanctuaireCell(def);
+          dom.bloom.classList.add("on");
+          try { playSfx("crown"); } catch (_) { }
+          try {
+            if (typeof kaykitFollowCell === "function") {
+              kaykitFollowCell(r, c, { duration: 900, force: true, cinematique: true, zoomBoost: 1.4 });
+            }
+          } catch (_) { }
+          await attendre(900);
+
+          /* Le recul : zoomBoost NÉGATIF éloigne (voir kaykitFollowCell, la
+             distance vaut base - zoomBoost). C'est le seul moment où le joueur
+             voit son archipel en entier. */
+          try {
+            if (typeof kaykitFollowCell === "function") {
+              kaykitFollowCell(r, c, { duration: 2200, force: true, cinematique: true, zoomBoost: -3.4 });
+            }
+          } catch (_) { }
+
+          /* Un autre Sanctuaire répond, par-delà l'archipel. Le joueur ne saura
+             jamais lequel : c'est la seule chose qui lui dit qu'il n'est pas
+             seul à rallumer des Voies. */
+          dom.lointain.classList.add("on");
+
+          if (def.verite) {
+            dom.caption.innerHTML = `« ${def.verite} »`;
+            dom.caption.classList.add("show");
+            await attendre(2600);
+            dom.caption.classList.remove("show");
+            await attendre(500);
+          } else {
+            await attendre(1500);
+          }
+          dom.lointain.classList.remove("on");
+        });
+      }
+
+      /* LE VOYAGE. Ce qui remplace un retour au menu entre deux Sanctuaires :
+         on part dans le noir, l'archipel suivant se découvre dessous pendant
+         que son nom se tient à l'écran, puis la main revient.
+
+         Le fondu au noir n'est pas qu'une élégance : puzzleFrame ré-impose son
+         cadrage à 350, 700, 1100, 1600 et 2400 ms pour gagner sa course contre
+         camera-start-face-auto-v1.js. Toute la mise en place se fait donc
+         derrière le noir, et l'on ne relève le rideau qu'une fois l'archipel
+         posé — sinon le joueur verrait la caméra se battre avec elle-même. */
+      async function puzzleVoyage(index) {
+        const def = PUZZLES[index];
+        if (!def || !PUZZLE.dom) { puzzleStart(index); return; }
+
+        await puzzleSequence(async (dom, attendre) => {
+          dom.layer.querySelectorAll(".pz-end").forEach(node => node.remove());
+          dom.fade.classList.add("on");
+          await attendre(760);
+
+          puzzleStart(index, { muet: true });
+
+          dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
+            + `<span class="nom">${def.title}</span>`;
+          dom.lieu.classList.add("show");
+          await attendre(1400);
+
+          // On relève le rideau sous le nom : l'archipel se découvre pendant
+          // que la caméra achève de se poser.
+          dom.fade.classList.remove("on");
+          await attendre(1500);
+          dom.lieu.classList.remove("show");
+          await attendre(900);
+        });
+
+        // La phrase d'entrée, si ce Sanctuaire en porte une, vient seulement
+        // après le nom du lieu : deux textes à la fois n'en font lire aucun.
+        // Hors de la séquence précédente, qui n'en autorise qu'une à la fois.
+        puzzleApproche(def);
+      }
+
+      /* UNE seule ligne au réveil, jamais deux (charte narrative). Quand le
+         Sanctuaire porte une « vérité », c'est elle qu'on lit — une phrase
+         mythologique qui dit ce que le joueur vient de comprendre, jamais quelle
+         mécanique il a employée. Les Sanctuaires ordinaires gardent leur ligne
+         d'enseignement, plus discrète : onze des dix-sept n'ont pas de vérité,
+         et c'est ce qui donne du poids aux six autres. */
+      function puzzleFinLigne(def, depense) {
+        const compte = `<span class="pz-cout">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`;
+        /* La vérité a déjà été lue sur le ciel pendant le réveil : la carte ne
+           la répète pas, elle garde la ligne d'enseignement. */
+        return `${def.winLine || ""}<br>${compte}`;
+      }
+
       function puzzleShowEnd({ won }) {
         if (!PUZZLE.dom || PUZZLE.ended) return;
         PUZZLE.ended = true;
@@ -29787,25 +30288,35 @@
         const etoiles = won ? puzzleStarsFor(def, depense) : 0;
         if (won) puzzleRecordSolved(def, depense, etoiles);
 
+        /* Le réveil passe AVANT la carte : le Sanctuaire s'illumine et la
+           caméra recule pendant que le joueur regarde encore le plateau. La
+           carte n'arrive qu'ensuite, et ne répète pas la vérité déjà lue. */
+        if (won) {
+          puzzleReveil(def).then(() => puzzleCarteDeFin(def, depense, etoiles, true));
+          return;
+        }
+        puzzleCarteDeFin(def, depense, etoiles, false);
+      }
+
+      function puzzleCarteDeFin(def, depense, etoiles, won) {
+        if (!PUZZLE.dom) return;
         const suivant = PUZZLES[PUZZLE.index + 1];
         const panneau = document.createElement("div");
         panneau.className = "pz-end";
         panneau.innerHTML = `
-          <h2>${won ? def.winTitle || "Résolu" : "L'énigme résiste"}</h2>
+          <h2>${won ? def.winTitle || "Sanctuaire éveillé" : "Le Sanctuaire reste éteint"}</h2>
           ${won ? `<div class="pz-stars">${"★".repeat(etoiles)}${"☆".repeat(3 - etoiles)}</div>` : ""}
-          <p>${won
-            ? `${def.winLine || ""}<br><span style="opacity:.7">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`
-            : def.failLine || "Il ne reste plus de quoi agir."}</p>
+          <p>${won ? puzzleFinLigne(def, depense) : def.failLine || "Il ne reste plus de quoi agir."}</p>
           <div class="pz-end-actions">
             <button type="button" data-pz="again">↺ Recommencer</button>
-            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Puzzle suivant →</button>' : ""}
-            <button type="button" data-pz="back">← Puzzles</button>
+            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Sanctuaire suivant →</button>' : ""}
+            <button type="button" data-pz="back">← Les Voies</button>
           </div>`;
         PUZZLE.dom.layer.appendChild(panneau);
         panneau.querySelector('[data-pz="again"]').addEventListener("click", () => puzzleRestart());
         panneau.querySelector('[data-pz="back"]').addEventListener("click", () => puzzleBackToMenu());
         const boutonSuivant = panneau.querySelector('[data-pz="next"]');
-        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleStart(PUZZLE.index + 1));
+        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleVoyage(PUZZLE.index + 1));
       }
 
       /* ---------- Boucle d'observation ------------------------------------
@@ -29816,6 +30327,7 @@
         if (!PUZZLE.def.placement) state.islandPlacedThisTurn = true;
         puzzleSyncOverlay();
         puzzleRefreshMarkers();
+        puzzleRefreshSceaux();
         if (puzzleGoalReached()) { puzzleShowEnd({ won: true }); return; }
         // C'est au rival : on joue ses coups écrits, puis on rend la main.
         if (state.currentPlayer === 1 && !PUZZLE.replying && !state.turnTransitioning) {
@@ -29920,7 +30432,10 @@
          fin). Les deux étaient confondus : lancer une énigme par
          ILYOS_PUZZLE.start() la comptait comme reprise et lui retirait ses
          étoiles avant même le premier coup. */
-      function puzzleStart(index, { replay = false, force = false } = {}) {
+      /* `muet` coupe l'approche : l'oracle et le chercheur relancent des énigmes
+         en boucle, et une phrase d'entrée qui capte les clics pendant trois
+         secondes n'a aucun sens là. */
+      function puzzleStart(index, { replay = false, force = false, muet = false } = {}) {
         const def = PUZZLES[index];
         if (!def) return;
         if (!force && !puzzleUnlocked(index)) return;
@@ -29944,6 +30459,12 @@
         try { if (typeof aiRunToken !== "undefined") aiRunToken++; } catch (_) { }
         try { if (PUZZLE.prevRenderMode === null) PUZZLE.prevRenderMode = boardRenderMode; } catch (_) { }
         try { boardRenderMode = "3d"; } catch (_) { }
+
+        /* Deux énigmes de MÊME taille n'appellent pas setBoardSize, donc rien
+           ne vide le cache des châteaux : le village de l'énigme précédente
+           restait accroché à la scène, flottant dans le vide au-dessus du
+           nouvel archipel. Se voyait en enchaînant « Sanctuaire suivant ». */
+        try { clearKayKitVillages(); } catch (_) { }
 
         puzzleBuildState(def);
 
@@ -29970,6 +30491,11 @@
 
         clearInterval(PUZZLE.pollTimer);
         PUZZLE.pollTimer = setInterval(puzzleTick, 300);
+
+        /* La phrase d'entrée à la PREMIÈRE venue seulement : la relire à chaque
+           « Recommencer » deviendrait une taxe sur l'essai-erreur, qui est le
+           mode de jeu normal d'une énigme. */
+        if (!muet && !replay && !reprise) puzzleApproche(def);
       }
 
       function puzzleRestart() {
@@ -30034,21 +30560,24 @@
           const ouvert = puzzleUnlocked(index);
           const fiche = progress[def.id] || {};
           const etoiles = fiche.stars || 0;
+          const signe = PUZZLE_PRINCIPES[def.principe];
           return `
             <button type="button" class="pz-card" data-index="${index}"${ouvert ? "" : " disabled"}>
-              <div class="pz-num">ÉNIGME ${String(index + 1).padStart(2, "0")}</div>
-              <div class="pz-name">${ouvert ? def.title : "· · ·"}</div>
-              <div class="pz-line">${ouvert ? (def.tagline || "") : "Résous l'énigme précédente."}</div>
+              <div class="pz-num">${PUZZLE_ACTES[def.acte] || ""}</div>
+              <div class="pz-name">${ouvert ? def.title : "Sanctuaire ignoré"}</div>
+              <div class="pz-line">${ouvert
+                ? (fiche.solved ? "Sanctuaire éveillé" : "Sanctuaire dormant")
+                : "La Voie ne mène pas encore jusqu'ici."}</div>
               <div class="pz-foot">
                 <span class="stars">${ouvert ? "★".repeat(etoiles) + "☆".repeat(3 - etoiles) : "🔒"}</span>
-                <span>${ouvert && def.par ? `optimal ${def.par}` : ""}</span>
+                <span class="pz-signe" title="${signe ? signe.nom : ""}">${ouvert && signe ? signe.signe : ""}</span>
               </div>
             </button>`;
         }).join("");
 
         menu.innerHTML = `
-          <h1>PUZZLES</h1>
-          <div class="pz-sub">${resolus} / ${PUZZLES.length} résolues — une main figée, un seul tour, aucun hasard.</div>
+          <h1>LES VOIES D'ILYOS</h1>
+          <div class="pz-sub">${resolus} / ${PUZZLES.length} Sanctuaires éveillés — réveillez les Sanctuaires oubliés.</div>
           <div class="pz-grid">${cartes}</div>
           <button type="button" class="pz-back">← Retour au menu</button>`;
         document.body.appendChild(menu);
@@ -30222,10 +30751,13 @@
          `solution` prend ici une liste par TOUR : [[coups du tour 1], [tour 2]].
          Chaque tour est suivi d'une vraie fin de tour, la dernière comprise —
          sans quoi le point ne serait jamais accordé. */
-      async function puzzleVerifyLive(index) {
+      /* `keep` laisse l'énigme EN PLACE au lieu de la démonter : le sondage
+         de victoire la voit alors gagnée et joue le réveil, ce qu'un test
+         visuel ne peut obtenir autrement qu'en rejouant tout à la souris. */
+      async function puzzleVerifyLive(index, { keep = false } = {}) {
         const def = PUZZLES[index];
         const tours = def.solution || [];
-        puzzleStart(index, { force: true });
+        puzzleStart(index, { force: true, muet: true });
         await tutoWait(350);
 
         const journal = [];
@@ -30264,7 +30796,7 @@
             ? (def.par && depense !== def.par ? `objectif atteint mais ${depense} cartes au lieu de ${def.par}` : "")
             : "objectif non atteint"
         };
-        puzzleTeardown();
+        if (!keep) puzzleTeardown();
         return rapport;
       }
 
@@ -30454,7 +30986,10 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null, secondesMax = 60) {
+      /* `noeudsMax` : certaines énigmes ne se tranchent pas sous le plafond de
+         nœuds par défaut, et un barème non prouvé est un barème que le joueur
+         finira par battre. */
+      function puzzleSolve(index, plafond = null, secondesMax = 60, noeudsMax = null) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -30503,7 +31038,7 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
+              if (++noeuds > (noeudsMax || PUZZLE_SEARCH_MAX_NODES) || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
                   secondes: Math.round((Date.now() - depart) / 100) / 10,
@@ -30513,6 +31048,23 @@
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
+
+              /* L'objectif se teste ICI, au dépilement, et non à la génération
+                 des successeurs. Un successeur porte son coût TOTAL : en
+                 rendant la main dès qu'il atteignait le but, la recherche
+                 renvoyait le premier chemin gagnant rencontré, pas le moins
+                 cher — sur une énigme à grande main, une seule marche de treize
+                 cases trouvée depuis le seau 1 l'emportait sur une solution à
+                 cinq cartes jamais explorée. Les seaux étant parcourus par coût
+                 croissant, le premier chemin dépilé qui atteint le but est
+                 optimal. */
+              if (atteint()) {
+                return {
+                  id: def.id, cout, noeuds,
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  chemin: chemin.map(puzzleSearchLabel)
+                };
+              }
 
               /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
                  le restaure au lieu de reconstruire le plateau et de rejouer
@@ -30532,15 +31084,7 @@
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
                 vus.add(empreinte);
-                const nouveau = [...chemin, action];
-                if (atteint()) {
-                  return {
-                    id: def.id, cout: suivant, noeuds,
-                    secondes: Math.round((Date.now() - depart) / 100) / 10,
-                    chemin: nouveau.map(puzzleSearchLabel)
-                  };
-                }
-                pousser(suivant, nouveau);
+                pousser(suivant, [...chemin, action]);
               }
             }
           }
@@ -30681,7 +31225,15 @@
 
       window.ILYOS_PUZZLE = {
         open: puzzleOpenMenu,
-        start: index => puzzleStart(index, { force: true }),
+        /* Les points d'entrée de test démarrent MUETS : un test pilote des
+           clics, et l'approche les avalerait. Passer { muet: false } pour
+           observer la séquence elle-même. */
+        start: (index, options) => puzzleStart(index, { force: true, muet: true, ...options }),
+        /* Adressage par IDENTIFIANT : l'ordre de la campagne n'est plus celui
+           des identifiants, et un test qui vise un index vise le mauvais
+           Sanctuaire dès qu'on réordonne. */
+        startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
+          { force: true, muet: true, ...options }),
         restart: puzzleRestart,
         exit: puzzleQuitToHome,
         list: () => PUZZLES.map((def, index) => ({
@@ -30689,13 +31241,14 @@
         })),
         /* Oracle de test : rejoue la solution de référence d'une énigme, ou de
            toutes, sans toucher à la partie en cours. */
-        verify: index => puzzleIsMultiTurn(PUZZLES[index])
-          ? puzzleVerifyLive(index)
+        verify: (index, options) => (options?.live || puzzleIsMultiTurn(PUZZLES[index]))
+          ? puzzleVerifyLive(index, options)
           : puzzleVerify(index),
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        solve: (index, plafond, secondesMax, noeudsMax) =>
+          puzzleSolve(index, plafond, secondesMax, noeudsMax),
         /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
            et ce qu'un Gardien atteint à pied. */
         audit: puzzleAudit,
@@ -30743,9 +31296,11 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Seize énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
-         moteur vit dans js/game/puzzle.js ; ce fragment ne contient que des
-         données.
+         Vingt-deux énigmes, de la leçon de poussée à l'archipel des neuf
+         mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
+         contient que des données, et leur ORDRE est celui de la campagne :
+         « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
+         l'ordre des identifiants, qui ne dit plus que l'ancienneté.
 
          Chaque définition porte sa SOLUTION DE RÉFÉRENCE. Ce n'est pas de la
          documentation décorative : `ILYOS_PUZZLE.verify(i)` la rejoue sur un
@@ -30786,7 +31341,6 @@
          ===================================================================== */
 
       PUZZLES.push(
-
         /* -----------------------------------------------------------------
            01 — La poussée choisit sa force, et un rival dans ton village te
            verrouille. Le Gardien est enfermé derrière les deux rivaux : il ne
@@ -30796,6 +31350,7 @@
            sortir, et pas une de plus. */
         {
           id: "p01-seuil",
+          acte: "PROLOGUE",
           title: "Le seuil gardé",
           tagline: "Deux rivaux, une seule ligne, et ton village derrière eux.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -30822,7 +31377,6 @@
             { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
-
         /* -----------------------------------------------------------------
            02 — Le pivot. Une barre qui tourne autour de son EXTRÉMITÉ se
            translate de toute sa longueur et emmène son passager ; autour de son
@@ -30830,6 +31384,8 @@
            franchir le gouffre et perdre sa seule carte Magie. */
         {
           id: "p02-pont",
+          acte: "I",
+          principe: "TRACE",
           title: "Le pont dérobé",
           tagline: "Le gouffre est trop large pour marcher. La barre, elle, tourne.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -30857,7 +31413,6 @@
             { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
-
         /* -----------------------------------------------------------------
            03 — La chaîne. Une pièce DÉTACHÉE du bloc plafonne la poussée juste
            avant elle : pousser fort dans une file trouée ne fait avancer d'une
@@ -30865,7 +31420,9 @@
            demandée. Il faut d'abord refermer le trou, puis pousser une fois. */
         {
           id: "p03-domino",
-          title: "L'effet domino",
+          acte: "I",
+          principe: "MESURE",
+          title: "La file",
           tagline: "Une file trouée avale les cartes sans rien déplacer.",
           brief: "Ramène la couronne jusqu'à ton village.",
           board: 11,
@@ -30894,7 +31451,6 @@
             { a: "MOVE", who: "G", to: [0, 1] }
           ]
         },
-
         /* -----------------------------------------------------------------
            04 — Le budget. Marcher jusqu'à la barre coûte trois cartes, et la
            barre ne sert qu'au Gardien qui se tient DESSUS : pivoter avant
@@ -30902,6 +31458,9 @@
            dernier rival, lui, ne se déloge que depuis la case du village. */
         {
           id: "p04-main-serree",
+          acte: "I",
+          principe: "MESURE",
+          verite: "Ce qui est dépensé trop tôt manque toujours au dernier instant.",
           title: "Main serrée",
           tagline: "Sept cartes, six coups justes. L'ordre décide de tout.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -30931,7 +31490,6 @@
             { a: "PUSH", who: "G", on: [1, 0], force: 1 }
           ]
         },
-
         /* -----------------------------------------------------------------
            05 — Tout à la fois : une chaîne à éjecter par le bord de la
            corniche, une barre-navette pour franchir le gouffre, un dernier
@@ -30939,6 +31497,8 @@
            sont comptées au plus juste. */
         {
           id: "p05-longue-marche",
+          acte: "I",
+          principe: "MESURE",
           title: "La longue marche",
           tagline: "Éjecter, traverser, déloger. Onze cartes exactement utiles.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -30971,7 +31531,6 @@
             { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
-
         /* -----------------------------------------------------------------
            06 — La règle que rien n'a encore montrée : une couronne ne tombe
            JAMAIS. Elle survole le vide et se pose sur sa case d'arrivée. Aucun
@@ -30980,6 +31539,10 @@
            d'atterrissage. */
         {
           id: "p06-couronne-vole",
+          acte: "II",
+          principe: "TRACE",
+          avant: "Quelqu'un attend déjà sur l'autre rive.",
+          verite: "La lumière atteint les terres que nul Gardien ne peut fouler.",
           title: "La couronne qui vole",
           tagline: "Personne ne traversera. La couronne, elle, ne tombe jamais.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -31017,76 +31580,53 @@
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
           ]
         },
-
         /* -----------------------------------------------------------------
-           07 — Ni village, ni couronne, ni sanctuaire : une corniche nue et
-           quatre rivaux. Le premier bloc est plafonné par un rival détaché
-           qu'on ne voit pas comme un obstacle ; une poussée à pleine force n'y
-           gagnerait qu'une case et viderait la main. Il faut souder la file
-           d'une carte, puis l'éjecter d'un seul geste. */
+           18 — LES ACTIONS GRATUITES. Déposer, ramasser, transmettre ne coûtent
+           rien : ce sont les trois gestes que la collection n'avait jamais
+           obligé personne à voir, et dont l'oubli a faussé six barèmes. Ici le
+           gouffre interdit de porter la couronne, et un Gardien ne peut pas
+           voler : il faut la POSER, la POUSSER par-dessus le vide — une
+           couronne ne tombe jamais, elle atterrit sur la dernière terre à
+           portée — puis la faire RAMASSER par qui attend de l'autre côté. Le
+           Veilleur assis sur le Sanctuaire bloque la validation tant qu'il y
+           reste ; le déloger coûte la dernière carte de poussée. */
         {
-          id: "p07-vide-allie",
-          title: "Le vide pour seul allié",
-          tagline: "Quatre rivaux, aucune couronne. La corniche fera le reste.",
-          brief: "Fais tomber les quatre rivaux hors du plateau.",
+          id: "p18-relais-des-mains",
+          acte: "II",
+          principe: "TRACE",
+          title: "Le relais des mains",
+          tagline: "Le gouffre ne se marche pas. La couronne, elle, se lance.",
+          brief: "Ramène la couronne jusqu'à ton village.",
           board: 11,
           sanctuary: false,
+          focus: [4, 0],
+          villages: { 0: [[0, 0]] },
           islands: [
-            [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]]
+            [[0, 1]], [[1, 0]],
+            [[2, 0]], [[3, 0]], [[5, 0]], [[6, 0]], [[7, 0]], [[8, 0]], [[6, 1]]
           ],
           guardians: [
-            { key: "G", p: 0, r: 5, c: 7 },
-            { p: 1, r: 5, c: 6 },
-            { p: 1, r: 5, c: 5 },
-            { p: 1, r: 5, c: 3 },
-            { p: 1, r: 5, c: 2 }
+            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
+            { key: "A", p: 0, r: 6, c: 1 },
+            { key: "B", p: 0, r: 0, c: 0 },
+            { p: 1, r: 0, c: 1 }
           ],
-          hand: { PUSH: 7, MOVE: 2 },
-          par: 7,
-          goal: { type: "eliminateAll" },
-          winTitle: "La corniche est nue",
-          winLine: "Une pièce détachée arrête un bloc. Colle-la d'abord, pousse ensuite.",
-          failLine: "Il en reste debout, et la main est vide.",
+          hand: { MOVE: 3, PUSH: 5 },
+          par: 6,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Les mains se sont passé la lumière",
+          winLine: "Poser, lancer, ramasser : trois gestes qui ne coûtent rien, et une seule poussée qui compte.",
+          failLine: "La couronne est restée du mauvais côté du vide.",
           solution: [
-            { a: "PUSH", who: "G", on: [5, 6], force: 1 },
-            { a: "MOVE", who: "G", to: [5, 6] },
-            { a: "PUSH", who: "G", on: [5, 5], force: 5 }
+            { a: "DROP", who: "G", on: [7, 0] },
+            { a: "MOVE", who: "A", to: [6, 0] },
+            { a: "PICKUP", who: "A", on: [7, 0] },
+            { a: "DROP", who: "A", on: [5, 0] },
+            { a: "PUSH", who: "A", on: [5, 0], force: 4 },
+            { a: "PUSH", who: "B", on: [0, 1], force: 1 },
+            { a: "PICKUP", who: "B", on: [1, 0] }
           ]
         },
-
-        /* -----------------------------------------------------------------
-           08 — Une rotation de 90° change une rangée en colonne ET emmène tous
-           ceux qui se tiennent dessus. L'énigme n'est pas la rotation : c'est
-           l'ESPACEMENT à donner aux passagers AVANT de tourner, sachant qu'une
-           poussée trop forte jette son propre Gardien de tête dans le vide. */
-        {
-          id: "p08-ronde",
-          title: "La ronde",
-          tagline: "Trois passagers, une rotation. Reste à bien les asseoir.",
-          brief: "Place un Gardien sur chacune des trois cases marquées.",
-          board: 11,
-          sanctuary: false,
-          islands: [
-            { key: "A", cells: [[4, 4], [4, 5], [4, 6], [4, 7], [4, 8]] }
-          ],
-          guardians: [
-            { key: "G1", p: 0, r: 4, c: 4 },
-            { key: "G2", p: 0, r: 4, c: 5 },
-            { key: "G3", p: 0, r: 4, c: 6 },
-            { p: 1, r: 4, c: 7 }
-          ],
-          hand: { PUSH: 3, MAGIC: 1, MOVE: 1 },
-          par: 3,
-          goal: { type: "occupyCells", player: 0, cells: [[4, 4], [7, 4], [8, 4]] },
-          winTitle: "La rangée est devenue colonne",
-          winLine: "Un quart de tour emporte ses passagers là où ils étaient assis.",
-          failLine: "Mal assis, mal portés.",
-          solution: [
-            { a: "PUSH", who: "G1", on: [4, 5], force: 2 },
-            { a: "MAGIC", island: "A", pivot: [4, 4], turns: 1, direction: 1 }
-          ]
-        },
-
         /* -----------------------------------------------------------------
            09 — Deux couronnes, deux transports différents. L'une survole le
            gouffre ; l'autre ne bouge pas d'un pouce et se laisse EMPORTER par
@@ -31095,6 +31635,8 @@
            case d'arrivée avant le vol condamne le vol. */
         {
           id: "p09-fardeau",
+          acte: "II",
+          principe: "TRACE",
           title: "Le fardeau",
           tagline: "Deux couronnes, deux façons de voyager. Aucune ne marche.",
           brief: "Pose une couronne sur la case marquée d'or, et tiens l'autre en main sur la case bleue.",
@@ -31131,7 +31673,82 @@
             { a: "MAGIC", island: "B", pivot: [3, 5], turns: 2 }
           ]
         },
-
+        /* -----------------------------------------------------------------
+           08 — Une rotation de 90° change une rangée en colonne ET emmène tous
+           ceux qui se tiennent dessus. L'énigme n'est pas la rotation : c'est
+           l'ESPACEMENT à donner aux passagers AVANT de tourner, sachant qu'une
+           poussée trop forte jette son propre Gardien de tête dans le vide. */
+        {
+          id: "p08-ronde",
+          acte: "II",
+          principe: "TRACE",
+          title: "La ronde",
+          tagline: "Trois passagers, une rotation. Reste à bien les asseoir.",
+          brief: "Place un Gardien sur chacune des trois cases marquées.",
+          board: 11,
+          sanctuary: false,
+          islands: [
+            { key: "A", cells: [[4, 4], [4, 5], [4, 6], [4, 7], [4, 8]] }
+          ],
+          guardians: [
+            { key: "G1", p: 0, r: 4, c: 4 },
+            { key: "G2", p: 0, r: 4, c: 5 },
+            { key: "G3", p: 0, r: 4, c: 6 },
+            { p: 1, r: 4, c: 7 }
+          ],
+          hand: { PUSH: 3, MAGIC: 1, MOVE: 1 },
+          par: 3,
+          goal: { type: "occupyCells", player: 0, cells: [[4, 4], [7, 4], [8, 4]] },
+          winTitle: "La rangée est devenue colonne",
+          winLine: "Un quart de tour emporte ses passagers là où ils étaient assis.",
+          failLine: "Mal assis, mal portés.",
+          solution: [
+            { a: "PUSH", who: "G1", on: [4, 5], force: 2 },
+            { a: "MAGIC", island: "A", pivot: [4, 4], turns: 1, direction: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           19 — LA DIAGONALE. Elle existe, elle franchit un coin, et elle coûte
+           DEUX. C'est-à-dire exactement ce que coûtent les deux pas droits
+           qu'elle remplace : une diagonale n'est jamais un raccourci, c'est un
+           PASSAGE — elle ne sert que là où les deux cases droites sont du vide.
+           Le couloir grand ouvert vers l'ouest ne mène nulle part ; l'escalier
+           qui monte en biais est la seule route, et il n'y a pas de quoi le
+           gravir en entier. Reste la barre, qui ne se couche pas là où on
+           l'attend : pivotée par son autre bout, elle emmène son passager
+           jusqu'au pied de l'escalier. */
+        {
+          id: "p19-la-corde-oblique",
+          acte: "II",
+          principe: "TRACE",
+          title: "La corde oblique",
+          tagline: "Un couloir large qui ne mène nulle part, un escalier de biais qu'on ne peut pas gravir.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            { key: "B", cells: [[6, 3], [6, 4], [6, 5]] },
+            [[6, 2]], [[6, 1]], [[6, 0]], [[5, 0]],
+            [[3, 2]], [[2, 1]], [[2, 0]], [[1, 0]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 6, c: 5, crown: 1 }
+          ],
+          hand: { MOVE: 6, MAGIC: 1, PUSH: 3 },
+          par: 7,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La corde s'est tendue",
+          winLine: "Deux cases par pas de biais : l'escalier ne pardonne pas un détour.",
+          failLine: "L'escalier est encore au-dessus de toi.",
+          solution: [
+            { a: "MAGIC", island: "B", pivot: [6, 3], turns: 1, direction: -1 },
+            { a: "MOVE", who: "G", to: [3, 2] },
+            { a: "MOVE", who: "G", to: [2, 1] },
+            { a: "MOVE", who: "G", to: [1, 0] }
+          ]
+        },
         /* -----------------------------------------------------------------
            10 — La navette. Une seule île, un seul Gardien, aucun rival. Une
            barre pivotée par son extrémité se translate de toute sa longueur et
@@ -31140,6 +31757,9 @@
            quart de tour, au bon moment, fait tourner le couloir. */
         {
           id: "p10-escalier",
+          acte: "II",
+          principe: "TRACE",
+          verite: "Ce mécanisme n'a pas été bâti pour relier. Il a été bâti pour faire passer un seul voyageur.",
           title: "L'escalier",
           tagline: "Une barre, quatre rotations, et un passager qui doit courir.",
           brief: "Amène ton Gardien sur la case marquée.",
@@ -31170,7 +31790,45 @@
             { a: "MOVE", who: "G", to: [10, 8] }
           ]
         },
-
+        /* -----------------------------------------------------------------
+           07 — Ni village, ni couronne, ni sanctuaire : une corniche nue et
+           quatre rivaux. Le premier bloc est plafonné par un rival détaché
+           qu'on ne voit pas comme un obstacle ; une poussée à pleine force n'y
+           gagnerait qu'une case et viderait la main. Il faut souder la file
+           d'une carte, puis l'éjecter d'un seul geste. */
+        {
+          id: "p07-vide-allie",
+          acte: "II",
+          principe: "MESURE",
+          avant: "Il n'y a rien à rallumer ici.",
+          verite: "Le sceau du Sanctuaire est celui de ceux qui le gardaient.",
+          title: "Le vide pour seul allié",
+          tagline: "Quatre rivaux, aucune couronne. La corniche fera le reste.",
+          brief: "Fais tomber les quatre rivaux hors du plateau.",
+          board: 11,
+          sanctuary: false,
+          islands: [
+            [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 5, c: 7 },
+            { p: 1, r: 5, c: 6 },
+            { p: 1, r: 5, c: 5 },
+            { p: 1, r: 5, c: 3 },
+            { p: 1, r: 5, c: 2 }
+          ],
+          hand: { PUSH: 7, MOVE: 2 },
+          par: 7,
+          goal: { type: "eliminateAll" },
+          winTitle: "La corniche est nue",
+          winLine: "Une pièce détachée arrête un bloc. Colle-la d'abord, pousse ensuite.",
+          failLine: "Il en reste debout, et la main est vide.",
+          solution: [
+            { a: "PUSH", who: "G", on: [5, 6], force: 1 },
+            { a: "MOVE", who: "G", to: [5, 6] },
+            { a: "PUSH", who: "G", on: [5, 5], force: 5 }
+          ]
+        },
         /* -----------------------------------------------------------------
            11 — Tout, sans marge. Douze cartes pour douze cartes de solution.
            Le porteur ne franchira jamais le gouffre : il faut le SACRIFIER
@@ -31181,6 +31839,9 @@
            perdue. */
         {
           id: "p11-dernier-souffle",
+          acte: "III",
+          principe: "TRACE",
+          verite: "Certaines lumières ne passent que de main morte.",
           title: "Le dernier souffle",
           tagline: "Il est seul sur son rocher, et il ne peut rien poser.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -31219,29 +31880,6 @@
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
           ]
         },
-
-        /* =================================================================
-           ÉNIGMES MULTI-TOURS (12 à 14)
-
-           Les onze premières tiennent dans un tour : leur main est donnée d'un
-           bloc. Celles-ci durent plusieurs tours et écrivent leur PIOCHE au
-           lieu de leur main — cinq cartes distribuées par tour, par le vrai
-           `drawCards()`. Toute la boucle de jeu reste en place, et avec elle
-           deux règles que les énigmes d'un seul tour ne pouvaient pas montrer :
-
-           - une couronne ne se valide qu'au DÉBUT de ton tour suivant, donc le
-             rival a le temps de venir squatter ton village (objectif `scored`,
-             qui attend le vrai point de scoreCrownsAtTurnStart) ;
-           - les cartes non jouées passent en réserve : rien n'est perdu, mais
-             rien ne se rattrape non plus.
-
-           Le rival joue des coups ÉCRITS, affichés au joueur avant qu'il
-           commence (`rivalPlan`). Un coup devenu illégal est sauté — lui prendre
-           sa case d'avance est une parade, pas un bug. Et la composition du
-           paquet est elle-même une contrainte de conception : on ne peut pas
-           jouer au tour 1 ce que seul le tour 2 distribue.
-           ================================================================= */
-
         /* -----------------------------------------------------------------
            12 — Le rival annonce qu'il ira sur (1,0), une des trois cases du
            village. Le réflexe est de l'en déloger une fois assis ; la vraie
@@ -31250,7 +31888,10 @@
            s'installer. */
         {
           id: "p12-squatteur",
-          title: "Le squatteur",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "Toute action possède son instant.",
+          title: "La place prise",
           tagline: "Il annonce où il va s'asseoir. Assieds-toi, puis ne fais plus rien.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
@@ -31300,7 +31941,87 @@
             ]
           ]
         },
+        /* -----------------------------------------------------------------
+           LA DESCENTE — le bon coup ne va pas vers l'objectif.
 
+           Refonte complète. L'ancienne version promettait que « le plus court
+           chemin passe par lui » : c'était faux, le Veilleur descendait la
+           colonne d'à côté et on le délogeait au passage pour une carte, sans
+           y penser. Il n'y avait pas d'énigme.
+
+           Ici il ne peut PAS être poussé — le paquet ne contient aucune carte
+           POUSSER, et rien d'autre ne l'atteint. Sa route est écrite et se
+           termine sur une case du village, ce qui interdit toute validation.
+           La seule parade est d'envoyer le SECOND Gardien se poster sur la case
+           qu'il doit traverser : un coup annoncé devient illégal quand la case
+           est prise, et il reste planté là pour le reste de l'énigme.
+
+           Ce geste s'éloigne de la couronne et ne rapporte rien sur le moment.
+           C'est tout le sujet. Et il ne souffre aucun retard : la case doit
+           être prise avant sa première riposte, donc dès le premier tour, sur
+           des cartes que le porteur réclame. Aller au Sanctuaire en ligne
+           droite réussit jusqu'au troisième tour, où l'on découvre que la place
+           est tenue et qu'il ne reste rien pour s'en occuper. */
+        {
+          id: "p14-course",
+          acte: "III",
+          principe: "CADENCE",
+          title: "La descente",
+          tagline: "Il descend vers ton Sanctuaire, et rien ne peut le toucher.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [3, 1],
+          villages: { 0: [[0, 0]] },
+          /* La colonne du porteur et la voie du Veilleur ne se touchent NULLE
+             PART : une colonne de vide les sépare, et le seul lien entre les
+             deux est la diagonale qui joint la dernière case de la voie à la
+             place du Sanctuaire. Cette case est donc un vrai point de passage
+             obligé — sans quoi le blocage ne vaut rien, car une riposte annonce
+             une DESTINATION et le moteur lui cherche un chemin : la première
+             version offrait un détour, et le Veilleur passait tranquillement à
+             côté du Gardien posté. */
+          islands: [
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]],
+            [[6, 0]], [[7, 0]], [[8, 0]],
+            [[1, 2]], [[2, 2]], [[1, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
+            { key: "H", p: 0, r: 1, c: 3 },
+            { key: "R", p: 1, r: 2, c: 2 }
+          ],
+          /* Une carte de marge au second tour, pas zéro : une main vidée à la
+             dernière carte empêche le tour suivant de commencer, et la couronne
+             ne compte QU'AU DÉBUT du tour suivant. Sans cette carte, l'énigme
+             se jouait juste et ne se gagnait jamais. */
+          deck: [
+            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["MOVE", "MOVE", "MOVE", "MOVE"]
+          ],
+          par: 8,
+          rivalPlan: [
+            "le Veilleur monte d'une case.",
+            "puis il se pose sur la place du Sanctuaire."
+          ],
+          replies: [
+            [{ a: "MOVE", who: "R", to: [1, 2] }],
+            [{ a: "MOVE", who: "R", to: [0, 1] }]
+          ],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "La descente s'est arrêtée",
+          winLine: "Une case prise à temps vaut mieux qu'une poussée qu'on n'a pas.",
+          failLine: "Il s'est assis sur la place, et rien ne l'en délogera.",
+          solution: [
+            [
+              { a: "MOVE", who: "H", to: [1, 2] },
+              { a: "MOVE", who: "G", to: [4, 0] }
+            ],
+            [
+              { a: "MOVE", who: "G", to: [1, 0] }
+            ]
+          ]
+        },
         /* -----------------------------------------------------------------
            13 — Le rival annonce qu'il va se poster sur la SEULE case où la
            couronne peut se poser, et une couronne en vol ne se pose pas sur une
@@ -31309,6 +32030,9 @@
            — puis s'en écarter, sinon c'est ton propre Gardien qui l'encombre. */
         {
           id: "p13-intercepteur",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "Ils connaissent les Voies mieux que toi.",
           title: "L'intercepteur",
           tagline: "Il va se poster là où ta couronne doit atterrir.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
@@ -31363,77 +32087,69 @@
             ]
           ]
         },
-
         /* -----------------------------------------------------------------
-           14 — Une course qui ne se gagne pas à la course. Le rival descend de
-           deux cases par tour vers le village ; filer droit au but fait arriver
-           un tour trop tard, puisqu'une couronne ne compte qu'au tour suivant.
-           Le chemin le plus court passe par LUI : s'arrêter une case plus haut
-           met sa descente à portée de poussée. */
+           LA RELÈVE — libérer une place ne suffit pas, il faut s'y tenir.
+
+           Refonte. La première version ne pouvait pas fonctionner : le second
+           Veilleur était programmé pour prendre la place au troisième tour,
+           alors que la couronne comptait au début de ce même tour. La relève
+           n'arrivait jamais, et la leçon ne se jouait pas.
+
+           Elle arrive maintenant à la riposte SUIVANTE. Et comme un Veilleur
+           sur n'importe laquelle des trois cases du village interdit toute
+           validation, rester sur la case voisine — pourtant valide elle aussi —
+           ne sert à rien : il faut occuper précisément celle qu'on vient de
+           vider. Le paquet est calculé pour que ce pas de côté soit la
+           dernière carte, et pour qu'il ne reste rien après. */
         {
-          id: "p14-course",
-          title: "La course",
-          tagline: "Il descend de deux cases par tour. Le plus court chemin passe par lui.",
+          id: "p21-la-releve",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "On ne délivre pas une place. On la tient.",
+          title: "La relève",
+          tagline: "Tu peux le chasser. Un autre attend déjà son tour.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 13,
           sanctuary: false,
-          focus: [4, 0],
+          focus: [2, 0],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0]],
-            [[0, 1]],
-            [[1, 1], [2, 1], [3, 1], [4, 1]]
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]],
+            [[1, 1]]
           ],
           guardians: [
-            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "R", p: 1, r: 4, c: 1 }
+            { key: "G", p: 0, r: 6, c: 0, crown: 1 },
+            { key: "R", p: 1, r: 0, c: 1 },
+            { key: "S", p: 1, r: 1, c: 1 }
           ],
           deck: [
             ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"],
-            ["MOVE", "PUSH"]
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"]
           ],
           par: 8,
           rivalPlan: [
-            "il descend sur la case marquée.",
-            "puis il se poste sur une case de ton village."
+            "le second Veilleur attend son tour.",
+            "il prend la place laissée vide."
           ],
           replies: [
-            [{ a: "MOVE", who: "R", to: [2, 1] }],
-            [{ a: "MOVE", who: "R", to: [0, 1] }]
+            [],
+            [{ a: "MOVE", who: "S", to: [0, 1] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
-          winTitle: "La course est finie",
-          winLine: "S'arrêter à sa hauteur coûte une carte, et lui coûte la partie.",
-          failLine: "Il est arrivé le premier.",
+          winTitle: "La place est tenue",
+          winLine: "La case voisine valide aussi. Elle ne défend rien.",
+          failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [3, 0] }
+              { a: "MOVE", who: "G", to: [1, 0] }
             ],
             [
-              { a: "MOVE", who: "G", to: [2, 0] },
-              { a: "PUSH", who: "G", on: [2, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [1, 0] }
+              { a: "MOVE", who: "G", to: [0, 0] },
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
+              { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
         },
-
-        /* =================================================================
-           LES DEUX LONGUES ÉPREUVES (15 et 16)
-
-           Plus amples que les précédentes : trois tours chacune, une dizaine
-           de coups, et deux gestes que le reste de la collection n'employait
-           pas — tous deux GRATUITS, aucune carte dépensée (voir la phase
-           DROP_TREASURE dans ui.js) :
-
-           - la TRANSMISSION d'une couronne entre deux Gardiens adjacents ;
-           - le DÉPÔT d'une couronne sur une case libre voisine.
-
-           Ce sont eux qui rendent possible ce qu'aucun Gardien ne peut faire
-           seul : confier la lumière à quelqu'un d'autre, ou la poser pour la
-           pousser plus loin qu'on ne saurait marcher.
-           ================================================================= */
-
         /* -----------------------------------------------------------------
            15 — Le relais du vide.
 
@@ -31448,6 +32164,9 @@
            de s'écarter. */
         {
           id: "p15-relais-du-vide",
+          acte: "III",
+          principe: "MESURE",
+          verite: "Le chemin le plus proche n'est pas toujours le chemin le plus court.",
           title: "Le relais du vide",
           tagline: "Aucun Gardien ne traversera. La lumière, elle, peut voyager.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
@@ -31505,7 +32224,6 @@
             ]
           ]
         },
-
         /* -----------------------------------------------------------------
            16 — La charnière des cieux.
 
@@ -31522,8 +32240,11 @@
            Déplacer le voyageur, ou déplacer la route. */
         {
           id: "p16-charniere",
+          acte: "III",
+          principe: "TRACE",
+          verite: "Les îles ne portent pas les chemins. Elles sont les chemins.",
           title: "La charnière des cieux",
-          tagline: "Trois rotations. Aucune ne fait la même chose.",
+          tagline: "Une passerelle qui marche, et le bord du monde au bout.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
@@ -31540,7 +32261,15 @@
             { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
-            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] }
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
+            /* LE VERROU. Deux cases posées là uniquement pour interdire au
+               perchoir de tourner : sa seule rotation possible le couchait sur
+               [0,3], et emportait le Veilleur hors des cases du village. C'était
+               la solution que tout le monde voit en premier — elle est
+               maintenant impossible, et le joueur perd son temps à chercher un
+               pivot qui n'existe plus. La bonne fausse piste : celle qu'on
+               essaie longtemps avant d'y renoncer. */
+            { key: "VERROU", cells: [[0, 3], [0, 4]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -31551,16 +32280,34 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum PROUVÉ : 8. Ce sont les DÉPLACER rares qui font tenir
-             l'énigme — pas un interdit. Avec une main généreuse, le chercheur
-             couchait le T en échelle et parcourait tout à pied en neuf pas,
-             sans jamais monter sur rien : les deux usages de la Magie étaient
-             contournés d'un coup. Six DÉPLACER rendent la marche impossible, et
-             la seule route passe par les trois rotations. */
+          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
+             plafond 7), puis rejoué en direct sur les trois tours réels : le
+             coût annoncé n'est plus une intention mais un fait.
+
+             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             l'objectif à la GÉNÉRATION des successeurs et rendait la main au
+             premier chemin gagnant rencontré, pas au moins cher ; il validait
+             donc la solution qu'on lui présentait au lieu de la contredire.
+
+             Ce que la vraie ligne fait, et qui n'était pas prévu : la
+             PASSERELLE pivote TROIS FOIS sur elle-même, chaque rotation la
+             reposant plus près du Sanctuaire avec son passager dessus — une
+             île de trois cases n'est pas un pont, c'est une monture. Puis la
+             couronne déposée est poussée vers le nord : le bloc poussé la
+             contient ELLE et le Veilleur collé derrière, qui sort du plateau.
+             Une seule poussée de force 1 fait le travail que trois rotations
+             faisaient dans l'ancienne solution.
+
+             DÉFAUT ASSUMÉ : la terrasse, le perchoir et le bras ne servent
+             plus à rien dans la ligne optimale. Trois pièces de décor, là où
+             une seule était déjà de trop. L'énigme reste juste et se tient,
+             mais elle n'enseigne plus les trois usages de la Magie qu'elle
+             était censée enseigner — c'est une refonte, pas une retouche, et
+             elle attend un arbitrage. */
           par: 8,
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La charnière a tourné",
-          winLine: "Trois rotations, trois usages : on t'a porté, la route est venue à toi, et le rival a tourné avec son île.",
+          winLine: "La passerelle s'est déplacée trois fois sous tes pieds, et la couronne poussée a emporté le Veilleur par-dessus bord.",
           failLine: "Le chemin ne s'est pas ouvert.",
           /* Trois emplois de la MÊME carte, tous différents :
              - la passerelle TRANSPORTE le Gardien par-dessus le vide ;
@@ -31573,19 +32320,156 @@
              RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
              Il reste du décor, et une pièce inutile est un défaut — le même que
              le troisième Gardien du Relais avant sa refonte. */
+          par: 7,
           solution: [
             [
-              { a: "MOVE", who: "G", to: [7, 2] },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
-              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
+              { a: "MOVE", who: "G", to: [7, 2] }
             ],
             [
-              { a: "MAGIC", island: "TERRASSE", pivot: [1, 1], turns: 1, direction: 1 },
+            ],
+            [
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 1, direction: 1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 1], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [4, 1], turns: 2, direction: 1 },
+              { a: "DROP", who: "G", on: [1, 1] },
+              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
               { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
         },
+        /* -----------------------------------------------------------------
+           LA PLUS COURTE TRACE — celle que personne ne marche.
 
+           Refonte. La première version demandait de repérer deux barres et de
+           monter dessus : que la rotation transporte plus vite que le pied, on
+           le sait depuis la deuxième énigme du jeu. Il n'y avait rien à
+           chercher, et le grand tour à dix-huit cartes n'était pas une
+           tentation mais un décor.
+
+           Le sujet est maintenant que LA COURONNE VOYAGE SEULE. Elle n'a besoin
+           de personne : posée sur une île, une rotation l'emporte avec le
+           terrain ; poussée, elle survole le vide et se dépose sur la dernière
+           terre à portée. Le Gardien, lui, ne va nulle part — il n'y a d'ailleurs
+           aucune route pour lui.
+
+           Et la difficulté n'est pas de le deviner mais de le PLACER. Pousser
+           exige d'être derrière : c'est la rotation, et elle seule, qui décide
+           de quel côté de la couronne on se retrouve. Sur les six pivots
+           possibles, un seul laisse le Gardien au sud de la couronne avec de la
+           terre au nord ; les cinq autres se jouent, coûtent une carte, et ne
+           mènent à rien.
+
+           Optimum 6, PROUVÉ par recherche exhaustive sous plafond 6. */
+        {
+          id: "p20-la-plus-courte-trace",
+          acte: "III",
+          principe: "TRACE",
+          title: "La plus courte trace",
+          tagline: "Aucune route ne mène là-bas. La couronne n'en a pas besoin.",
+          brief: "Dépose la couronne sur la case marquée.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 2],
+          villages: {},
+          islands: [
+            { key: "SOCLE", cells: [[9, 1], [9, 2], [9, 3]] },
+            /* La cible, hors d'atteinte de tout pied : une île d'une case ne
+               pivote pas et rien ne la relie au reste. */
+            [[2, 1]],
+            /* Le leurre : une belle barre de quatre, parfaitement pivotable, et
+               qui ne rapproche de rien. Elle est là pour qu'on y passe du
+               temps. */
+            { key: "LEURRE", cells: [[5, 5], [6, 5], [7, 5], [8, 5]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 9, c: 2, crown: 1 }
+          ],
+          /* UNE SEULE MAGIE, et c'est le coeur de l'énigme. Avec trois, le
+             chercheur faisait MARCHER le socle vers le nord en l'enroulant sur
+             lui-même, la couronne dessus, et terminait d'une poussée de 1 :
+             quatre cartes, et la leçon contournée. C'est en outre l'idée de la
+             charnière, déjà jouée. Une carte de Magie ne donne qu'un pivot :
+             il faut choisir le bon, et la couronne doit ensuite franchir le
+             vide toute seule. */
+          hand: { MOVE: 6, PUSH: 6, MAGIC: 1 },
+          par: 6,
+          goal: { type: "crownAtCell", cell: [2, 1] },
+          winTitle: "La trace la plus courte",
+          winLine: "Personne n'a marché jusque-là. La couronne y est allée seule.",
+          failLine: "La couronne est restée au sud.",
+          solution: [
+            { a: "DROP", who: "G", on: [9, 3] },
+            { a: "MAGIC", island: "SOCLE", pivot: [9, 1], turns: 1, direction: -1 },
+            { a: "PUSH", who: "G", on: [7, 1], force: 5 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           DESTINÉE — le quatrième Gardien entre, et l'énigme ne tient que
+           parce qu'ils sont quatre.
+
+           Elle remplace « Les quatre mains », qui ne tenait pas : quatre
+           pointes interchangeables et quatre Gardiens laissaient chacun courir
+           vers la plus proche, et toute contrainte se dissolvait dans le libre
+           choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
+           et aucun ne peut prendre la place d'un autre.
+
+           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
+           ne font qu'une case de large : personne ne double personne. Il faut
+           GARER quelqu'un sur un bras déjà libéré, le temps que les autres
+           passent — un aller-retour qui ne rapporte rien et sans lequel rien
+           n'avance.
+
+           Le Veilleur assis au carrefour ne peut être chassé que vers l'ouest :
+           au nord comme au sud, le bloc poussé emporterait un allié dans le
+           vide, et seul le Gardien de l'est est placé pour pousser dans la
+           bonne direction. La géométrie désigne le pousseur.
+
+           PAS DE BARÈME. La solution de référence coûte 23 cartes et n'est pas
+           prouvée optimale : le chercheur n'a jamais tenu l'échelle d'une
+           énigme à quatre Gardiens. Annoncer un chiffre non prouvé, c'est
+           exactement ce qui s'est fait battre six fois. */
+        {
+          id: "p22-destinee",
+          acte: "III",
+          principe: "TRACE",
+          avant: "Ils étaient trois.",
+          verite: "Le carrefour en demandait quatre.",
+          title: "Destinée",
+          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
+          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: {},
+          islands: [
+            [[3, 6]], [[4, 6]], [[5, 6]], [[6, 6]], [[7, 6]], [[8, 6]], [[9, 6]],
+            [[6, 3]], [[6, 4]], [[6, 5]], [[6, 7]], [[6, 8]], [[6, 9]]
+          ],
+          guardians: [
+            { key: "A", p: 0, r: 5, c: 6 },
+            { key: "B", p: 0, r: 6, c: 7 },
+            { key: "C", p: 0, r: 7, c: 6 },
+            { key: "D", p: 0, r: 8, c: 6 },
+            { key: "R", p: 1, r: 6, c: 6 }
+          ],
+          hand: { MOVE: 20, PUSH: 5 },
+          goal: {
+            type: "assignedCells", player: 0,
+            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+          },
+          winTitle: "Chacun à sa place",
+          winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
+          failLine: "Un Gardien n'est pas sur son signe.",
+          solution: [
+            { a: "PUSH", who: "B", on: [6, 6], force: 4 },
+            { a: "MOVE", who: "B", to: [6, 3] },
+            { a: "MOVE", who: "A", to: [6, 5] },
+            { a: "MOVE", who: "C", to: [3, 6] },
+            { a: "MOVE", who: "D", to: [6, 9] },
+            { a: "MOVE", who: "A", to: [9, 6] }
+          ]
+        },
         /* =================================================================
            17 — L'ARCHIPEL DES NEUF MENSONGES
 
@@ -31604,6 +32488,8 @@
            ================================================================= */
         {
           id: "p17-neuf-mensonges",
+          acte: "CONFLUENCE",
+          avant: "Tu connais désormais les Voies. Ne crois pas pour autant ce qu'elles te montrent.",
           title: "L'archipel des neuf mensonges",
           tagline: "Tu as appris à déplacer le monde. Maintenant le monde va te mentir.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",

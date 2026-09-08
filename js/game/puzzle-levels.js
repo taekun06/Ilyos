@@ -1,9 +1,11 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Seize énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
-         moteur vit dans js/game/puzzle.js ; ce fragment ne contient que des
-         données.
+         Vingt-deux énigmes, de la leçon de poussée à l'archipel des neuf
+         mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
+         contient que des données, et leur ORDRE est celui de la campagne :
+         « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
+         l'ordre des identifiants, qui ne dit plus que l'ancienneté.
 
          Chaque définition porte sa SOLUTION DE RÉFÉRENCE. Ce n'est pas de la
          documentation décorative : `ILYOS_PUZZLE.verify(i)` la rejoue sur un
@@ -44,7 +46,6 @@
          ===================================================================== */
 
       PUZZLES.push(
-
         /* -----------------------------------------------------------------
            01 — La poussée choisit sa force, et un rival dans ton village te
            verrouille. Le Gardien est enfermé derrière les deux rivaux : il ne
@@ -54,6 +55,7 @@
            sortir, et pas une de plus. */
         {
           id: "p01-seuil",
+          acte: "PROLOGUE",
           title: "Le seuil gardé",
           tagline: "Deux rivaux, une seule ligne, et ton village derrière eux.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -80,7 +82,6 @@
             { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
-
         /* -----------------------------------------------------------------
            02 — Le pivot. Une barre qui tourne autour de son EXTRÉMITÉ se
            translate de toute sa longueur et emmène son passager ; autour de son
@@ -88,6 +89,8 @@
            franchir le gouffre et perdre sa seule carte Magie. */
         {
           id: "p02-pont",
+          acte: "I",
+          principe: "TRACE",
           title: "Le pont dérobé",
           tagline: "Le gouffre est trop large pour marcher. La barre, elle, tourne.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -115,7 +118,6 @@
             { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
-
         /* -----------------------------------------------------------------
            03 — La chaîne. Une pièce DÉTACHÉE du bloc plafonne la poussée juste
            avant elle : pousser fort dans une file trouée ne fait avancer d'une
@@ -123,7 +125,9 @@
            demandée. Il faut d'abord refermer le trou, puis pousser une fois. */
         {
           id: "p03-domino",
-          title: "L'effet domino",
+          acte: "I",
+          principe: "MESURE",
+          title: "La file",
           tagline: "Une file trouée avale les cartes sans rien déplacer.",
           brief: "Ramène la couronne jusqu'à ton village.",
           board: 11,
@@ -152,7 +156,6 @@
             { a: "MOVE", who: "G", to: [0, 1] }
           ]
         },
-
         /* -----------------------------------------------------------------
            04 — Le budget. Marcher jusqu'à la barre coûte trois cartes, et la
            barre ne sert qu'au Gardien qui se tient DESSUS : pivoter avant
@@ -160,6 +163,9 @@
            dernier rival, lui, ne se déloge que depuis la case du village. */
         {
           id: "p04-main-serree",
+          acte: "I",
+          principe: "MESURE",
+          verite: "Ce qui est dépensé trop tôt manque toujours au dernier instant.",
           title: "Main serrée",
           tagline: "Sept cartes, six coups justes. L'ordre décide de tout.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -189,7 +195,6 @@
             { a: "PUSH", who: "G", on: [1, 0], force: 1 }
           ]
         },
-
         /* -----------------------------------------------------------------
            05 — Tout à la fois : une chaîne à éjecter par le bord de la
            corniche, une barre-navette pour franchir le gouffre, un dernier
@@ -197,6 +202,8 @@
            sont comptées au plus juste. */
         {
           id: "p05-longue-marche",
+          acte: "I",
+          principe: "MESURE",
           title: "La longue marche",
           tagline: "Éjecter, traverser, déloger. Onze cartes exactement utiles.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -229,7 +236,6 @@
             { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
-
         /* -----------------------------------------------------------------
            06 — La règle que rien n'a encore montrée : une couronne ne tombe
            JAMAIS. Elle survole le vide et se pose sur sa case d'arrivée. Aucun
@@ -238,6 +244,10 @@
            d'atterrissage. */
         {
           id: "p06-couronne-vole",
+          acte: "II",
+          principe: "TRACE",
+          avant: "Quelqu'un attend déjà sur l'autre rive.",
+          verite: "La lumière atteint les terres que nul Gardien ne peut fouler.",
           title: "La couronne qui vole",
           tagline: "Personne ne traversera. La couronne, elle, ne tombe jamais.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -275,76 +285,53 @@
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
           ]
         },
-
         /* -----------------------------------------------------------------
-           07 — Ni village, ni couronne, ni sanctuaire : une corniche nue et
-           quatre rivaux. Le premier bloc est plafonné par un rival détaché
-           qu'on ne voit pas comme un obstacle ; une poussée à pleine force n'y
-           gagnerait qu'une case et viderait la main. Il faut souder la file
-           d'une carte, puis l'éjecter d'un seul geste. */
+           18 — LES ACTIONS GRATUITES. Déposer, ramasser, transmettre ne coûtent
+           rien : ce sont les trois gestes que la collection n'avait jamais
+           obligé personne à voir, et dont l'oubli a faussé six barèmes. Ici le
+           gouffre interdit de porter la couronne, et un Gardien ne peut pas
+           voler : il faut la POSER, la POUSSER par-dessus le vide — une
+           couronne ne tombe jamais, elle atterrit sur la dernière terre à
+           portée — puis la faire RAMASSER par qui attend de l'autre côté. Le
+           Veilleur assis sur le Sanctuaire bloque la validation tant qu'il y
+           reste ; le déloger coûte la dernière carte de poussée. */
         {
-          id: "p07-vide-allie",
-          title: "Le vide pour seul allié",
-          tagline: "Quatre rivaux, aucune couronne. La corniche fera le reste.",
-          brief: "Fais tomber les quatre rivaux hors du plateau.",
+          id: "p18-relais-des-mains",
+          acte: "II",
+          principe: "TRACE",
+          title: "Le relais des mains",
+          tagline: "Le gouffre ne se marche pas. La couronne, elle, se lance.",
+          brief: "Ramène la couronne jusqu'à ton village.",
           board: 11,
           sanctuary: false,
+          focus: [4, 0],
+          villages: { 0: [[0, 0]] },
           islands: [
-            [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]]
+            [[0, 1]], [[1, 0]],
+            [[2, 0]], [[3, 0]], [[5, 0]], [[6, 0]], [[7, 0]], [[8, 0]], [[6, 1]]
           ],
           guardians: [
-            { key: "G", p: 0, r: 5, c: 7 },
-            { p: 1, r: 5, c: 6 },
-            { p: 1, r: 5, c: 5 },
-            { p: 1, r: 5, c: 3 },
-            { p: 1, r: 5, c: 2 }
+            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
+            { key: "A", p: 0, r: 6, c: 1 },
+            { key: "B", p: 0, r: 0, c: 0 },
+            { p: 1, r: 0, c: 1 }
           ],
-          hand: { PUSH: 7, MOVE: 2 },
-          par: 7,
-          goal: { type: "eliminateAll" },
-          winTitle: "La corniche est nue",
-          winLine: "Une pièce détachée arrête un bloc. Colle-la d'abord, pousse ensuite.",
-          failLine: "Il en reste debout, et la main est vide.",
+          hand: { MOVE: 3, PUSH: 5 },
+          par: 6,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Les mains se sont passé la lumière",
+          winLine: "Poser, lancer, ramasser : trois gestes qui ne coûtent rien, et une seule poussée qui compte.",
+          failLine: "La couronne est restée du mauvais côté du vide.",
           solution: [
-            { a: "PUSH", who: "G", on: [5, 6], force: 1 },
-            { a: "MOVE", who: "G", to: [5, 6] },
-            { a: "PUSH", who: "G", on: [5, 5], force: 5 }
+            { a: "DROP", who: "G", on: [7, 0] },
+            { a: "MOVE", who: "A", to: [6, 0] },
+            { a: "PICKUP", who: "A", on: [7, 0] },
+            { a: "DROP", who: "A", on: [5, 0] },
+            { a: "PUSH", who: "A", on: [5, 0], force: 4 },
+            { a: "PUSH", who: "B", on: [0, 1], force: 1 },
+            { a: "PICKUP", who: "B", on: [1, 0] }
           ]
         },
-
-        /* -----------------------------------------------------------------
-           08 — Une rotation de 90° change une rangée en colonne ET emmène tous
-           ceux qui se tiennent dessus. L'énigme n'est pas la rotation : c'est
-           l'ESPACEMENT à donner aux passagers AVANT de tourner, sachant qu'une
-           poussée trop forte jette son propre Gardien de tête dans le vide. */
-        {
-          id: "p08-ronde",
-          title: "La ronde",
-          tagline: "Trois passagers, une rotation. Reste à bien les asseoir.",
-          brief: "Place un Gardien sur chacune des trois cases marquées.",
-          board: 11,
-          sanctuary: false,
-          islands: [
-            { key: "A", cells: [[4, 4], [4, 5], [4, 6], [4, 7], [4, 8]] }
-          ],
-          guardians: [
-            { key: "G1", p: 0, r: 4, c: 4 },
-            { key: "G2", p: 0, r: 4, c: 5 },
-            { key: "G3", p: 0, r: 4, c: 6 },
-            { p: 1, r: 4, c: 7 }
-          ],
-          hand: { PUSH: 3, MAGIC: 1, MOVE: 1 },
-          par: 3,
-          goal: { type: "occupyCells", player: 0, cells: [[4, 4], [7, 4], [8, 4]] },
-          winTitle: "La rangée est devenue colonne",
-          winLine: "Un quart de tour emporte ses passagers là où ils étaient assis.",
-          failLine: "Mal assis, mal portés.",
-          solution: [
-            { a: "PUSH", who: "G1", on: [4, 5], force: 2 },
-            { a: "MAGIC", island: "A", pivot: [4, 4], turns: 1, direction: 1 }
-          ]
-        },
-
         /* -----------------------------------------------------------------
            09 — Deux couronnes, deux transports différents. L'une survole le
            gouffre ; l'autre ne bouge pas d'un pouce et se laisse EMPORTER par
@@ -353,6 +340,8 @@
            case d'arrivée avant le vol condamne le vol. */
         {
           id: "p09-fardeau",
+          acte: "II",
+          principe: "TRACE",
           title: "Le fardeau",
           tagline: "Deux couronnes, deux façons de voyager. Aucune ne marche.",
           brief: "Pose une couronne sur la case marquée d'or, et tiens l'autre en main sur la case bleue.",
@@ -389,7 +378,82 @@
             { a: "MAGIC", island: "B", pivot: [3, 5], turns: 2 }
           ]
         },
-
+        /* -----------------------------------------------------------------
+           08 — Une rotation de 90° change une rangée en colonne ET emmène tous
+           ceux qui se tiennent dessus. L'énigme n'est pas la rotation : c'est
+           l'ESPACEMENT à donner aux passagers AVANT de tourner, sachant qu'une
+           poussée trop forte jette son propre Gardien de tête dans le vide. */
+        {
+          id: "p08-ronde",
+          acte: "II",
+          principe: "TRACE",
+          title: "La ronde",
+          tagline: "Trois passagers, une rotation. Reste à bien les asseoir.",
+          brief: "Place un Gardien sur chacune des trois cases marquées.",
+          board: 11,
+          sanctuary: false,
+          islands: [
+            { key: "A", cells: [[4, 4], [4, 5], [4, 6], [4, 7], [4, 8]] }
+          ],
+          guardians: [
+            { key: "G1", p: 0, r: 4, c: 4 },
+            { key: "G2", p: 0, r: 4, c: 5 },
+            { key: "G3", p: 0, r: 4, c: 6 },
+            { p: 1, r: 4, c: 7 }
+          ],
+          hand: { PUSH: 3, MAGIC: 1, MOVE: 1 },
+          par: 3,
+          goal: { type: "occupyCells", player: 0, cells: [[4, 4], [7, 4], [8, 4]] },
+          winTitle: "La rangée est devenue colonne",
+          winLine: "Un quart de tour emporte ses passagers là où ils étaient assis.",
+          failLine: "Mal assis, mal portés.",
+          solution: [
+            { a: "PUSH", who: "G1", on: [4, 5], force: 2 },
+            { a: "MAGIC", island: "A", pivot: [4, 4], turns: 1, direction: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           19 — LA DIAGONALE. Elle existe, elle franchit un coin, et elle coûte
+           DEUX. C'est-à-dire exactement ce que coûtent les deux pas droits
+           qu'elle remplace : une diagonale n'est jamais un raccourci, c'est un
+           PASSAGE — elle ne sert que là où les deux cases droites sont du vide.
+           Le couloir grand ouvert vers l'ouest ne mène nulle part ; l'escalier
+           qui monte en biais est la seule route, et il n'y a pas de quoi le
+           gravir en entier. Reste la barre, qui ne se couche pas là où on
+           l'attend : pivotée par son autre bout, elle emmène son passager
+           jusqu'au pied de l'escalier. */
+        {
+          id: "p19-la-corde-oblique",
+          acte: "II",
+          principe: "TRACE",
+          title: "La corde oblique",
+          tagline: "Un couloir large qui ne mène nulle part, un escalier de biais qu'on ne peut pas gravir.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            { key: "B", cells: [[6, 3], [6, 4], [6, 5]] },
+            [[6, 2]], [[6, 1]], [[6, 0]], [[5, 0]],
+            [[3, 2]], [[2, 1]], [[2, 0]], [[1, 0]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 6, c: 5, crown: 1 }
+          ],
+          hand: { MOVE: 6, MAGIC: 1, PUSH: 3 },
+          par: 7,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La corde s'est tendue",
+          winLine: "Deux cases par pas de biais : l'escalier ne pardonne pas un détour.",
+          failLine: "L'escalier est encore au-dessus de toi.",
+          solution: [
+            { a: "MAGIC", island: "B", pivot: [6, 3], turns: 1, direction: -1 },
+            { a: "MOVE", who: "G", to: [3, 2] },
+            { a: "MOVE", who: "G", to: [2, 1] },
+            { a: "MOVE", who: "G", to: [1, 0] }
+          ]
+        },
         /* -----------------------------------------------------------------
            10 — La navette. Une seule île, un seul Gardien, aucun rival. Une
            barre pivotée par son extrémité se translate de toute sa longueur et
@@ -398,6 +462,9 @@
            quart de tour, au bon moment, fait tourner le couloir. */
         {
           id: "p10-escalier",
+          acte: "II",
+          principe: "TRACE",
+          verite: "Ce mécanisme n'a pas été bâti pour relier. Il a été bâti pour faire passer un seul voyageur.",
           title: "L'escalier",
           tagline: "Une barre, quatre rotations, et un passager qui doit courir.",
           brief: "Amène ton Gardien sur la case marquée.",
@@ -428,7 +495,45 @@
             { a: "MOVE", who: "G", to: [10, 8] }
           ]
         },
-
+        /* -----------------------------------------------------------------
+           07 — Ni village, ni couronne, ni sanctuaire : une corniche nue et
+           quatre rivaux. Le premier bloc est plafonné par un rival détaché
+           qu'on ne voit pas comme un obstacle ; une poussée à pleine force n'y
+           gagnerait qu'une case et viderait la main. Il faut souder la file
+           d'une carte, puis l'éjecter d'un seul geste. */
+        {
+          id: "p07-vide-allie",
+          acte: "II",
+          principe: "MESURE",
+          avant: "Il n'y a rien à rallumer ici.",
+          verite: "Le sceau du Sanctuaire est celui de ceux qui le gardaient.",
+          title: "Le vide pour seul allié",
+          tagline: "Quatre rivaux, aucune couronne. La corniche fera le reste.",
+          brief: "Fais tomber les quatre rivaux hors du plateau.",
+          board: 11,
+          sanctuary: false,
+          islands: [
+            [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 5, c: 7 },
+            { p: 1, r: 5, c: 6 },
+            { p: 1, r: 5, c: 5 },
+            { p: 1, r: 5, c: 3 },
+            { p: 1, r: 5, c: 2 }
+          ],
+          hand: { PUSH: 7, MOVE: 2 },
+          par: 7,
+          goal: { type: "eliminateAll" },
+          winTitle: "La corniche est nue",
+          winLine: "Une pièce détachée arrête un bloc. Colle-la d'abord, pousse ensuite.",
+          failLine: "Il en reste debout, et la main est vide.",
+          solution: [
+            { a: "PUSH", who: "G", on: [5, 6], force: 1 },
+            { a: "MOVE", who: "G", to: [5, 6] },
+            { a: "PUSH", who: "G", on: [5, 5], force: 5 }
+          ]
+        },
         /* -----------------------------------------------------------------
            11 — Tout, sans marge. Douze cartes pour douze cartes de solution.
            Le porteur ne franchira jamais le gouffre : il faut le SACRIFIER
@@ -439,6 +544,9 @@
            perdue. */
         {
           id: "p11-dernier-souffle",
+          acte: "III",
+          principe: "TRACE",
+          verite: "Certaines lumières ne passent que de main morte.",
           title: "Le dernier souffle",
           tagline: "Il est seul sur son rocher, et il ne peut rien poser.",
           brief: "Ramène la couronne jusqu'à ton village.",
@@ -477,29 +585,6 @@
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
           ]
         },
-
-        /* =================================================================
-           ÉNIGMES MULTI-TOURS (12 à 14)
-
-           Les onze premières tiennent dans un tour : leur main est donnée d'un
-           bloc. Celles-ci durent plusieurs tours et écrivent leur PIOCHE au
-           lieu de leur main — cinq cartes distribuées par tour, par le vrai
-           `drawCards()`. Toute la boucle de jeu reste en place, et avec elle
-           deux règles que les énigmes d'un seul tour ne pouvaient pas montrer :
-
-           - une couronne ne se valide qu'au DÉBUT de ton tour suivant, donc le
-             rival a le temps de venir squatter ton village (objectif `scored`,
-             qui attend le vrai point de scoreCrownsAtTurnStart) ;
-           - les cartes non jouées passent en réserve : rien n'est perdu, mais
-             rien ne se rattrape non plus.
-
-           Le rival joue des coups ÉCRITS, affichés au joueur avant qu'il
-           commence (`rivalPlan`). Un coup devenu illégal est sauté — lui prendre
-           sa case d'avance est une parade, pas un bug. Et la composition du
-           paquet est elle-même une contrainte de conception : on ne peut pas
-           jouer au tour 1 ce que seul le tour 2 distribue.
-           ================================================================= */
-
         /* -----------------------------------------------------------------
            12 — Le rival annonce qu'il ira sur (1,0), une des trois cases du
            village. Le réflexe est de l'en déloger une fois assis ; la vraie
@@ -508,7 +593,10 @@
            s'installer. */
         {
           id: "p12-squatteur",
-          title: "Le squatteur",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "Toute action possède son instant.",
+          title: "La place prise",
           tagline: "Il annonce où il va s'asseoir. Assieds-toi, puis ne fais plus rien.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
@@ -558,7 +646,87 @@
             ]
           ]
         },
+        /* -----------------------------------------------------------------
+           LA DESCENTE — le bon coup ne va pas vers l'objectif.
 
+           Refonte complète. L'ancienne version promettait que « le plus court
+           chemin passe par lui » : c'était faux, le Veilleur descendait la
+           colonne d'à côté et on le délogeait au passage pour une carte, sans
+           y penser. Il n'y avait pas d'énigme.
+
+           Ici il ne peut PAS être poussé — le paquet ne contient aucune carte
+           POUSSER, et rien d'autre ne l'atteint. Sa route est écrite et se
+           termine sur une case du village, ce qui interdit toute validation.
+           La seule parade est d'envoyer le SECOND Gardien se poster sur la case
+           qu'il doit traverser : un coup annoncé devient illégal quand la case
+           est prise, et il reste planté là pour le reste de l'énigme.
+
+           Ce geste s'éloigne de la couronne et ne rapporte rien sur le moment.
+           C'est tout le sujet. Et il ne souffre aucun retard : la case doit
+           être prise avant sa première riposte, donc dès le premier tour, sur
+           des cartes que le porteur réclame. Aller au Sanctuaire en ligne
+           droite réussit jusqu'au troisième tour, où l'on découvre que la place
+           est tenue et qu'il ne reste rien pour s'en occuper. */
+        {
+          id: "p14-course",
+          acte: "III",
+          principe: "CADENCE",
+          title: "La descente",
+          tagline: "Il descend vers ton Sanctuaire, et rien ne peut le toucher.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [3, 1],
+          villages: { 0: [[0, 0]] },
+          /* La colonne du porteur et la voie du Veilleur ne se touchent NULLE
+             PART : une colonne de vide les sépare, et le seul lien entre les
+             deux est la diagonale qui joint la dernière case de la voie à la
+             place du Sanctuaire. Cette case est donc un vrai point de passage
+             obligé — sans quoi le blocage ne vaut rien, car une riposte annonce
+             une DESTINATION et le moteur lui cherche un chemin : la première
+             version offrait un détour, et le Veilleur passait tranquillement à
+             côté du Gardien posté. */
+          islands: [
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]],
+            [[6, 0]], [[7, 0]], [[8, 0]],
+            [[1, 2]], [[2, 2]], [[1, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
+            { key: "H", p: 0, r: 1, c: 3 },
+            { key: "R", p: 1, r: 2, c: 2 }
+          ],
+          /* Une carte de marge au second tour, pas zéro : une main vidée à la
+             dernière carte empêche le tour suivant de commencer, et la couronne
+             ne compte QU'AU DÉBUT du tour suivant. Sans cette carte, l'énigme
+             se jouait juste et ne se gagnait jamais. */
+          deck: [
+            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["MOVE", "MOVE", "MOVE", "MOVE"]
+          ],
+          par: 8,
+          rivalPlan: [
+            "le Veilleur monte d'une case.",
+            "puis il se pose sur la place du Sanctuaire."
+          ],
+          replies: [
+            [{ a: "MOVE", who: "R", to: [1, 2] }],
+            [{ a: "MOVE", who: "R", to: [0, 1] }]
+          ],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "La descente s'est arrêtée",
+          winLine: "Une case prise à temps vaut mieux qu'une poussée qu'on n'a pas.",
+          failLine: "Il s'est assis sur la place, et rien ne l'en délogera.",
+          solution: [
+            [
+              { a: "MOVE", who: "H", to: [1, 2] },
+              { a: "MOVE", who: "G", to: [4, 0] }
+            ],
+            [
+              { a: "MOVE", who: "G", to: [1, 0] }
+            ]
+          ]
+        },
         /* -----------------------------------------------------------------
            13 — Le rival annonce qu'il va se poster sur la SEULE case où la
            couronne peut se poser, et une couronne en vol ne se pose pas sur une
@@ -567,6 +735,9 @@
            — puis s'en écarter, sinon c'est ton propre Gardien qui l'encombre. */
         {
           id: "p13-intercepteur",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "Ils connaissent les Voies mieux que toi.",
           title: "L'intercepteur",
           tagline: "Il va se poster là où ta couronne doit atterrir.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
@@ -621,77 +792,69 @@
             ]
           ]
         },
-
         /* -----------------------------------------------------------------
-           14 — Une course qui ne se gagne pas à la course. Le rival descend de
-           deux cases par tour vers le village ; filer droit au but fait arriver
-           un tour trop tard, puisqu'une couronne ne compte qu'au tour suivant.
-           Le chemin le plus court passe par LUI : s'arrêter une case plus haut
-           met sa descente à portée de poussée. */
+           LA RELÈVE — libérer une place ne suffit pas, il faut s'y tenir.
+
+           Refonte. La première version ne pouvait pas fonctionner : le second
+           Veilleur était programmé pour prendre la place au troisième tour,
+           alors que la couronne comptait au début de ce même tour. La relève
+           n'arrivait jamais, et la leçon ne se jouait pas.
+
+           Elle arrive maintenant à la riposte SUIVANTE. Et comme un Veilleur
+           sur n'importe laquelle des trois cases du village interdit toute
+           validation, rester sur la case voisine — pourtant valide elle aussi —
+           ne sert à rien : il faut occuper précisément celle qu'on vient de
+           vider. Le paquet est calculé pour que ce pas de côté soit la
+           dernière carte, et pour qu'il ne reste rien après. */
         {
-          id: "p14-course",
-          title: "La course",
-          tagline: "Il descend de deux cases par tour. Le plus court chemin passe par lui.",
+          id: "p21-la-releve",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "On ne délivre pas une place. On la tient.",
+          title: "La relève",
+          tagline: "Tu peux le chasser. Un autre attend déjà son tour.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 13,
           sanctuary: false,
-          focus: [4, 0],
+          focus: [2, 0],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0]],
-            [[0, 1]],
-            [[1, 1], [2, 1], [3, 1], [4, 1]]
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]],
+            [[1, 1]]
           ],
           guardians: [
-            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "R", p: 1, r: 4, c: 1 }
+            { key: "G", p: 0, r: 6, c: 0, crown: 1 },
+            { key: "R", p: 1, r: 0, c: 1 },
+            { key: "S", p: 1, r: 1, c: 1 }
           ],
           deck: [
             ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"],
-            ["MOVE", "PUSH"]
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"]
           ],
           par: 8,
           rivalPlan: [
-            "il descend sur la case marquée.",
-            "puis il se poste sur une case de ton village."
+            "le second Veilleur attend son tour.",
+            "il prend la place laissée vide."
           ],
           replies: [
-            [{ a: "MOVE", who: "R", to: [2, 1] }],
-            [{ a: "MOVE", who: "R", to: [0, 1] }]
+            [],
+            [{ a: "MOVE", who: "S", to: [0, 1] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
-          winTitle: "La course est finie",
-          winLine: "S'arrêter à sa hauteur coûte une carte, et lui coûte la partie.",
-          failLine: "Il est arrivé le premier.",
+          winTitle: "La place est tenue",
+          winLine: "La case voisine valide aussi. Elle ne défend rien.",
+          failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [3, 0] }
+              { a: "MOVE", who: "G", to: [1, 0] }
             ],
             [
-              { a: "MOVE", who: "G", to: [2, 0] },
-              { a: "PUSH", who: "G", on: [2, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [1, 0] }
+              { a: "MOVE", who: "G", to: [0, 0] },
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
+              { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
         },
-
-        /* =================================================================
-           LES DEUX LONGUES ÉPREUVES (15 et 16)
-
-           Plus amples que les précédentes : trois tours chacune, une dizaine
-           de coups, et deux gestes que le reste de la collection n'employait
-           pas — tous deux GRATUITS, aucune carte dépensée (voir la phase
-           DROP_TREASURE dans ui.js) :
-
-           - la TRANSMISSION d'une couronne entre deux Gardiens adjacents ;
-           - le DÉPÔT d'une couronne sur une case libre voisine.
-
-           Ce sont eux qui rendent possible ce qu'aucun Gardien ne peut faire
-           seul : confier la lumière à quelqu'un d'autre, ou la poser pour la
-           pousser plus loin qu'on ne saurait marcher.
-           ================================================================= */
-
         /* -----------------------------------------------------------------
            15 — Le relais du vide.
 
@@ -706,6 +869,9 @@
            de s'écarter. */
         {
           id: "p15-relais-du-vide",
+          acte: "III",
+          principe: "MESURE",
+          verite: "Le chemin le plus proche n'est pas toujours le chemin le plus court.",
           title: "Le relais du vide",
           tagline: "Aucun Gardien ne traversera. La lumière, elle, peut voyager.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
@@ -763,7 +929,6 @@
             ]
           ]
         },
-
         /* -----------------------------------------------------------------
            16 — La charnière des cieux.
 
@@ -780,8 +945,11 @@
            Déplacer le voyageur, ou déplacer la route. */
         {
           id: "p16-charniere",
+          acte: "III",
+          principe: "TRACE",
+          verite: "Les îles ne portent pas les chemins. Elles sont les chemins.",
           title: "La charnière des cieux",
-          tagline: "Trois rotations. Aucune ne fait la même chose.",
+          tagline: "Une passerelle qui marche, et le bord du monde au bout.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
@@ -798,7 +966,15 @@
             { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
-            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] }
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
+            /* LE VERROU. Deux cases posées là uniquement pour interdire au
+               perchoir de tourner : sa seule rotation possible le couchait sur
+               [0,3], et emportait le Veilleur hors des cases du village. C'était
+               la solution que tout le monde voit en premier — elle est
+               maintenant impossible, et le joueur perd son temps à chercher un
+               pivot qui n'existe plus. La bonne fausse piste : celle qu'on
+               essaie longtemps avant d'y renoncer. */
+            { key: "VERROU", cells: [[0, 3], [0, 4]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -809,16 +985,34 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum PROUVÉ : 8. Ce sont les DÉPLACER rares qui font tenir
-             l'énigme — pas un interdit. Avec une main généreuse, le chercheur
-             couchait le T en échelle et parcourait tout à pied en neuf pas,
-             sans jamais monter sur rien : les deux usages de la Magie étaient
-             contournés d'un coup. Six DÉPLACER rendent la marche impossible, et
-             la seule route passe par les trois rotations. */
+          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
+             plafond 7), puis rejoué en direct sur les trois tours réels : le
+             coût annoncé n'est plus une intention mais un fait.
+
+             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             l'objectif à la GÉNÉRATION des successeurs et rendait la main au
+             premier chemin gagnant rencontré, pas au moins cher ; il validait
+             donc la solution qu'on lui présentait au lieu de la contredire.
+
+             Ce que la vraie ligne fait, et qui n'était pas prévu : la
+             PASSERELLE pivote TROIS FOIS sur elle-même, chaque rotation la
+             reposant plus près du Sanctuaire avec son passager dessus — une
+             île de trois cases n'est pas un pont, c'est une monture. Puis la
+             couronne déposée est poussée vers le nord : le bloc poussé la
+             contient ELLE et le Veilleur collé derrière, qui sort du plateau.
+             Une seule poussée de force 1 fait le travail que trois rotations
+             faisaient dans l'ancienne solution.
+
+             DÉFAUT ASSUMÉ : la terrasse, le perchoir et le bras ne servent
+             plus à rien dans la ligne optimale. Trois pièces de décor, là où
+             une seule était déjà de trop. L'énigme reste juste et se tient,
+             mais elle n'enseigne plus les trois usages de la Magie qu'elle
+             était censée enseigner — c'est une refonte, pas une retouche, et
+             elle attend un arbitrage. */
           par: 8,
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La charnière a tourné",
-          winLine: "Trois rotations, trois usages : on t'a porté, la route est venue à toi, et le rival a tourné avec son île.",
+          winLine: "La passerelle s'est déplacée trois fois sous tes pieds, et la couronne poussée a emporté le Veilleur par-dessus bord.",
           failLine: "Le chemin ne s'est pas ouvert.",
           /* Trois emplois de la MÊME carte, tous différents :
              - la passerelle TRANSPORTE le Gardien par-dessus le vide ;
@@ -831,19 +1025,156 @@
              RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
              Il reste du décor, et une pièce inutile est un défaut — le même que
              le troisième Gardien du Relais avant sa refonte. */
+          par: 7,
           solution: [
             [
-              { a: "MOVE", who: "G", to: [7, 2] },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
-              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
+              { a: "MOVE", who: "G", to: [7, 2] }
             ],
             [
-              { a: "MAGIC", island: "TERRASSE", pivot: [1, 1], turns: 1, direction: 1 },
+            ],
+            [
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 1, direction: 1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 1], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [4, 1], turns: 2, direction: 1 },
+              { a: "DROP", who: "G", on: [1, 1] },
+              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
               { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
         },
+        /* -----------------------------------------------------------------
+           LA PLUS COURTE TRACE — celle que personne ne marche.
 
+           Refonte. La première version demandait de repérer deux barres et de
+           monter dessus : que la rotation transporte plus vite que le pied, on
+           le sait depuis la deuxième énigme du jeu. Il n'y avait rien à
+           chercher, et le grand tour à dix-huit cartes n'était pas une
+           tentation mais un décor.
+
+           Le sujet est maintenant que LA COURONNE VOYAGE SEULE. Elle n'a besoin
+           de personne : posée sur une île, une rotation l'emporte avec le
+           terrain ; poussée, elle survole le vide et se dépose sur la dernière
+           terre à portée. Le Gardien, lui, ne va nulle part — il n'y a d'ailleurs
+           aucune route pour lui.
+
+           Et la difficulté n'est pas de le deviner mais de le PLACER. Pousser
+           exige d'être derrière : c'est la rotation, et elle seule, qui décide
+           de quel côté de la couronne on se retrouve. Sur les six pivots
+           possibles, un seul laisse le Gardien au sud de la couronne avec de la
+           terre au nord ; les cinq autres se jouent, coûtent une carte, et ne
+           mènent à rien.
+
+           Optimum 6, PROUVÉ par recherche exhaustive sous plafond 6. */
+        {
+          id: "p20-la-plus-courte-trace",
+          acte: "III",
+          principe: "TRACE",
+          title: "La plus courte trace",
+          tagline: "Aucune route ne mène là-bas. La couronne n'en a pas besoin.",
+          brief: "Dépose la couronne sur la case marquée.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 2],
+          villages: {},
+          islands: [
+            { key: "SOCLE", cells: [[9, 1], [9, 2], [9, 3]] },
+            /* La cible, hors d'atteinte de tout pied : une île d'une case ne
+               pivote pas et rien ne la relie au reste. */
+            [[2, 1]],
+            /* Le leurre : une belle barre de quatre, parfaitement pivotable, et
+               qui ne rapproche de rien. Elle est là pour qu'on y passe du
+               temps. */
+            { key: "LEURRE", cells: [[5, 5], [6, 5], [7, 5], [8, 5]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 9, c: 2, crown: 1 }
+          ],
+          /* UNE SEULE MAGIE, et c'est le coeur de l'énigme. Avec trois, le
+             chercheur faisait MARCHER le socle vers le nord en l'enroulant sur
+             lui-même, la couronne dessus, et terminait d'une poussée de 1 :
+             quatre cartes, et la leçon contournée. C'est en outre l'idée de la
+             charnière, déjà jouée. Une carte de Magie ne donne qu'un pivot :
+             il faut choisir le bon, et la couronne doit ensuite franchir le
+             vide toute seule. */
+          hand: { MOVE: 6, PUSH: 6, MAGIC: 1 },
+          par: 6,
+          goal: { type: "crownAtCell", cell: [2, 1] },
+          winTitle: "La trace la plus courte",
+          winLine: "Personne n'a marché jusque-là. La couronne y est allée seule.",
+          failLine: "La couronne est restée au sud.",
+          solution: [
+            { a: "DROP", who: "G", on: [9, 3] },
+            { a: "MAGIC", island: "SOCLE", pivot: [9, 1], turns: 1, direction: -1 },
+            { a: "PUSH", who: "G", on: [7, 1], force: 5 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           DESTINÉE — le quatrième Gardien entre, et l'énigme ne tient que
+           parce qu'ils sont quatre.
+
+           Elle remplace « Les quatre mains », qui ne tenait pas : quatre
+           pointes interchangeables et quatre Gardiens laissaient chacun courir
+           vers la plus proche, et toute contrainte se dissolvait dans le libre
+           choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
+           et aucun ne peut prendre la place d'un autre.
+
+           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
+           ne font qu'une case de large : personne ne double personne. Il faut
+           GARER quelqu'un sur un bras déjà libéré, le temps que les autres
+           passent — un aller-retour qui ne rapporte rien et sans lequel rien
+           n'avance.
+
+           Le Veilleur assis au carrefour ne peut être chassé que vers l'ouest :
+           au nord comme au sud, le bloc poussé emporterait un allié dans le
+           vide, et seul le Gardien de l'est est placé pour pousser dans la
+           bonne direction. La géométrie désigne le pousseur.
+
+           PAS DE BARÈME. La solution de référence coûte 23 cartes et n'est pas
+           prouvée optimale : le chercheur n'a jamais tenu l'échelle d'une
+           énigme à quatre Gardiens. Annoncer un chiffre non prouvé, c'est
+           exactement ce qui s'est fait battre six fois. */
+        {
+          id: "p22-destinee",
+          acte: "III",
+          principe: "TRACE",
+          avant: "Ils étaient trois.",
+          verite: "Le carrefour en demandait quatre.",
+          title: "Destinée",
+          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
+          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: {},
+          islands: [
+            [[3, 6]], [[4, 6]], [[5, 6]], [[6, 6]], [[7, 6]], [[8, 6]], [[9, 6]],
+            [[6, 3]], [[6, 4]], [[6, 5]], [[6, 7]], [[6, 8]], [[6, 9]]
+          ],
+          guardians: [
+            { key: "A", p: 0, r: 5, c: 6 },
+            { key: "B", p: 0, r: 6, c: 7 },
+            { key: "C", p: 0, r: 7, c: 6 },
+            { key: "D", p: 0, r: 8, c: 6 },
+            { key: "R", p: 1, r: 6, c: 6 }
+          ],
+          hand: { MOVE: 20, PUSH: 5 },
+          goal: {
+            type: "assignedCells", player: 0,
+            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+          },
+          winTitle: "Chacun à sa place",
+          winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
+          failLine: "Un Gardien n'est pas sur son signe.",
+          solution: [
+            { a: "PUSH", who: "B", on: [6, 6], force: 4 },
+            { a: "MOVE", who: "B", to: [6, 3] },
+            { a: "MOVE", who: "A", to: [6, 5] },
+            { a: "MOVE", who: "C", to: [3, 6] },
+            { a: "MOVE", who: "D", to: [6, 9] },
+            { a: "MOVE", who: "A", to: [9, 6] }
+          ]
+        },
         /* =================================================================
            17 — L'ARCHIPEL DES NEUF MENSONGES
 
@@ -862,6 +1193,8 @@
            ================================================================= */
         {
           id: "p17-neuf-mensonges",
+          acte: "CONFLUENCE",
+          avant: "Tu connais désormais les Voies. Ne crois pas pour autant ce qu'elles te montrent.",
           title: "L'archipel des neuf mensonges",
           tagline: "Tu as appris à déplacer le monde. Maintenant le monde va te mentir.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",

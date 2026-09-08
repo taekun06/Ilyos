@@ -23,6 +23,26 @@
          js/version-bootstrap.js au clic sur PUZZLES) ou `ILYOS_PUZZLE.open()`.
          ===================================================================== */
 
+      /* La campagne parle de SANCTUAIRES, pas d'énigmes numérotées. Le joueur
+         ne doit jamais lire « Puzzle 12/17 » : il lit un nom de lieu et l'état
+         de son réveil. Les identifiants internes (p01…p17) ne bougent pas —
+         c'est sur eux que la progression est enregistrée. */
+      const PUZZLE_ACTES = {
+        PROLOGUE: "Prologue · La première lueur",
+        I: "Acte I · Les Voies éteintes",
+        II: "Acte II · Les Îles se souviennent",
+        III: "Acte III · La Dissonance",
+        CONFLUENCE: "Confluence"
+      };
+
+      /* Les trois principes anciens ne sont JAMAIS présentés comme des
+         catégories : un symbole discret sur la fiche, rien de plus. */
+      const PUZZLE_PRINCIPES = {
+        MESURE: { signe: "◆", nom: "La Mesure" },
+        CADENCE: { signe: "◇", nom: "La Cadence" },
+        TRACE: { signe: "◈", nom: "La Trace" }
+      };
+
       const PUZZLE_STORAGE_KEY = "ilyos.puzzles.progress";
       const PUZZLE_DEV_KEY = "ilyos.puzzles.dev";
 
@@ -319,6 +339,21 @@
             && char.r === goal.cell[0] && char.c === goal.cell[1]);
         },
 
+        /* Chaque Gardien NOMMÉ sur SA case, en même temps. La différence avec
+           occupyCells n'est pas cosmétique : tant que n'importe qui pouvait
+           remplir n'importe quelle case, le joueur se contentait d'envoyer
+           chacun vers la plus proche et toute contrainte d'ordre se dissolvait.
+           En liant le porteur à sa destination, on rend les croisements
+           obligatoires — c'est la leçon des Quatre mains, qui n'en avait
+           aucune. */
+        assignedCells(def, goal) {
+          return Object.entries(goal.pairs || {}).every(([cle, cellule]) => {
+            const char = characterById(PUZZLE.charsByKey[cle]);
+            return !!char && char.player === (goal.player ?? 0)
+              && char.r === cellule[0] && char.c === cellule[1];
+          });
+        },
+
         /* Des gardiens du joueur sur TOUTES les cases listées, en même temps. */
         occupyCells(def, goal) {
           return (goal.cells || []).every(([r, c]) => {
@@ -410,6 +445,10 @@
         const style = document.createElement("style");
         style.id = "ilyos-puzzle-style";
         style.textContent = `
+          /* Pendant une séquence, le calque CAPTE les clics : c'est ce qui
+             permet de la passer, et cela évite au passage qu'un clic destiné
+             à l'interrompre sélectionne un Gardien sur le plateau. */
+          #puzzleLayer.reveil{pointer-events:auto;}
           #puzzleLayer{position:fixed;inset:0;z-index:1500001;pointer-events:none;
             font-family:'Nunito Sans','Inter',system-ui,sans-serif;color:#eaf1ff;}
           #puzzleLayer .pz-brief{position:absolute;top:74px;left:50%;
@@ -458,9 +497,97 @@
           #puzzleLayer .pz-end h2{font-family:'Cinzel Decorative','Almendra',serif;
             font-size:clamp(21px,3.6vw,32px);margin:0;letter-spacing:.04em;}
           #puzzleLayer .pz-end p{margin:0;max-width:460px;color:#c4d2ee;line-height:1.6;font-size:14px;}
+          /* Le réveil du Sanctuaire. Trois calques seulement : une lueur qui
+             monte du sol, une phrase posée sur le ciel, un fondu. Le reste du
+             mouvement vient de la CAMÉRA, qui recule — c'est elle qui donne
+             l'échelle, pas un effet. */
+          #puzzleLayer .pz-bloom{position:absolute;inset:0;z-index:5;pointer-events:none;
+            opacity:0;background:radial-gradient(circle at 50% 58%,
+              rgba(255,238,190,.95),rgba(255,206,120,.35) 42%,rgba(255,200,110,0) 70%);}
+          #puzzleLayer .pz-bloom.on{animation:pz-bloom-k 2.6s ease-out;}
+          @keyframes pz-bloom-k{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+
+          /* Le ciel d'ILYOS est CLAIR : un texte doré posé dessus sans voile
+             se perd dans les nuages. Le dégradé est porté par l'élément
+             lui-même — un ::before en z-index négatif ne peint pas de façon
+             fiable sous un parent en opacité animée. */
+          #puzzleLayer .pz-caption{position:absolute;left:50%;bottom:24%;
+            transform:translateX(-50%) translateY(10px);z-index:9;
+            width:min(760px,92vw);padding:26px 40px;text-align:center;opacity:0;
+            background:radial-gradient(ellipse at center,
+              rgba(4,6,14,.72),rgba(4,6,14,.42) 52%,rgba(4,6,14,0) 78%);
+            transition:opacity 1s ease, transform 1s ease;
+            font-family:'Cinzel Decorative','Almendra',serif;
+            font-size:clamp(16px,2.2vw,22px);line-height:1.65;color:#ffeec6;
+            text-shadow:0 2px 18px rgba(0,0,0,.75),0 0 34px rgba(255,206,120,.35);}
+          #puzzleLayer .pz-caption.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+          /* LA RÉPONSE AU LOIN. Un autre Sanctuaire s'allume par-delà l'archipel
+             — le joueur n'apprend jamais lequel. Posé haut et sur le côté, à
+             hauteur d'horizon : sur le plateau, ce serait un effet de plus ;
+             au loin, c'est quelqu'un. */
+          #puzzleLayer .pz-lointain{position:absolute;left:76%;top:34%;z-index:6;
+            width:190px;height:190px;margin:-95px 0 0 -95px;pointer-events:none;opacity:0;
+            background:radial-gradient(circle at 50% 50%,
+              rgba(255,246,214,.92) 0%,rgba(255,222,150,.55) 14%,
+              rgba(255,206,120,.20) 34%,rgba(255,200,110,0) 66%);}
+          #puzzleLayer .pz-lointain.on{animation:pz-loin-k 3s ease-in-out;}
+          @keyframes pz-loin-k{0%{opacity:0;transform:scale(.55)}
+            34%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
+
+          #puzzleLayer .pz-fade{position:absolute;inset:0;z-index:11;pointer-events:none;
+            background:#04060d;opacity:0;transition:opacity .7s ease;}
+          #puzzleLayer .pz-fade.on{opacity:1;}
+
+          /* Le nom du lieu où l'on vient d'arriver, sur le noir, puis tenu
+             pendant que l'archipel se découvre dessous. */
+          /* Le nom se tient d'abord sur le noir, puis sur le ciel quand le rideau
+             se lève : il lui faut son propre voile, comme à la vérité. */
+          #puzzleLayer .pz-lieu{position:absolute;left:50%;top:44%;z-index:13;
+            transform:translate(-50%,-50%);width:min(860px,94vw);padding:40px 40px 46px;
+            text-align:center;opacity:0;pointer-events:none;transition:opacity .9s ease;
+            background:radial-gradient(ellipse at center,
+              rgba(4,6,14,.66),rgba(4,6,14,.34) 54%,rgba(4,6,14,0) 78%);}
+          #puzzleLayer .pz-lieu.show{opacity:1;}
+          #puzzleLayer .pz-lieu .acte{display:block;font-size:11.5px;letter-spacing:.24em;
+            text-transform:uppercase;color:#c3d2ee;margin-bottom:14px;
+            text-shadow:0 1px 12px rgba(0,0,0,.9);}
+          #puzzleLayer .pz-lieu .nom{display:block;font-family:'Cinzel Decorative','Almendra',serif;
+            font-size:clamp(24px,4.2vw,40px);letter-spacing:.08em;color:#ffe3ab;
+            text-shadow:0 2px 26px rgba(0,0,0,.8),0 0 46px rgba(255,206,120,.3);}
+
+          /* Pendant le réveil, le chrome de jeu s'efface : on regarde le ciel,
+             on ne joue plus. */
+          #gameScreen.puzzle-reveil #hudV2Top,
+          #gameScreen.puzzle-reveil #hudV2Dock,
+          #gameScreen.puzzle-reveil #turnRibbon,
+          #gameScreen.puzzle-reveil #ilyosHudOrganicV2,
+          #gameScreen.puzzle-reveil #hudV2Toast,
+          #gameScreen.puzzle-reveil .hud-v2-vignette,
+          body.puzzle-reveil #toast,
+          /* Les couronnes se valident AU DÉBUT du tour suivant : la distribution
+             des cartes vole donc à l'écran au moment exact où le Sanctuaire
+             s'éveille. Ces cartes vivent sur <body>, hors de #gameScreen. */
+          body.puzzle-reveil > .card-cycle-v7-card,
+          body.puzzle-reveil > .card-cycle-v7-count{opacity:0 !important;
+            transition:opacity .8s ease;pointer-events:none;}
+          #puzzleLayer.reveil .pz-brief,
+          #puzzleLayer.reveil .pz-budget,
+          #puzzleLayer.reveil .pz-plan,
+          #puzzleLayer.reveil .pz-tools{opacity:0;transition:opacity .8s ease;
+            pointer-events:none;}
+
+          #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
+            font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
+            line-height:1.6;color:#ffe3ab;letter-spacing:.02em;}
+          #puzzleLayer .pz-cout{opacity:.55;font-size:12.5px;}
+          #puzzleMenu .pz-signe{font-size:14px;color:#8fa6d2;opacity:.8;}
           #puzzleLayer .pz-stars{font-size:30px;letter-spacing:8px;
             filter:drop-shadow(0 0 10px rgba(255,205,110,.5));}
           #puzzleLayer .pz-end-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+          #puzzleLayer .pz-end-actions .primary{background:linear-gradient(180deg,#f0c273,#c98f36);
+            border-color:rgba(255,226,167,.55);color:#2a1b04;font-weight:800;
+            box-shadow:0 6px 20px rgba(201,143,54,.35);}
 
           /* Au-dessus de l'iframe du menu (z-index 2147483000, voir
              js/version-bootstrap.js) : l'écran de sélection s'ouvre alors que
@@ -597,7 +724,25 @@
         guardian: 0x1f8fff,   // amène un Gardien ici
         carrier: 0x1f8fff,    // un Gardien PORTANT une couronne (même famille)
         crown: 0xf0a800,      // pose une couronne ici
-        threat: 0x9a63e0      // le rival a annoncé qu'il viendrait là
+        threat: 0x9a63e0,     // le rival a annoncé qu'il viendrait là
+        /* Le sceau porte un RANG : la case et le Gardien attendu portent le
+           même signe, et c'est la seule chose qui les appareille. */
+        sceau: 0xffd98a
+      };
+
+      /* Une couleur PAR RANG. Les bâtons de comptage seuls ne suffisaient pas :
+         vus de la caméra de jeu, quatre sceaux dorés posés aux quatre bouts d'un
+         plateau se ressemblent, et les insignes portés par des Gardiens en file
+         se recouvrent. La teinte se lit d'un coup d'oeil là où le compte demande
+         qu'on s'approche ; les bâtons restent, pour qui distingue mal les
+         couleurs. Quatre teintes franches, aucune verte — le vert se perdrait
+         sur les îles. */
+      const PUZZLE_SCEAU_COLORS = {
+        1: 0x2b9dff,   // bleu
+        2: 0xff8a32,   // orange
+        3: 0xe256cf,   // magenta
+        4: 0xff4d4d    // vermillon — le jaune essayé d'abord se dissolvait
+                       //   sur le vert clair des îles comme sur le ciel
       };
 
       function puzzleGoalCellsFrom(goal, sortie = []) {
@@ -606,6 +751,12 @@
           (cells || []).forEach(([r, c]) => sortie.push({ r, c, kind }));
         switch (goal.type) {
           case "occupyCells": pousser(goal.cells, "guardian"); break;
+          /* Le RANG distingue les sceaux entre eux : sans lui, quatre cases
+             identiques ne diraient pas laquelle attend qui. */
+          case "assignedCells":
+            Object.values(goal.pairs || {}).forEach(([r, c], index) =>
+              sortie.push({ r, c, kind: "sceau", rang: index + 1 }));
+            break;
           case "reachCell": pousser([goal.cell], "guardian"); break;
           case "carryToCell": pousser([goal.cell], "carrier"); break;
           case "crownAtCell": pousser([goal.cell], "crown"); break;
@@ -659,7 +810,7 @@
          forme une fois réduites. Une vraie rune gravée pourra les remplacer :
          il suffira de charger une image à la place du tracé, le reste ne
          bouge pas. */
-      function puzzleGlyphTexture(kind, couleur) {
+      function puzzleGlyphTexture(kind, couleur, rang = 0) {
         const taille = 256;
         const canevas = document.createElement("canvas");
         canevas.width = canevas.height = taille;
@@ -708,6 +859,91 @@
           ctx.lineWidth = 46; ctx.stroke();
           ctx.strokeStyle = teinte;
           ctx.lineWidth = 28; ctx.stroke();
+        } else if (kind === "sceau") {
+          /* LE SCEAU : un losange fin, et dedans une des quatre LUMIÈRES —
+             croissant, étoile, croix, anneau. Le rang ne se compte plus, il se
+             reconnaît : c'est une SILHOUETTE, seule chose qui survive à vingt
+             pixels sous une vue inclinée. Les hachures essayées avant étaient
+             une texture, et une texture disparaît à cette taille. Le disque
+             plein a été écarté : à côté de l'anneau, seul le trou les séparait.
+
+             LE MOTIF EST CLAIR, PAS COLORÉ. Une forme saturée posée sur le vert
+             vif d'une île perd la moitié de son contraste ; un motif ivoire
+             cerné de sa teinte et nimbé d'un halo se détache des deux fonds du
+             jeu — l'herbe et le ciel — sans rien devoir à la couleur, qui ne
+             sert plus qu'à l'appariement. */
+          const halo = (couleurHalo, force) => {
+            ctx.shadowColor = couleurHalo;
+            ctx.shadowBlur = force;
+          };
+          const sansHalo = () => { ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; };
+
+          const d = 104;
+          const losange = (k = 1) => {
+            const t = d * k;
+            ctx.beginPath();
+            ctx.moveTo(0, -t); ctx.lineTo(t, 0); ctx.lineTo(0, t); ctx.lineTo(-t, 0);
+            ctx.closePath();
+          };
+
+          /* LE FOND SOMBRE, et c'est lui qui fait tout. Un premier essai posait
+             un motif ivoire à même la case : sur le vert clair d'une île, clair
+             sur clair, il ne restait rien. Le sceau porte donc son propre fond
+             de nuit — le motif ne dépend plus du terrain sur lequel il tombe,
+             et c'est ce que faisait l'image de référence sans qu'on le
+             remarque. */
+          losange(.94);
+          ctx.fillStyle = "rgba(9,14,30,.88)";
+          ctx.fill();
+
+          // Cartouche : deux traits fins plutôt qu'un épais — c'est ce qui fait
+          // la différence entre une bordure et un bijou.
+          /* Halo COURT. Un halo large était superbe sur la texture et
+             catastrophique à l'écran : le rendu passe par un bloom, qui
+             ramassait ces pixels clairs et blanchissait toute la zone — îles
+             comprises. Le contraste vient désormais du fond de nuit, pas de la
+             lueur. */
+          halo(teinte, 10);
+          losange(1);
+          ctx.strokeStyle = teinte; ctx.lineWidth = 9; ctx.stroke();
+          sansHalo();
+          losange(.84);
+          ctx.strokeStyle = teinte; ctx.lineWidth = 4; ctx.stroke();
+
+          /* Le motif tient dans le carré INSCRIT au losange, pas dans le
+             losange : au-delà il déborderait sur les pointes. */
+          const r = 54;
+          ctx.beginPath();
+          if (rang === 1) {
+            // le Croissant
+            ctx.arc(0, 0, r, Math.PI * .42, Math.PI * 1.58, false);
+            ctx.arc(r * .42, 0, r * .86, Math.PI * 1.5, Math.PI * .5, true);
+            ctx.closePath();
+          } else if (rang === 2) {
+            // l'Étoile — quatre branches, pas cinq : elles restent effilées
+            for (let i = 0; i < 8; i++) {
+              const a = i * Math.PI / 4 - Math.PI / 2;
+              const rr = i % 2 ? r * .32 : r;
+              ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
+            }
+            ctx.closePath();
+          } else if (rang === 3) {
+            // la Croix
+            const b = r * .32;
+            ctx.rect(-b, -r, b * 2, r * 2);
+            ctx.rect(-r, -b, r * 2, b * 2);
+          } else {
+            // l'Anneau — le trou est large, c'est lui qui porte la lecture
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.arc(0, 0, r * .54, 0, Math.PI * 2, true);
+          }
+          halo(teinte, 12);
+          ctx.fillStyle = teinte; ctx.fill();
+          sansHalo();
+          // Un liseré ivoire À L'INTÉRIEUR du motif : il lui donne son éclat
+          // sans lui retirer sa couleur, qui reste le signe d'appariement.
+          ctx.strokeStyle = "rgba(255,246,226,.85)"; ctx.lineWidth = 4; ctx.stroke();
+
         } else {
           if (kind === "guardian") tracerChevron(); else tracerCouronne();
           ctx.lineWidth = 26; ctx.stroke();
@@ -776,8 +1012,9 @@
       function puzzleAddMarker(marque) {
         const groupe = puzzleMarkerGroup();
         if (!groupe) return;
-        const { r, c, kind } = marque;
-        const couleur = PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
+        const { r, c, kind, rang } = marque;
+        const couleur = (kind === "sceau" && PUZZLE_SCEAU_COLORS[rang])
+          || PUZZLE_MARKER_COLORS[kind] || PUZZLE_MARKER_COLORS.guardian;
         /* Hauteur du DESSUS DES ÎLES, y compris pour une case vide.
            kaykitCellSurfaceY() rend le niveau du plateau (.05) là où il n'y a
            pas de terre, contre .47 pour une île : en vue inclinée, le marqueur
@@ -817,7 +1054,8 @@
         couche(
           new THREE.PlaneGeometry(cote, cote),
           new THREE.MeshBasicMaterial({
-            color: couleur, transparent: true, opacity: surTerre ? .34 : .24,
+            color: couleur, transparent: true,
+            opacity: kind === "sceau" ? .12 : (surTerre ? .34 : .24),
             side: THREE.DoubleSide, depthWrite: false, depthTest: true
           }),
           .075, 44
@@ -849,8 +1087,13 @@
         const glyphe = couche(
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
-            map: puzzleGlyphTexture(kind, couleur),
-            transparent: true, opacity: surTerre ? 1 : .88,
+            map: puzzleGlyphTexture(kind, couleur, rang),
+            /* 80 % pour les glyphes ordinaires : ils désignent la case, ils ne la
+               remplacent pas. Le SCEAU, lui, se rend plein : il porte son propre
+               fond de nuit, et le diluer rendait ce fond gris — donc le motif
+               illisible sur une île claire, ce qu'on cherchait justement à
+               éviter. */
+            transparent: true, opacity: kind === "sceau" ? 1 : (surTerre ? 1 : .88),
             depthWrite: false, depthTest: false
           }),
           .106, 52
@@ -875,8 +1118,68 @@
         cells.forEach(puzzleAddMarker);
       }
 
+      /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
+         alliés sont visuellement identiques, et une consigne « celui-ci va
+         là-bas » serait injouable telle quelle. On accroche donc au-dessus de
+         chacun le même sceau que celui posé au sol — un sprite enfant de son
+         wrapper, qui le suit sans qu'on ait à le repositionner. C'est la
+         solution la plus légère : des variantes de modèle seraient un chantier
+         dans kaykit3d.js, pour une énigme.
+
+         Reconstruit quand un sceau a perdu son parent : les visuels de
+         personnage sont recréés par syncKayKitCharacters, et un sprite orphelin
+         cesse silencieusement d'être rendu. */
+      function puzzleRefreshSceaux() {
+        const paires = PUZZLE.def?.goal?.type === "assignedCells"
+          ? PUZZLE.def.goal.pairs : null;
+        const poses = PUZZLE.sceaux || (PUZZLE.sceaux = []);
+        if (!paires || typeof kaykit3D === "undefined" || !kaykit3D?.characterVisuals) {
+          if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
+          return;
+        }
+        const cles = Object.keys(paires);
+        const complet = poses.length === cles.length && poses.every(sp => !!sp.parent);
+        if (complet) return;
+
+        poses.forEach(sp => sp.parent?.remove(sp));
+        poses.length = 0;
+        cles.forEach((cle, index) => {
+          const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
+          if (!visual?.wrapper) return;
+          /* LE MÊME LOSANGE, à plat sous les pieds, et non un insigne flottant.
+             Deux essais ont échoué avant : haut dans le ciel, le sprite
+             dérivait sur la case du voisin — la vue est inclinée, tout ce qui
+             monte part vers le haut de l'écran, et les Gardiens se suivent en
+             file d'une case ; posé sur le casque, il se confondait avec le
+             modèle. Au sol, il ne peut désigner que la case où se tient son
+             porteur, et il porte exactement le tracé gravé sur la case
+             attendue : aucune traduction à faire. */
+          const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
+          /* Plus petit qu'une case : à pleine taille le losange débordait sous
+             les pieds et, la vue étant inclinée, se lisait comme une dalle
+             POSÉE DEVANT le Gardien plutôt que sous lui. Resserré, il devient
+             un socle et le Gardien se tient dedans. */
+          const anneau = new THREE.Mesh(
+            new THREE.PlaneGeometry(.82, .82),
+            new THREE.MeshBasicMaterial({
+              map: puzzleGlyphTexture("sceau", teinte, index + 1),
+              transparent: true,
+              side: THREE.DoubleSide, depthWrite: false, depthTest: false
+            })
+          );
+          anneau.rotation.x = -Math.PI / 2;
+          anneau.position.set(0, .05, 0);
+          anneau.renderOrder = 58;
+          anneau.userData = { ilyosTransient: true };
+          visual.wrapper.add(anneau);
+          poses.push(anneau);
+        });
+      }
+
       function puzzleClearMarkers() {
         PUZZLE.markerKey = null;
+        (PUZZLE.sceaux || []).forEach(sp => sp.parent?.remove(sp));
+        PUZZLE.sceaux = [];
         const groupe = typeof kaykit3D !== "undefined" && kaykit3D
           ? kaykit3D.puzzleMarkerGroup : null;
         if (groupe && typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
@@ -894,9 +1197,14 @@
           </div>
           <div class="pz-budget"></div>
           <div class="pz-plan" hidden></div>
+          <div class="pz-bloom"></div>
+          <div class="pz-lointain"></div>
+          <div class="pz-caption"></div>
+          <div class="pz-fade"></div>
+          <div class="pz-lieu"></div>
           <div class="pz-tools">
             <button type="button" data-pz="restart">↺ Recommencer</button>
-            <button type="button" data-pz="menu">← Puzzles</button>
+            <button type="button" data-pz="menu">← Les Voies</button>
           </div>`;
         document.body.appendChild(layer);
         layer.querySelector('[data-pz="restart"]').addEventListener("click", () => puzzleRestart());
@@ -906,7 +1214,12 @@
           title: layer.querySelector(".pz-title"),
           goal: layer.querySelector(".pz-goal"),
           budget: layer.querySelector(".pz-budget"),
-          plan: layer.querySelector(".pz-plan")
+          plan: layer.querySelector(".pz-plan"),
+          bloom: layer.querySelector(".pz-bloom"),
+          lointain: layer.querySelector(".pz-lointain"),
+          caption: layer.querySelector(".pz-caption"),
+          fade: layer.querySelector(".pz-fade"),
+          lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
       }
@@ -915,7 +1228,8 @@
         const dom = PUZZLE.dom;
         const def = PUZZLE.def;
         if (!dom || !def) return;
-        dom.title.textContent = `${PUZZLE.index + 1}. ${def.title}`;
+        /* Le nom du lieu, pas un numéro d'énigme. */
+        dom.title.textContent = def.title;
         dom.goal.textContent = def.brief || "";
         const restant = puzzleCardsLeft();
         const depense = puzzleCardsSpent();
@@ -956,6 +1270,177 @@
         puzzleSaveProgress(progress);
       }
 
+      /* Où se trouve le Sanctuaire : le coin du village du joueur. Les deux
+         énigmes qui n'en ont pas — celle sans rival, celle sans couronne —
+         retombent sur le cadrage de la définition. */
+      function puzzleSanctuaireCell(def) {
+        const coins = def.villages?.[0];
+        if (coins && coins.length) return coins[0];
+        return puzzleFocusCell(def);
+      }
+
+      /* LE RÉVEIL. Version courte et volontairement sobre : la lueur monte, la
+         caméra RECULE — c'est elle qui donne l'échelle du réseau, pas un effet
+         — et la vérité s'inscrit sur le ciel. Quatre secondes, interruptibles
+         d'un clic. La carte de fin ne vient qu'après.
+
+         Les variantes annoncées (Voie qui se divise, rayon interrompu, réponse
+         au loin) attendent qu'il y ait une carte des Voies : les écrire
+         maintenant serait décorer un réseau qui n'existe pas encore. */
+      /* L'échafaudage commun aux deux séquences — l'approche et le réveil.
+         Toutes deux effacent le même chrome, se passent du même geste et
+         doivent se démonter même si un appel de caméra jette. Le corps reçoit
+         `attendre`, qui rend la main dès que le joueur veut passer. */
+      async function puzzleSequence(corps) {
+        const dom = PUZZLE.dom;
+        if (!dom || PUZZLE.sequenceEnCours) return;
+        PUZZLE.sequenceEnCours = true;
+        PUZZLE.sequenceSaute = false;
+
+        /* Le geste qui DÉCLENCHE une séquence ne doit pas l'interrompre : le
+           clic sur « Sanctuaire suivant » est encore en train de remonter le
+           DOM quand ce code s'exécute, et un écouteur posé sur le calque le
+           recevrait aussitôt — le voyage se jouait en entier en moins d'une
+           seconde. On n'arme donc la sortie qu'une fois ce clic passé. */
+        const passer = () => { PUZZLE.sequenceSaute = true; };
+        const armement = setTimeout(() => {
+          dom.layer.addEventListener("click", passer, { once: true });
+          window.addEventListener("keydown", passer, { once: true });
+        }, 260);
+        const attendre = async ms => {
+          const fin = Date.now() + ms;
+          while (Date.now() < fin && !PUZZLE.sequenceSaute) await tutoWait(60);
+        };
+
+        try {
+          dom.layer.classList.add("reveil");
+          els.gameScreen && els.gameScreen.classList.add("puzzle-reveil");
+          document.body.classList.add("puzzle-reveil");
+          await corps(dom, attendre);
+        } finally {
+          clearTimeout(armement);
+          dom.layer.removeEventListener("click", passer);
+          window.removeEventListener("keydown", passer);
+          dom.caption.classList.remove("show");
+          dom.bloom.classList.remove("on");
+          dom.lointain.classList.remove("on");
+          dom.lieu.classList.remove("show");
+          dom.fade.classList.remove("on");
+          dom.layer.classList.remove("reveil");
+          els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
+          document.body.classList.remove("puzzle-reveil");
+          PUZZLE.sequenceEnCours = false;
+        }
+      }
+
+      /* L'APPROCHE. Le pendant du réveil, à l'autre bout de l'énigme : une
+         phrase avant que le joueur ne prenne la main. Trois Sanctuaires
+         seulement en portent une — celui où quelqu'un attend déjà, celui qui
+         n'a rien à rallumer, et la Confluence. Les quatorze autres commencent
+         en silence, et c'est ce silence qui donne son poids à la phrase. */
+      function puzzleApproche(def) {
+        if (!def.avant) return;
+        return puzzleSequence(async (dom, attendre) => {
+          await attendre(500);
+          dom.caption.innerHTML = def.avant;
+          dom.caption.classList.add("show");
+          await attendre(2600);
+          dom.caption.classList.remove("show");
+          await attendre(600);
+        });
+      }
+
+      function puzzleReveil(def) {
+        return puzzleSequence(async (dom, attendre) => {
+          const [r, c] = puzzleSanctuaireCell(def);
+          dom.bloom.classList.add("on");
+          try { playSfx("crown"); } catch (_) { }
+          try {
+            if (typeof kaykitFollowCell === "function") {
+              kaykitFollowCell(r, c, { duration: 900, force: true, cinematique: true, zoomBoost: 1.4 });
+            }
+          } catch (_) { }
+          await attendre(900);
+
+          /* Le recul : zoomBoost NÉGATIF éloigne (voir kaykitFollowCell, la
+             distance vaut base - zoomBoost). C'est le seul moment où le joueur
+             voit son archipel en entier. */
+          try {
+            if (typeof kaykitFollowCell === "function") {
+              kaykitFollowCell(r, c, { duration: 2200, force: true, cinematique: true, zoomBoost: -3.4 });
+            }
+          } catch (_) { }
+
+          /* Un autre Sanctuaire répond, par-delà l'archipel. Le joueur ne saura
+             jamais lequel : c'est la seule chose qui lui dit qu'il n'est pas
+             seul à rallumer des Voies. */
+          dom.lointain.classList.add("on");
+
+          if (def.verite) {
+            dom.caption.innerHTML = `« ${def.verite} »`;
+            dom.caption.classList.add("show");
+            await attendre(2600);
+            dom.caption.classList.remove("show");
+            await attendre(500);
+          } else {
+            await attendre(1500);
+          }
+          dom.lointain.classList.remove("on");
+        });
+      }
+
+      /* LE VOYAGE. Ce qui remplace un retour au menu entre deux Sanctuaires :
+         on part dans le noir, l'archipel suivant se découvre dessous pendant
+         que son nom se tient à l'écran, puis la main revient.
+
+         Le fondu au noir n'est pas qu'une élégance : puzzleFrame ré-impose son
+         cadrage à 350, 700, 1100, 1600 et 2400 ms pour gagner sa course contre
+         camera-start-face-auto-v1.js. Toute la mise en place se fait donc
+         derrière le noir, et l'on ne relève le rideau qu'une fois l'archipel
+         posé — sinon le joueur verrait la caméra se battre avec elle-même. */
+      async function puzzleVoyage(index) {
+        const def = PUZZLES[index];
+        if (!def || !PUZZLE.dom) { puzzleStart(index); return; }
+
+        await puzzleSequence(async (dom, attendre) => {
+          dom.layer.querySelectorAll(".pz-end").forEach(node => node.remove());
+          dom.fade.classList.add("on");
+          await attendre(760);
+
+          puzzleStart(index, { muet: true });
+
+          dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
+            + `<span class="nom">${def.title}</span>`;
+          dom.lieu.classList.add("show");
+          await attendre(1400);
+
+          // On relève le rideau sous le nom : l'archipel se découvre pendant
+          // que la caméra achève de se poser.
+          dom.fade.classList.remove("on");
+          await attendre(1500);
+          dom.lieu.classList.remove("show");
+          await attendre(900);
+        });
+
+        // La phrase d'entrée, si ce Sanctuaire en porte une, vient seulement
+        // après le nom du lieu : deux textes à la fois n'en font lire aucun.
+        // Hors de la séquence précédente, qui n'en autorise qu'une à la fois.
+        puzzleApproche(def);
+      }
+
+      /* UNE seule ligne au réveil, jamais deux (charte narrative). Quand le
+         Sanctuaire porte une « vérité », c'est elle qu'on lit — une phrase
+         mythologique qui dit ce que le joueur vient de comprendre, jamais quelle
+         mécanique il a employée. Les Sanctuaires ordinaires gardent leur ligne
+         d'enseignement, plus discrète : onze des dix-sept n'ont pas de vérité,
+         et c'est ce qui donne du poids aux six autres. */
+      function puzzleFinLigne(def, depense) {
+        const compte = `<span class="pz-cout">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`;
+        /* La vérité a déjà été lue sur le ciel pendant le réveil : la carte ne
+           la répète pas, elle garde la ligne d'enseignement. */
+        return `${def.winLine || ""}<br>${compte}`;
+      }
+
       function puzzleShowEnd({ won }) {
         if (!PUZZLE.dom || PUZZLE.ended) return;
         PUZZLE.ended = true;
@@ -968,25 +1453,35 @@
         const etoiles = won ? puzzleStarsFor(def, depense) : 0;
         if (won) puzzleRecordSolved(def, depense, etoiles);
 
+        /* Le réveil passe AVANT la carte : le Sanctuaire s'illumine et la
+           caméra recule pendant que le joueur regarde encore le plateau. La
+           carte n'arrive qu'ensuite, et ne répète pas la vérité déjà lue. */
+        if (won) {
+          puzzleReveil(def).then(() => puzzleCarteDeFin(def, depense, etoiles, true));
+          return;
+        }
+        puzzleCarteDeFin(def, depense, etoiles, false);
+      }
+
+      function puzzleCarteDeFin(def, depense, etoiles, won) {
+        if (!PUZZLE.dom) return;
         const suivant = PUZZLES[PUZZLE.index + 1];
         const panneau = document.createElement("div");
         panneau.className = "pz-end";
         panneau.innerHTML = `
-          <h2>${won ? def.winTitle || "Résolu" : "L'énigme résiste"}</h2>
+          <h2>${won ? def.winTitle || "Sanctuaire éveillé" : "Le Sanctuaire reste éteint"}</h2>
           ${won ? `<div class="pz-stars">${"★".repeat(etoiles)}${"☆".repeat(3 - etoiles)}</div>` : ""}
-          <p>${won
-            ? `${def.winLine || ""}<br><span style="opacity:.7">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`
-            : def.failLine || "Il ne reste plus de quoi agir."}</p>
+          <p>${won ? puzzleFinLigne(def, depense) : def.failLine || "Il ne reste plus de quoi agir."}</p>
           <div class="pz-end-actions">
             <button type="button" data-pz="again">↺ Recommencer</button>
-            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Puzzle suivant →</button>' : ""}
-            <button type="button" data-pz="back">← Puzzles</button>
+            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Sanctuaire suivant →</button>' : ""}
+            <button type="button" data-pz="back">← Les Voies</button>
           </div>`;
         PUZZLE.dom.layer.appendChild(panneau);
         panneau.querySelector('[data-pz="again"]').addEventListener("click", () => puzzleRestart());
         panneau.querySelector('[data-pz="back"]').addEventListener("click", () => puzzleBackToMenu());
         const boutonSuivant = panneau.querySelector('[data-pz="next"]');
-        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleStart(PUZZLE.index + 1));
+        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleVoyage(PUZZLE.index + 1));
       }
 
       /* ---------- Boucle d'observation ------------------------------------
@@ -997,6 +1492,7 @@
         if (!PUZZLE.def.placement) state.islandPlacedThisTurn = true;
         puzzleSyncOverlay();
         puzzleRefreshMarkers();
+        puzzleRefreshSceaux();
         if (puzzleGoalReached()) { puzzleShowEnd({ won: true }); return; }
         // C'est au rival : on joue ses coups écrits, puis on rend la main.
         if (state.currentPlayer === 1 && !PUZZLE.replying && !state.turnTransitioning) {
@@ -1101,7 +1597,10 @@
          fin). Les deux étaient confondus : lancer une énigme par
          ILYOS_PUZZLE.start() la comptait comme reprise et lui retirait ses
          étoiles avant même le premier coup. */
-      function puzzleStart(index, { replay = false, force = false } = {}) {
+      /* `muet` coupe l'approche : l'oracle et le chercheur relancent des énigmes
+         en boucle, et une phrase d'entrée qui capte les clics pendant trois
+         secondes n'a aucun sens là. */
+      function puzzleStart(index, { replay = false, force = false, muet = false } = {}) {
         const def = PUZZLES[index];
         if (!def) return;
         if (!force && !puzzleUnlocked(index)) return;
@@ -1125,6 +1624,12 @@
         try { if (typeof aiRunToken !== "undefined") aiRunToken++; } catch (_) { }
         try { if (PUZZLE.prevRenderMode === null) PUZZLE.prevRenderMode = boardRenderMode; } catch (_) { }
         try { boardRenderMode = "3d"; } catch (_) { }
+
+        /* Deux énigmes de MÊME taille n'appellent pas setBoardSize, donc rien
+           ne vide le cache des châteaux : le village de l'énigme précédente
+           restait accroché à la scène, flottant dans le vide au-dessus du
+           nouvel archipel. Se voyait en enchaînant « Sanctuaire suivant ». */
+        try { clearKayKitVillages(); } catch (_) { }
 
         puzzleBuildState(def);
 
@@ -1151,6 +1656,11 @@
 
         clearInterval(PUZZLE.pollTimer);
         PUZZLE.pollTimer = setInterval(puzzleTick, 300);
+
+        /* La phrase d'entrée à la PREMIÈRE venue seulement : la relire à chaque
+           « Recommencer » deviendrait une taxe sur l'essai-erreur, qui est le
+           mode de jeu normal d'une énigme. */
+        if (!muet && !replay && !reprise) puzzleApproche(def);
       }
 
       function puzzleRestart() {
@@ -1215,21 +1725,24 @@
           const ouvert = puzzleUnlocked(index);
           const fiche = progress[def.id] || {};
           const etoiles = fiche.stars || 0;
+          const signe = PUZZLE_PRINCIPES[def.principe];
           return `
             <button type="button" class="pz-card" data-index="${index}"${ouvert ? "" : " disabled"}>
-              <div class="pz-num">ÉNIGME ${String(index + 1).padStart(2, "0")}</div>
-              <div class="pz-name">${ouvert ? def.title : "· · ·"}</div>
-              <div class="pz-line">${ouvert ? (def.tagline || "") : "Résous l'énigme précédente."}</div>
+              <div class="pz-num">${PUZZLE_ACTES[def.acte] || ""}</div>
+              <div class="pz-name">${ouvert ? def.title : "Sanctuaire ignoré"}</div>
+              <div class="pz-line">${ouvert
+                ? (fiche.solved ? "Sanctuaire éveillé" : "Sanctuaire dormant")
+                : "La Voie ne mène pas encore jusqu'ici."}</div>
               <div class="pz-foot">
                 <span class="stars">${ouvert ? "★".repeat(etoiles) + "☆".repeat(3 - etoiles) : "🔒"}</span>
-                <span>${ouvert && def.par ? `optimal ${def.par}` : ""}</span>
+                <span class="pz-signe" title="${signe ? signe.nom : ""}">${ouvert && signe ? signe.signe : ""}</span>
               </div>
             </button>`;
         }).join("");
 
         menu.innerHTML = `
-          <h1>PUZZLES</h1>
-          <div class="pz-sub">${resolus} / ${PUZZLES.length} résolues — une main figée, un seul tour, aucun hasard.</div>
+          <h1>LES VOIES D'ILYOS</h1>
+          <div class="pz-sub">${resolus} / ${PUZZLES.length} Sanctuaires éveillés — réveillez les Sanctuaires oubliés.</div>
           <div class="pz-grid">${cartes}</div>
           <button type="button" class="pz-back">← Retour au menu</button>`;
         document.body.appendChild(menu);
@@ -1403,10 +1916,13 @@
          `solution` prend ici une liste par TOUR : [[coups du tour 1], [tour 2]].
          Chaque tour est suivi d'une vraie fin de tour, la dernière comprise —
          sans quoi le point ne serait jamais accordé. */
-      async function puzzleVerifyLive(index) {
+      /* `keep` laisse l'énigme EN PLACE au lieu de la démonter : le sondage
+         de victoire la voit alors gagnée et joue le réveil, ce qu'un test
+         visuel ne peut obtenir autrement qu'en rejouant tout à la souris. */
+      async function puzzleVerifyLive(index, { keep = false } = {}) {
         const def = PUZZLES[index];
         const tours = def.solution || [];
-        puzzleStart(index, { force: true });
+        puzzleStart(index, { force: true, muet: true });
         await tutoWait(350);
 
         const journal = [];
@@ -1445,7 +1961,7 @@
             ? (def.par && depense !== def.par ? `objectif atteint mais ${depense} cartes au lieu de ${def.par}` : "")
             : "objectif non atteint"
         };
-        puzzleTeardown();
+        if (!keep) puzzleTeardown();
         return rapport;
       }
 
@@ -1635,7 +2151,10 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null, secondesMax = 60) {
+      /* `noeudsMax` : certaines énigmes ne se tranchent pas sous le plafond de
+         nœuds par défaut, et un barème non prouvé est un barème que le joueur
+         finira par battre. */
+      function puzzleSolve(index, plafond = null, secondesMax = 60, noeudsMax = null) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -1684,7 +2203,7 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
+              if (++noeuds > (noeudsMax || PUZZLE_SEARCH_MAX_NODES) || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
                   secondes: Math.round((Date.now() - depart) / 100) / 10,
@@ -1694,6 +2213,23 @@
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
+
+              /* L'objectif se teste ICI, au dépilement, et non à la génération
+                 des successeurs. Un successeur porte son coût TOTAL : en
+                 rendant la main dès qu'il atteignait le but, la recherche
+                 renvoyait le premier chemin gagnant rencontré, pas le moins
+                 cher — sur une énigme à grande main, une seule marche de treize
+                 cases trouvée depuis le seau 1 l'emportait sur une solution à
+                 cinq cartes jamais explorée. Les seaux étant parcourus par coût
+                 croissant, le premier chemin dépilé qui atteint le but est
+                 optimal. */
+              if (atteint()) {
+                return {
+                  id: def.id, cout, noeuds,
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  chemin: chemin.map(puzzleSearchLabel)
+                };
+              }
 
               /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
                  le restaure au lieu de reconstruire le plateau et de rejouer
@@ -1713,15 +2249,7 @@
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
                 vus.add(empreinte);
-                const nouveau = [...chemin, action];
-                if (atteint()) {
-                  return {
-                    id: def.id, cout: suivant, noeuds,
-                    secondes: Math.round((Date.now() - depart) / 100) / 10,
-                    chemin: nouveau.map(puzzleSearchLabel)
-                  };
-                }
-                pousser(suivant, nouveau);
+                pousser(suivant, [...chemin, action]);
               }
             }
           }
@@ -1862,7 +2390,15 @@
 
       window.ILYOS_PUZZLE = {
         open: puzzleOpenMenu,
-        start: index => puzzleStart(index, { force: true }),
+        /* Les points d'entrée de test démarrent MUETS : un test pilote des
+           clics, et l'approche les avalerait. Passer { muet: false } pour
+           observer la séquence elle-même. */
+        start: (index, options) => puzzleStart(index, { force: true, muet: true, ...options }),
+        /* Adressage par IDENTIFIANT : l'ordre de la campagne n'est plus celui
+           des identifiants, et un test qui vise un index vise le mauvais
+           Sanctuaire dès qu'on réordonne. */
+        startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
+          { force: true, muet: true, ...options }),
         restart: puzzleRestart,
         exit: puzzleQuitToHome,
         list: () => PUZZLES.map((def, index) => ({
@@ -1870,13 +2406,14 @@
         })),
         /* Oracle de test : rejoue la solution de référence d'une énigme, ou de
            toutes, sans toucher à la partie en cours. */
-        verify: index => puzzleIsMultiTurn(PUZZLES[index])
-          ? puzzleVerifyLive(index)
+        verify: (index, options) => (options?.live || puzzleIsMultiTurn(PUZZLES[index]))
+          ? puzzleVerifyLive(index, options)
           : puzzleVerify(index),
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        solve: (index, plafond, secondesMax, noeudsMax) =>
+          puzzleSolve(index, plafond, secondesMax, noeudsMax),
         /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
            et ce qu'un Gardien atteint à pied. */
         audit: puzzleAudit,
