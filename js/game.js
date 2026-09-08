@@ -32281,48 +32281,62 @@
           ]
         },
         /* -----------------------------------------------------------------
-           20 — LA TRACE LA PLUS COURTE. Ici les cartes ne manquent pas : il y
-           en a plus qu'il n'en faut, et c'est tout le problème. Marcher coûte
-           une carte par case, pousser une carte par unité de force — même
-           tarif. Une seule chose dans ce jeu transporte plus vite que le pied :
-           une ÎLE. Pivotée par son extrémité, une barre de cinq se translate de
-           quatre cases pour UNE carte, et emmène qui se tient dessus. Le grand
-           tour par l'est fonctionne parfaitement et coûte dix-huit ; la bonne
-           route en coûte cinq, et se lit en regardant non pas où l'on va, mais
-           quelle barre va où. */
+           LA PLUS COURTE TRACE — celle que personne ne marche.
+
+           Refonte. La première version demandait de repérer deux barres et de
+           monter dessus : que la rotation transporte plus vite que le pied, on
+           le sait depuis la deuxième énigme du jeu. Il n'y avait rien à
+           chercher, et le grand tour à dix-huit cartes n'était pas une
+           tentation mais un décor.
+
+           Le sujet est maintenant que LA COURONNE VOYAGE SEULE. Elle n'a besoin
+           de personne : posée sur une île, une rotation l'emporte avec le
+           terrain ; poussée, elle survole le vide et se dépose sur la dernière
+           terre à portée. Le Gardien, lui, ne va nulle part — il n'y a d'ailleurs
+           aucune route pour lui.
+
+           Et la difficulté n'est pas de le deviner mais de le PLACER. Pousser
+           exige d'être derrière : c'est la rotation, et elle seule, qui décide
+           de quel côté de la couronne on se retrouve. Sur les six pivots
+           possibles, un seul laisse le Gardien au sud de la couronne avec de la
+           terre au nord ; les cinq autres se jouent, coûtent une carte, et ne
+           mènent à rien.
+
+           PAS DE BARÈME tant qu'il n'est pas prouvé. La solution de référence
+           coûte 6. */
         {
           id: "p20-la-plus-courte-trace",
           acte: "III",
           principe: "TRACE",
           title: "La plus courte trace",
-          tagline: "Les cartes ne manqueront pas. C'est la route qu'il faut trouver.",
-          brief: "Ramène la couronne jusqu'à ton village.",
+          tagline: "Aucune route ne mène là-bas. La couronne n'en a pas besoin.",
+          brief: "Dépose la couronne sur la case marquée.",
           board: 13,
           sanctuary: false,
-          focus: [6, 5],
-          zoom: -1,
-          villages: { 0: [[0, 0]] },
+          focus: [6, 2],
+          villages: {},
           islands: [
-            { key: "A", cells: [[6, 8], [7, 8], [8, 8], [9, 8], [10, 8]] },
-            { key: "B", cells: [[3, 3], [4, 3], [5, 3], [6, 3]] },
-            [[2, 0]], [[1, 0]],
-            [[5, 8]], [[4, 8]], [[3, 8]], [[2, 8]], [[1, 8]],
-            [[1, 7]], [[1, 6]], [[1, 5]], [[1, 4]], [[1, 3]], [[1, 2]], [[1, 1]]
+            { key: "SOCLE", cells: [[9, 1], [9, 2], [9, 3]] },
+            /* La cible, hors d'atteinte de tout pied : une île d'une case ne
+               pivote pas et rien ne la relie au reste. */
+            [[2, 1]],
+            /* Le leurre : une belle barre de quatre, parfaitement pivotable, et
+               qui ne rapproche de rien. Elle est là pour qu'on y passe du
+               temps. */
+            { key: "LEURRE", cells: [[5, 5], [6, 5], [7, 5], [8, 5]] }
           ],
           guardians: [
-            { key: "G", p: 0, r: 10, c: 8, crown: 1 }
+            { key: "G", p: 0, r: 9, c: 2, crown: 1 }
           ],
-          hand: { MOVE: 16, MAGIC: 3, PUSH: 4 },
-          par: 5,
-          goal: { type: "crownDelivered", player: 0 },
+          hand: { MOVE: 6, PUSH: 6, MAGIC: 3 },
+          goal: { type: "crownAtCell", cell: [2, 1] },
           winTitle: "La trace la plus courte",
-          winLine: "Une barre de cinq franchit quatre cases pour une carte. Aucun pied ne fait mieux.",
-          failLine: "Le grand tour t'a coûté plus que tu n'avais.",
+          winLine: "Personne n'a marché jusque-là. La couronne y est allée seule.",
+          failLine: "La couronne est restée au sud.",
           solution: [
-            { a: "MAGIC", island: "A", pivot: [6, 8], turns: 1, direction: 1 },
-            { a: "MOVE", who: "G", to: [6, 3] },
-            { a: "MAGIC", island: "B", pivot: [3, 3], turns: 1, direction: 1 },
-            { a: "MOVE", who: "G", to: [1, 0] }
+            { a: "DROP", who: "G", on: [9, 3] },
+            { a: "MAGIC", island: "SOCLE", pivot: [9, 1], turns: 1, direction: -1 },
+            { a: "PUSH", who: "G", on: [7, 1], force: 5 }
           ]
         },
         /* -----------------------------------------------------------------
