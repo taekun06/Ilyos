@@ -565,7 +565,14 @@
             ["PUSH", "PUSH", "PUSH", "PUSH", "PUSH"],
             ["MOVE", "MOVE", "MOVE", "PUSH"]
           ],
-          par: 12,
+          /* Optimum réel : 8. La première solution de référence en dépensait
+             douze — elle envoyait le receveur MARCHER jusqu'au rival puis
+             revenir, alors qu'il suffit de descendre d'une case pour le
+             pousser. Le chercheur, lui, annonce 6 : sa relaxation ignore le
+             tour adverse, or le rival vient se placer sur la trajectoire et
+             une pièce en travers PLAFONNE la poussée — le vol s'effondre à
+             trois cases, qui sont du vide, et le moteur le refuse. */
+          par: 8,
           rivalPlan: ["il se poste sur la case marquée, la seule où ta couronne peut se poser."],
           replies: [
             [{ a: "MOVE", who: "R", to: [3, 0] }]
@@ -576,16 +583,15 @@
           failLine: "La couronne n'avait nulle part où se poser.",
           solution: [
             [
-              { a: "MOVE", who: "C", to: [3, 0] },
-              { a: "PUSH", who: "C", on: [3, 1], force: 1 },
-              { a: "MOVE", who: "C", to: [2, 0] }
+              { a: "PUSH", who: "B", on: [7, 0], force: 1 }
             ],
             [
-              { a: "PUSH", who: "B", on: [7, 0], force: 1 },
-              { a: "PUSH", who: "B", on: [7, 0], force: 4 }
+              { a: "MOVE", who: "C", to: [2, 0] },
+              { a: "PUSH", who: "C", on: [3, 0], force: 1 },
+              { a: "PUSH", who: "B", on: [7, 0], force: 4 },
+              { a: "PICKUP", who: "C", on: [3, 0] }
             ],
             [
-              { a: "MOVE", who: "C", to: [3, 0] },
               { a: "MOVE", who: "C", to: [1, 0] }
             ]
           ]
