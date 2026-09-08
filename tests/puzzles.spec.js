@@ -28,11 +28,11 @@ async function ouvrirJeu(page) {
   return erreurs;
 }
 
-test('les seize énigmes se résolvent exactement par leur solution de référence', async ({ page }) => {
+test('les énigmes achevées se résolvent exactement par leur solution de référence', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
   const liste = await page.evaluate(() => window.ILYOS_PUZZLE.list());
-  expect(liste.length).toBe(16);
+  expect(liste.length).toBe(17);
 
   const resultats = await page.evaluate(() => window.ILYOS_PUZZLE.verifyAll());
 
@@ -62,7 +62,7 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   /* Déblocage linéaire : seule la première carte est cliquable au premier
      lancement, les dix autres restent verrouillées. */
   const cartes = page.locator('#puzzleMenu .pz-card');
-  await expect(cartes).toHaveCount(16);
+  await expect(cartes).toHaveCount(17);
   await expect(cartes.nth(0)).toBeEnabled();
   await expect(cartes.nth(1)).toBeDisabled();
 

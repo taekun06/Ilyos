@@ -237,6 +237,19 @@
           if (!Array.isArray(entry) && entry.key) PUZZLE.islandsByKey[entry.key] = id;
         });
 
+        /* Une case de village est de la TERRE au sens des règles — isLand()
+           passe par villageAt() — mais rien ne la DESSINE : le château se
+           retrouve suspendu à l'écart des îles, comme s'il flottait seul.
+           On matérialise donc chaque coin de village qu'aucune île ne couvre.
+           Sans effet sur les règles (la case était déjà praticable) ni sur les
+           rotations (villageAt les refusait déjà), et le plateau redevient
+           lisible. */
+        Object.values(def.villages || {}).forEach(coins => {
+          (coins || []).forEach(([r, c]) => {
+            if (!islandAt(r, c)) tutoAddIsland([[r, c]], 0);
+          });
+        });
+
         /* Gardiens. `crown: 1|2` fait porter la couronne correspondante. */
         PUZZLE.charsByKey = {};
         (def.guardians || []).forEach(g => {
@@ -1441,6 +1454,11 @@
       async function puzzleVerifyAll() {
         const resultats = [];
         for (let index = 0; index < PUZZLES.length; index++) {
+          /* Une énigme `wip` est jouable mais n'a pas encore de solution de
+             référence vérifiée : la passer à l'oracle ne dirait rien d'utile.
+             Le marqueur rend l'inachèvement visible dans le code plutôt que de
+             le cacher derrière un `par` inventé. */
+          if (PUZZLES[index].wip) continue;
           resultats.push(puzzleIsMultiTurn(PUZZLES[index])
             ? await puzzleVerifyLive(index)
             : puzzleVerify(index));
@@ -1617,7 +1635,7 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null) {
+      function puzzleSolve(index, plafond = null, secondesMax = 60) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -1625,6 +1643,7 @@
         const actifAvant = PUZZLE.active;
         const defAvant = PUZZLE.def;
         const depart = Date.now();
+        const finAu = depart + secondesMax * 1000;
         try {
           PUZZLE.active = true;
           PUZZLE.def = def;
@@ -1665,18 +1684,31 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES) {
+              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
-                  error: `exploration interrompue à ${noeuds} nœuds`
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  error: Date.now() > finAu
+                    ? `exploration interrompue après ${secondesMax} s (${noeuds} nœuds)`
+                    : `exploration interrompue à ${noeuds} nœuds`
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
 
-              for (const action of puzzleSearchActions()) {
+              /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
+                 le restaure au lieu de reconstruire le plateau et de rejouer
+                 tout le chemin : le rejeu coûtait O(profondeur) par arête, ce
+                 qui rendait la recherche inutilisable dès qu'une énigme passait
+                 la dizaine de cartes (vingt minutes sans réponse sur le boss).
+                 snapshotState/applyStateSnapshot sont ceux du jeu, synchrones,
+                 et déjà employés par l'annulation. */
+              const instantane = snapshotState();
+              const coups = puzzleSearchActions();
+
+              for (const action of coups) {
                 const suivant = cout + action.cout;
                 if (suivant > coutMax) continue;
-                if (!puzzleSearchReplay(def, chemin)) break;
+                if (!applyStateSnapshot(JSON.parse(instantane))) break;
                 if (!puzzleSearchApply(action)) continue;
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
@@ -1707,6 +1739,124 @@
         }
       }
 
+      /* ---------- Audit de conception -------------------------------------
+         Le chercheur d'optimum ne tient pas les grandes énigmes. Cet audit
+         répond à d'autres questions, moins ambitieuses mais décisives quand on
+         dessine un plateau :
+
+         - quelles rotations sont légales, et OÙ elles emmènent les cases ;
+         - qui elles transportent — Gardien, rival ou couronne posée ;
+         - quelles cases un Gardien peut atteindre à pied, donc quelles régions
+           sont réellement séparées ;
+         - quelles îles ne servent à rien.
+
+         Il ne prouve rien sur le coût. Il montre la topologie, ce qui suffit à
+         repérer un raccourci qui saute une moitié du puzzle. */
+      function puzzleAudit(index = PUZZLE.index) {
+        const def = PUZZLES[index];
+        if (!def) return { error: "énigme inexistante" };
+
+        const etatReel = state;
+        const actifAvant = PUZZLE.active;
+        const defAvant = PUZZLE.def;
+        try {
+          PUZZLE.active = true;
+          PUZZLE.def = def;
+          puzzleBuildState(def);
+
+          const nom = ile => Object.keys(PUZZLE.islandsByKey)
+            .find(cle => PUZZLE.islandsByKey[cle] === ile.id) || `île${ile.id}`;
+
+          /* Toutes les rotations légales, avec ce qu'elles emportent. */
+          const rotations = [];
+          (state.islands || []).forEach(ile => {
+            ile.cells.forEach(([pr, pc]) => {
+              [[1, 1], [-1, 1], [1, 2]].forEach(([direction, turns]) => {
+                const rot = calculateIslandRotationAroundPivot(ile, pr, pc, direction, turns);
+                if (!rot?.valid) return;
+                const passagers = (rot.characterMoves || [])
+                  .filter(m => m.char.r !== m.r || m.char.c !== m.c)
+                  .map(m => `${m.char.player === 0 ? "allié" : "RIVAL"} ${m.char.r},${m.char.c}->${m.r},${m.c}`);
+                rotations.push({
+                  ile: nom(ile),
+                  pivot: [pr, pc],
+                  tour: turns === 2 ? "180" : (direction === 1 ? "90+" : "90-"),
+                  cases: rot.absCells.map(([r, c]) => `${r},${c}`).join(" "),
+                  passagers
+                });
+              });
+            });
+          });
+
+          /* LE contrôle décisif : pour CHAQUE rotation légale, on l'applique et
+             on redemande au moteur si un Gardien du sud atteint le village à
+             pied. Vérifier les adjacences à l'œil ne marche pas — une diagonale
+             franchit un coin, et deux corrections successives m'ont échappé
+             pour cette raison. Ici c'est movementRange qui répond. */
+          const ponts = [];
+          const convois = [];
+          const depots = [];
+          rotations.forEach(rot => {
+            const avant = snapshotState();
+            const ile = state.islands.find(i => nom(i) === rot.ile);
+            const calc = ile && calculateIslandRotationAroundPivot(
+              ile, rot.pivot[0], rot.pivot[1],
+              rot.tour === "90-" ? -1 : 1, rot.tour === "180" ? 2 : 1);
+            if (calc?.valid) {
+              applyMagicRotationCore(ile.id, calc);
+              const ouvre = (state.characters || [])
+                .filter(ch => ch.player === 0 && ch.r >= 4)
+                .some(ch => [...movementRange(ch, 99)]
+                  .some(k => k === "0,0" || k === "1,0" || k === "0,1"));
+              if (ouvre) ponts.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} -> [${rot.cases}]`);
+              /* Second angle mort, tout aussi coûteux : une rotation qui
+                 n'ouvre AUCUNE route mais convoie un Gardien sur une longue
+                 distance. Un trajet gratuit de quatre cases vaut quatre
+                 DÉPLACER, et peut contourner une région entière. */
+              /* Indépendant des occupants : ce qui compte n'est pas qui se
+                 tient sur l'île MAINTENANT, mais où un passager SERAIT déposé
+                 s'il y montait en cours de partie. On regarde donc le trajet de
+                 chaque CASE. Ne pas le faire m'a coûté deux raccourcis : la
+                 passerelle dressée dépose son passager au pied du village, et
+                 personne n'est dessus au premier tour. */
+              ile.cells.forEach(([cr, cc], i) => {
+                const [nr, nc] = calc.absCells[i] || [];
+                if (!Number.isFinite(nr)) return;
+                const d = Math.abs(cr - nr) + Math.abs(cc - nc);
+                if (d >= 3) {
+                  convois.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : ${cr},${cc}->${nr},${nc} (${d} cases)`);
+                }
+                /* Un passager déposé au nord, ou à une diagonale du nord, a
+                   franchi le gouffre sans le franchir. */
+                if (cr >= 4 && nr <= 2) {
+                  depots.push(`${rot.ile} pivot ${rot.pivot} ${rot.tour} : ${cr},${cc}->${nr},${nc} (dépose au NORD)`);
+                }
+              });
+            }
+            applyStateSnapshot(JSON.parse(avant));
+          });
+
+          /* Régions accessibles à pied : un budget énorme révèle la topologie
+             réelle, diagonales comprises. */
+          const pied = (state.characters || []).filter(ch => ch.player === 0).map(ch => {
+            const portee = movementRange(ch, 99);
+            return {
+              gardien: `${ch.r},${ch.c}`,
+              atteint: [...portee].length,
+              village: [...portee].some(k => k === "0,0" || k === "1,0" || k === "0,1")
+            };
+          });
+
+          return { id: def.id, rotations, pied, ponts, convois, depots };
+        } catch (error) {
+          return { error: `exception : ${error && error.message}` };
+        } finally {
+          PUZZLE.active = actifAvant;
+          PUZZLE.def = defAvant;
+          state = etatReel;
+        }
+      }
+
       /* ---------- Câblage ---------------------------------------------------- */
       window.addEventListener("ilyos-puzzle-requested", () => puzzleOpenMenu());
 
@@ -1726,7 +1876,10 @@
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: puzzleSolve,
+        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
+           et ce qu'un Gardien atteint à pied. */
+        audit: puzzleAudit,
         unlockAll: () => { try { localStorage.setItem(PUZZLE_DEV_KEY, "1"); } catch (_) { } },
         /* Force un recalcul des marqueurs (mise au point du rendu). */
         refreshMarkers: () => { PUZZLE.markerKey = null; puzzleRefreshMarkers(); },

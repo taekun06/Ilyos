@@ -22,6 +22,20 @@
          - les villages restent aux COINS, seuls endroits où
            cornerCrownCellsForVillage produit des cases cohérentes. Les énigmes
            sans village n'en déclarent aucun et visent un autre objectif ;
+         - UNE ÎLE D'UNE SEULE CASE NE PIVOTE PAS. Son seul pivot possible est
+           elle-même, et une rotation autour de son propre centre la laisse en
+           place : elle est immobile par construction et ne transporte
+           personne. C'est le moyen le plus simple de figer un terrain — et il
+           est INVISIBLE, puisqu'une région découpée en îles d'une case
+           ressemble à l'écran à une île entière. À préférer aux dégagements et
+           aux collisions dès qu'on veut qu'un morceau de plateau ne bouge
+           jamais ;
+         - à l'inverse, toute île de plusieurs cases alignées est un VÉHICULE :
+           pivotée par une extrémité elle se translate de sa longueur moins un,
+           et emporte ce qui se tient dessus. Une île de trois projette donc une
+           case à deux de distance, et une diagonale franchit un coin : il faut
+           trois rangées de dégagement pour qu'aucune rotation ne relie deux
+           régions censées rester séparées ;
          - aucun texte lu par le joueur ne cite de COORDONNÉES. Le jeu n'en
            affiche nulle part : un énoncé qui en donne est illisible. Les cases
            qui comptent sont marquées sur le plateau, déduites de `goal` et de
@@ -495,7 +509,7 @@
         {
           id: "p12-squatteur",
           title: "Le squatteur",
-          tagline: "Il annonce où il va s'asseoir. À toi d'y être avant lui.",
+          tagline: "Il annonce où il va s'asseoir. Assieds-toi, puis ne fais plus rien.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
@@ -516,20 +530,31 @@
             ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"],
             ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"]
           ],
-          par: 5,
+          /* Optimum réel : 3, et c'est un vrai coup de TEMPO — le premier de
+             la collection. On monte d'une case sur le siège du rival, puis on
+             TERMINE SON TOUR avec des cartes en main. Le rival ne peut plus
+             s'y asseoir, sa case est prise ; son coup est simplement sauté. Il
+             ne reste qu'à monter et pousser le second.
+
+             Ni l'abattre (quatre cartes) ni foncer au village (le rival prend
+             le siège derrière soi) ne valent ce simple arrêt. Le bon coup est
+             de ne rien jouer de plus. */
+          par: 3,
           rivalPlan: ["il se poste sur la case marquée — une case de ton village."],
           replies: [
             [{ a: "MOVE", who: "R1", to: [1, 0] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La place était prise",
-          winLine: "Un Gardien qui ne porte rien vaut une place assise.",
+          winLine: "Prendre la place ne coûte rien. Le bon coup était de s'arrêter là.",
           failLine: "Il s'est installé sur ton village, et tu n'as plus de quoi l'en sortir.",
           solution: [
             [
+              { a: "MOVE", who: "G", to: [1, 0] }
+            ],
+            [
               { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "G2", to: [1, 0] }
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 }
             ]
           ]
         },
@@ -565,7 +590,14 @@
             ["PUSH", "PUSH", "PUSH", "PUSH", "PUSH"],
             ["MOVE", "MOVE", "MOVE", "PUSH"]
           ],
-          par: 12,
+          /* Optimum réel : 8. La première solution de référence en dépensait
+             douze — elle envoyait le receveur MARCHER jusqu'au rival puis
+             revenir, alors qu'il suffit de descendre d'une case pour le
+             pousser. Le chercheur, lui, annonce 6 : sa relaxation ignore le
+             tour adverse, or le rival vient se placer sur la trajectoire et
+             une pièce en travers PLAFONNE la poussée — le vol s'effondre à
+             trois cases, qui sont du vide, et le moteur le refuse. */
+          par: 8,
           rivalPlan: ["il se poste sur la case marquée, la seule où ta couronne peut se poser."],
           replies: [
             [{ a: "MOVE", who: "R", to: [3, 0] }]
@@ -576,16 +608,15 @@
           failLine: "La couronne n'avait nulle part où se poser.",
           solution: [
             [
-              { a: "MOVE", who: "C", to: [3, 0] },
-              { a: "PUSH", who: "C", on: [3, 1], force: 1 },
-              { a: "MOVE", who: "C", to: [2, 0] }
+              { a: "PUSH", who: "B", on: [7, 0], force: 1 }
             ],
             [
-              { a: "PUSH", who: "B", on: [7, 0], force: 1 },
-              { a: "PUSH", who: "B", on: [7, 0], force: 4 }
+              { a: "MOVE", who: "C", to: [2, 0] },
+              { a: "PUSH", who: "C", on: [3, 0], force: 1 },
+              { a: "PUSH", who: "B", on: [7, 0], force: 4 },
+              { a: "PICKUP", who: "C", on: [3, 0] }
             ],
             [
-              { a: "MOVE", who: "C", to: [3, 0] },
               { a: "MOVE", who: "C", to: [1, 0] }
             ]
           ]
@@ -750,49 +781,246 @@
         {
           id: "p16-charniere",
           title: "La charnière des cieux",
-          tagline: "Quand la route n'existe plus, c'est le monde qu'il faut tourner.",
+          tagline: "Trois rotations. Aucune ne fait la même chose.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
+          /* Cadrage imposé : le terrain pèse vers le haut (deux rangées
+             pleines), et le centre de gravité calculé laissait le Gardien de
+             départ sous la barre d'action. */
+          focus: [5, 2],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[8, 2]],
+            /* Départ en Z. Aucune conséquence de règle : il brouille la
+               lecture, là où un îlot d'une seule case annonçait trop clairement
+               qu'on n'y ferait rien. */
+            { key: "DEPART", cells: [[8, 2], [8, 3], [9, 1], [9, 2]] },
             { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
-            /* La terrasse s'arrête à (1,4) : (1,5) et (2,5) doivent rester
-               VIDES, sinon la rotation du bras chevaucherait un autre terrain
-               et calculateIslandRotationAroundPivot la refuserait. */
-            [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
-            [[0, 1], [0, 2]]
+            { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
             { key: "R", p: 1, r: 0, c: 1 }
           ],
           deck: [
-            ["MOVE", "MAGIC", "MOVE", "MOVE", "MOVE"],
-            ["MAGIC", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
-            ["MOVE", "PUSH"]
+            ["MOVE", "MAGIC", "MOVE"],
+            ["MAGIC", "MOVE", "MOVE"],
+            ["MAGIC", "MOVE", "PUSH"]
           ],
-          par: 15,
+          /* Optimum PROUVÉ : 8. Ce sont les DÉPLACER rares qui font tenir
+             l'énigme — pas un interdit. Avec une main généreuse, le chercheur
+             couchait le T en échelle et parcourait tout à pied en neuf pas,
+             sans jamais monter sur rien : les deux usages de la Magie étaient
+             contournés d'un coup. Six DÉPLACER rendent la marche impossible, et
+             la seule route passe par les trois rotations. */
+          par: 8,
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La charnière a tourné",
-          winLine: "Tu n'as pas trouvé de route : tu as appris à déplacer le monde.",
+          winLine: "Trois rotations, trois usages : on t'a porté, la route est venue à toi, et le rival a tourné avec son île.",
           failLine: "Le chemin ne s'est pas ouvert.",
+          /* Trois emplois de la MÊME carte, tous différents :
+             - la passerelle TRANSPORTE le Gardien par-dessus le vide ;
+             - le perchoir emporte le RIVAL hors des cases du village, là où
+               l'on aurait cru devoir le pousser ;
+             - la terrasse, longue barre de cinq cases, pivote en ÉCHELLE
+               verticale : le Gardien n'est pas dessus, c'est la route qui vient
+               le chercher.
+
+             RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
+             Il reste du décor, et une pièce inutile est un défaut — le même que
+             le troisième Gardien du Relais avant sa refonte. */
           solution: [
             [
               { a: "MOVE", who: "G", to: [7, 2] },
               { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
-              { a: "MOVE", who: "G", to: [3, 5] }
+              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
             ],
             [
-              { a: "MAGIC", island: "BRAS", pivot: [3, 5], turns: 1, direction: 1 },
-              { a: "MOVE", who: "G", to: [1, 3] }
+              { a: "MAGIC", island: "TERRASSE", pivot: [1, 1], turns: 1, direction: 1 },
+              { a: "MOVE", who: "G", to: [0, 1] }
+            ]
+          ]
+        },
+
+        /* =================================================================
+           17 — L'ARCHIPEL DES NEUF MENSONGES
+
+           L'examen. Aucune règle nouvelle : tout ce que les seize précédentes
+           ont appris, et rien d'autre. Neuf îles, quatre Gardiens, quatre
+           rivaux, cinq tours de pioche écrite.
+
+           Le thème est dans le titre : ce qui semble être un bon chemin peut
+           être vrai localement sans être la bonne solution globale. Chaque île
+           est un véhicule potentiel — le chercheur d'optimum l'a assez montré —
+           et AUCUN pivot n'est interdit. Ce sont les distances, les collisions
+           et la rareté des cartes qui rendent les mauvais chemins coûteux.
+
+           Le rôle passe de main en main : A porte, B relaie, C envoie, D
+           valide. Aucun Gardien ne fait le trajet entier.
+           ================================================================= */
+        {
+          id: "p17-neuf-mensonges",
+          title: "L'archipel des neuf mensonges",
+          tagline: "Tu as appris à déplacer le monde. Maintenant le monde va te mentir.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 5],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            /* Nord-ouest : le village et sa dernière serrure. */
+            /* LE NORD TIENT SUR LA SEULE RANGÉE 0, et c'est structurel. Une
+               île de trois cases projette une case à DEUX de distance quand on
+               la pivote par une extrémité, et une diagonale franchit un coin :
+               il faut donc trois rangées de dégagement entre la terre du sud
+               (rangée 4) et celle du nord pour qu'aucune rotation ne vienne
+               déposer un passager au pied du village. Trois tentatives de
+               colmatage cas par cas ont échoué avant ce constat. */
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            /* Le gouffre de la rangée 3 sépare le Virage de la Passerelle :
+               aucun Gardien ne le franchit, une couronne poussée si. */
+            { key: "PASSERELLE", cells: [[4, 1], [4, 2], [4, 3]] },
+            /* Le faux chemin court : deux cases qui ne se touchent que par un
+               coin. Une diagonale coûte DEUX déplacements (movementEdges), donc
+               ce raccourci apparent est le plus cher du plateau. */
+            /* Chaîne diagonale de trois. La troisième case, (7,1), n'est là
+               que pour COLLISIONNER : sans elle, la croix pleine pivotée à 180°
+               autour de (7,4) translatait tout le corridor de quatre colonnes
+               vers l'ouest et venait toucher cette région — un convoi gratuit
+               qui contournait la croix creuse, pourtant le cœur de l'énigme.
+               Signalé en jouant. Elle ne connecte rien de neuf : elle ne touche
+               que (6,0), en diagonale, et reste un cul-de-sac. */
+            /* Chaîne diagonale. (5,2) est la plate-forme d'où l'on pousse la
+               couronne vers le nord ; (7,0) n'est là que pour COLLISIONNER avec
+               l'arrivée d'une rotation de la croix pleine qui, sans elle,
+               translatait tout le corridor de quatre colonnes vers l'ouest. */
+            { key: "DOMINO", cells: [[5, 2], [6, 1], [7, 0]] },
+            /* Croix creuse : le cœur. Son centre (5,4) est vide, et selon son
+               orientation elle relie la Passerelle, reçoit un Gardien, ou ferme
+               une route. */
+            { key: "CROIX_CREUSE", cells: [[4, 4], [5, 3], [5, 5], [6, 4]] },
+            /* Croix pleine : le problème de poussée. Le rival en occupe le
+               centre, et il faut le déloger pour traverser. */
+            /* Bras ouest allongé À DESSEIN : le rival qui en occupe le centre
+               se DÉPLACE d'une poussée de force 1, mais il faut une force 4
+               pour l'envoyer par-dessus le bord. L'élimination spectaculaire
+               coûte donc trois cartes de plus, et ce sont exactement celles
+               qui manqueront à la fin. */
+            { key: "CROIX_PLEINE", cells: [[6, 6], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7], [8, 6]] },
+            /* Carrefour : le moyeu. Trois branches en partent, toutes
+               plausibles. */
+            { key: "CARREFOUR", cells: [[8, 8], [8, 9], [8, 10], [9, 9]] },
+            /* Serpent : le faux raccourci majeur. Sa rotation ouvre une route
+               vers le nord qui gagne vraiment — mais plus cher. */
+            { key: "SERPENT", cells: [[6, 10], [6, 11], [5, 11], [5, 12]] },
+            /* La première machine : le V qui transporte le porteur. */
+            { key: "V", cells: [[10, 10], [11, 10], [11, 9]] },
+            /* Le départ. Quatre sorties, aucune évidente. */
+            { key: "CARRE", cells: [[10, 11], [10, 12], [11, 11], [11, 12]] }
+          ],
+          guardians: [
+            { key: "A", p: 0, r: 11, c: 12, crown: 1 },
+            { key: "B", p: 0, r: 8, c: 9 },
+            { key: "C", p: 0, r: 5, c: 3 },
+            { key: "D", p: 0, r: 0, c: 3 },
+            { key: "R1", p: 1, r: 7, c: 6 },
+            { key: "R2", p: 1, r: 6, c: 11 },
+            { key: "R3", p: 1, r: 0, c: 1 }
+          ],
+          /* La pioche donne cinq cartes par tour. Les cartes non jouées passent
+             en réserve : ne rien dépenser n'est pas perdre. */
+          deck: [
+            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["MAGIC", "PUSH", "PUSH", "PUSH", "PUSH"],
+            ["MOVE", "MOVE", "MOVE", "MAGIC", "MAGIC"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
+            ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"],
+            ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"]
+          ],
+          /* AUCUN `par`. La solution de référence ci-dessous est vérifiée
+             LÉGALE par l'oracle, mais rien ne dit qu'elle soit la moins chère :
+             le chercheur d'optimum ne tient pas cette échelle. Annoncer un
+             barème non prouvé serait répéter une erreur déjà commise cinq fois.
+             L'oracle vérifie donc que l'énigme reste SOLUBLE, et rien d'autre. */
+          par: null,
+          /* Le nord tenant sur une seule rangée, le rival n'a aucun trajet à
+             faire : il CAMPE déjà sur la case de validation, et sa seule
+             présence verrouille le village. Il ne peut pas non plus être
+             emporté par une rotation — la seule arrivée possible de son île
+             chevaucherait le village, ce que le moteur refuse. */
+          rivalPlan: [
+            "il campe déjà sur ton village. Rien ne l'en fera bouger — sauf toi."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "L'archipel s'illumine",
+          winLine: "Aucun Gardien n'a fait le trajet. La lumière, elle, l'a fait en entier.",
+          failLine: "Un chemin te semblait bon. Il l'était — mais pas jusqu'au bout.",
+          /* AUDIT DE TOPOLOGIE (ILYOS_PUZZLE.audit) — ce que le chercheur ne
+             peut pas dire, l'audit le dit. Cinquante-trois rotations légales
+             recensées, et la propriété qui tient tout le puzzle :
+
+             AUCUN Gardien du sud ne peut marcher jusqu'au village. Le gouffre
+             de la rangée 3 sépare le plateau en deux, et seul D, isolé au nord
+             sur quatre cases, atteint la zone de validation. Le relais n'est
+             donc pas une élégance, c'est la seule issue.
+
+             Deux rotations franchissent ce gouffre — la Passerelle dressée en
+             pont, la Croix creuse qui dépose son passager au nord. Toutes deux
+             sont LÉGALES et volontairement conservées : ce sont de vraies
+             routes alternatives, simplement plus chères, puisqu'elles obligent
+             un porteur du sud à faire tout le trajet nord alors que D est déjà
+             sur place. Une fausse piste n'est pas une défaite.
+
+             Le rival du village, lui, ne se déloge par aucune rotation : sa
+             seule autre case ferait chevaucher le village, ce que le moteur
+             refuse. La menace finale ne se contourne pas.
+
+             Le chercheur d'optimum, en revanche, n'aboutit pas ici : quatre
+             alliés, quatre rivaux et dix îles donnent un branchement qu'il ne
+             couvre pas — 48 000 nœuds en deux minutes sans conclure. */
+          /* SOLUTION DE RÉFÉRENCE — légale, vérifiée par l'oracle sous les
+             vraies règles et la vraie structure de tours. Ce n'est PAS un
+             optimum : le chercheur ne tient pas cette échelle, et rien ne dit
+             qu'on ne fait pas mieux. Elle prouve seulement que l'énigme est
+             soluble, et elle montre le relais voulu — A porte, B relaie, C
+             convoie, D reçoit et valide.
+
+             Aucun Gardien ne fait le trajet entier, et la couronne franchit le
+             gouffre de la rangée 3 sans personne : elle est posée puis poussée,
+             et ramassée gratuitement de l'autre côté. */
+          solution: [
+            [
+              { a: "MOVE", who: "A", to: [11, 10] },
+              { a: "MOVE", who: "C", to: [6, 4] }
             ],
             [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 }
+              { a: "MAGIC", island: "V", pivot: [10, 10], turns: 2 },
+              { a: "MOVE", who: "A", to: [8, 10] },
+              { a: "TRANSFER", who: "A", to: "B" }
+            ],
+            [
+              { a: "MOVE", who: "B", to: [7, 7] },
+              { a: "PUSH", who: "B", on: [7, 6], force: 1 },
+              { a: "DROP", who: "B", on: [7, 6] },
+              { a: "PUSH", who: "B", on: [7, 6], force: 2 },
+              { a: "PICKUP", who: "C", on: [7, 4] }
+            ],
+            [
+              { a: "MOVE", who: "C", to: [4, 2] }
+            ],
+            [
+              { a: "MOVE", who: "C", to: [5, 2] },
+              { a: "DROP", who: "C", on: [4, 2] },
+              { a: "PUSH", who: "C", on: [4, 2], force: 4 },
+              { a: "PICKUP", who: "D", on: [0, 2] }
+            ],
+            [
+              { a: "MOVE", who: "D", to: [0, 2] },
+              { a: "PUSH", who: "D", on: [0, 1], force: 2 },
+              { a: "MOVE", who: "D", to: [0, 1] }
             ]
           ]
         }
