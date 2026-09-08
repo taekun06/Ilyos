@@ -261,3 +261,38 @@ test("cliquer la case du village déclenche le raccourci de déplacement", async
 
   expect(erreurs).toEqual([]);
 });
+
+/* Régression : le clic droit annulait partout SAUF dans les énigmes.
+
+   Échap et le clic droit y étaient verrouillés parce qu'ils déclenchent
+   l'annulation du dernier coup, laquelle cassait le décompte de cartes. Ce
+   n'est plus vrai depuis que restoreUndoSnapshot recalcule la dépense : le
+   verrou ne protégeait plus rien et privait le joueur des deux gestes les plus
+   naturels pour défaire un coup, dans le mode où l'on se trompe le plus. */
+test("dans une énigme, le clic droit annule le dernier coup et rend la carte", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p20-la-plus-courte-trace'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p20-la-plus-courte-trace');
+  await attendreLaMain(page);
+
+  const clic = (r, c) => page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).dispatchEvent('click');
+  await page.locator('#ov2Move').click({ force: true });
+  await clic(9, 2);
+  await clic(9, 1);
+  await page.waitForFunction(() =>
+    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 9 && ch.c === 1),
+    null, { timeout: 8000 });
+  await attendreLaMain(page);
+  expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(1);
+
+  // Le geste du jeu : clic droit SEC sur le canevas 3D.
+  await page.locator('#kaykitCanvas').dispatchEvent('contextmenu');
+  await page.waitForFunction(() =>
+    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 9 && ch.c === 2),
+    null, { timeout: 8000 });
+  // La carte revient au joueur : sans cette égalité, l'annulation ment.
+  expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(0);
+
+  expect(erreurs).toEqual([]);
+});

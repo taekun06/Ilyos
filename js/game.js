@@ -30450,13 +30450,19 @@
       }
 
       /* ---------- Garde-fous ---------------------------------------------
-         Mêmes verrous que le tutoriel : Échap rembobinerait la partie, le clic
-         droit sur le canevas 3D déclenche l'annulation de la dernière action
-         (listener contextmenu de bindKayKitInteractions) et casserait le
-         décompte de cartes. */
+         Il n'en reste qu'UN, et ce n'est plus celui d'origine.
+
+         Échap et le clic droit étaient verrouillés parce qu'ils déclenchent
+         l'annulation du dernier coup, laquelle cassait le décompte de cartes
+         d'une énigme. Ce n'est plus vrai depuis que restoreUndoSnapshot
+         recalcule PUZZLE.spent à chaque retour en arrière (voir plus haut) :
+         l'annulation est devenue exacte, et l'interdire ne protégeait plus
+         rien — elle privait seulement le joueur des deux gestes les plus
+         naturels pour défaire un coup, dans le mode où l'on se trompe le plus.
+         Échap referme aussi les fenêtres Règles et Son, donc les verrouiller
+         rendait ces fenêtres impossibles à fermer au clavier. */
       function puzzleKeyGuard(event) {
         if (!PUZZLE.active) return;
-        if (event.key === "Escape") { event.stopImmediatePropagation(); event.preventDefault(); }
         /* « T » bascule le plateau tactique 2D, où une chute par le bord du
            plateau n'est pas cliquable. La capture sur window passe avant le
            listener de js/plateau-tactique.js, posé sur document. */
@@ -30466,16 +30472,12 @@
         }
       }
 
-      function puzzleRightClickGuard(event) {
-        if (!PUZZLE.active) return;
-        if (event.type !== "contextmenu" && event.button !== 2) return;
-        const cible = event.target;
-        if (!cible || !cible.closest) return;
-        if (!cible.closest("#gameScreen") && !cible.closest("#kaykitCanvas")) return;
-        event.stopImmediatePropagation();
-        event.stopPropagation();
-        event.preventDefault();
-      }
+      /* Le clic droit sec sur le canevas annule le dernier coup — c'est le
+         geste du jeu, et une énigme n'a plus de raison de s'en priver. La
+         fonction reste, vide, parce que le démontage la retire toujours des
+         écouteurs : la supprimer obligerait à toucher trois autres endroits
+         pour rien. */
+      function puzzleRightClickGuard() { }
 
       /* ---------- Lancement d'une énigme ----------------------------------- */
       /* `replay` = le joueur RECOMMENCE (il perd l'étoile du sans-faute).
