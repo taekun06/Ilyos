@@ -232,3 +232,32 @@ test("une énigme lancée après une partie n'hérite pas de son sanctuaire", as
 
   expect(erreurs).toEqual([]);
 });
+
+/* Régression : cliquer la case du château ne faisait rien.
+
+   Le raccourci « clic direct » — on désigne la destination, le jeu envoie le
+   Gardien le plus proche — était réservé au sanctuaire. Il a été élargi aux
+   trois cases d'un village, mais seulement dans le PRÉDICAT : son point
+   d'appel filtrait toujours sur isSanctuary, si bien que la fonction acceptait
+   ces cases sans jamais être appelée pour elles. Signalé deux fois en jeu.
+
+   Le test ne vérifie pas qu'un Gardien arrive — dans cette énigme aucun ne le
+   peut — mais que le jeu RÉPOND. C'est exactement ce qui manquait : le clic
+   tombait dans le vide, sans mouvement et sans message. */
+test("cliquer la case du village déclenche le raccourci de déplacement", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p01-seuil'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p01-seuil');
+  await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
+
+  await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.textContent = ''; });
+  await page.locator('.cell[data-r="0"][data-c="0"]').dispatchEvent('click');
+
+  await page.waitForFunction(
+    () => (document.getElementById('toast')?.textContent || '').trim().length > 0
+      || window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 0 && ch.c === 0),
+    null, { timeout: 8000 });
+
+  expect(erreurs).toEqual([]);
+});

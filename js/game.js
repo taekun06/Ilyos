@@ -20032,9 +20032,15 @@
           return;
         }
 
+        /* Le filtre était resté sur isSanctuary alors que le prédicat, lui,
+           avait été élargi aux cases de validation d'un village et aux cases
+           marquées d'une énigme : la fonction acceptait ces cases, mais on ne
+           l'appelait jamais pour elles. Cliquer le château ne faisait donc
+           rien — et la branche suivante n'aidait pas, car une case de village
+           n'est PAS couverte par une île. */
         if (
           state.phase === "ACTION_SELECT"
-          && isSanctuary(r, c)
+          && accepteDeplacementDirect(r, c)
           && tryDirectSanctuaryMove(r, c)
         ) {
           return;
@@ -21111,8 +21117,23 @@
            callback d'animation : entre les deux, l'IA pouvait relire un compte
            d'actions encore intact et décider sur une base périmée. */
         const applique = applyPushCore(pusher.id, r, c, force);
-        if (!applique) discardLastUndoSnapshot();
-        if (!applique) return;
+        if (!applique) {
+          discardLastUndoSnapshot();
+          /* ÉCHEC SILENCIEUX auparavant : le noyau refusait, l'interface gardait
+             ses options périmées et rien ne le disait. Le joueur n'avait d'autre
+             issue que de refermer puis rouvrir la poussée — geste qui ne faisait
+             rien d'autre que reconstruire ces options. On le fait pour lui, et
+             on le dit. Signalé en jeu, surtout sur les poussées qui visent une
+             chute, où la force annoncée et celle qui reste jouable divergent le
+             plus facilement. */
+          state.pushOptions = collectUnifiedPushOptions(
+            state.pushTargetId ? { targetId: state.pushTargetId } : undefined);
+          state.pushHoverOptionId = null;
+          showToast("Cette poussée n’est plus possible : les options ont été recalculées.");
+          renderAll();
+          scheduleKayKitSync();
+          return;
+        }
         /* Les options de poussée décrivent un état qui vient de disparaître.
            consumeSelectedActionCore remet la sélection à zéro mais ne les
            touche pas : sans cette ligne, les marqueurs de destination et
@@ -32322,11 +32343,18 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
-             plafond 7), puis rejoué en direct sur les trois tours réels : le
+          /* Optimum 6, PROUVÉ par recherche exhaustive (657 436 nœuds sous
+             plafond 6), puis rejoué en direct sur les trois tours réels : le
              coût annoncé n'est plus une intention mais un fait.
 
-             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             Il valait 7 avant que le verrou ne s'installe en colonne 0. Cette
+             île de deux cases ne fait pas qu'interdire l'échelle de la
+             terrasse : elle PIVOTE, et son pivot ouvre le dernier pas vers le
+             Sanctuaire. Une pièce posée pour bloquer s'est révélée être la
+             clé — on la garde, parce que le joueur qui la trouve a compris
+             quelque chose.
+
+             Il valait 8 au départ, et c'était faux. Le chercheur testait
              l'objectif à la GÉNÉRATION des successeurs et rendait la main au
              premier chemin gagnant rencontré, pas au moins cher ; il validait
              donc la solution qu'on lui présentait au lieu de la contredire.
@@ -32362,20 +32390,19 @@
              RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
              Il reste du décor, et une pièce inutile est un défaut — le même que
              le troisième Gardien du Relais avant sa refonte. */
-          par: 7,
+          par: 6,
           solution: [
             [
-              { a: "MOVE", who: "G", to: [7, 2] }
-            ],
-            [
-            ],
-            [
+              { a: "MOVE", who: "G", to: [7, 2] },
               { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 1, direction: 1 },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 1], turns: 1, direction: -1 },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [4, 1], turns: 2, direction: 1 },
-              { a: "DROP", who: "G", on: [1, 1] },
-              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [0, 1] }
+              { a: "MOVE", who: "G", to: [4, 0] }
+            ],
+            [
+              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
+            ],
+            [
+              { a: "MAGIC", island: "VERROU", pivot: [3, 0], turns: 2 },
+              { a: "MOVE", who: "G", to: [1, 0] }
             ]
           ]
         },

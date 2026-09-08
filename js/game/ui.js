@@ -1875,9 +1875,15 @@
           return;
         }
 
+        /* Le filtre était resté sur isSanctuary alors que le prédicat, lui,
+           avait été élargi aux cases de validation d'un village et aux cases
+           marquées d'une énigme : la fonction acceptait ces cases, mais on ne
+           l'appelait jamais pour elles. Cliquer le château ne faisait donc
+           rien — et la branche suivante n'aidait pas, car une case de village
+           n'est PAS couverte par une île. */
         if (
           state.phase === "ACTION_SELECT"
-          && isSanctuary(r, c)
+          && accepteDeplacementDirect(r, c)
           && tryDirectSanctuaryMove(r, c)
         ) {
           return;
@@ -2954,8 +2960,23 @@
            callback d'animation : entre les deux, l'IA pouvait relire un compte
            d'actions encore intact et décider sur une base périmée. */
         const applique = applyPushCore(pusher.id, r, c, force);
-        if (!applique) discardLastUndoSnapshot();
-        if (!applique) return;
+        if (!applique) {
+          discardLastUndoSnapshot();
+          /* ÉCHEC SILENCIEUX auparavant : le noyau refusait, l'interface gardait
+             ses options périmées et rien ne le disait. Le joueur n'avait d'autre
+             issue que de refermer puis rouvrir la poussée — geste qui ne faisait
+             rien d'autre que reconstruire ces options. On le fait pour lui, et
+             on le dit. Signalé en jeu, surtout sur les poussées qui visent une
+             chute, où la force annoncée et celle qui reste jouable divergent le
+             plus facilement. */
+          state.pushOptions = collectUnifiedPushOptions(
+            state.pushTargetId ? { targetId: state.pushTargetId } : undefined);
+          state.pushHoverOptionId = null;
+          showToast("Cette poussée n’est plus possible : les options ont été recalculées.");
+          renderAll();
+          scheduleKayKitSync();
+          return;
+        }
         /* Les options de poussée décrivent un état qui vient de disparaître.
            consumeSelectedActionCore remet la sélection à zéro mais ne les
            touche pas : sans cette ligne, les marqueurs de destination et

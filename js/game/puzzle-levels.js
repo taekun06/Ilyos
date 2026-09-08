@@ -994,11 +994,18 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
-             plafond 7), puis rejoué en direct sur les trois tours réels : le
+          /* Optimum 6, PROUVÉ par recherche exhaustive (657 436 nœuds sous
+             plafond 6), puis rejoué en direct sur les trois tours réels : le
              coût annoncé n'est plus une intention mais un fait.
 
-             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             Il valait 7 avant que le verrou ne s'installe en colonne 0. Cette
+             île de deux cases ne fait pas qu'interdire l'échelle de la
+             terrasse : elle PIVOTE, et son pivot ouvre le dernier pas vers le
+             Sanctuaire. Une pièce posée pour bloquer s'est révélée être la
+             clé — on la garde, parce que le joueur qui la trouve a compris
+             quelque chose.
+
+             Il valait 8 au départ, et c'était faux. Le chercheur testait
              l'objectif à la GÉNÉRATION des successeurs et rendait la main au
              premier chemin gagnant rencontré, pas au moins cher ; il validait
              donc la solution qu'on lui présentait au lieu de la contredire.
@@ -1034,20 +1041,19 @@
              RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
              Il reste du décor, et une pièce inutile est un défaut — le même que
              le troisième Gardien du Relais avant sa refonte. */
-          par: 7,
+          par: 6,
           solution: [
             [
-              { a: "MOVE", who: "G", to: [7, 2] }
-            ],
-            [
-            ],
-            [
+              { a: "MOVE", who: "G", to: [7, 2] },
               { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 1, direction: 1 },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 1], turns: 1, direction: -1 },
-              { a: "MAGIC", island: "PASSERELLE", pivot: [4, 1], turns: 2, direction: 1 },
-              { a: "DROP", who: "G", on: [1, 1] },
-              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [0, 1] }
+              { a: "MOVE", who: "G", to: [4, 0] }
+            ],
+            [
+              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
+            ],
+            [
+              { a: "MAGIC", island: "VERROU", pivot: [3, 0], turns: 2 },
+              { a: "MOVE", who: "G", to: [1, 0] }
             ]
           ]
         },
