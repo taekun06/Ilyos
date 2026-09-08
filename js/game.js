@@ -30794,7 +30794,10 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null, secondesMax = 60) {
+      /* `noeudsMax` : certaines énigmes ne se tranchent pas sous le plafond de
+         nœuds par défaut, et un barème non prouvé est un barème que le joueur
+         finira par battre. */
+      function puzzleSolve(index, plafond = null, secondesMax = 60, noeudsMax = null) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -30843,7 +30846,7 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
+              if (++noeuds > (noeudsMax || PUZZLE_SEARCH_MAX_NODES) || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
                   secondes: Math.round((Date.now() - depart) / 100) / 10,
@@ -30853,6 +30856,23 @@
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
+
+              /* L'objectif se teste ICI, au dépilement, et non à la génération
+                 des successeurs. Un successeur porte son coût TOTAL : en
+                 rendant la main dès qu'il atteignait le but, la recherche
+                 renvoyait le premier chemin gagnant rencontré, pas le moins
+                 cher — sur une énigme à grande main, une seule marche de treize
+                 cases trouvée depuis le seau 1 l'emportait sur une solution à
+                 cinq cartes jamais explorée. Les seaux étant parcourus par coût
+                 croissant, le premier chemin dépilé qui atteint le but est
+                 optimal. */
+              if (atteint()) {
+                return {
+                  id: def.id, cout, noeuds,
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  chemin: chemin.map(puzzleSearchLabel)
+                };
+              }
 
               /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
                  le restaure au lieu de reconstruire le plateau et de rejouer
@@ -30872,15 +30892,7 @@
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
                 vus.add(empreinte);
-                const nouveau = [...chemin, action];
-                if (atteint()) {
-                  return {
-                    id: def.id, cout: suivant, noeuds,
-                    secondes: Math.round((Date.now() - depart) / 100) / 10,
-                    chemin: nouveau.map(puzzleSearchLabel)
-                  };
-                }
-                pousser(suivant, nouveau);
+                pousser(suivant, [...chemin, action]);
               }
             }
           }
@@ -31043,7 +31055,8 @@
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        solve: (index, plafond, secondesMax, noeudsMax) =>
+          puzzleSolve(index, plafond, secondesMax, noeudsMax),
         /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
            et ce qu'un Gardien atteint à pied. */
         audit: puzzleAudit,
@@ -31091,9 +31104,11 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Seize énigmes, de la leçon de poussée à l'enchaînement sans marge. Le
-         moteur vit dans js/game/puzzle.js ; ce fragment ne contient que des
-         données.
+         Vingt-deux énigmes, de la leçon de poussée à l'archipel des neuf
+         mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
+         contient que des données, et leur ORDRE est celui de la campagne :
+         « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
+         l'ordre des identifiants, qui ne dit plus que l'ancienneté.
 
          Chaque définition porte sa SOLUTION DE RÉFÉRENCE. Ce n'est pas de la
          documentation décorative : `ILYOS_PUZZLE.verify(i)` la rejoue sur un
@@ -31374,6 +31389,53 @@
           ]
         },
         /* -----------------------------------------------------------------
+           18 — LES ACTIONS GRATUITES. Déposer, ramasser, transmettre ne coûtent
+           rien : ce sont les trois gestes que la collection n'avait jamais
+           obligé personne à voir, et dont l'oubli a faussé six barèmes. Ici le
+           gouffre interdit de porter la couronne, et un Gardien ne peut pas
+           voler : il faut la POSER, la POUSSER par-dessus le vide — une
+           couronne ne tombe jamais, elle atterrit sur la dernière terre à
+           portée — puis la faire RAMASSER par qui attend de l'autre côté. Le
+           Veilleur assis sur le Sanctuaire bloque la validation tant qu'il y
+           reste ; le déloger coûte la dernière carte de poussée. */
+        {
+          id: "p18-relais-des-mains",
+          acte: "II",
+          principe: "TRACE",
+          title: "Le relais des mains",
+          tagline: "Le gouffre ne se marche pas. La couronne, elle, se lance.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 0],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]],
+            [[2, 0]], [[3, 0]], [[5, 0]], [[6, 0]], [[7, 0]], [[8, 0]], [[6, 1]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
+            { key: "A", p: 0, r: 6, c: 1 },
+            { key: "B", p: 0, r: 0, c: 0 },
+            { p: 1, r: 0, c: 1 }
+          ],
+          hand: { MOVE: 3, PUSH: 5 },
+          par: 6,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Les mains se sont passé la lumière",
+          winLine: "Poser, lancer, ramasser : trois gestes qui ne coûtent rien, et une seule poussée qui compte.",
+          failLine: "La couronne est restée du mauvais côté du vide.",
+          solution: [
+            { a: "DROP", who: "G", on: [7, 0] },
+            { a: "MOVE", who: "A", to: [6, 0] },
+            { a: "PICKUP", who: "A", on: [7, 0] },
+            { a: "DROP", who: "A", on: [5, 0] },
+            { a: "PUSH", who: "A", on: [5, 0], force: 4 },
+            { a: "PUSH", who: "B", on: [0, 1], force: 1 },
+            { a: "PICKUP", who: "B", on: [1, 0] }
+          ]
+        },
+        /* -----------------------------------------------------------------
            09 — Deux couronnes, deux transports différents. L'une survole le
            gouffre ; l'autre ne bouge pas d'un pouce et se laisse EMPORTER par
            l'île qui pivote sous elle — une rotation déplace les couronnes au
@@ -31451,6 +31513,48 @@
           solution: [
             { a: "PUSH", who: "G1", on: [4, 5], force: 2 },
             { a: "MAGIC", island: "A", pivot: [4, 4], turns: 1, direction: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           19 — LA DIAGONALE. Elle existe, elle franchit un coin, et elle coûte
+           DEUX. C'est-à-dire exactement ce que coûtent les deux pas droits
+           qu'elle remplace : une diagonale n'est jamais un raccourci, c'est un
+           PASSAGE — elle ne sert que là où les deux cases droites sont du vide.
+           Le couloir grand ouvert vers l'ouest ne mène nulle part ; l'escalier
+           qui monte en biais est la seule route, et il n'y a pas de quoi le
+           gravir en entier. Reste la barre, qui ne se couche pas là où on
+           l'attend : pivotée par son autre bout, elle emmène son passager
+           jusqu'au pied de l'escalier. */
+        {
+          id: "p19-la-corde-oblique",
+          acte: "II",
+          principe: "TRACE",
+          title: "La corde oblique",
+          tagline: "Un couloir large qui ne mène nulle part, un escalier de biais qu'on ne peut pas gravir.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            { key: "B", cells: [[6, 3], [6, 4], [6, 5]] },
+            [[6, 2]], [[6, 1]], [[6, 0]], [[5, 0]],
+            [[3, 2]], [[2, 1]], [[2, 0]], [[1, 0]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 6, c: 5, crown: 1 }
+          ],
+          hand: { MOVE: 6, MAGIC: 1, PUSH: 3 },
+          par: 7,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La corde s'est tendue",
+          winLine: "Deux cases par pas de biais : l'escalier ne pardonne pas un détour.",
+          failLine: "L'escalier est encore au-dessus de toi.",
+          solution: [
+            { a: "MAGIC", island: "B", pivot: [6, 3], turns: 1, direction: -1 },
+            { a: "MOVE", who: "G", to: [3, 2] },
+            { a: "MOVE", who: "G", to: [2, 1] },
+            { a: "MOVE", who: "G", to: [1, 0] }
           ]
         },
         /* -----------------------------------------------------------------
@@ -31766,6 +31870,65 @@
           ]
         },
         /* -----------------------------------------------------------------
+           21 — LA RELÈVE. Un Veilleur assis sur le Sanctuaire bloque la
+           validation ; le déloger ne suffit pas, car un second marche déjà
+           vers la place laissée vide. La seule parade est d'OCCUPER soi-même
+           la case qu'on vient de libérer — elle valide et elle interdit. Qui
+           dégage puis s'arrête sur l'autre case de validation constate au tour
+           suivant que la relève a eu lieu et que rien n'a compté. La fenêtre
+           dure un tour. */
+        {
+          id: "p21-la-releve",
+          acte: "III",
+          principe: "CADENCE",
+          verite: "On ne délivre pas une place. On la tient.",
+          title: "La relève",
+          tagline: "En déloger un ne sert à rien : un autre marche déjà vers la place.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [3, 0],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]],
+            [[1, 1]], [[2, 1]], [[3, 1]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 7, c: 0, crown: 1 },
+            { key: "R", p: 1, r: 0, c: 1 },
+            { key: "S", p: 1, r: 3, c: 1 }
+          ],
+          deck: [
+            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"]
+          ],
+          par: 9,
+          rivalPlan: [
+            "le second Veilleur monte vers le Sanctuaire.",
+            "il se rapproche encore de la place."
+          ],
+          replies: [
+            [{ a: "MOVE", who: "S", to: [2, 1] }],
+            [{ a: "MOVE", who: "S", to: [1, 1] }],
+            [{ a: "MOVE", who: "S", to: [0, 1] }]
+          ],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "La place est tenue",
+          winLine: "Libérer la case ne suffisait pas : il fallait s'y tenir.",
+          failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
+          solution: [
+            [
+              { a: "MOVE", who: "G", to: [2, 0] }
+            ],
+            [
+              { a: "MOVE", who: "G", to: [0, 0] },
+              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
+              { a: "MOVE", who: "G", to: [0, 1] }
+            ]
+          ]
+        },
+        /* -----------------------------------------------------------------
            15 — Le relais du vide.
 
            Trois Gardiens, deux terres, un gouffre entre elles. Aucun ne
@@ -31919,6 +32082,106 @@
               { a: "MAGIC", island: "TERRASSE", pivot: [1, 1], turns: 1, direction: 1 },
               { a: "MOVE", who: "G", to: [0, 1] }
             ]
+          ]
+        },
+        /* -----------------------------------------------------------------
+           20 — LA TRACE LA PLUS COURTE. Ici les cartes ne manquent pas : il y
+           en a plus qu'il n'en faut, et c'est tout le problème. Marcher coûte
+           une carte par case, pousser une carte par unité de force — même
+           tarif. Une seule chose dans ce jeu transporte plus vite que le pied :
+           une ÎLE. Pivotée par son extrémité, une barre de cinq se translate de
+           quatre cases pour UNE carte, et emmène qui se tient dessus. Le grand
+           tour par l'est fonctionne parfaitement et coûte dix-huit ; la bonne
+           route en coûte cinq, et se lit en regardant non pas où l'on va, mais
+           quelle barre va où. */
+        {
+          id: "p20-la-plus-courte-trace",
+          acte: "III",
+          principe: "TRACE",
+          title: "La plus courte trace",
+          tagline: "Les cartes ne manqueront pas. C'est la route qu'il faut trouver.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 5],
+          zoom: -1,
+          villages: { 0: [[0, 0]] },
+          islands: [
+            { key: "A", cells: [[6, 8], [7, 8], [8, 8], [9, 8], [10, 8]] },
+            { key: "B", cells: [[3, 3], [4, 3], [5, 3], [6, 3]] },
+            [[2, 0]], [[1, 0]],
+            [[5, 8]], [[4, 8]], [[3, 8]], [[2, 8]], [[1, 8]],
+            [[1, 7]], [[1, 6]], [[1, 5]], [[1, 4]], [[1, 3]], [[1, 2]], [[1, 1]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 10, c: 8, crown: 1 }
+          ],
+          hand: { MOVE: 16, MAGIC: 3, PUSH: 4 },
+          par: 5,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La trace la plus courte",
+          winLine: "Une barre de cinq franchit quatre cases pour une carte. Aucun pied ne fait mieux.",
+          failLine: "Le grand tour t'a coûté plus que tu n'avais.",
+          solution: [
+            { a: "MAGIC", island: "A", pivot: [6, 8], turns: 1, direction: 1 },
+            { a: "MOVE", who: "G", to: [6, 3] },
+            { a: "MAGIC", island: "B", pivot: [3, 3], turns: 1, direction: 1 },
+            { a: "MOVE", who: "G", to: [1, 0] }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           22 — LES QUATRE MAINS. Le quatrième Gardien entre ici, et l'énigme
+           ne tient que parce qu'ils sont quatre : quatre extrémités à occuper
+           EN MÊME TEMPS, et un seul carrefour d'une case par où tout le monde
+           passe. Un Veilleur y est assis. Le pousser assez fort le fait tomber
+           au-delà de la dernière terre ; pas assez fort, il s'assied sur une
+           des quatre pointes et l'énigme devient impossible. Et la poussée
+           emporte le BLOC : trois bras sur quatre portent un Gardien collé au
+           carrefour, qui partirait dans le vide avec le Veilleur. Une seule
+           direction convient, et elle désigne d'elle-même qui doit pousser.
+
+           Reste l'ordre, et il est cruel : les deux Gardiens du bras sud se
+           font face, chacun devant traverser l'autre. Celui de devant doit
+           donc quitter le sud pour de bon — se ranger sur un bras que les
+           autres viennent de libérer — laisser passer, puis revenir. Ce
+           détour coûte quatre cases et c'est le prix de l'énigme. */
+        {
+          id: "p22-les-quatre-mains",
+          acte: "III",
+          principe: "MESURE",
+          avant: "Ils étaient trois.",
+          verite: "Le carrefour en demandait quatre.",
+          title: "Les quatre mains",
+          tagline: "Quatre pointes, un seul carrefour, et quelqu'un d'assis dessus.",
+          brief: "Place un Gardien sur chacune des quatre cases marquées, en même temps.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: {},
+          islands: [
+            [[3, 6]], [[4, 6]], [[5, 6]], [[6, 6]], [[7, 6]], [[8, 6]], [[9, 6]],
+            [[6, 3]], [[6, 4]], [[6, 5]], [[6, 7]], [[6, 8]], [[6, 9]]
+          ],
+          guardians: [
+            { key: "A", p: 0, r: 5, c: 6 },
+            { key: "B", p: 0, r: 6, c: 7 },
+            { key: "C", p: 0, r: 7, c: 6 },
+            { key: "D", p: 0, r: 8, c: 6 },
+            { key: "R", p: 1, r: 6, c: 6 }
+          ],
+          hand: { MOVE: 16, PUSH: 5 },
+          par: 19,
+          goal: { type: "occupyCells", player: 0, cells: [[3, 6], [9, 6], [6, 3], [6, 9]] },
+          winTitle: "Les quatre mains sont posées",
+          winLine: "Quatre Gardiens, quatre pointes, et un carrefour qu'il fallait vider pour de bon.",
+          failLine: "Une pointe est restée vide.",
+          solution: [
+            { a: "PUSH", who: "B", on: [6, 6], force: 4 },
+            { a: "MOVE", who: "B", to: [6, 9] },
+            { a: "MOVE", who: "A", to: [3, 6] },
+            { a: "MOVE", who: "C", to: [5, 6] },
+            { a: "MOVE", who: "D", to: [6, 3] },
+            { a: "MOVE", who: "C", to: [9, 6] }
           ]
         },
         /* =================================================================

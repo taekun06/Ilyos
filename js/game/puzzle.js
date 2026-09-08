@@ -1959,7 +1959,10 @@
 
       /* Recherche par coût croissant (files par coût : les coûts sont de petits
          entiers, une file à seaux suffit et évite tout tri). */
-      function puzzleSolve(index, plafond = null, secondesMax = 60) {
+      /* `noeudsMax` : certaines énigmes ne se tranchent pas sous le plafond de
+         nœuds par défaut, et un barème non prouvé est un barème que le joueur
+         finira par battre. */
+      function puzzleSolve(index, plafond = null, secondesMax = 60, noeudsMax = null) {
         const def = PUZZLES[index];
         if (!def) return { id: null, error: "énigme inexistante" };
 
@@ -2008,7 +2011,7 @@
             if (!file) continue;
             while (file.length) {
               const chemin = file.shift();
-              if (++noeuds > PUZZLE_SEARCH_MAX_NODES || Date.now() > finAu) {
+              if (++noeuds > (noeudsMax || PUZZLE_SEARCH_MAX_NODES) || Date.now() > finAu) {
                 return {
                   id: def.id, epuise: true, noeuds, coutMax,
                   secondes: Math.round((Date.now() - depart) / 100) / 10,
@@ -2018,6 +2021,23 @@
                 };
               }
               if (!puzzleSearchReplay(def, chemin)) continue;
+
+              /* L'objectif se teste ICI, au dépilement, et non à la génération
+                 des successeurs. Un successeur porte son coût TOTAL : en
+                 rendant la main dès qu'il atteignait le but, la recherche
+                 renvoyait le premier chemin gagnant rencontré, pas le moins
+                 cher — sur une énigme à grande main, une seule marche de treize
+                 cases trouvée depuis le seau 1 l'emportait sur une solution à
+                 cinq cartes jamais explorée. Les seaux étant parcourus par coût
+                 croissant, le premier chemin dépilé qui atteint le but est
+                 optimal. */
+              if (atteint()) {
+                return {
+                  id: def.id, cout, noeuds,
+                  secondes: Math.round((Date.now() - depart) / 100) / 10,
+                  chemin: chemin.map(puzzleSearchLabel)
+                };
+              }
 
               /* Un INSTANTANÉ du nœud, pris une seule fois. Chaque successeur
                  le restaure au lieu de reconstruire le plateau et de rejouer
@@ -2037,15 +2057,7 @@
                 const empreinte = strategicStateFingerprint();
                 if (vus.has(empreinte)) continue;
                 vus.add(empreinte);
-                const nouveau = [...chemin, action];
-                if (atteint()) {
-                  return {
-                    id: def.id, cout: suivant, noeuds,
-                    secondes: Math.round((Date.now() - depart) / 100) / 10,
-                    chemin: nouveau.map(puzzleSearchLabel)
-                  };
-                }
-                pousser(suivant, nouveau);
+                pousser(suivant, [...chemin, action]);
               }
             }
           }
@@ -2208,7 +2220,8 @@
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
            `par` sur preuve plutôt que sur la solution qu'on avait en tête. */
-        solve: (index, plafond, secondesMax) => puzzleSolve(index, plafond, secondesMax),
+        solve: (index, plafond, secondesMax, noeudsMax) =>
+          puzzleSolve(index, plafond, secondesMax, noeudsMax),
         /* Topologie d'une énigme : rotations légales, ce qu'elles transportent,
            et ce qu'un Gardien atteint à pied. */
         audit: puzzleAudit,

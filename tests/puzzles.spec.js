@@ -28,11 +28,11 @@ async function ouvrirJeu(page) {
   return erreurs;
 }
 
-test('les dix-sept Sanctuaires se résolvent exactement par leur solution de référence', async ({ page }) => {
+test('les vingt-deux Sanctuaires se résolvent exactement par leur solution de référence', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
   const liste = await page.evaluate(() => window.ILYOS_PUZZLE.list());
-  expect(liste.length).toBe(17);
+  expect(liste.length).toBe(22);
 
   const resultats = await page.evaluate(() => window.ILYOS_PUZZLE.verifyAll());
 
@@ -60,9 +60,9 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   await page.waitForSelector('#puzzleMenu', { timeout: 10000 });
 
   /* Déblocage linéaire : seule la première carte est cliquable au premier
-     lancement, les dix autres restent verrouillées. */
+     lancement, les vingt et une autres restent verrouillées. */
   const cartes = page.locator('#puzzleMenu .pz-card');
-  await expect(cartes).toHaveCount(17);
+  await expect(cartes).toHaveCount(22);
   await expect(cartes.nth(0)).toBeEnabled();
   await expect(cartes.nth(1)).toBeDisabled();
 
