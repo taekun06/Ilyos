@@ -430,6 +430,10 @@
         const style = document.createElement("style");
         style.id = "ilyos-puzzle-style";
         style.textContent = `
+          /* Pendant une séquence, le calque CAPTE les clics : c'est ce qui
+             permet de la passer, et cela évite au passage qu'un clic destiné
+             à l'interrompre sélectionne un Gardien sur le plateau. */
+          #puzzleLayer.reveil{pointer-events:auto;}
           #puzzleLayer{position:fixed;inset:0;z-index:1500001;pointer-events:none;
             font-family:'Nunito Sans','Inter',system-ui,sans-serif;color:#eaf1ff;}
           #puzzleLayer .pz-brief{position:absolute;top:74px;left:50%;
@@ -503,9 +507,39 @@
             text-shadow:0 2px 18px rgba(0,0,0,.75),0 0 34px rgba(255,206,120,.35);}
           #puzzleLayer .pz-caption.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
+          /* LA RÉPONSE AU LOIN. Un autre Sanctuaire s'allume par-delà l'archipel
+             — le joueur n'apprend jamais lequel. Posé haut et sur le côté, à
+             hauteur d'horizon : sur le plateau, ce serait un effet de plus ;
+             au loin, c'est quelqu'un. */
+          #puzzleLayer .pz-lointain{position:absolute;left:76%;top:34%;z-index:6;
+            width:190px;height:190px;margin:-95px 0 0 -95px;pointer-events:none;opacity:0;
+            background:radial-gradient(circle at 50% 50%,
+              rgba(255,246,214,.92) 0%,rgba(255,222,150,.55) 14%,
+              rgba(255,206,120,.20) 34%,rgba(255,200,110,0) 66%);}
+          #puzzleLayer .pz-lointain.on{animation:pz-loin-k 3s ease-in-out;}
+          @keyframes pz-loin-k{0%{opacity:0;transform:scale(.55)}
+            34%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.12)}}
+
           #puzzleLayer .pz-fade{position:absolute;inset:0;z-index:11;pointer-events:none;
-            background:#04060d;opacity:0;transition:opacity 1.1s ease;}
+            background:#04060d;opacity:0;transition:opacity .7s ease;}
           #puzzleLayer .pz-fade.on{opacity:1;}
+
+          /* Le nom du lieu où l'on vient d'arriver, sur le noir, puis tenu
+             pendant que l'archipel se découvre dessous. */
+          /* Le nom se tient d'abord sur le noir, puis sur le ciel quand le rideau
+             se lève : il lui faut son propre voile, comme à la vérité. */
+          #puzzleLayer .pz-lieu{position:absolute;left:50%;top:44%;z-index:13;
+            transform:translate(-50%,-50%);width:min(860px,94vw);padding:40px 40px 46px;
+            text-align:center;opacity:0;pointer-events:none;transition:opacity .9s ease;
+            background:radial-gradient(ellipse at center,
+              rgba(4,6,14,.66),rgba(4,6,14,.34) 54%,rgba(4,6,14,0) 78%);}
+          #puzzleLayer .pz-lieu.show{opacity:1;}
+          #puzzleLayer .pz-lieu .acte{display:block;font-size:11.5px;letter-spacing:.24em;
+            text-transform:uppercase;color:#c3d2ee;margin-bottom:14px;
+            text-shadow:0 1px 12px rgba(0,0,0,.9);}
+          #puzzleLayer .pz-lieu .nom{display:block;font-family:'Cinzel Decorative','Almendra',serif;
+            font-size:clamp(24px,4.2vw,40px);letter-spacing:.08em;color:#ffe3ab;
+            text-shadow:0 2px 26px rgba(0,0,0,.8),0 0 46px rgba(255,206,120,.3);}
 
           /* Pendant le réveil, le chrome de jeu s'efface : on regarde le ciel,
              on ne joue plus. */
@@ -973,8 +1007,10 @@
           <div class="pz-budget"></div>
           <div class="pz-plan" hidden></div>
           <div class="pz-bloom"></div>
+          <div class="pz-lointain"></div>
           <div class="pz-caption"></div>
           <div class="pz-fade"></div>
+          <div class="pz-lieu"></div>
           <div class="pz-tools">
             <button type="button" data-pz="restart">↺ Recommencer</button>
             <button type="button" data-pz="menu">← Les Voies</button>
@@ -989,8 +1025,10 @@
           budget: layer.querySelector(".pz-budget"),
           plan: layer.querySelector(".pz-plan"),
           bloom: layer.querySelector(".pz-bloom"),
+          lointain: layer.querySelector(".pz-lointain"),
           caption: layer.querySelector(".pz-caption"),
-          fade: layer.querySelector(".pz-fade")
+          fade: layer.querySelector(".pz-fade"),
+          lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
       }
@@ -1058,25 +1096,71 @@
          Les variantes annoncées (Voie qui se divise, rayon interrompu, réponse
          au loin) attendent qu'il y ait une carte des Voies : les écrire
          maintenant serait décorer un réseau qui n'existe pas encore. */
-      async function puzzleReveil(def) {
+      /* L'échafaudage commun aux deux séquences — l'approche et le réveil.
+         Toutes deux effacent le même chrome, se passent du même geste et
+         doivent se démonter même si un appel de caméra jette. Le corps reçoit
+         `attendre`, qui rend la main dès que le joueur veut passer. */
+      async function puzzleSequence(corps) {
         const dom = PUZZLE.dom;
-        if (!dom) return;
-        PUZZLE.reveilEnCours = true;
+        if (!dom || PUZZLE.sequenceEnCours) return;
+        PUZZLE.sequenceEnCours = true;
+        PUZZLE.sequenceSaute = false;
 
-        const passer = () => { PUZZLE.reveilSaute = true; };
-        PUZZLE.reveilSaute = false;
-        dom.layer.addEventListener("click", passer, { once: true });
-        window.addEventListener("keydown", passer, { once: true });
+        /* Le geste qui DÉCLENCHE une séquence ne doit pas l'interrompre : le
+           clic sur « Sanctuaire suivant » est encore en train de remonter le
+           DOM quand ce code s'exécute, et un écouteur posé sur le calque le
+           recevrait aussitôt — le voyage se jouait en entier en moins d'une
+           seconde. On n'arme donc la sortie qu'une fois ce clic passé. */
+        const passer = () => { PUZZLE.sequenceSaute = true; };
+        const armement = setTimeout(() => {
+          dom.layer.addEventListener("click", passer, { once: true });
+          window.addEventListener("keydown", passer, { once: true });
+        }, 260);
         const attendre = async ms => {
           const fin = Date.now() + ms;
-          while (Date.now() < fin && !PUZZLE.reveilSaute) await tutoWait(60);
+          while (Date.now() < fin && !PUZZLE.sequenceSaute) await tutoWait(60);
         };
 
         try {
           dom.layer.classList.add("reveil");
           els.gameScreen && els.gameScreen.classList.add("puzzle-reveil");
           document.body.classList.add("puzzle-reveil");
+          await corps(dom, attendre);
+        } finally {
+          clearTimeout(armement);
+          dom.layer.removeEventListener("click", passer);
+          window.removeEventListener("keydown", passer);
+          dom.caption.classList.remove("show");
+          dom.bloom.classList.remove("on");
+          dom.lointain.classList.remove("on");
+          dom.lieu.classList.remove("show");
+          dom.fade.classList.remove("on");
+          dom.layer.classList.remove("reveil");
+          els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
+          document.body.classList.remove("puzzle-reveil");
+          PUZZLE.sequenceEnCours = false;
+        }
+      }
 
+      /* L'APPROCHE. Le pendant du réveil, à l'autre bout de l'énigme : une
+         phrase avant que le joueur ne prenne la main. Trois Sanctuaires
+         seulement en portent une — celui où quelqu'un attend déjà, celui qui
+         n'a rien à rallumer, et la Confluence. Les quatorze autres commencent
+         en silence, et c'est ce silence qui donne son poids à la phrase. */
+      function puzzleApproche(def) {
+        if (!def.avant) return;
+        return puzzleSequence(async (dom, attendre) => {
+          await attendre(500);
+          dom.caption.innerHTML = def.avant;
+          dom.caption.classList.add("show");
+          await attendre(2600);
+          dom.caption.classList.remove("show");
+          await attendre(600);
+        });
+      }
+
+      function puzzleReveil(def) {
+        return puzzleSequence(async (dom, attendre) => {
           const [r, c] = puzzleSanctuaireCell(def);
           dom.bloom.classList.add("on");
           try { playSfx("crown"); } catch (_) { }
@@ -1096,6 +1180,11 @@
             }
           } catch (_) { }
 
+          /* Un autre Sanctuaire répond, par-delà l'archipel. Le joueur ne saura
+             jamais lequel : c'est la seule chose qui lui dit qu'il n'est pas
+             seul à rallumer des Voies. */
+          dom.lointain.classList.add("on");
+
           if (def.verite) {
             dom.caption.innerHTML = `« ${def.verite} »`;
             dom.caption.classList.add("show");
@@ -1105,16 +1194,47 @@
           } else {
             await attendre(1500);
           }
-        } finally {
-          dom.layer.removeEventListener("click", passer);
-          window.removeEventListener("keydown", passer);
-          dom.caption.classList.remove("show");
-          dom.bloom.classList.remove("on");
-          dom.layer.classList.remove("reveil");
-          els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
-          document.body.classList.remove("puzzle-reveil");
-          PUZZLE.reveilEnCours = false;
-        }
+          dom.lointain.classList.remove("on");
+        });
+      }
+
+      /* LE VOYAGE. Ce qui remplace un retour au menu entre deux Sanctuaires :
+         on part dans le noir, l'archipel suivant se découvre dessous pendant
+         que son nom se tient à l'écran, puis la main revient.
+
+         Le fondu au noir n'est pas qu'une élégance : puzzleFrame ré-impose son
+         cadrage à 350, 700, 1100, 1600 et 2400 ms pour gagner sa course contre
+         camera-start-face-auto-v1.js. Toute la mise en place se fait donc
+         derrière le noir, et l'on ne relève le rideau qu'une fois l'archipel
+         posé — sinon le joueur verrait la caméra se battre avec elle-même. */
+      async function puzzleVoyage(index) {
+        const def = PUZZLES[index];
+        if (!def || !PUZZLE.dom) { puzzleStart(index); return; }
+
+        await puzzleSequence(async (dom, attendre) => {
+          dom.layer.querySelectorAll(".pz-end").forEach(node => node.remove());
+          dom.fade.classList.add("on");
+          await attendre(760);
+
+          puzzleStart(index, { muet: true });
+
+          dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
+            + `<span class="nom">${def.title}</span>`;
+          dom.lieu.classList.add("show");
+          await attendre(1400);
+
+          // On relève le rideau sous le nom : l'archipel se découvre pendant
+          // que la caméra achève de se poser.
+          dom.fade.classList.remove("on");
+          await attendre(1500);
+          dom.lieu.classList.remove("show");
+          await attendre(900);
+        });
+
+        // La phrase d'entrée, si ce Sanctuaire en porte une, vient seulement
+        // après le nom du lieu : deux textes à la fois n'en font lire aucun.
+        // Hors de la séquence précédente, qui n'en autorise qu'une à la fois.
+        puzzleApproche(def);
       }
 
       /* UNE seule ligne au réveil, jamais deux (charte narrative). Quand le
@@ -1170,7 +1290,7 @@
         panneau.querySelector('[data-pz="again"]').addEventListener("click", () => puzzleRestart());
         panneau.querySelector('[data-pz="back"]').addEventListener("click", () => puzzleBackToMenu());
         const boutonSuivant = panneau.querySelector('[data-pz="next"]');
-        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleStart(PUZZLE.index + 1));
+        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleVoyage(PUZZLE.index + 1));
       }
 
       /* ---------- Boucle d'observation ------------------------------------
@@ -1285,7 +1405,10 @@
          fin). Les deux étaient confondus : lancer une énigme par
          ILYOS_PUZZLE.start() la comptait comme reprise et lui retirait ses
          étoiles avant même le premier coup. */
-      function puzzleStart(index, { replay = false, force = false } = {}) {
+      /* `muet` coupe l'approche : l'oracle et le chercheur relancent des énigmes
+         en boucle, et une phrase d'entrée qui capte les clics pendant trois
+         secondes n'a aucun sens là. */
+      function puzzleStart(index, { replay = false, force = false, muet = false } = {}) {
         const def = PUZZLES[index];
         if (!def) return;
         if (!force && !puzzleUnlocked(index)) return;
@@ -1309,6 +1432,12 @@
         try { if (typeof aiRunToken !== "undefined") aiRunToken++; } catch (_) { }
         try { if (PUZZLE.prevRenderMode === null) PUZZLE.prevRenderMode = boardRenderMode; } catch (_) { }
         try { boardRenderMode = "3d"; } catch (_) { }
+
+        /* Deux énigmes de MÊME taille n'appellent pas setBoardSize, donc rien
+           ne vide le cache des châteaux : le village de l'énigme précédente
+           restait accroché à la scène, flottant dans le vide au-dessus du
+           nouvel archipel. Se voyait en enchaînant « Sanctuaire suivant ». */
+        try { clearKayKitVillages(); } catch (_) { }
 
         puzzleBuildState(def);
 
@@ -1335,6 +1464,11 @@
 
         clearInterval(PUZZLE.pollTimer);
         PUZZLE.pollTimer = setInterval(puzzleTick, 300);
+
+        /* La phrase d'entrée à la PREMIÈRE venue seulement : la relire à chaque
+           « Recommencer » deviendrait une taxe sur l'essai-erreur, qui est le
+           mode de jeu normal d'une énigme. */
+        if (!muet && !replay && !reprise) puzzleApproche(def);
       }
 
       function puzzleRestart() {
@@ -1596,7 +1730,7 @@
       async function puzzleVerifyLive(index, { keep = false } = {}) {
         const def = PUZZLES[index];
         const tours = def.solution || [];
-        puzzleStart(index, { force: true });
+        puzzleStart(index, { force: true, muet: true });
         await tutoWait(350);
 
         const journal = [];
@@ -2052,11 +2186,15 @@
 
       window.ILYOS_PUZZLE = {
         open: puzzleOpenMenu,
-        start: index => puzzleStart(index, { force: true }),
+        /* Les points d'entrée de test démarrent MUETS : un test pilote des
+           clics, et l'approche les avalerait. Passer { muet: false } pour
+           observer la séquence elle-même. */
+        start: (index, options) => puzzleStart(index, { force: true, muet: true, ...options }),
         /* Adressage par IDENTIFIANT : l'ordre de la campagne n'est plus celui
            des identifiants, et un test qui vise un index vise le mauvais
            Sanctuaire dès qu'on réordonne. */
-        startById: id => puzzleStart(PUZZLES.findIndex(def => def.id === id), { force: true }),
+        startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
+          { force: true, muet: true, ...options }),
         restart: puzzleRestart,
         exit: puzzleQuitToHome,
         list: () => PUZZLES.map((def, index) => ({

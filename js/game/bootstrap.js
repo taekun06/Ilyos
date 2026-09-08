@@ -154,7 +154,7 @@
              une partie lancée après une autre d'une autre taille avait le même
              défaut. */
           if (grillePrecedente !== GRID) {
-            try { kaykit3D.villageRegistry?.clear(); } catch (_) {}
+            try { clearKayKitVillages(); } catch (_) {}
             try { kaykit3D.pedestalRegistry?.clear(); } catch (_) {}
           }
           kaykit3D.gridSize = GRID;
