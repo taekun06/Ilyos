@@ -967,23 +967,20 @@
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
             { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            /* LE VERROU, en colonne 0. Deux cases qui font trois choses à la
-               fois, et c'est pour ça qu'elles sont là plutôt qu'ailleurs :
+            /* LE VERROU, accroché sous la terrasse. Il INTERDIT à celle-ci de
+               se coucher en échelle dans la colonne 0 : sa rotation par [1,0]
+               visait exactement [1,0] à [5,0], et cette échelle ouvrait une
+               route droite jusqu'au village.
 
-               - elles INTERDISENT à la terrasse de se coucher en échelle dans
-                 la colonne 0 — sa rotation par [1,0] visait exactement
-                 [1,0],[2,0],[3,0],[4,0],[5,0], et cette échelle ouvrait une
-                 route droite jusqu'au village ;
-               - elles ressemblent à un MARCHEPIED providentiel au pied du
-                 Sanctuaire, alors qu'aucune de leurs voisines n'est de la
-                 terre : on y va, et on ne va nulle part ;
-               - étant deux, elles PIVOTENT — vers [3,0],[3,1] — ce qui donne
-                 encore de quoi essayer avant de comprendre que ça ne mène pas
-                 plus loin.
-
-               La bonne fausse piste est celle qu'on essaie longtemps avant d'y
-               renoncer. */
-            { key: "VERROU", cells: [[3, 0], [4, 0]] }
+               Sa POSITION a été corrigée. Posé un cran plus bas, en
+               [3,0]-[4,0], il touchait la case où la passerelle couchée dépose
+               son passager : le Gardien y montait, le faisait pivoter, et
+               gagnait une rangée gratuite. L'énigme tombait à six et la pièce
+               posée pour interdire une route devenait la clé d'une meilleure.
+               Remonté en [2,0]-[3,0], il reste hors d'atteinte de ce dépôt —
+               le vide de [4,0] l'en sépare — et redevient ce pour quoi il est
+               là. */
+            { key: "VERROU", cells: [[2, 0], [3, 0]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -994,16 +991,15 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum 6, PROUVÉ par recherche exhaustive (657 436 nœuds sous
-             plafond 6), puis rejoué en direct sur les trois tours réels : le
-             coût annoncé n'est plus une intention mais un fait.
+          /* Optimum 7, prouvé une première fois par recherche exhaustive
+             (788 224 nœuds) puis rejoué en direct sur les trois tours réels.
 
-             Il valait 7 avant que le verrou ne s'installe en colonne 0. Cette
-             île de deux cases ne fait pas qu'interdire l'échelle de la
-             terrasse : elle PIVOTE, et son pivot ouvre le dernier pas vers le
-             Sanctuaire. Une pièce posée pour bloquer s'est révélée être la
-             clé — on la garde, parce que le joueur qui la trouve a compris
-             quelque chose.
+             Il est passé à 6 le temps que le verrou séjourne en [3,0]-[4,0],
+             où le Gardien pouvait y monter depuis le dépôt de la passerelle et
+             s'en servir de monture. Le verrou remonté en [2,0]-[3,0], cette
+             ligne n'existe plus : re-prouvé à 7 sous plafond 7 en 959 405
+             nœuds, et le chercheur retrouve la solution de référence à la
+             carte près.
 
              Il valait 8 au départ, et c'était faux. Le chercheur testait
              l'objectif à la GÉNÉRATION des successeurs et rendait la main au
@@ -1041,19 +1037,20 @@
              RÉSERVE : le bras n'est touché par aucune de ces trois rotations.
              Il reste du décor, et une pièce inutile est un défaut — le même que
              le troisième Gardien du Relais avant sa refonte. */
-          par: 6,
+          par: 7,
           solution: [
             [
-              { a: "MOVE", who: "G", to: [7, 2] },
+              { a: "MOVE", who: "G", to: [7, 2] }
+            ],
+            [
+            ],
+            [
               { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 1, direction: 1 },
-              { a: "MOVE", who: "G", to: [4, 0] }
-            ],
-            [
-              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 2], turns: 2 }
-            ],
-            [
-              { a: "MAGIC", island: "VERROU", pivot: [3, 0], turns: 2 },
-              { a: "MOVE", who: "G", to: [1, 0] }
+              { a: "MAGIC", island: "PASSERELLE", pivot: [5, 1], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "PASSERELLE", pivot: [4, 1], turns: 2, direction: 1 },
+              { a: "DROP", who: "G", on: [1, 1] },
+              { a: "PUSH", who: "G", on: [1, 1], force: 1 },
+              { a: "MOVE", who: "G", to: [0, 1] }
             ]
           ]
         },
