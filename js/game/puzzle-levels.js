@@ -767,49 +767,63 @@
         {
           id: "p16-charniere",
           title: "La charnière des cieux",
-          tagline: "Quand la route n'existe plus, c'est le monde qu'il faut tourner.",
+          tagline: "Trois rotations. Aucune ne fait la même chose.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 11,
           sanctuary: false,
+          /* Cadrage imposé : le terrain pèse vers le haut (deux rangées
+             pleines), et le centre de gravité calculé laissait le Gardien de
+             départ sous la barre d'action. */
+          focus: [5, 2],
           villages: { 0: [[0, 0]] },
           islands: [
             [[8, 2]],
             { key: "PASSERELLE", cells: [[5, 2], [6, 2], [7, 2]] },
-            { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
-            /* La terrasse s'arrête à (1,4) : (1,5) et (2,5) doivent rester
-               VIDES, sinon la rotation du bras chevaucherait un autre terrain
-               et calculateIslandRotationAroundPivot la refuserait. */
-            [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]],
-            [[0, 1], [0, 2]]
+            /* Un T, plus une barre. Une barre alignée est un véhicule
+               universel — 180° autour d'une extrémité la translate de toute sa
+               longueur et emporte ses passagers. Un T, lui, ne se translate
+               pas : pivoté par son centre il ne bouge presque pas, et par une
+               pointe il part de travers. La géométrie fait le travail, sans
+               qu'aucun pivot soit interdit. */
+            { key: "BRAS", cells: [[2, 4], [3, 3], [3, 4], [4, 4]] },
+            { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
+            { key: "PERCHOIR", cells: [[0, 1], [0, 2], [0, 3], [0, 4]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
             { key: "R", p: 1, r: 0, c: 1 }
           ],
           deck: [
-            ["MOVE", "MAGIC", "MOVE", "MOVE", "MOVE"],
-            ["MAGIC", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
-            ["MOVE", "PUSH"]
+            ["MOVE", "MAGIC", "MOVE"],
+            ["MAGIC", "MOVE", "MOVE"],
+            ["MAGIC", "MOVE", "PUSH"]
           ],
-          par: 15,
+          /* Optimum PROUVÉ : 8. Ce sont les DÉPLACER rares qui font tenir
+             l'énigme — pas un interdit. Avec une main généreuse, le chercheur
+             couchait le T en échelle et parcourait tout à pied en neuf pas,
+             sans jamais monter sur rien : les deux usages de la Magie étaient
+             contournés d'un coup. Six DÉPLACER rendent la marche impossible, et
+             la seule route passe par les trois rotations. */
+          par: 8,
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La charnière a tourné",
-          winLine: "Tu n'as pas trouvé de route : tu as appris à déplacer le monde.",
+          winLine: "Trois rotations, trois usages : on t'a porté, la route est venue à toi, et le rival a tourné avec son île.",
           failLine: "Le chemin ne s'est pas ouvert.",
+          /* Trois emplois de la MÊME carte, tous différents :
+             - la passerelle TRANSPORTE le Gardien par-dessus le vide ;
+             - le T pivote alors qu'il n'est PAS dessus : ce n'est pas lui qui
+               se déplace, c'est la route qui vient le chercher ;
+             - le perchoir emporte le RIVAL hors des cases du village, là où
+               l'on aurait cru devoir le pousser. */
           solution: [
             [
               { a: "MOVE", who: "G", to: [7, 2] },
               { a: "MAGIC", island: "PASSERELLE", pivot: [5, 2], turns: 2 },
-              { a: "MOVE", who: "G", to: [3, 5] }
+              { a: "MAGIC", island: "BRAS", pivot: [3, 3], turns: 1, direction: -1 }
             ],
             [
-              { a: "MAGIC", island: "BRAS", pivot: [3, 5], turns: 1, direction: 1 },
-              { a: "MOVE", who: "G", to: [1, 3] }
-            ],
-            [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 }
+              { a: "MAGIC", island: "PERCHOIR", pivot: [0, 3], turns: 2 },
+              { a: "MOVE", who: "G", to: [1, 0] }
             ]
           ]
         }
