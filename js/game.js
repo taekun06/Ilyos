@@ -29297,6 +29297,56 @@
           #puzzleLayer .pz-end h2{font-family:'Cinzel Decorative','Almendra',serif;
             font-size:clamp(21px,3.6vw,32px);margin:0;letter-spacing:.04em;}
           #puzzleLayer .pz-end p{margin:0;max-width:460px;color:#c4d2ee;line-height:1.6;font-size:14px;}
+          /* Le réveil du Sanctuaire. Trois calques seulement : une lueur qui
+             monte du sol, une phrase posée sur le ciel, un fondu. Le reste du
+             mouvement vient de la CAMÉRA, qui recule — c'est elle qui donne
+             l'échelle, pas un effet. */
+          #puzzleLayer .pz-bloom{position:absolute;inset:0;z-index:5;pointer-events:none;
+            opacity:0;background:radial-gradient(circle at 50% 58%,
+              rgba(255,238,190,.95),rgba(255,206,120,.35) 42%,rgba(255,200,110,0) 70%);}
+          #puzzleLayer .pz-bloom.on{animation:pz-bloom-k 2.6s ease-out;}
+          @keyframes pz-bloom-k{0%{opacity:0}12%{opacity:1}100%{opacity:0}}
+
+          /* Le ciel d'ILYOS est CLAIR : un texte doré posé dessus sans voile
+             se perd dans les nuages. Le dégradé est porté par l'élément
+             lui-même — un ::before en z-index négatif ne peint pas de façon
+             fiable sous un parent en opacité animée. */
+          #puzzleLayer .pz-caption{position:absolute;left:50%;bottom:24%;
+            transform:translateX(-50%) translateY(10px);z-index:9;
+            width:min(760px,92vw);padding:26px 40px;text-align:center;opacity:0;
+            background:radial-gradient(ellipse at center,
+              rgba(4,6,14,.72),rgba(4,6,14,.42) 52%,rgba(4,6,14,0) 78%);
+            transition:opacity 1s ease, transform 1s ease;
+            font-family:'Cinzel Decorative','Almendra',serif;
+            font-size:clamp(16px,2.2vw,22px);line-height:1.65;color:#ffeec6;
+            text-shadow:0 2px 18px rgba(0,0,0,.75),0 0 34px rgba(255,206,120,.35);}
+          #puzzleLayer .pz-caption.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+          #puzzleLayer .pz-fade{position:absolute;inset:0;z-index:11;pointer-events:none;
+            background:#04060d;opacity:0;transition:opacity 1.1s ease;}
+          #puzzleLayer .pz-fade.on{opacity:1;}
+
+          /* Pendant le réveil, le chrome de jeu s'efface : on regarde le ciel,
+             on ne joue plus. */
+          #gameScreen.puzzle-reveil #hudV2Top,
+          #gameScreen.puzzle-reveil #hudV2Dock,
+          #gameScreen.puzzle-reveil #turnRibbon,
+          #gameScreen.puzzle-reveil #ilyosHudOrganicV2,
+          #gameScreen.puzzle-reveil #hudV2Toast,
+          #gameScreen.puzzle-reveil .hud-v2-vignette,
+          body.puzzle-reveil #toast,
+          /* Les couronnes se valident AU DÉBUT du tour suivant : la distribution
+             des cartes vole donc à l'écran au moment exact où le Sanctuaire
+             s'éveille. Ces cartes vivent sur <body>, hors de #gameScreen. */
+          body.puzzle-reveil > .card-cycle-v7-card,
+          body.puzzle-reveil > .card-cycle-v7-count{opacity:0 !important;
+            transition:opacity .8s ease;pointer-events:none;}
+          #puzzleLayer.reveil .pz-brief,
+          #puzzleLayer.reveil .pz-budget,
+          #puzzleLayer.reveil .pz-plan,
+          #puzzleLayer.reveil .pz-tools{opacity:0;transition:opacity .8s ease;
+            pointer-events:none;}
+
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
             font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
             line-height:1.6;color:#ffe3ab;letter-spacing:.02em;}
@@ -29305,6 +29355,9 @@
           #puzzleLayer .pz-stars{font-size:30px;letter-spacing:8px;
             filter:drop-shadow(0 0 10px rgba(255,205,110,.5));}
           #puzzleLayer .pz-end-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+          #puzzleLayer .pz-end-actions .primary{background:linear-gradient(180deg,#f0c273,#c98f36);
+            border-color:rgba(255,226,167,.55);color:#2a1b04;font-weight:800;
+            box-shadow:0 6px 20px rgba(201,143,54,.35);}
 
           /* Au-dessus de l'iframe du menu (z-index 2147483000, voir
              js/version-bootstrap.js) : l'écran de sélection s'ouvre alors que
@@ -29738,9 +29791,12 @@
           </div>
           <div class="pz-budget"></div>
           <div class="pz-plan" hidden></div>
+          <div class="pz-bloom"></div>
+          <div class="pz-caption"></div>
+          <div class="pz-fade"></div>
           <div class="pz-tools">
             <button type="button" data-pz="restart">↺ Recommencer</button>
-            <button type="button" data-pz="menu">← Puzzles</button>
+            <button type="button" data-pz="menu">← Les Voies</button>
           </div>`;
         document.body.appendChild(layer);
         layer.querySelector('[data-pz="restart"]').addEventListener("click", () => puzzleRestart());
@@ -29750,7 +29806,10 @@
           title: layer.querySelector(".pz-title"),
           goal: layer.querySelector(".pz-goal"),
           budget: layer.querySelector(".pz-budget"),
-          plan: layer.querySelector(".pz-plan")
+          plan: layer.querySelector(".pz-plan"),
+          bloom: layer.querySelector(".pz-bloom"),
+          caption: layer.querySelector(".pz-caption"),
+          fade: layer.querySelector(".pz-fade")
         };
         return PUZZLE.dom;
       }
@@ -29801,6 +29860,82 @@
         puzzleSaveProgress(progress);
       }
 
+      /* Où se trouve le Sanctuaire : le coin du village du joueur. Les deux
+         énigmes qui n'en ont pas — celle sans rival, celle sans couronne —
+         retombent sur le cadrage de la définition. */
+      function puzzleSanctuaireCell(def) {
+        const coins = def.villages?.[0];
+        if (coins && coins.length) return coins[0];
+        return puzzleFocusCell(def);
+      }
+
+      /* LE RÉVEIL. Version courte et volontairement sobre : la lueur monte, la
+         caméra RECULE — c'est elle qui donne l'échelle du réseau, pas un effet
+         — et la vérité s'inscrit sur le ciel. Quatre secondes, interruptibles
+         d'un clic. La carte de fin ne vient qu'après.
+
+         Les variantes annoncées (Voie qui se divise, rayon interrompu, réponse
+         au loin) attendent qu'il y ait une carte des Voies : les écrire
+         maintenant serait décorer un réseau qui n'existe pas encore. */
+      async function puzzleReveil(def) {
+        const dom = PUZZLE.dom;
+        if (!dom) return;
+        PUZZLE.reveilEnCours = true;
+
+        const passer = () => { PUZZLE.reveilSaute = true; };
+        PUZZLE.reveilSaute = false;
+        dom.layer.addEventListener("click", passer, { once: true });
+        window.addEventListener("keydown", passer, { once: true });
+        const attendre = async ms => {
+          const fin = Date.now() + ms;
+          while (Date.now() < fin && !PUZZLE.reveilSaute) await tutoWait(60);
+        };
+
+        try {
+          dom.layer.classList.add("reveil");
+          els.gameScreen && els.gameScreen.classList.add("puzzle-reveil");
+          document.body.classList.add("puzzle-reveil");
+
+          const [r, c] = puzzleSanctuaireCell(def);
+          dom.bloom.classList.add("on");
+          try { playSfx("crown"); } catch (_) { }
+          try {
+            if (typeof kaykitFollowCell === "function") {
+              kaykitFollowCell(r, c, { duration: 900, force: true, cinematique: true, zoomBoost: 1.4 });
+            }
+          } catch (_) { }
+          await attendre(900);
+
+          /* Le recul : zoomBoost NÉGATIF éloigne (voir kaykitFollowCell, la
+             distance vaut base - zoomBoost). C'est le seul moment où le joueur
+             voit son archipel en entier. */
+          try {
+            if (typeof kaykitFollowCell === "function") {
+              kaykitFollowCell(r, c, { duration: 2200, force: true, cinematique: true, zoomBoost: -3.4 });
+            }
+          } catch (_) { }
+
+          if (def.verite) {
+            dom.caption.innerHTML = `« ${def.verite} »`;
+            dom.caption.classList.add("show");
+            await attendre(2600);
+            dom.caption.classList.remove("show");
+            await attendre(500);
+          } else {
+            await attendre(1500);
+          }
+        } finally {
+          dom.layer.removeEventListener("click", passer);
+          window.removeEventListener("keydown", passer);
+          dom.caption.classList.remove("show");
+          dom.bloom.classList.remove("on");
+          dom.layer.classList.remove("reveil");
+          els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
+          document.body.classList.remove("puzzle-reveil");
+          PUZZLE.reveilEnCours = false;
+        }
+      }
+
       /* UNE seule ligne au réveil, jamais deux (charte narrative). Quand le
          Sanctuaire porte une « vérité », c'est elle qu'on lit — une phrase
          mythologique qui dit ce que le joueur vient de comprendre, jamais quelle
@@ -29809,9 +29944,9 @@
          et c'est ce qui donne du poids aux six autres. */
       function puzzleFinLigne(def, depense) {
         const compte = `<span class="pz-cout">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`;
-        return def.verite
-          ? `<span class="pz-verite">« ${def.verite} »</span><br>${compte}`
-          : `${def.winLine || ""}<br>${compte}`;
+        /* La vérité a déjà été lue sur le ciel pendant le réveil : la carte ne
+           la répète pas, elle garde la ligne d'enseignement. */
+        return `${def.winLine || ""}<br>${compte}`;
       }
 
       function puzzleShowEnd({ won }) {
@@ -29826,6 +29961,18 @@
         const etoiles = won ? puzzleStarsFor(def, depense) : 0;
         if (won) puzzleRecordSolved(def, depense, etoiles);
 
+        /* Le réveil passe AVANT la carte : le Sanctuaire s'illumine et la
+           caméra recule pendant que le joueur regarde encore le plateau. La
+           carte n'arrive qu'ensuite, et ne répète pas la vérité déjà lue. */
+        if (won) {
+          puzzleReveil(def).then(() => puzzleCarteDeFin(def, depense, etoiles, true));
+          return;
+        }
+        puzzleCarteDeFin(def, depense, etoiles, false);
+      }
+
+      function puzzleCarteDeFin(def, depense, etoiles, won) {
+        if (!PUZZLE.dom) return;
         const suivant = PUZZLES[PUZZLE.index + 1];
         const panneau = document.createElement("div");
         panneau.className = "pz-end";
@@ -29835,8 +29982,8 @@
           <p>${won ? puzzleFinLigne(def, depense) : def.failLine || "Il ne reste plus de quoi agir."}</p>
           <div class="pz-end-actions">
             <button type="button" data-pz="again">↺ Recommencer</button>
-            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Puzzle suivant →</button>' : ""}
-            <button type="button" data-pz="back">← Puzzles</button>
+            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Sanctuaire suivant →</button>' : ""}
+            <button type="button" data-pz="back">← Les Voies</button>
           </div>`;
         PUZZLE.dom.layer.appendChild(panneau);
         panneau.querySelector('[data-pz="again"]').addEventListener("click", () => puzzleRestart());
@@ -30262,7 +30409,10 @@
          `solution` prend ici une liste par TOUR : [[coups du tour 1], [tour 2]].
          Chaque tour est suivi d'une vraie fin de tour, la dernière comprise —
          sans quoi le point ne serait jamais accordé. */
-      async function puzzleVerifyLive(index) {
+      /* `keep` laisse l'énigme EN PLACE au lieu de la démonter : le sondage
+         de victoire la voit alors gagnée et joue le réveil, ce qu'un test
+         visuel ne peut obtenir autrement qu'en rejouant tout à la souris. */
+      async function puzzleVerifyLive(index, { keep = false } = {}) {
         const def = PUZZLES[index];
         const tours = def.solution || [];
         puzzleStart(index, { force: true });
@@ -30304,7 +30454,7 @@
             ? (def.par && depense !== def.par ? `objectif atteint mais ${depense} cartes au lieu de ${def.par}` : "")
             : "objectif non atteint"
         };
-        puzzleTeardown();
+        if (!keep) puzzleTeardown();
         return rapport;
       }
 
@@ -30733,8 +30883,8 @@
         })),
         /* Oracle de test : rejoue la solution de référence d'une énigme, ou de
            toutes, sans toucher à la partie en cours. */
-        verify: index => puzzleIsMultiTurn(PUZZLES[index])
-          ? puzzleVerifyLive(index)
+        verify: (index, options) => (options?.live || puzzleIsMultiTurn(PUZZLES[index]))
+          ? puzzleVerifyLive(index, options)
           : puzzleVerify(index),
         verifyAll: puzzleVerifyAll,
         /* Cherche le chemin le MOINS CHER vers l'objectif. Sert à établir les
