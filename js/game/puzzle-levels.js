@@ -967,14 +967,23 @@
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
             { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            /* LE VERROU. Deux cases posées là uniquement pour interdire au
-               perchoir de tourner : sa seule rotation possible le couchait sur
-               [0,3], et emportait le Veilleur hors des cases du village. C'était
-               la solution que tout le monde voit en premier — elle est
-               maintenant impossible, et le joueur perd son temps à chercher un
-               pivot qui n'existe plus. La bonne fausse piste : celle qu'on
-               essaie longtemps avant d'y renoncer. */
-            { key: "VERROU", cells: [[0, 3], [0, 4]] }
+            /* LE VERROU, en colonne 0. Deux cases qui font trois choses à la
+               fois, et c'est pour ça qu'elles sont là plutôt qu'ailleurs :
+
+               - elles INTERDISENT à la terrasse de se coucher en échelle dans
+                 la colonne 0 — sa rotation par [1,0] visait exactement
+                 [1,0],[2,0],[3,0],[4,0],[5,0], et cette échelle ouvrait une
+                 route droite jusqu'au village ;
+               - elles ressemblent à un MARCHEPIED providentiel au pied du
+                 Sanctuaire, alors qu'aucune de leurs voisines n'est de la
+                 terre : on y va, et on ne va nulle part ;
+               - étant deux, elles PIVOTENT — vers [3,0],[3,1] — ce qui donne
+                 encore de quoi essayer avant de comprendre que ça ne mène pas
+                 plus loin.
+
+               La bonne fausse piste est celle qu'on essaie longtemps avant d'y
+               renoncer. */
+            { key: "VERROU", cells: [[3, 0], [4, 0]] }
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
