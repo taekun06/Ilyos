@@ -31885,56 +31885,82 @@
           ]
         },
         /* -----------------------------------------------------------------
-           14 — Une course qui ne se gagne pas à la course. Le rival descend de
-           deux cases par tour vers le village ; filer droit au but fait arriver
-           un tour trop tard, puisqu'une couronne ne compte qu'au tour suivant.
-           Le chemin le plus court passe par LUI : s'arrêter une case plus haut
-           met sa descente à portée de poussée. */
+           LA DESCENTE — le bon coup ne va pas vers l'objectif.
+
+           Refonte complète. L'ancienne version promettait que « le plus court
+           chemin passe par lui » : c'était faux, le Veilleur descendait la
+           colonne d'à côté et on le délogeait au passage pour une carte, sans
+           y penser. Il n'y avait pas d'énigme.
+
+           Ici il ne peut PAS être poussé — le paquet ne contient aucune carte
+           POUSSER, et rien d'autre ne l'atteint. Sa route est écrite et se
+           termine sur une case du village, ce qui interdit toute validation.
+           La seule parade est d'envoyer le SECOND Gardien se poster sur la case
+           qu'il doit traverser : un coup annoncé devient illégal quand la case
+           est prise, et il reste planté là pour le reste de l'énigme.
+
+           Ce geste s'éloigne de la couronne et ne rapporte rien sur le moment.
+           C'est tout le sujet. Et il ne souffre aucun retard : la case doit
+           être prise avant sa première riposte, donc dès le premier tour, sur
+           des cartes que le porteur réclame. Aller au Sanctuaire en ligne
+           droite réussit jusqu'au troisième tour, où l'on découvre que la place
+           est tenue et qu'il ne reste rien pour s'en occuper. */
         {
           id: "p14-course",
           acte: "III",
           principe: "CADENCE",
           title: "La descente",
-          tagline: "Il descend de deux cases par tour. Le plus court chemin passe par lui.",
+          tagline: "Il descend vers ton Sanctuaire, et rien ne peut le toucher.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 13,
           sanctuary: false,
-          focus: [4, 0],
+          focus: [3, 1],
           villages: { 0: [[0, 0]] },
+          /* La colonne du porteur et la voie du Veilleur ne se touchent NULLE
+             PART : une colonne de vide les sépare, et le seul lien entre les
+             deux est la diagonale qui joint la dernière case de la voie à la
+             place du Sanctuaire. Cette case est donc un vrai point de passage
+             obligé — sans quoi le blocage ne vaut rien, car une riposte annonce
+             une DESTINATION et le moteur lui cherche un chemin : la première
+             version offrait un détour, et le Veilleur passait tranquillement à
+             côté du Gardien posté. */
           islands: [
-            [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0]],
-            [[0, 1]],
-            [[1, 1], [2, 1], [3, 1], [4, 1]]
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]],
+            [[6, 0]], [[7, 0]], [[8, 0]],
+            [[1, 2]], [[2, 2]], [[1, 3]]
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "R", p: 1, r: 4, c: 1 }
+            { key: "H", p: 0, r: 1, c: 3 },
+            { key: "R", p: 1, r: 2, c: 2 }
           ],
+          /* Une carte de marge au second tour, pas zéro : une main vidée à la
+             dernière carte empêche le tour suivant de commencer, et la couronne
+             ne compte QU'AU DÉBUT du tour suivant. Sans cette carte, l'énigme
+             se jouait juste et ne se gagnait jamais. */
           deck: [
             ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "PUSH", "MOVE", "PUSH", "MOVE"],
-            ["MOVE", "PUSH"]
+            ["MOVE", "MOVE", "MOVE", "MOVE"]
           ],
           par: 8,
           rivalPlan: [
-            "il descend sur la case marquée.",
-            "puis il se poste sur une case de ton village."
+            "le Veilleur monte d'une case.",
+            "puis il se pose sur la place du Sanctuaire."
           ],
           replies: [
-            [{ a: "MOVE", who: "R", to: [2, 1] }],
+            [{ a: "MOVE", who: "R", to: [1, 2] }],
             [{ a: "MOVE", who: "R", to: [0, 1] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
-          winTitle: "La course est finie",
-          winLine: "S'arrêter à sa hauteur coûte une carte, et lui coûte la partie.",
-          failLine: "Il est arrivé le premier.",
+          winTitle: "La descente s'est arrêtée",
+          winLine: "Une case prise à temps vaut mieux qu'une poussée qu'on n'a pas.",
+          failLine: "Il s'est assis sur la place, et rien ne l'en délogera.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [3, 0] }
+              { a: "MOVE", who: "H", to: [1, 2] },
+              { a: "MOVE", who: "G", to: [4, 0] }
             ],
             [
-              { a: "MOVE", who: "G", to: [2, 0] },
-              { a: "PUSH", who: "G", on: [2, 1], force: 1 },
               { a: "MOVE", who: "G", to: [1, 0] }
             ]
           ]
@@ -32005,56 +32031,60 @@
           ]
         },
         /* -----------------------------------------------------------------
-           21 — LA RELÈVE. Un Veilleur assis sur le Sanctuaire bloque la
-           validation ; le déloger ne suffit pas, car un second marche déjà
-           vers la place laissée vide. La seule parade est d'OCCUPER soi-même
-           la case qu'on vient de libérer — elle valide et elle interdit. Qui
-           dégage puis s'arrête sur l'autre case de validation constate au tour
-           suivant que la relève a eu lieu et que rien n'a compté. La fenêtre
-           dure un tour. */
+           LA RELÈVE — libérer une place ne suffit pas, il faut s'y tenir.
+
+           Refonte. La première version ne pouvait pas fonctionner : le second
+           Veilleur était programmé pour prendre la place au troisième tour,
+           alors que la couronne comptait au début de ce même tour. La relève
+           n'arrivait jamais, et la leçon ne se jouait pas.
+
+           Elle arrive maintenant à la riposte SUIVANTE. Et comme un Veilleur
+           sur n'importe laquelle des trois cases du village interdit toute
+           validation, rester sur la case voisine — pourtant valide elle aussi —
+           ne sert à rien : il faut occuper précisément celle qu'on vient de
+           vider. Le paquet est calculé pour que ce pas de côté soit la
+           dernière carte, et pour qu'il ne reste rien après. */
         {
           id: "p21-la-releve",
           acte: "III",
           principe: "CADENCE",
           verite: "On ne délivre pas une place. On la tient.",
           title: "La relève",
-          tagline: "En déloger un ne sert à rien : un autre marche déjà vers la place.",
+          tagline: "Tu peux le chasser. Un autre attend déjà son tour.",
           brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
           board: 13,
           sanctuary: false,
-          focus: [3, 0],
+          focus: [2, 0],
           villages: { 0: [[0, 0]] },
           islands: [
-            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]],
-            [[1, 1]], [[2, 1]], [[3, 1]]
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]],
+            [[1, 1]]
           ],
           guardians: [
-            { key: "G", p: 0, r: 7, c: 0, crown: 1 },
+            { key: "G", p: 0, r: 6, c: 0, crown: 1 },
             { key: "R", p: 1, r: 0, c: 1 },
-            { key: "S", p: 1, r: 3, c: 1 }
+            { key: "S", p: 1, r: 1, c: 1 }
           ],
           deck: [
             ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"]
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"]
           ],
-          par: 9,
+          par: 8,
           rivalPlan: [
-            "le second Veilleur monte vers le Sanctuaire.",
-            "il se rapproche encore de la place."
+            "le second Veilleur attend son tour.",
+            "il prend la place laissée vide."
           ],
           replies: [
-            [{ a: "MOVE", who: "S", to: [2, 1] }],
-            [{ a: "MOVE", who: "S", to: [1, 1] }],
+            [],
             [{ a: "MOVE", who: "S", to: [0, 1] }]
           ],
           goal: { type: "scored", player: 0, count: 1 },
           winTitle: "La place est tenue",
-          winLine: "Libérer la case ne suffisait pas : il fallait s'y tenir.",
+          winLine: "La case voisine valide aussi. Elle ne défend rien.",
           failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
           solution: [
             [
-              { a: "MOVE", who: "G", to: [2, 0] }
+              { a: "MOVE", who: "G", to: [1, 0] }
             ],
             [
               { a: "MOVE", who: "G", to: [0, 0] },

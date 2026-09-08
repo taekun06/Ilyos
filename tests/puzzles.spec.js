@@ -166,7 +166,8 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
 
   const clic = (r, c) => page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).dispatchEvent('click');
 
-  // Tour 1 : cinq cartes, cinq cases. Le Gardien s'arrête à hauteur du rival.
+  // Tour 1 : cinq cartes, cinq cases, droit vers le Sanctuaire — c'est
+  // justement la ligne qui perd, mais elle suffit à ce que le test observe.
   await page.locator('#ov2Move').click({ force: true });
   await clic(8, 0);
   await clic(3, 0);
@@ -176,10 +177,10 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
   await attendreLaMain(page);
   expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(5);
 
-  // Fin de tour : le rival descend en (2,1), comme annoncé.
+  // Fin de tour : le Veilleur monte en (1,2), comme annoncé.
   await page.locator('#ov2End').click({ force: true });
   await page.waitForFunction(() =>
-    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 1 && ch.r === 2 && ch.c === 1),
+    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 1 && ch.r === 1 && ch.c === 2),
     null, { timeout: 15000 });
   await page.waitForFunction(() => {
     const d = window.ILYOS_PUZZLE._debug();
@@ -188,8 +189,10 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
 
   const apres = await page.evaluate(() => window.ILYOS_PUZZLE._debug());
   expect(apres.rivalTurn).toBe(1);
-  // Cinq cartes fraîches au tour 2, sans que le budget dépensé bouge.
-  expect(apres.hand.length).toBe(5);
+  // La main du tour 2 est celle que le paquet annonce — quatre cartes ici,
+  // pas cinq : une énigme scriptée distribue ce qu'elle a écrit. Le budget
+  // déjà dépensé, lui, ne bouge pas.
+  expect(apres.hand.length).toBe(4);
   expect(apres.depense).toBe(5);
   // La ligne jouée s'éteint, la suivante s'allume.
   await expect(page.locator('#puzzleLayer .pz-plan-line').first()).toHaveClass(/done/);
