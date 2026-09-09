@@ -29599,38 +29599,66 @@
             border-color:var(--pz-cercle);box-shadow:none;}
 
           /* ================= LES SIGNES =================
-             Ce que l'image de référence appelle de la magie : trois anneaux
-             d'or en perspective, quelques glyphes, de la poussière de lumière.
-             Tout est en transform/opacity — composé par le GPU, aucun repaint —
-             et volontairement à la limite du visible : ces effets doivent se
-             SENTIR, jamais se regarder, et ne rien coûter à la lecture du
-             plateau. Rien ici ne capte le pointeur. */
+             Ce que l'image de référence appelle de la magie : des ORBES d'or
+             en perspective autour du plateau, avec leurs nœuds lumineux, des
+             glyphes qui scintillent et de la poussière de lumière qui monte.
+
+             Tout est en transform/opacity — composé par le GPU, aucun repaint,
+             aucune boucle JS — et rien ne capte le pointeur. Les traits sont
+             FINS et leur lumière est portée par la lueur (box-shadow), pas par
+             l'épaisseur : c'est ce qui permet de les voir passer devant le
+             plateau sans jamais gêner sa lecture. */
           #puzzleLayer .pz-signes{position:absolute;inset:0;z-index:1;
             overflow:hidden;pointer-events:none;opacity:0;
             transition:opacity 1.8s ease;}
           #puzzleLayer .pz-signes.on{opacity:1;}
+          /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
+             un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
+             le plateau ; une lueur, on la traverse du regard. */
           #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
-            border:1px solid rgba(246,226,174,.18);border-radius:50%;
+            border:1px solid rgba(255,220,140,.62);border-radius:50%;
+            box-shadow:0 0 20px rgba(255,190,90,.32),
+              inset 0 0 70px rgba(255,190,90,.07);
             animation:pz-tourne 220s linear infinite;}
+          /* LES NŒUDS. Chaque orbe porte deux points de lumière posés sur son
+             trait, qui tournent donc avec lui : un disque en haut, un losange
+             à droite. C'est ce qui fait lire une ORBITE plutôt qu'un cercle
+             dessiné — et cela ne coûte pas un élément de plus. */
+          #puzzleLayer .pz-anneau::before,#puzzleLayer .pz-anneau::after{
+            content:"";position:absolute;width:9px;height:9px;
+            background:rgba(255,244,214,.9);border-radius:50%;
+            box-shadow:0 0 12px rgba(255,214,140,.9),0 0 26px rgba(255,196,96,.5);}
+          #puzzleLayer .pz-anneau::before{left:50%;top:0;margin:-5px 0 0 -5px;}
+          #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
+            border-radius:2px;transform:rotate(45deg);
+            background:rgba(255,236,186,.85);}
           #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;}
           #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
-            border-style:dashed;border-color:rgba(246,226,174,.16);
+            border-style:dashed;border-color:rgba(255,220,140,.7);
             animation-duration:150s;animation-direction:reverse;}
           #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(246,226,174,.13);animation-duration:310s;}
+            border-color:rgba(255,220,140,.52);animation-duration:310s;}
+          /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
+             lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
+             profondeur. */
+          #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
+            border-color:rgba(255,220,140,.38);border-style:dashed;
+            animation-duration:420s;animation-direction:reverse;}
           @keyframes pz-tourne{
             from{transform:perspective(1400px) rotateX(72deg) rotate(0deg)}
             to{transform:perspective(1400px) rotateX(72deg) rotate(360deg)}}
-          #puzzleLayer .pz-glyphe{position:absolute;font-size:13px;
-            color:rgba(246,226,174,.55);text-shadow:0 0 12px rgba(246,226,174,.5);
+          #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
+            color:rgba(255,238,196,.85);
+            text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
             animation:pz-scintille 7s ease-in-out infinite;}
           #puzzleLayer .pz-mote{position:absolute;width:3px;height:3px;
-            border-radius:50%;background:rgba(255,241,208,.9);
-            box-shadow:0 0 7px rgba(255,224,160,.75);
+            border-radius:50%;background:rgba(255,246,222,1);
+            box-shadow:0 0 8px rgba(255,224,160,.95),0 0 18px rgba(255,196,96,.45);
             animation:pz-monte 15s linear infinite;}
-          @keyframes pz-scintille{0%,100%{opacity:.2}50%{opacity:.75}}
+          @keyframes pz-scintille{0%,100%{opacity:.3;transform:scale(.85)}
+            50%{opacity:1;transform:scale(1.15)}}
           @keyframes pz-monte{0%{opacity:0;transform:translateY(16px)}
-            18%{opacity:.8}70%{opacity:.45}
+            18%{opacity:1}70%{opacity:.6}
             100%{opacity:0;transform:translateY(-130px)}}
           /* Qui a demandé moins de mouvement n'en reçoit aucun : les signes
              sont un supplément d'âme, jamais une information. */
@@ -30450,11 +30478,92 @@
         const teinte = new THREE.Color(couleur);
         const rgb = `${Math.round(teinte.r * 255)},${Math.round(teinte.g * 255)},${Math.round(teinte.b * 255)}`;
         const degrade = ctx.createLinearGradient(0, 128, 0, 0);
-        degrade.addColorStop(0, `rgba(${rgb},.34)`);
-        degrade.addColorStop(.3, `rgba(${rgb},.12)`);
+        degrade.addColorStop(0, `rgba(${rgb},.5)`);
+        degrade.addColorStop(.3, `rgba(${rgb},.18)`);
         degrade.addColorStop(1, `rgba(${rgb},0)`);
         ctx.fillStyle = degrade;
         ctx.fillRect(0, 0, 8, 128);
+        const texture = new THREE.CanvasTexture(canevas);
+        texture.userData = { ilyosTransient: true };
+        return texture;
+      }
+
+      /* LE GRAND CERCLE. Autour de la case qui compte, très large et très
+         fin : deux cercles concentriques, des rayons qui s'échappent, et
+         quatre losanges aux quatre vents. C'est le motif de l'image de
+         référence — celui qui fait qu'un Sanctuaire ne ressemble pas à une
+         case de plateau. Il ne se pose que là où il y a un faisceau, donc au
+         plus deux fois par énigme. */
+      function puzzleGrandCercleTexture(couleur) {
+        const taille = 512;
+        const canevas = document.createElement("canvas");
+        canevas.width = canevas.height = taille;
+        const ctx = canevas.getContext("2d");
+        const teinte = "#" + new THREE.Color(couleur).getHexString();
+        ctx.translate(taille / 2, taille / 2);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = teinte;
+        ctx.fillStyle = teinte;
+
+        /* ÉPAISSEURS, encore. Ce cercle de 512 pixels est projeté sur environ
+           150 pixels d'écran : tout y est divisé par plus de trois, et un trait
+           de 3 px n'y survit pas — le premier jet était purement et simplement
+           invisible en jeu. */
+        const cercles = (largeur, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = style;
+          ctx.lineWidth = largeur;
+          [.30, .455].forEach(rayon => {
+            ctx.beginPath();
+            ctx.arc(0, 0, taille * rayon, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+        };
+        /* Trente-deux rayons entre les deux cercles, un sur huit traversant :
+           la couronne de lumière du dessin, sans le coût d'une texture
+           chargée. */
+        const rayons = (largeur, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = style;
+          ctx.lineWidth = largeur;
+          for (let i = 0; i < 32; i++) {
+            const a = i * Math.PI / 16;
+            const traversant = i % 8 === 0;
+            const r1 = taille * (traversant ? .24 : .40);
+            const r2 = taille * (traversant ? .49 : .445);
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+            ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+            ctx.stroke();
+          }
+        };
+        /* Les quatre vents. */
+        const vents = (demi, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = style;
+          for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2 + Math.PI / 4;
+            const x = Math.cos(a) * taille * .378;
+            const y = Math.sin(a) * taille * .378;
+            ctx.beginPath();
+            ctx.moveTo(x, y - demi);
+            ctx.lineTo(x + demi, y);
+            ctx.lineTo(x, y + demi);
+            ctx.lineTo(x - demi, y);
+            ctx.closePath();
+            ctx.fill();
+          }
+        };
+
+        // Le liseré sombre d'abord, l'or par-dessus : sur un ciel clair comme
+        // sur une île, c'est ce qui garde le trait lisible.
+        cercles(22, "rgba(10,16,32,.42)", 1);
+        rayons(18, "rgba(10,16,32,.42)", 1);
+        vents(34, "rgba(10,16,32,.42)", 1);
+        cercles(13, teinte, .8);
+        rayons(9, teinte, .68);
+        vents(26, teinte, .95);
+
         const texture = new THREE.CanvasTexture(canevas);
         texture.userData = { ilyosTransient: true };
         return texture;
@@ -30510,7 +30619,7 @@
         [[.5, .33], [-.44, .48], [.09, -.52]].forEach(([dx, dz], i) => {
           const etincelle = new THREE.Mesh(
             transitoire(new THREE.PlaneGeometry(.17, .17)),
-            transitoire(Object.assign(additif(puzzleEtincelleTexture()), { opacity: .75 }))
+            transitoire(Object.assign(additif(puzzleEtincelleTexture()), { opacity: .95 }))
           );
           etincelle.rotation.x = -Math.PI / 2;
           etincelle.position.set(p.x + dx, p.y + .09, p.z + dz);
@@ -30522,14 +30631,42 @@
         });
 
         if (!faisceau) return;
-        const hauteur = 3.2;
-        const rayon = cote * .34;
+
+        /* Le grand cercle se pose SOUS l'anneau de runes et tourne dans
+           l'AUTRE SENS : deux vitesses contraires font un mécanisme, une seule
+           ferait un tourniquet.
+
+           Le sens inverse ne demande aucun réglage nouveau dans la boucle
+           d'animation, qui ne sait qu'une chose (rotation.z = temps × .16,
+           voir kaykit3d.js) : le plan est simplement RETOURNÉ — rotation.x
+           positive au lieu de négative — ce qui suffit à inverser à l'écran
+           une rotation identique. Il est double face, et le motif est
+           symétrique, donc rien ne se voit du retournement.
+
+           Mélange normal, comme l'anneau : l'additif se dissout sur les îles
+           claires. */
+        const grand = new THREE.Mesh(
+          transitoire(new THREE.PlaneGeometry(cote * 3.4, cote * 3.4)),
+          transitoire(new THREE.MeshBasicMaterial({
+            map: puzzleGrandCercleTexture(couleur), transparent: true, opacity: .75,
+            side: THREE.DoubleSide, depthWrite: false, depthTest: false
+          }))
+        );
+        grand.rotation.x = Math.PI / 2;
+        grand.position.set(p.x, p.y + .06, p.z);
+        grand.renderOrder = 40;
+        grand.userData.slowSpin = true;
+        groupe.add(grand);
+        kaykit3D.animatedObjects.push(grand);
+
+        const hauteur = 4.2;
+        const rayon = cote * .3;
         const colonne = new THREE.Mesh(
           /* Ouvert aux deux bouts, légèrement évasé vers le haut : le regard y
              lit une lumière qui s'échappe, pas un tuyau posé sur la case. */
-          transitoire(new THREE.CylinderGeometry(rayon * 1.6, rayon, hauteur, 18, 1, true)),
+          transitoire(new THREE.CylinderGeometry(rayon * 2.1, rayon, hauteur, 18, 1, true)),
           transitoire(Object.assign(additif(puzzleFaisceauTexture(couleur)), {
-            opacity: .16, side: THREE.DoubleSide, depthTest: true
+            opacity: .2, side: THREE.DoubleSide, depthTest: true
           }))
         );
         colonne.position.set(p.x, p.y + hauteur / 2, p.z);
@@ -30648,12 +30785,15 @@
         if (cle === PUZZLE.markerKey && groupe.children.length) return;
         PUZZLE.markerKey = cle;
         if (typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
-        /* Le faisceau ne se pose que si l'objectif tient en une ou deux cases.
-           Quatre colonnes de lumière feraient une forêt, et le plateau —
-           qu'elles sont là pour désigner — disparaîtrait derrière elles. */
+        /* LE CŒUR : une seule case reçoit le grand cercle et le faisceau.
+           Deux colonnes de lumière suffisaient déjà à blanchir l'île qui les
+           sépare — quatre en feraient une forêt, et le plateau qu'elles sont
+           là pour désigner disparaîtrait derrière elles. La couronne passe
+           avant : quand une énigme demande de POSER quelque chose, c'est là
+           que le regard doit aller. */
         const buts = cells.filter(marque => marque.kind !== "threat");
-        const faisceau = buts.length <= 2;
-        cells.forEach(marque => puzzleAddMarker(faisceau ? { ...marque, faisceau: true } : marque));
+        const coeur = buts.find(marque => marque.kind === "crown") || buts[0];
+        cells.forEach(marque => puzzleAddMarker(marque === coeur ? { ...marque, faisceau: true } : marque));
       }
 
       /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
@@ -30760,12 +30900,12 @@
          boucle JS ne tourne ensuite : tout est en animations CSS. */
       function puzzleBuildSignes(hote) {
         if (!hote) return;
-        hote.innerHTML = '<div class="pz-anneau a"></div>'
+        hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
           + '<div class="pz-anneau b"></div><div class="pz-anneau c"></div>';
         let graine = 7;
         const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
         const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
-        for (let i = 0; i < 7; i++) {
+        for (let i = 0; i < 12; i++) {
           const glyphe = document.createElement("span");
           glyphe.className = "pz-glyphe";
           glyphe.textContent = glyphes[i % glyphes.length];
@@ -30774,7 +30914,7 @@
           glyphe.style.animationDelay = `${(suivant() * 7).toFixed(2)}s`;
           hote.appendChild(glyphe);
         }
-        for (let i = 0; i < 16; i++) {
+        for (let i = 0; i < 26; i++) {
           const mote = document.createElement("i");
           mote.className = "pz-mote";
           mote.style.left = `${(3 + suivant() * 94).toFixed(1)}%`;
