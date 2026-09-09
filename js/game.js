@@ -6560,6 +6560,56 @@
         groupe.parent?.remove(groupe);
       }
 
+      /* LE SOUVENIR DU PLATEAU QUITTÉ.
+         On ne REBÂTIT pas l'archipel qu'on laisse derrière : on clone ce qui
+         est déjà à l'écran. Un clone partage géométries et matériaux, donc il
+         est identique par construction — îles, coques, arbres, châteaux,
+         fanions — sans que ce code ait à savoir comment chacun a été fabriqué,
+         ni à rejouer les tirages pseudo-aléatoires du décor. C'est la seule
+         manière d'être sûr que rien ne change à l'instant de la substitution.
+
+         Corollaire : ce groupe ne doit JAMAIS être libéré comme les autres.
+         Ses géométries et ses matériaux appartiennent aux originaux, et
+         clearKayKitGroup les détruirait sous les pieds du plateau vivant. */
+      function kaykitSouvenirDuPlateau(extras = []) {
+        if (!kaykit3D?.dynamicGroup || typeof THREE === "undefined") return null;
+        const souvenir = new THREE.Group();
+        [...kaykit3D.dynamicGroup.children, ...extras].forEach(enfant => {
+          if (!enfant) return;
+          try {
+            const copie = enfant.clone();
+            copie.position.copy(enfant.position);
+            copie.quaternion.copy(enfant.quaternion);
+            copie.scale.copy(enfant.scale);
+            souvenir.add(copie);
+          } catch (_) { }
+        });
+        if (!souvenir.children.length) return null;
+        kaykit3D.fxGroup.add(souvenir);
+        return souvenir;
+      }
+
+      function kaykitRetirerSouvenir(souvenir) {
+        // Retrait SEC, sans dispose : tout est partagé avec les originaux.
+        souvenir?.parent?.remove(souvenir);
+      }
+
+      /* Le gardien qui vient de sortir du plateau part AVEC son ancien monde.
+         Son squelette interdit le clonage naïf : on déplace donc le vrai
+         visuel dans le souvenir, après l'avoir retiré du registre — sans quoi
+         la prochaine synchronisation le détruirait en ne le retrouvant pas
+         dans le nouvel état. Il s'y fige dans sa pose, ce qui ne se voit pas :
+         il s'éloigne déjà, de dos et de petite taille. */
+      function kaykitEmmenerVisuel(souvenir, visual, offset = { x: 0, y: 0, z: 0 }) {
+        if (!souvenir || !visual?.wrapper) return;
+        try {
+          kaykit3D.characterVisuals.delete(visual.id);
+          const p = visual.wrapper.position.clone();
+          souvenir.add(visual.wrapper);
+          visual.wrapper.position.set(p.x - (offset.x || 0), p.y - (offset.y || 0), p.z - (offset.z || 0));
+        } catch (_) { }
+      }
+
       function kaykitCellSurfaceY(r, c) {
         if (islandAt(r, c)) return KAYKIT_LEVELS.islandTop + .014;
         if (isLand(r, c)) return KAYKIT_LEVELS.pedestalTop + .014;
@@ -29027,6 +29077,9 @@
         def: null,
         budget: 0,
         restarted: false,
+        /* Numéro de montage, incrémenté à chaque puzzleStart. Sert à donner une
+           identité distincte aux gardiens d'une énigme à l'autre. */
+        serie: 0,
         ended: false,
         pollTimer: null,
         dom: null,
@@ -29252,9 +29305,17 @@
         });
 
         /* Gardiens. `crown: 1|2` fait porter la couronne correspondante. */
+        PUZZLE.serie++;
         PUZZLE.charsByKey = {};
         (def.guardians || []).forEach(g => {
-          const char = { id: `pz-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
+          /* IDENTITÉ PROPRE À CHAQUE MONTAGE. `state.nextCharId` repart à 100 pour
+             chaque énigme : sans le numéro de série, les gardiens s'appelaient
+             `pz-100`, `pz-101` PARTOUT. syncKayKitCharacters croyait alors
+             reconnaître un gardien déjà là, réutilisait son visuel et le
+             TÉLÉPORTAIT — au lieu de jouer playCharacterSpawn. C'est ce qui
+             faisait surgir les gardiens du Sanctuaire suivant au lieu de les
+             faire entrer. */
+          const char = { id: `pz${PUZZLE.serie}-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
           state.characters.push(char);
           if (g.key) PUZZLE.charsByKey[g.key] = char.id;
           if (g.crown) {
@@ -30516,6 +30577,7 @@
         requestAnimationFrame(animer);
 
         return {
+          groupe,
           dispose() {
             vivante = false;
             try { kaykitClearPasserelle(); } catch (_) { }
@@ -30583,7 +30645,7 @@
 
         await attendre(Math.max(0, PUZZLE_DEPART.marche - PUZZLE_DEPART.avance));
 
-        return () => {
+        const fin = () => {
           passerelle?.dispose();
           /* Le visuel est resté en cours de marche, hors de la grille. Les
              identifiants de gardiens repartent de zéro à chaque énigme
@@ -30597,6 +30659,10 @@
             try { visual.animator?.toIdle({ fade: .12 }); } catch (_) { }
           }
         };
+        /* Le groupe de dalles et le visuel du gardien sont rendus à l'appelant :
+           le glissement les emmène dans le souvenir du plateau quitté, au lieu
+           de les faire disparaître sous les yeux du joueur. */
+        return { fin, groupe: passerelle?.groupe || null, visual };
       }
 
       /* ---------- LE MONDE QUI GLISSE --------------------------------------
@@ -30638,8 +30704,8 @@
       /* Rend false si l'aperçu n'a pas pu être bâti — bloc KayKit pas encore
          chargé. L'appelant retombe alors sur la voie au noir, qui, elle, ne
          dépend d'aucun asset. */
-      async function puzzleGlissement(index, def, attendre, dir) {
-        if (typeof kaykitApercuArchipel !== "function") return false;
+      async function puzzleGlissement(index, def, attendre, dir, depart) {
+        if (typeof kaykitSouvenirDuPlateau !== "function") return false;
 
         const zero = kaykitCellPosition(0, 0, 0);
         const un = kaykitCellPosition(dir[0], dir[1], 0);
@@ -30647,8 +30713,49 @@
         const dz = (un.z - zero.z) * PUZZLE_GLISSEMENT.avance;
         const chute = PUZZLE_GLISSEMENT.chute;
 
-        const apercu = kaykitApercuArchipel(puzzleCellulesDe(def), { x: dx, y: 0, z: dz });
-        if (!apercu) return false;
+        /* LA BASCULE A LIEU MAINTENANT, au tout début — c'est l'inversion.
+           Auparavant le vrai plateau n'arrivait qu'à la fin, et l'on voyait
+           les gardiens, les couronnes et les arbres surgir d'un coup sur un
+           décor jusque-là nu. Désormais le Sanctuaire qui approche est le VRAI
+           depuis la première image, et c'est celui qu'on QUITTE qu'on remplace
+           par un souvenir cloné — pixel pour pixel, donc invisible.
+
+           Le sens est aussi le bon : un lieu qu'on laisse derrière soi a le
+           droit de se simplifier en s'éloignant ; un lieu qu'on découvre n'a
+           pas le droit de se peupler sous nos yeux. */
+        const souvenir = kaykitSouvenirDuPlateau(depart?.groupe ? [depart.groupe] : []);
+        if (!souvenir) return false;
+        souvenir.position.set(-dx, 0, -dz);
+        /* Le gardien part avec son monde ; puis les originaux — dalles de la
+           passerelle comprises — sont démontés. Le souvenir en porte déjà le
+           clone au même endroit : rien ne disparaît à l'écran. */
+        if (depart?.visual) kaykitEmmenerVisuel(souvenir, depart.visual, { x: -dx, y: 0, z: -dz });
+        if (depart?.fin) depart.fin();
+
+        puzzleStart(index, { muet: true });
+        /* Le souvenir se tient à `-d` du repère, et le repère part de `+d` :
+           l'ancien plateau reste donc EXACTEMENT là où il était, tandis que le
+           nouveau, à l'origine locale, se trouve encore loin devant. */
+        kaykitDecalerArchipel(dx, 0, dz);
+
+        /* Le cadrage du Sanctuaire suivant est visé sur toute la durée du
+           voyage plutôt qu'imposé d'un coup à l'arrivée. C'est ce qui
+           supprime le recul brusque qui trahissait l'échange : à l'arrivée la
+           caméra est déjà en place, et plus rien ne bouge.
+
+           puzzleStart vient d'armer ses rappels de cadrage à 350, 700, 1100,
+           1600 et 2400 ms ; on les désarme, sinon ils écraseraient ce
+           mouvement lent (voir puzzleArrivee pour le détail de cette course). */
+        PUZZLE.lastFrame = null;
+        try {
+          if (typeof kaykitFollowCell === "function") {
+            const [fr, fc] = puzzleFocusCell(def);
+            kaykitFollowCell(fr, fc, {
+              duration: PUZZLE_GLISSEMENT.duree, force: true,
+              cinematique: true, zoomBoost: def.zoom || 0
+            });
+          }
+        } catch (_) { }
 
         const depuis = performance.now();
         let actif = true;
@@ -30656,21 +30763,19 @@
           if (!actif) return;
           const t = Math.min(1, (performance.now() - depuis) / PUZZLE_GLISSEMENT.duree);
           const e = t * t * (3 - 2 * t);
-          kaykitDecalerArchipel(-dx * e, -chute * e, -dz * e);
-          apercu.position.set(dx, chute * e, dz);
+          // Le repère revient de `+d` à zéro : le nouveau Sanctuaire arrive.
+          kaykitDecalerArchipel(dx * (1 - e), 0, dz * (1 - e));
+          // Le souvenir garde sa place dans le repère et s'enfonce seul.
+          souvenir.position.set(-dx, -chute * e, -dz);
           if (t < 1) requestAnimationFrame(animer);
         };
         requestAnimationFrame(animer);
 
         await attendre(PUZZLE_GLISSEMENT.duree);
 
-        /* LA BASCULE. Tout se fait dans la même image : aucun rendu ne
-           s'intercale entre le retrait de l'aperçu et la remise à zéro, donc
-           aucune position intermédiaire n'est jamais affichée. */
         actif = false;
-        kaykitRetirerApercu(apercu);
-        puzzleStart(index, { muet: true });
         kaykitDecalerArchipel(0, 0, 0);
+        kaykitRetirerSouvenir(souvenir);
         return true;
       }
 
@@ -30751,9 +30856,9 @@
           /* VOIE DU MONDE QUI GLISSE. Caméra immobile pendant le départ du
              gardien : c'est l'archipel qui va bouger, et deux mouvements à la
              fois n'en laisseraient lire aucun. */
-          const finDepartGlisse = await puzzleDepart(attendre, { camera: false });
-          const glisse = await puzzleGlissement(index, def, attendre, dir);
-          if (finDepartGlisse) finDepartGlisse();
+          const depart = await puzzleDepart(attendre, { camera: false });
+          const glisse = await puzzleGlissement(index, def, attendre, dir, depart);
+          if (!glisse && depart) depart.fin();
           if (glisse) {
             dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
               + `<span class="nom">${def.title}</span>`;
@@ -30764,13 +30869,10 @@
             return;
           }
 
-          /* VOIE AU NOIR. Repli quand l'aperçu n'a pas pu être bâti : le
-             gardien est déjà parti, on enchaîne sur le rideau. */
-          const finDepart = null;
-
+          /* VOIE AU NOIR. Repli quand le souvenir n'a pas pu être cloné : le
+             gardien est déjà parti et démonté, on enchaîne sur le rideau. */
           dom.fade.classList.add("on");
           await attendre(760);
-          if (finDepart) finDepart();
 
           puzzleStart(index, { muet: true });
 

@@ -57,6 +57,9 @@
         def: null,
         budget: 0,
         restarted: false,
+        /* Numéro de montage, incrémenté à chaque puzzleStart. Sert à donner une
+           identité distincte aux gardiens d'une énigme à l'autre. */
+        serie: 0,
         ended: false,
         pollTimer: null,
         dom: null,
@@ -282,9 +285,17 @@
         });
 
         /* Gardiens. `crown: 1|2` fait porter la couronne correspondante. */
+        PUZZLE.serie++;
         PUZZLE.charsByKey = {};
         (def.guardians || []).forEach(g => {
-          const char = { id: `pz-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
+          /* IDENTITÉ PROPRE À CHAQUE MONTAGE. `state.nextCharId` repart à 100 pour
+             chaque énigme : sans le numéro de série, les gardiens s'appelaient
+             `pz-100`, `pz-101` PARTOUT. syncKayKitCharacters croyait alors
+             reconnaître un gardien déjà là, réutilisait son visuel et le
+             TÉLÉPORTAIT — au lieu de jouer playCharacterSpawn. C'est ce qui
+             faisait surgir les gardiens du Sanctuaire suivant au lieu de les
+             faire entrer. */
+          const char = { id: `pz${PUZZLE.serie}-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
           state.characters.push(char);
           if (g.key) PUZZLE.charsByKey[g.key] = char.id;
           if (g.crown) {
@@ -462,42 +473,158 @@
           #puzzleLayer.reveil{pointer-events:auto;}
           #puzzleLayer{position:fixed;inset:0;z-index:1500001;pointer-events:none;
             font-family:'Nunito Sans','Inter',system-ui,sans-serif;color:#eaf1ff;}
-          #puzzleLayer .pz-brief{position:absolute;top:74px;left:50%;
-            transform:translateX(-50%);max-width:min(620px,90vw);z-index:7;
-            padding:9px 20px;border-radius:14px;text-align:center;
-            background:rgba(9,16,34,.84);backdrop-filter:blur(6px);
-            border:1px solid rgba(150,190,255,.28);
-            box-shadow:0 8px 30px rgba(0,0,0,.45);}
-          #puzzleLayer .pz-title{font-family:'Cinzel Decorative','Almendra',serif;
-            font-size:15px;letter-spacing:.06em;color:#ffd98a;}
-          #puzzleLayer .pz-goal{font-size:13.5px;line-height:1.45;color:#dce8ff;margin-top:3px;}
-          #puzzleLayer .pz-budget{position:absolute;top:74px;right:16px;z-index:7;
-            padding:8px 14px;border-radius:12px;font-size:12.5px;letter-spacing:.03em;
-            background:rgba(9,16,34,.84);border:1px solid rgba(150,190,255,.28);}
-          #puzzleLayer .pz-budget b{color:#ffd98a;font-size:15px;}
-          #puzzleLayer .pz-budget.tight b{color:#ff9d7a;}
-          #puzzleLayer .pz-plan{position:absolute;top:150px;right:16px;z-index:7;
-            max-width:250px;padding:10px 14px;border-radius:12px;font-size:12px;
-            line-height:1.5;background:rgba(9,16,34,.84);
-            border:1px solid rgba(150,190,255,.28);}
-          #puzzleLayer .pz-plan-title{font-size:10px;letter-spacing:.16em;
-            color:#8fa6d2;margin-bottom:5px;}
-          #puzzleLayer .pz-plan-line{color:#b9c8e6;opacity:.55;}
-          #puzzleLayer .pz-plan-line b{color:#8fa6d2;margin-right:4px;}
-          #puzzleLayer .pz-plan-line.next{opacity:1;color:#ffd0a0;}
-          #puzzleLayer .pz-plan-line.next b{color:#ffb870;}
-          #puzzleLayer .pz-plan-line.done{opacity:.3;text-decoration:line-through;}
-          #puzzleLayer .pz-tools{position:absolute;left:16px;bottom:78px;z-index:7;
-            display:flex;gap:8px;}
+          /* ================= LE HUD DES VOIES =================
+             Or et nuit, rien d'autre. Chaque commande est un rond de verre
+             sombre cerclé d'or : faible au repos, il ne s'allume qu'au
+             regard. Aucun panneau, aucune barre, aucun portrait — le plateau
+             garde l'écran, c'est lui qu'on regarde.
+
+             Les compteurs DÉPLACER/POUSSER/MAGIE ne sont PAS refaits ici : ce
+             sont les vrais boutons du HUD (#hudV2MoveCount…), simplement
+             redessinés en ronds le temps d'une énigme. Aucun handler dupliqué,
+             aucune règle touchée — voir le bloc « chrome de jeu » plus bas. */
+          #puzzleLayer{--pz-or:#f6e2ae;--pz-or-vif:#fff3d4;
+            --pz-cercle:rgba(246,226,174,.32);--pz-nuit:rgba(7,12,26,.30);}
+
           #puzzleLayer button{pointer-events:auto;cursor:pointer;font:inherit;
-            font-size:12.5px;padding:8px 14px;border-radius:999px;color:#c8d4ee;
-            letter-spacing:.03em;background:rgba(9,16,34,.92);
-            border:1px solid rgba(120,150,210,.4);box-shadow:0 4px 18px rgba(0,0,0,.4);
-            transition:background .2s,color .2s,transform .1s;}
-          #puzzleLayer button:hover{background:rgba(24,38,68,.96);color:#eef3ff;}
+            font-size:12px;color:var(--pz-or);background:var(--pz-nuit);
+            border:1px solid var(--pz-cercle);border-radius:999px;padding:7px 14px;
+            letter-spacing:.03em;backdrop-filter:blur(6px);
+            transition:color .22s ease,border-color .22s ease,
+              background .22s ease,box-shadow .22s ease,transform .16s ease;}
+          #puzzleLayer button:hover{color:var(--pz-or-vif);
+            border-color:rgba(246,226,174,.62);background:rgba(20,30,58,.42);
+            box-shadow:0 0 16px rgba(246,226,174,.2);}
           #puzzleLayer button:active{transform:translateY(1px);}
-          #puzzleLayer button.primary{background:#3a6bd0;border-color:#5f8de0;color:#f2f7ff;}
-          #puzzleLayer button.primary:hover{background:#4a7be0;}
+
+          /* Le rond commun — retour, objectif, outils. Porté aussi bien par un
+             <button> que par un <span> à l'intérieur d'un bouton étiqueté. */
+          #puzzleLayer .pz-rond{box-sizing:border-box;display:inline-flex;
+            align-items:center;justify-content:center;width:38px;height:38px;
+            padding:0;border-radius:999px;color:var(--pz-or);
+            background:var(--pz-nuit);border:1px solid var(--pz-cercle);
+            backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+            box-shadow:0 4px 14px rgba(0,0,0,.28),inset 0 0 10px rgba(246,226,174,.05);
+            transition:color .22s ease,border-color .22s ease,box-shadow .22s ease;}
+          #puzzleLayer .pz-rond svg{width:18px;height:18px;fill:none;
+            stroke:currentColor;stroke-width:1.6;stroke-linecap:round;
+            stroke-linejoin:round;}
+          #puzzleLayer .pz-rond.pz-plein svg{fill:currentColor;stroke:none;}
+          #puzzleLayer button.pz-rond:hover{background:rgba(20,30,58,.44);
+            box-shadow:0 4px 16px rgba(0,0,0,.3),0 0 18px rgba(246,226,174,.26);}
+
+          #puzzleLayer .pz-retour{position:absolute;top:16px;left:18px;z-index:8;}
+          /* La colonne de droite se glisse SOUS le ⚙ du jeu, que le bloc
+             « chrome » déplace au même endroit : menu, puis objectif, puis son
+             raccourci. Le décalage de 4px recentre le rond de 38px sur celui
+             de 38px du ⚙. */
+          #puzzleLayer .pz-side{position:absolute;top:72px;
+            right:calc(clamp(28px,3.4vw,36px) - 4px);z-index:8;
+            display:flex;flex-direction:column;align-items:center;gap:5px;}
+          #puzzleLayer .pz-key{font-size:9.5px;letter-spacing:.16em;
+            color:rgba(246,226,174,.52);text-shadow:0 1px 5px rgba(0,0,0,.8);}
+
+          /* L'OBJECTIF. Une ligne posée sur le ciel, jamais un panneau : elle
+             paraît, se laisse lire, puis rend le ciel. O la rappelle. */
+          #puzzleLayer .pz-brief{position:absolute;top:18px;left:50%;
+            transform:translateX(-50%) translateY(-8px);z-index:7;
+            display:flex;align-items:center;gap:12px;
+            max-width:min(640px,78vw);padding:0 6px;text-align:center;
+            opacity:0;pointer-events:none;
+            transition:opacity .7s ease,transform .7s ease;}
+          #puzzleLayer .pz-brief.show{opacity:1;
+            transform:translateX(-50%) translateY(0);}
+          #puzzleLayer .pz-brief::before,#puzzleLayer .pz-brief::after{
+            content:"";flex:1 1 46px;min-width:22px;height:1px;
+            background:linear-gradient(90deg,rgba(246,226,174,0),rgba(246,226,174,.55));}
+          #puzzleLayer .pz-brief::after{transform:scaleX(-1);}
+          #puzzleLayer .pz-brief-icone{flex:0 0 auto;line-height:0;}
+          #puzzleLayer .pz-brief-icone svg{width:16px;height:16px;
+            fill:var(--pz-or);filter:drop-shadow(0 0 9px rgba(246,226,174,.55));}
+          #puzzleLayer .pz-goal{font-size:13px;letter-spacing:.02em;color:#fff4dc;
+            text-shadow:0 1px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.55);}
+
+          /* Le plan du rival reste PUBLIC — c'est une donnée de l'énigme, pas
+             du décor de duel — mais il se tient désormais en marge, sans
+             cadre : quelques lignes claires sur le ciel. */
+          #puzzleLayer .pz-plan{position:absolute;top:150px;right:20px;z-index:7;
+            max-width:230px;font-size:11px;line-height:1.55;text-align:right;
+            color:rgba(214,228,255,.62);text-shadow:0 1px 9px rgba(0,0,0,.85);}
+          #puzzleLayer .pz-plan-title{font-size:9px;letter-spacing:.18em;
+            color:rgba(246,226,174,.55);margin-bottom:5px;}
+          #puzzleLayer .pz-plan-line{opacity:.45;}
+          #puzzleLayer .pz-plan-line b{color:rgba(246,226,174,.6);margin-right:4px;}
+          #puzzleLayer .pz-plan-line.next{opacity:1;color:#ffd9ac;}
+          #puzzleLayer .pz-plan-line.next b{color:var(--pz-or-vif);}
+          #puzzleLayer .pz-plan-line.done{opacity:.22;text-decoration:line-through;}
+
+          /* Bas gauche : annuler, recommencer. Le plus petit chrome possible —
+             un rond et un mot, jamais un bouton plein. */
+          #puzzleLayer .pz-tools{position:absolute;left:20px;bottom:22px;z-index:7;
+            display:flex;align-items:center;gap:18px;}
+          #puzzleLayer .pz-tool{display:flex;align-items:center;gap:9px;
+            padding:0;background:none;border:none;box-shadow:none;
+            backdrop-filter:none;-webkit-backdrop-filter:none;
+            color:rgba(246,226,174,.62);font-size:11.5px;letter-spacing:.04em;}
+          #puzzleLayer .pz-tool .pz-rond{width:30px;height:30px;}
+          #puzzleLayer .pz-tool .pz-rond svg{width:15px;height:15px;}
+          #puzzleLayer .pz-tool:hover{background:none;box-shadow:none;
+            border-color:transparent;color:var(--pz-or-vif);}
+          #puzzleLayer .pz-tool:hover .pz-rond{border-color:rgba(246,226,174,.62);
+            box-shadow:0 0 16px rgba(246,226,174,.24);}
+          #puzzleLayer .pz-tool[disabled]{opacity:.3;cursor:default;}
+          #puzzleLayer .pz-tool[disabled]:hover{color:rgba(246,226,174,.62);}
+          #puzzleLayer .pz-tool[disabled]:hover .pz-rond{
+            border-color:var(--pz-cercle);box-shadow:none;}
+
+          /* ================= LES SIGNES =================
+             Ce que l'image de référence appelle de la magie : trois anneaux
+             d'or en perspective, quelques glyphes, de la poussière de lumière.
+             Tout est en transform/opacity — composé par le GPU, aucun repaint —
+             et volontairement à la limite du visible : ces effets doivent se
+             SENTIR, jamais se regarder, et ne rien coûter à la lecture du
+             plateau. Rien ici ne capte le pointeur. */
+          #puzzleLayer .pz-signes{position:absolute;inset:0;z-index:1;
+            overflow:hidden;pointer-events:none;opacity:0;
+            transition:opacity 1.8s ease;}
+          #puzzleLayer .pz-signes.on{opacity:1;}
+          #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
+            border:1px solid rgba(246,226,174,.10);border-radius:50%;
+            animation:pz-tourne 220s linear infinite;}
+          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;}
+          #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
+            border-style:dashed;border-color:rgba(246,226,174,.09);
+            animation-duration:150s;animation-direction:reverse;}
+          #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
+            border-color:rgba(246,226,174,.07);animation-duration:310s;}
+          @keyframes pz-tourne{
+            from{transform:perspective(1400px) rotateX(72deg) rotate(0deg)}
+            to{transform:perspective(1400px) rotateX(72deg) rotate(360deg)}}
+          #puzzleLayer .pz-glyphe{position:absolute;font-size:13px;
+            color:rgba(246,226,174,.55);text-shadow:0 0 12px rgba(246,226,174,.5);
+            animation:pz-scintille 7s ease-in-out infinite;}
+          #puzzleLayer .pz-mote{position:absolute;width:3px;height:3px;
+            border-radius:50%;background:rgba(255,241,208,.9);
+            box-shadow:0 0 7px rgba(255,224,160,.75);
+            animation:pz-monte 15s linear infinite;}
+          @keyframes pz-scintille{0%,100%{opacity:.12}50%{opacity:.6}}
+          @keyframes pz-monte{0%{opacity:0;transform:translateY(16px)}
+            18%{opacity:.8}70%{opacity:.45}
+            100%{opacity:0;transform:translateY(-130px)}}
+          /* Qui a demandé moins de mouvement n'en reçoit aucun : les signes
+             sont un supplément d'âme, jamais une information. */
+          @media (prefers-reduced-motion:reduce){
+            #puzzleLayer .pz-signes{display:none;}}
+
+          /* Petits écrans : la phrase d'objectif se resserre, le plan du rival
+             passe sous elle, les outils se réduisent à leurs ronds. */
+          @media (max-width:680px){
+            #puzzleLayer .pz-brief{max-width:88vw;gap:8px;}
+            #puzzleLayer .pz-brief::before,#puzzleLayer .pz-brief::after{display:none;}
+            #puzzleLayer .pz-goal{font-size:12px;}
+            #puzzleLayer .pz-plan{top:auto;bottom:96px;right:14px;max-width:46vw;}
+            #puzzleLayer .pz-tools{left:14px;bottom:16px;gap:12px;}
+            #puzzleLayer .pz-tool span:not(.pz-rond){display:none;}}
 
           #puzzleLayer .pz-end{position:absolute;inset:0;z-index:12;display:flex;
             flex-direction:column;align-items:center;justify-content:center;gap:18px;
@@ -1546,6 +1673,7 @@
         requestAnimationFrame(animer);
 
         return {
+          groupe,
           dispose() {
             vivante = false;
             try { kaykitClearPasserelle(); } catch (_) { }
@@ -1613,7 +1741,7 @@
 
         await attendre(Math.max(0, PUZZLE_DEPART.marche - PUZZLE_DEPART.avance));
 
-        return () => {
+        const fin = () => {
           passerelle?.dispose();
           /* Le visuel est resté en cours de marche, hors de la grille. Les
              identifiants de gardiens repartent de zéro à chaque énigme
@@ -1627,6 +1755,10 @@
             try { visual.animator?.toIdle({ fade: .12 }); } catch (_) { }
           }
         };
+        /* Le groupe de dalles et le visuel du gardien sont rendus à l'appelant :
+           le glissement les emmène dans le souvenir du plateau quitté, au lieu
+           de les faire disparaître sous les yeux du joueur. */
+        return { fin, groupe: passerelle?.groupe || null, visual };
       }
 
       /* ---------- LE MONDE QUI GLISSE --------------------------------------
@@ -1668,8 +1800,8 @@
       /* Rend false si l'aperçu n'a pas pu être bâti — bloc KayKit pas encore
          chargé. L'appelant retombe alors sur la voie au noir, qui, elle, ne
          dépend d'aucun asset. */
-      async function puzzleGlissement(index, def, attendre, dir) {
-        if (typeof kaykitApercuArchipel !== "function") return false;
+      async function puzzleGlissement(index, def, attendre, dir, depart) {
+        if (typeof kaykitSouvenirDuPlateau !== "function") return false;
 
         const zero = kaykitCellPosition(0, 0, 0);
         const un = kaykitCellPosition(dir[0], dir[1], 0);
@@ -1677,8 +1809,49 @@
         const dz = (un.z - zero.z) * PUZZLE_GLISSEMENT.avance;
         const chute = PUZZLE_GLISSEMENT.chute;
 
-        const apercu = kaykitApercuArchipel(puzzleCellulesDe(def), { x: dx, y: 0, z: dz });
-        if (!apercu) return false;
+        /* LA BASCULE A LIEU MAINTENANT, au tout début — c'est l'inversion.
+           Auparavant le vrai plateau n'arrivait qu'à la fin, et l'on voyait
+           les gardiens, les couronnes et les arbres surgir d'un coup sur un
+           décor jusque-là nu. Désormais le Sanctuaire qui approche est le VRAI
+           depuis la première image, et c'est celui qu'on QUITTE qu'on remplace
+           par un souvenir cloné — pixel pour pixel, donc invisible.
+
+           Le sens est aussi le bon : un lieu qu'on laisse derrière soi a le
+           droit de se simplifier en s'éloignant ; un lieu qu'on découvre n'a
+           pas le droit de se peupler sous nos yeux. */
+        const souvenir = kaykitSouvenirDuPlateau(depart?.groupe ? [depart.groupe] : []);
+        if (!souvenir) return false;
+        souvenir.position.set(-dx, 0, -dz);
+        /* Le gardien part avec son monde ; puis les originaux — dalles de la
+           passerelle comprises — sont démontés. Le souvenir en porte déjà le
+           clone au même endroit : rien ne disparaît à l'écran. */
+        if (depart?.visual) kaykitEmmenerVisuel(souvenir, depart.visual, { x: -dx, y: 0, z: -dz });
+        if (depart?.fin) depart.fin();
+
+        puzzleStart(index, { muet: true });
+        /* Le souvenir se tient à `-d` du repère, et le repère part de `+d` :
+           l'ancien plateau reste donc EXACTEMENT là où il était, tandis que le
+           nouveau, à l'origine locale, se trouve encore loin devant. */
+        kaykitDecalerArchipel(dx, 0, dz);
+
+        /* Le cadrage du Sanctuaire suivant est visé sur toute la durée du
+           voyage plutôt qu'imposé d'un coup à l'arrivée. C'est ce qui
+           supprime le recul brusque qui trahissait l'échange : à l'arrivée la
+           caméra est déjà en place, et plus rien ne bouge.
+
+           puzzleStart vient d'armer ses rappels de cadrage à 350, 700, 1100,
+           1600 et 2400 ms ; on les désarme, sinon ils écraseraient ce
+           mouvement lent (voir puzzleArrivee pour le détail de cette course). */
+        PUZZLE.lastFrame = null;
+        try {
+          if (typeof kaykitFollowCell === "function") {
+            const [fr, fc] = puzzleFocusCell(def);
+            kaykitFollowCell(fr, fc, {
+              duration: PUZZLE_GLISSEMENT.duree, force: true,
+              cinematique: true, zoomBoost: def.zoom || 0
+            });
+          }
+        } catch (_) { }
 
         const depuis = performance.now();
         let actif = true;
@@ -1686,21 +1859,19 @@
           if (!actif) return;
           const t = Math.min(1, (performance.now() - depuis) / PUZZLE_GLISSEMENT.duree);
           const e = t * t * (3 - 2 * t);
-          kaykitDecalerArchipel(-dx * e, -chute * e, -dz * e);
-          apercu.position.set(dx, chute * e, dz);
+          // Le repère revient de `+d` à zéro : le nouveau Sanctuaire arrive.
+          kaykitDecalerArchipel(dx * (1 - e), 0, dz * (1 - e));
+          // Le souvenir garde sa place dans le repère et s'enfonce seul.
+          souvenir.position.set(-dx, -chute * e, -dz);
           if (t < 1) requestAnimationFrame(animer);
         };
         requestAnimationFrame(animer);
 
         await attendre(PUZZLE_GLISSEMENT.duree);
 
-        /* LA BASCULE. Tout se fait dans la même image : aucun rendu ne
-           s'intercale entre le retrait de l'aperçu et la remise à zéro, donc
-           aucune position intermédiaire n'est jamais affichée. */
         actif = false;
-        kaykitRetirerApercu(apercu);
-        puzzleStart(index, { muet: true });
         kaykitDecalerArchipel(0, 0, 0);
+        kaykitRetirerSouvenir(souvenir);
         return true;
       }
 
@@ -1781,9 +1952,9 @@
           /* VOIE DU MONDE QUI GLISSE. Caméra immobile pendant le départ du
              gardien : c'est l'archipel qui va bouger, et deux mouvements à la
              fois n'en laisseraient lire aucun. */
-          const finDepartGlisse = await puzzleDepart(attendre, { camera: false });
-          const glisse = await puzzleGlissement(index, def, attendre, dir);
-          if (finDepartGlisse) finDepartGlisse();
+          const depart = await puzzleDepart(attendre, { camera: false });
+          const glisse = await puzzleGlissement(index, def, attendre, dir, depart);
+          if (!glisse && depart) depart.fin();
           if (glisse) {
             dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
               + `<span class="nom">${def.title}</span>`;
@@ -1794,13 +1965,10 @@
             return;
           }
 
-          /* VOIE AU NOIR. Repli quand l'aperçu n'a pas pu être bâti : le
-             gardien est déjà parti, on enchaîne sur le rideau. */
-          const finDepart = null;
-
+          /* VOIE AU NOIR. Repli quand le souvenir n'a pas pu être cloné : le
+             gardien est déjà parti et démonté, on enchaîne sur le rideau. */
           dom.fade.classList.add("on");
           await attendre(760);
-          if (finDepart) finDepart();
 
           puzzleStart(index, { muet: true });
 
