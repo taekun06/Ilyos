@@ -200,3 +200,99 @@ test('dans une énigme multi-tours, le rival joue le coup annoncé', async ({ pa
 
   expect(erreurs).toEqual([]);
 });
+
+/* Régression : le sol du sanctuaire survivait à la partie précédente.
+
+   Bâti une seule fois par session et jamais retiré, il réapparaissait au
+   milieu d'une énigme — qui n'en a pourtant aucun, toutes déclarant
+   `sanctuary: false`. Signalé en jeu en enchaînant une partie solo puis les
+   énigmes. Même famille que le château fantôme : un cache construit une fois,
+   avec ses positions monde. */
+test("une énigme lancée après une partie n'hérite pas de son sanctuaire", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().click();
+  await menu.locator('text=AFFRONTER LE CPU').first().click();
+  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 60000 });
+  await page.waitForFunction(() => !!window.kaykit3D?.orbit, null, { timeout: 60000 });
+  // La croix du sanctuaire n'est posée qu'à la première synchronisation.
+  await page.waitForFunction(() => !!window.kaykit3D?.crownCrossGroup, null, { timeout: 30000 });
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p10-escalier'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p10-escalier');
+  await page.waitForTimeout(3000);
+
+  const reste = await page.evaluate(() => {
+    let trouves = 0;
+    window.kaykit3D.scene.traverse(o => { if (o.userData?.crownCross) trouves++; });
+    return { groupe: !!window.kaykit3D.crownCrossGroup, dansLaScene: trouves };
+  });
+  expect(reste).toEqual({ groupe: false, dansLaScene: 0 });
+
+  expect(erreurs).toEqual([]);
+});
+
+/* Régression : cliquer la case du château ne faisait rien.
+
+   Le raccourci « clic direct » — on désigne la destination, le jeu envoie le
+   Gardien le plus proche — était réservé au sanctuaire. Il a été élargi aux
+   trois cases d'un village, mais seulement dans le PRÉDICAT : son point
+   d'appel filtrait toujours sur isSanctuary, si bien que la fonction acceptait
+   ces cases sans jamais être appelée pour elles. Signalé deux fois en jeu.
+
+   Le test ne vérifie pas qu'un Gardien arrive — dans cette énigme aucun ne le
+   peut — mais que le jeu RÉPOND. C'est exactement ce qui manquait : le clic
+   tombait dans le vide, sans mouvement et sans message. */
+test("cliquer la case du village déclenche le raccourci de déplacement", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p01-seuil'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p01-seuil');
+  await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
+
+  await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.textContent = ''; });
+  await page.locator('.cell[data-r="0"][data-c="0"]').dispatchEvent('click');
+
+  await page.waitForFunction(
+    () => (document.getElementById('toast')?.textContent || '').trim().length > 0
+      || window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 0 && ch.c === 0),
+    null, { timeout: 8000 });
+
+  expect(erreurs).toEqual([]);
+});
+
+/* Régression : le clic droit annulait partout SAUF dans les énigmes.
+
+   Échap et le clic droit y étaient verrouillés parce qu'ils déclenchent
+   l'annulation du dernier coup, laquelle cassait le décompte de cartes. Ce
+   n'est plus vrai depuis que restoreUndoSnapshot recalcule la dépense : le
+   verrou ne protégeait plus rien et privait le joueur des deux gestes les plus
+   naturels pour défaire un coup, dans le mode où l'on se trompe le plus. */
+test("dans une énigme, le clic droit annule le dernier coup et rend la carte", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p20-la-plus-courte-trace'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p20-la-plus-courte-trace');
+  await attendreLaMain(page);
+
+  const clic = (r, c) => page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).dispatchEvent('click');
+  await page.locator('#ov2Move').click({ force: true });
+  await clic(9, 2);
+  await clic(9, 1);
+  await page.waitForFunction(() =>
+    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 9 && ch.c === 1),
+    null, { timeout: 8000 });
+  await attendreLaMain(page);
+  expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(1);
+
+  // Le geste du jeu : clic droit SEC sur le canevas 3D.
+  await page.locator('#kaykitCanvas').dispatchEvent('contextmenu');
+  await page.waitForFunction(() =>
+    window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 9 && ch.c === 2),
+    null, { timeout: 8000 });
+  // La carte revient au joueur : sans cette égalité, l'annulation ment.
+  expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(0);
+
+  expect(erreurs).toEqual([]);
+});

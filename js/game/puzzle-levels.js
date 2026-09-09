@@ -967,14 +967,26 @@
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
             { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            /* LE VERROU. Deux cases posées là uniquement pour interdire au
-               perchoir de tourner : sa seule rotation possible le couchait sur
-               [0,3], et emportait le Veilleur hors des cases du village. C'était
-               la solution que tout le monde voit en premier — elle est
-               maintenant impossible, et le joueur perd son temps à chercher un
-               pivot qui n'existe plus. La bonne fausse piste : celle qu'on
-               essaie longtemps avant d'y renoncer. */
-            { key: "VERROU", cells: [[0, 3], [0, 4]] }
+            /* TROIS PIERRES ISOLÉES. Une île d'une seule case ne pivote pas :
+               son unique pivot est elle-même, et tourner autour de son propre
+               centre la laisse en place. Ces trois-là sont donc du terrain
+               FIGÉ par construction, et c'est tout leur intérêt.
+
+               [3,0] est le verrou : il interdit à la terrasse de se coucher en
+               échelle dans la colonne 0 — sa rotation par [1,0] visait
+               exactement [1,0] à [5,0], et cette échelle ouvrait une route
+               droite jusqu'au village. Il a d'abord été essayé à deux cases,
+               en [3,0]-[4,0] : le Gardien y montait depuis le dépôt de la
+               passerelle, s'en servait de monture et l'énigme tombait à six.
+               Réduit à une case, il ne peut plus servir de rien.
+
+               [6,0] est un cul-de-sac. Il touche la case où la passerelle
+               couchée dépose son passager, invite à y descendre, et ne mène
+               nulle part : aucune de ses autres voisines n'est de la terre.
+
+               [5,5] verrouille le bras. Sa rotation par [3,5] vers le sud
+               visait [3,5],[4,5],[5,5] ; elle est désormais impossible. */
+            [[3, 0]], [[6, 0]], [[5, 5]]
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -985,11 +997,24 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
-             plafond 7), puis rejoué en direct sur les trois tours réels : le
-             coût annoncé n'est plus une intention mais un fait.
+          /* Optimum 7, prouvé une première fois par recherche exhaustive
+             (788 224 nœuds) puis rejoué en direct sur les trois tours réels.
 
-             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             Il est passé à 6 le temps que le verrou soit une île de DEUX cases
+             en [3,0]-[4,0] : le Gardien y montait depuis le dépôt de la
+             passerelle et s'en servait de monture. Réduit à une seule case, il
+             ne peut plus pivoter, donc plus rien porter. Re-prouvé à 7 sous
+             plafond 7 en 706 052 nœuds avec les trois pierres, et le chercheur
+             retrouve la solution de référence à la carte près.
+
+             La ligne ne touche NI [3,0] NI [6,0] NI [5,5] : elle passe par la
+             colonne 2 au départ, la colonne 0 le temps d'un pivot, puis la
+             colonne 1 pour tout le reste — et la case d'arrivée, [2,1],
+             n'existe pas au départ. C'est la passerelle qui vient se poser
+             dessous. Les trois pierres ne sont là que pour fermer des routes
+             et en faire miroiter d'autres.
+
+             Il valait 8 au départ, et c'était faux. Le chercheur testait
              l'objectif à la GÉNÉRATION des successeurs et rendait la main au
              premier chemin gagnant rencontré, pas au moins cher ; il validait
              donc la solution qu'on lui présentait au lieu de la contredire.

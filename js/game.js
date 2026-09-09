@@ -155,6 +155,7 @@
              défaut. */
           if (grillePrecedente !== GRID) {
             try { clearKayKitVillages(); } catch (_) {}
+            try { clearKayKitCrownCross(); } catch (_) {}
             try { kaykit3D.pedestalRegistry?.clear(); } catch (_) {}
           }
           kaykit3D.gridSize = GRID;
@@ -1344,7 +1345,8 @@
           // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
           // ce qui a réellement changé. Voir syncKayKitScene pour le détail.
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
-          crownCrossGroundBuilt: false, // sol central : statique, construit une seule fois
+          crownCrossGroundBuilt: false, // sol central : rebâti quand le sanctuaire change
+          crownCrossGroup: null,
           boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
           horizonArchipel: null,        // îles découpées posées autour du monde, un seul appel de rendu
           horizonPanorama: null,        // plaque directionnelle : images indexées sur l'azimut du monde
@@ -6419,6 +6421,23 @@
         registre.clear();
       }
 
+      /* Le sol du sanctuaire est bâti UNE fois par session et jamais retiré :
+         il survivait donc à une partie, et réapparaissait au milieu d'une
+         énigme — qui n'a pourtant aucun sanctuaire. Vu en enchaînant une partie
+         solo puis une énigme. Même famille que le château fantôme : un cache
+         construit une fois, avec ses positions monde. */
+      function clearKayKitCrownCross() {
+        const croix = kaykit3D?.crownCrossGroup;
+        if (croix) {
+          try { disposeKayKitTaggedResources(croix); } catch (_) { }
+          croix.parent?.remove(croix);
+        }
+        if (kaykit3D) {
+          kaykit3D.crownCrossGroup = null;
+          kaykit3D.crownCrossGroundBuilt = false;
+        }
+      }
+
       function cellClassSet(r, c) {
         const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         return cell ? cell.classList : null;
@@ -9082,6 +9101,9 @@
       function makeCrownCrossGround() {
         const crossCells = [];
         for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) if (isSanctuary(r, c)) crossCells.push([r, c]);
+        /* Aucun sanctuaire — les énigmes le désactivent toutes. Sans ce retour,
+           on posait quand même le halo central sur une partie qui n'en a pas. */
+        if (!crossCells.length) return null;
 
         const group = new THREE.Group();
         group.userData.crownCross = true;
@@ -10972,7 +10994,8 @@
           // Sol central en croix sous les couronnes : statique (dépend de
           // isSanctuary, fixe pour toute la partie), construit une seule fois.
           if (!kaykit3D.crownCrossGroundBuilt) {
-            dynamic.add(makeCrownCrossGround());
+            const croix = makeCrownCrossGround();
+            if (croix) { dynamic.add(croix); kaykit3D.crownCrossGroup = croix; }
             kaykit3D.crownCrossGroundBuilt = true;
           }
           // Nuages du plateau : statiques (comme le sol en croix), construits une
@@ -11171,7 +11194,14 @@
           [state.artifact, state.secondArtifact].filter(Boolean).forEach((artifact, idx) => {
             const slot = artifact.id != null ? String(artifact.id) : (idx === 0 ? "primary" : "secondary");
             const active = !!(artifact.active && !artifact.carrierId && Number.isFinite(artifact.r) && Number.isFinite(artifact.c));
-            const signature = active ? `${artifact.r},${artifact.c}` : "";
+            /* Le NIVEAU DU SOL fait partie de la signature. Sans lui, une
+               couronne restée sur sa case gardait la hauteur calculée à sa
+               pose : qu'une rotation amène une île sous elle et elle se
+               retrouvait incrustée dedans ; que l'île s'en aille et elle
+               flottait. La case ne changeait pas, donc rien n'était reconstruit. */
+            const signature = active
+              ? `${artifact.r},${artifact.c},${kaykitCellSurfaceY(artifact.r, artifact.c).toFixed(3)}`
+              : "";
             const existing = kaykit3D.looseCrownRegistry.get(slot);
             if (existing && existing.signature === signature) {
               if (active && existing.crown) {
@@ -20002,9 +20032,15 @@
           return;
         }
 
+        /* Le filtre était resté sur isSanctuary alors que le prédicat, lui,
+           avait été élargi aux cases de validation d'un village et aux cases
+           marquées d'une énigme : la fonction acceptait ces cases, mais on ne
+           l'appelait jamais pour elles. Cliquer le château ne faisait donc
+           rien — et la branche suivante n'aidait pas, car une case de village
+           n'est PAS couverte par une île. */
         if (
           state.phase === "ACTION_SELECT"
-          && isSanctuary(r, c)
+          && accepteDeplacementDirect(r, c)
           && tryDirectSanctuaryMove(r, c)
         ) {
           return;
@@ -21081,8 +21117,23 @@
            callback d'animation : entre les deux, l'IA pouvait relire un compte
            d'actions encore intact et décider sur une base périmée. */
         const applique = applyPushCore(pusher.id, r, c, force);
-        if (!applique) discardLastUndoSnapshot();
-        if (!applique) return;
+        if (!applique) {
+          discardLastUndoSnapshot();
+          /* ÉCHEC SILENCIEUX auparavant : le noyau refusait, l'interface gardait
+             ses options périmées et rien ne le disait. Le joueur n'avait d'autre
+             issue que de refermer puis rouvrir la poussée — geste qui ne faisait
+             rien d'autre que reconstruire ces options. On le fait pour lui, et
+             on le dit. Signalé en jeu, surtout sur les poussées qui visent une
+             chute, où la force annoncée et celle qui reste jouable divergent le
+             plus facilement. */
+          state.pushOptions = collectUnifiedPushOptions(
+            state.pushTargetId ? { targetId: state.pushTargetId } : undefined);
+          state.pushHoverOptionId = null;
+          showToast("Cette poussée n’est plus possible : les options ont été recalculées.");
+          renderAll();
+          scheduleKayKitSync();
+          return;
+        }
         /* Les options de poussée décrivent un état qui vient de disparaître.
            consumeSelectedActionCore remet la sélection à zéro mais ne les
            touche pas : sans cette ligne, les marqueurs de destination et
@@ -30399,13 +30450,19 @@
       }
 
       /* ---------- Garde-fous ---------------------------------------------
-         Mêmes verrous que le tutoriel : Échap rembobinerait la partie, le clic
-         droit sur le canevas 3D déclenche l'annulation de la dernière action
-         (listener contextmenu de bindKayKitInteractions) et casserait le
-         décompte de cartes. */
+         Il n'en reste qu'UN, et ce n'est plus celui d'origine.
+
+         Échap et le clic droit étaient verrouillés parce qu'ils déclenchent
+         l'annulation du dernier coup, laquelle cassait le décompte de cartes
+         d'une énigme. Ce n'est plus vrai depuis que restoreUndoSnapshot
+         recalcule PUZZLE.spent à chaque retour en arrière (voir plus haut) :
+         l'annulation est devenue exacte, et l'interdire ne protégeait plus
+         rien — elle privait seulement le joueur des deux gestes les plus
+         naturels pour défaire un coup, dans le mode où l'on se trompe le plus.
+         Échap referme aussi les fenêtres Règles et Son, donc les verrouiller
+         rendait ces fenêtres impossibles à fermer au clavier. */
       function puzzleKeyGuard(event) {
         if (!PUZZLE.active) return;
-        if (event.key === "Escape") { event.stopImmediatePropagation(); event.preventDefault(); }
         /* « T » bascule le plateau tactique 2D, où une chute par le bord du
            plateau n'est pas cliquable. La capture sur window passe avant le
            listener de js/plateau-tactique.js, posé sur document. */
@@ -30415,16 +30472,12 @@
         }
       }
 
-      function puzzleRightClickGuard(event) {
-        if (!PUZZLE.active) return;
-        if (event.type !== "contextmenu" && event.button !== 2) return;
-        const cible = event.target;
-        if (!cible || !cible.closest) return;
-        if (!cible.closest("#gameScreen") && !cible.closest("#kaykitCanvas")) return;
-        event.stopImmediatePropagation();
-        event.stopPropagation();
-        event.preventDefault();
-      }
+      /* Le clic droit sec sur le canevas annule le dernier coup — c'est le
+         geste du jeu, et une énigme n'a plus de raison de s'en priver. La
+         fonction reste, vide, parce que le démontage la retire toujours des
+         écouteurs : la supprimer obligerait à toucher trois autres endroits
+         pour rien. */
+      function puzzleRightClickGuard() { }
 
       /* ---------- Lancement d'une énigme ----------------------------------- */
       /* `replay` = le joueur RECOMMENCE (il perd l'étoile du sans-faute).
@@ -30465,6 +30518,9 @@
            restait accroché à la scène, flottant dans le vide au-dessus du
            nouvel archipel. Se voyait en enchaînant « Sanctuaire suivant ». */
         try { clearKayKitVillages(); } catch (_) { }
+        /* Le sol du sanctuaire aussi : une énigme n'en a jamais, mais celui de
+           la partie précédente restait accroché à la scène. */
+        try { clearKayKitCrownCross(); } catch (_) { }
 
         puzzleBuildState(def);
 
@@ -32262,14 +32318,26 @@
             { key: "BRAS", cells: [[3, 3], [3, 4], [3, 5]] },
             { key: "TERRASSE", cells: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]] },
             { key: "PERCHOIR", cells: [[0, 1], [0, 2]] },
-            /* LE VERROU. Deux cases posées là uniquement pour interdire au
-               perchoir de tourner : sa seule rotation possible le couchait sur
-               [0,3], et emportait le Veilleur hors des cases du village. C'était
-               la solution que tout le monde voit en premier — elle est
-               maintenant impossible, et le joueur perd son temps à chercher un
-               pivot qui n'existe plus. La bonne fausse piste : celle qu'on
-               essaie longtemps avant d'y renoncer. */
-            { key: "VERROU", cells: [[0, 3], [0, 4]] }
+            /* TROIS PIERRES ISOLÉES. Une île d'une seule case ne pivote pas :
+               son unique pivot est elle-même, et tourner autour de son propre
+               centre la laisse en place. Ces trois-là sont donc du terrain
+               FIGÉ par construction, et c'est tout leur intérêt.
+
+               [3,0] est le verrou : il interdit à la terrasse de se coucher en
+               échelle dans la colonne 0 — sa rotation par [1,0] visait
+               exactement [1,0] à [5,0], et cette échelle ouvrait une route
+               droite jusqu'au village. Il a d'abord été essayé à deux cases,
+               en [3,0]-[4,0] : le Gardien y montait depuis le dépôt de la
+               passerelle, s'en servait de monture et l'énigme tombait à six.
+               Réduit à une case, il ne peut plus servir de rien.
+
+               [6,0] est un cul-de-sac. Il touche la case où la passerelle
+               couchée dépose son passager, invite à y descendre, et ne mène
+               nulle part : aucune de ses autres voisines n'est de la terre.
+
+               [5,5] verrouille le bras. Sa rotation par [3,5] vers le sud
+               visait [3,5],[4,5],[5,5] ; elle est désormais impossible. */
+            [[3, 0]], [[6, 0]], [[5, 5]]
           ],
           guardians: [
             { key: "G", p: 0, r: 8, c: 2, crown: 1 },
@@ -32280,11 +32348,24 @@
             ["MAGIC", "MOVE", "MOVE"],
             ["MAGIC", "MOVE", "PUSH"]
           ],
-          /* Optimum 7, PROUVÉ par recherche exhaustive (788 224 nœuds sous
-             plafond 7), puis rejoué en direct sur les trois tours réels : le
-             coût annoncé n'est plus une intention mais un fait.
+          /* Optimum 7, prouvé une première fois par recherche exhaustive
+             (788 224 nœuds) puis rejoué en direct sur les trois tours réels.
 
-             Il valait 8 jusqu'ici, et c'était faux. Le chercheur testait
+             Il est passé à 6 le temps que le verrou soit une île de DEUX cases
+             en [3,0]-[4,0] : le Gardien y montait depuis le dépôt de la
+             passerelle et s'en servait de monture. Réduit à une seule case, il
+             ne peut plus pivoter, donc plus rien porter. Re-prouvé à 7 sous
+             plafond 7 en 706 052 nœuds avec les trois pierres, et le chercheur
+             retrouve la solution de référence à la carte près.
+
+             La ligne ne touche NI [3,0] NI [6,0] NI [5,5] : elle passe par la
+             colonne 2 au départ, la colonne 0 le temps d'un pivot, puis la
+             colonne 1 pour tout le reste — et la case d'arrivée, [2,1],
+             n'existe pas au départ. C'est la passerelle qui vient se poser
+             dessous. Les trois pierres ne sont là que pour fermer des routes
+             et en faire miroiter d'autres.
+
+             Il valait 8 au départ, et c'était faux. Le chercheur testait
              l'objectif à la GÉNÉRATION des successeurs et rendait la main au
              premier chemin gagnant rencontré, pas au moins cher ; il validait
              donc la solution qu'on lui présentait au lieu de la contredire.

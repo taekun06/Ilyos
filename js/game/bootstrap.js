@@ -155,6 +155,7 @@
              défaut. */
           if (grillePrecedente !== GRID) {
             try { clearKayKitVillages(); } catch (_) {}
+            try { clearKayKitCrownCross(); } catch (_) {}
             try { kaykit3D.pedestalRegistry?.clear(); } catch (_) {}
           }
           kaykit3D.gridSize = GRID;
