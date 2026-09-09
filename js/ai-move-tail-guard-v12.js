@@ -86,3 +86,14 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',boot,{once:true});
   else boot();
 })();
+
+/* Charge le contrôleur musical du Cabinet d'énigmes sans alourdir le bundle
+   principal du jeu. */
+(function loadPuzzleMusicV1(){
+  if (window.__ILYOS_PUZZLE_MUSIC_V1_LOADER__) return;
+  window.__ILYOS_PUZZLE_MUSIC_V1_LOADER__ = true;
+  const script = document.createElement('script');
+  script.src = './js/puzzle-music-v1.js?v=1';
+  script.async = false;
+  document.head.appendChild(script);
+})();
