@@ -29562,13 +29562,14 @@
              premières secondes. */
           #gameScreen.puzzle-no-place #ov2Island,
           #gameScreen.puzzle-no-place #islandSelector{display:none !important;}
-          /* Le plateau tactique 2D (js/plateau-tactique.js) écarte
-             explicitement les destinations hors grille : une poussée qui éjecte
-             par le BORD du plateau n'y a aucun repère cliquable, alors que la
-             3D pose son ☠ dans le vide. C'est le coup gagnant de six énigmes.
-             Le bouton vit sur <body>, hors de #gameScreen : il faut donc une
-             classe posée sur <body> pour l'atteindre. */
-          body.puzzle-mode #plateauTactiqueBtn{display:none !important;}
+          /* Le plateau tactique 2D est de nouveau AUTORISÉ. Il était interdit
+             parce qu'il écartait les destinations hors grille : une poussée
+             qui éjecte par le BORD du plateau n'y avait aucun repère
+             cliquable, alors que la 3D pose son ☠ dans le vide — et c'est le
+             coup gagnant de six énigmes. La vue 2D dessine désormais ces
+             éjections dans sa marge et les exécute par ILYOS_BENCH.poussee(),
+             le seul chemin possible puisqu'aucune case du plateau d'origine ne
+             peut recevoir ce clic. */
         `;
         document.head.appendChild(style);
       }
@@ -30478,7 +30479,8 @@
       }
 
       /* ---------- Garde-fous ---------------------------------------------
-         Il n'en reste qu'UN, et ce n'est plus celui d'origine.
+         Il n'en reste AUCUN. Les trois d'origine sont tombés un par un, chacun
+         parce que sa raison d'être avait disparu.
 
          Échap et le clic droit étaient verrouillés parce qu'ils déclenchent
          l'annulation du dernier coup, laquelle cassait le décompte de cartes
@@ -30488,16 +30490,13 @@
          rien — elle privait seulement le joueur des deux gestes les plus
          naturels pour défaire un coup, dans le mode où l'on se trompe le plus.
          Échap referme aussi les fenêtres Règles et Son, donc les verrouiller
-         rendait ces fenêtres impossibles à fermer au clavier. */
+         rendait ces fenêtres impossibles à fermer au clavier.
+
+         « T » était intercepté parce que la vue 2D ne savait pas cliquer une
+         éjection par le bord du plateau. Elle le sait maintenant : elle dessine
+         ces repères dans sa marge et les exécute par identifiant. */
       function puzzleKeyGuard(event) {
         if (!PUZZLE.active) return;
-        /* « T » bascule le plateau tactique 2D, où une chute par le bord du
-           plateau n'est pas cliquable. La capture sur window passe avant le
-           listener de js/plateau-tactique.js, posé sur document. */
-        if (event.key === "t" || event.key === "T") {
-          event.stopImmediatePropagation();
-          event.preventDefault();
-        }
       }
 
       /* Le clic droit sec sur le canevas annule le dernier coup — c'est le
@@ -34359,6 +34358,14 @@
 
            Réservé à la comparaison de versions. Ne sert jamais en jeu. */
         etatComplet: () => snapshotState(),
+        /* LA VUE 2D est un vrai consommateur de ce point d'entrée, pas
+           seulement un banc : elle lit l'état par etatComplet() et relaie ses
+           clics en cliquant la case correspondante du plateau d'origine. Or une
+           poussée qui ÉJECTE hors du plateau n'a pas de case d'arrivée — il n'y
+           a rien à cliquer, et c'est le coup gagnant de six énigmes. Elle a
+           donc besoin d'exécuter une option de poussée par son identifiant, ce
+           qu'aucun geste sur la grille ne peut exprimer. */
+        poussee: optionId => executeUnifiedPushOption(optionId),
         jouerUnTour: async (json) => {
           if (json) applyStateSnapshot(JSON.parse(json));
           state.undoHistory = [];
