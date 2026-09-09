@@ -70,6 +70,11 @@
   let conteneur = null;
   let actif = false;
   let etat = null;
+  /* Les ÉJECTIONS : poussées dont l'arrivée tombe hors du plateau. Elles n'ont
+     aucune case à cliquer, et c'est le coup gagnant de six énigmes. On les
+     dessine dans la marge et on garde ici de quoi les toucher : {id, x, y, r}
+     en pixels canvas, refait à chaque peinture. */
+  let ejections = [];
   let cellules = null;        // lecture des 121 cases du moteur
   let survol = null;          // [r, c] sous la souris
   let survolCouronne = false; // la souris est-elle sur le badge couronne ?
@@ -190,6 +195,7 @@
     repeindreDemande = false;
     if (!actif || !ctx) return;
     etat = lireEtat();
+    ejections = [];
     if (!etat) return;
     cellules = lireCellules();
 
@@ -417,14 +423,19 @@
 
       const cibles = new Set();
       const parDestination = new Map();
+      /* Hors grille = ÉJECTION. On ne les jette plus : leur repère est posé
+         dans la marge, du côté où la victime sort. C'était la seule chose qui
+         rendait la vue 2D inutilisable sur six énigmes. */
+      const horsGrille = new Map();
       options.forEach(o => {
         cibles.add(o.targetId);
         const [dr, dc] = caseOption(o);
         if (!Number.isFinite(dr) || !Number.isFinite(dc)) return;
-        if (dr < 0 || dc < 0 || dr >= GRILLE || dc >= GRILLE) return;
+        const dedans = dr >= 0 && dc >= 0 && dr < GRILLE && dc < GRILLE;
+        const table = dedans ? parDestination : horsGrille;
         const k = cle(dr, dc);
-        const connue = parDestination.get(k);
-        if (!connue || o.force < connue.force) parDestination.set(k, o);
+        const connue = table.get(k);
+        if (!connue || o.force < connue.force) table.set(k, o);
       });
 
       // Les cibles : ce sur quoi on pousse.
@@ -487,6 +498,49 @@
         ctx.font = `800 ${Math.round(cote * 0.19)}px ui-monospace, monospace`;
         ctx.fillStyle = teinte;
         ctx.fillText(o.fell ? `CHUTE ×${o.force}` : `×${o.force}`, bx, by + cote * 0.44);
+      });
+
+      /* LES ÉJECTIONS, dans la marge. Le repère est ramené à l'intérieur du
+         canevas — la marge fait environ 4,5 % du côté, soit moins d'une case —
+         mais la flèche part bien de la victime, si bien que la direction reste
+         lisible. On le rend un peu plus gros que les autres : c'est le seul
+         qui ne se pose sur aucune case, et il faut qu'il s'assume. */
+      horsGrille.forEach(o => {
+        const [dr, dc] = caseOption(o);
+        const depart = posDe(o.targetId);
+        if (!depart) return;
+        const rayon = cote * 0.30;
+        const borne = (v) => Math.min(Math.max(v, rayon + 2), canvas.width - rayon - 2);
+        const bx = borne(m.x0 + dc * cote + cote / 2);
+        const by = borne(m.y0 + dr * cote + cote / 2);
+        const ax = m.x0 + depart[1] * cote + cote / 2;
+        const ay = m.y0 + depart[0] * cote + cote / 2;
+
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = C.rouge;
+        ctx.lineWidth = Math.max(3, cote * 0.10);
+        ctx.setLineDash([cote * 0.16, cote * 0.12]);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+
+        ctx.beginPath();
+        ctx.arc(bx, by, rayon, 0, Math.PI * 2);
+        ctx.fillStyle = C.rouge;
+        ctx.globalAlpha = 0.42;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = Math.max(2, cote * 0.08);
+        ctx.strokeStyle = C.rouge;
+        ctx.stroke();
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `700 ${Math.round(cote * 0.34)}px serif`;
+        ctx.fillStyle = C.blanc;
+        ctx.fillText("☠", bx, by);
+
+        ejections.push({ id: o.id, x: bx, y: by, r: rayon + cote * 0.10 });
       });
     }
 
@@ -665,6 +719,18 @@
   function surClic(evenement) {
     evenement.preventDefault();
     const [px, py] = pointCanvas(evenement);
+
+    /* L'ÉJECTION d'abord : son repère est hors de la grille, donc caseSousPoint
+       le refuse et aucune case du plateau d'origine ne peut recevoir le clic.
+       On exécute alors l'option par son identifiant, seul chemin possible. */
+    const ejection = ejections.find(e =>
+      (px - e.x) * (px - e.x) + (py - e.y) * (py - e.y) <= e.r * e.r);
+    if (ejection) {
+      try { window.ILYOS_BENCH?.poussee?.(ejection.id); } catch (_) { }
+      demanderPeinture();
+      return;
+    }
+
     const cellule = caseSousPoint(px, py);
     if (!cellule) return;
     /* Aucune garde ajoutée ici : `onCellClick` sort déjà de lui-même si
@@ -807,6 +873,10 @@
   window.ILYOS_PLATEAU_2D = {
     activer: basculer,
     actif: () => actif,
-    repeindre: demanderPeinture
+    repeindre: demanderPeinture,
+    /* Les repères d'éjection, en pixels canevas. Ils sont dessinés hors de la
+       grille : aucun sélecteur ne les désigne, et un test qui voudrait les
+       cliquer devrait sinon recalculer la géométrie du plateau à la main. */
+    _ejections: () => ejections.map(e => ({ ...e }))
   };
 })();

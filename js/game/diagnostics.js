@@ -1595,6 +1595,14 @@
 
            Réservé à la comparaison de versions. Ne sert jamais en jeu. */
         etatComplet: () => snapshotState(),
+        /* LA VUE 2D est un vrai consommateur de ce point d'entrée, pas
+           seulement un banc : elle lit l'état par etatComplet() et relaie ses
+           clics en cliquant la case correspondante du plateau d'origine. Or une
+           poussée qui ÉJECTE hors du plateau n'a pas de case d'arrivée — il n'y
+           a rien à cliquer, et c'est le coup gagnant de six énigmes. Elle a
+           donc besoin d'exécuter une option de poussée par son identifiant, ce
+           qu'aucun geste sur la grille ne peut exprimer. */
+        poussee: optionId => executeUnifiedPushOption(optionId),
         jouerUnTour: async (json) => {
           if (json) applyStateSnapshot(JSON.parse(json));
           state.undoHistory = [];

@@ -60,11 +60,23 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   await page.waitForSelector('#puzzleMenu', { timeout: 10000 });
 
   /* Déblocage linéaire : seule la première carte est cliquable au premier
-     lancement, les vingt et une autres restent verrouillées. */
+     lancement, les vingt et une autres restent verrouillées.
+
+     SAUF pendant le chantier des transitions, où tout est ouvert (drapeau
+     PUZZLE_TOUT_OUVERT dans js/game/puzzle.js). On lit l'état réel plutôt que
+     de relâcher l'assertion : les deux comportements restent vérifiés, et
+     remettre le verrou fait automatiquement repasser le test à l'exigence
+     d'origine. */
   const cartes = page.locator('#puzzleMenu .pz-card');
   await expect(cartes).toHaveCount(22);
   await expect(cartes.nth(0)).toBeEnabled();
-  await expect(cartes.nth(1)).toBeDisabled();
+  const toutOuvert = await page.evaluate(() => window.ILYOS_PUZZLE._debug().toutOuvert === true);
+  if (toutOuvert) {
+    await expect(cartes.nth(1)).toBeEnabled();
+    await expect(cartes.nth(21)).toBeEnabled();
+  } else {
+    await expect(cartes.nth(1)).toBeDisabled();
+  }
 
   await cartes.nth(0).click();
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().active === true);
@@ -78,11 +90,17 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   expect(etat.fail).toBe(false);
   // La pose d'île est neutralisée : le sélecteur de formes est masqué.
   await expect(page.locator('#gameScreen')).toHaveClass(/puzzle-no-place/);
-  /* La vue tactique 2D n'affiche pas les chutes hors plateau : ni le bouton ni
-     la touche T ne doivent pouvoir y faire basculer pendant une énigme. */
-  await expect(page.locator('#plateauTactiqueBtn')).toBeHidden();
+  /* La vue tactique 2D est de nouveau ACCESSIBLE pendant une énigme. Elle
+     était interdite parce qu'elle écartait les destinations hors grille : une
+     poussée qui éjecte par le bord n'y avait aucun repère cliquable, et c'est
+     le coup gagnant de six énigmes. Elle sait maintenant les dessiner dans sa
+     marge — voir le test dédié plus bas. */
+  await expect(page.locator('#plateauTactiqueBtn')).toBeVisible();
   await page.keyboard.press('t');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.ILYOS_PLATEAU_2D?.actif())).toBe(true);
+  await page.keyboard.press('t');
+  await page.waitForTimeout(400);
   expect(await page.evaluate(() => window.ILYOS_PLATEAU_2D?.actif())).toBe(false);
 
   expect(erreurs).toEqual([]);
@@ -293,6 +311,105 @@ test("dans une énigme, le clic droit annule le dernier coup et rend la carte", 
     null, { timeout: 8000 });
   // La carte revient au joueur : sans cette égalité, l'annulation ment.
   expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).depense).toBe(0);
+
+  expect(erreurs).toEqual([]);
+});
+
+/* Régression : le menu ⚙ était injoignable pendant une énigme.
+
+   Le chrome de jeu est masqué en mode énigme, et la roue partait avec — ce qui
+   privait le joueur des Règles, du Son et du réglage de Ciel pendant tout le
+   mode où l'on passe le plus de temps sur la même position.
+
+   Le bouton à viser est `#ov2Gear`, celui du HUD organique. L'ancienne roue
+   `#hudV2GearBtn` reste dans le DOM — c'est elle qui porte la logique du
+   popover — mais js/hud-organique-v2.js la neutralise avec un style EN LIGNE
+   (opacity 0, pointer-events none) et lui relaie le clic. Un test qui viserait
+   l'ancienne attendrait indéfiniment qu'elle devienne cliquable. */
+test("dans une énigme, la roue ouvre le menu", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p01-seuil'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p01-seuil');
+  await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
+
+  await expect(page.locator('#ov2Gear')).toBeVisible();
+  await page.locator('#ov2Gear').click();
+  await expect(page.locator('#hudV2GearPopover')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#rulesBtn')).toBeVisible();
+  await expect(page.locator('#soundBtn')).toBeVisible();
+
+  /* Deux entrées restent interdites : « Nouvelle partie », qui n'a aucun sens
+     ici, et la bascule 2D, qui casse six énigmes — le plateau tactique écarte
+     les destinations hors grille, et une poussée qui éjecte par le BORD n'y a
+     aucun repère cliquable. */
+  await expect(page.locator('#newGameBtn')).toBeHidden();
+  await expect(page.locator('.hud-v2-popover-render-grid')).toBeHidden();
+
+  expect(erreurs).toEqual([]);
+});
+
+/* Régression : la vue 2D ne savait pas éjecter par le BORD du plateau.
+
+   Elle écartait toute destination hors grille, si bien qu'une poussée qui
+   sort la victime du plateau n'y avait aucun repère cliquable — et c'est le
+   coup gagnant de six énigmes. La vue 2D était pour cette raison interdite
+   pendant les énigmes.
+
+   Elle dessine désormais ces éjections dans sa marge et les exécute par
+   `ILYOS_BENCH.poussee(id)`, seul chemin possible : aucune case du plateau
+   d'origine ne peut recevoir ce clic. Le test fournit l'option à la vue plutôt
+   que de la provoquer en jeu — la situation demande une position tardive, et
+   ce qu'on vérifie ici est le DESSIN et la CAPTURE du clic, pas la règle. */
+test("en vue 2D, une éjection par le bord du plateau est dessinée et cliquable", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+  await page.evaluate(() => window.ILYOS_PUZZLE.unlockAll());
+  await page.evaluate(() => window.ILYOS_PUZZLE.startById('p18-relais-des-mains'));
+  await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
+
+  // Le Veilleur de p18 est en [0,1], sur le bord nord. On fabrique l'option
+  // qui l'en chasse vers le haut : arrivee [-1,1], hors grille.
+  const info = await page.evaluate(() => {
+    const brut = window.ILYOS_BENCH.etatComplet();
+    const e = JSON.parse(brut);
+    const rival = e.characters.find(c => c.player === 1);
+    const mien = e.characters.find(c => c.player === 0);
+    e.pushOptions = [{
+      id: 'test:ejection', pusherId: mien.id, targetId: rival.id, targetType: 'character',
+      force: 1, fell: true, r: null, c: null, dr: -1, dc: 0,
+      lastLandR: rival.r, lastLandC: rival.c
+    }];
+    const original = window.ILYOS_BENCH.etatComplet;
+    window.ILYOS_BENCH.etatComplet = () => JSON.stringify(e);
+    window.__rendreOriginal = () => { window.ILYOS_BENCH.etatComplet = original; };
+    return { rival: [rival.r, rival.c] };
+  });
+  expect(info.rival).toEqual([0, 1]);
+
+  await page.evaluate(() => window.ILYOS_PLATEAU_2D.activer(true));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => window.ILYOS_PLATEAU_2D.repeindre());
+  await page.waitForTimeout(600);
+
+  const ej = await page.evaluate(() => window.ILYOS_PLATEAU_2D._ejections());
+  expect(ej.length).toBe(1);
+  expect(ej[0].id).toBe('test:ejection');
+
+  // Le repere doit tomber DANS le canevas, au-dessus du plateau.
+  const dims = await page.evaluate(() => { const c = document.getElementById('plateauTactique'); return { w: c.width, h: c.height }; });
+  expect(ej[0].y).toBeGreaterThan(0);
+  expect(ej[0].y).toBeLessThan(dims.h);
+
+  // Le clic sur le repere doit appeler le pont moteur avec le bon identifiant.
+  await page.evaluate(() => {
+    window.__appels = [];
+    window.ILYOS_BENCH.poussee = id => { window.__appels.push(id); return true; };
+  });
+  const cv = await page.locator('#plateauTactique').boundingBox();
+  await page.mouse.click(cv.x + ej[0].x * (cv.width / dims.w), cv.y + ej[0].y * (cv.height / dims.h));
+  await page.waitForTimeout(500);
+  const appels = await page.evaluate(() => window.__appels);
+  expect(appels).toEqual(['test:ejection']);
 
   expect(erreurs).toEqual([]);
 });
