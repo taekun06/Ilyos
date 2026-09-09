@@ -158,8 +158,15 @@ test('la neuvième énigme se résout entièrement à la souris', async ({ page 
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().goal === true, null, { timeout: 10000 });
   const fin = await page.evaluate(() => window.ILYOS_PUZZLE._debug());
   expect(fin.depense).toBe(4);
-  await expect(page.locator('#puzzleLayer .pz-end')).toBeVisible();
-  await expect(page.locator('#puzzleLayer .pz-stars')).toHaveText('★★★');
+  /* La réussite ne s'annonce plus par une carte : le Sanctuaire s'éveille,
+     puis le voyage vers le suivant part tout seul. On vérifie donc que RIEN
+     ne s'interpose — aucun panneau de fin — et que le réveil a bien démarré ;
+     les trois étoiles, elles, se lisent dans la progression enregistrée. */
+  await expect(page.locator('#puzzleLayer')).toHaveClass(/reveil/);
+  await expect(page.locator('#puzzleLayer .pz-end')).toHaveCount(0);
+  const progression = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('ilyos.puzzles.progress') || '{}'));
+  expect(progression['p09-fardeau']).toMatchObject({ solved: true, stars: 3, best: 4 });
 
   expect(erreurs).toEqual([]);
 });
