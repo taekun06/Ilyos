@@ -29514,14 +29514,11 @@
              décide quand laisser le rival jouer sa réplique. */
           #gameScreen.puzzle-one-turn #endTurnBtn,
           #gameScreen.puzzle-one-turn #ov2End,
-          #gameScreen.puzzle-on #ov2Gear,
-          #gameScreen.puzzle-on #hudV2GearBtn,
           #gameScreen.puzzle-on #turnTimer,
           #gameScreen.puzzle-on #ov2Timer,
           #gameScreen.puzzle-on [data-hud="timer"],
           #gameScreen.puzzle-on .turn-timer,
           #gameScreen.puzzle-on [data-hud-render],
-          #gameScreen.puzzle-on [data-hud-camera],
           #gameScreen.puzzle-on .kaykit-camera-hint,
           #gameScreen.puzzle-on .kaykit-camera-controls,
           #gameScreen.puzzle-on .kaykit-control-btn,
@@ -29531,7 +29528,38 @@
           #gameScreen.puzzle-on .hud-v2-render-toggle,
           #gameScreen.puzzle-on #instruction,
           #gameScreen.puzzle-on .ov2-instruction,
-          #gameScreen.puzzle-on #newGameBtn{display:none !important;}
+          #gameScreen.puzzle-on #newGameBtn,
+          #gameScreen.puzzle-on .hud-v2-popover-render-grid,
+          #gameScreen.puzzle-on .hud-v2-coordinate-help,
+          /* L'intitulé de la section et le séparateur qui la suit : sans eux,
+             « RENDU DU PLATEAU » restait affiché au-dessus d'un vide. :has()
+             n'est pas indispensable — s'il n'est pas compris, la règle est
+             simplement ignorée et il ne reste qu'un titre orphelin. */
+          #gameScreen.puzzle-on .hud-v2-popover-section-label:has(+ .hud-v2-popover-render-grid),
+          #gameScreen.puzzle-on .hud-v2-popover-divider:has(+ .hud-v2-popover-section-label + .hud-v2-popover-camera-grid){display:none !important;}
+
+          /* Le panneau descend sous le bandeau de l'énigme. #puzzleLayer est en
+             z-index 1500001 sur <body> : aucun sélecteur ne peut faire passer
+             le popover au-dessus depuis l'intérieur de #gameScreen, et son
+             premier intitulé se retrouvait caché derrière le titre du
+             Sanctuaire. Les boutons, eux, restaient cliquables — le calque est
+             en pointer-events:none. */
+          #gameScreen.puzzle-on #hudV2GearPopover{margin-top:58px !important;}
+
+          /* LA ROUE RESTE, et son contenu avec — sauf le rendu 2D.
+
+             Elle était masquée avec le reste du chrome, ce qui privait le
+             joueur des Règles, du Son et du réglage de Ciel pendant tout le
+             mode où il en a le plus besoin : on y passe de longues minutes
+             sur la même position. Ne restent interdits que « Nouvelle partie »,
+             qui n'a aucun sens dans une énigme — « ← Les Voies » et
+             « ↺ Recommencer » font le travail proprement — et la bascule 2D,
+             qui casse six énigmes : le plateau tactique écarte les
+             destinations hors grille, et une poussée qui éjecte par le BORD
+             n'y a aucun repère cliquable. Les presets de CAMÉRA, eux, sont
+             rendus : la caméra est déjà libre à l'orbite, et le cadrage
+             imposé par puzzleFrame ne se ré-applique que dans les deux
+             premières secondes. */
           #gameScreen.puzzle-no-place #ov2Island,
           #gameScreen.puzzle-no-place #islandSelector{display:none !important;}
           /* Le plateau tactique 2D (js/plateau-tactique.js) écarte

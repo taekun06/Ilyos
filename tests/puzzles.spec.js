@@ -296,3 +296,37 @@ test("dans une énigme, le clic droit annule le dernier coup et rend la carte", 
 
   expect(erreurs).toEqual([]);
 });
+
+/* Régression : le menu ⚙ était injoignable pendant une énigme.
+
+   Le chrome de jeu est masqué en mode énigme, et la roue partait avec — ce qui
+   privait le joueur des Règles, du Son et du réglage de Ciel pendant tout le
+   mode où l'on passe le plus de temps sur la même position.
+
+   Le bouton à viser est `#ov2Gear`, celui du HUD organique. L'ancienne roue
+   `#hudV2GearBtn` reste dans le DOM — c'est elle qui porte la logique du
+   popover — mais js/hud-organique-v2.js la neutralise avec un style EN LIGNE
+   (opacity 0, pointer-events none) et lui relaie le clic. Un test qui viserait
+   l'ancienne attendrait indéfiniment qu'elle devienne cliquable. */
+test("dans une énigme, la roue ouvre le menu", async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => { window.ILYOS_PUZZLE.unlockAll(); window.ILYOS_PUZZLE.startById('p01-seuil'); });
+  await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().id === 'p01-seuil');
+  await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
+
+  await expect(page.locator('#ov2Gear')).toBeVisible();
+  await page.locator('#ov2Gear').click();
+  await expect(page.locator('#hudV2GearPopover')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#rulesBtn')).toBeVisible();
+  await expect(page.locator('#soundBtn')).toBeVisible();
+
+  /* Deux entrées restent interdites : « Nouvelle partie », qui n'a aucun sens
+     ici, et la bascule 2D, qui casse six énigmes — le plateau tactique écarte
+     les destinations hors grille, et une poussée qui éjecte par le BORD n'y a
+     aucun repère cliquable. */
+  await expect(page.locator('#newGameBtn')).toBeHidden();
+  await expect(page.locator('.hud-v2-popover-render-grid')).toBeHidden();
+
+  expect(erreurs).toEqual([]);
+});
