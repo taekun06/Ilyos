@@ -6479,9 +6479,93 @@
 
       const KAYKIT_LEVELS = { board: .05, islandTop: .47, pedestalTop: .47 };
 
+      /* Cases qui portent une DALLE DE PASSERELLE. Une passerelle est purement
+         décorative — aucune règle ne la connaît — mais c'est du sol pour qui
+         marche dessus, et à hauteur d'île. Sans cela, le gardien qui quitte
+         l'archipel au départ d'un voyage (voir puzzleDepart) descendait d'un
+         bloc entier dès la première case vide : il partait en tombant d'une
+         marche au lieu de s'avancer. La clé est "r,c" — ces cases sortent de la
+         grille, aucune structure indexée par le plateau ne peut les porter. */
+      const KAYKIT_PASSERELLE = new Set();
+      function kaykitSetPasserelle(cells) {
+        KAYKIT_PASSERELLE.clear();
+        (cells || []).forEach(([r, c]) => KAYKIT_PASSERELLE.add(`${r},${c}`));
+      }
+      function kaykitClearPasserelle() { KAYKIT_PASSERELLE.clear(); }
+
+      /* GLISSEMENT DU MONDE ------------------------------------------------
+         Déplacer `root` déplace TOUT le visuel — plateau, gardiens, effets —
+         et le ciel avec, puisque buildKayKitStaticScene le construit dans
+         staticGroup. Sans compensation, l'archipel et l'horizon partiraient
+         ensemble et il ne se passerait rien à l'écran.
+
+         On décale donc le ciel de l'inverse exact : il reste fixe dans le
+         monde pendant que l'archipel défile devant lui. C'est cette
+         différence, et elle seule, qui fabrique la parallaxe — sans qu'aucune
+         caméra n'ait à bouger. Les nuages, les îles lointaines et l'horizon
+         peint sont déjà là ; ils ne demandaient qu'à ne pas suivre.
+
+         AUCUN calcul de caméra n'est touché : viewTarget et les cadrages sont
+         exprimés en coordonnées LOCALES (kaykitCellPosition), qui ignorent ce
+         décalage. Il doit donc impérativement être ramené à zéro avant de
+         rendre la main. Il ne vit que le temps d'une transition, pendant
+         laquelle la caméra est pilotée et les entrées verrouillées. */
+      function kaykitDecalerArchipel(x = 0, y = 0, z = 0) {
+        if (!kaykit3D?.root) return;
+        kaykit3D.root.position.set(x, y, z);
+        const ciel = kaykit3D.scene?.getObjectByName("ilyos-sky");
+        if (ciel) ciel.position.set(-x, -y, -z);
+      }
+
+      /* APERÇU D'UN ARCHIPEL. Les VRAIES formes du prochain Sanctuaire, bâties
+         avec le vrai bloc KayKit — pas une silhouette approchée. Les données
+         existent déjà dans la définition de l'énigme : les dessiner ne coûte
+         qu'un clone par case.
+
+         Volontairement à l'écart de makeKayKitIslandBlock, qui inscrit chaque
+         bloc dans l'index des cases cliquables (registerKayKitCellVisual) et
+         pose un contour d'île. Un décor n'a rien à faire dans l'index du
+         plateau jouable.
+
+         Rend null si le bloc n'est pas encore chargé. On ne pose JAMAIS de
+         secours : un aperçu approximatif qui se ferait remplacer à l'arrivée
+         serait précisément le raccord visible qu'on cherche à éviter. */
+      function kaykitApercuArchipel(cellules, decalage = {}) {
+        if (!kaykit3D?.fxGroup || typeof THREE === "undefined") return null;
+        const groupe = new THREE.Group();
+        (cellules || []).forEach(([r, c]) => {
+          const bloc = cloneKayKitAsset("blockBitsGrassDirt", {
+            exactWidth: KAYKIT_BLOCK_SIZE, exactDepth: KAYKIT_BLOCK_SIZE,
+            exactHeight: .46, targetFloor: 0
+          });
+          if (!bloc) return;
+          const p = kaykitCellPosition(r, c, 0);
+          bloc.position.set(p.x, KAYKIT_LEVELS.board, p.z);
+          bloc.traverse?.(child => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = true;
+          });
+          groupe.add(bloc);
+        });
+        if (!groupe.children.length) return null;
+        groupe.position.set(decalage.x || 0, decalage.y || 0, decalage.z || 0);
+        kaykit3D.fxGroup.add(groupe);
+        return groupe;
+      }
+
+      function kaykitRetirerApercu(groupe) {
+        if (!groupe) return;
+        try { clearKayKitGroup(groupe); } catch (_) { }
+        groupe.parent?.remove(groupe);
+      }
+
       function kaykitCellSurfaceY(r, c) {
         if (islandAt(r, c)) return KAYKIT_LEVELS.islandTop + .014;
         if (isLand(r, c)) return KAYKIT_LEVELS.pedestalTop + .014;
+        if (KAYKIT_PASSERELLE.size && KAYKIT_PASSERELLE.has(`${r},${c}`)) {
+          return KAYKIT_LEVELS.islandTop + .014;
+        }
         return KAYKIT_LEVELS.board + .014;
       }
 
@@ -29022,7 +29106,18 @@
         try { localStorage.setItem(PUZZLE_STORAGE_KEY, JSON.stringify(progress)); } catch (_) { }
       }
 
+      /* CHANTIER DES TRANSITIONS — tout est ouvert.
+         Régler un voyage demande de l'atteindre des dizaines de fois, et les
+         Sanctuaires intéressants sont en fin de campagne. Exiger de résoudre
+         les dix-sept précédents rendrait le travail impraticable.
+
+         À REMETTRE quand les transitions seront réglées : il suffit de rendre
+         sa ligne à la fonction ci-dessous. La progression, elle, continue
+         d'être enregistrée normalement — rien n'est perdu. */
+      const PUZZLE_TOUT_OUVERT = true;
+
       function puzzleDevUnlocked() {
+        if (PUZZLE_TOUT_OUVERT) return true;
         try { if (localStorage.getItem(PUZZLE_DEV_KEY) === "1") return true; } catch (_) { }
         try { return /[?&]dev=puzzles(&|$)/.test(location.search); } catch (_) { return false; }
       }
@@ -30304,6 +30399,337 @@
         });
       }
 
+      /* ---------- LE DÉPART ------------------------------------------------
+         Ce qui manquait entre deux Sanctuaires : le sentiment d'ALLER quelque
+         part. Le procédé est celui de Lara Croft GO — un seul plateau existe à
+         la fois, et c'est le MOUVEMENT qui raconte le voyage, pas une seconde
+         géométrie. Le Gardien s'avance hors de l'archipel sur une passerelle
+         qui se pose sous ses pas, la caméra part avec lui, et le noir ne tombe
+         qu'une fois qu'il marche déjà. Le rideau cesse alors d'être une
+         coupure : il devient une sortie de champ. Même code, sensation
+         inverse.
+
+         Rien ici ne touche aux règles. La passerelle est décorative, la marche
+         est jouée sur le VISUEL du gardien (playCharacterMove) sans que sa case
+         logique bouge d'un pouce, et le plateau suivant se construit derrière
+         le noir exactement comme avant. L'oracle des solutions ne voit
+         strictement rien de cette séquence — il tourne d'ailleurs avec
+         ilyosSimulationActive, qui court-circuite et la marche et la caméra. */
+
+      const PUZZLE_DEPART = {
+        pas: 4,          // cases parcourues hors du plateau
+        marche: 2600,    // durée de la marche, ms
+        avance: 500      // ms de marche restants QUAND le noir tombe
+      };
+
+      /* Vers où « l'avant » ? Pas vers r décroissant par principe : le joueur a
+         pu tourner autour du plateau, et le monde ne change pas de sens parce
+         que le cadrage a changé. On lit donc la direction que regarde vraiment
+         la caméra et on la rabat sur l'axe de grille dominant : le départ suit
+         toujours le haut de l'écran. */
+      function puzzleDirectionDepart() {
+        const defaut = [-1, 0];
+        try {
+          const camera = kaykit3D?.camera;
+          const cible = kaykit3D?.orbit?.target || kaykit3D?.viewTarget;
+          if (!camera || !cible) return defaut;
+          /* kaykitCellPosition : x croît avec la colonne, z croît avec la
+             ligne. La direction du regard est donc directement lisible en
+             coordonnées de grille. */
+          const dx = cible.x - camera.position.x;
+          const dz = cible.z - camera.position.z;
+          if (Math.abs(dx) < 1e-3 && Math.abs(dz) < 1e-3) return defaut;
+          return Math.abs(dz) >= Math.abs(dx)
+            ? [Math.sign(dz), 0]
+            : [0, Math.sign(dx)];
+        } catch (_) { return defaut; }
+      }
+
+      /* Celui de mes gardiens qui est déjà le plus avancé dans cette direction.
+         C'est le seul dont le départ ne ressemble pas à un demi-tour, et il a le
+         moins de plateau à traverser avant d'atteindre le vide. */
+      function puzzleGardienDuDepart(dir) {
+        const miens = (state?.characters || []).filter(char => char.player === 0);
+        if (!miens.length) return null;
+        const avance = char => char.r * dir[0] + char.c * dir[1];
+        return miens.reduce((a, b) => (avance(b) > avance(a) ? b : a));
+      }
+
+      /* LA PASSERELLE. Quelques dalles posées dans le vide, hors de la grille —
+         kaykitCellPosition est de l'arithmétique pure, sans borne, et
+         kaykitCellSurfaceY rend le niveau du plateau pour toute case sans île :
+         un gardien peut donc marcher au-delà du bord, à plat.
+
+         Les dalles ne s'allument pas d'un coup : chacune arrive juste avant le
+         pas qui va s'y poser. C'est le « le chemin se construit parce que
+         j'avance » du document, obtenu sans un seul asset nouveau. */
+      function puzzlePasserelle(depart, dir, longueur, cadence) {
+        if (typeof THREE === "undefined" || typeof kaykit3D === "undefined") return null;
+        if (!kaykit3D?.fxGroup) return null;
+
+        const groupe = new THREE.Group();
+        const cote = KAYKIT_CELL_SPACING * .58;
+        const epaisseur = .09;
+        const geometrie = new THREE.BoxGeometry(cote, epaisseur, cote);
+        const dalles = [];
+        const cellules = [];
+
+        for (let i = 1; i <= longueur; i++) {
+          const r = depart[0] + dir[0] * i;
+          const c = depart[1] + dir[1] * i;
+          /* Une case déjà couverte par une île est du sol : y poser une dalle
+             ne ferait qu'un plan qui lutte avec le dessus de l'île. */
+          if (typeof islandAt === "function" && islandAt(r, c)) continue;
+          cellules.push([r, c]);
+          /* Hauteur d'île : le gardien marche SUR la dalle. C'est la même
+             hauteur que kaykitCellSurfaceY rend pour une case de passerelle. */
+          const p = kaykitCellPosition(r, c, KAYKIT_LEVELS.islandTop - epaisseur / 2);
+          /* Un matériau par dalle : elles doivent s'éclaircir chacune à son
+             tour, et une opacité est portée par le matériau, pas par le mesh. */
+          const materiau = new THREE.MeshBasicMaterial({
+            color: 0x5a6a86, fog: true, transparent: true, opacity: 0, toneMapped: false
+          });
+          const dalle = new THREE.Mesh(geometrie, materiau);
+          dalle.position.set(p.x, p.y, p.z);
+          groupe.add(dalle);
+          dalles.push({ materiau, debut: (i - 1) * cadence });
+        }
+
+        kaykit3D.fxGroup.add(groupe);
+        /* Déclarer les dalles AVANT la marche : c'est ce qui donne au gardien
+           un sol à hauteur d'île sur tout le trajet, y compris sur les cases
+           vides encore à l'intérieur du plateau. */
+        try { kaykitSetPasserelle(cellules); } catch (_) { }
+
+        const depuis = performance.now();
+        const montee = 380;
+        let vivante = true;
+        const animer = () => {
+          if (!vivante) return;
+          const ecoule = performance.now() - depuis;
+          dalles.forEach(dalle => {
+            const t = (ecoule - dalle.debut) / montee;
+            dalle.materiau.opacity = t <= 0 ? 0 : (t >= 1 ? 1 : t * t * (3 - 2 * t));
+          });
+          requestAnimationFrame(animer);
+        };
+        requestAnimationFrame(animer);
+
+        return {
+          dispose() {
+            vivante = false;
+            try { kaykitClearPasserelle(); } catch (_) { }
+            try {
+              kaykit3D?.fxGroup?.remove(groupe);
+              dalles.forEach(dalle => dalle.materiau.dispose());
+              geometrie.dispose();
+            } catch (_) { }
+          }
+        };
+      }
+
+      /* La séquence elle-même. Rend une fonction de démontage, que le voyage
+         appelle UNE FOIS LE NOIR POSÉ : démonter plus tôt ferait disparaître la
+         passerelle sous les pieds du gardien. */
+      async function puzzleDepart(attendre, { camera = true } = {}) {
+        const dir = puzzleDirectionDepart();
+
+        /* Le départ ne DÉPEND PAS d'un gardien. Certaines énigmes vident le
+           plateau en se résolvant — La charnière des cieux valide sa couronne
+           et il ne reste plus personne — et la séquence entière sautait alors
+           en silence. Quand il n'y a plus de gardien, c'est le chemin lui-même
+           qui part vers l'avant, depuis le Sanctuaire : les dalles s'allument
+           l'une après l'autre et la caméra les suit. */
+        const gardien = puzzleGardienDuDepart(dir);
+        const origine = gardien
+          ? [gardien.r, gardien.c]
+          : puzzleSanctuaireCell(PUZZLE.def || {});
+        if (!origine) return null;
+
+        let visual = null;
+        try {
+          if (gardien && typeof characterVisualById === "function") {
+            visual = characterVisualById(gardien.id);
+          }
+        } catch (_) { }
+
+        const pas = PUZZLE_DEPART.pas;
+        const cadence = PUZZLE_DEPART.marche / pas;
+        const passerelle = puzzlePasserelle(origine, dir, pas, cadence);
+
+        const route = [[origine[0], origine[1]]];
+        for (let i = 1; i <= pas; i++) route.push([origine[0] + dir[0] * i, origine[1] + dir[1] * i]);
+
+        try {
+          if (visual && typeof playCharacterMove === "function") {
+            playCharacterMove(visual, route, PUZZLE_DEPART.marche);
+          }
+        } catch (_) { }
+
+        /* La caméra vise une case ENCORE plus loin que l'arrivée du gardien :
+           il marche donc vers le bas du cadre pendant que le regard, lui, est
+           déjà porté sur ce qui vient. Le léger recul (zoomBoost négatif) ouvre
+           le paysage au moment du départ. */
+        /* `camera: false` quand c'est LE MONDE qui glisse : la caméra doit
+           alors rester rigoureusement immobile, sans quoi la parallaxe se
+           brouille et l'on ne sait plus qui bouge de l'archipel ou du regard. */
+        try {
+          if (camera && typeof kaykitFollowCell === "function") {
+            kaykitFollowCell(origine[0] + dir[0] * (pas + 2), origine[1] + dir[1] * (pas + 2), {
+              duration: PUZZLE_DEPART.marche + 400, force: true, cinematique: true, zoomBoost: -1.2
+            });
+          }
+        } catch (_) { }
+
+        await attendre(Math.max(0, PUZZLE_DEPART.marche - PUZZLE_DEPART.avance));
+
+        return () => {
+          passerelle?.dispose();
+          /* Le visuel est resté en cours de marche, hors de la grille. Les
+             identifiants de gardiens repartent de zéro à chaque énigme
+             (`pz-${state.nextCharId++}`) : sans ce nettoyage, le gardien du
+             Sanctuaire SUIVANT peut hériter du même visuel, et
+             syncKayKitCharacters ne le replace pas tant que `move` est posé —
+             il resterait planté dans le vide. */
+          if (visual) {
+            visual.move = null;
+            visual.settle = null;
+            try { visual.animator?.toIdle({ fade: .12 }); } catch (_) { }
+          }
+        };
+      }
+
+      /* ---------- LE MONDE QUI GLISSE --------------------------------------
+         La transition « le monde s'étend », et la seule des trois où RIEN
+         n'est masqué ni substitué derrière un rideau.
+
+         Le principe, celui de Lara Croft GO : la caméra ne bouge pas, c'est
+         l'archipel qui défile. L'ancien Sanctuaire s'éloigne et s'enfonce sous
+         le cadre ; le prochain, dessiné à l'avance dans ses vraies formes,
+         arrive exactement au centre. Quand il y est, on échange l'aperçu contre
+         le vrai plateau et l'on remet le décalage à zéro — dans la même image,
+         au même endroit. Il n'y a rien à cacher, donc pas de noir.
+
+         Trois compensations, et l'affaire tient toute entière dedans :
+         - le CIEL est décalé de l'inverse, sinon il partirait avec l'archipel
+           (kaykitDecalerArchipel) — c'est lui qui donne la parallaxe ;
+         - l'APERÇU est remonté de la hauteur dont l'ancien plateau s'enfonce,
+           pour rester à niveau pendant que l'autre coule ;
+         - le DÉCALAGE revient à zéro à la bascule, parce que tous les cadrages
+           de caméra du moteur sont exprimés en coordonnées locales. */
+      const PUZZLE_GLISSEMENT = {
+        duree: 3400,   // ms de défilement
+        avance: 13,    // cases parcourues vers l'avant
+        chute: 8.5     // unités dont l'ancien archipel s'enfonce
+      };
+
+      /* Le terrain d'une définition : ses îles, plus les coins de village, qui
+         reçoivent une île d'office au montage (voir puzzleStart). */
+      function puzzleCellulesDe(def) {
+        const cellules = [];
+        (def.islands || []).forEach(entry => {
+          (Array.isArray(entry) ? entry : entry.cells || []).forEach(cell => cellules.push(cell));
+        });
+        Object.values(def.villages || {}).forEach(coins =>
+          (coins || []).forEach(cell => cellules.push(cell)));
+        return cellules;
+      }
+
+      /* Rend false si l'aperçu n'a pas pu être bâti — bloc KayKit pas encore
+         chargé. L'appelant retombe alors sur la voie au noir, qui, elle, ne
+         dépend d'aucun asset. */
+      async function puzzleGlissement(index, def, attendre, dir) {
+        if (typeof kaykitApercuArchipel !== "function") return false;
+
+        const zero = kaykitCellPosition(0, 0, 0);
+        const un = kaykitCellPosition(dir[0], dir[1], 0);
+        const dx = (un.x - zero.x) * PUZZLE_GLISSEMENT.avance;
+        const dz = (un.z - zero.z) * PUZZLE_GLISSEMENT.avance;
+        const chute = PUZZLE_GLISSEMENT.chute;
+
+        const apercu = kaykitApercuArchipel(puzzleCellulesDe(def), { x: dx, y: 0, z: dz });
+        if (!apercu) return false;
+
+        const depuis = performance.now();
+        let actif = true;
+        const animer = () => {
+          if (!actif) return;
+          const t = Math.min(1, (performance.now() - depuis) / PUZZLE_GLISSEMENT.duree);
+          const e = t * t * (3 - 2 * t);
+          kaykitDecalerArchipel(-dx * e, -chute * e, -dz * e);
+          apercu.position.set(dx, chute * e, dz);
+          if (t < 1) requestAnimationFrame(animer);
+        };
+        requestAnimationFrame(animer);
+
+        await attendre(PUZZLE_GLISSEMENT.duree);
+
+        /* LA BASCULE. Tout se fait dans la même image : aucun rendu ne
+           s'intercale entre le retrait de l'aperçu et la remise à zéro, donc
+           aucune position intermédiaire n'est jamais affichée. */
+        actif = false;
+        kaykitRetirerApercu(apercu);
+        puzzleStart(index, { muet: true });
+        kaykitDecalerArchipel(0, 0, 0);
+        return true;
+      }
+
+      /* L'ARRIVÉE. Le pendant du départ, et ce qui manquait le plus : on ne se
+         RÉVEILLAIT pas devant le nouveau plateau, on y apparaissait. La caméra
+         est donc posée en retrait, dans l'axe d'où l'on vient, puis glisse
+         jusqu'au cadrage de jeu pendant que le rideau se lève. Le joueur
+         reprend la main sur un mouvement qui s'achève, pas sur une image qui
+         surgit.
+
+         Deux précautions, toutes deux apprises en le regardant tourner :
+
+         • puzzleStart réimpose son cadrage à 350, 700, 1100, 1600 et 2400 ms.
+           Ces rappels écraseraient le glissement. On les désarme en effaçant
+           PUZZLE.lastFrame, que puzzleFrame teste avant chaque rappel — et
+           c'est sans risque ici : la course qu'ils protègent est celle contre
+           camera-start-face-auto-v1.js, qui ne s'arme qu'au passage de
+           gameScreen de caché à visible, donc jamais entre deux Sanctuaires.
+
+         • La distance de jeu est RELEVÉE avant le recul, et le glissement la
+           vise explicitement. Un cadrage cinématique part de la distance où
+           l'on est : viser « zoomBoost 0 » après un recul aurait figé la
+           caméra sur la distance du recul. */
+      function puzzleArrivee(def, dir) {
+        const [fr, fc] = puzzleFocusCell(def);
+        const zoom = def.zoom || 0;
+        PUZZLE.lastFrame = null;
+
+        let distanceJeu = null;
+        try { distanceJeu = kaykit3D?.zoomDistance ?? null; } catch (_) { }
+
+        const recul = 3;
+        try {
+          if (typeof kaykitFollowCell === "function") {
+            /* `dir` pointait vers l'AVANT au moment du départ : l'arrière du
+               nouveau plateau se trouve donc à -dir. */
+            kaykitFollowCell(fr - dir[0] * recul, fc - dir[1] * recul, {
+              duration: 1, force: true, cinematique: true, zoomBoost: zoom - 3.4
+            });
+          }
+        } catch (_) { }
+
+        return function glisser(duree) {
+          try {
+            if (typeof kaykitFollowCell !== "function") return;
+            const actuelle = kaykit3D?.zoomDistance;
+            /* distance = base - zoomBoost, base = distance actuelle : viser
+               `actuelle - distanceJeu` ramène exactement au cadrage de jeu,
+               que la distance ait bougé pendant le recul ou non. */
+            const retour = (Number.isFinite(actuelle) && Number.isFinite(distanceJeu))
+              ? actuelle - distanceJeu
+              : zoom;
+            kaykitFollowCell(fr, fc, {
+              duration: duree, force: true, cinematique: true, zoomBoost: retour
+            });
+          } catch (_) { }
+        };
+      }
+
       /* LE VOYAGE. Ce qui remplace un retour au menu entre deux Sanctuaires :
          on part dans le noir, l'archipel suivant se découvre dessous pendant
          que son nom se tient à l'écran, puis la main revient.
@@ -30319,20 +30745,52 @@
 
         await puzzleSequence(async (dom, attendre) => {
           dom.layer.querySelectorAll(".pz-end").forEach(node => node.remove());
+
+          const dir = puzzleDirectionDepart();
+
+          /* VOIE DU MONDE QUI GLISSE. Caméra immobile pendant le départ du
+             gardien : c'est l'archipel qui va bouger, et deux mouvements à la
+             fois n'en laisseraient lire aucun. */
+          const finDepartGlisse = await puzzleDepart(attendre, { camera: false });
+          const glisse = await puzzleGlissement(index, def, attendre, dir);
+          if (finDepartGlisse) finDepartGlisse();
+          if (glisse) {
+            dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
+              + `<span class="nom">${def.title}</span>`;
+            dom.lieu.classList.add("show");
+            await attendre(2200);
+            dom.lieu.classList.remove("show");
+            await attendre(900);
+            return;
+          }
+
+          /* VOIE AU NOIR. Repli quand l'aperçu n'a pas pu être bâti : le
+             gardien est déjà parti, on enchaîne sur le rideau. */
+          const finDepart = null;
+
           dom.fade.classList.add("on");
           await attendre(760);
+          if (finDepart) finDepart();
 
           puzzleStart(index, { muet: true });
 
           dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
             + `<span class="nom">${def.title}</span>`;
           dom.lieu.classList.add("show");
-          await attendre(1400);
 
-          // On relève le rideau sous le nom : l'archipel se découvre pendant
-          // que la caméra achève de se poser.
+          /* Le temps que le cadrage d'ouverture se pose une première fois. Le
+             recul d'arrivée part de LUI : sans cette attente, on reculerait
+             depuis un cadrage encore en train de bouger. */
+          await attendre(980);
+          const glisser = puzzleArrivee(def, dir);
+          await attendre(140);
+
+          /* Le rideau se lève sur une caméra DÉJÀ en mouvement : l'archipel se
+             découvre pendant l'approche, il n'apparaît pas tout posé. */
+          const approche = 2600;
+          glisser(approche);
           dom.fade.classList.remove("on");
-          await attendre(1500);
+          await attendre(approche - 700);
           dom.lieu.classList.remove("show");
           await attendre(900);
         });
@@ -31318,6 +31776,13 @@
         startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
           { force: true, muet: true, ...options }),
         restart: puzzleRestart,
+        /* Joue la TRANSITION vers un Sanctuaire depuis celui en cours, sans
+           passer par une victoire. Une transition ne se règle qu'en la
+           regardant tourner des dizaines de fois ; l'atteindre en résolvant
+           l'énigme à chaque essai n'est pas praticable, et la voie live de
+           l'oracle ne convient qu'aux énigmes multi-tours. */
+        voyage: index => puzzleVoyage(index),
+        voyageById: id => puzzleVoyage(PUZZLES.findIndex(def => def.id === id)),
         exit: puzzleQuitToHome,
         list: () => PUZZLES.map((def, index) => ({
           index, id: def.id, title: def.title, board: def.board || 11, par: def.par ?? null
@@ -31344,6 +31809,12 @@
         _debug: () => ({
           active: PUZZLE.active,
           menuOpen: PUZZLE.menuOpen,
+          /* Le déblocage linéaire est suspendu pendant le chantier des
+             transitions. Exposé ici pour que le test du menu vérifie le
+             comportement RÉEL au lieu d'être assoupli : il exige les 22 cartes
+             ouvertes tant que ce drapeau tient, et le verrou linéaire dès
+             qu'il retombe. */
+          toutOuvert: PUZZLE_TOUT_OUVERT,
           index: PUZZLE.index,
           id: PUZZLE.def?.id || null,
           ended: PUZZLE.ended,

@@ -6106,9 +6106,93 @@
 
       const KAYKIT_LEVELS = { board: .05, islandTop: .47, pedestalTop: .47 };
 
+      /* Cases qui portent une DALLE DE PASSERELLE. Une passerelle est purement
+         décorative — aucune règle ne la connaît — mais c'est du sol pour qui
+         marche dessus, et à hauteur d'île. Sans cela, le gardien qui quitte
+         l'archipel au départ d'un voyage (voir puzzleDepart) descendait d'un
+         bloc entier dès la première case vide : il partait en tombant d'une
+         marche au lieu de s'avancer. La clé est "r,c" — ces cases sortent de la
+         grille, aucune structure indexée par le plateau ne peut les porter. */
+      const KAYKIT_PASSERELLE = new Set();
+      function kaykitSetPasserelle(cells) {
+        KAYKIT_PASSERELLE.clear();
+        (cells || []).forEach(([r, c]) => KAYKIT_PASSERELLE.add(`${r},${c}`));
+      }
+      function kaykitClearPasserelle() { KAYKIT_PASSERELLE.clear(); }
+
+      /* GLISSEMENT DU MONDE ------------------------------------------------
+         Déplacer `root` déplace TOUT le visuel — plateau, gardiens, effets —
+         et le ciel avec, puisque buildKayKitStaticScene le construit dans
+         staticGroup. Sans compensation, l'archipel et l'horizon partiraient
+         ensemble et il ne se passerait rien à l'écran.
+
+         On décale donc le ciel de l'inverse exact : il reste fixe dans le
+         monde pendant que l'archipel défile devant lui. C'est cette
+         différence, et elle seule, qui fabrique la parallaxe — sans qu'aucune
+         caméra n'ait à bouger. Les nuages, les îles lointaines et l'horizon
+         peint sont déjà là ; ils ne demandaient qu'à ne pas suivre.
+
+         AUCUN calcul de caméra n'est touché : viewTarget et les cadrages sont
+         exprimés en coordonnées LOCALES (kaykitCellPosition), qui ignorent ce
+         décalage. Il doit donc impérativement être ramené à zéro avant de
+         rendre la main. Il ne vit que le temps d'une transition, pendant
+         laquelle la caméra est pilotée et les entrées verrouillées. */
+      function kaykitDecalerArchipel(x = 0, y = 0, z = 0) {
+        if (!kaykit3D?.root) return;
+        kaykit3D.root.position.set(x, y, z);
+        const ciel = kaykit3D.scene?.getObjectByName("ilyos-sky");
+        if (ciel) ciel.position.set(-x, -y, -z);
+      }
+
+      /* APERÇU D'UN ARCHIPEL. Les VRAIES formes du prochain Sanctuaire, bâties
+         avec le vrai bloc KayKit — pas une silhouette approchée. Les données
+         existent déjà dans la définition de l'énigme : les dessiner ne coûte
+         qu'un clone par case.
+
+         Volontairement à l'écart de makeKayKitIslandBlock, qui inscrit chaque
+         bloc dans l'index des cases cliquables (registerKayKitCellVisual) et
+         pose un contour d'île. Un décor n'a rien à faire dans l'index du
+         plateau jouable.
+
+         Rend null si le bloc n'est pas encore chargé. On ne pose JAMAIS de
+         secours : un aperçu approximatif qui se ferait remplacer à l'arrivée
+         serait précisément le raccord visible qu'on cherche à éviter. */
+      function kaykitApercuArchipel(cellules, decalage = {}) {
+        if (!kaykit3D?.fxGroup || typeof THREE === "undefined") return null;
+        const groupe = new THREE.Group();
+        (cellules || []).forEach(([r, c]) => {
+          const bloc = cloneKayKitAsset("blockBitsGrassDirt", {
+            exactWidth: KAYKIT_BLOCK_SIZE, exactDepth: KAYKIT_BLOCK_SIZE,
+            exactHeight: .46, targetFloor: 0
+          });
+          if (!bloc) return;
+          const p = kaykitCellPosition(r, c, 0);
+          bloc.position.set(p.x, KAYKIT_LEVELS.board, p.z);
+          bloc.traverse?.(child => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = true;
+          });
+          groupe.add(bloc);
+        });
+        if (!groupe.children.length) return null;
+        groupe.position.set(decalage.x || 0, decalage.y || 0, decalage.z || 0);
+        kaykit3D.fxGroup.add(groupe);
+        return groupe;
+      }
+
+      function kaykitRetirerApercu(groupe) {
+        if (!groupe) return;
+        try { clearKayKitGroup(groupe); } catch (_) { }
+        groupe.parent?.remove(groupe);
+      }
+
       function kaykitCellSurfaceY(r, c) {
         if (islandAt(r, c)) return KAYKIT_LEVELS.islandTop + .014;
         if (isLand(r, c)) return KAYKIT_LEVELS.pedestalTop + .014;
+        if (KAYKIT_PASSERELLE.size && KAYKIT_PASSERELLE.has(`${r},${c}`)) {
+          return KAYKIT_LEVELS.islandTop + .014;
+        }
         return KAYKIT_LEVELS.board + .014;
       }
 
