@@ -84,6 +84,18 @@
         return puzzleIsSanctuaryBase(r, c);
       };
 
+      /* Un Relais de campagne peut occuper trois cases qui ne sont pas dans
+         un coin. On conserve le château et toutes les règles de validation
+         existantes ; seule la forme de sa zone vient alors de la définition. */
+      const puzzleCornerCrownCellsBase = cornerCrownCellsForVillage;
+      cornerCrownCellsForVillage = function cornerCrownCellsForVillagePuzzleAware(village) {
+        const relais = PUZZLE.active && PUZZLE.def?.validation;
+        const villageDuJoueur = state?.players?.[0] && villagesForPlayer(state.players[0])
+          .some(v => v.r === village?.r && v.c === village?.c);
+        if (relais && villageDuJoueur) return relais.map(([r, c]) => [r, c]);
+        return puzzleCornerCrownCellsBase(village);
+      };
+
       /* ---------- Comptage exact des cartes -----------------------------
          Le budget ne peut pas se déduire de « ce qu'il reste » : quand la pioche
          se vide, drawCards() REMÉLANGE la défausse et rend des cartes déjà

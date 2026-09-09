@@ -47,39 +47,52 @@
 
       PUZZLES.push(
         /* -----------------------------------------------------------------
-           01 — La poussée choisit sa force, et un rival dans ton village te
-           verrouille. Le Gardien est enfermé derrière les deux rivaux : il ne
-           peut RIEN faire d'autre que pousser, ce qui met la leçon au premier
-           geste. Force 2 tue le premier rival mais dépose le second pile sur
-           le coin du village ; il reste alors juste assez de cartes pour s'en
-           sortir, et pas une de plus. */
+           01 — Tutoriel invisible. La géométrie conduit naturellement le
+           joueur de MOVE à PUSH 1, puis lui fait découvrir qu'un Veilleur
+           poussé hors de la terre chute. Les coordonnées de conception sont
+           données en (x,y) ; ce fichier les stocke en (r,c), soit (y,x). */
         {
           id: "p01-seuil",
           acte: "PROLOGUE",
-          title: "Le seuil gardé",
-          tagline: "Deux rivaux, une seule ligne, et ton village derrière eux.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
+          title: "La Première Lueur",
+          tagline: "Une voie, deux Veilleurs, et la lumière au bout.",
+          brief: "Ramène la couronne jusqu'au Relais.",
+          board: 13,
           sanctuary: false,
-          focus: [1, 0],
-          villages: { 0: [[0, 0]] },
+          focus: [6, 6],
+          villages: { 0: [[2, 2]] },
+          validation: [[2, 2], [2, 3], [3, 2]],
           islands: [
-            [[0, 1], [1, 0], [2, 0], [3, 0]]
+            [
+              [2, 2], [2, 3],
+              [3, 2], [3, 3], [3, 4],
+              [4, 2], [4, 3], [4, 4], [4, 5],
+              [5, 5], [5, 6], [5, 7],
+              [6, 6], [6, 7], [6, 8],
+              [7, 7], [7, 8], [7, 9],
+              [8, 8], [8, 9],
+              [9, 8], [9, 9], [9, 10],
+              [10, 10], [10, 11],
+              [11, 9], [11, 10], [11, 11]
+            ]
           ],
           guardians: [
-            { key: "G", p: 0, r: 3, c: 0, crown: 1 },
-            { p: 1, r: 2, c: 0 },
-            { p: 1, r: 1, c: 0 }
+            { key: "G", p: 0, r: 10, c: 10, crown: 1 },
+            { key: "R1", p: 1, r: 9, c: 9 },
+            { key: "R2", p: 1, r: 5, c: 5 }
           ],
-          hand: { PUSH: 3, MOVE: 2, MAGIC: 1 },
-          par: 5,
+          hand: { MOVE: 22, PUSH: 3, MAGIC: 0 },
+          par: 17,
           goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Le seuil est libre",
-          winLine: "Une poussée assez longue les emporte tous les deux.",
-          failLine: "Un rival campe encore sur ton village, et la main est vide.",
+          winTitle: "Le Relais s'éveille",
+          winLine: "La première voie d'Ilyos brille de nouveau.",
+          failLine: "La lumière n'a pas encore atteint le Relais.",
           solution: [
-            { a: "PUSH", who: "G", on: [2, 0], force: 3 },
-            { a: "MOVE", who: "G", to: [1, 0] }
+            { a: "MOVE", who: "G", to: [9, 10] },
+            { a: "PUSH", who: "G", on: [9, 9], force: 1 },
+            { a: "MOVE", who: "G", to: [5, 6] },
+            { a: "PUSH", who: "G", on: [5, 5], force: 1 },
+            { a: "MOVE", who: "G", to: [3, 2] }
           ]
         },
         /* -----------------------------------------------------------------

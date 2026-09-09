@@ -84,8 +84,8 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
 
   const etat = await page.evaluate(() => window.ILYOS_PUZZLE._debug());
   expect(etat.id).toBe('p01-seuil');
-  expect(etat.budget).toBe(6);
-  expect(etat.restant).toBe(6);
+  expect(etat.budget).toBe(25);
+  expect(etat.restant).toBe(25);
   expect(etat.goal).toBe(false);
   expect(etat.fail).toBe(false);
   // La pose d'île est neutralisée : le sélecteur de formes est masqué.
