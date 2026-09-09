@@ -1,24 +1,39 @@
-# Musique ILYOS
+# Musiques ILYOS
 
 Ce dossier accueille les soundtracks longues du jeu.
 
-## V1 simple
+## Mode Puzzle — séquence V1
 
-Pour la première intégration, utiliser un seul fichier principal :
+Le Cabinet d’énigmes utilise trois fichiers :
 
-- `gameplay-01.mp3`
+- `Intro.mp3` — joué une seule fois à l’entrée du mode Puzzle ;
+- `2.mp3` — première ambiance de jeu ;
+- `3.mp3` — seconde ambiance de jeu.
 
-Le fichier sera lu en boucle par le moteur audio existant d’ILYOS, avec le volume Musique du menu Son et le système de cache des assets déjà présent.
+Ordre de lecture :
 
-## Format conseillé
+```text
+Intro → 2 → 3 → 2 → 3 → …
+```
 
-- MP3
-- 44,1 ou 48 kHz
-- stéréo
-- 160 à 192 kb/s pour une bonne qualité sans poids excessif
+Recommencer une énigme ou revenir à la liste des Sanctuaires ne relance pas l’Intro. La playlist s’arrête seulement lorsque le joueur quitte complètement le mode Puzzle. Les bruitages restent actifs et le volume suit les réglages Son d’ILYOS.
 
-Ne pas normaliser trop fort : garder un peu de marge afin que les bruitages restent lisibles par-dessus la musique.
+Le contrôleur est `js/puzzle-music-v1.js`. Si un fichier est absent ou illisible, le jeu revient proprement à son ambiance normale sans bloquer le mode Puzzle.
+
+## Format actuel
+
+Les trois morceaux fournis utilisent déjà un format adapté :
+
+- MP3 ;
+- stéréo ;
+- 44,1 kHz.
+
+Durées approximatives :
+
+- `Intro.mp3` : 1 min 47 s ;
+- `2.mp3` : 1 min 40 s ;
+- `3.mp3` : 2 min 20 s.
 
 ## Licence
 
-Avant publication, renseigner la provenance et la licence de chaque morceau dans `docs/ASSETS.md` et vérifier que l’utilisation dans un jeu distribué/commercial est autorisée.
+Avant publication, renseigner la provenance et la licence de chaque morceau dans `docs/ASSETS.md` et vérifier que l’utilisation dans un jeu distribué ou commercial est autorisée.
