@@ -106,7 +106,27 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   expect(erreurs).toEqual([]);
 });
 
-/* Les deux tests ci-dessus vérifient les RÈGLES et le câblage. Celui-ci vérifie
+test('le prologue vocal de La Première Lueur accompagne le puzzle et reste passable', async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => {
+    window.__ilyosVoixTest = [];
+    window.speechSynthesis.speak = utterance => window.__ilyosVoixTest.push(utterance.text);
+    window.speechSynthesis.cancel = () => { };
+    window.ILYOS_PUZZLE.startById('p01-seuil', { muet: false });
+  });
+
+  await expect(page.locator('#puzzleLayer')).toHaveClass(/reveil/);
+  await expect(page.locator('#puzzleLayer .pz-caption')).toHaveText("Ton village s'est éteint.");
+  await expect.poll(() => page.evaluate(() => window.__ilyosVoixTest)).toContain("Ton village s'est éteint.");
+
+  await page.keyboard.press('Space');
+  await expect(page.locator('#puzzleLayer')).not.toHaveClass(/reveil/, { timeout: 3000 });
+  expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).active).toBe(true);
+  expect(erreurs).toEqual([]);
+});
+
+/* Les tests ci-dessus vérifient les RÈGLES et le câblage. Celui-ci vérifie
    qu'une énigme se joue vraiment à la souris : sélectionner une poussée dans le
    HUD, désigner sa destination, déplacer un Gardien, puis faire pivoter une île.
    C'est le seul chemin que l'oracle ne peut pas couvrir, puisqu'il applique les

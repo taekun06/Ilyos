@@ -57,9 +57,10 @@
           title: "La Première Lueur",
           tagline: "Une voie, deux Veilleurs, et la lumière au bout.",
           brief: "Ramène la couronne jusqu'au Relais.",
+          prologue: true,
           board: 13,
           sanctuary: false,
-          focus: [6, 6],
+          focus: [2, 2],
           villages: { 0: [[2, 2]] },
           validation: [[2, 2], [2, 3], [3, 2]],
           islands: [

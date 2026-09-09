@@ -30355,14 +30355,48 @@
         }
       }
 
-      /* L'APPROCHE. Le pendant du réveil, à l'autre bout de l'énigme : une
-         phrase avant que le joueur ne prenne la main. Trois Sanctuaires
-         seulement en portent une — celui où quelqu'un attend déjà, celui qui
-         n'a rien à rallumer, et la Confluence. Les quatorze autres commencent
-         en silence, et c'est ce silence qui donne son poids à la phrase. */
+      /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
+         l'ancienne Première Ascension. Il passe par puzzleSequence : un clic
+         ou une touche rend donc immédiatement la main, sans nouveau système.
+         Les autres approches gardent leur phrase courte et silencieuse. */
       function puzzleApproche(def) {
-        if (!def.avant) return;
+        if (!def.avant && !def.prologue) return;
         return puzzleSequence(async (dom, attendre) => {
+          if (def.prologue) {
+            const dire = async (texte, duree) => {
+              dom.caption.textContent = texte;
+              dom.caption.classList.add("show");
+              try { tutoSpeak(texte); } catch (_) { }
+              await attendre(duree);
+              dom.caption.classList.remove("show");
+              try { tutoStopSpeak(); } catch (_) { }
+            };
+
+            try {
+              await attendre(450);
+              if (PUZZLE.sequenceSaute) return;
+              await dire("Ton village s'est éteint.", 2600);
+              if (PUZZLE.sequenceSaute) return;
+              await attendre(500);
+              if (PUZZLE.sequenceSaute) return;
+              try {
+                if (typeof kaykitFollowCell === "function") {
+                  kaykitFollowCell(6, 6, {
+                    duration: 3600, force: true, cinematique: true, zoomBoost: -1.4
+                  });
+                }
+              } catch (_) { }
+              await attendre(1100);
+              if (PUZZLE.sequenceSaute) return;
+              await dire("Rien ne mène plus jusqu'à lui.", 3200);
+              if (PUZZLE.sequenceSaute) return;
+              await attendre(500);
+            } finally {
+              try { tutoStopSpeak(); } catch (_) { }
+            }
+            return;
+          }
+
           await attendre(500);
           dom.caption.innerHTML = def.avant;
           dom.caption.classList.add("show");
@@ -31918,9 +31952,10 @@
           title: "La Première Lueur",
           tagline: "Une voie, deux Veilleurs, et la lumière au bout.",
           brief: "Ramène la couronne jusqu'au Relais.",
+          prologue: true,
           board: 13,
           sanctuary: false,
-          focus: [6, 6],
+          focus: [2, 2],
           villages: { 0: [[2, 2]] },
           validation: [[2, 2], [2, 3], [3, 2]],
           islands: [
