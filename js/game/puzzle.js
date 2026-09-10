@@ -2477,9 +2477,26 @@
         try {
           if (typeof kaykitFollowCell === "function") {
             const [fr, fc] = puzzleFocusCell(def);
+            /* VISER LA DISTANCE JUSTE, pas celle où l'on se trouve. Un cadrage
+               cinématique part de la distance courante ; c'était en réalité le
+               recadrage au redimensionnement qui donnait ensuite au plateau son
+               échelle correcte. Maintenant qu'il ne peut plus interrompre le
+               voyage, c'est au voyage de viser juste — sinon on arriverait
+               proprement, mais trop près, avec une partie du plateau hors
+               champ. distance = base - zoomBoost, d'où le calcul. */
+            let ecart = def.zoom || 0;
+            try {
+              const juste = kaykitFitDistance(kaykit3D.camera.aspect, kaykit3D.viewMode);
+              if (Number.isFinite(juste)) ecart = kaykit3D.zoomDistance - juste + (def.zoom || 0);
+            } catch (_) { }
             kaykitFollowCell(fr, fc, {
               duration: PUZZLE_GLISSEMENT.duree, force: true,
-              cinematique: true, zoomBoost: def.zoom || 0
+              cinematique: true, zoomBoost: ecart,
+              /* Le voyage POSSÈDE la caméra jusqu'à son terme. Sans cette
+                 protection, le montage du plateau suivant appelle
+                 resizeKayKit3D(true), qui recadrait en 360 ms et coupait le
+                 plan à un demi-seconde de son départ. */
+              priorite: 4, maintien: PUZZLE_GLISSEMENT.duree + 400
             });
           }
         } catch (_) { }

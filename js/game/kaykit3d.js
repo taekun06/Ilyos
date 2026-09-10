@@ -5961,7 +5961,23 @@
                ramener le joueur à l'angle canonique. Tant que personne n'a
                touché à la caméra, l'angle courant EST l'angle canonique, donc
                le cadrage d'ouverture reste identique. */
-            animateKayKitCameraTo(kaykit3D.viewMode, kaykit3D.zoomDistance, 360, { conserverAngle: true });
+            /* UN CADRAGE PROTÉGÉ N'EST PAS ÉCRASÉ PAR UN REFIT FORCÉ.
+               kaykitFollowCell sait déjà protéger un cadrage pour une durée
+               (option `maintien`), mais ce recadrage-ci posait son tween sans
+               jamais consulter cette protection. Un plan cinématique de trois
+               secondes se faisait donc remplacer par 360 ms de recadrage dès
+               qu'un montage de plateau appelait resizeKayKit3D(true) — c'est ce
+               qui coupait le voyage entre deux Sanctuaires au bout d'une demi-
+               seconde.
+
+               Un VRAI changement de format garde la priorité : on ne laisse pas
+               un écran pivoté sur un cadrage faux le temps d'une cinématique.
+               Seul le refit forcé, lui, attend son tour. La distance, elle, est
+               mise à jour dans tous les cas : à la fin de la protection, le
+               cadrage retrouve la bonne échelle. */
+            if (aspectChanged || performance.now() >= kaykit3D.cameraFocusUntil) {
+              animateKayKitCameraTo(kaykit3D.viewMode, kaykit3D.zoomDistance, 360, { conserverAngle: true });
+            }
           }
           kaykit3D.badge.style.left = `18px`;
           kaykit3D.badge.style.top = `18px`;
@@ -6144,7 +6160,14 @@
         if (ciel) ciel.position.set(-x, -y, -z);
       }
 
-      /* APERÇU D'UN ARCHIPEL. Les VRAIES formes du prochain Sanctuaire, bâties
+      /* GARDÉE À DESSEIN, bien que plus appelée depuis que le glissement a été
+         inversé (le souvenir cloné a remplacé l'aperçu par blocs). Ce n'est pas
+         l'ancienne transition mais sa BRIQUE : dessiner un archipel à distance,
+         à partir de la seule liste de ses cases. C'est exactement ce que réclame
+         la « grande route » du plan — annoncer une destination lointaine, puis
+         la laisser grandir à l'approche. La supprimer serait à réécrire.
+
+         APERÇU D'UN ARCHIPEL. Les VRAIES formes du prochain Sanctuaire, bâties
          avec le vrai bloc KayKit — pas une silhouette approchée. Les données
          existent déjà dans la définition de l'énigme : les dessiner ne coûte
          qu'un clone par case.
