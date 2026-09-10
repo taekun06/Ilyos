@@ -32182,6 +32182,13 @@
         ["contextmenu", "pointerdown", "mousedown", "mouseup", "auxclick"].forEach(type =>
           window.addEventListener(type, puzzleRightClickGuard, true));
 
+        /* La bande-son du Cabinet. Elle ne démarrait que sur
+           `ilyos-puzzle-requested`, émis par le seul bouton PUZZLES du menu :
+           toute autre façon d'ouvrir une énigme la laissait muette. `start` ne
+           fait rien si elle tourne déjà, donc le chemin par le menu est
+           inchangé et la piste n'est jamais reprise à zéro. */
+        try { window.ILYOS_PUZZLE_MUSIC?.start?.(); } catch (_) { }
+
         tutoRender();
         puzzleSyncOverlay();
         puzzleShowObjectif();
