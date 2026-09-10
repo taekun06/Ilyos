@@ -89,6 +89,18 @@
         return puzzleIsSanctuaryBase(r, c);
       };
 
+      /* Un Relais de campagne peut occuper trois cases qui ne sont pas dans
+         un coin. On conserve le château et toutes les règles de validation
+         existantes ; seule la forme de sa zone vient alors de la définition. */
+      const puzzleCornerCrownCellsBase = cornerCrownCellsForVillage;
+      cornerCrownCellsForVillage = function cornerCrownCellsForVillagePuzzleAware(village) {
+        const relais = PUZZLE.active && PUZZLE.def?.validation;
+        const villageDuJoueur = state?.players?.[0] && villagesForPlayer(state.players[0])
+          .some(v => v.r === village?.r && v.c === village?.c);
+        if (relais && villageDuJoueur) return relais.map(([r, c]) => [r, c]);
+        return puzzleCornerCrownCellsBase(village);
+      };
+
       /* ---------- Comptage exact des cartes -----------------------------
          Le budget ne peut pas se déduire de « ce qu'il reste » : quand la pioche
          se vide, drawCards() REMÉLANGE la défausse et rend des cartes déjà
@@ -2074,14 +2086,48 @@
         }
       }
 
-      /* L'APPROCHE. Le pendant du réveil, à l'autre bout de l'énigme : une
-         phrase avant que le joueur ne prenne la main. Trois Sanctuaires
-         seulement en portent une — celui où quelqu'un attend déjà, celui qui
-         n'a rien à rallumer, et la Confluence. Les quatorze autres commencent
-         en silence, et c'est ce silence qui donne son poids à la phrase. */
+      /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
+         l'ancienne Première Ascension. Il passe par puzzleSequence : un clic
+         ou une touche rend donc immédiatement la main, sans nouveau système.
+         Les autres approches gardent leur phrase courte et silencieuse. */
       function puzzleApproche(def) {
-        if (!def.avant) return;
+        if (!def.avant && !def.prologue) return;
         return puzzleSequence(async (dom, attendre) => {
+          if (def.prologue) {
+            const dire = async (texte, duree) => {
+              dom.caption.textContent = texte;
+              dom.caption.classList.add("show");
+              try { tutoSpeak(texte); } catch (_) { }
+              await attendre(duree);
+              dom.caption.classList.remove("show");
+              try { tutoStopSpeak(); } catch (_) { }
+            };
+
+            try {
+              await attendre(450);
+              if (PUZZLE.sequenceSaute) return;
+              await dire("Ton village s'est éteint.", 2600);
+              if (PUZZLE.sequenceSaute) return;
+              await attendre(500);
+              if (PUZZLE.sequenceSaute) return;
+              try {
+                if (typeof kaykitFollowCell === "function") {
+                  kaykitFollowCell(6, 6, {
+                    duration: 3600, force: true, cinematique: true, zoomBoost: -1.4
+                  });
+                }
+              } catch (_) { }
+              await attendre(1100);
+              if (PUZZLE.sequenceSaute) return;
+              await dire("Rien ne mène plus jusqu'à lui.", 3200);
+              if (PUZZLE.sequenceSaute) return;
+              await attendre(500);
+            } finally {
+              try { tutoStopSpeak(); } catch (_) { }
+            }
+            return;
+          }
+
           await attendre(500);
           dom.caption.innerHTML = def.avant;
           dom.caption.classList.add("show");
@@ -3617,6 +3663,10 @@
           toutOuvert: PUZZLE_TOUT_OUVERT,
           index: PUZZLE.index,
           id: PUZZLE.def?.id || null,
+          /* Les coins de village de la définition. Un test qui vise « la case
+             du village » doit la LIRE, pas la graver : la refonte du premier
+             Sanctuaire l'a déplacée et le test cliquait alors dans le vide. */
+          villages: PUZZLE.def?.villages || null,
           ended: PUZZLE.ended,
           /* Les règles sont appliquées de façon synchrone, mais l'animation qui
              les raconte garde la main verrouillée quelques centaines de
