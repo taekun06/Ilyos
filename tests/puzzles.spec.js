@@ -290,12 +290,19 @@ test("cliquer la case du village déclenche le raccourci de déplacement", async
   await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
 
   await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.textContent = ''; });
-  await page.locator('.cell[data-r="0"][data-c="0"]').dispatchEvent('click');
+  /* La case du village, LUE DANS LA DÉFINITION plutôt qu'écrite en dur : la
+     refonte de La Première Lueur l'a déplacée de (0,0) à (2,2) et le test
+     visait alors du vide. Un raccourci qui dépend d'une coordonnée gravée
+     casse au premier redécoupage du plateau. */
+  const village = await page.evaluate(() => window.ILYOS_PUZZLE._debug().villages?.[0]?.[0] || null);
+  expect(village, "le premier Sanctuaire doit déclarer un village").not.toBeNull();
+  const [vr, vc] = village;
+  await page.locator(`.cell[data-r="${vr}"][data-c="${vc}"]`).dispatchEvent('click');
 
   await page.waitForFunction(
-    () => (document.getElementById('toast')?.textContent || '').trim().length > 0
-      || window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 0 && ch.c === 0),
-    null, { timeout: 8000 });
+    ([r, c]) => (document.getElementById('toast')?.textContent || '').trim().length > 0
+      || window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === r && ch.c === c),
+    [vr, vc], { timeout: 8000 });
 
   expect(erreurs).toEqual([]);
 });

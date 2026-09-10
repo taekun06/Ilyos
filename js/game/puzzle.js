@@ -2893,6 +2893,10 @@
           toutOuvert: PUZZLE_TOUT_OUVERT,
           index: PUZZLE.index,
           id: PUZZLE.def?.id || null,
+          /* Les coins de village de la définition. Un test qui vise « la case
+             du village » doit la LIRE, pas la graver : la refonte du premier
+             Sanctuaire l'a déplacée et le test cliquait alors dans le vide. */
+          villages: PUZZLE.def?.villages || null,
           ended: PUZZLE.ended,
           /* Les règles sont appliquées de façon synchrone, mais l'animation qui
              les raconte garde la main verrouillée quelques centaines de
