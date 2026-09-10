@@ -31341,15 +31341,6 @@
 
       function puzzleOuvertureVoies() {
         return puzzleSequence(async (dom, attendre) => {
-          /* 0. LA MUSIQUE. Elle ne démarrait que sur `ilyos-puzzle-requested`,
-                émis par le seul bouton PUZZLES du menu : arriver sur le premier
-                Sanctuaire par une autre voie donnait une ouverture muette.
-                Le mouvement est réglé sur Intro.mp3, donc il la réclame lui-même.
-                `start` ne fait rien si la musique tourne déjà — le chemin normal
-                par le menu est donc inchangé, et la piste n'est pas reprise à
-                zéro pour ceux qui l'ont déjà lancée. */
-          try { window.ILYOS_PUZZLE_MUSIC?.start?.(); } catch (_) { }
-
           /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
                 hors du monde pendant qu'il est encore opaque, donc le saut
                 n'est jamais vu. */
