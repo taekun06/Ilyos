@@ -6160,7 +6160,14 @@
         if (ciel) ciel.position.set(-x, -y, -z);
       }
 
-      /* APERÇU D'UN ARCHIPEL. Les VRAIES formes du prochain Sanctuaire, bâties
+      /* GARDÉE À DESSEIN, bien que plus appelée depuis que le glissement a été
+         inversé (le souvenir cloné a remplacé l'aperçu par blocs). Ce n'est pas
+         l'ancienne transition mais sa BRIQUE : dessiner un archipel à distance,
+         à partir de la seule liste de ses cases. C'est exactement ce que réclame
+         la « grande route » du plan — annoncer une destination lointaine, puis
+         la laisser grandir à l'approche. La supprimer serait à réécrire.
+
+         APERÇU D'UN ARCHIPEL. Les VRAIES formes du prochain Sanctuaire, bâties
          avec le vrai bloc KayKit — pas une silhouette approchée. Les données
          existent déjà dans la définition de l'énigme : les dessiner ne coûte
          qu'un clone par case.

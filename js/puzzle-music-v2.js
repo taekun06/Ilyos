@@ -30,6 +30,11 @@
     } catch (_) { return -1; }
   }
   const RESTORE_KEY = 'ilyos.puzzle.music.restore.v2';
+  /* Marqueur de l'ANCIEN contrôleur. Un joueur interrompu pendant que la V1
+     jouait a laissé son volume de musique à zéro et cette clé derrière lui.
+     Ne lire que la clé V2 le condamnerait à un jeu silencieux, sans qu'il
+     puisse deviner pourquoi. On consomme donc les deux. */
+  const RESTORE_KEY_V1 = 'ilyos.puzzle.music.restore.v1';
   const SOUND_SETTINGS_KEY = 'ilyosSoundSettings';
   const PUZZLE_GAIN = 2.8;
 
@@ -109,12 +114,19 @@
   }
 
   function recoverInterruptedSession(){
-    let restore = null;
-    try { restore = JSON.parse(localStorage.getItem(RESTORE_KEY) || 'null'); } catch (_) { }
-    const percent = Number(restore?.musicPercent);
-    if (!Number.isFinite(percent)) return;
-    setSavedMusicPercent(percent);
-    try { localStorage.removeItem(RESTORE_KEY); } catch (_) { }
+    /* La clé V2 d'abord : c'est la session la plus récente qui fait foi. */
+    for (const cle of [RESTORE_KEY, RESTORE_KEY_V1]) {
+      let restore = null;
+      try { restore = JSON.parse(localStorage.getItem(cle) || 'null'); } catch (_) { }
+      const percent = Number(restore?.musicPercent);
+      if (!Number.isFinite(percent)) continue;
+      setSavedMusicPercent(percent);
+      try { localStorage.removeItem(cle); } catch (_) { }
+      /* Les deux clés sont retirées : en garder une ferait resurgir un vieux
+         volume à la prochaine ouverture. */
+      try { localStorage.removeItem(cle === RESTORE_KEY ? RESTORE_KEY_V1 : RESTORE_KEY); } catch (_) { }
+      return;
+    }
   }
 
   function syncDisplayedVolume(){
