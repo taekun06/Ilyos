@@ -6187,6 +6187,56 @@
         groupe.parent?.remove(groupe);
       }
 
+      /* LE SOUVENIR DU PLATEAU QUITTÉ.
+         On ne REBÂTIT pas l'archipel qu'on laisse derrière : on clone ce qui
+         est déjà à l'écran. Un clone partage géométries et matériaux, donc il
+         est identique par construction — îles, coques, arbres, châteaux,
+         fanions — sans que ce code ait à savoir comment chacun a été fabriqué,
+         ni à rejouer les tirages pseudo-aléatoires du décor. C'est la seule
+         manière d'être sûr que rien ne change à l'instant de la substitution.
+
+         Corollaire : ce groupe ne doit JAMAIS être libéré comme les autres.
+         Ses géométries et ses matériaux appartiennent aux originaux, et
+         clearKayKitGroup les détruirait sous les pieds du plateau vivant. */
+      function kaykitSouvenirDuPlateau(extras = []) {
+        if (!kaykit3D?.dynamicGroup || typeof THREE === "undefined") return null;
+        const souvenir = new THREE.Group();
+        [...kaykit3D.dynamicGroup.children, ...extras].forEach(enfant => {
+          if (!enfant) return;
+          try {
+            const copie = enfant.clone();
+            copie.position.copy(enfant.position);
+            copie.quaternion.copy(enfant.quaternion);
+            copie.scale.copy(enfant.scale);
+            souvenir.add(copie);
+          } catch (_) { }
+        });
+        if (!souvenir.children.length) return null;
+        kaykit3D.fxGroup.add(souvenir);
+        return souvenir;
+      }
+
+      function kaykitRetirerSouvenir(souvenir) {
+        // Retrait SEC, sans dispose : tout est partagé avec les originaux.
+        souvenir?.parent?.remove(souvenir);
+      }
+
+      /* Le gardien qui vient de sortir du plateau part AVEC son ancien monde.
+         Son squelette interdit le clonage naïf : on déplace donc le vrai
+         visuel dans le souvenir, après l'avoir retiré du registre — sans quoi
+         la prochaine synchronisation le détruirait en ne le retrouvant pas
+         dans le nouvel état. Il s'y fige dans sa pose, ce qui ne se voit pas :
+         il s'éloigne déjà, de dos et de petite taille. */
+      function kaykitEmmenerVisuel(souvenir, visual, offset = { x: 0, y: 0, z: 0 }) {
+        if (!souvenir || !visual?.wrapper) return;
+        try {
+          kaykit3D.characterVisuals.delete(visual.id);
+          const p = visual.wrapper.position.clone();
+          souvenir.add(visual.wrapper);
+          visual.wrapper.position.set(p.x - (offset.x || 0), p.y - (offset.y || 0), p.z - (offset.z || 0));
+        } catch (_) { }
+      }
+
       function kaykitCellSurfaceY(r, c) {
         if (islandAt(r, c)) return KAYKIT_LEVELS.islandTop + .014;
         if (isLand(r, c)) return KAYKIT_LEVELS.pedestalTop + .014;
