@@ -57,6 +57,9 @@
         def: null,
         budget: 0,
         restarted: false,
+        /* Numéro de montage, incrémenté à chaque puzzleStart. Sert à donner une
+           identité distincte aux gardiens d'une énigme à l'autre. */
+        serie: 0,
         ended: false,
         pollTimer: null,
         dom: null,
@@ -69,7 +72,9 @@
         rivalTurn: 0,
         replying: false,
         islandsByKey: {},
-        charsByKey: {}
+        charsByKey: {},
+        /* Minuterie de l'objectif : il paraît, se laisse lire, s'efface. */
+        objectifTimer: null
       };
 
       /* ---------- Sanctuaire optionnel ---------------------------------
@@ -294,9 +299,17 @@
         });
 
         /* Gardiens. `crown: 1|2` fait porter la couronne correspondante. */
+        PUZZLE.serie++;
         PUZZLE.charsByKey = {};
         (def.guardians || []).forEach(g => {
-          const char = { id: `pz-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
+          /* IDENTITÉ PROPRE À CHAQUE MONTAGE. `state.nextCharId` repart à 100 pour
+             chaque énigme : sans le numéro de série, les gardiens s'appelaient
+             `pz-100`, `pz-101` PARTOUT. syncKayKitCharacters croyait alors
+             reconnaître un gardien déjà là, réutilisait son visuel et le
+             TÉLÉPORTAIT — au lieu de jouer playCharacterSpawn. C'est ce qui
+             faisait surgir les gardiens du Sanctuaire suivant au lieu de les
+             faire entrer. */
+          const char = { id: `pz${PUZZLE.serie}-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
           state.characters.push(char);
           if (g.key) PUZZLE.charsByKey[g.key] = char.id;
           if (g.crown) {
@@ -474,52 +487,203 @@
           #puzzleLayer.reveil{pointer-events:auto;}
           #puzzleLayer{position:fixed;inset:0;z-index:1500001;pointer-events:none;
             font-family:'Nunito Sans','Inter',system-ui,sans-serif;color:#eaf1ff;}
-          #puzzleLayer .pz-brief{position:absolute;top:74px;left:50%;
-            transform:translateX(-50%);max-width:min(620px,90vw);z-index:7;
-            padding:9px 20px;border-radius:14px;text-align:center;
-            background:rgba(9,16,34,.84);backdrop-filter:blur(6px);
-            border:1px solid rgba(150,190,255,.28);
-            box-shadow:0 8px 30px rgba(0,0,0,.45);}
-          #puzzleLayer .pz-title{font-family:'Cinzel Decorative','Almendra',serif;
-            font-size:15px;letter-spacing:.06em;color:#ffd98a;}
-          #puzzleLayer .pz-goal{font-size:13.5px;line-height:1.45;color:#dce8ff;margin-top:3px;}
-          #puzzleLayer .pz-budget{position:absolute;top:74px;right:16px;z-index:7;
-            padding:8px 14px;border-radius:12px;font-size:12.5px;letter-spacing:.03em;
-            background:rgba(9,16,34,.84);border:1px solid rgba(150,190,255,.28);}
-          #puzzleLayer .pz-budget b{color:#ffd98a;font-size:15px;}
-          #puzzleLayer .pz-budget.tight b{color:#ff9d7a;}
-          #puzzleLayer .pz-plan{position:absolute;top:150px;right:16px;z-index:7;
-            max-width:250px;padding:10px 14px;border-radius:12px;font-size:12px;
-            line-height:1.5;background:rgba(9,16,34,.84);
-            border:1px solid rgba(150,190,255,.28);}
-          #puzzleLayer .pz-plan-title{font-size:10px;letter-spacing:.16em;
-            color:#8fa6d2;margin-bottom:5px;}
-          #puzzleLayer .pz-plan-line{color:#b9c8e6;opacity:.55;}
-          #puzzleLayer .pz-plan-line b{color:#8fa6d2;margin-right:4px;}
-          #puzzleLayer .pz-plan-line.next{opacity:1;color:#ffd0a0;}
-          #puzzleLayer .pz-plan-line.next b{color:#ffb870;}
-          #puzzleLayer .pz-plan-line.done{opacity:.3;text-decoration:line-through;}
-          #puzzleLayer .pz-tools{position:absolute;left:16px;bottom:78px;z-index:7;
-            display:flex;gap:8px;}
-          #puzzleLayer button{pointer-events:auto;cursor:pointer;font:inherit;
-            font-size:12.5px;padding:8px 14px;border-radius:999px;color:#c8d4ee;
-            letter-spacing:.03em;background:rgba(9,16,34,.92);
-            border:1px solid rgba(120,150,210,.4);box-shadow:0 4px 18px rgba(0,0,0,.4);
-            transition:background .2s,color .2s,transform .1s;}
-          #puzzleLayer button:hover{background:rgba(24,38,68,.96);color:#eef3ff;}
-          #puzzleLayer button:active{transform:translateY(1px);}
-          #puzzleLayer button.primary{background:#3a6bd0;border-color:#5f8de0;color:#f2f7ff;}
-          #puzzleLayer button.primary:hover{background:#4a7be0;}
+          /* ================= LE HUD DES VOIES =================
+             Or et nuit, rien d'autre. Chaque commande est un rond de verre
+             sombre cerclé d'or : faible au repos, il ne s'allume qu'au
+             regard. Aucun panneau, aucune barre, aucun portrait — le plateau
+             garde l'écran, c'est lui qu'on regarde.
 
-          #puzzleLayer .pz-end{position:absolute;inset:0;z-index:12;display:flex;
-            flex-direction:column;align-items:center;justify-content:center;gap:18px;
-            background:radial-gradient(circle at 50% 42%,rgba(12,22,48,.92),rgba(6,10,22,.97));
-            pointer-events:auto;text-align:center;padding:24px;
-            animation:pz-in .55s ease both;}
+             Les compteurs DÉPLACER/POUSSER/MAGIE ne sont PAS refaits ici : ce
+             sont les vrais boutons du HUD (#hudV2MoveCount…), simplement
+             redessinés en ronds le temps d'une énigme. Aucun handler dupliqué,
+             aucune règle touchée — voir le bloc « chrome de jeu » plus bas. */
+          #puzzleLayer{--pz-or:#f6e2ae;--pz-or-vif:#fff3d4;
+            --pz-cercle:rgba(255,232,170,.72);--pz-nuit:rgba(6,10,22,.58);}
+
+          #puzzleLayer button{pointer-events:auto;cursor:pointer;font:inherit;
+            font-size:12px;color:var(--pz-or);background:var(--pz-nuit);
+            border:1px solid var(--pz-cercle);border-radius:999px;padding:7px 14px;
+            letter-spacing:.03em;backdrop-filter:blur(6px);
+            transition:color .22s ease,border-color .22s ease,
+              background .22s ease,box-shadow .22s ease,transform .16s ease;}
+          #puzzleLayer button:hover{color:var(--pz-or-vif);
+            border-color:rgba(246,226,174,.62);background:rgba(20,30,58,.42);
+            box-shadow:0 0 16px rgba(246,226,174,.2);}
+          #puzzleLayer button:active{transform:translateY(1px);}
+
+          /* Le rond commun — retour, objectif, outils. Porté aussi bien par un
+             <button> que par un <span> à l'intérieur d'un bouton étiqueté. */
+          #puzzleLayer .pz-rond{box-sizing:border-box;display:inline-flex;
+            align-items:center;justify-content:center;width:38px;height:38px;
+            padding:0;border-radius:999px;color:var(--pz-or);
+            background:var(--pz-nuit);border:1.5px solid var(--pz-cercle);
+            backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+            box-shadow:0 4px 14px rgba(0,0,0,.28),inset 0 0 10px rgba(246,226,174,.05);
+            transition:color .22s ease,border-color .22s ease,box-shadow .22s ease;}
+          #puzzleLayer .pz-rond svg{width:18px;height:18px;fill:none;
+            stroke:currentColor;stroke-width:1.6;stroke-linecap:round;
+            stroke-linejoin:round;}
+          #puzzleLayer .pz-rond.pz-plein svg{fill:currentColor;stroke:none;}
+          #puzzleLayer button.pz-rond:hover{background:rgba(20,30,58,.44);
+            box-shadow:0 4px 16px rgba(0,0,0,.3),0 0 18px rgba(246,226,174,.26);}
+
+          #puzzleLayer .pz-retour{position:absolute;top:16px;left:18px;z-index:8;}
+          /* La colonne de droite se glisse SOUS le bouton Menu du jeu, que le
+             bloc « chrome » ramène au même bord (.ov2-top est à 20px, et son
+             rond fait 38px comme celui-ci). */
+          #puzzleLayer .pz-side{position:absolute;top:66px;right:20px;z-index:8;
+            display:flex;flex-direction:column;align-items:center;gap:5px;}
+          #puzzleLayer .pz-key{font-size:10px;font-weight:700;
+            letter-spacing:.14em;color:rgba(246,226,174,.6);
+            text-shadow:0 1px 6px rgba(0,0,0,.9);}
+
+          /* L'OBJECTIF. Une ligne posée sur le ciel, jamais un panneau : elle
+             paraît, se laisse lire, puis rend le ciel. O la rappelle. */
+          #puzzleLayer .pz-brief{position:absolute;top:18px;left:50%;
+            transform:translateX(-50%) translateY(-8px);z-index:7;
+            display:flex;align-items:center;gap:12px;
+            max-width:min(640px,78vw);padding:0 6px;text-align:center;
+            opacity:0;pointer-events:none;
+            transition:opacity .7s ease,transform .7s ease;}
+          #puzzleLayer .pz-brief.show{opacity:1;
+            transform:translateX(-50%) translateY(0);}
+          #puzzleLayer .pz-brief::before,#puzzleLayer .pz-brief::after{
+            content:"";flex:1 1 46px;min-width:22px;height:1px;
+            background:linear-gradient(90deg,rgba(246,226,174,0),rgba(246,226,174,.55));}
+          #puzzleLayer .pz-brief::after{transform:scaleX(-1);}
+          #puzzleLayer .pz-brief-icone{flex:0 0 auto;line-height:0;}
+          #puzzleLayer .pz-brief-icone svg{width:16px;height:16px;
+            fill:var(--pz-or);filter:drop-shadow(0 0 9px rgba(246,226,174,.55));}
+          #puzzleLayer .pz-goal{font-size:13px;letter-spacing:.02em;color:#fff4dc;
+            text-shadow:0 1px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.55);}
+
+          /* Le plan du rival reste PUBLIC — c'est une donnée de l'énigme, pas
+             du décor de duel — mais il se tient désormais en marge, sans
+             cadre : quelques lignes claires sur le ciel. */
+          #puzzleLayer .pz-plan{position:absolute;top:150px;right:20px;z-index:7;
+            max-width:230px;font-size:11px;line-height:1.55;text-align:right;
+            color:rgba(214,228,255,.62);text-shadow:0 1px 9px rgba(0,0,0,.85);}
+          #puzzleLayer .pz-plan-title{font-size:9px;letter-spacing:.18em;
+            color:rgba(246,226,174,.55);margin-bottom:5px;}
+          #puzzleLayer .pz-plan-line{opacity:.45;}
+          #puzzleLayer .pz-plan-line b{color:rgba(246,226,174,.6);margin-right:4px;}
+          #puzzleLayer .pz-plan-line.next{opacity:1;color:#ffd9ac;}
+          #puzzleLayer .pz-plan-line.next b{color:var(--pz-or-vif);}
+          #puzzleLayer .pz-plan-line.done{opacity:.22;text-decoration:line-through;}
+
+          /* Bas gauche : annuler, recommencer. Le plus petit chrome possible —
+             un rond et un mot, jamais un bouton plein. */
+          #puzzleLayer .pz-tools{position:absolute;left:20px;bottom:22px;z-index:7;
+            display:flex;align-items:center;gap:18px;}
+          #puzzleLayer .pz-tool{display:flex;align-items:center;gap:9px;
+            padding:0;background:none;border:none;box-shadow:none;
+            backdrop-filter:none;-webkit-backdrop-filter:none;
+            color:rgba(246,226,174,.62);font-size:11.5px;letter-spacing:.04em;}
+          #puzzleLayer .pz-tool .pz-rond{width:30px;height:30px;}
+          #puzzleLayer .pz-tool .pz-rond svg{width:15px;height:15px;}
+          #puzzleLayer .pz-tool:hover{background:none;box-shadow:none;
+            border-color:transparent;color:var(--pz-or-vif);}
+          #puzzleLayer .pz-tool:hover .pz-rond{border-color:rgba(246,226,174,.62);
+            box-shadow:0 0 16px rgba(246,226,174,.24);}
+          #puzzleLayer .pz-tool[disabled]{opacity:.3;cursor:default;}
+          #puzzleLayer .pz-tool[disabled]:hover{color:rgba(246,226,174,.62);}
+          #puzzleLayer .pz-tool[disabled]:hover .pz-rond{
+            border-color:var(--pz-cercle);box-shadow:none;}
+
+          /* ================= LES SIGNES =================
+             Ce que l'image de référence appelle de la magie : des ORBES d'or
+             en perspective autour du plateau, avec leurs nœuds lumineux, des
+             glyphes qui scintillent et de la poussière de lumière qui monte.
+
+             Tout est en transform/opacity — composé par le GPU, aucun repaint,
+             aucune boucle JS — et rien ne capte le pointeur. Les traits sont
+             FINS et leur lumière est portée par la lueur (box-shadow), pas par
+             l'épaisseur : c'est ce qui permet de les voir passer devant le
+             plateau sans jamais gêner sa lecture. */
+          #puzzleLayer .pz-signes{position:absolute;inset:0;z-index:1;
+            overflow:hidden;pointer-events:none;opacity:0;
+            transition:opacity 1.8s ease;}
+          #puzzleLayer .pz-signes.on{opacity:1;}
+          /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
+             un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
+             le plateau ; une lueur, on la traverse du regard. */
+          #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
+            border:1px solid rgba(255,220,140,.62);border-radius:50%;
+            box-shadow:0 0 20px rgba(255,190,90,.32),
+              inset 0 0 70px rgba(255,190,90,.07);
+            animation:pz-tourne 220s linear infinite;}
+          /* LES NŒUDS. Chaque orbe porte deux points de lumière posés sur son
+             trait, qui tournent donc avec lui : un disque en haut, un losange
+             à droite. C'est ce qui fait lire une ORBITE plutôt qu'un cercle
+             dessiné — et cela ne coûte pas un élément de plus. */
+          #puzzleLayer .pz-anneau::before,#puzzleLayer .pz-anneau::after{
+            content:"";position:absolute;width:9px;height:9px;
+            background:rgba(255,244,214,.9);border-radius:50%;
+            box-shadow:0 0 12px rgba(255,214,140,.9),0 0 26px rgba(255,196,96,.5);}
+          #puzzleLayer .pz-anneau::before{left:50%;top:0;margin:-5px 0 0 -5px;}
+          #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
+            border-radius:2px;transform:rotate(45deg);
+            background:rgba(255,236,186,.85);}
+          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;}
+          #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
+            border-style:dashed;border-color:rgba(255,220,140,.7);
+            animation-duration:150s;animation-direction:reverse;}
+          #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
+            border-color:rgba(255,220,140,.52);animation-duration:310s;}
+          /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
+             lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
+             profondeur. */
+          #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
+            border-color:rgba(255,220,140,.38);border-style:dashed;
+            animation-duration:420s;animation-direction:reverse;}
+          @keyframes pz-tourne{
+            from{transform:perspective(1400px) rotateX(72deg) rotate(0deg)}
+            to{transform:perspective(1400px) rotateX(72deg) rotate(360deg)}}
+          #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
+            color:rgba(255,238,196,.85);
+            text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
+            animation:pz-scintille 7s ease-in-out infinite;}
+          #puzzleLayer .pz-mote{position:absolute;width:3px;height:3px;
+            border-radius:50%;background:rgba(255,246,222,1);
+            box-shadow:0 0 8px rgba(255,224,160,.95),0 0 18px rgba(255,196,96,.45);
+            animation:pz-monte 15s linear infinite;}
+          @keyframes pz-scintille{0%,100%{opacity:.3;transform:scale(.85)}
+            50%{opacity:1;transform:scale(1.15)}}
+          @keyframes pz-monte{0%{opacity:0;transform:translateY(16px)}
+            18%{opacity:1}70%{opacity:.6}
+            100%{opacity:0;transform:translateY(-130px)}}
+          /* Qui a demandé moins de mouvement n'en reçoit aucun : les signes
+             sont un supplément d'âme, jamais une information. */
+          @media (prefers-reduced-motion:reduce){
+            #puzzleLayer .pz-signes{display:none;}}
+
+          @media (orientation:portrait) and (max-width:820px){
+            #puzzleLayer .pz-retour,#puzzleLayer .pz-side,#puzzleLayer .pz-brief,
+            #puzzleLayer .pz-plan,#puzzleLayer .pz-tools,
+            #puzzleLayer .pz-signes{display:none !important;}}
+
+          /* Petits écrans : la phrase d'objectif se resserre, le plan du rival
+             passe sous elle, les outils se réduisent à leurs ronds. */
+          @media (max-width:680px){
+            #puzzleLayer .pz-brief{max-width:88vw;gap:8px;}
+            #puzzleLayer .pz-brief::before,#puzzleLayer .pz-brief::after{display:none;}
+            #puzzleLayer .pz-goal{font-size:12px;}
+            #puzzleLayer .pz-plan{top:auto;bottom:96px;right:14px;max-width:46vw;}
+            #puzzleLayer .pz-tools{left:14px;bottom:16px;gap:12px;}
+            #puzzleLayer .pz-tool span:not(.pz-rond){display:none;}}
+
+          /* L'ÉCHEC seul s'annonce — et en bas de l'écran, sur deux lignes,
+             jamais sur un panneau qui recouvre le plateau qu'on vient de
+             perdre. La RÉUSSITE, elle, ne s'annonce pas du tout : le
+             Sanctuaire s'éveille et le voyage part (voir puzzleShowEnd). */
+          #puzzleLayer .pz-end{position:absolute;left:50%;bottom:104px;z-index:12;
+            transform:translateX(-50%);display:flex;flex-direction:column;
+            align-items:center;gap:12px;max-width:min(560px,86vw);
+            pointer-events:auto;text-align:center;padding:0 20px;
+            animation:pz-in .6s ease both;}
           @keyframes pz-in{from{opacity:0}to{opacity:1}}
-          #puzzleLayer .pz-end h2{font-family:'Cinzel Decorative','Almendra',serif;
-            font-size:clamp(21px,3.6vw,32px);margin:0;letter-spacing:.04em;}
-          #puzzleLayer .pz-end p{margin:0;max-width:460px;color:#c4d2ee;line-height:1.6;font-size:14px;}
+          #puzzleLayer .pz-end p{margin:0;color:#ffe9c4;line-height:1.6;font-size:13.5px;
+            text-shadow:0 1px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.55);}
           /* Le réveil du Sanctuaire. Trois calques seulement : une lueur qui
              monte du sol, une phrase posée sur le ciel, un fondu. Le reste du
              mouvement vient de la CAMÉRA, qui recule — c'est elle qui donne
@@ -595,9 +759,11 @@
           body.puzzle-reveil > .card-cycle-v7-count{opacity:0 !important;
             transition:opacity .8s ease;pointer-events:none;}
           #puzzleLayer.reveil .pz-brief,
-          #puzzleLayer.reveil .pz-budget,
           #puzzleLayer.reveil .pz-plan,
-          #puzzleLayer.reveil .pz-tools{opacity:0;transition:opacity .8s ease;
+          #puzzleLayer.reveil .pz-tools,
+          #puzzleLayer.reveil .pz-retour,
+          #puzzleLayer.reveil .pz-side,
+          #puzzleLayer.reveil .pz-signes{opacity:0;transition:opacity .8s ease;
             pointer-events:none;}
 
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
@@ -605,12 +771,7 @@
             line-height:1.6;color:#ffe3ab;letter-spacing:.02em;}
           #puzzleLayer .pz-cout{opacity:.55;font-size:12.5px;}
           #puzzleMenu .pz-signe{font-size:14px;color:#8fa6d2;opacity:.8;}
-          #puzzleLayer .pz-stars{font-size:30px;letter-spacing:8px;
-            filter:drop-shadow(0 0 10px rgba(255,205,110,.5));}
-          #puzzleLayer .pz-end-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
-          #puzzleLayer .pz-end-actions .primary{background:linear-gradient(180deg,#f0c273,#c98f36);
-            border-color:rgba(255,226,167,.55);color:#2a1b04;font-weight:800;
-            box-shadow:0 6px 20px rgba(201,143,54,.35);}
+          #puzzleLayer .pz-end-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;}
 
           /* Au-dessus de l'iframe du menu (z-index 2147483000, voir
              js/version-bootstrap.js) : l'écran de sélection s'ouvre alors que
@@ -707,6 +868,181 @@
              éjections dans sa marge et les exécute par ILYOS_BENCH.poussee(),
              le seul chemin possible puisqu'aucune case du plateau d'origine ne
              peut recevoir ce clic. */
+
+          /* ================= LE CHROME DE DUEL S'EFFACE =================
+             Le HUD réellement à l'écran est #ilyosHudOrganicV2 (voir
+             js/hud-organique-v2.js) : un calque qui RELAIE les clics vers les
+             boutons historiques (#hudV2MoveCount, #cancelCardBtn, …). C'est
+             donc lui qu'on habille — jamais qu'on remplace. Aucun handler
+             n'est redéfini, aucune règle n'est touchée : les mêmes boutons,
+             avec le même état activé/désactivé et la même mise à jour, portent
+             simplement une autre forme le temps d'une énigme.
+
+             Disparaissent : les deux bandeaux de joueur (portraits, « TOI »,
+             « LES RIVAUX », scores, « À VOUS »), « TOUR I », le minuteur, le
+             ruban de tour et le bouton d'annulation du dock — le nôtre est en
+             bas à gauche. Restent : le Menu, ramené en rond en haut à droite,
+             et les trois actions, redessinées en ronds.
+
+             Les !important sont ici une nécessité, pas un raccourci : les
+             quatre couches de css/hud-organique-v2*.css et
+             css/hud-consolidation-v12.css en portent elles-mêmes sur ces mêmes
+             propriétés. Le préfixe « body.puzzle-mode » non plus n'est pas
+             décoratif : ces couches écrivent
+             « body[data-visual-mode] #gameScreen … », dont le « body » suffit
+             à l'emporter à égalité de classes — un flex-basis de 38 px gagnait
+             ainsi contre nos ronds, qui sortaient ovales. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-side,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Turn,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Timer,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-undo,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-dock:before,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-dock:after,
+          #gameScreen.puzzle-on #hudV2Top,
+          #gameScreen.puzzle-on .hud-v2-vignette,
+          #gameScreen.puzzle-on #turnRibbon{display:none !important;}
+
+          /* Le bandeau du haut n'est plus qu'une ancre pour le Menu, poussé
+             contre le bord droit. Le losange d'origine (9px, tourné à 45°)
+             devient le rond ☰ de la maquette. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-top{
+            top:16px !important;left:20px !important;right:20px !important;
+            height:auto !important;gap:0 !important;transform:none !important;
+            grid-template-columns:1fr !important;justify-items:end !important;
+            pointer-events:none !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-turn{
+            min-width:0 !important;width:auto !important;height:auto !important;
+            padding:0 !important;gap:0 !important;clip-path:none !important;
+            background:none !important;border:0 !important;
+            box-shadow:none !important;backdrop-filter:none !important;
+            -webkit-backdrop-filter:none !important;
+            pointer-events:auto !important;}
+          /* Le losange du duel est déjà un rond bordé d'or (voir
+             css/hud-organique-v2-readability-v7.css) : il suffit de le porter
+             à la taille des autres ronds du HUD des Voies. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear{
+            width:38px !important;height:38px !important;min-width:38px !important;
+            background:rgba(6,10,22,.58) !important;
+            border:1.5px solid rgba(255,232,170,.72) !important;
+            box-shadow:0 4px 14px rgba(0,0,0,.28) !important;
+            display:grid !important;place-items:center !important;
+            color:#f6e2ae !important;line-height:1 !important;}
+          /* Le ⚙ cède la place : le bouton dit « menu », pas « réglages ». */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear::before{
+            content:"" !important;}
+          /* Trois traits DESSINÉS : le caractère ☰ dépend d'une police que le
+             poste n'a pas forcément, et le HUD tourne en Georgia. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear::after{content:"";
+            width:15px;height:1.6px;border-radius:2px;background:currentColor;
+            box-shadow:0 -5px 0 currentColor,0 5px 0 currentColor;}
+
+          /* ---- Les trois actions ----
+             Un rond de verre par verbe, faible au repos, qui monte et s'allume
+             au survol comme à la sélection. Le mot passe en bas de casse — la
+             source écrit « DÉPLACER » en capitales pour le HUD de duel — et
+             ::first-letter lui rend sa majuscule. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-dock{
+            bottom:24px !important;gap:clamp(14px,2.2vw,26px) !important;
+            transform:translateX(-50%) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action{
+            width:86px !important;height:auto !important;padding:0 !important;
+            color:rgba(246,226,174,.72) !important;}
+          /* La plaque hexagonale d'origine s'efface : c'est l'icône elle-même
+             qui porte désormais le rond. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:before{
+            display:none !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action .ov2-ico{
+            box-sizing:border-box !important;
+            width:clamp(46px,4.4vw,54px) !important;
+            height:clamp(46px,4.4vw,54px) !important;
+            flex:0 0 auto !important;
+            padding:11px !important;margin-bottom:9px !important;
+            border-radius:999px !important;
+            background:rgba(6,10,22,.58) !important;
+            border:1.5px solid rgba(255,232,170,.72) !important;
+            backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+            box-shadow:0 4px 16px rgba(0,0,0,.38),
+              inset 0 0 14px rgba(246,226,174,.08) !important;
+            filter:none !important;
+            transition:border-color .22s ease,box-shadow .22s ease,
+              background .22s ease !important;}
+          /* L'icône de DÉPLACER porte un rétrécissement de 8 % qui lui est
+             propre (voir css/hud-consolidation-v12.css) : dans un rond, il se
+             lisait comme un bouton plus petit que ses deux voisins. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-move-footprints{
+            transform:none !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action strong{
+            display:inline-block !important;text-transform:lowercase !important;
+            font-family:inherit !important;font-size:11px !important;
+            font-weight:600 !important;letter-spacing:.04em !important;
+            color:rgba(246,226,174,.62) !important;
+            text-shadow:0 1px 8px rgba(0,0,0,.8) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action strong::first-letter{
+            text-transform:uppercase !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action small{
+            font-size:11px !important;font-weight:700 !important;
+            color:rgba(246,226,174,.72) !important;margin-top:1px !important;
+            text-shadow:0 1px 8px rgba(0,0,0,.8) !important;}
+          /* La Magie garde sa teinte violette dans un duel ; ici tout est or et
+             nuit, et une seule tache de couleur romprait l'ensemble. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-magic{
+            color:rgba(246,226,174,.72) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:hover:not(:disabled) .ov2-ico,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected .ov2-ico{
+            border-color:rgba(255,236,190,.75) !important;
+            background:rgba(28,40,74,.44) !important;
+            box-shadow:0 6px 22px rgba(0,0,0,.34),
+              0 0 22px rgba(246,226,174,.30),
+              inset 0 0 18px rgba(246,226,174,.12) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected strong,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected small{
+            color:#fff3d4 !important;}
+          /* Faible au repos, jamais éteint : une action impossible doit rester
+             lisible, sinon on la cherche au lieu de la voir. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:disabled{
+            opacity:.55 !important;filter:none !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
+            background:rgba(7,12,26,.20) !important;
+            border-color:rgba(246,226,174,.14) !important;
+            box-shadow:none !important;}
+
+          /* Fin du tour : gardée pour les énigmes à plusieurs tours (les autres
+             la masquent déjà), mais ramenée au même vocabulaire d'or et de
+             nuit — le bloc doré du duel pesait à lui seul plus que tout le
+             reste du HUD. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-end{
+            width:auto !important;height:38px !important;padding:0 18px !important;
+            right:20px !important;bottom:24px !important;gap:9px !important;
+            border-radius:999px !important;clip-path:none !important;
+            background:rgba(7,12,26,.30) !important;
+            border:1px solid rgba(246,226,174,.32) !important;
+            box-shadow:0 4px 14px rgba(0,0,0,.28) !important;
+            color:#f6e2ae !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-end svg{
+            width:16px !important;height:16px !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-end b{
+            font-family:inherit !important;font-size:11.5px !important;
+            font-weight:600 !important;letter-spacing:.06em !important;}
+
+          /* Les piles PIOCHE/DÉFAUSSE ne disent rien dans une énigme d'un seul
+             tour : tout est déjà en main, et les trois compteurs le disent
+             mieux. Elles restent partout où la pioche compte vraiment. */
+          #gameScreen.puzzle-on.puzzle-one-turn #ov2DeckHud,
+          #gameScreen.puzzle-on.puzzle-one-turn #ov2DiscardHud{display:none !important;}
+
+          /* La bascule 2D vit sur <body>, hors de #gameScreen. Elle reste — le
+             plateau tactique est un vrai recours dans une énigme — mais elle
+             quitte l'angle où le Menu vient de s'installer, et prend la même
+             sobriété que le reste. */
+          body.puzzle-mode #plateauTactiqueBtn{
+            top:auto !important;bottom:24px !important;right:20px !important;
+            padding:7px 13px !important;font-size:10.5px !important;
+            background:rgba(7,12,26,.30) !important;
+            border-color:rgba(246,226,174,.28) !important;
+            color:rgba(246,226,174,.66) !important;}
+          /* Sauf quand « Fin du tour » occupe déjà ce coin. */
+          body.puzzle-mode.puzzle-multi #plateauTactiqueBtn{bottom:74px !important;}
         `;
         document.head.appendChild(style);
       }
@@ -1061,6 +1397,275 @@
         return morceaux;
       }
 
+      /* ---------- L'AURA DE LA CASE OBJECTIF -----------------------------
+         La case qui compte doit se voir sans qu'on ait à la chercher : un
+         anneau de runes qui tourne très lentement, trois scintillements, et
+         — quand l'objectif tient en une ou deux cases — un faisceau très doux
+         qui monte vers le ciel.
+
+         Tout est additif, sans écriture de profondeur, et posé UNIQUEMENT sur
+         les cases d'objectif : au plus quatre par énigme, construites une fois
+         par plateau. Aucune boucle nouvelle non plus — l'anneau et les
+         scintillements sont portés par les listes d'animation déjà en place
+         (userData.slowSpin et userData.pulse, voir kaykit3d.js), le faisceau
+         ne bouge pas du tout. */
+      function puzzleRunesTexture(couleur) {
+        const taille = 256;
+        const canevas = document.createElement("canvas");
+        canevas.width = canevas.height = taille;
+        const ctx = canevas.getContext("2d");
+        const teinte = "#" + new THREE.Color(couleur).getHexString();
+        ctx.translate(taille / 2, taille / 2);
+        ctx.lineCap = "round";
+
+        /* ÉPAISSEURS. Une case fait une soixantaine de pixels à l'écran pour
+           256 dans cette texture : un trait de 2 px y devient un demi-pixel,
+           c'est-à-dire rien. Le premier jet était invisible en jeu pour cette
+           seule raison. Tout est donc tracé large, et doublé d'un liseré
+           sombre — sans lui, l'or se dissout sur une île vert clair, comme
+           pour les cadres de case (voir puzzleAddMarker). */
+        const cercle = (largeur, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = style;
+          ctx.lineWidth = largeur;
+          ctx.beginPath();
+          ctx.arc(0, 0, taille * .37, 0, Math.PI * 2);
+          ctx.stroke();
+        };
+        /* Seize tirets, un sur quatre plus long : c'est ce qui rend la
+           rotation LISIBLE. Un anneau lisse tournerait sans qu'on le voie
+           tourner, et l'effet ne coûterait que sa consommation. */
+        const tirets = (largeur, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = style;
+          ctx.lineWidth = largeur;
+          for (let i = 0; i < 16; i++) {
+            const a = i * Math.PI / 8;
+            const r1 = taille * .41;
+            const r2 = taille * (i % 4 === 0 ? .482 : .445);
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+            ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+            ctx.stroke();
+          }
+        };
+        cercle(10, "rgba(10,16,32,.5)", 1);
+        tirets(14, "rgba(10,16,32,.5)", 1);
+        cercle(5, teinte, .8);
+        tirets(8, teinte, 1);
+        const texture = new THREE.CanvasTexture(canevas);
+        texture.userData = { ilyosTransient: true };
+        return texture;
+      }
+
+      /* Le faisceau : un dégradé vertical peint une fois, porté par un
+         cylindre ouvert. Une vraie lumière volumétrique demanderait une passe
+         de rendu ; ceci ne coûte qu'une bande de triangles, et se lit pareil
+         sous la caméra inclinée du jeu. */
+      function puzzleFaisceauTexture(couleur) {
+        const canevas = document.createElement("canvas");
+        canevas.width = 8;
+        canevas.height = 128;
+        const ctx = canevas.getContext("2d");
+        const teinte = new THREE.Color(couleur);
+        const rgb = `${Math.round(teinte.r * 255)},${Math.round(teinte.g * 255)},${Math.round(teinte.b * 255)}`;
+        const degrade = ctx.createLinearGradient(0, 128, 0, 0);
+        degrade.addColorStop(0, `rgba(${rgb},.5)`);
+        degrade.addColorStop(.3, `rgba(${rgb},.18)`);
+        degrade.addColorStop(1, `rgba(${rgb},0)`);
+        ctx.fillStyle = degrade;
+        ctx.fillRect(0, 0, 8, 128);
+        const texture = new THREE.CanvasTexture(canevas);
+        texture.userData = { ilyosTransient: true };
+        return texture;
+      }
+
+      /* LE GRAND CERCLE. Autour de la case qui compte, très large et très
+         fin : deux cercles concentriques, des rayons qui s'échappent, et
+         quatre losanges aux quatre vents. C'est le motif de l'image de
+         référence — celui qui fait qu'un Sanctuaire ne ressemble pas à une
+         case de plateau. Il ne se pose que là où il y a un faisceau, donc au
+         plus deux fois par énigme. */
+      function puzzleGrandCercleTexture(couleur) {
+        const taille = 512;
+        const canevas = document.createElement("canvas");
+        canevas.width = canevas.height = taille;
+        const ctx = canevas.getContext("2d");
+        const teinte = "#" + new THREE.Color(couleur).getHexString();
+        ctx.translate(taille / 2, taille / 2);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = teinte;
+        ctx.fillStyle = teinte;
+
+        /* ÉPAISSEURS, encore. Ce cercle de 512 pixels est projeté sur environ
+           150 pixels d'écran : tout y est divisé par plus de trois, et un trait
+           de 3 px n'y survit pas — le premier jet était purement et simplement
+           invisible en jeu. */
+        const cercles = (largeur, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = style;
+          ctx.lineWidth = largeur;
+          [.30, .455].forEach(rayon => {
+            ctx.beginPath();
+            ctx.arc(0, 0, taille * rayon, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+        };
+        /* Trente-deux rayons entre les deux cercles, un sur huit traversant :
+           la couronne de lumière du dessin, sans le coût d'une texture
+           chargée. */
+        const rayons = (largeur, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = style;
+          ctx.lineWidth = largeur;
+          for (let i = 0; i < 32; i++) {
+            const a = i * Math.PI / 16;
+            const traversant = i % 8 === 0;
+            const r1 = taille * (traversant ? .24 : .40);
+            const r2 = taille * (traversant ? .49 : .445);
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+            ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+            ctx.stroke();
+          }
+        };
+        /* Les quatre vents. */
+        const vents = (demi, style, alpha) => {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = style;
+          for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2 + Math.PI / 4;
+            const x = Math.cos(a) * taille * .378;
+            const y = Math.sin(a) * taille * .378;
+            ctx.beginPath();
+            ctx.moveTo(x, y - demi);
+            ctx.lineTo(x + demi, y);
+            ctx.lineTo(x, y + demi);
+            ctx.lineTo(x - demi, y);
+            ctx.closePath();
+            ctx.fill();
+          }
+        };
+
+        // Le liseré sombre d'abord, l'or par-dessus : sur un ciel clair comme
+        // sur une île, c'est ce qui garde le trait lisible.
+        cercles(22, "rgba(10,16,32,.42)", 1);
+        rayons(18, "rgba(10,16,32,.42)", 1);
+        vents(34, "rgba(10,16,32,.42)", 1);
+        cercles(13, teinte, .8);
+        rayons(9, teinte, .68);
+        vents(26, teinte, .95);
+
+        const texture = new THREE.CanvasTexture(canevas);
+        texture.userData = { ilyosTransient: true };
+        return texture;
+      }
+
+      /* Un point de lumière, en dégradé radial. */
+      function puzzleEtincelleTexture() {
+        const canevas = document.createElement("canvas");
+        canevas.width = canevas.height = 64;
+        const ctx = canevas.getContext("2d");
+        const degrade = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        degrade.addColorStop(0, "rgba(255,255,255,1)");
+        degrade.addColorStop(.34, "rgba(255,240,200,.55)");
+        degrade.addColorStop(1, "rgba(255,220,150,0)");
+        ctx.fillStyle = degrade;
+        ctx.fillRect(0, 0, 64, 64);
+        const texture = new THREE.CanvasTexture(canevas);
+        texture.userData = { ilyosTransient: true };
+        return texture;
+      }
+
+      function puzzleAddAura(groupe, p, couleur, cote, faisceau) {
+        const transitoire = objet => {
+          objet.userData = { ...(objet.userData || {}), ilyosTransient: true };
+          return objet;
+        };
+        const additif = map => new THREE.MeshBasicMaterial({
+          map, transparent: true, blending: THREE.AdditiveBlending,
+          depthWrite: false, depthTest: false
+        });
+
+        /* L'anneau se POSE, il ne s'ajoute pas. L'additif a été essayé et
+           abandonné : sur une île vert clair ou une dalle bleutée, ajouter de
+           l'or sature vers le blanc et l'anneau disparaît exactement là où on
+           en a besoin. Le mélange normal, lui, tient sur tous les fonds — c'est
+           déjà le choix fait pour les glyphes de case. */
+        const anneau = new THREE.Mesh(
+          transitoire(new THREE.PlaneGeometry(cote * 1.36, cote * 1.36)),
+          transitoire(new THREE.MeshBasicMaterial({
+            map: puzzleRunesTexture(couleur), transparent: true, opacity: .9,
+            depthWrite: false, depthTest: false
+          }))
+        );
+        anneau.rotation.x = -Math.PI / 2;
+        anneau.position.set(p.x, p.y + .07, p.z);
+        anneau.renderOrder = 42;
+        anneau.userData.slowSpin = true;
+        groupe.add(anneau);
+        kaykit3D.animatedObjects.push(anneau);
+
+        /* Trois scintillements, jamais au même rythme : ce sont eux qui font
+           respirer la case sans que rien n'y bouge vraiment. */
+        [[.5, .33], [-.44, .48], [.09, -.52]].forEach(([dx, dz], i) => {
+          const etincelle = new THREE.Mesh(
+            transitoire(new THREE.PlaneGeometry(.17, .17)),
+            transitoire(Object.assign(additif(puzzleEtincelleTexture()), { opacity: .95 }))
+          );
+          etincelle.rotation.x = -Math.PI / 2;
+          etincelle.position.set(p.x + dx, p.y + .09, p.z + dz);
+          etincelle.renderOrder = 43;
+          etincelle.userData.pulse = true;
+          etincelle.userData.pulsePhase = i * 2.1 + p.x * .3;
+          groupe.add(etincelle);
+          kaykit3D.animatedObjects.push(etincelle);
+        });
+
+        if (!faisceau) return;
+
+        /* Le grand cercle se pose SOUS l'anneau de runes et tourne dans
+           l'AUTRE SENS : deux vitesses contraires font un mécanisme, une seule
+           ferait un tourniquet.
+
+           Le sens inverse ne demande aucun réglage nouveau dans la boucle
+           d'animation, qui ne sait qu'une chose (rotation.z = temps × .16,
+           voir kaykit3d.js) : le plan est simplement RETOURNÉ — rotation.x
+           positive au lieu de négative — ce qui suffit à inverser à l'écran
+           une rotation identique. Il est double face, et le motif est
+           symétrique, donc rien ne se voit du retournement.
+
+           Mélange normal, comme l'anneau : l'additif se dissout sur les îles
+           claires. */
+        const grand = new THREE.Mesh(
+          transitoire(new THREE.PlaneGeometry(cote * 3.4, cote * 3.4)),
+          transitoire(new THREE.MeshBasicMaterial({
+            map: puzzleGrandCercleTexture(couleur), transparent: true, opacity: .75,
+            side: THREE.DoubleSide, depthWrite: false, depthTest: false
+          }))
+        );
+        grand.rotation.x = Math.PI / 2;
+        grand.position.set(p.x, p.y + .06, p.z);
+        grand.renderOrder = 40;
+        grand.userData.slowSpin = true;
+        groupe.add(grand);
+        kaykit3D.animatedObjects.push(grand);
+
+        const hauteur = 4.2;
+        const rayon = cote * .3;
+        const colonne = new THREE.Mesh(
+          /* Ouvert aux deux bouts, légèrement évasé vers le haut : le regard y
+             lit une lumière qui s'échappe, pas un tuyau posé sur la case. */
+          transitoire(new THREE.CylinderGeometry(rayon * 2.1, rayon, hauteur, 18, 1, true)),
+          transitoire(Object.assign(additif(puzzleFaisceauTexture(couleur)), {
+            opacity: .2, side: THREE.DoubleSide, depthTest: true
+          }))
+        );
+        colonne.position.set(p.x, p.y + hauteur / 2, p.z);
+        colonne.renderOrder = 41;
+        groupe.add(colonne);
+      }
+
       function puzzleAddMarker(marque) {
         const groupe = puzzleMarkerGroup();
         if (!groupe) return;
@@ -1153,6 +1758,11 @@
         glyphe.userData.pulse = true;
         glyphe.userData.pulsePhase = (r * 5 + c) * .41;
         kaykit3D.animatedObjects.push(glyphe);
+
+        /* La menace annoncée par le rival garde son cadre nu : elle désigne un
+           danger, pas une destination — l'auréoler d'or la ferait lire comme
+           un but. */
+        if (kind !== "threat") puzzleAddAura(groupe, p, couleur, cote, !!marque.faisceau);
       }
 
       /* Reconstruit seulement quand les cases marquées changent : le groupe
@@ -1167,7 +1777,15 @@
         if (cle === PUZZLE.markerKey && groupe.children.length) return;
         PUZZLE.markerKey = cle;
         if (typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
-        cells.forEach(puzzleAddMarker);
+        /* LE CŒUR : une seule case reçoit le grand cercle et le faisceau.
+           Deux colonnes de lumière suffisaient déjà à blanchir l'île qui les
+           sépare — quatre en feraient une forêt, et le plateau qu'elles sont
+           là pour désigner disparaîtrait derrière elles. La couronne passe
+           avant : quand une énigme demande de POSER quelque chose, c'est là
+           que le regard doit aller. */
+        const buts = cells.filter(marque => marque.kind !== "threat");
+        const coeur = buts.find(marque => marque.kind === "crown") || buts[0];
+        cells.forEach(marque => puzzleAddMarker(marque === coeur ? { ...marque, faisceau: true } : marque));
       }
 
       /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
@@ -1237,17 +1855,86 @@
         if (groupe && typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
       }
 
-      /* ---------- Surcouche en jeu --------------------------------------- */
+      /* ---------- Surcouche en jeu ---------------------------------------
+         Quatre choses, pas une de plus : un retour, un menu doublé d'un
+         objectif, la phrase de l'énigme, et de quoi défaire. Le reste de ce
+         que le joueur peut faire vit déjà dans le HUD du jeu, qui est
+         simplement habillé autrement le temps d'une énigme. */
+      /* Traits de la même famille que les icônes du HUD (HUD_V2_ICONS, voir
+         js/game/ui.js) : même viewBox, même épaisseur, mêmes bouts ronds. La
+         couronne est empruntée telle quelle — c'est la même couronne. */
+      const PUZZLE_ICONES = {
+        retour: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg>',
+        annuler: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M5.6 2.9v3.9h3.9"/></svg>',
+        recommencer: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M18.4 2.9v3.9h-3.9"/></svg>'
+      };
+
+      function puzzleCouronneSVG() {
+        try { return HUD_V2_ICONS.CROWN; } catch (_) { return "♛"; }
+      }
+
+      /* L'objectif ne s'installe pas : il passe. Le temps de le lire, puis il
+         rend le ciel. La touche O et le rond à couronne le rappellent à tout
+         moment — c'est cela qui autorise à ne PAS l'afficher en permanence. */
+      function puzzleShowObjectif() {
+        const dom = PUZZLE.dom;
+        if (!dom || !dom.brief) return;
+        dom.brief.classList.add("show");
+        clearTimeout(PUZZLE.objectifTimer);
+        PUZZLE.objectifTimer = setTimeout(() => {
+          dom.brief && dom.brief.classList.remove("show");
+        }, 4600);
+      }
+
+      /* Les signes : anneaux, glyphes, poussière de lumière. Les positions
+         sortent d'une suite déterministe — deux ouvertures du même Sanctuaire
+         donnent le même ciel, et rien ne saute d'une image à l'autre. Aucune
+         boucle JS ne tourne ensuite : tout est en animations CSS. */
+      function puzzleBuildSignes(hote) {
+        if (!hote) return;
+        hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
+          + '<div class="pz-anneau b"></div><div class="pz-anneau c"></div>';
+        let graine = 7;
+        const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
+        const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
+        for (let i = 0; i < 12; i++) {
+          const glyphe = document.createElement("span");
+          glyphe.className = "pz-glyphe";
+          glyphe.textContent = glyphes[i % glyphes.length];
+          glyphe.style.left = `${(5 + suivant() * 88).toFixed(1)}%`;
+          glyphe.style.top = `${(8 + suivant() * 72).toFixed(1)}%`;
+          glyphe.style.animationDelay = `${(suivant() * 7).toFixed(2)}s`;
+          hote.appendChild(glyphe);
+        }
+        for (let i = 0; i < 26; i++) {
+          const mote = document.createElement("i");
+          mote.className = "pz-mote";
+          mote.style.left = `${(3 + suivant() * 94).toFixed(1)}%`;
+          mote.style.top = `${(28 + suivant() * 64).toFixed(1)}%`;
+          mote.style.animationDelay = `${(suivant() * 15).toFixed(2)}s`;
+          mote.style.animationDuration = `${(11 + suivant() * 9).toFixed(1)}s`;
+          hote.appendChild(mote);
+        }
+        requestAnimationFrame(() => hote.classList.add("on"));
+      }
+
       function puzzleBuildOverlay() {
         if (PUZZLE.dom) return PUZZLE.dom;
         const layer = document.createElement("div");
         layer.id = "puzzleLayer";
         layer.innerHTML = `
-          <div class="pz-brief">
-            <div class="pz-title"></div>
-            <div class="pz-goal"></div>
+          <div class="pz-signes" aria-hidden="true"></div>
+          <button type="button" class="pz-rond pz-retour" data-pz="menu"
+            title="Les Voies" aria-label="Revenir aux Voies">${PUZZLE_ICONES.retour}</button>
+          <div class="pz-side">
+            <button type="button" class="pz-rond pz-plein" data-pz="objectif"
+              title="Objectif (O)" aria-label="Objectif">${puzzleCouronneSVG()}</button>
+            <span class="pz-key" aria-hidden="true">O</span>
           </div>
-          <div class="pz-budget"></div>
+          <div class="pz-brief" role="status" aria-live="polite">
+            <span class="pz-brief-icone" aria-hidden="true">${puzzleCouronneSVG()}</span>
+            <span class="pz-goal"></span>
+          </div>
           <div class="pz-plan" hidden></div>
           <div class="pz-bloom"></div>
           <div class="pz-lointain"></div>
@@ -1255,17 +1942,31 @@
           <div class="pz-fade"></div>
           <div class="pz-lieu"></div>
           <div class="pz-tools">
-            <button type="button" data-pz="restart">↺ Recommencer</button>
-            <button type="button" data-pz="menu">← Les Voies</button>
+            <button type="button" class="pz-tool" data-pz="undo">
+              <span class="pz-rond">${PUZZLE_ICONES.annuler}</span><span>Annuler</span>
+            </button>
+            <button type="button" class="pz-tool" data-pz="restart">
+              <span class="pz-rond">${PUZZLE_ICONES.recommencer}</span><span>Recommencer</span>
+            </button>
           </div>`;
         document.body.appendChild(layer);
         layer.querySelector('[data-pz="restart"]').addEventListener("click", () => puzzleRestart());
         layer.querySelector('[data-pz="menu"]').addEventListener("click", () => puzzleBackToMenu());
+        layer.querySelector('[data-pz="objectif"]').addEventListener("click", () => puzzleShowObjectif());
+        /* ANNULER passe par le handler du jeu, pas par une seconde annulation :
+           handleCancelButton() sait déjà arbitrer entre désélectionner et
+           défaire réellement le dernier coup (voir turns.js). Le bouton du HUD
+           (#cancelCardBtn) reste en place, simplement masqué — c'est lui qui
+           dicte ici l'état activé/désactivé, dans puzzleSyncOverlay. */
+        layer.querySelector('[data-pz="undo"]').addEventListener("click", () => {
+          try { handleCancelButton(); } catch (_) { }
+        });
+        puzzleBuildSignes(layer.querySelector(".pz-signes"));
         PUZZLE.dom = {
           layer,
-          title: layer.querySelector(".pz-title"),
           goal: layer.querySelector(".pz-goal"),
-          budget: layer.querySelector(".pz-budget"),
+          brief: layer.querySelector(".pz-brief"),
+          undo: layer.querySelector('[data-pz="undo"]'),
           plan: layer.querySelector(".pz-plan"),
           bloom: layer.querySelector(".pz-bloom"),
           lointain: layer.querySelector(".pz-lointain"),
@@ -1280,14 +1981,14 @@
         const dom = PUZZLE.dom;
         const def = PUZZLE.def;
         if (!dom || !def) return;
-        /* Le nom du lieu, pas un numéro d'énigme. */
-        dom.title.textContent = def.title;
-        dom.goal.textContent = def.brief || "";
-        const restant = puzzleCardsLeft();
-        const depense = puzzleCardsSpent();
-        dom.budget.innerHTML = `Cartes <b>${restant}</b> / ${PUZZLE.budget}`
-          + (def.par ? `<br><span style="opacity:.65">optimal : ${def.par} dépensées</span>` : "");
-        dom.budget.classList.toggle("tight", def.par ? depense > def.par : false);
+        /* L'objectif, et rien d'autre. Le nom du lieu a déjà été lu pendant le
+           voyage, et le budget est écrit sur les trois compteurs du bas : le
+           répéter dans un cadre ne dirait rien de plus. */
+        const phrase = def.brief || "";
+        if (dom.goal.textContent !== phrase) dom.goal.textContent = phrase;
+        /* Annuler suit exactement le bouton du jeu : même handler, même
+           disponibilité — rien n'est décidé ici. */
+        if (dom.undo && els.cancelCardBtn) dom.undo.disabled = !!els.cancelCardBtn.disabled;
 
         /* Le plan du rival est PUBLIC. Une énigme se lit comme un problème
            d'échecs : la difficulté est d'y répondre, pas de le deviner. La
@@ -1471,6 +2172,17 @@
           } else {
             await attendre(1500);
           }
+
+          /* La ligne d'enseignement, qui vivait sur la carte de fin. Sans
+             carte, elle se pose ici, sur le même ciel que la vérité — le
+             joueur la lit sans avoir rien à cliquer. */
+          if (def.winLine) {
+            dom.caption.innerHTML = def.winLine;
+            dom.caption.classList.add("show");
+            await attendre(2400);
+            dom.caption.classList.remove("show");
+            await attendre(500);
+          }
           dom.lointain.classList.remove("on");
         });
       }
@@ -1592,6 +2304,7 @@
         requestAnimationFrame(animer);
 
         return {
+          groupe,
           dispose() {
             vivante = false;
             try { kaykitClearPasserelle(); } catch (_) { }
@@ -1659,7 +2372,7 @@
 
         await attendre(Math.max(0, PUZZLE_DEPART.marche - PUZZLE_DEPART.avance));
 
-        return () => {
+        const fin = () => {
           passerelle?.dispose();
           /* Le visuel est resté en cours de marche, hors de la grille. Les
              identifiants de gardiens repartent de zéro à chaque énigme
@@ -1673,6 +2386,10 @@
             try { visual.animator?.toIdle({ fade: .12 }); } catch (_) { }
           }
         };
+        /* Le groupe de dalles et le visuel du gardien sont rendus à l'appelant :
+           le glissement les emmène dans le souvenir du plateau quitté, au lieu
+           de les faire disparaître sous les yeux du joueur. */
+        return { fin, groupe: passerelle?.groupe || null, visual };
       }
 
       /* ---------- LE MONDE QUI GLISSE --------------------------------------
@@ -1714,8 +2431,8 @@
       /* Rend false si l'aperçu n'a pas pu être bâti — bloc KayKit pas encore
          chargé. L'appelant retombe alors sur la voie au noir, qui, elle, ne
          dépend d'aucun asset. */
-      async function puzzleGlissement(index, def, attendre, dir) {
-        if (typeof kaykitApercuArchipel !== "function") return false;
+      async function puzzleGlissement(index, def, attendre, dir, depart) {
+        if (typeof kaykitSouvenirDuPlateau !== "function") return false;
 
         const zero = kaykitCellPosition(0, 0, 0);
         const un = kaykitCellPosition(dir[0], dir[1], 0);
@@ -1723,8 +2440,49 @@
         const dz = (un.z - zero.z) * PUZZLE_GLISSEMENT.avance;
         const chute = PUZZLE_GLISSEMENT.chute;
 
-        const apercu = kaykitApercuArchipel(puzzleCellulesDe(def), { x: dx, y: 0, z: dz });
-        if (!apercu) return false;
+        /* LA BASCULE A LIEU MAINTENANT, au tout début — c'est l'inversion.
+           Auparavant le vrai plateau n'arrivait qu'à la fin, et l'on voyait
+           les gardiens, les couronnes et les arbres surgir d'un coup sur un
+           décor jusque-là nu. Désormais le Sanctuaire qui approche est le VRAI
+           depuis la première image, et c'est celui qu'on QUITTE qu'on remplace
+           par un souvenir cloné — pixel pour pixel, donc invisible.
+
+           Le sens est aussi le bon : un lieu qu'on laisse derrière soi a le
+           droit de se simplifier en s'éloignant ; un lieu qu'on découvre n'a
+           pas le droit de se peupler sous nos yeux. */
+        const souvenir = kaykitSouvenirDuPlateau(depart?.groupe ? [depart.groupe] : []);
+        if (!souvenir) return false;
+        souvenir.position.set(-dx, 0, -dz);
+        /* Le gardien part avec son monde ; puis les originaux — dalles de la
+           passerelle comprises — sont démontés. Le souvenir en porte déjà le
+           clone au même endroit : rien ne disparaît à l'écran. */
+        if (depart?.visual) kaykitEmmenerVisuel(souvenir, depart.visual, { x: -dx, y: 0, z: -dz });
+        if (depart?.fin) depart.fin();
+
+        puzzleStart(index, { muet: true });
+        /* Le souvenir se tient à `-d` du repère, et le repère part de `+d` :
+           l'ancien plateau reste donc EXACTEMENT là où il était, tandis que le
+           nouveau, à l'origine locale, se trouve encore loin devant. */
+        kaykitDecalerArchipel(dx, 0, dz);
+
+        /* Le cadrage du Sanctuaire suivant est visé sur toute la durée du
+           voyage plutôt qu'imposé d'un coup à l'arrivée. C'est ce qui
+           supprime le recul brusque qui trahissait l'échange : à l'arrivée la
+           caméra est déjà en place, et plus rien ne bouge.
+
+           puzzleStart vient d'armer ses rappels de cadrage à 350, 700, 1100,
+           1600 et 2400 ms ; on les désarme, sinon ils écraseraient ce
+           mouvement lent (voir puzzleArrivee pour le détail de cette course). */
+        PUZZLE.lastFrame = null;
+        try {
+          if (typeof kaykitFollowCell === "function") {
+            const [fr, fc] = puzzleFocusCell(def);
+            kaykitFollowCell(fr, fc, {
+              duration: PUZZLE_GLISSEMENT.duree, force: true,
+              cinematique: true, zoomBoost: def.zoom || 0
+            });
+          }
+        } catch (_) { }
 
         const depuis = performance.now();
         let actif = true;
@@ -1732,21 +2490,19 @@
           if (!actif) return;
           const t = Math.min(1, (performance.now() - depuis) / PUZZLE_GLISSEMENT.duree);
           const e = t * t * (3 - 2 * t);
-          kaykitDecalerArchipel(-dx * e, -chute * e, -dz * e);
-          apercu.position.set(dx, chute * e, dz);
+          // Le repère revient de `+d` à zéro : le nouveau Sanctuaire arrive.
+          kaykitDecalerArchipel(dx * (1 - e), 0, dz * (1 - e));
+          // Le souvenir garde sa place dans le repère et s'enfonce seul.
+          souvenir.position.set(-dx, -chute * e, -dz);
           if (t < 1) requestAnimationFrame(animer);
         };
         requestAnimationFrame(animer);
 
         await attendre(PUZZLE_GLISSEMENT.duree);
 
-        /* LA BASCULE. Tout se fait dans la même image : aucun rendu ne
-           s'intercale entre le retrait de l'aperçu et la remise à zéro, donc
-           aucune position intermédiaire n'est jamais affichée. */
         actif = false;
-        kaykitRetirerApercu(apercu);
-        puzzleStart(index, { muet: true });
         kaykitDecalerArchipel(0, 0, 0);
+        kaykitRetirerSouvenir(souvenir);
         return true;
       }
 
@@ -1827,9 +2583,9 @@
           /* VOIE DU MONDE QUI GLISSE. Caméra immobile pendant le départ du
              gardien : c'est l'archipel qui va bouger, et deux mouvements à la
              fois n'en laisseraient lire aucun. */
-          const finDepartGlisse = await puzzleDepart(attendre, { camera: false });
-          const glisse = await puzzleGlissement(index, def, attendre, dir);
-          if (finDepartGlisse) finDepartGlisse();
+          const depart = await puzzleDepart(attendre, { camera: false });
+          const glisse = await puzzleGlissement(index, def, attendre, dir, depart);
+          if (!glisse && depart) depart.fin();
           if (glisse) {
             dom.lieu.innerHTML = `<span class="acte">${PUZZLE_ACTES[def.acte] || ""}</span>`
               + `<span class="nom">${def.title}</span>`;
@@ -1840,13 +2596,10 @@
             return;
           }
 
-          /* VOIE AU NOIR. Repli quand l'aperçu n'a pas pu être bâti : le
-             gardien est déjà parti, on enchaîne sur le rideau. */
-          const finDepart = null;
-
+          /* VOIE AU NOIR. Repli quand le souvenir n'a pas pu être cloné : le
+             gardien est déjà parti et démonté, on enchaîne sur le rideau. */
           dom.fade.classList.add("on");
           await attendre(760);
-          if (finDepart) finDepart();
 
           puzzleStart(index, { muet: true });
 
@@ -1883,13 +2636,6 @@
          mécanique il a employée. Les Sanctuaires ordinaires gardent leur ligne
          d'enseignement, plus discrète : onze des dix-sept n'ont pas de vérité,
          et c'est ce qui donne du poids aux six autres. */
-      function puzzleFinLigne(def, depense) {
-        const compte = `<span class="pz-cout">${depense} carte${depense > 1 ? "s" : ""} dépensée${depense > 1 ? "s" : ""}${def.par ? ` — optimal : ${def.par}` : ""}</span>`;
-        /* La vérité a déjà été lue sur le ciel pendant le réveil : la carte ne
-           la répète pas, elle garde la ligne d'enseignement. */
-        return `${def.winLine || ""}<br>${compte}`;
-      }
-
       function puzzleShowEnd({ won }) {
         if (!PUZZLE.dom || PUZZLE.ended) return;
         PUZZLE.ended = true;
@@ -1902,35 +2648,44 @@
         const etoiles = won ? puzzleStarsFor(def, depense) : 0;
         if (won) puzzleRecordSolved(def, depense, etoiles);
 
-        /* Le réveil passe AVANT la carte : le Sanctuaire s'illumine et la
-           caméra recule pendant que le joueur regarde encore le plateau. La
-           carte n'arrive qu'ensuite, et ne répète pas la vérité déjà lue. */
+        /* AUCUNE PORTE ENTRE DEUX SANCTUAIRES. Une carte de victoire, un
+           bouton « Continuer », un écran intermédiaire : autant de gestes
+           demandés à quelqu'un qui vient justement de finir de réfléchir. La
+           réussite se lit sur le plateau qui s'illumine — c'est le réveil — et
+           le voyage part tout seul derrière. La progression, elle, est déjà
+           enregistrée ci-dessus : rien n'est perdu à ne pas l'afficher. */
         if (won) {
-          puzzleReveil(def).then(() => puzzleCarteDeFin(def, depense, etoiles, true));
+          const resolu = PUZZLE.index;
+          puzzleReveil(def).then(() => {
+            /* Le joueur a pu quitter pendant le réveil, ou en relancer un
+               autre : on ne l'emmène nulle part s'il n'est plus là. */
+            if (!PUZZLE.active || PUZZLE.index !== resolu) return;
+            if (PUZZLES[resolu + 1]) puzzleVoyage(resolu + 1);
+            else puzzleBackToMenu();
+          });
           return;
         }
-        puzzleCarteDeFin(def, depense, etoiles, false);
+        puzzleCarteDeFin(def);
       }
 
-      function puzzleCarteDeFin(def, depense, etoiles, won) {
+      /* L'ÉCHEC est le seul moment où une énigme doit dire quelque chose :
+         il n'y a plus de quoi agir, et sans un mot le joueur resterait devant
+         un plateau muet à chercher un coup qui n'existe plus. Une ligne et
+         deux gestes, posés en bas de l'écran — jamais un panneau qui recouvre
+         la position qu'on vient de perdre, et qu'on voudra relire. */
+      function puzzleCarteDeFin(def) {
         if (!PUZZLE.dom) return;
-        const suivant = PUZZLES[PUZZLE.index + 1];
         const panneau = document.createElement("div");
         panneau.className = "pz-end";
         panneau.innerHTML = `
-          <h2>${won ? def.winTitle || "Sanctuaire éveillé" : "Le Sanctuaire reste éteint"}</h2>
-          ${won ? `<div class="pz-stars">${"★".repeat(etoiles)}${"☆".repeat(3 - etoiles)}</div>` : ""}
-          <p>${won ? puzzleFinLigne(def, depense) : def.failLine || "Il ne reste plus de quoi agir."}</p>
+          <p>${def.failLine || "Il ne reste plus de quoi agir."}</p>
           <div class="pz-end-actions">
             <button type="button" data-pz="again">↺ Recommencer</button>
-            ${won && suivant ? '<button type="button" class="primary" data-pz="next">Sanctuaire suivant →</button>' : ""}
             <button type="button" data-pz="back">← Les Voies</button>
           </div>`;
         PUZZLE.dom.layer.appendChild(panneau);
         panneau.querySelector('[data-pz="again"]').addEventListener("click", () => puzzleRestart());
         panneau.querySelector('[data-pz="back"]').addEventListener("click", () => puzzleBackToMenu());
-        const boutonSuivant = panneau.querySelector('[data-pz="next"]');
-        if (boutonSuivant) boutonSuivant.addEventListener("click", () => puzzleVoyage(PUZZLE.index + 1));
       }
 
       /* ---------- Boucle d'observation ------------------------------------
@@ -2029,8 +2784,17 @@
          « T » était intercepté parce que la vue 2D ne savait pas cliquer une
          éjection par le bord du plateau. Elle le sait maintenant : elle dessine
          ces repères dans sa marge et les exécute par identifiant. */
+      /* O comme Objectif. Le seul raccourci ajouté par les énigmes : il ne
+         consomme pas la touche (pas de preventDefault) et laisse donc intacts
+         tous ceux du jeu — flèches de rotation, caméra, Échap. */
       function puzzleKeyGuard(event) {
         if (!PUZZLE.active) return;
+        if (event.key !== "o" && event.key !== "O") return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const cible = event.target;
+        if (cible && (cible.isContentEditable
+          || /^(INPUT|TEXTAREA|SELECT)$/.test(cible.tagName || ""))) return;
+        puzzleShowObjectif();
       }
 
       /* Le clic droit sec sur le canevas annule le dernier coup — c'est le
@@ -2094,6 +2858,9 @@
         els.gameScreen && els.gameScreen.classList.toggle("puzzle-no-place", !def.placement);
         els.gameScreen && els.gameScreen.classList.toggle("puzzle-one-turn", !puzzleIsMultiTurn(def));
         document.body.classList.add("puzzle-mode");
+        /* Lu par la seule règle qui vise un élément hors de #gameScreen : la
+           bascule 2D, qui doit s'écarter de « Fin du tour ». */
+        document.body.classList.toggle("puzzle-multi", puzzleIsMultiTurn(def));
         // Une session précédente a pu laisser la vue tactique allumée.
         try { window.ILYOS_PLATEAU_2D?.activer(false); } catch (_) { }
 
@@ -2103,6 +2870,7 @@
 
         tutoRender();
         puzzleSyncOverlay();
+        puzzleShowObjectif();
         const [fr, fc] = puzzleFocusCell(def);
         puzzleFrame(fr, fc, def.zoom || 0);
 
@@ -2126,12 +2894,14 @@
         PUZZLE.ended = true;
         clearInterval(PUZZLE.pollTimer);
         PUZZLE.pollTimer = null;
+        clearTimeout(PUZZLE.objectifTimer);
+        PUZZLE.objectifTimer = null;
         window.removeEventListener("keydown", puzzleKeyGuard, true);
         ["contextmenu", "pointerdown", "mousedown", "mouseup", "auxclick"].forEach(type =>
           window.removeEventListener(type, puzzleRightClickGuard, true));
         puzzleClearMarkers();
         els.gameScreen && els.gameScreen.classList.remove("puzzle-on", "puzzle-no-place", "puzzle-one-turn");
-        document.body.classList.remove("puzzle-mode");
+        document.body.classList.remove("puzzle-mode", "puzzle-multi");
         if (PUZZLE.dom) { PUZZLE.dom.layer.remove(); PUZZLE.dom = null; }
         try { tutoUnlockCamera(); } catch (_) { }
         if (state) { state.puzzle = false; state.inputLocked = false; }
