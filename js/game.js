@@ -5718,6 +5718,159 @@
         return true;
       }
 
+      /* ---------- CINÉMATIQUE D'OUVERTURE ---------------------------------
+
+         La caméra est écrite ICI, directement, image par image.
+
+         Elle ne passe surtout pas par ILYOS_SKY.cadrage() : ce chemin-là
+         réapplique le preset de vue face en entier à chaque appel. C'est le bon
+         outil pour régler un cadrage à la console, mais appelé soixante fois par
+         seconde il fait tomber le rendu à ~20 images/s. La géométrie reproduite
+         ci-dessous est exactement la sienne (js/version-bootstrap.js,
+         applyFrontPreset), bornage de la distance compris.
+
+         Ce bornage n'est PAS un détail à corriger : `recul` est écrêté à
+         maxZoom (~29,5). Le mouvement approuvé part d'un recul de 800, qui reste
+         donc collé au maximum pendant toute la première partie du trajet — la
+         caméra ne s'approche pas encore, elle ne fait que basculer son regard et
+         perdre de l'altitude. C'est ce palier qui donne la suspension du départ.
+         Écrire 30 au lieu de 800 « nettoierait » le chiffre et changerait le plan.
+
+         L'éloignement, lui, vient de `hauteur` : la caméra monte réellement, et
+         au-delà de la brume (fogFar 145) le monde disparaît de lui-même. C'est
+         ce qui donne l'écran vide du départ, sans un seul objet ajouté.
+
+         PRIORITÉ CAMÉRA : la cinématique passe simplement en mode LIBRE.
+         kaykitFollowCell s'y retire de lui-même (voir son garde `cameraMode`),
+         donc aucun recadrage de jeu ne peut couper le mouvement. Il n'y a pas de
+         second système d'arbitrage à écrire ni à entretenir. */
+      let kaykitCinematique = null;
+
+      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur) {
+        if (!kaykit3D?.camera?.position || !kaykit3D.viewTarget) return;
+        const min = Number.isFinite(kaykit3D.minZoom) ? kaykit3D.minZoom : 6.4;
+        const max = Number.isFinite(kaykit3D.maxZoom) ? kaykit3D.maxZoom : 25;
+        const distance = Math.max(min, Math.min(recul, max));
+        const pitch = inclinaisonDeg * Math.PI / 180;
+        const cible = kaykit3D.viewTarget;
+        cible.set(0, hauteur, .18);
+        kaykit3D.camera.position.set(
+          cible.x,
+          cible.y + distance * Math.sin(pitch),
+          cible.z + distance * Math.cos(pitch)
+        );
+        kaykit3D.camera.lookAt(cible);
+        kaykit3D.zoomDistance = distance;
+        if (kaykit3D.orbit) {
+          kaykit3D.orbit.target.copy(cible);
+          kaykit3D.orbit.object.position.copy(kaykit3D.camera.position);
+        }
+      }
+
+      /* Le mouvement entier est une fonction pure de t ∈ [0,1]. Sauter la
+         cinématique, c'est donc poser t = 1 : il n'existe pas de chemin
+         « interrompu » distinct du chemin normal, et donc aucun état à moitié
+         appliqué à réparer après coup. */
+      function kaykitCinematiqueEtat(depart, arrivee, t) {
+        const eased = t < .5 ? 8 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
+        const lineaire = (a, b, u) => a + (b - a) * u;
+        /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
+           foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
+           distance par deux change autant l'image que passer de 34 à 17 tout
+           près. Multiplier, et non soustraire, donne une vitesse d'approche
+           perçue constante. */
+        const geometrique = (a, b, u) => a * Math.pow(b / a, u);
+        return {
+          recul: geometrique(depart.recul, arrivee.recul, eased),
+          inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
+          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased)
+        };
+      }
+
+      /* Rend la caméra au jeu. Le raccord n'est pas réglé à la main : on
+         redonne la main au preset de vue face, qui écrit très exactement le
+         cadrage d'arrivée de la cinématique. La dernière image du mouvement est
+         donc la première du jeu par construction, et le restera même si le FOV
+         ou le recul canonique changent un jour. */
+      function kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant) {
+        /* Levé AVANT le preset ci-dessous : c'est lui qui doit reprendre la
+           main, et il refuse d'agir tant que le drapeau est posé. */
+        window.ILYOS_CINEMATIQUE_ACTIVE = false;
+        if (!kaykit3D) return;
+        if (kaykit3D.orbit && orbitAvant !== null) kaykit3D.orbit.enabled = orbitAvant;
+        kaykit3D.cameraTween = null;
+        kaykit3D.cameraMode = modeAvant;
+        kaykit3D.userRotated = false;
+        kaykit3D.userInteracting = false;
+        kaykit3D.cameraFocusUntil = 0;
+        kaykit3D.cameraFocusPriorite = 0;
+        try { window.ILYOS_applyFrontCameraPreset?.(); } catch (_) { }
+        try { updateKayKitCameraModeUI(); } catch (_) { }
+      }
+
+      /* Rend une promesse tenue à la fin du mouvement — ou tout de suite si le
+         joueur a demandé un mouvement réduit, auquel cas on pose directement
+         l'image d'arrivée. */
+      function kaykitJouerCinematique({ depart, arrivee, duree = 21000, attente = 0 } = {}) {
+        if (!kaykit3D?.camera || !depart || !arrivee) return Promise.resolve(false);
+        kaykitArreterCinematique();
+
+        const modeAvant = kaykit3D.cameraMode;
+        const orbitAvant = kaykit3D.orbit ? kaykit3D.orbit.enabled : null;
+
+        if (kaykitReducedMotion()) {
+          kaykitCinematiquePose(arrivee.recul, arrivee.inclinaison, arrivee.hauteur);
+          kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
+          return Promise.resolve(true);
+        }
+
+        kaykit3D.cameraTween = null;
+        kaykit3D.viewMode = "front";
+        kaykit3D.autoFit = false;
+        /* Mode LIBRE : c'est tout le verrou. La valeur est "free" et pas
+           "libre" — setKayKitCameraMode normalise en "auto" tout ce qui n'est
+           pas exactement "free", et le verrou se relâchait donc à la première
+           synchronisation d'interface. */
+        kaykit3D.cameraMode = "free";
+        /* Drapeau PUBLIC : les couches d'initialisation qui vivent hors du
+           bundle (js/camera-start-face-auto-v1.js, le preset de
+           js/version-bootstrap.js) reprennent la caméra à l'ouverture d'une
+           partie — jusqu'à cliquer VUE FACE elles-mêmes. Sans ce drapeau, elles
+           tombaient en plein milieu du plongeon et le coupaient. */
+        window.ILYOS_CINEMATIQUE_ACTIVE = true;
+        if (kaykit3D.orbit) kaykit3D.orbit.enabled = false;
+        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur);
+
+        return new Promise(resolve => {
+          kaykitCinematique = {
+            depart, arrivee, duree,
+            /* `attente` tient la caméra à son poste de départ sans avancer.
+               Le verrou est déjà pris pendant ce temps-là : c'est ce qui permet
+               d'ouvrir sur le vide plusieurs secondes sans qu'un recadrage de
+               jeu vienne s'y glisser. */
+            debut: performance.now() + attente,
+            terminer() {
+              kaykitCinematique = null;
+              kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
+              resolve(true);
+            }
+          };
+        });
+      }
+
+      function kaykitArreterCinematique() {
+        const encours = kaykitCinematique;
+        if (!encours) return false;
+        const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
+        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+        encours.terminer();
+        return true;
+      }
+
+      function kaykitCinematiqueEnCours() {
+        return !!kaykitCinematique;
+      }
+
       /* Inclinaison de la vue de face, exprimée en polaire. Le preset raisonne
          en degrés SOUS l'horizontale, OrbitControls en angle depuis le zénith :
          les deux sont complémentaires. */
@@ -11691,6 +11844,17 @@
           layer.object.position.x = layer.base.x + Math.sin(elapsed * layer.drift.sx) * layer.drift.x;
           layer.object.position.z = layer.base.z + Math.cos(elapsed * layer.drift.sz) * layer.drift.z;
         });
+        /* La cinématique d'ouverture écrit la caméra elle-même. Elle passe
+           AVANT le tween de jeu et le vide à chaque image : un recadrage parti
+           juste avant elle ne peut donc pas continuer de tirer la caméra
+           pendant le mouvement. */
+        if (kaykitCinematique) {
+          const brut = Math.min(1, Math.max(0, (frameNow - kaykitCinematique.debut) / kaykitCinematique.duree));
+          const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
+          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+          kaykit3D.cameraTween = null;
+          if (brut >= 1) kaykitCinematique.terminer();
+        }
         if (kaykit3D.cameraTween) {
           const tween = kaykit3D.cameraTween;
           const raw = Math.min(1, (performance.now() - tween.started) / tween.duration);
@@ -27230,6 +27394,12 @@
       function tutoLockCamera(persistMs) {
         const apply = () => {
           try {
+            /* Une cinématique possède la caméra du début à la fin. Ce verrou-ci
+               se réapplique toutes les 400 ms et remettait `cameraMode` en AUTO
+               en plein mouvement — le plongeon tenait quand même, parce qu'il
+               réécrit la caméra à chaque image, mais la priorité n'était vraie
+               que par accident. */
+            if (window.ILYOS_CINEMATIQUE_ACTIVE) return;
             if (typeof kaykit3D !== "undefined" && kaykit3D) {
               // On garde orbit.enabled = true : sinon la boucle de rendu
               // n'applique plus AUCUN mouvement caméra, y compris nos propres
@@ -31087,7 +31257,13 @@
          Toutes deux effacent le même chrome, se passent du même geste et
          doivent se démonter même si un appel de caméra jette. Le corps reçoit
          `attendre`, qui rend la main dès que le joueur veut passer. */
-      async function puzzleSequence(corps) {
+      /* `sortie` choisit ce qui interrompt la séquence :
+           - par défaut, le moindre geste (clic ou touche) — c'est ce que veulent
+             le prologue et les voyages, où le joueur veut surtout aller jouer ;
+           - "echap", ÉCHAP et rien d'autre. Réservé à l'ouverture des Voies :
+             elle dure une demi-minute et se regarde, un clic parasite ou une
+             touche effleurée ne doit pas la faire sauter. */
+      async function puzzleSequence(corps, { sortie = "geste" } = {}) {
         const dom = PUZZLE.dom;
         if (!dom || PUZZLE.sequenceEnCours) return;
         PUZZLE.sequenceEnCours = true;
@@ -31099,9 +31275,16 @@
            recevrait aussitôt — le voyage se jouait en entier en moins d'une
            seconde. On n'arme donc la sortie qu'une fois ce clic passé. */
         const passer = () => { PUZZLE.sequenceSaute = true; };
+        const echapSeul = sortie === "echap";
+        const surTouche = echapSeul
+          ? (event => { if (event.key === "Escape") passer(); })
+          : passer;
         const armement = setTimeout(() => {
-          dom.layer.addEventListener("click", passer, { once: true });
-          window.addEventListener("keydown", passer, { once: true });
+          if (!echapSeul) dom.layer.addEventListener("click", passer, { once: true });
+          /* `once` ne convient pas en mode ÉCHAP : la première touche venue
+             consommerait l'écouteur sans rien interrompre, et ÉCHAP n'aurait
+             plus personne pour l'entendre. */
+          window.addEventListener("keydown", surTouche, echapSeul ? false : { once: true });
         }, 260);
         const attendre = async ms => {
           const fin = Date.now() + ms;
@@ -31116,7 +31299,7 @@
         } finally {
           clearTimeout(armement);
           dom.layer.removeEventListener("click", passer);
-          window.removeEventListener("keydown", passer);
+          window.removeEventListener("keydown", surTouche);
           dom.caption.classList.remove("show");
           dom.bloom.classList.remove("on");
           dom.lointain.classList.remove("on");
@@ -31127,6 +31310,77 @@
           document.body.classList.remove("puzzle-reveil");
           PUZZLE.sequenceEnCours = false;
         }
+      }
+
+      /* ---------- L'OUVERTURE DES VOIES -------------------------------------
+
+         Une seule fois, à la toute première entrée dans la campagne : on tombe
+         d'un ciel vide jusqu'au premier Sanctuaire, sans coupure.
+
+         Rien n'est ajouté à la scène. L'écran vide du départ n'est pas un décor
+         peint : à 240 unités d'altitude le monde passe derrière la brume
+         (fogFar 145) et disparaît tout seul. Ce qui reste — les anneaux dorés
+         des Voies et les étoiles — appartient déjà au ciel du jeu.
+
+         Les nombres ci-dessous ont été réglés à l'écran avant d'être écrits ici.
+         Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
+         maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
+      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { recul: 17, inclinaison: 37.2, hauteur: -.5 };
+      const PUZZLE_OUVERTURE_DUREE = 21000;
+      const PUZZLE_OUVERTURE_NOIR = 1100;    // l'écran noir, tenu
+      const PUZZLE_OUVERTURE_VIDE = 2600;    // le vide, tenu, avant que ça tombe
+
+      /* À CHAQUE venue sur le premier Sanctuaire — pas seulement la première.
+         L'appelant limite déjà aux vraies entrées : un « Recommencer » ne la
+         rejoue pas, sans quoi elle deviendrait une taxe d'une demi-minute sur
+         l'essai-erreur, qui est le mode de jeu normal d'une énigme. */
+      function puzzleOuvertureDue(def) {
+        return !!def && def.id === "p01-seuil";
+      }
+
+      function puzzleOuvertureVoies() {
+        return puzzleSequence(async (dom, attendre) => {
+          /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
+                hors du monde pendant qu'il est encore opaque, donc le saut
+                n'est jamais vu. */
+          dom.fade.classList.add("on");
+          await attendre(PUZZLE_OUVERTURE_NOIR);
+          if (PUZZLE.sequenceSaute) return;
+
+          let mouvement = Promise.resolve(false);
+          try {
+            if (typeof kaykitJouerCinematique === "function") {
+              mouvement = kaykitJouerCinematique({
+                depart: PUZZLE_OUVERTURE_DEPART,
+                arrivee: PUZZLE_OUVERTURE_ARRIVEE,
+                duree: PUZZLE_OUVERTURE_DUREE,
+                /* Le mouvement ne part qu'après le fondu ET le temps de vide :
+                   la caméra reste tenue à son poste, verrou compris. */
+                attente: PUZZLE_OUVERTURE_VIDE
+              });
+            }
+          } catch (_) { }
+
+          /* 2. LE FONDU. Le monde n'apparaît pas : c'est le noir qui s'en va.
+                Ce qu'on découvre dessous est un ciel vide. */
+          dom.fade.classList.remove("on");
+
+          /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
+                lui-même — la dernière image du mouvement est la première du
+                jeu, sans raccord à régler. */
+          while (!PUZZLE.sequenceSaute
+            && typeof kaykitCinematiqueEnCours === "function"
+            && kaykitCinematiqueEnCours()) {
+            await tutoWait(80);
+          }
+          /* Sauter, c'est poser t = 1 — le même chemin que la fin normale, donc
+             aucun état à demi appliqué et aucune caméra restée verrouillée. */
+          if (PUZZLE.sequenceSaute) {
+            try { kaykitArreterCinematique(); } catch (_) { }
+          }
+          await mouvement;
+        }, { sortie: "echap" });
       }
 
       /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
@@ -31940,7 +32194,16 @@
         /* La phrase d'entrée à la PREMIÈRE venue seulement : la relire à chaque
            « Recommencer » deviendrait une taxe sur l'essai-erreur, qui est le
            mode de jeu normal d'une énigme. */
-        if (!muet && !replay && !reprise) puzzleApproche(def);
+        if (!muet && !replay && !reprise) {
+          /* L'ouverture précède le prologue : on arrive dans le monde, puis le
+             monde parle. Les deux ne se chevauchent pas — puzzleSequence n'en
+             autorise qu'une à la fois. */
+          if (puzzleOuvertureDue(def)) {
+            puzzleOuvertureVoies().then(() => puzzleApproche(def));
+          } else {
+            puzzleApproche(def);
+          }
+        }
       }
 
       function puzzleRestart() {
@@ -32682,6 +32945,11 @@
         startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
           { force: true, muet: true, ...options }),
         restart: puzzleRestart,
+        /* Rejoue l'ouverture sur le Sanctuaire en cours, sans toucher à la clé
+           qui dit qu'elle a déjà été vue. Une cinématique ne se règle qu'en la
+           regardant tourner ; l'atteindre en vidant le stockage à chaque essai
+           n'est pas praticable. */
+        playOpeningCinematic: () => puzzleOuvertureVoies(),
         /* Joue la TRANSITION vers un Sanctuaire depuis celui en cours, sans
            passer par une victoire. Une transition ne se règle qu'en la
            regardant tourner des dizaines de fois ; l'atteindre en résolvant

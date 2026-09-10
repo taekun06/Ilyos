@@ -2044,7 +2044,13 @@
          Toutes deux effacent le même chrome, se passent du même geste et
          doivent se démonter même si un appel de caméra jette. Le corps reçoit
          `attendre`, qui rend la main dès que le joueur veut passer. */
-      async function puzzleSequence(corps) {
+      /* `sortie` choisit ce qui interrompt la séquence :
+           - par défaut, le moindre geste (clic ou touche) — c'est ce que veulent
+             le prologue et les voyages, où le joueur veut surtout aller jouer ;
+           - "echap", ÉCHAP et rien d'autre. Réservé à l'ouverture des Voies :
+             elle dure une demi-minute et se regarde, un clic parasite ou une
+             touche effleurée ne doit pas la faire sauter. */
+      async function puzzleSequence(corps, { sortie = "geste" } = {}) {
         const dom = PUZZLE.dom;
         if (!dom || PUZZLE.sequenceEnCours) return;
         PUZZLE.sequenceEnCours = true;
@@ -2056,9 +2062,16 @@
            recevrait aussitôt — le voyage se jouait en entier en moins d'une
            seconde. On n'arme donc la sortie qu'une fois ce clic passé. */
         const passer = () => { PUZZLE.sequenceSaute = true; };
+        const echapSeul = sortie === "echap";
+        const surTouche = echapSeul
+          ? (event => { if (event.key === "Escape") passer(); })
+          : passer;
         const armement = setTimeout(() => {
-          dom.layer.addEventListener("click", passer, { once: true });
-          window.addEventListener("keydown", passer, { once: true });
+          if (!echapSeul) dom.layer.addEventListener("click", passer, { once: true });
+          /* `once` ne convient pas en mode ÉCHAP : la première touche venue
+             consommerait l'écouteur sans rien interrompre, et ÉCHAP n'aurait
+             plus personne pour l'entendre. */
+          window.addEventListener("keydown", surTouche, echapSeul ? false : { once: true });
         }, 260);
         const attendre = async ms => {
           const fin = Date.now() + ms;
@@ -2073,7 +2086,7 @@
         } finally {
           clearTimeout(armement);
           dom.layer.removeEventListener("click", passer);
-          window.removeEventListener("keydown", passer);
+          window.removeEventListener("keydown", surTouche);
           dom.caption.classList.remove("show");
           dom.bloom.classList.remove("on");
           dom.lointain.classList.remove("on");
@@ -2084,6 +2097,77 @@
           document.body.classList.remove("puzzle-reveil");
           PUZZLE.sequenceEnCours = false;
         }
+      }
+
+      /* ---------- L'OUVERTURE DES VOIES -------------------------------------
+
+         Une seule fois, à la toute première entrée dans la campagne : on tombe
+         d'un ciel vide jusqu'au premier Sanctuaire, sans coupure.
+
+         Rien n'est ajouté à la scène. L'écran vide du départ n'est pas un décor
+         peint : à 240 unités d'altitude le monde passe derrière la brume
+         (fogFar 145) et disparaît tout seul. Ce qui reste — les anneaux dorés
+         des Voies et les étoiles — appartient déjà au ciel du jeu.
+
+         Les nombres ci-dessous ont été réglés à l'écran avant d'être écrits ici.
+         Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
+         maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
+      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { recul: 17, inclinaison: 37.2, hauteur: -.5 };
+      const PUZZLE_OUVERTURE_DUREE = 21000;
+      const PUZZLE_OUVERTURE_NOIR = 1100;    // l'écran noir, tenu
+      const PUZZLE_OUVERTURE_VIDE = 2600;    // le vide, tenu, avant que ça tombe
+
+      /* À CHAQUE venue sur le premier Sanctuaire — pas seulement la première.
+         L'appelant limite déjà aux vraies entrées : un « Recommencer » ne la
+         rejoue pas, sans quoi elle deviendrait une taxe d'une demi-minute sur
+         l'essai-erreur, qui est le mode de jeu normal d'une énigme. */
+      function puzzleOuvertureDue(def) {
+        return !!def && def.id === "p01-seuil";
+      }
+
+      function puzzleOuvertureVoies() {
+        return puzzleSequence(async (dom, attendre) => {
+          /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
+                hors du monde pendant qu'il est encore opaque, donc le saut
+                n'est jamais vu. */
+          dom.fade.classList.add("on");
+          await attendre(PUZZLE_OUVERTURE_NOIR);
+          if (PUZZLE.sequenceSaute) return;
+
+          let mouvement = Promise.resolve(false);
+          try {
+            if (typeof kaykitJouerCinematique === "function") {
+              mouvement = kaykitJouerCinematique({
+                depart: PUZZLE_OUVERTURE_DEPART,
+                arrivee: PUZZLE_OUVERTURE_ARRIVEE,
+                duree: PUZZLE_OUVERTURE_DUREE,
+                /* Le mouvement ne part qu'après le fondu ET le temps de vide :
+                   la caméra reste tenue à son poste, verrou compris. */
+                attente: PUZZLE_OUVERTURE_VIDE
+              });
+            }
+          } catch (_) { }
+
+          /* 2. LE FONDU. Le monde n'apparaît pas : c'est le noir qui s'en va.
+                Ce qu'on découvre dessous est un ciel vide. */
+          dom.fade.classList.remove("on");
+
+          /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
+                lui-même — la dernière image du mouvement est la première du
+                jeu, sans raccord à régler. */
+          while (!PUZZLE.sequenceSaute
+            && typeof kaykitCinematiqueEnCours === "function"
+            && kaykitCinematiqueEnCours()) {
+            await tutoWait(80);
+          }
+          /* Sauter, c'est poser t = 1 — le même chemin que la fin normale, donc
+             aucun état à demi appliqué et aucune caméra restée verrouillée. */
+          if (PUZZLE.sequenceSaute) {
+            try { kaykitArreterCinematique(); } catch (_) { }
+          }
+          await mouvement;
+        }, { sortie: "echap" });
       }
 
       /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
@@ -2897,7 +2981,16 @@
         /* La phrase d'entrée à la PREMIÈRE venue seulement : la relire à chaque
            « Recommencer » deviendrait une taxe sur l'essai-erreur, qui est le
            mode de jeu normal d'une énigme. */
-        if (!muet && !replay && !reprise) puzzleApproche(def);
+        if (!muet && !replay && !reprise) {
+          /* L'ouverture précède le prologue : on arrive dans le monde, puis le
+             monde parle. Les deux ne se chevauchent pas — puzzleSequence n'en
+             autorise qu'une à la fois. */
+          if (puzzleOuvertureDue(def)) {
+            puzzleOuvertureVoies().then(() => puzzleApproche(def));
+          } else {
+            puzzleApproche(def);
+          }
+        }
       }
 
       function puzzleRestart() {
@@ -3639,6 +3732,11 @@
         startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
           { force: true, muet: true, ...options }),
         restart: puzzleRestart,
+        /* Rejoue l'ouverture sur le Sanctuaire en cours, sans toucher à la clé
+           qui dit qu'elle a déjà été vue. Une cinématique ne se règle qu'en la
+           regardant tourner ; l'atteindre en vidant le stockage à chaque essai
+           n'est pas praticable. */
+        playOpeningCinematic: () => puzzleOuvertureVoies(),
         /* Joue la TRANSITION vers un Sanctuaire depuis celui en cours, sans
            passer par une victoire. Une transition ne se règle qu'en la
            regardant tourner des dizaines de fois ; l'atteindre en résolvant

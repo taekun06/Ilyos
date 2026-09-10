@@ -80,6 +80,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     const k = window.kaykit3D;
     if (!k?.camera || !k?.viewTarget) return false;
 
+    /* Une cinématique prime sur TOUT, y compris sur un VUE FACE explicite :
+       elle écrit la caméra elle-même à chaque image, et c'est elle qui rend la
+       main au preset à la fin (voir kaykitCinematiqueRendreLaCamera). */
+    if (window.ILYOS_CINEMATIQUE_ACTIVE) return false;
+
     /* Une action manuelle du joueur prime toujours sur le preset initial.
        Seul un clic explicite sur VUE FACE est autorisé à reprendre la main. */
     if (!explicit && (k.userRotated || k.userInteracting || k.cameraMode === 'free')) {
