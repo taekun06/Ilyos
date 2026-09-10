@@ -14,7 +14,21 @@
     './assets/audio/music/3.mp3'
   ];
   const SPECIAL_TRACK = './assets/audio/music/neuf-mensonges.mp3';
-  const SPECIAL_PUZZLE_INDEX = 16;
+  /* L'ARCHIPEL DES NEUF MENSONGES, désigné par son IDENTIFIANT et non par son
+     rang. L'ordre de campagne n'est plus celui des identifiants — le fichier de
+     définitions l'annonce en tête — et `p17-neuf-mensonges` occupe aujourd'hui
+     la vingt-deuxième place, donc l'index 21. La valeur 16 gravée ici visait en
+     réalité `p21-la-releve` : l'intro de la Confluence se serait jouée sur le
+     mauvais Sanctuaire. Résolu au clic, le rang suivra tout réordonnancement. */
+  const SPECIAL_PUZZLE_ID = 'p17-neuf-mensonges';
+
+  function specialPuzzleIndex(){
+    try {
+      const liste = window.ILYOS_PUZZLE?.list?.();
+      if (!Array.isArray(liste)) return -1;
+      return liste.findIndex(entree => entree && entree.id === SPECIAL_PUZZLE_ID);
+    } catch (_) { return -1; }
+  }
   const RESTORE_KEY = 'ilyos.puzzle.music.restore.v2';
   const SOUND_SETTINGS_KEY = 'ilyosSoundSettings';
   const PUZZLE_GAIN = 2.8;
@@ -242,7 +256,9 @@
 
   document.addEventListener('click', event => {
     const card = event.target?.closest?.('.pz-card[data-index]');
-    if (!card || Number(card.dataset.index) !== SPECIAL_PUZZLE_INDEX) return;
+    if (!card) return;
+    const vise = specialPuzzleIndex();
+    if (vise < 0 || Number(card.dataset.index) !== vise) return;
     playSpecialTrack();
   }, true);
 
