@@ -84,8 +84,8 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
 
   const etat = await page.evaluate(() => window.ILYOS_PUZZLE._debug());
   expect(etat.id).toBe('p01-seuil');
-  expect(etat.budget).toBe(6);
-  expect(etat.restant).toBe(6);
+  expect(etat.budget).toBe(25);
+  expect(etat.restant).toBe(25);
   expect(etat.goal).toBe(false);
   expect(etat.fail).toBe(false);
   // La pose d'île est neutralisée : le sélecteur de formes est masqué.
@@ -106,7 +106,27 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   expect(erreurs).toEqual([]);
 });
 
-/* Les deux tests ci-dessus vérifient les RÈGLES et le câblage. Celui-ci vérifie
+test('le prologue vocal de La Première Lueur accompagne le puzzle et reste passable', async ({ page }) => {
+  const erreurs = await ouvrirJeu(page);
+
+  await page.evaluate(() => {
+    window.__ilyosVoixTest = [];
+    window.speechSynthesis.speak = utterance => window.__ilyosVoixTest.push(utterance.text);
+    window.speechSynthesis.cancel = () => { };
+    window.ILYOS_PUZZLE.startById('p01-seuil', { muet: false });
+  });
+
+  await expect(page.locator('#puzzleLayer')).toHaveClass(/reveil/);
+  await expect(page.locator('#puzzleLayer .pz-caption')).toHaveText("Ton village s'est éteint.");
+  await expect.poll(() => page.evaluate(() => window.__ilyosVoixTest)).toContain("Ton village s'est éteint.");
+
+  await page.keyboard.press('Space');
+  await expect(page.locator('#puzzleLayer')).not.toHaveClass(/reveil/, { timeout: 3000 });
+  expect((await page.evaluate(() => window.ILYOS_PUZZLE._debug())).active).toBe(true);
+  expect(erreurs).toEqual([]);
+});
+
+/* Les tests ci-dessus vérifient les RÈGLES et le câblage. Celui-ci vérifie
    qu'une énigme se joue vraiment à la souris : sélectionner une poussée dans le
    HUD, désigner sa destination, déplacer un Gardien, puis faire pivoter une île.
    C'est le seul chemin que l'oracle ne peut pas couvrir, puisqu'il applique les
@@ -158,8 +178,15 @@ test('la neuvième énigme se résout entièrement à la souris', async ({ page 
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().goal === true, null, { timeout: 10000 });
   const fin = await page.evaluate(() => window.ILYOS_PUZZLE._debug());
   expect(fin.depense).toBe(4);
-  await expect(page.locator('#puzzleLayer .pz-end')).toBeVisible();
-  await expect(page.locator('#puzzleLayer .pz-stars')).toHaveText('★★★');
+  /* La réussite ne s'annonce plus par une carte : le Sanctuaire s'éveille,
+     puis le voyage vers le suivant part tout seul. On vérifie donc que RIEN
+     ne s'interpose — aucun panneau de fin — et que le réveil a bien démarré ;
+     les trois étoiles, elles, se lisent dans la progression enregistrée. */
+  await expect(page.locator('#puzzleLayer')).toHaveClass(/reveil/);
+  await expect(page.locator('#puzzleLayer .pz-end')).toHaveCount(0);
+  const progression = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('ilyos.puzzles.progress') || '{}'));
+  expect(progression['p09-fardeau']).toMatchObject({ solved: true, stars: 3, best: 4 });
 
   expect(erreurs).toEqual([]);
 });
@@ -270,12 +297,19 @@ test("cliquer la case du village déclenche le raccourci de déplacement", async
   await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
 
   await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.textContent = ''; });
-  await page.locator('.cell[data-r="0"][data-c="0"]').dispatchEvent('click');
+  /* La case du village, LUE DANS LA DÉFINITION plutôt qu'écrite en dur : la
+     refonte de La Première Lueur l'a déplacée de (0,0) à (2,2) et le test
+     visait alors du vide. Un raccourci qui dépend d'une coordonnée gravée
+     casse au premier redécoupage du plateau. */
+  const village = await page.evaluate(() => window.ILYOS_PUZZLE._debug().villages?.[0]?.[0] || null);
+  expect(village, "le premier Sanctuaire doit déclarer un village").not.toBeNull();
+  const [vr, vc] = village;
+  await page.locator(`.cell[data-r="${vr}"][data-c="${vc}"]`).dispatchEvent('click');
 
   await page.waitForFunction(
-    () => (document.getElementById('toast')?.textContent || '').trim().length > 0
-      || window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === 0 && ch.c === 0),
-    null, { timeout: 8000 });
+    ([r, c]) => (document.getElementById('toast')?.textContent || '').trim().length > 0
+      || window.ILYOS_PUZZLE._debug().chars.some(ch => ch.p === 0 && ch.r === r && ch.c === c),
+    [vr, vc], { timeout: 8000 });
 
   expect(erreurs).toEqual([]);
 });
