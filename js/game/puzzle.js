@@ -2164,6 +2164,17 @@
          une valeur écrite en dur ne tombait pas dessus, et la caméra sautait de
          trois unités à l'image exacte où la cinématique rendait la main. Le
          point d'arrivée se demande donc à celui qui en décide. */
+      /* Le départ recopie les constantes, puis laisse la console imposer les
+         réglages qu'on a réellement envie d'essayer (voir ILYOS_CINE). */
+      function puzzleOuvertureDepart() {
+        const depart = Object.assign({}, PUZZLE_OUVERTURE_DEPART);
+        if (window.ILYOS_CINE) {
+          depart.azimut = window.ILYOS_CINE.azimut();
+          depart.hauteur = window.ILYOS_CINE.altitude();
+        }
+        return depart;
+      }
+
       function puzzleOuvertureArrivee() {
         const arrivee = Object.assign({}, PUZZLE_OUVERTURE_ARRIVEE);
         let recul = NaN;
@@ -2207,9 +2218,9 @@
           try {
             if (typeof kaykitJouerCinematique === "function") {
               mouvement = kaykitJouerCinematique({
-                depart: PUZZLE_OUVERTURE_DEPART,
+                depart: puzzleOuvertureDepart(),
                 arrivee: puzzleOuvertureArrivee(),
-                duree: PUZZLE_OUVERTURE_DUREE,
+                duree: window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE,
                 /* Le mouvement ne part qu'après le fondu ET le temps de vide :
                    la caméra reste tenue à son poste, verrou compris. */
                 attente: PUZZLE_OUVERTURE_FONDU + PUZZLE_OUVERTURE_VIDE

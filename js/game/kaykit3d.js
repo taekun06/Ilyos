@@ -5377,6 +5377,17 @@
          second système d'arbitrage à écrire ni à entretenir. */
       let kaykitCinematique = null;
 
+      /* Réglages de l'ouverture, ouverts à la console. Une cinématique ne se
+         règle qu'en la regardant tourner : reconstruire le bundle entre deux
+         essais rend la comparaison impossible — on ne se souvient plus de ce
+         qu'on a vu trente secondes plus tôt. Voir window.ILYOS_CINE. */
+      const KAYKIT_CINE = {
+        exposant: 2,     // 2 = freinage doux, 3 = chute franche puis pose longue
+        duree: 21000,
+        azimut: -72,
+        altitude: 240
+      };
+
       /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
 
          Déplacer réellement l'astre demande ILYOS_SKY.soleil(), qui régénère la
@@ -5495,8 +5506,9 @@
            Exposant 2 et non 3 : au cube, les six dernières secondes ne faisaient
            plus bouger l'altitude que de quatre unités — le mouvement passait de
            « se pose » à « s'enlise ». Le carré garde la chute franche au départ
-           et rend du mouvement à l'arrivée. */
-        const eased = 1 - Math.pow(1 - t, 2);
+           et rend du mouvement à l'arrivée. Réglable à chaud :
+           ILYOS_CINE.exposant(3). */
+        const eased = 1 - Math.pow(1 - t, KAYKIT_CINE.exposant);
         const lineaire = (a, b, u) => a + (b - a) * u;
         /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
            foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
@@ -5549,7 +5561,7 @@
       /* Rend une promesse tenue à la fin du mouvement — ou tout de suite si le
          joueur a demandé un mouvement réduit, auquel cas on pose directement
          l'image d'arrivée. */
-      function kaykitJouerCinematique({ depart, arrivee, duree = 21000, attente = 0 } = {}) {
+      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0 } = {}) {
         if (!kaykit3D?.camera || !depart || !arrivee) return Promise.resolve(false);
         kaykitArreterCinematique();
 
@@ -5631,6 +5643,29 @@
       function kaykitCinematiqueEnCours() {
         return !!kaykitCinematique;
       }
+
+      /* Console : comparer deux courbes sans reconstruire le bundle.
+         Sans argument, chaque fonction rend la valeur en place. */
+      window.ILYOS_CINE = {
+        aide() {
+          return [
+            "exposant(n)   courbe de décélération. 2 = freinage doux (défaut),",
+            "              3 = chute franche puis pose longue. Essayer 1.5 à 4.",
+            "duree(ms)     durée du plongeon (21000 par défaut)",
+            "azimut(deg)   d'où l'on arrive ; 0 = pile en face (-72 par défaut)",
+            "altitude(u)   hauteur de départ (240 par défaut)",
+            "valeurs()     les réglages en place",
+            "",
+            "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
+            "Exemple : ILYOS_CINE.exposant(3); ILYOS_PUZZLE.playOpeningCinematic()"
+          ].join(String.fromCharCode(10));
+        },
+        exposant(v) { if (Number.isFinite(v)) KAYKIT_CINE.exposant = v; return KAYKIT_CINE.exposant; },
+        duree(v) { if (Number.isFinite(v)) KAYKIT_CINE.duree = v; return KAYKIT_CINE.duree; },
+        azimut(v) { if (Number.isFinite(v)) KAYKIT_CINE.azimut = v; return KAYKIT_CINE.azimut; },
+        altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
+        valeurs() { return Object.assign({}, KAYKIT_CINE); }
+      };
 
       /* Inclinaison de la vue de face, exprimée en polaire. Le preset raisonne
          en degrés SOUS l'horizontale, OrbitControls en angle depuis le zénith :
