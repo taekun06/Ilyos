@@ -5746,6 +5746,13 @@
          second système d'arbitrage à écrire ni à entretenir. */
       let kaykitCinematique = null;
 
+      function kaykitCinematiqueBrume(near, far) {
+        const fog = kaykit3D?.scene?.fog;
+        if (!fog || !Number.isFinite(near) || !Number.isFinite(far)) return;
+        fog.near = near;
+        fog.far = far;
+      }
+
       function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur) {
         if (!kaykit3D?.camera?.position || !kaykit3D.viewTarget) return;
         const min = Number.isFinite(kaykit3D.minZoom) ? kaykit3D.minZoom : 6.4;
@@ -5783,7 +5790,12 @@
         return {
           recul: geometrique(depart.recul, arrivee.recul, eased),
           inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
-          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased)
+          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased),
+          /* La brume est le seul « effet » de la cinématique, et elle ne coûte
+             rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
+             le brouillard qui recule et le découvre. */
+          brumeNear: lineaire(depart.brumeNear, arrivee.brumeNear, eased),
+          brumeFar: lineaire(depart.brumeFar, arrivee.brumeFar, eased)
         };
       }
 
@@ -5820,8 +5832,20 @@
 
         if (kaykitReducedMotion()) {
           kaykitCinematiquePose(arrivee.recul, arrivee.inclinaison, arrivee.hauteur);
+          kaykitCinematiqueBrume(arrivee.brumeNear, arrivee.brumeFar);
           kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
           return Promise.resolve(true);
+        }
+
+        /* La brume d'arrivée n'est PAS une constante : c'est celle que la
+           scène porte déjà. On la relève au démarrage et on y revient, donc un
+           réglage de ciel changé un jour n'est jamais écrasé par la cinématique. */
+        const fog = kaykit3D.scene?.fog;
+        if (fog) {
+          if (!Number.isFinite(arrivee.brumeNear)) arrivee.brumeNear = fog.near;
+          if (!Number.isFinite(arrivee.brumeFar)) arrivee.brumeFar = fog.far;
+          if (!Number.isFinite(depart.brumeNear)) depart.brumeNear = Math.min(fog.near, 6);
+          if (!Number.isFinite(depart.brumeFar)) depart.brumeFar = Math.min(fog.far, 46);
         }
 
         kaykit3D.cameraTween = null;
@@ -5863,6 +5887,7 @@
         if (!encours) return false;
         const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
         kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+        kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
         encours.terminer();
         return true;
       }
@@ -11852,6 +11877,7 @@
           const brut = Math.min(1, Math.max(0, (frameNow - kaykitCinematique.debut) / kaykitCinematique.duree));
           const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
           kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+          kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }
@@ -12003,6 +12029,11 @@
       let reverbNode = null;
       let reverbDamp = null;
       let reverbReturn = null;
+      /* Départ de réverbe réservé à la musique. Voir connectReverbSend :
+         le retour de réverb est branché sur masterGain et court-circuite donc
+         musicGain — sans ce bus, la queue de réverb des accords et des cloches
+         continuait de jouer alors que le volume Musique était à zéro. */
+      let musicReverbSend = null;
       // 11 : passage au moteur génératif. 12 : musique à 15 % (le bump force la
       // nouvelle valeur chez les joueurs qui avaient déjà un réglage enregistré).
       const SOUND_SETTINGS_VERSION = 12;
@@ -17438,6 +17469,14 @@
           reverbDamp = audioCtx.createBiquadFilter();
           reverbDamp.type = "lowpass";
           reverbDamp.frequency.value = 3200;
+          /* Tout ce que la musique envoie à la réverbe passe par ici, et ce
+             gain suit le volume Musique (voir updateSoundLevels). Sans lui, le
+             signal direct se taisait à zéro mais la queue de réverb restait
+             audible — c'est ce qu'on entendait « dans le fond », en solo comme
+             par-dessus la bande-son des énigmes. */
+          musicReverbSend = audioCtx.createGain();
+          musicReverbSend.connect(reverbDamp);
+
           reverbReturn = audioCtx.createGain();
           reverbReturn.gain.value = .85;
           reverbDamp.connect(reverbNode);
@@ -17461,12 +17500,13 @@
 
       /* Départ réverbe. Renvoie null si le graphe n'est pas prêt, pour que les
          appelants puissent simplement ignorer l'envoi. */
-      function connectReverbSend(node, amount) {
+      function connectReverbSend(node, amount, bus = null) {
         if (!audioCtx || !reverbDamp || amount <= 0) return null;
+        const destination = bus || reverbDamp;
         const send = audioCtx.createGain();
         send.gain.value = amount;
         node.connect(send);
-        send.connect(reverbDamp);
+        send.connect(destination);
         return send;
       }
 
@@ -17601,7 +17641,7 @@
             osc.connect(filter);
             filter.connect(gain);
             gain.connect(musicGain);
-            const send = connectReverbSend(gain, .45);
+            const send = connectReverbSend(gain, .45, musicReverbSend);
 
             osc.start(time);
             osc.stop(time + duration + release + .2);
@@ -17653,7 +17693,7 @@
         const tail = panner || gain;
         if (panner) gain.connect(panner);
         tail.connect(musicGain);
-        const send = connectReverbSend(tail, .8);
+        const send = connectReverbSend(tail, .8, musicReverbSend);
 
         osc.start(time);
         partial.start(time);
@@ -17878,6 +17918,11 @@
           masterGain.gain.cancelScheduledValues(now);
           masterGain.gain.setTargetAtTime(soundSettings.master * enabledMultiplier, now, .02);
           musicGain.gain.setTargetAtTime(Math.min(1, soundSettings.music * .92), now, .05);
+          /* Même loi que musicGain : à zéro, la réverbe de la musique se tait
+             aussi. C'est tout l'objet de ce bus. */
+          if (musicReverbSend) {
+            musicReverbSend.gain.setTargetAtTime(Math.min(1, soundSettings.music * .92), now, .05);
+          }
           effectsGain.gain.setTargetAtTime(Math.min(1.65, soundSettings.effects), now, .018);
         }
 
@@ -31326,10 +31371,24 @@
          Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
          maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
       const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
-      const PUZZLE_OUVERTURE_ARRIVEE = { recul: 17, inclinaison: 37.2, hauteur: -.5 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5 };
       const PUZZLE_OUVERTURE_DUREE = 21000;
-      const PUZZLE_OUVERTURE_NOIR = 1100;    // l'écran noir, tenu
-      const PUZZLE_OUVERTURE_VIDE = 2600;    // le vide, tenu, avant que ça tombe
+      const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
+      const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée
+      const PUZZLE_OUVERTURE_VIDE = 3400;    // le vide, tenu, avant que ça tombe
+
+      /* Le recul d'arrivée n'est PAS une constante. Le preset de vue face
+         calcule le sien à partir du plateau (voir ILYOS_frontCameraDistance) ;
+         une valeur écrite en dur ne tombait pas dessus, et la caméra sautait de
+         trois unités à l'image exacte où la cinématique rendait la main. Le
+         point d'arrivée se demande donc à celui qui en décide. */
+      function puzzleOuvertureArrivee() {
+        const arrivee = Object.assign({}, PUZZLE_OUVERTURE_ARRIVEE);
+        let recul = NaN;
+        try { recul = Number(window.ILYOS_frontCameraDistance?.()); } catch (_) { }
+        arrivee.recul = Number.isFinite(recul) ? recul : 17;
+        return arrivee;
+      }
 
       /* À CHAQUE venue sur le premier Sanctuaire — pas seulement la première.
          L'appelant limite déjà aux vraies entrées : un « Recommencer » ne la
@@ -31344,6 +31403,12 @@
           /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
                 hors du monde pendant qu'il est encore opaque, donc le saut
                 n'est jamais vu. */
+          /* Le noir entre vite (on vient d'un clic) et s'en va très lentement :
+             c'est la sortie qui porte la sensation, pas l'entrée. La durée est
+             posée ici plutôt que dans la feuille de style — le même voile sert
+             aux transitions entre Sanctuaires, où un fondu de trois secondes
+             serait interminable. */
+          dom.fade.style.transition = "opacity 140ms ease";
           dom.fade.classList.add("on");
           await attendre(PUZZLE_OUVERTURE_NOIR);
           if (PUZZLE.sequenceSaute) return;
@@ -31353,18 +31418,22 @@
             if (typeof kaykitJouerCinematique === "function") {
               mouvement = kaykitJouerCinematique({
                 depart: PUZZLE_OUVERTURE_DEPART,
-                arrivee: PUZZLE_OUVERTURE_ARRIVEE,
+                arrivee: puzzleOuvertureArrivee(),
                 duree: PUZZLE_OUVERTURE_DUREE,
                 /* Le mouvement ne part qu'après le fondu ET le temps de vide :
                    la caméra reste tenue à son poste, verrou compris. */
-                attente: PUZZLE_OUVERTURE_VIDE
+                attente: PUZZLE_OUVERTURE_FONDU + PUZZLE_OUVERTURE_VIDE
               });
             }
           } catch (_) { }
 
-          /* 2. LE FONDU. Le monde n'apparaît pas : c'est le noir qui s'en va.
-                Ce qu'on découvre dessous est un ciel vide. */
+          /* 2. LE FONDU, très étalé. Le monde n'apparaît pas : c'est le noir
+                qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
+                brume est encore presque fermée — elle ne s'ouvrira qu'en
+                tombant (voir kaykitCinematiqueBrume). */
+          dom.fade.style.transition = `opacity ${PUZZLE_OUVERTURE_FONDU}ms cubic-bezier(.35,0,.65,1)`;
           dom.fade.classList.remove("on");
+          await attendre(PUZZLE_OUVERTURE_FONDU);
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du
@@ -31380,6 +31449,8 @@
             try { kaykitArreterCinematique(); } catch (_) { }
           }
           await mouvement;
+          // Le voile retrouve la durée que partagent les autres séquences.
+          dom.fade.style.transition = "";
         }, { sortie: "echap" });
       }
 

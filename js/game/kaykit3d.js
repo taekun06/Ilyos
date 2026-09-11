@@ -5373,6 +5373,13 @@
          second système d'arbitrage à écrire ni à entretenir. */
       let kaykitCinematique = null;
 
+      function kaykitCinematiqueBrume(near, far) {
+        const fog = kaykit3D?.scene?.fog;
+        if (!fog || !Number.isFinite(near) || !Number.isFinite(far)) return;
+        fog.near = near;
+        fog.far = far;
+      }
+
       function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur) {
         if (!kaykit3D?.camera?.position || !kaykit3D.viewTarget) return;
         const min = Number.isFinite(kaykit3D.minZoom) ? kaykit3D.minZoom : 6.4;
@@ -5410,7 +5417,12 @@
         return {
           recul: geometrique(depart.recul, arrivee.recul, eased),
           inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
-          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased)
+          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased),
+          /* La brume est le seul « effet » de la cinématique, et elle ne coûte
+             rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
+             le brouillard qui recule et le découvre. */
+          brumeNear: lineaire(depart.brumeNear, arrivee.brumeNear, eased),
+          brumeFar: lineaire(depart.brumeFar, arrivee.brumeFar, eased)
         };
       }
 
@@ -5447,8 +5459,20 @@
 
         if (kaykitReducedMotion()) {
           kaykitCinematiquePose(arrivee.recul, arrivee.inclinaison, arrivee.hauteur);
+          kaykitCinematiqueBrume(arrivee.brumeNear, arrivee.brumeFar);
           kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
           return Promise.resolve(true);
+        }
+
+        /* La brume d'arrivée n'est PAS une constante : c'est celle que la
+           scène porte déjà. On la relève au démarrage et on y revient, donc un
+           réglage de ciel changé un jour n'est jamais écrasé par la cinématique. */
+        const fog = kaykit3D.scene?.fog;
+        if (fog) {
+          if (!Number.isFinite(arrivee.brumeNear)) arrivee.brumeNear = fog.near;
+          if (!Number.isFinite(arrivee.brumeFar)) arrivee.brumeFar = fog.far;
+          if (!Number.isFinite(depart.brumeNear)) depart.brumeNear = Math.min(fog.near, 6);
+          if (!Number.isFinite(depart.brumeFar)) depart.brumeFar = Math.min(fog.far, 46);
         }
 
         kaykit3D.cameraTween = null;
@@ -5490,6 +5514,7 @@
         if (!encours) return false;
         const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
         kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+        kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
         encours.terminer();
         return true;
       }
@@ -11479,6 +11504,7 @@
           const brut = Math.min(1, Math.max(0, (frameNow - kaykitCinematique.debut) / kaykitCinematique.duree));
           const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
           kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+          kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }

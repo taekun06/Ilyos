@@ -2113,10 +2113,24 @@
          Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
          maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
       const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
-      const PUZZLE_OUVERTURE_ARRIVEE = { recul: 17, inclinaison: 37.2, hauteur: -.5 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5 };
       const PUZZLE_OUVERTURE_DUREE = 21000;
-      const PUZZLE_OUVERTURE_NOIR = 1100;    // l'écran noir, tenu
-      const PUZZLE_OUVERTURE_VIDE = 2600;    // le vide, tenu, avant que ça tombe
+      const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
+      const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée
+      const PUZZLE_OUVERTURE_VIDE = 3400;    // le vide, tenu, avant que ça tombe
+
+      /* Le recul d'arrivée n'est PAS une constante. Le preset de vue face
+         calcule le sien à partir du plateau (voir ILYOS_frontCameraDistance) ;
+         une valeur écrite en dur ne tombait pas dessus, et la caméra sautait de
+         trois unités à l'image exacte où la cinématique rendait la main. Le
+         point d'arrivée se demande donc à celui qui en décide. */
+      function puzzleOuvertureArrivee() {
+        const arrivee = Object.assign({}, PUZZLE_OUVERTURE_ARRIVEE);
+        let recul = NaN;
+        try { recul = Number(window.ILYOS_frontCameraDistance?.()); } catch (_) { }
+        arrivee.recul = Number.isFinite(recul) ? recul : 17;
+        return arrivee;
+      }
 
       /* À CHAQUE venue sur le premier Sanctuaire — pas seulement la première.
          L'appelant limite déjà aux vraies entrées : un « Recommencer » ne la
@@ -2131,6 +2145,12 @@
           /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
                 hors du monde pendant qu'il est encore opaque, donc le saut
                 n'est jamais vu. */
+          /* Le noir entre vite (on vient d'un clic) et s'en va très lentement :
+             c'est la sortie qui porte la sensation, pas l'entrée. La durée est
+             posée ici plutôt que dans la feuille de style — le même voile sert
+             aux transitions entre Sanctuaires, où un fondu de trois secondes
+             serait interminable. */
+          dom.fade.style.transition = "opacity 140ms ease";
           dom.fade.classList.add("on");
           await attendre(PUZZLE_OUVERTURE_NOIR);
           if (PUZZLE.sequenceSaute) return;
@@ -2140,18 +2160,22 @@
             if (typeof kaykitJouerCinematique === "function") {
               mouvement = kaykitJouerCinematique({
                 depart: PUZZLE_OUVERTURE_DEPART,
-                arrivee: PUZZLE_OUVERTURE_ARRIVEE,
+                arrivee: puzzleOuvertureArrivee(),
                 duree: PUZZLE_OUVERTURE_DUREE,
                 /* Le mouvement ne part qu'après le fondu ET le temps de vide :
                    la caméra reste tenue à son poste, verrou compris. */
-                attente: PUZZLE_OUVERTURE_VIDE
+                attente: PUZZLE_OUVERTURE_FONDU + PUZZLE_OUVERTURE_VIDE
               });
             }
           } catch (_) { }
 
-          /* 2. LE FONDU. Le monde n'apparaît pas : c'est le noir qui s'en va.
-                Ce qu'on découvre dessous est un ciel vide. */
+          /* 2. LE FONDU, très étalé. Le monde n'apparaît pas : c'est le noir
+                qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
+                brume est encore presque fermée — elle ne s'ouvrira qu'en
+                tombant (voir kaykitCinematiqueBrume). */
+          dom.fade.style.transition = `opacity ${PUZZLE_OUVERTURE_FONDU}ms cubic-bezier(.35,0,.65,1)`;
           dom.fade.classList.remove("on");
+          await attendre(PUZZLE_OUVERTURE_FONDU);
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du
@@ -2167,6 +2191,8 @@
             try { kaykitArreterCinematique(); } catch (_) { }
           }
           await mouvement;
+          // Le voile retrouve la durée que partagent les autres séquences.
+          dom.fade.style.transition = "";
         }, { sortie: "echap" });
       }
 
