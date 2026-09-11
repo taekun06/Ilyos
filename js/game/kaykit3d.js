@@ -5384,8 +5384,8 @@
       const KAYKIT_CINE = {
         exposant: 2,     // 2 = freinage doux, 3 = chute franche puis pose longue
         duree: 21000,
-        azimut: -72,
-        altitude: 240
+        azimut: -300,
+        altitude: 160
       };
 
       /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.

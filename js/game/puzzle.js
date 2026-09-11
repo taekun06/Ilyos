@@ -790,7 +790,13 @@
              masquer comme le reste du chrome — ce que fait toute séquence —
              laissait un aplat bleu parfaitement vide. Ce sont eux qui font le
              ciel habité du plan d'ouverture, pas le décor 3D. */
-          #puzzleLayer.reveil.ouverture .pz-signes{opacity:1;}
+          /* Ils ne sont pas « démasqués », ils SE LÈVENT. Les afficher d'emblée
+             donnait un ciel déjà entièrement écrit dès la première image : il
+             ne restait plus rien à découvrir pendant la chute. Ils montent donc
+             sur toute la durée du plongeon, comme la lumière. */
+          #puzzleLayer.reveil.ouverture .pz-signes{opacity:0;
+            transition:opacity var(--pz-signes-duree, 9s) cubic-bezier(.45,0,.7,1);}
+          #puzzleLayer.reveil.ouverture.signes .pz-signes{opacity:1;}
 
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
             font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
@@ -2122,7 +2128,8 @@
           dom.fade.classList.remove("on");
           dom.brume?.classList.remove("on");
           if (dom.brume) dom.brume.style.transition = "";
-          dom.layer.classList.remove("reveil", "ouverture");
+          dom.layer.classList.remove("reveil", "ouverture", "signes");
+          dom.layer.style.removeProperty("--pz-signes-duree");
           els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
           document.body.classList.remove("puzzle-reveil");
           PUZZLE.sequenceEnCours = false;
@@ -2146,7 +2153,7 @@
          tombant. Elle finit à zéro, c'est-à-dire pile sur la vue de face du
          jeu. C'est ce quart de tour qui fait glisser les îles lointaines les
          unes derrière les autres — sans lui, la descente est un rail. */
-      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240, azimut: -72 };
+      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 160, azimut: -300 };
       const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5, azimut: 0 };
       const PUZZLE_OUVERTURE_DUREE = 21000;
       const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
@@ -2211,7 +2218,9 @@
           dom.layer.classList.add("ouverture");
           dom.fade.style.transition = "opacity 140ms ease";
           dom.fade.classList.add("on");
-          await attendre(PUZZLE_OUVERTURE_NOIR);
+          // Le temps que le noir soit réellement opaque : la caméra est
+          // téléportée derrière lui, jamais devant.
+          await attendre(240);
           if (PUZZLE.sequenceSaute) return;
 
           let mouvement = Promise.resolve(false);
@@ -2221,12 +2230,22 @@
                 depart: puzzleOuvertureDepart(),
                 arrivee: puzzleOuvertureArrivee(),
                 duree: window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE,
-                /* Le mouvement ne part qu'après le fondu ET le temps de vide :
-                   la caméra reste tenue à son poste, verrou compris. */
-                attente: PUZZLE_OUVERTURE_FONDU + PUZZLE_OUVERTURE_VIDE
+                /* AUCUNE attente : la chute commence DERRIÈRE le noir. Quand
+                   celui-ci se lève, la caméra est déjà lancée — on hérite d'un
+                   mouvement en cours au lieu d'assister à un démarrage. Le temps
+                   passé caché est le prix à payer, et il est faible. */
+                attente: 0
               });
             }
           } catch (_) { }
+
+          /* Les signes se lèvent sur toute la durée du plongeon. */
+          const dureeSignes = (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE) * .78;
+          dom.layer.style.setProperty("--pz-signes-duree", `${Math.round(dureeSignes)}ms`);
+          dom.layer.classList.add("signes");
+
+          await attendre(Math.max(0, PUZZLE_OUVERTURE_NOIR - 240));
+          if (PUZZLE.sequenceSaute) return;
 
           /* 2. LE FONDU, très étalé. Le monde n'apparaît pas : c'est le noir
                 qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
