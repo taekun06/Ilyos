@@ -5758,7 +5758,8 @@
         exposant: 2,     // 2 = freinage doux, 3 = chute franche puis pose longue
         duree: 21000,
         azimut: -300,
-        altitude: 160
+        altitude: 160,
+        noir: 8500      // dissolution de l'écran noir : commence tout de suite
       };
 
       /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
@@ -5934,7 +5935,13 @@
       /* Rend une promesse tenue à la fin du mouvement — ou tout de suite si le
          joueur a demandé un mouvement réduit, auquel cas on pose directement
          l'image d'arrivée. */
-      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0 } = {}) {
+      /* `surAvancement(t)` est appelé à CHAQUE image avec l'avancement brut du
+         mouvement, 0 au départ et 1 à l'arrivée. C'est par là que l'ouverture
+         fait respirer son écran noir et sa brume : un fondu CSS lancé à côté
+         court sur sa propre horloge et finit toujours par se désynchroniser du
+         plongeon — ou, pire, par ne jamais démarrer si la classe est posée et
+         retirée avant le premier affichage. Ici il n'y a qu'une horloge. */
+      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0, surAvancement = null } = {}) {
         if (!kaykit3D?.camera || !depart || !arrivee) return Promise.resolve(false);
         kaykitArreterCinematique();
 
@@ -5988,6 +5995,7 @@
           kaykitCinematique = {
             depart, arrivee, duree,
             lumiereBase: kaykitCinematiqueReleverLumiere(),
+            surAvancement,
             /* `attente` tient la caméra à son poste de départ sans avancer.
                Le verrou est déjà pris pendant ce temps-là : c'est ce qui permet
                d'ouvrir sur le vide plusieurs secondes sans qu'un recadrage de
@@ -6009,6 +6017,7 @@
         kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
         kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
         kaykitCinematiqueLumiere(encours.lumiereBase, 1);
+        if (encours.surAvancement) { try { encours.surAvancement(1); } catch (_) { } }
         encours.terminer();
         return true;
       }
@@ -6026,7 +6035,9 @@
             "              3 = chute franche puis pose longue. Essayer 1.5 à 4.",
             "duree(ms)     durée du plongeon (21000 par défaut)",
             "azimut(deg)   d'où l'on arrive ; 0 = pile en face (-72 par défaut)",
-            "altitude(u)   hauteur de départ (240 par défaut)",
+            "altitude(u)   hauteur de départ (160 par défaut)",
+            "noir(ms)      dissolution de l'écran noir (8500 par défaut).",
+            "              Elle commence dès la première image : pas de palier.",
             "valeurs()     les réglages en place",
             "",
             "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
@@ -6037,6 +6048,7 @@
         duree(v) { if (Number.isFinite(v)) KAYKIT_CINE.duree = v; return KAYKIT_CINE.duree; },
         azimut(v) { if (Number.isFinite(v)) KAYKIT_CINE.azimut = v; return KAYKIT_CINE.azimut; },
         altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
+        noir(v) { if (Number.isFinite(v)) KAYKIT_CINE.noir = v; return KAYKIT_CINE.noir; },
         valeurs() { return Object.assign({}, KAYKIT_CINE); }
       };
 
@@ -12023,6 +12035,9 @@
           kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
           kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
           kaykitCinematiqueLumiere(kaykitCinematique.lumiereBase, etat.lumiere);
+          if (kaykitCinematique.surAvancement) {
+            try { kaykitCinematique.surAvancement(brut); } catch (_) { }
+          }
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }
@@ -31529,8 +31544,11 @@
           dom.lointain.classList.remove("on");
           dom.lieu.classList.remove("show");
           dom.fade.classList.remove("on");
-          dom.brume?.classList.remove("on");
-          if (dom.brume) dom.brume.style.transition = "";
+          dom.fade.style.removeProperty("opacity");
+          /* La brume n'est PAS rendue ici. Elle n'appartient qu'à l'ouverture,
+             qui la remet à zéro elle-même ; la rendre au CSS depuis ce finally
+             partagé effaçait le style que l'ouverture venait de poser, et le
+             voile restait visible après un ÉCHAP. */
           dom.layer.classList.remove("reveil", "ouverture", "signes");
           dom.layer.style.removeProperty("--pz-signes-duree");
           els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
@@ -31559,8 +31577,17 @@
       const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 160, azimut: -300 };
       const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5, azimut: 0 };
       const PUZZLE_OUVERTURE_DUREE = 21000;
-      const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
-      const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée
+      /* L'écran noir ne se TIENT plus : il s'ouvre.
+
+         Il y avait un palier de 2,6 s à pleine opacité, puis un fondu. Deux
+         temps, donc une attente : rien ne commençait avant la fin du premier.
+         Il ne reste du palier que de quoi couvrir la mise en place de la caméra
+         — un quart de seconde — et la dissolution part aussitôt, très longue.
+         Elle se termine bien après que la chute est engagée, si bien qu'on ne
+         voit jamais ni un écran noir immobile, ni un rideau qui se lève d'un
+         coup : le monde s'éclaircit pendant qu'on tombe déjà dedans. */
+      const PUZZLE_OUVERTURE_NOIR = 260;     // le temps de poser la caméra, pas plus
+      const PUZZLE_OUVERTURE_FONDU = 8500;   // la dissolution, réglable : ILYOS_CINE.noir()
       /* Le vide n'est plus « tenu » longtemps. L'ancienne pose de 3,4 s
          s'ajoutait à une courbe très plate au départ : on obtenait neuf secondes
          d'image parfaitement immobile après le noir. La chute commence donc
@@ -31603,6 +31630,51 @@
 
       function puzzleOuvertureVoies() {
         return puzzleSequence(async (dom, attendre) => {
+          /* Les voiles sont écrits en style direct pendant toute l'ouverture.
+             Ils DOIVENT être rendus au CSS ensuite, sinon une opacité figée
+             reste sur le calque et le voyage entre Sanctuaires, qui réutilise le
+             même voile, ne peut plus le piloter. Le corps est donc enveloppé
+             ici : les retours anticipés de la sortie ÉCHAP passent aussi par là. */
+          const rendreLesVoiles = () => {
+            /* La brume n'appartient QU'À l'ouverture : on la laisse à zéro, sans
+               la rendre au CSS. Le voile noir, lui, est partagé avec les voyages
+               entre Sanctuaires — il doit redevenir pilotable, d'où les deux
+               temps ci-dessous. */
+            if (dom.brume) {
+              dom.brume.classList.remove("on");
+              dom.brume.style.transition = "none";
+              dom.brume.style.opacity = "0";
+            }
+            [dom.fade].forEach(el => {
+              if (!el) return;
+              el.classList.remove("on");
+              /* On IMPOSE zéro d'abord, transition coupée. Se contenter de
+                 retirer les styles laissait le voile figé à la valeur qu'il
+                 avait au moment du saut : la règle CSS rendait bien zéro, mais
+                 rien ne déclenchait de nouvelle transition depuis une opacité
+                 écrite à la main image par image. Un ÉCHAP au début laissait
+                 donc l'écran voilé pour de bon. */
+              el.style.transition = "none";
+              el.style.opacity = "0";
+              /* Puis on rend la main au CSS, une fois zéro appliqué : le voile
+                 redevient pilotable par les autres séquences, qui s'en servent
+                 pour les voyages entre Sanctuaires. */
+              requestAnimationFrame(() => {
+                el.style.removeProperty("transition");
+                el.style.removeProperty("opacity");
+              });
+            });
+          };
+          try {
+            return await puzzleOuvertureCorps(dom, attendre);
+          } finally {
+            rendreLesVoiles();
+          }
+        }, { sortie: "echap" });
+      }
+
+      async function puzzleOuvertureCorps(dom, attendre) {
+        {
           /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
                 hors du monde pendant qu'il est encore opaque, donc le saut
                 n'est jamais vu. */
@@ -31615,15 +31687,20 @@
              l'instant : quand le noir se lèvera, il découvrira du laiteux et non
              l'image nette. C'est là toute la progression. */
           if (dom.brume) {
-            dom.brume.style.transition = "opacity 200ms ease";
-            dom.brume.classList.add("on");
+            dom.brume.style.transition = "none";
+            dom.brume.style.opacity = "1";
           }
           dom.layer.classList.add("ouverture");
-          dom.fade.style.transition = "opacity 140ms ease";
-          dom.fade.classList.add("on");
+          /* Aucune transition CSS pendant l'ouverture : l'opacité est écrite
+             image par image depuis le mouvement (voir surAvancement plus bas).
+             Une transition lancée à côté court sur sa propre horloge, et celle
+             posée ici ne démarrait même pas — la classe était retirée avant le
+             premier affichage, si bien que l'écran noir ne s'est jamais vu. */
+          dom.fade.style.transition = "none";
+          dom.fade.style.opacity = "1";
           // Le temps que le noir soit réellement opaque : la caméra est
           // téléportée derrière lui, jamais devant.
-          await attendre(240);
+          await attendre(PUZZLE_OUVERTURE_NOIR);
           if (PUZZLE.sequenceSaute) return;
 
           let mouvement = Promise.resolve(false);
@@ -31637,7 +31714,15 @@
                    celui-ci se lève, la caméra est déjà lancée — on hérite d'un
                    mouvement en cours au lieu d'assister à un démarrage. Le temps
                    passé caché est le prix à payer, et il est faible. */
-                attente: 0
+                attente: 0,
+                /* L'écran s'ouvre AU RYTHME DE LA CHUTE, pas sur une horloge à
+                   part : dès la première image le noir commence à céder. */
+                surAvancement(t) {
+                  dom.fade.style.opacity = String(1 - adoucir(Math.min(1, t / partNoir)));
+                  if (dom.brume) {
+                    dom.brume.style.opacity = String(1 - adoucir(Math.min(1, t / partBrume)));
+                  }
+                }
               });
             }
           } catch (_) { }
@@ -31647,23 +31732,21 @@
           dom.layer.style.setProperty("--pz-signes-duree", `${Math.round(dureeSignes)}ms`);
           dom.layer.classList.add("signes");
 
-          await attendre(Math.max(0, PUZZLE_OUVERTURE_NOIR - 240));
-          if (PUZZLE.sequenceSaute) return;
+          /* La part du plongeon que dure chaque voile. Le noir s'efface sur le
+             premier quart, la brume sur la première moitié : ils se recouvrent,
+             donc l'image s'éclaircit sans palier ni rupture. */
+          const partNoir = Math.max(.02, Math.min(.9,
+            (window.ILYOS_CINE ? window.ILYOS_CINE.noir() : PUZZLE_OUVERTURE_FONDU)
+            / (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE)));
+          const partBrume = Math.min(.95, partNoir * 1.9);
+          /* Le voile s'en va vite au début puis s'attarde : sans cette courbe,
+             une disparition linéaire se lit comme un rideau qu'on tire. */
+          const adoucir = u => 1 - Math.pow(1 - u, 2.2);
 
           /* 2. LE FONDU, très étalé. Le monde n'apparaît pas : c'est le noir
                 qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
                 brume est encore presque fermée — elle ne s'ouvrira qu'en
                 tombant (voir kaykitCinematiqueBrume). */
-          dom.fade.style.transition = `opacity ${PUZZLE_OUVERTURE_FONDU}ms cubic-bezier(.35,0,.65,1)`;
-          dom.fade.classList.remove("on");
-          /* La brume se dissout beaucoup plus lentement que le noir, et sa
-             dissolution déborde largement sur le début de la chute : le monde
-             se découvre pendant qu'on tombe déjà. */
-          if (dom.brume) {
-            dom.brume.style.transition = `opacity ${PUZZLE_OUVERTURE_BRUME}ms cubic-bezier(.3,0,.6,1)`;
-            dom.brume.classList.remove("on");
-          }
-          await attendre(PUZZLE_OUVERTURE_FONDU);
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du
@@ -31679,9 +31762,7 @@
             try { kaykitArreterCinematique(); } catch (_) { }
           }
           await mouvement;
-          // Le voile retrouve la durée que partagent les autres séquences.
-          dom.fade.style.transition = "";
-        }, { sortie: "echap" });
+        }
       }
 
       /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de

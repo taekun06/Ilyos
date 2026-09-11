@@ -5385,7 +5385,8 @@
         exposant: 2,     // 2 = freinage doux, 3 = chute franche puis pose longue
         duree: 21000,
         azimut: -300,
-        altitude: 160
+        altitude: 160,
+        noir: 8500      // dissolution de l'écran noir : commence tout de suite
       };
 
       /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
@@ -5561,7 +5562,13 @@
       /* Rend une promesse tenue à la fin du mouvement — ou tout de suite si le
          joueur a demandé un mouvement réduit, auquel cas on pose directement
          l'image d'arrivée. */
-      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0 } = {}) {
+      /* `surAvancement(t)` est appelé à CHAQUE image avec l'avancement brut du
+         mouvement, 0 au départ et 1 à l'arrivée. C'est par là que l'ouverture
+         fait respirer son écran noir et sa brume : un fondu CSS lancé à côté
+         court sur sa propre horloge et finit toujours par se désynchroniser du
+         plongeon — ou, pire, par ne jamais démarrer si la classe est posée et
+         retirée avant le premier affichage. Ici il n'y a qu'une horloge. */
+      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0, surAvancement = null } = {}) {
         if (!kaykit3D?.camera || !depart || !arrivee) return Promise.resolve(false);
         kaykitArreterCinematique();
 
@@ -5615,6 +5622,7 @@
           kaykitCinematique = {
             depart, arrivee, duree,
             lumiereBase: kaykitCinematiqueReleverLumiere(),
+            surAvancement,
             /* `attente` tient la caméra à son poste de départ sans avancer.
                Le verrou est déjà pris pendant ce temps-là : c'est ce qui permet
                d'ouvrir sur le vide plusieurs secondes sans qu'un recadrage de
@@ -5636,6 +5644,7 @@
         kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
         kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
         kaykitCinematiqueLumiere(encours.lumiereBase, 1);
+        if (encours.surAvancement) { try { encours.surAvancement(1); } catch (_) { } }
         encours.terminer();
         return true;
       }
@@ -5653,7 +5662,9 @@
             "              3 = chute franche puis pose longue. Essayer 1.5 à 4.",
             "duree(ms)     durée du plongeon (21000 par défaut)",
             "azimut(deg)   d'où l'on arrive ; 0 = pile en face (-72 par défaut)",
-            "altitude(u)   hauteur de départ (240 par défaut)",
+            "altitude(u)   hauteur de départ (160 par défaut)",
+            "noir(ms)      dissolution de l'écran noir (8500 par défaut).",
+            "              Elle commence dès la première image : pas de palier.",
             "valeurs()     les réglages en place",
             "",
             "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
@@ -5664,6 +5675,7 @@
         duree(v) { if (Number.isFinite(v)) KAYKIT_CINE.duree = v; return KAYKIT_CINE.duree; },
         azimut(v) { if (Number.isFinite(v)) KAYKIT_CINE.azimut = v; return KAYKIT_CINE.azimut; },
         altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
+        noir(v) { if (Number.isFinite(v)) KAYKIT_CINE.noir = v; return KAYKIT_CINE.noir; },
         valeurs() { return Object.assign({}, KAYKIT_CINE); }
       };
 
@@ -11650,6 +11662,9 @@
           kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
           kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
           kaykitCinematiqueLumiere(kaykitCinematique.lumiereBase, etat.lumiere);
+          if (kaykitCinematique.surAvancement) {
+            try { kaykitCinematique.surAvancement(brut); } catch (_) { }
+          }
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }
