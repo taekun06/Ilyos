@@ -724,6 +724,24 @@
 
           #puzzleLayer .pz-fade{position:absolute;inset:0;z-index:11;pointer-events:none;
             background:#04060d;opacity:0;transition:opacity .7s ease;}
+          /* LA BRUME DE L'OUVERTURE. Elle est peinte ICI, au-dessus de l'image,
+             et non dans la scène : le brouillard 3D ne touche que les objets
+             compris entre ses deux distances, or au départ de la cinématique le
+             monde est tout entier au-delà — et le dôme, l'archipel lointain et
+             les poussières portent fog:false. La brume de scène n'avait donc
+             aucun effet visible, quelle que soit sa densité. Un voile, lui, se
+             voit toujours. */
+          /* Discrète, et pesant vers le BAS — là où le monde se trouve. Un
+             premier essai couvrait tout l'écran d'un blanc dense : le vide
+             étoilé devenait un aplat gris et on ne voyait plus rien du tout.
+             Une brume qui cache tout ne se distingue pas d'un écran vide. */
+          #puzzleLayer .pz-brume{position:absolute;inset:0;z-index:10;pointer-events:none;
+            opacity:0;transition:opacity 1.2s ease;
+            background:
+              radial-gradient(130% 62% at 50% 104%, rgba(226,234,248,.72) 0%,
+                rgba(198,214,240,.42) 42%, rgba(168,190,224,.14) 74%, rgba(150,175,214,0) 100%),
+              linear-gradient(180deg, rgba(180,200,232,0) 34%, rgba(206,222,246,.30) 100%);}
+          #puzzleLayer .pz-brume.on{opacity:1;}
           #puzzleLayer .pz-fade.on{opacity:1;}
 
           /* Le nom du lieu où l'on vient d'arriver, sur le noir, puis tenu
@@ -765,6 +783,14 @@
           #puzzleLayer.reveil .pz-side,
           #puzzleLayer.reveil .pz-signes{opacity:0;transition:opacity .8s ease;
             pointer-events:none;}
+          /* EXCEPTION : l'ouverture des Voies garde ses signes célestes.
+             Les anneaux dorés, les glyphes et les poussières sont TOUT ce qu'il
+             y a à voir pendant les premières secondes, quand la caméra est à
+             240 unités d'altitude et que le monde 3D est hors de portée. Les
+             masquer comme le reste du chrome — ce que fait toute séquence —
+             laissait un aplat bleu parfaitement vide. Ce sont eux qui font le
+             ciel habité du plan d'ouverture, pas le décor 3D. */
+          #puzzleLayer.reveil.ouverture .pz-signes{opacity:1;}
 
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
             font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
@@ -1939,6 +1965,7 @@
           <div class="pz-bloom"></div>
           <div class="pz-lointain"></div>
           <div class="pz-caption"></div>
+          <div class="pz-brume"></div>
           <div class="pz-fade"></div>
           <div class="pz-lieu"></div>
           <div class="pz-tools">
@@ -1972,6 +1999,7 @@
           lointain: layer.querySelector(".pz-lointain"),
           caption: layer.querySelector(".pz-caption"),
           fade: layer.querySelector(".pz-fade"),
+          brume: layer.querySelector(".pz-brume"),
           lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
@@ -2092,7 +2120,9 @@
           dom.lointain.classList.remove("on");
           dom.lieu.classList.remove("show");
           dom.fade.classList.remove("on");
-          dom.layer.classList.remove("reveil");
+          dom.brume?.classList.remove("on");
+          if (dom.brume) dom.brume.style.transition = "";
+          dom.layer.classList.remove("reveil", "ouverture");
           els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
           document.body.classList.remove("puzzle-reveil");
           PUZZLE.sequenceEnCours = false;
@@ -2117,7 +2147,13 @@
       const PUZZLE_OUVERTURE_DUREE = 21000;
       const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
       const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée
-      const PUZZLE_OUVERTURE_VIDE = 3400;    // le vide, tenu, avant que ça tombe
+      /* Le vide n'est plus « tenu » longtemps. L'ancienne pose de 3,4 s
+         s'ajoutait à une courbe très plate au départ : on obtenait neuf secondes
+         d'image parfaitement immobile après le noir. La chute commence donc
+         pendant que le noir finit de se lever, et c'est la brume qui occupe le
+         regard le temps que le mouvement se voie. */
+      const PUZZLE_OUVERTURE_VIDE = 900;
+      const PUZZLE_OUVERTURE_BRUME = 7000;   // la dissolution du voile laiteux
 
       /* Le recul d'arrivée n'est PAS une constante. Le preset de vue face
          calcule le sien à partir du plateau (voir ILYOS_frontCameraDistance) ;
@@ -2150,6 +2186,14 @@
              posée ici plutôt que dans la feuille de style — le même voile sert
              aux transitions entre Sanctuaires, où un fondu de trois secondes
              serait interminable. */
+          /* Le voile de brume est posé SOUS le noir, donc invisible pour
+             l'instant : quand le noir se lèvera, il découvrira du laiteux et non
+             l'image nette. C'est là toute la progression. */
+          if (dom.brume) {
+            dom.brume.style.transition = "opacity 200ms ease";
+            dom.brume.classList.add("on");
+          }
+          dom.layer.classList.add("ouverture");
           dom.fade.style.transition = "opacity 140ms ease";
           dom.fade.classList.add("on");
           await attendre(PUZZLE_OUVERTURE_NOIR);
@@ -2175,6 +2219,13 @@
                 tombant (voir kaykitCinematiqueBrume). */
           dom.fade.style.transition = `opacity ${PUZZLE_OUVERTURE_FONDU}ms cubic-bezier(.35,0,.65,1)`;
           dom.fade.classList.remove("on");
+          /* La brume se dissout beaucoup plus lentement que le noir, et sa
+             dissolution déborde largement sur le début de la chute : le monde
+             se découvre pendant qu'on tombe déjà. */
+          if (dom.brume) {
+            dom.brume.style.transition = `opacity ${PUZZLE_OUVERTURE_BRUME}ms cubic-bezier(.3,0,.6,1)`;
+            dom.brume.classList.remove("on");
+          }
           await attendre(PUZZLE_OUVERTURE_FONDU);
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face

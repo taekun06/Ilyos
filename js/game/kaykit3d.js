@@ -374,7 +374,11 @@
 
          Ce qui n'est chargé n'est jamais téléchargé : basculer d'un horizon à
          l'autre construit le sien à la demande et démonte l'autre. */
-      const KAYKIT_HORIZON_DEFAUT = "plaques";
+      /* L'archipel découpé est l'horizon de référence : c'est lui qui donne la
+         profondeur réelle — les îles s'éloignent quand la caméra monte, là où les
+         quatre plaques peintes restent collées au dôme et ne bougent jamais. Toute
+         la mise en scène de l'ouverture des Voies repose dessus. */
+      const KAYKIT_HORIZON_DEFAUT = "archipel";
       // Le choix survit au rechargement : c'est un réglage de confort local, il
       // n'entre ni dans les règles, ni dans la sauvegarde, ni dans la synchro.
       const KAYKIT_HORIZON_STORAGE_KEY = "ilyos-horizon-v1";
@@ -5406,7 +5410,11 @@
          « interrompu » distinct du chemin normal, et donc aucun état à moitié
          appliqué à réparer après coup. */
       function kaykitCinematiqueEtat(depart, arrivee, t) {
-        const eased = t < .5 ? 8 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
+        /* easeInOutSine, et non plus une quintique. Une quintique est si plate
+           au départ qu'après deux secondes de chute la caméra n'avait pas perdu
+           un mètre : additionnée au temps de pose sur le vide, elle donnait neuf
+           secondes d'image figée. Le sinus démarre doucement mais visiblement. */
+        const eased = (1 - Math.cos(Math.PI * t)) / 2;
         const lineaire = (a, b, u) => a + (b - a) * u;
         /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
            foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
@@ -5471,8 +5479,15 @@
         if (fog) {
           if (!Number.isFinite(arrivee.brumeNear)) arrivee.brumeNear = fog.near;
           if (!Number.isFinite(arrivee.brumeFar)) arrivee.brumeFar = fog.far;
-          if (!Number.isFinite(depart.brumeNear)) depart.brumeNear = Math.min(fog.near, 6);
-          if (!Number.isFinite(depart.brumeFar)) depart.brumeFar = Math.min(fog.far, 46);
+          /* Le départ n'est que LÉGÈREMENT plus fermé que la scène. Un premier
+             essai partait à 6/46 : à 240 unités d'altitude, cela effaçait tout
+             le contenu 3D — y compris les étoiles et les anneaux des Voies, les
+             deux seules choses qui faisaient la beauté du plan d'ouverture. Le
+             brouillard de scène ne sait pas « épaissir l'air » ici, il ne sait
+             que faire disparaître ; la brume qu'on VOIT est un voile peint
+             au-dessus de l'image (voir .pz-brume dans js/game/puzzle.js). */
+          if (!Number.isFinite(depart.brumeNear)) depart.brumeNear = fog.near * .62;
+          if (!Number.isFinite(depart.brumeFar)) depart.brumeFar = fog.far * .78;
         }
 
         kaykit3D.cameraTween = null;
