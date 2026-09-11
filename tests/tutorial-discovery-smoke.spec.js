@@ -15,10 +15,14 @@ async function startTutorialFromMenu(page) {
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 }
 
+/* `id` vaut « regarder » dès l'ouverture (l'index d'étape part de 0) : attendre
+   l'id seul laisserait passer tout le sas d'ouverture muet. On exige donc aussi
+   `pret`, posé quand le sas a rendu la caméra au joueur. */
 async function waitForDiscoveryStep(page, id) {
-  await page.waitForFunction(expected => window.ILYOS_TUTORIAL?._debug()?.id === expected, id, {
-    timeout: 20000
-  });
+  await page.waitForFunction(expected => {
+    const d = window.ILYOS_TUTORIAL?._debug();
+    return !!d?.pret && d.id === expected && !d.souffle;
+  }, id, { timeout: 25000 });
 }
 
 async function clickCell(page, r, c) {
@@ -30,7 +34,11 @@ test('le bouton tutoriel pointe vers la découverte et laisse la caméra libre',
   page.on('pageerror', error => errors.push(error.message));
   await startTutorial(page, 'start');
   await page.waitForFunction(() => window.ILYOS_TUTORIAL.mode() === 'discovery');
-  await page.waitForTimeout(2200);
+  // Le sas d'ouverture muet possède la caméra ~8 s avant de rendre la main :
+  // on attend qu'il ait fini, c'est seulement à ce moment que la première
+  // étape commence et que la caméra redevient libre.
+  await waitForDiscoveryStep(page, 'regarder');
+  await page.waitForTimeout(300);
 
   const snapshot = await page.evaluate(() => ({
     mode: window.ILYOS_TUTORIAL.mode(),

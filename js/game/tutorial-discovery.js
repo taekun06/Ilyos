@@ -6,10 +6,18 @@
          - `ILYOS_TUTORIAL.startAscension()` : l'ancien parcours scénarisé
            « La Première Ascension », conservé comme future épreuve/puzzle.
 
+         La Découverte est MUETTE : pas une consigne, pas une réplique, pas un
+         bandeau d'objectif. Le joueur apprend par le cadrage de la caméra, la
+         lumière posée sur ce qui compte, un HUD réduit à ce qui sert, et la
+         conséquence immédiate de son geste. La grammaire tient en cinq signes
+         (Appel, Promesse, Refus, Assentiment, Souffle) définis plus bas, et
+         l'aide ne monte que sur l'immobilité, jamais sur l'horloge.
+
          Ce fragment vit dans le même IIFE que tutorial.js. Il réutilise donc
-         volontairement son overlay, sa narration, ses balises, son suivi des
-         événements visuels et ses helpers d'état au lieu de créer un second
-         moteur de tutoriel.
+         volontairement son overlay, ses balises, son suivi des événements
+         visuels et ses helpers d'état au lieu de créer un second moteur de
+         tutoriel. La narration écrite/parlée de tutorial.js reste en place pour
+         « La Première Ascension » seule, et est masquée en mode découverte.
          ===================================================================== */
 
       const tutoStartPremiereAscension = tutoStart;
@@ -31,10 +39,30 @@
         transferFrom: null,
         validationRunning: false,
         validationPromise: null,
-        styleReady: false
+        styleReady: false,
+        // Grammaire muette
+        promesseNode: null,
+        promesseFrame: 0,
+        souffleEnCours: false,
+        cameraNotre: false,  // un recadrage à nous, pas un geste du joueur
+        sasFini: false,      // le sas d'ouverture a rendu la caméra
+        refusAt: 0,
+        aide: 0,             // palier d'aide atteint sur l'étape en cours
+        trace: []            // instrumentation : une ligne par étape franchie
       };
 
-      const DISCOVERY_HINT_DELAY = 12000;
+      /* L'aide ne monte que sur l'IMMOBILITÉ, jamais sur l'horloge seule :
+         faire tourner le monde, survoler des cases, ouvrir un bouton comptent
+         comme de l'activité (voir discTouched / tutoTouched) et remettent le
+         compteur à zéro. Quelqu'un qui regarde n'est pas quelqu'un qui bloque.
+
+         Palier 1 : l'Appel, à peine une respiration.
+         Palier 2 : l'Appel s'affirme, et la caméra recadre la zone utile.
+         Palier 3 : la Promesse s'offre sans qu'on l'ait demandée.
+
+         Il n'y a pas de palier 4 : jamais de démonstration qui joue à la
+         place du joueur. */
+      const DISCOVERY_AIDE = [8000, 18000, 30000];
       const DISCOVERY_HUD = {
         island: "#ov2Island",
         move: "#ov2Move",
@@ -48,15 +76,56 @@
         style.id = "ilyos-discovery-style";
         style.textContent = `
           #gameScreen.tutorial-discovery .disc-concealed{display:none!important;}
-          #tutorialLayer.discovery .tuto-portrait{display:none;}
-          #tutorialLayer.discovery .tuto-speech{width:min(610px,88vw);bottom:118px;}
-          #tutorialLayer.discovery .tuto-bubble{font-size:14px;padding:10px 15px;
-            background:rgba(9,16,34,.78);backdrop-filter:blur(7px);}
-          #tutorialLayer.discovery .tuto-objective{top:68px;background:rgba(9,16,34,.72);}
-          #tutorialLayer.discovery .tuto-quit{bottom:72px;opacity:.8;}
-          #tutorialLayer.discovery .tuto-voice{bottom:72px;opacity:.8;}
+
+          /* --- Découverte muette : aucun canal écrit ni parlé -------------
+             La bulle de narration, le portrait, le bandeau d'objectif et le
+             bouton de voix appartenaient au tutoriel raconté. Ici rien ne
+             parle : ce qui reste à l'écran, c'est le plateau et le HUD. */
+          #tutorialLayer.discovery .tuto-speech,
+          #tutorialLayer.discovery .tuto-portrait,
+          #tutorialLayer.discovery .tuto-objective,
+          #tutorialLayer.discovery .tuto-voice{display:none!important;}
+          #tutorialLayer.discovery .tuto-quit{bottom:72px;opacity:.55;
+            transition:opacity .3s, bottom .5s;}
+          #tutorialLayer.discovery .tuto-quit:hover{opacity:1;}
           #tutorialLayer.discovery .disc-end-kicker{font-size:12px;letter-spacing:.16em;
             text-transform:uppercase;color:#91a8d6;}
+
+          /* --- L'APPEL : « c'est ici que ça se passe » --------------------
+             Palier 1, la balise de lumière respire à peine. Palier 2, elle
+             s'affirme. C'est le même objet, jamais deux langages différents. */
+          #tutorialLayer.discovery.appel-1 .tuto-beacon{opacity:.72;}
+          #tutorialLayer.discovery.appel-1 .tuto-beacon::before{animation-duration:3.4s;}
+          #tutorialLayer.discovery.appel-1 .tuto-beacon::after{animation-duration:3.4s;}
+          #tutorialLayer.discovery.appel-1 .tuto-pulse,
+          #gameScreen.tutorial-discovery.appel-1 .tuto-pulse{animation-duration:3s;
+            filter:drop-shadow(0 0 6px rgba(255,226,150,.5));}
+
+          /* --- LA PROMESSE : « voilà ce qui va arriver » ------------------
+             Un fil de lumière tendu entre la case de départ et la case
+             d'arrivée. Ne dit rien, montre le geste. */
+          #tutorialLayer .disc-promesse{position:absolute;left:0;top:0;width:100%;height:100%;
+            pointer-events:none;z-index:6;overflow:visible;}
+          #tutorialLayer .disc-promesse .fil-ombre{stroke:rgba(20,14,4,.55);stroke-width:9;
+            stroke-linecap:round;}
+          #tutorialLayer .disc-promesse .fil{stroke:rgba(255,244,206,.98);stroke-width:4;
+            stroke-linecap:round;stroke-dasharray:10 12;
+            filter:drop-shadow(0 0 8px rgba(255,214,120,1));
+            animation:disc-fil 1.4s linear infinite;}
+          @keyframes disc-fil{to{stroke-dashoffset:-44;}}
+          /* L'arrivée porte un anneau franc : entre deux cases voisines le
+             trait est court, c'est lui qui dit « ici ». */
+          #tutorialLayer .disc-promesse .bout{fill:none;stroke:rgba(255,246,214,.98);stroke-width:3;
+            filter:drop-shadow(0 0 10px rgba(255,196,90,.95));
+            transform-box:fill-box;transform-origin:center;
+            animation:disc-fil-bout 1.9s ease-out infinite;}
+          @keyframes disc-fil-bout{0%{transform:scale(.55);opacity:1}
+            75%{transform:scale(1.25);opacity:0}100%{opacity:0}}
+
+
+          /* --- LE REFUS : le monde se rétracte, brièvement ---------------- */
+          #gameScreen.tutorial-discovery.disc-refus .board-wrap{animation:disc-refus-k .34s ease-out;}
+          @keyframes disc-refus-k{0%,100%{filter:none}45%{filter:brightness(.82) saturate(.6)}}
         `;
         document.head.appendChild(style);
         DISCOVERY.styleReady = true;
@@ -126,6 +195,155 @@
         document.querySelectorAll(".disc-concealed").forEach(el => el.classList.remove("disc-concealed"));
       }
 
+      /* ==================================================================
+         LA GRAMMAIRE MUETTE
+
+         Un signal = un sens, partout, pour toujours. Le joueur n'apprend
+         jamais un mot : il apprend six signes, une seule fois.
+
+           L'APPEL       « c'est ici »          balise + bouton qui respire
+           LA PROMESSE   « voilà ce qui vient » fil de lumière départ → arrivée
+           LE REFUS      « pas ça »             le monde se rétracte
+           L'ASSENTIMENT « oui »                éclat chaud
+           LE SOUFFLE    « regarde »            la caméra cadre, on n'a pas la main
+
+         Tout est local à la découverte : rien n'est partagé avec les
+         Sanctuaires ni avec le jeu normal, dont les affordances (anneaux,
+         prévisualisations) ne sont ici que lues, jamais modifiées.
+         ================================================================== */
+
+      /* L'APPEL. `niveau` 1 = à peine une respiration, 2 = assumé. Le spec est
+         celui de tutoGuideStart (cases + sélecteurs de HUD). */
+      function discAppel(spec, niveau) {
+        const layer = TUTO.dom?.layer;
+        if (!layer || !spec) return;
+        layer.classList.toggle("appel-1", niveau === 1);
+        els.gameScreen?.classList.toggle("appel-1", niveau === 1);
+        try { tutoGuideStart(spec); } catch (_) { }
+      }
+
+      function discAppelStop() {
+        TUTO.dom?.layer?.classList.remove("appel-1");
+        els.gameScreen?.classList.remove("appel-1");
+        tutoGuideStop();
+      }
+
+      /* LA PROMESSE. Un fil tendu de `from` vers `to`, reprojeté à chaque
+         image depuis les positions 3D (tutoCellToScreen gère 2D comme 3D), donc
+         il tient quand la caméra bouge. C'est la seule chose du tutoriel qui
+         montre une conséquence avant qu'elle arrive. */
+      function discPromesse(from, to) {
+        discPromesseStop();
+        const layer = TUTO.dom?.layer;
+        if (!layer || !from || !to) return;
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("class", "disc-promesse");
+        const ombre = document.createElementNS(NS, "line");
+        ombre.setAttribute("class", "fil-ombre");
+        const line = document.createElementNS(NS, "line");
+        line.setAttribute("class", "fil");
+        const bout = document.createElementNS(NS, "circle");
+        bout.setAttribute("class", "bout");
+        bout.setAttribute("r", "17");
+        svg.appendChild(ombre); svg.appendChild(line); svg.appendChild(bout);
+        layer.appendChild(svg);
+        DISCOVERY.promesseNode = svg;
+
+        const suivre = () => {
+          if (!DISCOVERY.active || DISCOVERY.promesseNode !== svg) return;
+          const a = tutoCellToScreen(from[0], from[1]);
+          const b = tutoCellToScreen(to[0], to[1]);
+          if (!a || !b) { svg.style.display = "none"; }
+          else {
+            svg.style.display = "block";
+            [ombre, line].forEach(el => {
+              el.setAttribute("x1", a.x); el.setAttribute("y1", a.y);
+              el.setAttribute("x2", b.x); el.setAttribute("y2", b.y);
+            });
+            bout.setAttribute("cx", b.x); bout.setAttribute("cy", b.y);
+          }
+          DISCOVERY.promesseFrame = requestAnimationFrame(suivre);
+        };
+        suivre();
+      }
+
+      function discPromesseStop() {
+        cancelAnimationFrame(DISCOVERY.promesseFrame);
+        DISCOVERY.promesseFrame = 0;
+        DISCOVERY.promesseNode?.remove();
+        DISCOVERY.promesseNode = null;
+      }
+
+      /* LE REFUS. Jamais une phrase : le monde se ternit un quart de seconde
+         et revient. On ne bloque rien — le geste a simplement été sans effet,
+         et ça se voit. */
+      function discRefus() {
+        const g = els.gameScreen;
+        if (!g) return;
+        const now = Date.now();
+        if (now - (DISCOVERY.refusAt || 0) < 700) return;
+        DISCOVERY.refusAt = now;
+        g.classList.remove("disc-refus");
+        void g.offsetWidth;
+        g.classList.add("disc-refus");
+        setTimeout(() => g.classList.remove("disc-refus"), 420);
+      }
+
+      /* Tout recadrage passe par ici. `tutoTravel` appelle `tutoLockCamera`,
+         qui coupe la rotation à la souris : sans cette restitution, le premier
+         plan de caméra confisquerait définitivement le monde au joueur. */
+      function discTravel(r, c, duree, zoom) {
+        tutoTravel(r, c, duree, zoom || 0);
+        clearTimeout(DISCOVERY.rendreCameraTimer);
+        DISCOVERY.rendreCameraTimer = setTimeout(() => {
+          if (DISCOVERY.active && !DISCOVERY.souffleEnCours) discEnableFreeCamera();
+        }, (duree || 0) + 120);
+      }
+
+      /* L'INVITATION. Une seule étape ne porte sur aucune case : celle où
+         l'on découvre qu'on peut tourner le monde. Rien à éclairer, donc — on
+         fait dériver la caméra de quelques degrés, doucement, puis on s'arrête.
+         Le monde a bougé une fois : le joueur comprend qu'il peut le bouger.
+
+         Tout le piège est là : ce mouvement ne doit pas franchir l'étape à la
+         place du joueur. Tant qu'il dure, `discCameraMoved` répond non ; et
+         quand il finit, discEnableFreeCamera reprend la pose d'arrivée comme
+         nouvelle référence. Seul le geste du joueur compte encore. */
+      function discInviterARegarder() {
+        if (DISCOVERY.cameraNotre || DISCOVERY.souffleEnCours) return;
+        const g = discGuardians()[0];
+        if (!g) return;
+        DISCOVERY.cameraNotre = true;
+        discTravel(g.r, g.c + 1.8, 1700, -0.2);
+        clearTimeout(DISCOVERY.inviteTimer);
+        DISCOVERY.inviteTimer = setTimeout(() => {
+          DISCOVERY.cameraNotre = false;
+        }, 2100);   // après discTravel (1700 + 120), donc après la recalibration
+      }
+
+      /* LE SOUFFLE. La caméra raconte : une suite de cadrages joués d'affilée,
+         letterbox posée, plateau intouchable. Rend la main en caméra libre. */
+      async function discSouffle(plans) {
+        if (!plans?.length) return;
+        DISCOVERY.souffleEnCours = true;
+        TUTO.cinematic = true;
+        tutoLetterbox(true);
+        if (state) state.inputLocked = true;
+        for (const [r, c, duree, zoom] of plans) {
+          if (!DISCOVERY.active) break;
+          tutoTravel(r, c, duree, zoom || 0);
+          await tutoWait(duree);
+        }
+        if (state) state.inputLocked = false;
+        tutoLetterbox(false);
+        TUTO.cinematic = false;
+        DISCOVERY.souffleEnCours = false;
+        // Le souffle a repris la caméra : on la rend, et on reprend la pose
+        // courante comme nouvelle référence (l'étape « regarder » compare à elle).
+        if (DISCOVERY.active) discEnableFreeCamera();
+      }
+
       function discEnableFreeCamera() {
         try {
           if (typeof kaykit3D === "undefined" || !kaykit3D) return;
@@ -151,6 +369,8 @@
 
       function discCameraMoved() {
         try {
+          // Un mouvement que NOUS avons déclenché n'est pas le geste du joueur.
+          if (DISCOVERY.cameraNotre) return false;
           if (!DISCOVERY.cameraPosition0 || !DISCOVERY.cameraQuaternion0 || !kaykit3D?.camera) return false;
           const posDelta = kaykit3D.camera.position.distanceTo(DISCOVERY.cameraPosition0);
           const dot = Math.min(1, Math.abs(kaykit3D.camera.quaternion.dot(DISCOVERY.cameraQuaternion0)));
@@ -168,13 +388,23 @@
         DISCOVERY.lastCellClick = { r, c, at: Date.now() };
         const ch = characterAt(r, c);
         if (ch) DISCOVERY.lastCharClickId = ch.id;
+
+        /* LE REFUS. Toucher le vide ne fait rien — sauf à l'étape « vide »,
+           où c'est précisément la leçon et où le geste doit aboutir. Ailleurs,
+           le monde se ternit un instant : le joueur apprend que la terre porte
+           et que le vide, non. Aucun clic n'est bloqué pour autant. */
+        try {
+          const étape = DISCOVERY_STEPS[DISCOVERY.step];
+          if (étape && étape.id !== "vide" && discInBounds(r, c) && !isLand(r, c)) discRefus();
+        } catch (_) { }
       }
 
+      /* Toute action du joueur — un clic, un bouton, une rotation de caméra —
+         redescend l'aide à zéro : il a repris la main, on se tait. */
       function discTouched() {
         if (!DISCOVERY.active) return;
-        const hadHint = !!TUTO.hintShown;
         tutoTouched();
-        if (hadHint) tutoSetObjective("");
+        if (DISCOVERY.aide > 0 || DISCOVERY.promesseNode) discAideStop();
       }
 
       function discBuildState() {
@@ -329,12 +559,16 @@
         DISCOVERY.validationRunning = true;
         state.inputLocked = true;
         discSetHud([]);
-        tutoSetObjective("");
 
-        tutoSayLines([
-          "Tu es revenu.",
-          "Mais une Couronne ne s'ancre qu'au début de ton prochain tour."
-        ]);
+        /* La règle la plus abstraite du jeu — une Couronne ne s'ancre qu'au
+           début de ton PROCHAIN tour — est ici jouée, pas énoncée. Le plan
+           tient sur le porteur pendant que les tours passent : le joueur voit
+           le temps s'écouler avec la Couronne encore en suspens, puis l'éclat
+           au moment exact où elle s'ancre. C'est la seule façon de la montrer. */
+        const carrier = discCarrier();
+        TUTO.cinematic = true;
+        tutoLetterbox(true);
+        if (carrier) tutoTravel(carrier.r, carrier.c, 1400, 0.8);
         await tutoWait(1800);
         if (!DISCOVERY.active) return;
 
@@ -342,12 +576,21 @@
         try { await endTurn(true); } catch (_) { }
         if (!DISCOVERY.active) return;
 
+        // Le tour adverse : la caméra le suit, c'est lui qui parle maintenant.
         state.inputLocked = true;
-        tutoSayLines(["Le rival a encore un tour."]);
+        const rival = tutoEnemies()[0];
+        if (rival) tutoTravel(rival.r, rival.c, 1200, 0.5);
         await tutoWait(1500);
         if (!DISCOVERY.active) return;
         discMoveRivalHarmlessly();
         await tutoWait(900);
+        // Retour sur la Couronne, juste avant qu'elle s'ancre.
+        const porteur = discCarrier();
+        if (porteur) tutoTravel(porteur.r, porteur.c, 1100, 0.8);
+        await tutoWait(700);
+        tutoLetterbox(false);
+        TUTO.cinematic = false;
+        discEnableFreeCamera();       // le plan rend la caméra, toujours
 
         state.inputLocked = false;
         try { await endTurn(true); } catch (_) { }
@@ -355,21 +598,30 @@
         DISCOVERY.validationRunning = false;
       }
 
+      /* Chaque étape peut porter :
+           souffle()  — les plans de caméra joués à l'entrée (le « regarde »)
+           guide()    — l'Appel : cases à éclairer + boutons du HUD
+           promesse() — {from,to} : le fil montré au dernier palier d'aide
+         Aucune ne porte de texte. C'est la règle du parcours. */
       const DISCOVERY_STEPS = [
         {
           id: "regarder",
-          intro: [],
-          hint: "Fais tourner le monde.",
-          setup() {
-            discSetHud([]);
-            setTimeout(() => { if (DISCOVERY.active) tutoSayLines(["Regarde."]); }, 900);
-          },
+          setup() { discSetHud([]); },
+          /* Rien à éclairer : l'objet de l'étape, c'est le monde entier. Et
+             surtout : la caméra ne doit PAS bouger toute seule ici, sinon le
+             tutoriel franchit l'étape à la place du joueur. L'aide est donc le
+             mime du geste, jamais le geste lui-même. */
+          guide: () => ({ cells: [] }),
+          invite: discInviterARegarder,
           done: () => discCameraMoved()
         },
         {
           id: "gardien",
-          intro: ["Là."],
-          hint: "Touche ton Gardien.",
+          // La caméra descend sur lui et s'arrête : le seul être vivant du plan.
+          souffle() {
+            const g = discGuardians()[0];
+            return g ? [[g.r, g.c, 1400, 0.9]] : [];
+          },
           guide: () => {
             const g = discGuardians()[0];
             return { cells: g ? [[g.r, g.c]] : [] };
@@ -382,8 +634,20 @@
         },
         {
           id: "marcher",
-          intro: ["Il peut avancer."],
-          hint: "Choisis DÉPLACER, puis une autre case de terre.",
+          // Le regard glisse du Gardien vers la terre devant lui : le trajet
+          // est raconté par un mouvement, pas par une phrase.
+          souffle() {
+            const g = discGuardians()[0];
+            if (!g) return [];
+            return [[g.r, g.c, 800, 0.6], [g.r - 1, g.c + 0.5, 1500, 0.1]];
+          },
+          promesse() {
+            const g = discGuardians()[0];
+            if (!g) return null;
+            const land = [[g.r - 1, g.c], [g.r, g.c + 1], [g.r - 1, g.c + 1]]
+              .find(([r, c]) => discInBounds(r, c) && isLand(r, c) && !characterAt(r, c));
+            return land ? { from: [g.r, g.c], to: land } : null;
+          },
           guide: () => {
             const g = discGuardians()[0];
             if (!g) return { hud: [DISCOVERY_HUD.move], cells: [] };
@@ -406,9 +670,19 @@
         },
         {
           id: "vide",
-          intro: ["Et après ?"],
-          hint: "Essaie la case vide juste devant toi.",
+          // La caméra bute sur le bord de la terre et s'arrête net, comme un
+          // pas qui ne peut pas se faire.
+          souffle() {
+            const g = discGuardians()[0];
+            const v = DISCOVERY.voidTarget;
+            if (!g) return [];
+            return v ? [[g.r, g.c, 700, 0.5], [v[0], v[1], 1400, 0.2]] : [[g.r, g.c, 900, 0.5]];
+          },
           guide: () => ({ cells: DISCOVERY.voidTarget ? [DISCOVERY.voidTarget] : [] }),
+          promesse() {
+            const g = discGuardians()[0];
+            return g && DISCOVERY.voidTarget ? { from: [g.r, g.c], to: DISCOVERY.voidTarget } : null;
+          },
           setup() {
             discSetHud(["move"]);
             DISCOVERY.lastCellClick = null;
@@ -426,12 +700,17 @@
         },
         {
           id: "ile",
-          intro: ["Alors, crée le chemin."],
-          hint: "Ouvre ÎLE, pose une terre dans le vide, puis choisis où éveiller le nouveau Gardien.",
+          /* L'étape juste avant a montré que le vide refuse le pas. Celle-ci
+             ouvre le seul bouton qui puisse y répondre : c'est le HUD lui-même,
+             réduit à une seule possibilité, qui fait la phrase. */
           guide: () => ({
             hud: [DISCOVERY_HUD.island],
             cells: DISCOVERY.voidTarget ? [DISCOVERY.voidTarget] : []
           }),
+          promesse() {
+            const g = discGuardians()[0];
+            return g && DISCOVERY.voidTarget ? { from: [g.r, g.c], to: DISCOVERY.voidTarget } : null;
+          },
           setup() {
             discSetHud(["island"]);
             state.islandPlacedThisTurn = false;
@@ -443,12 +722,20 @@
         },
         {
           id: "couronne",
-          intro: ["Une lumière."],
-          hint: "Amène un Gardien sur la Couronne.",
+          // Le plan s'arrête sur elle avant tout le reste : elle seule brille.
+          souffle() {
+            const t = DISCOVERY.crownTarget;
+            return t ? [[t[0], t[1], 1500, 0.8]] : [];
+          },
           guide: () => ({
             hud: [DISCOVERY_HUD.move],
             cells: DISCOVERY.crownTarget ? [DISCOVERY.crownTarget] : []
           }),
+          promesse() {
+            const guardians = discGuardians();
+            const g = guardians[guardians.length - 1] || guardians[0];
+            return g && DISCOVERY.crownTarget ? { from: [g.r, g.c], to: DISCOVERY.crownTarget } : null;
+          },
           setup() {
             discSetHud(["move"]);
             discPrepareCrown();
@@ -457,8 +744,18 @@
         },
         {
           id: "transmission",
-          intro: ["Deux Gardiens. Une même lumière."],
-          hint: "Rapproche tes Gardiens. Clique le porteur, puis un allié adjacent pour lui transmettre la Couronne.",
+          // D'un Gardien à l'autre : le mouvement de caméra EST la transmission.
+          souffle() {
+            const carrier = discCarrier();
+            const other = carrier && discOtherGuardian(carrier.id);
+            if (!carrier || !other) return [];
+            return [[carrier.r, carrier.c, 900, 0.7], [other.r, other.c, 1400, 0.5]];
+          },
+          promesse() {
+            const carrier = discCarrier();
+            const other = carrier && discOtherGuardian(carrier.id);
+            return carrier && other ? { from: [carrier.r, carrier.c], to: [other.r, other.c] } : null;
+          },
           guide: () => {
             const carrier = discCarrier();
             const other = carrier && discOtherGuardian(carrier.id);
@@ -476,12 +773,28 @@
         },
         {
           id: "rival",
-          intro: ["Quelqu'un te barre le retour."],
-          hint: "Ramène la Couronne au village, puis utilise POUSSER pour écarter le rival sans le faire tomber.",
+          /* Le plan remonte jusqu'au village, s'arrête sur le rival qui en
+             barre le seuil, puis glisse d'un cran vers la case libre derrière
+             lui. La direction de la poussée est donnée par un mouvement de
+             caméra — c'est la seule chose que le joueur ait besoin de savoir. */
+          souffle() {
+            const carrier = discCarrier();
+            const plans = [];
+            if (carrier) plans.push([carrier.r, carrier.c, 800, 0.4]);
+            plans.push([0, 0.5, 1700, 0.3]);
+            plans.push([0, 1.6, 1100, 0.2]);
+            return plans;
+          },
           guide: () => ({
             hud: [DISCOVERY_HUD.move, DISCOVERY_HUD.push],
             cells: [...tutoEnemies().map(e => [e.r, e.c]), [0, 0], [0, 2]]
           }),
+          // Le fil ne montre pas le retour (que le joueur sait déjà faire) mais
+          // le geste neuf : d'où le rival part, où il doit finir.
+          promesse() {
+            const e = tutoEnemies()[0];
+            return e ? { from: [e.r, e.c], to: [0, 2] } : null;
+          },
           setup() {
             discSetHud(["move", "push"]);
             discPrepareRival();
@@ -498,8 +811,8 @@
         },
         {
           id: "tenir",
-          intro: [],
-          hint: "Observe le tour adverse.",
+          // Rien à faire : c'est un plan, pas une étape. Le joueur regarde
+          // le temps passer et la Couronne s'ancrer.
           setup() {
             discSetHud([]);
             DISCOVERY.validationRunning = false;
@@ -509,28 +822,63 @@
         }
       ];
 
-      function discShowHint(step) {
-        TUTO.hintShown = true;
-        if (step.hint) tutoSetObjective(step.hint);
-        if (typeof step.guide === "function") {
-          try { tutoGuideStart(step.guide()); } catch (_) { }
-        }
+      /* Monte l'aide d'un cran. Chaque palier ajoute au précédent, il ne le
+         remplace pas : la lumière s'affirme, la caméra vient, puis le fil. */
+      function discMonterAide(step, niveau) {
+        DISCOVERY.aide = niveau;
+        try {
+          if (typeof step.guide === "function") {
+            discAppel(step.guide(), niveau === 1 ? 1 : 2);
+          }
+          if (niveau >= 2 && typeof step.invite === "function") { step.invite(); }
+          else if (niveau >= 2 && !DISCOVERY.souffleEnCours) {
+            const g = discGuardians()[0];
+            const cible = (typeof step.guide === "function" && step.guide().cells?.[0])
+              || (g && [g.r, g.c]);
+            if (cible) discTravel(cible[0], cible[1], 1100, 0.3);
+          }
+          if (niveau >= 3 && typeof step.promesse === "function") {
+            const p = step.promesse();
+            if (p) discPromesse(p.from, p.to);
+          }
+        } catch (_) { }
+      }
+
+      function discAideStop() {
+        DISCOVERY.aide = 0;
+        discAppelStop();
+        discPromesseStop();
       }
 
       function discArm(step) {
         TUTO.lastAct = Date.now();
         TUTO.hintShown = false;
+        DISCOVERY.aide = 0;
+        DISCOVERY.aideMax = 0;
         const check = () => {
           if (!DISCOVERY.active || DISCOVERY_STEPS[DISCOVERY.step] !== step) return;
           try { if (typeof step.tick === "function") step.tick(); } catch (_) { }
-          if (TUTO.sayBusy) TUTO.lastAct = Date.now();
-          else if (!TUTO.hintShown && Date.now() - TUTO.lastAct > DISCOVERY_HINT_DELAY) discShowHint(step);
+          // Pendant un plan de caméra, le joueur n'a pas la main : le compteur
+          // d'immobilité n'a aucun sens, on le tient à zéro.
+          if (DISCOVERY.souffleEnCours) TUTO.lastAct = Date.now();
+          else {
+            const immobile = Date.now() - TUTO.lastAct;
+            let vise = 0;
+            for (let i = 0; i < DISCOVERY_AIDE.length; i++) {
+              if (immobile > DISCOVERY_AIDE[i]) vise = i + 1;
+            }
+            if (vise > DISCOVERY.aide) {
+              discMonterAide(step, vise);
+              DISCOVERY.aideMax = Math.max(DISCOVERY.aideMax || 0, vise);
+              TUTO.hintShown = vise > 0;
+            }
+          }
 
           let ok = false;
           try { ok = !!step.done(); } catch (_) { ok = false; }
           if (!ok) return;
           tutoDisarm();
-          tutoSetObjective("");
+          discAideStop();
           discStepCleared(step);
         };
         TUTO.pollTimer = setInterval(check, 250);
@@ -551,26 +899,27 @@
         DISCOVERY.stepStartedAt = Date.now();
         TUTO.beatIndex = index;
         TUTO.gateAllows = () => true;
-        tutoSetObjective("");
-        tutoGuideStop();
+        discAideStop();
         try { step.setup?.(); } catch (err) { console.warn("[tuto/discovery] setup", step.id, err); }
-        if (step.intro?.length) tutoSayLines(step.intro);
+        // Le SOUFFLE se joue APRÈS le setup : les plans se calculent sur le
+        // monde tel qu'il vient d'être préparé (couronne posée, rival placé).
+        const plans = (typeof step.souffle === "function") ? (step.souffle() || []) : [];
+        if (plans.length) {
+          discSouffle(plans).then(() => { if (DISCOVERY.active) TUTO.lastAct = Date.now(); });
+        }
         discArm(step);
       }
 
+      /* L'ASSENTIMENT, et rien d'autre : un éclat, un son, on enchaîne. Pas de
+         phrase de félicitation — la conséquence à l'écran EST la phrase. */
       function discStepCleared(step) {
         try { if (typeof playSfx === "function") playSfx("crown"); } catch (_) { }
-        const lines = {
-          regarder: ["Le monde répond à ton regard."],
-          gardien: ["Il t'écoute."],
-          marcher: ["La terre porte ses pas."],
-          vide: ["Le vide ne se traverse pas."],
-          ile: ["Un autre Gardien s'éveille."],
-          couronne: ["Elle voyage avec lui."],
-          transmission: ["La Couronne peut passer d'un allié à l'autre."],
-          rival: ["Tu es revenu. Mais ce n'est pas encore gagné."],
-          tenir: []
-        }[step.id] || [];
+        tutoBloom();
+        DISCOVERY.trace.push({
+          id: step.id,
+          secondes: Math.round((Date.now() - DISCOVERY.stepStartedAt) / 100) / 10,
+          aide: DISCOVERY.aideMax || 0
+        });
 
         const next = DISCOVERY.step + 1;
         let advanced = false;
@@ -580,9 +929,8 @@
           clearTimeout(DISCOVERY.advanceTimer);
           discGoto(next);
         };
-        DISCOVERY.advanceTimer = setTimeout(advance, 5200);
-        if (lines.length) tutoSayLines(lines, { then: () => setTimeout(advance, 450) });
-        else setTimeout(advance, 350);
+        // Un temps de respiration sur la conséquence, puis la suite.
+        DISCOVERY.advanceTimer = setTimeout(advance, 1100);
       }
 
       function discBuildEndCard() {
@@ -593,7 +941,7 @@
         end.innerHTML = `
           <div class="disc-end-kicker">Découverte accomplie</div>
           <h2>La lumière est revenue.</h2>
-          <p>Tu sais bâtir, déplacer, transmettre, pousser et surtout pourquoi une Couronne doit survivre jusqu'à ton prochain tour.</p>
+          <p>Le reste du ciel t'attend.</p>
           <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
             <button type="button" class="tuto-btn primary" data-tuto="play">Entrer dans une vraie partie</button>
             <button type="button" class="tuto-btn" data-tuto="menu">Retour au menu</button>
@@ -615,16 +963,15 @@
         clearTimeout(DISCOVERY.advanceTimer);
         discSetHud([]);
         TUTO.gateAllows = () => false;
-        tutoSetObjective("");
-        tutoGuideStop();
+        discAideStop();
         tutoBloom();
-        tutoSayLines([
-          "Voilà la règle qu'aucun symbole ne pouvait te montrer.",
-          "La lumière revient au début de ton tour — si tu as réussi à la garder."
-        ], { then: () => setTimeout(discBuildEndCard, 400) });
-        // La voix navigateur peut être absente ou rester muette : l'écran final
-        // ne doit jamais dépendre d'elle pour apparaître.
-        setTimeout(() => { if (DISCOVERY.active) discBuildEndCard(); }, 6500);
+        // Le village s'est rallumé : un dernier plan le laisse voir, puis la
+        // carte de fin — le seul endroit du parcours qui a encore des mots,
+        // parce qu'il n'enseigne plus rien : il propose de jouer.
+        tutoLetterbox(true);
+        tutoTravel(0.6, 0.6, 2400, 0.4);
+        setTimeout(() => { if (DISCOVERY.active) tutoTravel(2.5, 1.5, 2600, -2.6); }, 2500);
+        setTimeout(() => { if (DISCOVERY.active) discBuildEndCard(); }, 5200);
       }
 
       function discCleanup() {
@@ -637,6 +984,15 @@
         DISCOVERY.lastCharClickId = null;
         DISCOVERY.cameraPosition0 = null;
         DISCOVERY.cameraQuaternion0 = null;
+        DISCOVERY.souffleEnCours = false;
+        DISCOVERY.sasFini = false;
+        DISCOVERY.aide = 0;
+        discPromesseStop();
+        DISCOVERY.cameraNotre = false;
+        clearTimeout(DISCOVERY.inviteTimer);
+        clearTimeout(DISCOVERY.rendreCameraTimer);
+        try { tutoGrade(false); } catch (_) { }
+        els.gameScreen?.classList.remove("appel-1", "disc-refus");
         try { els.board?.removeEventListener("click", discBoardTap, true); } catch (_) { }
         try { els.board?.removeEventListener("mousedown", discBoardTap, true); } catch (_) { }
         try { els.board?.removeEventListener("pointerdown", discBoardTap, true); } catch (_) { }
@@ -654,6 +1010,49 @@
         return tutoExitBase(toMenu);
       };
 
+      /* LE SAS D'OUVERTURE — la seule phrase que le tutoriel prononce, et
+         c'est la caméra qui la dit.
+
+         Noir. Le village, éteint et gris. Un long silence sur lui. Puis la
+         descente jusqu'à la petite terre où se tient le Gardien, la couleur qui
+         revient en s'éloignant. Le but et le départ ont été montrés dans cet
+         ordre : tout le parcours n'est plus que le trajet entre les deux. */
+      async function discSasOuverture() {
+        TUTO.cinematic = true;
+        DISCOVERY.souffleEnCours = true;
+        tutoLetterbox(true);
+        tutoFadeBlack(true);
+        tutoGrade(true);                           // ce qu'on va voir est éteint
+        await tutoWaitForScene();
+        if (!DISCOVERY.active) return;
+
+        tutoTravel(0.5, 0.5, 200, 1.1);            // posé sur le village
+        await tutoWait(500);
+        tutoTravel(0.5, 0.5, 200, 1.1);            // second appel : le cadrage tient
+        await tutoWait(450);
+        tutoFadeBlack(false);                      // il apparaît, gris, sans lumière
+        await tutoWait(1700);                      // on le laisse peser
+        if (!DISCOVERY.active) return;
+
+        const g = discGuardians()[0];
+        tutoTravel(2.6, 1.6, 3200, -1.1);          // la descente le long du vide
+        tutoGrade(false);                          // la couleur revient
+        await tutoWait(2900);
+        if (!DISCOVERY.active) return;
+        if (g) tutoTravel(g.r, g.c, 2200, 0.2);    // arrivée sur le Gardien
+        await tutoWait(2000);
+
+        tutoLetterbox(false);
+        TUTO.cinematic = false;
+        DISCOVERY.souffleEnCours = false;
+        if (!DISCOVERY.active) return;
+        // La caméra est rendue : c'est la pose de référence à partir de
+        // laquelle l'étape « regarder » détectera un vrai mouvement du joueur.
+        discEnableFreeCamera();
+        DISCOVERY.sasFini = true;
+        discGoto(0);
+      }
+
       function tutoDiscoveryStart() {
         if (TUTO.active) return;
         DISCOVERY.active = true;
@@ -661,6 +1060,10 @@
         DISCOVERY.validationRunning = false;
         DISCOVERY.lastCellClick = null;
         DISCOVERY.lastCharClickId = null;
+        DISCOVERY.trace = [];
+        DISCOVERY.sasFini = false;
+        DISCOVERY.aide = 0;
+        DISCOVERY.aideMax = 0;
         discInjectStyle();
         tutoInjectStyle();
         tutoBuildOverlay();
@@ -714,18 +1117,7 @@
 
         discSetHud([]);
         tutoRender();
-        setTimeout(async () => {
-          if (!DISCOVERY.active) return;
-          await tutoWaitForScene();
-          if (!DISCOVERY.active) return;
-          // La caméra de départ globale finit ses deux recentrages à ~520 ms.
-          // On passe ensuite définitivement en libre et on prend cette pose
-          // comme référence pour détecter un vrai mouvement du joueur.
-          await tutoWait(650);
-          discEnableFreeCamera();
-          tutoFadeBlack(false);
-          discGoto(0);
-        }, 450);
+        setTimeout(() => { if (DISCOVERY.active) discSasOuverture(); }, 450);
       }
 
       /* ---------------------------------------------------------------------
@@ -816,7 +1208,16 @@
               c: state.secondArtifact.c
             } : null,
             islandPlaced: !!state?.islandPlacedThisTurn,
-            validationRunning: DISCOVERY.validationRunning
+            validationRunning: DISCOVERY.validationRunning,
+            // Instrumentation du parcours muet : sans ça, « compréhensible
+            // sans lire » ne se vérifie pas autrement qu'à l'intuition.
+            // `id` vaut « regarder » dès l'ouverture (l'index part de 0) : il
+            // ne dit donc pas que le parcours a commencé. `pret` le dit.
+            pret: DISCOVERY.sasFini,
+            souffle: DISCOVERY.souffleEnCours,
+            aide: DISCOVERY.aide,
+            aideMax: DISCOVERY.aideMax || 0,
+            trace: DISCOVERY.trace.slice()
           };
         }
       };
