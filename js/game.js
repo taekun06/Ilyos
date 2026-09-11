@@ -5750,6 +5750,82 @@
          second système d'arbitrage à écrire ni à entretenir. */
       let kaykitCinematique = null;
 
+      /* Réglages de l'ouverture, ouverts à la console. Une cinématique ne se
+         règle qu'en la regardant tourner : reconstruire le bundle entre deux
+         essais rend la comparaison impossible — on ne se souvient plus de ce
+         qu'on a vu trente secondes plus tôt. Voir window.ILYOS_CINE. */
+      const KAYKIT_CINE = {
+        exposant: 2,     // 2 = freinage doux, 3 = chute franche puis pose longue
+        duree: 21000,
+        azimut: -300,
+        altitude: 160,
+        noir: 8500,     // dissolution de l'écran noir : commence tout de suite
+        pause: 1000,    // noir plein avant que la chute ne commence
+        signes: 4000    // combien de temps AVANT LA FIN les cercles s'allument
+      };
+
+      /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
+
+         Déplacer réellement l'astre demande ILYOS_SKY.soleil(), qui régénère la
+         texture de ciel : 200 à 250 ms par appel, mesuré. C'est un gel d'une
+         quinzaine d'images, donc inutilisable en mouvement, même par paliers.
+
+         Ce qui fait un lever de soleil à l'œil n'est de toute façon pas le
+         disque — la caméra le fait déjà entrer dans le cadre toute seule en
+         basculant de -62° à +37°. C'est la LUMIÈRE qui croît : le halo, le
+         liseré sur les nuages, la poussière qui s'allume. Ces trois-là sont des
+         réglages directs — un objet de configuration, des opacités de matériau,
+         deux uniformes déjà compilés — et ne coûtent rien par image.
+
+         Les valeurs d'arrivée sont relevées sur la scène au démarrage, jamais
+         écrites en dur : la cinématique rend exactement ce qu'elle a trouvé. */
+      function kaykitCinematiqueReleverLumiere() {
+        const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
+        return {
+          bloomForce: KAYKIT_BLOOM.force,
+          bloomSeuil: KAYKIT_BLOOM.seuil,
+          rim: KAYKIT_CLOUD_BACKLIT.rimStrength,
+          rimPower: KAYKIT_CLOUD_BACKLIT.rimPower,
+          poussieres: champs.map(champ => ({
+            opacite: champ.object.material.opacity,
+            taille: champ.object.material.size
+          }))
+        };
+      }
+
+      /* u = 0 au départ (lumière basse), u = 1 à l'arrivée (valeurs de la scène). */
+      function kaykitCinematiqueLumiere(base, u) {
+        if (!base) return;
+        const melange = (depart, fin) => depart + (fin - depart) * u;
+
+        KAYKIT_BLOOM.force = melange(base.bloomForce * 2.15, base.bloomForce);
+        // Seuil plus BAS = plus de choses débordent : le vide devient rêveur.
+        KAYKIT_BLOOM.seuil = melange(base.bloomSeuil * .55, base.bloomSeuil);
+
+        KAYKIT_CLOUD_BACKLIT.rimStrength = melange(base.rim * .22, base.rim);
+        /* Un liseré large et mou au loin, qui se resserre en approchant : c'est
+           la même lumière, vue de plus près. */
+        KAYKIT_CLOUD_BACKLIT.rimPower = melange(base.rimPower * .55, base.rimPower);
+        kaykitBacklitCloudCache.forEach(mat => {
+          const sh = mat.userData && mat.userData.shader;
+          if (!sh) return;
+          if (sh.uniforms.uRimStrength) sh.uniforms.uRimStrength.value = KAYKIT_CLOUD_BACKLIT.rimStrength;
+          if (sh.uniforms.uRimPower) sh.uniforms.uRimPower.value = KAYKIT_CLOUD_BACKLIT.rimPower;
+        });
+
+        /* Les poussières montent en OPACITÉ et en TAILLE. L'opacité seule les
+           faisait apparaître sans qu'elles se rapprochent ; la taille qui croît
+           donne l'impression qu'on descend dedans, ce qui est précisément ce
+           que fait la caméra. */
+        const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
+        champs.forEach((champ, i) => {
+          const fin = base.poussieres[i];
+          if (!fin) return;
+          if (Number.isFinite(fin.opacite)) champ.object.material.opacity = melange(fin.opacite * .12, fin.opacite);
+          if (Number.isFinite(fin.taille)) champ.object.material.size = melange(fin.taille * .45, fin.taille);
+        });
+      }
+
       function kaykitCinematiqueBrume(near, far) {
         const fog = kaykit3D?.scene?.fog;
         if (!fog || !Number.isFinite(near) || !Number.isFinite(far)) return;
@@ -5757,7 +5833,13 @@
         fog.far = far;
       }
 
-      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur) {
+      /* `azimutDeg` fait tourner le point de vue AUTOUR du monde, à distance et
+         à hauteur constantes. Zéro rend très exactement la vue de face, donc le
+         cadrage d'arrivée reste celui du preset et rien d'existant ne bouge.
+         C'est ce qui donne la parallaxe : sans lui, la caméra descend sur un
+         rail vertical et les îles lointaines ne glissent jamais les unes
+         derrière les autres. */
+      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur, azimutDeg = 0) {
         if (!kaykit3D?.camera?.position || !kaykit3D.viewTarget) return;
         const min = Number.isFinite(kaykit3D.minZoom) ? kaykit3D.minZoom : 6.4;
         const max = Number.isFinite(kaykit3D.maxZoom) ? kaykit3D.maxZoom : 25;
@@ -5765,10 +5847,12 @@
         const pitch = inclinaisonDeg * Math.PI / 180;
         const cible = kaykit3D.viewTarget;
         cible.set(0, hauteur, .18);
+        const azimut = azimutDeg * Math.PI / 180;
+        const rayon = distance * Math.cos(pitch);
         kaykit3D.camera.position.set(
-          cible.x,
+          cible.x + rayon * Math.sin(azimut),
           cible.y + distance * Math.sin(pitch),
-          cible.z + distance * Math.cos(pitch)
+          cible.z + rayon * Math.cos(azimut)
         );
         kaykit3D.camera.lookAt(cible);
         kaykit3D.zoomDistance = distance;
@@ -5783,11 +5867,24 @@
          « interrompu » distinct du chemin normal, et donc aucun état à moitié
          appliqué à réparer après coup. */
       function kaykitCinematiqueEtat(depart, arrivee, t) {
-        /* easeInOutSine, et non plus une quintique. Une quintique est si plate
-           au départ qu'après deux secondes de chute la caméra n'avait pas perdu
-           un mètre : additionnée au temps de pose sur le vide, elle donnait neuf
-           secondes d'image figée. Le sinus démarre doucement mais visiblement. */
-        const eased = (1 - Math.cos(Math.PI * t)) / 2;
+        /* DÉCÉLÉRATION PURE — c'est une chute, pas un travelling.
+
+           On ne part pas : quand le noir se lève, on tombe DÉJÀ, à pleine
+           vitesse, et tout le reste du mouvement est un freinage qui se pose
+           sur le monde. Une courbe symétrique (sinus, quintique) racontait
+           l'inverse — une caméra qui s'ébranle, prend de la vitesse au milieu,
+           puis s'arrête : correct pour un survol, faux pour une chute.
+
+           Le départ brutal n'est pas un défaut ici : il tombe pendant que le
+           fondu du noir n'est pas fini, donc on hérite de la vitesse au lieu de
+           voir la caméra démarrer.
+
+           Exposant 2 et non 3 : au cube, les six dernières secondes ne faisaient
+           plus bouger l'altitude que de quatre unités — le mouvement passait de
+           « se pose » à « s'enlise ». Le carré garde la chute franche au départ
+           et rend du mouvement à l'arrivée. Réglable à chaud :
+           ILYOS_CINE.exposant(3). */
+        const eased = 1 - Math.pow(1 - t, KAYKIT_CINE.exposant);
         const lineaire = (a, b, u) => a + (b - a) * u;
         /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
            foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
@@ -5798,7 +5895,16 @@
         return {
           recul: geometrique(depart.recul, arrivee.recul, eased),
           inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
+          /* L'altitude suit désormais la courbe commune, sans forçage. Elle en
+             avait un tant que la courbe était symétrique : il fallait bien
+             quitter le vide avant les quatre dernières secondes. Une
+             décélération pure le fait d'elle-même — l'altitude s'effondre dans
+             les premières secondes, puis le monde monte lentement. */
           hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased),
+          azimut: lineaire(depart.azimut || 0, arrivee.azimut || 0, eased),
+          /* La lumière suit l'ALTITUDE et non le temps : elle se lève à mesure
+             qu'on descend vers le monde, pas selon le chronomètre. */
+          lumiere: eased,
           /* La brume est le seul « effet » de la cinématique, et elle ne coûte
              rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
              le brouillard qui recule et le découvre. */
@@ -5831,7 +5937,13 @@
       /* Rend une promesse tenue à la fin du mouvement — ou tout de suite si le
          joueur a demandé un mouvement réduit, auquel cas on pose directement
          l'image d'arrivée. */
-      function kaykitJouerCinematique({ depart, arrivee, duree = 21000, attente = 0 } = {}) {
+      /* `surAvancement(t)` est appelé à CHAQUE image avec l'avancement brut du
+         mouvement, 0 au départ et 1 à l'arrivée. C'est par là que l'ouverture
+         fait respirer son écran noir et sa brume : un fondu CSS lancé à côté
+         court sur sa propre horloge et finit toujours par se désynchroniser du
+         plongeon — ou, pire, par ne jamais démarrer si la classe est posée et
+         retirée avant le premier affichage. Ici il n'y a qu'une horloge. */
+      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0, surAvancement = null } = {}) {
         if (!kaykit3D?.camera || !depart || !arrivee) return Promise.resolve(false);
         kaykitArreterCinematique();
 
@@ -5841,6 +5953,7 @@
         if (kaykitReducedMotion()) {
           kaykitCinematiquePose(arrivee.recul, arrivee.inclinaison, arrivee.hauteur);
           kaykitCinematiqueBrume(arrivee.brumeNear, arrivee.brumeFar);
+          kaykitCinematiqueLumiere(kaykitCinematiqueReleverLumiere(), 1);
           kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
           return Promise.resolve(true);
         }
@@ -5878,11 +5991,13 @@
            tombaient en plein milieu du plongeon et le coupaient. */
         window.ILYOS_CINEMATIQUE_ACTIVE = true;
         if (kaykit3D.orbit) kaykit3D.orbit.enabled = false;
-        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur);
+        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur, depart.azimut || 0);
 
         return new Promise(resolve => {
           kaykitCinematique = {
             depart, arrivee, duree,
+            lumiereBase: kaykitCinematiqueReleverLumiere(),
+            surAvancement,
             /* `attente` tient la caméra à son poste de départ sans avancer.
                Le verrou est déjà pris pendant ce temps-là : c'est ce qui permet
                d'ouvrir sur le vide plusieurs secondes sans qu'un recadrage de
@@ -5901,8 +6016,10 @@
         const encours = kaykitCinematique;
         if (!encours) return false;
         const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
-        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
         kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
+        kaykitCinematiqueLumiere(encours.lumiereBase, 1);
+        if (encours.surAvancement) { try { encours.surAvancement(1); } catch (_) { } }
         encours.terminer();
         return true;
       }
@@ -5910,6 +6027,37 @@
       function kaykitCinematiqueEnCours() {
         return !!kaykitCinematique;
       }
+
+      /* Console : comparer deux courbes sans reconstruire le bundle.
+         Sans argument, chaque fonction rend la valeur en place. */
+      window.ILYOS_CINE = {
+        aide() {
+          return [
+            "exposant(n)   courbe de décélération. 2 = freinage doux (défaut),",
+            "              3 = chute franche puis pose longue. Essayer 1.5 à 4.",
+            "duree(ms)     durée du plongeon (21000 par défaut)",
+            "azimut(deg)   d'où l'on arrive ; 0 = pile en face (-72 par défaut)",
+            "altitude(u)   hauteur de départ (160 par défaut)",
+            "noir(ms)      dissolution de l'écran noir (8500 par défaut).",
+            "              Elle commence dès la première image : pas de palier.",
+            "pause(ms)     noir plein avant la chute (1000 par défaut)",
+            "signes(ms)    les cercles s'allument dans les N dernières",
+            "              millisecondes du plongeon (4000 par défaut)",
+            "valeurs()     les réglages en place",
+            "",
+            "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
+            "Exemple : ILYOS_CINE.exposant(3); ILYOS_PUZZLE.playOpeningCinematic()"
+          ].join(String.fromCharCode(10));
+        },
+        exposant(v) { if (Number.isFinite(v)) KAYKIT_CINE.exposant = v; return KAYKIT_CINE.exposant; },
+        duree(v) { if (Number.isFinite(v)) KAYKIT_CINE.duree = v; return KAYKIT_CINE.duree; },
+        azimut(v) { if (Number.isFinite(v)) KAYKIT_CINE.azimut = v; return KAYKIT_CINE.azimut; },
+        altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
+        noir(v) { if (Number.isFinite(v)) KAYKIT_CINE.noir = v; return KAYKIT_CINE.noir; },
+        pause(v) { if (Number.isFinite(v)) KAYKIT_CINE.pause = v; return KAYKIT_CINE.pause; },
+        signes(v) { if (Number.isFinite(v)) KAYKIT_CINE.signes = v; return KAYKIT_CINE.signes; },
+        valeurs() { return Object.assign({}, KAYKIT_CINE); }
+      };
 
       /* Inclinaison de la vue de face, exprimée en polaire. Le preset raisonne
          en degrés SOUS l'horizontale, OrbitControls en angle depuis le zénith :
@@ -11891,8 +12039,12 @@
         if (kaykitCinematique) {
           const brut = Math.min(1, Math.max(0, (frameNow - kaykitCinematique.debut) / kaykitCinematique.duree));
           const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
-          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
           kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
+          kaykitCinematiqueLumiere(kaykitCinematique.lumiereBase, etat.lumiere);
+          if (kaykitCinematique.surAvancement) {
+            try { kaykitCinematique.surAvancement(brut); } catch (_) { }
+          }
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }
@@ -29880,8 +30032,34 @@
           /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
              un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
              le plateau ; une lueur, on la traverse du regard. */
+          /* DES ARCS, PAS DES CERCLES. Rendre une bordure transparente
+             n'enlevait qu'un quart du tour, avec une coupe nette en diagonale :
+             il restait trois quarts de tracé, et l'œil refermait le cercle tout
+             seul. Un masque conique découpe un arc de longueur LIBRE et, mieux,
+             laisse ses deux extrémités s'éteindre en fondu — c'est ce fondu qui
+             fait qu'un arc se perd au loin au lieu d'être coupé.
+             Les deux variables d'arc sont posées par la construction,
+             avec les runes, pour que celles-ci tombent toujours SUR le tracé
+             conservé — masquées avec lui sinon. */
+          /* LE POIDS DU TRAIT. Le masque conique découpe aussi la lueur portée
+             par box-shadow : les arcs avaient beau être justes, ils ne pesaient
+             plus rien sur un ciel doré très clair. La lueur passe donc par
+             la propriete filter, qui suit le contour réellement conservé au lieu de
+             rayonner depuis la boîte carrée — elle survit au masque. Et le
+             trait passe à 1,4 px : sous cette épaisseur, l'anti-crénelage d'un
+             cercle incliné mange la moitié du pixel et le tracé clignote. */
           #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
-            border:1px solid rgba(255,220,140,.62);border-radius:50%;
+            border:1.4px solid rgba(255,226,158,.95);border-radius:50%;
+            filter:drop-shadow(0 0 4px rgba(255,198,110,.85))
+                   drop-shadow(0 0 12px rgba(255,170,70,.45));
+            -webkit-mask-image:conic-gradient(from var(--pz-arc-de,0deg),
+              rgba(0,0,0,0) 0deg, #000 26deg,
+              #000 calc(var(--pz-arc-long,150deg) - 26deg),
+              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
+            mask-image:conic-gradient(from var(--pz-arc-de,0deg),
+              rgba(0,0,0,0) 0deg, #000 26deg,
+              #000 calc(var(--pz-arc-long,150deg) - 26deg),
+              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
             box-shadow:0 0 20px rgba(255,190,90,.32),
               inset 0 0 70px rgba(255,190,90,.07);
             animation:pz-tourne 220s linear infinite;}
@@ -29897,21 +30075,71 @@
           #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
             border-radius:2px;transform:rotate(45deg);
             background:rgba(255,236,186,.85);}
-          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;}
+          /* Chaque orbe a SON centre et SON assiette. Les décentrages sont
+             volontairement inégaux : deux orbes décalés du même écart
+             recréeraient une symétrie, qui est exactement ce qu'on fuit. */
+          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;
+            left:57%;top:38%;--pz-assiette:67deg;}
+          /* ORBES DÉDOUBLÉS. Un second tracé collé au premier, à peine plus
+             large et un peu plus pâle : deux traits qui courent ensemble se
+             lisent comme une trajectoire, là où un trait seul n'est qu'un
+             cercle. Ils partagent la même assiette et le même centre, donc ils
+             restent parallèles en tournant. */
+          #puzzleLayer .pz-anneau.a2{width:160vmin;height:160vmin;margin:-80vmin 0 0 -80vmin;
+            left:57%;top:38%;--pz-assiette:67deg;
+            border-color:rgba(255,222,150,.62);
+            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
+            animation-duration:220s;}
           #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
-            border-style:dashed;border-color:rgba(255,220,140,.7);
+            border-style:dashed;border-color:rgba(255,230,166,.98);
+            left:45%;top:47%;--pz-assiette:75deg;
             animation-duration:150s;animation-direction:reverse;}
+          #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
+            left:45%;top:47%;--pz-assiette:75deg;
+            border-color:rgba(255,222,150,.58);
+            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
+            animation-duration:150s;animation-direction:reverse;}
+          /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
+             il se perd hors du regard au lieu de se refermer sur lui-même. */
           #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,220,140,.52);animation-duration:310s;}
+            border-color:rgba(255,228,162,.92);animation-duration:310s;
+            left:63%;top:33%;--pz-assiette:61deg;}
+          /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
+             ils coupent les orbes au lieu de les accompagner. Sans eux tout le
+             réseau reste couché dans le même plan et le ciel paraît plat. */
+          #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
+            left:28%;top:30%;--pz-assiette:24deg;
+            border-color:rgba(255,222,150,.70);
+            box-shadow:0 0 16px rgba(255,190,90,.20);animation-duration:520s;}
+          #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
+            left:78%;top:26%;--pz-assiette:38deg;
+            border-color:rgba(255,222,150,.64);border-style:dashed;
+            box-shadow:none;animation-duration:380s;animation-direction:reverse;}
           /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
              lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
              profondeur. */
           #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
-            border-color:rgba(255,220,140,.38);border-style:dashed;
+            border-color:rgba(255,224,152,.78);border-style:dashed;
+            left:41%;top:52%;--pz-assiette:80deg;
             animation-duration:420s;animation-direction:reverse;}
+          /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
+             empêche les orbes de se lire comme une cible. Quatre cercles
+             partageant le même centre et le même angle se superposent en
+             anneaux parfaitement emboîtés ; quatre orbes d'assiettes
+             différentes se croisent, et le ciel prend de la profondeur. */
           @keyframes pz-tourne{
-            from{transform:perspective(1400px) rotateX(72deg) rotate(0deg)}
-            to{transform:perspective(1400px) rotateX(72deg) rotate(360deg)}}
+            from{transform:perspective(1400px) rotateX(var(--pz-assiette,72deg)) rotate(0deg)}
+            to{transform:perspective(1400px) rotateX(var(--pz-assiette,72deg)) rotate(360deg)}}
+          /* LES RUNES. Elles ne flottent pas dans le cadre : elles sont posées
+             SUR un orbe, donc elles tournent avec lui. La contre-rotation leur
+             rend leur lisibilité — sans elle, elles se retrouvent couchées à
+             plat dans l'assiette de l'orbe et deviennent illisibles. */
+          #puzzleLayer .pz-rune{position:absolute;
+            font-family:'Cinzel Decorative','Almendra',serif;font-size:14px;
+            color:rgba(255,236,190,.82);letter-spacing:.04em;
+            transform:translate(-50%,-50%) rotateX(calc(var(--pz-assiette,72deg) * -1));
+            text-shadow:0 0 10px rgba(255,214,140,.85),0 0 24px rgba(255,190,90,.45);
+            animation:pz-scintille 9s ease-in-out infinite;}
           #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
             color:rgba(255,238,196,.85);
             text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
@@ -30063,7 +30291,12 @@
              masquer comme le reste du chrome — ce que fait toute séquence —
              laissait un aplat bleu parfaitement vide. Ce sont eux qui font le
              ciel habité du plan d'ouverture, pas le décor 3D. */
-          #puzzleLayer.reveil.ouverture .pz-signes{opacity:1;}
+          /* Éteints par défaut pendant l'ouverture : leur opacité est écrite
+             image par image depuis la chute (voir surAvancement). Ils ne
+             s'allument que dans les toutes dernières secondes — allumés plus
+             tôt, ils donnaient un ciel déjà entièrement écrit alors qu'on est
+             encore loin, et il ne restait rien à découvrir en arrivant. */
+          #puzzleLayer.reveil.ouverture .pz-signes{opacity:0;transition:none;}
 
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
             font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
@@ -31192,7 +31425,53 @@
       function puzzleBuildSignes(hote) {
         if (!hote) return;
         hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
-          + '<div class="pz-anneau b"></div><div class="pz-anneau c"></div>';
+          + '<div class="pz-anneau a2"></div><div class="pz-anneau b"></div>'
+          + '<div class="pz-anneau b2"></div><div class="pz-anneau c"></div>'
+          + '<div class="pz-anneau e"></div><div class="pz-anneau f"></div>';
+
+        /* LES ARCS, et les runes qui vont avec.
+
+           `de` et `long` sont des angles de dégradé conique : ils partent de
+           midi et tournent dans le sens des aiguilles. Les runes, elles, sont
+           placées en coordonnées polaires ordinaires, où zéro est à trois
+           heures — d'où le quart de tour entre les deux repères.
+
+           Les deux sont décidés ICI et non dans la feuille de style, parce
+           qu'ils dépendent l'un de l'autre : une rune posée hors de l'arc
+           conservé serait masquée en même temps que lui et disparaîtrait sans
+           rien dire. On pose donc chaque rune au milieu de son arc.
+
+           Les longueurs vont de 96 à 168 degrés : entre le quart et la moitié
+           du tour. Au-delà, l'œil referme le cercle de lui-même et tout le
+           bénéfice de l'arc est perdu. */
+        const runes = ["ᛉ", "ᚨ", "ᛟ", "ᛞ", "ᚱ", "ᛊ"];
+        const arcs = [
+          { orbe: "a", de: 196, long: 150, rune: true },
+          { orbe: "a2", de: 188, long: 166 },
+          { orbe: "b", de: 32, long: 138, rune: true },
+          { orbe: "b2", de: 40, long: 124 },
+          { orbe: "c", de: 148, long: 112, rune: true },
+          { orbe: "d", de: 244, long: 168, rune: true },
+          { orbe: "e", de: 300, long: 96, rune: true },
+          { orbe: "f", de: 86, long: 118, rune: true }
+        ];
+        let rangRune = 0;
+        arcs.forEach(arc => {
+          const cible = hote.querySelector(`.pz-anneau.${arc.orbe}`);
+          if (!cible) return;
+          cible.style.setProperty("--pz-arc-de", `${arc.de}deg`);
+          cible.style.setProperty("--pz-arc-long", `${arc.long}deg`);
+          if (!arc.rune) return;
+          const milieu = (arc.de + arc.long / 2 - 90) * Math.PI / 180;
+          const rune = document.createElement("span");
+          rune.className = "pz-rune";
+          rune.textContent = runes[rangRune % runes.length];
+          rune.style.left = `${(50 + 50 * Math.cos(milieu)).toFixed(2)}%`;
+          rune.style.top = `${(50 + 50 * Math.sin(milieu)).toFixed(2)}%`;
+          rune.style.animationDelay = `${(rangRune * 1.3).toFixed(1)}s`;
+          cible.appendChild(rune);
+          rangRune++;
+        });
         let graine = 7;
         const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
         const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
@@ -31273,6 +31552,7 @@
           caption: layer.querySelector(".pz-caption"),
           fade: layer.querySelector(".pz-fade"),
           brume: layer.querySelector(".pz-brume"),
+          signes: layer.querySelector(".pz-signes"),
           lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
@@ -31393,8 +31673,11 @@
           dom.lointain.classList.remove("on");
           dom.lieu.classList.remove("show");
           dom.fade.classList.remove("on");
-          dom.brume?.classList.remove("on");
-          if (dom.brume) dom.brume.style.transition = "";
+          dom.fade.style.removeProperty("opacity");
+          /* La brume n'est PAS rendue ici. Elle n'appartient qu'à l'ouverture,
+             qui la remet à zéro elle-même ; la rendre au CSS depuis ce finally
+             partagé effaçait le style que l'ouverture venait de poser, et le
+             voile restait visible après un ÉCHAP. */
           dom.layer.classList.remove("reveil", "ouverture");
           els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
           document.body.classList.remove("puzzle-reveil");
@@ -31415,11 +31698,29 @@
          Les nombres ci-dessous ont été réglés à l'écran avant d'être écrits ici.
          Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
          maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
-      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
-      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5 };
+      /* L'azimut de départ : la caméra arrive DE CÔTÉ et se redresse en
+         tombant. Elle finit à zéro, c'est-à-dire pile sur la vue de face du
+         jeu. C'est ce quart de tour qui fait glisser les îles lointaines les
+         unes derrière les autres — sans lui, la descente est un rail. */
+      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 160, azimut: -300 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5, azimut: 0 };
       const PUZZLE_OUVERTURE_DUREE = 21000;
-      const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
-      const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée
+      /* L'écran noir ne se TIENT plus : il s'ouvre.
+
+         Il y avait un palier de 2,6 s à pleine opacité, puis un fondu. Deux
+         temps, donc une attente : rien ne commençait avant la fin du premier.
+         Il ne reste du palier que de quoi couvrir la mise en place de la caméra
+         — un quart de seconde — et la dissolution part aussitôt, très longue.
+         Elle se termine bien après que la chute est engagée, si bien qu'on ne
+         voit jamais ni un écran noir immobile, ni un rideau qui se lève d'un
+         coup : le monde s'éclaircit pendant qu'on tombe déjà dedans. */
+      /* Le noir PLEIN, avant que quoi que ce soit ne bouge. Il couvre la mise
+         en place de la caméra — c'était sa seule raison d'être — mais il dure
+         maintenant assez pour se lire comme un temps : on arrive de nulle part,
+         il ne se passe rien, puis on tombe. Le mouvement ne démarre qu'après.
+         Réglable : ILYOS_CINE.pause(). */
+      const PUZZLE_OUVERTURE_NOIR = 1000;
+      const PUZZLE_OUVERTURE_FONDU = 8500;   // la dissolution, réglable : ILYOS_CINE.noir()
       /* Le vide n'est plus « tenu » longtemps. L'ancienne pose de 3,4 s
          s'ajoutait à une courbe très plate au départ : on obtenait neuf secondes
          d'image parfaitement immobile après le noir. La chute commence donc
@@ -31433,6 +31734,17 @@
          une valeur écrite en dur ne tombait pas dessus, et la caméra sautait de
          trois unités à l'image exacte où la cinématique rendait la main. Le
          point d'arrivée se demande donc à celui qui en décide. */
+      /* Le départ recopie les constantes, puis laisse la console imposer les
+         réglages qu'on a réellement envie d'essayer (voir ILYOS_CINE). */
+      function puzzleOuvertureDepart() {
+        const depart = Object.assign({}, PUZZLE_OUVERTURE_DEPART);
+        if (window.ILYOS_CINE) {
+          depart.azimut = window.ILYOS_CINE.azimut();
+          depart.hauteur = window.ILYOS_CINE.altitude();
+        }
+        return depart;
+      }
+
       function puzzleOuvertureArrivee() {
         const arrivee = Object.assign({}, PUZZLE_OUVERTURE_ARRIVEE);
         let recul = NaN;
@@ -31451,6 +31763,59 @@
 
       function puzzleOuvertureVoies() {
         return puzzleSequence(async (dom, attendre) => {
+          /* Les voiles sont écrits en style direct pendant toute l'ouverture.
+             Ils DOIVENT être rendus au CSS ensuite, sinon une opacité figée
+             reste sur le calque et le voyage entre Sanctuaires, qui réutilise le
+             même voile, ne peut plus le piloter. Le corps est donc enveloppé
+             ici : les retours anticipés de la sortie ÉCHAP passent aussi par là. */
+          const rendreLesVoiles = () => {
+            /* La brume n'appartient QU'À l'ouverture : on la laisse à zéro, sans
+               la rendre au CSS. Le voile noir, lui, est partagé avec les voyages
+               entre Sanctuaires — il doit redevenir pilotable, d'où les deux
+               temps ci-dessous. */
+            if (dom.brume) {
+              dom.brume.classList.remove("on");
+              dom.brume.style.transition = "none";
+              dom.brume.style.opacity = "0";
+            }
+            /* Les signes gardent leur classe `on` : c'est elle qui les rend
+               visibles en jeu normal, et la retirer les éteignait pour de bon
+               une fois l'ouverture finie. On ne leur enlève que l'opacité
+               écrite à la main. */
+            if (dom.signes) {
+              dom.signes.style.removeProperty("transition");
+              dom.signes.style.removeProperty("opacity");
+            }
+            [dom.fade].forEach(el => {
+              if (!el) return;
+              el.classList.remove("on");
+              /* On IMPOSE zéro d'abord, transition coupée. Se contenter de
+                 retirer les styles laissait le voile figé à la valeur qu'il
+                 avait au moment du saut : la règle CSS rendait bien zéro, mais
+                 rien ne déclenchait de nouvelle transition depuis une opacité
+                 écrite à la main image par image. Un ÉCHAP au début laissait
+                 donc l'écran voilé pour de bon. */
+              el.style.transition = "none";
+              el.style.opacity = "0";
+              /* Puis on rend la main au CSS, une fois zéro appliqué : le voile
+                 redevient pilotable par les autres séquences, qui s'en servent
+                 pour les voyages entre Sanctuaires. */
+              requestAnimationFrame(() => {
+                el.style.removeProperty("transition");
+                el.style.removeProperty("opacity");
+              });
+            });
+          };
+          try {
+            return await puzzleOuvertureCorps(dom, attendre);
+          } finally {
+            rendreLesVoiles();
+          }
+        }, { sortie: "echap" });
+      }
+
+      async function puzzleOuvertureCorps(dom, attendre) {
+        {
           /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
                 hors du monde pendant qu'il est encore opaque, donc le saut
                 n'est jamais vu. */
@@ -31463,43 +31828,72 @@
              l'instant : quand le noir se lèvera, il découvrira du laiteux et non
              l'image nette. C'est là toute la progression. */
           if (dom.brume) {
-            dom.brume.style.transition = "opacity 200ms ease";
-            dom.brume.classList.add("on");
+            dom.brume.style.transition = "none";
+            dom.brume.style.opacity = "1";
           }
           dom.layer.classList.add("ouverture");
-          dom.fade.style.transition = "opacity 140ms ease";
-          dom.fade.classList.add("on");
-          await attendre(PUZZLE_OUVERTURE_NOIR);
+          /* Aucune transition CSS pendant l'ouverture : l'opacité est écrite
+             image par image depuis le mouvement (voir surAvancement plus bas).
+             Une transition lancée à côté court sur sa propre horloge, et celle
+             posée ici ne démarrait même pas — la classe était retirée avant le
+             premier affichage, si bien que l'écran noir ne s'est jamais vu. */
+          dom.fade.style.transition = "none";
+          dom.fade.style.opacity = "1";
+          // Le temps que le noir soit réellement opaque : la caméra est
+          // téléportée derrière lui, jamais devant.
+          await attendre(window.ILYOS_CINE ? window.ILYOS_CINE.pause() : PUZZLE_OUVERTURE_NOIR);
           if (PUZZLE.sequenceSaute) return;
 
           let mouvement = Promise.resolve(false);
           try {
             if (typeof kaykitJouerCinematique === "function") {
               mouvement = kaykitJouerCinematique({
-                depart: PUZZLE_OUVERTURE_DEPART,
+                depart: puzzleOuvertureDepart(),
                 arrivee: puzzleOuvertureArrivee(),
-                duree: PUZZLE_OUVERTURE_DUREE,
-                /* Le mouvement ne part qu'après le fondu ET le temps de vide :
-                   la caméra reste tenue à son poste, verrou compris. */
-                attente: PUZZLE_OUVERTURE_FONDU + PUZZLE_OUVERTURE_VIDE
+                duree: window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE,
+                /* AUCUNE attente : la chute commence DERRIÈRE le noir. Quand
+                   celui-ci se lève, la caméra est déjà lancée — on hérite d'un
+                   mouvement en cours au lieu d'assister à un démarrage. Le temps
+                   passé caché est le prix à payer, et il est faible. */
+                attente: 0,
+                /* L'écran s'ouvre AU RYTHME DE LA CHUTE, pas sur une horloge à
+                   part : dès la première image le noir commence à céder. */
+                surAvancement(t) {
+                  dom.fade.style.opacity = String(1 - adoucir(Math.min(1, t / partNoir)));
+                  if (dom.brume) {
+                    dom.brume.style.opacity = String(1 - adoucir(Math.min(1, t / partBrume)));
+                  }
+                  if (dom.signes) {
+                    const u = seuilSignes >= 1 ? 1 : (t - seuilSignes) / (1 - seuilSignes);
+                    dom.signes.style.opacity = String(adoucir(Math.max(0, Math.min(1, u))));
+                  }
+                }
               });
             }
           } catch (_) { }
+
+          /* Les cercles ne s'allument que dans la dernière ligne droite : on
+             prend la part du trajet qui reste quand il ne manque plus que
+             `signes` millisecondes. */
+          const dureeTotale = window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE;
+          const seuilSignes = Math.max(0, Math.min(.98,
+            1 - (window.ILYOS_CINE ? window.ILYOS_CINE.signes() : 4000) / dureeTotale));
+
+          /* La part du plongeon que dure chaque voile. Le noir s'efface sur le
+             premier quart, la brume sur la première moitié : ils se recouvrent,
+             donc l'image s'éclaircit sans palier ni rupture. */
+          const partNoir = Math.max(.02, Math.min(.9,
+            (window.ILYOS_CINE ? window.ILYOS_CINE.noir() : PUZZLE_OUVERTURE_FONDU)
+            / (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE)));
+          const partBrume = Math.min(.95, partNoir * 1.9);
+          /* Le voile s'en va vite au début puis s'attarde : sans cette courbe,
+             une disparition linéaire se lit comme un rideau qu'on tire. */
+          const adoucir = u => 1 - Math.pow(1 - u, 2.2);
 
           /* 2. LE FONDU, très étalé. Le monde n'apparaît pas : c'est le noir
                 qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
                 brume est encore presque fermée — elle ne s'ouvrira qu'en
                 tombant (voir kaykitCinematiqueBrume). */
-          dom.fade.style.transition = `opacity ${PUZZLE_OUVERTURE_FONDU}ms cubic-bezier(.35,0,.65,1)`;
-          dom.fade.classList.remove("on");
-          /* La brume se dissout beaucoup plus lentement que le noir, et sa
-             dissolution déborde largement sur le début de la chute : le monde
-             se découvre pendant qu'on tombe déjà. */
-          if (dom.brume) {
-            dom.brume.style.transition = `opacity ${PUZZLE_OUVERTURE_BRUME}ms cubic-bezier(.3,0,.6,1)`;
-            dom.brume.classList.remove("on");
-          }
-          await attendre(PUZZLE_OUVERTURE_FONDU);
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du
@@ -31515,9 +31909,7 @@
             try { kaykitArreterCinematique(); } catch (_) { }
           }
           await mouvement;
-          // Le voile retrouve la durée que partagent les autres séquences.
-          dom.fade.style.transition = "";
-        }, { sortie: "echap" });
+        }
       }
 
       /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de

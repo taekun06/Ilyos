@@ -5377,6 +5377,82 @@
          second système d'arbitrage à écrire ni à entretenir. */
       let kaykitCinematique = null;
 
+      /* Réglages de l'ouverture, ouverts à la console. Une cinématique ne se
+         règle qu'en la regardant tourner : reconstruire le bundle entre deux
+         essais rend la comparaison impossible — on ne se souvient plus de ce
+         qu'on a vu trente secondes plus tôt. Voir window.ILYOS_CINE. */
+      const KAYKIT_CINE = {
+        exposant: 2,     // 2 = freinage doux, 3 = chute franche puis pose longue
+        duree: 21000,
+        azimut: -300,
+        altitude: 160,
+        noir: 8500,     // dissolution de l'écran noir : commence tout de suite
+        pause: 1000,    // noir plein avant que la chute ne commence
+        signes: 4000    // combien de temps AVANT LA FIN les cercles s'allument
+      };
+
+      /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
+
+         Déplacer réellement l'astre demande ILYOS_SKY.soleil(), qui régénère la
+         texture de ciel : 200 à 250 ms par appel, mesuré. C'est un gel d'une
+         quinzaine d'images, donc inutilisable en mouvement, même par paliers.
+
+         Ce qui fait un lever de soleil à l'œil n'est de toute façon pas le
+         disque — la caméra le fait déjà entrer dans le cadre toute seule en
+         basculant de -62° à +37°. C'est la LUMIÈRE qui croît : le halo, le
+         liseré sur les nuages, la poussière qui s'allume. Ces trois-là sont des
+         réglages directs — un objet de configuration, des opacités de matériau,
+         deux uniformes déjà compilés — et ne coûtent rien par image.
+
+         Les valeurs d'arrivée sont relevées sur la scène au démarrage, jamais
+         écrites en dur : la cinématique rend exactement ce qu'elle a trouvé. */
+      function kaykitCinematiqueReleverLumiere() {
+        const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
+        return {
+          bloomForce: KAYKIT_BLOOM.force,
+          bloomSeuil: KAYKIT_BLOOM.seuil,
+          rim: KAYKIT_CLOUD_BACKLIT.rimStrength,
+          rimPower: KAYKIT_CLOUD_BACKLIT.rimPower,
+          poussieres: champs.map(champ => ({
+            opacite: champ.object.material.opacity,
+            taille: champ.object.material.size
+          }))
+        };
+      }
+
+      /* u = 0 au départ (lumière basse), u = 1 à l'arrivée (valeurs de la scène). */
+      function kaykitCinematiqueLumiere(base, u) {
+        if (!base) return;
+        const melange = (depart, fin) => depart + (fin - depart) * u;
+
+        KAYKIT_BLOOM.force = melange(base.bloomForce * 2.15, base.bloomForce);
+        // Seuil plus BAS = plus de choses débordent : le vide devient rêveur.
+        KAYKIT_BLOOM.seuil = melange(base.bloomSeuil * .55, base.bloomSeuil);
+
+        KAYKIT_CLOUD_BACKLIT.rimStrength = melange(base.rim * .22, base.rim);
+        /* Un liseré large et mou au loin, qui se resserre en approchant : c'est
+           la même lumière, vue de plus près. */
+        KAYKIT_CLOUD_BACKLIT.rimPower = melange(base.rimPower * .55, base.rimPower);
+        kaykitBacklitCloudCache.forEach(mat => {
+          const sh = mat.userData && mat.userData.shader;
+          if (!sh) return;
+          if (sh.uniforms.uRimStrength) sh.uniforms.uRimStrength.value = KAYKIT_CLOUD_BACKLIT.rimStrength;
+          if (sh.uniforms.uRimPower) sh.uniforms.uRimPower.value = KAYKIT_CLOUD_BACKLIT.rimPower;
+        });
+
+        /* Les poussières montent en OPACITÉ et en TAILLE. L'opacité seule les
+           faisait apparaître sans qu'elles se rapprochent ; la taille qui croît
+           donne l'impression qu'on descend dedans, ce qui est précisément ce
+           que fait la caméra. */
+        const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
+        champs.forEach((champ, i) => {
+          const fin = base.poussieres[i];
+          if (!fin) return;
+          if (Number.isFinite(fin.opacite)) champ.object.material.opacity = melange(fin.opacite * .12, fin.opacite);
+          if (Number.isFinite(fin.taille)) champ.object.material.size = melange(fin.taille * .45, fin.taille);
+        });
+      }
+
       function kaykitCinematiqueBrume(near, far) {
         const fog = kaykit3D?.scene?.fog;
         if (!fog || !Number.isFinite(near) || !Number.isFinite(far)) return;
@@ -5384,7 +5460,13 @@
         fog.far = far;
       }
 
-      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur) {
+      /* `azimutDeg` fait tourner le point de vue AUTOUR du monde, à distance et
+         à hauteur constantes. Zéro rend très exactement la vue de face, donc le
+         cadrage d'arrivée reste celui du preset et rien d'existant ne bouge.
+         C'est ce qui donne la parallaxe : sans lui, la caméra descend sur un
+         rail vertical et les îles lointaines ne glissent jamais les unes
+         derrière les autres. */
+      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur, azimutDeg = 0) {
         if (!kaykit3D?.camera?.position || !kaykit3D.viewTarget) return;
         const min = Number.isFinite(kaykit3D.minZoom) ? kaykit3D.minZoom : 6.4;
         const max = Number.isFinite(kaykit3D.maxZoom) ? kaykit3D.maxZoom : 25;
@@ -5392,10 +5474,12 @@
         const pitch = inclinaisonDeg * Math.PI / 180;
         const cible = kaykit3D.viewTarget;
         cible.set(0, hauteur, .18);
+        const azimut = azimutDeg * Math.PI / 180;
+        const rayon = distance * Math.cos(pitch);
         kaykit3D.camera.position.set(
-          cible.x,
+          cible.x + rayon * Math.sin(azimut),
           cible.y + distance * Math.sin(pitch),
-          cible.z + distance * Math.cos(pitch)
+          cible.z + rayon * Math.cos(azimut)
         );
         kaykit3D.camera.lookAt(cible);
         kaykit3D.zoomDistance = distance;
@@ -5410,11 +5494,24 @@
          « interrompu » distinct du chemin normal, et donc aucun état à moitié
          appliqué à réparer après coup. */
       function kaykitCinematiqueEtat(depart, arrivee, t) {
-        /* easeInOutSine, et non plus une quintique. Une quintique est si plate
-           au départ qu'après deux secondes de chute la caméra n'avait pas perdu
-           un mètre : additionnée au temps de pose sur le vide, elle donnait neuf
-           secondes d'image figée. Le sinus démarre doucement mais visiblement. */
-        const eased = (1 - Math.cos(Math.PI * t)) / 2;
+        /* DÉCÉLÉRATION PURE — c'est une chute, pas un travelling.
+
+           On ne part pas : quand le noir se lève, on tombe DÉJÀ, à pleine
+           vitesse, et tout le reste du mouvement est un freinage qui se pose
+           sur le monde. Une courbe symétrique (sinus, quintique) racontait
+           l'inverse — une caméra qui s'ébranle, prend de la vitesse au milieu,
+           puis s'arrête : correct pour un survol, faux pour une chute.
+
+           Le départ brutal n'est pas un défaut ici : il tombe pendant que le
+           fondu du noir n'est pas fini, donc on hérite de la vitesse au lieu de
+           voir la caméra démarrer.
+
+           Exposant 2 et non 3 : au cube, les six dernières secondes ne faisaient
+           plus bouger l'altitude que de quatre unités — le mouvement passait de
+           « se pose » à « s'enlise ». Le carré garde la chute franche au départ
+           et rend du mouvement à l'arrivée. Réglable à chaud :
+           ILYOS_CINE.exposant(3). */
+        const eased = 1 - Math.pow(1 - t, KAYKIT_CINE.exposant);
         const lineaire = (a, b, u) => a + (b - a) * u;
         /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
            foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
@@ -5425,7 +5522,16 @@
         return {
           recul: geometrique(depart.recul, arrivee.recul, eased),
           inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
+          /* L'altitude suit désormais la courbe commune, sans forçage. Elle en
+             avait un tant que la courbe était symétrique : il fallait bien
+             quitter le vide avant les quatre dernières secondes. Une
+             décélération pure le fait d'elle-même — l'altitude s'effondre dans
+             les premières secondes, puis le monde monte lentement. */
           hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased),
+          azimut: lineaire(depart.azimut || 0, arrivee.azimut || 0, eased),
+          /* La lumière suit l'ALTITUDE et non le temps : elle se lève à mesure
+             qu'on descend vers le monde, pas selon le chronomètre. */
+          lumiere: eased,
           /* La brume est le seul « effet » de la cinématique, et elle ne coûte
              rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
              le brouillard qui recule et le découvre. */
@@ -5458,7 +5564,13 @@
       /* Rend une promesse tenue à la fin du mouvement — ou tout de suite si le
          joueur a demandé un mouvement réduit, auquel cas on pose directement
          l'image d'arrivée. */
-      function kaykitJouerCinematique({ depart, arrivee, duree = 21000, attente = 0 } = {}) {
+      /* `surAvancement(t)` est appelé à CHAQUE image avec l'avancement brut du
+         mouvement, 0 au départ et 1 à l'arrivée. C'est par là que l'ouverture
+         fait respirer son écran noir et sa brume : un fondu CSS lancé à côté
+         court sur sa propre horloge et finit toujours par se désynchroniser du
+         plongeon — ou, pire, par ne jamais démarrer si la classe est posée et
+         retirée avant le premier affichage. Ici il n'y a qu'une horloge. */
+      function kaykitJouerCinematique({ depart, arrivee, duree = KAYKIT_CINE.duree, attente = 0, surAvancement = null } = {}) {
         if (!kaykit3D?.camera || !depart || !arrivee) return Promise.resolve(false);
         kaykitArreterCinematique();
 
@@ -5468,6 +5580,7 @@
         if (kaykitReducedMotion()) {
           kaykitCinematiquePose(arrivee.recul, arrivee.inclinaison, arrivee.hauteur);
           kaykitCinematiqueBrume(arrivee.brumeNear, arrivee.brumeFar);
+          kaykitCinematiqueLumiere(kaykitCinematiqueReleverLumiere(), 1);
           kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
           return Promise.resolve(true);
         }
@@ -5505,11 +5618,13 @@
            tombaient en plein milieu du plongeon et le coupaient. */
         window.ILYOS_CINEMATIQUE_ACTIVE = true;
         if (kaykit3D.orbit) kaykit3D.orbit.enabled = false;
-        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur);
+        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur, depart.azimut || 0);
 
         return new Promise(resolve => {
           kaykitCinematique = {
             depart, arrivee, duree,
+            lumiereBase: kaykitCinematiqueReleverLumiere(),
+            surAvancement,
             /* `attente` tient la caméra à son poste de départ sans avancer.
                Le verrou est déjà pris pendant ce temps-là : c'est ce qui permet
                d'ouvrir sur le vide plusieurs secondes sans qu'un recadrage de
@@ -5528,8 +5643,10 @@
         const encours = kaykitCinematique;
         if (!encours) return false;
         const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
-        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
         kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
+        kaykitCinematiqueLumiere(encours.lumiereBase, 1);
+        if (encours.surAvancement) { try { encours.surAvancement(1); } catch (_) { } }
         encours.terminer();
         return true;
       }
@@ -5537,6 +5654,37 @@
       function kaykitCinematiqueEnCours() {
         return !!kaykitCinematique;
       }
+
+      /* Console : comparer deux courbes sans reconstruire le bundle.
+         Sans argument, chaque fonction rend la valeur en place. */
+      window.ILYOS_CINE = {
+        aide() {
+          return [
+            "exposant(n)   courbe de décélération. 2 = freinage doux (défaut),",
+            "              3 = chute franche puis pose longue. Essayer 1.5 à 4.",
+            "duree(ms)     durée du plongeon (21000 par défaut)",
+            "azimut(deg)   d'où l'on arrive ; 0 = pile en face (-72 par défaut)",
+            "altitude(u)   hauteur de départ (160 par défaut)",
+            "noir(ms)      dissolution de l'écran noir (8500 par défaut).",
+            "              Elle commence dès la première image : pas de palier.",
+            "pause(ms)     noir plein avant la chute (1000 par défaut)",
+            "signes(ms)    les cercles s'allument dans les N dernières",
+            "              millisecondes du plongeon (4000 par défaut)",
+            "valeurs()     les réglages en place",
+            "",
+            "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
+            "Exemple : ILYOS_CINE.exposant(3); ILYOS_PUZZLE.playOpeningCinematic()"
+          ].join(String.fromCharCode(10));
+        },
+        exposant(v) { if (Number.isFinite(v)) KAYKIT_CINE.exposant = v; return KAYKIT_CINE.exposant; },
+        duree(v) { if (Number.isFinite(v)) KAYKIT_CINE.duree = v; return KAYKIT_CINE.duree; },
+        azimut(v) { if (Number.isFinite(v)) KAYKIT_CINE.azimut = v; return KAYKIT_CINE.azimut; },
+        altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
+        noir(v) { if (Number.isFinite(v)) KAYKIT_CINE.noir = v; return KAYKIT_CINE.noir; },
+        pause(v) { if (Number.isFinite(v)) KAYKIT_CINE.pause = v; return KAYKIT_CINE.pause; },
+        signes(v) { if (Number.isFinite(v)) KAYKIT_CINE.signes = v; return KAYKIT_CINE.signes; },
+        valeurs() { return Object.assign({}, KAYKIT_CINE); }
+      };
 
       /* Inclinaison de la vue de face, exprimée en polaire. Le preset raisonne
          en degrés SOUS l'horizontale, OrbitControls en angle depuis le zénith :
@@ -11518,8 +11666,12 @@
         if (kaykitCinematique) {
           const brut = Math.min(1, Math.max(0, (frameNow - kaykitCinematique.debut) / kaykitCinematique.duree));
           const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
-          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
           kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
+          kaykitCinematiqueLumiere(kaykitCinematique.lumiereBase, etat.lumiere);
+          if (kaykitCinematique.surAvancement) {
+            try { kaykitCinematique.surAvancement(brut); } catch (_) { }
+          }
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }
