@@ -25380,6 +25380,39 @@
         return tous;
       }
 
+      // Réserver d'abord les places à des positions de gardiens/couronnes
+      // distinctes : des variantes de pose d'une même manœuvre ne doivent pas
+      // monopoliser les quatre ripostes. Ce n'est pas une déduplication d'états :
+      // les variantes de terrain complètent la liste s'il reste des places.
+      function plannerFinalistesDiversifies(terminaux, plafond) {
+        const tries = terminaux.sort((a, b) => b.note - a.note);
+        const retenus = [], variantes = [], vus = new Set();
+        const position = noeud => {
+          const etat = noeud.etat;
+          const gardiens = etat.characters.map(g => [g.player, g.r, g.c]).sort();
+          const couronnes = [etat.artifact, etat.secondArtifact]
+            .filter(a => a && a.active).map(a => {
+              const porteur = etat.characters.find(g => g.id === a.carrierId);
+              return [a.id, porteur ? porteur.player : null,
+                porteur ? porteur.r : a.r, porteur ? porteur.c : a.c];
+            });
+          return JSON.stringify([gardiens, couronnes,
+            etat.players.map(p => p.score || 0)]);
+        };
+        const premiers = tries.slice(0, PLAN_RIPOSTE.finalistes);
+        if (!premiers.length || premiers.some(n => position(n) !== position(premiers[0]))) {
+          return tries.slice(0, plafond);
+        }
+        for (const noeud of tries) {
+          const signature = position(noeud);
+          if (vus.has(signature)) { variantes.push(noeud); continue; }
+          vus.add(signature);
+          retenus.push(noeud);
+          if (retenus.length === plafond) break;
+        }
+        return retenus.concat(variantes).slice(0, plafond);
+      }
+
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
         let debut = performance.now();
@@ -25513,7 +25546,9 @@
           // entre l'état prévu et l'état réellement obtenu.
           empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,
           // Finalistes triés, prêts pour l'anticipation adverse (V3).
-          finalistes: terminaux.sort((a, b) => b.note - a.note).slice(0, 8),
+          finalistes: !racine.terminal && !plannerMenaceValidationAdverse(playerId)
+            ? plannerFinalistesDiversifies(terminaux, 8)
+            : terminaux.sort((a, b) => b.note - a.note).slice(0, 8),
           releveCandidats,
           /* Conservés pour la décomposition de score de l'autopsie. Hors
              autopsie ils restent nuls : garder des clones d'état complets à
