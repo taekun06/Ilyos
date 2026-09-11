@@ -30041,8 +30041,17 @@
              Les deux variables d'arc sont posées par la construction,
              avec les runes, pour que celles-ci tombent toujours SUR le tracé
              conservé — masquées avec lui sinon. */
+          /* LE POIDS DU TRAIT. Le masque conique découpe aussi la lueur portée
+             par box-shadow : les arcs avaient beau être justes, ils ne pesaient
+             plus rien sur un ciel doré très clair. La lueur passe donc par
+             la propriete filter, qui suit le contour réellement conservé au lieu de
+             rayonner depuis la boîte carrée — elle survit au masque. Et le
+             trait passe à 1,4 px : sous cette épaisseur, l'anti-crénelage d'un
+             cercle incliné mange la moitié du pixel et le tracé clignote. */
           #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
-            border:1px solid rgba(255,220,140,.62);border-radius:50%;
+            border:1.4px solid rgba(255,226,158,.95);border-radius:50%;
+            filter:drop-shadow(0 0 4px rgba(255,198,110,.85))
+                   drop-shadow(0 0 12px rgba(255,170,70,.45));
             -webkit-mask-image:conic-gradient(from var(--pz-arc-de,0deg),
               rgba(0,0,0,0) 0deg, #000 26deg,
               #000 calc(var(--pz-arc-long,150deg) - 26deg),
@@ -30078,37 +30087,39 @@
              restent parallèles en tournant. */
           #puzzleLayer .pz-anneau.a2{width:160vmin;height:160vmin;margin:-80vmin 0 0 -80vmin;
             left:57%;top:38%;--pz-assiette:67deg;
-            border-color:rgba(255,220,140,.26);
-            box-shadow:none;animation-duration:220s;}
+            border-color:rgba(255,222,150,.62);
+            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
+            animation-duration:220s;}
           #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
-            border-style:dashed;border-color:rgba(255,220,140,.7);
+            border-style:dashed;border-color:rgba(255,230,166,.98);
             left:45%;top:47%;--pz-assiette:75deg;
             animation-duration:150s;animation-direction:reverse;}
           #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
             left:45%;top:47%;--pz-assiette:75deg;
-            border-color:rgba(255,220,140,.24);
-            box-shadow:none;animation-duration:150s;animation-direction:reverse;}
+            border-color:rgba(255,222,150,.58);
+            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
+            animation-duration:150s;animation-direction:reverse;}
           /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
              il se perd hors du regard au lieu de se refermer sur lui-même. */
           #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,220,140,.52);animation-duration:310s;
+            border-color:rgba(255,228,162,.92);animation-duration:310s;
             left:63%;top:33%;--pz-assiette:61deg;}
           /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
              ils coupent les orbes au lieu de les accompagner. Sans eux tout le
              réseau reste couché dans le même plan et le ciel paraît plat. */
           #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
             left:28%;top:30%;--pz-assiette:24deg;
-            border-color:rgba(255,220,140,.30);
+            border-color:rgba(255,222,150,.70);
             box-shadow:0 0 16px rgba(255,190,90,.20);animation-duration:520s;}
           #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
             left:78%;top:26%;--pz-assiette:38deg;
-            border-color:rgba(255,220,140,.26);border-style:dashed;
+            border-color:rgba(255,222,150,.64);border-style:dashed;
             box-shadow:none;animation-duration:380s;animation-direction:reverse;}
           /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
              lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
              profondeur. */
           #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
-            border-color:rgba(255,220,140,.38);border-style:dashed;
+            border-color:rgba(255,224,152,.78);border-style:dashed;
             left:41%;top:52%;--pz-assiette:80deg;
             animation-duration:420s;animation-direction:reverse;}
           /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
