@@ -2142,8 +2142,12 @@
          Les nombres ci-dessous ont été réglés à l'écran avant d'être écrits ici.
          Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
          maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
-      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
-      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5 };
+      /* L'azimut de départ : la caméra arrive DE CÔTÉ et se redresse en
+         tombant. Elle finit à zéro, c'est-à-dire pile sur la vue de face du
+         jeu. C'est ce quart de tour qui fait glisser les îles lointaines les
+         unes derrière les autres — sans lui, la descente est un rail. */
+      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240, azimut: -72 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5, azimut: 0 };
       const PUZZLE_OUVERTURE_DUREE = 21000;
       const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
       const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée

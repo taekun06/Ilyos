@@ -5384,7 +5384,13 @@
         fog.far = far;
       }
 
-      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur) {
+      /* `azimutDeg` fait tourner le point de vue AUTOUR du monde, à distance et
+         à hauteur constantes. Zéro rend très exactement la vue de face, donc le
+         cadrage d'arrivée reste celui du preset et rien d'existant ne bouge.
+         C'est ce qui donne la parallaxe : sans lui, la caméra descend sur un
+         rail vertical et les îles lointaines ne glissent jamais les unes
+         derrière les autres. */
+      function kaykitCinematiquePose(recul, inclinaisonDeg, hauteur, azimutDeg = 0) {
         if (!kaykit3D?.camera?.position || !kaykit3D.viewTarget) return;
         const min = Number.isFinite(kaykit3D.minZoom) ? kaykit3D.minZoom : 6.4;
         const max = Number.isFinite(kaykit3D.maxZoom) ? kaykit3D.maxZoom : 25;
@@ -5392,10 +5398,12 @@
         const pitch = inclinaisonDeg * Math.PI / 180;
         const cible = kaykit3D.viewTarget;
         cible.set(0, hauteur, .18);
+        const azimut = azimutDeg * Math.PI / 180;
+        const rayon = distance * Math.cos(pitch);
         kaykit3D.camera.position.set(
-          cible.x,
+          cible.x + rayon * Math.sin(azimut),
           cible.y + distance * Math.sin(pitch),
-          cible.z + distance * Math.cos(pitch)
+          cible.z + rayon * Math.cos(azimut)
         );
         kaykit3D.camera.lookAt(cible);
         kaykit3D.zoomDistance = distance;
@@ -5425,12 +5433,21 @@
         return {
           recul: geometrique(depart.recul, arrivee.recul, eased),
           inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
-          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased),
+          /* L'ALTITUDE A SA PROPRE COURBE, et c'est le réglage qui décide si la
+             cinématique est belle ou vide. Avec la courbe commune, on restait
+             au-dessus de la brume pendant les trois quarts du trajet : le monde
+             n'apparaissait qu'aux quatre dernières secondes, après dix-sept
+             secondes de ciel nu. En faisant chuter l'altitude beaucoup plus tôt,
+             on sort du vide en quelques secondes et on passe l'essentiel du
+             temps à survoler l'archipel — ce qu'on est venu voir. Le recul et
+             l'inclinaison, eux, gardent la courbe douce. */
+          hauteur: lineaire(depart.hauteur, arrivee.hauteur, Math.pow(eased, .4)),
+          azimut: lineaire(depart.azimut || 0, arrivee.azimut || 0, eased),
           /* La brume est le seul « effet » de la cinématique, et elle ne coûte
              rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
              le brouillard qui recule et le découvre. */
-          brumeNear: lineaire(depart.brumeNear, arrivee.brumeNear, eased),
-          brumeFar: lineaire(depart.brumeFar, arrivee.brumeFar, eased)
+          brumeNear: lineaire(depart.brumeNear, arrivee.brumeNear, Math.pow(eased, .4)),
+          brumeFar: lineaire(depart.brumeFar, arrivee.brumeFar, Math.pow(eased, .4))
         };
       }
 
@@ -5505,7 +5522,7 @@
            tombaient en plein milieu du plongeon et le coupaient. */
         window.ILYOS_CINEMATIQUE_ACTIVE = true;
         if (kaykit3D.orbit) kaykit3D.orbit.enabled = false;
-        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur);
+        kaykitCinematiquePose(depart.recul, depart.inclinaison, depart.hauteur, depart.azimut || 0);
 
         return new Promise(resolve => {
           kaykitCinematique = {
@@ -5528,7 +5545,7 @@
         const encours = kaykitCinematique;
         if (!encours) return false;
         const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
-        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+        kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
         kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
         encours.terminer();
         return true;
@@ -11518,7 +11535,7 @@
         if (kaykitCinematique) {
           const brut = Math.min(1, Math.max(0, (frameNow - kaykitCinematique.debut) / kaykitCinematique.duree));
           const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
-          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur);
+          kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
           kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
