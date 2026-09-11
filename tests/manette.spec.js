@@ -310,39 +310,77 @@ async function appuyerDansLeMenu(page, index, duree = 120) {
   await page.waitForTimeout(240);
 }
 
-test('la manette navigue dès le premier menu', async ({ page }) => {
+test('le menu suit la grammaire console : modes, réglages, valeurs', async ({ page }) => {
   const incidents = collecterIncidents(page);
   await page.addInitScript(FAUSSE_MANETTE);
   await page.goto('/');
 
   const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
   await menu.locator('[data-mode="solo"]').first().waitFor({ timeout: 30000 });
+  await page.waitForTimeout(600);
 
-  const viseDansLeMenu = () => cadreDuMenu(page).evaluate(() => {
+  const vise = () => cadreDuMenu(page).evaluate(() => {
     const element = document.querySelector('.ilyos-pad-vise');
     if (!element) return null;
-    return element.getAttribute('data-mode') || element.getAttribute('data-action') || element.tagName;
+    return element.getAttribute('data-mode')
+      || element.getAttribute('data-key')
+      || element.getAttribute('data-action')
+      || element.id
+      || element.tagName;
   });
 
-  // Bas : le menu se parcourt sans souris.
-  await inclinerDansLeMenu(page, 1, 1);
-  const premier = await viseDansLeMenu();
-  expect(premier, 'le stick doit désigner un élément du menu').not.toBeNull();
+  // Règle 1 : un nouvel écran choisit lui-même son meilleur point de départ.
+  expect(await vise(), 'l’accueil doit démarrer sur le mode Solo').toBe('solo');
 
-  await inclinerDansLeMenu(page, 1, 1);
-  expect(await viseDansLeMenu(), 'une seconde poussée doit avancer dans le menu').not.toBe(premier);
+  /* Navigation SPATIALE : droite désigne la carte réellement située à droite,
+     pas la suivante dans le document. Les cartes sont en grille. */
+  await inclinerDansLeMenu(page, 0, 1);
+  const aDroite = await vise();
+  expect(aDroite, 'droite doit changer de mode').not.toBe('solo');
 
-  /* A doit réellement agir : on descend jusqu'au mode solo, puis on valide, et
-     l'écran de configuration du duel doit apparaître. */
-  let atteint = false;
-  for (let essai = 0; essai < 24 && !atteint; essai++) {
-    await inclinerDansLeMenu(page, 1, 1, 120);
-    atteint = (await viseDansLeMenu()) === 'solo';
-  }
-  expect(atteint, 'le parcours doit pouvoir atteindre le mode solo').toBe(true);
+  await inclinerDansLeMenu(page, 0, -1);
+  expect(await vise(), 'gauche doit revenir au mode précédent').toBe('solo');
 
+  // A entre dans le mode.
   await appuyerDansLeMenu(page, B.A);
   await menu.locator('text=AFFRONTER LE CPU').first().waitFor({ timeout: 15000 });
+  await page.waitForTimeout(500);
+
+  const premierReglage = await vise();
+  expect(premierReglage, 'la configuration doit désigner un réglage d’emblée').not.toBeNull();
+
+  const estReglage = () => cadreDuMenu(page).evaluate(() => {
+    const element = document.querySelector('.ilyos-pad-vise');
+    return !!element && element.matches('.field[data-key], .difficulty-zone[data-key]');
+  });
+  expect(await estReglage(), 'le point de départ doit être un réglage, pas un bouton').toBe(true);
+
+  /* LE POINT CENTRAL : gauche/droite change la VALEUR du réglage visé, sans
+     jamais désigner séparément les petites flèches. Un mouvement par
+     changement, au lieu de trois. */
+  const valeur = () => cadreDuMenu(page).evaluate(clef => {
+    const ligne = document.querySelector(`[data-key="${clef}"]`);
+    return ligne ? ligne.textContent.replace(/\s+/g, ' ').trim() : null;
+  }, premierReglage);
+
+  const avant = await valeur();
+  await inclinerDansLeMenu(page, 0, 1);
+  expect(await valeur(), 'droite doit changer la valeur du réglage').not.toBe(avant);
+  expect(await vise(), 'et le focus doit rester sur ce même réglage').toBe(premierReglage);
+
+  /* Le focus est retenu par identité : render() refait tout le DOM du panneau à
+     chaque changement de valeur, donc une référence n'aurait pas survécu. */
+  await inclinerDansLeMenu(page, 0, 1);
+  expect(await vise(), 'le focus doit survivre à la reconstruction du panneau').toBe(premierReglage);
+
+  // Haut/bas passe d'un réglage au suivant, sans jamais viser une flèche.
+  await inclinerDansLeMenu(page, 1, 1);
+  expect(await vise(), 'bas doit passer au réglage suivant').not.toBe(premierReglage);
+
+  // B revient à l'accueil.
+  await appuyerDansLeMenu(page, B.B);
+  await page.waitForTimeout(900);
+  expect(await vise(), 'B doit ramener à l’accueil').toBe('solo');
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });

@@ -103,19 +103,47 @@
              gardien selectionne — et passait donc pour « neutre » : le stick
              repartait vers le dock alors que le jeu attendait un clic sur une
              case, et le gardien devenait impossible a poser a la manette. */
-          if (state.phase === "PLACE_SPAWN" || spawnChoices().length) return false;
+          if (state.phase === "PLACE_SPAWN") return false;
+          // Le moteur propose des cibles : le jeu attend un clic sur le plateau,
+          // pas un choix dans le dock.
+          if (pointsOfInterest()) return false;
           return !placingIsland()
             && !state.selectedActionType
             && !state.selectedCharId
             && !(state.pushOptions && state.pushOptions.length);
         }
 
-        /* Cases ouvertes a l'invocation : le moteur les marque deja d'une classe
-           sur le plateau DOM (voir renderBoard), en tenant compte du draft comme
-           de l'ile fraichement posee. On lit donc sa decision au lieu de la
-           refaire. */
-        function spawnChoices() {
-          return [...document.querySelectorAll(".cell.spawn-choice")]
+        /* LES CIBLES VALIDES SONT CELLES QUE LE MOTEUR SURLIGNE DEJA.
+
+           renderBoard marque chaque case offerte d'une classe — « reachable »
+           pour un deplacement, « spawn-choice » pour une invocation,
+           « crown-claimable » pour une couronne, « magic-valid » et
+           « magic-pivot » pour la magie. Lire cette decision plutot que de la
+           refaire evite de dupliquer la regle, couvre le tutoriel et les enigmes
+           qui partagent le meme plateau, et fera vivre toute action ajoutee plus
+           tard sans qu'on retouche cette couche. */
+        const CLASSES_CIBLES = [
+          "spawn-choice",      // invocation d'un gardien
+          "crown-claimable",   // couronne a prendre, transmettre ou poser
+          "magic-pivot",       // pivot d'une rotation magique
+          "magic-valid",       // ile ou case concernee par la magie
+          "reachable"          // destination de deplacement
+        ];
+
+        function cellulesMarquees(className) {
+          return [...document.querySelectorAll(`.cell.${className}`)]
+            .map(cell => ({ r: Number(cell.dataset.r), c: Number(cell.dataset.c) }))
+            .filter(cell => Number.isFinite(cell.r) && Number.isFinite(cell.c));
+        }
+
+        function spawnChoices() { return cellulesMarquees("spawn-choice"); }
+
+        /* Gardiens que le moteur declare choisissables : au repos, ce sont eux
+           que haut/bas doit parcourir, et non tous les allies indistinctement. */
+        function guardiansMarques() {
+          return [...document.querySelectorAll(".cell .character.selectable")]
+            .map(marque => marque.closest(".cell"))
+            .filter(Boolean)
             .map(cell => ({ r: Number(cell.dataset.r), c: Number(cell.dataset.c) }))
             .filter(cell => Number.isFinite(cell.r) && Number.isFinite(cell.c));
         }
@@ -197,14 +225,13 @@
               .map(option => ({ r: option.r, c: option.c }));
             if (cells.length) return cells;
           }
-          const spawns = spawnChoices();
-          if (spawns.length) return spawns;
-          if (state.reachable && state.reachable.size) {
-            return [...state.reachable].map(key => {
-              const [r, c] = key.split(",").map(Number);
-              return { r, c };
-            });
+          for (const className of CLASSES_CIBLES) {
+            const cells = cellulesMarquees(className);
+            if (cells.length) return cells;
           }
+          /* Aucune cible publiee : on rend la navigation libre, case par case.
+             La pose d'ile en depend — une ile doit pouvoir aller partout, y
+             compris sur des cases que rien ne distingue. */
           return null;
         }
 
@@ -599,8 +626,15 @@
           return Math.abs(value) < DEADZONE ? 0 : value;
         }
 
+        /* Haut/bas au repos : d'abord les gardiens que le moteur declare
+           choisissables — lui seul sait lesquels ont encore quelque chose a
+           faire. A defaut, tous les allies. Le parcours reprend au dernier
+           gardien utilise, pas au premier de la liste. */
         function navigateGuardians(direction) {
-          const guardians = alliedGuardians();
+          const marques = guardiansMarques();
+          const guardians = marques.length
+            ? marques.map(cell => (state?.characters || []).find(char => char.r === cell.r && char.c === cell.c)).filter(Boolean)
+            : alliedGuardians();
           if (!guardians.length) return;
           const current = guardians.findIndex(char => char.id === pad.lastGuardianId);
           const next = guardians[(Math.max(0, current) + direction + guardians.length) % guardians.length];
@@ -616,6 +650,12 @@
           activePad = gamepad;
           if (!gamepad) { pad.previous = []; return; }
           if (typeof kaykit3D === "undefined" || !kaykit3D?.camera) return;
+
+          /* Tour de l'adversaire : plus aucune navigation de jeu. Sans cela le
+             stick promenait un curseur sur des cibles perimees, et A tombait
+             dans le vide. La camera, elle, reste libre — regarder le plateau
+             pendant que l'autre joue est precisement un moment ou on le veut. */
+          const aLaMain = typeof canLocalPlayerAct !== "function" || canLocalPlayerAct();
 
           const now = performance.now();
           let hoverDirty = false;
@@ -669,7 +709,7 @@
           if (pressed(gamepad, BUTTON.UP)) dy = -1;
           if (pressed(gamepad, BUTTON.DOWN)) dy = 1;
 
-          if (dx || dy) {
+          if ((dx || dy) && aLaMain) {
             const fresh = !pad.stepAt;
             if (fresh || now >= pad.stepAt) {
               // Un seul axe a la fois : les diagonales n'existent pas ici.
@@ -705,6 +745,13 @@
           // Gachettes : rotation d'ile, a la pose comme sous Magie.
           if (pressed(gamepad, BUTTON.LT)) rotateIsland(-1, now);
           if (pressed(gamepad, BUTTON.RT)) rotateIsland(1, now);
+
+          if (!aLaMain) {
+            setHud(null);
+            clearChoice();
+            pad.previous = gamepad.buttons.map(button => !!button.pressed);
+            return;
+          }
 
           if (justPressed(gamepad, BUTTON.LB)) moveChoice(-1);
           if (justPressed(gamepad, BUTTON.RB)) moveChoice(1);
