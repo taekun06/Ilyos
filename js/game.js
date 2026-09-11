@@ -5853,11 +5853,18 @@
          « interrompu » distinct du chemin normal, et donc aucun état à moitié
          appliqué à réparer après coup. */
       function kaykitCinematiqueEtat(depart, arrivee, t) {
-        /* easeInOutSine, et non plus une quintique. Une quintique est si plate
-           au départ qu'après deux secondes de chute la caméra n'avait pas perdu
-           un mètre : additionnée au temps de pose sur le vide, elle donnait neuf
-           secondes d'image figée. Le sinus démarre doucement mais visiblement. */
-        const eased = (1 - Math.cos(Math.PI * t)) / 2;
+        /* DÉCÉLÉRATION PURE — c'est une chute, pas un travelling.
+
+           On ne part pas : quand le noir se lève, on tombe DÉJÀ, à pleine
+           vitesse, et tout le reste du mouvement est un freinage qui se pose
+           sur le monde. Une courbe symétrique (sinus, quintique) racontait
+           l'inverse — une caméra qui s'ébranle, prend de la vitesse au milieu,
+           puis s'arrête : correct pour un survol, faux pour une chute.
+
+           Le départ brutal n'est pas un défaut ici : il tombe pendant que le
+           fondu du noir n'est pas fini, donc on hérite de la vitesse au lieu de
+           voir la caméra démarrer. */
+        const eased = 1 - Math.pow(1 - t, 3);
         const lineaire = (a, b, u) => a + (b - a) * u;
         /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
            foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
@@ -5868,24 +5875,21 @@
         return {
           recul: geometrique(depart.recul, arrivee.recul, eased),
           inclinaison: lineaire(depart.inclinaison, arrivee.inclinaison, eased),
-          /* L'ALTITUDE A SA PROPRE COURBE, et c'est le réglage qui décide si la
-             cinématique est belle ou vide. Avec la courbe commune, on restait
-             au-dessus de la brume pendant les trois quarts du trajet : le monde
-             n'apparaissait qu'aux quatre dernières secondes, après dix-sept
-             secondes de ciel nu. En faisant chuter l'altitude beaucoup plus tôt,
-             on sort du vide en quelques secondes et on passe l'essentiel du
-             temps à survoler l'archipel — ce qu'on est venu voir. Le recul et
-             l'inclinaison, eux, gardent la courbe douce. */
-          hauteur: lineaire(depart.hauteur, arrivee.hauteur, Math.pow(eased, .4)),
+          /* L'altitude suit désormais la courbe commune, sans forçage. Elle en
+             avait un tant que la courbe était symétrique : il fallait bien
+             quitter le vide avant les quatre dernières secondes. Une
+             décélération pure le fait d'elle-même — l'altitude s'effondre dans
+             les premières secondes, puis le monde monte lentement. */
+          hauteur: lineaire(depart.hauteur, arrivee.hauteur, eased),
           azimut: lineaire(depart.azimut || 0, arrivee.azimut || 0, eased),
           /* La lumière suit l'ALTITUDE et non le temps : elle se lève à mesure
              qu'on descend vers le monde, pas selon le chronomètre. */
-          lumiere: Math.pow(eased, .4),
+          lumiere: eased,
           /* La brume est le seul « effet » de la cinématique, et elle ne coûte
              rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
              le brouillard qui recule et le découvre. */
-          brumeNear: lineaire(depart.brumeNear, arrivee.brumeNear, Math.pow(eased, .4)),
-          brumeFar: lineaire(depart.brumeFar, arrivee.brumeFar, Math.pow(eased, .4))
+          brumeNear: lineaire(depart.brumeNear, arrivee.brumeNear, eased),
+          brumeFar: lineaire(depart.brumeFar, arrivee.brumeFar, eased)
         };
       }
 
