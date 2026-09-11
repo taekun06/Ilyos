@@ -1877,6 +1877,25 @@
         poidsMenacePlausible: 0.65
       };
 
+      const PLAN_RIPOSTE_CRITIQUE = {
+        finalistes: 2,
+        decisionsMax: 4,
+        etatsMax: 350,
+        tempsSupplementairesMaxMs: 180
+      };
+
+      function plannerPositionCritique() {
+        return activeArtifacts().some(couronne => {
+          const porteur = couronne.carrierId && characterById(couronne.carrierId);
+          if (!porteur) return false;
+          const joueur = state.players[porteur.player];
+          const distance = aiValidationDistanceForPlayer(joueur, porteur.r, porteur.c);
+          return distance <= 2
+            || ((joueur.score || 0) >= 2 && distance <= 4)
+            || plannerMenaceExpulsion(porteur.player, porteur.r, porteur.c);
+        });
+      }
+
       /* Main plausible prêtée à l'adversaire pour la simulation. Ce n'est PAS
          sa vraie main future : `player.deck` est un tableau ordonné et
          mélangé, le consulter serait tricher. On part de la composition
@@ -1939,7 +1958,7 @@
       }
 
       /** Ce que vaut un plan APRÈS la meilleure réplique adverse courte. */
-      function plannerEvaluerRobustesse(noeudFinal, playerId) {
+      function plannerEvaluerRobustesse(noeudFinal, playerId, budget = {}) {
         const apres = structuredClone(noeudFinal.etat);
         return withSimulatedState(apres, () => {
           const adverse = plannerAdversaire(playerId);
@@ -1963,24 +1982,36 @@
             largeurFaisceau: PLAN_RIPOSTE.largeurFaisceau,
             decisionsMax: PLAN_RIPOSTE.decisionsMax,
             etatsMax: PLAN_RIPOSTE.etatsMax,
-            tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs
+            tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs,
+            ...budget
           });
-          for (const action of reponse.plan) plannerAppliquerAction(action);
-
-          const apresRiposte = evaluateStrategicState(playerId);
-          const degat = Math.max(0, avantRiposte - apresRiposte);
-
-          const ressourcesApres = plannerRessources(adverse.id);
-          const garantie = ["MOVE", "PUSH", "MAGIC"].every(type =>
-            (ressourcesAvant[type] - ressourcesApres[type]) <= reserveGarantie[type]);
-          const poids = garantie ? 1 : PLAN_RIPOSTE.poidsMenacePlausible;
-
-          return {
-            note: noeudFinal.note - degat * poids,
-            riposte: reponse.plan.map(a => a.type),
-            menace: Math.round(degat * poids),
-            garantie: garantie
+          // Les réponses existent déjà : les comparer de notre point de vue
+          // ne développe aucun arbre supplémentaire. La plus dommageable
+          // n'est pas forcément celle que l'adversaire note le mieux pour lui.
+          const mesurer = plan => {
+            const degat = Math.max(0, avantRiposte - evaluateStrategicState(playerId));
+            const ressourcesApres = plannerRessources(adverse.id);
+            const garantie = ["MOVE", "PUSH", "MAGIC"].every(type =>
+              (ressourcesAvant[type] - ressourcesApres[type]) <= reserveGarantie[type]);
+            const menace = degat * (garantie ? 1 : PLAN_RIPOSTE.poidsMenacePlausible);
+            return {
+              note: noeudFinal.note - menace,
+              riposte: plan.map(a => a.type),
+              menace: Math.round(menace),
+              garantie
+            };
           };
+          const candidates = reponse.finalistes || [];
+          if (!candidates.length) {
+            for (const action of reponse.plan) plannerAppliquerAction(action);
+            return { ...mesurer(reponse.plan), ripostesComparees: 1 };
+          }
+          let pire = null;
+          for (const candidate of candidates) {
+            const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
+            if (!pire || resultat.note < pire.note) pire = resultat;
+          }
+          return { ...pire, ripostesComparees: candidates.length };
         });
       }
 
@@ -2019,6 +2050,27 @@
           noeud: noeud,
           robustesse: plannerEvaluerRobustesse(noeud, playerId)
         }));
+        // Un supplément borné pour les seuls finalistes en situation critique.
+        // Une réponse déjà trouvée reste une menace même si la seconde
+        // recherche, bornée elle aussi, ne la retrouve pas.
+        const debutSupplement = performance.now();
+        const echeance = debutSupplement + PLAN_RIPOSTE_CRITIQUE.tempsSupplementairesMaxMs;
+        const aApprofondir = examines.filter(e =>
+          withSimulatedState(e.noeud.etat, () => plannerPositionCritique()))
+          .sort((a, b) => b.robustesse.note - a.robustesse.note)
+          .slice(0, PLAN_RIPOSTE_CRITIQUE.finalistes);
+        let approfondis = 0;
+        for (const e of aApprofondir) {
+          const restant = echeance - performance.now();
+          if (restant <= 0) break;
+          const approfondie = plannerEvaluerRobustesse(e.noeud, playerId, {
+            decisionsMax: PLAN_RIPOSTE_CRITIQUE.decisionsMax,
+            etatsMax: PLAN_RIPOSTE_CRITIQUE.etatsMax,
+            tempsMaxMs: Math.min(PLAN_RIPOSTE.tempsMaxMs, restant)
+          });
+          approfondis++;
+          if (approfondie.note < e.robustesse.note) e.robustesse = approfondie;
+        }
         examines.forEach(e => {
           if (!e.noeud.plan.length) e.robustesse.note -= PLAN_POIDS.tempoPerdu;
         });
@@ -2055,6 +2107,11 @@
           riposte: retenu.robustesse.riposte,
           menace: retenu.robustesse.menace,
           garantie: retenu.robustesse.garantie,
+          ripostesComparees: retenu.robustesse.ripostesComparees || 0,
+          approfondissement: {
+            finalistes: approfondis,
+            dureeMs: Math.round(performance.now() - debutSupplement)
+          },
           rejets: rejets
         };
         principal.dureeTotaleMs = Math.round(performance.now() - debutTotal);
