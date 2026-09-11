@@ -106,6 +106,11 @@
       let reverbNode = null;
       let reverbDamp = null;
       let reverbReturn = null;
+      /* Départ de réverbe réservé à la musique. Voir connectReverbSend :
+         le retour de réverb est branché sur masterGain et court-circuite donc
+         musicGain — sans ce bus, la queue de réverb des accords et des cloches
+         continuait de jouer alors que le volume Musique était à zéro. */
+      let musicReverbSend = null;
       // 11 : passage au moteur génératif. 12 : musique à 15 % (le bump force la
       // nouvelle valeur chez les joueurs qui avaient déjà un réglage enregistré).
       const SOUND_SETTINGS_VERSION = 12;

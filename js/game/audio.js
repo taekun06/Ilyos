@@ -232,6 +232,14 @@
           reverbDamp = audioCtx.createBiquadFilter();
           reverbDamp.type = "lowpass";
           reverbDamp.frequency.value = 3200;
+          /* Tout ce que la musique envoie à la réverbe passe par ici, et ce
+             gain suit le volume Musique (voir updateSoundLevels). Sans lui, le
+             signal direct se taisait à zéro mais la queue de réverb restait
+             audible — c'est ce qu'on entendait « dans le fond », en solo comme
+             par-dessus la bande-son des énigmes. */
+          musicReverbSend = audioCtx.createGain();
+          musicReverbSend.connect(reverbDamp);
+
           reverbReturn = audioCtx.createGain();
           reverbReturn.gain.value = .85;
           reverbDamp.connect(reverbNode);
@@ -255,12 +263,13 @@
 
       /* Départ réverbe. Renvoie null si le graphe n'est pas prêt, pour que les
          appelants puissent simplement ignorer l'envoi. */
-      function connectReverbSend(node, amount) {
+      function connectReverbSend(node, amount, bus = null) {
         if (!audioCtx || !reverbDamp || amount <= 0) return null;
+        const destination = bus || reverbDamp;
         const send = audioCtx.createGain();
         send.gain.value = amount;
         node.connect(send);
-        send.connect(reverbDamp);
+        send.connect(destination);
         return send;
       }
 
@@ -395,7 +404,7 @@
             osc.connect(filter);
             filter.connect(gain);
             gain.connect(musicGain);
-            const send = connectReverbSend(gain, .45);
+            const send = connectReverbSend(gain, .45, musicReverbSend);
 
             osc.start(time);
             osc.stop(time + duration + release + .2);
@@ -447,7 +456,7 @@
         const tail = panner || gain;
         if (panner) gain.connect(panner);
         tail.connect(musicGain);
-        const send = connectReverbSend(tail, .8);
+        const send = connectReverbSend(tail, .8, musicReverbSend);
 
         osc.start(time);
         partial.start(time);
@@ -672,6 +681,11 @@
           masterGain.gain.cancelScheduledValues(now);
           masterGain.gain.setTargetAtTime(soundSettings.master * enabledMultiplier, now, .02);
           musicGain.gain.setTargetAtTime(Math.min(1, soundSettings.music * .92), now, .05);
+          /* Même loi que musicGain : à zéro, la réverbe de la musique se tait
+             aussi. C'est tout l'objet de ce bus. */
+          if (musicReverbSend) {
+            musicReverbSend.gain.setTargetAtTime(Math.min(1, soundSettings.music * .92), now, .05);
+          }
           effectsGain.gain.setTargetAtTime(Math.min(1.65, soundSettings.effects), now, .018);
         }
 
