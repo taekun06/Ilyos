@@ -30049,21 +30049,37 @@
           #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
             border-radius:2px;transform:rotate(45deg);
             background:rgba(255,236,186,.85);}
-          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;}
+          /* Chaque orbe a SON centre et SON assiette. Les décentrages sont
+             volontairement inégaux : deux orbes décalés du même écart
+             recréeraient une symétrie, qui est exactement ce qu'on fuit. */
+          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;
+            left:57%;top:51%;--pz-assiette:67deg;}
           #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
             border-style:dashed;border-color:rgba(255,220,140,.7);
+            left:45%;top:61%;--pz-assiette:75deg;
             animation-duration:150s;animation-direction:reverse;}
+          /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
+             il se perd hors du regard au lieu de se refermer sur lui-même. */
           #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,220,140,.52);animation-duration:310s;}
+            border-color:rgba(255,220,140,.52);animation-duration:310s;
+            left:61%;top:49%;--pz-assiette:61deg;
+            border-top-color:transparent;}
           /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
              lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
              profondeur. */
           #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
             border-color:rgba(255,220,140,.38);border-style:dashed;
+            left:41%;top:64%;--pz-assiette:80deg;
+            border-bottom-color:transparent;
             animation-duration:420s;animation-direction:reverse;}
+          /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
+             empêche les orbes de se lire comme une cible. Quatre cercles
+             partageant le même centre et le même angle se superposent en
+             anneaux parfaitement emboîtés ; quatre orbes d'assiettes
+             différentes se croisent, et le ciel prend de la profondeur. */
           @keyframes pz-tourne{
-            from{transform:perspective(1400px) rotateX(72deg) rotate(0deg)}
-            to{transform:perspective(1400px) rotateX(72deg) rotate(360deg)}}
+            from{transform:perspective(1400px) rotateX(var(--pz-assiette,72deg)) rotate(0deg)}
+            to{transform:perspective(1400px) rotateX(var(--pz-assiette,72deg)) rotate(360deg)}}
           #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
             color:rgba(255,238,196,.85);
             text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
