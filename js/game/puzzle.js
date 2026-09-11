@@ -790,13 +790,12 @@
              masquer comme le reste du chrome — ce que fait toute séquence —
              laissait un aplat bleu parfaitement vide. Ce sont eux qui font le
              ciel habité du plan d'ouverture, pas le décor 3D. */
-          /* Ils ne sont pas « démasqués », ils SE LÈVENT. Les afficher d'emblée
-             donnait un ciel déjà entièrement écrit dès la première image : il
-             ne restait plus rien à découvrir pendant la chute. Ils montent donc
-             sur toute la durée du plongeon, comme la lumière. */
-          #puzzleLayer.reveil.ouverture .pz-signes{opacity:0;
-            transition:opacity var(--pz-signes-duree, 9s) cubic-bezier(.45,0,.7,1);}
-          #puzzleLayer.reveil.ouverture.signes .pz-signes{opacity:1;}
+          /* Éteints par défaut pendant l'ouverture : leur opacité est écrite
+             image par image depuis la chute (voir surAvancement). Ils ne
+             s'allument que dans les toutes dernières secondes — allumés plus
+             tôt, ils donnaient un ciel déjà entièrement écrit alors qu'on est
+             encore loin, et il ne restait rien à découvrir en arrivant. */
+          #puzzleLayer.reveil.ouverture .pz-signes{opacity:0;transition:none;}
 
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
             font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
@@ -2006,6 +2005,7 @@
           caption: layer.querySelector(".pz-caption"),
           fade: layer.querySelector(".pz-fade"),
           brume: layer.querySelector(".pz-brume"),
+          signes: layer.querySelector(".pz-signes"),
           lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
@@ -2131,8 +2131,7 @@
              qui la remet à zéro elle-même ; la rendre au CSS depuis ce finally
              partagé effaçait le style que l'ouverture venait de poser, et le
              voile restait visible après un ÉCHAP. */
-          dom.layer.classList.remove("reveil", "ouverture", "signes");
-          dom.layer.style.removeProperty("--pz-signes-duree");
+          dom.layer.classList.remove("reveil", "ouverture");
           els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
           document.body.classList.remove("puzzle-reveil");
           PUZZLE.sequenceEnCours = false;
@@ -2232,6 +2231,14 @@
               dom.brume.style.transition = "none";
               dom.brume.style.opacity = "0";
             }
+            /* Les signes gardent leur classe `on` : c'est elle qui les rend
+               visibles en jeu normal, et la retirer les éteignait pour de bon
+               une fois l'ouverture finie. On ne leur enlève que l'opacité
+               écrite à la main. */
+            if (dom.signes) {
+              dom.signes.style.removeProperty("transition");
+              dom.signes.style.removeProperty("opacity");
+            }
             [dom.fade].forEach(el => {
               if (!el) return;
               el.classList.remove("on");
@@ -2309,15 +2316,21 @@
                   if (dom.brume) {
                     dom.brume.style.opacity = String(1 - adoucir(Math.min(1, t / partBrume)));
                   }
+                  if (dom.signes) {
+                    const u = seuilSignes >= 1 ? 1 : (t - seuilSignes) / (1 - seuilSignes);
+                    dom.signes.style.opacity = String(adoucir(Math.max(0, Math.min(1, u))));
+                  }
                 }
               });
             }
           } catch (_) { }
 
-          /* Les signes se lèvent sur toute la durée du plongeon. */
-          const dureeSignes = (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE) * .78;
-          dom.layer.style.setProperty("--pz-signes-duree", `${Math.round(dureeSignes)}ms`);
-          dom.layer.classList.add("signes");
+          /* Les cercles ne s'allument que dans la dernière ligne droite : on
+             prend la part du trajet qui reste quand il ne manque plus que
+             `signes` millisecondes. */
+          const dureeTotale = window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE;
+          const seuilSignes = Math.max(0, Math.min(.98,
+            1 - (window.ILYOS_CINE ? window.ILYOS_CINE.signes() : 4000) / dureeTotale));
 
           /* La part du plongeon que dure chaque voile. Le noir s'efface sur le
              premier quart, la brume sur la première moitié : ils se recouvrent,

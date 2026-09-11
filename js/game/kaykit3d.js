@@ -5387,7 +5387,8 @@
         azimut: -300,
         altitude: 160,
         noir: 8500,     // dissolution de l'écran noir : commence tout de suite
-        pause: 1000     // noir plein avant que la chute ne commence
+        pause: 1000,    // noir plein avant que la chute ne commence
+        signes: 4000    // combien de temps AVANT LA FIN les cercles s'allument
       };
 
       /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
@@ -5667,6 +5668,8 @@
             "noir(ms)      dissolution de l'écran noir (8500 par défaut).",
             "              Elle commence dès la première image : pas de palier.",
             "pause(ms)     noir plein avant la chute (1000 par défaut)",
+            "signes(ms)    les cercles s'allument dans les N dernières",
+            "              millisecondes du plongeon (4000 par défaut)",
             "valeurs()     les réglages en place",
             "",
             "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
@@ -5679,6 +5682,7 @@
         altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
         noir(v) { if (Number.isFinite(v)) KAYKIT_CINE.noir = v; return KAYKIT_CINE.noir; },
         pause(v) { if (Number.isFinite(v)) KAYKIT_CINE.pause = v; return KAYKIT_CINE.pause; },
+        signes(v) { if (Number.isFinite(v)) KAYKIT_CINE.signes = v; return KAYKIT_CINE.signes; },
         valeurs() { return Object.assign({}, KAYKIT_CINE); }
       };
 
