@@ -239,6 +239,11 @@
            deplacer le curseur vers le haut DE L'ECRAN, pas vers la rangee 0 du
            plateau. Tout se decide donc en coordonnees ecran — pour les quatre
            voisines comme pour les cibles pertinentes. */
+        /* Le seuil d'alignement est volontairement bas, et la separation minimale
+           minuscule : vue de face, le plateau est presque de profil et l'axe de
+           profondeur ne se projette plus que sur quelques pixels. Un seuil severe
+           ecartait alors les cases situees derriere — elles devenaient
+           inatteignables sans tourner la camera. */
         function bestInDirection(candidates, dx, dy, origin) {
           let best = null, bestScore = 0;
           for (const candidate of candidates) {
@@ -246,14 +251,41 @@
             if (!point) continue;
             const vx = point.x - origin.x, vy = point.y - origin.y;
             const length = Math.hypot(vx, vy);
-            if (length < 1) continue;
+            if (length < .5) continue;
             // Cap d'abord, distance ensuite : a cap egal, la plus proche gagne.
             const alignment = ((vx / length) * dx + (vy / length) * dy);
-            if (alignment < .4) continue;
+            if (alignment < .25) continue;
             const score = alignment / (1 + length / 240);
             if (score > bestScore) { bestScore = score; best = candidate; }
           }
           return best;
+        }
+
+        /* FILET DE SECURITE : aucune cible valide ne doit dependre de l'angle de
+           camera. Deux cases distinctes peuvent se projeter au meme point — un
+           gardien devant, un plateau vu de face — et aucun geometrie ne les
+           departagera jamais. On garde donc un parcours par ordre de plateau,
+           independant de la vue : il traverse toutes les cibles, toujours. */
+        function orderedTargets() {
+          const cibles = pointsOfInterest();
+          if (!cibles || !cibles.length) return null;
+          return [...cibles].sort((a, b) => (a.r - b.r) || (a.c - b.c));
+        }
+
+        function cycleTargets(direction) {
+          const cibles = orderedTargets();
+          if (!cibles) return false;
+          const rang = pad.cursor
+            ? cibles.findIndex(cell => cell.r === pad.cursor.r && cell.c === pad.cursor.c)
+            : -1;
+          const suivant = rang < 0
+            ? (direction > 0 ? 0 : cibles.length - 1)
+            : (rang + direction + cibles.length) % cibles.length;
+          const cible = cibles[suivant];
+          if (pad.cursor && cible.r === pad.cursor.r && cible.c === pad.cursor.c) return false;
+          pad.cursor = { r: cible.r, c: cible.c };
+          pad.special = null;
+          return true;
         }
 
         function stepCursor(dx, dy) {
@@ -294,6 +326,11 @@
                 interesting.filter(cell => cell.r !== r || cell.c !== c),
                 dx, dy, origin
               );
+              /* Rien dans cette direction alors que des cibles existent : la vue
+                 les superpose. On avance dans l'ordre du plateau plutot que de
+                 laisser le joueur bloque ou de le renvoyer sur une case sans
+                 interet. */
+              if (!best && interesting.length > 1) return cycleTargets(dx + dy >= 0 ? 1 : -1);
             }
             if (!best) {
               const neighbours = [{ r: r - 1, c }, { r: r + 1, c }, { r, c: c - 1 }, { r, c: c + 1 }]
@@ -753,8 +790,15 @@
             return;
           }
 
-          if (justPressed(gamepad, BUTTON.LB)) moveChoice(-1);
-          if (justPressed(gamepad, BUTTON.RB)) moveChoice(1);
+          const parcoursContextuel = contextChoices().length > 0;
+          if (justPressed(gamepad, BUTTON.LB)) {
+            if (parcoursContextuel) moveChoice(-1);
+            else if (cycleTargets(-1)) { setHud(null); refreshHover(); }
+          }
+          if (justPressed(gamepad, BUTTON.RB)) {
+            if (parcoursContextuel) moveChoice(1);
+            else if (cycleTargets(1)) { setHud(null); refreshHover(); }
+          }
 
           if (justPressed(gamepad, BUTTON.A)) {
             const choix = pad.choiceIndex >= 0 ? syncChoice() : null;

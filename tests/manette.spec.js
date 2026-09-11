@@ -399,8 +399,14 @@ test('l’île se pose à la manette même après un choix à la souris', async 
   const tiroirOuvert = () => page.evaluate(
     () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
   );
-  if (!(await tiroirOuvert())) await page.locator('#ov2Island').click({ force: true });
-  await page.locator('#islandSelector .island-choice:not([disabled])').first().click({ force: true });
+  /* dispatchEvent plutôt qu'un vrai clic : le bouton ÎLE passe brièvement en
+     « ov2-off » quand le tiroir s'ouvre de lui-même, et un clic réel exige une
+     boîte visible — la préparation du test échouait alors, pas la manette. */
+  if (!(await tiroirOuvert())) {
+    await page.locator('#ov2Island').dispatchEvent('click');
+    await page.waitForTimeout(500);
+  }
+  await page.locator('#islandSelector .island-choice:not([disabled])').first().dispatchEvent('click');
 
   await page.waitForFunction(() => {
     const racine = window.kaykit3D?.dynamicGroup;
@@ -420,15 +426,25 @@ test('l’île se pose à la manette même après un choix à la souris', async 
   expect(apres, 'le stick doit déplacer le curseur sur le plateau').not.toBeNull();
   expect(apres, 'le curseur doit avoir changé de case malgré le tiroir ouvert').not.toBe(depart);
 
-  // Et A doit réellement poser l'île : l'aperçu cède la place à une vraie île.
-  await appuyer(page, B.A);
-  await page.waitForFunction(() => {
+  /* Et A doit réellement poser l'île : l'aperçu cède la place à une vraie île.
+     Toutes les cases n'accueillent pas une île — le curseur peut tomber sur une
+     position refusée — donc on essaie quelques emplacements, comme un joueur.
+     Ce qui est vérifié ici, c'est que la pose ABOUTIT à la manette. */
+  const encoreEnApercu = () => page.evaluate(() => {
     const racine = window.kaykit3D?.dynamicGroup;
     if (!racine) return false;
     let apercu = false;
     racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') apercu = true; });
-    return !apercu;
-  }, null, { timeout: 8000 });
+    return apercu;
+  });
+
+  let posee = false;
+  for (let essai = 0; essai < 10 && !posee; essai++) {
+    await appuyer(page, B.A);
+    posee = !(await encoreEnApercu());
+    if (!posee) await incliner(page, essai % 2 ? 1 : 0, 1, 140);
+  }
+  expect(posee, 'A doit finir par poser l’île à la manette').toBe(true);
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
