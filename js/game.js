@@ -5771,7 +5771,11 @@
           bloomForce: KAYKIT_BLOOM.force,
           bloomSeuil: KAYKIT_BLOOM.seuil,
           rim: KAYKIT_CLOUD_BACKLIT.rimStrength,
-          poussieres: champs.map(champ => champ.object.material.opacity)
+          rimPower: KAYKIT_CLOUD_BACKLIT.rimPower,
+          poussieres: champs.map(champ => ({
+            opacite: champ.object.material.opacity,
+            taille: champ.object.material.size
+          }))
         };
       }
 
@@ -5785,15 +5789,26 @@
         KAYKIT_BLOOM.seuil = melange(base.bloomSeuil * .55, base.bloomSeuil);
 
         KAYKIT_CLOUD_BACKLIT.rimStrength = melange(base.rim * .22, base.rim);
+        /* Un liseré large et mou au loin, qui se resserre en approchant : c'est
+           la même lumière, vue de plus près. */
+        KAYKIT_CLOUD_BACKLIT.rimPower = melange(base.rimPower * .55, base.rimPower);
         kaykitBacklitCloudCache.forEach(mat => {
           const sh = mat.userData && mat.userData.shader;
-          if (sh && sh.uniforms.uRimStrength) sh.uniforms.uRimStrength.value = KAYKIT_CLOUD_BACKLIT.rimStrength;
+          if (!sh) return;
+          if (sh.uniforms.uRimStrength) sh.uniforms.uRimStrength.value = KAYKIT_CLOUD_BACKLIT.rimStrength;
+          if (sh.uniforms.uRimPower) sh.uniforms.uRimPower.value = KAYKIT_CLOUD_BACKLIT.rimPower;
         });
 
+        /* Les poussières montent en OPACITÉ et en TAILLE. L'opacité seule les
+           faisait apparaître sans qu'elles se rapprochent ; la taille qui croît
+           donne l'impression qu'on descend dedans, ce qui est précisément ce
+           que fait la caméra. */
         const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
         champs.forEach((champ, i) => {
           const fin = base.poussieres[i];
-          if (Number.isFinite(fin)) champ.object.material.opacity = melange(fin * .12, fin);
+          if (!fin) return;
+          if (Number.isFinite(fin.opacite)) champ.object.material.opacity = melange(fin.opacite * .12, fin.opacite);
+          if (Number.isFinite(fin.taille)) champ.object.material.size = melange(fin.taille * .45, fin.taille);
         });
       }
 
