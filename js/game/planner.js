@@ -1382,6 +1382,30 @@
          liste entière ne coûte donc rien de plus que d'en demander dix. */
       const PLAN_POSE_ENUM_MAX = 100000;
 
+      // Départager les apparitions équivalentes seulement sur les poses
+      // présélectionnées, avec le terrain réellement créé et les règles actives.
+      function plannerSpawnMoinsExpose(playerId, pose, intention, initial) {
+        if (!canCreateGuardian(playerId) || !plannerAdversaire(playerId)) return initial;
+        const ecart = cellule => Math.abs(Math.min(...intention.cibles.map(([r, c]) =>
+          Math.abs(cellule[0] - r) + Math.abs(cellule[1] - c))) - intention.contact);
+        const reference = ecart(initial);
+        const equivalentes = pose.cells.filter(cellule =>
+          (cellule[0] !== initial[0] || cellule[1] !== initial[1])
+          && !characterAt(cellule[0], cellule[1]) && ecart(cellule) === reference);
+        if (!equivalentes.length) return initial;
+        for (const spawn of [initial, ...equivalentes]) {
+          const clone = cloneStateForSimulation();
+          const expose = withSimulatedState(clone, () => {
+            const resultat = applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId,
+              pose.relCells, pose.anchor, spawn);
+            if (!resultat || !resultat.gardienId) return true;
+            return plannerMenaceExpulsion(playerId, spawn[0], spawn[1]);
+          });
+          if (!expose) return spawn;
+        }
+        return initial;
+      }
+
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
         /* Le biais vers la zone adverse ne s'active que sous menace réelle.
@@ -1441,7 +1465,8 @@
           let places = 0;
           for (const n of notees) {
             if (places >= plafonds().poseParIntention) break;
-            if (proposer(n.pose, n.spawn, intention.but, n.indice)) places++;
+            const spawn = plannerSpawnMoinsExpose(playerId, n.pose, intention, n.spawn);
+            if (proposer(n.pose, spawn, intention.but, n.indice)) places++;
           }
         }
 
