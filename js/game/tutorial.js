@@ -517,6 +517,12 @@
       function tutoLockCamera(persistMs) {
         const apply = () => {
           try {
+            /* Une cinématique possède la caméra du début à la fin. Ce verrou-ci
+               se réapplique toutes les 400 ms et remettait `cameraMode` en AUTO
+               en plein mouvement — le plongeon tenait quand même, parce qu'il
+               réécrit la caméra à chaque image, mais la priorité n'était vraie
+               que par accident. */
+            if (window.ILYOS_CINEMATIQUE_ACTIVE) return;
             if (typeof kaykit3D !== "undefined" && kaykit3D) {
               // On garde orbit.enabled = true : sinon la boucle de rendu
               // n'applique plus AUCUN mouvement caméra, y compris nos propres

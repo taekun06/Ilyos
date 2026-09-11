@@ -724,6 +724,24 @@
 
           #puzzleLayer .pz-fade{position:absolute;inset:0;z-index:11;pointer-events:none;
             background:#04060d;opacity:0;transition:opacity .7s ease;}
+          /* LA BRUME DE L'OUVERTURE. Elle est peinte ICI, au-dessus de l'image,
+             et non dans la scène : le brouillard 3D ne touche que les objets
+             compris entre ses deux distances, or au départ de la cinématique le
+             monde est tout entier au-delà — et le dôme, l'archipel lointain et
+             les poussières portent fog:false. La brume de scène n'avait donc
+             aucun effet visible, quelle que soit sa densité. Un voile, lui, se
+             voit toujours. */
+          /* Discrète, et pesant vers le BAS — là où le monde se trouve. Un
+             premier essai couvrait tout l'écran d'un blanc dense : le vide
+             étoilé devenait un aplat gris et on ne voyait plus rien du tout.
+             Une brume qui cache tout ne se distingue pas d'un écran vide. */
+          #puzzleLayer .pz-brume{position:absolute;inset:0;z-index:10;pointer-events:none;
+            opacity:0;transition:opacity 1.2s ease;
+            background:
+              radial-gradient(130% 62% at 50% 104%, rgba(226,234,248,.72) 0%,
+                rgba(198,214,240,.42) 42%, rgba(168,190,224,.14) 74%, rgba(150,175,214,0) 100%),
+              linear-gradient(180deg, rgba(180,200,232,0) 34%, rgba(206,222,246,.30) 100%);}
+          #puzzleLayer .pz-brume.on{opacity:1;}
           #puzzleLayer .pz-fade.on{opacity:1;}
 
           /* Le nom du lieu où l'on vient d'arriver, sur le noir, puis tenu
@@ -765,6 +783,14 @@
           #puzzleLayer.reveil .pz-side,
           #puzzleLayer.reveil .pz-signes{opacity:0;transition:opacity .8s ease;
             pointer-events:none;}
+          /* EXCEPTION : l'ouverture des Voies garde ses signes célestes.
+             Les anneaux dorés, les glyphes et les poussières sont TOUT ce qu'il
+             y a à voir pendant les premières secondes, quand la caméra est à
+             240 unités d'altitude et que le monde 3D est hors de portée. Les
+             masquer comme le reste du chrome — ce que fait toute séquence —
+             laissait un aplat bleu parfaitement vide. Ce sont eux qui font le
+             ciel habité du plan d'ouverture, pas le décor 3D. */
+          #puzzleLayer.reveil.ouverture .pz-signes{opacity:1;}
 
           #puzzleLayer .pz-verite{display:inline-block;margin-bottom:10px;
             font-family:'Cinzel Decorative','Almendra',serif;font-size:16px;
@@ -1939,6 +1965,7 @@
           <div class="pz-bloom"></div>
           <div class="pz-lointain"></div>
           <div class="pz-caption"></div>
+          <div class="pz-brume"></div>
           <div class="pz-fade"></div>
           <div class="pz-lieu"></div>
           <div class="pz-tools">
@@ -1972,6 +1999,7 @@
           lointain: layer.querySelector(".pz-lointain"),
           caption: layer.querySelector(".pz-caption"),
           fade: layer.querySelector(".pz-fade"),
+          brume: layer.querySelector(".pz-brume"),
           lieu: layer.querySelector(".pz-lieu")
         };
         return PUZZLE.dom;
@@ -2044,7 +2072,13 @@
          Toutes deux effacent le même chrome, se passent du même geste et
          doivent se démonter même si un appel de caméra jette. Le corps reçoit
          `attendre`, qui rend la main dès que le joueur veut passer. */
-      async function puzzleSequence(corps) {
+      /* `sortie` choisit ce qui interrompt la séquence :
+           - par défaut, le moindre geste (clic ou touche) — c'est ce que veulent
+             le prologue et les voyages, où le joueur veut surtout aller jouer ;
+           - "echap", ÉCHAP et rien d'autre. Réservé à l'ouverture des Voies :
+             elle dure une demi-minute et se regarde, un clic parasite ou une
+             touche effleurée ne doit pas la faire sauter. */
+      async function puzzleSequence(corps, { sortie = "geste" } = {}) {
         const dom = PUZZLE.dom;
         if (!dom || PUZZLE.sequenceEnCours) return;
         PUZZLE.sequenceEnCours = true;
@@ -2056,9 +2090,16 @@
            recevrait aussitôt — le voyage se jouait en entier en moins d'une
            seconde. On n'arme donc la sortie qu'une fois ce clic passé. */
         const passer = () => { PUZZLE.sequenceSaute = true; };
+        const echapSeul = sortie === "echap";
+        const surTouche = echapSeul
+          ? (event => { if (event.key === "Escape") passer(); })
+          : passer;
         const armement = setTimeout(() => {
-          dom.layer.addEventListener("click", passer, { once: true });
-          window.addEventListener("keydown", passer, { once: true });
+          if (!echapSeul) dom.layer.addEventListener("click", passer, { once: true });
+          /* `once` ne convient pas en mode ÉCHAP : la première touche venue
+             consommerait l'écouteur sans rien interrompre, et ÉCHAP n'aurait
+             plus personne pour l'entendre. */
+          window.addEventListener("keydown", surTouche, echapSeul ? false : { once: true });
         }, 260);
         const attendre = async ms => {
           const fin = Date.now() + ms;
@@ -2073,17 +2114,137 @@
         } finally {
           clearTimeout(armement);
           dom.layer.removeEventListener("click", passer);
-          window.removeEventListener("keydown", passer);
+          window.removeEventListener("keydown", surTouche);
           dom.caption.classList.remove("show");
           dom.bloom.classList.remove("on");
           dom.lointain.classList.remove("on");
           dom.lieu.classList.remove("show");
           dom.fade.classList.remove("on");
-          dom.layer.classList.remove("reveil");
+          dom.brume?.classList.remove("on");
+          if (dom.brume) dom.brume.style.transition = "";
+          dom.layer.classList.remove("reveil", "ouverture");
           els.gameScreen && els.gameScreen.classList.remove("puzzle-reveil");
           document.body.classList.remove("puzzle-reveil");
           PUZZLE.sequenceEnCours = false;
         }
+      }
+
+      /* ---------- L'OUVERTURE DES VOIES -------------------------------------
+
+         Une seule fois, à la toute première entrée dans la campagne : on tombe
+         d'un ciel vide jusqu'au premier Sanctuaire, sans coupure.
+
+         Rien n'est ajouté à la scène. L'écran vide du départ n'est pas un décor
+         peint : à 240 unités d'altitude le monde passe derrière la brume
+         (fogFar 145) et disparaît tout seul. Ce qui reste — les anneaux dorés
+         des Voies et les étoiles — appartient déjà au ciel du jeu.
+
+         Les nombres ci-dessous ont été réglés à l'écran avant d'être écrits ici.
+         Ils vont ensemble : changer `recul` sans savoir qu'il est écrêté à
+         maxZoom (voir kaykitJouerCinematique) ne fait rien du tout. */
+      const PUZZLE_OUVERTURE_DEPART = { recul: 800, inclinaison: -62, hauteur: 240 };
+      const PUZZLE_OUVERTURE_ARRIVEE = { inclinaison: 37.2, hauteur: -.5 };
+      const PUZZLE_OUVERTURE_DUREE = 21000;
+      const PUZZLE_OUVERTURE_NOIR = 2600;    // l'écran noir, tenu
+      const PUZZLE_OUVERTURE_FONDU = 3200;   // la sortie du noir, très étalée
+      /* Le vide n'est plus « tenu » longtemps. L'ancienne pose de 3,4 s
+         s'ajoutait à une courbe très plate au départ : on obtenait neuf secondes
+         d'image parfaitement immobile après le noir. La chute commence donc
+         pendant que le noir finit de se lever, et c'est la brume qui occupe le
+         regard le temps que le mouvement se voie. */
+      const PUZZLE_OUVERTURE_VIDE = 900;
+      const PUZZLE_OUVERTURE_BRUME = 7000;   // la dissolution du voile laiteux
+
+      /* Le recul d'arrivée n'est PAS une constante. Le preset de vue face
+         calcule le sien à partir du plateau (voir ILYOS_frontCameraDistance) ;
+         une valeur écrite en dur ne tombait pas dessus, et la caméra sautait de
+         trois unités à l'image exacte où la cinématique rendait la main. Le
+         point d'arrivée se demande donc à celui qui en décide. */
+      function puzzleOuvertureArrivee() {
+        const arrivee = Object.assign({}, PUZZLE_OUVERTURE_ARRIVEE);
+        let recul = NaN;
+        try { recul = Number(window.ILYOS_frontCameraDistance?.()); } catch (_) { }
+        arrivee.recul = Number.isFinite(recul) ? recul : 17;
+        return arrivee;
+      }
+
+      /* À CHAQUE venue sur le premier Sanctuaire — pas seulement la première.
+         L'appelant limite déjà aux vraies entrées : un « Recommencer » ne la
+         rejoue pas, sans quoi elle deviendrait une taxe d'une demi-minute sur
+         l'essai-erreur, qui est le mode de jeu normal d'une énigme. */
+      function puzzleOuvertureDue(def) {
+        return !!def && def.id === "p01-seuil";
+      }
+
+      function puzzleOuvertureVoies() {
+        return puzzleSequence(async (dom, attendre) => {
+          /* 1. LE NOIR. Il couvre la mise en place : la caméra est téléportée
+                hors du monde pendant qu'il est encore opaque, donc le saut
+                n'est jamais vu. */
+          /* Le noir entre vite (on vient d'un clic) et s'en va très lentement :
+             c'est la sortie qui porte la sensation, pas l'entrée. La durée est
+             posée ici plutôt que dans la feuille de style — le même voile sert
+             aux transitions entre Sanctuaires, où un fondu de trois secondes
+             serait interminable. */
+          /* Le voile de brume est posé SOUS le noir, donc invisible pour
+             l'instant : quand le noir se lèvera, il découvrira du laiteux et non
+             l'image nette. C'est là toute la progression. */
+          if (dom.brume) {
+            dom.brume.style.transition = "opacity 200ms ease";
+            dom.brume.classList.add("on");
+          }
+          dom.layer.classList.add("ouverture");
+          dom.fade.style.transition = "opacity 140ms ease";
+          dom.fade.classList.add("on");
+          await attendre(PUZZLE_OUVERTURE_NOIR);
+          if (PUZZLE.sequenceSaute) return;
+
+          let mouvement = Promise.resolve(false);
+          try {
+            if (typeof kaykitJouerCinematique === "function") {
+              mouvement = kaykitJouerCinematique({
+                depart: PUZZLE_OUVERTURE_DEPART,
+                arrivee: puzzleOuvertureArrivee(),
+                duree: PUZZLE_OUVERTURE_DUREE,
+                /* Le mouvement ne part qu'après le fondu ET le temps de vide :
+                   la caméra reste tenue à son poste, verrou compris. */
+                attente: PUZZLE_OUVERTURE_FONDU + PUZZLE_OUVERTURE_VIDE
+              });
+            }
+          } catch (_) { }
+
+          /* 2. LE FONDU, très étalé. Le monde n'apparaît pas : c'est le noir
+                qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
+                brume est encore presque fermée — elle ne s'ouvrira qu'en
+                tombant (voir kaykitCinematiqueBrume). */
+          dom.fade.style.transition = `opacity ${PUZZLE_OUVERTURE_FONDU}ms cubic-bezier(.35,0,.65,1)`;
+          dom.fade.classList.remove("on");
+          /* La brume se dissout beaucoup plus lentement que le noir, et sa
+             dissolution déborde largement sur le début de la chute : le monde
+             se découvre pendant qu'on tombe déjà. */
+          if (dom.brume) {
+            dom.brume.style.transition = `opacity ${PUZZLE_OUVERTURE_BRUME}ms cubic-bezier(.3,0,.6,1)`;
+            dom.brume.classList.remove("on");
+          }
+          await attendre(PUZZLE_OUVERTURE_FONDU);
+
+          /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
+                lui-même — la dernière image du mouvement est la première du
+                jeu, sans raccord à régler. */
+          while (!PUZZLE.sequenceSaute
+            && typeof kaykitCinematiqueEnCours === "function"
+            && kaykitCinematiqueEnCours()) {
+            await tutoWait(80);
+          }
+          /* Sauter, c'est poser t = 1 — le même chemin que la fin normale, donc
+             aucun état à demi appliqué et aucune caméra restée verrouillée. */
+          if (PUZZLE.sequenceSaute) {
+            try { kaykitArreterCinematique(); } catch (_) { }
+          }
+          await mouvement;
+          // Le voile retrouve la durée que partagent les autres séquences.
+          dom.fade.style.transition = "";
+        }, { sortie: "echap" });
       }
 
       /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
@@ -2885,6 +3046,13 @@
         ["contextmenu", "pointerdown", "mousedown", "mouseup", "auxclick"].forEach(type =>
           window.addEventListener(type, puzzleRightClickGuard, true));
 
+        /* La bande-son du Cabinet. Elle ne démarrait que sur
+           `ilyos-puzzle-requested`, émis par le seul bouton PUZZLES du menu :
+           toute autre façon d'ouvrir une énigme la laissait muette. `start` ne
+           fait rien si elle tourne déjà, donc le chemin par le menu est
+           inchangé et la piste n'est jamais reprise à zéro. */
+        try { window.ILYOS_PUZZLE_MUSIC?.start?.(); } catch (_) { }
+
         tutoRender();
         puzzleSyncOverlay();
         puzzleShowObjectif();
@@ -2897,7 +3065,16 @@
         /* La phrase d'entrée à la PREMIÈRE venue seulement : la relire à chaque
            « Recommencer » deviendrait une taxe sur l'essai-erreur, qui est le
            mode de jeu normal d'une énigme. */
-        if (!muet && !replay && !reprise) puzzleApproche(def);
+        if (!muet && !replay && !reprise) {
+          /* L'ouverture précède le prologue : on arrive dans le monde, puis le
+             monde parle. Les deux ne se chevauchent pas — puzzleSequence n'en
+             autorise qu'une à la fois. */
+          if (puzzleOuvertureDue(def)) {
+            puzzleOuvertureVoies().then(() => puzzleApproche(def));
+          } else {
+            puzzleApproche(def);
+          }
+        }
       }
 
       function puzzleRestart() {
@@ -3639,6 +3816,11 @@
         startById: (id, options) => puzzleStart(PUZZLES.findIndex(def => def.id === id),
           { force: true, muet: true, ...options }),
         restart: puzzleRestart,
+        /* Rejoue l'ouverture sur le Sanctuaire en cours, sans toucher à la clé
+           qui dit qu'elle a déjà été vue. Une cinématique ne se règle qu'en la
+           regardant tourner ; l'atteindre en vidant le stockage à chaque essai
+           n'est pas praticable. */
+        playOpeningCinematic: () => puzzleOuvertureVoies(),
         /* Joue la TRANSITION vers un Sanctuaire depuis celui en cours, sans
            passer par une victoire. Une transition ne se règle qu'en la
            regardant tourner des dizaines de fois ; l'atteindre en résolvant
