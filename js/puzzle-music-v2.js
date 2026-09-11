@@ -296,7 +296,11 @@
     }
   });
 
-  window.addEventListener('ilyos-puzzle-requested', startPuzzleMusic);
+  /* La musique ne démarre PLUS à l'ouverture du menu des Voies : elle
+     accompagne une énigme, pas une liste. C'est puzzleStart qui la lance
+     désormais (voir js/game/puzzle.js), donc au premier Sanctuaire réellement
+     ouvert — et elle continue ensuite de l'un à l'autre.
+     `startPuzzleMusic` reste exporté par ILYOS_PUZZLE_MUSIC.start. */
   window.addEventListener('pagehide', () => {
     if (gameMusicMuted) restoreGameMusic();
   });

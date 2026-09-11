@@ -2168,7 +2168,12 @@
          Elle se termine bien après que la chute est engagée, si bien qu'on ne
          voit jamais ni un écran noir immobile, ni un rideau qui se lève d'un
          coup : le monde s'éclaircit pendant qu'on tombe déjà dedans. */
-      const PUZZLE_OUVERTURE_NOIR = 260;     // le temps de poser la caméra, pas plus
+      /* Le noir PLEIN, avant que quoi que ce soit ne bouge. Il couvre la mise
+         en place de la caméra — c'était sa seule raison d'être — mais il dure
+         maintenant assez pour se lire comme un temps : on arrive de nulle part,
+         il ne se passe rien, puis on tombe. Le mouvement ne démarre qu'après.
+         Réglable : ILYOS_CINE.pause(). */
+      const PUZZLE_OUVERTURE_NOIR = 1000;
       const PUZZLE_OUVERTURE_FONDU = 8500;   // la dissolution, réglable : ILYOS_CINE.noir()
       /* Le vide n'est plus « tenu » longtemps. L'ancienne pose de 3,4 s
          s'ajoutait à une courbe très plate au départ : on obtenait neuf secondes
@@ -2282,7 +2287,7 @@
           dom.fade.style.opacity = "1";
           // Le temps que le noir soit réellement opaque : la caméra est
           // téléportée derrière lui, jamais devant.
-          await attendre(PUZZLE_OUVERTURE_NOIR);
+          await attendre(window.ILYOS_CINE ? window.ILYOS_CINE.pause() : PUZZLE_OUVERTURE_NOIR);
           if (PUZZLE.sequenceSaute) return;
 
           let mouvement = Promise.resolve(false);
@@ -2309,15 +2314,6 @@
             }
           } catch (_) { }
 
-          /* LE TITRE, sur le noir. Même traitement que le nom d'un Sanctuaire
-             à l'arrivée d'un voyage (voir la « voie au noir » plus bas) : c'est
-             le seul texte de toute l'ouverture, et il est écrit sur un rideau
-             qui se lève déjà. La caméra tombe derrière lui pendant ce temps —
-             quand il s'efface, le monde est en train d'apparaître, pas en train
-             d'attendre. */
-          dom.lieu.innerHTML = `<span class="nom">ILYOS</span>`;
-          dom.lieu.classList.add("show");
-
           /* Les signes se lèvent sur toute la durée du plongeon. */
           const dureeSignes = (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE) * .78;
           dom.layer.style.setProperty("--pz-signes-duree", `${Math.round(dureeSignes)}ms`);
@@ -2338,9 +2334,6 @@
                 qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
                 brume est encore presque fermée — elle ne s'ouvrira qu'en
                 tombant (voir kaykitCinematiqueBrume). */
-
-          await attendre(window.ILYOS_CINE ? window.ILYOS_CINE.titre() : 3600);
-          dom.lieu.classList.remove("show");
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du
