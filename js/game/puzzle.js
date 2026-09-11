@@ -2309,6 +2309,15 @@
             }
           } catch (_) { }
 
+          /* LE TITRE, sur le noir. Même traitement que le nom d'un Sanctuaire
+             à l'arrivée d'un voyage (voir la « voie au noir » plus bas) : c'est
+             le seul texte de toute l'ouverture, et il est écrit sur un rideau
+             qui se lève déjà. La caméra tombe derrière lui pendant ce temps —
+             quand il s'efface, le monde est en train d'apparaître, pas en train
+             d'attendre. */
+          dom.lieu.innerHTML = `<span class="nom">ILYOS</span>`;
+          dom.lieu.classList.add("show");
+
           /* Les signes se lèvent sur toute la durée du plongeon. */
           const dureeSignes = (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE) * .78;
           dom.layer.style.setProperty("--pz-signes-duree", `${Math.round(dureeSignes)}ms`);
@@ -2329,6 +2338,9 @@
                 qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
                 brume est encore presque fermée — elle ne s'ouvrira qu'en
                 tombant (voir kaykitCinematiqueBrume). */
+
+          await attendre(window.ILYOS_CINE ? window.ILYOS_CINE.titre() : 3600);
+          dom.lieu.classList.remove("show");
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du

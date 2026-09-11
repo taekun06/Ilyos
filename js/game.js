@@ -5759,7 +5759,8 @@
         duree: 21000,
         azimut: -300,
         altitude: 160,
-        noir: 8500      // dissolution de l'écran noir : commence tout de suite
+        noir: 8500,     // dissolution de l'écran noir : commence tout de suite
+        titre: 3600     // combien de temps ILYOS reste écrit sur le noir
       };
 
       /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
@@ -6038,6 +6039,7 @@
             "altitude(u)   hauteur de départ (160 par défaut)",
             "noir(ms)      dissolution de l'écran noir (8500 par défaut).",
             "              Elle commence dès la première image : pas de palier.",
+            "titre(ms)     durée du titre ILYOS sur le noir (3600 par défaut)",
             "valeurs()     les réglages en place",
             "",
             "Pour voir l'effet : ILYOS_PUZZLE.playOpeningCinematic()",
@@ -6049,6 +6051,7 @@
         azimut(v) { if (Number.isFinite(v)) KAYKIT_CINE.azimut = v; return KAYKIT_CINE.azimut; },
         altitude(v) { if (Number.isFinite(v)) KAYKIT_CINE.altitude = v; return KAYKIT_CINE.altitude; },
         noir(v) { if (Number.isFinite(v)) KAYKIT_CINE.noir = v; return KAYKIT_CINE.noir; },
+        titre(v) { if (Number.isFinite(v)) KAYKIT_CINE.titre = v; return KAYKIT_CINE.titre; },
         valeurs() { return Object.assign({}, KAYKIT_CINE); }
       };
 
@@ -31727,6 +31730,15 @@
             }
           } catch (_) { }
 
+          /* LE TITRE, sur le noir. Même traitement que le nom d'un Sanctuaire
+             à l'arrivée d'un voyage (voir la « voie au noir » plus bas) : c'est
+             le seul texte de toute l'ouverture, et il est écrit sur un rideau
+             qui se lève déjà. La caméra tombe derrière lui pendant ce temps —
+             quand il s'efface, le monde est en train d'apparaître, pas en train
+             d'attendre. */
+          dom.lieu.innerHTML = `<span class="nom">ILYOS</span>`;
+          dom.lieu.classList.add("show");
+
           /* Les signes se lèvent sur toute la durée du plongeon. */
           const dureeSignes = (window.ILYOS_CINE ? window.ILYOS_CINE.duree() : PUZZLE_OUVERTURE_DUREE) * .78;
           dom.layer.style.setProperty("--pz-signes-duree", `${Math.round(dureeSignes)}ms`);
@@ -31747,6 +31759,9 @@
                 qui s'en va. Ce qu'on découvre dessous est un ciel vide, et la
                 brume est encore presque fermée — elle ne s'ouvrira qu'en
                 tombant (voir kaykitCinematiqueBrume). */
+
+          await attendre(window.ILYOS_CINE ? window.ILYOS_CINE.titre() : 3600);
+          dom.lieu.classList.remove("show");
 
           /* 3. LA CHUTE, puis la caméra rendue au jeu par le preset de vue face
                 lui-même — la dernière image du mouvement est la première du
