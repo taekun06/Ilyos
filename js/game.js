@@ -25565,8 +25565,51 @@
         return retenus.concat(variantes).slice(0, plafond);
       }
 
+      function plannerMenacesDefense(playerId) {
+        return activeArtifacts().flatMap(couronne => {
+          const porteur = couronne.carrierId && characterById(couronne.carrierId);
+          if (!porteur || porteur.player === playerId) return [];
+          const adverse = state.players[porteur.player];
+          if (aiValidationDistanceForPlayer(adverse, porteur.r, porteur.c) > 3) return [];
+          const villages = villagesForPlayer(adverse).map(v => cornerCrownCellsForVillage(v));
+          const distance = cells => Math.min(...cells.map(([r, c]) =>
+            Math.abs(r - porteur.r) + Math.abs(c - porteur.c)));
+          villages.sort((a, b) => distance(a) - distance(b));
+          return [{ couronneId: couronne.id, porteurId: porteur.id, village: villages[0] || [],
+            imminente: isCrownValidationCell(adverse, porteur.r, porteur.c) }];
+        });
+      }
+
+      function plannerPrioriteDefense(playerId, menaces) {
+        if (!menaces.length) return 0;
+        if (state.winner != null) return state.winner === playerId ? 4 : -1;
+        const couronnes = activeArtifacts();
+        // Ne pas sacrifier un autre point pour éliminer un seul porteur.
+        if (couronnes.some(a => {
+          const g = a.carrierId && characterById(a.carrierId);
+          return g && g.player !== playerId
+            && isCrownValidationCell(state.players[g.player], g.r, g.c)
+            && !validationBloqueeParAdversaire(state.players[g.player], g.r, g.c);
+        })) return 0;
+        return Math.min(...menaces.map(menace => {
+          if (!characterById(menace.porteurId)) return 3;
+          const couronne = couronnes.find(a => a.id === menace.couronneId);
+          const porteur = couronne && couronne.carrierId && characterById(couronne.carrierId);
+          if (porteur && porteur.player === playerId) return 2;
+          const bloque = menace.village.some(([r, c]) => {
+            const gardien = characterAt(r, c);
+            return gardien && gardien.player === playerId;
+          });
+          const ecarte = menace.imminente && (!porteur
+            || !isCrownValidationCell(state.players[porteur.player], porteur.r, porteur.c));
+          return bloque || ecarte ? 1 : 0;
+        }));
+      }
+
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
+        const menacesDefense = options.prioriteDefense ? plannerMenacesDefense(playerId) : [];
+        const comparerDefense = (a, b) => (b.prioriteDefense || 0) - (a.prioriteDefense || 0);
         let debut = performance.now();
         let etatsExplores = 0;
         let candidatsGeneres = 0;
@@ -25578,6 +25621,7 @@
         };
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
         racine.terminal = racine.etat.islandPlacedThisTurn;
+        racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
 
         /* Sous autopsie, on relève AVANT la recherche : la position de départ
            est alors intacte, et le relevé décrit exactement ce que la
@@ -25646,6 +25690,8 @@
                 if (!applique) return null;
                 return {
                   note: evaluateStrategicState(playerId),
+                  prioriteDefense: clone.islandPlacedThisTurn
+                    ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
                 };
               });
@@ -25661,6 +25707,7 @@
                 // Une transition gratuite ne consomme pas de profondeur.
                 decisions: noeud.decisions + (plannerActionGratuite(action) ? 0 : 1),
                 note: resultat.note,
+                prioriteDefense: resultat.prioriteDefense,
                 terminal: clone.islandPlacedThisTurn
               };
               suivants.push(enfant);
@@ -25668,7 +25715,8 @@
               // « S'arrêter ici » entre en concurrence avec toute continuation.
               if (enfant.terminal) {
                 terminaux.push(enfant);
-                if (!meilleur || enfant.note > meilleur.note) meilleur = enfant;
+                if (!meilleur || comparerDefense(enfant, meilleur) < 0
+                  || (comparerDefense(enfant, meilleur) === 0 && enfant.note > meilleur.note)) meilleur = enfant;
               }
             }
           }
@@ -25698,7 +25746,9 @@
           // entre l'état prévu et l'état réellement obtenu.
           empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,
           // Finalistes triés, prêts pour l'anticipation adverse (V3).
-          finalistes: !racine.terminal && !plannerMenaceValidationAdverse(playerId)
+          finalistes: menacesDefense.length
+            ? terminaux.sort((a, b) => comparerDefense(a, b) || b.note - a.note).slice(0, 8)
+            : !racine.terminal && !plannerMenaceValidationAdverse(playerId)
             ? plannerFinalistesDiversifies(terminaux, 8)
             : terminaux.sort((a, b) => b.note - a.note).slice(0, 8),
           releveCandidats,
@@ -25889,7 +25939,7 @@
       function plannerChercherPlanRobuste(playerId, options) {
         if (plannerSansAnticipation.has(playerId)) return plannerChercherPlan(playerId, options || {});
         const debutTotal = performance.now();
-        const principal = plannerChercherPlan(playerId, options || {});
+        const principal = plannerChercherPlan(playerId, { ...options, prioriteDefense: true });
         const finalistes = (principal.finalistes || []).slice(0, PLAN_RIPOSTE.finalistes);
 
         if (finalistes.length < 2) {
@@ -25937,7 +25987,8 @@
         examines.forEach(e => {
           if (!e.noeud.plan.length) e.robustesse.note -= PLAN_POIDS.tempoPerdu;
         });
-        examines.sort((a, b) => b.robustesse.note - a.robustesse.note);
+        examines.sort((a, b) => (b.noeud.prioriteDefense || 0) - (a.noeud.prioriteDefense || 0)
+          || b.robustesse.note - a.robustesse.note);
         const dureeRiposte = performance.now() - debutRiposte;
         const retenu = examines[0];
 
