@@ -607,8 +607,25 @@
           /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
              un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
              le plateau ; une lueur, on la traverse du regard. */
+          /* DES ARCS, PAS DES CERCLES. Rendre une bordure transparente
+             n'enlevait qu'un quart du tour, avec une coupe nette en diagonale :
+             il restait trois quarts de tracé, et l'œil refermait le cercle tout
+             seul. Un masque conique découpe un arc de longueur LIBRE et, mieux,
+             laisse ses deux extrémités s'éteindre en fondu — c'est ce fondu qui
+             fait qu'un arc se perd au loin au lieu d'être coupé.
+             Les deux variables d'arc sont posées par la construction,
+             avec les runes, pour que celles-ci tombent toujours SUR le tracé
+             conservé — masquées avec lui sinon. */
           #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
             border:1px solid rgba(255,220,140,.62);border-radius:50%;
+            -webkit-mask-image:conic-gradient(from var(--pz-arc-de,0deg),
+              rgba(0,0,0,0) 0deg, #000 26deg,
+              #000 calc(var(--pz-arc-long,150deg) - 26deg),
+              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
+            mask-image:conic-gradient(from var(--pz-arc-de,0deg),
+              rgba(0,0,0,0) 0deg, #000 26deg,
+              #000 calc(var(--pz-arc-long,150deg) - 26deg),
+              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
             box-shadow:0 0 20px rgba(255,190,90,.32),
               inset 0 0 70px rgba(255,190,90,.07);
             animation:pz-tourne 220s linear infinite;}
@@ -628,8 +645,7 @@
              volontairement inégaux : deux orbes décalés du même écart
              recréeraient une symétrie, qui est exactement ce qu'on fuit. */
           #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;
-            left:57%;top:38%;--pz-assiette:67deg;
-            border-right-color:transparent;}
+            left:57%;top:38%;--pz-assiette:67deg;}
           /* ORBES DÉDOUBLÉS. Un second tracé collé au premier, à peine plus
              large et un peu plus pâle : deux traits qui courent ensemble se
              lisent comme une trajectoire, là où un trait seul n'est qu'un
@@ -637,35 +653,31 @@
              restent parallèles en tournant. */
           #puzzleLayer .pz-anneau.a2{width:160vmin;height:160vmin;margin:-80vmin 0 0 -80vmin;
             left:57%;top:38%;--pz-assiette:67deg;
-            border-color:rgba(255,220,140,.26);border-right-color:transparent;
+            border-color:rgba(255,220,140,.26);
             box-shadow:none;animation-duration:220s;}
           #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
             border-style:dashed;border-color:rgba(255,220,140,.7);
             left:45%;top:47%;--pz-assiette:75deg;
-            border-bottom-color:transparent;
             animation-duration:150s;animation-direction:reverse;}
           #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
             left:45%;top:47%;--pz-assiette:75deg;
-            border-color:rgba(255,220,140,.24);border-bottom-color:transparent;
+            border-color:rgba(255,220,140,.24);
             box-shadow:none;animation-duration:150s;animation-direction:reverse;}
           /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
              il se perd hors du regard au lieu de se refermer sur lui-même. */
           #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
             border-color:rgba(255,220,140,.52);animation-duration:310s;
-            left:63%;top:33%;--pz-assiette:61deg;
-            border-top-color:transparent;}
+            left:63%;top:33%;--pz-assiette:61deg;}
           /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
              ils coupent les orbes au lieu de les accompagner. Sans eux tout le
              réseau reste couché dans le même plan et le ciel paraît plat. */
           #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
             left:28%;top:30%;--pz-assiette:24deg;
             border-color:rgba(255,220,140,.30);
-            border-top-color:transparent;border-left-color:transparent;
             box-shadow:0 0 16px rgba(255,190,90,.20);animation-duration:520s;}
           #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
             left:78%;top:26%;--pz-assiette:38deg;
             border-color:rgba(255,220,140,.26);border-style:dashed;
-            border-bottom-color:transparent;border-right-color:transparent;
             box-shadow:none;animation-duration:380s;animation-direction:reverse;}
           /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
              lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
@@ -673,7 +685,6 @@
           #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
             border-color:rgba(255,220,140,.38);border-style:dashed;
             left:41%;top:52%;--pz-assiette:80deg;
-            border-bottom-color:transparent;
             animation-duration:420s;animation-direction:reverse;}
           /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
              empêche les orbes de se lire comme une cible. Quatre cercles
@@ -1982,24 +1993,49 @@
           + '<div class="pz-anneau b2"></div><div class="pz-anneau c"></div>'
           + '<div class="pz-anneau e"></div><div class="pz-anneau f"></div>';
 
-        /* Quelques runes posées sur les tracés, à des angles choisis plutôt
-           qu'au hasard : sur un cercle, le hasard les regroupe visuellement
-           d'un côté une fois sur deux. Les coordonnées polaires deviennent des
-           pourcentages dans la boîte carrée de l'orbe. */
+        /* LES ARCS, et les runes qui vont avec.
+
+           `de` et `long` sont des angles de dégradé conique : ils partent de
+           midi et tournent dans le sens des aiguilles. Les runes, elles, sont
+           placées en coordonnées polaires ordinaires, où zéro est à trois
+           heures — d'où le quart de tour entre les deux repères.
+
+           Les deux sont décidés ICI et non dans la feuille de style, parce
+           qu'ils dépendent l'un de l'autre : une rune posée hors de l'arc
+           conservé serait masquée en même temps que lui et disparaîtrait sans
+           rien dire. On pose donc chaque rune au milieu de son arc.
+
+           Les longueurs vont de 96 à 168 degrés : entre le quart et la moitié
+           du tour. Au-delà, l'œil referme le cercle de lui-même et tout le
+           bénéfice de l'arc est perdu. */
         const runes = ["ᛉ", "ᚨ", "ᛟ", "ᛞ", "ᚱ", "ᛊ"];
-        [["a", 205], ["a", 340], ["b", 145], ["c", 25], ["d", 255], ["e", 70]]
-          .forEach(([orbe, deg], i) => {
-            const cible = hote.querySelector(`.pz-anneau.${orbe}`);
-            if (!cible) return;
-            const rad = deg * Math.PI / 180;
-            const rune = document.createElement("span");
-            rune.className = "pz-rune";
-            rune.textContent = runes[i % runes.length];
-            rune.style.left = `${(50 + 50 * Math.cos(rad)).toFixed(2)}%`;
-            rune.style.top = `${(50 + 50 * Math.sin(rad)).toFixed(2)}%`;
-            rune.style.animationDelay = `${(i * 1.3).toFixed(1)}s`;
-            cible.appendChild(rune);
-          });
+        const arcs = [
+          { orbe: "a", de: 196, long: 150, rune: true },
+          { orbe: "a2", de: 188, long: 166 },
+          { orbe: "b", de: 32, long: 138, rune: true },
+          { orbe: "b2", de: 40, long: 124 },
+          { orbe: "c", de: 148, long: 112, rune: true },
+          { orbe: "d", de: 244, long: 168, rune: true },
+          { orbe: "e", de: 300, long: 96, rune: true },
+          { orbe: "f", de: 86, long: 118, rune: true }
+        ];
+        let rangRune = 0;
+        arcs.forEach(arc => {
+          const cible = hote.querySelector(`.pz-anneau.${arc.orbe}`);
+          if (!cible) return;
+          cible.style.setProperty("--pz-arc-de", `${arc.de}deg`);
+          cible.style.setProperty("--pz-arc-long", `${arc.long}deg`);
+          if (!arc.rune) return;
+          const milieu = (arc.de + arc.long / 2 - 90) * Math.PI / 180;
+          const rune = document.createElement("span");
+          rune.className = "pz-rune";
+          rune.textContent = runes[rangRune % runes.length];
+          rune.style.left = `${(50 + 50 * Math.cos(milieu)).toFixed(2)}%`;
+          rune.style.top = `${(50 + 50 * Math.sin(milieu)).toFixed(2)}%`;
+          rune.style.animationDelay = `${(rangRune * 1.3).toFixed(1)}s`;
+          cible.appendChild(rune);
+          rangRune++;
+        });
         let graine = 7;
         const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
         const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
