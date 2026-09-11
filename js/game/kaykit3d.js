@@ -5490,8 +5490,13 @@
 
            Le départ brutal n'est pas un défaut ici : il tombe pendant que le
            fondu du noir n'est pas fini, donc on hérite de la vitesse au lieu de
-           voir la caméra démarrer. */
-        const eased = 1 - Math.pow(1 - t, 3);
+           voir la caméra démarrer.
+
+           Exposant 2 et non 3 : au cube, les six dernières secondes ne faisaient
+           plus bouger l'altitude que de quatre unités — le mouvement passait de
+           « se pose » à « s'enlise ». Le carré garde la chute franche au départ
+           et rend du mouvement à l'arrivée. */
+        const eased = 1 - Math.pow(1 - t, 2);
         const lineaire = (a, b, u) => a + (b - a) * u;
         /* Distance en progression GÉOMÉTRIQUE. En linéaire, la caméra semblait
            foncer au début puis ramper à l'arrivée : vue de très loin, diviser la
