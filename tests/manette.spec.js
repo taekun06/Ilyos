@@ -1,7 +1,13 @@
-/* Couche manette (js/game/gamepad.js) (js/game/gamepad.js).
+/* Couche manette (js/game/gamepad.js).
+
    Une vraie manette n'existe pas en headless : on injecte un objet Gamepad
    factice avant le chargement, ce que la Gamepad API permet de simuler
-   puisque la couche ne lit que navigator.getGamepads(). */
+   puisque la couche ne lit que navigator.getGamepads().
+
+   Tout ce qui est vérifié ici l'est par le DOM ou par kaykit3D, jamais par un
+   accès privilégié à l'état : le bundle n'expose pas `state`, et ajouter un
+   crochet de test au code de production pour ce seul besoin serait payer le
+   confort du test avec de la dette dans le jeu. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -14,14 +20,104 @@ const FAUSSE_MANETTE = () => {
   navigator.getGamepads = () => [window.__pad];
 };
 
+/* Disposition « standard » de la Gamepad API, la même que lit la couche. */
+const B = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, SELECT: 8, START: 9, L3: 10, R3: 11, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+
 async function appuyer(page, index, duree = 120) {
   await page.evaluate(i => { window.__pad.buttons[i].pressed = true; }, index);
   await page.waitForTimeout(duree);
   await page.evaluate(i => { window.__pad.buttons[i].pressed = false; }, index);
-  await page.waitForTimeout(180);
+  await page.waitForTimeout(220);
 }
 
-test('la manette pilote le curseur, le survol et les boutons du HUD', async ({ page }) => {
+/* Le stick, et non la croix : c'est lui qui doit suffire à tout piloter. */
+async function incliner(page, axe, valeur, duree = 220) {
+  await page.evaluate(([a, v]) => { window.__pad.axes[a] = v; }, [axe, valeur]);
+  await page.waitForTimeout(duree);
+  await page.evaluate(a => { window.__pad.axes[a] = 0; }, axe);
+  await page.waitForTimeout(220);
+}
+
+const surligne = page => page.evaluate(() => {
+  const element = document.querySelector('.ilyos-gamepad-focus');
+  return element ? (element.id || element.className) : null;
+});
+
+const survol = page => page.evaluate(() => {
+  const cellule = window.kaykit3D?.hoverCell;
+  return cellule && !cellule.special ? `${cellule.r},${cellule.c}` : null;
+});
+
+/* Le bandeau #ov2Instruction n'affiche que la ligne d'aide, sans l'angle.
+   Celui-ci vit dans le contexte de tour rempli par renderTurnContext — tantot
+   dans le titre (« Rotation : 90° »), tantot dans la ligne suivante pendant la
+   mise en place (« Rotation 90° — Q/E pour tourner »), ou le titre compte les
+   iles restantes. On lit donc les deux. */
+const contexteDePhase = page => page.evaluate(() => {
+  const titre = document.getElementById('turnContextTitle')?.textContent?.trim() || '';
+  const suite = document.getElementById('turnContextNext')?.textContent?.trim() || '';
+  return `${titre} | ${suite}`;
+});
+
+const tour = page => page.evaluate(
+  () => document.getElementById('ov2Turn')?.textContent?.trim() || ''
+);
+
+/* Empreinte au sol de l'ile en cours de pose, lue dans la scene : le HUD V2
+   n'affiche l'angle nulle part (#turnContext* reste vide, et le bandeau ne
+   reprend que la ligne d'aide), donc c'est le seul temoin observable d'une
+   rotation. Positions MONDE : les positions locales des meshes valent toutes
+   zero, la forme etant portee par la geometrie. */
+const empreinteDeLIle = page => page.evaluate(() => {
+  const racine = window.kaykit3D?.dynamicGroup;
+  if (!racine) return null;
+  let bloc = null;
+  racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') bloc = objet; });
+  if (!bloc) return null;
+  const points = [];
+  bloc.traverse(objet => {
+    if (!objet.isMesh) return;
+    const monde = objet.getWorldPosition(new window.THREE.Vector3());
+    points.push(`${monde.x.toFixed(2)},${monde.z.toFixed(2)}`);
+  });
+  return points.sort().join('|') || null;
+});
+
+const actionsDisponibles = page => page.evaluate(
+  () => ['ov2Island', 'ov2Move', 'ov2Push', 'ov2Magic', 'ov2End', 'ov2Undo'].filter(id => {
+    const bouton = document.getElementById(id);
+    if (!bouton || bouton.disabled) return false;
+    if (bouton.getAttribute('aria-disabled') === 'true') return false;
+    if (bouton.classList.contains('disabled')) return false;
+    return bouton.getBoundingClientRect().width > 0;
+  })
+);
+
+/* La decouverte pose des gardiens des l'ouverture, la ou une partie normale
+   commence par une phase de pose d'iles sans aucun pion sur le plateau : c'est
+   donc le seul terrain ou la navigation entre gardiens peut etre observee sans
+   jouer plusieurs tours. */
+async function demarrerTutoriel(page) {
+  await page.waitForFunction(() => typeof window.ILYOS_TUTORIAL?.start === 'function');
+  await page.evaluate(() => window.ILYOS_TUTORIAL.start());
+  await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
+  await page.waitForFunction(() => {
+    const debug = window.ILYOS_TUTORIAL?._debug();
+    return !!debug?.pret && !debug.souffle;
+  }, null, { timeout: 30000 });
+  await page.waitForFunction(() => document.querySelectorAll('.cell .character').length > 0, null, { timeout: 20000 });
+}
+
+async function demarrerPartieSolo(page) {
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().click();
+  await menu.locator('text=AFFRONTER LE CPU').first().click();
+  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 40000 });
+  await page.waitForFunction(() => !!window.kaykit3D?.orbit, null, { timeout: 60000 });
+  await page.waitForTimeout(6000);
+}
+
+function collecterIncidents(page) {
   const incidents = [];
   page.on('pageerror', erreur => incidents.push(erreur.message));
   /* Le serveur de developpement local lache parfois une connexion sur un
@@ -34,58 +130,267 @@ test('la manette pilote le curseur, le survol et les boutons du HUD', async ({ p
     if (/Failed to load resource|net::ERR_/.test(texte)) return;
     incidents.push(texte);
   });
+  return incidents;
+}
 
+test('au repos, le stick parcourt le HUD et rejoint les gardiens', async ({ page }) => {
+  const incidents = collecterIncidents(page);
   await page.addInitScript(FAUSSE_MANETTE);
   await page.goto('/');
 
   // La couche s'installe dès le parsing du bundle, avant toute partie.
   expect(await page.locator('#ilyosGamepadStyle').count()).toBe(1);
 
-  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
-  await menu.locator('[data-mode="solo"]').first().click();
-  await menu.locator('text=AFFRONTER LE CPU').first().click();
-  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 40000 });
-  await page.waitForFunction(() => !!window.kaykit3D?.orbit, null, { timeout: 60000 });
-  await page.waitForTimeout(6000);
+  await demarrerPartieSolo(page);
 
-  const survol = () => page.evaluate(() => {
-    const cellule = window.kaykit3D?.hoverCell;
-    return cellule && !cellule.special ? `${cellule.r},${cellule.c}` : null;
-  });
+  /* Droite : une action du dock se surligne, sans rien viser sur le plateau.
+     Au tout premier tour, poser une ile est obligatoire et c'est la SEULE
+     action offerte — le cycle n'a donc nulle part ou aller. On ne verifie le
+     passage a la suivante que lorsqu'il y a reellement plusieurs choix. */
+  const dock = await actionsDisponibles(page);
+  expect(dock.length, 'le dock doit proposer au moins une action').toBeGreaterThan(0);
 
-  // Croix directionnelle : première pression = curseur au centre du plateau.
-  await appuyer(page, 15);
-  const premier = await survol();
-  expect(premier, 'le premier appui doit poser le curseur sur une case').not.toBeNull();
+  await incliner(page, 0, 1);
+  const premiere = await surligne(page);
+  expect(premiere, 'le stick vers la droite doit surligner une action du dock').toBe(dock[0]);
 
-  await appuyer(page, 15);
-  const second = await survol();
-  expect(second, 'le curseur doit avoir changé de case').not.toBe(premier);
+  await incliner(page, 0, 1);
+  if (dock.length > 1) {
+    expect(await surligne(page), 'une seconde poussée doit passer à l’action suivante').toBe(dock[1]);
+  } else {
+    expect(await surligne(page), 'une seule action disponible : le surlignage ne bouge pas').toBe(dock[0]);
+  }
 
-  // RB : anneau de focus sur un contrôle réellement visible du HUD.
-  await appuyer(page, 5);
-  const focus = await page.evaluate(() => {
-    const element = document.querySelector('.ilyos-gamepad-focus');
-    return element ? (element.id || element.className) : null;
-  });
-  expect(focus, 'RB doit sélectionner un bouton visible').not.toBeNull();
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
 
-  // A sur ce contrôle, puis B pour annuler : aucun des deux ne doit lever d'erreur.
-  await appuyer(page, 0);
-  await appuyer(page, 1);
+test('haut et bas sautent de gardien en gardien', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await demarrerTutoriel(page);
 
-  // Stick droit : rotation caméra.
+  // Haut : le curseur saute sur un gardien, sans traverser le plateau case à case.
+  await incliner(page, 1, -1);
+  const cellule = await survol(page);
+  expect(cellule, 'haut doit poser le curseur sur une case').not.toBeNull();
+
+  const gardienSurLaCase = await page.evaluate(cible => {
+    const [r, c] = cible.split(',').map(Number);
+    return !!document.querySelector(`.cell[data-r="${r}"][data-c="${c}"] .character`);
+  }, cellule);
+  expect(gardienSurLaCase, 'haut doit viser un gardien, pas une case quelconque').toBe(true);
+
+  // Le surlignage du dock doit avoir cédé la place au plateau.
+  expect(await surligne(page), 'naviguer vers les gardiens doit relâcher le dock').toBeNull();
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('le tiroir d’îles se parcourt et l’île se tourne aux gâchettes', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await demarrerPartieSolo(page);
+
+  /* Le tiroir s'ouvre par l'action ÎLE du dock — Y porte desormais la couronne.
+     Au premier tour, poser une ile est obligatoire : ÎLE est la seule action
+     offerte, donc une poussee du stick suffit a la designer. Le tiroir peut
+     deja etre ouvert ; valider alors le refermerait. */
+  const tiroirOuvert = () => page.evaluate(
+    () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
+  );
+  /* Le tiroir s'ouvre aussi tout seul au debut du tour : selon l'instant, la
+     poussee du stick tombe avant ou apres. On repete donc le geste jusqu'a ce
+     que le tiroir soit ouvert, sans rien relacher sur l'exigence — il doit
+     s'ouvrir A LA MANETTE. */
+  for (let essai = 0; essai < 4 && !(await tiroirOuvert()); essai++) {
+    await incliner(page, 0, 1);
+    if ((await surligne(page)) === 'ov2Island') await appuyer(page, B.A);
+  }
+  expect(await tiroirOuvert(), 'le tiroir doit s’ouvrir à la manette').toBe(true);
+
+  /* RB surligne une ile. On cherche une forme RETOURNABLE : le badge « ⇄ » ne
+     figure que sur les iles asymetriques, les seules dont une rotation change
+     reellement l'empreinte. La premiere du tiroir est symetrique — la tourner
+     ne prouverait rien. */
+  let trouvee = false;
+  for (let essai = 0; essai < 9 && !trouvee; essai++) {
+    await appuyer(page, B.RB);
+    trouvee = await page.evaluate(
+      () => !!document.querySelector('.ilyos-gamepad-focus .island-choice-flip')
+    );
+  }
+  expect(trouvee, 'RB doit pouvoir atteindre une île retournable').toBe(true);
+  expect(await surligne(page), 'RB doit surligner une île du tiroir').toContain('island-choice');
+
+  // A la choisit : la pose commence et l'aperçu apparaît sous le curseur.
+  await appuyer(page, B.A);
+  await page.waitForFunction(() => {
+    const racine = window.kaykit3D?.dynamicGroup;
+    if (!racine) return false;
+    let trouve = false;
+    racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') trouve = true; });
+    return trouve;
+  }, null, { timeout: 8000 });
+
+  // LT / RT : rotation d'un quart de tour, exactement comme Q/E au clavier.
+  const avant = await empreinteDeLIle(page);
+  expect(avant, 'l’aperçu de pose doit être visible').not.toBeNull();
+
+  await appuyer(page, B.RT);
+  const apresRT = await empreinteDeLIle(page);
+  expect(apresRT, 'RT doit tourner l’île d’un quart de tour').not.toBe(avant);
+
+  /* On ne demande PAS a LT de redonner exactement l'empreinte de depart :
+     rotateSelectedIsland recentre la forme apres chaque quart de tour, donc la
+     rotation n'est pas involutive en coordonnees absolues. C'est une propriete
+     du moteur, pas de la manette. On verifie seulement que la gachette gauche
+     agit elle aussi. */
+  await appuyer(page, B.LT);
+  expect(await empreinteDeLIle(page), 'LT doit tourner l’île à son tour').not.toBe(apresRT);
+
+  // Select pendant un placement : refusé, pas de fin de tour accidentelle.
+  const tourAvant = await tour(page);
+  await appuyer(page, B.SELECT);
+  expect(await tour(page), 'Select ne doit pas terminer le tour pendant une pose').toBe(tourAvant);
+  expect(await empreinteDeLIle(page), 'la pose doit toujours être en cours').not.toBeNull();
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('le stick droit tourne et zoome, R3 ramène la vue de face', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await demarrerPartieSolo(page);
+
   const azimut = () => page.evaluate(() => {
     const k = window.kaykit3D;
     const ecart = k.camera.position.clone().sub(k.orbit.target);
     return +Math.atan2(ecart.x, ecart.z).toFixed(3);
   });
-  const avant = await azimut();
-  await page.evaluate(() => { window.__pad.axes[2] = 1; });
-  await page.waitForTimeout(500);
-  await page.evaluate(() => { window.__pad.axes[2] = 0; });
-  await page.waitForTimeout(300);
-  expect(await azimut(), 'le stick droit doit tourner la caméra').not.toBe(avant);
+  const distance = () => page.evaluate(() => +(window.kaykit3D?.zoomDistance ?? 0).toFixed(2));
+
+  const azimutDepart = await azimut();
+  await incliner(page, 2, 1, 500);
+  const azimutTourne = await azimut();
+  expect(azimutTourne, 'le stick droit doit tourner la caméra').not.toBe(azimutDepart);
+
+  const distanceAvant = await distance();
+  await incliner(page, 3, 1, 400);
+  expect(await distance(), 'le stick droit vertical doit zoomer').not.toBe(distanceAvant);
+
+  // R3 : même geste qu'ESPACE au clavier — la vue revient de face.
+  await appuyer(page, B.R3, 150);
+  await page.waitForTimeout(1200);
+  expect(await azimut(), 'R3 doit abandonner l’angle choisi à la main').not.toBe(azimutTourne);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+/* L'iframe du menu possede son propre `window.__pad` : addInitScript s'applique
+   a chaque cadre, mais chacun a sa copie. Piloter celui du haut ne bouge donc
+   rien dans le menu — il faut s'adresser au cadre lui-meme. */
+const cadreDuMenu = page => page.frames().find(cadre => cadre.url().includes('menu/frame.html'));
+
+async function inclinerDansLeMenu(page, axe, valeur, duree = 240) {
+  const cadre = cadreDuMenu(page);
+  await cadre.evaluate(([a, v]) => { window.__pad.axes[a] = v; }, [axe, valeur]);
+  await page.waitForTimeout(duree);
+  await cadre.evaluate(a => { window.__pad.axes[a] = 0; }, axe);
+  await page.waitForTimeout(240);
+}
+
+async function appuyerDansLeMenu(page, index, duree = 120) {
+  const cadre = cadreDuMenu(page);
+  await cadre.evaluate(i => { window.__pad.buttons[i].pressed = true; }, index);
+  await page.waitForTimeout(duree);
+  await cadre.evaluate(i => { window.__pad.buttons[i].pressed = false; }, index);
+  await page.waitForTimeout(240);
+}
+
+test('la manette navigue dès le premier menu', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().waitFor({ timeout: 30000 });
+
+  const viseDansLeMenu = () => cadreDuMenu(page).evaluate(() => {
+    const element = document.querySelector('.ilyos-pad-vise');
+    if (!element) return null;
+    return element.getAttribute('data-mode') || element.getAttribute('data-action') || element.tagName;
+  });
+
+  // Bas : le menu se parcourt sans souris.
+  await inclinerDansLeMenu(page, 1, 1);
+  const premier = await viseDansLeMenu();
+  expect(premier, 'le stick doit désigner un élément du menu').not.toBeNull();
+
+  await inclinerDansLeMenu(page, 1, 1);
+  expect(await viseDansLeMenu(), 'une seconde poussée doit avancer dans le menu').not.toBe(premier);
+
+  /* A doit réellement agir : on descend jusqu'au mode solo, puis on valide, et
+     l'écran de configuration du duel doit apparaître. */
+  let atteint = false;
+  for (let essai = 0; essai < 24 && !atteint; essai++) {
+    await inclinerDansLeMenu(page, 1, 1, 120);
+    atteint = (await viseDansLeMenu()) === 'solo';
+  }
+  expect(atteint, 'le parcours doit pouvoir atteindre le mode solo').toBe(true);
+
+  await appuyerDansLeMenu(page, B.A);
+  await menu.locator('text=AFFRONTER LE CPU').first().waitFor({ timeout: 15000 });
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('l’île se pose à la manette même après un choix à la souris', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await demarrerPartieSolo(page);
+
+  /* Chemin mixte, celui d'un joueur réel : la forme est choisie à la souris —
+     le tiroir RESTE alors ouvert — puis tout le reste se fait à la manette.
+     La branche « tiroir ouvert » passait avant les autres et confisquait le
+     stick : le curseur du plateau ne bougeait plus et l'île devenait
+     impossible à poser. */
+  const tiroirOuvert = () => page.evaluate(
+    () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
+  );
+  if (!(await tiroirOuvert())) await page.locator('#ov2Island').click({ force: true });
+  await page.locator('#islandSelector .island-choice:not([disabled])').first().click({ force: true });
+
+  await page.waitForFunction(() => {
+    const racine = window.kaykit3D?.dynamicGroup;
+    if (!racine) return false;
+    let trouve = false;
+    racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') trouve = true; });
+    return trouve;
+  }, null, { timeout: 8000 });
+
+  expect(await tiroirOuvert(), 'le tiroir reste ouvert après le choix — c’est le cas piégeux').toBe(true);
+
+  // Le stick doit déplacer l'aperçu sur le plateau, tiroir ouvert ou non.
+  const cellule = () => survol(page);
+  const depart = await cellule();
+  await incliner(page, 0, 1);
+  const apres = await cellule();
+  expect(apres, 'le stick doit déplacer le curseur sur le plateau').not.toBeNull();
+  expect(apres, 'le curseur doit avoir changé de case malgré le tiroir ouvert').not.toBe(depart);
+
+  // Et A doit réellement poser l'île : l'aperçu cède la place à une vraie île.
+  await appuyer(page, B.A);
+  await page.waitForFunction(() => {
+    const racine = window.kaykit3D?.dynamicGroup;
+    if (!racine) return false;
+    let apercu = false;
+    racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') apercu = true; });
+    return !apercu;
+  }, null, { timeout: 8000 });
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
