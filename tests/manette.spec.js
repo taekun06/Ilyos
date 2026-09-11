@@ -238,9 +238,14 @@ test('le tiroir d’îles se parcourt et l’île se tourne aux gâchettes', asy
   const avant = await empreinteDeLIle(page);
   expect(avant, 'l’aperçu de pose doit être visible').not.toBeNull();
 
+  /* La scène se reconstruit de façon asynchrone après une rotation : lire
+     l'empreinte une seule fois attrapait parfois l'état d'avant. On attend le
+     changement plutôt que de le supposer instantané. */
   await appuyer(page, B.RT);
+  await expect.poll(() => empreinteDeLIle(page), {
+    message: 'RT doit tourner l’île d’un quart de tour', timeout: 8000
+  }).not.toBe(avant);
   const apresRT = await empreinteDeLIle(page);
-  expect(apresRT, 'RT doit tourner l’île d’un quart de tour').not.toBe(avant);
 
   /* On ne demande PAS a LT de redonner exactement l'empreinte de depart :
      rotateSelectedIsland recentre la forme apres chaque quart de tour, donc la
@@ -248,7 +253,9 @@ test('le tiroir d’îles se parcourt et l’île se tourne aux gâchettes', asy
      du moteur, pas de la manette. On verifie seulement que la gachette gauche
      agit elle aussi. */
   await appuyer(page, B.LT);
-  expect(await empreinteDeLIle(page), 'LT doit tourner l’île à son tour').not.toBe(apresRT);
+  await expect.poll(() => empreinteDeLIle(page), {
+    message: 'LT doit tourner l’île à son tour', timeout: 8000
+  }).not.toBe(apresRT);
 
   // Select pendant un placement : refusé, pas de fin de tour accidentelle.
   const tourAvant = await tour(page);

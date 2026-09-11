@@ -8291,11 +8291,18 @@
            est appelée à chaque mousemove) — un vrai coût CPU répété pour ne
            produire, la plupart du temps, que la même clé. Signalé en jeu
            comme un ralentissement. */
-        const zoneRef = smartResting ? state.reachable : null;
+        /* La zone bleue accompagne TOUT ce qui relève d'un déplacement, pas
+           seulement le clic direct sur un gardien. Le chemin classique — action
+           DÉPLACER puis gardien choisi dans le dock — produit exactement le même
+           ensemble atteignable, mais ne le montrait pas : le joueur devait
+           deviner où il pouvait aller, alors que l'information existait déjà. */
+        const zoneVisible = (smartResting || (moveActive && !!state.selectedCharId))
+          && !!state.reachable?.size;
+        const zoneRef = zoneVisible ? state.reachable : null;
         if (zoneRef !== kaykit3D.moveZoneRef) {
           kaykit3D.moveZoneRef = zoneRef;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
-          if (smartResting) {
+          if (zoneVisible) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
             addKayKitMoveZone(cellules);
           }
@@ -35517,6 +35524,7 @@
           choiceEl: null,        // choix contextuel surligne (tiroir, panneau)
           choiceIndex: -1,       // ... suivi par RANG, voir syncChoice()
           lastGuardianId: null,  // dernier gardien parcouru ou utilise
+          lastGuardianCell: null,// ... et ou il se trouvait, pour le suivre
           previous: [],          // etat des boutons a l'image precedente
           wasNeutral: true,      // pour detecter l'entree dans une action
           lastScoreAnim: null,   // pour vibrer sur une couronne validee
@@ -35561,10 +35569,13 @@
              gardien selectionne — et passait donc pour « neutre » : le stick
              repartait vers le dock alors que le jeu attendait un clic sur une
              case, et le gardien devenait impossible a poser a la manette. */
-          if (state.phase === "PLACE_SPAWN") return false;
-          // Le moteur propose des cibles : le jeu attend un clic sur le plateau,
-          // pas un choix dans le dock.
-          if (pointsOfInterest()) return false;
+          /* Seules les phases qui ATTENDENT un clic sur le plateau sortent de
+             l'etat neutre. Tester « des cibles existent » etait trop large : une
+             couronne reclamable au village suffit a en publier une des le premier
+             tour, et le stick ne rejoignait alors plus jamais le dock. Les autres
+             cas — deplacement, poussee, magie — sont deja couverts plus bas par
+             l'action ou le gardien selectionne. */
+          if (state.phase === "PLACE_SPAWN" || spawnChoices().length) return false;
           return !placingIsland()
             && !state.selectedActionType
             && !state.selectedCharId
@@ -35784,11 +35795,19 @@
                 interesting.filter(cell => cell.r !== r || cell.c !== c),
                 dx, dy, origin
               );
-              /* Rien dans cette direction alors que des cibles existent : la vue
-                 les superpose. On avance dans l'ordre du plateau plutot que de
-                 laisser le joueur bloque ou de le renvoyer sur une case sans
-                 interet. */
-              if (!best && interesting.length > 1) return cycleTargets(dx + dy >= 0 ? 1 : -1);
+              /* TANT QUE DES CIBLES EXISTENT, LE CURSEUR N'EN SORT PAS.
+
+                 Rien dans cette direction ne veut pas dire qu'il faut partir
+                 ailleurs : pendant un deplacement, viser une case inatteignable
+                 ne sert a rien, et obligeait a retraverser le vide pour revenir
+                 dans la zone. Quand la geometrie ne tranche pas — vue de face,
+                 cibles superposees — on avance dans l'ordre du plateau ; s'il n'y
+                 a qu'une cible, on y reste. Le parcours libre reprend seulement
+                 quand le moteur ne propose plus rien, la pose d'ile par exemple. */
+              if (!best) return cycleTargets(dx + dy >= 0 ? 1 : -1);
+              pad.cursor = { r: best.r, c: best.c };
+              pad.special = null;
+              return true;
             }
             if (!best) {
               const neighbours = [{ r: r - 1, c }, { r: r + 1, c }, { r, c: c - 1 }, { r, c: c + 1 }]
@@ -35891,33 +35910,51 @@
            case. dispatchKayKitClick sait viser ce noeud ; on lui donne donc la
            couronne visee, puis le joueur designe le gardien voisin au curseur.
            Priorite a la couronne sous le curseur, sinon celle du porteur allie. */
+        /* Y DESIGNE une couronne, il n'en actionne aucune : c'est A qui agit.
+
+           Y choisissait auparavant lui-meme — couronne sous le curseur, sinon
+           celle du porteur allie, sinon la premiere venue — et validait dans la
+           foulee. Quand deux couronnes etaient en jeu, la seconde etait donc
+           inatteignable : le joueur n'avait aucun moyen de dire laquelle il
+           visait. Y parcourt desormais toutes les couronnes a portee, dans un
+           ordre stable, et laisse la decision au joueur.
+
+           Prendre, transmettre et poser passent tous par un clic sur le noeud de
+           la couronne (".carrier-crown" pour une couronne portee, ".artifact"
+           pour une couronne au sol) et jamais sur la case : c'est pourquoi la
+           couronne sous le curseur est retrouvee au moment d'agir. */
+        function crownTargets() {
+          if (!kaykit3D?.interactiveMeshes) return [];
+          const vues = new Set();
+          return kaykit3D.interactiveMeshes
+            .filter(mesh => {
+              const action = mesh?.userData?.kaykitAction;
+              if (action !== "crown-carried" && action !== "crown-loose") return false;
+              // Un modele 3D compte plusieurs meshes par couronne : une seule
+              // entree par case, sinon Y semblerait ne pas avancer.
+              const clef = `${mesh.userData.r},${mesh.userData.c}`;
+              if (vues.has(clef)) return false;
+              vues.add(clef);
+              return true;
+            })
+            .map(mesh => ({ r: mesh.userData.r, c: mesh.userData.c, action: mesh.userData.kaykitAction }))
+            .sort((a, b) => (a.r - b.r) || (a.c - b.c));
+        }
+
         function crownAction() {
-          if (!kaykit3D?.interactiveMeshes) return;
-          const crowns = kaykit3D.interactiveMeshes.filter(mesh => {
-            const action = mesh?.userData?.kaykitAction;
-            return action === "crown-carried" || action === "crown-loose";
-          });
-          if (!crowns.length) { showToast("Aucune couronne a portee."); return; }
+          const couronnes = crownTargets();
+          if (!couronnes.length) { showToast("Aucune couronne a portee."); return; }
 
-          const sousCurseur = pad.cursor && crowns.find(
-            mesh => mesh.userData.r === pad.cursor.r && mesh.userData.c === pad.cursor.c
+          const rang = couronnes.findIndex(
+            couronne => pad.cursor && couronne.r === pad.cursor.r && couronne.c === pad.cursor.c
           );
-          const portee = crowns.find(mesh => {
-            if (mesh.userData.kaykitAction !== "crown-carried") return false;
-            const porteur = (state?.characters || []).find(
-              char => char.r === mesh.userData.r && char.c === mesh.userData.c
-            );
-            return porteur?.player === state.currentPlayer;
-          });
-          const cible = sousCurseur || portee || crowns[0];
+          const cible = couronnes[(rang + 1) % couronnes.length];
 
-          moveCursorTo(cible.userData.r, cible.userData.c);
-          const point = cellToScreen(cible.userData.r, cible.userData.c) || { x: 0, y: 0 };
-          dispatchKayKitClick(
-            { userData: { r: cible.userData.r, c: cible.userData.c, kaykitAction: cible.userData.kaykitAction } },
-            { clientX: point.x, clientY: point.y, button: 0, buttons: 0 }
-          );
-          vibrate(60, .3);
+          moveCursorTo(cible.r, cible.c);
+          if (couronnes.length > 1) {
+            showToast(`Couronne ${couronnes.indexOf(cible) + 1} sur ${couronnes.length} — A pour agir, Y pour la suivante.`);
+          }
+          vibrate(40, .2);
         }
 
         /* B : meme arbitrage que la touche Echap (voir diagnostics.js) —
@@ -36134,6 +36171,11 @@
           const current = guardians.findIndex(char => char.id === pad.lastGuardianId);
           const next = guardians[(Math.max(0, current) + direction + guardians.length) % guardians.length];
           pad.lastGuardianId = next.id;
+          /* Un seul gardien allie : le parcours revient sur lui-meme. Renvoyer
+             malgre tout un survol a chaque poussee de stick relancait les
+             affordances du moteur, ce qui se lit comme une selection qu'on
+             n'a pas demandee. */
+          if (pad.cursor && pad.cursor.r === next.r && pad.cursor.c === next.c) return;
           moveCursorTo(next.r, next.c);
         }
 
@@ -36188,6 +36230,19 @@
             hoverDirty = true;
           }
           pad.wasNeutral = isNeutral;
+
+          /* Le gardien qui vient d'agir garde le curseur. Apres un deplacement ou
+             une poussee, il n'est plus sur la case visee un instant plus tot :
+             sans ce suivi, la selection restait en arriere et il fallait aller
+             le rechercher pour enchainer une seconde action. */
+          const suivi = (state?.characters || []).find(char => char.id === pad.lastGuardianId);
+          if (suivi && Number.isFinite(suivi.r)) {
+            const avant = pad.lastGuardianCell;
+            if (!avant || avant.r !== suivi.r || avant.c !== suivi.c) {
+              if (avant) { pad.cursor = { r: suivi.r, c: suivi.c }; pad.special = null; hoverDirty = true; }
+              pad.lastGuardianCell = { r: suivi.r, c: suivi.c };
+            }
+          } else pad.lastGuardianCell = null;
 
           // Couronne validee : le moteur pose deja cet identifiant le temps de
           // son animation de score. On s'y raccroche plutot que d'inventer un
