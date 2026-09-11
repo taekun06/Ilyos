@@ -35463,23 +35463,29 @@
 
          Pourquoi ce fragment vit DANS le bundle et non dans un script autonome
          comme js/mobile-input-v1.js : dispatchKayKitClick, handleCancelButton,
-         executeUnifiedPushOption et kaykit3D sont prives de la fermeture
-         partagee par js/game/*.js. Un script charge separement ne peut que
-         fabriquer de faux evenements DOM — c'est precisement ce que la couche
-         tactile doit faire, et son en-tete documente le prix paye : le click
-         natif arrive parfois avant que le moteur ait remis dragMoved a false,
-         et une action se perdait en pleine poussee. Ici, l'action ne passe
-         jamais par un faux click sur le canvas : on appelle le moteur.
+         executeUnifiedPushOption, rotateSelectedIsland et kaykit3D sont prives
+         de la fermeture partagee par js/game/*.js. Un script charge separement
+         ne peut que fabriquer de faux evenements DOM — c'est precisement ce que
+         la couche tactile doit faire, et son en-tete documente le prix paye :
+         le click natif arrive parfois avant que le moteur ait remis dragMoved a
+         false, et une action se perdait en pleine poussee.
 
          Deux chemins distincts, choisis pour leur risque :
          - SURVOL : un vrai pointermove synthetique sur le canvas, aux
            coordonnees ecran de la case visee. Inoffensif (aucune action
            declenchee) et cela reutilise tel quel tout le systeme d'affordance
-           existant — reticule, apercus de deplacement, anneaux de poussee.
+           existant — reticule, apercus de deplacement, anneaux de poussee, et
+           l'apercu de pose d'ile, qui suit deja la case survolee.
          - ACTION : appel direct au moteur. On contourne ainsi le verrou
            dragMoved, et surtout dispatchKayKitClick sait deja resoudre les
            couronnes (".carrier-crown" / ".artifact"), ce qu'un simple
            cell.click() ne fait pas — la vue tactique s'y etait deja brulee.
+
+         NAVIGATION EN DEUX TEMPS. Au repos, le stick gauche parcourt le HUD
+         (gauche/droite) et les gardiens allies (haut/bas) : on ne demande pas
+         au joueur de viser une case pour choisir une action. Des qu'une action
+         ou un gardien est pris, le meme stick navigue sur le plateau. La croix
+         directionnelle double le stick et n'est jamais obligatoire.
       */
       (function setupIlyosGamepad() {
         if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return;
@@ -35489,31 +35495,98 @@
         const STEP_REPEAT_MS = 120;  // cadence de repetition ensuite
         const ROTATE_SPEED = .035;   // radians par image a fond de course
         const ZOOM_COOLDOWN_MS = 90;
+        const ROTATE_ISLAND_MS = 180; // anti-rebond des rotations d'ile
 
-        const BUTTON = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
-
-        const pad = {
-          cursor: null,         // { r, c } de la case visee
-          focusEl: null,        // controle HUD selectionne via LB/RB
-          previous: [],         // etat des boutons a l'image precedente
-          stepAt: 0,
-          zoomAt: 0
+        // Disposition "standard" de la Gamepad API : c'est celle que Chrome
+        // expose pour les manettes Xbox, PlayStation et la plupart des modeles
+        // USB/Bluetooth. gamepad.mapping vaut alors "standard".
+        const BUTTON = {
+          A: 0, B: 1, X: 2, Y: 3,
+          LB: 4, RB: 5, LT: 6, RT: 7,
+          SELECT: 8, START: 9, L3: 10, R3: 11,
+          UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15
         };
 
-        /* ---- Curseur de case ------------------------------------------- */
+        // Ordre de parcours du dock, de gauche a droite comme a l'ecran.
+        const HUD_ORDER = ["ov2Island", "ov2Move", "ov2Push", "ov2Magic", "ov2End", "ov2Undo"];
+
+        const pad = {
+          cursor: null,          // { r, c } de la case visee
+          special: null,         // cible hors trame : destination de poussee ou chute
+          hudEl: null,           // action du dock surlignee (etat neutre)
+          choiceEl: null,        // choix contextuel surligne (tiroir, panneau)
+          choiceIndex: -1,       // ... suivi par RANG, voir syncChoice()
+          lastGuardianId: null,  // dernier gardien parcouru ou utilise
+          previous: [],          // etat des boutons a l'image precedente
+          wasNeutral: true,      // pour detecter l'entree dans une action
+          lastScoreAnim: null,   // pour vibrer sur une couronne validee
+          stepAt: 0,
+          zoomAt: 0,
+          rotateAt: 0
+        };
+
+        /* ---- Lecture de la situation ------------------------------------ */
 
         function boardCanvas() { return kaykit3D?.canvas || document.getElementById("kaykitCanvas"); }
 
-        function clampCell(value) { return Math.max(0, Math.min(GRID - 1, value)); }
-
-        function defaultCursor() {
-          // Reprendre le gardien selectionne si possible : c'est la ou le
-          // regard du joueur se trouve deja.
-          const selected = state?.characters?.find?.(char => char.id === state.selectedCharId);
-          if (selected && Number.isFinite(selected.r)) return { r: selected.r, c: selected.c };
-          const middle = Math.floor(GRID / 2);
-          return { r: middle, c: middle };
+        /* On cherche les boutons d'ile EUX-MEMES, pas le tiroir qui les contient.
+           Se fier a #hudV2IslandDrawer etait fragile : reparentFunctionalPopovers()
+           deplace #islandSelector d'un conteneur a l'autre, et il suffisait que le
+           tiroir consulte ne soit pas celui reellement affiche pour que la liste
+           ressorte vide — le stick n'avait alors rien a parcourir. Un bouton
+           visible et actif est offert au joueur : cela suffit a le dire. */
+        function islandChoices() {
+          return [...document.querySelectorAll(".island-choice")].filter(button => {
+            // L'ancien panneau gauche porte les memes boutons sous aria-hidden :
+            // les compter rendrait le tiroir « ouvert » en permanence, et le stick
+            // ne quitterait plus jamais la liste d'iles.
+            if (button.closest('[aria-hidden="true"]')) return false;
+            return usable(button);
+          });
         }
+
+        function drawerOpen() { return islandChoices().length > 0; }
+
+        function placingIsland() {
+          return state?.phase === "PLACE_ISLAND" && !!state.placementCells;
+        }
+
+        /* « Neutre » = rien n'est engage, donc le stick appartient au HUD.
+           On le deduit de l'etat du jeu plutot que d'un drapeau interne : un
+           drapeau se desynchronise des que le joueur agit a la souris, et les
+           deux peripheriques doivent rester utilisables en meme temps. */
+        function neutral() {
+          if (!state) return true;
+          /* PLACE_SPAWN ne coche aucune des cases ci-dessous — ni action, ni
+             gardien selectionne — et passait donc pour « neutre » : le stick
+             repartait vers le dock alors que le jeu attendait un clic sur une
+             case, et le gardien devenait impossible a poser a la manette. */
+          if (state.phase === "PLACE_SPAWN" || spawnChoices().length) return false;
+          return !placingIsland()
+            && !state.selectedActionType
+            && !state.selectedCharId
+            && !(state.pushOptions && state.pushOptions.length);
+        }
+
+        /* Cases ouvertes a l'invocation : le moteur les marque deja d'une classe
+           sur le plateau DOM (voir renderBoard), en tenant compte du draft comme
+           de l'ile fraichement posee. On lit donc sa decision au lieu de la
+           refaire. */
+        function spawnChoices() {
+          return [...document.querySelectorAll(".cell.spawn-choice")]
+            .map(cell => ({ r: Number(cell.dataset.r), c: Number(cell.dataset.c) }))
+            .filter(cell => Number.isFinite(cell.r) && Number.isFinite(cell.c));
+        }
+
+        function alliedGuardians() {
+          return (state?.characters || [])
+            .filter(char => char.player === state.currentPlayer && Number.isFinite(char.r) && Number.isFinite(char.c))
+            .sort((a, b) => (a.r - b.r) || (a.c - b.c));
+        }
+
+        /* ---- Curseur de case -------------------------------------------- */
+
+        function clampCell(value) { return Math.max(0, Math.min(GRID - 1, value)); }
 
         function cellToScreen(r, c) {
           const canvas = boardCanvas();
@@ -35528,30 +35601,141 @@
           };
         }
 
-        /* L'ecran tourne avec la camera : pousser le stick "vers le haut" doit
+        function defaultCursor() {
+          // Une case ouverte a l'action en cours vaut mieux que le centre du
+          // plateau : le joueur n'a pas a aller chercher ce qui lui est offert.
+          const interessantes = pointsOfInterest();
+          if (interessantes && interessantes.length) return { r: interessantes[0].r, c: interessantes[0].c };
+          const selected = (state?.characters || []).find(char => char.id === state.selectedCharId);
+          if (selected && Number.isFinite(selected.r)) return { r: selected.r, c: selected.c };
+          const remembered = (state?.characters || []).find(char => char.id === pad.lastGuardianId);
+          if (remembered && Number.isFinite(remembered.r)) return { r: remembered.r, c: remembered.c };
+          const middle = Math.floor(GRID / 2);
+          return { r: middle, c: middle };
+        }
+
+        /* Les cibles d'une poussee ne sont pas des cases : ce sont les anneaux
+           de destination et le marqueur de chute, ce dernier flottant hors de la
+           trame du plateau. Naviguer par case ne pouvait donc pas les atteindre.
+           On les parcourt comme ce qu'elles sont — des objets de la scene. */
+        function pushTargets() {
+          if (!state?.pushOptions?.length || !kaykit3D?.interactiveMeshes) return [];
+          return kaykit3D.interactiveMeshes
+            .filter(mesh => {
+              const kind = mesh?.userData?.ilyosInteraction;
+              return kind === "push-destination" || kind === "push-death-destination";
+            })
+            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }));
+        }
+
+        function screenOfMesh(mesh) {
+          const canvas = boardCanvas();
+          if (!kaykit3D?.camera || !canvas || !mesh) return null;
+          const monde = mesh.getWorldPosition(new THREE.Vector3());
+          const projected = monde.project(kaykit3D.camera);
+          const rect = canvas.getBoundingClientRect();
+          if (!rect.width || !rect.height) return null;
+          return {
+            x: rect.left + (projected.x * .5 + .5) * rect.width,
+            y: rect.top + (-projected.y * .5 + .5) * rect.height
+          };
+        }
+
+        /* Cases qui meritent vraiment qu'on s'y arrete, dans l'ordre de
+           priorite de la situation. Sans cela, atteindre une destination de
+           poussee a l'autre bout du plateau demandait une dizaine de crans sur
+           des cases sans le moindre interet. La pose d'ile est volontairement
+           exclue : l'ile doit pouvoir aller partout, y compris sur des cases
+           que rien ne distingue. */
+        function pointsOfInterest() {
+          if (!state || placingIsland()) return null;
+          if (state.pushOptions && state.pushOptions.length) {
+            const cells = state.pushOptions
+              .filter(option => Number.isFinite(option.r) && Number.isFinite(option.c))
+              .map(option => ({ r: option.r, c: option.c }));
+            if (cells.length) return cells;
+          }
+          const spawns = spawnChoices();
+          if (spawns.length) return spawns;
+          if (state.reachable && state.reachable.size) {
+            return [...state.reachable].map(key => {
+              const [r, c] = key.split(",").map(Number);
+              return { r, c };
+            });
+          }
+          return null;
+        }
+
+        /* L'ecran tourne avec la camera : pousser le stick « vers le haut » doit
            deplacer le curseur vers le haut DE L'ECRAN, pas vers la rangee 0 du
-           plateau. On projette donc les quatre cases voisines a l'ecran et on
-           retient celle qui suit le mieux la direction demandee. */
+           plateau. Tout se decide donc en coordonnees ecran — pour les quatre
+           voisines comme pour les cibles pertinentes. */
+        function bestInDirection(candidates, dx, dy, origin) {
+          let best = null, bestScore = 0;
+          for (const candidate of candidates) {
+            const point = cellToScreen(candidate.r, candidate.c);
+            if (!point) continue;
+            const vx = point.x - origin.x, vy = point.y - origin.y;
+            const length = Math.hypot(vx, vy);
+            if (length < 1) continue;
+            // Cap d'abord, distance ensuite : a cap egal, la plus proche gagne.
+            const alignment = ((vx / length) * dx + (vy / length) * dy);
+            if (alignment < .4) continue;
+            const score = alignment / (1 + length / 240);
+            if (score > bestScore) { bestScore = score; best = candidate; }
+          }
+          return best;
+        }
+
         function stepCursor(dx, dy) {
+          const targets = pushTargets();
+          if (targets.length) {
+            const points = targets
+              .map(target => ({ target, point: screenOfMesh(target.mesh) }))
+              .filter(entry => entry.point);
+            if (points.length) {
+              const current = pad.special && points.find(entry => entry.target.id === pad.special.id);
+              if (!current) { pad.special = points[0].target; return true; }
+              const others = points.filter(entry => entry.target.id !== pad.special.id);
+              let best = null, bestScore = 0;
+              for (const entry of others) {
+                const vx = entry.point.x - current.point.x, vy = entry.point.y - current.point.y;
+                const length = Math.hypot(vx, vy);
+                if (length < 1) continue;
+                const alignment = (vx / length) * dx + (vy / length) * dy;
+                if (alignment < .25) continue;
+                const score = alignment / (1 + length / 240);
+                if (score > bestScore) { bestScore = score; best = entry.target; }
+              }
+              if (!best) return false;
+              pad.special = best;
+              return true;
+            }
+          }
+          pad.special = null;
           if (!pad.cursor) { pad.cursor = defaultCursor(); return true; }
           const { r, c } = pad.cursor;
           const origin = cellToScreen(r, c);
-          let best = null, bestScore = 0;
+          let best = null;
+
           if (origin) {
-            for (const [nr, nc] of [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]]) {
-              if (nr < 0 || nc < 0 || nr >= GRID || nc >= GRID) continue;
-              const point = cellToScreen(nr, nc);
-              if (!point) continue;
-              const vx = point.x - origin.x, vy = point.y - origin.y;
-              const length = Math.hypot(vx, vy) || 1;
-              const score = (vx / length) * dx + (vy / length) * dy;
-              if (score > bestScore) { bestScore = score; best = [nr, nc]; }
+            const interesting = pointsOfInterest();
+            if (interesting) {
+              best = bestInDirection(
+                interesting.filter(cell => cell.r !== r || cell.c !== c),
+                dx, dy, origin
+              );
+            }
+            if (!best) {
+              const neighbours = [{ r: r - 1, c }, { r: r + 1, c }, { r, c: c - 1 }, { r, c: c + 1 }]
+                .filter(cell => cell.r >= 0 && cell.c >= 0 && cell.r < GRID && cell.c < GRID);
+              best = bestInDirection(neighbours, dx, dy, origin);
             }
           }
           // Repli sans camera exploitable : axes bruts du plateau.
-          if (!best) best = [clampCell(r + Math.round(dy)), clampCell(c + Math.round(dx))];
-          if (best[0] === r && best[1] === c) return false;
-          pad.cursor = { r: best[0], c: best[1] };
+          if (!best) best = { r: clampCell(r + Math.round(dy)), c: clampCell(c + Math.round(dx)) };
+          if (best.r === r && best.c === c) return false;
+          pad.cursor = { r: best.r, c: best.c };
           return true;
         }
 
@@ -35560,7 +35744,9 @@
            ne traite que les pointeurs non-souris, il ne doit pas s'en saisir. */
         function refreshHover() {
           const canvas = boardCanvas();
-          const point = pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c);
+          const point = pad.special
+            ? screenOfMesh(pad.special.mesh)
+            : (pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c));
           if (!canvas || !point) return;
           canvas.dispatchEvent(new PointerEvent("pointermove", {
             bubbles: true, cancelable: true, view: window,
@@ -35569,7 +35755,14 @@
           }));
         }
 
-        /* ---- Actions ---------------------------------------------------- */
+        function moveCursorTo(r, c) {
+          pad.cursor = { r, c };
+          setHud(null);
+          clearChoice();
+          refreshHover();
+        }
+
+        /* ---- Actions sur le plateau -------------------------------------- */
 
         function interactionAtCursor() {
           if (!pad.cursor || !kaykit3D?.interactiveMeshes) return null;
@@ -35595,40 +35788,95 @@
         }
 
         function actOnCursor() {
-          if (!pad.cursor || typeof canLocalPlayerAct !== "function" || !canLocalPlayerAct()) return;
+          if (typeof canLocalPlayerAct !== "function" || !canLocalPlayerAct()) return;
+          if (pad.special) {
+            executeUnifiedPushOption(pad.special.id);
+            pad.special = null;
+            vibrate(170, .75);
+            return;
+          }
+          if (!pad.cursor) return;
           const found = interactionAtCursor();
           if (!found) return;
-          if (found.pushOptionId) { executeUnifiedPushOption(found.pushOptionId); return; }
+          const guardian = (state?.characters || []).find(
+            char => char.r === pad.cursor.r && char.c === pad.cursor.c && char.player === state.currentPlayer
+          );
+          if (guardian) pad.lastGuardianId = guardian.id;
+          if (found.pushOptionId) {
+            executeUnifiedPushOption(found.pushOptionId);
+            vibrate(170, .75);
+            return;
+          }
           const point = cellToScreen(pad.cursor.r, pad.cursor.c) || { x: 0, y: 0 };
           dispatchKayKitClick(
             { userData: { r: pad.cursor.r, c: pad.cursor.c, kaykitAction: found.kaykitAction } },
             { clientX: point.x, clientY: point.y, button: 0, buttons: 0 }
           );
+          vibrate(45, .22);
+        }
+
+        function clickDock(id) {
+          const button = document.getElementById(id);
+          if (button && usable(button)) { button.click(); vibrate(45, .22); }
+          else showToast("Action indisponible pour le moment.");
+        }
+
+        /* Y : la couronne. Prendre, transmettre ou poser passent tous par un
+           clic sur le noeud de la couronne lui-meme (".carrier-crown" pour une
+           couronne portee, ".artifact" pour une couronne au sol) — jamais sur la
+           case. dispatchKayKitClick sait viser ce noeud ; on lui donne donc la
+           couronne visee, puis le joueur designe le gardien voisin au curseur.
+           Priorite a la couronne sous le curseur, sinon celle du porteur allie. */
+        function crownAction() {
+          if (!kaykit3D?.interactiveMeshes) return;
+          const crowns = kaykit3D.interactiveMeshes.filter(mesh => {
+            const action = mesh?.userData?.kaykitAction;
+            return action === "crown-carried" || action === "crown-loose";
+          });
+          if (!crowns.length) { showToast("Aucune couronne a portee."); return; }
+
+          const sousCurseur = pad.cursor && crowns.find(
+            mesh => mesh.userData.r === pad.cursor.r && mesh.userData.c === pad.cursor.c
+          );
+          const portee = crowns.find(mesh => {
+            if (mesh.userData.kaykitAction !== "crown-carried") return false;
+            const porteur = (state?.characters || []).find(
+              char => char.r === mesh.userData.r && char.c === mesh.userData.c
+            );
+            return porteur?.player === state.currentPlayer;
+          });
+          const cible = sousCurseur || portee || crowns[0];
+
+          moveCursorTo(cible.userData.r, cible.userData.c);
+          const point = cellToScreen(cible.userData.r, cible.userData.c) || { x: 0, y: 0 };
+          dispatchKayKitClick(
+            { userData: { r: cible.userData.r, c: cible.userData.c, kaykitAction: cible.userData.kaykitAction } },
+            { clientX: point.x, clientY: point.y, button: 0, buttons: 0 }
+          );
+          vibrate(60, .3);
         }
 
         /* B : meme arbitrage que la touche Echap (voir diagnostics.js) —
-           refermer une fenetre ouverte d'abord, sinon annuler. */
+           refermer une fenetre ouverte d'abord, sinon annuler. handleCancelButton
+           sait deja remonter d'un cran a la fois : desselectionner ce qui est en
+           cours, puis seulement annuler la derniere action. On ne redecrit donc
+           pas cette echelle ici, on l'emprunte. */
         function cancel() {
           if (els.rulesModal && !els.rulesModal.classList.contains("hidden")) {
             els.rulesModal.classList.add("hidden");
             return;
           }
           if (els.soundMenu && !els.soundMenu.classList.contains("hidden")) { closeSoundMenu(); return; }
+          if (drawerOpen()) { closeHudV2Drawer(); return; }
           handleCancelButton();
         }
 
-        /* ---- Controles du HUD (LB / RB) --------------------------------- */
-
-        // Peu de controles vivent a l'ecran en meme temps, et ils sont presque
-        // tous contextuels : les panneaux de rotation d'ile ou de gardien
-        // n'existent que pendant leur phase. Une simple liste des boutons
-        // reellement visibles et actifs suffit donc, sans navigation spatiale.
-        const FOCUS_CONTAINERS = ["ov2IslandRotationV12", "hand", "ilyosHudOrganicV2"];
+        /* ---- Surlignage ------------------------------------------------- */
 
         /* Ne PAS tester offsetParent ici : il vaut null pour tout element en
            position:fixed, ce qu'est justement le HUD organique. La liste des
-           controles etait alors systematiquement vide et LB/RB ne faisaient
-           rien. On mesure la boite et on lit le style calcule. */
+           controles etait alors systematiquement vide et la navigation ne
+           faisait rien. On mesure la boite et on lit le style calcule. */
         function visible(element) {
           if (!element) return false;
           const rect = element.getBoundingClientRect();
@@ -35637,47 +35885,98 @@
           return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) !== 0;
         }
 
-        function focusables() {
-          const found = [];
-          for (const id of FOCUS_CONTAINERS) {
-            const container = document.getElementById(id);
-            if (!container || !visible(container)) continue;
-            container.querySelectorAll("button").forEach(button => {
-              if (visible(button) && !button.disabled
-                && button.getAttribute("aria-disabled") !== "true"
-                && !button.classList.contains("disabled")) found.push(button);
-            });
-          }
-          return found;
+        function usable(button) {
+          return visible(button) && !button.disabled
+            && button.getAttribute("aria-disabled") !== "true"
+            && !button.classList.contains("disabled");
         }
 
-        function setFocus(element) {
-          if (pad.focusEl && pad.focusEl !== element) pad.focusEl.classList.remove("ilyos-gamepad-focus");
-          pad.focusEl = element || null;
-          if (pad.focusEl) {
-            pad.focusEl.classList.add("ilyos-gamepad-focus");
-            pad.focusEl.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        function highlight(previous, next) {
+          if (previous && previous !== next) previous.classList.remove("ilyos-gamepad-focus");
+          if (next) {
+            next.classList.add("ilyos-gamepad-focus");
+            next.scrollIntoView?.({ block: "nearest", inline: "nearest" });
           }
+          return next || null;
         }
 
-        function moveFocus(direction) {
-          const list = focusables();
-          if (!list.length) { setFocus(null); return; }
-          const current = list.indexOf(pad.focusEl);
-          const next = current < 0
+        function setHud(element) {
+          pad.hudEl = highlight(pad.hudEl, element);
+          // Un seul anneau a la fois : laisser le dock allume pendant qu'on
+          // choisit une ile donnait deux surlignages concurrents a l'ecran, sans
+          // dire lequel A validerait.
+          if (element) clearChoice();
+        }
+
+        function clearChoice() {
+          pad.choiceEl = highlight(pad.choiceEl, null);
+          pad.choiceIndex = -1;
+        }
+
+        /* Le choix contextuel est suivi par RANG, pas par reference.
+           renderIslandSelector() vide #islandSelector et reconstruit ses neuf
+           boutons a chaque rendu — et un rendu survient a chaque changement de
+           survol, donc a chaque mouvement du curseur. Une reference gardee d'une
+           image sur l'autre designait donc un noeud detache : le menage l'ecartait
+           et le surlignage retombait sur la premiere ile. Impossible, dans ces
+           conditions, d'en choisir une autre a la manette. Le rang, lui, survit a
+           la reconstruction. */
+        function syncChoice() {
+          const list = contextChoices();
+          if (!list.length) { clearChoice(); return null; }
+          if (pad.choiceIndex < 0) pad.choiceIndex = 0;
+          if (pad.choiceIndex >= list.length) pad.choiceIndex = list.length - 1;
+          const element = list[pad.choiceIndex];
+          pad.choiceEl = highlight(pad.choiceEl, element);
+          pad.hudEl = highlight(pad.hudEl, null);
+          return element;
+        }
+
+        function moveChoice(direction) {
+          const list = contextChoices();
+          if (!list.length) { clearChoice(); return; }
+          pad.choiceIndex = pad.choiceIndex < 0
             ? (direction > 0 ? 0 : list.length - 1)
-            : (current + direction + list.length) % list.length;
-          setFocus(list[next]);
+            : (pad.choiceIndex + direction + list.length) % list.length;
+          syncChoice();
         }
 
-        /* Un controle focalise peut disparaitre entre deux images (fin de la
+        function hudActions() {
+          return HUD_ORDER.map(id => document.getElementById(id)).filter(button => button && usable(button));
+        }
+
+        /* Choix contextuels, par ordre de priorite. LB/RB leur sont reserves :
+           les faire parcourir tout le HUD en jeu normal noyait le seul usage
+           ou ils sont vraiment utiles. */
+        function contextChoices() {
+          const islands = islandChoices();
+          if (islands.length) return islands;
+          const hand = document.getElementById("hand");
+          if (hand && visible(hand)) {
+            const choices = [...hand.querySelectorAll("button")].filter(usable);
+            if (choices.length > 1) return choices;
+          }
+          return [];
+        }
+
+        function cycle(list, current, direction) {
+          if (!list.length) return null;
+          const index = list.indexOf(current);
+          if (index < 0) return list[direction > 0 ? 0 : list.length - 1];
+          return list[(index + direction + list.length) % list.length];
+        }
+
+        /* Un element surligne peut disparaitre entre deux images (fin de la
            phase de pose, action epuisee) : sans ce menage, A cliquerait un
            bouton devenu invisible. */
-        function pruneFocus() {
-          if (pad.focusEl && !focusables().includes(pad.focusEl)) setFocus(null);
+        function prune() {
+          if (pad.hudEl && !hudActions().includes(pad.hudEl)) setHud(null);
+          // Rien a faire pour le choix contextuel : syncChoice() le rattache a
+          // chaque image au bouton de meme rang, reconstruit ou non.
+          if (pad.choiceIndex >= 0 && !contextChoices().length) clearChoice();
         }
 
-        /* ---- Camera ----------------------------------------------------- */
+        /* ---- Camera ------------------------------------------------------ */
 
         function rotateCamera(amount) {
           if (!kaykit3D || !amount) return;
@@ -35700,7 +35999,56 @@
           }
         }
 
-        /* ---- Boucle ----------------------------------------------------- */
+        /* ---- Haptique ---------------------------------------------------- */
+
+        /* Strictement decoratif : aucune information de jeu ne transite par la
+           vibration, et une manette qui n'en a pas se comporte normalement. */
+        let activePad = null;
+        function vibrate(duration, strength) {
+          const actuator = activePad?.vibrationActuator;
+          if (!actuator?.playEffect) return;
+          try {
+            actuator.playEffect("dual-rumble", {
+              duration, strongMagnitude: strength, weakMagnitude: strength * .6
+            });
+          } catch (_) { /* manette sans retour de force : sans consequence */ }
+        }
+
+        /* ---- Rotations d'ile --------------------------------------------- */
+
+        // Memes conditions que handleRotateKey (core.js) : pose d'ile en cours,
+        // ou rotation magique d'une ile deja choisie avec son pivot.
+        function canRotateIsland() {
+          if (!state) return false;
+          if (placingIsland()) return true;
+          return state.phase === "ACTION"
+            && state.selectedActionType === "MAGIC"
+            && !!state.selectedIslandId
+            && !!state.selectedMagicPivot;
+        }
+
+        function rotateIsland(direction, now) {
+          if (!canRotateIsland() || now - pad.rotateAt < ROTATE_ISLAND_MS) return;
+          pad.rotateAt = now;
+          rotateSelectedIsland(direction);
+          vibrate(35, .18);
+        }
+
+        /* ---- Fin de tour -------------------------------------------------- */
+
+        /* Une fin de tour accidentelle coute un tour entier et ne s'annule pas
+           toujours : on refuse tant qu'un geste est engage, plutot que de la
+           laisser passer en silence. */
+        function endTurnFromPad() {
+          if (placingIsland() || (state?.pushOptions && state.pushOptions.length)) {
+            showToast("Terminez ou annulez le geste en cours avant de finir le tour.");
+            return;
+          }
+          const button = document.getElementById("ov2End");
+          if (button && usable(button)) button.click();
+        }
+
+        /* ---- Boucle ------------------------------------------------------- */
 
         function pressed(gamepad, index) { return !!gamepad.buttons[index]?.pressed; }
         function justPressed(gamepad, index) { return pressed(gamepad, index) && !pad.previous[index]; }
@@ -35709,31 +36057,97 @@
           return Math.abs(value) < DEADZONE ? 0 : value;
         }
 
+        function navigateGuardians(direction) {
+          const guardians = alliedGuardians();
+          if (!guardians.length) return;
+          const current = guardians.findIndex(char => char.id === pad.lastGuardianId);
+          const next = guardians[(Math.max(0, current) + direction + guardians.length) % guardians.length];
+          pad.lastGuardianId = next.id;
+          moveCursorTo(next.r, next.c);
+        }
+
         function poll() {
           requestAnimationFrame(poll);
           const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
           let gamepad = null;
           for (const candidate of gamepads) if (candidate?.connected) { gamepad = candidate; break; }
+          activePad = gamepad;
           if (!gamepad) { pad.previous = []; return; }
           if (typeof kaykit3D === "undefined" || !kaykit3D?.camera) return;
 
           const now = performance.now();
           let hoverDirty = false;
+          const isNeutral = neutral();
+          /* Le tiroir ne prend le stick QUE s'il a vraiment quelque chose a
+             offrir, et jamais pendant une pose.
 
-          // Stick gauche + croix directionnelle : une seule et meme navigation.
+             Il reste ouvert apres le choix de la forme : la branche « tiroir »
+             passant avant toutes les autres, elle accaparait alors le stick et
+             le curseur du plateau ne bougeait plus — l'ile devenait impossible a
+             poser a la manette, y compris apres un choix fait a la souris. Et
+             quand aucun choix n'etait jugé utilisable, la meme branche avalait
+             le stick sans rien faire : plus de navigation du tout. */
+          const choix = contextChoices();
+          const drawer = drawerOpen() && !placingIsland() && choix.length > 0;
+
+          /* Et le surlignage doit etre RELACHE des que le tiroir cesse d'etre
+             actif. Il survivait au choix de la forme, or la boucle saute le
+             survol du plateau tant qu'un choix est designe : plus d'apercu de
+             pose, donc plus rien a poser — exactement le symptome « je ne peux
+             plus placer l'ile a la manette apres l'avoir choisie a la souris ». */
+          if (!drawer && (placingIsland() || !choix.length)) clearChoice();
+
+          /* Tiroir d'iles : designer d'office la premiere forme disponible.
+             Auparavant, rien n'etait surligne tant que le joueur n'avait pas
+             devine qu'il fallait d'abord parcourir la liste — A ne faisait donc
+             rien a l'ouverture, et le tiroir semblait mort a la manette. */
+          if (drawer) syncChoice();
+
+          /* Entree dans une action : poser le curseur la ou le joueur regarde
+             deja, plutot que de le laisser chercher le gardien concerne. */
+          if (pad.wasNeutral && !isNeutral) {
+            pad.cursor = defaultCursor();
+            setHud(null);
+            hoverDirty = true;
+          }
+          pad.wasNeutral = isNeutral;
+
+          // Couronne validee : le moteur pose deja cet identifiant le temps de
+          // son animation de score. On s'y raccroche plutot que d'inventer un
+          // signal parallele.
+          if (state?.scoreAnimationPlayerId !== pad.lastScoreAnim) {
+            if (state?.scoreAnimationPlayerId) vibrate(240, .9);
+            pad.lastScoreAnim = state?.scoreAnimationPlayerId ?? null;
+          }
+
+          // Stick gauche et croix directionnelle : strictement equivalents.
           let dx = axis(gamepad, 0), dy = axis(gamepad, 1);
           if (pressed(gamepad, BUTTON.LEFT)) dx = -1;
           if (pressed(gamepad, BUTTON.RIGHT)) dx = 1;
           if (pressed(gamepad, BUTTON.UP)) dy = -1;
           if (pressed(gamepad, BUTTON.DOWN)) dy = 1;
+
           if (dx || dy) {
             const fresh = !pad.stepAt;
             if (fresh || now >= pad.stepAt) {
-              // Un seul axe a la fois : les diagonales n'existent pas sur la grille.
-              const only = Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
-              if (stepCursor(only[0], only[1])) hoverDirty = true;
+              // Un seul axe a la fois : les diagonales n'existent pas ici.
+              const horizontal = Math.abs(dx) >= Math.abs(dy);
+              const direction = horizontal ? Math.sign(dx) : Math.sign(dy);
+              if (drawer) {
+                /* Le tiroir ouvert accapare le stick : LB/RB font la meme chose,
+                   mais rien ne doit exiger de les connaitre. Les deux axes
+                   avancent dans la meme liste — le tiroir est une grille, et
+                   n'obeir qu'a la horizontale y paraissait casse. */
+                moveChoice(direction);
+              } else if (isNeutral) {
+                if (horizontal) { clearChoice(); setHud(cycle(hudActions(), pad.hudEl, direction)); }
+                else navigateGuardians(direction);
+              } else {
+                setHud(null);
+                clearChoice();
+                if (stepCursor(horizontal ? direction : 0, horizontal ? 0 : direction)) hoverDirty = true;
+              }
               pad.stepAt = now + (fresh ? STEP_FIRST_MS : STEP_REPEAT_MS);
-              setFocus(null); // revenir au plateau des qu'on y navigue
             }
           } else pad.stepAt = 0;
 
@@ -35746,19 +36160,36 @@
             hoverDirty = true;
           }
 
-          if (justPressed(gamepad, BUTTON.LB)) moveFocus(-1);
-          if (justPressed(gamepad, BUTTON.RB)) moveFocus(1);
+          // Gachettes : rotation d'ile, a la pose comme sous Magie.
+          if (pressed(gamepad, BUTTON.LT)) rotateIsland(-1, now);
+          if (pressed(gamepad, BUTTON.RT)) rotateIsland(1, now);
+
+          if (justPressed(gamepad, BUTTON.LB)) moveChoice(-1);
+          if (justPressed(gamepad, BUTTON.RB)) moveChoice(1);
+
           if (justPressed(gamepad, BUTTON.A)) {
-            if (pad.focusEl) pad.focusEl.click();
+            const choix = pad.choiceIndex >= 0 ? syncChoice() : null;
+            if (choix) { choix.click(); vibrate(45, .22); }
+            else if (pad.hudEl) { pad.hudEl.click(); vibrate(45, .22); }
             else actOnCursor();
           }
-          if (justPressed(gamepad, BUTTON.B)) { setFocus(null); cancel(); }
-          if (justPressed(gamepad, BUTTON.X)) document.getElementById("ov2End")?.click();
-          if (justPressed(gamepad, BUTTON.Y)) els.rulesModal?.classList.toggle("hidden");
+          if (justPressed(gamepad, BUTTON.B)) { setHud(null); clearChoice(); cancel(); }
+          /* X : miroir pendant une pose d'ile — c'est la seule chose a faire a
+             ce moment-la — et action POUSSER partout ailleurs. */
+          if (justPressed(gamepad, BUTTON.X)) {
+            if (placingIsland()) flipSelectedIsland();
+            else clickDock("ov2Push");
+          }
+          if (justPressed(gamepad, BUTTON.Y)) crownAction();
+          if (justPressed(gamepad, BUTTON.SELECT)) endTurnFromPad();
           if (justPressed(gamepad, BUTTON.START)) document.getElementById("ov2Gear")?.click();
+          if (justPressed(gamepad, BUTTON.R3)) reprendreKayKitVueDeFace();
+          // Il n'existe pas de panneau « objectif » distinct dans ce HUD : la
+          // fenetre des regles est ce qui s'en approche le plus.
+          if (justPressed(gamepad, BUTTON.L3)) els.rulesModal?.classList.toggle("hidden");
 
-          pruneFocus();
-          if (hoverDirty && !pad.focusEl) refreshHover();
+          prune();
+          if (hoverDirty && !pad.hudEl && !pad.choiceEl) refreshHover();
           pad.previous = gamepad.buttons.map(button => !!button.pressed);
         }
 
@@ -35766,10 +36197,20 @@
           if (document.getElementById("ilyosGamepadStyle")) return;
           const style = document.createElement("style");
           style.id = "ilyosGamepadStyle";
-          // Anneau de focus manette : seul ajout visuel de cette couche.
+          // Anneau de focus manette : seul ajout visuel de cette couche. Tout le
+          // reste — anneau du gardien, affordances de cases — existe deja.
           style.textContent =
             ".ilyos-gamepad-focus{outline:3px solid #ffd879;outline-offset:3px;"
-            + "border-radius:10px;box-shadow:0 0 16px rgba(255,216,121,.55);}";
+            + "border-radius:10px;box-shadow:0 0 16px rgba(255,216,121,.55);}"
+            /* Vignettes d'ile : petites, serrees, dans un conteneur qui rogne.
+               Un anneau pose A L'EXTERIEUR du bouton y etait tout simplement
+               invisible — on croyait ne pas pouvoir changer d'ile alors que le
+               parcours fonctionnait, faute de voir laquelle etait visee. On le
+               rentre donc a l'interieur, et on l'appuie d'un fond et d'une
+               legere echelle pour qu'il se distingue au premier coup d'oeil. */
+            + ".island-choice.ilyos-gamepad-focus{outline-offset:-3px;"
+            + "background:rgba(255,216,121,.22);transform:scale(1.06);"
+            + "position:relative;z-index:2;}";
           document.head.appendChild(style);
         }
 
