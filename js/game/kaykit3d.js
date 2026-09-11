@@ -5377,6 +5377,53 @@
          second système d'arbitrage à écrire ni à entretenir. */
       let kaykitCinematique = null;
 
+      /* LA LUMIÈRE QUI MONTE — le lever de soleil, sans bouger le soleil.
+
+         Déplacer réellement l'astre demande ILYOS_SKY.soleil(), qui régénère la
+         texture de ciel : 200 à 250 ms par appel, mesuré. C'est un gel d'une
+         quinzaine d'images, donc inutilisable en mouvement, même par paliers.
+
+         Ce qui fait un lever de soleil à l'œil n'est de toute façon pas le
+         disque — la caméra le fait déjà entrer dans le cadre toute seule en
+         basculant de -62° à +37°. C'est la LUMIÈRE qui croît : le halo, le
+         liseré sur les nuages, la poussière qui s'allume. Ces trois-là sont des
+         réglages directs — un objet de configuration, des opacités de matériau,
+         deux uniformes déjà compilés — et ne coûtent rien par image.
+
+         Les valeurs d'arrivée sont relevées sur la scène au démarrage, jamais
+         écrites en dur : la cinématique rend exactement ce qu'elle a trouvé. */
+      function kaykitCinematiqueReleverLumiere() {
+        const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
+        return {
+          bloomForce: KAYKIT_BLOOM.force,
+          bloomSeuil: KAYKIT_BLOOM.seuil,
+          rim: KAYKIT_CLOUD_BACKLIT.rimStrength,
+          poussieres: champs.map(champ => champ.object.material.opacity)
+        };
+      }
+
+      /* u = 0 au départ (lumière basse), u = 1 à l'arrivée (valeurs de la scène). */
+      function kaykitCinematiqueLumiere(base, u) {
+        if (!base) return;
+        const melange = (depart, fin) => depart + (fin - depart) * u;
+
+        KAYKIT_BLOOM.force = melange(base.bloomForce * 2.15, base.bloomForce);
+        // Seuil plus BAS = plus de choses débordent : le vide devient rêveur.
+        KAYKIT_BLOOM.seuil = melange(base.bloomSeuil * .55, base.bloomSeuil);
+
+        KAYKIT_CLOUD_BACKLIT.rimStrength = melange(base.rim * .22, base.rim);
+        kaykitBacklitCloudCache.forEach(mat => {
+          const sh = mat.userData && mat.userData.shader;
+          if (sh && sh.uniforms.uRimStrength) sh.uniforms.uRimStrength.value = KAYKIT_CLOUD_BACKLIT.rimStrength;
+        });
+
+        const champs = (kaykit3D && kaykit3D.skyDustFields) || [];
+        champs.forEach((champ, i) => {
+          const fin = base.poussieres[i];
+          if (Number.isFinite(fin)) champ.object.material.opacity = melange(fin * .12, fin);
+        });
+      }
+
       function kaykitCinematiqueBrume(near, far) {
         const fog = kaykit3D?.scene?.fog;
         if (!fog || !Number.isFinite(near) || !Number.isFinite(far)) return;
@@ -5443,6 +5490,9 @@
              l'inclinaison, eux, gardent la courbe douce. */
           hauteur: lineaire(depart.hauteur, arrivee.hauteur, Math.pow(eased, .4)),
           azimut: lineaire(depart.azimut || 0, arrivee.azimut || 0, eased),
+          /* La lumière suit l'ALTITUDE et non le temps : elle se lève à mesure
+             qu'on descend vers le monde, pas selon le chronomètre. */
+          lumiere: Math.pow(eased, .4),
           /* La brume est le seul « effet » de la cinématique, et elle ne coûte
              rien : deux nombres. Le monde ne se construit pas à l'écran, c'est
              le brouillard qui recule et le découvre. */
@@ -5485,6 +5535,7 @@
         if (kaykitReducedMotion()) {
           kaykitCinematiquePose(arrivee.recul, arrivee.inclinaison, arrivee.hauteur);
           kaykitCinematiqueBrume(arrivee.brumeNear, arrivee.brumeFar);
+          kaykitCinematiqueLumiere(kaykitCinematiqueReleverLumiere(), 1);
           kaykitCinematiqueRendreLaCamera(modeAvant, orbitAvant);
           return Promise.resolve(true);
         }
@@ -5527,6 +5578,7 @@
         return new Promise(resolve => {
           kaykitCinematique = {
             depart, arrivee, duree,
+            lumiereBase: kaykitCinematiqueReleverLumiere(),
             /* `attente` tient la caméra à son poste de départ sans avancer.
                Le verrou est déjà pris pendant ce temps-là : c'est ce qui permet
                d'ouvrir sur le vide plusieurs secondes sans qu'un recadrage de
@@ -5547,6 +5599,7 @@
         const etat = kaykitCinematiqueEtat(encours.depart, encours.arrivee, 1);
         kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
         kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
+        kaykitCinematiqueLumiere(encours.lumiereBase, 1);
         encours.terminer();
         return true;
       }
@@ -11537,6 +11590,7 @@
           const etat = kaykitCinematiqueEtat(kaykitCinematique.depart, kaykitCinematique.arrivee, brut);
           kaykitCinematiquePose(etat.recul, etat.inclinaison, etat.hauteur, etat.azimut);
           kaykitCinematiqueBrume(etat.brumeNear, etat.brumeFar);
+          kaykitCinematiqueLumiere(kaykitCinematique.lumiereBase, etat.lumiere);
           kaykit3D.cameraTween = null;
           if (brut >= 1) kaykitCinematique.terminer();
         }
