@@ -37,6 +37,10 @@ const fragmentNames = [
   // suivre le moteur qui déclare le tableau PUZZLES.
   'puzzle.js',
   'puzzle-levels.js',
+  // Couche manette : purement additive, elle n'appelle que des fonctions
+  // deja definies (dispatchKayKitClick, handleCancelButton, zoomKayKitCamera).
+  // Placee en dernier pour que son IIFE s'execute quand tout est declare.
+  'gamepad.js',
   'diagnostics.js',
 ];
 
