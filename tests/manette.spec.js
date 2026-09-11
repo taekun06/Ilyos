@@ -310,39 +310,77 @@ async function appuyerDansLeMenu(page, index, duree = 120) {
   await page.waitForTimeout(240);
 }
 
-test('la manette navigue dès le premier menu', async ({ page }) => {
+test('le menu suit la grammaire console : modes, réglages, valeurs', async ({ page }) => {
   const incidents = collecterIncidents(page);
   await page.addInitScript(FAUSSE_MANETTE);
   await page.goto('/');
 
   const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
   await menu.locator('[data-mode="solo"]').first().waitFor({ timeout: 30000 });
+  await page.waitForTimeout(600);
 
-  const viseDansLeMenu = () => cadreDuMenu(page).evaluate(() => {
+  const vise = () => cadreDuMenu(page).evaluate(() => {
     const element = document.querySelector('.ilyos-pad-vise');
     if (!element) return null;
-    return element.getAttribute('data-mode') || element.getAttribute('data-action') || element.tagName;
+    return element.getAttribute('data-mode')
+      || element.getAttribute('data-key')
+      || element.getAttribute('data-action')
+      || element.id
+      || element.tagName;
   });
 
-  // Bas : le menu se parcourt sans souris.
-  await inclinerDansLeMenu(page, 1, 1);
-  const premier = await viseDansLeMenu();
-  expect(premier, 'le stick doit désigner un élément du menu').not.toBeNull();
+  // Règle 1 : un nouvel écran choisit lui-même son meilleur point de départ.
+  expect(await vise(), 'l’accueil doit démarrer sur le mode Solo').toBe('solo');
 
-  await inclinerDansLeMenu(page, 1, 1);
-  expect(await viseDansLeMenu(), 'une seconde poussée doit avancer dans le menu').not.toBe(premier);
+  /* Navigation SPATIALE : droite désigne la carte réellement située à droite,
+     pas la suivante dans le document. Les cartes sont en grille. */
+  await inclinerDansLeMenu(page, 0, 1);
+  const aDroite = await vise();
+  expect(aDroite, 'droite doit changer de mode').not.toBe('solo');
 
-  /* A doit réellement agir : on descend jusqu'au mode solo, puis on valide, et
-     l'écran de configuration du duel doit apparaître. */
-  let atteint = false;
-  for (let essai = 0; essai < 24 && !atteint; essai++) {
-    await inclinerDansLeMenu(page, 1, 1, 120);
-    atteint = (await viseDansLeMenu()) === 'solo';
-  }
-  expect(atteint, 'le parcours doit pouvoir atteindre le mode solo').toBe(true);
+  await inclinerDansLeMenu(page, 0, -1);
+  expect(await vise(), 'gauche doit revenir au mode précédent').toBe('solo');
 
+  // A entre dans le mode.
   await appuyerDansLeMenu(page, B.A);
   await menu.locator('text=AFFRONTER LE CPU').first().waitFor({ timeout: 15000 });
+  await page.waitForTimeout(500);
+
+  const premierReglage = await vise();
+  expect(premierReglage, 'la configuration doit désigner un réglage d’emblée').not.toBeNull();
+
+  const estReglage = () => cadreDuMenu(page).evaluate(() => {
+    const element = document.querySelector('.ilyos-pad-vise');
+    return !!element && element.matches('.field[data-key], .difficulty-zone[data-key]');
+  });
+  expect(await estReglage(), 'le point de départ doit être un réglage, pas un bouton').toBe(true);
+
+  /* LE POINT CENTRAL : gauche/droite change la VALEUR du réglage visé, sans
+     jamais désigner séparément les petites flèches. Un mouvement par
+     changement, au lieu de trois. */
+  const valeur = () => cadreDuMenu(page).evaluate(clef => {
+    const ligne = document.querySelector(`[data-key="${clef}"]`);
+    return ligne ? ligne.textContent.replace(/\s+/g, ' ').trim() : null;
+  }, premierReglage);
+
+  const avant = await valeur();
+  await inclinerDansLeMenu(page, 0, 1);
+  expect(await valeur(), 'droite doit changer la valeur du réglage').not.toBe(avant);
+  expect(await vise(), 'et le focus doit rester sur ce même réglage').toBe(premierReglage);
+
+  /* Le focus est retenu par identité : render() refait tout le DOM du panneau à
+     chaque changement de valeur, donc une référence n'aurait pas survécu. */
+  await inclinerDansLeMenu(page, 0, 1);
+  expect(await vise(), 'le focus doit survivre à la reconstruction du panneau').toBe(premierReglage);
+
+  // Haut/bas passe d'un réglage au suivant, sans jamais viser une flèche.
+  await inclinerDansLeMenu(page, 1, 1);
+  expect(await vise(), 'bas doit passer au réglage suivant').not.toBe(premierReglage);
+
+  // B revient à l'accueil.
+  await appuyerDansLeMenu(page, B.B);
+  await page.waitForTimeout(900);
+  expect(await vise(), 'B doit ramener à l’accueil').toBe('solo');
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
@@ -361,8 +399,14 @@ test('l’île se pose à la manette même après un choix à la souris', async 
   const tiroirOuvert = () => page.evaluate(
     () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
   );
-  if (!(await tiroirOuvert())) await page.locator('#ov2Island').click({ force: true });
-  await page.locator('#islandSelector .island-choice:not([disabled])').first().click({ force: true });
+  /* dispatchEvent plutôt qu'un vrai clic : le bouton ÎLE passe brièvement en
+     « ov2-off » quand le tiroir s'ouvre de lui-même, et un clic réel exige une
+     boîte visible — la préparation du test échouait alors, pas la manette. */
+  if (!(await tiroirOuvert())) {
+    await page.locator('#ov2Island').dispatchEvent('click');
+    await page.waitForTimeout(500);
+  }
+  await page.locator('#islandSelector .island-choice:not([disabled])').first().dispatchEvent('click');
 
   await page.waitForFunction(() => {
     const racine = window.kaykit3D?.dynamicGroup;
@@ -382,15 +426,25 @@ test('l’île se pose à la manette même après un choix à la souris', async 
   expect(apres, 'le stick doit déplacer le curseur sur le plateau').not.toBeNull();
   expect(apres, 'le curseur doit avoir changé de case malgré le tiroir ouvert').not.toBe(depart);
 
-  // Et A doit réellement poser l'île : l'aperçu cède la place à une vraie île.
-  await appuyer(page, B.A);
-  await page.waitForFunction(() => {
+  /* Et A doit réellement poser l'île : l'aperçu cède la place à une vraie île.
+     Toutes les cases n'accueillent pas une île — le curseur peut tomber sur une
+     position refusée — donc on essaie quelques emplacements, comme un joueur.
+     Ce qui est vérifié ici, c'est que la pose ABOUTIT à la manette. */
+  const encoreEnApercu = () => page.evaluate(() => {
     const racine = window.kaykit3D?.dynamicGroup;
     if (!racine) return false;
     let apercu = false;
     racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') apercu = true; });
-    return !apercu;
-  }, null, { timeout: 8000 });
+    return apercu;
+  });
+
+  let posee = false;
+  for (let essai = 0; essai < 10 && !posee; essai++) {
+    await appuyer(page, B.A);
+    posee = !(await encoreEnApercu());
+    if (!posee) await incliner(page, essai % 2 ? 1 : 0, 1, 140);
+  }
+  expect(posee, 'A doit finir par poser l’île à la manette').toBe(true);
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });

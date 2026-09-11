@@ -35561,19 +35561,47 @@
              gardien selectionne — et passait donc pour « neutre » : le stick
              repartait vers le dock alors que le jeu attendait un clic sur une
              case, et le gardien devenait impossible a poser a la manette. */
-          if (state.phase === "PLACE_SPAWN" || spawnChoices().length) return false;
+          if (state.phase === "PLACE_SPAWN") return false;
+          // Le moteur propose des cibles : le jeu attend un clic sur le plateau,
+          // pas un choix dans le dock.
+          if (pointsOfInterest()) return false;
           return !placingIsland()
             && !state.selectedActionType
             && !state.selectedCharId
             && !(state.pushOptions && state.pushOptions.length);
         }
 
-        /* Cases ouvertes a l'invocation : le moteur les marque deja d'une classe
-           sur le plateau DOM (voir renderBoard), en tenant compte du draft comme
-           de l'ile fraichement posee. On lit donc sa decision au lieu de la
-           refaire. */
-        function spawnChoices() {
-          return [...document.querySelectorAll(".cell.spawn-choice")]
+        /* LES CIBLES VALIDES SONT CELLES QUE LE MOTEUR SURLIGNE DEJA.
+
+           renderBoard marque chaque case offerte d'une classe — « reachable »
+           pour un deplacement, « spawn-choice » pour une invocation,
+           « crown-claimable » pour une couronne, « magic-valid » et
+           « magic-pivot » pour la magie. Lire cette decision plutot que de la
+           refaire evite de dupliquer la regle, couvre le tutoriel et les enigmes
+           qui partagent le meme plateau, et fera vivre toute action ajoutee plus
+           tard sans qu'on retouche cette couche. */
+        const CLASSES_CIBLES = [
+          "spawn-choice",      // invocation d'un gardien
+          "crown-claimable",   // couronne a prendre, transmettre ou poser
+          "magic-pivot",       // pivot d'une rotation magique
+          "magic-valid",       // ile ou case concernee par la magie
+          "reachable"          // destination de deplacement
+        ];
+
+        function cellulesMarquees(className) {
+          return [...document.querySelectorAll(`.cell.${className}`)]
+            .map(cell => ({ r: Number(cell.dataset.r), c: Number(cell.dataset.c) }))
+            .filter(cell => Number.isFinite(cell.r) && Number.isFinite(cell.c));
+        }
+
+        function spawnChoices() { return cellulesMarquees("spawn-choice"); }
+
+        /* Gardiens que le moteur declare choisissables : au repos, ce sont eux
+           que haut/bas doit parcourir, et non tous les allies indistinctement. */
+        function guardiansMarques() {
+          return [...document.querySelectorAll(".cell .character.selectable")]
+            .map(marque => marque.closest(".cell"))
+            .filter(Boolean)
             .map(cell => ({ r: Number(cell.dataset.r), c: Number(cell.dataset.c) }))
             .filter(cell => Number.isFinite(cell.r) && Number.isFinite(cell.c));
         }
@@ -35655,14 +35683,13 @@
               .map(option => ({ r: option.r, c: option.c }));
             if (cells.length) return cells;
           }
-          const spawns = spawnChoices();
-          if (spawns.length) return spawns;
-          if (state.reachable && state.reachable.size) {
-            return [...state.reachable].map(key => {
-              const [r, c] = key.split(",").map(Number);
-              return { r, c };
-            });
+          for (const className of CLASSES_CIBLES) {
+            const cells = cellulesMarquees(className);
+            if (cells.length) return cells;
           }
+          /* Aucune cible publiee : on rend la navigation libre, case par case.
+             La pose d'ile en depend — une ile doit pouvoir aller partout, y
+             compris sur des cases que rien ne distingue. */
           return null;
         }
 
@@ -35670,6 +35697,11 @@
            deplacer le curseur vers le haut DE L'ECRAN, pas vers la rangee 0 du
            plateau. Tout se decide donc en coordonnees ecran — pour les quatre
            voisines comme pour les cibles pertinentes. */
+        /* Le seuil d'alignement est volontairement bas, et la separation minimale
+           minuscule : vue de face, le plateau est presque de profil et l'axe de
+           profondeur ne se projette plus que sur quelques pixels. Un seuil severe
+           ecartait alors les cases situees derriere — elles devenaient
+           inatteignables sans tourner la camera. */
         function bestInDirection(candidates, dx, dy, origin) {
           let best = null, bestScore = 0;
           for (const candidate of candidates) {
@@ -35677,14 +35709,41 @@
             if (!point) continue;
             const vx = point.x - origin.x, vy = point.y - origin.y;
             const length = Math.hypot(vx, vy);
-            if (length < 1) continue;
+            if (length < .5) continue;
             // Cap d'abord, distance ensuite : a cap egal, la plus proche gagne.
             const alignment = ((vx / length) * dx + (vy / length) * dy);
-            if (alignment < .4) continue;
+            if (alignment < .25) continue;
             const score = alignment / (1 + length / 240);
             if (score > bestScore) { bestScore = score; best = candidate; }
           }
           return best;
+        }
+
+        /* FILET DE SECURITE : aucune cible valide ne doit dependre de l'angle de
+           camera. Deux cases distinctes peuvent se projeter au meme point — un
+           gardien devant, un plateau vu de face — et aucun geometrie ne les
+           departagera jamais. On garde donc un parcours par ordre de plateau,
+           independant de la vue : il traverse toutes les cibles, toujours. */
+        function orderedTargets() {
+          const cibles = pointsOfInterest();
+          if (!cibles || !cibles.length) return null;
+          return [...cibles].sort((a, b) => (a.r - b.r) || (a.c - b.c));
+        }
+
+        function cycleTargets(direction) {
+          const cibles = orderedTargets();
+          if (!cibles) return false;
+          const rang = pad.cursor
+            ? cibles.findIndex(cell => cell.r === pad.cursor.r && cell.c === pad.cursor.c)
+            : -1;
+          const suivant = rang < 0
+            ? (direction > 0 ? 0 : cibles.length - 1)
+            : (rang + direction + cibles.length) % cibles.length;
+          const cible = cibles[suivant];
+          if (pad.cursor && cible.r === pad.cursor.r && cible.c === pad.cursor.c) return false;
+          pad.cursor = { r: cible.r, c: cible.c };
+          pad.special = null;
+          return true;
         }
 
         function stepCursor(dx, dy) {
@@ -35725,6 +35784,11 @@
                 interesting.filter(cell => cell.r !== r || cell.c !== c),
                 dx, dy, origin
               );
+              /* Rien dans cette direction alors que des cibles existent : la vue
+                 les superpose. On avance dans l'ordre du plateau plutot que de
+                 laisser le joueur bloque ou de le renvoyer sur une case sans
+                 interet. */
+              if (!best && interesting.length > 1) return cycleTargets(dx + dy >= 0 ? 1 : -1);
             }
             if (!best) {
               const neighbours = [{ r: r - 1, c }, { r: r + 1, c }, { r, c: c - 1 }, { r, c: c + 1 }]
@@ -36057,8 +36121,15 @@
           return Math.abs(value) < DEADZONE ? 0 : value;
         }
 
+        /* Haut/bas au repos : d'abord les gardiens que le moteur declare
+           choisissables — lui seul sait lesquels ont encore quelque chose a
+           faire. A defaut, tous les allies. Le parcours reprend au dernier
+           gardien utilise, pas au premier de la liste. */
         function navigateGuardians(direction) {
-          const guardians = alliedGuardians();
+          const marques = guardiansMarques();
+          const guardians = marques.length
+            ? marques.map(cell => (state?.characters || []).find(char => char.r === cell.r && char.c === cell.c)).filter(Boolean)
+            : alliedGuardians();
           if (!guardians.length) return;
           const current = guardians.findIndex(char => char.id === pad.lastGuardianId);
           const next = guardians[(Math.max(0, current) + direction + guardians.length) % guardians.length];
@@ -36074,6 +36145,12 @@
           activePad = gamepad;
           if (!gamepad) { pad.previous = []; return; }
           if (typeof kaykit3D === "undefined" || !kaykit3D?.camera) return;
+
+          /* Tour de l'adversaire : plus aucune navigation de jeu. Sans cela le
+             stick promenait un curseur sur des cibles perimees, et A tombait
+             dans le vide. La camera, elle, reste libre — regarder le plateau
+             pendant que l'autre joue est precisement un moment ou on le veut. */
+          const aLaMain = typeof canLocalPlayerAct !== "function" || canLocalPlayerAct();
 
           const now = performance.now();
           let hoverDirty = false;
@@ -36127,7 +36204,7 @@
           if (pressed(gamepad, BUTTON.UP)) dy = -1;
           if (pressed(gamepad, BUTTON.DOWN)) dy = 1;
 
-          if (dx || dy) {
+          if ((dx || dy) && aLaMain) {
             const fresh = !pad.stepAt;
             if (fresh || now >= pad.stepAt) {
               // Un seul axe a la fois : les diagonales n'existent pas ici.
@@ -36164,8 +36241,22 @@
           if (pressed(gamepad, BUTTON.LT)) rotateIsland(-1, now);
           if (pressed(gamepad, BUTTON.RT)) rotateIsland(1, now);
 
-          if (justPressed(gamepad, BUTTON.LB)) moveChoice(-1);
-          if (justPressed(gamepad, BUTTON.RB)) moveChoice(1);
+          if (!aLaMain) {
+            setHud(null);
+            clearChoice();
+            pad.previous = gamepad.buttons.map(button => !!button.pressed);
+            return;
+          }
+
+          const parcoursContextuel = contextChoices().length > 0;
+          if (justPressed(gamepad, BUTTON.LB)) {
+            if (parcoursContextuel) moveChoice(-1);
+            else if (cycleTargets(-1)) { setHud(null); refreshHover(); }
+          }
+          if (justPressed(gamepad, BUTTON.RB)) {
+            if (parcoursContextuel) moveChoice(1);
+            else if (cycleTargets(1)) { setHud(null); refreshHover(); }
+          }
 
           if (justPressed(gamepad, BUTTON.A)) {
             const choix = pad.choiceIndex >= 0 ? syncChoice() : null;
