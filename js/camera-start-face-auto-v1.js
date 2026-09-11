@@ -22,16 +22,8 @@
     return !!byId('gameScreen')?.classList.contains('tutorial-discovery');
   }
 
-  /* Une cinématique possède la caméra du début à la fin. Cette couche-ci
-     s'applique à l'ouverture d'une partie — exactement le moment où l'ouverture
-     des Voies commence — et allait jusqu'à cliquer VUE FACE par-dessus elle.
-     Même raison d'être que discoveryOwnsCamera() juste au-dessus. */
-  function cinematicOwnsCamera() {
-    return !!window.ILYOS_CINEMATIQUE_ACTIVE;
-  }
-
   function applyFaceAuto(token, attempt = 0) {
-    if (token !== applyToken || !gameVisible() || discoveryOwnsCamera() || cinematicOwnsCamera()) return;
+    if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
     const k = window.kaykit3D;
     const controls = k?.controls;
     const face = controls?.querySelector?.('[data-kay-view-face]');
@@ -52,7 +44,7 @@
 
     face.click();
     setTimeout(() => {
-      if (token !== applyToken || !gameVisible() || discoveryOwnsCamera() || cinematicOwnsCamera()) return;
+      if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
       auto.click();
     }, 45);
 
@@ -61,13 +53,13 @@
        bien en VUE FACE/AUTO, sans empêcher les suivis automatiques ultérieurs. */
     if (attempt === 0) {
       setTimeout(() => {
-        if (token !== applyToken || !gameVisible() || discoveryOwnsCamera() || cinematicOwnsCamera()) return;
+        if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
         k.viewMode = 'front';
         k.cameraMode = 'auto';
         k.autoFit = true;
         face.click();
         setTimeout(() => {
-          if (token !== applyToken || !gameVisible() || discoveryOwnsCamera() || cinematicOwnsCamera()) return;
+          if (token !== applyToken || !gameVisible() || discoveryOwnsCamera()) return;
           auto.click();
         }, 35);
       }, 520);
