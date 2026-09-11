@@ -1716,7 +1716,10 @@
         const vus = new Set();
         let profondeurAtteinte = 0;
 
-        for (let niveau = 0; niveau < budget.decisionsMax; niveau++) {
+        // Le plafond porte sur noeud.decisions, pas sur le nombre de clics :
+        // ramassages et transmissions doivent laisser chercher la suite.
+        // Les budgets temps/états et les empreintes bornent aussi les relais.
+        for (let niveau = 0; faisceau.length; niveau++) {
           // Les générateurs s'ouvrent à la racine et se resserrent ensuite.
           plannerNiveau = niveau;
           const suivants = [];

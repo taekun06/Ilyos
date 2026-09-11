@@ -991,7 +991,7 @@
          rapport complet du planner — plan retenu, notes avant et après riposte,
          plans rejetés et la punition qui les a écartés. C'est l'outil demandé
          pour comprendre pourquoi Expert abandonne une ligne brillante. */
-      function benchInspecterPlan(spec = {}) {
+      function benchInspecterPlan(spec = {}, budget = {}) {
         const joueurIA = spec.aiPlayer ?? 0;
         setTestRandomSeed(spec.seed ?? 1);
         const instantane = benchBuildSnapshot(spec);
@@ -999,7 +999,7 @@
         state.rules = Object.assign(
           { allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
         state.undoHistory = [];
-        const rapport = plannerChercherPlanRobuste(joueurIA);
+        const rapport = plannerChercherPlanRobuste(joueurIA, budget);
         setTestRandomSeed(null);
         return {
           plan: rapport.plan.map(a => a.type),

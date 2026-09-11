@@ -25427,7 +25427,10 @@
         const vus = new Set();
         let profondeurAtteinte = 0;
 
-        for (let niveau = 0; niveau < budget.decisionsMax; niveau++) {
+        // Le plafond porte sur noeud.decisions, pas sur le nombre de clics :
+        // ramassages et transmissions doivent laisser chercher la suite.
+        // Les budgets temps/états et les empreintes bornent aussi les relais.
+        for (let niveau = 0; faisceau.length; niveau++) {
           // Les générateurs s'ouvrent à la racine et se resserrent ensuite.
           plannerNiveau = niveau;
           const suivants = [];
@@ -35561,7 +35564,7 @@
          rapport complet du planner — plan retenu, notes avant et après riposte,
          plans rejetés et la punition qui les a écartés. C'est l'outil demandé
          pour comprendre pourquoi Expert abandonne une ligne brillante. */
-      function benchInspecterPlan(spec = {}) {
+      function benchInspecterPlan(spec = {}, budget = {}) {
         const joueurIA = spec.aiPlayer ?? 0;
         setTestRandomSeed(spec.seed ?? 1);
         const instantane = benchBuildSnapshot(spec);
@@ -35569,7 +35572,7 @@
         state.rules = Object.assign(
           { allowDissolve: false, islandLimitPerPlayer: 0 }, spec.rules || {});
         state.undoHistory = [];
-        const rapport = plannerChercherPlanRobuste(joueurIA);
+        const rapport = plannerChercherPlanRobuste(joueurIA, budget);
         setTestRandomSeed(null);
         return {
           plan: rapport.plan.map(a => a.type),
