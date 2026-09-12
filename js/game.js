@@ -35530,6 +35530,7 @@
           cursor: null,          // { r, c } de la case visee
           special: null,         // cible hors trame : destination de poussee ou chute
           crownMode: false,      // contexte COURONNE ouvert par Y
+          panneauEl: null,       // bouton vise dans un panneau plein ecran
           bDepuis: 0,            // debut de l'appui sur B, pour l'appui long
           bTraite: false,        // l'appui long a deja agi : le relacher ne fait rien
           chaineUndo: false,     // remontee d'historique explicitement engagee
@@ -35613,6 +35614,16 @@
           "magic-valid",       // ile ou case concernee par la magie
           "reachable"          // destination de deplacement
         ];
+
+        function classesDeLAction() {
+          if (state?.phase === "PLACE_SPAWN") return ["spawn-choice"];
+          switch (state?.selectedActionType) {
+            case "MAGIC": return ["magic-pivot", "magic-valid"];
+            case "MOVE": return ["reachable"];
+            case "PUSH": return ["reachable"];
+            default: return CLASSES_CIBLES;
+          }
+        }
 
         function cellulesMarquees(className) {
           return [...document.querySelectorAll(`.cell.${className}`)]
@@ -35709,10 +35720,21 @@
               .map(option => ({ r: option.r, c: option.c }));
             if (cells.length) return cells;
           }
-          for (const className of CLASSES_CIBLES) {
-            const cells = cellulesMarquees(className);
-            if (cells.length) return cells;
+          /* LES CIBLES DEPENDENT DE L'ACTION, PAS D'UN ORDRE FIXE.
+
+             Une liste de priorites figee laissait la premiere classe non vide
+             tout rafler : « crown-claimable » existe des le premier tour a cause
+             du village, et passait devant « magic-pivot ». Le pivot d'une
+             rotation magique devenait donc impossible a viser. On demande
+             desormais a l'action en cours quelles classes la concernent, et on
+             prend leur union — un pivot et ses cases valides comptent ensemble. */
+          const retenues = [];
+          for (const className of classesDeLAction()) {
+            for (const cell of cellulesMarquees(className)) {
+              if (!retenues.some(vue => vue.r === cell.r && vue.c === cell.c)) retenues.push(cell);
+            }
           }
+          if (retenues.length) return retenues;
           /* Aucune cible publiee : on rend la navigation libre, case par case.
              La pose d'ile en depend — une ile doit pouvoir aller partout, y
              compris sur des cases que rien ne distingue. */
@@ -36154,6 +36176,42 @@
           if (pad.choiceIndex >= 0 && !contextChoices().length) clearChoice();
         }
 
+        /* ---- Panneaux plein ecran ----------------------------------------- */
+
+        /* Le cabinet d'enigmes, les fenetres de fin et les modales vivent
+           au-dessus du plateau et n'ont rien a voir avec le dock : le stick n'y
+           trouvait donc rien a parcourir, et « LES VOIES D'ILYOS » etait
+           injouable a la manette. On les traite comme ce qu'ils sont — un
+           panneau dont les boutons visibles sont les seules cibles — et on
+           navigue dedans geometriquement, avec le socle partage. */
+        const PANNEAUX = ["puzzleMenu", "puzzleLayer", "rulesModal", "victoryModal", "soundMenu"];
+
+        function panneauActif() {
+          for (const id of PANNEAUX) {
+            const panneau = document.getElementById(id);
+            if (!panneau || !visible(panneau)) continue;
+            const boutons = [...panneau.querySelectorAll("button, [role=\"button\"], a[href]")].filter(usable);
+            if (boutons.length) return { panneau, boutons };
+          }
+          return null;
+        }
+
+        function naviguerPanneau(actif, dx, dy) {
+          const NAV = window.ILYOS_PAD_NAV;
+          const courant = actif.boutons.includes(pad.panneauEl) ? pad.panneauEl : null;
+          if (!courant || !NAV) { designerPanneau(actif.boutons[0]); return; }
+          const suivant = NAV.choisirElementDansDirection(courant, actif.boutons, dx, dy);
+          if (suivant) designerPanneau(suivant);
+        }
+
+        function designerPanneau(element) {
+          if (pad.panneauEl && pad.panneauEl !== element) pad.panneauEl.classList.remove("ilyos-gamepad-focus");
+          pad.panneauEl = element || null;
+          if (!pad.panneauEl) return;
+          pad.panneauEl.classList.add("ilyos-gamepad-focus");
+          pad.panneauEl.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        }
+
         /* ---- Camera ------------------------------------------------------ */
 
         function rotateCamera(amount) {
@@ -36520,6 +36578,38 @@
             pad.lastScoreAnim = state?.scoreAnimationPlayerId ?? null;
           }
 
+          /* Un panneau ouvert possede l'ecran : tant qu'il est la, le stick lui
+             appartient entierement, et rien du plateau ne doit repondre. */
+          const panneau = panneauActif();
+          if (panneau) {
+            if (!panneau.boutons.includes(pad.panneauEl)) designerPanneau(panneau.boutons[0]);
+            let px = axis(gamepad, 0), py = axis(gamepad, 1);
+            if (pressed(gamepad, BUTTON.LEFT)) px = -1;
+            if (pressed(gamepad, BUTTON.RIGHT)) px = 1;
+            if (pressed(gamepad, BUTTON.UP)) py = -1;
+            if (pressed(gamepad, BUTTON.DOWN)) py = 1;
+            if (px || py) {
+              const premier = !pad.stepAt;
+              if (premier || now >= pad.stepAt) {
+                const horizontal = Math.abs(px) >= Math.abs(py);
+                naviguerPanneau(panneau, horizontal ? Math.sign(px) : 0, horizontal ? 0 : Math.sign(py));
+                pad.stepAt = now + (premier ? STEP_FIRST_MS : STEP_REPEAT_MS);
+              }
+            } else pad.stepAt = 0;
+
+            if (justPressed(gamepad, BUTTON.LB)) naviguerPanneau(panneau, -1, 0);
+            if (justPressed(gamepad, BUTTON.RB)) naviguerPanneau(panneau, 1, 0);
+            if (justPressed(gamepad, BUTTON.A) && pad.panneauEl) { pad.panneauEl.click(); vibrate(45, .22); }
+            if (justPressed(gamepad, BUTTON.B)) {
+              const retour = panneau.panneau.querySelector(".pz-back, [data-close], .menu-modal-close");
+              if (retour && usable(retour)) retour.click();
+              else cancel();
+            }
+            pad.previous = gamepad.buttons.map(button => !!button.pressed);
+            return;
+          }
+          designerPanneau(null);
+
           // Stick gauche et croix directionnelle : strictement equivalents.
           let dx = axis(gamepad, 0), dy = axis(gamepad, 1);
           if (pressed(gamepad, BUTTON.LEFT)) dx = -1;
@@ -36636,8 +36726,17 @@
           // Anneau de focus manette : seul ajout visuel de cette couche. Tout le
           // reste — anneau du gardien, affordances de cases — existe deja.
           style.textContent =
-            ".ilyos-gamepad-focus{outline:3px solid #ffd879;outline-offset:3px;"
-            + "border-radius:10px;box-shadow:0 0 16px rgba(255,216,121,.55);}"
+            /* Un liere anneau de 3 px passait inapercu sur un dock deja tres
+               contraste, a un metre de l'ecran. On l'epaissit, on l'appuie d'un
+               fond ambre et d'une legere echelle, et on le fait respirer : ce
+               qui est vise doit se reperer sans le chercher. */
+            ".ilyos-gamepad-focus{outline:4px solid #ffd879;outline-offset:-4px;"
+            + "border-radius:12px;background-color:rgba(255,216,121,.18);"
+            + "box-shadow:0 0 0 2px rgba(0,0,0,.45),0 0 26px rgba(255,216,121,.75);"
+            + "transform:scale(1.05);position:relative;z-index:5;"
+            + "animation:ilyosPadPouls 1.6s ease-in-out infinite;}"
+            + "@keyframes ilyosPadPouls{50%{box-shadow:0 0 0 2px rgba(0,0,0,.45),"
+            + "0 0 34px rgba(255,216,121,1);}}"
             /* Vignettes d'ile : petites, serrees, dans un conteneur qui rogne.
                Un anneau pose A L'EXTERIEUR du bouton y etait tout simplement
                invisible — on croyait ne pas pouvoir changer d'ile alors que le

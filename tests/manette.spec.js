@@ -585,3 +585,44 @@ test('l’annulation remonte jusqu’au début du tour, jamais au-delà', async 
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
+
+test('le cabinet d’énigmes se parcourt à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+
+  /* Le cabinet vit au-dessus du plateau et n'a rien à voir avec le dock : le
+     stick n'y trouvait aucune cible et « LES VOIES D'ILYOS » restait injouable
+     à la manette. */
+  await page.waitForFunction(() => typeof window.ILYOS_PUZZLE?.open === 'function', null, { timeout: 30000 });
+  await page.evaluate(() => window.ILYOS_PUZZLE.open());
+  await page.waitForSelector('#puzzleMenu .pz-card', { timeout: 15000 });
+  await page.waitForTimeout(600);
+
+  const vise = () => page.evaluate(() => {
+    const element = document.querySelector('#puzzleMenu .ilyos-gamepad-focus');
+    if (!element) return null;
+    return element.getAttribute('data-index') ?? element.className;
+  });
+
+  // Un panneau ouvert désigne lui-même son point de départ.
+  expect(await vise(), 'le cabinet doit désigner une carte d’emblée').not.toBeNull();
+
+  const depart = await vise();
+  await incliner(page, 0, 1);
+  const apres = await vise();
+  expect(apres, 'le stick doit changer de sanctuaire').not.toBe(depart);
+
+  // RB fait la même chose, pour qui préfère les gâchettes.
+  await appuyer(page, B.RB);
+  expect(await vise(), 'RB doit aussi changer de sanctuaire').not.toBeNull();
+
+  // A ouvre le sanctuaire visé : le menu cède la place.
+  await appuyer(page, B.A);
+  await page.waitForFunction(
+    () => !document.querySelector('#puzzleMenu .pz-card'),
+    null, { timeout: 15000 }
+  );
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
