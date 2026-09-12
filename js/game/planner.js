@@ -1510,7 +1510,8 @@
         for (const porteur of porteurs) {
           for (const allie of plannerGardiensDe(playerId)) {
             if (allie.id === porteur.id || characterCarriesCrown(allie.id)) continue;
-            if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1) continue;
+            if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1
+              && !plannerCaseRelaisGratuit(porteur, allie)) continue;
             transitions.push({ type: "TRANSMISSION", deId: porteur.id, versId: allie.id });
           }
         }
@@ -1530,18 +1531,29 @@
           : null;
       }
 
+      function plannerCaseRelaisGratuit(porteur, allie) {
+        if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 2) return null;
+        return orthogonalNeighbors(porteur.r, porteur.c).find(([r, c]) =>
+          isLand(r, c) && !characterAt(r, c) && !looseArtifactAt(r, c)
+          && Math.abs(allie.r - r) + Math.abs(allie.c - c) === 1) || null;
+      }
+
       function applyFreeHandoffCore(deId, versId) {
         const porteur = characterById(deId);
         const allie = characterById(versId);
-        if (!porteur || !allie || characterCarriesCrown(allie.id)) return null;
+        if (!porteur || !allie || porteur.player !== allie.player || characterCarriesCrown(allie.id)) return null;
         const couronne = artifactCarriedBy(porteur.id);
         if (!couronne) return null;
-        if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1) return null;
+        const directe = Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) === 1;
+        const depot = directe ? null : plannerCaseRelaisGratuit(porteur, allie);
+        if (!directe && !depot) return null;
+        // Dépôt et récupération gratuits forment un seul candidat : le relais
+        // n'est pas éliminé sur l'état intermédiaire où la couronne est au sol.
         couronne.carrierId = null;
-        couronne.r = allie.r;
-        couronne.c = allie.c;
+        couronne.r = depot ? depot[0] : allie.r;
+        couronne.c = depot ? depot[1] : allie.c;
         return giveArtifactToCharacter(couronne, allie)
-          ? { type: "TRANSMISSION", deId, versId }
+          ? { type: "TRANSMISSION", deId, versId, directe, depot }
           : null;
       }
 
