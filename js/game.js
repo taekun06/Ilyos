@@ -35520,6 +35520,7 @@
         const pad = {
           cursor: null,          // { r, c } de la case visee
           special: null,         // cible hors trame : destination de poussee ou chute
+          crownMode: false,      // contexte COURONNE ouvert par Y
           hudEl: null,           // action du dock surlignee (etat neutre)
           choiceEl: null,        // choix contextuel surligne (tiroir, panneau)
           choiceIndex: -1,       // ... suivi par RANG, voir syncChoice()
@@ -35858,6 +35859,18 @@
             const option = state?.pushOptions?.find(item => item.id === data.pushOptionId);
             if (option && option.r === r && option.c === c) return { pushOptionId: data.pushOptionId };
           }
+          /* UN GARDIEN ALLIE RESTE UN GARDIEN.
+
+             Les couronnes etaient examinees avant la case, donc A sur son propre
+             porteur declenchait l'action de couronne au lieu de le selectionner :
+             on ne pouvait plus le deplacer sans passer par le dock. La couronne
+             appartient desormais entierement a Y ; A ne fait que selectionner ce
+             qu'il vise. Priorite : gardien allie selectionnable, puis couronne. */
+          const gardienSelectionnable = document.querySelector(
+            `.cell[data-r="${r}"][data-c="${c}"] .character.selectable`
+          );
+          if (gardienSelectionnable) return {};
+
           // Couronne portee ou posee sur la case : dispatchKayKitClick vise
           // alors le bon noeud enfant, pas la case elle-meme.
           for (const mesh of kaykit3D.interactiveMeshes) {
@@ -35938,23 +35951,73 @@
               return true;
             })
             .map(mesh => ({ r: mesh.userData.r, c: mesh.userData.c, action: mesh.userData.kaykitAction }))
+            .concat(
+              /* Le moteur marque aussi les cases ou une interaction de couronne
+                 est offerte sans qu'un objet 3D ne s'y trouve — un gardien qui
+                 peut recuperer, transmettre ou valider. Les ignorer aurait rendu
+                 ces interactions invisibles a Y. */
+              cellulesMarquees("crown-claimable")
+                .filter(cell => !vues.has(`${cell.r},${cell.c}`))
+                .map(cell => ({ r: cell.r, c: cell.c, action: undefined }))
+            )
             .sort((a, b) => (a.r - b.r) || (a.c - b.c));
         }
 
+        /* Y : TOUTES les interactions de couronne legales, et elles seules.
+
+           Les cibles viennent du moteur — maillages de couronne pour les objets,
+           cases « crown-claimable » pour les gardiens habilites a agir — jamais
+           d'une regle recopiee ici.
+
+           Une seule possibilite : Y l'execute. Plusieurs : Y ouvre un contexte
+           COURONNE ou LB/RB changent d'objet et A confirme. Aucun choix
+           arbitraire : quand il y a un choix, il revient au joueur. */
         function crownAction() {
           const couronnes = crownTargets();
           if (!couronnes.length) { showToast("Aucune couronne a portee."); return; }
 
+          if (couronnes.length === 1) {
+            const seule = couronnes[0];
+            pad.crownMode = false;
+            moveCursorTo(seule.r, seule.c);
+            actOnCrown(seule);
+            return;
+          }
+
+          if (!pad.crownMode) {
+            pad.crownMode = true;
+            const depart = couronnes[0];
+            moveCursorTo(depart.r, depart.c);
+            showToast(`Couronne 1 sur ${couronnes.length} — LB/RB pour changer, A pour agir.`);
+            vibrate(40, .2);
+            return;
+          }
+          // Deja dans le contexte : Y fait defiler comme LB/RB.
+          cycleCrowns(1);
+        }
+
+        function actOnCrown(cible) {
+          const point = cellToScreen(cible.r, cible.c) || { x: 0, y: 0 };
+          dispatchKayKitClick(
+            { userData: { r: cible.r, c: cible.c, kaykitAction: cible.action } },
+            { clientX: point.x, clientY: point.y, button: 0, buttons: 0 }
+          );
+          vibrate(60, .3);
+        }
+
+        function cycleCrowns(direction) {
+          const couronnes = crownTargets();
+          if (!couronnes.length) { pad.crownMode = false; return false; }
           const rang = couronnes.findIndex(
             couronne => pad.cursor && couronne.r === pad.cursor.r && couronne.c === pad.cursor.c
           );
-          const cible = couronnes[(rang + 1) % couronnes.length];
-
+          const suivant = rang < 0
+            ? 0
+            : (rang + direction + couronnes.length) % couronnes.length;
+          const cible = couronnes[suivant];
           moveCursorTo(cible.r, cible.c);
-          if (couronnes.length > 1) {
-            showToast(`Couronne ${couronnes.indexOf(cible) + 1} sur ${couronnes.length} — A pour agir, Y pour la suivante.`);
-          }
-          vibrate(40, .2);
+          showToast(`Couronne ${suivant + 1} sur ${couronnes.length} — A pour agir.`);
+          return true;
         }
 
         /* B : meme arbitrage que la touche Echap (voir diagnostics.js) —
@@ -36135,6 +36198,88 @@
           vibrate(35, .18);
         }
 
+        /* ---- Reprise du dernier gardien ----------------------------------- */
+
+        /* Une action liee a un gardien en reclame un : le joueur ne doit pas
+           avoir a le rechercher alors qu'il vient de jouer avec lui. On reprend
+           donc le dernier utilise, sinon le premier que le moteur declare
+           selectionnable.
+
+           La selection passe par le MEME chemin que le clic souris — un clic sur
+           la case du gardien — et non par un appel direct a la selection interne :
+           c'est ce qui garantit que les regles decidant qui peut agir restent au
+           seul endroit ou elles sont ecrites. */
+        function attendUnGardien() {
+          return state?.phase === "ACTION"
+            && !!state.selectedActionType
+            && !state.selectedCharId
+            && guardiansMarques().length > 0;
+        }
+
+        function selectGuardianCell(cell) {
+          pad.cursor = { r: cell.r, c: cell.c };
+          pad.special = null;
+          const point = cellToScreen(cell.r, cell.c) || { x: 0, y: 0 };
+          dispatchKayKitClick(
+            { userData: { r: cell.r, c: cell.c } },
+            { clientX: point.x, clientY: point.y, button: 0, buttons: 0 }
+          );
+          const gardien = (state?.characters || []).find(char => char.r === cell.r && char.c === cell.c);
+          if (gardien) pad.lastGuardianId = gardien.id;
+        }
+
+        function reprendreGardien() {
+          const offerts = guardiansMarques();
+          if (!offerts.length) return false;
+          const retenu = (state?.characters || []).find(char => char.id === pad.lastGuardianId);
+          const cible = (retenu && offerts.find(cell => cell.r === retenu.r && cell.c === retenu.c))
+            || offerts[0];
+          selectGuardianCell(cible);
+          return true;
+        }
+
+        /* LB/RB pendant une action liee a un gardien : changer DE GARDIEN, ce
+           qui republie ses propres destinations. On repasse par le moteur pour
+           deselectionner puis reselectionner, sans rien recalculer ici. */
+        function cycleGuardians(direction) {
+          const offerts = guardiansMarques();
+          const encoursId = state?.selectedCharId;
+          const encours = (state?.characters || []).find(char => char.id === encoursId);
+          if (encours && offerts.length <= 1) return false;
+
+          if (encours) {
+            // Revenir au choix du gardien sans toucher a l'action engagee.
+            handleCancelButton();
+            const apres = guardiansMarques();
+            const rang = apres.findIndex(cell => cell.r === encours.r && cell.c === encours.c);
+            if (!apres.length) return false;
+            const suivant = apres[(Math.max(0, rang) + direction + apres.length) % apres.length];
+            selectGuardianCell(suivant);
+            return true;
+          }
+
+          if (!offerts.length) return false;
+          const rang = pad.cursor
+            ? offerts.findIndex(cell => cell.r === pad.cursor.r && cell.c === pad.cursor.c)
+            : -1;
+          const suivant = offerts[(Math.max(0, rang) + direction + offerts.length) % offerts.length];
+          selectGuardianCell(suivant);
+          return true;
+        }
+
+        /* ---- Camera sur le gardien ---------------------------------------- */
+
+        function recentrerSurGardien() {
+          const actif = (state?.characters || []).find(
+            char => char.id === (state.selectedCharId || pad.lastGuardianId)
+          );
+          if (!actif || !Number.isFinite(actif.r)) { showToast("Aucun gardien a recentrer."); return; }
+          pad.cursor = { r: actif.r, c: actif.c };
+          pad.special = null;
+          kaykitFollowCell(actif.r, actif.c, { force: true, priorite: 3 });
+          refreshHover();
+        }
+
         /* ---- Fin de tour -------------------------------------------------- */
 
         /* Une fin de tour accidentelle coute un tour entier et ne s'annule pas
@@ -36292,9 +36437,17 @@
             hoverDirty = true;
           }
 
-          // Gachettes : rotation d'ile, a la pose comme sous Magie.
-          if (pressed(gamepad, BUTTON.LT)) rotateIsland(-1, now);
-          if (pressed(gamepad, BUTTON.RT)) rotateIsland(1, now);
+          /* GACHETTES : rotation quand une rotation est en cours, verbe direct
+             sinon. Le changement de sens est sans ambiguite parce que le
+             changement de mode, lui, est visible a l'ecran — une ile en cours de
+             pose ou de rotation magique ne ressemble a rien d'autre. */
+          if (canRotateIsland()) {
+            if (pressed(gamepad, BUTTON.LT)) rotateIsland(-1, now);
+            if (pressed(gamepad, BUTTON.RT)) rotateIsland(1, now);
+          } else {
+            if (justPressed(gamepad, BUTTON.LT)) clickDock("ov2Island");
+            if (justPressed(gamepad, BUTTON.RT)) clickDock("ov2Magic");
+          }
 
           if (!aLaMain) {
             setHud(null);
@@ -36303,15 +36456,26 @@
             return;
           }
 
-          const parcoursContextuel = contextChoices().length > 0;
-          if (justPressed(gamepad, BUTTON.LB)) {
-            if (parcoursContextuel) moveChoice(-1);
-            else if (cycleTargets(-1)) { setHud(null); refreshHover(); }
-          }
-          if (justPressed(gamepad, BUTTON.RB)) {
-            if (parcoursContextuel) moveChoice(1);
-            else if (cycleTargets(1)) { setHud(null); refreshHover(); }
-          }
+          /* Une action vient d'etre lancee et reclame un gardien : le reprendre
+             aussitot. Sans cela il fallait le rechercher a chaque fois, alors
+             qu'on venait souvent de jouer avec lui. */
+          if (attendUnGardien() && reprendreGardien()) hoverDirty = true;
+
+          /* LB/RB REPONDENT TOUJOURS A LA MEME QUESTION : avec QUI, ou avec QUOI,
+             suis-je en train de jouer ? Le stick gauche repond a l'autre : OU.
+             Cette separation vaut mieux qu'une fonction qui changeait d'ecran en
+             ecran — c'est elle qui rend les touches apprenables. */
+          const changerQui = direction => {
+            if (contextChoices().length) { moveChoice(direction); return; }
+            if (pad.crownMode) { cycleCrowns(direction); return; }
+            if (state?.selectedActionType || attendUnGardien()) {
+              if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            navigateGuardians(direction);
+          };
+          if (justPressed(gamepad, BUTTON.LB)) changerQui(-1);
+          if (justPressed(gamepad, BUTTON.RB)) changerQui(1);
 
           if (justPressed(gamepad, BUTTON.A)) {
             const choix = pad.choiceIndex >= 0 ? syncChoice() : null;
@@ -36319,7 +36483,13 @@
             else if (pad.hudEl) { pad.hudEl.click(); vibrate(45, .22); }
             else actOnCursor();
           }
-          if (justPressed(gamepad, BUTTON.B)) { setHud(null); clearChoice(); cancel(); }
+          if (justPressed(gamepad, BUTTON.B)) {
+            setHud(null);
+            clearChoice();
+            // Quitter d'abord le contexte Couronne : c'est le geste en cours.
+            if (pad.crownMode) { pad.crownMode = false; showToast("Couronne : sortie."); }
+            else cancel();
+          }
           /* X : miroir pendant une pose d'ile — c'est la seule chose a faire a
              ce moment-la — et action POUSSER partout ailleurs. */
           if (justPressed(gamepad, BUTTON.X)) {
@@ -36330,10 +36500,12 @@
           if (justPressed(gamepad, BUTTON.SELECT)) endTurnFromPad();
           if (justPressed(gamepad, BUTTON.START)) document.getElementById("ov2Gear")?.click();
           if (justPressed(gamepad, BUTTON.R3)) reprendreKayKitVueDeFace();
-          // Il n'existe pas de panneau « objectif » distinct dans ce HUD : la
-          // fenetre des regles est ce qui s'en approche le plus.
-          if (justPressed(gamepad, BUTTON.L3)) els.rulesModal?.classList.toggle("hidden");
+          /* L3 ramene la camera sur son gardien. Il ouvrait les regles faute de
+             panneau « objectif » dans ce HUD — un raccourci de manette gaspille
+             pour une fenetre qui vit tres bien dans le menu. */
+          if (justPressed(gamepad, BUTTON.L3)) recentrerSurGardien();
 
+          if (pad.crownMode && crownTargets().length < 2) pad.crownMode = false;
           prune();
           if (hoverDirty && !pad.hudEl && !pad.choiceEl) refreshHover();
           pad.previous = gamepad.buttons.map(button => !!button.pressed);

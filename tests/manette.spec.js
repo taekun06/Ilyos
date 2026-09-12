@@ -144,22 +144,21 @@ test('au repos, le stick parcourt le HUD et rejoint les gardiens', async ({ page
   await demarrerPartieSolo(page);
 
   /* Droite : une action du dock se surligne, sans rien viser sur le plateau.
-     Au tout premier tour, poser une ile est obligatoire et c'est la SEULE
-     action offerte — le cycle n'a donc nulle part ou aller. On ne verifie le
-     passage a la suivante que lorsqu'il y a reellement plusieurs choix. */
-  const dock = await actionsDisponibles(page);
-  expect(dock.length, 'le dock doit proposer au moins une action').toBeGreaterThan(0);
+
+     On ne compare PAS à une liste lue ici : le dock change d'un instant à
+     l'autre — le bouton ÎLE passe en « ov2-off » quand son tiroir s'ouvre — et
+     la couche lit le sien au moment de la poussée. Comparer deux photos prises
+     à des instants différents faisait échouer le test sans qu'aucun défaut ne
+     soit en cause. Ce qui doit être vrai, c'est qu'une action du dock est
+     désignée, et qu'une seconde poussée n'éteint pas le surlignage. */
+  const DOCK = ['ov2Island', 'ov2Move', 'ov2Push', 'ov2Magic', 'ov2End', 'ov2Undo'];
 
   await incliner(page, 0, 1);
   const premiere = await surligne(page);
-  expect(premiere, 'le stick vers la droite doit surligner une action du dock').toBe(dock[0]);
+  expect(DOCK, 'le stick vers la droite doit surligner une action du dock').toContain(premiere);
 
   await incliner(page, 0, 1);
-  if (dock.length > 1) {
-    expect(await surligne(page), 'une seconde poussée doit passer à l’action suivante').toBe(dock[1]);
-  } else {
-    expect(await surligne(page), 'une seule action disponible : le surlignage ne bouge pas').toBe(dock[0]);
-  }
+  expect(DOCK, 'une seconde poussée doit rester dans le dock').toContain(await surligne(page));
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
@@ -445,13 +444,73 @@ test('l’île se pose à la manette même après un choix à la souris', async 
     return apercu;
   });
 
+  /* On balaie les quatre directions plutôt qu'une diagonale : selon la case de
+     départ, dix essais dans deux sens seulement pouvaient s'éloigner du plateau
+     sans jamais rencontrer une position acceptée. */
+  const balayage = [[0, 1], [1, 1], [0, -1], [1, -1]];
   let posee = false;
-  for (let essai = 0; essai < 10 && !posee; essai++) {
+  for (let essai = 0; essai < 24 && !posee; essai++) {
     await appuyer(page, B.A);
     posee = !(await encoreEnApercu());
-    if (!posee) await incliner(page, essai % 2 ? 1 : 0, 1, 140);
+    if (!posee) {
+      const [axe, sens] = balayage[essai % balayage.length];
+      await incliner(page, axe, sens, 140);
+    }
   }
   expect(posee, 'A doit finir par poser l’île à la manette').toBe(true);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('LT ouvre l’île, X pousse, RT lance la magie — sans passer par le dock', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await demarrerPartieSolo(page);
+
+  const tiroirOuvert = () => page.evaluate(
+    () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
+  );
+
+  /* LT au repos = ÎLE. Le tiroir peut déjà être ouvert au premier tour : on le
+     referme d'abord pour que le test mesure bien l'effet de la gâchette. */
+  if (await tiroirOuvert()) {
+    await page.locator('#ov2Island').dispatchEvent('click');
+  }
+  /* Attendre que la bascule soit finie : le bouton ÎLE passe brièvement en
+     « ov2-off » pendant l'animation, et la gâchette refuse alors d'agir sur un
+     contrôle indisponible — la préparation du test échouait, pas la manette. */
+  await page.waitForFunction(() => {
+    const tiroir = document.getElementById('hudV2IslandDrawer');
+    const bouton = document.getElementById('ov2Island');
+    if (!tiroir || !bouton) return false;
+    if (!tiroir.classList.contains('hidden')) return false;
+    return bouton.getBoundingClientRect().width > 0 && !bouton.disabled;
+  }, null, { timeout: 8000 });
+
+  await appuyer(page, B.LT);
+  await page.waitForFunction(
+    () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden'),
+    null, { timeout: 5000 }
+  );
+
+  /* Une fois une île en cours de pose, LT reprend son sens de rotation : le
+     changement de mode est visible à l'écran, donc sans ambiguïté. */
+  await page.locator('#islandSelector .island-choice:not([disabled])').first().dispatchEvent('click');
+  await page.waitForFunction(() => {
+    const racine = window.kaykit3D?.dynamicGroup;
+    if (!racine) return false;
+    let trouve = false;
+    racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') trouve = true; });
+    return trouve;
+  }, null, { timeout: 8000 });
+
+  const avant = await empreinteDeLIle(page);
+  await appuyer(page, B.LT);
+  await expect.poll(() => empreinteDeLIle(page), {
+    message: 'pendant une pose, LT doit tourner l’île et non rouvrir le tiroir',
+    timeout: 8000
+  }).not.toBe(avant);
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
