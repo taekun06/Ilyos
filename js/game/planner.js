@@ -1242,6 +1242,28 @@
         };
 
         const avant = mesurer();
+        const libres = activeArtifacts().filter(a => a.carrierId === null);
+        const distance = (r, c, cibles) => cibles.length
+          ? Math.min(...cibles.map(([tr, tc]) => Math.abs(r - tr) + Math.abs(c - tc))) : 0;
+        const villages = aiValidationTargetsForPlayer(state.players[playerId]);
+        const allies = plannerGardiensDe(playerId).filter(g => !characterCarriesCrown(g.id));
+        const ennemis = adverse ? plannerGardiensDe(adverse.id) : [];
+        const gainTransport = rotation => {
+          let gain = -Infinity;
+          for (const m of rotation.artifactMoves || []) {
+            const a = m.artifact;
+            if (a.r === m.r && a.c === m.c) continue;
+            const positions = gardiens => gardiens.map(g => {
+              const mouvement = rotation.characterMoves.find(x => x.char.id === g.id);
+              return mouvement ? [mouvement.r, mouvement.c] : [g.r, g.c];
+            });
+            gain = Math.max(gain,
+              distance(a.r, a.c, villages) - distance(m.r, m.c, villages),
+              distance(a.r, a.c, allies.map(g => [g.r, g.c])) - distance(m.r, m.c, positions(allies)),
+              distance(m.r, m.c, positions(ennemis)) - distance(a.r, a.c, ennemis.map(g => [g.r, g.c])));
+          }
+          return gain;
+        };
         /* Borne DURE. Chaque rotation candidate est évaluée en clonant l'état
            et en la simulant : sans plafond, le coût est île × case × 3, et il
            explose dès que le plateau se remplit. Mesuré : une partie complète
@@ -1256,6 +1278,8 @@
         const echeance = performance.now() + PLAN_CANDIDATS.magicMsMax;
         let examinees = 0;
         const ilesTriees = plannerIlesParInteret(playerId);
+        const porteCouronneLibre = ile => libres.some(a => ile.cells.some(([r, c]) => r === a.r && c === a.c));
+        ilesTriees.sort((a, b) => Number(porteCouronneLibre(b)) - Number(porteCouronneLibre(a)));
 
         for (const ile of ilesTriees) {
           if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
@@ -1268,6 +1292,7 @@
               const tours = pas === 3 ? 1 : pas;
               const rotation = calculateIslandRotationAroundPivot(ile, pr, pc, direction, tours);
               if (!rotation?.valid) continue;
+              const transport = gainTransport(rotation);
 
               // Impact mesuré sur le graphe, en simulant réellement la rotation.
               const clone = cloneStateForSimulation();
@@ -1283,20 +1308,26 @@
               const gainMoi = plannerProximite(impact.moi) - plannerProximite(avant.moi);
               const gainContre = plannerProximite(avant.adverse) - plannerProximite(impact.adverse);
               const indice = (gainMoi + gainContre) * 100;
-              // Une rotation sans effet sur les distances utiles est écartée
-              // avant même d'entrer dans la recherche.
-              if (Math.abs(indice) < 1) continue;
-
-              options.push({
+              const candidat = {
                 type: "MAGIC", islandId: ile.id, pivot: [pr, pc],
-                direction, turns: tours, indice
-              });
+                direction, turns: tours, indice, transport
+              };
+              if (Math.abs(indice) < 1 && !Number.isFinite(transport)) {
+                if (plannerCandidatsEcartes) plannerCandidatsEcartes.push({ categorie: "MAGIC", action: candidat });
+                continue;
+              }
+              options.push(candidat);
             }
           }
         }
 
         options.sort((a, b) => b.indice - a.indice);
-        return plannerRetenir(options, plafonds().magic, "MAGIC");
+        // Quelques places dans le plafond existant, sans bonus à l'évaluateur.
+        // Même un transport neutre peut préparer un ramassage ou un relais.
+        const transports = options.filter(a => Number.isFinite(a.transport))
+          .sort((a, b) => b.transport - a.transport || b.indice - a.indice)
+          .slice(0, plannerNiveau === 0 ? 2 : 1);
+        return plannerRetenir([...transports, ...options.filter(a => !transports.includes(a))], plafonds().magic, "MAGIC");
       }
 
       /* L'adversaire est-il assez près de marquer pour que se poser sur son
@@ -1482,7 +1513,16 @@
         }
 
         const porteurs = plannerGardiensDe(playerId).filter(g => characterCarriesCrown(g.id));
+        const peutTourner = availableActionCount("MAGIC", state.players[playerId]) > 0;
+        const receveurs = plannerGardiensDe(playerId).filter(g => !characterCarriesCrown(g.id));
         for (const porteur of porteurs) {
+          for (const [r, c] of orthogonalNeighbors(porteur.r, porteur.c)) {
+            // Sans rotation ni receveur immédiat, déposer multiplie les états
+            // sans préparer le transport gratuit recherché.
+            if (!peutTourner && !receveurs.some(g => Math.abs(g.r - r) + Math.abs(g.c - c) === 1)) continue;
+            if (isLand(r, c) && !characterAt(r, c) && !looseArtifactAt(r, c))
+              transitions.push({ type: "DEPOT", charId: porteur.id, r, c });
+          }
           for (const allie of plannerGardiensDe(playerId)) {
             if (allie.id === porteur.id || characterCarriesCrown(allie.id)) continue;
             if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1) continue;
@@ -1555,13 +1595,14 @@
       }
 
       function plannerAppliquerAction(action) {
+        if (action.type === "DEPOT") return applyFreeDropCore(action.charId, action.r, action.c);
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
         return appliquerActionNoyau(action);
       }
 
       function plannerActionGratuite(action) {
-        return action.type === "RAMASSAGE" || action.type === "TRANSMISSION";
+        return action.type === "DEPOT" || action.type === "RAMASSAGE" || action.type === "TRANSMISSION";
       }
 
       /* ---------------------------------------------------------------------
@@ -1746,7 +1787,7 @@
            n'est pas forcément le meilleur après. */
         const terminaux = racine.terminal ? [racine] : [];
         let faisceau = [racine];
-        const vus = new Set();
+        const vus = new Set([strategicStateFingerprint(racine.etat)]);
         let profondeurAtteinte = 0;
 
         // Le plafond porte sur noeud.decisions, pas sur le nombre de clics :
