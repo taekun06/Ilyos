@@ -16898,7 +16898,8 @@
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
-            benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId });
+            benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId,
+              directe: applique.directe, depot: applique.depot });
             renderAll();
             await sleep(360);
             return true;
@@ -25245,6 +25246,30 @@
          liste entière ne coûte donc rien de plus que d'en demander dix. */
       const PLAN_POSE_ENUM_MAX = 100000;
 
+      // Départager les apparitions équivalentes seulement sur les poses
+      // présélectionnées, avec le terrain réellement créé et les règles actives.
+      function plannerSpawnMoinsExpose(playerId, pose, intention, initial) {
+        if (!canCreateGuardian(playerId) || !plannerAdversaire(playerId)) return initial;
+        const ecart = cellule => Math.abs(Math.min(...intention.cibles.map(([r, c]) =>
+          Math.abs(cellule[0] - r) + Math.abs(cellule[1] - c))) - intention.contact);
+        const reference = ecart(initial);
+        const equivalentes = pose.cells.filter(cellule =>
+          (cellule[0] !== initial[0] || cellule[1] !== initial[1])
+          && !characterAt(cellule[0], cellule[1]) && ecart(cellule) === reference);
+        if (!equivalentes.length) return initial;
+        for (const spawn of [initial, ...equivalentes]) {
+          const clone = cloneStateForSimulation();
+          const expose = withSimulatedState(clone, () => {
+            const resultat = applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId,
+              pose.relCells, pose.anchor, spawn);
+            if (!resultat || !resultat.gardienId) return true;
+            return plannerMenaceExpulsion(playerId, spawn[0], spawn[1]);
+          });
+          if (!expose) return spawn;
+        }
+        return initial;
+      }
+
       function plannerCandidatsPose(playerId) {
         if (state.islandPlacedThisTurn) return [];
         /* Le biais vers la zone adverse ne s'active que sous menace réelle.
@@ -25304,7 +25329,8 @@
           let places = 0;
           for (const n of notees) {
             if (places >= plafonds().poseParIntention) break;
-            if (proposer(n.pose, n.spawn, intention.but, n.indice)) places++;
+            const spawn = plannerSpawnMoinsExpose(playerId, n.pose, intention, n.spawn);
+            if (proposer(n.pose, spawn, intention.but, n.indice)) places++;
           }
         }
 
@@ -25348,7 +25374,8 @@
         for (const porteur of porteurs) {
           for (const allie of plannerGardiensDe(playerId)) {
             if (allie.id === porteur.id || characterCarriesCrown(allie.id)) continue;
-            if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1) continue;
+            if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1
+              && !plannerCaseRelaisGratuit(porteur, allie)) continue;
             transitions.push({ type: "TRANSMISSION", deId: porteur.id, versId: allie.id });
           }
         }
@@ -25368,18 +25395,29 @@
           : null;
       }
 
+      function plannerCaseRelaisGratuit(porteur, allie) {
+        if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 2) return null;
+        return orthogonalNeighbors(porteur.r, porteur.c).find(([r, c]) =>
+          isLand(r, c) && !characterAt(r, c) && !looseArtifactAt(r, c)
+          && Math.abs(allie.r - r) + Math.abs(allie.c - c) === 1) || null;
+      }
+
       function applyFreeHandoffCore(deId, versId) {
         const porteur = characterById(deId);
         const allie = characterById(versId);
-        if (!porteur || !allie || characterCarriesCrown(allie.id)) return null;
+        if (!porteur || !allie || porteur.player !== allie.player || characterCarriesCrown(allie.id)) return null;
         const couronne = artifactCarriedBy(porteur.id);
         if (!couronne) return null;
-        if (Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) !== 1) return null;
+        const directe = Math.abs(porteur.r - allie.r) + Math.abs(porteur.c - allie.c) === 1;
+        const depot = directe ? null : plannerCaseRelaisGratuit(porteur, allie);
+        if (!directe && !depot) return null;
+        // Dépôt et récupération gratuits forment un seul candidat : le relais
+        // n'est pas éliminé sur l'état intermédiaire où la couronne est au sol.
         couronne.carrierId = null;
-        couronne.r = allie.r;
-        couronne.c = allie.c;
+        couronne.r = depot ? depot[0] : allie.r;
+        couronne.c = depot ? depot[1] : allie.c;
         return giveArtifactToCharacter(couronne, allie)
-          ? { type: "TRANSMISSION", deId, versId }
+          ? { type: "TRANSMISSION", deId, versId, directe, depot }
           : null;
       }
 
@@ -25565,8 +25603,51 @@
         return retenus.concat(variantes).slice(0, plafond);
       }
 
+      function plannerMenacesDefense(playerId) {
+        return activeArtifacts().flatMap(couronne => {
+          const porteur = couronne.carrierId && characterById(couronne.carrierId);
+          if (!porteur || porteur.player === playerId) return [];
+          const adverse = state.players[porteur.player];
+          if (aiValidationDistanceForPlayer(adverse, porteur.r, porteur.c) > 3) return [];
+          const villages = villagesForPlayer(adverse).map(v => cornerCrownCellsForVillage(v));
+          const distance = cells => Math.min(...cells.map(([r, c]) =>
+            Math.abs(r - porteur.r) + Math.abs(c - porteur.c)));
+          villages.sort((a, b) => distance(a) - distance(b));
+          return [{ couronneId: couronne.id, porteurId: porteur.id, village: villages[0] || [],
+            imminente: isCrownValidationCell(adverse, porteur.r, porteur.c) }];
+        });
+      }
+
+      function plannerPrioriteDefense(playerId, menaces) {
+        if (!menaces.length) return 0;
+        if (state.winner != null) return state.winner === playerId ? 4 : -1;
+        const couronnes = activeArtifacts();
+        // Ne pas sacrifier un autre point pour éliminer un seul porteur.
+        if (couronnes.some(a => {
+          const g = a.carrierId && characterById(a.carrierId);
+          return g && g.player !== playerId
+            && isCrownValidationCell(state.players[g.player], g.r, g.c)
+            && !validationBloqueeParAdversaire(state.players[g.player], g.r, g.c);
+        })) return 0;
+        return Math.min(...menaces.map(menace => {
+          if (!characterById(menace.porteurId)) return 3;
+          const couronne = couronnes.find(a => a.id === menace.couronneId);
+          const porteur = couronne && couronne.carrierId && characterById(couronne.carrierId);
+          if (porteur && porteur.player === playerId) return 2;
+          const bloque = menace.village.some(([r, c]) => {
+            const gardien = characterAt(r, c);
+            return gardien && gardien.player === playerId;
+          });
+          const ecarte = menace.imminente && (!porteur
+            || !isCrownValidationCell(state.players[porteur.player], porteur.r, porteur.c));
+          return bloque || ecarte ? 1 : 0;
+        }));
+      }
+
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
+        const menacesDefense = options.prioriteDefense ? plannerMenacesDefense(playerId) : [];
+        const comparerDefense = (a, b) => (b.prioriteDefense || 0) - (a.prioriteDefense || 0);
         let debut = performance.now();
         let etatsExplores = 0;
         let candidatsGeneres = 0;
@@ -25578,6 +25659,7 @@
         };
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
         racine.terminal = racine.etat.islandPlacedThisTurn;
+        racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
 
         /* Sous autopsie, on relève AVANT la recherche : la position de départ
            est alors intacte, et le relevé décrit exactement ce que la
@@ -25646,6 +25728,8 @@
                 if (!applique) return null;
                 return {
                   note: evaluateStrategicState(playerId),
+                  prioriteDefense: clone.islandPlacedThisTurn
+                    ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
                 };
               });
@@ -25661,6 +25745,7 @@
                 // Une transition gratuite ne consomme pas de profondeur.
                 decisions: noeud.decisions + (plannerActionGratuite(action) ? 0 : 1),
                 note: resultat.note,
+                prioriteDefense: resultat.prioriteDefense,
                 terminal: clone.islandPlacedThisTurn
               };
               suivants.push(enfant);
@@ -25668,7 +25753,8 @@
               // « S'arrêter ici » entre en concurrence avec toute continuation.
               if (enfant.terminal) {
                 terminaux.push(enfant);
-                if (!meilleur || enfant.note > meilleur.note) meilleur = enfant;
+                if (!meilleur || comparerDefense(enfant, meilleur) < 0
+                  || (comparerDefense(enfant, meilleur) === 0 && enfant.note > meilleur.note)) meilleur = enfant;
               }
             }
           }
@@ -25698,7 +25784,9 @@
           // entre l'état prévu et l'état réellement obtenu.
           empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,
           // Finalistes triés, prêts pour l'anticipation adverse (V3).
-          finalistes: !racine.terminal && !plannerMenaceValidationAdverse(playerId)
+          finalistes: menacesDefense.length
+            ? terminaux.sort((a, b) => comparerDefense(a, b) || b.note - a.note).slice(0, 8)
+            : !racine.terminal && !plannerMenaceValidationAdverse(playerId)
             ? plannerFinalistesDiversifies(terminaux, 8)
             : terminaux.sort((a, b) => b.note - a.note).slice(0, 8),
           releveCandidats,
@@ -25889,7 +25977,7 @@
       function plannerChercherPlanRobuste(playerId, options) {
         if (plannerSansAnticipation.has(playerId)) return plannerChercherPlan(playerId, options || {});
         const debutTotal = performance.now();
-        const principal = plannerChercherPlan(playerId, options || {});
+        const principal = plannerChercherPlan(playerId, { ...options, prioriteDefense: true });
         const finalistes = (principal.finalistes || []).slice(0, PLAN_RIPOSTE.finalistes);
 
         if (finalistes.length < 2) {
@@ -25937,7 +26025,8 @@
         examines.forEach(e => {
           if (!e.noeud.plan.length) e.robustesse.note -= PLAN_POIDS.tempoPerdu;
         });
-        examines.sort((a, b) => b.robustesse.note - a.robustesse.note);
+        examines.sort((a, b) => (b.noeud.prioriteDefense || 0) - (a.noeud.prioriteDefense || 0)
+          || b.robustesse.note - a.robustesse.note);
         const dureeRiposte = performance.now() - debutRiposte;
         const retenu = examines[0];
 

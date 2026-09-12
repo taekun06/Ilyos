@@ -1016,7 +1016,8 @@
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
-            benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId });
+            benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId,
+              directe: applique.directe, depot: applique.depot });
             renderAll();
             await sleep(360);
             return true;
