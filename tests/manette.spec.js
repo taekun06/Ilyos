@@ -153,8 +153,14 @@ test('au repos, le stick parcourt le HUD et rejoint les gardiens', async ({ page
      désignée, et qu'une seconde poussée n'éteint pas le surlignage. */
   const DOCK = ['ov2Island', 'ov2Move', 'ov2Push', 'ov2Magic', 'ov2End', 'ov2Undo'];
 
-  await incliner(page, 0, 1);
-  const premiere = await surligne(page);
+  /* Le jeu peut encore verrouiller les entrées juste après l'ouverture : on
+     répète la poussée jusqu'à ce qu'il rende la main, plutôt que de mesurer un
+     instant où rien ne pouvait répondre. */
+  let premiere = null;
+  for (let essai = 0; essai < 6 && !premiere; essai++) {
+    await incliner(page, 0, 1);
+    premiere = await surligne(page);
+  }
   expect(DOCK, 'le stick vers la droite doit surligner une action du dock').toContain(premiere);
 
   await incliner(page, 0, 1);
@@ -511,6 +517,71 @@ test('LT ouvre l’île, X pousse, RT lance la magie — sans passer par le dock
     message: 'pendant une pose, LT doit tourner l’île et non rouvrir le tiroir',
     timeout: 8000
   }).not.toBe(avant);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('l’annulation remonte jusqu’au début du tour, jamais au-delà', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await demarrerPartieSolo(page);
+
+  const iles = () => page.evaluate(
+    () => document.querySelectorAll('.cell.placed-island-cell').length
+  );
+  const tiroirOuvert = () => page.evaluate(
+    () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
+  );
+
+  const ilesAvant = await iles();
+
+  // Poser une île à la manette : c'est le geste qui ouvre le tour.
+  if (!(await tiroirOuvert())) {
+    await page.locator('#ov2Island').dispatchEvent('click');
+    await page.waitForTimeout(400);
+  }
+  await page.locator('#islandSelector .island-choice:not([disabled])').first().dispatchEvent('click');
+  await page.waitForFunction(() => {
+    const racine = window.kaykit3D?.dynamicGroup;
+    if (!racine) return false;
+    let trouve = false;
+    racine.traverse(objet => { if (objet.userData?.islandId === 'placement-preview') trouve = true; });
+    return trouve;
+  }, null, { timeout: 8000 });
+
+  const balayage = [[0, 1], [1, 1], [0, -1], [1, -1]];
+  let posee = false;
+  for (let essai = 0; essai < 24 && !posee; essai++) {
+    await appuyer(page, B.A);
+    posee = (await iles()) > ilesAvant;
+    if (!posee) {
+      const [axe, sens] = balayage[essai % balayage.length];
+      await incliner(page, axe, sens, 140);
+    }
+  }
+  expect(posee, 'préparation : l’île doit être posée').toBe(true);
+
+  /* B COURT NE TOUCHE JAMAIS À L'HISTORIQUE. C'est toute la raison d'être de
+     la distinction : fermer un panneau et défaire un coup ne doivent pas
+     partager le même geste. */
+  await appuyer(page, B.B, 150);
+  await appuyer(page, B.B, 150);
+  expect(await iles(), 'un appui court ne doit pas défaire la pose').toBeGreaterThan(ilesAvant);
+
+  // B LONG : première annulation, explicitement demandée.
+  await appuyer(page, B.B, 800);
+  await page.waitForTimeout(600);
+  expect(await iles(), 'un appui long doit défaire la pose d’île').toBe(ilesAvant);
+
+  /* FRONTIÈRE DU TOUR. L'historique est vidé à chaque changement de tour, donc
+     remonter encore ne doit plus rien défaire — le tour précédent est hors
+     d'atteinte par construction. */
+  await appuyer(page, B.B, 800);
+  await page.waitForTimeout(400);
+  await appuyer(page, B.B, 150);
+  await page.waitForTimeout(400);
+  expect(await iles(), 'on ne doit pas pouvoir remonter avant le début du tour').toBe(ilesAvant);
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });

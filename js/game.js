@@ -20229,6 +20229,12 @@
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           if (isValidPlacement(r, c)) {
+            /* La pose d'île n'entrait pas dans l'historique : on pouvait annuler
+               un déplacement ou une poussée, mais pas le geste qui ouvre le tour.
+               L'annulation s'arrêtait donc au milieu du tour au lieu d'en
+               atteindre le début. L'instantané est pris AVANT la pose, comme
+               pour toute autre action. */
+            saveUndoSnapshot();
             placeIsland(r, c);
           } else {
             updatePlacementPreview(r, c);
@@ -20256,6 +20262,9 @@
 
           const island = state.islands.find(is => is.id === state.pendingSpawnIslandId);
           if (island && island.cells.some(([ir, ic]) => ir === r && ic === c) && !characterAt(r, c)) {
+            // Même raison que la pose ci-dessus : sans cet instantané,
+            // l'invocation était un point de non-retour au milieu du tour.
+            saveUndoSnapshot();
             const char = {
               id: `char-${state.nextCharId++}`,
               player: state.currentPlayer,
@@ -35521,6 +35530,11 @@
           cursor: null,          // { r, c } de la case visee
           special: null,         // cible hors trame : destination de poussee ou chute
           crownMode: false,      // contexte COURONNE ouvert par Y
+          bDepuis: 0,            // debut de l'appui sur B, pour l'appui long
+          bTraite: false,        // l'appui long a deja agi : le relacher ne fait rien
+          chaineUndo: false,     // remontee d'historique explicitement engagee
+          undoConnus: 0,         // taille d'historique vue, pour desarmer la chaine
+          tourConnu: null,
           hudEl: null,           // action du dock surlignee (etat neutre)
           choiceEl: null,        // choix contextuel surligne (tiroir, panneau)
           choiceIndex: -1,       // ... suivi par RANG, voir syncChoice()
@@ -36280,6 +36294,115 @@
           refreshHover();
         }
 
+        /* ---- B : quitter, ou revenir sur ce qui est joue ------------------- */
+
+        /* DEUX INTENTIONS QUE TOUT OPPOSE, ET UNE SEULE TOUCHE.
+
+           « Je ne veux plus faire ce que je prepare » et « je veux revenir sur
+           ce que j'ai deja joue » n'ont pas la meme consequence : la premiere ne
+           coute rien, la seconde defait un coup. Les confondre, c'est annuler un
+           deplacement en croyant fermer un panneau.
+
+           Appui court : quitter ce qui est engage, jamais l'historique.
+           Appui long : entrer dans l'historique, volontairement.
+           Appuis courts suivants : continuer a remonter, la chaine etant armee.
+
+           handleCancelButton() arbitre deja entre desselectionner et annuler
+           pour de bon — on ne redecrit pas cette echelle, on decide seulement
+           quand il a le droit de toucher a l'historique. */
+        const APPUI_LONG_MS = 500;
+
+        function fenetreOuverteManette() {
+          const visible = element => !!element && !element.classList.contains("hidden");
+          return visible(els.rulesModal) || visible(els.soundMenu) || visible(els.victoryModal);
+        }
+
+        /* Ce que handleCancelButton() QUITTE, par opposition a ce qu'il ANNULE.
+
+           Sa derniere branche appelle restoreUndoSnapshot() : quand plus rien
+           n'est engage, « annuler » defait un coup deja joue. Un appui court ne
+           doit jamais tomber la — c'est precisement la confusion qu'on cherche a
+           supprimer. On lit donc les phases ou il se contente de desselectionner,
+           telles que le moteur les traite (voir turns.js). Ce n'est pas une regle
+           recopiee mais la liste des etats « en cours ». */
+        const PHASES_ENGAGEES = ["PLACE_ISLAND", "DROP_TREASURE", "PICKUP_CROWN", "SMART_CHAR"];
+
+        function quitterSansAnnuler() {
+          if (state?.phase === "ACTION" && state.selectedActionType) return true;
+          return PHASES_ENGAGEES.includes(state?.phase);
+        }
+
+        function gesteEnCours() {
+          if (fenetreOuverteManette() || pad.crownMode) return true;
+          if (pad.choiceIndex >= 0 || drawerOpen()) return true;
+          if (state?.pushOptions?.length) return true;
+          return quitterSansAnnuler();
+        }
+
+        function annulerUnCran() {
+          handleCancelButton();
+          marquerChaine(true);
+        }
+
+        function marquerChaine(active) {
+          pad.chaineUndo = active;
+          pad.undoConnus = state?.undoHistory?.length ?? 0;
+          const bouton = document.getElementById("ov2Undo");
+          bouton?.classList.toggle("ilyos-undo-chaine", !!active);
+        }
+
+        /* La chaine ne s'eteint pas toute seule apres un delai : un mode
+           invisible qui expire est impossible a apprendre. Elle s'arrete quand
+           le joueur rejoue vraiment, ou quand le tour change. */
+        function surveillerChaine() {
+          const taille = state?.undoHistory?.length ?? 0;
+          const tour = `${state?.turn}-${state?.currentPlayer}`;
+          if (pad.tourConnu !== tour) { pad.tourConnu = tour; if (pad.chaineUndo) marquerChaine(false); }
+          if (pad.chaineUndo && taille > pad.undoConnus) marquerChaine(false);
+          else if (pad.chaineUndo) pad.undoConnus = taille;
+        }
+
+        function bouttonB(gamepad, now) {
+          const appuye = pressed(gamepad, BUTTON.B);
+
+          if (appuye && !pad.bDepuis) { pad.bDepuis = now; pad.bTraite = false; }
+
+          // Appui long : il agit pendant qu'on maintient, pas au relachement —
+          // le joueur doit sentir a quel moment il franchit le seuil.
+          if (appuye && !pad.bTraite && now - pad.bDepuis >= APPUI_LONG_MS) {
+            pad.bTraite = true;
+            if (gesteEnCours()) return;               // rien a annuler : B court a deja fait son office
+            if (!(state?.undoHistory?.length)) { showToast("Rien a annuler dans ce tour."); return; }
+            annulerUnCran();
+            showToast("Annulation engagee — B pour continuer a remonter.");
+            vibrate(220, .85);
+            return;
+          }
+
+          if (!appuye && pad.bDepuis) {
+            const duree = now - pad.bDepuis;
+            pad.bDepuis = 0;
+            if (pad.bTraite) { pad.bTraite = false; return; }
+            if (duree >= APPUI_LONG_MS) return;
+
+            // APPUI COURT.
+            setHud(null);
+            clearChoice();
+            if (pad.crownMode) { pad.crownMode = false; showToast("Couronne : sortie."); return; }
+            if (fenetreOuverteManette()) { cancel(); return; }
+            if (drawerOpen() && !placingIsland()) { closeHudV2Drawer(); return; }
+            // Seulement ici handleCancelButton() se contente de quitter.
+            if (quitterSansAnnuler() || state?.pushOptions?.length) { handleCancelButton(); return; }
+            if (pad.chaineUndo) {
+              if (!(state?.undoHistory?.length)) { marquerChaine(false); return; }
+              annulerUnCran();
+              vibrate(70, .35);
+              return;
+            }
+            showToast("Maintenez B pour annuler la derniere action.");
+          }
+        }
+
         /* ---- Fin de tour -------------------------------------------------- */
 
         /* Une fin de tour accidentelle coute un tour entier et ne s'annule pas
@@ -36483,13 +36606,8 @@
             else if (pad.hudEl) { pad.hudEl.click(); vibrate(45, .22); }
             else actOnCursor();
           }
-          if (justPressed(gamepad, BUTTON.B)) {
-            setHud(null);
-            clearChoice();
-            // Quitter d'abord le contexte Couronne : c'est le geste en cours.
-            if (pad.crownMode) { pad.crownMode = false; showToast("Couronne : sortie."); }
-            else cancel();
-          }
+          surveillerChaine();
+          bouttonB(gamepad, now);
           /* X : miroir pendant une pose d'ile — c'est la seule chose a faire a
              ce moment-la — et action POUSSER partout ailleurs. */
           if (justPressed(gamepad, BUTTON.X)) {
@@ -36526,6 +36644,11 @@
                parcours fonctionnait, faute de voir laquelle etait visee. On le
                rentre donc a l'interieur, et on l'appuie d'un fond et d'une
                legere echelle pour qu'il se distingue au premier coup d'oeil. */
+            /* La remontee d'historique doit SE VOIR : le HUD a deja son bouton
+               d'annulation avec son compte, on l'allume plutot que d'inventer un
+               indicateur de plus. */
+            + ".ilyos-undo-chaine{outline:3px solid #ff9d5c;outline-offset:-3px;"
+            + "box-shadow:0 0 22px rgba(255,157,92,.7);}"
             + ".island-choice.ilyos-gamepad-focus{outline-offset:-3px;"
             + "background:rgba(255,216,121,.22);transform:scale(1.06);"
             + "position:relative;z-index:2;}";

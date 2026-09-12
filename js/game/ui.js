@@ -1532,6 +1532,12 @@
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           if (isValidPlacement(r, c)) {
+            /* La pose d'île n'entrait pas dans l'historique : on pouvait annuler
+               un déplacement ou une poussée, mais pas le geste qui ouvre le tour.
+               L'annulation s'arrêtait donc au milieu du tour au lieu d'en
+               atteindre le début. L'instantané est pris AVANT la pose, comme
+               pour toute autre action. */
+            saveUndoSnapshot();
             placeIsland(r, c);
           } else {
             updatePlacementPreview(r, c);
@@ -1559,6 +1565,9 @@
 
           const island = state.islands.find(is => is.id === state.pendingSpawnIslandId);
           if (island && island.cells.some(([ir, ic]) => ir === r && ic === c) && !characterAt(r, c)) {
+            // Même raison que la pose ci-dessus : sans cet instantané,
+            // l'invocation était un point de non-retour au milieu du tour.
+            saveUndoSnapshot();
             const char = {
               id: `char-${state.nextCharId++}`,
               player: state.currentPlayer,
