@@ -111,6 +111,17 @@
         return { type: "PUSH", pusherId, vers: [r, c], force: depense, resultat };
       }
 
+      function applyFreeDropCore(charId, r, c) {
+        const gardien = characterById(charId);
+        const couronne = gardien && artifactCarriedBy(charId);
+        if (!couronne || Math.abs(gardien.r - r) + Math.abs(gardien.c - c) !== 1
+          || !isLand(r, c) || characterAt(r, c) || looseArtifactAt(r, c)) return null;
+        couronne.carrierId = null;
+        couronne.r = r;
+        couronne.c = c;
+        return { type: "DEPOT", charId, artifactId: couronne.id, r, c };
+      }
+
       /** Rotation d'île : applique la transformation déjà calculée par
        *  calculateIslandRotationAroundPivot(), y compris le déplacement des
        *  gardiens et des couronnes portés par l'île.
@@ -273,8 +284,8 @@
             .sort((a, b) => String(a.id).localeCompare(String(b.id))),
           couronnes: [source.artifact, source.secondArtifact].filter(Boolean).map(a => ({
             id: a.id,
-            r: a.r,
-            c: a.c,
+            r: (source.characters || []).find(ch => ch.id === a.carrierId)?.r ?? a.r,
+            c: (source.characters || []).find(ch => ch.id === a.carrierId)?.c ?? a.c,
             active: !!a.active,
             porteur: a.carrierId ?? null
           })).sort((a, b) => String(a.id).localeCompare(String(b.id))),

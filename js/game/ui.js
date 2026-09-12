@@ -1636,9 +1636,10 @@
               return;
             }
 
-            artifact.carrierId = null;
-            artifact.r = r;
-            artifact.c = c;
+            if (!applyFreeDropCore(owner.id, r, c)) {
+              discardLastUndoSnapshot();
+              return;
+            }
             state.treasureDropFromId = null;
             state.treasureDropArtifactId = null;
             state.crownTransferTargetIds = [];
