@@ -4,6 +4,21 @@ Jeu de plateau 3D web, JavaScript classique + Three.js r128 et KayKit.
 Budget outils/assets supplémentaires : **0 €**. Priorités : jeu web existant,
 qualité visuelle, itérations courtes. Communiquer en français.
 
+## Portée : maintenance V1 vs conception V2
+
+Les consignes techniques de ce fichier — notamment préserver le site statique,
+Three.js r128, le bundle et l'architecture existante — concernent **la maintenance
+d'ILYOS V1**.
+
+Pour un travail explicitement consacré à **ILYOS V2 / reconstruction V2**, commencer
+par `docs/v2-context/START_HERE.md`. Les choix de moteur, langage, architecture,
+plateformes et règles y sont volontairement ouverts : les contraintes techniques
+V1 de ce fichier ne doivent pas être interprétées comme des contraintes V2.
+
+Les règles générales de prudence restent utiles dans tous les cas : préserver les
+changements présents, vérifier ce qui est réellement modifié, documenter les
+preuves et ne pas annoncer une validation non exécutée.
+
 ## Se repérer sans charger tout le dépôt
 
 - Lire `git status --short` avant de modifier ; préserver les changements présents.
