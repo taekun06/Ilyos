@@ -47,10 +47,12 @@ Les cartes inutilisées peuvent aller dans une réserve physique, avec un plafon
 - le pousseur vise une cible adjacente orthogonalement ;
 - la poussée peut agir sur un Gardien ou une Couronne libre ;
 - une force est choisie/consommée en cartes `PUSH` ;
-- le moteur calcule la ligne, la force minimale, la destination et une éventuelle chute ;
-- **différence importante** : un Gardien peut chuter, mais une Couronne libre ne disparaît pas dans le vide ; la logique V1 la fait voyager jusqu'à sa dernière destination autorisée selon les règles de poussée.
+- **règle V1 actuelle : il n'existe plus de « force requise » liée au nombre de pièces poussées** ; toute la ligne contiguë au pousseur est déplacée du nombre de cases correspondant à la force dépensée ;
+- un obstacle séparé du bloc par un trou arrête le déplacement juste avant lui ;
+- un Gardien qui entre dans le vide chute ;
+- une Couronne libre ne tombe jamais : elle survole le vide et cherche sa case d'arrivée, ou à défaut la dernière case d'île libre franchie selon la règle actuelle.
 
-Pour toute reconstruction exacte de la poussée, lire le noyau actuel plutôt que cette synthèse (`rules-core.js`, fonctions de poussée appelées par ce noyau).
+Pour toute reconstruction exacte de la poussée, lire `rules-core.js` et `scripts/verif-poussee.js` de la ref testée : cette mécanique a déjà évolué au cours de V1.
 
 ## Magie
 
