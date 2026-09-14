@@ -3,6 +3,11 @@
 Jeu de plateau 3D dans le navigateur : îles flottantes, gardiens et couronnes.
 Site statique en JavaScript, Three.js et KayKit. Node sert à l'outillage local.
 
+> **ILYOS V2 / reconstruction avec agent IA :** commencer par
+> [`docs/v2-context/START_HERE.md`](docs/v2-context/START_HERE.md). Le pack V2
+> décrit V1 comme référence et laisse volontairement ouverts moteur, langage,
+> architecture, plateformes et évolutions de règles.
+
 ## Commencer
 
 Sur ce poste, Node, les dépendances et Chromium sont déjà présents.
@@ -43,6 +48,7 @@ l'arrêter via **Terminal → Terminer la tâche**.
 
 ## Pour continuer
 
+- [Context pack ILYOS V2 pour agents](docs/v2-context/START_HERE.md)
 - [Environnement, abonnements IA et méthode de travail](docs/ENVIRONNEMENT.md)
 - [Assets : sources, provenance et intégration](docs/ASSETS.md)
 - [Instructions communes des assistants](AGENTS.md)

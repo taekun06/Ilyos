@@ -7918,11 +7918,18 @@
            est appelée à chaque mousemove) — un vrai coût CPU répété pour ne
            produire, la plupart du temps, que la même clé. Signalé en jeu
            comme un ralentissement. */
-        const zoneRef = smartResting ? state.reachable : null;
+        /* La zone bleue accompagne TOUT ce qui relève d'un déplacement, pas
+           seulement le clic direct sur un gardien. Le chemin classique — action
+           DÉPLACER puis gardien choisi dans le dock — produit exactement le même
+           ensemble atteignable, mais ne le montrait pas : le joueur devait
+           deviner où il pouvait aller, alors que l'information existait déjà. */
+        const zoneVisible = (smartResting || (moveActive && !!state.selectedCharId))
+          && !!state.reachable?.size;
+        const zoneRef = zoneVisible ? state.reachable : null;
         if (zoneRef !== kaykit3D.moveZoneRef) {
           kaykit3D.moveZoneRef = zoneRef;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
-          if (smartResting) {
+          if (zoneVisible) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
             addKayKitMoveZone(cellules);
           }
