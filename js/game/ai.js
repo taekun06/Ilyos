@@ -1005,6 +1005,14 @@
             await sleep(620);
             return true;
           }
+          case "DEPOT": {
+            const applique = applyFreeDropCore(action.charId, action.r, action.c);
+            if (!applique) return false;
+            benchJournaliser(applique);
+            renderAll();
+            await sleep(320);
+            return true;
+          }
           case "RAMASSAGE": {
             const applique = applyFreePickupCore(action.charId, action.artifactId);
             if (!applique) return false;
