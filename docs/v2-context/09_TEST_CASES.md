@@ -50,11 +50,13 @@ Attendu V1 : après la troisième Couronne marquée, `state.winner` devient l'id
 
 ## G. Poussée d'un Gardien
 
-Position : pousseur adjacent orthogonalement à une ligne de cible(s), ressources `PUSH` suffisantes.
+Position : pousseur adjacent orthogonalement à une ligne contiguë, avec une force `PUSH` choisie.
 
-Attendu V1 : le moteur calcule une force minimale, déplace la ligne selon la force et consomme les ressources correspondantes.
+Attendu V1 actuel : **il n'existe plus de force minimale liée au nombre de pièces poussées**. Tout le bloc collé au pousseur se déplace du nombre de cases correspondant à la force dépensée. Un obstacle séparé du bloc par un trou l'arrête juste avant lui.
 
-Cas critique : si le Gardien sort du terrain/plateau, il chute et est retiré du jeu.
+Cas critique : si un Gardien entre dans le vide ou sort du plateau, il chute et est retiré du jeu.
+
+Preuve dédiée : `scripts/verif-poussee.js`.
 
 ## H. Chute d'un porteur
 
@@ -66,7 +68,7 @@ Attendu V1 : le Gardien disparaît ; sa Couronne est conservée/lâchée sur la 
 
 Position : Couronne libre adjacente à un pousseur.
 
-Attendu V1 : la Couronne peut être poussée ; contrairement à un Gardien, elle n'est pas éliminée par le vide.
+Attendu V1 : la Couronne peut être poussée ; contrairement à un Gardien, elle n'est pas éliminée par le vide. Elle survole le vide et se pose sur sa case d'arrivée, ou à défaut sur la dernière case d'île libre franchie selon la règle actuelle.
 
 La campagne contient des niveaux construits autour du voyage autonome d'une Couronne : utiles comme oracle complémentaire.
 
