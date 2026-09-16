@@ -156,3 +156,71 @@ test("la caméra assistée ne confisque plus le point de vue", async ({ page }) 
 
   expect(incidents).toEqual([]);
 });
+
+/* ------------------------------------------------------------------------
+   L'ÉCHELLE DU CADRAGE AUTOMATIQUE.
+
+   La caméra assistée se tient à la distance qui garde tout le plateau à
+   l'image. Cette exigence est juste, mais sa marge ne l'était pas : 12 % de
+   vide tout autour, mesurés en partie solo à 1278 × 798 par une case de
+   60 pixels et un plateau qui n'occupait que 46 % de l'écran. Le serrage est
+   passé à 1,03.
+
+   Ce banc protège les deux moitiés de la promesse, et la seconde compte
+   autant que la première : plus près, MAIS rien du plateau ne sort du cadre.
+   Il lit la règle de cadrage elle-même — pas la distance du moment, qui
+   dépend de l'instant où le test regarde. */
+test('le cadrage automatique serre l’image sans rien laisser sortir', async ({ page }) => {
+  await demarrerPartieSolo(page);
+
+  const cadrage = serrage => page.evaluate(valeur => {
+    window.ILYOS_CADRAGE = { serrage: valeur, coinsEndormis: 0 };
+    const k = window.kaykit3D, THREE = window.THREE;
+    // Mêmes points que le moteur : tout ce qui porte de la terre, plus les pièces.
+    const cases = [...document.querySelectorAll('.cell.land')]
+      .map(cell => [Number(cell.dataset.r), Number(cell.dataset.c)]);
+    const meshes = (k.hitMeshes || []).filter(h => Number.isFinite(h.userData?.r));
+    const points = cases
+      .map(([r, c]) => meshes.find(h => h.userData.r === r && h.userData.c === c))
+      .filter(Boolean)
+      .map(h => h.getWorldPosition(new THREE.Vector3()));
+    if (!points.length) return null;
+
+    // La distance qu'exige ce serrage, sous l'orientation courante.
+    const camera = k.camera, cible = k.orbit.target;
+    const tanV = Math.tan(camera.fov * Math.PI / 360);
+    const tanH = tanV * Math.max(.25, camera.aspect || 1);
+    const u = camera.position.clone().sub(cible).normalize();
+    const droite = new THREE.Vector3(0, 1, 0).cross(u).normalize();
+    const haut = u.clone().cross(droite).normalize();
+    let distance = 0;
+    points.forEach(point => {
+      const ecart = point.clone().sub(cible);
+      const profondeur = ecart.dot(u);
+      distance = Math.max(distance,
+        profondeur + valeur * Math.abs(ecart.dot(droite)) / tanH,
+        profondeur + valeur * Math.abs(ecart.dot(haut)) / tanV);
+    });
+
+    // À cette distance, tout le terrain tient-il encore dans l'image ?
+    const essai = camera.clone();
+    essai.position.copy(cible).add(u.clone().multiplyScalar(distance));
+    essai.lookAt(cible);
+    essai.updateMatrixWorld();
+    essai.updateProjectionMatrix();
+    const hors = points.filter(point => {
+      const n = point.clone().project(essai);
+      return Math.abs(n.x) > 1 || Math.abs(n.y) > 1;
+    }).length;
+    return { distance: +distance.toFixed(2), hors, terrain: points.length };
+  }, serrage);
+
+  const avant = await cadrage(1.12);
+  const apres = await cadrage(1.03);
+  expect(avant, 'le plateau doit porter du terrain à mesurer').not.toBeNull();
+
+  expect(apres.distance, 'le serrage doit rapprocher la caméra').toBeLessThan(avant.distance);
+  expect(apres.hors, 'mais aucune case de terrain ne doit sortir du cadre').toBe(0);
+  expect(apres.distance, 'sans pour autant plonger dans le plateau')
+    .toBeGreaterThan(avant.distance * .85);
+});

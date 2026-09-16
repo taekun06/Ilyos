@@ -6337,6 +6337,49 @@
          points les plus éloignés du plateau. Le cadre se calculait alors sur une
          poignée d'îles centrales et la caméra plongeait à 9 unités du plateau en
          laissant un tiers du jeu hors champ. */
+      /* ==================================================================
+         ÉCHELLE DU CADRAGE AUTOMATIQUE — deux réglages, et un seul par défaut.
+
+         Mesuré sur une partie solo en 1278 × 798 : la caméra assistée se fige à
+         18,7 unités, une case fait 60 pixels et le plateau n'occupe que 46 % de
+         l'image. Elle est à la distance exacte que réclame « tout le plateau
+         dans le cadre », marge comprise — donc elle ne peut pas approcher tant
+         que cette exigence tient. C'est ce qui fait paraître les Gardiens petits
+         sur un grand écran.
+
+         • serrage : la marge du calcul de distance. 1,12 laissait 12 % de vide
+           tout autour ; à 1,03 le cadre se resserre d'environ 7 % sans que rien
+           ne sorte de l'image. C'est le changement par défaut, et il est sûr.
+
+         • coinsEndormis : distance, en cases, au-delà de laquelle un village ou
+           le sanctuaire DÉSERT cesse d'épingler le cadre. Ce sont eux qui
+           tiennent les quatre coins du plateau et imposent le recul. À 3, la
+           distance mesurée tombe de 18,7 à 12,4 — les Gardiens doublent
+           presque de taille, mais la moitié opposée du plateau sort du champ,
+           et l'adversaire avec elle. Éteint par défaut (0) : c'est un choix de
+           confort, pas une correction, et il se juge à l'œil.
+
+         Les deux se règlent à chaud : ILYOS_CADRAGE.serrage = 1, puis
+         ILYOS_CADRAGE.coinsEndormis = 3, et le prochain recadrage en tient
+         compte. */
+      const KAYKIT_CADRAGE_DEFAUT = { serrage: 1.03, coinsEndormis: 0 };
+
+      function kaykitCadrageReglage(nom) {
+        const vif = Number(window.ILYOS_CADRAGE?.[nom]);
+        return Number.isFinite(vif) && vif >= 0 ? vif : KAYKIT_CADRAGE_DEFAUT[nom];
+      }
+
+      /* Une case de bord déserte ne tient plus le cadre : on regarde s'il s'y
+         passe quelque chose, pièce ou couronne, dans le rayon demandé. */
+      function kaykitCoinEndormi(r, c, rayon) {
+        if (!(rayon > 0) || !state) return false;
+        const vivant = piece => Number.isFinite(piece?.r) && Number.isFinite(piece?.c)
+          && Math.abs(piece.r - r) + Math.abs(piece.c - c) <= rayon;
+        if ((state.characters || []).some(vivant)) return false;
+        const couronnes = typeof activeArtifacts === "function" ? activeArtifacts() : [];
+        return !(couronnes || []).some(vivant);
+      }
+
       function kaykitPointsDuContenu(interet) {
         const cases = [];
         if (state) {
@@ -6347,18 +6390,23 @@
              passée de 12 à 16 minutes sous les tests. Ici on énumère ce qui
              existe — mêmes points exactement, coût proportionnel au contenu. */
           (state.islands || []).forEach(ile => (ile.cells || []).forEach(([r, c]) => cases.push([r, c])));
+          const rayonEveil = kaykitCadrageReglage("coinsEndormis");
           (state.players || []).forEach(joueur => {
             const villages = Array.isArray(joueur?.villages) && joueur.villages.length
               ? joueur.villages
               : (joueur?.village ? [joueur.village] : []);
             villages.forEach(village => {
-              if (Number.isFinite(village?.r) && Number.isFinite(village?.c)) cases.push([village.r, village.c]);
+              if (!Number.isFinite(village?.r) || !Number.isFinite(village?.c)) return;
+              if (kaykitCoinEndormi(village.r, village.c, rayonEveil)) return;
+              cases.push([village.r, village.c]);
             });
           });
           // Sanctuaire : la croix centrale, définie par isSanctuary().
           if (typeof CENTER === "object" && CENTER) {
             [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dr, dc]) => {
-              cases.push([CENTER.r + dr, CENTER.c + dc]);
+              const r = CENTER.r + dr, c = CENTER.c + dc;
+              if (kaykitCoinEndormi(r, c, rayonEveil)) return;
+              cases.push([r, c]);
             });
           }
           (state.characters || []).forEach(ch => {
@@ -6382,7 +6430,7 @@
          d ≥ w·u + |w·droite| / tan(fovH/2). On prend le maximum sur tous les
          points et sur les deux axes. Exact, et sans dépendre d'une caméra qu'il
          faudrait déjà avoir positionnée. */
-      function kaykitDistancePourContenir(points, cible, marge = 1.12) {
+      function kaykitDistancePourContenir(points, cible, marge = kaykitCadrageReglage("serrage")) {
         if (!points.length || !kaykit3D?.camera) return 0;
         const camera = kaykit3D.camera;
         const tanVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
