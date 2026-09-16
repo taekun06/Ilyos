@@ -626,3 +626,145 @@ test('le cabinet d’énigmes se parcourt à la manette', async ({ page }) => {
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
+
+/* ------------------------------------------------------------------------
+   DANS UNE ÉNIGME, PUIS PENDANT UNE POUSSÉE ET UNE MAGIE.
+
+   Trois situations où la manette ne répondait plus, chacune pour une raison
+   différente, et qu'aucun test ne couvrait :
+
+   • #puzzleLayer reste affiché pendant TOUTE une énigme — c'est le HUD du
+     Sanctuaire, pas une fenêtre. Pris pour un panneau plein écran, il
+     confisquait le stick et les boutons du début à la fin.
+   • Pendant qu'une poussée attend sa destination, le moteur laisse le
+     pousseur « selectionnable » : la reprise automatique du gardien s'y
+     raccrochait à chaque image et ramenait le curseur sur lui.
+   • Sous MAGIE, tous les alliés sont « selectionnables » — un clic sur l'un
+     d'eux choisit l'île sous ses pieds — et la même reprise automatique
+     empêchait de viser le pivot voulu.
+
+   On les vérifie sur des Sanctuaires, seuls plateaux dont la position de
+   départ est écrite : une partie normale ne garantit ni cible adjacente à
+   pousser, ni carte MAGIE en main. */
+
+async function ouvrirEnigme(page, id) {
+  await page.waitForFunction(() => typeof window.ILYOS_PUZZLE?.startById === 'function', null, { timeout: 30000 });
+  await page.evaluate(identifiant => {
+    window.ILYOS_PUZZLE.unlockAll?.();
+    window.ILYOS_PUZZLE.startById(identifiant);
+  }, id);
+  await page.waitForFunction(() => document.querySelectorAll('.cell .character').length > 1, null, { timeout: 40000 });
+  await page.waitForTimeout(4000);
+}
+
+const gardiens = page => page.evaluate(
+  () => [...document.querySelectorAll('.cell .character')]
+    .map(marque => { const cell = marque.closest('.cell'); return `${cell.dataset.r},${cell.dataset.c}`; })
+    .sort().join(' ')
+);
+
+test('dans une énigme, une poussée se vise et s’exécute à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p03-domino');
+
+  // L'action est lancée depuis le dock ; ce que le test mesure, c'est la SUITE.
+  await page.locator('#ov2Push').click({ force: true });
+  await page.waitForFunction(
+    () => /destination/.test(document.getElementById('ov2Instruction')?.textContent || ''),
+    null, { timeout: 15000 }
+  );
+  await page.waitForTimeout(1200);
+
+  const viseUneDestination = () => page.evaluate(
+    () => !!window.kaykit3D?.hoverCell?.special
+  );
+
+  /* Le stick doit atteindre un anneau de destination — et y RESTER : c'est
+     précisément ce qui échouait, le curseur étant ramené sur le pousseur à
+     chaque image.
+
+     Plusieurs poussées de stick, et non une seule : le survol est repeint à
+     l'image suivante, et un navigateur sans GPU en rend une poignée par
+     seconde. On mesure ce que la manette FINIT par atteindre, pas la vitesse
+     du rendu — l'assertion, elle, reste entière. */
+  let atteint = false;
+  for (let essai = 0; essai < 6 && !atteint; essai++) {
+    await incliner(page, 0, -1);
+    atteint = await viseUneDestination();
+  }
+  expect(atteint, 'le stick doit atteindre une destination de poussée').toBe(true);
+  await incliner(page, 0, -1);
+  await incliner(page, 1, 1);
+  expect(await viseUneDestination(), 'le curseur ne doit pas quitter les destinations').toBe(true);
+
+  /* ET LES AUTRES FORCES DOIVENT ÊTRE ATTEIGNABLES.
+
+     Les résultats d'une même poussée — force 1, 2, 3... — visent souvent la
+     MÊME case : leurs anneaux se superposent au pixel près. Tant que la manette
+     passait par un survol, le lancer de rayon renvoyait toujours le premier, et
+     les autres forces étaient littéralement hors d'atteinte. */
+  const resultatVise = () => page.evaluate(
+    () => window.kaykit3D?.hoverCell?.hit?.userData?.pushOptionId || null
+  );
+  const premier = await resultatVise();
+  let change = false;
+  for (let essai = 0; essai < 4 && !change; essai++) {
+    await incliner(page, 0, -1);
+    change = (await resultatVise()) !== premier;
+  }
+  expect(change, 'le stick doit atteindre les autres forces de la même poussée').toBe(true);
+
+  // Et A exécute la poussée visée : les gardiens bougent.
+  const avant = await gardiens(page);
+  /* Plusieurs appuis si besoin : sans GPU, la boucle de manette ne voit qu'une
+     poignee d'images par seconde et un appui bref peut tomber entre deux. Ce
+     que le test prouve reste entier — A finit par exécuter la poussée visée. */
+  let joue = false;
+  for (let essai = 0; essai < 4 && !joue; essai++) {
+    await appuyer(page, B.A, 420);
+    await page.waitForTimeout(800);
+    joue = (await gardiens(page)) !== avant;
+  }
+  expect(joue, 'A doit exécuter la poussée visée').toBe(true);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('sous Magie, le pivot se choisit à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p09-fardeau');
+
+  await page.locator('#ov2Magic').click({ force: true });
+  await page.waitForFunction(
+    () => /pivot/.test(document.getElementById('ov2Instruction')?.textContent || ''),
+    null, { timeout: 15000 }
+  );
+  await page.waitForTimeout(1200);
+
+  /* LE CURSEUR DOIT TENIR EN PLACE, et le pivot être CELUI QU'ON VISAIT.
+
+     Le défaut ne se voyait pas à « un pivot a-t-il été choisi » : la reprise
+     automatique cliquait elle-même un gardien, donc un pivot finissait bien par
+     apparaître — sur la case du gardien, jamais sur celle visée. On mesure donc
+     les deux choses qui manquaient : le curseur reste où le joueur l'a mis, et
+     A choisit ce pivot-là. */
+  await incliner(page, 1, 1);
+  const vise = await survol(page);
+  expect(vise, 'le stick doit poser le curseur sur une case').not.toBeNull();
+
+  await page.waitForTimeout(1500);   // sans aucune entrée : rien ne doit bouger
+  expect(await survol(page), 'le curseur ne doit pas être repris par un gardien').toBe(vise);
+
+  await appuyer(page, B.A, 420);
+  await expect.poll(
+    () => page.evaluate(() => [...document.querySelectorAll('.cell.magic-pivot')]
+      .map(cell => `${cell.dataset.r},${cell.dataset.c}`).join(' ')),
+    { message: 'A doit choisir le pivot visé', timeout: 10000 }
+  ).toBe(vise);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});

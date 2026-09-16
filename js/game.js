@@ -5301,11 +5301,31 @@
             kaykit3D.camera
           );
 
-          const interactive =
+          const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
               false
-            )[0]?.object;
+            );
+
+          /* UN CHOIX DE POUSSÉE PASSE DEVANT CE QUI LE MASQUE.
+
+             Les anneaux de destination sont dessinés sans test de profondeur :
+             ils apparaissent donc PAR-DESSUS le pousseur, et c'est bien ce que
+             le joueur voit et vise. Le lancer de rayon, lui, ne connaît que la
+             géométrie : quand la caméra place le gardien entre l'œil et
+             l'anneau, il renvoyait le gardien, et la destination visible était
+             impossible à désigner — ni à la souris ni à la manette. Tant qu'une
+             poussée attend sa destination, ce choix l'emporte donc sur tout ce
+             qui se trouve devant. */
+          if (state?.pushOptions?.length) {
+            const destination = interactifs.find(item => {
+              const interaction = item.object?.userData?.ilyosInteraction;
+              return interaction === "push-destination" || interaction === "push-death-destination";
+            });
+            if (destination) return destination.object;
+          }
+
+          const interactive = interactifs[0]?.object;
 
           if (interactive) return interactive;
 
@@ -5370,25 +5390,7 @@
             specialInteraction === "push-destination"
             || specialInteraction === "push-death-destination"
           ) {
-            const optionId = hit.userData.pushOptionId;
-            if (state.pushHoverOptionId !== optionId) {
-              state.pushHoverOptionId = optionId;
-              if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
-              renderTurnContext();
-              renderHand();
-            }
-            const option = state.pushOptions?.find(item => item.id === optionId);
-            kaykit3D.hoverCell = { special: true, hit };
-            if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
-            clearKayKitVisualHover();
-            refreshKayKitHoverPreviews();
-            if (kaykit3D.cursorLabel && option) {
-              kaykit3D.cursorLabel.textContent = option.fell
-                ? `☠ CHUTE · FORCE ${option.force}`
-                : `POUSSER · FORCE ${option.force}`;
-              kaykit3D.cursorLabel.dataset.kind = "push";
-              kaykit3D.cursorLabel.classList.add("visible");
-            }
+            viserOptionPoussee(hit.userData.pushOptionId, hit);
             canvas.style.cursor = "pointer";
             return kaykit3D.hoverCell;
           }
@@ -9649,6 +9651,39 @@
        * le bloc réel et le ghost de renderKayKitMagicRotationPreview se
        * superposaient à 0 cran de rotation.
        */
+      /* VISER UN RESULTAT DE POUSSEE, quelle que soit la main qui le vise.
+
+         Extrait tel quel du survol souris pour que la manette puisse designer
+         exactement le meme resultat. C'est necessaire, et pas seulement plus
+         propre : les resultats d'une meme poussee — force 1, 2, 3... — visent
+         souvent la MEME case, leurs anneaux se superposent au pixel pres, et un
+         lancer de rayon renvoie toujours le premier. Sans ce point d'entree par
+         identifiant, les autres forces etaient litteralement invisibles a qui
+         n'a pas de souris. */
+      function viserOptionPoussee(optionId, hit = null) {
+        if (!kaykit3D || !optionId) return null;
+        const option = state?.pushOptions?.find(item => item.id === optionId);
+        if (!option) return null;
+        if (state.pushHoverOptionId !== optionId) {
+          state.pushHoverOptionId = optionId;
+          if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+          renderTurnContext();
+          renderHand();
+        }
+        kaykit3D.hoverCell = { special: true, hit };
+        if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+        clearKayKitVisualHover();
+        refreshKayKitHoverPreviews();
+        if (kaykit3D.cursorLabel) {
+          kaykit3D.cursorLabel.textContent = option.fell
+            ? `☠ CHUTE · FORCE ${option.force}`
+            : `POUSSER · FORCE ${option.force}`;
+          kaykit3D.cursorLabel.dataset.kind = "push";
+          kaykit3D.cursorLabel.classList.add("visible");
+        }
+        return option;
+      }
+
       function refreshKayKitMagicHiddenIsland() {
         if (!kaykit3D) return;
         const hiddenId = (state?.phase === "ACTION"
@@ -35898,12 +35933,29 @@
            On les parcourt comme ce qu'elles sont — des objets de la scene. */
         function pushTargets() {
           if (!state?.pushOptions?.length || !kaykit3D?.interactiveMeshes) return [];
+          /* Dans l'ordre du moteur — force 1, 2, 3... — et non dans celui,
+             arbitraire, ou la scene a ete construite : c'est cet ordre-la que le
+             joueur suit quand il fait defiler les resultats possibles. */
+          const rang = id => state.pushOptions.findIndex(option => option.id === id);
           return kaykit3D.interactiveMeshes
             .filter(mesh => {
               const kind = mesh?.userData?.ilyosInteraction;
               return kind === "push-destination" || kind === "push-death-destination";
             })
-            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }));
+            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }))
+            .filter(cible => rang(cible.id) >= 0)
+            .sort((a, b) => rang(a.id) - rang(b.id));
+        }
+
+        /* Designer un resultat de poussee, c'est le dire au moteur : le survol
+           par lancer de rayon ne peut pas distinguer des anneaux superposes
+           (force 1, 2, 3... sur la meme case), et le joueur aurait vu force 1
+           tout en validant autre chose. viserOptionPoussee est le meme point
+           d'entree que le survol souris. */
+        function viserPoussee(cible) {
+          pad.special = cible;
+          if (!cible) return;
+          if (typeof viserOptionPoussee === "function") viserOptionPoussee(cible.id, cible.mesh);
         }
 
         function screenOfMesh(mesh) {
@@ -36015,7 +36067,7 @@
               .filter(entry => entry.point);
             if (points.length) {
               const current = pad.special && points.find(entry => entry.target.id === pad.special.id);
-              if (!current) { pad.special = points[0].target; return true; }
+              if (!current) { viserPoussee(points[0].target); return true; }
               const others = points.filter(entry => entry.target.id !== pad.special.id);
               let best = null, bestScore = 0;
               for (const entry of others) {
@@ -36027,10 +36079,29 @@
                 const score = alignment / (1 + length / 240);
                 if (score > bestScore) { bestScore = score; best = entry.target; }
               }
-              if (!best) return false;
-              pad.special = best;
+              /* LA GEOMETRIE NE SUFFIT PAS ICI, ET NE LE PEUT PAS.
+
+                 Les resultats d'une meme poussee — force 1, 2, 3... — visent
+                 souvent LA MEME case : leurs anneaux se superposent au pixel
+                 pres, et aucune direction ne les separera jamais. Le stick ne
+                 repondait alors plus du tout, et la destination voulue restait
+                 inatteignable. On retombe donc sur le parcours par ordre du
+                 moteur, exactement comme pour les cases du plateau. */
+              if (!best) {
+                if (points.length < 2) return false;
+                const rang = points.findIndex(entry => entry.target.id === pad.special.id);
+                const pas = dx + dy >= 0 ? 1 : -1;
+                best = points[(rang + pas + points.length) % points.length].target;
+              }
+              viserPoussee(best);
               return true;
             }
+            /* Les anneaux sont reconstruits a chaque survol : ils manquent
+               parfois le temps d'une image. Oublier la cible visee pour si peu
+               ramenait le curseur sur le plateau au moment meme ou le joueur
+               validait — la poussee choisie ne partait pas. On garde donc ce
+               qui est vise tant que le moteur propose des resultats. */
+            return false;
           }
           pad.special = null;
           if (!pad.cursor) { pad.cursor = defaultCursor(); return true; }
@@ -36077,9 +36148,18 @@
            ne traite que les pointeurs non-souris, il ne doit pas s'en saisir. */
         function refreshHover() {
           const canvas = boardCanvas();
-          const point = pad.special
-            ? screenOfMesh(pad.special.mesh)
-            : (pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c));
+          /* UNE DESTINATION DE POUSSEE SE DESIGNE, ELLE NE SE SURVOLE PAS.
+
+             Un pointermove synthetique repasserait par le lancer de rayon, et
+             celui-ci rend toujours le PREMIER des anneaux empiles : la force
+             choisie au stick etait aussitot ramenee a la premiere, sans que rien
+             ne le montre. On redit donc au moteur, par identifiant, ce qui est
+             vise — c'est le meme point d'entree que le survol souris. */
+          if (pad.special) {
+            const vise = pushTargets().find(cible => cible.id === pad.special.id) || pad.special;
+            if (typeof viserOptionPoussee === "function") { viserOptionPoussee(vise.id, vise.mesh); return; }
+          }
+          const point = pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c);
           if (!canvas || !point) return;
           canvas.dispatchEvent(new PointerEvent("pointermove", {
             bubbles: true, cancelable: true, view: window,
@@ -36399,10 +36479,27 @@
            navigue dedans geometriquement, avec le socle partage. */
         const PANNEAUX = ["puzzleMenu", "puzzleLayer", "rulesModal", "victoryModal", "soundMenu"];
 
+        /* UN PANNEAU N'EN EST UN QUE S'IL PREND L'ECRAN.
+
+           #puzzleLayer reste affiche pendant TOUTE une enigme : c'est le HUD du
+           Sanctuaire, pas une fenetre. Pris pour un panneau, il confisquait le
+           stick et les boutons du debut a la fin — le plateau ne repondait plus
+           du tout a la manette dans les enigmes. Le depart se lit dans le style
+           deja ecrit : la couche laisse passer les clics (`pointer-events:none`)
+           tant qu'elle ne fait qu'habiller le plateau, et ne les capte que
+           lorsqu'elle s'ouvre vraiment (`.reveil`). On se fie donc a ce que le
+           joueur constate a la souris : ce qui laisse passer le clic laisse
+           passer la manette. */
+        function panneauCapteLeClic(panneau) {
+          try { return getComputedStyle(panneau).pointerEvents !== "none"; }
+          catch (_) { return true; }
+        }
+
         function panneauActif() {
           for (const id of PANNEAUX) {
             const panneau = document.getElementById(id);
             if (!panneau || !visible(panneau)) continue;
+            if (!panneauCapteLeClic(panneau)) continue;
             const boutons = [...panneau.querySelectorAll("button, [role=\"button\"], a[href]")].filter(usable);
             if (boutons.length) return { panneau, boutons };
           }
@@ -36494,10 +36591,23 @@
            la case du gardien — et non par un appel direct a la selection interne :
            c'est ce qui garantit que les regles decidant qui peut agir restent au
            seul endroit ou elles sont ecrites. */
+        /* Seuls DEPLACER et POUSSER reclament qu'on designe un gardien. Sous
+           MAGIE, le moteur marque aussi les allies « selectable » — un clic sur
+           l'un d'eux choisit l'ile sous ses pieds — et la reprise automatique
+           s'y raccrochait a chaque image : le curseur revenait sans cesse sur le
+           gardien, et le pivot voulu devenait impossible a viser. */
+        const ACTIONS_A_GARDIEN = ["MOVE", "PUSH"];
+
+        /* Et PAS pendant qu'une poussee attend son resultat : le moteur y laisse
+           le pousseur « selectionnable », alors qu'il ne demande plus un gardien
+           mais une destination. La reprise automatique s'y rattrapait a chaque
+           image — curseur ramene sur le gardien, cible speciale effacee : la
+           destination devenait proprement inatteignable. */
         function attendUnGardien() {
           return state?.phase === "ACTION"
-            && !!state.selectedActionType
+            && ACTIONS_A_GARDIEN.includes(state.selectedActionType || "")
             && !state.selectedCharId
+            && !(state.pushOptions && state.pushOptions.length)
             && guardiansMarques().length > 0;
         }
 
@@ -36894,8 +37004,16 @@
           const changerQui = direction => {
             if (contextChoices().length) { moveChoice(direction); return; }
             if (pad.crownMode) { cycleCrowns(direction); return; }
-            if (state?.selectedActionType || attendUnGardien()) {
+            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
               if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
+               revenait a appeler handleCancelButton(), donc a quitter l'action
+               que le joueur venait de lancer. On parcourt ce que le moteur
+               propose, et s'il ne propose rien, on ne fait rien. */
+            if (state?.selectedActionType) {
+              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
               return;
             }
             navigateGuardians(direction);

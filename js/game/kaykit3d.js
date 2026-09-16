@@ -4928,11 +4928,31 @@
             kaykit3D.camera
           );
 
-          const interactive =
+          const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
               false
-            )[0]?.object;
+            );
+
+          /* UN CHOIX DE POUSSÉE PASSE DEVANT CE QUI LE MASQUE.
+
+             Les anneaux de destination sont dessinés sans test de profondeur :
+             ils apparaissent donc PAR-DESSUS le pousseur, et c'est bien ce que
+             le joueur voit et vise. Le lancer de rayon, lui, ne connaît que la
+             géométrie : quand la caméra place le gardien entre l'œil et
+             l'anneau, il renvoyait le gardien, et la destination visible était
+             impossible à désigner — ni à la souris ni à la manette. Tant qu'une
+             poussée attend sa destination, ce choix l'emporte donc sur tout ce
+             qui se trouve devant. */
+          if (state?.pushOptions?.length) {
+            const destination = interactifs.find(item => {
+              const interaction = item.object?.userData?.ilyosInteraction;
+              return interaction === "push-destination" || interaction === "push-death-destination";
+            });
+            if (destination) return destination.object;
+          }
+
+          const interactive = interactifs[0]?.object;
 
           if (interactive) return interactive;
 
@@ -4997,25 +5017,7 @@
             specialInteraction === "push-destination"
             || specialInteraction === "push-death-destination"
           ) {
-            const optionId = hit.userData.pushOptionId;
-            if (state.pushHoverOptionId !== optionId) {
-              state.pushHoverOptionId = optionId;
-              if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
-              renderTurnContext();
-              renderHand();
-            }
-            const option = state.pushOptions?.find(item => item.id === optionId);
-            kaykit3D.hoverCell = { special: true, hit };
-            if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
-            clearKayKitVisualHover();
-            refreshKayKitHoverPreviews();
-            if (kaykit3D.cursorLabel && option) {
-              kaykit3D.cursorLabel.textContent = option.fell
-                ? `☠ CHUTE · FORCE ${option.force}`
-                : `POUSSER · FORCE ${option.force}`;
-              kaykit3D.cursorLabel.dataset.kind = "push";
-              kaykit3D.cursorLabel.classList.add("visible");
-            }
+            viserOptionPoussee(hit.userData.pushOptionId, hit);
             canvas.style.cursor = "pointer";
             return kaykit3D.hoverCell;
           }
@@ -9276,6 +9278,39 @@
        * le bloc réel et le ghost de renderKayKitMagicRotationPreview se
        * superposaient à 0 cran de rotation.
        */
+      /* VISER UN RESULTAT DE POUSSEE, quelle que soit la main qui le vise.
+
+         Extrait tel quel du survol souris pour que la manette puisse designer
+         exactement le meme resultat. C'est necessaire, et pas seulement plus
+         propre : les resultats d'une meme poussee — force 1, 2, 3... — visent
+         souvent la MEME case, leurs anneaux se superposent au pixel pres, et un
+         lancer de rayon renvoie toujours le premier. Sans ce point d'entree par
+         identifiant, les autres forces etaient litteralement invisibles a qui
+         n'a pas de souris. */
+      function viserOptionPoussee(optionId, hit = null) {
+        if (!kaykit3D || !optionId) return null;
+        const option = state?.pushOptions?.find(item => item.id === optionId);
+        if (!option) return null;
+        if (state.pushHoverOptionId !== optionId) {
+          state.pushHoverOptionId = optionId;
+          if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+          renderTurnContext();
+          renderHand();
+        }
+        kaykit3D.hoverCell = { special: true, hit };
+        if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+        clearKayKitVisualHover();
+        refreshKayKitHoverPreviews();
+        if (kaykit3D.cursorLabel) {
+          kaykit3D.cursorLabel.textContent = option.fell
+            ? `☠ CHUTE · FORCE ${option.force}`
+            : `POUSSER · FORCE ${option.force}`;
+          kaykit3D.cursorLabel.dataset.kind = "push";
+          kaykit3D.cursorLabel.classList.add("visible");
+        }
+        return option;
+      }
+
       function refreshKayKitMagicHiddenIsland() {
         if (!kaykit3D) return;
         const hiddenId = (state?.phase === "ACTION"
