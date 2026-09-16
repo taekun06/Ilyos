@@ -13,7 +13,17 @@
       function applyQuality(next, reason = 'auto') {
         if (next === quality && !reason.includes('init')) return; quality = next; ensureUI();
         const r = renderer(); const dpr = devicePixelRatio || 1;
-        if (r) r.setPixelRatio(Math.min(dpr, QUALITY_DPR[next] || QUALITY_DPR.balanced));
+        /* Le palier fixe le PLAFOND ; la densité tenable, elle, dépend de la
+           taille de la fenêtre et se décide dans js/game/kaykit3d.js
+           (kaykitDensiteRendu, « budget de pixels »). Appliquer le plafond tel
+           quel demandait 3,2 millions de pixels par image sur une fenêtre de
+           portable et 8,3 sur un écran externe, pour la même scène qu'un
+           téléphone rend en 0,7 — c'est ce grand écart qui rendait le jeu plus
+           lourd sur ordinateur que sur mobile. Repli sur l'ancien calcul si le
+           moteur n'expose pas encore ce point d'entrée. */
+        const plafond = QUALITY_DPR[next] || QUALITY_DPR.balanced;
+        if (window.kaykit3D?.appliquerDensite) window.kaykit3D.appliquerDensite(plafond);
+        else if (r) r.setPixelRatio(Math.min(dpr, plafond));
         const shadow = window.kaykit3D?.scene?.getObjectByProperty?.('isDirectionalLight', true)?.shadow?.mapSize;
         if (shadow) { const size = QUALITY_SHADOW[next] || QUALITY_SHADOW.balanced; shadow.set(size, size) }
         document.documentElement.classList.toggle('v69-fps-low', next === 'performance');

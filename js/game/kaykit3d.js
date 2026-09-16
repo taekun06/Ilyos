@@ -769,6 +769,69 @@
         updateKayKitLoadStatus();
       }
 
+      /* ==================================================================
+         BUDGET DE PIXELS — la densité suit la TAILLE de la fenêtre.
+
+         Un plafond de densité fixe (1,5) ne dit rien du travail réel : c'est un
+         MULTIPLICATEUR, et ce qui coûte, c'est le nombre de pixels dessinés.
+         Un téléphone à 390 × 844 en demande 0,7 million ; la même règle sur une
+         fenêtre de portable de 1500 × 950 en demande 3,2 millions, et sur un
+         écran externe 2560 × 1440, 8,3 millions — pour exactement la même scène.
+         D'où le grand écart constaté : le jeu tournait moins bien sur Mac que
+         sur téléphone, non par manque de puissance, mais parce qu'on lui
+         demandait quatre à onze fois plus de pixels.
+
+         On borne donc le TRAVAIL, pas le multiplicateur.
+
+         Trois garde-fous, pour que l'image ne puisse pas y perdre :
+         • jamais au-dessus du plafond de qualité en cours — le budget ne sert
+           qu'à descendre, jamais à forcer un rendu plus lourd ;
+         • jamais au-dessus de la densité réelle de l'écran — pas de
+           suréchantillonnage sur un écran classique ;
+         • jamais SOUS 1 pixel rendu par pixel CSS : au pire, le jeu dessine à la
+           résolution native de la fenêtre. C'est le plancher, et il est net.
+
+         Conséquence directe : sur téléphone et sur toute fenêtre modeste, le
+         budget n'est jamais atteint et la densité ne change pas d'un iota. Seuls
+         les grands écrans, qui sont précisément les machines qui peinent,
+         voient la densité descendre — et proportionnellement, au lieu de
+         s'effondrer d'un coup au palier « performance ».
+
+         window.ILYOS_PIXEL_BUDGET se règle à chaud pour comparer à l'œil. */
+      const KAYKIT_BUDGET_PIXELS_DEFAUT = 2600000;
+
+      function kaykitSurfaceCss() {
+        const rect = els.boardWrap?.getBoundingClientRect?.();
+        const largeur = rect && rect.width > 20 ? rect.width : (window.innerWidth || 1280);
+        const hauteur = rect && rect.height > 20 ? rect.height : (window.innerHeight || 800);
+        return Math.max(1, largeur * hauteur);
+      }
+
+      function kaykitDensiteRendu(plafond = 1.5) {
+        const budget = Number(window.ILYOS_PIXEL_BUDGET) > 0
+          ? Number(window.ILYOS_PIXEL_BUDGET)
+          : KAYKIT_BUDGET_PIXELS_DEFAUT;
+        const ecran = window.devicePixelRatio || 1;
+        const tenue = Math.sqrt(budget / kaykitSurfaceCss());
+        // Le plancher passe AVANT les plafonds : il ne doit jamais faire monter
+        // la densité au-dessus de ce que la qualité en cours autorise.
+        return Math.min(plafond, ecran, Math.max(1, tenue));
+      }
+
+      /* Une fenêtre agrandie change la surface, donc le budget : sans cela, un
+         plein écran gardait la densité calculée pour la petite fenêtre et
+         doublait le travail en silence. On ne touche au renderer que si la
+         valeur a vraiment changé — chaque appel réalloue les tampons GPU. */
+      function kaykitAppliquerDensite(plafond) {
+        if (!kaykit3D?.renderer) return;
+        const voulue = kaykitDensiteRendu(
+          plafond ?? kaykit3D.plafondDensite ?? 1.5
+        );
+        if (plafond !== undefined) kaykit3D.plafondDensite = plafond;
+        if (Math.abs(kaykit3D.renderer.getPixelRatio() - voulue) < .01) return;
+        kaykit3D.renderer.setPixelRatio(voulue);
+      }
+
       function initKayKit3D() {
         if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
@@ -835,7 +898,7 @@
           canvas.remove(); badge.remove(); controls.remove(); status.remove(); cameraHint.remove();
           return;
         }
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.outputEncoding = THREE.sRGBEncoding;
@@ -971,6 +1034,9 @@
           // Qualité courante ("high" | "balanced" | "performance"), pilotée par
           // le moniteur d'images de js/complete-polish.js.
           qualityMode: "balanced",
+          // Plafond de densité imposé par le mode qualité en cours ; la densité
+          // réellement appliquée en découle, bornée par le budget de pixels.
+          plafondDensite: 1.5,
           // Registres de la synchronisation incrémentale (V77) : syncKayKitScene
           // ne vide plus dynamicGroup à chaque appel. Chaque catégorie garde la
           // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
@@ -1000,6 +1066,13 @@
         // V78 : point d'entrée resize pour js/complete-polish.js (script
         // séparé, ne partage pas cette IIFE) — voir resizeKayKitRenderer().
         kaykit3D.resize = resizeKayKitRenderer;
+        /* Même contrat pour la densité : le moniteur d'images fixe le PLAFOND
+           qu'autorise la qualité courante, ce fragment décide de la densité
+           réellement tenable dans le budget de pixels. Sans ce point d'entrée,
+           complete-polish.js appliquerait son plafond tel quel et un grand
+           écran retrouverait ses huit millions de pixels par image. */
+        kaykit3D.appliquerDensite = kaykitAppliquerDensite;
+        kaykit3D.densiteRendu = kaykitDensiteRendu;
 
         // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
         // enchaîne start→change→end pour la molette exactement comme pour un
@@ -6319,6 +6392,8 @@
           kaykit3D.canvas.style.width = `${width}px`;
           kaykit3D.canvas.style.height = `${height}px`;
           kaykit3D.renderer.setSize(width, height, false);
+          // La surface vient de changer : le budget de pixels aussi.
+          kaykitAppliquerDensite();
           const nextAspect = width / height;
           const aspectChanged = Math.abs(nextAspect - kaykit3D.lastAspect) > .035;
           kaykit3D.lastAspect = nextAspect;
