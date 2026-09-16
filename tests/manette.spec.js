@@ -768,3 +768,80 @@ test('sous Magie, le pivot se choisit à la manette', async ({ page }) => {
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
+
+
+/* ------------------------------------------------------------------------
+   UNE CASE MASQUÉE PAR UN GARDIEN RESTE VISABLE À LA MANETTE.
+
+   Le survol passe par un lancer de rayon depuis un pixel. C'est juste pour la
+   souris : quand un Gardien occupe ce pixel, c'est lui qu'on voit et c'est lui
+   qu'on doit obtenir. Mais la manette ne désigne pas un pixel, elle désigne une
+   CASE, et son curseur vise toujours le centre — un Gardien placé devant par la
+   caméra volait donc le survol, et la case visée devenait impossible à montrer :
+   on éclairait l'une et on jouait l'autre.
+
+   Le test commence par CONSTATER la superposition — sinon il ne prouverait
+   rien — puis exige que la manette atteigne quand même la case cachée. */
+test('une case masquée par un Gardien se laisse viser à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p09-fardeau');
+
+  await page.locator('#ov2Magic').click({ force: true });
+  await page.waitForFunction(
+    () => /pivot/.test(document.getElementById('ov2Instruction')?.textContent || ''),
+    null, { timeout: 15000 }
+  );
+  await page.waitForTimeout(1000);
+
+  /* Les cases dont le CENTRE, à l'écran, est occupé par autre chose qu'elles :
+     ce sont exactement celles que le survol par pixel ne peut pas désigner. */
+  const masquees = await page.evaluate(() => {
+    const k = window.kaykit3D, THREE = window.THREE;
+    const canvas = document.getElementById('kaykitCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const cachees = [];
+    for (const hit of (k.hitMeshes || [])) {
+      const { r, c } = hit.userData || {};
+      if (!Number.isFinite(r)) continue;
+      const point = hit.getWorldPosition(new THREE.Vector3()).project(k.camera);
+      const x = rect.left + (point.x * .5 + .5) * rect.width;
+      const y = rect.top + (-point.y * .5 + .5) * rect.height;
+      k.pointer.x = ((x - rect.left) / rect.width) * 2 - 1;
+      k.pointer.y = -((y - rect.top) / rect.height) * 2 + 1;
+      k.raycaster.setFromCamera(k.pointer, k.camera);
+      const devant = k.raycaster.intersectObjects(k.interactiveMeshes || [], false)[0]?.object;
+      if (devant && (devant.userData?.r !== r || devant.userData?.c !== c)) cachees.push(`${r},${c}`);
+    }
+    return cachees;
+  });
+  expect(masquees.length, 'ce Sanctuaire doit bien présenter une case masquée à viser').toBeGreaterThan(0);
+
+  /* Le stick parcourt la colonne dans les deux sens : l'une de ces cases doit
+     finir par s'éclairer, ce qu'aucune coordonnée d'écran ne permettait.
+
+     On attend que le survol ait CHANGÉ avant de pousser à nouveau. Sans cette
+     attente, un navigateur sans GPU repeint le survol plus lentement que le
+     test ne le lit : le curseur passait bien par la case cherchée, mais elle
+     n'était jamais échantillonnée. L'exigence, elle, ne bouge pas. */
+  const vues = new Set();
+  let derniere = await survol(page);
+  if (derniere) vues.add(derniere);
+  for (const sens of [-1, 1]) {
+    for (let pas = 0; pas < 8; pas++) {
+      await incliner(page, 1, sens);
+      await expect.poll(() => survol(page), { timeout: 4000 })
+        .not.toBe(derniere)
+        .catch(() => { /* bord de plateau : le curseur ne bouge plus, on continue */ });
+      derniere = await survol(page);
+      if (derniere) vues.add(derniere);
+    }
+  }
+  const atteinte = masquees.find(cellule => vues.has(cellule));
+  expect(atteinte,
+    `aucune case masquée atteinte — masquées : ${masquees.join(' ')} · parcourues : ${[...vues].join(' ')}`
+  ).toBeTruthy();
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});

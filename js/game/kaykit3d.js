@@ -4913,7 +4913,34 @@
             pendingHoverEvent = null;
           });
         };
+        /* DÉSIGNER UNE CASE PAR SES COORDONNÉES, SANS PASSER PAR LE PIXEL.
+
+           La souris désigne un pixel : si un Gardien s'y trouve, c'est lui qu'on
+           voit et c'est lui qu'on doit obtenir. La manette, elle, ne désigne pas
+           un pixel mais UNE CASE, et son curseur vise toujours le centre de
+           cette case. Quand la caméra place un Gardien devant, le lancer de
+           rayon renvoyait ce Gardien : la case d'à côté s'éclairait à la place
+           de celle qu'on visait, et une case entière devenait impossible à
+           montrer — on éclairait l'une et on jouait l'autre.
+
+           La manette joint donc la case voulue à son événement de survol. On
+           préfère toujours un objet interactif DE CETTE CASE — couronne portée,
+           couronne au sol — pour que ses affordances restent offertes, et on
+           retombe sur la case elle-même sinon. Le reste du survol ne change pas
+           d'un iota : c'est le même chemin, avec la bonne cible. */
+        const caseDemandee = event => {
+          const voulue = event?.ilyosCase;
+          if (!voulue || !kaykit3D) return null;
+          const memeCase = objet => objet?.userData?.r === voulue.r && objet?.userData?.c === voulue.c;
+          return (kaykit3D.interactiveMeshes || []).find(memeCase)
+            || (kaykit3D.hitMeshes || []).find(memeCase)
+            || null;
+        };
+
         const pick = event => {
+          const demandee = caseDemandee(event);
+          if (demandee) return demandee;
+
           const rect = canvas.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
 

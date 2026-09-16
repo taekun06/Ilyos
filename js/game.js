@@ -5286,7 +5286,34 @@
             pendingHoverEvent = null;
           });
         };
+        /* DÉSIGNER UNE CASE PAR SES COORDONNÉES, SANS PASSER PAR LE PIXEL.
+
+           La souris désigne un pixel : si un Gardien s'y trouve, c'est lui qu'on
+           voit et c'est lui qu'on doit obtenir. La manette, elle, ne désigne pas
+           un pixel mais UNE CASE, et son curseur vise toujours le centre de
+           cette case. Quand la caméra place un Gardien devant, le lancer de
+           rayon renvoyait ce Gardien : la case d'à côté s'éclairait à la place
+           de celle qu'on visait, et une case entière devenait impossible à
+           montrer — on éclairait l'une et on jouait l'autre.
+
+           La manette joint donc la case voulue à son événement de survol. On
+           préfère toujours un objet interactif DE CETTE CASE — couronne portée,
+           couronne au sol — pour que ses affordances restent offertes, et on
+           retombe sur la case elle-même sinon. Le reste du survol ne change pas
+           d'un iota : c'est le même chemin, avec la bonne cible. */
+        const caseDemandee = event => {
+          const voulue = event?.ilyosCase;
+          if (!voulue || !kaykit3D) return null;
+          const memeCase = objet => objet?.userData?.r === voulue.r && objet?.userData?.c === voulue.c;
+          return (kaykit3D.interactiveMeshes || []).find(memeCase)
+            || (kaykit3D.hitMeshes || []).find(memeCase)
+            || null;
+        };
+
         const pick = event => {
+          const demandee = caseDemandee(event);
+          if (demandee) return demandee;
+
           const rect = canvas.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
 
@@ -31157,7 +31184,7 @@
              qui éjecte par le BORD du plateau n'y avait aucun repère
              cliquable, alors que la 3D pose son ☠ dans le vide — et c'est le
              coup gagnant de six énigmes. La vue 2D dessine désormais ces
-             éjections dans sa marge et les exécute par ILYOS_BENCH.poussee(),
+             éjections dans sa marge et les exécute par ILYOS_BENCH.executerPoussee(),
              le seul chemin possible puisqu'aucune case du plateau d'origine ne
              peut recevoir ce clic. */
 
@@ -36161,11 +36188,20 @@
           }
           const point = pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c);
           if (!canvas || !point) return;
-          canvas.dispatchEvent(new PointerEvent("pointermove", {
+          const survol = new PointerEvent("pointermove", {
             bubbles: true, cancelable: true, view: window,
             pointerId: 1, pointerType: "mouse", isPrimary: true,
             clientX: point.x, clientY: point.y
-          }));
+          });
+          /* LA CASE VISEE VOYAGE AVEC L'EVENEMENT.
+
+             Les coordonnees ecran seules ne suffisent pas : un gardien place
+             devant intercepte le rayon, et c'est SA case qui s'eclairait au
+             lieu de celle qu'on vise. Le curseur de manette designe une case,
+             pas un pixel — on le dit donc au moteur, qui prefere alors cette
+             case sans rien changer d'autre a son survol. */
+          survol.ilyosCase = { r: pad.cursor.r, c: pad.cursor.c };
+          canvas.dispatchEvent(survol);
         }
 
         function moveCursorTo(r, c) {
@@ -38694,8 +38730,15 @@
            poussée qui ÉJECTE hors du plateau n'a pas de case d'arrivée — il n'y
            a rien à cliquer, et c'est le coup gagnant de six énigmes. Elle a
            donc besoin d'exécuter une option de poussée par son identifiant, ce
-           qu'aucun geste sur la grille ne peut exprimer. */
-        poussee: optionId => executeUnifiedPushOption(optionId),
+           qu'aucun geste sur la grille ne peut exprimer.
+
+           EXÉCUTER, pas MESURER : ce point d'entrée s'appelait lui aussi
+           `poussee` et écrasait donc en silence `benchPoussee` déclaré plus
+           haut dans le même objet — la dernière clé gagne. scripts/verif-poussee.js
+           recevait `false` au lieu d'un relevé d'arrivées et plantait : la règle
+           de poussée n'avait plus de preuve automatique. Les deux noms disent
+           maintenant ce que chacun fait. */
+        executerPoussee: optionId => executeUnifiedPushOption(optionId),
         jouerUnTour: async (json) => {
           if (json) applyStateSnapshot(JSON.parse(json));
           state.undoHistory = [];

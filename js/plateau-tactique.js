@@ -726,7 +726,7 @@
     const ejection = ejections.find(e =>
       (px - e.x) * (px - e.x) + (py - e.y) * (py - e.y) <= e.r * e.r);
     if (ejection) {
-      try { window.ILYOS_BENCH?.poussee?.(ejection.id); } catch (_) { }
+      try { window.ILYOS_BENCH?.executerPoussee?.(ejection.id); } catch (_) { }
       demanderPeinture();
       return;
     }

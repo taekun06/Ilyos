@@ -439,11 +439,20 @@
           }
           const point = pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c);
           if (!canvas || !point) return;
-          canvas.dispatchEvent(new PointerEvent("pointermove", {
+          const survol = new PointerEvent("pointermove", {
             bubbles: true, cancelable: true, view: window,
             pointerId: 1, pointerType: "mouse", isPrimary: true,
             clientX: point.x, clientY: point.y
-          }));
+          });
+          /* LA CASE VISEE VOYAGE AVEC L'EVENEMENT.
+
+             Les coordonnees ecran seules ne suffisent pas : un gardien place
+             devant intercepte le rayon, et c'est SA case qui s'eclairait au
+             lieu de celle qu'on vise. Le curseur de manette designe une case,
+             pas un pixel — on le dit donc au moteur, qui prefere alors cette
+             case sans rien changer d'autre a son survol. */
+          survol.ilyosCase = { r: pad.cursor.r, c: pad.cursor.c };
+          canvas.dispatchEvent(survol);
         }
 
         function moveCursorTo(r, c) {

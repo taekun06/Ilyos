@@ -972,7 +972,7 @@
              qui éjecte par le BORD du plateau n'y avait aucun repère
              cliquable, alors que la 3D pose son ☠ dans le vide — et c'est le
              coup gagnant de six énigmes. La vue 2D dessine désormais ces
-             éjections dans sa marge et les exécute par ILYOS_BENCH.poussee(),
+             éjections dans sa marge et les exécute par ILYOS_BENCH.executerPoussee(),
              le seul chemin possible puisqu'aucune case du plateau d'origine ne
              peut recevoir ce clic. */
 
