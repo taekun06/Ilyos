@@ -769,6 +769,69 @@
         updateKayKitLoadStatus();
       }
 
+      /* ==================================================================
+         BUDGET DE PIXELS — la densité suit la TAILLE de la fenêtre.
+
+         Un plafond de densité fixe (1,5) ne dit rien du travail réel : c'est un
+         MULTIPLICATEUR, et ce qui coûte, c'est le nombre de pixels dessinés.
+         Un téléphone à 390 × 844 en demande 0,7 million ; la même règle sur une
+         fenêtre de portable de 1500 × 950 en demande 3,2 millions, et sur un
+         écran externe 2560 × 1440, 8,3 millions — pour exactement la même scène.
+         D'où le grand écart constaté : le jeu tournait moins bien sur Mac que
+         sur téléphone, non par manque de puissance, mais parce qu'on lui
+         demandait quatre à onze fois plus de pixels.
+
+         On borne donc le TRAVAIL, pas le multiplicateur.
+
+         Trois garde-fous, pour que l'image ne puisse pas y perdre :
+         • jamais au-dessus du plafond de qualité en cours — le budget ne sert
+           qu'à descendre, jamais à forcer un rendu plus lourd ;
+         • jamais au-dessus de la densité réelle de l'écran — pas de
+           suréchantillonnage sur un écran classique ;
+         • jamais SOUS 1 pixel rendu par pixel CSS : au pire, le jeu dessine à la
+           résolution native de la fenêtre. C'est le plancher, et il est net.
+
+         Conséquence directe : sur téléphone et sur toute fenêtre modeste, le
+         budget n'est jamais atteint et la densité ne change pas d'un iota. Seuls
+         les grands écrans, qui sont précisément les machines qui peinent,
+         voient la densité descendre — et proportionnellement, au lieu de
+         s'effondrer d'un coup au palier « performance ».
+
+         window.ILYOS_PIXEL_BUDGET se règle à chaud pour comparer à l'œil. */
+      const KAYKIT_BUDGET_PIXELS_DEFAUT = 2600000;
+
+      function kaykitSurfaceCss() {
+        const rect = els.boardWrap?.getBoundingClientRect?.();
+        const largeur = rect && rect.width > 20 ? rect.width : (window.innerWidth || 1280);
+        const hauteur = rect && rect.height > 20 ? rect.height : (window.innerHeight || 800);
+        return Math.max(1, largeur * hauteur);
+      }
+
+      function kaykitDensiteRendu(plafond = 1.5) {
+        const budget = Number(window.ILYOS_PIXEL_BUDGET) > 0
+          ? Number(window.ILYOS_PIXEL_BUDGET)
+          : KAYKIT_BUDGET_PIXELS_DEFAUT;
+        const ecran = window.devicePixelRatio || 1;
+        const tenue = Math.sqrt(budget / kaykitSurfaceCss());
+        // Le plancher passe AVANT les plafonds : il ne doit jamais faire monter
+        // la densité au-dessus de ce que la qualité en cours autorise.
+        return Math.min(plafond, ecran, Math.max(1, tenue));
+      }
+
+      /* Une fenêtre agrandie change la surface, donc le budget : sans cela, un
+         plein écran gardait la densité calculée pour la petite fenêtre et
+         doublait le travail en silence. On ne touche au renderer que si la
+         valeur a vraiment changé — chaque appel réalloue les tampons GPU. */
+      function kaykitAppliquerDensite(plafond) {
+        if (!kaykit3D?.renderer) return;
+        const voulue = kaykitDensiteRendu(
+          plafond ?? kaykit3D.plafondDensite ?? 1.5
+        );
+        if (plafond !== undefined) kaykit3D.plafondDensite = plafond;
+        if (Math.abs(kaykit3D.renderer.getPixelRatio() - voulue) < .01) return;
+        kaykit3D.renderer.setPixelRatio(voulue);
+      }
+
       function initKayKit3D() {
         if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
@@ -835,7 +898,7 @@
           canvas.remove(); badge.remove(); controls.remove(); status.remove(); cameraHint.remove();
           return;
         }
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.outputEncoding = THREE.sRGBEncoding;
@@ -971,6 +1034,9 @@
           // Qualité courante ("high" | "balanced" | "performance"), pilotée par
           // le moniteur d'images de js/complete-polish.js.
           qualityMode: "balanced",
+          // Plafond de densité imposé par le mode qualité en cours ; la densité
+          // réellement appliquée en découle, bornée par le budget de pixels.
+          plafondDensite: 1.5,
           // Registres de la synchronisation incrémentale (V77) : syncKayKitScene
           // ne vide plus dynamicGroup à chaque appel. Chaque catégorie garde la
           // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
@@ -1000,6 +1066,13 @@
         // V78 : point d'entrée resize pour js/complete-polish.js (script
         // séparé, ne partage pas cette IIFE) — voir resizeKayKitRenderer().
         kaykit3D.resize = resizeKayKitRenderer;
+        /* Même contrat pour la densité : le moniteur d'images fixe le PLAFOND
+           qu'autorise la qualité courante, ce fragment décide de la densité
+           réellement tenable dans le budget de pixels. Sans ce point d'entrée,
+           complete-polish.js appliquerait son plafond tel quel et un grand
+           écran retrouverait ses huit millions de pixels par image. */
+        kaykit3D.appliquerDensite = kaykitAppliquerDensite;
+        kaykit3D.densiteRendu = kaykitDensiteRendu;
 
         // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
         // enchaîne start→change→end pour la molette exactement comme pour un
@@ -4913,7 +4986,34 @@
             pendingHoverEvent = null;
           });
         };
+        /* DÉSIGNER UNE CASE PAR SES COORDONNÉES, SANS PASSER PAR LE PIXEL.
+
+           La souris désigne un pixel : si un Gardien s'y trouve, c'est lui qu'on
+           voit et c'est lui qu'on doit obtenir. La manette, elle, ne désigne pas
+           un pixel mais UNE CASE, et son curseur vise toujours le centre de
+           cette case. Quand la caméra place un Gardien devant, le lancer de
+           rayon renvoyait ce Gardien : la case d'à côté s'éclairait à la place
+           de celle qu'on visait, et une case entière devenait impossible à
+           montrer — on éclairait l'une et on jouait l'autre.
+
+           La manette joint donc la case voulue à son événement de survol. On
+           préfère toujours un objet interactif DE CETTE CASE — couronne portée,
+           couronne au sol — pour que ses affordances restent offertes, et on
+           retombe sur la case elle-même sinon. Le reste du survol ne change pas
+           d'un iota : c'est le même chemin, avec la bonne cible. */
+        const caseDemandee = event => {
+          const voulue = event?.ilyosCase;
+          if (!voulue || !kaykit3D) return null;
+          const memeCase = objet => objet?.userData?.r === voulue.r && objet?.userData?.c === voulue.c;
+          return (kaykit3D.interactiveMeshes || []).find(memeCase)
+            || (kaykit3D.hitMeshes || []).find(memeCase)
+            || null;
+        };
+
         const pick = event => {
+          const demandee = caseDemandee(event);
+          if (demandee) return demandee;
+
           const rect = canvas.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
 
@@ -4928,11 +5028,31 @@
             kaykit3D.camera
           );
 
-          const interactive =
+          const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
               false
-            )[0]?.object;
+            );
+
+          /* UN CHOIX DE POUSSÉE PASSE DEVANT CE QUI LE MASQUE.
+
+             Les anneaux de destination sont dessinés sans test de profondeur :
+             ils apparaissent donc PAR-DESSUS le pousseur, et c'est bien ce que
+             le joueur voit et vise. Le lancer de rayon, lui, ne connaît que la
+             géométrie : quand la caméra place le gardien entre l'œil et
+             l'anneau, il renvoyait le gardien, et la destination visible était
+             impossible à désigner — ni à la souris ni à la manette. Tant qu'une
+             poussée attend sa destination, ce choix l'emporte donc sur tout ce
+             qui se trouve devant. */
+          if (state?.pushOptions?.length) {
+            const destination = interactifs.find(item => {
+              const interaction = item.object?.userData?.ilyosInteraction;
+              return interaction === "push-destination" || interaction === "push-death-destination";
+            });
+            if (destination) return destination.object;
+          }
+
+          const interactive = interactifs[0]?.object;
 
           if (interactive) return interactive;
 
@@ -4997,25 +5117,7 @@
             specialInteraction === "push-destination"
             || specialInteraction === "push-death-destination"
           ) {
-            const optionId = hit.userData.pushOptionId;
-            if (state.pushHoverOptionId !== optionId) {
-              state.pushHoverOptionId = optionId;
-              if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
-              renderTurnContext();
-              renderHand();
-            }
-            const option = state.pushOptions?.find(item => item.id === optionId);
-            kaykit3D.hoverCell = { special: true, hit };
-            if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
-            clearKayKitVisualHover();
-            refreshKayKitHoverPreviews();
-            if (kaykit3D.cursorLabel && option) {
-              kaykit3D.cursorLabel.textContent = option.fell
-                ? `☠ CHUTE · FORCE ${option.force}`
-                : `POUSSER · FORCE ${option.force}`;
-              kaykit3D.cursorLabel.dataset.kind = "push";
-              kaykit3D.cursorLabel.classList.add("visible");
-            }
+            viserOptionPoussee(hit.userData.pushOptionId, hit);
             canvas.style.cursor = "pointer";
             return kaykit3D.hoverCell;
           }
@@ -5862,6 +5964,49 @@
          points les plus éloignés du plateau. Le cadre se calculait alors sur une
          poignée d'îles centrales et la caméra plongeait à 9 unités du plateau en
          laissant un tiers du jeu hors champ. */
+      /* ==================================================================
+         ÉCHELLE DU CADRAGE AUTOMATIQUE — deux réglages, et un seul par défaut.
+
+         Mesuré sur une partie solo en 1278 × 798 : la caméra assistée se fige à
+         18,7 unités, une case fait 60 pixels et le plateau n'occupe que 46 % de
+         l'image. Elle est à la distance exacte que réclame « tout le plateau
+         dans le cadre », marge comprise — donc elle ne peut pas approcher tant
+         que cette exigence tient. C'est ce qui fait paraître les Gardiens petits
+         sur un grand écran.
+
+         • serrage : la marge du calcul de distance. 1,12 laissait 12 % de vide
+           tout autour ; à 1,03 le cadre se resserre d'environ 7 % sans que rien
+           ne sorte de l'image. C'est le changement par défaut, et il est sûr.
+
+         • coinsEndormis : distance, en cases, au-delà de laquelle un village ou
+           le sanctuaire DÉSERT cesse d'épingler le cadre. Ce sont eux qui
+           tiennent les quatre coins du plateau et imposent le recul. À 3, la
+           distance mesurée tombe de 18,7 à 12,4 — les Gardiens doublent
+           presque de taille, mais la moitié opposée du plateau sort du champ,
+           et l'adversaire avec elle. Éteint par défaut (0) : c'est un choix de
+           confort, pas une correction, et il se juge à l'œil.
+
+         Les deux se règlent à chaud : ILYOS_CADRAGE.serrage = 1, puis
+         ILYOS_CADRAGE.coinsEndormis = 3, et le prochain recadrage en tient
+         compte. */
+      const KAYKIT_CADRAGE_DEFAUT = { serrage: 1.03, coinsEndormis: 0 };
+
+      function kaykitCadrageReglage(nom) {
+        const vif = Number(window.ILYOS_CADRAGE?.[nom]);
+        return Number.isFinite(vif) && vif >= 0 ? vif : KAYKIT_CADRAGE_DEFAUT[nom];
+      }
+
+      /* Une case de bord déserte ne tient plus le cadre : on regarde s'il s'y
+         passe quelque chose, pièce ou couronne, dans le rayon demandé. */
+      function kaykitCoinEndormi(r, c, rayon) {
+        if (!(rayon > 0) || !state) return false;
+        const vivant = piece => Number.isFinite(piece?.r) && Number.isFinite(piece?.c)
+          && Math.abs(piece.r - r) + Math.abs(piece.c - c) <= rayon;
+        if ((state.characters || []).some(vivant)) return false;
+        const couronnes = typeof activeArtifacts === "function" ? activeArtifacts() : [];
+        return !(couronnes || []).some(vivant);
+      }
+
       function kaykitPointsDuContenu(interet) {
         const cases = [];
         if (state) {
@@ -5872,18 +6017,23 @@
              passée de 12 à 16 minutes sous les tests. Ici on énumère ce qui
              existe — mêmes points exactement, coût proportionnel au contenu. */
           (state.islands || []).forEach(ile => (ile.cells || []).forEach(([r, c]) => cases.push([r, c])));
+          const rayonEveil = kaykitCadrageReglage("coinsEndormis");
           (state.players || []).forEach(joueur => {
             const villages = Array.isArray(joueur?.villages) && joueur.villages.length
               ? joueur.villages
               : (joueur?.village ? [joueur.village] : []);
             villages.forEach(village => {
-              if (Number.isFinite(village?.r) && Number.isFinite(village?.c)) cases.push([village.r, village.c]);
+              if (!Number.isFinite(village?.r) || !Number.isFinite(village?.c)) return;
+              if (kaykitCoinEndormi(village.r, village.c, rayonEveil)) return;
+              cases.push([village.r, village.c]);
             });
           });
           // Sanctuaire : la croix centrale, définie par isSanctuary().
           if (typeof CENTER === "object" && CENTER) {
             [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dr, dc]) => {
-              cases.push([CENTER.r + dr, CENTER.c + dc]);
+              const r = CENTER.r + dr, c = CENTER.c + dc;
+              if (kaykitCoinEndormi(r, c, rayonEveil)) return;
+              cases.push([r, c]);
             });
           }
           (state.characters || []).forEach(ch => {
@@ -5907,7 +6057,7 @@
          d ≥ w·u + |w·droite| / tan(fovH/2). On prend le maximum sur tous les
          points et sur les deux axes. Exact, et sans dépendre d'une caméra qu'il
          faudrait déjà avoir positionnée. */
-      function kaykitDistancePourContenir(points, cible, marge = 1.12) {
+      function kaykitDistancePourContenir(points, cible, marge = kaykitCadrageReglage("serrage")) {
         if (!points.length || !kaykit3D?.camera) return 0;
         const camera = kaykit3D.camera;
         const tanVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
@@ -6290,6 +6440,8 @@
           kaykit3D.canvas.style.width = `${width}px`;
           kaykit3D.canvas.style.height = `${height}px`;
           kaykit3D.renderer.setSize(width, height, false);
+          // La surface vient de changer : le budget de pixels aussi.
+          kaykitAppliquerDensite();
           const nextAspect = width / height;
           const aspectChanged = Math.abs(nextAspect - kaykit3D.lastAspect) > .035;
           kaykit3D.lastAspect = nextAspect;
@@ -9276,6 +9428,39 @@
        * le bloc réel et le ghost de renderKayKitMagicRotationPreview se
        * superposaient à 0 cran de rotation.
        */
+      /* VISER UN RESULTAT DE POUSSEE, quelle que soit la main qui le vise.
+
+         Extrait tel quel du survol souris pour que la manette puisse designer
+         exactement le meme resultat. C'est necessaire, et pas seulement plus
+         propre : les resultats d'une meme poussee — force 1, 2, 3... — visent
+         souvent la MEME case, leurs anneaux se superposent au pixel pres, et un
+         lancer de rayon renvoie toujours le premier. Sans ce point d'entree par
+         identifiant, les autres forces etaient litteralement invisibles a qui
+         n'a pas de souris. */
+      function viserOptionPoussee(optionId, hit = null) {
+        if (!kaykit3D || !optionId) return null;
+        const option = state?.pushOptions?.find(item => item.id === optionId);
+        if (!option) return null;
+        if (state.pushHoverOptionId !== optionId) {
+          state.pushHoverOptionId = optionId;
+          if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+          renderTurnContext();
+          renderHand();
+        }
+        kaykit3D.hoverCell = { special: true, hit };
+        if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+        clearKayKitVisualHover();
+        refreshKayKitHoverPreviews();
+        if (kaykit3D.cursorLabel) {
+          kaykit3D.cursorLabel.textContent = option.fell
+            ? `☠ CHUTE · FORCE ${option.force}`
+            : `POUSSER · FORCE ${option.force}`;
+          kaykit3D.cursorLabel.dataset.kind = "push";
+          kaykit3D.cursorLabel.classList.add("visible");
+        }
+        return option;
+      }
+
       function refreshKayKitMagicHiddenIsland() {
         if (!kaykit3D) return;
         const hiddenId = (state?.phase === "ACTION"

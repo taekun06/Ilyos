@@ -1601,8 +1601,15 @@
            poussée qui ÉJECTE hors du plateau n'a pas de case d'arrivée — il n'y
            a rien à cliquer, et c'est le coup gagnant de six énigmes. Elle a
            donc besoin d'exécuter une option de poussée par son identifiant, ce
-           qu'aucun geste sur la grille ne peut exprimer. */
-        poussee: optionId => executeUnifiedPushOption(optionId),
+           qu'aucun geste sur la grille ne peut exprimer.
+
+           EXÉCUTER, pas MESURER : ce point d'entrée s'appelait lui aussi
+           `poussee` et écrasait donc en silence `benchPoussee` déclaré plus
+           haut dans le même objet — la dernière clé gagne. scripts/verif-poussee.js
+           recevait `false` au lieu d'un relevé d'arrivées et plantait : la règle
+           de poussée n'avait plus de preuve automatique. Les deux noms disent
+           maintenant ce que chacun fait. */
+        executerPoussee: optionId => executeUnifiedPushOption(optionId),
         jouerUnTour: async (json) => {
           if (json) applyStateSnapshot(JSON.parse(json));
           state.undoHistory = [];

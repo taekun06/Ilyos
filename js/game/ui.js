@@ -1496,6 +1496,49 @@
         return true;
       }
 
+      /* UNE COURONNE OFFRE-T-ELLE VRAIMENT QUELQUE CHOSE, ICI ET MAINTENANT ?
+
+         onCellClick, juste en dessous, porte les regles : une couronne au sol
+         se ramasse s'il existe un gardien allie orthogonalement adjacent ; une
+         couronne portee par l'adversaire se reprend a la meme condition ; celle
+         que porte un allie se transmet a un voisin libre ou se pose sur une case
+         libre adjacente. Faute de quoi le clic ne produit qu'un message.
+
+         Ce predicat lit les MEMES conditions, sans rien executer. Il existe
+         parce qu'une manette doit savoir AVANT de proposer : la touche COURONNE
+         ouvrait un choix entre deux couronnes meme quand l'une d'elles etait
+         hors de portee de tout gardien, et demander de choisir entre une action
+         et rien n'est pas un choix. Toute evolution des branches couronne de
+         onCellClick doit se refleter ici. */
+      function crownInteractionAvailable(r, c) {
+        if (!state) return false;
+        /* Pendant les phases qui PORTENT sur la couronne, le moteur publie
+           lui-meme les cases offertes : on ne redecide rien. */
+        if (state.phase === "PICKUP_CROWN" || state.phase === "DROP_TREASURE") {
+          return !!els.board?.querySelector(`.cell[data-r="${r}"][data-c="${c}"].crown-claimable`);
+        }
+        if (state.phase !== "ACTION_SELECT") return false;
+
+        const alliesAdjacents = () => orthogonalNeighbors(r, c)
+          .map(([nr, nc]) => characterAt(nr, nc))
+          .filter(voisin => voisin && voisin.player === state.currentPlayer);
+
+        if (looseArtifactAt(r, c)) return alliesAdjacents().length > 0;
+
+        const char = characterAt(r, c);
+        if (!char || !artifactCarriedBy(char.id)) return false;
+
+        // Porteur adverse : la reprise demande un allie au contact.
+        if (char.player !== state.currentPlayer) return alliesAdjacents().length > 0;
+
+        // Porteur allie : transmettre a un voisin libre, ou poser a cote.
+        const receveurs = alliesAdjacents()
+          .filter(allie => allie.id !== char.id && !characterCarriesCrown(allie.id));
+        if (receveurs.length) return true;
+        return orthogonalNeighbors(r, c).some(([nr, nc]) =>
+          isLand(nr, nc) && !characterAt(nr, nc) && !looseArtifactAt(nr, nc));
+      }
+
       function onCellClick(event) {
         if (!state || state.winner !== null || state.inputLocked || !canLocalPlayerAct()) return;
         const r = Number(event.currentTarget.dataset.r);

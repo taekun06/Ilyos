@@ -626,3 +626,331 @@ test('le cabinet d’énigmes se parcourt à la manette', async ({ page }) => {
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
+
+/* ------------------------------------------------------------------------
+   DANS UNE ÉNIGME, PUIS PENDANT UNE POUSSÉE ET UNE MAGIE.
+
+   Trois situations où la manette ne répondait plus, chacune pour une raison
+   différente, et qu'aucun test ne couvrait :
+
+   • #puzzleLayer reste affiché pendant TOUTE une énigme — c'est le HUD du
+     Sanctuaire, pas une fenêtre. Pris pour un panneau plein écran, il
+     confisquait le stick et les boutons du début à la fin.
+   • Pendant qu'une poussée attend sa destination, le moteur laisse le
+     pousseur « selectionnable » : la reprise automatique du gardien s'y
+     raccrochait à chaque image et ramenait le curseur sur lui.
+   • Sous MAGIE, tous les alliés sont « selectionnables » — un clic sur l'un
+     d'eux choisit l'île sous ses pieds — et la même reprise automatique
+     empêchait de viser le pivot voulu.
+
+   On les vérifie sur des Sanctuaires, seuls plateaux dont la position de
+   départ est écrite : une partie normale ne garantit ni cible adjacente à
+   pousser, ni carte MAGIE en main. */
+
+async function ouvrirEnigme(page, id) {
+  await page.waitForFunction(() => typeof window.ILYOS_PUZZLE?.startById === 'function', null, { timeout: 30000 });
+  await page.evaluate(identifiant => {
+    window.ILYOS_PUZZLE.unlockAll?.();
+    window.ILYOS_PUZZLE.startById(identifiant);
+  }, id);
+  await page.waitForFunction(() => document.querySelectorAll('.cell .character').length > 1, null, { timeout: 40000 });
+  await page.waitForTimeout(4000);
+}
+
+const gardiens = page => page.evaluate(
+  () => [...document.querySelectorAll('.cell .character')]
+    .map(marque => { const cell = marque.closest('.cell'); return `${cell.dataset.r},${cell.dataset.c}`; })
+    .sort().join(' ')
+);
+
+test('dans une énigme, une poussée se vise et s’exécute à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p03-domino');
+
+  // L'action est lancée depuis le dock ; ce que le test mesure, c'est la SUITE.
+  await page.locator('#ov2Push').click({ force: true });
+  await page.waitForFunction(
+    () => /destination/.test(document.getElementById('ov2Instruction')?.textContent || ''),
+    null, { timeout: 15000 }
+  );
+  await page.waitForTimeout(1200);
+
+  const viseUneDestination = () => page.evaluate(
+    () => !!window.kaykit3D?.hoverCell?.special
+  );
+
+  /* Le stick doit atteindre un anneau de destination — et y RESTER : c'est
+     précisément ce qui échouait, le curseur étant ramené sur le pousseur à
+     chaque image.
+
+     Plusieurs poussées de stick, et non une seule : le survol est repeint à
+     l'image suivante, et un navigateur sans GPU en rend une poignée par
+     seconde. On mesure ce que la manette FINIT par atteindre, pas la vitesse
+     du rendu — l'assertion, elle, reste entière. */
+  let atteint = false;
+  for (let essai = 0; essai < 6 && !atteint; essai++) {
+    await incliner(page, 0, -1);
+    atteint = await viseUneDestination();
+  }
+  expect(atteint, 'le stick doit atteindre une destination de poussée').toBe(true);
+  await incliner(page, 0, -1);
+  await incliner(page, 1, 1);
+  expect(await viseUneDestination(), 'le curseur ne doit pas quitter les destinations').toBe(true);
+
+  /* ET LES AUTRES FORCES DOIVENT ÊTRE ATTEIGNABLES.
+
+     Les résultats d'une même poussée — force 1, 2, 3... — visent souvent la
+     MÊME case : leurs anneaux se superposent au pixel près. Tant que la manette
+     passait par un survol, le lancer de rayon renvoyait toujours le premier, et
+     les autres forces étaient littéralement hors d'atteinte. */
+  const resultatVise = () => page.evaluate(
+    () => window.kaykit3D?.hoverCell?.hit?.userData?.pushOptionId || null
+  );
+  const premier = await resultatVise();
+  let change = false;
+  for (let essai = 0; essai < 4 && !change; essai++) {
+    await incliner(page, 0, -1);
+    change = (await resultatVise()) !== premier;
+  }
+  expect(change, 'le stick doit atteindre les autres forces de la même poussée').toBe(true);
+
+  // Et A exécute la poussée visée : les gardiens bougent.
+  const avant = await gardiens(page);
+  /* Plusieurs appuis si besoin : sans GPU, la boucle de manette ne voit qu'une
+     poignee d'images par seconde et un appui bref peut tomber entre deux. Ce
+     que le test prouve reste entier — A finit par exécuter la poussée visée. */
+  let joue = false;
+  for (let essai = 0; essai < 4 && !joue; essai++) {
+    await appuyer(page, B.A, 420);
+    await page.waitForTimeout(800);
+    joue = (await gardiens(page)) !== avant;
+  }
+  expect(joue, 'A doit exécuter la poussée visée').toBe(true);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('sous Magie, le pivot se choisit à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p09-fardeau');
+
+  await page.locator('#ov2Magic').click({ force: true });
+  await page.waitForFunction(
+    () => /pivot/.test(document.getElementById('ov2Instruction')?.textContent || ''),
+    null, { timeout: 15000 }
+  );
+  await page.waitForTimeout(1200);
+
+  /* LE CURSEUR DOIT TENIR EN PLACE, et le pivot être CELUI QU'ON VISAIT.
+
+     Le défaut ne se voyait pas à « un pivot a-t-il été choisi » : la reprise
+     automatique cliquait elle-même un gardien, donc un pivot finissait bien par
+     apparaître — sur la case du gardien, jamais sur celle visée. On mesure donc
+     les deux choses qui manquaient : le curseur reste où le joueur l'a mis, et
+     A choisit ce pivot-là. */
+  await incliner(page, 1, 1);
+  const vise = await survol(page);
+  expect(vise, 'le stick doit poser le curseur sur une case').not.toBeNull();
+
+  await page.waitForTimeout(1500);   // sans aucune entrée : rien ne doit bouger
+  expect(await survol(page), 'le curseur ne doit pas être repris par un gardien').toBe(vise);
+
+  await appuyer(page, B.A, 420);
+  await expect.poll(
+    () => page.evaluate(() => [...document.querySelectorAll('.cell.magic-pivot')]
+      .map(cell => `${cell.dataset.r},${cell.dataset.c}`).join(' ')),
+    { message: 'A doit choisir le pivot visé', timeout: 10000 }
+  ).toBe(vise);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+
+/* ------------------------------------------------------------------------
+   UNE CASE MASQUÉE PAR UN GARDIEN RESTE VISABLE À LA MANETTE.
+
+   Le survol passe par un lancer de rayon depuis un pixel. C'est juste pour la
+   souris : quand un Gardien occupe ce pixel, c'est lui qu'on voit et c'est lui
+   qu'on doit obtenir. Mais la manette ne désigne pas un pixel, elle désigne une
+   CASE, et son curseur vise toujours le centre — un Gardien placé devant par la
+   caméra volait donc le survol, et la case visée devenait impossible à montrer :
+   on éclairait l'une et on jouait l'autre.
+
+   Le test commence par CONSTATER la superposition — sinon il ne prouverait
+   rien — puis exige que la manette atteigne quand même la case cachée. */
+test('une case masquée par un Gardien se laisse viser à la manette', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p09-fardeau');
+
+  await page.locator('#ov2Magic').click({ force: true });
+  await page.waitForFunction(
+    () => /pivot/.test(document.getElementById('ov2Instruction')?.textContent || ''),
+    null, { timeout: 15000 }
+  );
+  await page.waitForTimeout(1000);
+
+  /* Les cases dont le CENTRE, à l'écran, est occupé par autre chose qu'elles :
+     ce sont exactement celles que le survol par pixel ne peut pas désigner. */
+  const masquees = await page.evaluate(() => {
+    const k = window.kaykit3D, THREE = window.THREE;
+    const canvas = document.getElementById('kaykitCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const cachees = [];
+    for (const hit of (k.hitMeshes || [])) {
+      const { r, c } = hit.userData || {};
+      if (!Number.isFinite(r)) continue;
+      const point = hit.getWorldPosition(new THREE.Vector3()).project(k.camera);
+      const x = rect.left + (point.x * .5 + .5) * rect.width;
+      const y = rect.top + (-point.y * .5 + .5) * rect.height;
+      k.pointer.x = ((x - rect.left) / rect.width) * 2 - 1;
+      k.pointer.y = -((y - rect.top) / rect.height) * 2 + 1;
+      k.raycaster.setFromCamera(k.pointer, k.camera);
+      const devant = k.raycaster.intersectObjects(k.interactiveMeshes || [], false)[0]?.object;
+      if (devant && (devant.userData?.r !== r || devant.userData?.c !== c)) cachees.push(`${r},${c}`);
+    }
+    return cachees;
+  });
+  expect(masquees.length, 'ce Sanctuaire doit bien présenter une case masquée à viser').toBeGreaterThan(0);
+
+  /* Le stick parcourt la colonne dans les deux sens : l'une de ces cases doit
+     finir par s'éclairer, ce qu'aucune coordonnée d'écran ne permettait.
+
+     On attend que le survol ait CHANGÉ avant de pousser à nouveau. Sans cette
+     attente, un navigateur sans GPU repeint le survol plus lentement que le
+     test ne le lit : le curseur passait bien par la case cherchée, mais elle
+     n'était jamais échantillonnée. L'exigence, elle, ne bouge pas. */
+  const vues = new Set();
+  let derniere = await survol(page);
+  if (derniere) vues.add(derniere);
+  for (const sens of [-1, 1]) {
+    for (let pas = 0; pas < 8; pas++) {
+      await incliner(page, 1, sens);
+      await expect.poll(() => survol(page), { timeout: 4000 })
+        .not.toBe(derniere)
+        .catch(() => { /* bord de plateau : le curseur ne bouge plus, on continue */ });
+      derniere = await survol(page);
+      if (derniere) vues.add(derniere);
+    }
+  }
+  const atteinte = masquees.find(cellule => vues.has(cellule));
+  expect(atteinte,
+    `aucune case masquée atteinte — masquées : ${masquees.join(' ')} · parcourues : ${[...vues].join(' ')}`
+  ).toBeTruthy();
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+/* ------------------------------------------------------------------------
+   A CHOISIT UN GARDIEN, Y S'OCCUPE DE LA COURONNE.
+
+   Deux défauts signalés en jeu, tous deux sur la même touche de trop.
+
+   • A sur son propre porteur ouvrait « transmettre ou poser » au lieu de
+     sélectionner le Gardien. Le garde posé plus tôt ne valait que pour un
+     Gardien que le moteur déclare « selectable », c'est-à-dire une fois
+     l'action déjà choisie ; au REPOS — la phase où l'on choisit justement son
+     Gardien — aucun ne l'est, et A retombait sur la couronne portée.
+
+   • Y proposait de choisir entre deux couronnes même quand une seule était à
+     portée d'un Gardien. Choisir entre une action et rien n'est pas choisir. */
+
+/* Le curseur se déplace au stick, comme chez un joueur : pousser jusqu'à ce
+   que la case visée s'éclaire, sans jamais la désigner par un raccourci. */
+async function amenerLeCurseur(page, cible) {
+  for (const [axe, sens] of [[1, -1], [1, 1], [0, -1], [0, 1]]) {
+    for (let pas = 0; pas < 10; pas++) {
+      if (await survol(page) === cible) return true;
+      await incliner(page, axe, sens);
+    }
+  }
+  return await survol(page) === cible;
+}
+
+const instruction = page => page.evaluate(
+  () => document.getElementById('ov2Instruction')?.textContent?.trim() || ''
+);
+const toast = page => page.evaluate(
+  () => (document.getElementById('hudV2Toast')?.textContent || '').trim()
+);
+
+test('A sur son propre porteur sélectionne le Gardien, pas sa couronne', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p12-squatteur');   // un Gardien y porte une couronne d'emblée
+
+  const porteur = await page.evaluate(() => {
+    const cell = document.querySelector('.cell .carrier-crown')?.closest('.cell');
+    return cell ? `${cell.dataset.r},${cell.dataset.c}` : null;
+  });
+  expect(porteur, 'ce Sanctuaire doit ouvrir sur un porteur allié').not.toBeNull();
+  expect(await amenerLeCurseur(page, porteur), 'le stick doit atteindre le porteur').toBe(true);
+
+  /* Un appui peut tomber entre deux images sur un navigateur sans GPU : on
+     réessaie, en s'arrêtant dès que la sélection est là — appuyer encore la
+     retirerait. L'exigence, elle, ne bouge pas. */
+  const selection = () => page.evaluate(
+    () => [...document.querySelectorAll('.cell.selected-character')]
+      .map(cell => `${cell.dataset.r},${cell.dataset.c}`).join(' ')
+  );
+  let pris = false;
+  for (let essai = 0; essai < 4 && !pris; essai++) {
+    await appuyer(page, B.A, 420);
+    await page.waitForTimeout(700);
+    pris = await selection() === porteur;
+  }
+
+  /* Le Gardien est pris en main — et sa couronne n'a pas bougé : rien n'a été
+     transmis ni posé dans son dos. */
+  expect(pris, 'A doit sélectionner le porteur').toBe(true);
+
+  expect(await instruction(page), 'et non ouvrir le choix de la couronne')
+    .not.toMatch(/allié|couronne/i);
+  expect(await page.evaluate(
+    () => document.querySelector('.cell .carrier-crown')?.closest('.cell')?.dataset.r
+  ), 'la couronne doit rester portée').toBe(porteur.split(',')[0]);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('Y n’ouvre un choix que si plusieurs couronnes sont vraiment jouables', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p09-fardeau');   // couronnes en 5,5 et 7,5, un Gardien en 6,5 touche les deux
+
+  // Deux couronnes à portée : le choix est légitime, il doit rester.
+  await appuyer(page, B.Y, 420);
+  await expect.poll(() => toast(page), {
+    message: 'deux couronnes jouables doivent ouvrir un choix', timeout: 8000
+  }).toMatch(/Couronne 1 sur 2/);
+
+  /* On éloigne le Gardien d'une case : la couronne du bas n'a plus personne au
+     contact, celle du haut si. Une seule reste jouable. */
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(700);
+  await page.locator('#ov2Move').click({ force: true });
+  await page.waitForTimeout(700);
+  await page.locator('.cell[data-r="6"][data-c="5"]').dispatchEvent('click');
+  await page.waitForTimeout(700);
+  await page.locator('.cell[data-r="4"][data-c="5"]').dispatchEvent('click');
+  await page.waitForTimeout(2500);
+
+  await appuyer(page, B.Y, 420);
+
+  /* Plus de question : Y agit. La couronne du haut est ramassée, celle du bas
+     reste au sol — c'est bien la jouable qui a été retenue. */
+  await expect.poll(() => page.evaluate(
+    () => document.querySelectorAll('.cell .carrier-crown').length
+  ), { message: 'Y doit agir directement sur la seule couronne jouable', timeout: 10000 }).toBe(1);
+
+  expect(await toast(page), 'sans ouvrir de choix').not.toMatch(/sur 2/);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});

@@ -211,12 +211,29 @@
            On les parcourt comme ce qu'elles sont — des objets de la scene. */
         function pushTargets() {
           if (!state?.pushOptions?.length || !kaykit3D?.interactiveMeshes) return [];
+          /* Dans l'ordre du moteur — force 1, 2, 3... — et non dans celui,
+             arbitraire, ou la scene a ete construite : c'est cet ordre-la que le
+             joueur suit quand il fait defiler les resultats possibles. */
+          const rang = id => state.pushOptions.findIndex(option => option.id === id);
           return kaykit3D.interactiveMeshes
             .filter(mesh => {
               const kind = mesh?.userData?.ilyosInteraction;
               return kind === "push-destination" || kind === "push-death-destination";
             })
-            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }));
+            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }))
+            .filter(cible => rang(cible.id) >= 0)
+            .sort((a, b) => rang(a.id) - rang(b.id));
+        }
+
+        /* Designer un resultat de poussee, c'est le dire au moteur : le survol
+           par lancer de rayon ne peut pas distinguer des anneaux superposes
+           (force 1, 2, 3... sur la meme case), et le joueur aurait vu force 1
+           tout en validant autre chose. viserOptionPoussee est le meme point
+           d'entree que le survol souris. */
+        function viserPoussee(cible) {
+          pad.special = cible;
+          if (!cible) return;
+          if (typeof viserOptionPoussee === "function") viserOptionPoussee(cible.id, cible.mesh);
         }
 
         function screenOfMesh(mesh) {
@@ -328,7 +345,7 @@
               .filter(entry => entry.point);
             if (points.length) {
               const current = pad.special && points.find(entry => entry.target.id === pad.special.id);
-              if (!current) { pad.special = points[0].target; return true; }
+              if (!current) { viserPoussee(points[0].target); return true; }
               const others = points.filter(entry => entry.target.id !== pad.special.id);
               let best = null, bestScore = 0;
               for (const entry of others) {
@@ -340,10 +357,29 @@
                 const score = alignment / (1 + length / 240);
                 if (score > bestScore) { bestScore = score; best = entry.target; }
               }
-              if (!best) return false;
-              pad.special = best;
+              /* LA GEOMETRIE NE SUFFIT PAS ICI, ET NE LE PEUT PAS.
+
+                 Les resultats d'une meme poussee — force 1, 2, 3... — visent
+                 souvent LA MEME case : leurs anneaux se superposent au pixel
+                 pres, et aucune direction ne les separera jamais. Le stick ne
+                 repondait alors plus du tout, et la destination voulue restait
+                 inatteignable. On retombe donc sur le parcours par ordre du
+                 moteur, exactement comme pour les cases du plateau. */
+              if (!best) {
+                if (points.length < 2) return false;
+                const rang = points.findIndex(entry => entry.target.id === pad.special.id);
+                const pas = dx + dy >= 0 ? 1 : -1;
+                best = points[(rang + pas + points.length) % points.length].target;
+              }
+              viserPoussee(best);
               return true;
             }
+            /* Les anneaux sont reconstruits a chaque survol : ils manquent
+               parfois le temps d'une image. Oublier la cible visee pour si peu
+               ramenait le curseur sur le plateau au moment meme ou le joueur
+               validait — la poussee choisie ne partait pas. On garde donc ce
+               qui est vise tant que le moteur propose des resultats. */
+            return false;
           }
           pad.special = null;
           if (!pad.cursor) { pad.cursor = defaultCursor(); return true; }
@@ -390,15 +426,33 @@
            ne traite que les pointeurs non-souris, il ne doit pas s'en saisir. */
         function refreshHover() {
           const canvas = boardCanvas();
-          const point = pad.special
-            ? screenOfMesh(pad.special.mesh)
-            : (pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c));
+          /* UNE DESTINATION DE POUSSEE SE DESIGNE, ELLE NE SE SURVOLE PAS.
+
+             Un pointermove synthetique repasserait par le lancer de rayon, et
+             celui-ci rend toujours le PREMIER des anneaux empiles : la force
+             choisie au stick etait aussitot ramenee a la premiere, sans que rien
+             ne le montre. On redit donc au moteur, par identifiant, ce qui est
+             vise — c'est le meme point d'entree que le survol souris. */
+          if (pad.special) {
+            const vise = pushTargets().find(cible => cible.id === pad.special.id) || pad.special;
+            if (typeof viserOptionPoussee === "function") { viserOptionPoussee(vise.id, vise.mesh); return; }
+          }
+          const point = pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c);
           if (!canvas || !point) return;
-          canvas.dispatchEvent(new PointerEvent("pointermove", {
+          const survol = new PointerEvent("pointermove", {
             bubbles: true, cancelable: true, view: window,
             pointerId: 1, pointerType: "mouse", isPrimary: true,
             clientX: point.x, clientY: point.y
-          }));
+          });
+          /* LA CASE VISEE VOYAGE AVEC L'EVENEMENT.
+
+             Les coordonnees ecran seules ne suffisent pas : un gardien place
+             devant intercepte le rayon, et c'est SA case qui s'eclairait au
+             lieu de celle qu'on vise. Le curseur de manette designe une case,
+             pas un pixel — on le dit donc au moteur, qui prefere alors cette
+             case sans rien changer d'autre a son survol. */
+          survol.ilyosCase = { r: pad.cursor.r, c: pad.cursor.c };
+          canvas.dispatchEvent(survol);
         }
 
         function moveCursorTo(r, c) {
@@ -421,17 +475,28 @@
             const option = state?.pushOptions?.find(item => item.id === data.pushOptionId);
             if (option && option.r === r && option.c === c) return { pushOptionId: data.pushOptionId };
           }
-          /* UN GARDIEN ALLIE RESTE UN GARDIEN.
+          /* UN GARDIEN ALLIE RESTE UN GARDIEN — Y COMPRIS AU REPOS.
 
              Les couronnes etaient examinees avant la case, donc A sur son propre
              porteur declenchait l'action de couronne au lieu de le selectionner :
              on ne pouvait plus le deplacer sans passer par le dock. La couronne
-             appartient desormais entierement a Y ; A ne fait que selectionner ce
-             qu'il vise. Priorite : gardien allie selectionnable, puis couronne. */
-          const gardienSelectionnable = document.querySelector(
-            `.cell[data-r="${r}"][data-c="${c}"] .character.selectable`
+             appartient a Y ; A ne fait que selectionner ce qu'il vise.
+
+             Le garde ne valait d'abord que pour un gardien que le moteur declare
+             « selectable » — c'est-a-dire une fois l'action deja choisie. Or au
+             REPOS, la phase ou l'on choisit justement son gardien, aucun ne l'est
+             (voir la condition de ui.js) : A retombait sur la couronne portee et
+             rouvrait transmettre/poser. Signale en jeu. On prefere donc TOUT
+             gardien allie, sauf dans les deux phases qui demandent explicitement
+             quel gardien agit sur la couronne — la couronne y est le sujet.
+
+             Un porteur ADVERSE, lui, n'est pas selectionnable : sa couronne
+             reste la seule chose a viser sur sa case. */
+          const phaseDeCouronne = state?.phase === "PICKUP_CROWN" || state?.phase === "DROP_TREASURE";
+          const gardienAllie = (state?.characters || []).some(
+            char => char.r === r && char.c === c && char.player === state.currentPlayer
           );
-          if (gardienSelectionnable) return {};
+          if (gardienAllie && !phaseDeCouronne) return {};
 
           // Couronne portee ou posee sur la case : dispatchKayKitClick vise
           // alors le bon noeud enfant, pas la case elle-meme.
@@ -498,6 +563,15 @@
            la couronne (".carrier-crown" pour une couronne portee, ".artifact"
            pour une couronne au sol) et jamais sur la case : c'est pourquoi la
            couronne sous le curseur est retrouvee au moment d'agir. */
+        /* Une couronne qu'aucun gardien ne peut atteindre n'est pas une cible :
+           la proposer forcait un choix entre une action et rien. Le moteur sait
+           deja repondre — crownInteractionAvailable porte les memes conditions
+           que les branches couronne de onCellClick. */
+        function couronneActionnable(r, c) {
+          if (typeof crownInteractionAvailable !== "function") return true;
+          try { return crownInteractionAvailable(r, c); } catch (_) { return true; }
+        }
+
         function crownTargets() {
           if (!kaykit3D?.interactiveMeshes) return [];
           const vues = new Set();
@@ -513,6 +587,7 @@
               return true;
             })
             .map(mesh => ({ r: mesh.userData.r, c: mesh.userData.c, action: mesh.userData.kaykitAction }))
+            .filter(cible => couronneActionnable(cible.r, cible.c))
             .concat(
               /* Le moteur marque aussi les cases ou une interaction de couronne
                  est offerte sans qu'un objet 3D ne s'y trouve — un gardien qui
@@ -712,10 +787,27 @@
            navigue dedans geometriquement, avec le socle partage. */
         const PANNEAUX = ["puzzleMenu", "puzzleLayer", "rulesModal", "victoryModal", "soundMenu"];
 
+        /* UN PANNEAU N'EN EST UN QUE S'IL PREND L'ECRAN.
+
+           #puzzleLayer reste affiche pendant TOUTE une enigme : c'est le HUD du
+           Sanctuaire, pas une fenetre. Pris pour un panneau, il confisquait le
+           stick et les boutons du debut a la fin — le plateau ne repondait plus
+           du tout a la manette dans les enigmes. Le depart se lit dans le style
+           deja ecrit : la couche laisse passer les clics (`pointer-events:none`)
+           tant qu'elle ne fait qu'habiller le plateau, et ne les capte que
+           lorsqu'elle s'ouvre vraiment (`.reveil`). On se fie donc a ce que le
+           joueur constate a la souris : ce qui laisse passer le clic laisse
+           passer la manette. */
+        function panneauCapteLeClic(panneau) {
+          try { return getComputedStyle(panneau).pointerEvents !== "none"; }
+          catch (_) { return true; }
+        }
+
         function panneauActif() {
           for (const id of PANNEAUX) {
             const panneau = document.getElementById(id);
             if (!panneau || !visible(panneau)) continue;
+            if (!panneauCapteLeClic(panneau)) continue;
             const boutons = [...panneau.querySelectorAll("button, [role=\"button\"], a[href]")].filter(usable);
             if (boutons.length) return { panneau, boutons };
           }
@@ -807,10 +899,23 @@
            la case du gardien — et non par un appel direct a la selection interne :
            c'est ce qui garantit que les regles decidant qui peut agir restent au
            seul endroit ou elles sont ecrites. */
+        /* Seuls DEPLACER et POUSSER reclament qu'on designe un gardien. Sous
+           MAGIE, le moteur marque aussi les allies « selectable » — un clic sur
+           l'un d'eux choisit l'ile sous ses pieds — et la reprise automatique
+           s'y raccrochait a chaque image : le curseur revenait sans cesse sur le
+           gardien, et le pivot voulu devenait impossible a viser. */
+        const ACTIONS_A_GARDIEN = ["MOVE", "PUSH"];
+
+        /* Et PAS pendant qu'une poussee attend son resultat : le moteur y laisse
+           le pousseur « selectionnable », alors qu'il ne demande plus un gardien
+           mais une destination. La reprise automatique s'y rattrapait a chaque
+           image — curseur ramene sur le gardien, cible speciale effacee : la
+           destination devenait proprement inatteignable. */
         function attendUnGardien() {
           return state?.phase === "ACTION"
-            && !!state.selectedActionType
+            && ACTIONS_A_GARDIEN.includes(state.selectedActionType || "")
             && !state.selectedCharId
+            && !(state.pushOptions && state.pushOptions.length)
             && guardiansMarques().length > 0;
         }
 
@@ -1207,8 +1312,16 @@
           const changerQui = direction => {
             if (contextChoices().length) { moveChoice(direction); return; }
             if (pad.crownMode) { cycleCrowns(direction); return; }
-            if (state?.selectedActionType || attendUnGardien()) {
+            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
               if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
+               revenait a appeler handleCancelButton(), donc a quitter l'action
+               que le joueur venait de lancer. On parcourt ce que le moteur
+               propose, et s'il ne propose rien, on ne fait rien. */
+            if (state?.selectedActionType) {
+              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
               return;
             }
             navigateGuardians(direction);

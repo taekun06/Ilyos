@@ -391,7 +391,7 @@ test("dans une énigme, la roue ouvre le menu", async ({ page }) => {
    pendant les énigmes.
 
    Elle dessine désormais ces éjections dans sa marge et les exécute par
-   `ILYOS_BENCH.poussee(id)`, seul chemin possible : aucune case du plateau
+   `ILYOS_BENCH.executerPoussee(id)`, seul chemin possible : aucune case du plateau
    d'origine ne peut recevoir ce clic. Le test fournit l'option à la vue plutôt
    que de la provoquer en jeu — la situation demande une position tardive, et
    ce qu'on vérifie ici est le DESSIN et la CAPTURE du clic, pas la règle. */
@@ -437,7 +437,7 @@ test("en vue 2D, une éjection par le bord du plateau est dessinée et cliquable
   // Le clic sur le repere doit appeler le pont moteur avec le bon identifiant.
   await page.evaluate(() => {
     window.__appels = [];
-    window.ILYOS_BENCH.poussee = id => { window.__appels.push(id); return true; };
+    window.ILYOS_BENCH.executerPoussee = id => { window.__appels.push(id); return true; };
   });
   const cv = await page.locator('#plateauTactique').boundingBox();
   await page.mouse.click(cv.x + ej[0].x * (cv.width / dims.w), cv.y + ej[0].y * (cv.height / dims.h));

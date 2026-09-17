@@ -1142,6 +1142,69 @@
         updateKayKitLoadStatus();
       }
 
+      /* ==================================================================
+         BUDGET DE PIXELS — la densité suit la TAILLE de la fenêtre.
+
+         Un plafond de densité fixe (1,5) ne dit rien du travail réel : c'est un
+         MULTIPLICATEUR, et ce qui coûte, c'est le nombre de pixels dessinés.
+         Un téléphone à 390 × 844 en demande 0,7 million ; la même règle sur une
+         fenêtre de portable de 1500 × 950 en demande 3,2 millions, et sur un
+         écran externe 2560 × 1440, 8,3 millions — pour exactement la même scène.
+         D'où le grand écart constaté : le jeu tournait moins bien sur Mac que
+         sur téléphone, non par manque de puissance, mais parce qu'on lui
+         demandait quatre à onze fois plus de pixels.
+
+         On borne donc le TRAVAIL, pas le multiplicateur.
+
+         Trois garde-fous, pour que l'image ne puisse pas y perdre :
+         • jamais au-dessus du plafond de qualité en cours — le budget ne sert
+           qu'à descendre, jamais à forcer un rendu plus lourd ;
+         • jamais au-dessus de la densité réelle de l'écran — pas de
+           suréchantillonnage sur un écran classique ;
+         • jamais SOUS 1 pixel rendu par pixel CSS : au pire, le jeu dessine à la
+           résolution native de la fenêtre. C'est le plancher, et il est net.
+
+         Conséquence directe : sur téléphone et sur toute fenêtre modeste, le
+         budget n'est jamais atteint et la densité ne change pas d'un iota. Seuls
+         les grands écrans, qui sont précisément les machines qui peinent,
+         voient la densité descendre — et proportionnellement, au lieu de
+         s'effondrer d'un coup au palier « performance ».
+
+         window.ILYOS_PIXEL_BUDGET se règle à chaud pour comparer à l'œil. */
+      const KAYKIT_BUDGET_PIXELS_DEFAUT = 2600000;
+
+      function kaykitSurfaceCss() {
+        const rect = els.boardWrap?.getBoundingClientRect?.();
+        const largeur = rect && rect.width > 20 ? rect.width : (window.innerWidth || 1280);
+        const hauteur = rect && rect.height > 20 ? rect.height : (window.innerHeight || 800);
+        return Math.max(1, largeur * hauteur);
+      }
+
+      function kaykitDensiteRendu(plafond = 1.5) {
+        const budget = Number(window.ILYOS_PIXEL_BUDGET) > 0
+          ? Number(window.ILYOS_PIXEL_BUDGET)
+          : KAYKIT_BUDGET_PIXELS_DEFAUT;
+        const ecran = window.devicePixelRatio || 1;
+        const tenue = Math.sqrt(budget / kaykitSurfaceCss());
+        // Le plancher passe AVANT les plafonds : il ne doit jamais faire monter
+        // la densité au-dessus de ce que la qualité en cours autorise.
+        return Math.min(plafond, ecran, Math.max(1, tenue));
+      }
+
+      /* Une fenêtre agrandie change la surface, donc le budget : sans cela, un
+         plein écran gardait la densité calculée pour la petite fenêtre et
+         doublait le travail en silence. On ne touche au renderer que si la
+         valeur a vraiment changé — chaque appel réalloue les tampons GPU. */
+      function kaykitAppliquerDensite(plafond) {
+        if (!kaykit3D?.renderer) return;
+        const voulue = kaykitDensiteRendu(
+          plafond ?? kaykit3D.plafondDensite ?? 1.5
+        );
+        if (plafond !== undefined) kaykit3D.plafondDensite = plafond;
+        if (Math.abs(kaykit3D.renderer.getPixelRatio() - voulue) < .01) return;
+        kaykit3D.renderer.setPixelRatio(voulue);
+      }
+
       function initKayKit3D() {
         if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
@@ -1208,7 +1271,7 @@
           canvas.remove(); badge.remove(); controls.remove(); status.remove(); cameraHint.remove();
           return;
         }
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.outputEncoding = THREE.sRGBEncoding;
@@ -1344,6 +1407,9 @@
           // Qualité courante ("high" | "balanced" | "performance"), pilotée par
           // le moniteur d'images de js/complete-polish.js.
           qualityMode: "balanced",
+          // Plafond de densité imposé par le mode qualité en cours ; la densité
+          // réellement appliquée en découle, bornée par le budget de pixels.
+          plafondDensite: 1.5,
           // Registres de la synchronisation incrémentale (V77) : syncKayKitScene
           // ne vide plus dynamicGroup à chaque appel. Chaque catégorie garde la
           // trace de ce qui existe déjà pour ne créer/mettre à jour/supprimer que
@@ -1373,6 +1439,13 @@
         // V78 : point d'entrée resize pour js/complete-polish.js (script
         // séparé, ne partage pas cette IIFE) — voir resizeKayKitRenderer().
         kaykit3D.resize = resizeKayKitRenderer;
+        /* Même contrat pour la densité : le moniteur d'images fixe le PLAFOND
+           qu'autorise la qualité courante, ce fragment décide de la densité
+           réellement tenable dans le budget de pixels. Sans ce point d'entrée,
+           complete-polish.js appliquerait son plafond tel quel et un grand
+           écran retrouverait ses huit millions de pixels par image. */
+        kaykit3D.appliquerDensite = kaykitAppliquerDensite;
+        kaykit3D.densiteRendu = kaykitDensiteRendu;
 
         // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
         // enchaîne start→change→end pour la molette exactement comme pour un
@@ -5286,7 +5359,34 @@
             pendingHoverEvent = null;
           });
         };
+        /* DÉSIGNER UNE CASE PAR SES COORDONNÉES, SANS PASSER PAR LE PIXEL.
+
+           La souris désigne un pixel : si un Gardien s'y trouve, c'est lui qu'on
+           voit et c'est lui qu'on doit obtenir. La manette, elle, ne désigne pas
+           un pixel mais UNE CASE, et son curseur vise toujours le centre de
+           cette case. Quand la caméra place un Gardien devant, le lancer de
+           rayon renvoyait ce Gardien : la case d'à côté s'éclairait à la place
+           de celle qu'on visait, et une case entière devenait impossible à
+           montrer — on éclairait l'une et on jouait l'autre.
+
+           La manette joint donc la case voulue à son événement de survol. On
+           préfère toujours un objet interactif DE CETTE CASE — couronne portée,
+           couronne au sol — pour que ses affordances restent offertes, et on
+           retombe sur la case elle-même sinon. Le reste du survol ne change pas
+           d'un iota : c'est le même chemin, avec la bonne cible. */
+        const caseDemandee = event => {
+          const voulue = event?.ilyosCase;
+          if (!voulue || !kaykit3D) return null;
+          const memeCase = objet => objet?.userData?.r === voulue.r && objet?.userData?.c === voulue.c;
+          return (kaykit3D.interactiveMeshes || []).find(memeCase)
+            || (kaykit3D.hitMeshes || []).find(memeCase)
+            || null;
+        };
+
         const pick = event => {
+          const demandee = caseDemandee(event);
+          if (demandee) return demandee;
+
           const rect = canvas.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
 
@@ -5301,11 +5401,31 @@
             kaykit3D.camera
           );
 
-          const interactive =
+          const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
               false
-            )[0]?.object;
+            );
+
+          /* UN CHOIX DE POUSSÉE PASSE DEVANT CE QUI LE MASQUE.
+
+             Les anneaux de destination sont dessinés sans test de profondeur :
+             ils apparaissent donc PAR-DESSUS le pousseur, et c'est bien ce que
+             le joueur voit et vise. Le lancer de rayon, lui, ne connaît que la
+             géométrie : quand la caméra place le gardien entre l'œil et
+             l'anneau, il renvoyait le gardien, et la destination visible était
+             impossible à désigner — ni à la souris ni à la manette. Tant qu'une
+             poussée attend sa destination, ce choix l'emporte donc sur tout ce
+             qui se trouve devant. */
+          if (state?.pushOptions?.length) {
+            const destination = interactifs.find(item => {
+              const interaction = item.object?.userData?.ilyosInteraction;
+              return interaction === "push-destination" || interaction === "push-death-destination";
+            });
+            if (destination) return destination.object;
+          }
+
+          const interactive = interactifs[0]?.object;
 
           if (interactive) return interactive;
 
@@ -5370,25 +5490,7 @@
             specialInteraction === "push-destination"
             || specialInteraction === "push-death-destination"
           ) {
-            const optionId = hit.userData.pushOptionId;
-            if (state.pushHoverOptionId !== optionId) {
-              state.pushHoverOptionId = optionId;
-              if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
-              renderTurnContext();
-              renderHand();
-            }
-            const option = state.pushOptions?.find(item => item.id === optionId);
-            kaykit3D.hoverCell = { special: true, hit };
-            if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
-            clearKayKitVisualHover();
-            refreshKayKitHoverPreviews();
-            if (kaykit3D.cursorLabel && option) {
-              kaykit3D.cursorLabel.textContent = option.fell
-                ? `☠ CHUTE · FORCE ${option.force}`
-                : `POUSSER · FORCE ${option.force}`;
-              kaykit3D.cursorLabel.dataset.kind = "push";
-              kaykit3D.cursorLabel.classList.add("visible");
-            }
+            viserOptionPoussee(hit.userData.pushOptionId, hit);
             canvas.style.cursor = "pointer";
             return kaykit3D.hoverCell;
           }
@@ -6235,6 +6337,49 @@
          points les plus éloignés du plateau. Le cadre se calculait alors sur une
          poignée d'îles centrales et la caméra plongeait à 9 unités du plateau en
          laissant un tiers du jeu hors champ. */
+      /* ==================================================================
+         ÉCHELLE DU CADRAGE AUTOMATIQUE — deux réglages, et un seul par défaut.
+
+         Mesuré sur une partie solo en 1278 × 798 : la caméra assistée se fige à
+         18,7 unités, une case fait 60 pixels et le plateau n'occupe que 46 % de
+         l'image. Elle est à la distance exacte que réclame « tout le plateau
+         dans le cadre », marge comprise — donc elle ne peut pas approcher tant
+         que cette exigence tient. C'est ce qui fait paraître les Gardiens petits
+         sur un grand écran.
+
+         • serrage : la marge du calcul de distance. 1,12 laissait 12 % de vide
+           tout autour ; à 1,03 le cadre se resserre d'environ 7 % sans que rien
+           ne sorte de l'image. C'est le changement par défaut, et il est sûr.
+
+         • coinsEndormis : distance, en cases, au-delà de laquelle un village ou
+           le sanctuaire DÉSERT cesse d'épingler le cadre. Ce sont eux qui
+           tiennent les quatre coins du plateau et imposent le recul. À 3, la
+           distance mesurée tombe de 18,7 à 12,4 — les Gardiens doublent
+           presque de taille, mais la moitié opposée du plateau sort du champ,
+           et l'adversaire avec elle. Éteint par défaut (0) : c'est un choix de
+           confort, pas une correction, et il se juge à l'œil.
+
+         Les deux se règlent à chaud : ILYOS_CADRAGE.serrage = 1, puis
+         ILYOS_CADRAGE.coinsEndormis = 3, et le prochain recadrage en tient
+         compte. */
+      const KAYKIT_CADRAGE_DEFAUT = { serrage: 1.03, coinsEndormis: 0 };
+
+      function kaykitCadrageReglage(nom) {
+        const vif = Number(window.ILYOS_CADRAGE?.[nom]);
+        return Number.isFinite(vif) && vif >= 0 ? vif : KAYKIT_CADRAGE_DEFAUT[nom];
+      }
+
+      /* Une case de bord déserte ne tient plus le cadre : on regarde s'il s'y
+         passe quelque chose, pièce ou couronne, dans le rayon demandé. */
+      function kaykitCoinEndormi(r, c, rayon) {
+        if (!(rayon > 0) || !state) return false;
+        const vivant = piece => Number.isFinite(piece?.r) && Number.isFinite(piece?.c)
+          && Math.abs(piece.r - r) + Math.abs(piece.c - c) <= rayon;
+        if ((state.characters || []).some(vivant)) return false;
+        const couronnes = typeof activeArtifacts === "function" ? activeArtifacts() : [];
+        return !(couronnes || []).some(vivant);
+      }
+
       function kaykitPointsDuContenu(interet) {
         const cases = [];
         if (state) {
@@ -6245,18 +6390,23 @@
              passée de 12 à 16 minutes sous les tests. Ici on énumère ce qui
              existe — mêmes points exactement, coût proportionnel au contenu. */
           (state.islands || []).forEach(ile => (ile.cells || []).forEach(([r, c]) => cases.push([r, c])));
+          const rayonEveil = kaykitCadrageReglage("coinsEndormis");
           (state.players || []).forEach(joueur => {
             const villages = Array.isArray(joueur?.villages) && joueur.villages.length
               ? joueur.villages
               : (joueur?.village ? [joueur.village] : []);
             villages.forEach(village => {
-              if (Number.isFinite(village?.r) && Number.isFinite(village?.c)) cases.push([village.r, village.c]);
+              if (!Number.isFinite(village?.r) || !Number.isFinite(village?.c)) return;
+              if (kaykitCoinEndormi(village.r, village.c, rayonEveil)) return;
+              cases.push([village.r, village.c]);
             });
           });
           // Sanctuaire : la croix centrale, définie par isSanctuary().
           if (typeof CENTER === "object" && CENTER) {
             [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dr, dc]) => {
-              cases.push([CENTER.r + dr, CENTER.c + dc]);
+              const r = CENTER.r + dr, c = CENTER.c + dc;
+              if (kaykitCoinEndormi(r, c, rayonEveil)) return;
+              cases.push([r, c]);
             });
           }
           (state.characters || []).forEach(ch => {
@@ -6280,7 +6430,7 @@
          d ≥ w·u + |w·droite| / tan(fovH/2). On prend le maximum sur tous les
          points et sur les deux axes. Exact, et sans dépendre d'une caméra qu'il
          faudrait déjà avoir positionnée. */
-      function kaykitDistancePourContenir(points, cible, marge = 1.12) {
+      function kaykitDistancePourContenir(points, cible, marge = kaykitCadrageReglage("serrage")) {
         if (!points.length || !kaykit3D?.camera) return 0;
         const camera = kaykit3D.camera;
         const tanVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
@@ -6663,6 +6813,8 @@
           kaykit3D.canvas.style.width = `${width}px`;
           kaykit3D.canvas.style.height = `${height}px`;
           kaykit3D.renderer.setSize(width, height, false);
+          // La surface vient de changer : le budget de pixels aussi.
+          kaykitAppliquerDensite();
           const nextAspect = width / height;
           const aspectChanged = Math.abs(nextAspect - kaykit3D.lastAspect) > .035;
           kaykit3D.lastAspect = nextAspect;
@@ -9649,6 +9801,39 @@
        * le bloc réel et le ghost de renderKayKitMagicRotationPreview se
        * superposaient à 0 cran de rotation.
        */
+      /* VISER UN RESULTAT DE POUSSEE, quelle que soit la main qui le vise.
+
+         Extrait tel quel du survol souris pour que la manette puisse designer
+         exactement le meme resultat. C'est necessaire, et pas seulement plus
+         propre : les resultats d'une meme poussee — force 1, 2, 3... — visent
+         souvent la MEME case, leurs anneaux se superposent au pixel pres, et un
+         lancer de rayon renvoie toujours le premier. Sans ce point d'entree par
+         identifiant, les autres forces etaient litteralement invisibles a qui
+         n'a pas de souris. */
+      function viserOptionPoussee(optionId, hit = null) {
+        if (!kaykit3D || !optionId) return null;
+        const option = state?.pushOptions?.find(item => item.id === optionId);
+        if (!option) return null;
+        if (state.pushHoverOptionId !== optionId) {
+          state.pushHoverOptionId = optionId;
+          if (els.instruction) els.instruction.textContent = phaseInfo().instruction;
+          renderTurnContext();
+          renderHand();
+        }
+        kaykit3D.hoverCell = { special: true, hit };
+        if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
+        clearKayKitVisualHover();
+        refreshKayKitHoverPreviews();
+        if (kaykit3D.cursorLabel) {
+          kaykit3D.cursorLabel.textContent = option.fell
+            ? `☠ CHUTE · FORCE ${option.force}`
+            : `POUSSER · FORCE ${option.force}`;
+          kaykit3D.cursorLabel.dataset.kind = "push";
+          kaykit3D.cursorLabel.classList.add("visible");
+        }
+        return option;
+      }
+
       function refreshKayKitMagicHiddenIsland() {
         if (!kaykit3D) return;
         const hiddenId = (state?.phase === "ACTION"
@@ -20200,6 +20385,49 @@
         renderAll();
         showToast(multipleMessage);
         return true;
+      }
+
+      /* UNE COURONNE OFFRE-T-ELLE VRAIMENT QUELQUE CHOSE, ICI ET MAINTENANT ?
+
+         onCellClick, juste en dessous, porte les regles : une couronne au sol
+         se ramasse s'il existe un gardien allie orthogonalement adjacent ; une
+         couronne portee par l'adversaire se reprend a la meme condition ; celle
+         que porte un allie se transmet a un voisin libre ou se pose sur une case
+         libre adjacente. Faute de quoi le clic ne produit qu'un message.
+
+         Ce predicat lit les MEMES conditions, sans rien executer. Il existe
+         parce qu'une manette doit savoir AVANT de proposer : la touche COURONNE
+         ouvrait un choix entre deux couronnes meme quand l'une d'elles etait
+         hors de portee de tout gardien, et demander de choisir entre une action
+         et rien n'est pas un choix. Toute evolution des branches couronne de
+         onCellClick doit se refleter ici. */
+      function crownInteractionAvailable(r, c) {
+        if (!state) return false;
+        /* Pendant les phases qui PORTENT sur la couronne, le moteur publie
+           lui-meme les cases offertes : on ne redecide rien. */
+        if (state.phase === "PICKUP_CROWN" || state.phase === "DROP_TREASURE") {
+          return !!els.board?.querySelector(`.cell[data-r="${r}"][data-c="${c}"].crown-claimable`);
+        }
+        if (state.phase !== "ACTION_SELECT") return false;
+
+        const alliesAdjacents = () => orthogonalNeighbors(r, c)
+          .map(([nr, nc]) => characterAt(nr, nc))
+          .filter(voisin => voisin && voisin.player === state.currentPlayer);
+
+        if (looseArtifactAt(r, c)) return alliesAdjacents().length > 0;
+
+        const char = characterAt(r, c);
+        if (!char || !artifactCarriedBy(char.id)) return false;
+
+        // Porteur adverse : la reprise demande un allie au contact.
+        if (char.player !== state.currentPlayer) return alliesAdjacents().length > 0;
+
+        // Porteur allie : transmettre a un voisin libre, ou poser a cote.
+        const receveurs = alliesAdjacents()
+          .filter(allie => allie.id !== char.id && !characterCarriesCrown(allie.id));
+        if (receveurs.length) return true;
+        return orthogonalNeighbors(r, c).some(([nr, nc]) =>
+          isLand(nr, nc) && !characterAt(nr, nc) && !looseArtifactAt(nr, nc));
       }
 
       function onCellClick(event) {
@@ -31122,7 +31350,7 @@
              qui éjecte par le BORD du plateau n'y avait aucun repère
              cliquable, alors que la 3D pose son ☠ dans le vide — et c'est le
              coup gagnant de six énigmes. La vue 2D dessine désormais ces
-             éjections dans sa marge et les exécute par ILYOS_BENCH.poussee(),
+             éjections dans sa marge et les exécute par ILYOS_BENCH.executerPoussee(),
              le seul chemin possible puisqu'aucune case du plateau d'origine ne
              peut recevoir ce clic. */
 
@@ -35898,12 +36126,29 @@
            On les parcourt comme ce qu'elles sont — des objets de la scene. */
         function pushTargets() {
           if (!state?.pushOptions?.length || !kaykit3D?.interactiveMeshes) return [];
+          /* Dans l'ordre du moteur — force 1, 2, 3... — et non dans celui,
+             arbitraire, ou la scene a ete construite : c'est cet ordre-la que le
+             joueur suit quand il fait defiler les resultats possibles. */
+          const rang = id => state.pushOptions.findIndex(option => option.id === id);
           return kaykit3D.interactiveMeshes
             .filter(mesh => {
               const kind = mesh?.userData?.ilyosInteraction;
               return kind === "push-destination" || kind === "push-death-destination";
             })
-            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }));
+            .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }))
+            .filter(cible => rang(cible.id) >= 0)
+            .sort((a, b) => rang(a.id) - rang(b.id));
+        }
+
+        /* Designer un resultat de poussee, c'est le dire au moteur : le survol
+           par lancer de rayon ne peut pas distinguer des anneaux superposes
+           (force 1, 2, 3... sur la meme case), et le joueur aurait vu force 1
+           tout en validant autre chose. viserOptionPoussee est le meme point
+           d'entree que le survol souris. */
+        function viserPoussee(cible) {
+          pad.special = cible;
+          if (!cible) return;
+          if (typeof viserOptionPoussee === "function") viserOptionPoussee(cible.id, cible.mesh);
         }
 
         function screenOfMesh(mesh) {
@@ -36015,7 +36260,7 @@
               .filter(entry => entry.point);
             if (points.length) {
               const current = pad.special && points.find(entry => entry.target.id === pad.special.id);
-              if (!current) { pad.special = points[0].target; return true; }
+              if (!current) { viserPoussee(points[0].target); return true; }
               const others = points.filter(entry => entry.target.id !== pad.special.id);
               let best = null, bestScore = 0;
               for (const entry of others) {
@@ -36027,10 +36272,29 @@
                 const score = alignment / (1 + length / 240);
                 if (score > bestScore) { bestScore = score; best = entry.target; }
               }
-              if (!best) return false;
-              pad.special = best;
+              /* LA GEOMETRIE NE SUFFIT PAS ICI, ET NE LE PEUT PAS.
+
+                 Les resultats d'une meme poussee — force 1, 2, 3... — visent
+                 souvent LA MEME case : leurs anneaux se superposent au pixel
+                 pres, et aucune direction ne les separera jamais. Le stick ne
+                 repondait alors plus du tout, et la destination voulue restait
+                 inatteignable. On retombe donc sur le parcours par ordre du
+                 moteur, exactement comme pour les cases du plateau. */
+              if (!best) {
+                if (points.length < 2) return false;
+                const rang = points.findIndex(entry => entry.target.id === pad.special.id);
+                const pas = dx + dy >= 0 ? 1 : -1;
+                best = points[(rang + pas + points.length) % points.length].target;
+              }
+              viserPoussee(best);
               return true;
             }
+            /* Les anneaux sont reconstruits a chaque survol : ils manquent
+               parfois le temps d'une image. Oublier la cible visee pour si peu
+               ramenait le curseur sur le plateau au moment meme ou le joueur
+               validait — la poussee choisie ne partait pas. On garde donc ce
+               qui est vise tant que le moteur propose des resultats. */
+            return false;
           }
           pad.special = null;
           if (!pad.cursor) { pad.cursor = defaultCursor(); return true; }
@@ -36077,15 +36341,33 @@
            ne traite que les pointeurs non-souris, il ne doit pas s'en saisir. */
         function refreshHover() {
           const canvas = boardCanvas();
-          const point = pad.special
-            ? screenOfMesh(pad.special.mesh)
-            : (pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c));
+          /* UNE DESTINATION DE POUSSEE SE DESIGNE, ELLE NE SE SURVOLE PAS.
+
+             Un pointermove synthetique repasserait par le lancer de rayon, et
+             celui-ci rend toujours le PREMIER des anneaux empiles : la force
+             choisie au stick etait aussitot ramenee a la premiere, sans que rien
+             ne le montre. On redit donc au moteur, par identifiant, ce qui est
+             vise — c'est le meme point d'entree que le survol souris. */
+          if (pad.special) {
+            const vise = pushTargets().find(cible => cible.id === pad.special.id) || pad.special;
+            if (typeof viserOptionPoussee === "function") { viserOptionPoussee(vise.id, vise.mesh); return; }
+          }
+          const point = pad.cursor && cellToScreen(pad.cursor.r, pad.cursor.c);
           if (!canvas || !point) return;
-          canvas.dispatchEvent(new PointerEvent("pointermove", {
+          const survol = new PointerEvent("pointermove", {
             bubbles: true, cancelable: true, view: window,
             pointerId: 1, pointerType: "mouse", isPrimary: true,
             clientX: point.x, clientY: point.y
-          }));
+          });
+          /* LA CASE VISEE VOYAGE AVEC L'EVENEMENT.
+
+             Les coordonnees ecran seules ne suffisent pas : un gardien place
+             devant intercepte le rayon, et c'est SA case qui s'eclairait au
+             lieu de celle qu'on vise. Le curseur de manette designe une case,
+             pas un pixel — on le dit donc au moteur, qui prefere alors cette
+             case sans rien changer d'autre a son survol. */
+          survol.ilyosCase = { r: pad.cursor.r, c: pad.cursor.c };
+          canvas.dispatchEvent(survol);
         }
 
         function moveCursorTo(r, c) {
@@ -36108,17 +36390,28 @@
             const option = state?.pushOptions?.find(item => item.id === data.pushOptionId);
             if (option && option.r === r && option.c === c) return { pushOptionId: data.pushOptionId };
           }
-          /* UN GARDIEN ALLIE RESTE UN GARDIEN.
+          /* UN GARDIEN ALLIE RESTE UN GARDIEN — Y COMPRIS AU REPOS.
 
              Les couronnes etaient examinees avant la case, donc A sur son propre
              porteur declenchait l'action de couronne au lieu de le selectionner :
              on ne pouvait plus le deplacer sans passer par le dock. La couronne
-             appartient desormais entierement a Y ; A ne fait que selectionner ce
-             qu'il vise. Priorite : gardien allie selectionnable, puis couronne. */
-          const gardienSelectionnable = document.querySelector(
-            `.cell[data-r="${r}"][data-c="${c}"] .character.selectable`
+             appartient a Y ; A ne fait que selectionner ce qu'il vise.
+
+             Le garde ne valait d'abord que pour un gardien que le moteur declare
+             « selectable » — c'est-a-dire une fois l'action deja choisie. Or au
+             REPOS, la phase ou l'on choisit justement son gardien, aucun ne l'est
+             (voir la condition de ui.js) : A retombait sur la couronne portee et
+             rouvrait transmettre/poser. Signale en jeu. On prefere donc TOUT
+             gardien allie, sauf dans les deux phases qui demandent explicitement
+             quel gardien agit sur la couronne — la couronne y est le sujet.
+
+             Un porteur ADVERSE, lui, n'est pas selectionnable : sa couronne
+             reste la seule chose a viser sur sa case. */
+          const phaseDeCouronne = state?.phase === "PICKUP_CROWN" || state?.phase === "DROP_TREASURE";
+          const gardienAllie = (state?.characters || []).some(
+            char => char.r === r && char.c === c && char.player === state.currentPlayer
           );
-          if (gardienSelectionnable) return {};
+          if (gardienAllie && !phaseDeCouronne) return {};
 
           // Couronne portee ou posee sur la case : dispatchKayKitClick vise
           // alors le bon noeud enfant, pas la case elle-meme.
@@ -36185,6 +36478,15 @@
            la couronne (".carrier-crown" pour une couronne portee, ".artifact"
            pour une couronne au sol) et jamais sur la case : c'est pourquoi la
            couronne sous le curseur est retrouvee au moment d'agir. */
+        /* Une couronne qu'aucun gardien ne peut atteindre n'est pas une cible :
+           la proposer forcait un choix entre une action et rien. Le moteur sait
+           deja repondre — crownInteractionAvailable porte les memes conditions
+           que les branches couronne de onCellClick. */
+        function couronneActionnable(r, c) {
+          if (typeof crownInteractionAvailable !== "function") return true;
+          try { return crownInteractionAvailable(r, c); } catch (_) { return true; }
+        }
+
         function crownTargets() {
           if (!kaykit3D?.interactiveMeshes) return [];
           const vues = new Set();
@@ -36200,6 +36502,7 @@
               return true;
             })
             .map(mesh => ({ r: mesh.userData.r, c: mesh.userData.c, action: mesh.userData.kaykitAction }))
+            .filter(cible => couronneActionnable(cible.r, cible.c))
             .concat(
               /* Le moteur marque aussi les cases ou une interaction de couronne
                  est offerte sans qu'un objet 3D ne s'y trouve — un gardien qui
@@ -36399,10 +36702,27 @@
            navigue dedans geometriquement, avec le socle partage. */
         const PANNEAUX = ["puzzleMenu", "puzzleLayer", "rulesModal", "victoryModal", "soundMenu"];
 
+        /* UN PANNEAU N'EN EST UN QUE S'IL PREND L'ECRAN.
+
+           #puzzleLayer reste affiche pendant TOUTE une enigme : c'est le HUD du
+           Sanctuaire, pas une fenetre. Pris pour un panneau, il confisquait le
+           stick et les boutons du debut a la fin — le plateau ne repondait plus
+           du tout a la manette dans les enigmes. Le depart se lit dans le style
+           deja ecrit : la couche laisse passer les clics (`pointer-events:none`)
+           tant qu'elle ne fait qu'habiller le plateau, et ne les capte que
+           lorsqu'elle s'ouvre vraiment (`.reveil`). On se fie donc a ce que le
+           joueur constate a la souris : ce qui laisse passer le clic laisse
+           passer la manette. */
+        function panneauCapteLeClic(panneau) {
+          try { return getComputedStyle(panneau).pointerEvents !== "none"; }
+          catch (_) { return true; }
+        }
+
         function panneauActif() {
           for (const id of PANNEAUX) {
             const panneau = document.getElementById(id);
             if (!panneau || !visible(panneau)) continue;
+            if (!panneauCapteLeClic(panneau)) continue;
             const boutons = [...panneau.querySelectorAll("button, [role=\"button\"], a[href]")].filter(usable);
             if (boutons.length) return { panneau, boutons };
           }
@@ -36494,10 +36814,23 @@
            la case du gardien — et non par un appel direct a la selection interne :
            c'est ce qui garantit que les regles decidant qui peut agir restent au
            seul endroit ou elles sont ecrites. */
+        /* Seuls DEPLACER et POUSSER reclament qu'on designe un gardien. Sous
+           MAGIE, le moteur marque aussi les allies « selectable » — un clic sur
+           l'un d'eux choisit l'ile sous ses pieds — et la reprise automatique
+           s'y raccrochait a chaque image : le curseur revenait sans cesse sur le
+           gardien, et le pivot voulu devenait impossible a viser. */
+        const ACTIONS_A_GARDIEN = ["MOVE", "PUSH"];
+
+        /* Et PAS pendant qu'une poussee attend son resultat : le moteur y laisse
+           le pousseur « selectionnable », alors qu'il ne demande plus un gardien
+           mais une destination. La reprise automatique s'y rattrapait a chaque
+           image — curseur ramene sur le gardien, cible speciale effacee : la
+           destination devenait proprement inatteignable. */
         function attendUnGardien() {
           return state?.phase === "ACTION"
-            && !!state.selectedActionType
+            && ACTIONS_A_GARDIEN.includes(state.selectedActionType || "")
             && !state.selectedCharId
+            && !(state.pushOptions && state.pushOptions.length)
             && guardiansMarques().length > 0;
         }
 
@@ -36894,8 +37227,16 @@
           const changerQui = direction => {
             if (contextChoices().length) { moveChoice(direction); return; }
             if (pad.crownMode) { cycleCrowns(direction); return; }
-            if (state?.selectedActionType || attendUnGardien()) {
+            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
               if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
+               revenait a appeler handleCancelButton(), donc a quitter l'action
+               que le joueur venait de lancer. On parcourt ce que le moteur
+               propose, et s'il ne propose rien, on ne fait rien. */
+            if (state?.selectedActionType) {
+              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
               return;
             }
             navigateGuardians(direction);
@@ -38576,8 +38917,15 @@
            poussée qui ÉJECTE hors du plateau n'a pas de case d'arrivée — il n'y
            a rien à cliquer, et c'est le coup gagnant de six énigmes. Elle a
            donc besoin d'exécuter une option de poussée par son identifiant, ce
-           qu'aucun geste sur la grille ne peut exprimer. */
-        poussee: optionId => executeUnifiedPushOption(optionId),
+           qu'aucun geste sur la grille ne peut exprimer.
+
+           EXÉCUTER, pas MESURER : ce point d'entrée s'appelait lui aussi
+           `poussee` et écrasait donc en silence `benchPoussee` déclaré plus
+           haut dans le même objet — la dernière clé gagne. scripts/verif-poussee.js
+           recevait `false` au lieu d'un relevé d'arrivées et plantait : la règle
+           de poussée n'avait plus de preuve automatique. Les deux noms disent
+           maintenant ce que chacun fait. */
+        executerPoussee: optionId => executeUnifiedPushOption(optionId),
         jouerUnTour: async (json) => {
           if (json) applyStateSnapshot(JSON.parse(json));
           state.undoHistory = [];
