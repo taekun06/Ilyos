@@ -818,6 +818,94 @@
         return Math.min(plafond, ecran, Math.max(1, tenue));
       }
 
+      /* ==================================================================
+         CE QUE COÛTE UNE IMAGE, PALIER PAR PALIER.
+
+         Le moniteur d'images de js/complete-polish.js sait déjà reconnaître une
+         machine qui peine et descendre de palier. Mais il ne touchait qu'à deux
+         choses : la densité de rendu et la TAILLE de la carte d'ombres. Les deux
+         postes réellement lourds continuaient de tourner au palier le plus bas :
+
+         • les OMBRES — une passe de rendu complète de la scène depuis le soleil,
+           à chaque image. La réduire de 1024 à 512 texels ne change pas le fait
+           qu'elle a lieu ;
+         • le BLOOM — la scène rendue dans une cible multi-échantillonnée, puis
+           quatre passes plein écran (seuil, flou horizontal, flou vertical,
+           composition). Son garde-fou n'agissait qu'après 120 images
+           CONSÉCUTIVES sous 32 i/s, et une seule bonne image remettait le
+           compteur à zéro : une machine qui oscille autour du seuil — le cas
+           typique d'un PC modeste — ne l'a jamais déclenché.
+
+         Le palier « performance » les éteint donc tous les deux. C'est un vrai
+         changement d'image — plus d'ombres portées, plus de halo solaire — mais
+         il ne concerne que les machines qui n'y arrivent pas : un ordinateur qui
+         tient sa cadence reste aux paliers « élevé » ou « équilibré », où rien
+         ne bouge. window.ILYOS_SKY.bloom({ actif: false }) permet de le juger à
+         la main, sur n'importe quelle machine. */
+      const KAYKIT_PALIERS = {
+        high: { densite: 1.5, ombres: 1024, bloom: true, decor: true },
+        balanced: { densite: 1.2, ombres: 768, bloom: true, decor: true },
+        performance: { densite: .95, ombres: 0, bloom: false, decor: false }
+      };
+
+      /* LE CIEL EST LE POSTE LE PLUS LOURD DE LA SCENE, ET DE LOIN.
+
+         Mesure en partie solo a 1280 x 800 : masquer le groupe du ciel enleve
+         36 a 41 % du temps par image. Ce n'est ni la geometrie (48 000 triangles
+         en tout, une misere) ni le nombre d'objets : ce sont des COQUES PLEIN
+         ECRAN superposees, repeintes a chaque pixel et a chaque image. Detail
+         mesure, coque par coque : dome 11 %, nappe de nuages haute 12 %, nappe
+         d'horizon 6 %, archipel lointain 6 %, bande de ciel 2 %.
+
+         Le dome et la nappe haute portent la lecture du jeu — d'ou l'on tombe,
+         ce qu'il y a sous les iles. La nappe d'horizon et l'archipel sont du
+         decor : beaux, mais sans information. Le palier « performance » les
+         retire donc, et eux seuls. */
+      function kaykitAppliquerDecorLointain(actif) {
+        if (!kaykit3D?.scene) return 0;
+        let touches = 0;
+        kaykit3D.scene.traverse(objet => {
+          if (!objet.userData?.decorFacultatif) return;
+          objet.visible = !!actif;
+          touches++;
+        });
+        return touches;
+      }
+
+      function kaykitSoleil() {
+        return kaykit3D?.scene?.getObjectByProperty?.("isDirectionalLight", true) || null;
+      }
+
+      function kaykitAppliquerQualite(palier) {
+        if (!kaykit3D?.renderer) return null;
+        const reglage = KAYKIT_PALIERS[palier] || KAYKIT_PALIERS.balanced;
+        kaykit3D.qualityMode = palier;
+        kaykitAppliquerDensite(reglage.densite);
+
+        /* Éteindre la passe d'ombres, et pas seulement la rétrécir. Trois.js
+           recompile les shaders concernés au changement — un à-coup unique, au
+           moment d'un changement de palier, qui est déjà rare. */
+        const soleil = kaykitSoleil();
+        const avecOmbres = reglage.ombres > 0;
+        kaykit3D.renderer.shadowMap.enabled = avecOmbres;
+        if (soleil) {
+          soleil.castShadow = avecOmbres;
+          if (avecOmbres) soleil.shadow.mapSize.set(reglage.ombres, reglage.ombres);
+        }
+        if (avecOmbres) kaykit3D.renderer.shadowMap.needsUpdate = true;
+
+        // Le bloom reprend proprement quand la machine remonte de palier.
+        KAYKIT_BLOOM.actif = reglage.bloom;
+        if (reglage.bloom) { kaykitBloom.coupeAuto = false; kaykitBloom.imagesBasses = 0; }
+
+        const decor = kaykitAppliquerDecorLointain(reglage.decor);
+
+        return {
+          palier, densite: kaykit3D.renderer.getPixelRatio(),
+          ombres: reglage.ombres, bloom: reglage.bloom, decorLointain: reglage.decor, objetsDeDecor: decor
+        };
+      }
+
       /* Une fenêtre agrandie change la surface, donc le budget : sans cela, un
          plein écran gardait la densité calculée pour la petite fenêtre et
          doublait le travail en silence. On ne touche au renderer que si la
@@ -1073,6 +1161,10 @@
            écran retrouverait ses huit millions de pixels par image. */
         kaykit3D.appliquerDensite = kaykitAppliquerDensite;
         kaykit3D.densiteRendu = kaykitDensiteRendu;
+        /* Le palier de qualite entier — densite, ombres, bloom — decide ici, en
+           un seul endroit, plutot que d'etre bricole depuis le script de mesure
+           qui ne connait ni la scene ni le post-traitement. */
+        kaykit3D.appliquerQualite = kaykitAppliquerQualite;
 
         // Repère si un 'wheel' natif est en train d'être traité : OrbitControls
         // enchaîne start→change→end pour la molette exactement comme pour un
@@ -2795,6 +2887,8 @@
 
             const archipel = new THREE.Mesh(geometry, material);
             archipel.name = "ilyos-horizon-archipel";
+            // Silhouette d'iles lointaines : pur decor, 6 % du temps par image.
+            archipel.userData.decorFacultatif = true;
             archipel.renderOrder = -950; // dôme/bande, archipel, puis nuages
             archipel.frustumCulled = false;
             archipel.userData.atlasTexture = atlas;
@@ -2886,6 +2980,12 @@
           sheet.position.y = layer.y;
           sheet.renderOrder = -900 + index * 10;
           sheet.frustumCulled = false;
+          /* La nappe d'horizon est la SECONDE : elle ajoute du parallaxe et la
+             courbure « petite planete », mais la lecture « iles / vide / nuages »
+             tient sans elle. Mesuree a 6 % du temps par image a elle seule, elle
+             rejoint donc le decor qu'un palier « performance » peut abandonner.
+             La nappe haute, elle, reste : c'est celle qui porte la lecture. */
+          if (index > 0) sheet.userData.decorFacultatif = true;
           sky.add(sheet);
           kaykit3D.skyLayers.push({ object: sheet, base: sheet.position.clone(), drift: layer.drift });
         });
@@ -3384,6 +3484,10 @@
           if (opts.seuil !== undefined) KAYKIT_BLOOM.seuil = opts.seuil;
           if (opts.douceur !== undefined) KAYKIT_BLOOM.douceur = opts.douceur;
           if (opts.rayon !== undefined) KAYKIT_BLOOM.rayon = opts.rayon;
+          if (opts.actif !== undefined) {
+            KAYKIT_BLOOM.actif = !!opts.actif;
+            if (opts.actif) { kaykitBloom.coupeAuto = false; kaykitBloom.imagesBasses = 0; }
+          }
           if (opts.reprendre) { kaykitBloom.coupeAuto = false; kaykitBloom.imagesBasses = 0; }
           return Object.assign({}, KAYKIT_BLOOM, { coupeAutomatique: kaykitBloom.coupeAuto });
         },
@@ -3767,6 +3871,16 @@
         const { staticGroup, fxGroup } = kaykit3D;
 
         buildKayKitSkyEnvironment(staticGroup);
+        /* LE PALIER DECIDE AVANT QUE LA SCENE N'EXISTE.
+
+           js/complete-polish.js choisit un palier des le chargement, d'apres le
+           nombre de coeurs et la memoire — donc AVANT que ce moteur soit la pour
+           en tirer les consequences. Une machine modeste demarrait ainsi avec
+           les ombres, le bloom et tout le decor lointain, et ne s'en debarrassait
+           qu'apres plusieurs secondes de mesure. On rejoue donc le palier retenu
+           des que la scene est batie. */
+        const palierRetenu = window.ILYOS_V69?.getQuality?.();
+        if (palierRetenu) kaykitAppliquerQualite(palierRetenu);
 
         // Plus de socle plein ni d'ombre de plateau : seule la grille filaire
         // reste, suspendue dans le ciel. Chaque ligne est découpée case par case
@@ -11770,12 +11884,12 @@
           const fps = 1000 / Math.max(1, maintenant - B.derniereImage);
           if (fps < KAYKIT_BLOOM.fpsPlancher) {
             B.imagesBasses++;
-            if (B.imagesBasses > 120) {
+            if (B.imagesBasses > 90) {
               B.coupeAuto = true;
               console.info("[ILYOS] bloom coupé automatiquement : FPS soutenu sous " +
                 KAYKIT_BLOOM.fpsPlancher + ". Réactivation : ILYOS_SKY.bloom({ reprendre: true }).");
             }
-          } else B.imagesBasses = 0;
+          } else B.imagesBasses = Math.max(0, B.imagesBasses - 2);
         }
         B.derniereImage = maintenant;
         return true;

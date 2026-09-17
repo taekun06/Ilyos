@@ -21,13 +21,30 @@
            téléphone rend en 0,7 — c'est ce grand écart qui rendait le jeu plus
            lourd sur ordinateur que sur mobile. Repli sur l'ancien calcul si le
            moteur n'expose pas encore ce point d'entrée. */
+        /* LE PALIER SE DÉCIDE ICI, SES CONSÉQUENCES 3D SE DÉCIDENT LÀ-BAS.
+
+           Ce script sait mesurer des images par seconde ; il ne connaît ni la
+           scène, ni les ombres, ni le post-traitement. Il fixait donc la densité
+           et rétrécissait la carte d'ombres, sans jamais pouvoir éteindre les
+           deux postes réellement lourds — la passe d'ombres et les cinq passes
+           de bloom — qui tournaient encore au palier le plus bas, sur les
+           machines qui en avaient le moins les moyens.
+
+           kaykit3D.appliquerQualite (js/game/kaykit3d.js) porte désormais tout
+           le paquet. Repli sur l'ancien calcul si le moteur n'expose pas encore
+           ce point d'entrée. */
         const plafond = QUALITY_DPR[next] || QUALITY_DPR.balanced;
-        if (window.kaykit3D?.appliquerDensite) window.kaykit3D.appliquerDensite(plafond);
-        else if (r) r.setPixelRatio(Math.min(dpr, plafond));
-        const shadow = window.kaykit3D?.scene?.getObjectByProperty?.('isDirectionalLight', true)?.shadow?.mapSize;
-        if (shadow) { const size = QUALITY_SHADOW[next] || QUALITY_SHADOW.balanced; shadow.set(size, size) }
+        if (window.kaykit3D?.appliquerQualite) {
+          window.kaykit3D.appliquerQualite(next);
+        } else if (window.kaykit3D?.appliquerDensite) {
+          window.kaykit3D.appliquerDensite(plafond);
+        } else if (r) r.setPixelRatio(Math.min(dpr, plafond));
+        if (!window.kaykit3D?.appliquerQualite) {
+          const shadow = window.kaykit3D?.scene?.getObjectByProperty?.('isDirectionalLight', true)?.shadow?.mapSize;
+          if (shadow) { const size = QUALITY_SHADOW[next] || QUALITY_SHADOW.balanced; shadow.set(size, size) }
+          if (window.kaykit3D) window.kaykit3D.qualityMode = next;
+        }
         document.documentElement.classList.toggle('v69-fps-low', next === 'performance');
-        if (window.kaykit3D) window.kaykit3D.qualityMode = next;
         qualityPill.textContent = `Qualité ${next === 'high' ? 'élevée' : next === 'balanced' ? 'équilibrée' : 'performance'} · ${Math.round(ema)} i/s`;
         window.kaykit3D?.resize?.({ refitCamera: false });
       }
