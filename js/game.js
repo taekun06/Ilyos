@@ -20387,6 +20387,49 @@
         return true;
       }
 
+      /* UNE COURONNE OFFRE-T-ELLE VRAIMENT QUELQUE CHOSE, ICI ET MAINTENANT ?
+
+         onCellClick, juste en dessous, porte les regles : une couronne au sol
+         se ramasse s'il existe un gardien allie orthogonalement adjacent ; une
+         couronne portee par l'adversaire se reprend a la meme condition ; celle
+         que porte un allie se transmet a un voisin libre ou se pose sur une case
+         libre adjacente. Faute de quoi le clic ne produit qu'un message.
+
+         Ce predicat lit les MEMES conditions, sans rien executer. Il existe
+         parce qu'une manette doit savoir AVANT de proposer : la touche COURONNE
+         ouvrait un choix entre deux couronnes meme quand l'une d'elles etait
+         hors de portee de tout gardien, et demander de choisir entre une action
+         et rien n'est pas un choix. Toute evolution des branches couronne de
+         onCellClick doit se refleter ici. */
+      function crownInteractionAvailable(r, c) {
+        if (!state) return false;
+        /* Pendant les phases qui PORTENT sur la couronne, le moteur publie
+           lui-meme les cases offertes : on ne redecide rien. */
+        if (state.phase === "PICKUP_CROWN" || state.phase === "DROP_TREASURE") {
+          return !!els.board?.querySelector(`.cell[data-r="${r}"][data-c="${c}"].crown-claimable`);
+        }
+        if (state.phase !== "ACTION_SELECT") return false;
+
+        const alliesAdjacents = () => orthogonalNeighbors(r, c)
+          .map(([nr, nc]) => characterAt(nr, nc))
+          .filter(voisin => voisin && voisin.player === state.currentPlayer);
+
+        if (looseArtifactAt(r, c)) return alliesAdjacents().length > 0;
+
+        const char = characterAt(r, c);
+        if (!char || !artifactCarriedBy(char.id)) return false;
+
+        // Porteur adverse : la reprise demande un allie au contact.
+        if (char.player !== state.currentPlayer) return alliesAdjacents().length > 0;
+
+        // Porteur allie : transmettre a un voisin libre, ou poser a cote.
+        const receveurs = alliesAdjacents()
+          .filter(allie => allie.id !== char.id && !characterCarriesCrown(allie.id));
+        if (receveurs.length) return true;
+        return orthogonalNeighbors(r, c).some(([nr, nc]) =>
+          isLand(nr, nc) && !characterAt(nr, nc) && !looseArtifactAt(nr, nc));
+      }
+
       function onCellClick(event) {
         if (!state || state.winner !== null || state.inputLocked || !canLocalPlayerAct()) return;
         const r = Number(event.currentTarget.dataset.r);
@@ -36347,17 +36390,28 @@
             const option = state?.pushOptions?.find(item => item.id === data.pushOptionId);
             if (option && option.r === r && option.c === c) return { pushOptionId: data.pushOptionId };
           }
-          /* UN GARDIEN ALLIE RESTE UN GARDIEN.
+          /* UN GARDIEN ALLIE RESTE UN GARDIEN — Y COMPRIS AU REPOS.
 
              Les couronnes etaient examinees avant la case, donc A sur son propre
              porteur declenchait l'action de couronne au lieu de le selectionner :
              on ne pouvait plus le deplacer sans passer par le dock. La couronne
-             appartient desormais entierement a Y ; A ne fait que selectionner ce
-             qu'il vise. Priorite : gardien allie selectionnable, puis couronne. */
-          const gardienSelectionnable = document.querySelector(
-            `.cell[data-r="${r}"][data-c="${c}"] .character.selectable`
+             appartient a Y ; A ne fait que selectionner ce qu'il vise.
+
+             Le garde ne valait d'abord que pour un gardien que le moteur declare
+             « selectable » — c'est-a-dire une fois l'action deja choisie. Or au
+             REPOS, la phase ou l'on choisit justement son gardien, aucun ne l'est
+             (voir la condition de ui.js) : A retombait sur la couronne portee et
+             rouvrait transmettre/poser. Signale en jeu. On prefere donc TOUT
+             gardien allie, sauf dans les deux phases qui demandent explicitement
+             quel gardien agit sur la couronne — la couronne y est le sujet.
+
+             Un porteur ADVERSE, lui, n'est pas selectionnable : sa couronne
+             reste la seule chose a viser sur sa case. */
+          const phaseDeCouronne = state?.phase === "PICKUP_CROWN" || state?.phase === "DROP_TREASURE";
+          const gardienAllie = (state?.characters || []).some(
+            char => char.r === r && char.c === c && char.player === state.currentPlayer
           );
-          if (gardienSelectionnable) return {};
+          if (gardienAllie && !phaseDeCouronne) return {};
 
           // Couronne portee ou posee sur la case : dispatchKayKitClick vise
           // alors le bon noeud enfant, pas la case elle-meme.
@@ -36424,6 +36478,15 @@
            la couronne (".carrier-crown" pour une couronne portee, ".artifact"
            pour une couronne au sol) et jamais sur la case : c'est pourquoi la
            couronne sous le curseur est retrouvee au moment d'agir. */
+        /* Une couronne qu'aucun gardien ne peut atteindre n'est pas une cible :
+           la proposer forcait un choix entre une action et rien. Le moteur sait
+           deja repondre — crownInteractionAvailable porte les memes conditions
+           que les branches couronne de onCellClick. */
+        function couronneActionnable(r, c) {
+          if (typeof crownInteractionAvailable !== "function") return true;
+          try { return crownInteractionAvailable(r, c); } catch (_) { return true; }
+        }
+
         function crownTargets() {
           if (!kaykit3D?.interactiveMeshes) return [];
           const vues = new Set();
@@ -36439,6 +36502,7 @@
               return true;
             })
             .map(mesh => ({ r: mesh.userData.r, c: mesh.userData.c, action: mesh.userData.kaykitAction }))
+            .filter(cible => couronneActionnable(cible.r, cible.c))
             .concat(
               /* Le moteur marque aussi les cases ou une interaction de couronne
                  est offerte sans qu'un objet 3D ne s'y trouve — un gardien qui

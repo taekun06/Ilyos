@@ -845,3 +845,112 @@ test('une case masquée par un Gardien se laisse viser à la manette', async ({ 
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
+
+/* ------------------------------------------------------------------------
+   A CHOISIT UN GARDIEN, Y S'OCCUPE DE LA COURONNE.
+
+   Deux défauts signalés en jeu, tous deux sur la même touche de trop.
+
+   • A sur son propre porteur ouvrait « transmettre ou poser » au lieu de
+     sélectionner le Gardien. Le garde posé plus tôt ne valait que pour un
+     Gardien que le moteur déclare « selectable », c'est-à-dire une fois
+     l'action déjà choisie ; au REPOS — la phase où l'on choisit justement son
+     Gardien — aucun ne l'est, et A retombait sur la couronne portée.
+
+   • Y proposait de choisir entre deux couronnes même quand une seule était à
+     portée d'un Gardien. Choisir entre une action et rien n'est pas choisir. */
+
+/* Le curseur se déplace au stick, comme chez un joueur : pousser jusqu'à ce
+   que la case visée s'éclaire, sans jamais la désigner par un raccourci. */
+async function amenerLeCurseur(page, cible) {
+  for (const [axe, sens] of [[1, -1], [1, 1], [0, -1], [0, 1]]) {
+    for (let pas = 0; pas < 10; pas++) {
+      if (await survol(page) === cible) return true;
+      await incliner(page, axe, sens);
+    }
+  }
+  return await survol(page) === cible;
+}
+
+const instruction = page => page.evaluate(
+  () => document.getElementById('ov2Instruction')?.textContent?.trim() || ''
+);
+const toast = page => page.evaluate(
+  () => (document.getElementById('hudV2Toast')?.textContent || '').trim()
+);
+
+test('A sur son propre porteur sélectionne le Gardien, pas sa couronne', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p12-squatteur');   // un Gardien y porte une couronne d'emblée
+
+  const porteur = await page.evaluate(() => {
+    const cell = document.querySelector('.cell .carrier-crown')?.closest('.cell');
+    return cell ? `${cell.dataset.r},${cell.dataset.c}` : null;
+  });
+  expect(porteur, 'ce Sanctuaire doit ouvrir sur un porteur allié').not.toBeNull();
+  expect(await amenerLeCurseur(page, porteur), 'le stick doit atteindre le porteur').toBe(true);
+
+  /* Un appui peut tomber entre deux images sur un navigateur sans GPU : on
+     réessaie, en s'arrêtant dès que la sélection est là — appuyer encore la
+     retirerait. L'exigence, elle, ne bouge pas. */
+  const selection = () => page.evaluate(
+    () => [...document.querySelectorAll('.cell.selected-character')]
+      .map(cell => `${cell.dataset.r},${cell.dataset.c}`).join(' ')
+  );
+  let pris = false;
+  for (let essai = 0; essai < 4 && !pris; essai++) {
+    await appuyer(page, B.A, 420);
+    await page.waitForTimeout(700);
+    pris = await selection() === porteur;
+  }
+
+  /* Le Gardien est pris en main — et sa couronne n'a pas bougé : rien n'a été
+     transmis ni posé dans son dos. */
+  expect(pris, 'A doit sélectionner le porteur').toBe(true);
+
+  expect(await instruction(page), 'et non ouvrir le choix de la couronne')
+    .not.toMatch(/allié|couronne/i);
+  expect(await page.evaluate(
+    () => document.querySelector('.cell .carrier-crown')?.closest('.cell')?.dataset.r
+  ), 'la couronne doit rester portée').toBe(porteur.split(',')[0]);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
+
+test('Y n’ouvre un choix que si plusieurs couronnes sont vraiment jouables', async ({ page }) => {
+  const incidents = collecterIncidents(page);
+  await page.addInitScript(FAUSSE_MANETTE);
+  await page.goto('/');
+  await ouvrirEnigme(page, 'p09-fardeau');   // couronnes en 5,5 et 7,5, un Gardien en 6,5 touche les deux
+
+  // Deux couronnes à portée : le choix est légitime, il doit rester.
+  await appuyer(page, B.Y, 420);
+  await expect.poll(() => toast(page), {
+    message: 'deux couronnes jouables doivent ouvrir un choix', timeout: 8000
+  }).toMatch(/Couronne 1 sur 2/);
+
+  /* On éloigne le Gardien d'une case : la couronne du bas n'a plus personne au
+     contact, celle du haut si. Une seule reste jouable. */
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(700);
+  await page.locator('#ov2Move').click({ force: true });
+  await page.waitForTimeout(700);
+  await page.locator('.cell[data-r="6"][data-c="5"]').dispatchEvent('click');
+  await page.waitForTimeout(700);
+  await page.locator('.cell[data-r="4"][data-c="5"]').dispatchEvent('click');
+  await page.waitForTimeout(2500);
+
+  await appuyer(page, B.Y, 420);
+
+  /* Plus de question : Y agit. La couronne du haut est ramassée, celle du bas
+     reste au sol — c'est bien la jouable qui a été retenue. */
+  await expect.poll(() => page.evaluate(
+    () => document.querySelectorAll('.cell .carrier-crown').length
+  ), { message: 'Y doit agir directement sur la seule couronne jouable', timeout: 10000 }).toBe(1);
+
+  expect(await toast(page), 'sans ouvrir de choix').not.toMatch(/sur 2/);
+
+  expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
+});
