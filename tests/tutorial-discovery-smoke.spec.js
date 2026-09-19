@@ -7,10 +7,13 @@ async function startTutorial(page, method = 'start') {
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 }
 
-async function startTutorialFromMenu(page) {
+/* Le bouton TUTORIEL du menu mene desormais a « L'Eveil » (voir
+   docs/TUTORIEL-EVEIL.md et tests/eveil.spec.js). La Decouverte muette reste
+   jouable le temps du chantier, mais par son entree nommee. */
+async function startDiscovery(page) {
   await page.goto('/');
-  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
-  await menu.locator('[data-action="tutorial"]').first().click();
+  await page.waitForFunction(() => typeof window.ILYOS_TUTORIAL?.startDiscovery === 'function');
+  await page.evaluate(() => window.ILYOS_TUTORIAL.startDiscovery());
   await page.waitForFunction(() => window.ILYOS_TUTORIAL?.mode() === 'discovery');
   await page.waitForFunction(() => !document.getElementById('gameScreen')?.classList.contains('hidden'));
 }
@@ -29,10 +32,10 @@ async function clickCell(page, r, c) {
   await page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).dispatchEvent('click');
 }
 
-test('le bouton tutoriel pointe vers la découverte et laisse la caméra libre', async ({ page }) => {
+test('la découverte muette laisse la caméra libre', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await startTutorial(page, 'start');
+  await startTutorial(page, 'startDiscovery');
   await page.waitForFunction(() => window.ILYOS_TUTORIAL.mode() === 'discovery');
   // Le sas d'ouverture muet possède la caméra ~8 s avant de rendre la main :
   // on attend qu'il ait fini, c'est seulement à ce moment que la première
@@ -78,14 +81,14 @@ test('La Première Ascension reste disponible séparément', async ({ page }) =>
   expect(errors).toEqual([]);
 });
 
-test('Découverte se joue du bouton Tutoriel jusqu’à la validation', async ({ page }) => {
+test('Découverte se joue jusqu’à la validation', async ({ page }) => {
   const pageErrors = [];
   const consoleErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('console', message => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
-  await startTutorialFromMenu(page);
+  await startDiscovery(page);
   page.setDefaultTimeout(25000);
   await waitForDiscoveryStep(page, 'regarder');
 
