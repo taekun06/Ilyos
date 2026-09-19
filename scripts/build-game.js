@@ -31,6 +31,10 @@ const fragmentNames = [
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
   // l'Ascension via ILYOS_TUTORIAL.startAscension().
   'tutorial-discovery.js',
+  // Nouveau parcours « L'Éveil » (docs/TUTORIEL-EVEIL.md). Placé après la
+  // découverte : il réassigne tutoStart à son tour et devient l'entrée du
+  // bouton TUTORIEL, sans modifier les fragments précédents.
+  'tutorial-eveil.js',
   // Cabinet d'énigmes : moteur puis collection. Placé après le tutoriel, dont
   // il réutilise les fabriques de terrain (tutoAddIsland, tutoRender) et les
   // verrous de caméra ; puzzle-levels.js ne contient que des données et doit
