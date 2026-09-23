@@ -13,7 +13,7 @@
     "build": "node scripts/build-game.js --write",
     "build:check": "node scripts/build-game.js",
     "test": "playwright test",
-    "test:smoke": "playwright test tests/eveil.spec.js tests/tutorial-discovery-smoke.spec.js tests/camera-partie-solo.spec.js --project=chromium --timeout=120000",
+    "test:smoke": "playwright test tests/eveil.spec.js tests/eveil-manette.spec.js tests/eveil-recommencer.spec.js tests/eveil-aide.spec.js tests/eveil-lumiere.spec.js tests/tutorial-discovery-smoke.spec.js tests/camera-partie-solo.spec.js --project=chromium --timeout=120000",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "empreinte": "node scripts/empreinte-css.js relever",
