@@ -2,9 +2,14 @@
 
    Deux politiques opposées, pour deux natures de fichiers :
 
-   • LE CODE reste toujours réseau-frais (`no-store`). C'est volontaire :
+   • LE CODE reste toujours réseau-frais (`no-cache`). C'est volontaire :
      GitHub Pages ne permet pas de fixer les en-têtes de cache, et servir un
      `game.js` périmé casse la partie sans que personne comprenne pourquoi.
+     `no-cache` et non `no-store` : le navigateur REVALIDE auprès du serveur
+     à chaque chargement (ETag / Last-Modified), il ne sert donc jamais une
+     copie périmée — mais un fichier inchangé revient en 304, sans corps.
+     `no-store` retéléchargeait game.js (~550 ko compressé) et le reste du
+     code à chaque visite, même quand rien n'avait bougé.
 
    • LES ASSETS (modèles 3D, textures, images, polices, audio) et le VENDOR
      (three.js, GLTFLoader, PeerJS) passent en cache-first. Ils ne changent
@@ -24,7 +29,7 @@
    nom, incrémenter ILYOS_ASSET_CACHE ci-dessous : l'ancien cache est alors
    supprimé à l'activation. */
 
-const ILYOS_SW_VERSION = '2026-08-21-asset-cache-1';
+const ILYOS_SW_VERSION = '2026-09-23-code-revalidation-1';
 const ILYOS_ASSET_CACHE = 'ilyos-assets-v1';
 
 self.addEventListener('install', () => {
@@ -67,7 +72,7 @@ self.addEventListener('fetch', event => {
   // Le code d'abord : un fichier de vendor a beau finir en .js, il est épinglé
   // et ne doit pas repasser par le réseau à chaque chargement.
   if (estCode && !estAssetCachable(url)) {
-    event.respondWith(fetch(request, { cache: 'no-store' }));
+    event.respondWith(fetch(request, { cache: 'no-cache' }));
     return;
   }
 
