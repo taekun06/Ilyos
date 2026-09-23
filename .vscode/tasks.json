@@ -3,11 +3,16 @@
   "tasks": [
     {
       "label": "ILYOS : développer",
-      "type": "npm",
-      "script": "dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "windows": {
+        "command": "npm.cmd run dev"
+      },
       "isBackground": true,
       "problemMatcher": {
-        "pattern": { "regexp": "^$" },
+        "pattern": {
+          "regexp": "^$"
+        },
         "background": {
           "activeOnStart": true,
           "beginsPattern": "^Built js/game\\.js",
@@ -15,10 +20,58 @@
         }
       }
     },
-    { "label": "ILYOS : diagnostic", "type": "npm", "script": "doctor", "problemMatcher": [] },
-    { "label": "ILYOS : vérifier", "type": "npm", "script": "check", "problemMatcher": [], "group": { "kind": "build", "isDefault": true } },
-    { "label": "ILYOS : tests rapides", "type": "npm", "script": "test:smoke", "problemMatcher": [], "group": { "kind": "test", "isDefault": true } },
-    { "label": "ILYOS : tests interactifs", "type": "npm", "script": "test:ui", "problemMatcher": [] },
-    { "label": "ILYOS : inventaire assets", "type": "npm", "script": "assets:audit", "problemMatcher": [] }
+    {
+      "label": "ILYOS : diagnostic",
+      "type": "shell",
+      "command": "npm run doctor",
+      "windows": {
+        "command": "npm.cmd run doctor"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ILYOS : vérifier",
+      "type": "shell",
+      "command": "npm run check",
+      "windows": {
+        "command": "npm.cmd run check"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "ILYOS : tests rapides",
+      "type": "shell",
+      "command": "npm run test:smoke",
+      "windows": {
+        "command": "npm.cmd run test:smoke"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "ILYOS : tests interactifs",
+      "type": "shell",
+      "command": "npm run test:ui",
+      "windows": {
+        "command": "npm.cmd run test:ui"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ILYOS : inventaire assets",
+      "type": "shell",
+      "command": "npm run assets:audit",
+      "windows": {
+        "command": "npm.cmd run assets:audit"
+      },
+      "problemMatcher": []
+    }
   ]
 }
