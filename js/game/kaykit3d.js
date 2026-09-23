@@ -832,6 +832,55 @@
         kaykit3D.renderer.setPixelRatio(voulue);
       }
 
+      /* PASSE PERFORMANCE SHADERS — Three.js r128 range le NOMBRE de lumières
+         ponctuelles visibles dans la clé de chaque programme shader, y compris
+         celle des matériaux non éclairés (MeshBasic, Sprite). Or ce nombre
+         bougeait sans cesse : halo de sélection, joyau et lueur des couronnes,
+         sanctuaires, survol. Chaque variation recompilait toute la scène à
+         l'instant du clic (mesuré : 75 compilations en deux minutes de partie
+         IA contre IA, 59 % du temps CPU, gels de plusieurs centaines de ms).
+         La réserve ci-dessous complète le compte avec des lumières éteintes,
+         hors champ et sans ombre : le total visible reste constant, donc les
+         clés aussi. Rendu inchangé — une lumière d'intensité nulle n'ajoute
+         rien. Si une scène dépasse la réserve, elle grandit une fois pour
+         toutes plutôt que de laisser le compte varier. */
+      const KAYKIT_LUMIERES_PONCTUELLES_MIN = 6;
+
+      function kaykitCreerLumiereReserve(scene) {
+        const lumiere = new THREE.PointLight(0xffffff, 0, .01, 2);
+        lumiere.position.set(0, -500, 0);
+        lumiere.userData.reserveLumiere = true;
+        scene.add(lumiere);
+        return lumiere;
+      }
+
+      function kaykitStabiliserLumieresPonctuelles() {
+        const reserve = kaykit3D?.lumieresReserve;
+        if (!reserve) return;
+        let actives = 0;
+        kaykit3D.scene.traverseVisible(objet => {
+          if (objet.isPointLight && !objet.userData.reserveLumiere) actives++;
+        });
+        while (reserve.length < actives) reserve.push(kaykitCreerLumiereReserve(kaykit3D.scene));
+        const eteintes = reserve.length - actives;
+        for (let i = 0; i < reserve.length; i++) reserve[i].visible = i < eteintes;
+      }
+
+      /* Même passe : r128 DÉTRUIT un programme dès que le dernier matériau qui
+         l'utilise est disposé, et l'effet suivant du même genre le recompile.
+         Les effets éphémères (onde au sol, halo de sélection) libèrent donc
+         leurs matériaux ici : le premier matériau de chaque programme est gardé
+         vivant, sans être dessiné, pour tenir la référence ; les autres sont
+         disposés normalement. Borné par le nombre de variantes de shader. */
+      function kaykitDisposeFxMaterial(material) {
+        if (!material) return;
+        const cle = kaykit3D?.renderer?.properties?.get(material)?.currentProgram?.cacheKey;
+        const gardiens = kaykit3D?.fxProgramKeepers;
+        if (!cle || !gardiens) { material.dispose(); return; }
+        if (!gardiens.has(cle)) { gardiens.set(cle, material); return; }
+        if (gardiens.get(cle) !== material) material.dispose();
+      }
+
       function initKayKit3D() {
         if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
@@ -969,6 +1018,12 @@
         const front = new THREE.DirectionalLight(0xfffbf1, .12);
         front.position.set(0, 6, 10);
         scene.add(front);
+        // Réserve de lumières ponctuelles éteintes : voir
+        // kaykitStabiliserLumieresPonctuelles().
+        const lumieresReserve = [];
+        for (let i = 0; i < KAYKIT_LUMIERES_PONCTUELLES_MIN; i++) {
+          lumieresReserve.push(kaykitCreerLumiereReserve(scene));
+        }
 
         const root = new THREE.Group();
         const staticGroup = new THREE.Group();
@@ -1025,6 +1080,9 @@
           // Séquences visuelles en cours (poussée, chute, magie, couronne...),
           // mises à jour dans la boucle de rendu plutôt qu'avec des setTimeout.
           visualSequences: [], fxTweens: [], crownFlights: [], islandDrops: [],
+          // Passe performance shaders : voir kaykitStabiliserLumieresPonctuelles()
+          // et kaykitDisposeFxMaterial().
+          lumieresReserve, fxProgramKeepers: new Map(),
           /* Verrou de cadrage : jusqu'à cameraFocusUntil, seul un recadrage de
              priorité strictement supérieure peut voler l'image. Une chute garde
              ainsi le cadre pendant que les gardiens continuent de bouger. */
@@ -9935,9 +9993,9 @@
         if (!selected) {
           if (visual.halo) {
             visual.halo.group.parent?.remove(visual.halo.group);
-            visual.halo.particles.forEach(particle => particle.material?.dispose?.());
-            visual.halo.beamMaterial?.dispose?.();
-            visual.halo.ring?.material?.dispose?.();
+            visual.halo.particles.forEach(particle => kaykitDisposeFxMaterial(particle.material));
+            kaykitDisposeFxMaterial(visual.halo.beamMaterial);
+            kaykitDisposeFxMaterial(visual.halo.ring?.material);
             visual.halo = null;
           }
           return;
@@ -10805,7 +10863,7 @@
             obj.scale.setScalar(.5 + eased * radius * 5.2);
             obj.material.opacity = .85 * (1 - eased);
           },
-          dispose: obj => { obj.material.dispose(); obj.parent?.remove(obj); }
+          dispose: obj => { kaykitDisposeFxMaterial(obj.material); obj.parent?.remove(obj); }
         });
       }
 
@@ -10832,7 +10890,7 @@
             obj.scale.setScalar(.35 + t * .75);
             obj.material.opacity = .95 * (1 - t);
           },
-          dispose: obj => { obj.material.dispose(); obj.parent?.remove(obj); }
+          dispose: obj => { kaykitDisposeFxMaterial(obj.material); obj.parent?.remove(obj); }
         });
 
         if (!pool) return;
@@ -11899,6 +11957,7 @@
         // interactions retrouvent leurs valeurs d'origine après chaque rendu.
         const restoreVisuals = window.ILYOS_VISUAL_EDITOR?.apply(kaykit3D);
         try {
+          kaykitStabiliserLumieresPonctuelles();
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
             kaykit3D.renderer.setRenderTarget(null);
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
