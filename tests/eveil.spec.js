@@ -4,7 +4,12 @@ const dbg = page => page.evaluate(() => window.ILYOS_TUTORIAL._debug());
 const clickCell = (page, r, c) =>
   page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).dispatchEvent('click');
 
-test('Actes I et II se jouent du bouton Tutoriel', async ({ page }) => {
+/* Le parcours dure, par conception : seize etapes, des plans de camera et des
+   cycles de tour joues en vrai. Il depasse donc les 120 s que npm run test:smoke
+   accorde par defaut, et declare son propre budget. */
+test.setTimeout(300000);
+
+test("L'Eveil se joue en entier du bouton Tutoriel", async ({ page }) => {
   const errs = [], cons = [];
   page.on('pageerror', e => errs.push(e.message));
   page.on('console', m => { if (m.type() === 'error') cons.push(m.text()); });
@@ -75,6 +80,41 @@ test('Actes I et II se jouent du bouton Tutoriel', async ({ page }) => {
     return d?.id === 'limite' && !d.souffle;
   }, null, { timeout: 25000 });
   await page.screenshot({ path: dir + '/5-limite.png' });
+
+  /* ON NE DOIT JAMAIS RESTER SANS UN GESTE JOUABLE.
+     Signale en jeu : depenser tous ses deplacements au milieu d'une etape
+     laissait la main vide, et comme FIN DU TOUR n'est pas encore acquis, plus
+     aucune sortie — le parcours se figeait. Le caillou de l'acte I fait 2x2 :
+     on y fait la navette bien au-dela d'une main pleine, et la main doit
+     toujours repondre. */
+  {
+    // Les cases de terre du caillou, lues sur l'etat : viser le vide ne
+    // deplacerait rien et le test se mentirait a lui-meme.
+    const terres = (await dbg(page)).iles.flatMap(i => i.cells);
+    const estTerre = (r, c) => terres.some(([tr, tc]) => tr === r && tc === c);
+    let pas = 0;
+    for (let i = 0; i < 12; i++) {
+      const avant = await dbg(page);
+      if (avant.id !== 'limite') break;
+      expect(avant.main).toBeGreaterThan(0);
+      const moi = avant.chars.find(c => c.p === 0);
+      const cible = [[moi.r - 1, moi.c], [moi.r, moi.c + 1], [moi.r + 1, moi.c], [moi.r, moi.c - 1]]
+        .find(([r, c]) => estTerre(r, c)
+          && !avant.chars.some(ch => ch.r === r && ch.c === c));
+      if (!cible) break;
+      await page.locator('#ov2Move').click({ force: true });
+      await clickCell(page, moi.r, moi.c);
+      await clickCell(page, cible[0], cible[1]);
+      await page.waitForTimeout(400);
+      const apres = (await dbg(page)).chars.find(c => c.p === 0);
+      if (apres.r !== moi.r || apres.c !== moi.c) pas++;
+    }
+    // On a joue plus de pas qu'une seule main n'en contient, sans jamais
+    // se retrouver sans carte.
+    expect(pas).toBeGreaterThan(5);
+    expect((await dbg(page)).main).toBeGreaterThan(0);
+  }
+
   await page.locator('.cell[data-r="9"][data-c="9"]').dispatchEvent('click');
 
   // ================= ACTE II =================
@@ -179,15 +219,177 @@ test('Actes I et II se jouent du bouton Tutoriel', async ({ page }) => {
     await clickCell(page, route.commune[0], route.commune[1]);
   }
 
-  // Fin de l'acte II.
-  await page.waitForSelector('.tuto-end', { timeout: 30000 });
-  await page.screenshot({ path: dir + '/10-fin-acte-II.png' });
+  // ================= ACTE III =================
+  const attendre = async id => page.waitForFunction(v => {
+    const d = window.ILYOS_TUTORIAL._debug();
+    return d?.id === v && !d.souffle;
+  }, id, { timeout: 30000 });
+
+  // 9. LE RIVAL : POUSSER apparait, on ecarte l'intrus.
+  await attendre('rival');
+  d = await dbg(page);
+  expect(d.verbesVisibles).toContain('push');
+  expect(d.rivaux.length).toBe(1);
+  await page.screenshot({ path: dir + '/11-le-rival.png' });
+
+  /* La poussee se joue en trois temps : choisir le verbe, designer le
+     pousseur et sa cible, puis la DESTINATION — le jeu propose plusieurs
+     options (force 1 ou 2, recul ou chute) et attend qu'on tranche. */
+  const pousser = async () => {
+    const st = await dbg(page);
+    const rival = st.rivaux[0];
+    if (!rival) return true;
+    const moi = st.chars.filter(c => c.p === 0)
+      .find(c => Math.abs(c.r - rival.r) + Math.abs(c.c - rival.c) === 1);
+    if (!moi) return false;
+    const derriere = [rival.r + (rival.r - moi.r), rival.c + (rival.c - moi.c)];
+    const bouge = () => page.evaluate(d => {
+      const r = window.ILYOS_TUTORIAL._debug()?.rivaux?.[0];
+      return !r || r.r !== d.r || r.c !== d.c;
+    }, rival);
+
+    await page.locator('#ov2Push').click({ force: true });
+    await clickCell(page, moi.r, moi.c);
+    await clickCell(page, rival.r, rival.c);
+    await page.waitForTimeout(500);
+    if (await bouge()) return true;
+    await clickCell(page, derriere[0], derriere[1]);
+    await page.waitForTimeout(900);
+    if (await bouge()) return true;
+    // Dernier essai : certaines poussees se declenchent depuis la seule
+    // destination, le jeu resolvant lui-meme pousseur et cible.
+    await page.locator('#ov2Push').click({ force: true });
+    await clickCell(page, derriere[0], derriere[1]);
+    await page.waitForTimeout(900);
+    return bouge();
+  };
+  expect(await pousser()).toBe(true);
+  /* A cette etape on ECARTE : le rival doit avoir recule sur de la terre, pas
+     disparu. Lui voler sa chute ici ruinerait l'etape suivante. */
+  expect((await dbg(page)).rivaux.length).toBe(1);
+
+  // 10. LA CHUTE : le rival revient dos au vide, la poussee le fait tomber.
+  await attendre('chute');
+  await page.screenshot({ path: dir + '/12-la-chute.png' });
+  expect(await pousser()).toBe(true);
+  await page.waitForFunction(() => window.ILYOS_TUTORIAL._debug()?.rivaux?.length === 0, null, { timeout: 20000 });
+
+  // 11. LE REPENTIR : ANNULER apparait ; on joue un coup, on le reprend.
+  await attendre('repentir');
+  d = await dbg(page);
+  expect(d.verbesVisibles).toContain('undo');
+  await page.screenshot({ path: dir + '/13-le-repentir.png' });
+  // Un pas, n'importe lequel.
+  {
+    const st = await dbg(page);
+    const g = st.chars.find(c => c.p === 0);
+    await page.locator('#ov2Move').click({ force: true });
+    await clickCell(page, g.r, g.c);
+    const voisines = [[g.r - 1, g.c], [g.r, g.c + 1], [g.r + 1, g.c], [g.r, g.c - 1]];
+    for (const [r, c] of voisines) {
+      await clickCell(page, r, c);
+      await page.waitForTimeout(400);
+      if (await page.evaluate(() => window.ILYOS_TUTORIAL._debug()?.undo > 0)) break;
+    }
+  }
+  expect(await page.evaluate(() => window.ILYOS_TUTORIAL._debug()?.undo)).toBeGreaterThan(0);
+  // Puis on le reprend.
+  await page.locator('#ov2Undo').click({ force: true });
+  await page.waitForTimeout(500);
+
+  // 12. LE CIEL SE PLIE : pivoter la barre pour franchir le gouffre.
+  await attendre('pivot');
+  d = await dbg(page);
+  expect(d.verbesVisibles).toContain('magic');
+  expect(d.corniche).toBeTruthy();
+  await page.screenshot({ path: dir + '/14-le-pivot.png' });
+
+  /* Le pivot du HAUT + demi-tour couche la barre par-dessus le gouffre et
+     emporte le Gardien quatre cases plus loin. C'est la decouverte de
+     l'etape : le tutoriel ne la souffle jamais, mais le harnais doit la
+     jouer pour prouver qu'elle est atteignable. */
+  const haut = d.corniche.cells[2];
+  await page.locator('#ov2Magic').click({ force: true });
+  await clickCell(page, haut[0], haut[1]);
+  await page.waitForTimeout(400);
+  for (let i = 0; i < 2; i++) {
+    await page.locator('#hudV2MagicRotateRight').click({ force: true });
+    await page.waitForTimeout(300);
+  }
+  // La validation est au joueur : on reclique la case pivot.
+  await clickCell(page, haut[0], haut[1]);
+  await page.waitForTimeout(1200);
+
+
+  // ================= ACTE IV =================
+  // 13. LE VILLAGE : on y amene la Couronne... et il ne se passe rien.
+  await attendre('village');
+  d = await dbg(page);
+  expect(d.zoneVillage).toBeTruthy();
+  // Un seul village materialise : celui du porteur, pas le coin oppose.
+  expect(d.zoneVillage.length).toBeLessThanOrEqual(3);
+  await page.screenshot({ path: dir + '/15-le-village.png' });
+  {
+    const cible = d.zoneVillage[0];
+    for (let essai = 0; essai < 14; essai++) {
+      const st = await dbg(page);
+      if (st.id !== 'village') break;
+      const porteur = st.chars.find(c => String(c.id) === String(st.porteur));
+      if (!porteur) break;
+      if (porteur.r === cible[0] && porteur.c === cible[1]) break;
+      // Un pas a la fois vers le village : le chemin est garanti par l'etape.
+      const dr = Math.sign(cible[0] - porteur.r);
+      const dc = dr === 0 ? Math.sign(cible[1] - porteur.c) : 0;
+      await page.locator('#ov2Move').click({ force: true });
+      await clickCell(page, porteur.r, porteur.c);
+      await clickCell(page, porteur.r + dr, porteur.c + dc);
+      await page.waitForTimeout(500);
+    }
+  }
+
+  // 14. LE SABLIER : le tour passe, puis la Couronne s'ancre.
+  await page.waitForFunction(() => window.ILYOS_TUTORIAL._debug()?.id === 'sablier', null, { timeout: 30000 });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: dir + '/16-le-sablier.png' });
+  await page.waitForFunction(() => window.ILYOS_TUTORIAL._debug()?.score >= 1, null, { timeout: 40000 });
+
+  // 15. LA MAIN QUI S'EPUISE : les piles apparaissent, on depense une carte.
+  await attendre('main');
+  d = await dbg(page);
+  expect(d.main).toBe(3);
+  await page.screenshot({ path: dir + '/17-la-main.png' });
+  {
+    const st = await dbg(page);
+    const g = st.chars.find(c => c.p === 0);
+    await page.locator('#ov2Move').click({ force: true });
+    await clickCell(page, g.r, g.c);
+    for (const [r, c] of [[g.r - 1, g.c], [g.r, g.c + 1], [g.r + 1, g.c], [g.r, g.c - 1]]) {
+      await clickCell(page, r, c);
+      await page.waitForTimeout(400);
+      if (await page.evaluate(() => window.ILYOS_TUTORIAL._debug()?.id !== 'main')) break;
+    }
+  }
+
+  // 16. LA RESERVE : FIN DU TOUR apparait, la carte non jouee est gardee.
+  await attendre('reserve');
+  d = await dbg(page);
+  expect(d.verbesVisibles).toContain('end');
+  await page.screenshot({ path: dir + '/18-la-reserve.png' });
+  await page.locator('#ov2End').click({ force: true });
+  await page.waitForTimeout(1500);
+
+  // Le seuil : les lumieres du parcours s'eteignent.
+  await page.waitForSelector('.tuto-end', { timeout: 40000 });
+  await page.screenshot({ path: dir + '/19-le-seuil.png' });
   d = await dbg(page);
   console.log('TRACE', JSON.stringify(d.trace));
   console.log('ERREURS', JSON.stringify(errs), JSON.stringify(cons.slice(0, 3)));
   // Huit etapes, franchies une seule fois chacune.
   expect(d.trace.map(t => t.id)).toEqual([
-    'eveil', 'nom', 'premier-pas', 'limite', 'batir', 'second', 'lueur', 'relais'
+    'eveil', 'nom', 'premier-pas', 'limite',
+    'batir', 'second', 'lueur', 'relais',
+    'rival', 'chute', 'repentir', 'pivot',
+    'village', 'sablier', 'main', 'reserve'
   ]);
   expect(errs).toEqual([]);
 
