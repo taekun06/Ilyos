@@ -271,9 +271,18 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   if (window.__ILYOS_MENU_IFRAME_BOOT__) return;
   window.__ILYOS_MENU_IFRAME_BOOT__ = true;
 
+  /* L'ancien #setupScreen est en tête du <body> : sans garde immédiate, il
+     s'affiche pendant tout le chargement des scripts synchrones (three.js,
+     game.js…), jusqu'à DOMContentLoaded où boot() pose la classe du body.
+     <html> existe déjà ici : on le masque tout de suite, puis boot() rend la
+     main à la classe du body (que revealOnlineSetup() retire volontairement
+     pour la partie EN LIGNE). */
+  document.documentElement.classList.add('ilyos-menu-v11-boot');
+
   const guardStyle = document.createElement('style');
   guardStyle.id = 'ilyos-menu-v11-guard';
   guardStyle.textContent = `
+    html.ilyos-menu-v11-boot > body > #setupScreen,
     body.ilyos-menu-v11-active > #setupScreen{visibility:hidden!important;pointer-events:none!important}
     #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:2147483000;background:#040a11;display:block}
     #ilyos-menu-v11-frame[hidden]{display:none!important}
@@ -398,6 +407,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   function boot() {
     if (document.getElementById('ilyos-menu-v11-frame')) return;
     document.body.classList.add('ilyos-menu-v11-active');
+    document.documentElement.classList.remove('ilyos-menu-v11-boot');
     const frame = document.createElement('iframe');
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
