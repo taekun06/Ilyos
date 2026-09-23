@@ -1353,16 +1353,31 @@
         return kaykit3D.materials.get(key);
       }
 
+      /* Idempotente (passe performance textures) : cette fonction est rappelée
+         par addShadowFlags() à CHAQUE pose ou clone d'un modèle, sur des
+         textures partagées entre toutes les copies. Lever `needsUpdate` sans
+         condition renvoyait l'image entière au GPU à chaque fois — mesuré :
+         298 appels et 40 renvois d'images 1024×1024 (montagnes de l'horizon,
+         mage, chevalier, forêt) en 75 s de partie, ~6,8 s de blocage cumulé.
+         On ne demande donc un envoi que si un réglage change réellement, ou si
+         la texture n'a encore jamais été marquée pour envoi (version 0). */
       function configureKayKitTexture(texture) {
         if (!texture) return texture;
-        texture.encoding = THREE.sRGBEncoding;
         const maxAnisotropy = kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1;
-        texture.anisotropy = Math.min(12, maxAnisotropy);
+        const anisotropy = Math.min(12, maxAnisotropy);
+        const change = texture.encoding !== THREE.sRGBEncoding
+          || texture.anisotropy !== anisotropy
+          || texture.magFilter !== THREE.LinearFilter
+          || texture.minFilter !== THREE.LinearMipmapLinearFilter
+          || texture.generateMipmaps !== true
+          || texture.flipY !== false;
+        texture.encoding = THREE.sRGBEncoding;
+        texture.anisotropy = anisotropy;
         texture.magFilter = THREE.LinearFilter;
         texture.minFilter = THREE.LinearMipmapLinearFilter;
         texture.generateMipmaps = true;
         texture.flipY = false;
-        texture.needsUpdate = true;
+        if (change || texture.version === 0) texture.needsUpdate = true;
         return texture;
       }
 
@@ -4097,7 +4112,10 @@
         const img = sourceMap.image;
         const canvas = document.createElement("canvas");
         canvas.width = img.width; canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
+        // Canvas relu aussitôt : `willReadFrequently` le garde en mémoire
+        // centrale, sinon getImageData() rapatrie l'image depuis le GPU
+        // (mesuré : ~350 ms par château en rendu logiciel).
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
         ctx.drawImage(img, 0, 0);
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const px = data.data;
