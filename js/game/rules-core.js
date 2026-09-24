@@ -604,26 +604,47 @@
       ================================================================== */
       function plateauSansPlace() {
         if (!state) return false;
-        for (const shape of Object.values(SHAPES)) {
-          let rotated = normalizeShape(shape.cells);
-          const vues = new Set();
-          for (let rotation = 0; rotation < 4; rotation++) {
-            const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
-            if (!vues.has(signature)) {
-              vues.add(signature);
-              const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
-              const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
-              for (let r = 0; r <= GRID - hauteur; r++) {
-                for (let c = 0; c <= GRID - largeur; c++) {
-                  // Une seule place suffit à prouver que la partie continue.
-                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return false;
-                }
+        return !Object.values(SHAPES).some(formeTientQuelquePart);
+      }
+
+      /** Une forme tient-elle quelque part, dans l'une de ses rotations ? */
+      function formeTientQuelquePart(shape) {
+        let rotated = normalizeShape(shape.cells);
+        const vues = new Set();
+        for (let rotation = 0; rotation < 4; rotation++) {
+          const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
+          if (!vues.has(signature)) {
+            vues.add(signature);
+            const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
+            const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
+            for (let r = 0; r <= GRID - hauteur; r++) {
+              for (let c = 0; c <= GRID - largeur; c++) {
+                // Une seule place suffit.
+                if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return true;
               }
             }
-            rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
           }
+          rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
         }
-        return true;
+        return false;
+      }
+
+      /* POSE LEVÉE FAUTE DE PLACE. Le plateau peut encore accueillir une forme
+         alors qu'aucune de celles qui restent dans le STOCK d'un joueur n'y
+         tient. La pose obligatoire est alors levée : c'est ce que fait
+         createAutomaticIslandAndSpawn, qui ne trouve rien et marque la pose
+         comme faite.
+
+         Le planner Expert l'ignorait. Il n'acceptait comme fin de tour qu'un
+         état où l'île était posée : faute d'en trouver, il rendait un plan vide
+         et la main passait à la logique historique — pour tout le reste de la
+         partie, puisque le stock ne se reconstitue pas. Mesuré en self-play :
+         à partir du trentième tour environ, plus aucune décision Expert. */
+      function poseImpossiblePour(playerId) {
+        if (!state) return false;
+        const limite = shapeLimitPerOwner();
+        return avecGrilleTerre(() => !Object.entries(SHAPES).some(([forme, shape]) =>
+          (!limite || shapeUsageCountForOwner(playerId, forme) < limite) && formeTientQuelquePart(shape)));
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */

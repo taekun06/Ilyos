@@ -23,11 +23,22 @@ const PAIRES = Math.max(1, Math.ceil((Number(process.argv[2]) || 20) / 2));
 const GRAINE = Number(process.argv[3]) || 5000;
 const PARALLELE = Math.max(1, Number(process.argv[4]) || 2);
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 120;
+/* Budget de recherche propre à chaque camp (JSON, ex. '{"tempsMaxMs":1000}'),
+   pour mesurer ce qu'apporte plus de réflexion dans un même build. */
+/* Poids de l'évaluateur propres à chaque camp (JSON, clés de PLAN_POIDS). */
+const POIDS = {
+  A: process.env.ILYOS_POIDS_A ? JSON.parse(process.env.ILYOS_POIDS_A) : null,
+  B: process.env.ILYOS_POIDS_B ? JSON.parse(process.env.ILYOS_POIDS_B) : null
+};
+const BUDGETS = {
+  A: process.env.ILYOS_BUDGET_A ? JSON.parse(process.env.ILYOS_BUDGET_A) : undefined,
+  B: process.env.ILYOS_BUDGET_B ? JSON.parse(process.env.ILYOS_BUDGET_B) : undefined
+};
 
 async function ouvrir(navigateur, url) {
   const page = await navigateur.newPage({ viewport: { width: 640, height: 400 } });
   page.on('pageerror', e => console.error(`[${url}] ${e.message}`));
-  await page.goto(url);
+  await page.goto(url, { timeout: 120000 });
   await page.waitForFunction(() => typeof window.ILYOS_SELFPLAY?.tour === 'function', null, { timeout: 60000 });
   /* Une partie doit exister : `state` sert de position de départ et de
      support à la simulation. On l'arrête avant que l'IA n'agisse. */
@@ -52,8 +63,9 @@ async function jouerPartie(pages, depart, campA, graine) {
   for (let i = 0; i < TOURS_MAX; i++) {
     const joueur = JSON.parse(etat).currentPlayer;
     const qui = joueur === campA ? 'A' : 'B';
-    const r = await pages[qui].evaluate(([json, g]) => window.ILYOS_SELFPLAY.tour(json, { graine: g }),
-      [etat, graine * 1000 + i]);
+    const r = await pages[qui].evaluate(([json, g, budget, poids]) =>
+      window.ILYOS_SELFPLAY.tour(json, { graine: g, budget, poids }),
+      [etat, graine * 1000 + i, BUDGETS[qui], POIDS[qui]]);
     temps[qui].push(r.dureeMs);
     etat = r.etat;
     tour = r.tour;

@@ -1307,7 +1307,7 @@
 
         entrant.hand = [];
         drawCards(entrant, 5);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";
@@ -1559,9 +1559,10 @@
          défaut) : c'est la force qu'affronte un joueur humain qu'on mesure.
          Chaque build joue ses tours ; `scripts/selfplay-rapide.js` transporte
          l'état de l'un à l'autre. */
-      function selfplayTourIsole(json, { graine = null, budget } = {}) {
+      function selfplayTourIsole(json, { graine = null, budget, poids = null } = {}) {
         const clone = JSON.parse(json);
         if (graine !== null) setTestRandomSeed(graine);
+        const memoire = selfplayAppliquerPoids(poids);
         try {
           return withSimulatedState(clone, () => {
             const debut = performance.now();
@@ -1574,6 +1575,7 @@
             };
           });
         } finally {
+          selfplayAppliquerPoids(memoire);
           if (graine !== null) setTestRandomSeed(null);
         }
       }
@@ -1601,7 +1603,54 @@
         }
       }
 
+      /* Ce que le cerveau voit sur un instantané, sans rien jouer : plan retenu,
+         finalistes, riposte, et décomposition de la note de départ et d'arrivée.
+         L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
+         position tirée d'un self-play. */
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false } = {}) {
+        const clone = JSON.parse(json);
+        setTestRandomSeed(graine);
+        const autopsieAvant = plannerAutopsieActive();
+        try {
+          return withSimulatedState(clone, () => {
+            const joueur = state.currentPlayer;
+            const depart = evaluerAvecDetail(joueur);
+            if (chronos) plannerActiverAutopsie(true);
+            const rapport = plannerChercherPlanRobuste(joueur, budget);
+            plannerActiverAutopsie(autopsieAvant);
+            const decrire = plan => plan.map(a => {
+              const { type, ...reste } = a;
+              return type + " " + JSON.stringify(reste).slice(0, 120);
+            });
+            const arrivee = withSimulatedState(structuredClone(clone), () => {
+              for (const action of rapport.plan) plannerAppliquerAction(action);
+              return evaluerAvecDetail(joueur);
+            });
+            return {
+              joueur,
+              plan: decrire(rapport.plan),
+              noteDepart: depart,
+              noteArrivee: arrivee,
+              etatsExplores: rapport.etatsExplores,
+              profondeur: rapport.profondeurAtteinte,
+              dureeMs: rapport.dureeTotaleMs ?? rapport.dureeMs,
+              anticipation: rapport.anticipation,
+              // Coût de chaque générateur à la racine (sous `chronos` seulement).
+              chronos: rapport.releveCandidats ? rapport.releveCandidats.chronos : null,
+              candidats: rapport.releveCandidats ? rapport.releveCandidats.length : null,
+              finalistes: (rapport.finalistes || []).slice(0, 8).map(n => ({
+                note: Math.round(n.note), plan: decrire(n.plan)
+              }))
+            };
+          });
+        } finally {
+          plannerActiverAutopsie(autopsieAvant);
+          setTestRandomSeed(null);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
+        analyser: selfplayAnalyser,
         fidelitePartie: benchFidelitePartie,
         empreintePlateau,
         partie: selfplayPartie,

@@ -13707,7 +13707,62 @@
        * Seule la case Château est déjà praticable. Les deux autres cases
        * restent constructibles et deviennent du terrain après la pose d'une île.
        */
-      function isLand(r, c) { return !!villageAt(r, c) || isSanctuary(r, c) || !!islandAt(r, c); }
+      function isLand(r, c) {
+        const grille = grilleTerreActive;
+        if (grille !== null && grille.etat === state) {
+          return r >= 0 && c >= 0 && r < grille.taille && c < grille.taille
+            && grille.cases[r * grille.taille + c] === 1;
+        }
+        return !!villageAt(r, c) || isSanctuary(r, c) || !!islandAt(r, c);
+      }
+
+      /* GRILLE DE TERRE, le temps d'un calcul qui ne touche pas au terrain.
+
+         isLand() parcourt toutes les îles et toutes leurs cases. C'est sans
+         importance pour un clic, mais l'évaluateur de l'IA l'appelle des
+         milliers de fois par position (plus courts chemins, portées adverses).
+         Mesuré en fin de partie : une évaluation coûtait 25 ms, dont 80 % dans
+         islandAt, et le planner Expert n'examinait plus qu'une vingtaine
+         d'états en 500 ms — il rendait un plan vide et jouait au hasard de la
+         logique de repli.
+
+         La grille ne vaut que pour l'état qui l'a construite (withSimulatedState
+         change `state`, la grille est alors ignorée) et que pendant `fn` :
+         n'y appeler que des calculs PURS, jamais une action qui modifie les
+         îles. Hors de ce cadre, isLand() reste le calcul d'origine. */
+      let grilleTerreActive = null;
+
+      function construireGrilleTerre() {
+        const taille = GRID;
+        const cases = new Uint8Array(taille * taille);
+        const marquer = (r, c) => {
+          if (r >= 0 && c >= 0 && r < taille && c < taille) cases[r * taille + c] = 1;
+        };
+        for (const ile of state.islands || []) {
+          for (const [r, c] of ile.cells) marquer(r, c);
+        }
+        for (const joueur of state.players || []) {
+          for (const village of villagesForPlayer(joueur)) marquer(village.r, village.c);
+        }
+        // isSanctuary peut être enveloppée (énigmes sans sanctuaire) : on
+        // l'interroge plutôt que de recopier sa forme.
+        for (let r = 0; r < taille; r++) {
+          for (let c = 0; c < taille; c++) {
+            if (isSanctuary(r, c)) marquer(r, c);
+          }
+        }
+        return { etat: state, taille, cases };
+      }
+
+      function avecGrilleTerre(fn) {
+        const precedente = grilleTerreActive;
+        if (precedente === null || precedente.etat !== state) grilleTerreActive = construireGrilleTerre();
+        try {
+          return fn();
+        } finally {
+          grilleTerreActive = precedente;
+        }
+      }
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
@@ -17058,6 +17113,13 @@
            sans jamais appeler endTurn — la partie se figeait (observé au tour
            28 d'une partie complète). Un cerveau qui échoue doit rendre la main
            à la logique historique, jamais bloquer le jeu. */
+        /* Aucune forme du stock ne tient plus sur le plateau : la pose est
+           levée, exactement comme createAutomaticIslandAndSpawn le ferait en
+           fin de tour. On l'acte AVANT de réfléchir, pour que le planner puisse
+           s'arrêter sans poser et que l'état réel suive l'état prévu. */
+        if (!state.islandPlacedThisTurn && poseImpossiblePour(joueur)) {
+          state.islandPlacedThisTurn = true;
+        }
         let rapport = null;
         try {
           rapport = plannerChercherPlanRobuste(joueur);
@@ -21728,29 +21790,37 @@
       function movementRange(char, maxCost) {
         const startKey = key(char.r, char.c);
         const distances = new Map([[startKey, 0]]);
-        const open = [{ r: char.r, c: char.c, cost: 0 }];
         const result = new Set();
+        /* Coûts entiers et petits (1 ou 2 par pas) : une file par coût, vidée
+           dans l'ordre d'arrivée, rend exactement l'ordre de l'ancien tri
+           stable, sans retrier la file à chaque case. L'IA appelle cette
+           fonction des centaines de fois par décision. */
+        const files = [[{ r: char.r, c: char.c, cost: 0 }]];
+        const occupees = new Set((state.characters || []).map(ch => key(ch.r, ch.c)));
 
-        while (open.length) {
-          open.sort((a, b) => a.cost - b.cost);
-          const current = open.shift();
-          const currentKey = key(current.r, current.c);
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const current = file[i];
+            const currentKey = key(current.r, current.c);
 
-          if (current.cost !== distances.get(currentKey)) continue;
+            if (current.cost !== distances.get(currentKey)) continue;
 
-          for (const edge of movementEdges(current.r, current.c)) {
-            if (!isLand(edge.r, edge.c)) continue;
-            if (characterAt(edge.r, edge.c)) continue;
+            for (const edge of movementEdges(current.r, current.c)) {
+              if (!isLand(edge.r, edge.c)) continue;
+              if (occupees.has(key(edge.r, edge.c))) continue;
 
-            const nextCost = current.cost + edge.cost;
-            if (nextCost > maxCost) continue;
+              const nextCost = current.cost + edge.cost;
+              if (nextCost > maxCost) continue;
 
-            const nextKey = key(edge.r, edge.c);
-            if (nextCost >= (distances.get(nextKey) ?? Infinity)) continue;
+              const nextKey = key(edge.r, edge.c);
+              if (nextCost >= (distances.get(nextKey) ?? Infinity)) continue;
 
-            distances.set(nextKey, nextCost);
-            result.add(nextKey);
-            open.push({ r: edge.r, c: edge.c, cost: nextCost });
+              distances.set(nextKey, nextCost);
+              result.add(nextKey);
+              (files[nextCost] ||= []).push({ r: edge.r, c: edge.c, cost: nextCost });
+            }
           }
         }
 
@@ -24173,26 +24243,47 @@
       ================================================================== */
       function plateauSansPlace() {
         if (!state) return false;
-        for (const shape of Object.values(SHAPES)) {
-          let rotated = normalizeShape(shape.cells);
-          const vues = new Set();
-          for (let rotation = 0; rotation < 4; rotation++) {
-            const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
-            if (!vues.has(signature)) {
-              vues.add(signature);
-              const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
-              const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
-              for (let r = 0; r <= GRID - hauteur; r++) {
-                for (let c = 0; c <= GRID - largeur; c++) {
-                  // Une seule place suffit à prouver que la partie continue.
-                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return false;
-                }
+        return !Object.values(SHAPES).some(formeTientQuelquePart);
+      }
+
+      /** Une forme tient-elle quelque part, dans l'une de ses rotations ? */
+      function formeTientQuelquePart(shape) {
+        let rotated = normalizeShape(shape.cells);
+        const vues = new Set();
+        for (let rotation = 0; rotation < 4; rotation++) {
+          const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
+          if (!vues.has(signature)) {
+            vues.add(signature);
+            const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
+            const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
+            for (let r = 0; r <= GRID - hauteur; r++) {
+              for (let c = 0; c <= GRID - largeur; c++) {
+                // Une seule place suffit.
+                if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return true;
               }
             }
-            rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
           }
+          rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
         }
-        return true;
+        return false;
+      }
+
+      /* POSE LEVÉE FAUTE DE PLACE. Le plateau peut encore accueillir une forme
+         alors qu'aucune de celles qui restent dans le STOCK d'un joueur n'y
+         tient. La pose obligatoire est alors levée : c'est ce que fait
+         createAutomaticIslandAndSpawn, qui ne trouve rien et marque la pose
+         comme faite.
+
+         Le planner Expert l'ignorait. Il n'acceptait comme fin de tour qu'un
+         état où l'île était posée : faute d'en trouver, il rendait un plan vide
+         et la main passait à la logique historique — pour tout le reste de la
+         partie, puisque le stock ne se reconstitue pas. Mesuré en self-play :
+         à partir du trentième tour environ, plus aucune décision Expert. */
+      function poseImpossiblePour(playerId) {
+        if (!state) return false;
+        const limite = shapeLimitPerOwner();
+        return avecGrilleTerre(() => !Object.entries(SHAPES).some(([forme, shape]) =>
+          (!limite || shapeUsageCountForOwner(playerId, forme) < limite) && formeTientQuelquePart(shape)));
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
@@ -24292,6 +24383,8 @@
         utiliteMenace: 450,
         utiliteMenaceMultiple: 900,
         blocageValidation: 900,
+        // Un second gardien dans le même village : réserve contre l'expulsion.
+        blocageRedondance: 0.25,
 
         /* Urgence à deux points. Grands nombres, mais jamais terminaux : une
            menace n'est pas une défaite. */
@@ -24345,13 +24438,40 @@
         return state.characters.filter(ch => ch.player === playerId);
       }
 
-      /** Distance de déplacement du gardien le plus proche d'un jeu de cases. */
+      /** Distance de déplacement du gardien le plus proche d'un jeu de cases.
+       *
+       *  Même résultat qu'un aiLandDistanceToTargets par gardien, mais lu dans
+       *  un CHAMP propagé une seule fois depuis les cibles (graphe non orienté,
+       *  coûts symétriques). Ce champ ne dépend que du terrain : il est gardé
+       *  en cache d'un nœud de recherche à l'autre, et seule une pose ou une
+       *  rotation l'invalide. Mesuré en fin de partie : ces Dijkstra par
+       *  gardien faisaient les deux tiers du coût de l'évaluateur. */
+      const PLAN_CACHE_CHAMPS_MAX = 256;
+      const plannerCacheChamps = new Map();
+
       function plannerDistanceEquipe(playerId, cibles) {
         const gardiens = plannerGardiensDe(playerId);
         if (!gardiens.length || !cibles.length) return Infinity;
+        const valides = cibles.filter(([r, c]) => inside(r, c) && isLand(r, c));
+        if (!valides.length) return 99;
+        const cle = plannerEmpreinteTerrain() + ':'
+          + valides.map(([r, c]) => r * GRID + c).sort((a, b) => a - b).join(',');
+        let champ = plannerCacheChamps.get(cle);
+        if (!champ) {
+          champ = plannerChampDistance(valides);
+          if (plannerCacheChamps.size >= PLAN_CACHE_CHAMPS_MAX) {
+            plannerCacheChamps.delete(plannerCacheChamps.keys().next().value);
+          }
+          plannerCacheChamps.set(cle, champ);
+        }
         let meilleure = Infinity;
         for (const g of gardiens) {
-          const d = aiLandDistanceToTargets(g.r, g.c, cibles);
+          let d = champ.get(key(g.r, g.c));
+          if (d === undefined) {
+            // Mêmes replis qu'aiLandDistanceToTargets : hors terre, ou injoignable.
+            d = !inside(g.r, g.c) || !isLand(g.r, g.c) ? 99
+              : 30 + Math.min(...valides.map(([r, c]) => Math.abs(g.r - r) + Math.abs(g.c - c)));
+          }
           if (d < meilleure) meilleure = d;
         }
         return meilleure;
@@ -24472,13 +24592,51 @@
           + (state.characters || []).map(c => c.r + ',' + c.c).sort().join('|');
         let portees = plannerCachePortees.get(cle);
         if (!portees) {
-          portees = ennemis.map(ennemi => movementRange(ennemi, budgetMove));
+          portees = [plannerPorteeReunie(ennemis, budgetMove)];
           if (plannerCachePortees.size >= PLAN_CACHE_PORTEES_MAX) {
             plannerCachePortees.delete(plannerCachePortees.keys().next().value);
           }
           plannerCachePortees.set(cle, portees);
         }
         return portees;
+      }
+
+      /* Les portées ne servent qu'à savoir si UN gardien adverse peut
+         rejoindre une case. La réunion des portées individuelles se calcule en
+         une seule propagation partie de tous les gardiens à la fois : les
+         obstacles (tous les gardiens) sont les mêmes pour chacun, un chemin
+         valable pour l'un l'est donc dans la propagation commune. Six
+         recherches par nœud deviennent une. */
+      function plannerPorteeReunie(ennemis, budgetMove) {
+        const resultat = new Set();
+        if (!ennemis.length) return resultat;
+        const occupees = new Set(state.characters.map(ch => key(ch.r, ch.c)));
+        const distances = new Map();
+        const files = [[]];
+        for (const e of ennemis) {
+          distances.set(key(e.r, e.c), 0);
+          files[0].push({ r: e.r, c: e.c, cout: 0 });
+        }
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const actuel = file[i];
+            if (actuel.cout !== distances.get(key(actuel.r, actuel.c))) continue;
+            for (const arete of movementEdges(actuel.r, actuel.c)) {
+              if (!isLand(arete.r, arete.c)) continue;
+              const k = key(arete.r, arete.c);
+              if (occupees.has(k)) continue;
+              const cout = actuel.cout + arete.cost;
+              if (cout > budgetMove) continue;
+              if (cout >= (distances.get(k) ?? Infinity)) continue;
+              distances.set(k, cout);
+              resultat.add(k);
+              (files[cout] ||= []).push({ r: arete.r, c: arete.c, cout });
+            }
+          }
+        }
+        return resultat;
       }
 
       function plannerMenaceExpulsion(playerId, r, c, budget) {
@@ -24560,7 +24718,19 @@
       const PLAN_CACHE_TERRAIN_MAX = 48;
       const plannerCacheTerrain = new Map();
 
+      /* L'empreinte parcourt toutes les cases de toutes les îles. Pendant un
+         calcul pur, le terrain ne change pas : on la garde sur la grille de
+         terre active plutôt que de la recalculer à chaque consultation. */
       function plannerEmpreinteTerrain() {
+        const grille = grilleTerreActive;
+        if (grille !== null && grille.etat === state) {
+          if (grille.empreinte === undefined) grille.empreinte = plannerCalculerEmpreinteTerrain();
+          return grille.empreinte;
+        }
+        return plannerCalculerEmpreinteTerrain();
+      }
+
+      function plannerCalculerEmpreinteTerrain() {
         let h = (state.islands || []).length * 1000003;
         for (const ile of state.islands || []) {
           for (const [r, c] of ile.cells) {
@@ -24759,7 +24929,12 @@
           Math.abs(g.r - r) + Math.abs(g.c - c) === 1 && (!filtre || filtre(g))) || null;
       }
 
+      /* L'évaluation ne modifie rien : elle profite de la grille de terre. */
       function evaluateStrategicState(playerId) {
+        return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+      }
+
+      function evaluerEtatStrategique(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
         const adverse = plannerAdversaire(playerId);
@@ -24924,15 +25099,6 @@
         let blocageTotal = 0;
         for (const g of miens) {
           let u = 0;
-          /* Le blocage est tenu HORS de la pondération par survivabilité qui
-             suit. Occuper une case de validation interdit le point dès
-             maintenant, même si l adversaire éjecte ensuite le gardien — et
-             l en chasser lui coûte une action. Pondérer ce terme par la
-             fragilité revenait à renoncer au blocage précisément là où il est
-             le plus utile : seul, en zone adverse. */
-          if (adverse && isCrownValidationCell(adverse, g.r, g.c)) {
-            blocageTotal += PLAN_POIDS.blocageValidation * menaceReelle;
-          }
           if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)) {
             u += PLAN_POIDS.utiliteRamassage;
           }
@@ -24956,6 +25122,29 @@
              poussée renvoie aussitôt. */
           u *= plannerMenaceExpulsion(playerId, g.r, g.c) ? 0.35 : 1;
           utiliteTotale += u;
+        }
+        /* Le blocage est tenu HORS de la pondération par survivabilité.
+           Occuper une case de validation interdit le point dès maintenant,
+           même si l adversaire éjecte ensuite le gardien — et l en chasser lui
+           coûte une action. Pondérer ce terme par la fragilité revenait à
+           renoncer au blocage précisément là où il est le plus utile : seul,
+           en zone adverse.
+
+           Il se compte PAR VILLAGE, pas par gardien. Un seul gardien
+           adverse dans les trois cases d'un village y interdit la validation :
+           un deuxième n'ajoute qu'une réserve contre l'expulsion, un troisième
+           rien. Compté par gardien, le terme payait chaque occupant plein
+           tarif — observé en self-play : cinq gardiens sur six campaient dans
+           les villages adverses, les deux camps se neutralisaient et la partie
+           s'arrêtait sur 0-0. */
+        if (adverse) {
+          for (const village of villagesForPlayer(adverse)) {
+            const cases = cornerCrownCellsForVillage(village);
+            const occupants = miens.filter(g => cases.some(([r, c]) => r === g.r && c === g.c)).length;
+            if (!occupants) continue;
+            blocageTotal += PLAN_POIDS.blocageValidation * menaceReelle
+              * (occupants > 1 ? 1 + PLAN_POIDS.blocageRedondance : 1);
+          }
         }
         ajouter("utiliteGardiens", utiliteTotale, `${miens.length} gardien(s)`);
         ajouter("blocageValidation", blocageTotal, `menace ${menaceReelle}`);
@@ -25506,7 +25695,7 @@
                 const rot = calculateIslandRotationAroundPivot(ileClone, pr, pc, direction, tours);
                 if (!rot?.valid) return null;
                 applyMagicRotationCore(ile.id, rot);
-                return mesurer();
+                return avecGrilleTerre(mesurer);
               });
               if (!impact) continue;
 
@@ -25638,7 +25827,7 @@
             const resultat = applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId,
               pose.relCells, pose.anchor, spawn);
             if (!resultat || !resultat.gardienId) return true;
-            return plannerMenaceExpulsion(playerId, spawn[0], spawn[1]);
+            return avecGrilleTerre(() => plannerMenaceExpulsion(playerId, spawn[0], spawn[1]));
           });
           if (!expose) return spawn;
         }
@@ -25675,8 +25864,8 @@
           const spawn = [...pose.cells].sort((a, b) => Number(frontier.has(key(...a))) - Number(frontier.has(key(...b))))[0];
           const nouvelles = withSimulatedState(cloneStateForSimulation(), () => {
             applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor, spawn);
-            return gardiens.flatMap((g, i) => [...movementRange(characterById(g.id), budget)]
-              .filter(k => sorties.has(k) && !portees[i].has(k)).map(k => `${g.id}:${k}`));
+            return avecGrilleTerre(() => gardiens.flatMap((g, i) => [...movementRange(characterById(g.id), budget)]
+              .filter(k => sorties.has(k) && !portees[i].has(k)).map(k => `${g.id}:${k}`)));
           });
           if (!nouvelles.some(k => !sortiesVues.has(k))) continue;
           nouvelles.forEach(k => sortiesVues.add(k));
@@ -26102,6 +26291,11 @@
           plan: [],
           decisions: 0
         };
+        // Pose levée faute de place : s'arrêter est alors permis d'emblée.
+        if (!racine.etat.islandPlacedThisTurn
+          && withSimulatedState(racine.etat, () => poseImpossiblePour(playerId))) {
+          racine.etat.islandPlacedThisTurn = true;
+        }
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
         racine.terminal = racine.etat.islandPlacedThisTurn;
         racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
@@ -26151,7 +26345,9 @@
             if (performance.now() - debut > budget.tempsMaxMs) break;
             if (etatsExplores > budget.etatsMax) break;
 
-            const actions = withSimulatedState(noeud.etat, () => {
+            // Les générateurs ne modifient pas l'état du nœud : ils simulent
+            // sur des clones. Ils profitent donc de la grille de terre.
+            const actions = withSimulatedState(noeud.etat, () => avecGrilleTerre(() => {
               const gratuites = plannerTransitionsGratuites(playerId);
               const payantes = noeud.decisions >= budget.decisionsMax ? [] : [
                 ...plannerCandidatsMove(playerId),
@@ -26160,7 +26356,7 @@
                 ...plannerCandidatsPose(playerId)
               ];
               return [...gratuites, ...payantes];
-            });
+            }));
             candidatsGeneres += actions.length;
 
             for (const action of actions) {
@@ -26342,7 +26538,7 @@
         entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
           id: "plausible-" + state.turn + "-" + i, action, used: false
         }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";
@@ -41962,7 +42158,7 @@
 
         entrant.hand = [];
         drawCards(entrant, 5);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";
@@ -42214,9 +42410,10 @@
          défaut) : c'est la force qu'affronte un joueur humain qu'on mesure.
          Chaque build joue ses tours ; `scripts/selfplay-rapide.js` transporte
          l'état de l'un à l'autre. */
-      function selfplayTourIsole(json, { graine = null, budget } = {}) {
+      function selfplayTourIsole(json, { graine = null, budget, poids = null } = {}) {
         const clone = JSON.parse(json);
         if (graine !== null) setTestRandomSeed(graine);
+        const memoire = selfplayAppliquerPoids(poids);
         try {
           return withSimulatedState(clone, () => {
             const debut = performance.now();
@@ -42229,6 +42426,7 @@
             };
           });
         } finally {
+          selfplayAppliquerPoids(memoire);
           if (graine !== null) setTestRandomSeed(null);
         }
       }
@@ -42256,7 +42454,54 @@
         }
       }
 
+      /* Ce que le cerveau voit sur un instantané, sans rien jouer : plan retenu,
+         finalistes, riposte, et décomposition de la note de départ et d'arrivée.
+         L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
+         position tirée d'un self-play. */
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false } = {}) {
+        const clone = JSON.parse(json);
+        setTestRandomSeed(graine);
+        const autopsieAvant = plannerAutopsieActive();
+        try {
+          return withSimulatedState(clone, () => {
+            const joueur = state.currentPlayer;
+            const depart = evaluerAvecDetail(joueur);
+            if (chronos) plannerActiverAutopsie(true);
+            const rapport = plannerChercherPlanRobuste(joueur, budget);
+            plannerActiverAutopsie(autopsieAvant);
+            const decrire = plan => plan.map(a => {
+              const { type, ...reste } = a;
+              return type + " " + JSON.stringify(reste).slice(0, 120);
+            });
+            const arrivee = withSimulatedState(structuredClone(clone), () => {
+              for (const action of rapport.plan) plannerAppliquerAction(action);
+              return evaluerAvecDetail(joueur);
+            });
+            return {
+              joueur,
+              plan: decrire(rapport.plan),
+              noteDepart: depart,
+              noteArrivee: arrivee,
+              etatsExplores: rapport.etatsExplores,
+              profondeur: rapport.profondeurAtteinte,
+              dureeMs: rapport.dureeTotaleMs ?? rapport.dureeMs,
+              anticipation: rapport.anticipation,
+              // Coût de chaque générateur à la racine (sous `chronos` seulement).
+              chronos: rapport.releveCandidats ? rapport.releveCandidats.chronos : null,
+              candidats: rapport.releveCandidats ? rapport.releveCandidats.length : null,
+              finalistes: (rapport.finalistes || []).slice(0, 8).map(n => ({
+                note: Math.round(n.note), plan: decrire(n.plan)
+              }))
+            };
+          });
+        } finally {
+          plannerActiverAutopsie(autopsieAvant);
+          setTestRandomSeed(null);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
+        analyser: selfplayAnalyser,
         fidelitePartie: benchFidelitePartie,
         empreintePlateau,
         partie: selfplayPartie,

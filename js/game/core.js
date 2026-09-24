@@ -1348,7 +1348,62 @@
        * Seule la case Château est déjà praticable. Les deux autres cases
        * restent constructibles et deviennent du terrain après la pose d'une île.
        */
-      function isLand(r, c) { return !!villageAt(r, c) || isSanctuary(r, c) || !!islandAt(r, c); }
+      function isLand(r, c) {
+        const grille = grilleTerreActive;
+        if (grille !== null && grille.etat === state) {
+          return r >= 0 && c >= 0 && r < grille.taille && c < grille.taille
+            && grille.cases[r * grille.taille + c] === 1;
+        }
+        return !!villageAt(r, c) || isSanctuary(r, c) || !!islandAt(r, c);
+      }
+
+      /* GRILLE DE TERRE, le temps d'un calcul qui ne touche pas au terrain.
+
+         isLand() parcourt toutes les îles et toutes leurs cases. C'est sans
+         importance pour un clic, mais l'évaluateur de l'IA l'appelle des
+         milliers de fois par position (plus courts chemins, portées adverses).
+         Mesuré en fin de partie : une évaluation coûtait 25 ms, dont 80 % dans
+         islandAt, et le planner Expert n'examinait plus qu'une vingtaine
+         d'états en 500 ms — il rendait un plan vide et jouait au hasard de la
+         logique de repli.
+
+         La grille ne vaut que pour l'état qui l'a construite (withSimulatedState
+         change `state`, la grille est alors ignorée) et que pendant `fn` :
+         n'y appeler que des calculs PURS, jamais une action qui modifie les
+         îles. Hors de ce cadre, isLand() reste le calcul d'origine. */
+      let grilleTerreActive = null;
+
+      function construireGrilleTerre() {
+        const taille = GRID;
+        const cases = new Uint8Array(taille * taille);
+        const marquer = (r, c) => {
+          if (r >= 0 && c >= 0 && r < taille && c < taille) cases[r * taille + c] = 1;
+        };
+        for (const ile of state.islands || []) {
+          for (const [r, c] of ile.cells) marquer(r, c);
+        }
+        for (const joueur of state.players || []) {
+          for (const village of villagesForPlayer(joueur)) marquer(village.r, village.c);
+        }
+        // isSanctuary peut être enveloppée (énigmes sans sanctuaire) : on
+        // l'interroge plutôt que de recopier sa forme.
+        for (let r = 0; r < taille; r++) {
+          for (let c = 0; c < taille; c++) {
+            if (isSanctuary(r, c)) marquer(r, c);
+          }
+        }
+        return { etat: state, taille, cases };
+      }
+
+      function avecGrilleTerre(fn) {
+        const precedente = grilleTerreActive;
+        if (precedente === null || precedente.etat !== state) grilleTerreActive = construireGrilleTerre();
+        try {
+          return fn();
+        } finally {
+          grilleTerreActive = precedente;
+        }
+      }
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
