@@ -599,52 +599,64 @@
 
          On raisonne sur le PLATEAU, pas sur les stocks : « il n'y a plus de
          place » veut dire qu'aucune forme du jeu ne tient nulle part, quel que
-         soit ce qu'il reste en réserve. Un stock épuisé rend seulement la pose
-         facultative — c'est une autre règle, déjà en vigueur.
+         soit ce qu'il reste en réserve. Un stock épuisé — ou dont aucune forme
+         restante ne tient plus — rend seulement la pose facultative pour ce
+         joueur : voir poseImpossiblePour.
       ================================================================== */
       function plateauSansPlace() {
         if (!state) return false;
-        return !Object.values(SHAPES).some(formeTientQuelquePart);
+        // Une seule forme qui tient suffit à prouver que la partie continue.
+        return !Object.keys(SHAPES).some(formeTientSurPlateau);
       }
 
-      /** Une forme tient-elle quelque part, dans l'une de ses rotations ? */
-      function formeTientQuelquePart(shape) {
-        let rotated = normalizeShape(shape.cells);
+      /** Vrai si la forme tient quelque part sur les cases libres, dans l'une
+       *  de ses rotations — et de ses miroirs pour une forme retournable, comme
+       *  le permet la pose humaine (flipSelectedIsland). */
+      function formeTientSurPlateau(shapeKey) {
+        const shape = SHAPES[shapeKey];
+        if (!shape) return false;
+        const depart = normalizeShape(shape.cells);
+        const orientations = shape.flippable
+          ? [depart, normalizeShape(depart.map(([r, c]) => [r, -c]))]
+          : [depart];
         const vues = new Set();
-        for (let rotation = 0; rotation < 4; rotation++) {
-          const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
-          if (!vues.has(signature)) {
-            vues.add(signature);
-            const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
-            const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
-            for (let r = 0; r <= GRID - hauteur; r++) {
-              for (let c = 0; c <= GRID - largeur; c++) {
-                // Une seule place suffit.
-                if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return true;
+        for (let rotated of orientations) {
+          for (let rotation = 0; rotation < 4; rotation++) {
+            const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
+            if (!vues.has(signature)) {
+              vues.add(signature);
+              const hauteur = Math.max(...rotated.map(([r]) => r)) + 1;
+              const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
+              for (let r = 0; r <= GRID - hauteur; r++) {
+                for (let c = 0; c <= GRID - largeur; c++) {
+                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return true;
+                }
               }
             }
+            rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
           }
-          rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
         }
         return false;
       }
 
-      /* POSE LEVÉE FAUTE DE PLACE. Le plateau peut encore accueillir une forme
-         alors qu'aucune de celles qui restent dans le STOCK d'un joueur n'y
-         tient. La pose obligatoire est alors levée : c'est ce que fait
-         createAutomaticIslandAndSpawn, qui ne trouve rien et marque la pose
-         comme faite.
-
-         Le planner Expert l'ignorait. Il n'acceptait comme fin de tour qu'un
-         état où l'île était posée : faute d'en trouver, il rendait un plan vide
-         et la main passait à la logique historique — pour tout le reste de la
-         partie, puisque le stock ne se reconstitue pas. Mesuré en self-play :
-         à partir du trentième tour environ, plus aucune décision Expert. */
+      /** Pose FACULTATIVE pour ce joueur : aucune forme qui lui reste en stock
+       *  (shapeLimitPerOwner) ne tient plus sur le plateau, alors que d'autres
+       *  formes y tiendraient encore — sinon plateauSansPlace aurait déjà
+       *  terminé la partie. Sans cette levée, un joueur humain restait bloqué :
+       *  « Fin du tour » exigeait une pose que plus rien ne permettait, et seul
+       *  le minuteur de tour débloquait la situation.
+       *
+       *  Le planner Expert l'ignorait aussi : il n'acceptait comme fin de tour
+       *  qu'un état où l'île était posée, rendait un plan vide et laissait la
+       *  main à la logique historique pour tout le reste de la partie. La
+       *  recherche l'appelle souvent : grille de terre (avecGrilleTerre). */
       function poseImpossiblePour(playerId) {
         if (!state) return false;
         const limite = shapeLimitPerOwner();
-        return avecGrilleTerre(() => !Object.entries(SHAPES).some(([forme, shape]) =>
-          (!limite || shapeUsageCountForOwner(playerId, forme) < limite) && formeTientQuelquePart(shape)));
+        return avecGrilleTerre(() => !Object.keys(SHAPES).some(shapeKey =>
+          (!limite || shapeUsageCountForOwner(playerId, shapeKey) < limite)
+          && formeTientSurPlateau(shapeKey)
+        ));
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */

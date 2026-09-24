@@ -3694,10 +3694,19 @@
           // continuerait à spammer sa forme préférée sans restriction.
           const limiteForme = shapeLimitPerOwner();
           if (limiteForme && shapeUsageCountForOwner(playerId, shapeKey) >= limiteForme) return;
-          let rotated = normalizeShape(shape.cells);
+          /* Mêmes orientations que la pose humaine : rotations, et miroir
+             d'une forme retournable (voir formeTientSurPlateau). Sans le
+             miroir, une pose légale pouvait rester la seule possible sans que
+             l'IA la voie jamais. */
+          const depart = normalizeShape(shape.cells);
+          const orientations = shape.flippable
+            ? [depart, normalizeShape(depart.map(([r, c]) => [r, -c]))]
+            : [depart];
           const seen = new Set();
+          let rotated = depart;
 
-          for (let rotation = 0; rotation < 4; rotation++) {
+          for (let orientation = 0; orientation < orientations.length * 4; orientation++) {
+            if (orientation % 4 === 0) rotated = orientations[orientation / 4];
             const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
 
             if (!seen.has(signature)) {
