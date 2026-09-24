@@ -24376,6 +24376,27 @@
            quatre. C'est ce que la proximité linéaire d'avant ne savait pas
            dire. */
         couronneParDistance: [2600, 2100, 1700, 1150, 700, 400, 200],
+        /* Au-delà de six cases, la table tombait à ZÉRO : une couronne au
+           milieu du plateau ne valait rien pour personne, et la rapprocher
+           de mon village — donc l'éloigner du sien — ne rapportait rien. Or
+           c'est doublement productif, même sans gardien pour la porter : un
+           gardien à venir la ramassera. Un dégradé faible prolonge donc la
+           table jusqu'au bord du plateau. */
+        couronneLointaine: [130, 80, 50, 30, 15],
+        /* Une couronne qu'aucune route terrestre ne relie au village n'est pas
+           perdue : une pose ou une rotation peut l'y rattacher, un gardien
+           invoqué sur place peut la reprendre. Elle vaut la moitié d'une
+           couronne à la même distance à vol d'oiseau, plus deux cases. */
+        couronneIsoleeFacteur: 0.5,
+        // Voir « QUI JOUE ENSUITE » dans l'évaluateur (0 = ancien calcul).
+        traitPerspective: 1,
+        /* Force de poussée maximale prise en compte pour juger un gardien
+           éjectable (plannerVideAPortee). 1 = seul le vide juste derrière. */
+        pousseeLongue: 2,
+        // Gravité d'une expulsion selon la force requise (1, 2, 3+).
+        graviteParForce: [1, 0.75, 0.6],
+        // Intention et pré-classement des poussées de couronne vers mon village.
+        pousseeCouronne: 1,
         couronnePortee: 75,
         /* Porteur sur une case de validation libre : le point tombera au
            début de son prochain tour. Voir l'évaluateur. */
@@ -24395,6 +24416,8 @@
         // Relais : environ 300 par action réellement économisée.
         relaisParAction: 300,
         relaisMaxParCouronne: 1000,
+        // Passe par une case commune : part du gain comptée (voir le relais).
+        relaisADistance: 0.5,
 
         /* Exposition du porteur, jugée par la position où la couronne
            RESTERAIT. Les règles la font tomber sur la dernière case valide. */
@@ -24405,6 +24428,9 @@
 
         // Gardien : présence faible, utilité positionnelle décisive.
         gardien: 200,
+        // Valeur du 1er, 2e… gardien ; au-delà de la table, `gardien`.
+        gardienMarginal: [900, 600, 400, 300, 250],
+        gardienExpose: 300,
         utiliteGardienMax: 1800,
         utiliteRamassage: 300,
         utiliteRelais: 400,
@@ -24669,9 +24695,63 @@
         return resultat;
       }
 
+      /* Une poussée de force N déplace TOUTE la ligne contiguë de N cases
+         (règle V67) : un gardien tombe dès que le vide est à portée de la
+         force disponible, pas seulement quand il est juste derrière lui.
+         L'ancien test — « la case derrière la victime est-elle du vide ? » —
+         ignorait donc tout gardien posté à deux ou trois cases du bord, qu'un
+         adversaire muni de deux ou trois poussées éjecte pourtant d'un coup.
+         C'est ce qui laissait l'IA garer ses gardiens là où on les éjecte.
+
+         On suit la ligne derrière la victime : des pièces collées à elle
+         forment un bloc qui avance avec elle ; une pièce séparée par une case
+         libre arrête le bloc (voir resoudrePousseeBloc). Une couronne au sol
+         dans la ligne est traitée comme un arrêt — elle survole le vide au
+         lieu d'y tomber, cas trop rare pour être modélisé ici. */
+      /** Force de poussée qui fait tomber la victime dans cette direction, ou
+       *  0 si aucune force disponible n'y suffit. */
+      function plannerVideAPortee(r, c, dr, dc, force) {
+        const portee = Math.min(force, Math.max(1, PLAN_POIDS.pousseeLongue || 1));
+        let contigu = true;
+        for (let pas = 1; pas <= portee; pas++) {
+          const vr = r + dr * pas, vc = c + dc * pas;
+          if (!inside(vr, vc) || !isLand(vr, vc)) return pas;
+          const occupe = characterAt(vr, vc) || looseArtifactAt(vr, vc);
+          if (occupe) {
+            if (!contigu || !characterAt(vr, vc)) return 0;
+          } else {
+            contigu = false;
+          }
+        }
+        return 0;
+      }
+
       function plannerMenaceExpulsion(playerId, r, c, budget) {
+        return plannerForceExpulsion(playerId, r, c, budget) > 0;
+      }
+
+      /* GRAVITÉ d'une menace d'expulsion : 1 pour une simple poussée, moins
+         quand il faut en dépenser plusieurs. Une case qui exige deux ou trois
+         cartes PUSH coûte bien plus cher à l'adversaire qu'une case au bord
+         du vide — sans cette gradation, dès que la réserve adverse permettait
+         une poussée longue, toutes les cases d'une petite île se valaient et
+         l'IA ne cherchait plus le refuge le moins exposé.
+
+         Gradation DOUCE, mesurée : [1 ; 0,5 ; 0,35] rendait l'IA imprudente
+         (4 victoires, 15 défaites contre aucune gradation), [1 ; 0,75 ; 0,6]
+         la renforce (16 victoires, 7 défaites). */
+      function plannerGraviteExpulsion(playerId, r, c) {
+        const force = plannerForceExpulsion(playerId, r, c);
+        if (!force) return 0;
+        const table = PLAN_POIDS.graviteParForce || [1];
+        return table[Math.min(force, table.length) - 1];
+      }
+
+      /** Plus petite force de poussée avec laquelle un gardien adverse peut
+       *  expulser ce qui se tient sur (r, c) à son prochain tour ; 0 si aucune. */
+      function plannerForceExpulsion(playerId, r, c, budget) {
         const adverse = plannerAdversaire(playerId);
-        if (!adverse) return false;
+        if (!adverse) return 0;
 
         const reserve = state.players[adverse.id] && state.players[adverse.id].stash || {};
         const plausibleMove = PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
@@ -24680,15 +24760,22 @@
           ? budget.move : (reserve.MOVE || 0) + plausibleMove;
         const budgetPush = budget && budget.push !== undefined
           ? budget.push : (reserve.PUSH || 0) + plausiblePush;
-        if (budgetPush < 1) return false;
+        if (budgetPush < 1) return 0;
+        /* Une poussée longue exige plusieurs cartes PUSH. On ne la prête à
+           l'adversaire que s'il les a en RÉSERVE — information visible. La
+           main plausible ne lui en garantit aucune : lui supposer deux
+           poussées rendait éjectable toute case d'une île de trois de large,
+           et l'IA ne distinguait plus un refuge d'une case exposée à une
+           simple poussée. */
+        const forceCertaine = Math.min(budgetPush, Math.max(1, reserve.PUSH || 0));
         // Fournies par l'appelant quand il enchaîne beaucoup de cases,
         // calculées ici sinon. Dans les deux cas, une seule fois.
         const portees = (budget && budget.portees) || plannerPorteesAdverses(playerId, budgetMove);
 
+        let meilleure = 0;
         for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-          // La victime ne tombe que si la case DERRIÈRE elle n'est pas du terrain.
-          const derriereR = r + dr, derriereC = c + dc;
-          if (inside(derriereR, derriereC) && isLand(derriereR, derriereC)) continue;
+          const force = plannerVideAPortee(r, c, dr, dc, forceCertaine);
+          if (!force || (meilleure && force >= meilleure)) continue;
           // Case d'où pousser, du côté opposé au vide.
           const posteR = r - dr, posteC = c - dc;
           if (!inside(posteR, posteC) || !isLand(posteR, posteC)) continue;
@@ -24696,16 +24783,14 @@
           const occupant = characterAt(posteR, posteC);
           if (occupant) {
             // Déjà en place : menace immédiate.
-            if (occupant.player !== playerId) return true;
+            if (occupant.player !== playerId) meilleure = force;
             continue;
           }
           // Sinon, un gardien adverse peut-il rejoindre ce poste à temps ?
           const postePorte = key(posteR, posteC);
-          for (const portee of portees) {
-            if (portee.has(postePorte)) return true;
-          }
+          if (portees.some(portee => portee.has(postePorte))) meilleure = force;
         }
-        return false;
+        return meilleure;
       }
 
       /* ---------------------------------------------------------------------
@@ -24928,9 +25013,14 @@
       /** Valeur d'une couronne selon sa distance au village. */
       function valeurCouronneADistance(d) {
         const table = PLAN_POIDS.couronneParDistance;
-        if (!Number.isFinite(d) || d < 0) return 0;
+        if (!Number.isFinite(d) || d < 0 || d >= 99) return 0;
+        // Repli de plannerLireChamp : 30 + distance à vol d'oiseau, pour une
+        // case qu'aucune route terrestre ne relie aux cibles.
+        if (d >= 30) return PLAN_POIDS.couronneIsoleeFacteur * valeurCouronneADistance(d - 30 + 2);
         const rang = Math.round(d);
-        return rang < table.length ? table[rang] : 0;
+        if (rang < table.length) return table[rang];
+        const loin = PLAN_POIDS.couronneLointaine || [];
+        return rang - table.length < loin.length ? loin[rang - table.length] : 0;
       }
 
       /* Urgence de fin de partie. Une menace n'est pas une défaite : ces
@@ -25012,6 +25102,18 @@
            gardien, une couronne gisait dans sa zone, et l'urgence de défense
            (−20 000) clouait mon dernier gardien sur son village au lieu de
            l'envoyer marquer le point gagnant. Partie nulle au tour 121. */
+        /* QUI JOUE ENSUITE. Les menaces d'expulsion sur mes gardiens ne
+           pèsent que si l'adversaire a le trait. En fin de MON tour, c'est
+           lui : un porteur expulsable est en danger. Mais après sa riposte
+           simulée (state.currentPlayer = lui), c'est MOI qui rejoue : je peux
+           mettre ce porteur à l'abri, et il valide avant d'avoir à bouger.
+           Compter cette menace-là, c'était faire payer à un plan une poussée
+           que l'adversaire n'a PAS jouée. Observé sur le puzzle 07 : une
+           transmission gratuite, meilleur plan de fin de tour, était rejetée
+           parce qu'une simple POSE adverse faisait apparaître un gardien à
+           côté du nouveau porteur — 1 543 points de « menace » sans aucune
+           poussée. */
+        const lAdversaireJoue = !PLAN_POIDS.traitPerspective || state.currentPlayer === playerId;
         const marqueMoi = plannerPeutEncoreMarquer(playerId);
         const marqueLui = !!adverse && plannerPeutEncoreMarquer(adverse.id);
         const distMoi = (r, c) => marqueMoi ? plannerLireChamp(terrain.champMoi, casesMoi, r, c) : Infinity;
@@ -25048,11 +25150,26 @@
           /* RELAIS : ce qu'on économise réellement pour améliorer la position.
              Un gardien adjacent agit GRATUITEMENT ; s'il est mieux placé que le
              porteur actuel, la couronne progresse sans dépenser de carte. */
-          const aidant = plannerGardienAdjacent(playerId, r, c,
-            g => !porteur || g.id !== porteur.id);
-          if (aidant) {
+          /* On retient le MEILLEUR relais, pas le premier trouvé. Et la passe
+             par une case commune compte aussi : le porteur dépose sur une case
+             voisine des deux, l'allié ramasse — la couronne avance de deux
+             cases sans qu'aucun gardien ne bouge ni ne dépense de carte, et
+             chacun reste là où il sert. Seule l'adjacence était récompensée :
+             préparer une telle passe ne rapportait rien. */
+          const aidants = plannerGardiensDe(playerId).filter(g =>
+            (!porteur || g.id !== porteur.id) && !characterCarriesCrown(g.id)
+            && (Math.abs(g.r - r) + Math.abs(g.c - c) === 1
+              || (PLAN_POIDS.relaisADistance && porteur && porteur.player === playerId
+                && plannerCaseRelaisGratuit(porteur, g))));
+          if (aidants.length) {
             exploitablesMoi++;
-            const gain = dm - distMoi(aidant.r, aidant.c);
+            let aidant = aidants[0], gain = -Infinity;
+            for (const g of aidants) {
+              // Une passe par case commune reste un potentiel : escomptée.
+              const facteur = Math.abs(g.r - r) + Math.abs(g.c - c) === 1 ? 1 : PLAN_POIDS.relaisADistance;
+              const gg = (dm - distMoi(g.r, g.c)) * facteur;
+              if (gg > gain) { gain = gg; aidant = g; }
+            }
             if (gain > 0) {
               ajouter("relaisUtile",
                 Math.min(gain * PLAN_POIDS.relaisParAction, PLAN_POIDS.relaisMaxParCouronne),
@@ -25087,7 +25204,7 @@
             && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
             if (porteur.player === playerId) {
               ajouter("validationPrete", PLAN_POIDS.validationPrete
-                * (plannerMenaceExpulsion(playerId, r, c) ? 0.35 : 1), porteur.id);
+                * (lAdversaireJoue ? 1 - 0.65 * plannerGraviteExpulsion(playerId, r, c) : 1), porteur.id);
             } else {
               ajouter("validationPreteAdverse", -PLAN_POIDS.validationPrete, porteur.id);
             }
@@ -25095,13 +25212,16 @@
 
           /* EXPOSITION DU PORTEUR, jugée par la position où la couronne
              RESTERAIT : les règles la font tomber sur sa case actuelle. */
-          if (porteur && porteur.player === playerId && plannerMenaceExpulsion(playerId, r, c)) {
+          const graviteCouronne = porteur && porteur.player === playerId && lAdversaireJoue
+            ? plannerGraviteExpulsion(playerId, r, c) : 0;
+          if (graviteCouronne > 0) {
             let cout;
             if (isCrownValidationCell(moi, r, c) || dm <= 1) cout = PLAN_POIDS.exposeCouronneSure;
             else if (dm <= dl) cout = PLAN_POIDS.exposeCouronneContestee;
             else if (dl <= 2) cout = PLAN_POIDS.exposeCatastrophe;
             else cout = PLAN_POIDS.exposeCouronneFavorableAdverse;
-            ajouter("porteurExpose", -cout, `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
+            ajouter("porteurExpose", -cout * graviteCouronne,
+              `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
           }
         }
 
@@ -25156,7 +25276,20 @@
            pondéré par la capacité à SURVIVRE là où ils sont. */
         const miens = plannerGardiensDe(playerId);
         const siens = adverse ? plannerGardiensDe(adverse.id) : [];
-        ajouter("gardiensPresents", (miens.length - siens.length) * PLAN_POIDS.gardien,
+        /* VALEUR MARGINALE. Un premier ou un deuxième gardien vaut bien plus
+           qu'un sixième : c'est lui qui porte, relaie, bloque — seul, il fait
+           tout. À valeur fixe (200), perdre son unique gardien ne coûtait
+           presque rien, et l'ouverture tournait à l'échange : chaque camp
+           faisait apparaître un gardien sur la croix du sanctuaire, entourée
+           de vide, et l'autre l'éjectait au tour suivant — observé à chaque
+           tour de T2 à T5. */
+        const valeurEquipe = n => {
+          const table = PLAN_POIDS.gardienMarginal || [];
+          let total = 0;
+          for (let i = 0; i < n; i++) total += i < table.length ? table[i] : PLAN_POIDS.gardien;
+          return total;
+        };
+        ajouter("gardiensPresents", valeurEquipe(miens.length) - valeurEquipe(siens.length),
           `${miens.length} contre ${siens.length}`);
 
         const couronnesLibres = activeArtifacts().filter(a => !a.carrierId && Number.isFinite(a.r));
@@ -25166,6 +25299,7 @@
 
         let utiliteTotale = 0;
         let blocageTotal = 0;
+        let gardiensExposes = 0;
         for (const g of miens) {
           let u = 0;
           if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)) {
@@ -25189,9 +25323,18 @@
           /* SURVIVABILITÉ : elle ne pondère que l'utilité, jamais la présence.
              Un infiltré qui tient vraiment vaut bien plus qu'un infiltré qu'une
              poussée renvoie aussitôt. */
-          u *= plannerMenaceExpulsion(playerId, g.r, g.c) ? 0.35 : 1;
+          const gravite = lAdversaireJoue ? plannerGraviteExpulsion(playerId, g.r, g.c) : 0;
+          u *= 1 - 0.65 * gravite;
           utiliteTotale += u;
+          /* Un gardien éjectable coûte en soi, pas seulement son utilité — qui
+             est souvent nulle : un gardien sans rôle garé au bord du vide ne
+             coûtait RIEN. Or le perdre coûte une pose et un tempo pour le
+             remplacer, et l'adversaire l'éjecte pour une seule carte. Le
+             porteur a déjà son propre terme (porteurExpose). */
+          if (!characterCarriesCrown(g.id)) gardiensExposes += gravite;
         }
+        ajouter("gardiensExposes", -gardiensExposes * PLAN_POIDS.gardienExpose,
+          `${gardiensExposes.toFixed(2)} gardien(s) éjectable(s), pondérés par la force requise`);
         /* Le blocage est tenu HORS de la pondération par survivabilité.
            Occuper une case de validation interdit le point dès maintenant,
            même si l adversaire éjecte ensuite le gardien — et l en chasser lui
@@ -25586,6 +25729,27 @@
           ajouter("poussee", postes);
         }
 
+        /* POUSSER UNE COURONNE vers mon village : se poster derrière elle, du
+           côté opposé. Une couronne poussée ne tombe jamais — elle survole le
+           vide — et le pousseur n'a pas à la porter : elle progresse sans
+           exposer de porteur, et le gardien reste placé où il sert. Sans cette
+           intention, une couronne n'était poussée que si un gardien se
+           trouvait déjà à côté, par hasard. */
+        if (PLAN_POIDS.pousseeCouronne && availableActionCount("PUSH", moi) > 0) {
+          const villages = crownValidationCellsForPlayer(moi);
+          const versVillage = (r, c) => Math.min(...villages.map(([vr, vc]) => Math.abs(vr - r) + Math.abs(vc - c)));
+          const postes = [];
+          for (const a of activeArtifacts()) {
+            if (a.carrierId !== null || !Number.isFinite(a.r)) continue;
+            for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+              if (versVillage(a.r + dr, a.c + dc) >= versVillage(a.r, a.c)) continue;
+              const poste = [a.r - dr, a.c - dc];
+              if (isLand(poste[0], poste[1])) postes.push(poste);
+            }
+          }
+          ajouter("pousseeCouronne", postes);
+        }
+
         /* SÉCURISER LE PORTEUR : s'éloigner de toute portée adverse. Le bonus
            de repli existant ne joue qu'à l'intérieur d'une autre intention, et
            pouvait donc ne jamais entrer dans ses places. */
@@ -25664,6 +25828,17 @@
               let indice = 10 - force;
               if (cible && characterCarriesCrown(cible.id)) indice += 70;
               if (couronne) indice += 40;
+              /* Le sens compte : une couronne poussée vers mon village vaut
+                 un coup, poussée vers le sien un cadeau. Distance à vol
+                 d'oiseau, la couronne survolant le vide. */
+              if (PLAN_POIDS.pousseeCouronne) {
+                const villages = crownValidationCellsForPlayer(state.players[playerId]);
+                const versVillage = (vr, vc) => Math.min(...villages.map(([a, b]) => Math.abs(a - vr) + Math.abs(b - vc)));
+                for (const mv of plan.mouvements) {
+                  if (mv.kind !== "crown") continue;
+                  indice += 15 * (versVillage(mv.from[0], mv.from[1]) - versVillage(mv.to[0], mv.to[1]));
+                }
+              }
               // Une poussée qui retire réellement un gardien vaut mieux qu'un
               // simple décalage : c'est le résultat qui le dit, pas la position.
               if (plan.chutes) indice += 90;
@@ -25929,7 +26104,10 @@
             .filter(e => isLand(e.r, e.c) && !characterAt(e.r, e.c))
             .map(e => key(e.r, e.c)).filter(k => portees.some(p => !p.has(k))));
           if (!sorties.size) continue;
-          if (essais++ >= plafonds().poseParIntention * 2) break;
+          /* Quatre essais par place : le miroir des formes retournables a
+             allongé la liste des poses, et deux essais par place s'épuisaient
+             sur des variantes avant d'atteindre une pose qui relie. */
+          if (essais++ >= plafonds().poseParIntention * 4) break;
           const spawn = [...pose.cells].sort((a, b) => Number(frontier.has(key(...a))) - Number(frontier.has(key(...b))))[0];
           const nouvelles = withSimulatedState(cloneStateForSimulation(), () => {
             applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor, spawn);
@@ -42527,10 +42705,11 @@
          finalistes, riposte, et décomposition de la note de départ et d'arrivée.
          L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
          position tirée d'un self-play. */
-      function selfplayAnalyser(json, { graine = 1, budget, chronos = false } = {}) {
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null } = {}) {
         const clone = JSON.parse(json);
         setTestRandomSeed(graine);
         const autopsieAvant = plannerAutopsieActive();
+        const poidsAvant = selfplayAppliquerPoids(poids);
         try {
           return withSimulatedState(clone, () => {
             const joueur = state.currentPlayer;
@@ -42564,6 +42743,7 @@
             };
           });
         } finally {
+          selfplayAppliquerPoids(poidsAvant);
           plannerActiverAutopsie(autopsieAvant);
           setTestRandomSeed(null);
         }

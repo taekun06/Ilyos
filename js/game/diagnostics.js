@@ -1607,10 +1607,11 @@
          finalistes, riposte, et décomposition de la note de départ et d'arrivée.
          L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
          position tirée d'un self-play. */
-      function selfplayAnalyser(json, { graine = 1, budget, chronos = false } = {}) {
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null } = {}) {
         const clone = JSON.parse(json);
         setTestRandomSeed(graine);
         const autopsieAvant = plannerAutopsieActive();
+        const poidsAvant = selfplayAppliquerPoids(poids);
         try {
           return withSimulatedState(clone, () => {
             const joueur = state.currentPlayer;
@@ -1644,6 +1645,7 @@
             };
           });
         } finally {
+          selfplayAppliquerPoids(poidsAvant);
           plannerActiverAutopsie(autopsieAvant);
           setTestRandomSeed(null);
         }

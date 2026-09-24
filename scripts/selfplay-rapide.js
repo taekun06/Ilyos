@@ -23,6 +23,7 @@ const PAIRES = Math.max(1, Math.ceil((Number(process.argv[2]) || 20) / 2));
 const GRAINE = Number(process.argv[3]) || 5000;
 const PARALLELE = Math.max(1, Number(process.argv[4]) || 2);
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 120;
+const TOURS_PERTES = 20;
 /* Budget de recherche propre à chaque camp (JSON, ex. '{"tempsMaxMs":1000}'),
    pour mesurer ce qu'apporte plus de réflexion dans un même build. */
 /* Poids de l'évaluateur propres à chaque camp (JSON, clés de PLAN_POIDS). */
@@ -51,6 +52,11 @@ async function ouvrir(navigateur, url) {
   await page.evaluate(() => {
     window.ILYOS_TEST.stopAutoplay?.();
     window.ILYOS_BENCH.reinitialiser();
+    /* Plus aucune image : la boucle de rendu 3D se reprogramme par
+       requestAnimationFrame, et une dizaine de pages qui dessinent en rendu
+       logiciel se disputaient le processeur au point de diviser la cadence
+       du banc par dix. Les tours simulés n'en ont aucun besoin. */
+    window.requestAnimationFrame = () => 0;
   });
   return page;
 }
@@ -60,13 +66,29 @@ async function jouerPartie(pages, depart, campA, graine) {
   let vainqueur = null;
   let tour = 0;
   const temps = { A: [], B: [] };
+  /* Gardiens PERDUS par camp (éjectés, pas partis valider une couronne),
+     en début de partie : c'est là qu'une perte coûte le plus cher. */
+  const pertes = { A: 0, B: 0 };
   for (let i = 0; i < TOURS_MAX; i++) {
-    const joueur = JSON.parse(etat).currentPlayer;
+    const avant = JSON.parse(etat);
+    const joueur = avant.currentPlayer;
     const qui = joueur === campA ? 'A' : 'B';
     const r = await pages[qui].evaluate(([json, g, budget, poids]) =>
       window.ILYOS_SELFPLAY.tour(json, { graine: g, budget, poids }),
       [etat, graine * 1000 + i, BUDGETS[qui], POIDS[qui]]);
     temps[qui].push(r.dureeMs);
+    const apres = JSON.parse(r.etat);
+    if (avant.turn <= TOURS_PERTES) {
+      // Par identifiant : une apparition dans le même tour ne masque pas une perte.
+      const restants = new Set(apres.characters.map(g => g.id));
+      const disparus = [0, 1].map(j => avant.characters
+        .filter(g => g.player === j && !restants.has(g.id)).length);
+      // Un gardien qui valide quitte aussi le jeu : on le retire du décompte.
+      const valides = [0, 1].map(j => (apres.players[j].score || 0) - (avant.players[j].score || 0));
+      const perdus = [0, 1].map(j => Math.max(0, disparus[j] - valides[j]));
+      pertes[campA === 0 ? 'A' : 'B'] += perdus[0];
+      pertes[campA === 1 ? 'A' : 'B'] += perdus[1];
+    }
     etat = r.etat;
     tour = r.tour;
     vainqueur = r.vainqueur;
@@ -77,7 +99,7 @@ async function jouerPartie(pages, depart, campA, graine) {
   if (vainqueur === null || vainqueur === undefined || vainqueur === -1 || typeof vainqueur !== 'number') {
     vainqueur = scores[0] === scores[1] ? null : (scores[0] > scores[1] ? 0 : 1);
   }
-  return { vainqueur, tour, scores, temps };
+  return { vainqueur, tour, scores, temps, pertes };
 }
 
 async function travailleur(navigateur, file, bilan, depart0) {
@@ -98,10 +120,13 @@ async function travailleur(navigateur, file, bilan, depart0) {
       else bilan.nul++;
       bilan.tours.push(r.tour);
       const moy = t => t.length ? Math.round(t.reduce((a, b) => a + b, 0) / t.length) : 0;
+      bilan.pertesA += r.pertes.A;
+      bilan.pertesB += r.pertes.B;
       bilan.msA.push(...r.temps.A);
       bilan.msB.push(...r.temps.B);
       console.log(`graine ${graine} A=J${campA} : ${issue} ${couronnesA}-${couronnesB} `
-        + `(tour ${r.tour}, ms/tour A ${moy(r.temps.A)} B ${moy(r.temps.B)})`);
+        + `(tour ${r.tour}, ms/tour A ${moy(r.temps.A)} B ${moy(r.temps.B)}, `
+        + `perdus<${TOURS_PERTES} A ${r.pertes.A} B ${r.pertes.B})`);
     }
   }
 }
@@ -109,7 +134,8 @@ async function travailleur(navigateur, file, bilan, depart0) {
 async function main() {
   const navigateur = await chromium.launch({ headless: true });
   const file = Array.from({ length: PAIRES }, (_, i) => GRAINE + i);
-  const bilan = { A: 0, B: 0, nul: 0, couronnesA: 0, couronnesB: 0, tours: [], msA: [], msB: [] };
+  const bilan = { A: 0, B: 0, nul: 0, couronnesA: 0, couronnesB: 0, pertesA: 0, pertesB: 0,
+    tours: [], msA: [], msB: [] };
   /* La position de départ vient toujours de la même page, pour que toutes les
      paires partent réellement du même plateau. */
   const reference = await ouvrir(navigateur, URL_A);
@@ -125,6 +151,7 @@ async function main() {
   console.log(`parties ${n} : A ${bilan.A}, B ${bilan.B}, nuls ${bilan.nul}`);
   console.log(`score A ${(100 * p).toFixed(1)} % ± ${(100 * ecart).toFixed(1)} (1σ)`);
   console.log(`couronnes A ${bilan.couronnesA}, B ${bilan.couronnesB}`);
+  console.log(`gardiens perdus avant le tour ${TOURS_PERTES} : A ${bilan.pertesA}, B ${bilan.pertesB}`);
   console.log(`tours moyens ${moy(bilan.tours)} ; ms/tour A ${moy(bilan.msA)} (p95 ${q(bilan.msA)}), B ${moy(bilan.msB)} (p95 ${q(bilan.msB)})`);
   await navigateur.close();
 }

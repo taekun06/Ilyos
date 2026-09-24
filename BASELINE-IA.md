@@ -833,3 +833,88 @@ Retiré.
 3 défaites, 3 nuls sur 11 parties. La plupart des tours s'arrêtent avant le
 budget (faisceau épuisé) ; le gain ne justifie pas un gel plus long de la page
 pendant le tour de l'IA.
+
+---
+
+# Ce que l'Expert sous-estimait : couronne au sol, passes, poussées, gardiens exposés
+
+Quatre observations de jeu du propriétaire, traduites en capacités puis
+mesurées une à une en self-play rapide (`selfplay-rapide.js`, budget réel,
+chaque changement contre la même version sans lui, via `ILYOS_POIDS_A/_B`).
+Le harnais compte désormais aussi les gardiens PERDUS (éjectés, pas partis
+valider) avant le tour 20, et coupe le rendu 3D de ses pages : une dizaine de
+pages en rendu logiciel divisaient sa cadence par dix.
+
+## Gardiens trop facilement éjectables
+
+**La menace ne voyait que le vide juste derrière.** Une poussée de force N
+déplace toute la ligne de N cases : un gardien à deux cases du bord s'éjecte
+avec deux poussées. `plannerForceExpulsion` suit la ligne derrière la victime
+(pièces collées = bloc, pièce séparée par une case libre = arrêt) et rend la
+force minimale. La poussée longue n'est prêtée à l'adversaire que s'il a les
+cartes en RÉSERVE (visible) : avec deux poussées supposées dans sa main, toute
+case d'une île de trois de large devenait éjectable et l'IA ne distinguait
+plus un refuge (A2 échouait ; la poussée longue seule : 10-15).
+
+**Gravité graduée.** Une case qui exige deux ou trois poussées est moins grave
+qu'une case au bord : `graviteParForce` [1 ; 0,75 ; 0,6]. Mesuré : [1 ; 0,5 ;
+0,35] → 4-15 (imprudent), [1 ; 0,75 ; 0,6] → 16-7, [1 ; 0,85 ; 0,75] → 7-10.
+
+**Un gardien exposé coûte en soi** (`gardienExpose` 300, pondéré par la gravité) :
+un gardien sans rôle garé au bord ne coûtait rien, seule son utilité — souvent
+nulle — était escomptée. Portée 2 + ce terme : 14-6-6.
+
+**Valeur marginale des gardiens** (`gardienMarginal` 900, 600, 400, 300, 250,
+puis 200). L'ouverture tournait à l'échange au sanctuaire : chaque camp faisait
+apparaître un gardien sur la croix centrale, entourée de vide, et l'autre
+l'éjectait au tour suivant (observé à chaque tour de T2 à T5). Perdre son
+unique gardien ne coûtait que 200. Mesuré : 13-9-4, gardiens perdus 63 contre 75.
+
+## Qui a le trait
+
+Après la riposte adverse simulée, c'est MOI qui rejoue : une menace d'expulsion
+sur mon porteur n'est plus un danger immédiat (je peux le déplacer, et il
+valide avant de bouger). L'évaluateur la comptait quand même : une simple POSE
+adverse faisant apparaître un gardien près du porteur « coûtait » 1 543 points
+sans aucune poussée, et la transmission gratuite du puzzle 07 était rejetée.
+Les menaces d'expulsion ne pèsent plus que si l'adversaire a le trait. Neutre
+en self-play (11-11-3), conservé : le puzzle 07 joue désormais la transmission.
+
+## Couronne au sol
+
+`couronneParDistance` tombait à zéro au-delà de six cases : au milieu du
+plateau, rapprocher une couronne de son village — donc l'éloigner du sien — ne
+rapportait rien. Prolongée (`couronneLointaine`), et une couronne qu'aucune
+route ne relie au village vaut la moitié de sa valeur à vol d'oiseau + 2
+(une pose ou un gardien invoqué la récupérera). Neutre en self-play (9-10-6).
+
+## Passes gratuites
+
+Le relais récompensé était le PREMIER gardien adjacent trouvé, et seulement
+adjacent. On retient le meilleur, et la passe par case commune (A dépose, B
+ramasse : deux cases gagnées sans qu'aucun gardien ne bouge) compte pour moitié
+(`relaisADistance` 0,5). Mesuré : à plein tarif 11-14-1 (les gardiens
+s'agglutinaient), à moitié 17-7-2.
+
+## Poussées de couronne
+
+Intention `pousseeCouronne` : se poster derrière une couronne libre pour la
+pousser vers son village (elle survole le vide, le pousseur n'a pas à la
+porter). Le pré-classement des poussées tient compte du sens où part la
+couronne.
+
+## Résultat
+
+Contre `main` (fin de la PR #121), 30 parties : **15 victoires, 8 défaites,
+7 nuls**, couronnes 58-46, gardiens perdus avant le tour 20 : **101 contre 133**.
+`bench-adverse` 12/12 (deux passages), `bench-ia` 14/17 : 09 passe désormais ;
+07 échoue encore au banc animé alors que l'analyse de la même position joue la
+transmission (deux plans de valeur proche, départagés par le temps de
+réflexion) ; 08 demande de porter une couronne que l'IA préfère laisser au sol
+près d'un gardien ; 13 inchangé. `verif-*` conformes, `verif-fidelite-partie`
+13/13.
+
+`verif-pose-tactique` échouait sur `main` depuis l'ajout du miroir du Serpent
+aux poses de l'IA (PR #121) : la liste des poses s'allongeait et la recherche
+de poses « de mobilité », plafonnée à deux essais par place, s'épuisait sur des
+variantes. Plafond porté à quatre essais.
