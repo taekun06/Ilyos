@@ -763,27 +763,61 @@ payait pourtant chaque occupant plein tarif. Observé : 4 à 5 gardiens sur 6
 campaient dans les villages adverses (+5 400 à +6 750 points), les deux camps se
 neutralisaient. Compté désormais par village, +25 % pour un second occupant.
 
+## Deux contresens de l'évaluateur, trouvés dans les parties Expert contre Expert
+
+Une fois l'Expert capable de réfléchir jusqu'au bout, ses parties contre
+lui-même s'éternisaient (tour 121, 2-1 ou 1-0). `analyser` sur les positions
+figées :
+
+**Une menace suppose un camp capable de marquer.** À 2-2, un camp n'avait plus
+aucun gardien ni aucune pose possible ; une couronne gisait dans sa zone.
+L'urgence de défense (−20 000) clouait le dernier gardien adverse sur son
+village au lieu de l'envoyer marquer le point gagnant. `plannerPeutEncoreMarquer`
+annule la valeur des couronnes, l'urgence et le blocage pour un camp qui ne
+pourra plus jamais porter de couronne.
+
+**Une couronne au sol ne marque pas.** Seul un PORTEUR sur une case de validation
+libre marque, au début de son tour. `positionCouronne` juge la couronne par sa
+position et ne faisait que 75 points d'écart entre « posée au sol dans ma zone »
+et « portée, prête à valider ». Observé : soixante tours à poser et reprendre
+deux couronnes dans sa propre zone sans les valider. Nouveau terme
+`validationPrete` (1 000, ×0,35 si le porteur est expulsable ; plein tarif
+en négatif pour un porteur adverse prêt, qui marquera avant que je rejoue).
+
 ## Mesures (self-play rapide, budget réel du jeu)
 
 | Comparaison | Parties | A | B | Nuls |
 |---|---|---|---|---|
 | perf + pose levée contre référence (arrêté) | 14 | 12 | 0 | 2 |
 | blocage par village contre par gardien | 20 | 7 | 5 | 8 |
-| **version livrée contre référence** | **30** | **28** | **0** | **2** |
+| perf + pose + blocage contre référence | 30 | 28 | 0 | 2 |
+| `validationPrete` contre sans | 24 | 12 | 8 | 4 |
+| **version livrée contre référence** | **24** | **24** | **0** | **0** |
 
-Version livrée contre référence : couronnes 75 à 1 ; temps par tour 971 ms
-(p95 1 111 ms) contre 2 165 ms (p95 7 840 ms).
+Version livrée contre référence : couronnes 72 à 0, parties de 33 tours en
+moyenne — toutes gagnées 3-0 avant l'épuisement des formes (vers le tour 36).
+L'écart ne tient donc pas à la fin de partie, où la référence rendait un plan
+vide (en self-play un plan vide ne fait RIEN, alors qu'en vraie partie la
+référence retombait sur la logique historique) : il est acquis en milieu de
+partie. Temps par tour 927 ms (p95 1 099 ms). Mesure précédente, sans les deux
+derniers termes : couronnes 75 à 1, référence à 2 165 ms par tour (p95 7 840 ms,
+jusqu'à 20 s de moyenne sur une partie).
 
-Limite honnête : en self-play, un plan vide ne fait RIEN, alors qu'en vraie
-partie la référence retombait sur la logique historique (niveau Difficile).
-L'écart réel face à la référence est donc plus faible que 28-0 sur les fins de
-partie ; le blocage par village, à 55 % ± 11, n'est pas statistiquement établi
-— conservé parce qu'il supprime un double comptage observé.
+Le blocage par village (55 % ± 11) et `validationPrete` (58 % ± 10) ne sont pas
+établis statistiquement pris seuls ; conservés parce qu'ils corrigent chacun un
+contresens observé, et que l'ensemble domine la référence.
 
 Non-régression : `bench-ia` 13/17 des deux côtés (mêmes quatre échecs
 préexistants : 07, 08, 09, 13) ; `bench-adverse` 12/12 contre 11/12 ;
-`verif-fidelite-partie` 13/13 tours ; `verif-finalistes` échoue sur la référence
-comme sur la version livrée (échec préexistant).
+`verif-fidelite-partie` 13/13 tours ; autres `verif-*` conformes ;
+`verif-finalistes` échoue sur la référence comme sur la version livrée (échec
+préexistant).
+
+Parties Expert contre Expert : encore souvent longues (24 parties du banc
+`validationPrete`, 81 tours en moyenne, 4 nuls) — deux Experts se neutralisent
+davantage qu'avant. Le test `partie-ia-contre-ia` exige une victoire en
+80 tours : il a atteint cette limite une fois ici (la référence, elle, s'y est
+figée 128 s au tour 22). Ce workflow était déjà annulé ou en échec sur `main`.
 
 ## Ce qui a été mesuré puis retiré
 

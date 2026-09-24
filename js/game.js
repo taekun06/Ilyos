@@ -24350,6 +24350,9 @@
            dire. */
         couronneParDistance: [2600, 2100, 1700, 1150, 700, 400, 200],
         couronnePortee: 75,
+        /* Porteur sur une case de validation libre : le point tombera au
+           début de son prochain tour. Voir l'évaluateur. */
+        validationPrete: 1000,
         /* Une couronne encore en attente entrera au sanctuaire au prochain
            tour : elle vaut déjà sa position future, à moitié prix. */
         couronneEnAttenteFacteur: 0.5,
@@ -24934,6 +24937,13 @@
         return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
       }
 
+      /** Ce camp pourra-t-il encore porter une couronne un jour ? */
+      function plannerPeutEncoreMarquer(playerId) {
+        if (plannerGardiensDe(playerId).length) return true;
+        return canCreateGuardian(playerId) && !islandLimitReachedForPlayer(playerId)
+          && !poseImpossiblePour(playerId);
+      }
+
       function evaluerEtatStrategique(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
@@ -24968,8 +24978,17 @@
         const casesMoi = crownValidationCellsForPlayer(moi).filter(([r, c]) => isLand(r, c));
         const casesLui = adverse
           ? crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c)) : [];
-        const distMoi = (r, c) => plannerLireChamp(terrain.champMoi, casesMoi, r, c);
-        const distLui = (r, c) => plannerLireChamp(terrain.champAdverse, casesLui, r, c);
+        /* Un camp qui ne peut plus jamais marquer — plus aucun gardien, et plus
+           aucune pose pour en faire apparaître un — ne menace plus rien : une
+           couronne « à côté de son village » n'y vaut rien pour lui. Sans cette
+           condition, observé en self-play à 2-2 : l'adversaire n'avait plus de
+           gardien, une couronne gisait dans sa zone, et l'urgence de défense
+           (−20 000) clouait mon dernier gardien sur son village au lieu de
+           l'envoyer marquer le point gagnant. Partie nulle au tour 121. */
+        const marqueMoi = plannerPeutEncoreMarquer(playerId);
+        const marqueLui = !!adverse && plannerPeutEncoreMarquer(adverse.id);
+        const distMoi = (r, c) => marqueMoi ? plannerLireChamp(terrain.champMoi, casesMoi, r, c) : Infinity;
+        const distLui = (r, c) => marqueLui ? plannerLireChamp(terrain.champAdverse, casesLui, r, c) : Infinity;
 
         const dMoiParCouronne = [];
         const dLuiParCouronne = [];
@@ -25024,6 +25043,28 @@
           ajouter("accesCouronne",
             PLAN_POIDS.accesCouronne * (plannerProximite(accesMoi) - plannerProximite(accesLui)),
             `accès moi ${accesMoi}, lui ${accesLui}`);
+
+          /* VALIDATION PRÊTE. Une couronne ne marque qu'au début du tour de
+             son PORTEUR, posté sur une case de validation que nul adversaire
+             ne bloque. Posée au sol dans la zone, elle ne marque jamais — et
+             positionCouronne, qui juge l'objet commun par sa position, ne
+             faisait presque aucune différence entre les deux (75 points).
+             Observé en self-play : un camp dont l'adversaire ne pouvait plus
+             rien passait soixante tours à poser et reprendre ses deux
+             couronnes dans sa propre zone sans jamais les valider.
+
+             Pour moi, le point doit encore survivre au tour adverse : même
+             escompte que l'utilité d'un gardien expulsable. Pour lui, il
+             tombera au début de son tour, sauf ce que je fais maintenant. */
+          if (porteur && isCrownValidationCell(state.players[porteur.player], r, c)
+            && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
+            if (porteur.player === playerId) {
+              ajouter("validationPrete", PLAN_POIDS.validationPrete
+                * (plannerMenaceExpulsion(playerId, r, c) ? 0.35 : 1), porteur.id);
+            } else {
+              ajouter("validationPreteAdverse", -PLAN_POIDS.validationPrete, porteur.id);
+            }
+          }
 
           /* EXPOSITION DU PORTEUR, jugée par la position où la couronne
              RESTERAIT : les règles la font tomber sur sa case actuelle. */
@@ -25093,7 +25134,8 @@
 
         const couronnesLibres = activeArtifacts().filter(a => !a.carrierId && Number.isFinite(a.r));
         const porteursAmis = miens.filter(g => characterCarriesCrown(g.id));
-        const menaceReelle = minLui <= 2 ? (minLui === 0 ? 1.5 : 1) : (minLui <= 4 ? 0.6 : 0.3);
+        const menaceReelle = !marqueLui ? 0
+          : minLui <= 2 ? (minLui === 0 ? 1.5 : 1) : (minLui <= 4 ? 0.6 : 0.3);
 
         let utiliteTotale = 0;
         let blocageTotal = 0;
