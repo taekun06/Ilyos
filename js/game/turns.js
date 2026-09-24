@@ -71,7 +71,11 @@
         // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
         // atteinte, la pose d'île redevient facultative au lieu de rester
         // obligatoire sans qu'aucune forme ne puisse plus être choisie.
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id);
+        // Même levée quand aucune forme restant en stock ne tient plus sur le
+        // plateau (poseImpossiblePour, rules-core.js) : sinon « Fin du tour »
+        // resterait bloqué pour un joueur humain jusqu'au minuteur.
+        const poseSansForme = !islandLimitReachedForPlayer(p.id) && poseImpossiblePour(p.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id) || poseSansForme;
         /* Le verrou du sanctuaire se relâche ici, et les couronnes qui
            attendaient leur entrée en jeu arrivent alors — dans cet ordre, sans
            quoi elles se remettraient aussitôt en attente. */
@@ -140,7 +144,9 @@
           if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
-              : `${p.name} commence son tour.`);
+              : poseSansForme
+                ? `${p.name} commence son tour — aucune forme restante ne tient : pose facultative.`
+                : `${p.name} commence son tour.`);
           }
         }
       }

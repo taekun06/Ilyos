@@ -17433,7 +17433,11 @@
         // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
         // atteinte, la pose d'île redevient facultative au lieu de rester
         // obligatoire sans qu'aucune forme ne puisse plus être choisie.
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id);
+        // Même levée quand aucune forme restant en stock ne tient plus sur le
+        // plateau (poseImpossiblePour, rules-core.js) : sinon « Fin du tour »
+        // resterait bloqué pour un joueur humain jusqu'au minuteur.
+        const poseSansForme = !islandLimitReachedForPlayer(p.id) && poseImpossiblePour(p.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id) || poseSansForme;
         /* Le verrou du sanctuaire se relâche ici, et les couronnes qui
            attendaient leur entrée en jeu arrivent alors — dans cet ordre, sans
            quoi elles se remettraient aussitôt en attente. */
@@ -17502,7 +17506,9 @@
           if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
-              : `${p.name} commence son tour.`);
+              : poseSansForme
+                ? `${p.name} commence son tour — aucune forme restante ne tient : pose facultative.`
+                : `${p.name} commence son tour.`);
           }
         }
       }
@@ -24168,14 +24174,28 @@
 
          On raisonne sur le PLATEAU, pas sur les stocks : « il n'y a plus de
          place » veut dire qu'aucune forme du jeu ne tient nulle part, quel que
-         soit ce qu'il reste en réserve. Un stock épuisé rend seulement la pose
-         facultative — c'est une autre règle, déjà en vigueur.
+         soit ce qu'il reste en réserve. Un stock épuisé — ou dont aucune forme
+         restante ne tient plus — rend seulement la pose facultative pour ce
+         joueur : voir poseImpossiblePour.
       ================================================================== */
       function plateauSansPlace() {
         if (!state) return false;
-        for (const shape of Object.values(SHAPES)) {
-          let rotated = normalizeShape(shape.cells);
-          const vues = new Set();
+        // Une seule forme qui tient suffit à prouver que la partie continue.
+        return !Object.keys(SHAPES).some(formeTientSurPlateau);
+      }
+
+      /** Vrai si la forme tient quelque part sur les cases libres, dans l'une
+       *  de ses rotations — et de ses miroirs pour une forme retournable, comme
+       *  le permet la pose humaine (flipSelectedIsland). */
+      function formeTientSurPlateau(shapeKey) {
+        const shape = SHAPES[shapeKey];
+        if (!shape) return false;
+        const depart = normalizeShape(shape.cells);
+        const orientations = shape.flippable
+          ? [depart, normalizeShape(depart.map(([r, c]) => [r, -c]))]
+          : [depart];
+        const vues = new Set();
+        for (let rotated of orientations) {
           for (let rotation = 0; rotation < 4; rotation++) {
             const signature = rotated.map(([r, c]) => `${r},${c}`).sort().join("|");
             if (!vues.has(signature)) {
@@ -24184,15 +24204,29 @@
               const largeur = Math.max(...rotated.map(([, c]) => c)) + 1;
               for (let r = 0; r <= GRID - hauteur; r++) {
                 for (let c = 0; c <= GRID - largeur; c++) {
-                  // Une seule place suffit à prouver que la partie continue.
-                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return false;
+                  if (!rotated.some(([dr, dc]) => isLand(r + dr, c + dc))) return true;
                 }
               }
             }
             rotated = normalizeShape(rotated.map(([r, c]) => [c, -r]));
           }
         }
-        return true;
+        return false;
+      }
+
+      /** Pose FACULTATIVE pour ce joueur : aucune forme qui lui reste en stock
+       *  (shapeLimitPerOwner) ne tient plus sur le plateau, alors que d'autres
+       *  formes y tiendraient encore — sinon plateauSansPlace aurait déjà
+       *  terminé la partie. Sans cette levée, un joueur humain restait bloqué :
+       *  « Fin du tour » exigeait une pose que plus rien ne permettait, et seul
+       *  le minuteur de tour débloquait la situation. */
+      function poseImpossiblePour(playerId) {
+        if (!state) return false;
+        const limite = shapeLimitPerOwner();
+        return !Object.keys(SHAPES).some(shapeKey =>
+          (!limite || shapeUsageCountForOwner(playerId, shapeKey) < limite)
+          && formeTientSurPlateau(shapeKey)
+        );
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
@@ -26342,7 +26376,7 @@
         entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
           id: "plausible-" + state.turn + "-" + i, action, used: false
         }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";
@@ -41962,7 +41996,7 @@
 
         entrant.hand = [];
         drawCards(entrant, 5);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";

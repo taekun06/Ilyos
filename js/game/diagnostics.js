@@ -1307,7 +1307,7 @@
 
         entrant.hand = [];
         drawCards(entrant, 5);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";

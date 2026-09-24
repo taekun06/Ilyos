@@ -2137,7 +2137,7 @@
         entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
           id: "plausible-" + state.turn + "-" + i, action, used: false
         }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";
