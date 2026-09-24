@@ -1551,12 +1551,64 @@
         };
       }
 
+      /* UN TOUR SANS RENDU, sur un instantané — self-play CROISÉ rapide.
+
+         Le relais `ILYOS_BENCH.jouerUnTour` fait jouer le vrai tour animé : une
+         partie y dure plusieurs minutes. Ici, le tour est joué en simulation
+         avec le budget de réflexion RÉEL du jeu (aucun budget réduit par
+         défaut) : c'est la force qu'affronte un joueur humain qu'on mesure.
+         Chaque build joue ses tours ; `scripts/selfplay-rapide.js` transporte
+         l'état de l'un à l'autre. */
+      function selfplayTourIsole(json, { graine = null, budget } = {}) {
+        const clone = JSON.parse(json);
+        if (graine !== null) setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(clone, () => {
+            const debut = performance.now();
+            const actions = selfplayJouerTour(state.currentPlayer, budget);
+            const dureeMs = Math.round(performance.now() - debut);
+            const continuer = selfplayTransitionTour();
+            return {
+              etat: snapshotState(), vainqueur: state.winner ?? null,
+              tour: state.turn, actions, dureeMs, fin: !continuer
+            };
+          });
+        } finally {
+          if (graine !== null) setTestRandomSeed(null);
+        }
+      }
+
+      /* Position de départ d'une partie de self-play : celle de la partie en
+         cours, paquets remélangés par la graine. Sans ce tirage, toutes les
+         parties partent des mêmes mains et le tournoi rejoue sans cesse la même
+         ouverture. */
+      function selfplayDepartMelange(graine) {
+        const depart = canonicalDepart();
+        setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(depart, () => {
+            state.players.forEach(joueur => {
+              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
+                .map(carte => ({ ...carte, used: false, fromStash: false })));
+              joueur.hand = [];
+              joueur.discard = [];
+            });
+            drawCards(state.players[state.currentPlayer], 5);
+            return snapshotState();
+          });
+        } finally {
+          setTestRandomSeed(null);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
         fidelitePartie: benchFidelitePartie,
         empreintePlateau,
         partie: selfplayPartie,
         tournoi: selfplayTournoi,
-        depart: canonicalDepart
+        depart: canonicalDepart,
+        departMelange: selfplayDepartMelange,
+        tour: selfplayTourIsole
       };
 
       window.ILYOS_BENCH = {
