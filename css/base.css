@@ -29,9 +29,9 @@
        font-family: Inter, Segoe UI, Arial, sans-serif;
        color: var(--text);
        user-select: none;
-       background:
-           linear-gradient(180deg, rgba(76, 136, 203, .28), rgba(232, 247, 255, .44)),
-           url("../assets/fond-page-maquette-v1.jpg") center/cover fixed;
+       /* Même ciel que la règle finale de index.html (#v74-3d-contrast-css),
+          visible pendant le chargement avant qu'elle ne s'applique. */
+       background: linear-gradient(180deg, #82c8df 0%, #a9d8e8 54%, #c9e5ee 100%) fixed;
    }
 
    button,
@@ -7496,8 +7496,7 @@
      ======================================================================= */
 
    body[data-visual-mode="alternative"] {
-       background: linear-gradient(180deg, rgba(76, 136, 203, .28), rgba(232, 247, 255, .44)),
-           url("../assets/fond-page-maquette-v1.jpg") center/cover fixed !important;
+       background: linear-gradient(180deg, #82c8df 0%, #a9d8e8 54%, #c9e5ee 100%) fixed !important;
        color: var(--text) !important;
    }
 

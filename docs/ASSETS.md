@@ -36,7 +36,6 @@ Ils ne constituent pas une vérification fichier par fichier de toutes les varia
 | `assets/sky/ilyos-horizon-*` | Images générées pour ILYOS d'après le même fichier de provenance |
 | `assets/sky/source/*`, atlas et manifeste | Pipeline local `scripts/build-horizon-islands.js` ; historique de génération à compléter |
 | `assets/hud`, `assets/image-*`, icônes et `menu/assets/*` | Provenance détaillée à compléter ; ne pas les déclarer CC0 par défaut |
-| `assets/fond-page-maquette-v1.jpg` | Extrait à l'octet près du base64 que `css/base.css` embarquait deux fois (fond de `body`, présent depuis au moins la fusion de la PR #68). Ancienne maquette de concept 1500×1000, données JPEG tronquées (bas de l'image bleu). Provenance à compléter. Écrasée par un dégradé une fois la page chargée : candidate à la suppression, décision visuelle à prendre |
 | `vendor/*` | Bibliothèques embarquées ; conserver leurs notices, distinctes des licences des images/modèles |
 
 Pour chaque ajout, noter : chemin final, auteur, URL précise, version/date,
