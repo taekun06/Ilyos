@@ -54,6 +54,9 @@
            dire. */
         couronneParDistance: [2600, 2100, 1700, 1150, 700, 400, 200],
         couronnePortee: 75,
+        /* Porteur sur une case de validation libre : le point tombera au
+           début de son prochain tour. Voir l'évaluateur. */
+        validationPrete: 1000,
         /* Une couronne encore en attente entrera au sanctuaire au prochain
            tour : elle vaut déjà sa position future, à moitié prix. */
         couronneEnAttenteFacteur: 0.5,
@@ -87,6 +90,8 @@
         utiliteMenace: 450,
         utiliteMenaceMultiple: 900,
         blocageValidation: 900,
+        // Un second gardien dans le même village : réserve contre l'expulsion.
+        blocageRedondance: 0.25,
 
         /* Urgence à deux points. Grands nombres, mais jamais terminaux : une
            menace n'est pas une défaite. */
@@ -140,13 +145,40 @@
         return state.characters.filter(ch => ch.player === playerId);
       }
 
-      /** Distance de déplacement du gardien le plus proche d'un jeu de cases. */
+      /** Distance de déplacement du gardien le plus proche d'un jeu de cases.
+       *
+       *  Même résultat qu'un aiLandDistanceToTargets par gardien, mais lu dans
+       *  un CHAMP propagé une seule fois depuis les cibles (graphe non orienté,
+       *  coûts symétriques). Ce champ ne dépend que du terrain : il est gardé
+       *  en cache d'un nœud de recherche à l'autre, et seule une pose ou une
+       *  rotation l'invalide. Mesuré en fin de partie : ces Dijkstra par
+       *  gardien faisaient les deux tiers du coût de l'évaluateur. */
+      const PLAN_CACHE_CHAMPS_MAX = 256;
+      const plannerCacheChamps = new Map();
+
       function plannerDistanceEquipe(playerId, cibles) {
         const gardiens = plannerGardiensDe(playerId);
         if (!gardiens.length || !cibles.length) return Infinity;
+        const valides = cibles.filter(([r, c]) => inside(r, c) && isLand(r, c));
+        if (!valides.length) return 99;
+        const cle = plannerEmpreinteTerrain() + ':'
+          + valides.map(([r, c]) => r * GRID + c).sort((a, b) => a - b).join(',');
+        let champ = plannerCacheChamps.get(cle);
+        if (!champ) {
+          champ = plannerChampDistance(valides);
+          if (plannerCacheChamps.size >= PLAN_CACHE_CHAMPS_MAX) {
+            plannerCacheChamps.delete(plannerCacheChamps.keys().next().value);
+          }
+          plannerCacheChamps.set(cle, champ);
+        }
         let meilleure = Infinity;
         for (const g of gardiens) {
-          const d = aiLandDistanceToTargets(g.r, g.c, cibles);
+          let d = champ.get(key(g.r, g.c));
+          if (d === undefined) {
+            // Mêmes replis qu'aiLandDistanceToTargets : hors terre, ou injoignable.
+            d = !inside(g.r, g.c) || !isLand(g.r, g.c) ? 99
+              : 30 + Math.min(...valides.map(([r, c]) => Math.abs(g.r - r) + Math.abs(g.c - c)));
+          }
           if (d < meilleure) meilleure = d;
         }
         return meilleure;
@@ -267,13 +299,51 @@
           + (state.characters || []).map(c => c.r + ',' + c.c).sort().join('|');
         let portees = plannerCachePortees.get(cle);
         if (!portees) {
-          portees = ennemis.map(ennemi => movementRange(ennemi, budgetMove));
+          portees = [plannerPorteeReunie(ennemis, budgetMove)];
           if (plannerCachePortees.size >= PLAN_CACHE_PORTEES_MAX) {
             plannerCachePortees.delete(plannerCachePortees.keys().next().value);
           }
           plannerCachePortees.set(cle, portees);
         }
         return portees;
+      }
+
+      /* Les portées ne servent qu'à savoir si UN gardien adverse peut
+         rejoindre une case. La réunion des portées individuelles se calcule en
+         une seule propagation partie de tous les gardiens à la fois : les
+         obstacles (tous les gardiens) sont les mêmes pour chacun, un chemin
+         valable pour l'un l'est donc dans la propagation commune. Six
+         recherches par nœud deviennent une. */
+      function plannerPorteeReunie(ennemis, budgetMove) {
+        const resultat = new Set();
+        if (!ennemis.length) return resultat;
+        const occupees = new Set(state.characters.map(ch => key(ch.r, ch.c)));
+        const distances = new Map();
+        const files = [[]];
+        for (const e of ennemis) {
+          distances.set(key(e.r, e.c), 0);
+          files[0].push({ r: e.r, c: e.c, cout: 0 });
+        }
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const actuel = file[i];
+            if (actuel.cout !== distances.get(key(actuel.r, actuel.c))) continue;
+            for (const arete of movementEdges(actuel.r, actuel.c)) {
+              if (!isLand(arete.r, arete.c)) continue;
+              const k = key(arete.r, arete.c);
+              if (occupees.has(k)) continue;
+              const cout = actuel.cout + arete.cost;
+              if (cout > budgetMove) continue;
+              if (cout >= (distances.get(k) ?? Infinity)) continue;
+              distances.set(k, cout);
+              resultat.add(k);
+              (files[cout] ||= []).push({ r: arete.r, c: arete.c, cout });
+            }
+          }
+        }
+        return resultat;
       }
 
       function plannerMenaceExpulsion(playerId, r, c, budget) {
@@ -355,7 +425,19 @@
       const PLAN_CACHE_TERRAIN_MAX = 48;
       const plannerCacheTerrain = new Map();
 
+      /* L'empreinte parcourt toutes les cases de toutes les îles. Pendant un
+         calcul pur, le terrain ne change pas : on la garde sur la grille de
+         terre active plutôt que de la recalculer à chaque consultation. */
       function plannerEmpreinteTerrain() {
+        const grille = grilleTerreActive;
+        if (grille !== null && grille.etat === state) {
+          if (grille.empreinte === undefined) grille.empreinte = plannerCalculerEmpreinteTerrain();
+          return grille.empreinte;
+        }
+        return plannerCalculerEmpreinteTerrain();
+      }
+
+      function plannerCalculerEmpreinteTerrain() {
         let h = (state.islands || []).length * 1000003;
         for (const ile of state.islands || []) {
           for (const [r, c] of ile.cells) {
@@ -554,7 +636,19 @@
           Math.abs(g.r - r) + Math.abs(g.c - c) === 1 && (!filtre || filtre(g))) || null;
       }
 
+      /* L'évaluation ne modifie rien : elle profite de la grille de terre. */
       function evaluateStrategicState(playerId) {
+        return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+      }
+
+      /** Ce camp pourra-t-il encore porter une couronne un jour ? */
+      function plannerPeutEncoreMarquer(playerId) {
+        if (plannerGardiensDe(playerId).length) return true;
+        return canCreateGuardian(playerId) && !islandLimitReachedForPlayer(playerId)
+          && !poseImpossiblePour(playerId);
+      }
+
+      function evaluerEtatStrategique(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
         const adverse = plannerAdversaire(playerId);
@@ -588,8 +682,17 @@
         const casesMoi = crownValidationCellsForPlayer(moi).filter(([r, c]) => isLand(r, c));
         const casesLui = adverse
           ? crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c)) : [];
-        const distMoi = (r, c) => plannerLireChamp(terrain.champMoi, casesMoi, r, c);
-        const distLui = (r, c) => plannerLireChamp(terrain.champAdverse, casesLui, r, c);
+        /* Un camp qui ne peut plus jamais marquer — plus aucun gardien, et plus
+           aucune pose pour en faire apparaître un — ne menace plus rien : une
+           couronne « à côté de son village » n'y vaut rien pour lui. Sans cette
+           condition, observé en self-play à 2-2 : l'adversaire n'avait plus de
+           gardien, une couronne gisait dans sa zone, et l'urgence de défense
+           (−20 000) clouait mon dernier gardien sur son village au lieu de
+           l'envoyer marquer le point gagnant. Partie nulle au tour 121. */
+        const marqueMoi = plannerPeutEncoreMarquer(playerId);
+        const marqueLui = !!adverse && plannerPeutEncoreMarquer(adverse.id);
+        const distMoi = (r, c) => marqueMoi ? plannerLireChamp(terrain.champMoi, casesMoi, r, c) : Infinity;
+        const distLui = (r, c) => marqueLui ? plannerLireChamp(terrain.champAdverse, casesLui, r, c) : Infinity;
 
         const dMoiParCouronne = [];
         const dLuiParCouronne = [];
@@ -644,6 +747,28 @@
           ajouter("accesCouronne",
             PLAN_POIDS.accesCouronne * (plannerProximite(accesMoi) - plannerProximite(accesLui)),
             `accès moi ${accesMoi}, lui ${accesLui}`);
+
+          /* VALIDATION PRÊTE. Une couronne ne marque qu'au début du tour de
+             son PORTEUR, posté sur une case de validation que nul adversaire
+             ne bloque. Posée au sol dans la zone, elle ne marque jamais — et
+             positionCouronne, qui juge l'objet commun par sa position, ne
+             faisait presque aucune différence entre les deux (75 points).
+             Observé en self-play : un camp dont l'adversaire ne pouvait plus
+             rien passait soixante tours à poser et reprendre ses deux
+             couronnes dans sa propre zone sans jamais les valider.
+
+             Pour moi, le point doit encore survivre au tour adverse : même
+             escompte que l'utilité d'un gardien expulsable. Pour lui, il
+             tombera au début de son tour, sauf ce que je fais maintenant. */
+          if (porteur && isCrownValidationCell(state.players[porteur.player], r, c)
+            && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
+            if (porteur.player === playerId) {
+              ajouter("validationPrete", PLAN_POIDS.validationPrete
+                * (plannerMenaceExpulsion(playerId, r, c) ? 0.35 : 1), porteur.id);
+            } else {
+              ajouter("validationPreteAdverse", -PLAN_POIDS.validationPrete, porteur.id);
+            }
+          }
 
           /* EXPOSITION DU PORTEUR, jugée par la position où la couronne
              RESTERAIT : les règles la font tomber sur sa case actuelle. */
@@ -713,21 +838,13 @@
 
         const couronnesLibres = activeArtifacts().filter(a => !a.carrierId && Number.isFinite(a.r));
         const porteursAmis = miens.filter(g => characterCarriesCrown(g.id));
-        const menaceReelle = minLui <= 2 ? (minLui === 0 ? 1.5 : 1) : (minLui <= 4 ? 0.6 : 0.3);
+        const menaceReelle = !marqueLui ? 0
+          : minLui <= 2 ? (minLui === 0 ? 1.5 : 1) : (minLui <= 4 ? 0.6 : 0.3);
 
         let utiliteTotale = 0;
         let blocageTotal = 0;
         for (const g of miens) {
           let u = 0;
-          /* Le blocage est tenu HORS de la pondération par survivabilité qui
-             suit. Occuper une case de validation interdit le point dès
-             maintenant, même si l adversaire éjecte ensuite le gardien — et
-             l en chasser lui coûte une action. Pondérer ce terme par la
-             fragilité revenait à renoncer au blocage précisément là où il est
-             le plus utile : seul, en zone adverse. */
-          if (adverse && isCrownValidationCell(adverse, g.r, g.c)) {
-            blocageTotal += PLAN_POIDS.blocageValidation * menaceReelle;
-          }
           if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)) {
             u += PLAN_POIDS.utiliteRamassage;
           }
@@ -751,6 +868,29 @@
              poussée renvoie aussitôt. */
           u *= plannerMenaceExpulsion(playerId, g.r, g.c) ? 0.35 : 1;
           utiliteTotale += u;
+        }
+        /* Le blocage est tenu HORS de la pondération par survivabilité.
+           Occuper une case de validation interdit le point dès maintenant,
+           même si l adversaire éjecte ensuite le gardien — et l en chasser lui
+           coûte une action. Pondérer ce terme par la fragilité revenait à
+           renoncer au blocage précisément là où il est le plus utile : seul,
+           en zone adverse.
+
+           Il se compte PAR VILLAGE, pas par gardien. Un seul gardien
+           adverse dans les trois cases d'un village y interdit la validation :
+           un deuxième n'ajoute qu'une réserve contre l'expulsion, un troisième
+           rien. Compté par gardien, le terme payait chaque occupant plein
+           tarif — observé en self-play : cinq gardiens sur six campaient dans
+           les villages adverses, les deux camps se neutralisaient et la partie
+           s'arrêtait sur 0-0. */
+        if (adverse) {
+          for (const village of villagesForPlayer(adverse)) {
+            const cases = cornerCrownCellsForVillage(village);
+            const occupants = miens.filter(g => cases.some(([r, c]) => r === g.r && c === g.c)).length;
+            if (!occupants) continue;
+            blocageTotal += PLAN_POIDS.blocageValidation * menaceReelle
+              * (occupants > 1 ? 1 + PLAN_POIDS.blocageRedondance : 1);
+          }
         }
         ajouter("utiliteGardiens", utiliteTotale, `${miens.length} gardien(s)`);
         ajouter("blocageValidation", blocageTotal, `menace ${menaceReelle}`);
@@ -1301,7 +1441,7 @@
                 const rot = calculateIslandRotationAroundPivot(ileClone, pr, pc, direction, tours);
                 if (!rot?.valid) return null;
                 applyMagicRotationCore(ile.id, rot);
-                return mesurer();
+                return avecGrilleTerre(mesurer);
               });
               if (!impact) continue;
 
@@ -1433,7 +1573,7 @@
             const resultat = applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId,
               pose.relCells, pose.anchor, spawn);
             if (!resultat || !resultat.gardienId) return true;
-            return plannerMenaceExpulsion(playerId, spawn[0], spawn[1]);
+            return avecGrilleTerre(() => plannerMenaceExpulsion(playerId, spawn[0], spawn[1]));
           });
           if (!expose) return spawn;
         }
@@ -1470,8 +1610,8 @@
           const spawn = [...pose.cells].sort((a, b) => Number(frontier.has(key(...a))) - Number(frontier.has(key(...b))))[0];
           const nouvelles = withSimulatedState(cloneStateForSimulation(), () => {
             applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor, spawn);
-            return gardiens.flatMap((g, i) => [...movementRange(characterById(g.id), budget)]
-              .filter(k => sorties.has(k) && !portees[i].has(k)).map(k => `${g.id}:${k}`));
+            return avecGrilleTerre(() => gardiens.flatMap((g, i) => [...movementRange(characterById(g.id), budget)]
+              .filter(k => sorties.has(k) && !portees[i].has(k)).map(k => `${g.id}:${k}`)));
           });
           if (!nouvelles.some(k => !sortiesVues.has(k))) continue;
           nouvelles.forEach(k => sortiesVues.add(k));
@@ -1897,6 +2037,11 @@
           plan: [],
           decisions: 0
         };
+        // Pose levée faute de place : s'arrêter est alors permis d'emblée.
+        if (!racine.etat.islandPlacedThisTurn
+          && withSimulatedState(racine.etat, () => poseImpossiblePour(playerId))) {
+          racine.etat.islandPlacedThisTurn = true;
+        }
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
         racine.terminal = racine.etat.islandPlacedThisTurn;
         racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
@@ -1946,7 +2091,9 @@
             if (performance.now() - debut > budget.tempsMaxMs) break;
             if (etatsExplores > budget.etatsMax) break;
 
-            const actions = withSimulatedState(noeud.etat, () => {
+            // Les générateurs ne modifient pas l'état du nœud : ils simulent
+            // sur des clones. Ils profitent donc de la grille de terre.
+            const actions = withSimulatedState(noeud.etat, () => avecGrilleTerre(() => {
               const gratuites = plannerTransitionsGratuites(playerId);
               const payantes = noeud.decisions >= budget.decisionsMax ? [] : [
                 ...plannerCandidatsMove(playerId),
@@ -1955,7 +2102,7 @@
                 ...plannerCandidatsPose(playerId)
               ];
               return [...gratuites, ...payantes];
-            });
+            }));
             candidatsGeneres += actions.length;
 
             for (const action of actions) {
@@ -2137,7 +2284,7 @@
         entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
           id: "plausible-" + state.turn + "-" + i, action, used: false
         }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id);
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
         state.phase = "ACTION_SELECT";

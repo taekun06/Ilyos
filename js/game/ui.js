@@ -2760,29 +2760,37 @@
       function movementRange(char, maxCost) {
         const startKey = key(char.r, char.c);
         const distances = new Map([[startKey, 0]]);
-        const open = [{ r: char.r, c: char.c, cost: 0 }];
         const result = new Set();
+        /* Coûts entiers et petits (1 ou 2 par pas) : une file par coût, vidée
+           dans l'ordre d'arrivée, rend exactement l'ordre de l'ancien tri
+           stable, sans retrier la file à chaque case. L'IA appelle cette
+           fonction des centaines de fois par décision. */
+        const files = [[{ r: char.r, c: char.c, cost: 0 }]];
+        const occupees = new Set((state.characters || []).map(ch => key(ch.r, ch.c)));
 
-        while (open.length) {
-          open.sort((a, b) => a.cost - b.cost);
-          const current = open.shift();
-          const currentKey = key(current.r, current.c);
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const current = file[i];
+            const currentKey = key(current.r, current.c);
 
-          if (current.cost !== distances.get(currentKey)) continue;
+            if (current.cost !== distances.get(currentKey)) continue;
 
-          for (const edge of movementEdges(current.r, current.c)) {
-            if (!isLand(edge.r, edge.c)) continue;
-            if (characterAt(edge.r, edge.c)) continue;
+            for (const edge of movementEdges(current.r, current.c)) {
+              if (!isLand(edge.r, edge.c)) continue;
+              if (occupees.has(key(edge.r, edge.c))) continue;
 
-            const nextCost = current.cost + edge.cost;
-            if (nextCost > maxCost) continue;
+              const nextCost = current.cost + edge.cost;
+              if (nextCost > maxCost) continue;
 
-            const nextKey = key(edge.r, edge.c);
-            if (nextCost >= (distances.get(nextKey) ?? Infinity)) continue;
+              const nextKey = key(edge.r, edge.c);
+              if (nextCost >= (distances.get(nextKey) ?? Infinity)) continue;
 
-            distances.set(nextKey, nextCost);
-            result.add(nextKey);
-            open.push({ r: edge.r, c: edge.c, cost: nextCost });
+              distances.set(nextKey, nextCost);
+              result.add(nextKey);
+              (files[nextCost] ||= []).push({ r: edge.r, c: edge.c, cost: nextCost });
+            }
           }
         }
 

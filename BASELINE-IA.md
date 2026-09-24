@@ -704,3 +704,132 @@ porteur ami. Le double comptage est réel, mais le retirer fait tomber le
 scénario adverse A10, où l'IA cesse de défendre et pousse le porteur adverse
 DANS sa case de validation. Conservé tel quel faute de pouvoir le corriger sans
 casser une défense.
+
+---
+
+# Expert en vraie partie — ce qu'il ne voyait plus au-delà du tour 30
+
+Les bancs tactiques décrivent une décision isolée sur un plateau presque vide.
+Ils ne pouvaient pas voir ce qui affaiblissait l'Expert en vraie partie : il ne
+réfléchissait presque plus dès que le plateau se remplissait.
+
+## L'instrument : un self-play croisé sans rendu
+
+`ILYOS_SELFPLAY.tour(json)` joue un tour en simulation avec le budget de
+réflexion RÉEL du jeu, et `scripts/selfplay-rapide.js` fait s'affronter deux
+builds, chaque graine jouée deux fois camps inversés. Une partie prend une à
+deux minutes au lieu de dix. `ILYOS_SELFPLAY.analyser(json)` montre le plan,
+les finalistes, la riposte et la décomposition de note d'une position tirée
+d'une partie — c'est avec lui que les défauts ci-dessous ont été trouvés.
+
+    node scripts/selfplay-rapide.js 30 500 3
+    # A = port 8123 (candidat), B = ILYOS_URL_B, défaut 8125 (worktree de référence)
+    # ILYOS_POIDS_A / _B : poids de PLAN_POIDS par camp ; ILYOS_BUDGET_A / _B : budget
+
+## Trois défauts, un même symptôme : un plan vide
+
+**Le coût de l'évaluation explosait avec le terrain.** `isLand()` parcourt
+toutes les îles et toutes leurs cases ; l'évaluateur l'appelle des milliers de
+fois par position (plus courts chemins par gardien, portées adverses). Mesuré
+au profileur sur une position de fin de partie : ~25 ms par état, 16 à 19 états
+explorés en 500 ms, profondeur 1, aucun état final — plan vide. Côté référence,
+le self-play relève aussi des tours de 7,8 s au p95 et jusqu'à 20 s de moyenne
+sur une partie : un générateur ne relit l'horloge qu'entre deux actions.
+
+Corrigé sans changer aucun résultat de calcul :
+- grille de terre mémorisée le temps d'un calcul pur (`avecGrilleTerre`, core.js) ;
+- `plannerDistanceEquipe` lit un champ de distance propagé depuis les cibles,
+  en cache par forme de terrain, au lieu d'un Dijkstra par gardien ;
+- portées adverses : une seule propagation partie de tous les gardiens
+  (`plannerPorteeReunie`), au lieu d'une par gardien ;
+- `movementRange` : file par coût au lieu d'un tri à chaque case (même ordre).
+
+Même position : 16 → ~240 états explorés.
+
+**La pose levée faute de place.** Chaque joueur a 2 exemplaires de chaque forme.
+Quand aucune forme restante ne tient, la pose obligatoire est levée
+(`createAutomaticIslandAndSpawn` ne trouve rien et marque la pose faite). Le
+planner ne l'acceptait pas : une fin de tour exigeait une île posée, il n'en
+trouvait aucune, rendait un plan vide, et la main passait à la logique
+historique — pour tout le reste de la partie. En self-play, dès le tour 30
+environ, plus aucune décision Expert : les deux camps restaient immobiles
+jusqu'au tour 120. `poseImpossiblePour()` (rules-core.js) lève désormais la
+pose à la racine du planner, dans la transition de l'anticipation et au début
+du tour Expert réel (avant la réflexion, pour la fidélité de l'état prévu).
+
+**Le blocage compté par gardien.** Un gardien dans les trois cases d'un village
+adverse suffit à y interdire la validation ; le terme `blocageValidation`
+payait pourtant chaque occupant plein tarif. Observé : 4 à 5 gardiens sur 6
+campaient dans les villages adverses (+5 400 à +6 750 points), les deux camps se
+neutralisaient. Compté désormais par village, +25 % pour un second occupant.
+
+## Deux contresens de l'évaluateur, trouvés dans les parties Expert contre Expert
+
+Une fois l'Expert capable de réfléchir jusqu'au bout, ses parties contre
+lui-même s'éternisaient (tour 121, 2-1 ou 1-0). `analyser` sur les positions
+figées :
+
+**Une menace suppose un camp capable de marquer.** À 2-2, un camp n'avait plus
+aucun gardien ni aucune pose possible ; une couronne gisait dans sa zone.
+L'urgence de défense (−20 000) clouait le dernier gardien adverse sur son
+village au lieu de l'envoyer marquer le point gagnant. `plannerPeutEncoreMarquer`
+annule la valeur des couronnes, l'urgence et le blocage pour un camp qui ne
+pourra plus jamais porter de couronne.
+
+**Une couronne au sol ne marque pas.** Seul un PORTEUR sur une case de validation
+libre marque, au début de son tour. `positionCouronne` juge la couronne par sa
+position et ne faisait que 75 points d'écart entre « posée au sol dans ma zone »
+et « portée, prête à valider ». Observé : soixante tours à poser et reprendre
+deux couronnes dans sa propre zone sans les valider. Nouveau terme
+`validationPrete` (1 000, ×0,35 si le porteur est expulsable ; plein tarif
+en négatif pour un porteur adverse prêt, qui marquera avant que je rejoue).
+
+## Mesures (self-play rapide, budget réel du jeu)
+
+| Comparaison | Parties | A | B | Nuls |
+|---|---|---|---|---|
+| perf + pose levée contre référence (arrêté) | 14 | 12 | 0 | 2 |
+| blocage par village contre par gardien | 20 | 7 | 5 | 8 |
+| perf + pose + blocage contre référence | 30 | 28 | 0 | 2 |
+| `validationPrete` contre sans | 24 | 12 | 8 | 4 |
+| **version livrée contre référence** | **24** | **24** | **0** | **0** |
+
+Version livrée contre référence : couronnes 72 à 0, parties de 33 tours en
+moyenne — toutes gagnées 3-0 avant l'épuisement des formes (vers le tour 36).
+L'écart ne tient donc pas à la fin de partie, où la référence rendait un plan
+vide (en self-play un plan vide ne fait RIEN, alors qu'en vraie partie la
+référence retombait sur la logique historique) : il est acquis en milieu de
+partie. Temps par tour 927 ms (p95 1 099 ms). Mesure précédente, sans les deux
+derniers termes : couronnes 75 à 1, référence à 2 165 ms par tour (p95 7 840 ms,
+jusqu'à 20 s de moyenne sur une partie).
+
+Le blocage par village (55 % ± 11) et `validationPrete` (58 % ± 10) ne sont pas
+établis statistiquement pris seuls ; conservés parce qu'ils corrigent chacun un
+contresens observé, et que l'ensemble domine la référence.
+
+Non-régression : `bench-ia` 13/17 des deux côtés (mêmes quatre échecs
+préexistants : 07, 08, 09, 13) ; `bench-adverse` 12/12 contre 11/12 ;
+`verif-fidelite-partie` 13/13 tours ; autres `verif-*` conformes ;
+`verif-finalistes` échoue sur la référence comme sur la version livrée (échec
+préexistant).
+
+Parties Expert contre Expert : encore souvent longues (24 parties du banc
+`validationPrete`, 81 tours en moyenne, 4 nuls) — deux Experts se neutralisent
+davantage qu'avant. Le test `partie-ia-contre-ia` exige une victoire en
+80 tours : il a atteint cette limite une fois ici (la référence, elle, s'y est
+figée 128 s au tour 22). Ce workflow était déjà annulé ou en échec sur `main`.
+
+## Ce qui a été mesuré puis retiré
+
+**Créditer le point du tour suivant.** Une couronne ne se valide qu'au début du
+tour de son porteur ; l'évaluateur ne voit jamais ce point, et une couronne
+posée au sol dans ma zone y vaut presque autant qu'une couronne portée sur une
+case de validation. Essai : après chaque riposte simulée, jouer la validation
+du début de mon tour suivant et créditer son gain (escompte 0,8). Mesuré contre
+la même version sans ce terme, 19 parties : 3 victoires, 7 défaites, 9 nuls.
+Retiré.
+
+**Doubler le budget de recherche** (1 200 ms, 3 000 états) : 5 victoires,
+3 défaites, 3 nuls sur 11 parties. La plupart des tours s'arrêtent avant le
+budget (faisceau épuisé) ; le gain ne justifie pas un gel plus long de la page
+pendant le tour de l'IA.

@@ -907,6 +907,13 @@
            sans jamais appeler endTurn — la partie se figeait (observé au tour
            28 d'une partie complète). Un cerveau qui échoue doit rendre la main
            à la logique historique, jamais bloquer le jeu. */
+        /* Aucune forme du stock ne tient plus sur le plateau : la pose est
+           levée, exactement comme createAutomaticIslandAndSpawn le ferait en
+           fin de tour. On l'acte AVANT de réfléchir, pour que le planner puisse
+           s'arrêter sans poser et que l'état réel suive l'état prévu. */
+        if (!state.islandPlacedThisTurn && poseImpossiblePour(joueur)) {
+          state.islandPlacedThisTurn = true;
+        }
         let rapport = null;
         try {
           rapport = plannerChercherPlanRobuste(joueur);
