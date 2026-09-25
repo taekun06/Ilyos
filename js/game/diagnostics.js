@@ -1671,9 +1671,11 @@
               if (!plannerAppliquerAction(action)) return { erreur: `action refusée : ${action.type}` };
             }
             const note = evaluateStrategicState(joueur);
+            plannerCoupuresMagie = 0;
             const robustesse = plannerEvaluerRobustesse({ etat: structuredClone(state), note, plan }, joueur);
             return { noteFinTour: Math.round(note), noteRobuste: Math.round(robustesse.note),
-              menace: robustesse.menace, riposte: robustesse.riposte, garantie: robustesse.garantie };
+              menace: robustesse.menace, riposte: robustesse.riposte, garantie: robustesse.garantie,
+              coupee: !!robustesse.coupee, magieCoupee: plannerCoupuresMagie };
           });
         } finally {
           selfplayAppliquerPoids(poidsAvant);

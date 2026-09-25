@@ -592,20 +592,24 @@
          13×13, quels que soient les villages : au premier tour d'une nouvelle
          partie dans la même page, les distances d'une partie précédente
          pouvaient ressortir du cache. */
+      /* EXACTE, et non un hachage : l'ancienne somme polynomiale (base 31)
+         confondait des terrains différents — une case décalée d'un côté,
+         une autre de 31 indices de l'autre, ce que produisent justement les
+         rotations d'îles. Un terrain déjà en cache (partie précédente, autre
+         branche de la recherche) répondait alors pour un autre : la même
+         position ne donnait pas la même décision selon l'historique de la
+         page (défaite archivée, une fois sur six). Calculée une fois par
+         grille de terre, la chaîne complète ne coûte presque rien. */
       function plannerCalculerEmpreinteTerrain() {
-        let h = GRID;
+        let empreinte = GRID + "/";
         for (const joueur of state.players || []) {
-          for (const v of villagesForPlayer(joueur)) {
-            h = (h * 31 + (v.r * GRID + v.c) + 7) % 2147483647;
-          }
+          for (const v of villagesForPlayer(joueur)) empreinte += (v.r * GRID + v.c) + ",";
         }
-        h = (h * 1000003 + (state.islands || []).length) % 2147483647;
         for (const ile of state.islands || []) {
-          for (const [r, c] of ile.cells) {
-            h = (h * 31 + (r * GRID + c) + 1) % 2147483647;
-          }
+          empreinte += "/";
+          for (const [r, c] of ile.cells) empreinte += (r * GRID + c) + ",";
         }
-        return h;
+        return empreinte;
       }
 
       function plannerAnalyseTerrain(playerId) {
