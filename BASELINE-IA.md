@@ -985,3 +985,98 @@ de vulnérabilité, îles ou gardiens seuls) restaient tous entre 39 et 55 %.
 Temps : la mise en place complète des deux IA prend 0,5 à 0,8 s (4 îles et
 2 gardiens, ou 6 et 3) — moins de 0,1 s par choix. Vérifiée dans une vraie
 partie (menu, animations) : mise en place puis tours joués sans erreur.
+
+---
+
+# Apparition tactique, dépôt libre, recherche reproductible
+
+## Case d'apparition d'une pose
+
+`plannerMeilleureApparition` note chaque case libre de la pose : objectif de
+l'intention, accès aux couronnes, sécurité (vulnérabilité potentielle de la
+mise en place, menace « pose adverse + apparition + poussée » comprise quand
+l'adversaire peut encore faire apparaître un gardien), relais, poussée d'un
+adversaire (même sans éjection) ou d'une couronne vers mon village, mobilité,
+blocage. Remplace le départage de `plannerSpawnMoinsExpose`, qui ne comparait
+que des cases équivalentes pour l'objectif. Neutre à légèrement positif
+(11-10-3, couronnes 45-35) ; ne change la case choisie que lorsqu'une autre
+est nettement meilleure (2 poses sur 24 sur une partie).
+
+Mesuré puis retiré : compter cette même menace de pose dans l'ÉVALUATEUR, sur
+tous mes gardiens (7-13). Comme la « projection par pose » d'avant : une
+pénalité fixe partout rend l'IA trop prudente. D'après l'auteur du jeu, la
+tactique est très fréquente mais son bénéfice dépasse souvent ses
+conséquences : c'est à la riposte simulée d'en faire le bilan, pas à un malus.
+
+## Dépôt libre de couronne
+
+Le générateur propose désormais tous les dépôts légaux (case libre adjacente au
+porteur). Pour qu'il ne serve plus à « cacher » un porteur exposé :
+- `perilCouronneSol` : une couronne au sol que l'adversaire peut atteindre à son
+  tour (un gardien qui vient à côté, ou une pose sur un vide voisin qui fait
+  apparaître un gardien, comptée pour moitié) coûte un cran de plus que le
+  porteur exposé sur la même case — la couronne ramassée repart avec lui ;
+- parité : le porteur reçoit le même bonus que le gardien posté à côté d'une
+  couronne libre, poser la couronne à ses pieds ne rapporte plus rien en soi.
+
+Un premier jet donnait au péril le coût le plus FAIBLE quand la couronne était
+plus proche de l'adversaire (échelle inversée) : A8 échouait, l'IA lâchait la
+couronne. Corrigé.
+
+Effets : `bench-ia` passe de 14 à 16/17 (07 transmission, 08 poussée de
+couronne — l'IA dépose puis pousse —, 04), `bench-adverse` reste 12/12.
+Self-play neutre (10-10-4), mais davantage de gardiens perdus : face à un
+porteur menacé, l'IA pose la couronne en lieu sûr au lieu de fuir avec, et le
+gardien resté exposé coûtait peu. `gardienExpose` passe de 300 à 500 (14-9-1).
+
+## Règle corrigée : entrée de la seconde couronne
+
+La seconde couronne entrait AUSSITÔT quand la première était prise (sauf prise
+sur la case centrale). Règle confirmée par l'auteur : elle n'apparaît qu'au
+début du tour suivant. `activateSecondCrownIfNeeded` met désormais toujours la
+seconde couronne en attente à la prise ; `faireEntrerCouronnesEnAttente` la fait
+entrer à l'ouverture du tour. Découvert parce que « déposer puis reprendre »
+une couronne portée faisait surgir la seconde dans le même tour. L'annonce d'une
+entrée simulée par l'IA ne s'affiche plus dans la vraie partie.
+
+## Recherche reproductible
+
+Les budgets en temps (500 ms principale, 90 ms par riposte, 180 ms
+d'approfondissement, 25 ms de MAGIE) faisaient dépendre la décision de la
+machine. `rechercheDeterministe` : seuls les budgets en nombre (états,
+rotations) limitent la recherche ; `PLAN_SECURITE` ne sert qu'à éviter un
+blocage (3 s + 4 × 0,7 s + 1,2 s ≈ 7 s au pire).
+
+Mêmes 11 positions, seul puis sous forte charge processeur : ancien mode 5/11
+décisions identiques, nouveau 11/11. Temps seul : médiane 0,7 s, max 1,1 s.
+Self-play contre l'ancien mode sous charge (4 processus pour 4 cœurs) :
+**20 victoires, 2 défaites, 2 nuls** — l'ancien mode perdait sa profondeur dès
+que la machine ralentissait ; le nouveau coûte alors 2,3 s par tour en moyenne
+(p95 5,2 s).
+
+## MAGIE élargie : pas retenue
+
+`magieRotationsMax` (36 par défaut, désormais réglable). 200 rotations contre
+36 : 11-13, couronnes 50-52, pour 30 % de temps de réflexion en plus (1,49 s
+contre 1,14 s par tour). Après génération, seules les 8 meilleures rotations
+(4 en profondeur) entrent dans la recherche : en examiner davantage change
+rarement la décision.
+
+## Bancs après cette passe
+
+`bench-adverse` 12/12 ; `bench-ia` 15/17 (13 réserve, et 17 — voir ci-dessous) ;
+`verif-*` conformes, `verif-fidelite-partie` 13/13 ; `verif-finalistes` échoue
+comme sur `main`.
+
+**17 « Poser près de l'action » — à trancher.** L'IA pose contre la couronne,
+fait apparaître un gardien qui la ramasse gratuitement, l'avance d'une case
+puis la DÉPOSE sur la case centrale du sanctuaire : ses quatre voisines sont
+de la terre, aucun gardien adverse ne peut l'atteindre, personne ne peut la
+reprendre au tour suivant — alors qu'un porteur resterait exposé à « pose +
+apparition + poussée ». Le test exige une couronne PORTÉE en fin de tour.
+
+**P08, proposition d'oracle stratégique** (P08 passe désormais : l'IA dépose
+la couronne puis la pousse vers son village). Plutôt qu'exiger une séquence,
+accepter : couronne portée par l'IA, OU couronne rapprochée du village, OU
+couronne au sol adjacente à un gardien de l'IA et hors d'atteinte adverse au
+tour suivant.

@@ -1630,6 +1630,8 @@
             return {
               joueur,
               plan: decrire(rapport.plan),
+              // Plan complet, pour les outils qui en lisent les paramètres.
+              detail: rapport.plan,
               noteDepart: depart,
               noteArrivee: arrivee,
               etatsExplores: rapport.etatsExplores,

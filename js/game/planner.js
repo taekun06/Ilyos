@@ -85,6 +85,26 @@
         draftCoutVide: 3,
         // Menace d'une pose adverse qui fait apparaître un pousseur sur le vide.
         draftMenacePose: 0.8,
+
+        /* Case d'apparition d'une pose (plannerNoteApparition).
+           apparitionTactique : 0 = ancien départage, pour comparer. */
+        apparitionTactique: 1,
+
+        /* Dépôt libre de couronne (0 = ancien générateur, pour comparer) et
+           péril d'une couronne au sol (plannerPerilCouronneSol). */
+        // Budgets en nombre d'états, le temps n'étant qu'une sécurité (PLAN_SECURITE).
+        rechercheDeterministe: 1,
+        // Rotations de MAGIE examinées par génération (voir plannerCandidatsMagic).
+        magieRotationsMax: 36,
+        depotLibre: 1,
+        perilCouronneSol: 1,
+        perilParPose: 0.5,
+        apparitionObjectif: 200,
+        apparitionAcces: 400,
+        apparitionVulnerabilite: 900,
+        apparitionPousseeCouronne: 150,
+        apparitionPoussee: 250,
+        apparitionMobilite: 60,
         // Proximité de la couronne pour le choix d'une case de gardien.
         draftAccesGardien: 1200,
         // Intention et pré-classement des poussées de couronne vers mon village.
@@ -122,7 +142,7 @@
         gardien: 200,
         // Valeur du 1er, 2e… gardien ; au-delà de la table, `gardien`.
         gardienMarginal: [900, 600, 400, 300, 250],
-        gardienExpose: 300,
+        gardienExpose: 500,
         utiliteGardienMax: 1800,
         utiliteRamassage: 300,
         utiliteRelais: 400,
@@ -746,6 +766,60 @@
         return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
       }
 
+      /** Coût d'une couronne dont le porteur est expulsable, selon l'endroit
+       *  où elle retomberait (sa case actuelle). */
+      function plannerCoutExpositionPorteur(surValidation, dm, dl) {
+        if (surValidation || dm <= 1) return PLAN_POIDS.exposeCouronneSure;
+        if (dm <= dl) return PLAN_POIDS.exposeCouronneContestee;
+        if (dl <= 2) return PLAN_POIDS.exposeCatastrophe;
+        return PLAN_POIDS.exposeCouronneFavorableAdverse;
+      }
+
+      /** Une couronne au sol en (r, c) peut-elle être ramassée par l'adversaire
+       *  à son prochain tour ? 1 si un de ses gardiens l'atteint, une fraction
+       *  si seule une pose (apparition à côté d'elle) le permet, 0 sinon. */
+      function plannerPerilCouronneSol(playerId, r, c) {
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return 0;
+        const reserve = state.players[adverse.id]?.stash || {};
+        const budgetMove = (reserve.MOVE || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
+        const portees = plannerPorteesAdverses(playerId, budgetMove);
+        let poseSeule = false;
+        for (const [vr, vc] of orthogonalNeighbors(r, c)) {
+          const occupant = characterAt(vr, vc);
+          if (occupant) {
+            if (occupant.player === adverse.id) return 1;
+            continue;
+          }
+          if (isLand(vr, vc)) {
+            if (portees.some(p => p.has(key(vr, vc)))) return 1;
+          } else {
+            // Une île posée sur ce vide peut y faire apparaître un gardien.
+            poseSeule = true;
+          }
+        }
+        if (!poseSeule || !canCreateGuardian(adverse.id) || plannerPoseImpossibleEnCache(adverse.id)) return 0;
+        return PLAN_POIDS.perilParPose;
+      }
+
+      /* poseImpossiblePour parcourt tout le plateau quand aucune forme ne
+         tient : l'évaluateur l'interroge à chaque nœud, on garde donc la
+         réponse par forme de terrain et par stock. */
+      const plannerCachePoseImpossible = new Map();
+      function plannerPoseImpossibleEnCache(joueurId) {
+        const cle = plannerEmpreinteTerrain() + ":" + joueurId + ":"
+          + state.islands.filter(i => i.owner === joueurId).length;
+        let reponse = plannerCachePoseImpossible.get(cle);
+        if (reponse === undefined) {
+          reponse = poseImpossiblePour(joueurId);
+          if (plannerCachePoseImpossible.size >= 128) {
+            plannerCachePoseImpossible.delete(plannerCachePoseImpossible.keys().next().value);
+          }
+          plannerCachePoseImpossible.set(cle, reponse);
+        }
+        return reponse;
+      }
+
       /** Ce camp pourra-t-il encore porter une couronne un jour ? */
       function plannerPeutEncoreMarquer(playerId) {
         if (plannerGardiensDe(playerId).length) return true;
@@ -902,16 +976,34 @@
             }
           }
 
+          /* PÉRIL D'UNE COURONNE AU SOL. Si l'adversaire peut venir à côté
+             d'elle à son tour — un gardien qui l'atteint, ou une pose qui en
+             fait apparaître un — il la ramasse gratuitement et repart avec :
+             c'est PIRE qu'un porteur expulsé, dont la couronne retombe sur
+             place. Même échelle que l'exposition du porteur, décalée d'un cran.
+             C'est ce terme qui empêche de « cacher » un porteur exposé en
+             lâchant sa couronne à côté de lui. */
+          if (!porteur && PLAN_POIDS.depotLibre && lAdversaireJoue && marqueLui) {
+            const peril = plannerPerilCouronneSol(playerId, r, c);
+            if (peril > 0) {
+              /* Un cran au-dessus de l'exposition d'un porteur sur la même case,
+                 sur toute l'échelle : la couronne ramassée repart avec
+                 l'adversaire, celle d'un porteur expulsé retombe sur place. */
+              const echelle = [PLAN_POIDS.exposeCouronneSure, PLAN_POIDS.exposeCouronneContestee,
+                PLAN_POIDS.exposeCouronneFavorableAdverse, PLAN_POIDS.exposeCatastrophe];
+              const rang = echelle.indexOf(plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl));
+              const cout = echelle[Math.min(rang + 1, echelle.length - 1)];
+              ajouter("perilCouronneSol", -cout * peril * PLAN_POIDS.perilCouronneSol,
+                `(${r},${c}) — atteinte ${peril === 1 ? "certaine" : "par une pose"}`);
+            }
+          }
+
           /* EXPOSITION DU PORTEUR, jugée par la position où la couronne
              RESTERAIT : les règles la font tomber sur sa case actuelle. */
           const graviteCouronne = porteur && porteur.player === playerId && lAdversaireJoue
             ? plannerGraviteExpulsion(playerId, r, c) : 0;
           if (graviteCouronne > 0) {
-            let cout;
-            if (isCrownValidationCell(moi, r, c) || dm <= 1) cout = PLAN_POIDS.exposeCouronneSure;
-            else if (dm <= dl) cout = PLAN_POIDS.exposeCouronneContestee;
-            else if (dl <= 2) cout = PLAN_POIDS.exposeCatastrophe;
-            else cout = PLAN_POIDS.exposeCouronneFavorableAdverse;
+            const cout = plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl);
             ajouter("porteurExpose", -cout * graviteCouronne,
               `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
           }
@@ -994,7 +1086,11 @@
         let gardiensExposes = 0;
         for (const g of miens) {
           let u = 0;
-          if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)) {
+          /* Un porteur a la couronne « en main » autant qu'un gardien qui se
+             tient à côté d'elle : sans cette parité, poser la couronne à ses
+             pieds rapportait 300 points sans rien changer. */
+          if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)
+            || (PLAN_POIDS.depotLibre && characterCarriesCrown(g.id))) {
             u += PLAN_POIDS.utiliteRamassage;
           }
           if (!characterCarriesCrown(g.id)
@@ -1605,18 +1701,19 @@
            en cours de route. Les îles proches de l'action sont examinées
            d'abord : une rotation lointaine ne change presque jamais une
            distance utile. */
-        const echeance = performance.now() + PLAN_CANDIDATS.magicMsMax;
+        const echeance = performance.now()
+          + (plannerDeterministe() ? PLAN_SECURITE.magieMs : PLAN_CANDIDATS.magicMsMax);
         let examinees = 0;
         const ilesTriees = plannerIlesParInteret(playerId);
         const porteCouronneLibre = ile => libres.some(a => ile.cells.some(([r, c]) => r === a.r && c === a.c));
         ilesTriees.sort((a, b) => Number(porteCouronneLibre(b)) - Number(porteCouronneLibre(a)));
 
         for (const ile of ilesTriees) {
-          if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
+          if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax) || performance.now() > echeance) break;
           for (const [pr, pc] of ile.cells) {
-            if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
+            if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax) || performance.now() > echeance) break;
             for (const pas of [1, 2, 3]) {
-              if (examinees >= PLAN_CANDIDATS.magicRotationsMax || performance.now() > echeance) break;
+              if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax) || performance.now() > echeance) break;
               examinees++;
               const direction = pas === 3 ? -1 : 1;
               const tours = pas === 3 ? 1 : pas;
@@ -1770,6 +1867,126 @@
         return initial;
       }
 
+      /* CASE D'APPARITION TACTIQUE.
+
+         La pose fait apparaître un gardien sur l'une de ses cases. Le choix
+         ne départageait que des cases ÉQUIVALENTES pour l'objectif, et ne
+         jugeait leur sécurité que par la menace d'un gardien adverse DÉJÀ sur
+         le plateau. Une case un peu moins proche de l'objectif mais nettement
+         meilleure n'était jamais proposée, et « pose adverse + apparition +
+         poussée » était ignorée — c'est l'échange de gardiens observé autour
+         du sanctuaire en ouverture.
+
+         Chaque case libre de la pose reçoit donc une note qui ARBITRE :
+         objectif de l'intention, accès aux couronnes, sécurité (vulnérabilité
+         potentielle, la même que pour la mise en place), relais, poussée d'un
+         adversaire ou d'une couronne, mobilité, blocage d'un village adverse.
+         Ce n'est qu'un pré-choix : l'état produit par la pose est ensuite noté
+         par l'évaluateur, comme tout candidat.
+
+         Coût tenu bas : les champs de distance sont calculés une fois par
+         génération (terrain courant), et l'île essayée est ajoutée à la grille
+         de terre le temps de noter ses cases, sans cloner l'état. */
+      function plannerContexteApparition(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        const cibles = activeArtifacts()
+          .filter(a => a.carrierId === null && Number.isFinite(a.r))
+          .map(a => [a.r, a.c]);
+        if ((state.couronnesEnAttente || []).length) cibles.push([CENTER.r, CENTER.c]);
+        return avecGrilleTerre(() => ({
+          adverse,
+          champCouronne: plannerChampDistance(cibles.length ? cibles : [[CENTER.r, CENTER.c]]),
+          champAdverse: plannerDraftChampAdverse(playerId),
+          poseAdverse: !!adverse && canCreateGuardian(adverse.id) && !poseImpossiblePour(adverse.id),
+          pousses: availableActionCount("PUSH", state.players[playerId]),
+          villages: crownValidationCellsForPlayer(state.players[playerId]),
+          marqueLui: !!adverse && plannerPeutEncoreMarquer(adverse.id)
+        }));
+      }
+
+      function plannerNoteApparition(playerId, r, c, pose, intention, ctx) {
+        const P = PLAN_POIDS;
+        let note = 0;
+        if (intention) {
+          let d = Infinity;
+          for (const [tr, tc] of intention.cibles) d = Math.min(d, Math.abs(r - tr) + Math.abs(c - tc));
+          note -= P.apparitionObjectif * Math.abs(d - intention.contact);
+        }
+        // Accès à une couronne : par la terre existante, ou par la pose elle-même.
+        let dCouronne = ctx.champCouronne.get(key(r, c));
+        if (dCouronne === undefined) {
+          for (const [pr, pc] of pose.cells) {
+            const intra = Math.abs(pr - r) + Math.abs(pc - c);
+            for (const e of movementEdges(pr, pc)) {
+              const v = ctx.champCouronne.get(key(e.r, e.c));
+              if (v !== undefined) dCouronne = Math.min(dCouronne ?? Infinity, v + e.cost + intra);
+            }
+          }
+        }
+        note += P.apparitionAcces * plannerProximite(dCouronne === undefined ? Infinity : dCouronne);
+        note -= P.apparitionVulnerabilite
+          * plannerVulnerabilitePotentielle(playerId, r, c, ctx.champAdverse, ctx.poseAdverse);
+        // Relais, ramassage, poussées : ce que ce gardien pourra faire aussitôt.
+        let libres = 0;
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const vr = r + dr, vc = c + dc;
+          if (!inside(vr, vc)) continue;
+          const voisin = characterAt(vr, vc);
+          if (voisin) {
+            if (voisin.player === playerId && characterCarriesCrown(voisin.id)) note += P.utiliteRelais;
+            if (voisin.player !== playerId && ctx.pousses > 0) {
+              /* Poussée possible DÈS CE TOUR (la pose précède les actions) :
+                 éjecter vaut une menace pleine ; simplement déplacer un
+                 adversaire — le chasser d'un village, l'écarter d'une couronne —
+                 vaut déjà quelque chose. */
+              if (plannerVideAPortee(vr, vc, dr, dc, Math.min(ctx.pousses, 2))) {
+                note += characterCarriesCrown(voisin.id) ? P.utiliteInterception : P.utiliteMenace;
+              } else {
+                note += P.apparitionPoussee;
+              }
+            }
+            continue;
+          }
+          const couronne = looseArtifactAt(vr, vc);
+          if (couronne) {
+            note += P.utiliteRamassage;
+            const vers = (a, b) => Math.min(...ctx.villages.map(([x, y]) => Math.abs(x - a) + Math.abs(y - b)));
+            if (ctx.pousses > 0 && vers(vr + dr, vc + dc) < vers(vr, vc)) note += P.apparitionPousseeCouronne;
+            continue;
+          }
+          if (isLand(vr, vc)) libres++;
+        }
+        note += P.apparitionMobilite * libres;
+        if (ctx.marqueLui && ctx.adverse && isCrownValidationCell(ctx.adverse, r, c)) {
+          note += P.blocageValidation * 0.6;
+        }
+        return note;
+      }
+
+      /** Meilleure case d'apparition d'une pose pour une intention. */
+      function plannerMeilleureApparition(playerId, pose, intention, ctx) {
+        const libres = pose.cells.filter(([r, c]) => !characterAt(r, c));
+        if (libres.length <= 1) return libres[0] || null;
+        return avecGrilleTerre(() => {
+          const grille = grilleTerreActive;
+          const ajoutees = [];
+          for (const [r, c] of pose.cells) {
+            const i = r * grille.taille + c;
+            if (grille.cases[i] === 0) { grille.cases[i] = 1; ajoutees.push(i); }
+          }
+          try {
+            let meilleure = libres[0], meilleureNote = -Infinity;
+            for (const [r, c] of libres) {
+              const note = plannerNoteApparition(playerId, r, c, pose, intention, ctx);
+              if (note > meilleureNote) { meilleureNote = note; meilleure = [r, c]; }
+            }
+            return meilleure;
+          } finally {
+            for (const i of ajoutees) grille.cases[i] = 0;
+          }
+        });
+      }
+
       // Quelques essais de connexion, après un filtre de portée bon marché.
       // Seule une nouvelle destination réellement joignable sur l'ancien
       // terrain qualifie la pose ; le simple contact ne rapporte rien.
@@ -1825,6 +2042,9 @@
 
         const options = [];
         const vues = new Set();
+        // Calculé à la première case d'apparition à choisir, une fois par appel.
+        let ctxApparition = null;
+        const contexteApparition = () => ctxApparition || (ctxApparition = plannerContexteApparition(playerId));
         const empreinte = (pose, spawn) =>
           `${pose.shapeKey}|${pose.cells.map(([r, c]) => key(r, c)).sort().join(';')}|${spawn[0]},${spawn[1]}`;
         const proposer = (pose, spawn, but, indice) => {
@@ -1880,7 +2100,9 @@
           }
           for (const n of [...distinctes, ...variantes].sort((a, b) => b.indice - a.indice)) {
             if (places >= plafonds().poseParIntention) break;
-            const spawn = plannerSpawnMoinsExpose(playerId, n.pose, intention, n.spawn);
+            const spawn = PLAN_POIDS.apparitionTactique
+              ? plannerMeilleureApparition(playerId, n.pose, intention, contexteApparition())
+              : plannerSpawnMoinsExpose(playerId, n.pose, intention, n.spawn);
             if (proposer(n.pose, spawn, intention.but, n.indice)) places++;
           }
         }
@@ -1897,8 +2119,16 @@
           libres.sort((a, b) =>
             (Math.abs(a[0] - cible[0]) + Math.abs(a[1] - cible[1])) -
             (Math.abs(b[0] - cible[0]) + Math.abs(b[1] - cible[1])));
-          for (const spawn of libres.slice(0, plafonds().poseSpawns)) {
-            proposer(pose, spawn, "terrain", 10);
+          /* La meilleure case tactique d'abord, puis les plus proches de la
+             cible historique pour garder de la diversité. */
+          const spawns = PLAN_POIDS.apparitionTactique && canCreateGuardian(playerId)
+            ? [plannerMeilleureApparition(playerId, pose, { cibles: [cible], contact: 1 }, contexteApparition()),
+              ...libres].filter(Boolean)
+            : libres;
+          let places = 0;
+          for (const spawn of spawns) {
+            if (places >= plafonds().poseSpawns) break;
+            if (proposer(pose, spawn, "terrain", 10)) places++;
           }
         }
 
@@ -1938,9 +2168,16 @@
         const receveurs = plannerGardiensDe(playerId).filter(g => !characterCarriesCrown(g.id));
         for (const porteur of porteurs) {
           for (const [r, c] of orthogonalNeighbors(porteur.r, porteur.c)) {
-            // Sans rotation ni receveur immédiat, déposer multiplie les états
-            // sans préparer le transport gratuit recherché.
-            if (!peutTourner && !receveurs.some(g => Math.abs(g.r - r) + Math.abs(g.c - c) === 1)) continue;
+            /* DÉPÔT LIBRE. Réservé jadis aux cas « MAGIE en main » ou
+               « receveur immédiat » : l'évaluateur jugeait le porteur et non la
+               couronne, si bien que lâcher la couronne effaçait la pénalité
+               d'exposition sans rien changer à la situation (BASELINE-IA.md).
+               L'évaluateur juge désormais aussi le PÉRIL d'une couronne au sol
+               (perilCouronneSol) : le dépôt devient une décision comme une
+               autre — libérer le porteur, poser la couronne hors d'atteinte ou
+               dans ma zone, préparer une poussée. */
+            if (!PLAN_POIDS.depotLibre && !peutTourner
+              && !receveurs.some(g => Math.abs(g.r - r) + Math.abs(g.c - c) === 1)) continue;
             if (isLand(r, c) && !characterAt(r, c) && !looseArtifactAt(r, c))
               transitions.push({ type: "DEPOT", charId: porteur.id, r, c });
           }
@@ -2063,6 +2300,23 @@
          DÉDUPLICATION PAR EMPREINTE. Deux chemins qui aboutissent au même état
          stratégique sont le même plan ; on garde celui qui a le mieux noté.
          ------------------------------------------------------------------- */
+
+      /* RECHERCHE REPRODUCTIBLE. Les budgets en TEMPS faisaient dépendre la
+         décision de la machine : deux plans de valeur proche étaient départagés
+         différemment selon la vitesse du processeur (P07 réussissait ou non
+         d'une exécution à l'autre), et un appareil lent jouait plus faible.
+         En mode déterministe, seuls les budgets en NOMBRE (états, rotations)
+         limitent la recherche ; les temps ne sont plus que des sécurités contre
+         un blocage — environ 7 s au total sur une machine lente. */
+      const PLAN_SECURITE = {
+        principaleMs: 3000,
+        riposteMs: 700,
+        critiqueMs: 1200,
+        magieMs: 150
+      };
+      function plannerDeterministe() {
+        return !!PLAN_POIDS.rechercheDeterministe;
+      }
 
       const PLAN_BUDGET = {
         /* Le faisceau suit l'ouverture de la racine. Élargir les candidats sans
@@ -2219,6 +2473,7 @@
 
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
+        if (plannerDeterministe()) budget.tempsMaxMs = options.tempsSecuriteMs ?? PLAN_SECURITE.principaleMs;
         const menacesDefense = options.prioriteDefense ? plannerMenacesDefense(playerId) : [];
         const comparerDefense = (a, b) => (b.prioriteDefense || 0) - (a.prioriteDefense || 0);
         let debut = performance.now();
@@ -2514,6 +2769,7 @@
             decisionsMax: PLAN_RIPOSTE.decisionsMax,
             etatsMax: PLAN_RIPOSTE.etatsMax,
             tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs,
+            tempsSecuriteMs: PLAN_SECURITE.riposteMs,
             ...budget
           });
           // Les réponses existent déjà : les comparer de notre point de vue
@@ -2585,7 +2841,8 @@
         // Une réponse déjà trouvée reste une menace même si la seconde
         // recherche, bornée elle aussi, ne la retrouve pas.
         const debutSupplement = performance.now();
-        const echeance = debutSupplement + PLAN_RIPOSTE_CRITIQUE.tempsSupplementairesMaxMs;
+        const echeance = debutSupplement + (plannerDeterministe()
+          ? PLAN_SECURITE.critiqueMs : PLAN_RIPOSTE_CRITIQUE.tempsSupplementairesMaxMs);
         const aApprofondir = examines.filter(e =>
           withSimulatedState(e.noeud.etat, () => plannerPositionCritique()))
           .sort((a, b) => b.robustesse.note - a.robustesse.note)
@@ -2597,7 +2854,8 @@
           const approfondie = plannerEvaluerRobustesse(e.noeud, playerId, {
             decisionsMax: PLAN_RIPOSTE_CRITIQUE.decisionsMax,
             etatsMax: PLAN_RIPOSTE_CRITIQUE.etatsMax,
-            tempsMaxMs: Math.min(PLAN_RIPOSTE.tempsMaxMs, restant)
+            tempsMaxMs: Math.min(PLAN_RIPOSTE.tempsMaxMs, restant),
+            tempsSecuriteMs: Math.min(PLAN_SECURITE.riposteMs, restant)
           });
           approfondis++;
           if (approfondie.note < e.robustesse.note) e.robustesse = approfondie;
@@ -2684,6 +2942,18 @@
 
       /** Vulnérabilité potentielle d'un gardien posé en (r, c), de 0 à 1. */
       function plannerDraftVulnerabilite(playerId, r, c, champAdverse) {
+        // L'adversaire qui joue le premier tour frappe avant que je bouge.
+        return plannerVulnerabilitePotentielle(playerId, r, c, champAdverse, true)
+          * (plannerDraftJoueEnPremier(playerId) ? 0.6 : 1);
+      }
+
+      /* VULNÉRABILITÉ POTENTIELLE, partagée par la mise en place et la case
+         d'apparition d'une pose : ce que l'adversaire pourra faire à SON tour,
+         y compris avec des gardiens qu'il n'a pas encore. `poseAdverse` dit s'il
+         peut encore faire apparaître un pousseur par une pose (sous le plafond
+         de gardiens, avec une forme qui tient) : sans cela, un poste de poussée
+         vide est bel et bien un abri. */
+      function plannerVulnerabilitePotentielle(playerId, r, c, champAdverse, poseAdverse) {
         let pire = 0;
         for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
           const force = plannerVideAPortee(r, c, dr, dc, 2);
@@ -2699,6 +2969,7 @@
                vides était ainsi la cible idéale — mesuré : le premier draft
                Expert perdait autant de gardiens de mise en place en quatre
                tours que l'historique (37 sur 120 contre 34). */
+            if (!poseAdverse) continue;
             acces = PLAN_POIDS.draftMenacePose;
           } else {
             const occupant = characterAt(pr, pc);
@@ -2710,8 +2981,7 @@
           const table = PLAN_POIDS.graviteParForce || [1];
           pire = Math.max(pire, table[Math.min(force, table.length) - 1] * acces);
         }
-        // L'adversaire qui joue le premier tour frappe avant que je bouge.
-        return pire * (plannerDraftJoueEnPremier(playerId) ? 0.6 : 1);
+        return pire;
       }
 
       // Le draft terminé, le joueur 0 ouvre la partie (finishCustomDraft).
