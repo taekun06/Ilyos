@@ -103,6 +103,12 @@
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
         riposteRemplacePeril: 1,
+        /* Caches du planner, en masque (voir plannerCacheActif). 0 les
+           contourne tous : calcul lent mais sans mémoire, qui sert de
+           référence pour vérifier qu'un cache ne change aucun résultat. */
+        cachesPlanner: 15,
+        // Multiplie les plafonds de temps de sécurité (analyse hors partie).
+        securiteFacteur: 1,
         // Course des couronnes : points par case d'écart (lui − moi), bornée.
         courseParCase: 0,
         courseHorizon: 16,
@@ -223,6 +229,13 @@
        *  en cache d'un nœud de recherche à l'autre, et seule une pose ou une
        *  rotation l'invalide. Mesuré en fin de partie : ces Dijkstra par
        *  gardien faisaient les deux tiers du coût de l'évaluateur. */
+      /* PLAN_POIDS.cachesPlanner : masque des caches actifs — 1 champs de
+         distance, 2 portées adverses, 4 analyse du terrain, 8 pose impossible.
+         0 les coupe tous (référence sans mémoire pour vérifier un cache). */
+      function plannerCacheActif(bit) {
+        const masque = PLAN_POIDS.cachesPlanner;
+        return masque === undefined || masque === true || (Number(masque) & bit) !== 0;
+      }
       const PLAN_CACHE_CHAMPS_MAX = 256;
       const plannerCacheChamps = new Map();
 
@@ -233,7 +246,7 @@
         if (!valides.length) return 99;
         const cle = plannerEmpreinteTerrain() + ':'
           + valides.map(([r, c]) => r * GRID + c).sort((a, b) => a - b).join(',');
-        let champ = plannerCacheChamps.get(cle);
+        let champ = plannerCacheActif(1) ? plannerCacheChamps.get(cle) : null;
         if (!champ) {
           champ = plannerChampDistance(valides);
           if (plannerCacheChamps.size >= PLAN_CACHE_CHAMPS_MAX) {
@@ -374,7 +387,7 @@
            autre page, ne donnait plus la même riposte (2 785 contre 788). */
         const cle = plannerEmpreinteTerrain() + ':' + adverse.id + ':' + budgetMove + ':'
           + (state.characters || []).map(c => c.player + '@' + c.r + ',' + c.c).sort().join('|');
-        let portees = plannerCachePortees.get(cle);
+        let portees = plannerCacheActif(2) ? plannerCachePortees.get(cle) : null;
         if (!portees) {
           portees = [plannerPorteeReunie(ennemis, budgetMove)];
           if (plannerCachePortees.size >= PLAN_CACHE_PORTEES_MAX) {
@@ -573,8 +586,20 @@
         return plannerCalculerEmpreinteTerrain();
       }
 
+      /* Le terrain au sens d'isLand, ce sont les îles MAIS AUSSI les villages
+         et le sanctuaire, et leurs coordonnées n'ont de sens qu'avec la taille
+         du plateau. Sans eux, un plateau vide valait 0 en 11×11 comme en
+         13×13, quels que soient les villages : au premier tour d'une nouvelle
+         partie dans la même page, les distances d'une partie précédente
+         pouvaient ressortir du cache. */
       function plannerCalculerEmpreinteTerrain() {
-        let h = (state.islands || []).length * 1000003;
+        let h = GRID;
+        for (const joueur of state.players || []) {
+          for (const v of villagesForPlayer(joueur)) {
+            h = (h * 31 + (v.r * GRID + v.c) + 7) % 2147483647;
+          }
+        }
+        h = (h * 1000003 + (state.islands || []).length) % 2147483647;
         for (const ile of state.islands || []) {
           for (const [r, c] of ile.cells) {
             h = (h * 31 + (r * GRID + c) + 1) % 2147483647;
@@ -636,7 +661,7 @@
 
       function plannerTerrain(playerId) {
         const cle = plannerEmpreinteTerrain() + ':' + playerId;
-        let analyse = plannerCacheTerrain.get(cle);
+        let analyse = plannerCacheActif(4) ? plannerCacheTerrain.get(cle) : null;
         if (!analyse) {
           analyse = plannerAnalyseTerrain(playerId);
           // Rotation simple : la forme la plus anciennement vue sort.
@@ -823,9 +848,13 @@
          réponse par forme de terrain et par stock. */
       const plannerCachePoseImpossible = new Map();
       function plannerPoseImpossibleEnCache(joueurId) {
-        const cle = plannerEmpreinteTerrain() + ":" + joueurId + ":"
-          + state.islands.filter(i => i.owner === joueurId).length;
-        let reponse = plannerCachePoseImpossible.get(cle);
+        /* La réponse dépend du STOCK restant, donc des formes déjà posées —
+           pas seulement de leur nombre : sur un même terrain, deux îles
+           échangées entre les camps laissaient autrement la même clé. */
+        const cle = plannerEmpreinteTerrain() + ":" + joueurId + ":" + shapeLimitPerOwner() + ":"
+          + state.islands.filter(i => i.owner === joueurId)
+            .map(i => i.shapeKey + (i.fromSetup ? "*" : "")).sort().join(",");
+        let reponse = plannerCacheActif(8) ? plannerCachePoseImpossible.get(cle) : undefined;
         if (reponse === undefined) {
           reponse = poseImpossiblePour(joueurId);
           if (plannerCachePoseImpossible.size >= 128) {
@@ -1679,6 +1708,10 @@
          validation, et celle du porteur adverse vers la sienne. Une rotation
          qui ne change aucune de ces deux quantités ne mérite pas d'être
          simulée, quelle que soit sa géométrie. */
+      /* Générations MAGIE arrêtées par leur plafond de temps depuis le début
+         du tour en cours (voir plannerChercherPlanRobuste). */
+      let plannerCoupuresMagie = 0;
+
       function plannerCandidatsMagic(playerId) {
         const budget = availableActionCount("MAGIC", state.players[playerId]);
         if (budget < 1) return [];
@@ -1736,18 +1769,21 @@
            d'abord : une rotation lointaine ne change presque jamais une
            distance utile. */
         const echeance = performance.now()
-          + (plannerDeterministe() ? PLAN_SECURITE.magieMs : PLAN_CANDIDATS.magicMsMax);
+          + (plannerDeterministe() ? PLAN_SECURITE.magieMs * plannerSecurite() : PLAN_CANDIDATS.magicMsMax);
         let examinees = 0;
         const ilesTriees = plannerIlesParInteret(playerId);
         const porteCouronneLibre = ile => libres.some(a => ile.cells.some(([r, c]) => r === a.r && c === a.c));
         ilesTriees.sort((a, b) => Number(porteCouronneLibre(b)) - Number(porteCouronneLibre(a)));
 
         for (const ile of ilesTriees) {
-          if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax) || performance.now() > echeance) break;
+          if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax)) break;
+          if (performance.now() > echeance) { plannerCoupuresMagie++; break; }
           for (const [pr, pc] of ile.cells) {
-            if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax) || performance.now() > echeance) break;
+            if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax)) break;
+            if (performance.now() > echeance) { plannerCoupuresMagie++; break; }
             for (const pas of [1, 2, 3]) {
-              if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax) || performance.now() > echeance) break;
+              if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax)) break;
+              if (performance.now() > echeance) { plannerCoupuresMagie++; break; }
               examinees++;
               const direction = pas === 3 ? -1 : 1;
               const tours = pas === 3 ? 1 : pas;
@@ -2008,6 +2044,11 @@
             const i = r * grille.taille + c;
             if (grille.cases[i] === 0) { grille.cases[i] = 1; ajoutees.push(i); }
           }
+          /* Terrain PROVISOIRE : l'empreinte doit le dire, sans quoi tout ce
+             qu'un cache retiendrait pendant l'essai serait rangé sous la clé du
+             terrain sans cette île, alors que calculé avec elle. */
+          const empreinteReelle = grille.empreinte;
+          grille.empreinte = "essai:" + plannerEmpreinteTerrain() + ":" + ajoutees.join(",");
           try {
             let meilleure = libres[0], meilleureNote = -Infinity;
             for (const [r, c] of libres) {
@@ -2017,6 +2058,7 @@
             return meilleure;
           } finally {
             for (const i of ajoutees) grille.cases[i] = 0;
+            grille.empreinte = empreinteReelle;
           }
         });
       }
@@ -2370,10 +2412,23 @@
          un blocage — environ 7 s au total sur une machine lente. */
       const PLAN_SECURITE = {
         principaleMs: 3000,
-        riposteMs: 700,
+        /* 700 ms tombait sur le coût NORMAL d'une riposte (250 états) dès que
+           la machine était un peu lente ou « froide » : la riposte était
+           coupée, la menace mesurée changeait, et la même position ne donnait
+           plus la même décision (2 785 contre 788, défaite archivée). Le
+           plafond redevient un filet ; l'échéance du tour borne la somme. */
+        riposteMs: 2000,
         critiqueMs: 1200,
-        magieMs: 150
+        magieMs: 150,
+        // Échéance de tout le tour (recherche + ripostes), sous les 7 s admis.
+        tourMs: 6000
       };
+      /* Multiplicateur des plafonds de sécurité (PLAN_POIDS.securiteFacteur),
+         pour les outils d'analyse : un plafond de temps atteint rend la
+         recherche dépendante de la vitesse de la machine. */
+      function plannerSecurite() {
+        return Math.max(1, Number(PLAN_POIDS.securiteFacteur) || 1);
+      }
       function plannerDeterministe() {
         return !!PLAN_POIDS.rechercheDeterministe;
       }
@@ -2595,11 +2650,13 @@
 
       function plannerChercherPlan(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
-        if (plannerDeterministe()) budget.tempsMaxMs = options.tempsSecuriteMs ?? PLAN_SECURITE.principaleMs;
+        if (plannerDeterministe()) budget.tempsMaxMs = options.tempsSecuriteMs ?? PLAN_SECURITE.principaleMs * plannerSecurite();
         const menacesDefense = options.prioriteDefense ? plannerMenacesDefense(playerId) : [];
         const comparerDefense = (a, b) => (b.prioriteDefense || 0) - (a.prioriteDefense || 0);
         let debut = performance.now();
         let etatsExplores = 0;
+        // Vrai si le plafond de temps a arrêté la recherche avant son budget d'états.
+        let coupeParTemps = false;
         let candidatsGeneres = 0;
 
         const racine = {
@@ -2658,7 +2715,7 @@
           const suivants = [];
 
           for (const noeud of faisceau) {
-            if (performance.now() - debut > budget.tempsMaxMs) break;
+            if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
             if (etatsExplores > budget.etatsMax) break;
 
             // Les générateurs ne modifient pas l'état du nœud : ils simulent
@@ -2676,7 +2733,7 @@
             candidatsGeneres += actions.length;
 
             for (const action of actions) {
-              if (performance.now() - debut > budget.tempsMaxMs) break;
+              if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
               const clone = structuredClone(noeud.etat);
@@ -2720,7 +2777,7 @@
           suivants.sort((a, b) => b.note - a.note);
           faisceau = plannerFaisceauDiversifie(suivants, budget.largeurFaisceau);
           profondeurAtteinte = niveau + 1;
-          if (performance.now() - debut > budget.tempsMaxMs) break;
+          if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
           if (etatsExplores > budget.etatsMax) break;
         }
 
@@ -2736,6 +2793,7 @@
           noteDepart: racine.note,
           noteArrivee: meilleur ? meilleur.note : racine.note,
           etatsExplores,
+          coupeParTemps,
           candidatsGeneres,
           profondeurAtteinte,
           largeurFaisceau: budget.largeurFaisceau,
@@ -2914,7 +2972,7 @@
             decisionsMax: PLAN_RIPOSTE.decisionsMax,
             etatsMax: PLAN_RIPOSTE.etatsMax,
             tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs,
-            tempsSecuriteMs: PLAN_SECURITE.riposteMs,
+            tempsSecuriteMs: PLAN_SECURITE.riposteMs * plannerSecurite(),
             ...budget
           });
           // Les réponses existent déjà : les comparer de notre point de vue
@@ -2933,17 +2991,18 @@
               garantie
             };
           };
+          const coupee = !!reponse.coupeParTemps;
           const candidates = reponse.finalistes || [];
           if (!candidates.length) {
             for (const action of reponse.plan) plannerAppliquerAction(action);
-            return { ...mesurer(reponse.plan), ripostesComparees: 1 };
+            return { ...mesurer(reponse.plan), ripostesComparees: 1, coupee };
           }
           let pire = null;
           for (const candidate of candidates) {
             const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
             if (!pire || resultat.note < pire.note) pire = resultat;
           }
-          return { ...pire, ripostesComparees: candidates.length };
+          return { ...pire, ripostesComparees: candidates.length, coupee };
         });
       }
 
@@ -2958,6 +3017,7 @@
       function plannerChercherPlanRobuste(playerId, options) {
         if (plannerSansAnticipation.has(playerId)) return plannerChercherPlan(playerId, options || {});
         const debutTotal = performance.now();
+        plannerCoupuresMagie = 0;
         const principal = plannerChercherPlan(playerId, { ...options, prioriteDefense: true });
         const finalistes = (principal.finalistes || [])
           .slice(0, principal.finalistesARiposter || PLAN_RIPOSTE.finalistes);
@@ -2979,16 +3039,21 @@
            Passer son tour n'est pourtant pas gratuit : c'est cinq cartes
            perdues et un tempo offert. Le plan vide se voit donc appliquer ce
            coût, comme n'importe quel autre coup a le sien. */
+        const echeanceTour = debutTotal + PLAN_SECURITE.tourMs * plannerSecurite();
+        const tempsRiposte = () => plannerDeterministe()
+          ? { tempsSecuriteMs: Math.max(50, Math.min(PLAN_SECURITE.riposteMs * plannerSecurite(),
+            echeanceTour - performance.now())) }
+          : {};
         const examines = finalistes.map(noeud => ({
           noeud: noeud,
-          robustesse: plannerEvaluerRobustesse(noeud, playerId)
+          robustesse: plannerEvaluerRobustesse(noeud, playerId, tempsRiposte())
         }));
         // Un supplément borné pour les seuls finalistes en situation critique.
         // Une réponse déjà trouvée reste une menace même si la seconde
         // recherche, bornée elle aussi, ne la retrouve pas.
         const debutSupplement = performance.now();
-        const echeance = debutSupplement + (plannerDeterministe()
-          ? PLAN_SECURITE.critiqueMs : PLAN_RIPOSTE_CRITIQUE.tempsSupplementairesMaxMs);
+        const echeance = Math.min(echeanceTour, debutSupplement + (plannerDeterministe()
+          ? PLAN_SECURITE.critiqueMs * plannerSecurite() : PLAN_RIPOSTE_CRITIQUE.tempsSupplementairesMaxMs));
         const aApprofondir = examines.filter(e =>
           withSimulatedState(e.noeud.etat, () => plannerPositionCritique()))
           .sort((a, b) => b.robustesse.note - a.robustesse.note)
@@ -3001,7 +3066,7 @@
             decisionsMax: PLAN_RIPOSTE_CRITIQUE.decisionsMax,
             etatsMax: PLAN_RIPOSTE_CRITIQUE.etatsMax,
             tempsMaxMs: Math.min(PLAN_RIPOSTE.tempsMaxMs, restant),
-            tempsSecuriteMs: Math.min(PLAN_SECURITE.riposteMs, restant)
+            tempsSecuriteMs: Math.min(PLAN_SECURITE.riposteMs * plannerSecurite(), restant)
           });
           approfondis++;
           if (approfondie.note < e.robustesse.note) e.robustesse = approfondie;
@@ -3047,6 +3112,11 @@
           // Notes après riposte, dans l'ordre du classement final : une
           // décision serrée se lit ici sans rien recalculer (defaites.js).
           classement: examines.slice(0, 6).map(e => Math.round(e.robustesse.note)),
+          // Recherches coupées par un plafond de temps : la décision dépend
+          // alors de la vitesse de la machine, et ne se rejoue plus à l'identique.
+          principaleCoupee: !!principal.coupeParTemps,
+          ripostesCoupees: examines.filter(e => e.robustesse.coupee).length,
+          magieCoupee: plannerCoupuresMagie,
           approfondissement: {
             finalistes: approfondis,
             dureeMs: Math.round(performance.now() - debutSupplement)

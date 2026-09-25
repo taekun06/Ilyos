@@ -139,14 +139,14 @@ async function main() {
         const joue = await page.evaluate(([j, p, g]) => window.ILYOS_SELFPLAY.robustesse(j, p, { graine: 1, grille: g }),
           [json, t.decision.plan, grille]);
         console.log(`IA a joué  : ${t.decision.planLisible}`);
-        console.log(`   en partie : fin de tour ${t.decision.noteArrivee}, après riposte ${t.decision.noteRobuste}`);
+        console.log(`   en partie : fin de tour ${t.decision.noteArrivee}, après riposte ${t.decision.noteRobuste}${t.decision.coupee ? ' — ⚠ recherche COUPÉE par le temps en partie : non reproductible' : ''}`);
         console.log(`   aujourd'hui : ${joue.erreur ? joue.erreur : `fin de tour ${joue.noteFinTour}, après riposte ${joue.noteRobuste} (riposte ${(joue.riposte || []).join('+')})`}`);
       }
       const r = await page.evaluate(([j, g]) => window.ILYOS_SELFPLAY.analyser(j, { graine: 1, grille: g }), [json, grille]);
       const a = r.anticipation || {};
       const lisible = await page.evaluate(([p, e]) => window.ILYOS_DEFAITES.decrire(p, e), [r.detail, t.etat]);
       console.log(`IA actuelle: ${lisible}`);
-      console.log(`   fin de tour ${Math.round(r.noteArrivee.note)}, après riposte ${a.noteRobuste ?? '—'}, ${r.etatsExplores} états, ${r.dureeMs} ms`);
+      console.log(`   fin de tour ${Math.round(r.noteArrivee.note)}, après riposte ${a.noteRobuste ?? '—'}, ${r.etatsExplores} états, ${r.dureeMs} ms${a.principaleCoupee || a.ripostesCoupees ? ' — ⚠ coupée par le temps ici aussi' : ''}`);
       const termes = (r.noteDepart.termes || []).slice().sort((x, y) => Math.abs(y.montant) - Math.abs(x.montant)).slice(0, 5)
         .map(x => `${x.terme} ${x.montant > 0 ? '+' : ''}${Math.round(x.montant)}`).join(', ');
       console.log(`   position de départ ${Math.round(r.noteDepart.note)} : ${termes}`);

@@ -130,6 +130,8 @@
             examines: a.examines ?? null,
             classement: a.classement || null,
             etatsExplores: rapport ? rapport.etatsExplores ?? null : null,
+            // Recherche arrêtée par un plafond de temps : décision non reproductible.
+            coupee: !!(a.principaleCoupee || a.ripostesCoupees),
             candidatsGeneres: rapport ? rapport.candidatsGeneres ?? null : null,
             profondeur: rapport ? rapport.profondeurAtteinte ?? null : null,
             dureeMs: rapport ? rapport.dureeTotaleMs ?? rapport.dureeMs ?? null : null
@@ -212,6 +214,7 @@
             }
           }
           if (d.repli) { raisons.push(`repli : ${d.repli}`); gravite += 1500; }
+          if (d.coupee) { raisons.push("recherche coupée par le temps (machine lente)"); gravite += 400; }
           // Écart NUL : deux finalistes menant à la même position, pas un choix serré.
           const ecartTete = Array.isArray(d.classement) && d.classement.length > 1
             ? Math.abs(d.classement[0] - d.classement[1]) : Infinity;

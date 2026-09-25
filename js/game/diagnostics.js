@@ -1659,10 +1659,11 @@
          Sert à l'autopsie d'un coup que l'IA n'a pas choisi : « et la ligne du
          joueur, combien la riposte la punit-elle ? ». Le plan est une liste
          d'actions au format du planner (champ `detail` d'`analyser`). */
-      function selfplayRobustesse(json, plan, { graine = 1, grille = null } = {}) {
+      function selfplayRobustesse(json, plan, { graine = 1, grille = null, poids = null } = {}) {
         if (grille && GRID !== grille) setBoardSize(grille);
         const clone = JSON.parse(json);
         setTestRandomSeed(graine);
+        const poidsAvant = selfplayAppliquerPoids(poids);
         try {
           return withSimulatedState(clone, () => {
             const joueur = state.currentPlayer;
@@ -1675,6 +1676,7 @@
               menace: robustesse.menace, riposte: robustesse.riposte, garantie: robustesse.garantie };
           });
         } finally {
+          selfplayAppliquerPoids(poidsAvant);
           setTestRandomSeed(null);
         }
       }
