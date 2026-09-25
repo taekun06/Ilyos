@@ -1897,7 +1897,34 @@
         });
       }
 
+      /* Gardiens de `joueur` que l'adversaire, au trait avec ses VRAIES
+         cartes (main tirée + réserve), peut éjecter ce tour-ci d'un seul
+         déplacement de gardien puis d'une poussée — et ce que le planner en
+         pensait avec le budget qu'il prête à l'adversaire (gravité). Sert à
+         mesurer les gardiens laissés exposés ; la MAGIE n'est pas comptée. */
+      function selfplayExposes(json, joueur, poids = null) {
+        const memoire = selfplayAppliquerPoids(poids);
+        try {
+          return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => {
+            const adverse = state.players[state.currentPlayer];
+            const move = availableActionCount("MOVE", adverse);
+            const push = availableActionCount("PUSH", adverse);
+            const reel = { move, push, forceMax: Math.min(push, PLAN_POIDS.pousseeLongue || 1),
+              portees: plannerPorteesAdverses(joueur, move) };
+            return plannerGardiensDe(joueur).map(g => ({
+              id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+              forceReelle: push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0,
+              graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
+              mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
+            }));
+          }));
+        } finally {
+          selfplayAppliquerPoids(memoire);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
+        exposes: selfplayExposes,
         departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
         robustesse: selfplayRobustesse,

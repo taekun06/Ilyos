@@ -1226,3 +1226,46 @@ réserve de PUSH adverse réelle (visible) plutôt qu'une main plausible fixe ;
 garde permanente d'un défenseur à portée des cases voisines des villages
 adverses de coin quand l'adversaire porte une couronne ; MAGIE dans la
 riposte (au moins les rotations qui déplacent un porteur).
+
+## Gardiens exposés à une poussée longue : corrigé (point 1)
+
+Cause, mesurée sur la partie gagnée (`tests/positions-defaites/
+partie-gagnee-expert-t29.json`, banc `scripts/verif-exposes-partie.js`) :
+les 11 décisions sur 14 qui laissaient un gardien éjectable l'étaient toutes
+par une poussée de **force 2**, et le planner les voyait toutes à gravité 0.
+`plannerForceExpulsion` ne prête une force 2 à l'adversaire que s'il tient
+déjà **deux PUSH en réserve**. Or avec une seule en réserve, sa main de cinq
+cartes en apporte une autre 9 fois sur 10 (loi hypergéométrique sur la
+composition publique : 5 cartes parmi 13 dont 4 PUSH) ; avec aucune, deux
+PUSH arrivent une fois sur deux.
+
+Correction (`plannerGraviteExpulsion`, `PLAN_POIDS.piochePush`) : quand la
+réserve seule ne suffit pas, la poussée longue (jusqu'à `pousseeLongue`)
+compte quand même, pondérée par la probabilité de piocher les PUSH qui
+manquent. Force 2 avec une PUSH en réserve : 0,75 × 0,90 = 0,68 ; sans
+réserve : 0,75 × 0,51 = 0,38. Seulement pour les gardiens NON porteurs.
+
+Mesures :
+- décisions de la partie rejouées avec le code (3 passages, stables) :
+  10/13 laissent un gardien éjectable avec l'ancien calcul, **7/13** avec la
+  correction. Les 7 restantes : 3 porteurs (volontairement hors du mode 1),
+  3 gardiens dont le risque est vu (0,38 à 0,68) mais jugé acceptable, 1
+  poste de poussée à 4 MOVE quand le modèle en prête 3 à l'adversaire.
+  Plus aucun gardien non porteur à portée n'est invisible ;
+- self-play rapide contre l'ancien calcul, 40 parties par série : mode 1
+  24-13-3 (graines 7100+) puis 18-19-3 (8100+), soit 56 % sur 80 parties
+  (environ 1σ) : aucun dommage, gain non démontré en IA contre IA, qui ne
+  cherche pas ces éliminations comme un humain. Temps par tour inchangé ;
+- mode 2 (porteurs compris) : 15-24-1, **rejeté** — les porteurs n'osent
+  plus avancer, comme l'avait déjà mesuré la limitation d'origine.
+
+Bancs : `verif-gardien-expose.js` (6/6, nouveau), `verif-spawn-sur`,
+`verif-priorite-defense`, `verif-validation`, `verif-pose-tactique`,
+`verif-depot-magic`, `verif-poussee` passent ; `npm run check` OK. Dans
+`tests/puzzles.spec.js`, le prologue vocal de « La Première Lueur » échoue
+aussi sans la correction (sous-titre vide), sans rapport avec le planner.
+
+Reste ouvert : le budget de déplacement prêté à l'adversaire (réserve +
+3 MOVE plausibles) ignore aussi la pioche ; la poussée « MAGIE puis force 1 »
+n'est pas modélisée ; le poids `gardienExpose` (500) reste inférieur à la
+valeur marginale d'un dernier gardien (900).
