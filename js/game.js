@@ -24470,6 +24470,9 @@
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
         riposteRemplacePeril: 1,
+        // Course des couronnes : points par case d'écart (lui − moi), bornée.
+        courseParCase: 0,
+        courseHorizon: 16,
         perilCouronneSol: 1,
         perilParPose: 0.5,
         apparitionObjectif: 200,
@@ -25278,6 +25281,24 @@
           ajouter("positionCouronne",
             valeurCouronneADistance(dm) - valeurCouronneADistance(dl),
             `(${r},${c}) — moi ${dm}, lui ${dl}`);
+
+          /* COURSE : chaque case compte, partout. La table ci-dessus est raide
+             près des villages et presque plate au-delà de six cases : au
+             milieu du plateau, faire avancer une couronne d'une case vers mon
+             village rapportait 35 à 70 points, 10 sans chemin de terre — rien
+             face à un seul terme de prudence. Or chaque case parcourue agit
+             trois fois : je me rapproche, je l'éloigne de lui, et il devra
+             dépenser pose, gardiens ou cartes pour revenir la chercher. Un
+             montant fixe par case d'écart, avec ou sans chemin (un gardien à
+             venir, une île posée la reprendront). */
+          if (PLAN_POIDS.courseParCase) {
+            const effective = d => !Number.isFinite(d) || d >= 99
+              ? PLAN_POIDS.courseHorizon
+              : Math.min(PLAN_POIDS.courseHorizon, d >= 30 ? d - 30 + 2 : d);
+            ajouter("courseCouronne",
+              PLAN_POIDS.courseParCase * (effective(dl) - effective(dm)),
+              `(${r},${c}) — écart ${effective(dl) - effective(dm)}`);
+          }
 
           // Porter n'est plus qu'un petit avantage pratique.
           if (porteur) {
