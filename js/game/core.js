@@ -1609,17 +1609,24 @@
           if (!artifact) continue;
           // La seconde couronne garde son annonce propre ; les autres se
           // reposent simplement sur le terrain.
-          if (artifact === state.secondArtifact && !artifact.active) activateSecondCrownIfNeeded();
+          if (artifact === state.secondArtifact && !artifact.active) activateSecondCrownIfNeeded(true);
           else resetArtifactObject(artifact);
         }
       }
 
-      function activateSecondCrownIfNeeded() {
+      /* ENTRÉE DE LA SECONDE COURONNE. Quand la première couronne est prise,
+         la seconde n'apparaît qu'au DÉBUT DU TOUR SUIVANT (règle confirmée par
+         l'auteur du jeu) : la prise la met en attente, l'ouverture du tour la
+         fait entrer (faireEntrerCouronnesEnAttente). Elle entrait auparavant
+         aussitôt, sauf prise sur la case centrale du sanctuaire — si bien que
+         déposer puis reprendre une couronne pouvait la faire surgir dans le
+         même tour. */
+      function activateSecondCrownIfNeeded(ouvertureDeTour = false) {
         ensureArtifactState();
         if (state.rules?.disableSecondCrown) return false;
-        if (state.secondArtifact.active || !state.artifact.carrierId) return false;
-        if (!couronnePeutEntrerMaintenant()) {
-          differerEntreeCouronne(state.secondArtifact);
+        if (state.secondArtifact.active) return false;
+        if (!ouvertureDeTour) {
+          if (state.artifact.carrierId) differerEntreeCouronne(state.secondArtifact);
           return false;
         }
         const spawn = findCrownSpawnCell(state.secondArtifact.id);
@@ -1627,6 +1634,8 @@
         state.secondArtifact.carrierId = null;
         state.secondArtifact.r = spawn.r;
         state.secondArtifact.c = spawn.c;
+        // Une entrée simulée par l'IA ne s'annonce pas dans la vraie partie.
+        if (ilyosSimulationActive) return true;
         setTimeout(() => {
           if (!state) return;
           animateCellPulse(spawn.r, spawn.c, "crown-burst");
