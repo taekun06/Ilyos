@@ -17683,7 +17683,14 @@
           reachable: [...state.reachable],
           nextIslandId: state.nextIslandId,
           nextCharId: state.nextCharId,
-          winner: state.winner
+          winner: state.winner,
+          /* Niveau de l'IA et règles de la partie : l'IA les lit (aiConfig,
+             stock de formes, limite d'îles). Sans eux, une position rejouée
+             depuis un instantané — analyse de défaite, self-play, banc —
+             retombait sur les réglages du niveau NORMAL (bruit sur le score
+             des poses, tactiques de couronne) : ce n'était plus l'Expert. */
+          aiDifficulty: state.aiDifficulty ?? null,
+          rules: state.rules ? { ...state.rules } : null
         });
       }
 
@@ -17760,6 +17767,10 @@
         state.nextIslandId = snap.nextIslandId;
         state.nextCharId = snap.nextCharId;
         state.winner = snap.winner;
+        // Absents des instantanés anciens ou fabriqués (bancs) : la partie
+        // en cours garde alors les siens.
+        if (snap.aiDifficulty) state.aiDifficulty = snap.aiDifficulty;
+        if (snap.rules) state.rules = { ...snap.rules };
         state.fxCells = [];
         state.inputLocked = false;
         state.magicHoverIslandId = null;
