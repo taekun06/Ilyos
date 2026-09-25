@@ -833,3 +833,340 @@ Retiré.
 3 défaites, 3 nuls sur 11 parties. La plupart des tours s'arrêtent avant le
 budget (faisceau épuisé) ; le gain ne justifie pas un gel plus long de la page
 pendant le tour de l'IA.
+
+---
+
+# Ce que l'Expert sous-estimait : couronne au sol, passes, poussées, gardiens exposés
+
+Quatre observations de jeu du propriétaire, traduites en capacités puis
+mesurées une à une en self-play rapide (`selfplay-rapide.js`, budget réel,
+chaque changement contre la même version sans lui, via `ILYOS_POIDS_A/_B`).
+Le harnais compte désormais aussi les gardiens PERDUS (éjectés, pas partis
+valider) avant le tour 20, et coupe le rendu 3D de ses pages : une dizaine de
+pages en rendu logiciel divisaient sa cadence par dix.
+
+## Gardiens trop facilement éjectables
+
+**La menace ne voyait que le vide juste derrière.** Une poussée de force N
+déplace toute la ligne de N cases : un gardien à deux cases du bord s'éjecte
+avec deux poussées. `plannerForceExpulsion` suit la ligne derrière la victime
+(pièces collées = bloc, pièce séparée par une case libre = arrêt) et rend la
+force minimale. La poussée longue n'est prêtée à l'adversaire que s'il a les
+cartes en RÉSERVE (visible) : avec deux poussées supposées dans sa main, toute
+case d'une île de trois de large devenait éjectable et l'IA ne distinguait
+plus un refuge (A2 échouait ; la poussée longue seule : 10-15).
+
+**Gravité graduée.** Une case qui exige deux ou trois poussées est moins grave
+qu'une case au bord : `graviteParForce` [1 ; 0,75 ; 0,6]. Mesuré : [1 ; 0,5 ;
+0,35] → 4-15 (imprudent), [1 ; 0,75 ; 0,6] → 16-7, [1 ; 0,85 ; 0,75] → 7-10.
+
+**Un gardien exposé coûte en soi** (`gardienExpose` 300, pondéré par la gravité) :
+un gardien sans rôle garé au bord ne coûtait rien, seule son utilité — souvent
+nulle — était escomptée. Portée 2 + ce terme : 14-6-6.
+
+**Valeur marginale des gardiens** (`gardienMarginal` 900, 600, 400, 300, 250,
+puis 200). L'ouverture tournait à l'échange au sanctuaire : chaque camp faisait
+apparaître un gardien sur la croix centrale, entourée de vide, et l'autre
+l'éjectait au tour suivant (observé à chaque tour de T2 à T5). Perdre son
+unique gardien ne coûtait que 200. Mesuré : 13-9-4, gardiens perdus 63 contre 75.
+
+## Qui a le trait
+
+Après la riposte adverse simulée, c'est MOI qui rejoue : une menace d'expulsion
+sur mon porteur n'est plus un danger immédiat (je peux le déplacer, et il
+valide avant de bouger). L'évaluateur la comptait quand même : une simple POSE
+adverse faisant apparaître un gardien près du porteur « coûtait » 1 543 points
+sans aucune poussée, et la transmission gratuite du puzzle 07 était rejetée.
+Les menaces d'expulsion ne pèsent plus que si l'adversaire a le trait. Neutre
+en self-play (11-11-3), conservé : le puzzle 07 joue désormais la transmission.
+
+## Couronne au sol
+
+`couronneParDistance` tombait à zéro au-delà de six cases : au milieu du
+plateau, rapprocher une couronne de son village — donc l'éloigner du sien — ne
+rapportait rien. Prolongée (`couronneLointaine`), et une couronne qu'aucune
+route ne relie au village vaut la moitié de sa valeur à vol d'oiseau + 2
+(une pose ou un gardien invoqué la récupérera). Neutre en self-play (9-10-6).
+
+## Passes gratuites
+
+Le relais récompensé était le PREMIER gardien adjacent trouvé, et seulement
+adjacent. On retient le meilleur, et la passe par case commune (A dépose, B
+ramasse : deux cases gagnées sans qu'aucun gardien ne bouge) compte pour moitié
+(`relaisADistance` 0,5). Mesuré : à plein tarif 11-14-1 (les gardiens
+s'agglutinaient), à moitié 17-7-2.
+
+## Poussées de couronne
+
+Intention `pousseeCouronne` : se poster derrière une couronne libre pour la
+pousser vers son village (elle survole le vide, le pousseur n'a pas à la
+porter). Le pré-classement des poussées tient compte du sens où part la
+couronne.
+
+## Résultat
+
+Contre `main` (fin de la PR #121), 30 parties : **15 victoires, 8 défaites,
+7 nuls**, couronnes 58-46, gardiens perdus avant le tour 20 : **101 contre 133**.
+`bench-adverse` 12/12 (deux passages), `bench-ia` 14/17 : 09 passe désormais ;
+07 échoue encore au banc animé alors que l'analyse de la même position joue la
+transmission (deux plans de valeur proche, départagés par le temps de
+réflexion) ; 08 demande de porter une couronne que l'IA préfère laisser au sol
+près d'un gardien ; 13 inchangé. `verif-*` conformes, `verif-fidelite-partie`
+13/13.
+
+`verif-pose-tactique` échouait sur `main` depuis l'ajout du miroir du Serpent
+aux poses de l'IA (PR #121) : la liste des poses s'allongeait et la recherche
+de poses « de mobilité », plafonnée à deux essais par place, s'épuisait sur des
+variantes. Plafond porté à quatre essais.
+
+---
+
+# Mise en place du mode personnalisé
+
+En mode personnalisé, chaque joueur pose avant le premier tour ses îles puis
+ses gardiens, en serpentin (4 îles et 2 gardiens par défaut). L'IA de mise en
+place était la même pour tous les niveaux : îles posées comme en cours de
+partie (vers la couronne), et chaque gardien sur la case de ses îles la plus
+proche du sanctuaire — presque toujours un bord d'île face au vide.
+
+## Ce qui change pour l'Expert
+
+`decisionDraft` (core.js) est désormais une décision PURE, appliquée par
+`appliquerDecisionDraft` : la partie réelle (`runDraftAI`) et le self-play
+(`ILYOS_SELFPLAY.departPerso`) jouent exactement le même code. Les autres
+niveaux gardent la logique historique.
+
+- **Gardiens** (`plannerDraftGardien`) : l'évaluateur de partie, plus une
+  vulnérabilité POTENTIELLE. Un poste de poussée n'est pas un abri parce qu'il
+  est vide : l'adversaire peut y poser une île, y faire apparaître un gardien et
+  pousser dans le même tour. Le premier jet l'ignorait et logeait les gardiens
+  dans des « couloirs » entre deux vides : il perdait autant de gardiens de mise
+  en place que l'historique (37 sur 120 en quatre tours, contre 34).
+- **Îles** (`plannerDraftIle`) : présélection par familles (classement
+  historique, abords du sanctuaire, cases de validation adverses, abords de mes
+  villages), puis note = meilleurs futurs postes de gardien + écart de route.
+- **Route estimée** (`plannerDraftRouteEstimee`) : pendant la mise en place, une
+  route n'est presque jamais complète ; mesurée sur le terrain seul, elle restait
+  infinie jusqu'à la dernière île et aucune île ne rapportait rien. Chaque case de
+  vide coûte ici un surcoût (une pose à faire), si bien que chaque île qui
+  rapproche la couronne de mon village est récompensée.
+
+## Mesures
+
+Harnais : `ILYOS_PERSO="4,2"` dans `selfplay-rapide.js`, `ILYOS_DRAFT_A/_B` pour
+les poids de chaque camp pendant SES choix de mise en place ; la partie est
+ensuite jouée par la même IA des deux côtés.
+
+**Sécurité seule, puis course à la couronne.** Avec la menace de pose, les
+gardiens de mise en place perdus dans les quatre premiers tours tombaient de
+38 % (historique) à 14 % (Expert). Mais l'Expert logeait alors ses gardiens
+dans le coin de son propre village, à l'abri et à dix cases de la couronne, et
+PERDAIT : 3 victoires, 13 défaites contre le draft historique. En mode
+personnalisé le plateau se remplit vite, et le premier qui marque gagne
+souvent. Le choix d'une case de gardien compte donc aussi la proximité de la
+couronne (`draftAccesGardien`).
+
+| `draftAccesGardien` | Parties | Expert | Historique | Nuls |
+|---|---|---|---|---|
+| 0 (sécurité seule) | 24 | 3 | 13 | 8 |
+| 800 | 24 | 7 | 9 | 8 |
+| **1 200** | 24 | **11** | **4** | 9 |
+| **1 200** (autres graines) | 30 | **11** | **5** | 14 |
+| 1 600 | 24 | 5 | 8 | 11 |
+
+Réglage retenu : 1 200 — 22 victoires, 9 défaites, 23 nuls sur 54 parties.
+Gardiens de mise en place perdus en quatre tours : 29 % contre 34 % pour
+l'historique ; le compromis avec la course à la couronne coûte une partie de
+la protection mesurée avec la sécurité seule.
+
+Avant la menace de pose, une dizaine de réglages (poids de route, d'accès,
+de vulnérabilité, îles ou gardiens seuls) restaient tous entre 39 et 55 %.
+
+Temps : la mise en place complète des deux IA prend 0,5 à 0,8 s (4 îles et
+2 gardiens, ou 6 et 3) — moins de 0,1 s par choix. Vérifiée dans une vraie
+partie (menu, animations) : mise en place puis tours joués sans erreur.
+
+---
+
+# Apparition tactique, dépôt libre, recherche reproductible
+
+## Case d'apparition d'une pose
+
+`plannerMeilleureApparition` note chaque case libre de la pose : objectif de
+l'intention, accès aux couronnes, sécurité (vulnérabilité potentielle de la
+mise en place, menace « pose adverse + apparition + poussée » comprise quand
+l'adversaire peut encore faire apparaître un gardien), relais, poussée d'un
+adversaire (même sans éjection) ou d'une couronne vers mon village, mobilité,
+blocage. Remplace le départage de `plannerSpawnMoinsExpose`, qui ne comparait
+que des cases équivalentes pour l'objectif. Neutre à légèrement positif
+(11-10-3, couronnes 45-35) ; ne change la case choisie que lorsqu'une autre
+est nettement meilleure (2 poses sur 24 sur une partie).
+
+Mesuré puis retiré : compter cette même menace de pose dans l'ÉVALUATEUR, sur
+tous mes gardiens (7-13). Comme la « projection par pose » d'avant : une
+pénalité fixe partout rend l'IA trop prudente. D'après l'auteur du jeu, la
+tactique est très fréquente mais son bénéfice dépasse souvent ses
+conséquences : c'est à la riposte simulée d'en faire le bilan, pas à un malus.
+
+## Dépôt libre de couronne
+
+Le générateur propose désormais tous les dépôts légaux (case libre adjacente au
+porteur). Pour qu'il ne serve plus à « cacher » un porteur exposé :
+- `perilCouronneSol` : une couronne au sol que l'adversaire peut atteindre à son
+  tour (un gardien qui vient à côté, ou une pose sur un vide voisin qui fait
+  apparaître un gardien, comptée pour moitié) coûte un cran de plus que le
+  porteur exposé sur la même case — la couronne ramassée repart avec lui ;
+- parité : le porteur reçoit le même bonus que le gardien posté à côté d'une
+  couronne libre, poser la couronne à ses pieds ne rapporte plus rien en soi.
+
+Un premier jet donnait au péril le coût le plus FAIBLE quand la couronne était
+plus proche de l'adversaire (échelle inversée) : A8 échouait, l'IA lâchait la
+couronne. Corrigé.
+
+Effets : `bench-ia` passe de 14 à 16/17 (07 transmission, 08 poussée de
+couronne — l'IA dépose puis pousse —, 04), `bench-adverse` reste 12/12.
+Self-play neutre (10-10-4), mais davantage de gardiens perdus : face à un
+porteur menacé, l'IA pose la couronne en lieu sûr au lieu de fuir avec, et le
+gardien resté exposé coûtait peu. `gardienExpose` passe de 300 à 500 (14-9-1).
+
+## Règle corrigée : entrée de la seconde couronne
+
+La seconde couronne entrait AUSSITÔT quand la première était prise (sauf prise
+sur la case centrale). Règle confirmée par l'auteur : elle n'apparaît qu'au
+début du tour suivant. `activateSecondCrownIfNeeded` met désormais toujours la
+seconde couronne en attente à la prise ; `faireEntrerCouronnesEnAttente` la fait
+entrer à l'ouverture du tour. Découvert parce que « déposer puis reprendre »
+une couronne portée faisait surgir la seconde dans le même tour. L'annonce d'une
+entrée simulée par l'IA ne s'affiche plus dans la vraie partie.
+
+## Recherche reproductible
+
+Les budgets en temps (500 ms principale, 90 ms par riposte, 180 ms
+d'approfondissement, 25 ms de MAGIE) faisaient dépendre la décision de la
+machine. `rechercheDeterministe` : seuls les budgets en nombre (états,
+rotations) limitent la recherche ; `PLAN_SECURITE` ne sert qu'à éviter un
+blocage (3 s + 4 × 0,7 s + 1,2 s ≈ 7 s au pire).
+
+Mêmes 11 positions, seul puis sous forte charge processeur : ancien mode 5/11
+décisions identiques, nouveau 11/11. Temps seul : médiane 0,7 s, max 1,1 s.
+Self-play contre l'ancien mode sous charge (4 processus pour 4 cœurs) :
+**20 victoires, 2 défaites, 2 nuls** — l'ancien mode perdait sa profondeur dès
+que la machine ralentissait ; le nouveau coûte alors 2,3 s par tour en moyenne
+(p95 5,2 s).
+
+## MAGIE élargie : pas retenue
+
+`magieRotationsMax` (36 par défaut, désormais réglable). 200 rotations contre
+36 : 11-13, couronnes 50-52, pour 30 % de temps de réflexion en plus (1,49 s
+contre 1,14 s par tour). Après génération, seules les 8 meilleures rotations
+(4 en profondeur) entrent dans la recherche : en examiner davantage change
+rarement la décision.
+
+## Bancs après cette passe
+
+`bench-adverse` 12/12 ; `bench-ia` 15/17 (13 réserve, et 17 — voir ci-dessous) ;
+`verif-*` conformes, `verif-fidelite-partie` 13/13 ; `verif-finalistes` échoue
+comme sur `main`.
+
+**17 « Poser près de l'action » — à trancher.** L'IA pose contre la couronne,
+fait apparaître un gardien qui la ramasse gratuitement, l'avance d'une case
+puis la DÉPOSE sur la case centrale du sanctuaire : ses quatre voisines sont
+de la terre, aucun gardien adverse ne peut l'atteindre, personne ne peut la
+reprendre au tour suivant — alors qu'un porteur resterait exposé à « pose +
+apparition + poussée ». Le test exige une couronne PORTÉE en fin de tour.
+
+**P08, proposition d'oracle stratégique** (P08 passe désormais : l'IA dépose
+la couronne puis la pousse vers son village). Plutôt qu'exiger une séquence,
+accepter : couronne portée par l'IA, OU couronne rapprochée du village, OU
+couronne au sol adjacente à un gardien de l'IA et hors d'atteinte adverse au
+tour suivant.
+
+## P17 tranché : la riposte juge les idées de couronne
+
+Analyse du coup joué par un humain sur P17 (outil `ILYOS_SELFPLAY.robustesse`) :
+déposer au centre plaçait la couronne à côté de la seconde, qui y entre au tour
+adverse ; l'adversaire prenait l'une et poussait l'autre (note après riposte
+≈ −112 à 290). Poser l'île vers MON village, ramasser et y marcher : l'adversaire
+ne prend que la seconde couronne (≈ 700). Trois défauts, trois corrections :
+
+1. **La pose n'était jamais générée** : l'intention « couronne » classait toutes
+   les poses au contact à égalité et gardait celles tournées vers le centre.
+   Une place est réservée à la pose au contact qui s'avance le plus vers mes
+   cases de validation (`poseRetourVillage`).
+2. **Elle n'atteignait jamais la riposte** : les 8 finalistes étaient des
+   variantes d'une seule pose. Deux places de riposte vont aux meilleures
+   AUTRES idées (pose, ou disposition des couronnes), deux variantes chacune
+   (`riposteAutresIdees` : 4 → 6 ripostes au plus).
+3. **Double comptage** : pour un plan passé à la riposte, `perilCouronneSol`
+   (estimation) est retiré de la note ; la réplique jouée le remplace
+   (`riposteRemplacePeril`). Le dépôt exact du joueur passe de −148 à 602.
+
+Résultats : `bench-ia` 16/17 (P17 passe, reste 13) ; `bench-adverse` 12/12 ;
+`verif-*` conformes, `verif-fidelite-partie` 13/13 ; `verif-finalistes` échoue
+comme avant (assertion du nombre de ripostes élargie à 4–6). Self-play contre
+9e3b9a2, 24 parties : **15-8-1** (64,6 % ± 9,8), couronnes 58-46, temps de
+réflexion +10 % (2,4 s par tour sous charge, p95 5,2 s).
+
+Non-reproductibilité à creuser : deux plans menant au même état reçoivent
+parfois des notes de riposte différentes (290 et −112).
+
+## Position des couronnes au loin : essai non retenu
+
+`couronneLointaine` [130, 80, 50, 30, 15] → [170, 145, 120, 100, 80, 62, 46, 32,
+20, 10] et `couronneIsoleeFacteur` 0,5 → 0,75, contre la version courante sur le
+même build : 10-12-2, couronnes 42-47. Pas de gain mesurable ; l'observation
+(rapprocher une couronne de mes villages est sous-payé) reste à instruire par
+autopsie de positions réelles plutôt que par la table.
+
+## Cache des portées adverses : clé incomplète (corrigé)
+
+`plannerPorteesAdverses` gardait en cache les portées des gardiens adverses sous
+une clé « terrain + budget + cases occupées », sans le camp mesuré ni le
+propriétaire des gardiens. Sur une même position, « jusqu'où vont ses gardiens »
+(vu de moi) et « jusqu'où vont les miens » (vu de lui, pendant la riposte)
+partageaient donc la même entrée ; le premier calculé servait les deux, selon
+l'historique de la page. Découvert par la bibliothèque des défaites : le même
+plan valait 2 785 après riposte en partie et 788 à la réanalyse. Après
+correction, 12 analyses dans 4 pages donnent le même résultat.
+
+Effet sur la force, contre la version précédente : 9-14-1 puis 25-22-1, soit
+34-36-2 sur 72 parties (≈ 49 %) — neutre. Gardé pour la justesse : une
+position doit valoir la même chose quel que soit ce qui a été calculé avant.
+`bench-ia` 16/17 (13), deux passes ; un échec isolé de 04 sous forte charge
+(tours à ~5 s, plafonds de temps de sécurité atteints), non reproduit.
+
+## Audit des caches et de la reproductibilité
+
+Méthode : un même tour d'une défaite archivée, réanalysé dans des pages neuves
+(préchauffage différent à chaque fois), avec et sans chaque cache
+(`PLAN_POIDS.cachesPlanner`, masque) et avec des plafonds de temps élargis
+(`PLAN_POIDS.securiteFacteur`). Un cache juste ne change aucun résultat.
+
+Corrigé :
+- empreinte du terrain : taille du plateau et villages (un plateau vide valait
+  0 en 11×11 comme en 13×13), puis empreinte EXACTE au lieu d'un hachage
+  polynomial qui pouvait confondre deux terrains (rotations d'îles) ;
+- cache « pose impossible » : clé sur les formes posées et la limite de stock ;
+- essai provisoire d'une île (case d'apparition) : empreinte distincte ;
+- plafond de riposte 700 → 2 000 ms, sous une échéance de tour de 6 s : 700 ms
+  tombait sur le coût normal d'une riposte sur machine lente ou froide ;
+- coupures par le temps (principale, ripostes, MAGIE) rapportées dans le
+  rapport du planner, le journal des défaites et `analyser-defaite.js`.
+
+Découvert, NON corrigé :
+- **Instantanés sans difficulté.** `snapshotState` ne porte ni `aiDifficulty`
+  ni les règles : rejouée depuis un instantané (analyse de défaites, analyse
+  de positions, self-play rapide), l'énumération des poses
+  (`findAutomaticIslandPlacement`) prend les réglages du niveau NORMAL —
+  bruit 0,28 sur le score, tactiques de couronne, liste restreinte. Toutes les
+  mesures de self-play rapide ont donc porté sur un Expert au choix de poses
+  légèrement différent du jeu réel (équitable entre versions, mais pas l'IA
+  que le joueur affronte).
+- **L'autopsie modifie les décisions.** Autopsie active, la même position
+  donne une autre riposte (2 785 contre 788, stable). Isolé jusqu'à
+  l'énumération des poses exécutée par le relevé à la racine de chaque
+  recherche (riposte comprise). Écartés : hasard (tirage neutralisé), caches
+  (tous coupés), modification de l'état racine (sonde JSON, Map et Set
+  compris), plafonds de temps. Canal exact encore inconnu. L'autopsie n'est
+  active qu'en IA contre IA depuis le menu, dans la Spirale et les outils —
+  jamais en partie solo normale.

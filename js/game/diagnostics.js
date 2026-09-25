@@ -1607,10 +1607,13 @@
          finalistes, riposte, et décomposition de la note de départ et d'arrivée.
          L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
          position tirée d'un self-play. */
-      function selfplayAnalyser(json, { graine = 1, budget, chronos = false } = {}) {
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null, grille = null } = {}) {
+        // Une position d'une autre taille de plateau (défaite archivée en 13×13).
+        if (grille && GRID !== grille) setBoardSize(grille);
         const clone = JSON.parse(json);
         setTestRandomSeed(graine);
         const autopsieAvant = plannerAutopsieActive();
+        const poidsAvant = selfplayAppliquerPoids(poids);
         try {
           return withSimulatedState(clone, () => {
             const joueur = state.currentPlayer;
@@ -1629,6 +1632,8 @@
             return {
               joueur,
               plan: decrire(rapport.plan),
+              // Plan complet, pour les outils qui en lisent les paramètres.
+              detail: rapport.plan,
               noteDepart: depart,
               noteArrivee: arrivee,
               etatsExplores: rapport.etatsExplores,
@@ -1639,18 +1644,107 @@
               chronos: rapport.releveCandidats ? rapport.releveCandidats.chronos : null,
               candidats: rapport.releveCandidats ? rapport.releveCandidats.length : null,
               finalistes: (rapport.finalistes || []).slice(0, 8).map(n => ({
-                note: Math.round(n.note), plan: decrire(n.plan)
+                note: Math.round(n.note), plan: decrire(n.plan), detail: n.plan
               }))
             };
           });
         } finally {
+          selfplayAppliquerPoids(poidsAvant);
           plannerActiverAutopsie(autopsieAvant);
           setTestRandomSeed(null);
         }
       }
 
+      /* Un plan DONNÉ face à la riposte adverse, comme le juge l'anticipation.
+         Sert à l'autopsie d'un coup que l'IA n'a pas choisi : « et la ligne du
+         joueur, combien la riposte la punit-elle ? ». Le plan est une liste
+         d'actions au format du planner (champ `detail` d'`analyser`). */
+      function selfplayRobustesse(json, plan, { graine = 1, grille = null, poids = null } = {}) {
+        if (grille && GRID !== grille) setBoardSize(grille);
+        const clone = JSON.parse(json);
+        setTestRandomSeed(graine);
+        const poidsAvant = selfplayAppliquerPoids(poids);
+        try {
+          return withSimulatedState(clone, () => {
+            const joueur = state.currentPlayer;
+            for (const action of plan) {
+              if (!plannerAppliquerAction(action)) return { erreur: `action refusée : ${action.type}` };
+            }
+            const note = evaluateStrategicState(joueur);
+            plannerCoupuresMagie = 0;
+            const robustesse = plannerEvaluerRobustesse({ etat: structuredClone(state), note, plan }, joueur);
+            return { noteFinTour: Math.round(note), noteRobuste: Math.round(robustesse.note),
+              menace: robustesse.menace, riposte: robustesse.riposte, garantie: robustesse.garantie,
+              coupee: !!robustesse.coupee, magieCoupee: plannerCoupuresMagie };
+          });
+        } finally {
+          selfplayAppliquerPoids(poidsAvant);
+          setTestRandomSeed(null);
+        }
+      }
+
+      /* Départ en MODE PERSONNALISÉ : la mise en place entière (îles puis
+         gardiens, en serpentin) est jouée par decisionDraft — la même décision
+         que dans la partie réelle — chaque joueur avec ses propres poids.
+         `expert` choisit la logique Expert ou historique, `poids` les réglages
+         de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
+      function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
+                                            expert = [true, true] } = {}) {
+        const depart = canonicalDepart();
+        setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(depart, () => {
+            state.rules = { allowDissolve: false, islandLimitPerPlayer: 0,
+              shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT };
+            state.players.forEach(joueur => {
+              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
+                .map(carte => ({ ...carte, used: false, fromStash: false })));
+              joueur.hand = [];
+              joueur.discard = [];
+            });
+            state.characters = [];
+            state.islands = [];
+            state.nextIslandId = 1;
+            state.nextCharId = 100;
+            state.draft = {
+              islandsPerPlayer: iles, guardiansPerPlayer: gardiens,
+              order: buildDraftOrder(state.players.length, iles + gardiens), index: 0,
+              placedIslands: new Array(state.players.length).fill(0),
+              placedGuardians: new Array(state.players.length).fill(0)
+            };
+            let pick;
+            while ((pick = draftCurrentPick())) {
+              state.currentPlayer = pick.player;
+              const memoire = selfplayAppliquerPoids(poids[pick.player]);
+              try {
+                appliquerDecisionDraft(decisionDraft(!!expert[pick.player]));
+              } finally {
+                selfplayAppliquerPoids(memoire);
+              }
+              state.draft.index++;
+            }
+            // Même ouverture que finishCustomDraft + beginTurn, sans rendu.
+            state.draft = null;
+            state.currentPlayer = 0;
+            state.turn = 1;
+            state.round = 1;
+            const entrant = state.players[0];
+            drawCards(entrant, 5);
+            state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
+            state.centerCrownTakenThisTurn = false;
+            faireEntrerCouronnesEnAttente();
+            state.phase = "ACTION_SELECT";
+            return snapshotState();
+          });
+        } finally {
+          setTestRandomSeed(null);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
+        departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
+        robustesse: selfplayRobustesse,
         fidelitePartie: benchFidelitePartie,
         empreintePlateau,
         partie: selfplayPartie,
@@ -1762,6 +1856,22 @@
         report: collectIlyosDiagnosticReport,
         refresh: showIlyosDiagnosticPanel,
         autoplay: ILYOS_AUTOPLAY,
+        /* Pour les tests de bout en bout d'une partie humain contre IA (voir
+           tests/defaites-expert.spec.js) : terminer le tour humain comme le
+           ferait le minuteur (pose automatique), et faire marquer une couronne
+           à un joueur par le vrai chemin de validation. */
+        terminerTourHumain: () => {
+          if (!state || state.winner !== null || currentPlayer().isAI) return false;
+          endTurn(true);
+          return true;
+        },
+        marquer: (joueurId) => {
+          const joueur = state && state.players[joueurId];
+          if (!joueur || state.winner !== null) return null;
+          scoreCrownForPlayer(joueur, null);
+          return joueur.score;
+        },
+        joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.

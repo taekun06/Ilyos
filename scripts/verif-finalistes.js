@@ -34,7 +34,10 @@ async function main() {
       // Garder la limite d'états ; éviter que la charge de la machine coupe
       // l'arbre principal avant les plans qui reproduisent le défaut.
       const rapport = await page.evaluate(s => ILYOS_BENCH.plan(s, { tempsMaxMs: 5000 }), spec);
-      assert.equal(rapport.anticipation.examines, 4, 'le nombre de ripostes doit rester inchangé');
+      // 4 ripostes, jusqu'à 6 quand d'autres idées ont une place réservée
+      // (plannerReserverAutresIdees) : le coût reste borné.
+      assert.ok(rapport.anticipation.examines >= 4 && rapport.anticipation.examines <= 6,
+        `nombre de ripostes hors bornes : ${rapport.anticipation.examines}`);
       assert.ok(new Set(rapport.finalistes.slice(0, 4).map(f => f.plan.join(','))).size > 1,
         'les variantes de pose masquent encore les autres continuations');
       const dernierMove = rapport.detail.filter(a => a.type === 'MOVE').at(-1);

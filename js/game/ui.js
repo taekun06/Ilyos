@@ -4191,6 +4191,7 @@
         els.victoryTitle.style.color = "#cfd6ea";
         els.victoryText.textContent = "Plus aucune île ne peut être posée, et les couronnes sont à égalité.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
+        defaitesFinPartie(null);
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
@@ -4226,6 +4227,8 @@
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
         renderVictoryRecap(player);
+        // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
+        defaitesFinPartie(player);
 
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;
@@ -4249,5 +4252,6 @@
         els.gameScreen.classList.add("hidden");
         els.setupScreen.classList.remove("hidden");
         renderSetupFields();
+        defaitesMajAcces();
       }
 

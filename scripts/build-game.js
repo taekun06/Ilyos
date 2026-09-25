@@ -26,6 +26,9 @@ const fragmentNames = [
   // bundle en fin de chantier. Placée après planner.js, dont elle lit les
   // rapports et l'évaluateur détaillé.
   'autopsie.js',
+  // Défaites de l'IA Expert : journal automatique des parties humain contre
+  // Expert, bibliothèque et export en un clic. Réutilise l'autopsie.
+  'defaites.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
