@@ -24741,8 +24741,15 @@
            le cache, et la menace qui en venait devenait invisible — A8, où le
            porteur fuit vers une case tout aussi expulsable, échouait pour
            cette seule raison. */
-        const cle = plannerEmpreinteTerrain() + ':' + budgetMove + ':'
-          + (state.characters || []).map(c => c.r + ',' + c.c).sort().join('|');
+        /* …et le CAMP dont on mesure les portées, ainsi que le propriétaire de
+           chaque gardien. Sans eux, « jusqu'où vont ses gardiens » (vu de moi)
+           et « jusqu'où vont les miens » (vu de lui, pendant la riposte)
+           partageaient la même clé sur une même position : le premier calculé
+           servait les deux. Le résultat dépendait donc de l'ordre des calculs
+           et de ce qui restait en cache — une même position, rejouée dans une
+           autre page, ne donnait plus la même riposte (2 785 contre 788). */
+        const cle = plannerEmpreinteTerrain() + ':' + adverse.id + ':' + budgetMove + ':'
+          + (state.characters || []).map(c => c.player + '@' + c.r + ',' + c.c).sort().join('|');
         let portees = plannerCachePortees.get(cle);
         if (!portees) {
           portees = [plannerPorteeReunie(ennemis, budgetMove)];
