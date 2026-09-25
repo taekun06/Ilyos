@@ -1134,3 +1134,39 @@ Effet sur la force, contre la version précédente : 9-14-1 puis 25-22-1, soit
 position doit valoir la même chose quel que soit ce qui a été calculé avant.
 `bench-ia` 16/17 (13), deux passes ; un échec isolé de 04 sous forte charge
 (tours à ~5 s, plafonds de temps de sécurité atteints), non reproduit.
+
+## Audit des caches et de la reproductibilité
+
+Méthode : un même tour d'une défaite archivée, réanalysé dans des pages neuves
+(préchauffage différent à chaque fois), avec et sans chaque cache
+(`PLAN_POIDS.cachesPlanner`, masque) et avec des plafonds de temps élargis
+(`PLAN_POIDS.securiteFacteur`). Un cache juste ne change aucun résultat.
+
+Corrigé :
+- empreinte du terrain : taille du plateau et villages (un plateau vide valait
+  0 en 11×11 comme en 13×13), puis empreinte EXACTE au lieu d'un hachage
+  polynomial qui pouvait confondre deux terrains (rotations d'îles) ;
+- cache « pose impossible » : clé sur les formes posées et la limite de stock ;
+- essai provisoire d'une île (case d'apparition) : empreinte distincte ;
+- plafond de riposte 700 → 2 000 ms, sous une échéance de tour de 6 s : 700 ms
+  tombait sur le coût normal d'une riposte sur machine lente ou froide ;
+- coupures par le temps (principale, ripostes, MAGIE) rapportées dans le
+  rapport du planner, le journal des défaites et `analyser-defaite.js`.
+
+Découvert, NON corrigé :
+- **Instantanés sans difficulté.** `snapshotState` ne porte ni `aiDifficulty`
+  ni les règles : rejouée depuis un instantané (analyse de défaites, analyse
+  de positions, self-play rapide), l'énumération des poses
+  (`findAutomaticIslandPlacement`) prend les réglages du niveau NORMAL —
+  bruit 0,28 sur le score, tactiques de couronne, liste restreinte. Toutes les
+  mesures de self-play rapide ont donc porté sur un Expert au choix de poses
+  légèrement différent du jeu réel (équitable entre versions, mais pas l'IA
+  que le joueur affronte).
+- **L'autopsie modifie les décisions.** Autopsie active, la même position
+  donne une autre riposte (2 785 contre 788, stable). Isolé jusqu'à
+  l'énumération des poses exécutée par le relevé à la racine de chaque
+  recherche (riposte comprise). Écartés : hasard (tirage neutralisé), caches
+  (tous coupés), modification de l'état racine (sonde JSON, Map et Set
+  compris), plafonds de temps. Canal exact encore inconnu. L'autopsie n'est
+  active qu'en IA contre IA depuis le menu, dans la Spirale et les outils —
+  jamais en partie solo normale.
