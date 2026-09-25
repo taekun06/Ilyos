@@ -1,0 +1,157 @@
+/* ILYOS — DÉFAITES DE L'IA EXPERT (js/game/defaites.js)
+   Bloc « Analyser cette défaite » de l'écran de victoire, et bibliothèque des
+   défaites. Feuille chargée en dernier ; sélecteurs ancrés sur #victoryModal
+   ou sur la classe propre à la bibliothèque, comme bilan-fin-de-partie.css,
+   pour ne rien disputer aux passes du HUD. Couleurs reprises de la carte de
+   victoire : fond crème, encre #17384a, texte adouci #4f6f7d, or #c9a45d. */
+
+#victoryModal .defaite-ia {
+  width: min(100%, 30rem);
+  margin: 14px auto 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(201, 164, 93, .34);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+
+#victoryModal .defaite-ia .defaite-ia-etat {
+  color: #4f6f7d;
+  font-size: .82rem;
+}
+
+#victoryModal .defaite-ia .defaite-ia-resume {
+  width: 100%;
+  max-height: 11rem;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(23, 56, 74, .06);
+  color: #17384a;
+  font: .78rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+/* Calque propre, SANS la classe .modal : le style système de la page fixe le
+   z-index de toute .modal en !important, sous l'iframe plein écran du menu
+   (z-index 2147483000, js/version-bootstrap.js). La bibliothèque s'ouvre
+   aussi depuis le menu : elle doit passer au-dessus. */
+body .defaites-biblio {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483002;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(5, 14, 27, .82);
+  backdrop-filter: blur(6px);
+}
+
+body .defaites-biblio .defaites-biblio-carte {
+  width: min(760px, 94vw);
+  background: rgb(251, 248, 238);
+  color: #17384a;
+  border-color: #c9a45d;
+}
+
+body .defaites-biblio .defaites-biblio-carte h2 {
+  color: #17384a;
+  font-size: 1.5rem;
+}
+
+body .defaites-biblio .defaites-biblio-aide,
+body .defaites-biblio .defaites-vide {
+  color: #4f6f7d;
+  font-size: .88rem;
+  text-align: center;
+}
+
+body .defaites-biblio .defaites-biblio-liste {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+body .defaites-biblio .defaites-ligne {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(201, 164, 93, .45);
+  border-radius: 10px;
+  background: #fff;
+}
+
+body .defaites-biblio .defaites-titre {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: .9rem;
+}
+
+body .defaites-biblio .defaites-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+body .defaites-biblio .defaites-actions button,
+body .defaites-biblio .defaites-actions select {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: .82rem;
+}
+
+#defaitesAccesBtn {
+  display: none;
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2147483001;
+  padding: 9px 16px;
+  border: 1px solid #c9a45d;
+  border-radius: 999px;
+  background: rgba(251, 248, 238, .94);
+  color: #17384a;
+  font: 700 .85rem/1.2 system-ui, sans-serif;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  cursor: pointer;
+}
+
+body.ilyos-menu-v11-active #defaitesAccesBtn {
+  display: block;
+}
+
+/* Boutons dessinés ici plutôt qu'hérités : ils ne portent PAS .primary-btn,
+   que base.css et le <style> de la page teignent en !important (texte blanc
+   sur fond translucide, illisible sur la carte crème). */
+#victoryModal .defaite-ia .defaite-ia-analyser,
+body .defaites-biblio [data-defaites="lot"] {
+  padding: 10px 20px;
+  border: 1px solid #c9a45d;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f6dc95, #dcae55);
+  color: #17384a;
+  font-weight: 800;
+  text-shadow: none;
+  box-shadow: 0 4px 12px rgba(23, 56, 74, .18);
+  cursor: pointer;
+}
+
+body .defaites-biblio [data-defaites="lot"]:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+/* La règle générique « select » de base.css impose son fond sombre en
+   !important : seule une priorité égale, ciblée sur cette liste, la contredit. */
+body .defaites-biblio .defaites-actions select {
+  border: 1px solid rgba(201, 164, 93, .7) !important;
+  border-radius: 8px;
+  background: #fff !important;
+  color: #17384a !important;
+}

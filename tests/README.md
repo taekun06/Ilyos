@@ -54,6 +54,20 @@ préréglage symétrique, taille de plateau, minuterie), c'est
 
 ---
 
+# Défaites de l'IA Expert
+
+`defaites-expert.spec.js` joue une partie solo contre l'Expert lancée par le
+menu, laisse l'IA prendre trois décisions (les tours humains se terminent comme
+au minuteur, `ILYOS_TEST.terminerTourHumain`), puis fait marquer trois
+couronnes à l'humain par le vrai chemin de validation (`ILYOS_TEST.marquer`).
+Il vérifie que le journal s'ouvre sans rien activer, que « 🧠 Analyser cette
+défaite de l'IA » télécharge un dossier complet (positions rejouables, plans,
+notes, cadre de reprise, récapitulatif), que la bibliothèque la garde, qu'on
+la rejoue depuis un tour, et qu'après rechargement le bouton flottant l'ouvre
+AU-DESSUS du menu. Environ une minute. Voir `docs/DEFAITES-EXPERT.md`.
+
+---
+
 # Contrat de la caméra
 
 `camera-partie-solo.spec.js` vérifie une règle et une seule : **la caméra

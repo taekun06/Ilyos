@@ -114,6 +114,8 @@
         startTurnTimer(true);
         resetKayKitPointerFeedback();
         renderAll();
+        // Journal des défaites Expert : la position que ce joueur a devant lui.
+        defaitesDebutTour();
         showTurnRibbon(p);
         // Nouveau tour d'un joueur humain : recadrage doux vers ses gardiens,
         // sauf au tout premier tour où l'objectif (la couronne) prime.

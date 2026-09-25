@@ -3037,6 +3037,9 @@
           menace: retenu.robustesse.menace,
           garantie: retenu.robustesse.garantie,
           ripostesComparees: retenu.robustesse.ripostesComparees || 0,
+          // Notes après riposte, dans l'ordre du classement final : une
+          // décision serrée se lit ici sans rien recalculer (defaites.js).
+          classement: examines.slice(0, 6).map(e => Math.round(e.robustesse.note)),
           approfondissement: {
             finalistes: approfondis,
             dureeMs: Math.round(performance.now() - debutSupplement)

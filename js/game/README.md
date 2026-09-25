@@ -11,7 +11,7 @@ The fragment order is intentional:
 5. `turns.js` — turn lifecycle and undo handling
 6. `audio.js` — embedded music, settings and sound effects
 7. `ui.js` — board rendering and player interactions
-8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `autopsie.js` — rules cores, Expert planner, AI autopsy
+8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `autopsie.js`, `defaites.js` — rules cores, Expert planner, AI autopsy, automatic record of games lost by the Expert (library, one-click export; see `docs/DEFAITES-EXPERT.md`)
 9. `tutorial.js` — scripted tutorial « La Première Ascension » (self-contained: builds a normal state, gates input via a capture listener on `els.board`, watches `window.ILYOS_VISUAL_EVENTS`)
 10. `diagnostics.js` — diagnostics, public API, event wiring and closure end
 

@@ -1607,7 +1607,9 @@
          finalistes, riposte, et décomposition de la note de départ et d'arrivée.
          L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
          position tirée d'un self-play. */
-      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null } = {}) {
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null, grille = null } = {}) {
+        // Une position d'une autre taille de plateau (défaite archivée en 13×13).
+        if (grille && GRID !== grille) setBoardSize(grille);
         const clone = JSON.parse(json);
         setTestRandomSeed(graine);
         const autopsieAvant = plannerAutopsieActive();
@@ -1657,7 +1659,8 @@
          Sert à l'autopsie d'un coup que l'IA n'a pas choisi : « et la ligne du
          joueur, combien la riposte la punit-elle ? ». Le plan est une liste
          d'actions au format du planner (champ `detail` d'`analyser`). */
-      function selfplayRobustesse(json, plan, { graine = 1 } = {}) {
+      function selfplayRobustesse(json, plan, { graine = 1, grille = null } = {}) {
+        if (grille && GRID !== grille) setBoardSize(grille);
         const clone = JSON.parse(json);
         setTestRandomSeed(graine);
         try {
@@ -1849,6 +1852,22 @@
         report: collectIlyosDiagnosticReport,
         refresh: showIlyosDiagnosticPanel,
         autoplay: ILYOS_AUTOPLAY,
+        /* Pour les tests de bout en bout d'une partie humain contre IA (voir
+           tests/defaites-expert.spec.js) : terminer le tour humain comme le
+           ferait le minuteur (pose automatique), et faire marquer une couronne
+           à un joueur par le vrai chemin de validation. */
+        terminerTourHumain: () => {
+          if (!state || state.winner !== null || currentPlayer().isAI) return false;
+          endTurn(true);
+          return true;
+        },
+        marquer: (joueurId) => {
+          const joueur = state && state.players[joueurId];
+          if (!joueur || state.winner !== null) return null;
+          scoreCrownForPlayer(joueur, null);
+          return joueur.score;
+        },
+        joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.
