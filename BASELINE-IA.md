@@ -1117,3 +1117,20 @@ parfois des notes de riposte différentes (290 et −112).
 même build : 10-12-2, couronnes 42-47. Pas de gain mesurable ; l'observation
 (rapprocher une couronne de mes villages est sous-payé) reste à instruire par
 autopsie de positions réelles plutôt que par la table.
+
+## Cache des portées adverses : clé incomplète (corrigé)
+
+`plannerPorteesAdverses` gardait en cache les portées des gardiens adverses sous
+une clé « terrain + budget + cases occupées », sans le camp mesuré ni le
+propriétaire des gardiens. Sur une même position, « jusqu'où vont ses gardiens »
+(vu de moi) et « jusqu'où vont les miens » (vu de lui, pendant la riposte)
+partageaient donc la même entrée ; le premier calculé servait les deux, selon
+l'historique de la page. Découvert par la bibliothèque des défaites : le même
+plan valait 2 785 après riposte en partie et 788 à la réanalyse. Après
+correction, 12 analyses dans 4 pages donnent le même résultat.
+
+Effet sur la force, contre la version précédente : 9-14-1 puis 25-22-1, soit
+34-36-2 sur 72 parties (≈ 49 %) — neutre. Gardé pour la justesse : une
+position doit valoir la même chose quel que soit ce qui a été calculé avant.
+`bench-ia` 16/17 (13), deux passes ; un échec isolé de 04 sous forte charge
+(tours à ~5 s, plafonds de temps de sécurité atteints), non reproduit.
