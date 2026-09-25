@@ -1642,13 +1642,36 @@
               chronos: rapport.releveCandidats ? rapport.releveCandidats.chronos : null,
               candidats: rapport.releveCandidats ? rapport.releveCandidats.length : null,
               finalistes: (rapport.finalistes || []).slice(0, 8).map(n => ({
-                note: Math.round(n.note), plan: decrire(n.plan)
+                note: Math.round(n.note), plan: decrire(n.plan), detail: n.plan
               }))
             };
           });
         } finally {
           selfplayAppliquerPoids(poidsAvant);
           plannerActiverAutopsie(autopsieAvant);
+          setTestRandomSeed(null);
+        }
+      }
+
+      /* Un plan DONNÉ face à la riposte adverse, comme le juge l'anticipation.
+         Sert à l'autopsie d'un coup que l'IA n'a pas choisi : « et la ligne du
+         joueur, combien la riposte la punit-elle ? ». Le plan est une liste
+         d'actions au format du planner (champ `detail` d'`analyser`). */
+      function selfplayRobustesse(json, plan, { graine = 1 } = {}) {
+        const clone = JSON.parse(json);
+        setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(clone, () => {
+            const joueur = state.currentPlayer;
+            for (const action of plan) {
+              if (!plannerAppliquerAction(action)) return { erreur: `action refusée : ${action.type}` };
+            }
+            const note = evaluateStrategicState(joueur);
+            const robustesse = plannerEvaluerRobustesse({ etat: structuredClone(state), note, plan }, joueur);
+            return { noteFinTour: Math.round(note), noteRobuste: Math.round(robustesse.note),
+              menace: robustesse.menace, riposte: robustesse.riposte, garantie: robustesse.garantie };
+          });
+        } finally {
           setTestRandomSeed(null);
         }
       }
@@ -1714,6 +1737,7 @@
       window.ILYOS_SELFPLAY = {
         departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
+        robustesse: selfplayRobustesse,
         fidelitePartie: benchFidelitePartie,
         empreintePlateau,
         partie: selfplayPartie,

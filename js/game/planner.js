@@ -97,6 +97,12 @@
         // Rotations de MAGIE examinées par génération (voir plannerCandidatsMagic).
         magieRotationsMax: 36,
         depotLibre: 1,
+        // Place réservée à la pose au contact qui ramène la couronne vers mon village.
+        poseRetourVillage: 1,
+        // Places de riposte réservées aux meilleurs plans d'autres idées.
+        riposteAutresIdees: 2,
+        // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
+        riposteRemplacePeril: 1,
         perilCouronneSol: 1,
         perilParPose: 0.5,
         apparitionObjectif: 200,
@@ -2098,12 +2104,38 @@
             if (spawnsVus.has(k)) variantes.push(n);
             else { spawnsVus.add(k); distinctes.push(n); }
           }
-          for (const n of [...distinctes, ...variantes].sort((a, b) => b.indice - a.indice)) {
-            if (places >= plafonds().poseParIntention) break;
+          const retenir = n => {
             const spawn = PLAN_POIDS.apparitionTactique
               ? plannerMeilleureApparition(playerId, n.pose, intention, contexteApparition())
               : plannerSpawnMoinsExpose(playerId, n.pose, intention, n.spawn);
-            if (proposer(n.pose, spawn, intention.but, n.indice)) places++;
+            return proposer(n.pose, spawn, intention.but, n.indice);
+          };
+          for (const n of [...distinctes, ...variantes].sort((a, b) => b.indice - a.indice)) {
+            if (places >= plafonds().poseParIntention) break;
+            if (retenir(n)) places++;
+          }
+          /* UNE PLACE POUR LE RETOUR AU VILLAGE. Le seul contact avec la
+             couronne classe à égalité toutes les poses qui la touchent : les
+             places allaient à celles orientées vers le centre, et l'île qui
+             ramène la couronne vers mon village — l'éloignant du sien du même
+             coup — n'était jamais examinée (P17). Le gardien qui apparaît à
+             côté d'elle la ramasse puis marche sur l'île : on retient donc la
+             pose au contact qui s'avance le plus vers mes cases de validation.
+             L'évaluateur et la riposte jugent ensuite. */
+          if (intention.but === "couronne" && PLAN_POIDS.poseRetourVillage) {
+            const validation = crownValidationCellsForPlayer(state.players[playerId]);
+            const versMoi = (r, c) => Math.min(...validation.map(([vr, vc]) =>
+              Math.abs(r - vr) + Math.abs(c - vc)));
+            let meilleure = null, meilleureAvance = 0;
+            for (const n of notees) {
+              if (n.indice < 100) continue;
+              const [cr, cc] = intention.cibles.reduce((best, cible) =>
+                Math.abs(cible[0] - n.spawn[0]) + Math.abs(cible[1] - n.spawn[1])
+                  < Math.abs(best[0] - n.spawn[0]) + Math.abs(best[1] - n.spawn[1]) ? cible : best);
+              const avance = versMoi(cr, cc) - Math.min(...n.pose.cells.map(([r, c]) => versMoi(r, c)));
+              if (avance > meilleureAvance) { meilleureAvance = avance; meilleure = n; }
+            }
+            if (meilleure) retenir(meilleure);
           }
         }
 
@@ -2401,24 +2433,27 @@
       // distinctes : des variantes de pose d'une même manœuvre ne doivent pas
       // monopoliser les quatre ripostes. Ce n'est pas une déduplication d'états :
       // les variantes de terrain complètent la liste s'il reste des places.
+      /* Gardiens, couronnes et scores d'un nœud — sans le terrain. */
+      function plannerSignaturePosition(noeud) {
+        const etat = noeud.etat;
+        const gardiens = etat.characters.map(g => [g.player, g.r, g.c]).sort();
+        const couronnes = [etat.artifact, etat.secondArtifact]
+          .filter(a => a && a.active).map(a => {
+            const porteur = etat.characters.find(g => g.id === a.carrierId);
+            return [a.id, porteur ? porteur.player : null,
+              porteur ? porteur.r : a.r, porteur ? porteur.c : a.c];
+          });
+        return JSON.stringify([gardiens, couronnes,
+          etat.players.map(p => p.score || 0)]);
+      }
+
       function plannerFinalistesDiversifies(terminaux, plafond) {
         const tries = terminaux.sort((a, b) => b.note - a.note);
         const retenus = [], variantes = [], vus = new Set();
-        const position = noeud => {
-          const etat = noeud.etat;
-          const gardiens = etat.characters.map(g => [g.player, g.r, g.c]).sort();
-          const couronnes = [etat.artifact, etat.secondArtifact]
-            .filter(a => a && a.active).map(a => {
-              const porteur = etat.characters.find(g => g.id === a.carrierId);
-              return [a.id, porteur ? porteur.player : null,
-                porteur ? porteur.r : a.r, porteur ? porteur.c : a.c];
-            });
-          return JSON.stringify([gardiens, couronnes,
-            etat.players.map(p => p.score || 0)]);
-        };
+        const position = plannerSignaturePosition;
         const premiers = tries.slice(0, PLAN_RIPOSTE.finalistes);
         if (!premiers.length || premiers.some(n => position(n) !== position(premiers[0]))) {
-          return tries.slice(0, plafond);
+          return plannerReserverAutresIdees(tries, plafond);
         }
         for (const noeud of tries) {
           const signature = position(noeud);
@@ -2427,7 +2462,66 @@
           retenus.push(noeud);
           if (retenus.length === plafond) break;
         }
-        return retenus.concat(variantes).slice(0, plafond);
+        return plannerReserverAutresIdees(retenus.concat(variantes), plafond);
+      }
+
+      /* DES PLACES DE RIPOSTE POUR D'AUTRES IDÉES.
+
+         Les quatre meilleurs plans avant riposte sont souvent quatre variantes
+         d'une même manœuvre : même pose, même couronne, même case d'arrivée.
+         Si la riposte la punit, il ne reste rien à lui opposer — l'IA garde le
+         coup puni faute d'alternative examinée. Dans P17, les huit finalistes
+         posaient tous la même île et amenaient la couronne au centre, à côté
+         de la seconde qui allait y entrer ; l'île qui ramène la couronne vers
+         mon village, explorée mais notée plus bas, n'était jamais confrontée
+         à la réplique réelle.
+
+         Une IDÉE est la pose du plan ; sans pose, la disposition des couronnes
+         (position, porteur). Les dernières places vont aux meilleurs plans
+         d'idées encore absentes. C'est la riposte, et non une règle a priori,
+         qui tranche entre elles. */
+      function plannerReserverAutresIdees(liste, plafond) {
+        const places = PLAN_RIPOSTE.finalistes;
+        const reservees = Math.min(PLAN_POIDS.riposteAutresIdees || 0, places - 1);
+        if (reservees <= 0 || liste.length <= places) return liste.slice(0, plafond);
+        const idee = noeud => {
+          const pose = noeud.plan.find(a => a.type === "POSE");
+          if (pose) return "pose " + pose.cells.map(([r, c]) => key(r, c)).sort().join(";");
+          const etat = noeud.etat;
+          return JSON.stringify([etat.artifact, etat.secondArtifact]
+            .filter(a => a && a.active).map(a => {
+              const porteur = etat.characters.find(g => g.id === a.carrierId);
+              return [a.id, porteur ? porteur.player : null,
+                porteur ? porteur.r : a.r, porteur ? porteur.c : a.c];
+            }));
+        };
+        const tete = liste.slice(0, places - reservees);
+        const vues = new Set(tete.map(idee));
+        /* Deux variantes par idée : la meilleure avant riposte n'est pas
+           forcément celle qui y résiste. Dans P17, « porter la couronne sur
+           place » notait le mieux et se faisait éjecter ; « marcher d'une case
+           vers le village » tenait. Deux positions distinctes, donc. */
+        const choisis = [];
+        const couronnes = noeud => JSON.stringify(JSON.parse(plannerSignaturePosition(noeud))[1]);
+        let idees = 0;
+        for (let i = tete.length; i < liste.length && idees < reservees; i++) {
+          const k = idee(liste[i]);
+          if (vues.has(k)) continue;
+          vues.add(k);
+          idees++;
+          choisis.push(i);
+          // La seconde variante doit changer le sort d'une couronne (porteur,
+          // case), pas seulement la place d'un gardien étranger à l'idée.
+          const signature = couronnes(liste[i]);
+          const seconde = liste.findIndex((n, j) => j > i && idee(n) === k && couronnes(n) !== signature);
+          if (seconde >= 0) choisis.push(seconde);
+        }
+        if (!choisis.length) return liste.slice(0, plafond);
+        const reste = liste.filter((_, i) => i >= tete.length && !choisis.includes(i));
+        const resultat = [...tete, ...choisis.map(i => liste[i]), ...reste].slice(0, plafond);
+        // Toutes les idées retenues passent la riposte, variantes comprises.
+        resultat.aExaminer = Math.min(plafond, tete.length + choisis.length);
+        return resultat;
       }
 
       function plannerMenacesDefense(playerId) {
@@ -2603,6 +2697,11 @@
         }
 
         const duree = performance.now() - debut;
+        const finalistes = menacesDefense.length
+          ? terminaux.sort((a, b) => comparerDefense(a, b) || b.note - a.note).slice(0, 8)
+          : !racine.terminal && !plannerMenaceValidationAdverse(playerId)
+          ? plannerFinalistesDiversifies(terminaux, 8)
+          : terminaux.sort((a, b) => b.note - a.note).slice(0, 8);
         plannerDernierRapport = {
           joueur: playerId,
           plan: meilleur ? meilleur.plan : [],
@@ -2619,11 +2718,8 @@
           // entre l'état prévu et l'état réellement obtenu.
           empreinteAttendue: meilleur ? strategicStateFingerprint(meilleur.etat) : null,
           // Finalistes triés, prêts pour l'anticipation adverse (V3).
-          finalistes: menacesDefense.length
-            ? terminaux.sort((a, b) => comparerDefense(a, b) || b.note - a.note).slice(0, 8)
-            : !racine.terminal && !plannerMenaceValidationAdverse(playerId)
-            ? plannerFinalistesDiversifies(terminaux, 8)
-            : terminaux.sort((a, b) => b.note - a.note).slice(0, 8),
+          finalistes,
+          finalistesARiposter: finalistes.aExaminer || PLAN_RIPOSTE.finalistes,
           releveCandidats,
           /* Conservés pour la décomposition de score de l'autopsie. Hors
              autopsie ils restent nuls : garder des clones d'état complets à
@@ -2744,11 +2840,32 @@
       }
 
       /** Ce que vaut un plan APRÈS la meilleure réplique adverse courte. */
+      /* Part de la note due au PÉRIL ESTIMÉ des couronnes au sol (négative ou
+         nulle), sur l'état courant. */
+      function plannerPerilSolDansNote(playerId) {
+        const poids = PLAN_POIDS.perilCouronneSol;
+        if (!poids) return 0;
+        const avec = evaluateStrategicState(playerId);
+        PLAN_POIDS.perilCouronneSol = 0;
+        try { return avec - evaluateStrategicState(playerId); }
+        finally { PLAN_POIDS.perilCouronneSol = poids; }
+      }
+
       function plannerEvaluerRobustesse(noeudFinal, playerId, budget = {}) {
         const apres = structuredClone(noeudFinal.etat);
         return withSimulatedState(apres, () => {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
+
+          /* LA RIPOSTE REMPLACE L'ESTIMATION. perilCouronneSol devine, sans
+             jouer, si l'adversaire ramassera une couronne laissée au sol. Ici
+             on JOUE sa réplique : s'il la prend, la menace mesurée le dit ; s'il
+             préfère autre chose (la seconde couronne qui entre, une poussée),
+             la couronne n'a rien risqué. Garder aussi l'estimation compterait
+             deux fois le même danger — dans P17, 800 points retenus contre un
+             dépôt près de mon village que l'adversaire ne visait pas. */
+          const noteSansEstimation = PLAN_POIDS.riposteRemplacePeril
+            ? noeudFinal.note - plannerPerilSolDansNote(playerId) : noeudFinal.note;
 
           const reserveGarantie = Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 },
             state.players[adverse.id] && state.players[adverse.id].stash);
@@ -2782,7 +2899,7 @@
               (ressourcesAvant[type] - ressourcesApres[type]) <= reserveGarantie[type]);
             const menace = degat * (garantie ? 1 : PLAN_RIPOSTE.poidsMenacePlausible);
             return {
-              note: noeudFinal.note - menace,
+              note: noteSansEstimation - menace,
               riposte: plan.map(a => a.type),
               menace: Math.round(menace),
               garantie
@@ -2814,7 +2931,8 @@
         if (plannerSansAnticipation.has(playerId)) return plannerChercherPlan(playerId, options || {});
         const debutTotal = performance.now();
         const principal = plannerChercherPlan(playerId, { ...options, prioriteDefense: true });
-        const finalistes = (principal.finalistes || []).slice(0, PLAN_RIPOSTE.finalistes);
+        const finalistes = (principal.finalistes || [])
+          .slice(0, principal.finalistesARiposter || PLAN_RIPOSTE.finalistes);
 
         if (finalistes.length < 2) {
           principal.anticipation = { examines: finalistes.length, dureeMs: 0, rejets: [] };
