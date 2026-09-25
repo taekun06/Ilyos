@@ -44250,6 +44250,162 @@
         }
       }
 
+      /* =====================================================================
+         JOUER À LA MAIN CONTRE L'EXPERT, EN SIMULATION
+
+         Trois aides pour un joueur qui pilote un camp depuis la console ou un
+         script : voir le plateau, lister les coups légaux, jouer une séquence
+         puis passer la main. L'Expert joue ses tours par `tour`, exactement
+         comme en self-play. Mêmes noyaux de règle que la partie réelle
+         (fidélité vérifiée par verif-fidelite-partie).
+         ===================================================================== */
+      /* Départ PROPRE d'une partie classique : plateau vide, couronnes au
+         sanctuaire, scores et réserves à zéro, paquets remélangés par la
+         graine, cinq cartes au premier joueur. */
+      function selfplayDepartPropre(graine, premier = 0) {
+        const depart = canonicalDepart();
+        setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(depart, () => {
+            state.players.forEach(joueur => {
+              // La réserve PHYSIQUE (reserveCards) aussi : sinon des cartes
+              // de la partie en cours seraient offertes au départ.
+              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || []),
+                ...(joueur.reserveCards || [])]
+                .map(carte => ({ ...carte, used: false, fromStash: false })));
+              joueur.hand = [];
+              joueur.discard = [];
+              joueur.reserveCards = [];
+              joueur.score = 0;
+              joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+            });
+            state.islands = [];
+            state.characters = [];
+            state.nextIslandId = 1;
+            state.nextCharId = 100;
+            state.artifact = { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true };
+            state.secondArtifact = { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
+            state.couronnesEnAttente = [];
+            state.turn = 1;
+            state.round = 1;
+            state.winner = null;
+            state.phase = "ACTION_SELECT";
+            state.islandPlacedThisTurn = false;
+            state.centerCrownTakenThisTurn = false;
+            state.aiDifficulty = "expert";
+            state.currentPlayer = premier;
+            drawCards(state.players[premier], 5);
+            return snapshotState();
+          });
+        } finally {
+          setTestRandomSeed(null);
+        }
+      }
+
+      function selfplayVoir(json) {
+        return withSimulatedState(JSON.parse(json), () => {
+          const lignes = [];
+          const entete = "    " + Array.from({ length: GRID }, (_, c) => String(c).padStart(3)).join("");
+          lignes.push(entete);
+          const valid = state.players.map(p => new Set(crownValidationCellsForPlayer(p).map(([r, c]) => key(r, c))));
+          for (let r = 0; r < GRID; r++) {
+            let ligne = String(r).padStart(3) + " ";
+            for (let c = 0; c < GRID; c++) {
+              const g = characterAt(r, c);
+              const couronne = looseArtifactAt(r, c);
+              const ile = islandAt(r, c);
+              let fond = !isLand(r, c) ? " . " : isSanctuary(r, c) ? " S " : villageAt(r, c) ? " V " : ile ? (ile.owner === 0 ? " o " : " x ") : " # ";
+              if (valid[0].has(key(r, c)) && isLand(r, c)) fond = fond.replace(/ (.) /, "[$1]");
+              else if (valid[1].has(key(r, c)) && isLand(r, c)) fond = fond.replace(/ (.) /, "{$1}");
+              if (g) fond = (g.player === 0 ? " A" : " B") + (characterCarriesCrown(g.id) ? "*" : " ");
+              else if (couronne) fond = " * ";
+              ligne += fond;
+            }
+            lignes.push(ligne);
+          }
+          const joueurs = state.players.map(p => ({
+            id: p.id, score: p.score || 0,
+            main: (p.hand || []).filter(c => !c.used).map(c => c.action),
+            reserve: { ...(p.stash || {}) },
+            validation: crownValidationCellsForPlayer(p)
+          }));
+          return {
+            tour: state.turn, trait: state.currentPlayer, vainqueur: state.winner ?? null,
+            ilePosee: !!state.islandPlacedThisTurn,
+            plateau: lignes.join("\n"),
+            legende: "A = mes gardiens (J0), B = Expert (J1), * = couronne (A*/B* = porteur), o/x = îles J0/J1, S sanctuaire, V village, [..] validation J0, {..} validation J1, . vide",
+            joueurs,
+            gardiens: state.characters.map(g => ({ id: g.id, j: g.player, r: g.r, c: g.c, porte: !!characterCarriesCrown(g.id) })),
+            couronnes: activeArtifacts().map(a => ({ id: a.id, r: a.r, c: a.c, porteur: a.carrierId })),
+            enAttente: [...(state.couronnesEnAttente || [])],
+            iles: state.islands.map(i => ({ id: i.id, j: i.owner, forme: i.shapeKey, cells: i.cells }))
+          };
+        });
+      }
+
+      function selfplayCoups(json, { poses = false, pres = null, rayon = 2 } = {}) {
+        return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => {
+          const moi = state.currentPlayer;
+          const joueur = state.players[moi];
+          const budgetMove = availableActionCount("MOVE", joueur);
+          const budgetPush = availableActionCount("PUSH", joueur);
+          const deplacements = {};
+          for (const g of plannerGardiensDe(moi)) {
+            if (budgetMove < 1) break;
+            const portee = movementRange(g, budgetMove);
+            deplacements[g.id] = [...portee].map(k => [k, portee.costs.get(k)]).sort((a, b) => a[1] - b[1]);
+          }
+          const poussees = [];
+          for (const g of plannerGardiensDe(moi)) {
+            for (const [r, c] of orthogonalNeighbors(g.r, g.c)) {
+              const cible = characterAt(r, c);
+              const couronne = cible ? null : looseArtifactAt(r, c);
+              if (!cible && !couronne) continue;
+              if (cible && cible.player === moi) continue;
+              const vus = new Set();
+              for (let force = 1; force <= budgetPush; force++) {
+                const plan = resoudrePousseeBloc(r, c, r - g.r, c - g.c, force);
+                if (!plan) continue;
+                const e = plan.mouvements.map(mv => `${mv.kind}:${mv.id}:${mv.to}:${mv.chute ? 1 : 0}`).join("|");
+                if (vus.has(e)) continue;
+                vus.add(e);
+                poussees.push({ action: { type: "PUSH", pusherId: g.id, r, c, force },
+                  effet: plan.mouvements.map(mv => `${mv.kind === "crown" ? "couronne" : mv.id} ${mv.from}→${mv.to}${mv.chute ? " CHUTE" : ""}`).join(", ") });
+              }
+            }
+          }
+          const gratuites = plannerTransitionsGratuites(moi);
+          const magie = availableActionCount("MAGIC", joueur) > 0 ? plannerCandidatsMagic(moi) : [];
+          let listePoses = [];
+          if (poses && !state.islandPlacedThisTurn) {
+            listePoses = (findAutomaticIslandPlacement(moi, PLAN_POSE_ENUM_MAX) || [])
+              .filter(p => !pres || p.cells.some(([r, c]) => Math.abs(r - pres[0]) + Math.abs(c - pres[1]) <= rayon))
+              .map(p => ({ type: "POSE", shapeKey: p.shapeKey, cells: p.cells, relCells: p.relCells, anchor: p.anchor, owner: moi }));
+          }
+          return { joueur: moi, main: { MOVE: budgetMove, PUSH: budgetPush, MAGIC: availableActionCount("MAGIC", joueur) },
+            deplacements, poussees, gratuites, magie, poses: listePoses };
+        }));
+      }
+
+      function selfplayJouerHumain(json, actions, { apercu = false } = {}) {
+        return withSimulatedState(JSON.parse(json), () => {
+          const moi = state.currentPlayer;
+          const journal = [];
+          for (const [i, action] of (actions || []).entries()) {
+            const ok = plannerAppliquerAction(action);
+            if (!ok) return { erreur: `action ${i} refusée : ${JSON.stringify(action)}`, journal };
+            journal.push(action.type);
+          }
+          // Aperçu : la position après ces actions, sans finir le tour.
+          if (apercu) return { etat: snapshotState(), journal };
+          if (!state.islandPlacedThisTurn && !poseImpossiblePour(moi)) {
+            return { erreur: "la pose d'île est obligatoire ce tour", journal };
+          }
+          const continuer = selfplayTransitionTour();
+          return { etat: snapshotState(), journal, fin: !continuer, vainqueur: state.winner ?? null, tour: state.turn };
+        });
+      }
+
       window.ILYOS_SELFPLAY = {
         departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
@@ -44260,7 +44416,11 @@
         tournoi: selfplayTournoi,
         depart: canonicalDepart,
         departMelange: selfplayDepartMelange,
-        tour: selfplayTourIsole
+        tour: selfplayTourIsole,
+        departPropre: selfplayDepartPropre,
+        voir: selfplayVoir,
+        coups: selfplayCoups,
+        jouer: selfplayJouerHumain
       };
 
       window.ILYOS_BENCH = {

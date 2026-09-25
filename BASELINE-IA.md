@@ -1153,8 +1153,8 @@ Corrigé :
 - coupures par le temps (principale, ripostes, MAGIE) rapportées dans le
   rapport du planner, le journal des défaites et `analyser-defaite.js`.
 
-Découvert, NON corrigé :
-- **Instantanés sans difficulté.** `snapshotState` ne porte ni `aiDifficulty`
+Découvert :
+- **Instantanés sans difficulté** (corrigé ensuite, 6ab520c). `snapshotState` ne porte ni `aiDifficulty`
   ni les règles : rejouée depuis un instantané (analyse de défaites, analyse
   de positions, self-play rapide), l'énumération des poses
   (`findAutomaticIslandPlacement`) prend les réglages du niveau NORMAL —
@@ -1170,3 +1170,59 @@ Découvert, NON corrigé :
   compris), plafonds de temps. Canal exact encore inconnu. L'autopsie n'est
   active qu'en IA contre IA depuis le menu, dans la Spirale et les outils —
   jamais en partie solo normale.
+
+## Partie gagnée contre l'Expert : ce qui a permis de gagner
+
+Une partie complète, un humain (joué au harnais `ILYOS_SELFPLAY` :
+`departPropre`, `voir`, `coups`, `jouer` avec aperçu) contre l'Expert du
+code de `main` après la fusion de la PR #122, plateau classique, départ propre.
+Victoire humaine **3-0 au tour 29**. Gardiens perdus : **10 pour l'IA, 4 pour
+l'humain** (hors gardiens sortis après une validation). Ce n'est qu'une partie :
+ce sont des pistes à vérifier par le journal des défaites, pas des mesures.
+
+Faiblesses exploitées, par ordre d'importance :
+
+1. **Gardien laissé dans une ligne de poussée mortelle.** L'IA a perdu un
+   gardien à presque chaque tour humain (tours 4 à 24). Motif récurrent : elle
+   place son gardien au contact d'un gardien humain (pour menacer ou bloquer),
+   avec du vide ou le bord à une ou deux cases derrière. Une poussée de force 2
+   (ou force 1 après une MAGIE qui ouvre le vide) le tue. Les gardiens
+   fraîchement apparus sont posés au contact et tombent le tour suivant
+   (119 au tour 23, 117 au tour 21). La riposte, limitée à une main plausible
+   de 3 MOVE + 2 PUSH sans MAGIE, sous-estime une réserve humaine accumulée
+   (tour 21 : 5 MOVE + 2 PUSH joués en un tour grâce à la réserve).
+2. **MAGIE humaine non anticipée.** La riposte ne joue pas la MAGIE : une
+   rotation d'île qui retire le sol derrière un gardien, ou qui avance un
+   porteur de deux cases vers un village (tour 27 : MAGIE puis 4 MOVE,
+   porteur de (7,7) à (10,10)), n'est jamais vue. Cf. tâche en attente
+   « anticipation probabiliste de la MAGIE adverse ».
+3. **Village de coin inattaquable.** Le village lui-même n'est pas une île :
+   la MAGIE ne le déplace pas. Un porteur sur (0,0) ou (10,10) ne peut être
+   tué que par un gardien sur l'une des deux cases voisines, poussant vers le
+   bord. Il suffit donc que l'IA n'ait aucun gardien à portée de ces deux
+   cases en un tour. Les deux validations humaines (tours 26 et 28) sont
+   venues ainsi, porteur arrivé au dernier moment.
+4. **Relais de couronne sous-estimé.** La transmission gratuite (diagonale
+   comprise) entre gardiens adjacents a fait gagner une case par relais :
+   couronne 1 de (5,5) à (0,0) en deux tours avec 4 MOVE par tour.
+5. **Pose humaine qui ferme les apparitions.** Au tour 27, une pose humaine sur
+   (10,7)-(10,8) a occupé la seule place où l'IA pouvait faire apparaître un
+   gardien près de (10,10) ((8,10) est un vide isolé, aucune forme n'y
+   tient). L'IA ne semble pas compter ces cases dans l'urgence défensive.
+6. **Réserve dépensée d'un coup.** L'IA garde longtemps ses cartes
+   (réserve 3 PUSH + MAGIE au tour 24) puis vide ses PUSH sur une cible
+   secondaire (tour 26 : un gardien non porteur repoussé de (2,4) à (2,0),
+   pendant que le porteur humain entrait sur (0,0)) et se retrouve à 0 PUSH /
+   0 MOVE face au second porteur qui file vers le coin.
+
+Ce que l'IA fait bien : ses MAGIES sur les îles humaines ont tué deux porteurs
+en début de partie, et elle ramène vite une couronne libre vers son village
+(tour 28). Elle perd par attrition de gardiens, puis par manque de défenseurs
+près des villages de coin.
+
+Pistes (non implémentées) : terme de danger pour un gardien dans une ligne
+« vide à ≤ 2 cases derrière » face à un gardien adverse, pondéré par la
+réserve de PUSH adverse réelle (visible) plutôt qu'une main plausible fixe ;
+garde permanente d'un défenseur à portée des cases voisines des villages
+adverses de coin quand l'adversaire porte une couronne ; MAGIE dans la
+riposte (au moins les rotations qui déplacent un porteur).
