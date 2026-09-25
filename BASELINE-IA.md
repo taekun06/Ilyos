@@ -918,3 +918,70 @@ près d'un gardien ; 13 inchangé. `verif-*` conformes, `verif-fidelite-partie`
 aux poses de l'IA (PR #121) : la liste des poses s'allongeait et la recherche
 de poses « de mobilité », plafonnée à deux essais par place, s'épuisait sur des
 variantes. Plafond porté à quatre essais.
+
+---
+
+# Mise en place du mode personnalisé
+
+En mode personnalisé, chaque joueur pose avant le premier tour ses îles puis
+ses gardiens, en serpentin (4 îles et 2 gardiens par défaut). L'IA de mise en
+place était la même pour tous les niveaux : îles posées comme en cours de
+partie (vers la couronne), et chaque gardien sur la case de ses îles la plus
+proche du sanctuaire — presque toujours un bord d'île face au vide.
+
+## Ce qui change pour l'Expert
+
+`decisionDraft` (core.js) est désormais une décision PURE, appliquée par
+`appliquerDecisionDraft` : la partie réelle (`runDraftAI`) et le self-play
+(`ILYOS_SELFPLAY.departPerso`) jouent exactement le même code. Les autres
+niveaux gardent la logique historique.
+
+- **Gardiens** (`plannerDraftGardien`) : l'évaluateur de partie, plus une
+  vulnérabilité POTENTIELLE. Un poste de poussée n'est pas un abri parce qu'il
+  est vide : l'adversaire peut y poser une île, y faire apparaître un gardien et
+  pousser dans le même tour. Le premier jet l'ignorait et logeait les gardiens
+  dans des « couloirs » entre deux vides : il perdait autant de gardiens de mise
+  en place que l'historique (37 sur 120 en quatre tours, contre 34).
+- **Îles** (`plannerDraftIle`) : présélection par familles (classement
+  historique, abords du sanctuaire, cases de validation adverses, abords de mes
+  villages), puis note = meilleurs futurs postes de gardien + écart de route.
+- **Route estimée** (`plannerDraftRouteEstimee`) : pendant la mise en place, une
+  route n'est presque jamais complète ; mesurée sur le terrain seul, elle restait
+  infinie jusqu'à la dernière île et aucune île ne rapportait rien. Chaque case de
+  vide coûte ici un surcoût (une pose à faire), si bien que chaque île qui
+  rapproche la couronne de mon village est récompensée.
+
+## Mesures
+
+Harnais : `ILYOS_PERSO="4,2"` dans `selfplay-rapide.js`, `ILYOS_DRAFT_A/_B` pour
+les poids de chaque camp pendant SES choix de mise en place ; la partie est
+ensuite jouée par la même IA des deux côtés.
+
+**Sécurité seule, puis course à la couronne.** Avec la menace de pose, les
+gardiens de mise en place perdus dans les quatre premiers tours tombaient de
+38 % (historique) à 14 % (Expert). Mais l'Expert logeait alors ses gardiens
+dans le coin de son propre village, à l'abri et à dix cases de la couronne, et
+PERDAIT : 3 victoires, 13 défaites contre le draft historique. En mode
+personnalisé le plateau se remplit vite, et le premier qui marque gagne
+souvent. Le choix d'une case de gardien compte donc aussi la proximité de la
+couronne (`draftAccesGardien`).
+
+| `draftAccesGardien` | Parties | Expert | Historique | Nuls |
+|---|---|---|---|---|
+| 0 (sécurité seule) | 24 | 3 | 13 | 8 |
+| 800 | 24 | 7 | 9 | 8 |
+| **1 200** | 24 | **11** | **4** | 9 |
+| **1 200** (autres graines) | 30 | **11** | **5** | 14 |
+| 1 600 | 24 | 5 | 8 | 11 |
+
+Réglage retenu : 1 200 — 22 victoires, 9 défaites, 23 nuls sur 54 parties.
+Gardiens de mise en place perdus en quatre tours : 29 % contre 34 % pour
+l'historique ; le compromis avec la course à la couronne coûte une partie de
+la protection mesurée avec la sécurité seule.
+
+Avant la menace de pose, une dizaine de réglages (poids de route, d'accès,
+de vulnérabilité, îles ou gardiens seuls) restaient tous entre 39 et 55 %.
+
+Temps : la mise en place complète des deux IA prend 0,5 à 0,8 s (4 îles et
+2 gardiens, ou 6 et 3) — moins de 0,1 s par choix. Vérifiée dans une vraie
+partie (menu, animations) : mise en place puis tours joués sans erreur.

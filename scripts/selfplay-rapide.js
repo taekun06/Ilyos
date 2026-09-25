@@ -31,6 +31,14 @@ const POIDS = {
   A: process.env.ILYOS_POIDS_A ? JSON.parse(process.env.ILYOS_POIDS_A) : null,
   B: process.env.ILYOS_POIDS_B ? JSON.parse(process.env.ILYOS_POIDS_B) : null
 };
+/* Mode personnalisé : ILYOS_PERSO="4,2" (îles, gardiens par joueur). La mise
+   en place est jouée en simulation ; ILYOS_DRAFT_A / _B donnent à chaque camp
+   ses poids pendant SES choix de mise en place (ex. '{"draftExpert":0}'). */
+const PERSO = process.env.ILYOS_PERSO ? process.env.ILYOS_PERSO.split(',').map(Number) : null;
+const DRAFT = {
+  A: process.env.ILYOS_DRAFT_A ? JSON.parse(process.env.ILYOS_DRAFT_A) : null,
+  B: process.env.ILYOS_DRAFT_B ? JSON.parse(process.env.ILYOS_DRAFT_B) : null
+};
 const BUDGETS = {
   A: process.env.ILYOS_BUDGET_A ? JSON.parse(process.env.ILYOS_BUDGET_A) : undefined,
   B: process.env.ILYOS_BUDGET_B ? JSON.parse(process.env.ILYOS_BUDGET_B) : undefined
@@ -107,8 +115,12 @@ async function travailleur(navigateur, file, bilan, depart0) {
   const baseDepart = depart0 || pages.A;
   while (file.length) {
     const graine = file.shift();
-    const depart = await baseDepart.evaluate(g => window.ILYOS_SELFPLAY.departMelange(g), graine);
+    const departClassique = PERSO ? null
+      : await baseDepart.evaluate(g => window.ILYOS_SELFPLAY.departMelange(g), graine);
     for (const campA of [0, 1]) {
+      const depart = departClassique || await baseDepart.evaluate(([g, iles, gardiens, poids]) =>
+        window.ILYOS_SELFPLAY.departPerso(g, { iles, gardiens, poids }),
+        [graine, PERSO[0], PERSO[1], campA === 0 ? [DRAFT.A, DRAFT.B] : [DRAFT.B, DRAFT.A]]);
       const r = await jouerPartie(pages, depart, campA, graine);
       const couronnesA = r.scores[campA];
       const couronnesB = r.scores[1 - campA];

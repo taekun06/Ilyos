@@ -72,6 +72,21 @@
         pousseeLongue: 2,
         // Gravité d'une expulsion selon la force requise (1, 2, 3+).
         graviteParForce: [1, 0.75, 0.6],
+
+        /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
+           draftExpert : 0 = logique historique, pour la comparer. */
+        draftExpert: 1,
+        draftIles: 1,
+        draftGardiens: 1,
+        draftAcces: 600,
+        draftVulnerabilite: 900,
+        draftRoute: 300,
+        // Surcoût d'une case de vide sur la route estimée (une pose à faire).
+        draftCoutVide: 3,
+        // Menace d'une pose adverse qui fait apparaître un pousseur sur le vide.
+        draftMenacePose: 0.8,
+        // Proximité de la couronne pour le choix d'une case de gardien.
+        draftAccesGardien: 1200,
         // Intention et pré-classement des poussées de couronne vers mon village.
         pousseeCouronne: 1,
         couronnePortee: 75,
@@ -2634,4 +2649,213 @@
         principal.dureeTotaleMs = Math.round(performance.now() - debutTotal);
         plannerDernierRapport = principal;
         return principal;
+      }
+
+      /* =====================================================================
+         MISE EN PLACE DU MODE PERSONNALISÉ — îles puis gardiens, en serpentin.
+
+         L'IA historique posait ses îles comme en cours de partie (vers la
+         couronne) puis chaque gardien sur la case de ses îles la plus proche
+         du sanctuaire : presque toujours un bord d'île face au vide, que
+         l'adversaire éjecte au premier tour. Une mise en place se juge au
+         contraire sur trois questions :
+
+         1. Mes gardiens tiendront-ils ? Un gardien est vulnérable si une case
+            d'où le pousser dans le vide est du terrain que l'adversaire
+            atteindra — ses îles et ses gardiens le disent, même avant qu'il
+            n'ait posé ses propres gardiens.
+         2. Atteindront-ils la couronne avant les siens ?
+         3. Où la couronne ira-t-elle ensuite : une route du sanctuaire à mon
+            village, et si possible pas au sien ; voire une île posée sur une
+            case de validation adverse, où un gardien bloque d'emblée.
+         ===================================================================== */
+
+      /* Terrain « tenu » par l'adversaire : ses gardiens, ses îles, ses
+         villages. Ses futurs gardiens partiront de là. */
+      function plannerDraftChampAdverse(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return new Map();
+        const sources = [];
+        for (const g of plannerGardiensDe(adverse.id)) sources.push([g.r, g.c]);
+        for (const ile of state.islands) if (ile.owner === adverse.id) sources.push(...ile.cells);
+        for (const v of villagesForPlayer(adverse)) sources.push([v.r, v.c]);
+        return plannerChampDistance(sources);
+      }
+
+      /** Vulnérabilité potentielle d'un gardien posé en (r, c), de 0 à 1. */
+      function plannerDraftVulnerabilite(playerId, r, c, champAdverse) {
+        let pire = 0;
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const force = plannerVideAPortee(r, c, dr, dc, 2);
+          if (!force) continue;
+          const pr = r - dr, pc = c - dc;
+          // Poussée depuis le bord du plateau : impossible.
+          if (!inside(pr, pc)) continue;
+          let acces;
+          if (!isLand(pr, pc)) {
+            /* Poste de poussée VIDE : ce n'est pas un abri. L'adversaire peut
+               y poser une île, y faire apparaître un gardien et pousser dans
+               le même tour. Un gardien posé dans un « couloir » entre deux
+               vides était ainsi la cible idéale — mesuré : le premier draft
+               Expert perdait autant de gardiens de mise en place en quatre
+               tours que l'historique (37 sur 120 contre 34). */
+            acces = PLAN_POIDS.draftMenacePose;
+          } else {
+            const occupant = characterAt(pr, pc);
+            if (occupant && occupant.player === playerId) continue;
+            const d = occupant ? 0 : champAdverse.get(key(pr, pc));
+            // Hors de toute route adverse, une pose peut encore la relier.
+            acces = d === undefined ? 0.15 : d <= 3 ? 1 : d <= 6 ? 0.6 : 0.3;
+          }
+          const table = PLAN_POIDS.graviteParForce || [1];
+          pire = Math.max(pire, table[Math.min(force, table.length) - 1] * acces);
+        }
+        // L'adversaire qui joue le premier tour frappe avant que je bouge.
+        return pire * (plannerDraftJoueEnPremier(playerId) ? 0.6 : 1);
+      }
+
+      // Le draft terminé, le joueur 0 ouvre la partie (finishCustomDraft).
+      function plannerDraftJoueEnPremier(playerId) {
+        return playerId === 0;
+      }
+
+      /** Note rapide d'une case comme futur poste de gardien. */
+      function plannerDraftNoteCase(playerId, r, c, champs) {
+        const adverse = plannerAdversaire(playerId);
+        const dCouronne = champs.couronne.get(key(r, c));
+        let note = PLAN_POIDS.draftAcces * plannerProximite(dCouronne === undefined ? Infinity : dCouronne);
+        note -= PLAN_POIDS.draftVulnerabilite * plannerDraftVulnerabilite(playerId, r, c, champs.adverse);
+        if (adverse && isCrownValidationCell(adverse, r, c)) note += PLAN_POIDS.blocageValidation * 0.6;
+        return note;
+      }
+
+      function plannerDraftCouronnes() {
+        const cibles = activeArtifacts()
+          .map(a => { const p = a.carrierId ? characterById(a.carrierId) : null; return p ? [p.r, p.c] : [a.r, a.c]; })
+          .filter(([r, c]) => Number.isFinite(r) && Number.isFinite(c));
+        return cibles.length ? cibles : [[CENTER.r, CENTER.c]];
+      }
+
+      /* ROUTE ESTIMÉE de la couronne jusqu'aux cases de validation d'un joueur.
+         Pendant la mise en place, une route n'est presque jamais complète :
+         mesurée sur le terrain seul, elle restait « infinie » jusqu'à la
+         dernière île, et une île qui avançait vers le village ne rapportait
+         rien. Ici chaque case de vide traversée coûte un surcoût — il faudra
+         une pose pour la combler — si bien que chaque île qui rapproche est
+         récompensée. Diagonales à 2 comme les déplacements. */
+      function plannerDraftRouteEstimee(joueur, depuis) {
+        const cibles = crownValidationCellsForPlayer(joueur);
+        const vide = PLAN_POIDS.draftCoutVide;
+        const cout = new Map();
+        const files = [[]];
+        for (const [r, c] of cibles) {
+          if (!inside(r, c)) continue;
+          const d = isLand(r, c) ? 0 : vide;
+          const k = key(r, c);
+          if ((cout.get(k) ?? Infinity) <= d) continue;
+          cout.set(k, d);
+          (files[d] ||= []).push([r, c, d]);
+        }
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const [r, c, d] = file[i];
+            if (d !== cout.get(key(r, c))) continue;
+            for (const arete of movementEdges(r, c)) {
+              const nd = d + arete.cost + (isLand(arete.r, arete.c) ? 0 : vide);
+              const k = key(arete.r, arete.c);
+              if (nd >= (cout.get(k) ?? Infinity)) continue;
+              cout.set(k, nd);
+              (files[nd] ||= []).push([arete.r, arete.c, nd]);
+            }
+          }
+        }
+        return Math.min(...depuis.map(([r, c]) => cout.get(key(r, c)) ?? 60));
+      }
+
+      /** Choix d'île du draft : l'emplacement qui offre les meilleurs postes
+       *  de gardien et la meilleure route pour la couronne. */
+      function plannerDraftIle(playerId) {
+        const toutes = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX);
+        if (!Array.isArray(toutes) || !toutes.length) return null;
+        const adverse = plannerAdversaire(playerId);
+        const draft = state.draft;
+        const gardiensAPoser = Math.max(1, draft
+          ? draft.guardiansPerPlayer - draft.placedGuardians[playerId] : 1);
+
+        /* Présélection par familles, pour que chaque idée soit examinée :
+           classement historique, contact du sanctuaire, cases de validation
+           adverses, abords de mes propres villages. */
+        const pres = (cells, cibles) => Math.min(...cells.flatMap(([r, c]) =>
+          cibles.map(([tr, tc]) => Math.abs(r - tr) + Math.abs(c - tc))));
+        const miennes = crownValidationCellsForPlayer(state.players[playerId]);
+        const siennes = adverse ? crownValidationCellsForPlayer(adverse) : [];
+        const couronnes = plannerDraftCouronnes();
+        const choisies = new Set();
+        const retenir = (liste, n) => liste.slice(0, n).forEach(p => choisies.add(p));
+        retenir(toutes, 30);
+        retenir([...toutes].sort((a, b) => pres(a.cells, couronnes) - pres(b.cells, couronnes)), 30);
+        retenir(toutes.filter(p => siennes.length && pres(p.cells, siennes) === 0), 12);
+        retenir([...toutes].sort((a, b) => pres(a.cells, miennes) - pres(b.cells, miennes)), 10);
+
+        let meilleure = null;
+        let meilleureNote = -Infinity;
+        for (const pose of choisies) {
+          const clone = cloneStateForSimulation();
+          const note = withSimulatedState(clone, () => {
+            state.islands.push({ id: -1, owner: playerId, shapeKey: pose.shapeKey,
+              cells: pose.cells.map(([r, c]) => [r, c]), fromSetup: true });
+            return avecGrilleTerre(() => {
+              const champs = { couronne: plannerChampDistance(couronnes), adverse: plannerDraftChampAdverse(playerId) };
+              const cases = [];
+              for (const ile of state.islands) {
+                if (ile.owner !== playerId) continue;
+                for (const [r, c] of ile.cells) if (!characterAt(r, c)) cases.push([r, c]);
+              }
+              const notes = cases.map(([r, c]) => plannerDraftNoteCase(playerId, r, c, champs))
+                .sort((a, b) => b - a);
+              let total = notes.slice(0, gardiensAPoser).reduce((s, n) => s + n, 0);
+              /* Route de la couronne : du sanctuaire à mon village, et à
+                 celui de l'adversaire. Bornée : une route coupée n'est qu'un
+                 retard, une pose pourra la rétablir. */
+              const adverseR = plannerAdversaire(playerId);
+              const routeMoi = plannerDraftRouteEstimee(state.players[playerId], couronnes);
+              const routeLui = adverseR ? plannerDraftRouteEstimee(adverseR, couronnes) : routeMoi;
+              total += PLAN_POIDS.draftRoute * (routeLui - routeMoi);
+              return total;
+            });
+          });
+          if (note > meilleureNote) { meilleureNote = note; meilleure = pose; }
+        }
+        return meilleure;
+      }
+
+      /** Choix de case du draft pour un gardien : l'évaluateur de partie, plus
+       *  la vulnérabilité potentielle face aux gardiens que l'adversaire n'a
+       *  pas encore posés. */
+      function plannerDraftGardien(playerId, candidates) {
+        let meilleure = candidates[0];
+        let meilleureNote = -Infinity;
+        /* Course à la couronne : en mode personnalisé, le plateau se remplit
+           vite et le premier qui marque gagne souvent. Sans ce terme, la
+           sécurité l'emportait et l'IA logeait ses gardiens dans le coin de son
+           propre village, à l'abri mais à dix cases de la couronne — mesuré :
+           3 victoires, 13 défaites contre le draft historique. */
+        const champCouronne = avecGrilleTerre(() => plannerChampDistance(plannerDraftCouronnes()));
+        for (const [r, c] of candidates) {
+          const clone = cloneStateForSimulation();
+          const note = withSimulatedState(clone, () => {
+            state.characters.push({ id: "draft-essai", player: playerId, r, c });
+            state.currentPlayer = playerId;
+            const evaluation = evaluateStrategicState(playerId);
+            const d = champCouronne.get(key(r, c));
+            const course = PLAN_POIDS.draftAccesGardien
+              * plannerProximite(d === undefined ? Infinity : d);
+            return evaluation + course - avecGrilleTerre(() => PLAN_POIDS.draftVulnerabilite
+              * plannerDraftVulnerabilite(playerId, r, c, plannerDraftChampAdverse(playerId)));
+          });
+          if (note > meilleureNote) { meilleureNote = note; meilleure = [r, c]; }
+        }
+        return meilleure;
       }

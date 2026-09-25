@@ -1651,7 +1651,66 @@
         }
       }
 
+      /* Départ en MODE PERSONNALISÉ : la mise en place entière (îles puis
+         gardiens, en serpentin) est jouée par decisionDraft — la même décision
+         que dans la partie réelle — chaque joueur avec ses propres poids.
+         `expert` choisit la logique Expert ou historique, `poids` les réglages
+         de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
+      function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
+                                            expert = [true, true] } = {}) {
+        const depart = canonicalDepart();
+        setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(depart, () => {
+            state.rules = { allowDissolve: false, islandLimitPerPlayer: 0,
+              shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT };
+            state.players.forEach(joueur => {
+              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
+                .map(carte => ({ ...carte, used: false, fromStash: false })));
+              joueur.hand = [];
+              joueur.discard = [];
+            });
+            state.characters = [];
+            state.islands = [];
+            state.nextIslandId = 1;
+            state.nextCharId = 100;
+            state.draft = {
+              islandsPerPlayer: iles, guardiansPerPlayer: gardiens,
+              order: buildDraftOrder(state.players.length, iles + gardiens), index: 0,
+              placedIslands: new Array(state.players.length).fill(0),
+              placedGuardians: new Array(state.players.length).fill(0)
+            };
+            let pick;
+            while ((pick = draftCurrentPick())) {
+              state.currentPlayer = pick.player;
+              const memoire = selfplayAppliquerPoids(poids[pick.player]);
+              try {
+                appliquerDecisionDraft(decisionDraft(!!expert[pick.player]));
+              } finally {
+                selfplayAppliquerPoids(memoire);
+              }
+              state.draft.index++;
+            }
+            // Même ouverture que finishCustomDraft + beginTurn, sans rendu.
+            state.draft = null;
+            state.currentPlayer = 0;
+            state.turn = 1;
+            state.round = 1;
+            const entrant = state.players[0];
+            drawCards(entrant, 5);
+            state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
+            state.centerCrownTakenThisTurn = false;
+            faireEntrerCouronnesEnAttente();
+            state.phase = "ACTION_SELECT";
+            return snapshotState();
+          });
+        } finally {
+          setTestRandomSeed(null);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
+        departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
         fidelitePartie: benchFidelitePartie,
         empreintePlateau,

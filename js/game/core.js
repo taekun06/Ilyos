@@ -2909,35 +2909,27 @@
         return true;
       }
 
-      /* IA de draft : réutilise le placement automatique d'île du jeu normal
-         (findAutomaticIslandPlacement, qui respecte déjà le stock par forme)
-         puis pose ses gardiens au plus près du sanctuaire. */
-      function runDraftAI() {
+      /* IA DE MISE EN PLACE — décision et application séparées.
+
+         `decisionDraft` est PURE : elle rend le choix sans rien modifier, si
+         bien que la partie réelle et le self-play (diagnostics.js) jouent
+         exactement la même décision. `appliquerDecisionDraft` ne fait que la
+         règle ; runDraftAI y ajoute sons et animations.
+
+         L'Expert (globalPlanning) confie la décision au planner
+         (plannerDraftIle / plannerDraftGardien) ; les autres niveaux gardent
+         la logique historique : pose automatique d'île, et gardien sur la case
+         la plus proche du sanctuaire — le plus souvent un bord d'île face au
+         vide, éjectable au premier tour. */
+      function decisionDraft(expert = !!aiConfig().globalPlanning) {
         const pick = draftCurrentPick();
-        if (!pick || !state?.players[pick.player]?.isAI) return;
+        if (!pick) return null;
 
         if (pick.kind === "island") {
-          const placement = findAutomaticIslandPlacement(pick.player);
-          if (!placement) {
-            advanceDraft();
-            return;
-          }
-          const island = {
-            id: state.nextIslandId++,
-            owner: pick.player,
-            shapeKey: placement.shapeKey,
-            anchor: { ...placement.anchor },
-            relCells: cloneCells(placement.relCells),
-            cells: cloneCells(placement.cells),
-            visualVariant: chooseIslandVisualVariant(placement.cells, state.nextIslandId, state.islands),
-            fromSetup: true
-          };
-          state.islands.push(island);
-          state.draft.placedIslands[pick.player]++;
-          playSfx("island");
-          animateIslandArrival(island);
-          advanceDraft();
-          return;
+          const placement = expert && PLAN_POIDS.draftExpert && PLAN_POIDS.draftIles
+            ? plannerDraftIle(pick.player)
+            : findAutomaticIslandPlacement(pick.player);
+          return { kind: "island", player: pick.player, placement: placement || null };
         }
 
         const candidates = [];
@@ -2951,17 +2943,60 @@
             candidates.push([village.r, village.c]);
           }
         });
-
-        if (!candidates.length) {
-          advanceDraft();
-          return;
+        if (!candidates.length) return { kind: "guardian", player: pick.player, cell: null };
+        if (expert && PLAN_POIDS.draftExpert && PLAN_POIDS.draftGardiens) {
+          return { kind: "guardian", player: pick.player, cell: plannerDraftGardien(pick.player, candidates) };
         }
         candidates.sort((a, b) =>
           (Math.abs(a[0] - CENTER.r) + Math.abs(a[1] - CENTER.c))
           - (Math.abs(b[0] - CENTER.r) + Math.abs(b[1] - CENTER.c))
         );
-        const [r, c] = candidates[0];
-        draftPlaceGuardian(r, c);
+        return { kind: "guardian", player: pick.player, cell: candidates[0] };
+      }
+
+      /** Applique une décision de draft — la règle seule, sans rien annoncer
+       *  ni passer au choix suivant (c'est à l'appelant d'avancer le draft).
+       *  Rend l'île ou le gardien créé, ou null. */
+      function appliquerDecisionDraft(decision) {
+        if (!decision || !state?.draft) return null;
+        let cree = null;
+        if (decision.kind === "island" && decision.placement) {
+          const placement = decision.placement;
+          cree = {
+            id: state.nextIslandId++,
+            owner: decision.player,
+            shapeKey: placement.shapeKey,
+            anchor: { ...placement.anchor },
+            relCells: cloneCells(placement.relCells),
+            cells: cloneCells(placement.cells),
+            visualVariant: chooseIslandVisualVariant(placement.cells, state.nextIslandId, state.islands),
+            fromSetup: true
+          };
+          state.islands.push(cree);
+          state.draft.placedIslands[decision.player]++;
+        } else if (decision.kind === "guardian" && decision.cell
+          && draftGuardianCellAllowed(decision.player, decision.cell[0], decision.cell[1])) {
+          cree = { id: `char-${state.nextCharId++}`, player: decision.player, r: decision.cell[0], c: decision.cell[1] };
+          state.characters.push(cree);
+          state.draft.placedGuardians[decision.player]++;
+        }
+        return cree;
+      }
+
+      function runDraftAI() {
+        const pick = draftCurrentPick();
+        if (!pick || !state?.players[pick.player]?.isAI) return;
+
+        const decision = decisionDraft();
+        const cree = appliquerDecisionDraft(decision);
+        if (cree && decision.kind === "island") {
+          playSfx("island");
+          animateIslandArrival(cree);
+        } else if (cree) {
+          playSfx("spawn");
+          animateCellPulse(cree.r, cree.c, "spawn-arrival");
+        }
+        advanceDraft();
       }
 
       function applyStartingBoardMode(mode, setupId = "open") {
