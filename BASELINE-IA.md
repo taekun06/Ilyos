@@ -1269,3 +1269,40 @@ Reste ouvert : le budget de déplacement prêté à l'adversaire (réserve +
 3 MOVE plausibles) ignore aussi la pioche ; la poussée « MAGIE puis force 1 »
 n'est pas modélisée ; le poids `gardienExpose` (500) reste inférieur à la
 valeur marginale d'un dernier gardien (900).
+
+## Adversaire « exploiteur » : essai non retenu, et ce qu'il a révélé
+
+Idée : un adversaire d'entraînement qui joue comme le joueur humain de la
+partie gagnée 3-0 — éliminer un gardien dès que les vraies cartes le
+permettent (déplacement puis poussée, MAGIE préalable comprise), puis laisser
+l'Expert jouer le reste du tour. Sur les positions de cette partie, il
+retrouvait bien les 10 éliminations humaines (et une de plus).
+
+Résultat contre l'Expert, 40 parties (graines 9100+) : **18-21-1**, et
+autant de gardiens perdus des deux côtés (239 contre 225 avant le tour 20).
+L'Expert élimine déjà autant qu'un chasseur : la chasse n'était pas
+l'avantage humain. L'exploiteur a été retiré du code.
+
+Ce que l'humain faisait de plus : **ne pas se faire éliminer** (4 gardiens
+perdus contre 10). Entre deux IA, les deux camps s'exposent et se font tuer à
+égalité, environ 6 gardiens chacun avant le tour 20 ; contre un humain, seul
+l'Expert paie.
+
+Classement des pertes (`scripts/analyser-pertes.js`, Expert contre Expert,
+6 parties, 99 gardiens perdus) :
+
+| cause | gardiens | porteurs |
+|---|---|---|
+| risque vu et accepté (gravité > 0) | 14 | 3 |
+| invisible : une seule poussée avec les vraies cartes | 8 | 13 |
+| gardien adverse apparu à côté (pose puis poussée) | 5 | 8 |
+| rotation d'île (MAGIE) | 6 | 11 |
+| combinaisons (plusieurs pièces, poussée puis déplacement…) | 16 | 15 |
+
+**83 % des pertes viennent de menaces que l'estimation du planner ne voit
+pas** : elle ne compte qu'un gardien adverse déjà présent, dans un budget de
+déplacement fixe, sans apparition ni MAGIE piochée. La riposte simulée, qui
+devrait rattraper le reste, ne tourne que sur quelques finalistes et avec une
+main plausible sans MAGIE. C'est la vraie raison des défaites contre un
+humain, et c'est mesurable en self-play : un camp qui évite ces pertes doit
+gagner contre l'Expert actuel.
