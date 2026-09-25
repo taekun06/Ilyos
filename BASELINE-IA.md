@@ -1080,3 +1080,40 @@ la couronne puis la pousse vers son village). Plutôt qu'exiger une séquence,
 accepter : couronne portée par l'IA, OU couronne rapprochée du village, OU
 couronne au sol adjacente à un gardien de l'IA et hors d'atteinte adverse au
 tour suivant.
+
+## P17 tranché : la riposte juge les idées de couronne
+
+Analyse du coup joué par un humain sur P17 (outil `ILYOS_SELFPLAY.robustesse`) :
+déposer au centre plaçait la couronne à côté de la seconde, qui y entre au tour
+adverse ; l'adversaire prenait l'une et poussait l'autre (note après riposte
+≈ −112 à 290). Poser l'île vers MON village, ramasser et y marcher : l'adversaire
+ne prend que la seconde couronne (≈ 700). Trois défauts, trois corrections :
+
+1. **La pose n'était jamais générée** : l'intention « couronne » classait toutes
+   les poses au contact à égalité et gardait celles tournées vers le centre.
+   Une place est réservée à la pose au contact qui s'avance le plus vers mes
+   cases de validation (`poseRetourVillage`).
+2. **Elle n'atteignait jamais la riposte** : les 8 finalistes étaient des
+   variantes d'une seule pose. Deux places de riposte vont aux meilleures
+   AUTRES idées (pose, ou disposition des couronnes), deux variantes chacune
+   (`riposteAutresIdees` : 4 → 6 ripostes au plus).
+3. **Double comptage** : pour un plan passé à la riposte, `perilCouronneSol`
+   (estimation) est retiré de la note ; la réplique jouée le remplace
+   (`riposteRemplacePeril`). Le dépôt exact du joueur passe de −148 à 602.
+
+Résultats : `bench-ia` 16/17 (P17 passe, reste 13) ; `bench-adverse` 12/12 ;
+`verif-*` conformes, `verif-fidelite-partie` 13/13 ; `verif-finalistes` échoue
+comme avant (assertion du nombre de ripostes élargie à 4–6). Self-play contre
+9e3b9a2, 24 parties : **15-8-1** (64,6 % ± 9,8), couronnes 58-46, temps de
+réflexion +10 % (2,4 s par tour sous charge, p95 5,2 s).
+
+Non-reproductibilité à creuser : deux plans menant au même état reçoivent
+parfois des notes de riposte différentes (290 et −112).
+
+## Position des couronnes au loin : essai non retenu
+
+`couronneLointaine` [130, 80, 50, 30, 15] → [170, 145, 120, 100, 80, 62, 46, 32,
+20, 10] et `couronneIsoleeFacteur` 0,5 → 0,75, contre la version courante sur le
+même build : 10-12-2, couronnes 42-47. Pas de gain mesurable ; l'observation
+(rapprocher une couronne de mes villages est sous-payé) reste à instruire par
+autopsie de positions réelles plutôt que par la table.
