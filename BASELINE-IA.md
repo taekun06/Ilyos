@@ -1306,3 +1306,25 @@ devrait rattraper le reste, ne tourne que sur quelques finalistes et avec une
 main plausible sans MAGIE. C'est la vraie raison des défaites contre un
 humain, et c'est mesurable en self-play : un camp qui évite ces pertes doit
 gagner contre l'Expert actuel.
+
+## Pousseur apparu par une pose adverse (`apparitionPoussee`)
+
+Deuxième cause de pertes invisible au planner (13 % en self-play) : le poste
+de poussée est du VIDE, l'adversaire y pose une île, y fait apparaître un
+gardien et pousse dans le même tour. La mise en place connaissait déjà cette
+menace (`plannerVulnerabilitePotentielle`), pas la partie. Elle entre
+désormais dans `plannerGraviteExpulsion`, pondérée comme au draft
+(`draftMenacePose` 0,8) et par la probabilité d'avoir les PUSH.
+
+Self-play contre l'ancien calcul, 40 parties par série :
+- mode 1 (gardiens non porteurs) : 18-19-3, pertes 205 contre 224 ;
+- mode 2 (porteurs compris) : **27-12-1** (graines 7100+) puis **19-21-0**
+  (8100+), soit 46-33-1 sur 80 parties (58 %, environ 1,5σ). Retenu par
+  défaut : aucun dommage, temps par tour inchangé, gain probable mais non
+  démontré.
+
+Leçon de mesure : deux fois de suite (poussée piochée, puis ce terme), une
+première série favorable (60-69 %) n'a pas été confirmée par la seconde. À
+40 parties, l'écart type vaut environ 8 points : un effet de 5 points
+demande plusieurs centaines de parties. Une série seule ne suffit pas à
+conclure.

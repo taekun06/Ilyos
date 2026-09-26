@@ -24466,6 +24466,12 @@
            mode 2 15-24-1 — les porteurs n'osent plus avancer, comme le
            notait déjà plannerForceExpulsion. */
         piochePush: 1,
+        /* Pousseur apparu par une pose adverse (plannerGraviteExpulsion) :
+           0 = ignoré, 1 = gardiens non porteurs, 2 = porteurs compris.
+           Mesuré contre 0 (40 parties par série) : mode 1 18-19-3 ; mode 2
+           27-12-1 (graines 7100+) puis 19-21-0 (8100+), soit 58 % sur 80
+           parties — gain probable, non démontré ; temps inchangé. */
+        apparitionPoussee: 2,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -24879,6 +24885,16 @@
         const table = PLAN_POIDS.graviteParForce || [1];
         const force = plannerForceExpulsion(playerId, r, c);
         if (force) return table[Math.min(force, table.length) - 1];
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return 0;
+        const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
+        const certaine = Math.max(1, enReserve);
+        const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
+        // Gravité d'une poussée de force f, pondérée par la chance d'en avoir les cartes.
+        const gravitePour = f => table[Math.min(f, table.length) - 1]
+          * (f <= certaine ? 1 : plannerProbaPiocherPush(f - enReserve));
+        const actif = mode => mode === 2 || (mode === 1 && pourGardien);
+        let pire = 0;
         /* Poussée longue grâce à la PIOCHE. plannerForceExpulsion ne prête une
            force 2 que si l'adversaire tient déjà deux PUSH en réserve. Or avec
            une seule en réserve, sa main de cinq cartes en apporte une autre
@@ -24888,18 +24904,28 @@
            menace entre donc, pondérée par la probabilité de la piocher.
            piochePush : 0 = ancien calcul, 1 = gardiens non porteurs seuls,
            2 = porteurs compris. */
-        const mode = PLAN_POIDS.piochePush || 0;
-        if (!mode || (mode === 1 && !pourGardien)) return 0;
-        const adverse = plannerAdversaire(playerId);
-        if (!adverse) return 0;
-        const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
-        const certaine = Math.max(1, enReserve);
-        const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
-        if (certaine >= longue) return 0;
-        const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue });
-        if (!forcePiochee || forcePiochee <= certaine) return 0;
-        return table[Math.min(forcePiochee, table.length) - 1]
-          * plannerProbaPiocherPush(forcePiochee - enReserve);
+        if (actif(PLAN_POIDS.piochePush || 0) && certaine < longue) {
+          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue });
+          if (forcePiochee > certaine) pire = gravitePour(forcePiochee);
+        }
+        /* Pousseur APPARU. Le poste de poussée est du vide : l'adversaire peut
+           y poser une île, y faire apparaître un gardien et pousser dans le
+           même tour. plannerForceExpulsion ne regarde que les gardiens déjà
+           sur le plateau ; en self-play, 13 % des gardiens perdus l'étaient
+           ainsi (scripts/analyser-pertes.js). La mise en place connaissait
+           déjà cette menace (plannerVulnerabilitePotentielle), pas la partie.
+           apparitionPoussee : 0 = ignorée, 1 = gardiens non porteurs,
+           2 = porteurs compris. */
+        if (actif(PLAN_POIDS.apparitionPoussee || 0) && canCreateGuardian(adverse.id)
+          && !plannerPoseImpossibleEnCache(adverse.id)) {
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const pr = r - dr, pc = c - dc;
+            if (!inside(pr, pc) || isLand(pr, pc)) continue;
+            const f = plannerVideAPortee(r, c, dr, dc, longue);
+            if (f) pire = Math.max(pire, gravitePour(f) * PLAN_POIDS.draftMenacePose);
+          }
+        }
+        return pire;
       }
 
       /* Probabilité qu'une main de cinq cartes tirée du paquet PUBLIC
