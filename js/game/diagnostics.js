@@ -1566,12 +1566,17 @@
         try {
           return withSimulatedState(clone, () => {
             const debut = performance.now();
+            plannerDernierRapport = null;
             const actions = selfplayJouerTour(state.currentPlayer, budget);
             const dureeMs = Math.round(performance.now() - debut);
+            // Coupures par le temps : la décision dépend alors de la machine.
+            const a = plannerDernierRapport && plannerDernierRapport.anticipation;
+            const coupures = a ? { principale: !!a.principaleCoupee, ripostes: a.ripostesCoupees || 0,
+              magie: a.magieCoupee || 0 } : null;
             const continuer = selfplayTransitionTour();
             return {
               etat: snapshotState(), vainqueur: state.winner ?? null,
-              tour: state.turn, actions, dureeMs, fin: !continuer
+              tour: state.turn, actions, dureeMs, fin: !continuer, coupures
             };
           });
         } finally {
@@ -1584,18 +1589,50 @@
          cours, paquets remélangés par la graine. Sans ce tirage, toutes les
          parties partent des mêmes mains et le tournoi rejoue sans cesse la même
          ouverture. */
-      function selfplayDepartMelange(graine) {
+      /* Paquets d'un départ de self-play : reconstruits depuis la composition
+         PUBLIQUE, avec des identifiants fixes, puis mélangés par la graine.
+
+         Mélanger les cartes de la partie en cours ne suffisait pas : leur ordre
+         d'entrée et leurs identifiants (suffixe aléatoire de createDeck)
+         venaient du préchauffage de la page, différent à chaque page. Avec la
+         même graine, deux séries ne jouaient donc PAS les mêmes parties —
+         mains, paquets, réserve et même joueur au trait différaient. Mesuré :
+         rejouer une série de 40 parties à l'identique changeait 25 parties sur
+         31, alors que chaque décision prise isolément se reproduit. */
+      function selfplayPaquetsCanoniques() {
+        state.players.forEach((joueur, index) => {
+          joueur.deck = shuffle(CARD_BLUEPRINTS.map((action, i) => ({ id: `P${index}-C${i}`, action, used: false })));
+          joueur.hand = [];
+          joueur.discard = [];
+          joueur.reserveCards = [];
+          joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        });
+      }
+
+      function selfplayDepartMelange(graine, premier = 0) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
           return withSimulatedState(depart, () => {
-            state.players.forEach(joueur => {
-              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
-                .map(carte => ({ ...carte, used: false, fromStash: false })));
-              joueur.hand = [];
-              joueur.discard = [];
-            });
-            drawCards(state.players[state.currentPlayer], 5);
+            selfplayPaquetsCanoniques();
+            state.players.forEach(joueur => { joueur.score = 0; });
+            // Plateau classique vide au départ : rien ne doit rester du préchauffage.
+            if (!state.islands.length && !state.characters.length) {
+              state.nextIslandId = 1;
+              state.nextCharId = 100;
+              state.artifact = { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true };
+              state.secondArtifact = { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
+              state.couronnesEnAttente = [];
+            }
+            state.turn = 1;
+            state.round = 1;
+            state.winner = null;
+            state.phase = "ACTION_SELECT";
+            state.islandPlacedThisTurn = false;
+            state.centerCrownTakenThisTurn = false;
+            state.aiDifficulty = "expert";
+            state.currentPlayer = premier;
+            drawCards(state.players[premier], 5);
             return snapshotState();
           });
         } finally {
@@ -1758,18 +1795,9 @@
         setTestRandomSeed(graine);
         try {
           return withSimulatedState(depart, () => {
-            state.players.forEach(joueur => {
-              // La réserve PHYSIQUE (reserveCards) aussi : sinon des cartes
-              // de la partie en cours seraient offertes au départ.
-              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || []),
-                ...(joueur.reserveCards || [])]
-                .map(carte => ({ ...carte, used: false, fromStash: false })));
-              joueur.hand = [];
-              joueur.discard = [];
-              joueur.reserveCards = [];
-              joueur.score = 0;
-              joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-            });
+            // Réserve physique comprise : aucune carte de la partie en cours.
+            selfplayPaquetsCanoniques();
+            state.players.forEach(joueur => { joueur.score = 0; });
             state.islands = [];
             state.characters = [];
             state.nextIslandId = 1;
