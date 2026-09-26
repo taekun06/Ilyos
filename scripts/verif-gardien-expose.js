@@ -29,16 +29,16 @@ const assert = require('node:assert/strict');
           characters: [{ id: 'humain', player: 0, r: 3, c: 2 }, { id: 'ia', player: 1, r: 3, c: 3 }],
           crowns: porteur ? [{ r: 3, c: 3, carrierId: 'ia', active: true }, null] : [],
           stash: [{ PUSH: reservePush }, {}] });
-        const memoire = PLAN_POIDS.piochePush, apparition = PLAN_POIDS.apparitionPoussee;
+        const memoire = PLAN_POIDS.piochePush, apparition = PLAN_POIDS.menacePoseAdverse;
         PLAN_POIDS.piochePush = mode;
-        PLAN_POIDS.apparitionPoussee = 0; // les postes vides (rangées 2 et 4) sont un autre sujet
+        PLAN_POIDS.menacePoseAdverse = 0; // les postes vides (rangées 2 et 4) sont un autre sujet
         try {
           return {
             certaine: plannerForceExpulsion(1, 3, 3),
             gravite: plannerGraviteExpulsion(1, 3, 3, !porteur),
             p1: plannerProbaPiocherPush(1), p2: plannerProbaPiocherPush(2)
           };
-        } finally { PLAN_POIDS.piochePush = memoire; PLAN_POIDS.apparitionPoussee = apparition; }
+        } finally { PLAN_POIDS.piochePush = memoire; PLAN_POIDS.menacePoseAdverse = apparition; }
       }; window.ILYOS_BENCH = {`;
       await route.fulfill({ contentType: 'application/javascript',
         body: source.replace('window.ILYOS_BENCH = {', hook) });

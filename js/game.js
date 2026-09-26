@@ -24461,17 +24461,20 @@
         graviteParForce: [1, 0.75, 0.6],
         /* Poussée longue prêtée à l'adversaire selon sa PIOCHE probable
            (plannerGraviteExpulsion). 0 = réserve seule, 1 = gardiens non
-           porteurs, 2 = porteurs compris. Mesuré contre 0 (self-play rapide,
-           40 parties par série) : mode 1 24-13-3 puis 18-19-3, sans surcoût ;
-           mode 2 15-24-1 — les porteurs n'osent plus avancer, comme le
-           notait déjà plannerForceExpulsion. */
-        piochePush: 1,
+           porteurs, 2 = porteurs compris. Mesure REPRODUCTIBLE (départs
+           canoniques), 80 parties contre 0 : mode 1 28-44-8, soit 40 % —
+           nuisible en IA contre IA. Les séries bruitées d'avant (24-13 puis
+           18-19) l'avaient masqué. Reste à 0 ; l'option garde le calcul pour
+           mesurer contre des humains. */
+        piochePush: 0,
         /* Pousseur apparu par une pose adverse (plannerGraviteExpulsion) :
            0 = ignoré, 1 = gardiens non porteurs, 2 = porteurs compris.
-           Mesuré contre 0 (40 parties par série) : mode 1 18-19-3 ; mode 2
-           27-12-1 (graines 7100+) puis 19-21-0 (8100+), soit 58 % sur 80
-           parties — gain probable, non démontré ; temps inchangé. */
-        apparitionPoussee: 2,
+           Mesure reproductible, 80 parties contre 0 : mode 2 42-33-5
+           (55,6 % ± 5,6), gardiens perdus avant le tour 20 : 405 contre 461,
+           couronnes 160 contre 141. Nom distinct d'`apparitionPoussee` (bonus
+           de case d'apparition, plus bas) : sous ce nom, la clé était écrasée
+           par la seconde et les premières mesures réglaient l'autre poids. */
+        menacePoseAdverse: 2,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -24914,9 +24917,9 @@
            sur le plateau ; en self-play, 13 % des gardiens perdus l'étaient
            ainsi (scripts/analyser-pertes.js). La mise en place connaissait
            déjà cette menace (plannerVulnerabilitePotentielle), pas la partie.
-           apparitionPoussee : 0 = ignorée, 1 = gardiens non porteurs,
+           menacePoseAdverse : 0 = ignorée, 1 = gardiens non porteurs,
            2 = porteurs compris. */
-        if (actif(PLAN_POIDS.apparitionPoussee || 0) && canCreateGuardian(adverse.id)
+        if (actif(PLAN_POIDS.menacePoseAdverse || 0) && canCreateGuardian(adverse.id)
           && !plannerPoseImpossibleEnCache(adverse.id)) {
           for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
             const pr = r - dr, pc = c - dc;

@@ -1328,3 +1328,42 @@ première série favorable (60-69 %) n'a pas été confirmée par la seconde. À
 40 parties, l'écart type vaut environ 8 points : un effet de 5 points
 demande plusieurs centaines de parties. Une série seule ne suffit pas à
 conclure.
+
+## Correction des mesures : self-play non reproductible, collision de poids
+
+Les séries de 40 parties donnaient des verdicts contradictoires (69 % puis
+47 % pour le même réglage). Ce n'était pas seulement le nombre de parties :
+
+1. **Départs différents d'une page à l'autre.** `departMelange` mélangeait
+   les cartes de la partie de préchauffage de la page : ordre d'entrée,
+   identifiants à suffixe aléatoire, réserve et joueur au trait changeaient à
+   chaque page. Avec la même graine, deux séries ne jouaient pas les mêmes
+   parties — rejouer une série changeait 25 parties sur 31, alors que chaque
+   décision isolée se reproduit (10/10, historique de page indifférent) et
+   qu'aucune réflexion n'est coupée par le temps (0 tour sur ~1 700).
+   Corrigé : paquets canoniques (CARD_BLUEPRINTS, identifiants fixes),
+   réserve vidée, premier joueur fixé. Même série = mêmes résultats ; test à
+   blanc (réglages identiques) : 6 paires sur 6 en miroir parfait.
+2. **Collision de nom.** Le nouveau terme s'appelait `apparitionPoussee`,
+   nom déjà pris plus bas dans `PLAN_POIDS` (bonus de case d'apparition,
+   250) : la seconde clé écrasait la première. Le terme n'était jamais actif
+   et les séries « mode 2 contre 0 » réglaient l'AUTRE poids à 2 ou 0.
+   Renommé `menacePoseAdverse` ; plus aucun doublon dans `PLAN_POIDS`.
+
+Mesures refaites, reproductibles (80 parties, graines 7100+, contre 0) :
+
+| réglage | résultat | gardiens perdus < tour 20 | couronnes |
+|---|---|---|---|
+| `piochePush` 1 | **28-44-8 (40 %)** | 454 contre 432 | 136 contre 169 |
+| `menacePoseAdverse` 2 | **42-33-5 (55,6 %)** | 405 contre 461 | 160 contre 141 |
+
+- `piochePush` (point 1) **affaiblit** l'Expert en IA contre IA : remis à 0.
+  Il réduisait pourtant l'exposition face au jeu humain (10/13 → 7/13 sur la
+  partie archivée) : trop de prudence se paie contre un adversaire qui
+  n'exploite pas. L'option reste pour mesurer contre des humains.
+- `menacePoseAdverse` : actif (2). Gain à 1σ seulement, mais les trois
+  signaux vont dans le même sens (victoires, pertes −12 %, couronnes +13 %).
+
+Les verdicts antérieurs de ce fichier obtenus avec `selfplay-rapide.js`
+avant cette correction ont le même bruit de départ (non biaisé : chaque
+paire rejoue le même départ camps inversés), pas la collision.
