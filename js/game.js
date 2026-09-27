@@ -17683,7 +17683,14 @@
           reachable: [...state.reachable],
           nextIslandId: state.nextIslandId,
           nextCharId: state.nextCharId,
-          winner: state.winner
+          winner: state.winner,
+          /* Niveau de l'IA et règles de la partie : l'IA les lit (aiConfig,
+             stock de formes, limite d'îles). Sans eux, une position rejouée
+             depuis un instantané — analyse de défaite, self-play, banc —
+             retombait sur les réglages du niveau NORMAL (bruit sur le score
+             des poses, tactiques de couronne) : ce n'était plus l'Expert. */
+          aiDifficulty: state.aiDifficulty ?? null,
+          rules: state.rules ? { ...state.rules } : null
         });
       }
 
@@ -17760,6 +17767,10 @@
         state.nextIslandId = snap.nextIslandId;
         state.nextCharId = snap.nextCharId;
         state.winner = snap.winner;
+        // Absents des instantanés anciens ou fabriqués (bancs) : la partie
+        // en cours garde alors les siens.
+        if (snap.aiDifficulty) state.aiDifficulty = snap.aiDifficulty;
+        if (snap.rules) state.rules = { ...snap.rules };
         state.fxCells = [];
         state.inputLocked = false;
         state.magicHoverIslandId = null;
@@ -24448,6 +24459,22 @@
         pousseeLongue: 2,
         // Gravité d'une expulsion selon la force requise (1, 2, 3+).
         graviteParForce: [1, 0.75, 0.6],
+        /* Poussée longue prêtée à l'adversaire selon sa PIOCHE probable
+           (plannerGraviteExpulsion). 0 = réserve seule, 1 = gardiens non
+           porteurs, 2 = porteurs compris. Mesure REPRODUCTIBLE (départs
+           canoniques), 80 parties contre 0 : mode 1 28-44-8, soit 40 % —
+           nuisible en IA contre IA. Les séries bruitées d'avant (24-13 puis
+           18-19) l'avaient masqué. Reste à 0 ; l'option garde le calcul pour
+           mesurer contre des humains. */
+        piochePush: 0,
+        /* Pousseur apparu par une pose adverse (plannerGraviteExpulsion) :
+           0 = ignoré, 1 = gardiens non porteurs, 2 = porteurs compris.
+           Mesure reproductible, 80 parties contre 0 : mode 2 42-33-5
+           (55,6 % ± 5,6), gardiens perdus avant le tour 20 : 405 contre 461,
+           couronnes 160 contre 141. Nom distinct d'`apparitionPoussee` (bonus
+           de case d'apparition, plus bas) : sous ce nom, la clé était écrasée
+           par la seconde et les premières mesures réglaient l'autre poids. */
+        menacePoseAdverse: 2,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -24857,11 +24884,75 @@
          Gradation DOUCE, mesurée : [1 ; 0,5 ; 0,35] rendait l'IA imprudente
          (4 victoires, 15 défaites contre aucune gradation), [1 ; 0,75 ; 0,6]
          la renforce (16 victoires, 7 défaites). */
-      function plannerGraviteExpulsion(playerId, r, c) {
-        const force = plannerForceExpulsion(playerId, r, c);
-        if (!force) return 0;
+      function plannerGraviteExpulsion(playerId, r, c, pourGardien = false) {
         const table = PLAN_POIDS.graviteParForce || [1];
-        return table[Math.min(force, table.length) - 1];
+        const force = plannerForceExpulsion(playerId, r, c);
+        if (force) return table[Math.min(force, table.length) - 1];
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return 0;
+        const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
+        const certaine = Math.max(1, enReserve);
+        const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
+        // Gravité d'une poussée de force f, pondérée par la chance d'en avoir les cartes.
+        const gravitePour = f => table[Math.min(f, table.length) - 1]
+          * (f <= certaine ? 1 : plannerProbaPiocherPush(f - enReserve));
+        const actif = mode => mode === 2 || (mode === 1 && pourGardien);
+        let pire = 0;
+        /* Poussée longue grâce à la PIOCHE. plannerForceExpulsion ne prête une
+           force 2 que si l'adversaire tient déjà deux PUSH en réserve. Or avec
+           une seule en réserve, sa main de cinq cartes en apporte une autre
+           neuf fois sur dix. Mesuré sur une partie perdue par l'Expert : 11
+           décisions sur 14 laissaient un gardien éjectable par une force 2,
+           vu à gravité 0, et l'humain en a tué un presque à chaque tour. La
+           menace entre donc, pondérée par la probabilité de la piocher.
+           piochePush : 0 = ancien calcul, 1 = gardiens non porteurs seuls,
+           2 = porteurs compris. */
+        if (actif(PLAN_POIDS.piochePush || 0) && certaine < longue) {
+          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue });
+          if (forcePiochee > certaine) pire = gravitePour(forcePiochee);
+        }
+        /* Pousseur APPARU. Le poste de poussée est du vide : l'adversaire peut
+           y poser une île, y faire apparaître un gardien et pousser dans le
+           même tour. plannerForceExpulsion ne regarde que les gardiens déjà
+           sur le plateau ; en self-play, 13 % des gardiens perdus l'étaient
+           ainsi (scripts/analyser-pertes.js). La mise en place connaissait
+           déjà cette menace (plannerVulnerabilitePotentielle), pas la partie.
+           menacePoseAdverse : 0 = ignorée, 1 = gardiens non porteurs,
+           2 = porteurs compris. */
+        if (actif(PLAN_POIDS.menacePoseAdverse || 0) && canCreateGuardian(adverse.id)
+          && !plannerPoseImpossibleEnCache(adverse.id)) {
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const pr = r - dr, pc = c - dc;
+            if (!inside(pr, pc) || isLand(pr, pc)) continue;
+            const f = plannerVideAPortee(r, c, dr, dc, longue);
+            if (f) pire = Math.max(pire, gravitePour(f) * PLAN_POIDS.draftMenacePose);
+          }
+        }
+        return pire;
+      }
+
+      /* Probabilité qu'une main de cinq cartes tirée du paquet PUBLIC
+         (CARD_BLUEPRINTS) contienne au moins `n` PUSH — loi hypergéométrique.
+         Composition publique, jamais le vrai paquet mélangé. */
+      const plannerProbaPushCache = [];
+      function plannerProbaPiocherPush(n) {
+        if (n <= 0) return 1;
+        if (plannerProbaPushCache[n] !== undefined) return plannerProbaPushCache[n];
+        const total = CARD_BLUEPRINTS.length;
+        const push = CARD_BLUEPRINTS.filter(a => a === "PUSH").length;
+        const main = PLAN_MAIN_PLAUSIBLE.length;
+        const comb = (a, b) => {
+          if (b < 0 || b > a) return 0;
+          let v = 1;
+          for (let i = 1; i <= b; i++) v = v * (a - b + i) / i;
+          return v;
+        };
+        let p = 0;
+        for (let k = n; k <= Math.min(push, main); k++) {
+          p += comb(push, k) * comb(total - push, main - k) / comb(total, main);
+        }
+        plannerProbaPushCache[n] = p;
+        return p;
       }
 
       /** Plus petite force de poussée avec laquelle un gardien adverse peut
@@ -24884,7 +24975,9 @@
            poussées rendait éjectable toute case d'une île de trois de large,
            et l'IA ne distinguait plus un refuge d'une case exposée à une
            simple poussée. */
-        const forceCertaine = Math.min(budgetPush, Math.max(1, reserve.PUSH || 0));
+        const forceCertaine = budget && budget.forceMax !== undefined
+          ? Math.min(budgetPush, budget.forceMax)
+          : Math.min(budgetPush, Math.max(1, reserve.PUSH || 0));
         // Fournies par l'appelant quand il enchaîne beaucoup de cases,
         // calculées ici sinon. Dans les deux cas, une seule fois.
         const portees = (budget && budget.portees) || plannerPorteesAdverses(playerId, budgetMove);
@@ -25554,7 +25647,8 @@
           /* SURVIVABILITÉ : elle ne pondère que l'utilité, jamais la présence.
              Un infiltré qui tient vraiment vaut bien plus qu'un infiltré qu'une
              poussée renvoie aussitôt. */
-          const gravite = lAdversaireJoue ? plannerGraviteExpulsion(playerId, g.r, g.c) : 0;
+          const gravite = lAdversaireJoue
+            ? plannerGraviteExpulsion(playerId, g.r, g.c, !characterCarriesCrown(g.id)) : 0;
           u *= 1 - 0.65 * gravite;
           utiliteTotale += u;
           /* Un gardien éjectable coûte en soi, pas seulement son utilité — qui
@@ -44064,12 +44158,17 @@
         try {
           return withSimulatedState(clone, () => {
             const debut = performance.now();
+            plannerDernierRapport = null;
             const actions = selfplayJouerTour(state.currentPlayer, budget);
             const dureeMs = Math.round(performance.now() - debut);
+            // Coupures par le temps : la décision dépend alors de la machine.
+            const a = plannerDernierRapport && plannerDernierRapport.anticipation;
+            const coupures = a ? { principale: !!a.principaleCoupee, ripostes: a.ripostesCoupees || 0,
+              magie: a.magieCoupee || 0 } : null;
             const continuer = selfplayTransitionTour();
             return {
               etat: snapshotState(), vainqueur: state.winner ?? null,
-              tour: state.turn, actions, dureeMs, fin: !continuer
+              tour: state.turn, actions, dureeMs, fin: !continuer, coupures
             };
           });
         } finally {
@@ -44082,18 +44181,50 @@
          cours, paquets remélangés par la graine. Sans ce tirage, toutes les
          parties partent des mêmes mains et le tournoi rejoue sans cesse la même
          ouverture. */
-      function selfplayDepartMelange(graine) {
+      /* Paquets d'un départ de self-play : reconstruits depuis la composition
+         PUBLIQUE, avec des identifiants fixes, puis mélangés par la graine.
+
+         Mélanger les cartes de la partie en cours ne suffisait pas : leur ordre
+         d'entrée et leurs identifiants (suffixe aléatoire de createDeck)
+         venaient du préchauffage de la page, différent à chaque page. Avec la
+         même graine, deux séries ne jouaient donc PAS les mêmes parties —
+         mains, paquets, réserve et même joueur au trait différaient. Mesuré :
+         rejouer une série de 40 parties à l'identique changeait 25 parties sur
+         31, alors que chaque décision prise isolément se reproduit. */
+      function selfplayPaquetsCanoniques() {
+        state.players.forEach((joueur, index) => {
+          joueur.deck = shuffle(CARD_BLUEPRINTS.map((action, i) => ({ id: `P${index}-C${i}`, action, used: false })));
+          joueur.hand = [];
+          joueur.discard = [];
+          joueur.reserveCards = [];
+          joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        });
+      }
+
+      function selfplayDepartMelange(graine, premier = 0) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
           return withSimulatedState(depart, () => {
-            state.players.forEach(joueur => {
-              joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
-                .map(carte => ({ ...carte, used: false, fromStash: false })));
-              joueur.hand = [];
-              joueur.discard = [];
-            });
-            drawCards(state.players[state.currentPlayer], 5);
+            selfplayPaquetsCanoniques();
+            state.players.forEach(joueur => { joueur.score = 0; });
+            // Plateau classique vide au départ : rien ne doit rester du préchauffage.
+            if (!state.islands.length && !state.characters.length) {
+              state.nextIslandId = 1;
+              state.nextCharId = 100;
+              state.artifact = { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true };
+              state.secondArtifact = { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
+              state.couronnesEnAttente = [];
+            }
+            state.turn = 1;
+            state.round = 1;
+            state.winner = null;
+            state.phase = "ACTION_SELECT";
+            state.islandPlacedThisTurn = false;
+            state.centerCrownTakenThisTurn = false;
+            state.aiDifficulty = "expert";
+            state.currentPlayer = premier;
+            drawCards(state.players[premier], 5);
             return snapshotState();
           });
         } finally {
@@ -44239,7 +44370,181 @@
         }
       }
 
+      /* =====================================================================
+         JOUER À LA MAIN CONTRE L'EXPERT, EN SIMULATION
+
+         Trois aides pour un joueur qui pilote un camp depuis la console ou un
+         script : voir le plateau, lister les coups légaux, jouer une séquence
+         puis passer la main. L'Expert joue ses tours par `tour`, exactement
+         comme en self-play. Mêmes noyaux de règle que la partie réelle
+         (fidélité vérifiée par verif-fidelite-partie).
+         ===================================================================== */
+      /* Départ PROPRE d'une partie classique : plateau vide, couronnes au
+         sanctuaire, scores et réserves à zéro, paquets remélangés par la
+         graine, cinq cartes au premier joueur. */
+      function selfplayDepartPropre(graine, premier = 0) {
+        const depart = canonicalDepart();
+        setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(depart, () => {
+            // Réserve physique comprise : aucune carte de la partie en cours.
+            selfplayPaquetsCanoniques();
+            state.players.forEach(joueur => { joueur.score = 0; });
+            state.islands = [];
+            state.characters = [];
+            state.nextIslandId = 1;
+            state.nextCharId = 100;
+            state.artifact = { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: true };
+            state.secondArtifact = { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
+            state.couronnesEnAttente = [];
+            state.turn = 1;
+            state.round = 1;
+            state.winner = null;
+            state.phase = "ACTION_SELECT";
+            state.islandPlacedThisTurn = false;
+            state.centerCrownTakenThisTurn = false;
+            state.aiDifficulty = "expert";
+            state.currentPlayer = premier;
+            drawCards(state.players[premier], 5);
+            return snapshotState();
+          });
+        } finally {
+          setTestRandomSeed(null);
+        }
+      }
+
+      function selfplayVoir(json) {
+        return withSimulatedState(JSON.parse(json), () => {
+          const lignes = [];
+          const entete = "    " + Array.from({ length: GRID }, (_, c) => String(c).padStart(3)).join("");
+          lignes.push(entete);
+          const valid = state.players.map(p => new Set(crownValidationCellsForPlayer(p).map(([r, c]) => key(r, c))));
+          for (let r = 0; r < GRID; r++) {
+            let ligne = String(r).padStart(3) + " ";
+            for (let c = 0; c < GRID; c++) {
+              const g = characterAt(r, c);
+              const couronne = looseArtifactAt(r, c);
+              const ile = islandAt(r, c);
+              let fond = !isLand(r, c) ? " . " : isSanctuary(r, c) ? " S " : villageAt(r, c) ? " V " : ile ? (ile.owner === 0 ? " o " : " x ") : " # ";
+              if (valid[0].has(key(r, c)) && isLand(r, c)) fond = fond.replace(/ (.) /, "[$1]");
+              else if (valid[1].has(key(r, c)) && isLand(r, c)) fond = fond.replace(/ (.) /, "{$1}");
+              if (g) fond = (g.player === 0 ? " A" : " B") + (characterCarriesCrown(g.id) ? "*" : " ");
+              else if (couronne) fond = " * ";
+              ligne += fond;
+            }
+            lignes.push(ligne);
+          }
+          const joueurs = state.players.map(p => ({
+            id: p.id, score: p.score || 0,
+            main: (p.hand || []).filter(c => !c.used).map(c => c.action),
+            reserve: { ...(p.stash || {}) },
+            validation: crownValidationCellsForPlayer(p)
+          }));
+          return {
+            tour: state.turn, trait: state.currentPlayer, vainqueur: state.winner ?? null,
+            ilePosee: !!state.islandPlacedThisTurn,
+            plateau: lignes.join("\n"),
+            legende: "A = mes gardiens (J0), B = Expert (J1), * = couronne (A*/B* = porteur), o/x = îles J0/J1, S sanctuaire, V village, [..] validation J0, {..} validation J1, . vide",
+            joueurs,
+            gardiens: state.characters.map(g => ({ id: g.id, j: g.player, r: g.r, c: g.c, porte: !!characterCarriesCrown(g.id) })),
+            couronnes: activeArtifacts().map(a => ({ id: a.id, r: a.r, c: a.c, porteur: a.carrierId })),
+            enAttente: [...(state.couronnesEnAttente || [])],
+            iles: state.islands.map(i => ({ id: i.id, j: i.owner, forme: i.shapeKey, cells: i.cells }))
+          };
+        });
+      }
+
+      function selfplayCoups(json, { poses = false, pres = null, rayon = 2 } = {}) {
+        return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => {
+          const moi = state.currentPlayer;
+          const joueur = state.players[moi];
+          const budgetMove = availableActionCount("MOVE", joueur);
+          const budgetPush = availableActionCount("PUSH", joueur);
+          const deplacements = {};
+          for (const g of plannerGardiensDe(moi)) {
+            if (budgetMove < 1) break;
+            const portee = movementRange(g, budgetMove);
+            deplacements[g.id] = [...portee].map(k => [k, portee.costs.get(k)]).sort((a, b) => a[1] - b[1]);
+          }
+          const poussees = [];
+          for (const g of plannerGardiensDe(moi)) {
+            for (const [r, c] of orthogonalNeighbors(g.r, g.c)) {
+              const cible = characterAt(r, c);
+              const couronne = cible ? null : looseArtifactAt(r, c);
+              if (!cible && !couronne) continue;
+              if (cible && cible.player === moi) continue;
+              const vus = new Set();
+              for (let force = 1; force <= budgetPush; force++) {
+                const plan = resoudrePousseeBloc(r, c, r - g.r, c - g.c, force);
+                if (!plan) continue;
+                const e = plan.mouvements.map(mv => `${mv.kind}:${mv.id}:${mv.to}:${mv.chute ? 1 : 0}`).join("|");
+                if (vus.has(e)) continue;
+                vus.add(e);
+                poussees.push({ action: { type: "PUSH", pusherId: g.id, r, c, force },
+                  effet: plan.mouvements.map(mv => `${mv.kind === "crown" ? "couronne" : mv.id} ${mv.from}→${mv.to}${mv.chute ? " CHUTE" : ""}`).join(", ") });
+              }
+            }
+          }
+          const gratuites = plannerTransitionsGratuites(moi);
+          const magie = availableActionCount("MAGIC", joueur) > 0 ? plannerCandidatsMagic(moi) : [];
+          let listePoses = [];
+          if (poses && !state.islandPlacedThisTurn) {
+            listePoses = (findAutomaticIslandPlacement(moi, PLAN_POSE_ENUM_MAX) || [])
+              .filter(p => !pres || p.cells.some(([r, c]) => Math.abs(r - pres[0]) + Math.abs(c - pres[1]) <= rayon))
+              .map(p => ({ type: "POSE", shapeKey: p.shapeKey, cells: p.cells, relCells: p.relCells, anchor: p.anchor, owner: moi }));
+          }
+          return { joueur: moi, main: { MOVE: budgetMove, PUSH: budgetPush, MAGIC: availableActionCount("MAGIC", joueur) },
+            deplacements, poussees, gratuites, magie, poses: listePoses };
+        }));
+      }
+
+      function selfplayJouerHumain(json, actions, { apercu = false } = {}) {
+        return withSimulatedState(JSON.parse(json), () => {
+          const moi = state.currentPlayer;
+          const journal = [];
+          for (const [i, action] of (actions || []).entries()) {
+            const ok = plannerAppliquerAction(action);
+            if (!ok) return { erreur: `action ${i} refusée : ${JSON.stringify(action)}`, journal };
+            journal.push(action.type);
+          }
+          // Aperçu : la position après ces actions, sans finir le tour.
+          if (apercu) return { etat: snapshotState(), journal };
+          if (!state.islandPlacedThisTurn && !poseImpossiblePour(moi)) {
+            return { erreur: "la pose d'île est obligatoire ce tour", journal };
+          }
+          const continuer = selfplayTransitionTour();
+          return { etat: snapshotState(), journal, fin: !continuer, vainqueur: state.winner ?? null, tour: state.turn };
+        });
+      }
+
+      /* Gardiens de `joueur` que l'adversaire, au trait avec ses VRAIES
+         cartes (main tirée + réserve), peut éjecter ce tour-ci d'un seul
+         déplacement de gardien puis d'une poussée — et ce que le planner en
+         pensait avec le budget qu'il prête à l'adversaire (gravité). Sert à
+         mesurer les gardiens laissés exposés ; la MAGIE n'est pas comptée. */
+      function selfplayExposes(json, joueur, poids = null) {
+        const memoire = selfplayAppliquerPoids(poids);
+        try {
+          return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => {
+            const adverse = state.players[state.currentPlayer];
+            const move = availableActionCount("MOVE", adverse);
+            const push = availableActionCount("PUSH", adverse);
+            const reel = { move, push, forceMax: Math.min(push, PLAN_POIDS.pousseeLongue || 1),
+              portees: plannerPorteesAdverses(joueur, move) };
+            return plannerGardiensDe(joueur).map(g => ({
+              id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+              forceReelle: push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0,
+              graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
+              mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
+            }));
+          }));
+        } finally {
+          selfplayAppliquerPoids(memoire);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
+        exposes: selfplayExposes,
         departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
         robustesse: selfplayRobustesse,
@@ -44249,7 +44554,11 @@
         tournoi: selfplayTournoi,
         depart: canonicalDepart,
         departMelange: selfplayDepartMelange,
-        tour: selfplayTourIsole
+        tour: selfplayTourIsole,
+        departPropre: selfplayDepartPropre,
+        voir: selfplayVoir,
+        coups: selfplayCoups,
+        jouer: selfplayJouerHumain
       };
 
       window.ILYOS_BENCH = {

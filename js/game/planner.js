@@ -72,6 +72,22 @@
         pousseeLongue: 2,
         // Gravité d'une expulsion selon la force requise (1, 2, 3+).
         graviteParForce: [1, 0.75, 0.6],
+        /* Poussée longue prêtée à l'adversaire selon sa PIOCHE probable
+           (plannerGraviteExpulsion). 0 = réserve seule, 1 = gardiens non
+           porteurs, 2 = porteurs compris. Mesure REPRODUCTIBLE (départs
+           canoniques), 80 parties contre 0 : mode 1 28-44-8, soit 40 % —
+           nuisible en IA contre IA. Les séries bruitées d'avant (24-13 puis
+           18-19) l'avaient masqué. Reste à 0 ; l'option garde le calcul pour
+           mesurer contre des humains. */
+        piochePush: 0,
+        /* Pousseur apparu par une pose adverse (plannerGraviteExpulsion) :
+           0 = ignoré, 1 = gardiens non porteurs, 2 = porteurs compris.
+           Mesure reproductible, 80 parties contre 0 : mode 2 42-33-5
+           (55,6 % ± 5,6), gardiens perdus avant le tour 20 : 405 contre 461,
+           couronnes 160 contre 141. Nom distinct d'`apparitionPoussee` (bonus
+           de case d'apparition, plus bas) : sous ce nom, la clé était écrasée
+           par la seconde et les premières mesures réglaient l'autre poids. */
+        menacePoseAdverse: 2,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -481,11 +497,75 @@
          Gradation DOUCE, mesurée : [1 ; 0,5 ; 0,35] rendait l'IA imprudente
          (4 victoires, 15 défaites contre aucune gradation), [1 ; 0,75 ; 0,6]
          la renforce (16 victoires, 7 défaites). */
-      function plannerGraviteExpulsion(playerId, r, c) {
-        const force = plannerForceExpulsion(playerId, r, c);
-        if (!force) return 0;
+      function plannerGraviteExpulsion(playerId, r, c, pourGardien = false) {
         const table = PLAN_POIDS.graviteParForce || [1];
-        return table[Math.min(force, table.length) - 1];
+        const force = plannerForceExpulsion(playerId, r, c);
+        if (force) return table[Math.min(force, table.length) - 1];
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return 0;
+        const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
+        const certaine = Math.max(1, enReserve);
+        const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
+        // Gravité d'une poussée de force f, pondérée par la chance d'en avoir les cartes.
+        const gravitePour = f => table[Math.min(f, table.length) - 1]
+          * (f <= certaine ? 1 : plannerProbaPiocherPush(f - enReserve));
+        const actif = mode => mode === 2 || (mode === 1 && pourGardien);
+        let pire = 0;
+        /* Poussée longue grâce à la PIOCHE. plannerForceExpulsion ne prête une
+           force 2 que si l'adversaire tient déjà deux PUSH en réserve. Or avec
+           une seule en réserve, sa main de cinq cartes en apporte une autre
+           neuf fois sur dix. Mesuré sur une partie perdue par l'Expert : 11
+           décisions sur 14 laissaient un gardien éjectable par une force 2,
+           vu à gravité 0, et l'humain en a tué un presque à chaque tour. La
+           menace entre donc, pondérée par la probabilité de la piocher.
+           piochePush : 0 = ancien calcul, 1 = gardiens non porteurs seuls,
+           2 = porteurs compris. */
+        if (actif(PLAN_POIDS.piochePush || 0) && certaine < longue) {
+          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue });
+          if (forcePiochee > certaine) pire = gravitePour(forcePiochee);
+        }
+        /* Pousseur APPARU. Le poste de poussée est du vide : l'adversaire peut
+           y poser une île, y faire apparaître un gardien et pousser dans le
+           même tour. plannerForceExpulsion ne regarde que les gardiens déjà
+           sur le plateau ; en self-play, 13 % des gardiens perdus l'étaient
+           ainsi (scripts/analyser-pertes.js). La mise en place connaissait
+           déjà cette menace (plannerVulnerabilitePotentielle), pas la partie.
+           menacePoseAdverse : 0 = ignorée, 1 = gardiens non porteurs,
+           2 = porteurs compris. */
+        if (actif(PLAN_POIDS.menacePoseAdverse || 0) && canCreateGuardian(adverse.id)
+          && !plannerPoseImpossibleEnCache(adverse.id)) {
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const pr = r - dr, pc = c - dc;
+            if (!inside(pr, pc) || isLand(pr, pc)) continue;
+            const f = plannerVideAPortee(r, c, dr, dc, longue);
+            if (f) pire = Math.max(pire, gravitePour(f) * PLAN_POIDS.draftMenacePose);
+          }
+        }
+        return pire;
+      }
+
+      /* Probabilité qu'une main de cinq cartes tirée du paquet PUBLIC
+         (CARD_BLUEPRINTS) contienne au moins `n` PUSH — loi hypergéométrique.
+         Composition publique, jamais le vrai paquet mélangé. */
+      const plannerProbaPushCache = [];
+      function plannerProbaPiocherPush(n) {
+        if (n <= 0) return 1;
+        if (plannerProbaPushCache[n] !== undefined) return plannerProbaPushCache[n];
+        const total = CARD_BLUEPRINTS.length;
+        const push = CARD_BLUEPRINTS.filter(a => a === "PUSH").length;
+        const main = PLAN_MAIN_PLAUSIBLE.length;
+        const comb = (a, b) => {
+          if (b < 0 || b > a) return 0;
+          let v = 1;
+          for (let i = 1; i <= b; i++) v = v * (a - b + i) / i;
+          return v;
+        };
+        let p = 0;
+        for (let k = n; k <= Math.min(push, main); k++) {
+          p += comb(push, k) * comb(total - push, main - k) / comb(total, main);
+        }
+        plannerProbaPushCache[n] = p;
+        return p;
       }
 
       /** Plus petite force de poussée avec laquelle un gardien adverse peut
@@ -508,7 +588,9 @@
            poussées rendait éjectable toute case d'une île de trois de large,
            et l'IA ne distinguait plus un refuge d'une case exposée à une
            simple poussée. */
-        const forceCertaine = Math.min(budgetPush, Math.max(1, reserve.PUSH || 0));
+        const forceCertaine = budget && budget.forceMax !== undefined
+          ? Math.min(budgetPush, budget.forceMax)
+          : Math.min(budgetPush, Math.max(1, reserve.PUSH || 0));
         // Fournies par l'appelant quand il enchaîne beaucoup de cases,
         // calculées ici sinon. Dans les deux cas, une seule fois.
         const portees = (budget && budget.portees) || plannerPorteesAdverses(playerId, budgetMove);
@@ -1178,7 +1260,8 @@
           /* SURVIVABILITÉ : elle ne pondère que l'utilité, jamais la présence.
              Un infiltré qui tient vraiment vaut bien plus qu'un infiltré qu'une
              poussée renvoie aussitôt. */
-          const gravite = lAdversaireJoue ? plannerGraviteExpulsion(playerId, g.r, g.c) : 0;
+          const gravite = lAdversaireJoue
+            ? plannerGraviteExpulsion(playerId, g.r, g.c, !characterCarriesCrown(g.id)) : 0;
           u *= 1 - 0.65 * gravite;
           utiliteTotale += u;
           /* Un gardien éjectable coûte en soi, pas seulement son utilité — qui

@@ -1153,8 +1153,8 @@ Corrigé :
 - coupures par le temps (principale, ripostes, MAGIE) rapportées dans le
   rapport du planner, le journal des défaites et `analyser-defaite.js`.
 
-Découvert, NON corrigé :
-- **Instantanés sans difficulté.** `snapshotState` ne porte ni `aiDifficulty`
+Découvert :
+- **Instantanés sans difficulté** (corrigé ensuite, 6ab520c). `snapshotState` ne porte ni `aiDifficulty`
   ni les règles : rejouée depuis un instantané (analyse de défaites, analyse
   de positions, self-play rapide), l'énumération des poses
   (`findAutomaticIslandPlacement`) prend les réglages du niveau NORMAL —
@@ -1170,3 +1170,200 @@ Découvert, NON corrigé :
   compris), plafonds de temps. Canal exact encore inconnu. L'autopsie n'est
   active qu'en IA contre IA depuis le menu, dans la Spirale et les outils —
   jamais en partie solo normale.
+
+## Partie gagnée contre l'Expert : ce qui a permis de gagner
+
+Une partie complète, un humain (joué au harnais `ILYOS_SELFPLAY` :
+`departPropre`, `voir`, `coups`, `jouer` avec aperçu) contre l'Expert du
+code de `main` après la fusion de la PR #122, plateau classique, départ propre.
+Victoire humaine **3-0 au tour 29**. Gardiens perdus : **10 pour l'IA, 4 pour
+l'humain** (hors gardiens sortis après une validation). Ce n'est qu'une partie :
+ce sont des pistes à vérifier par le journal des défaites, pas des mesures.
+
+Faiblesses exploitées, par ordre d'importance :
+
+1. **Gardien laissé dans une ligne de poussée mortelle.** L'IA a perdu un
+   gardien à presque chaque tour humain (tours 4 à 24). Motif récurrent : elle
+   place son gardien au contact d'un gardien humain (pour menacer ou bloquer),
+   avec du vide ou le bord à une ou deux cases derrière. Une poussée de force 2
+   (ou force 1 après une MAGIE qui ouvre le vide) le tue. Les gardiens
+   fraîchement apparus sont posés au contact et tombent le tour suivant
+   (119 au tour 23, 117 au tour 21). La riposte, limitée à une main plausible
+   de 3 MOVE + 2 PUSH sans MAGIE, sous-estime une réserve humaine accumulée
+   (tour 21 : 5 MOVE + 2 PUSH joués en un tour grâce à la réserve).
+2. **MAGIE humaine non anticipée.** La riposte ne joue pas la MAGIE : une
+   rotation d'île qui retire le sol derrière un gardien, ou qui avance un
+   porteur de deux cases vers un village (tour 27 : MAGIE puis 4 MOVE,
+   porteur de (7,7) à (10,10)), n'est jamais vue. Cf. tâche en attente
+   « anticipation probabiliste de la MAGIE adverse ».
+3. **Village de coin inattaquable.** Le village lui-même n'est pas une île :
+   la MAGIE ne le déplace pas. Un porteur sur (0,0) ou (10,10) ne peut être
+   tué que par un gardien sur l'une des deux cases voisines, poussant vers le
+   bord. Il suffit donc que l'IA n'ait aucun gardien à portée de ces deux
+   cases en un tour. Les deux validations humaines (tours 26 et 28) sont
+   venues ainsi, porteur arrivé au dernier moment.
+4. **Relais de couronne sous-estimé.** La transmission gratuite (diagonale
+   comprise) entre gardiens adjacents a fait gagner une case par relais :
+   couronne 1 de (5,5) à (0,0) en deux tours avec 4 MOVE par tour.
+5. **Pose humaine qui ferme les apparitions.** Au tour 27, une pose humaine sur
+   (10,7)-(10,8) a occupé la seule place où l'IA pouvait faire apparaître un
+   gardien près de (10,10) ((8,10) est un vide isolé, aucune forme n'y
+   tient). L'IA ne semble pas compter ces cases dans l'urgence défensive.
+6. **Réserve dépensée d'un coup.** L'IA garde longtemps ses cartes
+   (réserve 3 PUSH + MAGIE au tour 24) puis vide ses PUSH sur une cible
+   secondaire (tour 26 : un gardien non porteur repoussé de (2,4) à (2,0),
+   pendant que le porteur humain entrait sur (0,0)) et se retrouve à 0 PUSH /
+   0 MOVE face au second porteur qui file vers le coin.
+
+Ce que l'IA fait bien : ses MAGIES sur les îles humaines ont tué deux porteurs
+en début de partie, et elle ramène vite une couronne libre vers son village
+(tour 28). Elle perd par attrition de gardiens, puis par manque de défenseurs
+près des villages de coin.
+
+Pistes (non implémentées) : terme de danger pour un gardien dans une ligne
+« vide à ≤ 2 cases derrière » face à un gardien adverse, pondéré par la
+réserve de PUSH adverse réelle (visible) plutôt qu'une main plausible fixe ;
+garde permanente d'un défenseur à portée des cases voisines des villages
+adverses de coin quand l'adversaire porte une couronne ; MAGIE dans la
+riposte (au moins les rotations qui déplacent un porteur).
+
+## Gardiens exposés à une poussée longue : corrigé (point 1)
+
+Cause, mesurée sur la partie gagnée (`tests/positions-defaites/
+partie-gagnee-expert-t29.json`, banc `scripts/verif-exposes-partie.js`) :
+les 11 décisions sur 14 qui laissaient un gardien éjectable l'étaient toutes
+par une poussée de **force 2**, et le planner les voyait toutes à gravité 0.
+`plannerForceExpulsion` ne prête une force 2 à l'adversaire que s'il tient
+déjà **deux PUSH en réserve**. Or avec une seule en réserve, sa main de cinq
+cartes en apporte une autre 9 fois sur 10 (loi hypergéométrique sur la
+composition publique : 5 cartes parmi 13 dont 4 PUSH) ; avec aucune, deux
+PUSH arrivent une fois sur deux.
+
+Correction (`plannerGraviteExpulsion`, `PLAN_POIDS.piochePush`) : quand la
+réserve seule ne suffit pas, la poussée longue (jusqu'à `pousseeLongue`)
+compte quand même, pondérée par la probabilité de piocher les PUSH qui
+manquent. Force 2 avec une PUSH en réserve : 0,75 × 0,90 = 0,68 ; sans
+réserve : 0,75 × 0,51 = 0,38. Seulement pour les gardiens NON porteurs.
+
+Mesures :
+- décisions de la partie rejouées avec le code (3 passages, stables) :
+  10/13 laissent un gardien éjectable avec l'ancien calcul, **7/13** avec la
+  correction. Les 7 restantes : 3 porteurs (volontairement hors du mode 1),
+  3 gardiens dont le risque est vu (0,38 à 0,68) mais jugé acceptable, 1
+  poste de poussée à 4 MOVE quand le modèle en prête 3 à l'adversaire.
+  Plus aucun gardien non porteur à portée n'est invisible ;
+- self-play rapide contre l'ancien calcul, 40 parties par série : mode 1
+  24-13-3 (graines 7100+) puis 18-19-3 (8100+), soit 56 % sur 80 parties
+  (environ 1σ) : aucun dommage, gain non démontré en IA contre IA, qui ne
+  cherche pas ces éliminations comme un humain. Temps par tour inchangé ;
+- mode 2 (porteurs compris) : 15-24-1, **rejeté** — les porteurs n'osent
+  plus avancer, comme l'avait déjà mesuré la limitation d'origine.
+
+Bancs : `verif-gardien-expose.js` (6/6, nouveau), `verif-spawn-sur`,
+`verif-priorite-defense`, `verif-validation`, `verif-pose-tactique`,
+`verif-depot-magic`, `verif-poussee` passent ; `npm run check` OK. Dans
+`tests/puzzles.spec.js`, le prologue vocal de « La Première Lueur » échoue
+aussi sans la correction (sous-titre vide), sans rapport avec le planner.
+
+Reste ouvert : le budget de déplacement prêté à l'adversaire (réserve +
+3 MOVE plausibles) ignore aussi la pioche ; la poussée « MAGIE puis force 1 »
+n'est pas modélisée ; le poids `gardienExpose` (500) reste inférieur à la
+valeur marginale d'un dernier gardien (900).
+
+## Adversaire « exploiteur » : essai non retenu, et ce qu'il a révélé
+
+Idée : un adversaire d'entraînement qui joue comme le joueur humain de la
+partie gagnée 3-0 — éliminer un gardien dès que les vraies cartes le
+permettent (déplacement puis poussée, MAGIE préalable comprise), puis laisser
+l'Expert jouer le reste du tour. Sur les positions de cette partie, il
+retrouvait bien les 10 éliminations humaines (et une de plus).
+
+Résultat contre l'Expert, 40 parties (graines 9100+) : **18-21-1**, et
+autant de gardiens perdus des deux côtés (239 contre 225 avant le tour 20).
+L'Expert élimine déjà autant qu'un chasseur : la chasse n'était pas
+l'avantage humain. L'exploiteur a été retiré du code.
+
+Ce que l'humain faisait de plus : **ne pas se faire éliminer** (4 gardiens
+perdus contre 10). Entre deux IA, les deux camps s'exposent et se font tuer à
+égalité, environ 6 gardiens chacun avant le tour 20 ; contre un humain, seul
+l'Expert paie.
+
+Classement des pertes (`scripts/analyser-pertes.js`, Expert contre Expert,
+6 parties, 99 gardiens perdus) :
+
+| cause | gardiens | porteurs |
+|---|---|---|
+| risque vu et accepté (gravité > 0) | 14 | 3 |
+| invisible : une seule poussée avec les vraies cartes | 8 | 13 |
+| gardien adverse apparu à côté (pose puis poussée) | 5 | 8 |
+| rotation d'île (MAGIE) | 6 | 11 |
+| combinaisons (plusieurs pièces, poussée puis déplacement…) | 16 | 15 |
+
+**83 % des pertes viennent de menaces que l'estimation du planner ne voit
+pas** : elle ne compte qu'un gardien adverse déjà présent, dans un budget de
+déplacement fixe, sans apparition ni MAGIE piochée. La riposte simulée, qui
+devrait rattraper le reste, ne tourne que sur quelques finalistes et avec une
+main plausible sans MAGIE. C'est la vraie raison des défaites contre un
+humain, et c'est mesurable en self-play : un camp qui évite ces pertes doit
+gagner contre l'Expert actuel.
+
+## Pousseur apparu par une pose adverse (`apparitionPoussee`)
+
+Deuxième cause de pertes invisible au planner (13 % en self-play) : le poste
+de poussée est du VIDE, l'adversaire y pose une île, y fait apparaître un
+gardien et pousse dans le même tour. La mise en place connaissait déjà cette
+menace (`plannerVulnerabilitePotentielle`), pas la partie. Elle entre
+désormais dans `plannerGraviteExpulsion`, pondérée comme au draft
+(`draftMenacePose` 0,8) et par la probabilité d'avoir les PUSH.
+
+Self-play contre l'ancien calcul, 40 parties par série :
+- mode 1 (gardiens non porteurs) : 18-19-3, pertes 205 contre 224 ;
+- mode 2 (porteurs compris) : **27-12-1** (graines 7100+) puis **19-21-0**
+  (8100+), soit 46-33-1 sur 80 parties (58 %, environ 1,5σ). Retenu par
+  défaut : aucun dommage, temps par tour inchangé, gain probable mais non
+  démontré.
+
+Leçon de mesure : deux fois de suite (poussée piochée, puis ce terme), une
+première série favorable (60-69 %) n'a pas été confirmée par la seconde. À
+40 parties, l'écart type vaut environ 8 points : un effet de 5 points
+demande plusieurs centaines de parties. Une série seule ne suffit pas à
+conclure.
+
+## Correction des mesures : self-play non reproductible, collision de poids
+
+Les séries de 40 parties donnaient des verdicts contradictoires (69 % puis
+47 % pour le même réglage). Ce n'était pas seulement le nombre de parties :
+
+1. **Départs différents d'une page à l'autre.** `departMelange` mélangeait
+   les cartes de la partie de préchauffage de la page : ordre d'entrée,
+   identifiants à suffixe aléatoire, réserve et joueur au trait changeaient à
+   chaque page. Avec la même graine, deux séries ne jouaient pas les mêmes
+   parties — rejouer une série changeait 25 parties sur 31, alors que chaque
+   décision isolée se reproduit (10/10, historique de page indifférent) et
+   qu'aucune réflexion n'est coupée par le temps (0 tour sur ~1 700).
+   Corrigé : paquets canoniques (CARD_BLUEPRINTS, identifiants fixes),
+   réserve vidée, premier joueur fixé. Même série = mêmes résultats ; test à
+   blanc (réglages identiques) : 6 paires sur 6 en miroir parfait.
+2. **Collision de nom.** Le nouveau terme s'appelait `apparitionPoussee`,
+   nom déjà pris plus bas dans `PLAN_POIDS` (bonus de case d'apparition,
+   250) : la seconde clé écrasait la première. Le terme n'était jamais actif
+   et les séries « mode 2 contre 0 » réglaient l'AUTRE poids à 2 ou 0.
+   Renommé `menacePoseAdverse` ; plus aucun doublon dans `PLAN_POIDS`.
+
+Mesures refaites, reproductibles (80 parties, graines 7100+, contre 0) :
+
+| réglage | résultat | gardiens perdus < tour 20 | couronnes |
+|---|---|---|---|
+| `piochePush` 1 | **28-44-8 (40 %)** | 454 contre 432 | 136 contre 169 |
+| `menacePoseAdverse` 2 | **42-33-5 (55,6 %)** | 405 contre 461 | 160 contre 141 |
+
+- `piochePush` (point 1) **affaiblit** l'Expert en IA contre IA : remis à 0.
+  Il réduisait pourtant l'exposition face au jeu humain (10/13 → 7/13 sur la
+  partie archivée) : trop de prudence se paie contre un adversaire qui
+  n'exploite pas. L'option reste pour mesurer contre des humains.
+- `menacePoseAdverse` : actif (2). Gain à 1σ seulement, mais les trois
+  signaux vont dans le même sens (victoires, pertes −12 %, couronnes +13 %).
+
+Les verdicts antérieurs de ce fichier obtenus avec `selfplay-rapide.js`
+avant cette correction ont le même bruit de départ (non biaisé : chaque
+paire rejoue le même départ camps inversés), pas la collision.

@@ -49,7 +49,10 @@ function lireDossiers(chemin) {
    options de partie qu'un instantané ne porte pas. */
 function positionJouable(dossier, etat) {
   const position = JSON.parse(etat);
-  if (dossier.regles && dossier.regles.optionsPartie) position.rules = dossier.regles.optionsPartie;
+  if (!position.rules && dossier.regles && dossier.regles.optionsPartie) position.rules = dossier.regles.optionsPartie;
+  // Dossiers antérieurs à l'ajout du niveau dans l'instantané : c'est
+  // toujours l'Expert qui a perdu.
+  if (!position.aiDifficulty) position.aiDifficulty = 'expert';
   return JSON.stringify(position);
 }
 
