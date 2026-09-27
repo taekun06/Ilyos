@@ -43,7 +43,10 @@ Toute la partie, telle qu'elle a été jouée, avec ce que l'IA pensait :
   motif du signalement ;
 - **« Que jouerait l'IA aujourd'hui ? »** : le plan de l'Expert actuel à la
   place du joueur au trait (vous ou elle), ses notes, les autres plans
-  envisagés, visibles sur le plateau ;
+  envisagés ;
+- **les plans que l'IA a comparés** pendant la partie (jusqu'à quatre, pour
+  les parties jouées depuis cette version) : notes en fin de tour et après
+  riposte, et le retenu ;
 - **annotation** : un texte et des étiquettes (erreur de l'IA, bon coup,
   moment clé, à revoir) par tour ;
 - **✏ Proposer un meilleur coup** : le tour redevient jouable, avec les
@@ -55,6 +58,46 @@ Toute la partie, telle qu'elle a été jouée, avec ce que l'IA pensait :
   corriger : c'est le signal le plus utile ;
 - **▶ Reprendre la partie ici** : relance une partie vivante, vous contre
   l'Expert, depuis ce tour (l'ancien « Rejouer »).
+
+### Tracés sur le plateau
+
+Chaque coup se dessine sur le plateau, depuis la position de départ du tour :
+chemins et flèches de déplacement, flèches de poussée, croix rouge là où un
+gardien tombe, cases des îles posées ou tournées, anneaux (apparition,
+couronne, pivot), numéros d'ordre des actions. Une couleur par origine :
+
+- orange : le coup joué (à « début du tour » : tout le tour ; action par
+  action : ce que cette action a changé) ;
+- bleu : l'IA d'aujourd'hui ;
+- violet : un plan envisagé (par l'IA en partie, ou par l'IA d'aujourd'hui) ;
+- vert : un coup proposé.
+
+« ▶ position après ce coup » montre le résultat ; la case « tracer sur le
+plateau » coupe les tracés. Le plateau est recentré à gauche du panneau.
+
+## La revue IA contre IA, dans la même visionneuse
+
+Pendant une partie IA contre IA avec la revue active (bouton REVUE IA du
+panneau de partie automatique), une barre discrète compte les décisions
+relevées. **⏸ Pause et analyser** arrête la partie à la fin du tour en
+cours — jamais au milieu — puis ouvre la visionneuse sur toute la partie
+jusqu'ici, les deux IA étant lues chacune de son point de vue (une ligne de
+courbe par IA). Tout y est comme pour une défaite ; en plus :
+
+- **▶ Reprendre la partie ici** relance la partie automatique depuis ce tour
+  (les décisions suivantes du journal n'ont alors plus eu lieu) ; sur la
+  position actuelle, **▶ Reprendre la partie** la relance là où elle était ;
+- **▶ Continuer la partie depuis ce coup**, sur un coup proposé : la partie
+  repart de VOTRE coup (l'ancien « Jouer le tour ») ;
+- **⤓ Exporter** télécharge l'analyse (`ilyos-revue-….json`, lisible par
+  `analyser-defaite.js`) ; **⧉ Copier le résumé** donne le texte court à
+  coller dans une conversation ;
+- **✕** rend la partie telle qu'à la pause, en pause ; la barre propose alors
+  « ▶ Reprendre ».
+
+Annotations et coups proposés rejoignent aussi le journal de l'autopsie
+(`ILYOS_AUTOPSIE.journal()`, `corrections()`), et sont retrouvés à la
+réouverture suivante de la même partie.
 
 Annotations et coups proposés sont gardés dans le dossier (bibliothèque et
 export) et lus par `analyser-defaite.js`, qui examine d'office les tours
@@ -142,5 +185,6 @@ au cas par cas. C'est la matière des futurs scénarios de test.
 
 `window.ILYOS_DEFAITES` : `journal()`, `derniere()`, `analyser(dossier)`,
 `exporter(dossier)`, `bibliotheque()`, `lister()`, `lire(id)`,
-`supprimer(id)`, `rejouer(dossier, index)`, `voir(dossier, index)`, `vue()`,
+`supprimer(id)`, `rejouer(dossier, index)`, `voir(dossier, index)`, `vue()`
+(état de la visionneuse : tour, action, mode direct, tracé, propositions),
 `decrire(plan, etat)`, `seuils`.

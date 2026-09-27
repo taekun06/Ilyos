@@ -3221,6 +3221,15 @@
           // Notes après riposte, dans l'ordre du classement final : une
           // décision serrée se lit ici sans rien recalculer (defaites.js).
           classement: examines.slice(0, 6).map(e => Math.round(e.robustesse.note)),
+          /* Les plans eux-mêmes, dans le même ordre : la visionneuse les
+             décrit et les trace sur le plateau (« ce qu'elle a envisagé »).
+             Une poignée d'actions par plan : rien à côté de l'instantané. */
+          plansExamines: examines.slice(0, 4).map(e => ({
+            plan: e.noeud.plan.map(a => ({ ...a })),
+            noteFinTour: Math.round(e.noeud.note),
+            noteRobuste: Math.round(e.robustesse.note),
+            riposte: e.robustesse.riposte || []
+          })),
           // Recherches coupées par un plafond de temps : la décision dépend
           // alors de la vitesse de la machine, et ne se rejoue plus à l'identique.
           principaleCoupee: !!principal.coupeParTemps,

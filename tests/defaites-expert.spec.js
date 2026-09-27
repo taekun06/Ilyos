@@ -127,6 +127,8 @@ test("une défaite de l'Expert s'enregistre, s'exporte d'un clic et se rejoue", 
   await vue.locator(`[data-vue-index="${indexIA}"]`).dispatchEvent('click');
   await expect.poll(() => page.evaluate(() => window.ILYOS_DEFAITES.vue().index)).toBe(indexIA);
   await expect(vue).toContainText('Ce que l’IA a pensé');
+  // Le coup joué est tracé sur le plateau (flèches, cases, numéros).
+  expect(await page.evaluate(() => window.ILYOS_DEFAITES.vue().traces), 'coup joué tracé').toBeGreaterThan(0);
   await vue.locator('[data-vue="etape+"]').click();
   await expect(vue.locator('.dv-etape-texte')).toBeVisible();
   expect(await page.evaluate(() => window.ILYOS_DEFAITES.vue().etape)).toBe(1);
@@ -236,5 +238,51 @@ test("« Rejouer » relance contre l'Expert et la nouvelle partie entre au journ
   const seconde = await gagner();
   expect(seconde).not.toBe(premiere);
   await expect.poll(() => page.evaluate(async () => (await window.ILYOS_DEFAITES.lister()).length)).toBe(2);
+  expect(incidents, incidents.join('\n')).toEqual([]);
+});
+
+/* Revue IA contre IA : la même visionneuse, ouverte sur la partie en cours
+   mise en pause ; fermer rend la partie telle quelle, « Reprendre » relance
+   les IA. */
+test("la revue IA contre IA s'ouvre dans la visionneuse et rend la partie", async ({ page }) => {
+  const incidents = [];
+  page.on('pageerror', erreur => incidents.push(erreur.message));
+  await page.goto('/');
+  await page.waitForFunction(() => typeof window.ILYOS_TEST?.playAIvsAI === 'function', null, { timeout: 60000 });
+  await page.evaluate(() => { window.ILYOS_BENCH.vitesse(0.15); window.ILYOS_TEST.playAIvsAI({ difficulty: 'expert', maxTurns: 40 }); });
+  await page.waitForFunction(() => window.ILYOS_AUTOPSIE?.active?.()
+    && window.ILYOS_AUTOPSIE.journal().filter(e => e.instantane).length >= 3, null, { timeout: 240000 });
+  const barre = page.locator('.revue-barre');
+  await expect(barre).toContainText('Pause et analyser');
+  await barre.locator('[data-revue="analyser"]').click();
+  await page.waitForFunction(() => window.ILYOS_DEFAITES.vue()?.direct, null, { timeout: 60000 });
+  const vue = page.locator('.defaites-vue');
+  await expect(vue).toBeVisible();
+  await expect(barre).toBeHidden();
+  const ouverte = await page.evaluate(() => window.ILYOS_DEFAITES.vue());
+  expect(ouverte.tours, 'décisions relevées + position actuelle').toBeGreaterThanOrEqual(4);
+
+  // Un tour d'IA : sa réflexion, et un plan qu'elle a comparé, tracé.
+  await vue.locator('[data-vue="premier"]').click();
+  await expect(vue).toContainText('a pensé');
+  await vue.locator('details.dv-envisages summary').first().click();
+  await vue.locator('[data-vue="tracer-envisage"]').first().click();
+  await expect.poll(() => page.evaluate(() => window.ILYOS_DEFAITES.vue().trace)).toBe('envisage');
+  expect(await page.evaluate(() => window.ILYOS_DEFAITES.vue().traces)).toBeGreaterThan(0);
+
+  // L'annotation rejoint le journal de la revue (résumé, export).
+  await vue.locator('[data-vue-annotation]').fill('devait bloquer le village');
+  await vue.locator('[data-vue="annoter"]').click();
+  await expect.poll(() => page.evaluate(() =>
+    window.ILYOS_AUTOPSIE.journal().filter(e => e.annotation).map(e => e.annotation.coupAttendu)))
+    .toEqual(['devait bloquer le village']);
+
+  // Fermer : la partie revient telle qu'à la pause, en pause.
+  await vue.locator('[data-vue="fermer"]').click();
+  await expect(page.locator('.defaites-vue')).toHaveCount(0);
+  await expect(barre).toContainText('partie en pause');
+  const avant = await page.evaluate(() => window.ILYOS_AUTOPSIE.journal().length);
+  await barre.locator('[data-revue="reprendre"]').click();
+  await page.waitForFunction(n => window.ILYOS_AUTOPSIE.journal().length > n, avant, { timeout: 180000 });
   expect(incidents, incidents.join('\n')).toEqual([]);
 });

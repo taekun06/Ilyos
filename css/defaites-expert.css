@@ -324,3 +324,64 @@ body .defaites-vue .dv-aide { text-align: center; margin-top: 8px; }
   }
 }
 body .defaites-vue .dv-point-humain { fill: #fff; stroke: #4f6f7d; stroke-width: 1.2; }
+
+/* Tracés : légende et pastilles de couleur (une par origine de coup). */
+body .defaites-vue .dv-pastille {
+  display: inline-block;
+  width: .8em;
+  height: .8em;
+  margin-right: 2px;
+  border: 1px solid #10212c;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+body .defaites-vue .dv-legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 4px 0;
+  color: #4f6f7d;
+  font-size: .76rem;
+}
+body .defaites-vue .dv-envisages ol { padding-left: 1.2rem; margin: 4px 0; }
+body .defaites-vue .dv-envisages li { margin: 4px 0; }
+
+/* Revue IA contre IA : barre discrète pendant la partie automatique ; la
+   visionneuse fait le reste. Masquée, comme le panneau d'autoplay, quand la
+   visionneuse est ouverte. */
+body .revue-barre {
+  position: fixed;
+  top: 92px;
+  right: 12px;
+  z-index: 9999;
+  display: grid;
+  gap: 4px;
+  max-width: 300px;
+  padding: 8px 12px;
+  border: 1px solid #c9a45d;
+  border-radius: 12px;
+  background: rgba(251, 248, 238, .95);
+  color: #17384a;
+  font: .8rem/1.35 system-ui, sans-serif;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+body .revue-barre .revue-barre-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+body .revue-barre button {
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(201, 164, 93, .8);
+  border-radius: 8px;
+  background: #fff;
+  color: #17384a;
+  font: inherit;
+  text-shadow: none;
+  cursor: pointer;
+}
+body .revue-barre button[data-revue="analyser"] {
+  background: linear-gradient(180deg, #f6dc95, #dcae55);
+  font-weight: 800;
+}
+body .revue-barre button:disabled { opacity: .5; cursor: progress; }
+body.defaites-vue-ouverte .revue-barre,
+body.defaites-vue-ouverte .ilyos-autoplay-panel { display: none !important; }

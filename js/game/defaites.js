@@ -129,6 +129,7 @@
             garantie: a.garantie ?? null,
             examines: a.examines ?? null,
             classement: a.classement || null,
+            plansExamines: a.plansExamines || null,
             etatsExplores: rapport ? rapport.etatsExplores ?? null : null,
             // Recherche arrêtée par un plafond de temps : décision non reproductible.
             coupee: !!(a.principaleCoupee || a.ripostesCoupees),
@@ -624,6 +625,9 @@
         voir: (dossier, index = null) => defaitesVoir(dossier, index),
         vue: () => defaitesVue ? {
           index: defaitesVue.index, etape: defaitesVue.etape, sandbox: !!defaitesVue.sandbox,
+          direct: !!defaitesVue.direct, tours: defaitesVue.dossier.tours.length,
+          trace: defaitesVue.trace ? defaitesVue.trace.cle : null,
+          traces: defaitesVue.tracesAffiches || 0,
           tour: (defaitesVue.dossier.tours[defaitesVue.index] || {}).tour,
           propositions: (defaitesVue.dossier.propositions || []).length,
           annotations: Object.keys(defaitesVue.dossier.annotations || {}).length

@@ -42,6 +42,8 @@ function lireDossiers(chemin) {
   if (brut.type === 'lot-defaites-expert') return brut.defaites;
   if (brut.type === 'defaite-expert') return [brut];
   if (brut.type === 'position-defaite-expert') return [brut];
+  // Analyse d'une partie IA contre IA exportée depuis la visionneuse (revue IA).
+  if (brut.type === 'revue-ia-contre-ia') return [brut];
   throw new Error(`format inconnu : ${brut.type || 'sans type'}`);
 }
 
@@ -61,7 +63,7 @@ function toursAExaminer(dossier) {
   const tours = dossier.tours || [];
   const tour = option('--tour') || option('--extraire');
   if (tour && tour !== true) {
-    const i = tours.findIndex(t => t.tour === Number(tour) && t.joueur === dossier.ia && t.etat);
+    const i = tours.findIndex(t => t.tour === Number(tour) && t.decision && t.etat);
     if (i < 0) throw new Error(`aucune décision de l'IA au tour ${tour}`);
     return [i];
   }
