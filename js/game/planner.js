@@ -88,6 +88,13 @@
            de case d'apparition, plus bas) : sous ce nom, la clé était écrasée
            par la seconde et les premières mesures réglaient l'autre poids. */
         menacePoseAdverse: 2,
+        /* Un de mes gardiens collé derrière un autre forme un bloc poussable,
+           pas un rempart (plannerPosteDerriereBloc). 0 = ancien calcul.
+           Juste selon la règle, mais mesuré contre 0 (80 parties
+           reproductibles) : 33-39-8 (46 %), pertes 418 contre 424. Sans gain
+           en IA contre IA : reste à 0, en option pour mesurer contre des
+           humains. */
+        posteDerriereBloc: 0,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -535,7 +542,7 @@
         if (actif(PLAN_POIDS.menacePoseAdverse || 0) && canCreateGuardian(adverse.id)
           && !plannerPoseImpossibleEnCache(adverse.id)) {
           for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-            const pr = r - dr, pc = c - dc;
+            const [pr, pc] = plannerPosteDerriereBloc(playerId, r, c, dr, dc);
             if (!inside(pr, pc) || isLand(pr, pc)) continue;
             const f = plannerVideAPortee(r, c, dr, dc, longue);
             if (f) pire = Math.max(pire, gravitePour(f) * PLAN_POIDS.draftMenacePose);
@@ -566,6 +573,26 @@
         }
         plannerProbaPushCache[n] = p;
         return p;
+      }
+
+      /* Poste de poussée derrière la victime (r, c), pour une poussée vers
+         (dr, dc). Un de MES gardiens collé derrière elle ne la protège pas :
+         il forme un bloc avec elle, et l'adversaire pousse le bloc entier
+         depuis la case qui le suit (règle V67). L'ancien calcul voyait ce
+         gardien comme un rempart. Mesuré sur une défaite humaine : deux
+         gardiens IA alignés vers le bord, poussés d'un coup depuis une case
+         vide où l'humain venait de faire apparaître un pousseur.
+         Renvoie [r, c, pousseurEnPlace] : pousseurEnPlace si un gardien
+         adverse se tient déjà au bout du bloc. */
+      function plannerPosteDerriereBloc(playerId, r, c, dr, dc) {
+        let pr = r - dr, pc = c - dc;
+        while (PLAN_POIDS.posteDerriereBloc && inside(pr, pc) && isLand(pr, pc)) {
+          const occupant = characterAt(pr, pc);
+          if (!occupant) break;
+          if (occupant.player !== playerId) return [pr, pc, true];
+          pr -= dr; pc -= dc;
+        }
+        return [pr, pc, false];
       }
 
       /** Plus petite force de poussée avec laquelle un gardien adverse peut
@@ -600,15 +627,10 @@
           const force = plannerVideAPortee(r, c, dr, dc, forceCertaine);
           if (!force || (meilleure && force >= meilleure)) continue;
           // Case d'où pousser, du côté opposé au vide.
-          const posteR = r - dr, posteC = c - dc;
+          const [posteR, posteC, pousseurEnPlace] = plannerPosteDerriereBloc(playerId, r, c, dr, dc);
+          if (pousseurEnPlace) { meilleure = force; continue; }
           if (!inside(posteR, posteC) || !isLand(posteR, posteC)) continue;
-
-          const occupant = characterAt(posteR, posteC);
-          if (occupant) {
-            // Déjà en place : menace immédiate.
-            if (occupant.player !== playerId) meilleure = force;
-            continue;
-          }
+          if (characterAt(posteR, posteC)) continue;
           // Sinon, un gardien adverse peut-il rejoindre ce poste à temps ?
           const postePorte = key(posteR, posteC);
           if (portees.some(portee => portee.has(postePorte))) meilleure = force;
