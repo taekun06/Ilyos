@@ -1367,3 +1367,28 @@ Mesures refaites, reproductibles (80 parties, graines 7100+, contre 0) :
 Les verdicts antérieurs de ce fichier obtenus avec `selfplay-rapide.js`
 avant cette correction ont le même bruit de départ (non biaisé : chaque
 paire rejoue le même départ camps inversés), pas la collision.
+
+## Défaite humaine du 27/09 (Expert de `main`) : pertes encore invisibles
+
+Partie gagnée 3-0 en 34 tours par un humain contre l'Expert publié (sans
+`menacePoseAdverse`). L'IA perd 8 gardiens ; avec le code de la PR #123, 2 de
+plus auraient été vus. Les 4 encore invisibles :
+
+| tour | perte | comment | pourquoi invisible |
+|---|---|---|---|
+| 3 | gardien (4,6) | île posée, gardien apparu, déplacé, puis poussée | la menace de pose ne couvre que l'apparition SUR le poste |
+| 13 | gardien (0,1) | l'humain pousse l'autre gardien IA (1,1) : les deux sortent | un allié collé derrière était vu comme un rempart |
+| 15 | gardien (1,1) | force 2 avec 1 PUSH en réserve + 1 piochée | `piochePush` désactivé (nuisible en IA contre IA) |
+| 21 | porteur (2,4) | force 3 : 2 PUSH visibles en réserve + 1 piochée | force plafonnée à 2 (`pousseeLongue`) |
+
+Correction du tour 13 (`posteDerriereBloc`, `plannerPosteDerriereBloc`) :
+le poste de poussée se cherche derrière le bloc de mes gardiens collés à la
+victime. Juste selon la règle, le cas du tour 13 est désormais vu (0,80).
+Mesure reproductible contre 0, 80 parties : **33-39-8 (46 %)**, pertes 418
+contre 424 — sans gain : option désactivée par défaut.
+
+Constat d'ensemble : chaque correction qui fait VOIR davantage de menaces est
+neutre ou nuisible en IA contre IA (`piochePush` 40 %, `posteDerriereBloc`
+46 %), sauf `menacePoseAdverse` (55,6 %). Le self-play ne peut pas valider ce
+qui ne sert que contre un joueur qui exploite : ces options sont à juger
+contre des parties humaines.

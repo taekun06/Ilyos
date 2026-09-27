@@ -155,3 +155,233 @@ body .defaites-biblio .defaites-actions select {
   background: #fff !important;
   color: #17384a !important;
 }
+
+/* ------------------------------------------------------------------------
+   VISIONNEUSE DES DÉFAITES (js/game/defaites-vue.js)
+   Panneau à droite du plateau, au-dessus du HUD, sous la bibliothèque.
+   ------------------------------------------------------------------------ */
+
+body .defaites-biblio .defaites-voir {
+  padding: 6px 14px;
+  border: 1px solid #c9a45d;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f6dc95, #dcae55);
+  color: #17384a;
+  font-weight: 800;
+  text-shadow: none;
+  cursor: pointer;
+}
+
+body .defaites-vue {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2147482990;
+  width: min(380px, 42vw);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid #c9a45d;
+  border-radius: 14px;
+  background: rgba(251, 248, 238, .97);
+  color: #17384a;
+  font: .84rem/1.4 system-ui, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+}
+
+body .defaites-vue.defaites-vue-calcul { opacity: .6; cursor: progress; }
+
+body .defaites-vue h3 {
+  margin: 0 0 6px;
+  font-size: .9rem;
+  color: #17384a;
+}
+
+body .defaites-vue p { margin: 4px 0; }
+
+body .defaites-vue .dv-tete {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+body .defaites-vue .dv-tete small { display: block; color: #4f6f7d; }
+
+body .defaites-vue button {
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(201, 164, 93, .8);
+  border-radius: 8px;
+  background: #fff;
+  color: #17384a;
+  font: inherit;
+  text-shadow: none;
+  cursor: pointer;
+}
+
+body .defaites-vue button:disabled { opacity: .5; cursor: progress; }
+
+body .defaites-vue .dv-principal {
+  background: linear-gradient(180deg, #f6dc95, #dcae55);
+  font-weight: 800;
+}
+
+body .defaites-vue .dv-discret { color: #4f6f7d; font-size: .78rem; }
+body .defaites-vue .dv-plus { color: #1f7a45; }
+body .defaites-vue .dv-moins { color: #a33a2c; }
+body .defaites-vue .dv-alerte {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(201, 90, 60, .12);
+  color: #7a2e20;
+}
+
+body .defaites-vue .dv-courbe-bloc { margin-bottom: 6px; }
+body .defaites-vue .dv-courbe { width: 100%; height: auto; display: block; }
+body .defaites-vue .dv-zero { stroke: rgba(23, 56, 74, .25); stroke-dasharray: 3 3; }
+body .defaites-vue .dv-ligne { fill: none; stroke: #17384a; stroke-width: 1.5; }
+body .defaites-vue .dv-courbe circle { cursor: pointer; }
+body .defaites-vue .dv-point { fill: #4f6f7d; }
+body .defaites-vue .dv-point-annote { fill: #c9a45d; }
+body .defaites-vue .dv-point-signale { fill: #c94a3a; }
+body .defaites-vue .dv-point-courant { fill: #dcae55; stroke: #17384a; stroke-width: 2; }
+body .defaites-vue .dv-leg-signale { color: #c94a3a; }
+
+body .defaites-vue .dv-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+body .defaites-vue .dv-nav span { min-width: 9rem; text-align: center; }
+body .defaites-vue .dv-etape-texte,
+body .defaites-vue .dv-apercu {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(23, 56, 74, .06);
+}
+
+body .defaites-vue .dv-bloc {
+  margin: 8px 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(201, 164, 93, .35);
+}
+
+body .defaites-vue .dv-chiffres,
+body .defaites-vue .dv-termes {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
+
+body .defaites-vue .dv-chiffres li,
+body .defaites-vue .dv-termes li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body .defaites-vue .dv-finalistes { padding-left: 1.2rem; }
+body .defaites-vue .dv-proposition {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(201, 164, 93, .45);
+  border-radius: 8px;
+  background: #fff;
+}
+
+body .defaites-vue .dv-etiquettes { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0; }
+body .defaites-vue textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0;
+  padding: 5px;
+  border: 1px solid rgba(201, 164, 93, .7) !important;
+  border-radius: 8px;
+  background: #fff !important;
+  color: #17384a !important;
+  font: inherit;
+}
+
+body .defaites-vue .dv-etiquette { display: block; margin: 6px 0; }
+body .defaites-vue .dv-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+body .defaites-vue .dv-aide { text-align: center; margin-top: 8px; }
+
+/* Lecture seule : rien ne doit faire avancer la partie archivée. */
+#gameScreen.defaites-vue-lecture #endTurnBtn { visibility: hidden; }
+
+@media (max-width: 760px) {
+  body .defaites-vue {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: 46vh;
+  }
+}
+body .defaites-vue .dv-point-humain { fill: #fff; stroke: #4f6f7d; stroke-width: 1.2; }
+
+/* Tracés : légende et pastilles de couleur (une par origine de coup). */
+body .defaites-vue .dv-pastille {
+  display: inline-block;
+  width: .8em;
+  height: .8em;
+  margin-right: 2px;
+  border: 1px solid #10212c;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+body .defaites-vue .dv-legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 4px 0;
+  color: #4f6f7d;
+  font-size: .76rem;
+}
+body .defaites-vue .dv-envisages ol { padding-left: 1.2rem; margin: 4px 0; }
+body .defaites-vue .dv-envisages li { margin: 4px 0; }
+
+/* Revue IA contre IA : barre discrète pendant la partie automatique ; la
+   visionneuse fait le reste. Masquée, comme le panneau d'autoplay, quand la
+   visionneuse est ouverte. */
+body .revue-barre {
+  position: fixed;
+  top: 92px;
+  right: 12px;
+  z-index: 9999;
+  display: grid;
+  gap: 4px;
+  max-width: 300px;
+  padding: 8px 12px;
+  border: 1px solid #c9a45d;
+  border-radius: 12px;
+  background: rgba(251, 248, 238, .95);
+  color: #17384a;
+  font: .8rem/1.35 system-ui, sans-serif;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+body .revue-barre .revue-barre-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+body .revue-barre button {
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(201, 164, 93, .8);
+  border-radius: 8px;
+  background: #fff;
+  color: #17384a;
+  font: inherit;
+  text-shadow: none;
+  cursor: pointer;
+}
+body .revue-barre button[data-revue="analyser"] {
+  background: linear-gradient(180deg, #f6dc95, #dcae55);
+  font-weight: 800;
+}
+body .revue-barre button:disabled { opacity: .5; cursor: progress; }
+body.defaites-vue-ouverte .revue-barre,
+body.defaites-vue-ouverte .ilyos-autoplay-panel { display: none !important; }

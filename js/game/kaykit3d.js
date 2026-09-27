@@ -8110,6 +8110,196 @@
         group.add(head);
       }
 
+      /* TRACÉ D'ANALYSE (visionneuse des défaites, defaites-vue.js) : un coup
+         dessiné sur le plateau — flèches, cases, chutes, numéros d'ordre —
+         sans rien jouer. Calque À PART de actionPreviewGroup, que chaque survol
+         vide : le tracé doit rester tant que la visionneuse le demande.
+         Éléments :
+           { type: "case", r, c, couleur }
+           { type: "fleche", de: [r, c], vers: [r, c], couleur }
+           { type: "chemin", points: [[r, c], …], couleur }
+           { type: "chute", r, c }            (case hors plateau admise)
+           { type: "anneau", r, c, couleur }  (apparition, couronne, pivot)
+           { type: "numero", r, c, n, couleur } */
+      function kaykitTraceGroupe() {
+        if (!kaykit3D?.fxGroup || typeof THREE === "undefined") return null;
+        let groupe = kaykit3D.traceAnalyseGroup;
+        if (!groupe || groupe.parent !== kaykit3D.fxGroup) {
+          groupe = new THREE.Group();
+          groupe.name = "ilyos-trace-analyse";
+          kaykit3D.fxGroup.add(groupe);
+          kaykit3D.traceAnalyseGroup = groupe;
+        }
+        return groupe;
+      }
+
+      /* Recentre l'image sur la partie visible quand un panneau couvre un
+         côté de l'écran (visionneuse des défaites) : décalage de vue de la
+         caméra, sans toucher à la mise en page du canevas. Les clics restent
+         justes — le lancer de rayon passe par la même projection. 0 annule. */
+      function kaykitDecalerCadrage(decalagePx = 0) {
+        const camera = kaykit3D?.camera;
+        if (!camera || !kaykit3D.canvas) return;
+        const largeur = kaykit3D.canvas.clientWidth || 1, hauteur = kaykit3D.canvas.clientHeight || 1;
+        if (decalagePx) camera.setViewOffset(largeur, hauteur, decalagePx, 0, largeur, hauteur);
+        else camera.clearViewOffset();
+        camera.updateProjectionMatrix();
+      }
+
+      function kaykitEffacerTraceAnalyse() {
+        const groupe = kaykit3D?.traceAnalyseGroup;
+        if (groupe) clearKayKitGroup(groupe);
+      }
+
+      function kaykitTracerAnalyse(elements) {
+        const groupe = kaykitTraceGroupe();
+        if (!groupe) return 0;
+        clearKayKitGroup(groupe);
+        if (!elements || !elements.length || !isKayKitBoardActive()) return 0;
+        const transitoire = objet => {
+          objet.userData = { ...(objet.userData || {}), ilyosTransient: true };
+          return objet;
+        };
+        /* fog et toneMapped coupés : le brouillard du ciel et la correction de
+           tons délavaient le tracé jusqu'à le rendre illisible (vérifié en
+           capture) — une annotation doit garder sa couleur franche. */
+        const matiere = (couleur, opacite = 1) => transitoire(new THREE.MeshBasicMaterial({
+          color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: false,
+          fog: false, toneMapped: false
+        }));
+        const hauteur = (r, c) => {
+          try { return kaykitCellSurfaceY(r, c); } catch (erreur) { return KAYKIT_LEVELS.board + .014; }
+        };
+        const point = (r, c, dessus = .3) => kaykitCellPosition(r, c, hauteur(r, c) + dessus);
+        const SOMBRE = 0x10212c;
+
+        // Tige entre deux points, puis tête : foncé large dessous, couleur fine dessus.
+        const troncon = (de, vers, rayon, materiau, ordre) => {
+          const direction = new THREE.Vector3(vers.x - de.x, vers.y - de.y, vers.z - de.z);
+          const longueur = direction.length();
+          if (longueur < 1e-3) return null;
+          direction.normalize();
+          const tige = new THREE.Mesh(transitoire(new THREE.CylinderGeometry(rayon, rayon, longueur, 10)), materiau);
+          tige.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+          tige.position.set(de.x, de.y, de.z).addScaledVector(direction, longueur / 2);
+          tige.renderOrder = ordre;
+          groupe.add(tige);
+          return direction;
+        };
+        const tete = (bout, direction, rayon, materiau, ordre) => {
+          const cone = new THREE.Mesh(transitoire(new THREE.ConeGeometry(rayon, rayon * 2.1, 14)), materiau);
+          cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+          cone.position.set(bout.x, bout.y, bout.z).addScaledVector(direction, -rayon * .6);
+          cone.renderOrder = ordre;
+          groupe.add(cone);
+        };
+        const fleche = (cases, couleur) => {
+          const points = cases.map(([r, c]) => point(r, c));
+          if (points.length < 2) return;
+          const fonce = matiere(SOMBRE, .85), vif = matiere(couleur, 1);
+          let derniere = null;
+          for (let i = 0; i < points.length - 1; i++) {
+            const fin = i === points.length - 2;
+            // La dernière tige s'arrête avant la case : la tête la termine.
+            const vers = fin ? (() => {
+              const d = new THREE.Vector3(points[i + 1].x - points[i].x, 0, points[i + 1].z - points[i].z);
+              const l = d.length();
+              return l > .3 ? {
+                x: points[i + 1].x - d.x / l * .22, y: points[i + 1].y, z: points[i + 1].z - d.z / l * .22
+              } : points[i + 1];
+            })() : points[i + 1];
+            troncon(points[i], vers, .07, fonce, 96);
+            derniere = troncon(points[i], vers, .045, vif, 97) || derniere;
+            if (i > 0) {
+              const bille = new THREE.Mesh(transitoire(new THREE.SphereGeometry(.07, 10, 8)), fonce);
+              bille.position.set(points[i].x, points[i].y, points[i].z);
+              bille.renderOrder = 96;
+              groupe.add(bille);
+            }
+          }
+          if (derniere) {
+            const bout = points[points.length - 1];
+            tete(bout, derniere, .17, fonce, 96);
+            tete({ x: bout.x, y: bout.y + .01, z: bout.z }, derniere, .12, vif, 98);
+          }
+        };
+        const aplat = (r, c, couleur, opacite = .42) => {
+          const p = kaykitCellPosition(r, c, hauteur(r, c));
+          const dalle = new THREE.Mesh(transitoire(new THREE.PlaneGeometry(.86, .86)), matiere(couleur, opacite));
+          dalle.rotation.x = -Math.PI / 2;
+          dalle.position.set(p.x, p.y + .09, p.z);
+          dalle.renderOrder = 94;
+          groupe.add(dalle);
+          const bord = transitoire(new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-.43, 0, -.43), new THREE.Vector3(.43, 0, -.43),
+            new THREE.Vector3(.43, 0, .43), new THREE.Vector3(-.43, 0, .43)
+          ]));
+          const contour = new THREE.LineLoop(bord, transitoire(new THREE.LineBasicMaterial({
+            color: couleur, transparent: true, opacity: 1, depthWrite: false, depthTest: false,
+            fog: false, toneMapped: false
+          })));
+          contour.position.set(p.x, p.y + .1, p.z);
+          contour.renderOrder = 95;
+          groupe.add(contour);
+        };
+        const anneau = (r, c, couleur) => {
+          const p = point(r, c, .12);
+          const tore = new THREE.Mesh(transitoire(new THREE.TorusGeometry(.3, .045, 8, 28)), matiere(couleur, 1));
+          tore.rotation.x = Math.PI / 2;
+          tore.position.set(p.x, p.y, p.z);
+          tore.renderOrder = 97;
+          groupe.add(tore);
+        };
+        const chute = (r, c) => {
+          const p = point(r, c, .2);
+          const rouge = matiere(0xff3b3b, 1);
+          [Math.PI / 4, -Math.PI / 4].forEach(angle => {
+            const barre = new THREE.Mesh(transitoire(new THREE.BoxGeometry(.62, .06, .1)), rouge);
+            barre.rotation.y = angle;
+            barre.position.set(p.x, p.y, p.z);
+            barre.renderOrder = 98;
+            groupe.add(barre);
+          });
+        };
+        const numero = (r, c, n, couleur) => {
+          const toile = document.createElement("canvas");
+          toile.width = toile.height = 64;
+          const g = toile.getContext("2d");
+          g.fillStyle = "#" + new THREE.Color(couleur).getHexString();
+          g.beginPath(); g.arc(32, 32, 29, 0, Math.PI * 2); g.fill();
+          g.lineWidth = 5; g.strokeStyle = "#10212c"; g.stroke();
+          g.fillStyle = "#10212c";
+          g.font = "bold 36px system-ui, sans-serif";
+          g.textAlign = "center"; g.textBaseline = "middle";
+          g.fillText(String(n), 32, 35);
+          const texture = transitoire(new THREE.CanvasTexture(toile));
+          const materiau = transitoire(new THREE.SpriteMaterial({
+            map: texture, depthTest: false, depthWrite: false, fog: false, toneMapped: false
+          }));
+          const sprite = new THREE.Sprite(materiau);
+          const p = point(r, c, .75);
+          sprite.position.set(p.x, p.y, p.z);
+          sprite.scale.set(.34, .34, .34);
+          sprite.renderOrder = 99;
+          groupe.add(sprite);
+        };
+
+        let traces = 0;
+        for (const e of elements) {
+          try {
+            if (e.type === "case") aplat(e.r, e.c, e.couleur, e.opacite);
+            else if (e.type === "fleche") fleche([e.de, e.vers], e.couleur);
+            else if (e.type === "chemin") fleche(e.points, e.couleur);
+            else if (e.type === "chute") chute(e.r, e.c);
+            else if (e.type === "anneau") anneau(e.r, e.c, e.couleur);
+            else if (e.type === "numero") numero(e.r, e.c, e.n, e.couleur);
+            else continue;
+            traces++;
+          } catch (erreur) { /* un élément illisible ne doit pas priver des autres */ }
+        }
+        return traces;
+      }
+
       function refreshKayKitHoverPreviews() {
         if (!kaykit3D?.actionPreviewGroup || !state || !isKayKitBoardActive()) return;
         // Le gardien sélectionné via SMART_CHAR (clic direct) doit produire le même

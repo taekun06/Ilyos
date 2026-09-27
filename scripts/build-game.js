@@ -29,6 +29,9 @@ const fragmentNames = [
   // Défaites de l'IA Expert : journal automatique des parties humain contre
   // Expert, bibliothèque et export en un clic. Réutilise l'autopsie.
   'defaites.js',
+  // Visionneuse des défaites et relevé des actions une par une : s'appuie sur
+  // defaites.js, autopsie.js et planner.js, donc placée après eux.
+  'defaites-vue.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
