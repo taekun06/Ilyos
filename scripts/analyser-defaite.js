@@ -66,7 +66,35 @@ function toursAExaminer(dossier) {
     return [i];
   }
   if (option('--tous')) return tours.map((t, i) => i).filter(i => tours[i].decision);
-  return ((dossier.analyse && dossier.analyse.signales) || []).map(s => s.index);
+  /* Tours signalés, plus ceux que le joueur a annotés ou pour lesquels il a
+     proposé un meilleur coup dans la visionneuse : c'est SON signal. */
+  const choisis = new Set(((dossier.analyse && dossier.analyse.signales) || []).map(s => s.index));
+  Object.keys(dossier.annotations || {}).forEach(i => choisis.add(Number(i)));
+  (dossier.propositions || []).forEach(p => choisis.add(p.index));
+  return [...choisis].filter(i => tours[i] && tours[i].etat).sort((x, y) => x - y);
+}
+
+/* Annotations et coups proposés par le joueur (visionneuse) pour un tour. */
+function avisDuJoueur(dossier, index) {
+  const lignes = [];
+  const note = (dossier.annotations || {})[index];
+  if (note) {
+    lignes.push(`annotation : ${note.etiquettes && note.etiquettes.length ? '[' + note.etiquettes.join(', ') + '] ' : ''}${note.texte || ''}`);
+  }
+  (dossier.propositions || []).filter(p => p.index === index).forEach((p, k) => {
+    lignes.push(`COUP PROPOSÉ ${k + 1} (${p.camp === 'ia' ? 'à la place de l’IA' : 'à la place de l’humain'}) : ${(p.actions.length ? p.actions : p.changements).join(' · ')}`);
+    if (p.pourquoi) lignes.push(`   pourquoi : ${p.pourquoi}`);
+    if (p.vous && p.joue) {
+      const verdict = p.vous.robuste !== null && p.joue.robuste !== null
+        ? (p.vous.robuste >= p.joue.robuste ? 'l’évaluateur préfère le coup proposé' : 'l’évaluateur préfère le coup joué — désaccord avec le joueur')
+        : '';
+      lignes.push(`   proposé : fin de tour ${p.vous.fin}, après riposte ${p.vous.robuste} · joué : fin de tour ${p.joue.fin}, après riposte ${p.joue.robuste}${verdict ? ' — ' + verdict : ''}`);
+    }
+    if (p.ecart && p.ecart.length) {
+      lignes.push(`   écart : ${p.ecart.slice(0, 5).map(x => `${x.terme} ${x.delta > 0 ? '+' : ''}${x.delta}`).join(', ')}`);
+    }
+  });
+  return lignes;
 }
 
 function suiteHumaine(dossier, index) {
@@ -138,6 +166,7 @@ async function main() {
       console.log(`TOUR ${t.tour}${t.decision && t.decision.repli ? ' · REPLI : ' + t.decision.repli : ''}`);
       const signal = ((d.analyse && d.analyse.signales) || []).find(s => s.index === i);
       if (signal) console.log(`signal     : ${signal.raisons.join(' ; ')}`);
+      if (d.type !== 'position-defaite-expert') avisDuJoueur(d, i).forEach(l => console.log(l));
       if (t.decision && t.decision.plan && t.decision.plan.length) {
         const joue = await page.evaluate(([j, p, g]) => window.ILYOS_SELFPLAY.robustesse(j, p, { graine: 1, grille: g }),
           [json, t.decision.plan, grille]);

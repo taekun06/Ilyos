@@ -102,17 +102,63 @@ test("une défaite de l'Expert s'enregistre, s'exporte d'un clic et se rejoue", 
   }
   // Les tours humains ont aussi leur position de départ.
   expect(dossier.tours.some(t => !t.ia && t.etat)).toBe(true);
+  // Chaque action jouée est consignée avec le plateau qui en résulte.
+  const actions = dossier.tours.flatMap(t => t.actions || []);
+  expect(actions.length, 'actions consignées une par une').toBeGreaterThanOrEqual(3);
+  expect(actions.every(a => a.texte && a.plateau && Array.isArray(a.plateau.characters))).toBe(true);
   expect(dossier.analyse.resume).toContain('Défaite Expert');
   expect(dossier.analyse.signales.length, 'au moins la dernière décision').toBeGreaterThanOrEqual(1);
   await expect(page.locator('#victoryModal .defaite-ia-resume')).toContainText('Défaite Expert');
 
-  // Bibliothèque : la partie y est, et se rejoue depuis son début.
+  // Bibliothèque : la partie y est, et s'ouvre dans la visionneuse.
   await page.locator('#victoryModal .defaite-ia-biblio').click();
   const ligne = page.locator('.defaites-biblio .defaites-ligne');
   await expect(ligne).toHaveCount(1);
-  await ligne.locator('[data-action="rejouer"]').click();
+  await ligne.locator('[data-action="voir"]').click();
   await expect(page.locator('.defaites-biblio')).toHaveCount(0);
   await expect(page.locator('#victoryModal')).toBeHidden();
+  const vue = page.locator('.defaites-vue');
+  await expect(vue).toBeVisible();
+  await expect(vue.locator('.dv-courbe circle').first()).toBeVisible();
+
+  // Un tour de l'IA : navigation action par action, et sa réflexion.
+  const indexIA = dossier.tours.findIndex(t => t.decision && t.etat && (t.actions || []).length);
+  expect(indexIA, 'un tour IA avec ses actions').toBeGreaterThanOrEqual(0);
+  await vue.locator(`[data-vue-index="${indexIA}"]`).dispatchEvent('click');
+  await expect.poll(() => page.evaluate(() => window.ILYOS_DEFAITES.vue().index)).toBe(indexIA);
+  await expect(vue).toContainText('Ce que l’IA a pensé');
+  await vue.locator('[data-vue="etape+"]').click();
+  await expect(vue.locator('.dv-etape-texte')).toBeVisible();
+  expect(await page.evaluate(() => window.ILYOS_DEFAITES.vue().etape)).toBe(1);
+
+  // Lecture seule : « Fin du tour » ne fait pas avancer la partie archivée.
+  const avant = await page.evaluate(() => window.ILYOS_DEFAITES.vue());
+  await page.evaluate(() => window.ILYOS_TEST.terminerTourHumain());
+  expect(await page.evaluate(() => window.ILYOS_DEFAITES.vue())).toEqual(avant);
+
+  // Annotation, gardée dans la bibliothèque.
+  await vue.locator('[data-vue-etiquette="erreur-ia"]').check();
+  await vue.locator('[data-vue-annotation]').fill('elle laisse son gardien au bord');
+  await vue.locator('[data-vue="annoter"]').click();
+  await expect.poll(async () => (await page.evaluate(id => window.ILYOS_DEFAITES.lire(id), dossier.id)).annotations?.[indexIA]?.texte)
+    .toBe('elle laisse son gardien au bord');
+
+  // Proposer un meilleur coup : bac à sable, puis évaluation et enregistrement.
+  await vue.locator('[data-vue="proposer"]').click();
+  await expect.poll(() => page.evaluate(() => window.ILYOS_DEFAITES.vue().sandbox)).toBe(true);
+  await vue.locator('[data-vue-pourquoi]').fill('je ne bouge pas');
+  await vue.locator('[data-vue="valider"]').click();
+  await expect.poll(() => page.evaluate(() => window.ILYOS_DEFAITES.vue().propositions), { timeout: 30000 }).toBe(1);
+  await expect(vue).toContainText('Coups proposés pour ce tour');
+  const enregistre = await page.evaluate(id => window.ILYOS_DEFAITES.lire(id), dossier.id);
+  expect(enregistre.propositions).toHaveLength(1);
+  expect(enregistre.propositions[0].pourquoi).toBe('je ne bouge pas');
+  expect(Number.isFinite(enregistre.propositions[0].vous.fin)).toBe(true);
+  expect(Number.isFinite(enregistre.propositions[0].joue.fin)).toBe(true);
+
+  // « Reprendre la partie ici » : l'ancien « Rejouer », depuis la visionneuse.
+  await vue.locator('[data-vue="reprendre"]').click();
+  await expect(page.locator('.defaites-vue')).toHaveCount(0);
   await page.waitForFunction(() => window.ILYOS_DEFAITES.journal()?.origine?.defaite, null, { timeout: 20000 });
   const reprise = await page.evaluate(() => ({
     origine: window.ILYOS_DEFAITES.journal().origine,

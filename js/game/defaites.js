@@ -380,6 +380,8 @@
             return (await tout()).map(resume).sort((a, b) => String(b.date).localeCompare(String(a.date)));
           },
           lire: id => requete("readonly", m => m ? m.get(id) : memoire.get(id)),
+          // Annotations et coups proposés (visionneuse) : réécrit le dossier tel quel.
+          mettreAJour: dossier => requete("readwrite", m => m ? m.put(dossier) : memoire.set(dossier.id, dossier)),
           supprimer: id => requete("readwrite", m => m ? m.delete(id) : memoire.delete(id)),
           async epingler(id, oui) {
             const d = await this.lire(id);
@@ -543,8 +545,6 @@
           }
           liste.innerHTML = entrees.map(e => {
             const date = new Date(e.date);
-            const options = [`<option value="debut">début de la partie</option>`]
-              .concat(e.signales.map(t => `<option value="${t}">tour ${t} (signalé)</option>`)).join("");
             return `<div class="defaites-ligne" data-id="${defaitesEchapper(e.id)}">
               <label class="defaites-titre"><input type="checkbox" class="defaites-choix" value="${defaitesEchapper(e.id)}">
                 ${e.epinglee ? "📌 " : ""}${date.toLocaleDateString("fr-FR")} ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
@@ -552,9 +552,8 @@
                 · ${e.tours} tours${e.dureeMin ? ` · ${e.dureeMin} min` : ""}
                 · ${e.signales.length} tour(s) signalé(s)</label>
               <div class="defaites-actions">
+                <button type="button" class="defaites-voir" data-action="voir">👁 Voir la partie</button>
                 <button type="button" class="secondary-btn" data-action="exporter">Exporter</button>
-                <select class="defaites-tour" aria-label="Tour à rejouer">${options}</select>
-                <button type="button" class="secondary-btn" data-action="rejouer">Rejouer</button>
                 <button type="button" class="secondary-btn" data-action="epingler">${e.epinglee ? "Désépingler" : "Épingler"}</button>
                 <button type="button" class="secondary-btn" data-action="supprimer" aria-label="Supprimer">🗑</button>
               </div>
@@ -573,14 +572,13 @@
                 await defaitesBiblio.supprimer(id);
               } else if (action === "epingler") {
                 await defaitesBiblio.epingler(id, bouton.textContent === "Épingler");
-              } else if (action === "rejouer") {
+              } else if (action === "voir") {
+                /* La visionneuse (defaites-vue.js) : toute la partie, tour par
+                   tour ; « Reprendre la partie ici » y remplace l'ancien
+                   « Rejouer », qui relançait une partie vivante sans rien
+                   montrer de ce qui avait été joué. */
                 const dossier = await defaitesBiblio.lire(id);
-                if (!dossier) return;
-                const choix = ligne.querySelector(".defaites-tour").value;
-                const index = choix === "debut"
-                  ? dossier.tours.findIndex(t => t.etat)
-                  : dossier.tours.findIndex(t => t.tour === Number(choix) && t.joueur === dossier.ia && t.etat);
-                if (index >= 0) defaitesRejouer(dossier, index);
+                if (dossier) defaitesVoir(dossier);
                 return;
               }
               await rendre();
@@ -622,6 +620,14 @@
         lire: id => defaitesBiblio.lire(id),
         supprimer: id => defaitesBiblio.supprimer(id),
         rejouer: (dossier, index) => defaitesRejouer(dossier, index),
+        // Visionneuse : ouvrir, et l'état courant (tests, outils).
+        voir: (dossier, index = null) => defaitesVoir(dossier, index),
+        vue: () => defaitesVue ? {
+          index: defaitesVue.index, etape: defaitesVue.etape, sandbox: !!defaitesVue.sandbox,
+          tour: (defaitesVue.dossier.tours[defaitesVue.index] || {}).tour,
+          propositions: (defaitesVue.dossier.propositions || []).length,
+          annotations: Object.keys(defaitesVue.dossier.annotations || {}).length
+        } : null,
         // Plan du planner en langage de jeu (cases, gardiens), pour les outils.
         decrire: (plan, etat) => autopsieDecrirePlan(plan, etat),
         seuils: DEFAITES_SEUILS
