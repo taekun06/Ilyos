@@ -139,3 +139,56 @@ test("une défaite de l'Expert s'enregistre, s'exporte d'un clic et se rejoue", 
 
   expect(incidents, incidents.join('\n')).toEqual([]);
 });
+
+/* « Rejouer » à la fin d'une partie gagnée : la nouvelle partie doit repartir
+   contre l'Expert et entrer au journal. La difficulté est choisie ici par le
+   VRAI menu, sans forcer le sélecteur natif : c'est lui que renderSetupFields
+   remettait à « Normal » après le lancement, et « Rejouer » relançait alors
+   contre l'IA Normale, hors journal. */
+test("« Rejouer » relance contre l'Expert et la nouvelle partie entre au journal", async ({ page }) => {
+  const incidents = [];
+  page.on('pageerror', erreur => incidents.push(erreur.message));
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('defaites-rejouer')) {
+      sessionStorage.setItem('defaites-rejouer', '1');
+      indexedDB.deleteDatabase('ilyos-defaites');
+    }
+  });
+  await page.goto('/');
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().click();
+  for (let i = 0; i < 4; i++) {
+    if (/EXPERT/.test(await menu.locator('.difficulty-selector b').first().textContent())) break;
+    await menu.locator('.difficulty-selector button[data-step="1"]').first().click();
+  }
+  await menu.locator('text=AFFRONTER LE CPU').first().click();
+  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 40000 });
+  await page.waitForFunction(() => !!window.ILYOS_DEFAITES?.journal?.(), null, { timeout: 60000 });
+
+  const gagner = async () => {
+    const humain = await page.evaluate(() => window.ILYOS_DEFAITES.journal().joueurs.find(j => !j.ia).id);
+    await page.evaluate(id => { for (let i = 0; i < 3; i++) window.ILYOS_TEST.marquer(id); }, humain);
+    await expect(page.locator('#victoryModal')).toBeVisible({ timeout: 30000 });
+    await expect.poll(() => page.evaluate(() => window.ILYOS_DEFAITES.derniere()?.id || null)).not.toBeNull();
+    return page.evaluate(() => window.ILYOS_DEFAITES.derniere().id);
+  };
+
+  const premiere = await gagner();
+  await page.click('#replayBtn');
+  await page.waitForFunction(id => {
+    const j = window.ILYOS_DEFAITES.journal();
+    return j && j.id !== id && j.etatRef !== null;
+  }, premiere, { timeout: 30000 }).catch(() => {});
+  const journal = await page.evaluate(() => {
+    const j = window.ILYOS_DEFAITES.journal();
+    return j ? { id: j.id, expert: j.joueurs.some(x => x.ia && x.difficulte === 'expert') } : null;
+  });
+  expect(journal, 'la partie rejouée a un journal').not.toBeNull();
+  expect(journal.id).not.toBe(premiere);
+  expect(journal.expert, 'la partie rejouée est contre l’Expert').toBe(true);
+
+  const seconde = await gagner();
+  expect(seconde).not.toBe(premiere);
+  await expect.poll(() => page.evaluate(async () => (await window.ILYOS_DEFAITES.lister()).length)).toBe(2);
+  expect(incidents, incidents.join('\n')).toEqual([]);
+});

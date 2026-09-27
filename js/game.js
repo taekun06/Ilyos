@@ -42622,7 +42622,39 @@
           renderSetupFields();
           return;
         }
+        if (state && !state.tutorial && !state.puzzle) restaurerReglagesPartie(state);
         startGame();
+      }
+
+      /* « Rejouer » relance la MÊME partie : mêmes joueurs, même difficulté,
+         même plateau, même minuteur. startGame relit l'ancien écran de
+         réglages, dont renderSetupFields recrée les listes à leurs valeurs
+         par défaut ; lancée depuis le nouveau menu, la partie laissait donc
+         ces listes à « Normal », 11×11, plateau classique. Mesuré : une
+         partie Expert suivie de « Rejouer » repartait contre l'IA NORMALE —
+         et, n'étant plus contre l'Expert, n'entrait pas au journal des
+         défaites. On recopie donc les réglages de la partie qui s'achève. */
+      function restaurerReglagesPartie(partie) {
+        const humains = (partie.players || []).filter(j => !j.isAI);
+        const mode = partie.soloMode ? "1" : String(humains.length);
+        if (String(els.playerCount.value) !== mode
+          && [...els.playerCount.options].some(option => option.value === mode)) {
+          els.playerCount.value = mode;
+          renderSetupFields();
+        }
+        const fixer = (id, valeur) => {
+          const liste = document.getElementById(id);
+          if (!liste || valeur === null || valeur === undefined) return;
+          const voulu = String(valeur);
+          if ([...liste.options].some(option => option.value === voulu)) liste.value = voulu;
+        };
+        if (partie.soloMode) fixer("aiDifficultySelect", partie.aiDifficulty);
+        fixer("boardSizeSelect", GRID);
+        fixer("startingBoardSelect", partie.startingBoardMode);
+        fixer("turnTimerSelect", partie.turnDurationSeconds || 0);
+        [...els.playersForm.querySelectorAll(".player-name")].forEach((champ, i) => {
+          if (humains[i] && humains[i].name) champ.value = humains[i].name;
+        });
       }
 
       applyVisualMode("alternative");
