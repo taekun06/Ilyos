@@ -51,7 +51,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   const FRONT_DISTANCE = 17;
   function reculPourPlateau(k) {
     const taille = Number(k?.gridSize) || 11;
-    return FRONT_DISTANCE * (taille / 11);
+    return FRONT_DISTANCE * (taille / 11) * (enPortrait(k) ? PORTRAIT_RECUL : 1);
   }
   /* INCLINAISON DE LA VUE FACE, en degrés sous l'horizontale.
      Elle décide seule de ce qui entre dans le cadre : le haut de l'image se situe à
@@ -64,6 +64,15 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
      en volume du plateau serait trop dégradée pour le jeu.
      Réglable à chaud : ILYOS_SKY.cadrage({ inclinaison }). */
   const FRONT_PITCH_DEG = 37.2;
+  /* TÉLÉPHONE EN PORTRAIT. Le moteur y ouvre le champ vertical pour garder le
+     plateau entier en largeur (voir kaykitFovPourFormat dans
+     js/game/kaykit3d.js). L'image est alors haute et étroite : une vue plus
+     plongeante et un peu plus de recul remplissent cette hauteur avec le
+     plateau plutôt qu'avec du ciel, et la visée revient au plateau lui-même. */
+  const PORTRAIT_PITCH_DEG = 55;
+  const PORTRAIT_RECUL = 1.12;
+  const PORTRAIT_HAUTEUR_VISEE = 0;
+  const enPortrait = k => (Number(k?.camera?.aspect) || 1) < .9;
   let initialPresetApplied = false;
 
   /* Le joueur vient de toucher la caméra : le preset initial ne doit plus rien
@@ -93,6 +102,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
 
     const min = Number.isFinite(k.minZoom) ? k.minZoom : 6.4;
     const max = Number.isFinite(k.maxZoom) ? k.maxZoom : 25;
+    const portrait = enPortrait(k);
     const reculVoulu = Number.isFinite(window.ILYOS_FRONT_DISTANCE)
       ? window.ILYOS_FRONT_DISTANCE : reculPourPlateau(k);
     const distance = Math.max(min, Math.min(reculVoulu, max));
@@ -112,11 +122,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
        Ajustable à chaud par ILYOS_SKY.cadrage({ hauteur }). */
     const hauteurVisee = Number.isFinite(window.ILYOS_FRONT_VIEW_HEIGHT)
       ? window.ILYOS_FRONT_VIEW_HEIGHT
-      : -0.5;
+      : (portrait ? PORTRAIT_HAUTEUR_VISEE : -0.5);
     if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, hauteurVisee, .18);
     const target = k.viewTarget;
     const pitch = (Number.isFinite(window.ILYOS_FRONT_PITCH_DEG)
-      ? window.ILYOS_FRONT_PITCH_DEG : FRONT_PITCH_DEG) * Math.PI / 180;
+      ? window.ILYOS_FRONT_PITCH_DEG : (portrait ? PORTRAIT_PITCH_DEG : FRONT_PITCH_DEG)) * Math.PI / 180;
     k.camera.position.set(
       target.x,
       target.y + distance * Math.sin(pitch),
@@ -230,7 +240,9 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './css/hud-consolidation-v12.css?v=12.7',
     './css/hud-organique-v2-layout-v10.css?v=1',
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
-    './css/sound-lab.css?v=1'
+    './css/sound-lab.css?v=1',
+    // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
+    './css/portrait-mobile.css?v=1'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');

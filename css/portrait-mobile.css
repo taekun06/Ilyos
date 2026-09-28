@@ -1,0 +1,304 @@
+/* ILYOS — TÉLÉPHONE EN PORTRAIT (prototype)
+
+   Tout ce fichier est borné à un écran étroit tenu verticalement : il ne
+   change rien en paysage ni sur ordinateur. Il est chargé en dernier par le
+   chargeur du HUD (js/version-bootstrap.js), d'où la spécificité « html body »
+   qui passe devant les couches V6 à V12 sans en ajouter une nouvelle.
+
+   Disposition, de haut en bas :
+     - le tour au centre, les deux joueurs côte à côte sous lui ;
+     - le plateau 3D (cadré par js/game/kaykit3d.js, kaykitFovPourFormat) ;
+     - la phrase d'instruction, puis la rangée pioche / annuler / fin du tour /
+       défausse ;
+     - les quatre actions sur toute la largeur, sous le pouce. */
+
+@media (orientation: portrait) and (max-width: 820px) {
+  html body #gameScreen {
+    --pm-gutter: max(8px, env(safe-area-inset-left));
+    --pm-bottom: max(8px, env(safe-area-inset-bottom));
+    --pm-dock-h: 66px;
+    --pm-row-h: 46px;
+  }
+
+  /* Le HUD de bord de plateau porte déjà les consignes au clavier / souris. */
+  html body #gameScreen .kaykit-camera-hint {
+    display: none !important;
+  }
+
+  /* ---------- HAUT : tour + deux joueurs ---------- */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top {
+    left: var(--pm-gutter) !important;
+    right: var(--pm-gutter) !important;
+    top: max(6px, env(safe-area-inset-top)) !important;
+    height: auto !important;
+    transform: none !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-areas: "turn turn" "left right" !important;
+    gap: 4px 6px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-turn {
+    grid-area: turn !important;
+    justify-self: center !important;
+    min-width: 0 !important;
+    height: 28px !important;
+    padding: 0 12px !important;
+    gap: 8px !important;
+    transform: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-turn strong {
+    font-size: 13px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-turn .ov2-gem {
+    width: 22px !important;
+    height: 22px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-timer {
+    font-size: 11px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-left { grid-area: left !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-right { grid-area: right !important; }
+
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-side {
+    height: 48px !important;
+    min-width: 0 !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-avatar {
+    width: 44px !important;
+    height: 44px !important;
+    top: 2px !important;
+    z-index: 2 !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-avatar svg,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-avatar img {
+    width: 100% !important;
+    height: 100% !important;
+    inset: 0 !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon {
+    top: 4px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    clip-path: none !important;
+    border-radius: 10px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-ribbon {
+    left: 26px !important;
+    right: 0 !important;
+    padding-left: 22px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-ribbon {
+    left: 0 !important;
+    right: 26px !important;
+    padding-right: 22px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-player-main {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: stretch !important;
+    gap: 1px !important;
+    height: 100% !important;
+    padding: 0 6px !important;
+    min-width: 0 !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-player-main {
+    align-items: flex-end !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-pname {
+    font-size: 12px !important;
+    line-height: 1.1 !important;
+    max-width: 100% !important;
+    letter-spacing: .04em !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-score {
+    display: flex !important;
+    align-items: center !important;
+    gap: 3px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    transform: none !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-score svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-score .ov2-crown {
+    width: 13px !important;
+    height: 10px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-active {
+    top: 46px !important;
+    font-size: 9px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-active { left: 50px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-active { right: 50px !important; left: auto !important; }
+
+  /* Bouton VUE 2D : sous la bande des joueurs, à droite. */
+  html body #plateauTactiqueBtn {
+    top: calc(max(6px, env(safe-area-inset-top)) + 90px) !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    left: auto !important;
+    transform: scale(.8) !important;
+    transform-origin: top right !important;
+  }
+
+  /* ---------- BAS : actions, puis rangée de tour, puis instruction ---------- */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock {
+    left: var(--pm-gutter) !important;
+    right: var(--pm-gutter) !important;
+    bottom: var(--pm-bottom) !important;
+    width: auto !important;
+    transform: none !important;
+    display: grid !important;
+    grid-template-columns: none !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: 1fr !important;
+    gap: 6px !important;
+    align-items: stretch !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after {
+    display: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action {
+    width: auto !important;
+    min-width: 0 !important;
+    height: var(--pm-dock-h) !important;
+    padding: 6px 2px 4px !important;
+    margin: 0 !important;
+    justify-content: center !important;
+    gap: 1px !important;
+    transform: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action svg {
+    width: 24px !important;
+    height: 24px !important;
+    margin: 0 !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong {
+    font-size: 11px !important;
+    letter-spacing: .02em !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small {
+    font-size: 10px !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-island-required-halo {
+    width: 54px !important;
+    height: 54px !important;
+  }
+
+  /* Rangée du tour, juste au-dessus des actions. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end {
+    left: 50% !important;
+    right: auto !important;
+    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + 8px) !important;
+    width: min(180px, 46vw) !important;
+    height: var(--pm-row-h) !important;
+    min-width: 0 !important;
+    padding: 0 12px !important;
+    transform: translateX(-50%) !important;
+    gap: 8px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end b {
+    font-size: 13px !important;
+    white-space: nowrap !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-undo {
+    left: auto !important;
+    right: calc(50% + min(90px, 23vw) + 8px) !important;
+    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + 8px) !important;
+    width: var(--pm-row-h) !important;
+    height: var(--pm-row-h) !important;
+    transform: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-pile-hud {
+    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + 6px) !important;
+    top: auto !important;
+    transform: scale(.78) !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-deck-hud {
+    left: var(--pm-gutter) !important;
+    right: auto !important;
+    transform-origin: bottom left !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-discard-hud {
+    right: var(--pm-gutter) !important;
+    left: auto !important;
+    transform-origin: bottom right !important;
+  }
+
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-instruction {
+    left: 50% !important;
+    right: auto !important;
+    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 16px) !important;
+    width: calc(100% - 2 * var(--pm-gutter)) !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    transform: translateX(-50%) !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy {
+    white-space: normal !important;
+    gap: 8px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text {
+    font-size: 14px !important;
+    text-align: center !important;
+  }
+
+  /* Panneaux contextuels (formes d'île, rotation, magie, force de poussée) :
+     leur position suit déjà la phrase d'instruction ; on les borne en largeur. */
+  html body[data-visual-mode] #gameScreen #hudV2IslandDrawer,
+  html body[data-visual-mode] #gameScreen #hudV2MagicRow,
+  html body[data-visual-mode] #gameScreen #hudV2PushForceRow,
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
+    max-width: calc(100vw - 2 * var(--pm-gutter)) !important;
+  }
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
+    gap: 4px !important;
+    padding: 6px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 button {
+    min-width: 0 !important;
+    padding-inline: 8px !important;
+  }
+  html body[data-visual-mode] #gameScreen #hudV2IslandDrawer #islandSelector {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+  }
+
+  /* Toasts : pleine largeur, au-dessus de l'instruction. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-toast {
+    left: var(--pm-gutter) !important;
+    right: var(--pm-gutter) !important;
+    width: auto !important;
+    max-width: none !important;
+    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 56px) !important;
+    transform: none !important;
+  }
+
+  /* Le fond de vignette du bas suit la hauteur réelle du HUD. */
+  html body #gameScreen .hud-v2-vignette-bottom {
+    height: 170px !important;
+  }
+
+  /* L'étiquette qui suit le pointeur (« POSER L'ÎLE ICI ») reste figée là où
+     le doigt s'est levé, souvent sur les boutons du bas : sans souris, elle
+     n'a pas d'objet. */
+  @media (hover: none) {
+    html body #gameScreen .kaykit-cursor-label {
+      display: none !important;
+    }
+  }
+}

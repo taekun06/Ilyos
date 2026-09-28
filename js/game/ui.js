@@ -98,6 +98,14 @@
         }
       }
 
+      /* Consigne de pose : Q/E n'existe pas sur un écran tactile, où l'on
+         tourne l'île avec les boutons ↺/↻ du panneau et où un toucher montre
+         l'aperçu avant « Confirmer ». */
+      function consignePoseIle() {
+        const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
+      }
+
       function turnContextInfo() {
         const amount = state.selectedActionType ? selectedBatchSize() : 1;
         const action = state.selectedActionType ? ACTIONS[state.selectedActionType] : null;
@@ -121,7 +129,7 @@
               kicker: "MISE EN PLACE",
               title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
               next: state.phase === "PLACE_ISLAND"
-                ? `Rotation ${degrees}° — Q/E pour tourner, clic pour poser.`
+                ? `Rotation ${degrees}° — ${consignePoseIle()}`
                 : "Choisissez une forme d’île."
             };
           }
@@ -143,7 +151,7 @@
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
-          return { kind: "build", kicker: "ÎLE À POSER", title: `Rotation : ${degrees}°`, next: "Q/E pour tourner, clic pour poser." };
+          return { kind: "build", kicker: "ÎLE À POSER", title: `Rotation : ${degrees}°`, next: consignePoseIle() };
         }
         if (state.phase === "PLACE_SPAWN") {
           return { kind: "build", kicker: "INVOCATION", title: "Choisir une case", next: "Cliquez une case en surbrillance." };

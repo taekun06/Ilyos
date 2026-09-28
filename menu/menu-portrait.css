@@ -1,0 +1,140 @@
+/* ILYOS — MENU SUR TÉLÉPHONE EN PORTRAIT (prototype)
+
+   Le menu est une scène 16:9 dont toutes les mesures sont en unités de
+   conteneur (cqw/cqh). Tenu verticalement, un téléphone la réduisait à une
+   bande au milieu de l'écran, boutons minuscules. Ici, la scène prend tout
+   l'écran et les éléments passent en mesures fixes, empilés verticalement.
+   Rien ne change en paysage. */
+
+@media (orientation: portrait) and (max-width: 820px) {
+  .home-layout,
+  .duel-ui {
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    aspect-ratio: auto !important;
+  }
+
+  /* Les illustrations couvrent l'écran au lieu d'être entourées de noir. */
+  .art,
+  .duel-art,
+  .duel-left,
+  .duel-right {
+    width: 177.7777778vh !important;
+    width: 177.7777778dvh !important;
+  }
+
+  /* ---------- Accueil ---------- */
+  .logo-home {
+    top: 7% !important;
+    width: 78vw !important;
+  }
+  .top-icons {
+    right: 12px !important;
+    top: max(10px, env(safe-area-inset-top)) !important;
+    gap: 8px !important;
+  }
+  .round {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 18px !important;
+  }
+  .mode-grid {
+    top: auto !important;
+    bottom: calc(19% + env(safe-area-inset-bottom)) !important;
+    width: min(88vw, 420px) !important;
+    height: auto !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 14px !important;
+  }
+  .card {
+    height: 104px !important;
+    padding: 10px 6px 8px !important;
+  }
+  .card::after {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .card-icon {
+    font-size: 26px !important;
+  }
+  .card-title {
+    margin-top: 6px !important;
+    font-size: 16px !important;
+  }
+  .card-sub {
+    margin-top: 4px !important;
+    font-size: 11px !important;
+  }
+  .home-nav {
+    top: auto !important;
+    bottom: calc(4% + env(safe-area-inset-bottom)) !important;
+    width: min(92vw, 440px) !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 8px !important;
+  }
+  .home-nav .pill,
+  .resume-pill {
+    min-width: 0 !important;
+    padding: 9px 12px !important;
+    font-size: 12px !important;
+  }
+
+  /* ---------- Réglages de partie (Solo, Duel, 2 contre 2) ---------- */
+  .logo-duel {
+    top: 1.5% !important;
+    width: 46vw !important;
+  }
+  .back {
+    left: 10px !important;
+    top: max(10px, env(safe-area-inset-top)) !important;
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    z-index: 5 !important;
+  }
+  .duel .setup {
+    width: min(94vw, 460px) !important;
+    top: 55% !important;
+  }
+  .duel .panel {
+    padding: 8px 10px !important;
+  }
+  .duel .duel-panel-head {
+    margin: 0 0 8px !important;
+    padding: 6px 2px !important;
+    gap: 6px !important;
+  }
+  .duel .duel-medallion b {
+    font-size: 20px !important;
+  }
+  .duel .duel-medallion small,
+  .duel .duelist small {
+    font-size: 9px !important;
+  }
+  .duel .duelist b {
+    font-size: 11px !important;
+  }
+  .duel .duel-panel-body {
+    gap: 8px !important;
+  }
+  .duel .label {
+    margin: 0 0 3px 2px !important;
+    font-size: 11px !important;
+  }
+  .duel .control {
+    grid-template-columns: 34px minmax(0, 1fr) 34px !important;
+    gap: 4px !important;
+  }
+  .duel .control button,
+  .duel .control .value {
+    min-height: 40px !important;
+  }
+  .duel .control .value {
+    font-size: 13px !important;
+  }
+  .duel .play {
+    width: 100% !important;
+    min-height: 62px !important;
+  }
+}
