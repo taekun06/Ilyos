@@ -68,8 +68,12 @@
         // Voir « QUI JOUE ENSUITE » dans l'évaluateur (0 = ancien calcul).
         traitPerspective: 1,
         /* Force de poussée maximale prise en compte pour juger un gardien
-           éjectable (plannerVideAPortee). 1 = seul le vide juste derrière. */
-        pousseeLongue: 2,
+           éjectable (plannerVideAPortee). 1 = seul le vide juste derrière.
+           Quatre PUSH poussent de quatre cases : le plafond à 2 datait d'avant
+           la règle « force prêtée seulement si les cartes sont en réserve ».
+           Sur 4 défaites humaines (51 décisions rejouées), 2 → 4 fait passer
+           les porteurs laissés éjectables de 10 à 5, au même coût de calcul. */
+        pousseeLongue: 4,
         // Gravité d'une expulsion selon la force requise (1, 2, 3+).
         graviteParForce: [1, 0.75, 0.6],
         /* Poussée longue prêtée à l'adversaire selon sa PIOCHE probable

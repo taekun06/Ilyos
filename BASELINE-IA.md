@@ -1471,3 +1471,12 @@ validation. Le coût vaut 900 si un de mes gardiens est à côté, 2400 sinon, p
 `piochePush` et `pousseeLongue` 3 restent coupés : ils avaient été mesurés
 nuisibles en IA contre IA (avant le comptage des cartes et la correction du
 pousseur collé). Ils sont à trancher.
+
+### Plafond de poussée : 2 → 4
+
+Le plafond `pousseeLongue: 2` datait de la première modélisation des poussées
+longues, avant que la force ne soit prêtée seulement pour les PUSH en RÉSERVE
+(visibles). Il n'avait jamais été mesuré contre 3 ou 4. Or quatre PUSH poussent
+de quatre cases. Sur les 51 décisions rejouées, jugées avec toutes les menaces
+et une force jusqu'à 4, les porteurs laissés éjectables passent de 10 à 5, au
+même coût (1 145 → 1 109 ms par décision). Défaut : 4.
