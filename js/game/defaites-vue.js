@@ -656,6 +656,8 @@
         const tour = dossier.tours[index];
         defaitesVueQuitter();
         if (!v.direct) { defaitesRejouer(dossier, index); return; }
+        // Partie solo : on revient toujours à la position mise de côté.
+        if (v.direct.solo) { revueRestaurerPartie(v); return; }
         revueRestaurerPartie(v, { etat: tour.actuelle ? null : tour.etat, journal: tour.actuelle ? null : tour.journalIndex });
         autopsieReprendre();
       }
@@ -868,7 +870,10 @@
         const annotation = (d.annotations || {})[v.index] || { texte: "", etiquettes: [] };
         const date = new Date(d.fin.date);
         const scores = d.fin.scores || [];
-        const titre = v.direct
+        const titre = v.direct && v.direct.solo
+          ? `<b>Revue IA — partie en cours</b>
+             <small>${defaitesEchapper(defaitesVueNom(d.humain))} ${scores[d.humain] ?? 0}-${scores[d.ia] ?? 0} IA Expert · tour ${d.fin.tours}</small>`
+          : v.direct
           ? `<b>Partie IA contre IA — ${state && v.direct ? "en pause" : ""}</b>
              <small>${(d.joueurs || []).map((j, k) => `${defaitesEchapper(j.nom)} ${scores[k] ?? 0}`).join(" · ")} · tour ${d.fin.tours}</small>`
           : `<b>Partie du ${date.toLocaleDateString("fr-FR")}</b>
@@ -951,7 +956,7 @@
               ${p.ecart && p.ecart.length ? `<details><summary>Où les deux coups diffèrent</summary><ul class="dv-termes">${
                 p.ecart.map(x => `<li><span>${defaitesEchapper(x.terme)}</span><b class="${x.delta >= 0 ? "dv-plus" : "dv-moins"}">${defaitesVueSigne(x.delta)}</b></li>`).join("")}</ul></details>` : ""}
               <button type="button" data-vue="tracer-proposition" data-k="${k}">${defaitesVuePastille("propose")} tracer votre coup</button>
-              ${v.direct ? `<button type="button" data-vue="continuer-proposition" data-k="${k}">▶ Continuer la partie depuis ce coup</button>` : ""}
+              ${v.direct && !v.direct.solo ? `<button type="button" data-vue="continuer-proposition" data-k="${k}">▶ Continuer la partie depuis ce coup</button>` : ""}
             </div>`).join("")}
           </section>` : ""}
           <section class="dv-bloc">
@@ -965,7 +970,7 @@
             <textarea readonly rows="8">${defaitesEchapper(v.texteBrut)}</textarea></section>` : ""}
           <footer class="dv-actions">
             ${tour.actuelle ? "" : `<button type="button" class="dv-principal" data-vue="proposer">✏ Proposer un meilleur coup</button>`}
-            <button type="button" data-vue="reprendre">▶ ${v.direct && tour.actuelle ? "Reprendre la partie" : "Reprendre la partie ici"}</button>
+            <button type="button" data-vue="reprendre">▶ ${v.direct && (tour.actuelle || v.direct.solo) ? "Reprendre la partie" : "Reprendre la partie ici"}</button>
             <button type="button" data-vue="exporter">⤓ Exporter</button>
             ${v.direct ? `<button type="button" data-vue="copier">⧉ Copier le résumé</button>` : ""}
           </footer>
@@ -1199,7 +1204,13 @@
         state.onlineMode = false;
         if (etat) applyStateSnapshot(JSON.parse(etat));
         if (Number.isInteger(journal)) ILYOS_AUTOPSIE_JOURNAL.length = journal;
-        state.players.forEach(j => { j.isAI = false; });
+        if (v.direct.solo) {
+          /* Partie solo : l'adversaire reste l'IA, et le journal des défaites
+             reprend le même fil (il suit l'objet state, remplacé ici). */
+          if (v.direct.journal) { v.direct.journal.etatRef = state; defaitesJournal = v.direct.journal; }
+        } else {
+          state.players.forEach(j => { j.isAI = false; });
+        }
         state.undoHistory = [];
         state.inputLocked = false;
         state.aiThinking = false;
@@ -1210,9 +1221,70 @@
         els.gameScreen.classList.remove("hidden");
         if (typeof syncKayKitScene === "function") syncKayKitScene();
         renderAll();
+        if (v.direct.solo) startTurnTimer(true);
         revueRendre();
         return true;
       }
+
+      /* PARTIE SOLO contre l'Expert : la visionneuse sur la partie en cours
+         (menu ⚙ → « Revue IA »). Le journal des défaites a déjà chaque tour
+         et chaque décision de l'IA ; à la fermeture, la partie reprend là où
+         elle était, contre la même IA. */
+      function revueDossierSolo(journal) {
+        const humain = state.players.find(j => !j.isAI);
+        const ia = state.players.find(j => j.isAI);
+        const tours = journal.tours.filter(t => t.etat).map(t => ({ ...t }));
+        tours.push({ tour: state.turn, joueur: state.currentPlayer, ia: false, etat: snapshotState(), actuelle: true });
+        return {
+          jeu: "ILYOS", type: "revue-partie-solo", schema: 1,
+          id: `revue-${Date.now().toString(36)}`,
+          debut: journal.debut,
+          fin: {
+            date: new Date().toISOString(), tours: state.turn, manches: state.round,
+            vainqueur: null, scores: state.players.map(j => j.score || 0)
+          },
+          version: journal.version, bundle: journal.bundle, regles: journal.regles, joueurs: journal.joueurs,
+          humain: humain ? humain.id : null, ia: ia ? ia.id : null,
+          reprise: journal.reprise, origine: journal.origine,
+          poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
+          tours, etatFinal: tours[tours.length - 1].etat,
+          cadre: serializeGameStateForSave(),
+          annotations: {}, propositions: [], analyse: { signales: [] }
+        };
+      }
+
+      function revueSoloDisponible() {
+        return !!(state && !defaitesVue && !revueAutoplayEnCours() && defaitesJournalCourant());
+      }
+
+      function revueOuvrirPartieSolo() {
+        if (!revueSoloDisponible()) { showToast("La revue IA suit les parties solo contre l’IA Expert."); return false; }
+        const joueur = state.players[state.currentPlayer];
+        if (!revuePartieAuRepos() || (joueur && joueur.isAI)) {
+          showToast("Revue IA disponible à votre tour, quand l’IA a fini de jouer.");
+          return false;
+        }
+        const journal = defaitesJournalCourant();
+        if (!journal.tours.some(t => t.decision && t.etat)) {
+          showToast("Aucune décision de l’IA relevée pour l’instant.");
+          return false;
+        }
+        const dossier = revueDossierSolo(journal);
+        const direct = { cadre: dossier.cadre, visuel: state.visualMode, solo: true, journal };
+        // Dernière décision de l'IA : c'est elle qu'on vient de subir.
+        let index = dossier.tours.length - 1;
+        while (index > 0 && !(dossier.tours[index].decision && dossier.tours[index].etat)) index--;
+        return defaitesVueOuvrir(dossier, index, direct);
+      }
+
+      document.getElementById("revueIaBtn")?.addEventListener("click", () => {
+        closeHudV2Drawer();
+        revueOuvrirPartieSolo();
+      });
+      // Le bouton n'apparaît que dans une partie solo suivie contre l'Expert.
+      document.getElementById("hudV2GearBtn")?.addEventListener("click", () => {
+        document.getElementById("revueIaBtn")?.classList.toggle("hidden", !revueSoloDisponible());
+      });
 
       function revueBarre() {
         let barre = document.querySelector(".revue-barre");

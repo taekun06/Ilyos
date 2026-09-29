@@ -95,6 +95,16 @@ courbe par IA). Tout y est comme pour une défaite ; en plus :
 - **✕** rend la partie telle qu'à la pause, en pause ; la barre propose alors
   « ▶ Reprendre ».
 
+### En partie solo contre l'Expert : menu ⚙ → 🧠 Revue IA
+
+Dans une partie solo contre l'Expert, le menu ⚙ propose **🧠 Revue IA**, à
+votre tour, quand l'IA a fini de jouer. La visionneuse s'ouvre sur la partie
+en cours, sur la dernière décision de l'IA : sa réflexion, les plans qu'elle a
+comparés, les tracés, les coups proposés et les annotations, comme ailleurs.
+**▶ Reprendre la partie** (ou ✕) rend la partie là où elle était, contre la
+même IA ; le journal des défaites continue sur le même fil. Pas de « Continuer
+depuis ce coup » ici : la partie en cours n'est pas réécrite.
+
 Annotations et coups proposés rejoignent aussi le journal de l'autopsie
 (`ILYOS_AUTOPSIE.journal()`, `corrections()`), et sont retrouvés à la
 réouverture suivante de la même partie.

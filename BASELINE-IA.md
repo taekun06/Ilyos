@@ -1545,3 +1545,37 @@ non plus les combinaisons humaines. La pose de « réception » ne change qu'un
 plan sur 51. Une couronne libre à côté d'un gardien IA, avec des PUSH en main,
 est rare dans ces positions : la combinaison complète (dépôt, pose, poussée,
 rotation, ramassage) est à instruire sur une position dédiée. Budgets inchangés.
+
+### Lancer de couronne en un coup (`lancerCouronne: 1`)
+
+Technique humaine : le porteur DÉPOSE sa couronne sur une case voisine
+(gratuit), la POUSSE depuis sa case (elle glisse sur la terre, ou survole le
+vide jusqu'à une île posée pour la recevoir), une POSE fait apparaître un
+gardien à côté de l'arrivée, qui la RAMASSE (gratuit). Rotation magique ou
+marche ensuite.
+
+Sur la position de la capture du 29/09 (violet, 6 MOVE, 3 PUSH, 1 MAGIC), la
+ligne « porteur en (8,3), dépôt (8,2), poussée force 1, île avec apparition en
+(9,1), ramassage, pas en (9,0) » est légale et notée 5 953 par l'IA elle-même,
+contre 4 514 pour son choix. Pourtant la recherche ne la trouvait pas, même
+élargie. Les notes intermédiaires expliquent pourquoi : 1 970 → 1 023 (dépôt) →
+758 (poussée) → 4 130 (pose) → 4 457 (ramassage). Le faisceau élaguait la
+branche au creux. La poser d'abord n'y changeait rien non plus : les
+intentions de pose ne visaient pas l'arrivée d'une couronne poussée.
+
+`plannerCandidatsLancer` propose donc la combinaison comme UN coup
+(`type: "SEQUENCE"`, inscrite action par action au plan), notée complète.
+Pour chaque porteur, chaque case de dépôt et chaque force, il retient au plus
+deux poses par arrivée, les plus proches du village, et huit séquences en tout.
+Sur la capture, l'IA joue désormais : dépôt, poussée force 3 au-dessus du
+vide, île et apparition en (2,7), ramassage, rotation, pas vers son village
+haut-droite (`scripts/verif-lancer-couronne.js`).
+
+Lot du 29/09 (51 décisions rejouées) : 11 plans changent, 11 couronnes amenées
+sur une île posée au lieu de 8, 1 180 ms/décision au lieu de 1 147.
+Non mesuré en parties complètes.
+
+Bancs : `verif-profondeur-gratuite` comptait le DÉPÔT comme une action
+payante, alors qu'il est gratuit ; sa liste est complétée. `verif-spawn-sur`,
+`verif-depot-magic` et `verif-finalistes` échouent à l'identique sur `main`,
+avant cette branche.

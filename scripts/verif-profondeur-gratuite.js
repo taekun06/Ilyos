@@ -38,7 +38,7 @@ async function main() {
       const rapport = await page.evaluate(({spec, decisionsMax}) =>
         ILYOS_BENCH.plan(spec, { decisionsMax }), {spec, decisionsMax});
       const actions = rapport.detail;
-      const payantes = actions.filter(a => !['RAMASSAGE', 'TRANSMISSION'].includes(a.type));
+      const payantes = actions.filter(a => !['RAMASSAGE', 'TRANSMISSION', 'DEPOT'].includes(a.type));
       assert.ok(payantes.length <= decisionsMax, nom + ' : plafond payé dépassé');
       assert.ok(actions.some(a => a.type === 'RAMASSAGE'), nom + ' : couronne ignorée');
       if (decisionsMax > 0) {

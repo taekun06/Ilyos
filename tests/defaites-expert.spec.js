@@ -286,3 +286,43 @@ test("la revue IA contre IA s'ouvre dans la visionneuse et rend la partie", asyn
   await page.waitForFunction(n => window.ILYOS_AUTOPSIE.journal().length > n, avant, { timeout: 180000 });
   expect(incidents, incidents.join('\n')).toEqual([]);
 });
+
+test("partie solo : la revue IA s'ouvre depuis le menu ⚙ et rend la partie contre la même IA", async ({ page }) => {
+  const incidents = [];
+  page.on('pageerror', erreur => incidents.push(erreur.message));
+  await demarrerPartieExpert(page);
+  await jouerJusqua(page, 2);
+  // À mon tour, IA au repos.
+  await page.waitForFunction(() => {
+    const c = window.ILYOS_TEST.joueurCourant();
+    return c && !c.ia && !document.querySelector('#gameScreen.ai-turn');
+  }, null, { timeout: 120000 });
+  await page.waitForTimeout(1500);
+  const avant = await page.evaluate(() => ({ tours: window.ILYOS_DEFAITES.journal().tours.length }));
+
+  // La roue visible est celle du HUD organique ; elle relaie le clic à #hudV2GearBtn.
+  await page.locator('#ov2Gear').click();
+  const bouton = page.locator('#revueIaBtn');
+  await expect(bouton).toBeVisible();
+  await bouton.click();
+  await page.waitForFunction(() => window.ILYOS_DEFAITES.vue()?.direct, null, { timeout: 60000 });
+  const vue = page.locator('.defaites-vue');
+  await expect(vue).toBeVisible();
+  await expect(vue).toContainText('Revue IA — partie en cours');
+  await expect(vue).toContainText('a pensé');
+  await expect(vue.locator('[data-vue="continuer-proposition"]')).toHaveCount(0);
+
+  // Reprendre : même partie, adversaire toujours IA, journal sur le même fil.
+  await vue.locator('[data-vue="reprendre"]').click();
+  await expect(page.locator('.defaites-vue')).toHaveCount(0);
+  const apres = await page.evaluate(() => ({
+    tours: window.ILYOS_DEFAITES.journal() ? window.ILYOS_DEFAITES.journal().tours.length : -1
+  }));
+  expect(apres.tours, 'le journal reprend le même fil').toBe(avant.tours);
+  // Mon tour terminé, l'IA rejoue : sa décision rejoint le même journal.
+  await page.evaluate(() => window.ILYOS_TEST.terminerTourHumain());
+  await page.waitForFunction(n => window.ILYOS_DEFAITES.journal().tours.filter(t => t.decision).length > n,
+    await page.evaluate(() => window.ILYOS_DEFAITES.journal().tours.filter(t => t.decision).length),
+    { timeout: 120000 });
+  expect(incidents, incidents.join('\n')).toEqual([]);
+});

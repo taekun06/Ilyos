@@ -138,6 +138,8 @@
         poseRetourVillage: 1,
         // Pose qui reçoit une couronne poussée au-dessus du vide (plannerIntentionsPose).
         poseReception: 1,
+        // Combinaison dépôt + poussée + pose + ramassage en un coup (plannerCandidatsLancer).
+        lancerCouronne: 1,
         // Places de riposte réservées aux meilleurs plans d'autres idées.
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
@@ -2116,25 +2118,44 @@
            poussée, l'envoie loin d'un coup — puis une rotation magique ou un
            gardien lointain la reprend. Aucune intention ne visait ces cases :
            la combinaison n'était jamais examinée, quel que soit le budget. */
+        /* La couronne n'a pas besoin d'être déjà au sol : mon porteur la dépose
+           gratuitement sur une case voisine, puis la pousse depuis sa case.
+           Sur la terre, elle glisse : l'île sert alors à faire apparaître un
+           gardien À CÔTÉ de sa case d'arrivée, qui la ramasse gratuitement. */
         if (PLAN_POIDS.poseReception) {
           const force = availableActionCount("PUSH", moi);
-          const arrivees = [];
+          const auVide = [], surTerre = [];
+          const lancer = (cr, cc, dr, dc) => {
+            for (let f = 1; f <= force; f++) {
+              const r = cr + dr * f, c = cc + dc * f;
+              if (!inside(r, c)) break;
+              if (!isLand(r, c)) auVide.push([r, c]);
+              else if (characterAt(r, c) || looseArtifactAt(r, c)) break;
+              else surTerre.push([r, c]);
+            }
+          };
           for (const a of activeArtifacts()) {
+            const porteur = a.carrierId !== null ? characterById(a.carrierId) : null;
+            if (porteur && porteur.player === playerId) {
+              // Dépôt gratuit sur une case voisine libre, poussée depuis le porteur.
+              for (const [xr, xc] of orthogonalNeighbors(porteur.r, porteur.c)) {
+                if (!isLand(xr, xc) || characterAt(xr, xc) || looseArtifactAt(xr, xc)) continue;
+                lancer(xr, xc, xr - porteur.r, xc - porteur.c);
+              }
+              continue;
+            }
             if (a.carrierId !== null) continue;
             for (const pousseur of plannerGardiensDe(playerId)) {
               const dr = a.r - pousseur.r, dc = a.c - pousseur.c;
               if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
-              for (let f = 1; f <= force; f++) {
-                const r = a.r + dr * f, c = a.c + dc * f;
-                if (!inside(r, c)) break;
-                if (!isLand(r, c)) arrivees.push([r, c]);
-              }
+              lancer(a.r, a.c, dr, dc);
             }
           }
-          ajouter("reception", arrivees, 1);
-          // L'île doit COUVRIR une case d'arrivée, pas seulement la jouxter.
+          ajouter("reception", auVide, 1);
+          // Au vide, l'île doit COUVRIR la case d'arrivée, pas seulement la jouxter.
           const reception = intentions.find(i => i.but === "reception");
           if (reception) reception.couvrir = true;
+          ajouter("receptionTerre", surTerre, 1);
         }
         if ((state.couronnesEnAttente || []).length) ajouter("sanctuaire", [[CENTER.r, CENTER.c]], 1);
 
@@ -2511,6 +2532,90 @@
         return plannerRetenir(diversifiees, plafonds().poseTotal, "POSE");
       }
 
+      /* LANCER DE COURONNE — une combinaison, proposée comme UN coup.
+
+         Mon porteur dépose sa couronne sur une case voisine (gratuit) et la
+         pousse depuis sa case : elle glisse sur la terre, ou survole le vide
+         jusqu'à une île posée pour la recevoir. Une pose fait apparaître un
+         gardien à côté de sa case d'arrivée, qui la ramasse (gratuit).
+
+         Étape par étape, la recherche ne la trouvait jamais : déposer puis
+         pousser fait CHUTER la note (couronne au sol, exposée) avant que la
+         pose et le ramassage ne la relèvent, et le faisceau élaguait la
+         branche au milieu. Mesuré sur une position humaine : 1 970 → 1 023 →
+         758 → 4 130 → 4 457, puis 5 953 une fois sur la case de validation,
+         contre 4 514 pour le meilleur plan trouvé. Notée complète, la
+         combinaison est jugée sur ce qu'elle donne. */
+      const PLAN_LANCER_MAX = 8;
+      function plannerCandidatsLancer(playerId) {
+        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)) return [];
+        const moi = state.players[playerId];
+        const forceMax = Math.min(availableActionCount("PUSH", moi), Math.max(1, PLAN_POIDS.pousseeLongue || 1));
+        if (forceMax < 1) return [];
+        const porteurs = plannerGardiensDe(playerId).filter(g => characterCarriesCrown(g.id));
+        if (!porteurs.length) return [];
+        const validation = crownValidationCellsForPlayer(moi);
+        const versMoi = (r, c) => Math.min(...validation.map(([vr, vc]) => Math.abs(r - vr) + Math.abs(c - vc)));
+        const poses = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX, false) || [];
+        if (!poses.length) return [];
+        const options = [];
+        const essayer = actions => {
+          const clone = cloneStateForSimulation();
+          return withSimulatedState(clone, () => {
+            for (const action of actions) if (!plannerAppliquerAction(action)) return false;
+            return true;
+          });
+        };
+        for (const porteur of porteurs) {
+          const couronne = artifactCarriedBy(porteur.id);
+          const depart = versMoi(porteur.r, porteur.c);
+          for (const [xr, xc] of orthogonalNeighbors(porteur.r, porteur.c)) {
+            if (!isLand(xr, xc) || characterAt(xr, xc) || looseArtifactAt(xr, xc)) continue;
+            const dr = xr - porteur.r, dc = xc - porteur.c;
+            const depot = { type: "DEPOT", charId: porteur.id, artifactId: couronne.id, r: xr, c: xc };
+            for (let force = 1; force <= forceMax; force++) {
+              const [lr, lc] = [xr + dr * force, xc + dc * force];
+              if (!inside(lr, lc) || versMoi(lr, lc) >= depart) continue;
+              const pousse = { type: "PUSH", pusherId: porteur.id, r: xr, c: xc, force };
+              const auVide = !isLand(lr, lc);
+              // Poses qui font apparaître un gardien à côté de l'arrivée (et la
+              // couvrent si c'est du vide), les plus proches de mon village d'abord.
+              const retenues = [];
+              for (const pose of poses) {
+                if (auVide && !pose.cells.some(([r, c]) => r === lr && c === lc)) continue;
+                const spawns = pose.cells.filter(([r, c]) => Math.abs(r - lr) + Math.abs(c - lc) === 1
+                  && !characterAt(r, c));
+                for (const spawn of spawns) retenues.push({ pose, spawn, rang: versMoi(spawn[0], spawn[1]) });
+              }
+              retenues.sort((a, b) => a.rang - b.rang);
+              for (const { pose, spawn } of retenues.slice(0, 2)) {
+                const poser = { type: "POSE", shapeKey: pose.shapeKey, cells: pose.cells, relCells: pose.relCells,
+                  anchor: pose.anchor, owner: playerId, spawn, but: "lancer" };
+                const ordre = auVide ? [poser, depot, pousse] : [depot, pousse, poser];
+                // L'identifiant du gardien apparu se lit dans la simulation.
+                let nouveau = null;
+                const clone = cloneStateForSimulation();
+                const ok = withSimulatedState(clone, () => {
+                  for (const action of ordre) {
+                    const r = plannerAppliquerAction(action);
+                    if (!r) return false;
+                    if (action.type === "POSE") nouveau = r.gardienId;
+                  }
+                  const posee = [state.artifact, state.secondArtifact].find(a => a && a.id === couronne.id);
+                  return !!(posee && posee.carrierId === null && posee.r === lr && posee.c === lc);
+                });
+                if (!ok || !nouveau) continue;
+                const actions = [...ordre, { type: "RAMASSAGE", charId: nouveau, artifactId: couronne.id }];
+                if (!essayer(actions)) continue;
+                options.push({ type: "SEQUENCE", actions, gain: depart - versMoi(spawn[0], spawn[1]) });
+              }
+            }
+          }
+        }
+        options.sort((a, b) => b.gain - a.gain);
+        return options.slice(0, PLAN_LANCER_MAX);
+      }
+
       /* Transitions GRATUITES : elles ne consomment aucune carte et ne comptent
          pas comme une décision coûteuse. Elles ne sont plus des scripts joués
          avant le cerveau mais de vraies arêtes du graphe de recherche, ce qui
@@ -2631,6 +2736,10 @@
       }
 
       function plannerAppliquerAction(action) {
+        if (action.type === "SEQUENCE") {
+          for (const etape of action.actions) if (!plannerAppliquerAction(etape)) return null;
+          return action;
+        }
         if (action.type === "DEPOT") return applyFreeDropCore(action.charId, action.r, action.c);
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
@@ -2990,7 +3099,8 @@
                 ...plannerCandidatsMove(playerId),
                 ...plannerCandidatsPush(playerId),
                 ...plannerCandidatsMagic(playerId),
-                ...plannerCandidatsPose(playerId)
+                ...plannerCandidatsPose(playerId),
+                ...plannerCandidatsLancer(playerId)
               ];
               return [...gratuites, ...payantes];
             }));
@@ -3019,9 +3129,12 @@
 
               const enfant = {
                 etat: clone,
-                plan: [...noeud.plan, action],
+                // Une séquence s'inscrit au plan action par action.
+                plan: [...noeud.plan, ...(action.type === "SEQUENCE" ? action.actions : [action])],
                 // Une transition gratuite ne consomme pas de profondeur.
-                decisions: noeud.decisions + (plannerActionGratuite(action) ? 0 : 1),
+                decisions: noeud.decisions + (action.type === "SEQUENCE"
+                  ? action.actions.filter(a => !plannerActionGratuite(a)).length
+                  : plannerActionGratuite(action) ? 0 : 1),
                 note: resultat.note,
                 prioriteDefense: resultat.prioriteDefense,
                 terminal: clone.islandPlacedThisTurn
