@@ -88,6 +88,12 @@
            de case d'apparition, plus bas) : sous ce nom, la clé était écrasée
            par la seconde et les premières mesures réglaient l'autre poids. */
         menacePoseAdverse: 2,
+        /* …et le pousseur apparu qui MARCHE jusqu'à un poste en terre libre :
+           l'île est posée contre le bord, le gardien y apparaît, se déplace,
+           pousse. 4 défaites humaines du 29/09 : 8 porteurs sur 32 gardiens
+           perdus ainsi, l'humain n'ayant parfois aucun gardien en jeu.
+           0 = ignoré (ancien calcul), 1 = compté. */
+        apparitionMarche: 1,
         /* Un de mes gardiens collé derrière un autre forme un bloc poussable,
            pas un rempart (plannerPosteDerriereBloc). 0 = ancien calcul.
            Juste selon la règle, mais mesuré contre 0 (80 parties
@@ -541,9 +547,14 @@
            2 = porteurs compris. */
         if (actif(PLAN_POIDS.menacePoseAdverse || 0) && canCreateGuardian(adverse.id)
           && !plannerPoseImpossibleEnCache(adverse.id)) {
+          const marche = PLAN_POIDS.apparitionMarche ? plannerChampApparition() : null;
+          const budgetMove = marche ? plannerBudgetAdverse(playerId).move : 0;
           for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
             const [pr, pc] = plannerPosteDerriereBloc(playerId, r, c, dr, dc);
-            if (!inside(pr, pc) || isLand(pr, pc)) continue;
+            if (!inside(pr, pc)) continue;
+            // Poste en terre : il faut qu'il soit libre et à portée de marche.
+            if (isLand(pr, pc) && (!marche || characterAt(pr, pc)
+              || !((marche.get(key(pr, pc)) || Infinity) <= budgetMove))) continue;
             const f = plannerVideAPortee(r, c, dr, dc, longue);
             if (f) pire = Math.max(pire, gravitePour(f) * PLAN_POIDS.draftMenacePose);
           }
@@ -625,6 +636,42 @@
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
         return plannerPiocheProchaine(adverse.id).auMoinsPush[Math.min(n, 5)] ?? 0;
+      }
+
+      /* Déplacements qu'il faut à un gardien APPARU pour atteindre chaque case
+         de terre : il surgit sur une île posée contre un bord (1 déplacement
+         pour monter sur la terre), puis marche. Ne dépend que du terrain, donc
+         calculé une fois par forme de terrain. Occupation ignorée : c'est une
+         portée, pas un chemin. */
+      const plannerCacheApparition = new Map();
+      function plannerChampApparition() {
+        const cle = plannerEmpreinteTerrain();
+        let champ = plannerCacheApparition.get(cle);
+        if (champ) return champ;
+        champ = new Map();
+        let front = [];
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            if (isLand(r, c) && orthogonalNeighbors(r, c).some(([vr, vc]) => !isLand(vr, vc))) {
+              champ.set(key(r, c), 1);
+              front.push([r, c]);
+            }
+          }
+        }
+        for (let d = 2; front.length && d <= 8; d++) {
+          const suivant = [];
+          for (const [r, c] of front) {
+            for (const [vr, vc] of orthogonalNeighbors(r, c)) {
+              if (!isLand(vr, vc) || champ.has(key(vr, vc))) continue;
+              champ.set(key(vr, vc), d);
+              suivant.push([vr, vc]);
+            }
+          }
+          front = suivant;
+        }
+        if (plannerCacheApparition.size >= 64) plannerCacheApparition.clear();
+        plannerCacheApparition.set(cle, champ);
+        return champ;
       }
 
       /* Poste de poussée derrière la victime (r, c), pour une poussée vers

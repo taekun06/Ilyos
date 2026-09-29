@@ -1414,3 +1414,30 @@ COLLÉ à la victime n'était plus compté par `plannerForceExpulsion`. Il ne
 tenait plus qu'à `aiPushOffRisk`. Le banc `verif-gardien-expose.js` échouait
 sur `main`. Les mesures `posteDerriereBloc` et `menacePoseAdverse` ci-dessus ont
 été faites avec ce défaut.
+
+## Lot de 4 défaites humaines du 29/09 : le pousseur apparu qui marche
+
+Classement des 32 gardiens IA perdus (`scripts/pertes-defaites.js`). Avec le
+code de `main`, 19 d'entre eux étaient perdus sans que l'IA voie de menace
+(gravité 0). Le cas typique : un porteur IA sur le bord du plateau. L'humain,
+parfois sans aucun gardien en jeu, pose une île contre la terre, y fait
+apparaître un gardien, le déplace sur une case de terre libre derrière le
+porteur, puis pousse. `menacePoseAdverse` ne couvrait que le poste VIDE, que
+l'île posée comble.
+
+Correction (`apparitionMarche: 1`, `plannerChampApparition`) : un poste en
+terre libre compte aussi s'il est à portée de marche d'un gardien apparu (un
+déplacement pour monter sur la terre depuis l'île posée, puis la marche). Le
+budget pris est le budget de déplacement prêté à l'adversaire. C'est un champ de
+distances calculé une fois par forme de terrain.
+
+| Mesure sur le lot | `apparitionMarche` 0 | 1 |
+|---|---|---|
+| pertes invisibles pour l'IA (sur 32) | 19 | 7 |
+| décisions rejouées : porteurs laissés exposés (51 décisions) | 23 | 9 |
+| gardiens laissés exposés | 98 | 97 |
+| temps par décision | 1 143 ms | 1 211 ms |
+
+Non mesuré en self-play long. Une paire de contrôle s'est jouée sans erreur ni
+tour coupé. Reste : 25 pertes « vues et acceptées », à instruire (la gravité
+pèse-t-elle assez face au gain du coup ?).
