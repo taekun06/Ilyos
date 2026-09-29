@@ -24658,9 +24658,12 @@
            porteurs, 2 = porteurs compris. Mesure REPRODUCTIBLE (départs
            canoniques), 80 parties contre 0 : mode 1 28-44-8, soit 40 % —
            nuisible en IA contre IA. Les séries bruitées d'avant (24-13 puis
-           18-19) l'avaient masqué. Reste à 0 ; l'option garde le calcul pour
-           mesurer contre des humains. */
-        piochePush: 0,
+           18-19) l'avaient masqué. Cette mesure précédait le comptage des
+           cartes (probabilité alors tirée d'un paquet neuf) et la correction du
+           pousseur collé ; l'IA adverse n'exploite presque jamais ces poussées,
+           un humain si. Contre des humains (4 défaites du 29/09), c'est la
+           cause des 4 dernières pertes invisibles : activé, porteurs compris. */
+        piochePush: 2,
         /* Pousseur apparu par une pose adverse (plannerGraviteExpulsion) :
            0 = ignoré, 1 = gardiens non porteurs, 2 = porteurs compris.
            Mesure reproductible, 80 parties contre 0 : mode 2 42-33-5
@@ -25123,7 +25126,8 @@
            piochePush : 0 = ancien calcul, 1 = gardiens non porteurs seuls,
            2 = porteurs compris. */
         if (actif(PLAN_POIDS.piochePush || 0) && certaine < longue) {
-          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue });
+          // push : sinon la main moyenne (souvent 1 PUSH) replafonnait la force.
+          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue, push: longue });
           if (forcePiochee > certaine) pire = gravitePour(forcePiochee);
         }
         /* Pousseur APPARU. Le poste de poussée est du vide : l'adversaire peut
@@ -45928,12 +45932,24 @@
             const push = availableActionCount("PUSH", adverse);
             const reel = { move, push, forceMax: Math.min(push, PLAN_POIDS.pousseeLongue || 1),
               portees: plannerPorteesAdverses(joueur, move) };
-            return plannerGardiensDe(joueur).map(g => ({
-              id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
-              forceReelle: push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0,
-              graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
-              mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
-            }));
+            const forces = plannerGardiensDe(joueur).map(g =>
+              push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0);
+            /* La gravité se juge comme l'IA l'a vue : AVANT la pioche adverse.
+               Remise de la main dans la pioche (composition seule compte). */
+            const main = adverse.hand, pioche = adverse.deck;
+            adverse.deck = [...(pioche || []), ...(main || []).filter(carte => !carte.used)];
+            adverse.hand = [];
+            try {
+              return plannerGardiensDe(joueur).map((g, i) => ({
+                id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+                forceReelle: forces[i],
+                graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
+                mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
+              }));
+            } finally {
+              adverse.hand = main;
+              adverse.deck = pioche;
+            }
           }));
         } finally {
           selfplayAppliquerPoids(memoire);

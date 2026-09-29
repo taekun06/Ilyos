@@ -1497,3 +1497,19 @@ plateau n'y coûte qu'environ 770, contre 2 900 au barème. Dans les parties
 humaines, une couronne prise par un pousseur au milieu du plateau finit
 pourtant validée. L'accès de MES gardiens au porteur adverse au tour suivant
 (peut-on le repousser ?) reste à modéliser.
+
+### `piochePush` activé (mode 2), et corrigé
+
+La mesure qui l'avait coupé (80 parties IA contre IA, 40 %) précédait le
+comptage des cartes et la correction du pousseur collé. L'IA adverse n'exploite
+presque jamais ces poussées, un humain si. Deux défauts corrigés au passage :
+
+- la branche « poussée piochée » replafonnait la force au nombre de PUSH de la
+  main moyenne (souvent 1) : la force 2 piochée n'était jamais examinée ;
+- `ILYOS_SELFPLAY.exposes` jugeait la gravité APRÈS la pioche adverse (le
+  comptage voyait une pioche amputée de la main). Elle se juge désormais
+  comme l'IA l'a vue, main remise dans la pioche.
+
+Lot du 29/09 : pertes invisibles 7 → 1 (reste un bloc de trois gardiens
+alignés, `posteDerriereBloc: 0`). Porteurs laissés éjectables sur 51 décisions
+rejouées : 7 → 5.
