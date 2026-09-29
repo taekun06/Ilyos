@@ -93,11 +93,16 @@
         };
         giveArtifactToCharacter = function (artifact, char) {
           const porteurAvant = artifact ? artifact.carrierId : null;
+          const ancien = porteurAvant ? characterById(porteurAvant) : null;
+          const vol = !!(ancien && char && ancien.player !== char.player);
           const resultat = origine.couronne.apply(this, arguments);
           if (resultat && char) {
-            defaitesConsignerAction(porteurAvant
+            defaitesConsignerAction(vol
+              ? `vole la couronne du porteur (${ancien.r},${ancien.c}) avec le gardien (${char.r},${char.c})`
+              : porteurAvant
               ? `passe la couronne au gardien (${char.r},${char.c})`
-              : `ramasse la couronne avec le gardien (${char.r},${char.c})`, porteurAvant ? "TRANSMISSION" : "RAMASSAGE");
+              : `ramasse la couronne avec le gardien (${char.r},${char.c})`,
+              vol ? "VOL" : porteurAvant ? "TRANSMISSION" : "RAMASSAGE");
           }
           return resultat;
         };
@@ -227,6 +232,9 @@
               } else if (a.type === "DEPOT") {
                 ajouter({ type: "anneau", r: a.r, c: a.c, couleur: 0xf2c94c });
                 marque = [a.r, a.c];
+              } else if (a.type === "VOL") {
+                const de = characterById(a.deId), vers = characterById(a.charId);
+                if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }
               } else if (a.type === "TRANSMISSION") {
                 const de = characterById(a.deId), vers = characterById(a.versId);
                 if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }

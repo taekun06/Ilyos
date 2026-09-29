@@ -17480,6 +17480,18 @@
             await sleep(320);
             return true;
           }
+          case "VOL": {
+            const applique = applyFreeStealCore(action.charId, action.artifactId);
+            if (!applique) return false;
+            benchJournaliser({ type: "VOL", gardien: action.charId, de: applique.deId });
+            renderAll();
+            const voleur = characterById(action.charId);
+            if (voleur) animateCellPulse(voleur.r, voleur.c, "crown-burst");
+            playSfx("crownTake");
+            showToast("ORDINATEUR vole la couronne d’un porteur adjacent !");
+            await sleep(520);
+            return true;
+          }
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
@@ -24717,6 +24729,10 @@
         poseReception: 1,
         // Combinaison dépôt + poussée + pose + ramassage en un coup (plannerCandidatsLancer).
         lancerCouronne: 1,
+        // Vol de la couronne d'un porteur adverse adjacent (gratuit), et son danger.
+        volCouronne: 1,
+        // Faisceau trié avec le meilleur ramassage/vol gratuit immédiat de chaque nœud.
+        fermetureGratuite: 1,
         // Places de riposte réservées aux meilleurs plans d'autres idées.
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
@@ -25883,6 +25899,25 @@
                 + PLAN_POIDS.gardienExpose;
             ajouter("porteurExpose", -cout * graviteCouronne,
               `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
+          }
+
+          /* PORTEUR VOLABLE : un gardien adverse qui arrive à côté de mon
+             porteur — en marchant, ou apparu d'une pose — lui prend sa
+             couronne gratuitement et repart avec. Même atteinte que pour une
+             couronne au sol (plannerPerilCouronneSol) ; on ne compte que
+             l'excédent sur l'éjection, les deux pertes ne s'additionnant pas. */
+          if (PLAN_POIDS.volCouronne && porteur && porteur.player === playerId && lAdversaireJoue && marqueLui) {
+            const volable = plannerPerilCouronneSol(playerId, r, c);
+            if (volable > 0) {
+              const coutVol = (dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe)
+                * volable * PLAN_POIDS.perilCouronneSol * (PLAN_POIDS.porteurVolable ?? 1);
+              const dejaCompte = graviteCouronne > 0
+                ? ((dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe) * graviteCouronne) : 0;
+              if (coutVol > dejaCompte) {
+                ajouter("porteurVolable", -(coutVol - dejaCompte),
+                  `(${r},${c}) — ${volable === 1 ? "un gardien adverse peut venir à côté" : "une pose peut y faire apparaître un gardien"}`);
+              }
+            }
           }
         }
 
@@ -27211,6 +27246,23 @@
           }
         }
 
+        /* VOL : un gardien à côté d'un porteur ADVERSE lui prend sa couronne,
+           gratuitement (règle de l'interface, ui.js : clic sur la couronne du
+           porteur adverse). L'IA ne le savait pas : elle ne volait jamais, et
+           sa riposte simulée ne volait pas non plus ses porteurs. */
+        if (PLAN_POIDS.volCouronne) {
+          for (const gardien of plannerGardiensDe(playerId)) {
+            if (characterCarriesCrown(gardien.id)) continue;
+            for (const couronne of activeArtifacts()) {
+              const porteur = couronne.carrierId ? characterById(couronne.carrierId) : null;
+              if (!porteur || porteur.player === playerId) continue;
+              if (Math.abs(gardien.r - porteur.r) + Math.abs(gardien.c - porteur.c) !== 1) continue;
+              if (porteur.r === CENTER.r && porteur.c === CENTER.c && state.centerCrownTakenThisTurn) continue;
+              transitions.push({ type: "VOL", charId: gardien.id, artifactId: couronne.id, deId: porteur.id });
+            }
+          }
+        }
+
         const porteurs = plannerGardiensDe(playerId).filter(g => characterCarriesCrown(g.id));
         const peutTourner = availableActionCount("MAGIC", state.players[playerId]) > 0;
         const receveurs = plannerGardiensDe(playerId).filter(g => !characterCarriesCrown(g.id));
@@ -27250,6 +27302,22 @@
         return giveArtifactToCharacter(couronne, gardien)
           ? { type: "RAMASSAGE", charId, artifactId }
           : null;
+      }
+
+      /* Vol de la couronne d'un porteur adverse adjacent (même règle que
+         beginCrownRecovery, ui.js) : une seule prise au sanctuaire par tour. */
+      function applyFreeStealCore(charId, artifactId) {
+        const gardien = characterById(charId);
+        const couronne = [state.artifact, state.secondArtifact].find(a => a && a.id === artifactId);
+        const porteur = couronne && couronne.carrierId ? characterById(couronne.carrierId) : null;
+        if (!gardien || !porteur || porteur.player === gardien.player || !couronne.active) return null;
+        if (characterCarriesCrown(gardien.id)) return null;
+        if (Math.abs(gardien.r - porteur.r) + Math.abs(gardien.c - porteur.c) !== 1) return null;
+        const auSanctuaire = porteur.r === CENTER.r && porteur.c === CENTER.c;
+        if (auSanctuaire && state.centerCrownTakenThisTurn) return null;
+        if (!giveArtifactToCharacter(couronne, gardien)) return null;
+        if (auSanctuaire) state.centerCrownTakenThisTurn = true;
+        return { type: "VOL", charId, artifactId, deId: porteur.id };
       }
 
       function plannerCaseRelaisGratuit(porteur, allie) {
@@ -27318,13 +27386,15 @@
           return action;
         }
         if (action.type === "DEPOT") return applyFreeDropCore(action.charId, action.r, action.c);
+        if (action.type === "VOL") return applyFreeStealCore(action.charId, action.artifactId);
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
         return appliquerActionNoyau(action);
       }
 
       function plannerActionGratuite(action) {
-        return action.type === "DEPOT" || action.type === "RAMASSAGE" || action.type === "TRANSMISSION";
+        return action.type === "DEPOT" || action.type === "RAMASSAGE" || action.type === "TRANSMISSION"
+          || action.type === "VOL";
       }
 
       /* ---------------------------------------------------------------------
@@ -27361,7 +27431,8 @@
          limitent la recherche ; les temps ne sont plus que des sécurités contre
          un blocage — environ 7 s au total sur une machine lente. */
       const PLAN_SECURITE = {
-        principaleMs: 3000,
+        // Relevé avec le budget de recherche (PLAN_BUDGET) : un filet, pas une borne.
+        principaleMs: 7000,
         /* 700 ms tombait sur le coût NORMAL d'une riposte (250 états) dès que
            la machine était un peu lente ou « froide » : la riposte était
            coupée, la menace mesurée changeait, et la même position ne donnait
@@ -27370,8 +27441,10 @@
         riposteMs: 2000,
         critiqueMs: 1200,
         magieMs: 150,
-        // Échéance de tout le tour (recherche + ripostes), sous les 7 s admis.
-        tourMs: 6000
+        /* Échéance de tout le tour (recherche + ripostes). 6 s jusqu'au 29/09 ;
+           relevée avec le budget, les tours de l'IA restant rapides en pratique
+           (3,8 s au plus sur 55 décisions humaines). */
+        tourMs: 12000
       };
       /* Multiplicateur des plafonds de sécurité (PLAN_POIDS.securiteFacteur),
          pour les outils d'analyse : un plafond de temps atteint rend la
@@ -27389,9 +27462,15 @@
            idée — dix poses d'île presque identiques — remplissent les places et
            évincent les lignes d'une autre nature. Mesuré : A8, qui demande une
            parade précise, échouait pour cette seule raison. */
-        largeurFaisceau: 14,
-        decisionsMax: 6,
-        etatsMax: 1200,
+        /* 14 / 6 / 1 200 jusqu'au 29/09. Avec le vol et la fermeture gratuite,
+           une position humaine (capture du 29/09, côté jaune) montrait l'écart :
+           vol + lancer vers le village + second vol, 4 222 après la réplique
+           adverse, trouvé à 24 / 8 / 5 000 seulement (936 au budget d'avant).
+           Coût mesuré sur 55 décisions humaines : 1,5 → 1,9 s en moyenne,
+           3,8 s au plus, aucune coupure par le temps. */
+        largeurFaisceau: 24,
+        decisionsMax: 8,
+        etatsMax: 5000,
         tempsMaxMs: 500
       };
 
@@ -27691,8 +27770,24 @@
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
+                const note = evaluateStrategicState(playerId);
+                /* FERMETURE GRATUITE. Un nœud se classe au faisceau avec le
+                   meilleur ramassage ou vol GRATUIT qu'il permet aussitôt : ce
+                   gain ne coûte rien et suivra au niveau suivant. Sans cela,
+                   « pousser le porteur, aller à côté de sa couronne » était
+                   élagué au creux (−652) avant le ramassage qui le relevait. */
+                let noteTri = note;
+                if (PLAN_POIDS.fermetureGratuite) {
+                  for (const t of plannerTransitionsGratuites(playerId)) {
+                    if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
+                    const essai = structuredClone(state);
+                    const n = withSimulatedState(essai, () =>
+                      plannerAppliquerAction(t) ? evaluateStrategicState(playerId) : -Infinity);
+                    if (n > noteTri) noteTri = n;
+                  }
+                }
                 return {
-                  note: evaluateStrategicState(playerId),
+                  note, noteTri,
                   prioriteDefense: clone.islandPlacedThisTurn
                     ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
@@ -27713,6 +27808,7 @@
                   ? action.actions.filter(a => !plannerActionGratuite(a)).length
                   : plannerActionGratuite(action) ? 0 : 1),
                 note: resultat.note,
+                noteTri: resultat.noteTri,
                 prioriteDefense: resultat.prioriteDefense,
                 terminal: clone.islandPlacedThisTurn
               };
@@ -27728,7 +27824,7 @@
           }
 
           if (!suivants.length) break;
-          suivants.sort((a, b) => b.note - a.note);
+          suivants.sort((a, b) => (b.noteTri ?? b.note) - (a.noteTri ?? a.note));
           faisceau = plannerFaisceauDiversifie(suivants, budget.largeurFaisceau);
           profondeurAtteinte = niveau + 1;
           if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
@@ -28387,6 +28483,8 @@
                 + ` (${a.turns} quart${a.turns > 1 ? "s" : ""} de tour)`;
             case "RAMASSAGE":
               return `ramasse la couronne avec le gardien ${depuis(a.charId)}`;
+            case "VOL":
+              return `vole la couronne du porteur ${depuis(a.deId)} avec le gardien ${depuis(a.charId)}`;
             case "TRANSMISSION":
               return `passe la couronne de ${depuis(a.deId)} à ${depuis(a.versId)}`;
             case "DEPOT":
@@ -29182,12 +29280,15 @@
           };
           giveArtifactToCharacter = function (artifact, char) {
             const porteurAvant = artifact ? artifact.carrierId : null;
+            const ancien = porteurAvant ? characterById(porteurAvant) : null;
+            const vol = !!(ancien && char && ancien.player !== char.player);
             const resultat = revueNoyauxDorigine.couronne.apply(null, arguments);
             if (resultat && char) {
-              noter(porteurAvant
+              noter(vol ? `VOL par (${char.r},${char.c})`
+                : porteurAvant
                 ? `TRANSMISSION vers (${char.r},${char.c})`
                 : `RAMASSAGE par (${char.r},${char.c})`,
-                { type: porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
+                { type: vol ? "VOL" : porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
             }
             return resultat;
           };
@@ -30006,11 +30107,16 @@
         };
         giveArtifactToCharacter = function (artifact, char) {
           const porteurAvant = artifact ? artifact.carrierId : null;
+          const ancien = porteurAvant ? characterById(porteurAvant) : null;
+          const vol = !!(ancien && char && ancien.player !== char.player);
           const resultat = origine.couronne.apply(this, arguments);
           if (resultat && char) {
-            defaitesConsignerAction(porteurAvant
+            defaitesConsignerAction(vol
+              ? `vole la couronne du porteur (${ancien.r},${ancien.c}) avec le gardien (${char.r},${char.c})`
+              : porteurAvant
               ? `passe la couronne au gardien (${char.r},${char.c})`
-              : `ramasse la couronne avec le gardien (${char.r},${char.c})`, porteurAvant ? "TRANSMISSION" : "RAMASSAGE");
+              : `ramasse la couronne avec le gardien (${char.r},${char.c})`,
+              vol ? "VOL" : porteurAvant ? "TRANSMISSION" : "RAMASSAGE");
           }
           return resultat;
         };
@@ -30140,6 +30246,9 @@
               } else if (a.type === "DEPOT") {
                 ajouter({ type: "anneau", r: a.r, c: a.c, couleur: 0xf2c94c });
                 marque = [a.r, a.c];
+              } else if (a.type === "VOL") {
+                const de = characterById(a.deId), vers = characterById(a.charId);
+                if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }
               } else if (a.type === "TRANSMISSION") {
                 const de = characterById(a.deId), vers = characterById(a.versId);
                 if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }

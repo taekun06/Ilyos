@@ -8,7 +8,9 @@
    et bas-gauche. Étape par étape, la recherche n'examinait jamais ce coup :
    déposer puis pousser fait chuter la note avant que la pose et le ramassage
    ne la relèvent (1 970 → 758 → 4 457). Proposé en un seul coup
-   (plannerCandidatsLancer), il est trouvé.                                  */
+   (plannerCandidatsLancer), il est trouvé et départagé par la riposte.
+   Depuis le vol de couronne (29/09), la riposte jaune peut voler : le plan
+   retenu peut être plus prudent, mais le lancer doit rester examiné.       */
 
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -40,6 +42,7 @@ const MAIN = ['MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'PUSH', 'PUSH', 'P
         try {
           const rapport = plannerChercherPlanRobuste(1);
           return { plan: rapport.plan.map(a => ({ ...a })),
+            examines: (rapport.anticipation?.plansExamines || []).map(p => p.plan.map(a => ({ ...a }))),
             lisible: autopsieDecrirePlan(rapport.plan, snapshotState()) };
         } finally { PLAN_POIDS.lancerCouronne = memoire; }
       }; window.ILYOS_BENCH = {`;
@@ -57,9 +60,12 @@ const MAIN = ['MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'PUSH', 'PUSH', 'P
     console.log(`sans lancer : ${sans.lisible}`);
     const avec = await page.evaluate(a => window.TEST_LANCER(...a), [TERRE, MAIN, 1]);
     console.log(`avec lancer : ${avec.lisible}`);
-    assert.ok(avec.plan.some(a => a.type === 'DEPOT') && avec.plan.some(a => a.type === 'POSE'),
-      'dépôt et pose attendus');
-    assert.ok(lance(avec.plan), 'la couronne déposée doit être poussée puis ramassée par un gardien apparu');
+    /* Le choix final dépend ensuite de la réplique adverse (qui peut voler) :
+       ce banc garantit que la combinaison n'est plus élaguée au creux et
+       arrive jusqu'aux plans départagés par la riposte. */
+    assert.ok(lance(avec.plan) || avec.examines.some(lance),
+      'une couronne déposée, poussée puis ramassée par un gardien apparu doit figurer parmi les plans examinés');
+    assert.ok(!lance(sans.plan) && !sans.examines.some(lance), 'témoin : sans le générateur, la combinaison n’apparaît pas');
     console.log('verif-lancer-couronne : 1/1');
   } finally {
     await browser.close();

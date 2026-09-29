@@ -87,6 +87,8 @@
                 + ` (${a.turns} quart${a.turns > 1 ? "s" : ""} de tour)`;
             case "RAMASSAGE":
               return `ramasse la couronne avec le gardien ${depuis(a.charId)}`;
+            case "VOL":
+              return `vole la couronne du porteur ${depuis(a.deId)} avec le gardien ${depuis(a.charId)}`;
             case "TRANSMISSION":
               return `passe la couronne de ${depuis(a.deId)} à ${depuis(a.versId)}`;
             case "DEPOT":
@@ -882,12 +884,15 @@
           };
           giveArtifactToCharacter = function (artifact, char) {
             const porteurAvant = artifact ? artifact.carrierId : null;
+            const ancien = porteurAvant ? characterById(porteurAvant) : null;
+            const vol = !!(ancien && char && ancien.player !== char.player);
             const resultat = revueNoyauxDorigine.couronne.apply(null, arguments);
             if (resultat && char) {
-              noter(porteurAvant
+              noter(vol ? `VOL par (${char.r},${char.c})`
+                : porteurAvant
                 ? `TRANSMISSION vers (${char.r},${char.c})`
                 : `RAMASSAGE par (${char.r},${char.c})`,
-                { type: porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
+                { type: vol ? "VOL" : porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
             }
             return resultat;
           };
