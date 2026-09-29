@@ -1623,3 +1623,10 @@ comme certaine même sans aucune PUSH possible (vestige de la main fixe).
 - `verif-reserve`, `verif-pose-isolee` : échouaient sur une police Google
   bloquée par un proxy ; les ressources externes ne comptent plus.
 - Nouveau : `verif-couverture-regles` (11/11 actions de joueur), `verif-vol-couronne`.
+
+**Poids du « porteur volable » (`porteurVolable`, défaut 1).** Un premier
+miroir (graine 7000, code intermédiaire) finissait 2-2 au tour 120 dans les
+deux parties. Sur le code livré : miroir 1 contre 1, graines 7300-7301, 4
+parties terminées en 32 à 56 tours (2-2) ; 0,5 contre 1 : 1-1 et 2 nuls. Aucun
+écart mesurable : le poids reste à 1 (danger compté en entier). Échantillons
+petits, à surveiller sur les prochaines défaites humaines.
