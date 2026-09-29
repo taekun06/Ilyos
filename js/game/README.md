@@ -22,6 +22,18 @@ node scripts/build-game.js --write
 node scripts/build-game.js
 ```
 
+## Règles ↔ IA
+
+Le planner (`planner.js`) doit connaître chaque action qu'un joueur peut faire
+dans l'interface (`ui.js`) : déplacement (et ramassage en marchant), poussée de
+gardien et de couronne, rotation et dissolution (option), pose avec apparition,
+et les actions GRATUITES — ramassage, dépôt, transmission, vol d'un porteur
+adverse adjacent. `scripts/verif-couverture-regles.js` le vérifie ; une action
+nouvelle s'y ajoute en même temps qu'au planner. Le vol a manqué à l'IA jusqu'au
+29/09 sans qu'aucun banc ne le signale.
+
+`npm run verif:ia` lance tous les bancs de l'IA et en donne le bilan.
+
 ## Recent UX passes (guardian interaction, turn flow, island/spawn)
 
 Several UX-only passes landed on top of each other without being committed yet

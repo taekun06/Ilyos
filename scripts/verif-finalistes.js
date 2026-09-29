@@ -2,6 +2,13 @@
    Quatre variantes de POSE occupaient toutes les places de riposte : le
    porteur avançait jusqu'en (7,5), alors que l'arrêt en (6,6), déjà trouvé,
    résistait mieux à la même recherche adverse. Aucun poids n'est ajusté.
+
+   L'attendu « arrêt en (6,6) » est tombé avec le commit 8665a7c (dépôt
+   gratuit de couronne, 24/09), qui n'a pas mis ce banc à jour — il échouait
+   depuis. Avec le dépôt, puis le VOL de couronne (29/09), la meilleure ligne
+   de cette position n'est plus celle-là. L'intention reste contrôlée : des
+   variantes de pose ne monopolisent pas les ripostes, et le plan joué est le
+   meilleur APRÈS la riposte parmi ceux examinés.
    node scripts/verif-finalistes.js — serveur de développement port 8123. */
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
@@ -40,9 +47,11 @@ async function main() {
         `nombre de ripostes hors bornes : ${rapport.anticipation.examines}`);
       assert.ok(new Set(rapport.finalistes.slice(0, 4).map(f => f.plan.join(','))).size > 1,
         'les variantes de pose masquent encore les autres continuations');
-      const dernierMove = rapport.detail.filter(a => a.type === 'MOVE').at(-1);
-      assert.deepEqual([dernierMove?.r, dernierMove?.c], [6, 6],
-        'le porteur poursuit la ligne plus exposée plutôt que le plan déjà trouvé');
+      const examines = rapport.anticipation.plansExamines || [];
+      const meilleur = Math.max(...examines.map(p => p.noteRobuste));
+      const joue = examines.find(p => JSON.stringify(p.plan) === JSON.stringify(rapport.detail));
+      assert.ok(joue, 'le plan joué doit faire partie des plans confrontés à la riposte');
+      assert.equal(joue.noteRobuste, meilleur, 'le plan joué doit être le meilleur après la riposte');
       console.log(`Passage ${i + 1}: OK — ${rapport.plan.join(' → ')}, quatre ripostes`);
     }
   } finally { await browser.close(); }

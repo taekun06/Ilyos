@@ -232,6 +232,9 @@
               } else if (a.type === "DEPOT") {
                 ajouter({ type: "anneau", r: a.r, c: a.c, couleur: 0xf2c94c });
                 marque = [a.r, a.c];
+              } else if (a.type === "DISSOLUTION") {
+                const ile = (state.islands || []).find(i => i.id === a.islandId);
+                if (ile) { ile.cells.forEach(([r, c]) => ajouter({ type: "case", r, c, couleur })); marque = ile.cells[0]; }
               } else if (a.type === "VOL") {
                 const de = characterById(a.deId), vers = characterById(a.charId);
                 if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }

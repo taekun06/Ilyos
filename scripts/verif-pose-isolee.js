@@ -124,7 +124,10 @@ async function main() {
   const page = await navigateur.newPage({ viewport: { width: 1280, height: 800 } });
   const incidents = [];
   page.on('pageerror', e => incidents.push('exception: ' + e.message));
-  page.on('console', m => { if (m.type() === 'error') incidents.push('console.error: ' + m.text()); });
+  /* Une ressource EXTERNE refusée (police Google derrière un proxy, hors
+     ligne) n'est pas un défaut du jeu : seules les erreurs du site comptent. */
+  const externe = m => { try { return new URL(m.location().url).host !== new URL(page.url()).host; } catch (e) { return false; } };
+  page.on('console', m => { if (m.type() === 'error' && !externe(m)) incidents.push('console.error: ' + m.text()); });
 
   await page.goto(ORIGINE);
   await page.waitForFunction(() => typeof window.ILYOS_TEST?.playAIvsAI === 'function', null, { timeout: 45000 });

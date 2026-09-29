@@ -144,6 +144,11 @@
         volCouronne: 1,
         // Faisceau trié avec le meilleur ramassage/vol gratuit immédiat de chaque nœud.
         fermetureGratuite: 1,
+        /* Faisceau trié aussi sur le potentiel (sans menaces de fin de tour),
+           plannerNotePotentiel. Mesuré sur la position jaune du 29/09 : 1 016
+           après réplique au lieu de 4 222 — le faisceau se remplit de passages
+           imprudents. Coupé ; gardé pour mesurer. */
+        triPotentiel: 0,
         // Places de riposte réservées aux meilleurs plans d'autres idées.
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
@@ -543,9 +548,12 @@
         const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
         const certaine = Math.max(1, enReserve);
         const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
-        // Gravité d'une poussée de force f, pondérée par la chance d'en avoir les cartes.
+        /* Gravité d'une poussée de force f, pondérée par la chance d'en avoir
+           les cartes : certaine jusqu'à la réserve, puis la pioche (comptage).
+           La force 1 passait pour certaine même sans aucune PUSH possible —
+           vestige de la main fixe, qui en contenait toujours deux. */
         const gravitePour = f => table[Math.min(f, table.length) - 1]
-          * (f <= certaine ? 1 : plannerProbaPiocherPush(playerId, f - enReserve));
+          * (f <= enReserve ? 1 : plannerProbaPiocherPush(playerId, f - enReserve));
         const actif = mode => mode === 2 || (mode === 1 && pourGardien);
         let pire = 0;
         /* Poussée longue grâce à la PIOCHE. plannerForceExpulsion ne prête une
@@ -1108,6 +1116,23 @@
           && !poseImpossiblePour(playerId);
       }
 
+      /* NOTE DE POTENTIEL d'une position INTERMÉDIAIRE du tour.
+
+         Une position au milieu du tour n'est pas une fin de tour : les cartes
+         qui restent peuvent encore abriter le porteur, reprendre la couronne,
+         poser l'île. La juger avec les menaces adverses, comme si l'adversaire
+         jouait maintenant, creusait la note de tout plan qui passe par un
+         moment exposé (voler puis s'éloigner : −2 752 au vol, 4 622 à la fin)
+         et le faisceau l'abandonnait au creux. Les plans sont désormais
+         classés en cours de route sur ce potentiel ; seule la position FINALE
+         est jugée avec les menaces, puis confrontée à la riposte. */
+      let plannerEvalPotentiel = false;
+      function plannerNotePotentiel(playerId) {
+        plannerEvalPotentiel = true;
+        try { return evaluateStrategicState(playerId); }
+        finally { plannerEvalPotentiel = false; }
+      }
+
       function evaluerEtatStrategique(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
@@ -1160,7 +1185,11 @@
            parce qu'une simple POSE adverse faisait apparaître un gardien à
            côté du nouveau porteur — 1 543 points de « menace » sans aucune
            poussée. */
-        const lAdversaireJoue = !PLAN_POIDS.traitPerspective || state.currentPlayer === playerId;
+        /* En POTENTIEL (plannerNotePotentiel), la position est lue comme un
+           point de passage du tour : l'adversaire ne joue pas encore, ses
+           menaces n'y comptent pas. */
+        const lAdversaireJoue = !plannerEvalPotentiel
+          && (!PLAN_POIDS.traitPerspective || state.currentPlayer === playerId);
         const marqueMoi = plannerPeutEncoreMarquer(playerId);
         const marqueLui = !!adverse && plannerPeutEncoreMarquer(adverse.id);
         const distMoi = (r, c) => marqueMoi ? plannerLireChamp(terrain.champMoi, casesMoi, r, c) : Infinity;
@@ -2715,6 +2744,43 @@
           : null;
       }
 
+      /* DISSOLUTION (option de partie allowDissolve) : 1 magie retire une île
+         VIDE — ni gardien ni couronne au sol (règle de dissolveSelectedIsland,
+         ui.js). L'IA l'ignorait : couper le pont d'un adversaire, isoler son
+         porteur, ou priver son gardien d'un poste de poussée lui échappaient. */
+      function applyDissolutionCore(islandId) {
+        if (!state.rules || !state.rules.allowDissolve) return null;
+        const ile = state.islands.find(i => i.id === islandId);
+        if (!ile || !islandIsEmpty(ile)) return null;
+        if (availableActionCount("MAGIC", state.players[state.currentPlayer]) < 1) return null;
+        state.islands = state.islands.filter(i => i.id !== islandId);
+        const depense = consumeSelectedActionCore("MAGIC", 1);
+        return { type: "DISSOLUTION", islandId, cellules: ile.cells.map(([r, c]) => [r, c]), cout: depense };
+      }
+
+      /* Candidats de dissolution : les îles vides les plus proches de l'action
+         (gardiens et couronnes), six au plus ; l'évaluateur tranche. */
+      function plannerCandidatsDissolution(playerId) {
+        if (!state.rules || !state.rules.allowDissolve) return [];
+        if (availableActionCount("MAGIC", state.players[playerId]) < 1) return [];
+        const reperes = [
+          ...(state.characters || []).map(g => [g.r, g.c]),
+          ...activeArtifacts().map(a => {
+            const p = a.carrierId ? characterById(a.carrierId) : null;
+            return p ? [p.r, p.c] : [a.r, a.c];
+          })
+        ].filter(([r, c]) => Number.isFinite(r) && Number.isFinite(c));
+        return state.islands.filter(islandIsEmpty)
+          .map(ile => ({
+            ile,
+            proximite: Math.min(...ile.cells.flatMap(([r, c]) => reperes.map(([pr, pc]) =>
+              Math.abs(r - pr) + Math.abs(c - pc))))
+          }))
+          .sort((a, b) => a.proximite - b.proximite)
+          .slice(0, 6)
+          .map(({ ile }) => ({ type: "DISSOLUTION", islandId: ile.id }));
+      }
+
       /* Vol de la couronne d'un porteur adverse adjacent (même règle que
          beginCrownRecovery, ui.js) : une seule prise au sanctuaire par tour. */
       function applyFreeStealCore(charId, artifactId) {
@@ -2798,6 +2864,7 @@
         }
         if (action.type === "DEPOT") return applyFreeDropCore(action.charId, action.r, action.c);
         if (action.type === "VOL") return applyFreeStealCore(action.charId, action.artifactId);
+        if (action.type === "DISSOLUTION") return applyDissolutionCore(action.islandId);
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
         return appliquerActionNoyau(action);
@@ -3167,7 +3234,8 @@
                 ...plannerCandidatsPush(playerId),
                 ...plannerCandidatsMagic(playerId),
                 ...plannerCandidatsPose(playerId),
-                ...plannerCandidatsLancer(playerId)
+                ...plannerCandidatsLancer(playerId),
+                ...plannerCandidatsDissolution(playerId)
               ];
               return [...gratuites, ...payantes];
             }));
@@ -3187,13 +3255,13 @@
                    gain ne coûte rien et suivra au niveau suivant. Sans cela,
                    « pousser le porteur, aller à côté de sa couronne » était
                    élagué au creux (−652) avant le ramassage qui le relevait. */
-                let noteTri = note;
+                let noteTri = PLAN_POIDS.triPotentiel ? Math.max(note, plannerNotePotentiel(playerId)) : note;
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
                     if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
                     const essai = structuredClone(state);
-                    const n = withSimulatedState(essai, () =>
-                      plannerAppliquerAction(t) ? evaluateStrategicState(playerId) : -Infinity);
+                    const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
+                      : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
                   }
                 }
@@ -3235,8 +3303,19 @@
           }
 
           if (!suivants.length) break;
-          suivants.sort((a, b) => (b.noteTri ?? b.note) - (a.noteTri ?? a.note));
-          faisceau = plannerFaisceauDiversifie(suivants, budget.largeurFaisceau);
+          /* Deux classements, deux moitiés du faisceau : la note complète
+             (menaces comprises) garde les plans sûrs, le potentiel garde ceux
+             qui passent par un moment exposé avant de se relever. L'un seul
+             perdait l'autre famille. */
+          const parNote = [...suivants].sort((a, b) => b.note - a.note);
+          const parPotentiel = [...suivants].sort((a, b) => (b.noteTri ?? b.note) - (a.noteTri ?? a.note));
+          const moitie = Math.ceil(budget.largeurFaisceau / 2);
+          const retenus = new Set(plannerFaisceauDiversifie(parNote, moitie));
+          for (const n of plannerFaisceauDiversifie(parPotentiel, budget.largeurFaisceau)) {
+            if (retenus.size >= budget.largeurFaisceau) break;
+            retenus.add(n);
+          }
+          faisceau = [...retenus];
           profondeurAtteinte = niveau + 1;
           if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
           if (etatsExplores > budget.etatsMax) break;

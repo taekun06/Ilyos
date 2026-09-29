@@ -1031,6 +1031,19 @@
             await sleep(320);
             return true;
           }
+          case "DISSOLUTION": {
+            const applique = applyDissolutionCore(action.islandId);
+            if (!applique) return false;
+            benchJournaliser({ type: "DISSOLUTION", ile: action.islandId });
+            applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
+            if (kaykit3D) kaykit3D.lastStateSignature = "";
+            playSfx("magic");
+            showToast("ORDINATEUR dissout une île vide pour 1 magie.");
+            renderAll();
+            scheduleKayKitSync();
+            await sleep(620);
+            return true;
+          }
           case "VOL": {
             const applique = applyFreeStealCore(action.charId, action.artifactId);
             if (!applique) return false;

@@ -1579,3 +1579,47 @@ Bancs : `verif-profondeur-gratuite` comptait le DÉPÔT comme une action
 payante, alors qu'il est gratuit ; sa liste est complétée. `verif-spawn-sur`,
 `verif-depot-magic` et `verif-finalistes` échouent à l'identique sur `main`,
 avant cette branche.
+
+## Règles oubliées, bancs rouges : remise à plat (29/09)
+
+**Vol de couronne.** Un gardien à côté d'un porteur adverse lui prend sa
+couronne, gratuitement (règle de l'interface). L'IA l'ignorait : elle ne volait
+jamais, sa riposte simulée non plus, et un porteur que l'adversaire pouvait
+rejoindre ne lui paraissait pas en danger. Ajouts : transition gratuite `VOL`,
+terme « porteur volable » (même atteinte que la couronne au sol), exécution,
+description, tracé. Sur la position humaine côté jaune, l'IA vole, lance la
+couronne vers son village par une île et une rotation, puis vole la seconde :
+4 222 après réplique, contre 936.
+
+**Dissolution** (option `allowDissolve`) : ajoutée au planner.
+
+**Budget de recherche** 24 / 8 / 5 000 (était 14 / 6 / 1 200) : indispensable
+à la ligne ci-dessus. 55 décisions humaines : 1,5 → 1,9 s en moyenne, 3,8 s au
+plus. Sécurités de temps relevées (principale 7 s, tour 12 s).
+
+**Classement du faisceau.** Essai « potentiel » (positions intermédiaires lues
+sans les menaces de fin de tour) : 1 016 après réplique au lieu de 4 222 sur la
+même position, coupé (`triPotentiel: 0`). Le faisceau garde une moitié par note
+complète, une moitié par note + meilleur ramassage/vol gratuit immédiat.
+Garantie réelle : toute fin de tour rencontrée est jugée sur sa note finale ;
+les combinaisons connues (lancer, vol) sont proposées d'un bloc ; les positions
+humaines deviennent des bancs. Une recherche exhaustive (~10¹⁵ plans par tour)
+est hors de portée.
+
+**Bug corrigé** : la menace d'un pousseur apparu d'une pose comptait la force 1
+comme certaine même sans aucune PUSH possible (vestige de la main fixe).
+
+**Bancs.** Tous verts (`npm run verif:ia`, 18/18). Causes des rouges :
+- `verif-finalistes` : cassé par 8665a7c (dépôt gratuit, 24/09) sans mise à
+  jour ; attendu obsolète remplacé par son intention (le plan joué est le
+  meilleur après la riposte) ;
+- `verif-spawn-sur` : bug du pousseur collé (corrigé), puis pioche vide des
+  positions de banc lue comme « aucune carte » par le comptage — le
+  constructeur de positions donne désormais la composition restante ;
+- `verif-depot-magic` : même bug de force 1 certaine ; port et budget recopiés
+  en dur (8135, 1 200) remplacés par ceux du moteur ;
+- `verif-profondeur-gratuite` : liste recopiée des actions gratuites (oubli du
+  dépôt) → `ILYOS_BENCH.actionGratuite` ;
+- `verif-reserve`, `verif-pose-isolee` : échouaient sur une police Google
+  bloquée par un proxy ; les ressources externes ne comptent plus.
+- Nouveau : `verif-couverture-regles` (11/11 actions de joueur), `verif-vol-couronne`.

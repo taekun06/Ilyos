@@ -12,7 +12,7 @@ const hook=`window.TEST_POSE=(spec,mode)=>{
   return {common:second.length,unchanged:second.every(p=>Math.abs(first.get(signature(p))-p.score)<1e-9)};
   } finally {gameRandom=random;}
  }
- if(mode==='plan') {const r=plannerChercherPlan(0); return {states:r.etatsExplores,ms:r.dureeMs,plan:r.plan.map(a=>a.type),detail:r.plan};}
+ if(mode==='plan') {const r=plannerChercherPlan(0); return {states:r.etatsExplores,budget:PLAN_BUDGET.etatsMax,ms:r.dureeMs,plan:r.plan.map(a=>a.type),detail:r.plan};}
  const all=findAutomaticIslandPlacement(0,PLAN_POSE_ENUM_MAX,plannerMenaceValidationAdverse(0));
  const intentions=plannerIntentionsPose(0);
  const start=performance.now(); const report=plannerReleverCandidats(0);
@@ -55,7 +55,7 @@ const F={seed:722,islandPlacedThisTurn:false,hands:[['MOVE','MOVE','MOVE'],[]],i
  const page=await browser.newPage(); await page.route('**/js/game.js*',route=>{
  const source=fs.readFileSync(process.env.ILYOS_SOURCE||path.join(__dirname,'../js/game.js'),'utf8');
  return route.fulfill({contentType:'application/javascript',body:source.replace('window.ILYOS_BENCH = {',hook)});});
- await page.goto(process.env.ILYOS_BENCH_URL||'http://localhost:8136/',{waitUntil:'domcontentloaded'});
+ await page.goto(process.env.ILYOS_BENCH_URL||'http://localhost:8123/',{waitUntil:'domcontentloaded'});
  await page.waitForFunction(()=>!!window.TEST_POSE);
  const output={}; for(const [name,spec] of Object.entries({A,B,C,D,E,F,dense})) {
   output[name]={diagnostic:await page.evaluate(s=>TEST_POSE(s,'diagnostic'),spec),runs:[]};
@@ -74,7 +74,7 @@ const F={seed:722,islandPlacedThisTurn:false,hands:[['MOVE','MOVE','MOVE'],[]],i
  for(const entry of Object.values(output)) {
   assert.ok(entry.diagnostic.poses.filter(p=>p.retained).length<=20);
   assert.ok(entry.diagnostic.deep.length<=8);
-  for(const r of entry.runs) assert.ok(r.states<=1201);
+  for(const r of entry.runs) assert.ok(r.states<=r.budget+1, 'budget du moteur respecté');
  }
  if(process.env.ILYOS_SOURCE) assert.equal(pushes('A').length,0);
  else {

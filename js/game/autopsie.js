@@ -87,6 +87,8 @@
                 + ` (${a.turns} quart${a.turns > 1 ? "s" : ""} de tour)`;
             case "RAMASSAGE":
               return `ramasse la couronne avec le gardien ${depuis(a.charId)}`;
+            case "DISSOLUTION":
+              return `dissout l'île ${a.islandId} (1 magie)`;
             case "VOL":
               return `vole la couronne du porteur ${depuis(a.deId)} avec le gardien ${depuis(a.charId)}`;
             case "TRANSMISSION":
