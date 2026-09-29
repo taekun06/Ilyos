@@ -360,8 +360,8 @@
         const adverse = plannerAdversaire(playerId);
         const reserve = (adverse && state.players[adverse.id] && state.players[adverse.id].stash) || {};
         return {
-          move: (reserve.MOVE || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length,
-          push: (reserve.PUSH || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "PUSH").length
+          move: (reserve.MOVE || 0) + plannerMainAdverse(playerId).MOVE,
+          push: (reserve.PUSH || 0) + plannerMainAdverse(playerId).PUSH
         };
       }
 
@@ -515,7 +515,7 @@
         const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
         // Gravité d'une poussée de force f, pondérée par la chance d'en avoir les cartes.
         const gravitePour = f => table[Math.min(f, table.length) - 1]
-          * (f <= certaine ? 1 : plannerProbaPiocherPush(f - enReserve));
+          * (f <= certaine ? 1 : plannerProbaPiocherPush(playerId, f - enReserve));
         const actif = mode => mode === 2 || (mode === 1 && pourGardien);
         let pire = 0;
         /* Poussée longue grâce à la PIOCHE. plannerForceExpulsion ne prête une
@@ -551,28 +551,80 @@
         return pire;
       }
 
-      /* Probabilité qu'une main de cinq cartes tirée du paquet PUBLIC
-         (CARD_BLUEPRINTS) contienne au moins `n` PUSH — loi hypergéométrique.
-         Composition publique, jamais le vrai paquet mélangé. */
-      const plannerProbaPushCache = [];
-      function plannerProbaPiocherPush(n) {
-        if (n <= 0) return 1;
-        if (plannerProbaPushCache[n] !== undefined) return plannerProbaPushCache[n];
-        const total = CARD_BLUEPRINTS.length;
-        const push = CARD_BLUEPRINTS.filter(a => a === "PUSH").length;
-        const main = PLAN_MAIN_PLAUSIBLE.length;
+      /* COMPTAGE DES CARTES. Chaque joueur a 8 MOVE, 4 PUSH, 1 MAGIC ; les
+         cartes jouées vont à la défausse, remélangée quand la pioche est vide.
+         La COMPOSITION de la pioche est donc publique (13 moins défausse,
+         réserve et main) ; seul son ORDRE est caché, et on ne le lit jamais.
+         Au début de son tour, le joueur pioche cinq cartes :
+           - pioche ≥ 5 : cinq cartes tirées de la pioche ;
+           - pioche < 5 : toutes ses cartes, SÛRES, puis le reste tiré de la
+             défausse remélangée.
+         D'où une main plausible (cartes sûres + espérance arrondie au plus
+         fort reste) et la chance de piocher n PUSH (loi hypergéométrique).
+         Paquet neuf : 3,1 / 1,5 / 0,4 donnent 3 MOVE, 2 PUSH, 0 MAGIC — l'ancienne
+         main fixe. Un simple décompte, mis en cache par composition. */
+      const PLAN_TYPES_CARTES = ["MOVE", "PUSH", "MAGIC"];
+      const plannerPiocheCache = new Map();
+      function plannerPiocheProchaine(joueurId) {
+        const joueur = state.players[joueurId] || {};
+        const compter = cartes => {
+          const n = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          (cartes || []).forEach(c => { if (n[c.action] !== undefined) n[c.action]++; });
+          return n;
+        };
+        const pioche = compter(joueur.deck), defausse = compter(joueur.discard);
+        const taille = PLAN_TYPES_CARTES.reduce((s, t) => s + pioche[t], 0);
+        const cle = PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
+        const connu = plannerPiocheCache.get(cle);
+        if (connu) return connu;
+
+        const MAIN = 5;
+        const sures = taille >= MAIN ? { MOVE: 0, PUSH: 0, MAGIC: 0 } : pioche;
+        const tas = taille >= MAIN ? pioche : defausse;
+        const tasTotal = PLAN_TYPES_CARTES.reduce((s, t) => s + tas[t], 0);
+        const tirees = Math.min(taille >= MAIN ? MAIN : MAIN - taille, tasTotal);
+
+        // Main plausible : sûres + espérance du tirage, arrondie au plus fort reste.
+        const main = { ...sures };
+        const esperance = PLAN_TYPES_CARTES.map(t => [t, tasTotal ? tirees * tas[t] / tasTotal : 0]);
+        esperance.forEach(([t, e]) => { main[t] += Math.floor(e); });
+        let reste = tirees - esperance.reduce((s, [, e]) => s + Math.floor(e), 0);
+        esperance.sort((a, b) => (b[1] % 1) - (a[1] % 1))
+          .forEach(([t]) => { if (reste > 0) { main[t]++; reste--; } });
+
+        // P(au moins n PUSH) = sûres + tirage hypergéométrique.
         const comb = (a, b) => {
           if (b < 0 || b > a) return 0;
           let v = 1;
           for (let i = 1; i <= b; i++) v = v * (a - b + i) / i;
           return v;
         };
-        let p = 0;
-        for (let k = n; k <= Math.min(push, main); k++) {
-          p += comb(push, k) * comb(total - push, main - k) / comb(total, main);
+        const auMoinsPush = [];
+        for (let n = 0; n <= MAIN; n++) {
+          let p = 0;
+          for (let k = Math.max(0, n - sures.PUSH); k <= Math.min(tas.PUSH, tirees); k++) {
+            p += comb(tas.PUSH, k) * comb(tasTotal - tas.PUSH, tirees - k) / comb(tasTotal, tirees);
+          }
+          auMoinsPush.push(n <= sures.PUSH ? 1 : tasTotal ? p : 0);
         }
-        plannerProbaPushCache[n] = p;
-        return p;
+        const resultat = { main, auMoinsPush };
+        if (plannerPiocheCache.size > 256) plannerPiocheCache.clear();
+        plannerPiocheCache.set(cle, resultat);
+        return resultat;
+      }
+
+      /** Main plausible de l'adversaire de `playerId` : { MOVE, PUSH, MAGIC }. */
+      function plannerMainAdverse(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        return adverse ? plannerPiocheProchaine(adverse.id).main : { MOVE: 0, PUSH: 0, MAGIC: 0 };
+      }
+
+      /* Probabilité que l'adversaire de `playerId` pioche au moins `n` PUSH. */
+      function plannerProbaPiocherPush(playerId, n) {
+        if (n <= 0) return 1;
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return 0;
+        return plannerPiocheProchaine(adverse.id).auMoinsPush[Math.min(n, 5)] ?? 0;
       }
 
       /* Poste de poussée derrière la victime (r, c), pour une poussée vers
@@ -586,10 +638,13 @@
          adverse se tient déjà au bout du bloc. */
       function plannerPosteDerriereBloc(playerId, r, c, dr, dc) {
         let pr = r - dr, pc = c - dc;
-        while (PLAN_POIDS.posteDerriereBloc && inside(pr, pc) && isLand(pr, pc)) {
+        while (inside(pr, pc) && isLand(pr, pc)) {
           const occupant = characterAt(pr, pc);
           if (!occupant) break;
+          // Pousseur adverse en place, collé ou au bout du bloc.
           if (occupant.player !== playerId) return [pr, pc, true];
+          // Option coupée : mon gardien derrière reste un rempart (ancien calcul).
+          if (!PLAN_POIDS.posteDerriereBloc) break;
           pr -= dr; pc -= dc;
         }
         return [pr, pc, false];
@@ -602,8 +657,9 @@
         if (!adverse) return 0;
 
         const reserve = state.players[adverse.id] && state.players[adverse.id].stash || {};
-        const plausibleMove = PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
-        const plausiblePush = PLAN_MAIN_PLAUSIBLE.filter(a => a === "PUSH").length;
+        const plausible = plannerMainAdverse(playerId);
+        const plausibleMove = plausible.MOVE;
+        const plausiblePush = plausible.PUSH;
         const budgetMove = budget && budget.move !== undefined
           ? budget.move : (reserve.MOVE || 0) + plausibleMove;
         const budgetPush = budget && budget.push !== undefined
@@ -931,7 +987,7 @@
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
         const reserve = state.players[adverse.id]?.stash || {};
-        const budgetMove = (reserve.MOVE || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
+        const budgetMove = (reserve.MOVE || 0) + plannerMainAdverse(playerId).MOVE;
         const portees = plannerPorteesAdverses(playerId, budgetMove);
         let poseSeule = false;
         for (const [vr, vc] of orthogonalNeighbors(r, c)) {
@@ -2973,24 +3029,11 @@
         });
       }
 
-      /* Main plausible prêtée à l'adversaire pour la simulation. Ce n'est PAS
-         sa vraie main future : `player.deck` est un tableau ordonné et
-         mélangé, le consulter serait tricher. On part de la composition
-         PUBLIQUE du paquet (CARD_BLUEPRINTS : 8 MOVE, 4 PUSH, 1 MAGIC sur 13),
-         arrondie sur cinq cartes en gardant les trois types représentés — un
-         adversaire dont on ne simulerait jamais la magie serait sous-estimé. */
-      /* Espérance arrondie d'un tirage de cinq cartes : 8/13 MOVE, 4/13 PUSH,
-         1/13 MAGIC donnent 3,1 / 1,5 / 0,4. D'où trois MOVE, deux PUSH, et
-         AUCUNE magie.
-
-         Ce dernier point a été mesuré. Prêter une magie garantie à chaque main
-         simulée rendait l'IA paranoïaque : l'adversaire faisait tourner l'île
-         sous les pieds du porteur, si bien qu'aucune case de validation ne
-         paraissait jamais tenable et qu'Expert renonçait à marquer. Or la magie
-         est UNE carte sur treize. Les menaces de magie restent modélisées quand
-         l'adversaire en a réellement une en RÉSERVE — information connue — mais
-         on ne lui suppose plus une pioche chanceuse. */
-      const PLAN_MAIN_PLAUSIBLE = ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"];
+      /* Main plausible prêtée au joueur qui entre en jeu : plannerPiocheProchaine
+         (comptage des cartes). Jamais sa vraie main : `player.deck` est ordonné,
+         seule sa composition est lue. La MAGIE n'y entre que si le décompte la
+         rend probable (pioche presque vide) : la prêter à chaque main rendait
+         l'IA paranoïaque — aucune case de validation ne paraissait tenable. */
 
       /** Transition de fin de tour réduite à ses effets de RÈGLE.
        *  Reproduit l'ordre réel du moteur — mise en réserve des cartes non
@@ -3020,9 +3063,9 @@
           return { vainqueur: state.winner };
         }
 
-        entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
-          id: "plausible-" + state.turn + "-" + i, action, used: false
-        }));
+        const plausible = plannerPiocheProchaine(entrant.id).main;
+        entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
+          .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();

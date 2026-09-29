@@ -22,13 +22,17 @@ const assert = require('node:assert/strict');
     const page = await browser.newPage();
     await page.route('**/js/game.js*', async route => {
       const source = fs.readFileSync(path.join(__dirname, '../js/game.js'), 'utf8');
-      const hook = `window.TEST_EXPOSE = (reservePush, porteur, mode) => {
+      const hook = `window.TEST_EXPOSE = (reservePush, porteur, mode, pioche) => {
         state = state || {};
         benchPoserPosition({ seed: 5, islandPlacedThisTurn: false, aiPlayer: 1,
           islands: [{ owner: 0, cells: [[3,1],[3,2],[3,3],[3,4]] }],
           characters: [{ id: 'humain', player: 0, r: 3, c: 2 }, { id: 'ia', player: 1, r: 3, c: 3 }],
           crowns: porteur ? [{ r: 3, c: 3, carrierId: 'ia', active: true }, null] : [],
           stash: [{ PUSH: reservePush }, {}] });
+        // Paquet de l'humain (J0) : neuf par défaut, sinon [pioche, défausse].
+        const cartes = l => l.map((action, i) => ({ id: 'c' + i, action, used: false }));
+        state.players[0].deck = cartes(pioche ? pioche[0] : CARD_BLUEPRINTS);
+        state.players[0].discard = cartes(pioche ? pioche[1] : []);
         const memoire = PLAN_POIDS.piochePush, apparition = PLAN_POIDS.menacePoseAdverse;
         PLAN_POIDS.piochePush = mode;
         PLAN_POIDS.menacePoseAdverse = 0; // les postes vides (rangées 2 et 4) sont un autre sujet
@@ -36,7 +40,8 @@ const assert = require('node:assert/strict');
           return {
             certaine: plannerForceExpulsion(1, 3, 3),
             gravite: plannerGraviteExpulsion(1, 3, 3, !porteur),
-            p1: plannerProbaPiocherPush(1), p2: plannerProbaPiocherPush(2)
+            p1: plannerProbaPiocherPush(1, 1), p2: plannerProbaPiocherPush(1, 2),
+            main: plannerMainAdverse(1)
           };
         } finally { PLAN_POIDS.piochePush = memoire; PLAN_POIDS.menacePoseAdverse = apparition; }
       }; window.ILYOS_BENCH = {`;
@@ -45,12 +50,14 @@ const assert = require('node:assert/strict');
     });
     await page.goto(process.env.ILYOS_BENCH_URL || 'http://localhost:8123/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof window.TEST_EXPOSE === 'function', null, { timeout: 60000 });
-    const t = (push, porteur, mode) => page.evaluate(a => window.TEST_EXPOSE(...a), [push, porteur, mode]);
+    const t = (push, porteur, mode, pioche) => page.evaluate(a => window.TEST_EXPOSE(...a), [push, porteur, mode, pioche]);
 
     // Loi hypergéométrique : 5 cartes parmi 13 dont 4 PUSH.
     const base = await t(1, false, 1);
     assert.ok(Math.abs(base.p1 - 1161 / 1287) < 1e-9, `P(≥1 PUSH) ${base.p1}`);
     assert.ok(Math.abs(base.p2 - 657 / 1287) < 1e-9, `P(≥2 PUSH) ${base.p2}`);
+    assert.deepEqual(base.main, { MOVE: 3, PUSH: 2, MAGIC: 0 }, 'paquet neuf : main 3/2/0');
+
 
     const cas = [
       // [réserve PUSH, porteur, mode, gravité attendue]
@@ -66,7 +73,17 @@ const assert = require('node:assert/strict');
       assert.ok(Math.abs(r.gravite - attendu) < 1e-9, `${nom} : gravité ${r.gravite}, attendu ${attendu}`);
       console.log(`ok  ${nom} — gravité ${r.gravite.toFixed(3)} (force certaine ${r.certaine})`);
     }
-    console.log('verif-gardien-expose : 6/6');
+    // Comptage : plus aucune PUSH en pioche (6 cartes), toutes en défausse.
+    const M = 'MOVE', P = 'PUSH';
+    const vide = await t(1, false, 1, [[M, M, M, M, M, 'MAGIC'], [M, M, M, P, P, P, P]]);
+    assert.equal(vide.p1, 0, 'aucune PUSH piochable');
+    // Pioche de 2 cartes (PUSH, MAGIC) sûres, 3 tirées de la défausse (6 MOVE, 3 PUSH).
+    const fin = await t(0, false, 1, [[P, 'MAGIC'], [M, M, M, M, M, M, P, P, P]]);
+    assert.equal(fin.p1, 1, 'PUSH sûre en fin de pioche');
+    assert.ok(Math.abs(fin.p2 - (1 - 20 / 84)) < 1e-9, `P(≥2 PUSH) fin de pioche ${fin.p2}`);
+    assert.deepEqual(fin.main, { MOVE: 2, PUSH: 2, MAGIC: 1 }, 'main : sûres + espérance');
+    console.log('ok  comptage des cartes (paquet neuf, pioche sans PUSH, fin de pioche)');
+    console.log('verif-gardien-expose : 7/7');
   } finally {
     await browser.close();
   }

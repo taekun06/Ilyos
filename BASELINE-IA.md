@@ -1392,3 +1392,25 @@ neutre ou nuisible en IA contre IA (`piochePush` 40 %, `posteDerriereBloc`
 46 %), sauf `menacePoseAdverse` (55,6 %). Le self-play ne peut pas valider ce
 qui ne sert que contre un joueur qui exploite : ces options sont à juger
 contre des parties humaines.
+
+## Comptage des cartes adverses
+
+Avant : main adverse fixe (3 MOVE, 2 PUSH) et probabilité de pioche calculée
+sur un paquet neuf de 13 cartes, quel que soit l'état de la pioche.
+
+Maintenant (`plannerPiocheProchaine`) : décompte de la COMPOSITION de la pioche
+et de la défausse, jamais de leur ordre. Pioche ≥ 5 : cinq cartes tirées de la
+pioche. Pioche < 5 : ses cartes sont sûres, le reste est tiré de la défausse
+remélangée. Il en sort une main plausible (sûres + espérance arrondie au plus
+fort reste, 3/2/0 sur un paquet neuf) et P(≥ n PUSH). Le calcul est mis en cache
+par composition. Il sert au budget adverse, aux portées, à la gravité
+d'expulsion et à la main simulée du joueur entrant ; la MAGIE n'y entre que si
+le décompte la rend probable. Les poids sont inchangés et le comptage n'a pas
+été mesuré en self-play (banc `verif-gardien-expose.js` 7/7, une paire
+self-play sans erreur ni coupure).
+
+Corrigé au passage : avec `posteDerriereBloc: 0`, un pousseur adverse déjà
+COLLÉ à la victime n'était plus compté par `plannerForceExpulsion`. Il ne
+tenait plus qu'à `aiPushOffRisk`. Le banc `verif-gardien-expose.js` échouait
+sur `main`. Les mesures `posteDerriereBloc` et `menacePoseAdverse` ci-dessus ont
+été faites avec ce défaut.
