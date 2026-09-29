@@ -1381,12 +1381,18 @@
       /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
          rend. Sans restitution, un tournoi laisserait le jeu réel avec les
          poids du dernier candidat testé. */
+      /* Clés pointées pour les bornes de recherche, à comparer sans toucher au
+         jeu : « PLAN_RIPOSTE.decisionsMax », « PLAN_BUDGET.etatsMax »… */
+      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE };
       function selfplayAppliquerPoids(poids) {
         if (!poids) return null;
         const memoire = {};
         Object.keys(poids).forEach(cle => {
-          memoire[cle] = PLAN_POIDS[cle];
-          PLAN_POIDS[cle] = poids[cle];
+          const [table, champ] = cle.includes(".") ? cle.split(".") : [null, cle];
+          const cible = table ? SELFPLAY_TABLES[table] : PLAN_POIDS;
+          if (!cible) return;
+          memoire[cle] = cible[champ];
+          cible[champ] = poids[cle];
         });
         return memoire;
       }

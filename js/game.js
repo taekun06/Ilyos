@@ -24681,10 +24681,11 @@
         /* Un de mes gardiens collé derrière un autre forme un bloc poussable,
            pas un rempart (plannerPosteDerriereBloc). 0 = ancien calcul.
            Juste selon la règle, mais mesuré contre 0 (80 parties
-           reproductibles) : 33-39-8 (46 %), pertes 418 contre 424. Sans gain
-           en IA contre IA : reste à 0, en option pour mesurer contre des
-           humains. */
-        posteDerriereBloc: 0,
+           reproductibles) : 33-39-8 (46 %), pertes 418 contre 424 — mesure
+           faite quand le mode 0 perdait aussi le pousseur COLLÉ (corrigé). Une
+           défaite humaine du 29/09 : trois gardiens alignés éjectés d'une seule
+           poussée, invisible au mode 0. Activé. */
+        posteDerriereBloc: 1,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -24712,6 +24713,8 @@
         depotLibre: 1,
         // Place réservée à la pose au contact qui ramène la couronne vers mon village.
         poseRetourVillage: 1,
+        // Pose qui reçoit une couronne poussée au-dessus du vide (plannerIntentionsPose).
+        poseReception: 1,
         // Places de riposte réservées aux meilleurs plans d'autres idées.
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
@@ -26684,6 +26687,32 @@
            un village veut un gardien DESSUS (0). */
         const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
         ajouter("couronne", libres, 1);
+
+        /* RÉCEPTION : une couronne poussée survole le vide et se pose sur sa
+           case d'arrivée si c'est de la terre. Poser l'île LÀ, avant la
+           poussée, l'envoie loin d'un coup — puis une rotation magique ou un
+           gardien lointain la reprend. Aucune intention ne visait ces cases :
+           la combinaison n'était jamais examinée, quel que soit le budget. */
+        if (PLAN_POIDS.poseReception) {
+          const force = availableActionCount("PUSH", moi);
+          const arrivees = [];
+          for (const a of activeArtifacts()) {
+            if (a.carrierId !== null) continue;
+            for (const pousseur of plannerGardiensDe(playerId)) {
+              const dr = a.r - pousseur.r, dc = a.c - pousseur.c;
+              if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
+              for (let f = 1; f <= force; f++) {
+                const r = a.r + dr * f, c = a.c + dc * f;
+                if (!inside(r, c)) break;
+                if (!isLand(r, c)) arrivees.push([r, c]);
+              }
+            }
+          }
+          ajouter("reception", arrivees, 1);
+          // L'île doit COUVRIR une case d'arrivée, pas seulement la jouxter.
+          const reception = intentions.find(i => i.but === "reception");
+          if (reception) reception.couvrir = true;
+        }
         if ((state.couronnesEnAttente || []).length) ajouter("sanctuaire", [[CENTER.r, CENTER.c]], 1);
 
         if (adverse) {
@@ -26960,6 +26989,8 @@
         for (const intention of plannerIntentionsPose(playerId)) {
           const notees = [];
           for (const pose of toutes) {
+            if (intention.couvrir && !pose.cells.some(([r, c]) =>
+              intention.cibles.some(([tr, tc]) => tr === r && tc === c))) continue;
             let meilleurSpawn = null;
             let meilleurEcart = Infinity;
             for (const cellule of pose.cells) {
@@ -45342,12 +45373,18 @@
       /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
          rend. Sans restitution, un tournoi laisserait le jeu réel avec les
          poids du dernier candidat testé. */
+      /* Clés pointées pour les bornes de recherche, à comparer sans toucher au
+         jeu : « PLAN_RIPOSTE.decisionsMax », « PLAN_BUDGET.etatsMax »… */
+      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE };
       function selfplayAppliquerPoids(poids) {
         if (!poids) return null;
         const memoire = {};
         Object.keys(poids).forEach(cle => {
-          memoire[cle] = PLAN_POIDS[cle];
-          PLAN_POIDS[cle] = poids[cle];
+          const [table, champ] = cle.includes(".") ? cle.split(".") : [null, cle];
+          const cible = table ? SELFPLAY_TABLES[table] : PLAN_POIDS;
+          if (!cible) return;
+          memoire[cle] = cible[champ];
+          cible[champ] = poids[cle];
         });
         return memoire;
       }

@@ -1513,3 +1513,17 @@ presque jamais ces poussées, un humain si. Deux défauts corrigés au passage :
 Lot du 29/09 : pertes invisibles 7 → 1 (reste un bloc de trois gardiens
 alignés, `posteDerriereBloc: 0`). Porteurs laissés éjectables sur 51 décisions
 rejouées : 7 → 5.
+
+### `posteDerriereBloc` activé, pose de « réception », budgets réglables
+
+- `posteDerriereBloc: 1` : la mesure qui l'avait coupé datait d'avant la
+  correction du pousseur collé. Dernière perte invisible du lot du 29/09 :
+  trois gardiens alignés éjectés d'une seule poussée.
+- Intention de pose « réception » (`poseReception: 1`) : une couronne poussée
+  survole le vide et se pose sur sa case d'arrivée si c'est de la terre.
+  Aucune intention ne proposait d'île sur ces cases : la combinaison « poser
+  une île lointaine, y pousser la couronne, pivoter, ramasser » n'était jamais
+  examinée. L'île doit COUVRIR une case d'arrivée. Effet en partie : non mesuré.
+- `ILYOS_SELFPLAY` accepte des clés pointées (`PLAN_RIPOSTE.decisionsMax`,
+  `PLAN_BUDGET.etatsMax`…) pour comparer des bornes de recherche sans toucher
+  au jeu.
