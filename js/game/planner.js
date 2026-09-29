@@ -181,6 +181,13 @@
         exposeCouronneContestee: 900,
         exposeCouronneFavorableAdverse: 1600,
         exposeCatastrophe: 2400,
+        /* Porteur éjectable : c'est l'ADVERSAIRE qui joue, et son pousseur finit
+           collé à la couronne tombée — il la ramasse dans la foulée. Le cas
+           « sûr » (un de mes gardiens à côté) ne vaut donc plus, et le gardien
+           porteur est perdu en plus. Sur 4 défaites humaines, 17 décisions
+           rejouées sur 51 laissaient un porteur éjectable, vu mais sous-coté
+           (400 points). 0 = ancien calcul. */
+        porteurExposeRiposte: 1,
 
         // Gardien : présence faible, utilité positionnelle décisive.
         gardien: 200,
@@ -1277,7 +1284,12 @@
           const graviteCouronne = porteur && porteur.player === playerId && lAdversaireJoue
             ? plannerGraviteExpulsion(playerId, r, c) : 0;
           if (graviteCouronne > 0) {
-            const cout = plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl);
+            const surValidation = isCrownValidationCell(moi, r, c);
+            const cout = !PLAN_POIDS.porteurExposeRiposte
+              ? plannerCoutExpositionPorteur(surValidation, dm, dl)
+              : (surValidation ? PLAN_POIDS.exposeCouronneSure
+                : dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe)
+                + PLAN_POIDS.gardienExpose;
             ajouter("porteurExpose", -cout * graviteCouronne,
               `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
           }

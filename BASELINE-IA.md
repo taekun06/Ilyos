@@ -1441,3 +1441,33 @@ distances calculé une fois par forme de terrain.
 Non mesuré en self-play long. Une paire de contrôle s'est jouée sans erreur ni
 tour coupé. Reste : 25 pertes « vues et acceptées », à instruire (la gravité
 pèse-t-elle assez face au gain du coup ?).
+
+### Les 7 pertes restantes, et le porteur « vu mais accepté »
+
+Les 7 pertes encore invisibles viennent de deux réglages coupés : 4 poussées de
+force 2 faites avec des PUSH PIOCHÉES (`piochePush: 0`) et 3 poussées de
+FORCE 3 (`pousseeLongue: 2`). Si on juge avec ces deux menaces activées, il ne
+reste que 4 pertes invisibles.
+
+Mais la cause principale est ailleurs : 28 pertes sur 32 sont VUES par l'IA.
+Même en voyant tout, elle laisse un porteur éjectable dans 17 décisions
+rejouées sur 51. Son coût était celui d'une couronne « sûre » (400) dès qu'un
+de mes gardiens se tient à côté de la case où elle tomberait. Or c'est
+l'adversaire qui joue : son pousseur finit collé à la couronne tombée et la
+ramasse dans la foulée, ce que montrent les parties. Relever ce coût à 2400
+partout fait passer les porteurs exposés de 17 à 7 : c'est bien une affaire de
+poids, pas d'absence de refuge.
+
+Correction (`porteurExposeRiposte: 1`) : plus de cas « sûr » hors case de
+validation. Le coût vaut 900 si un de mes gardiens est à côté, 2400 sinon, plus
+`gardienExpose` (500) pour le gardien porteur perdu.
+
+| 51 décisions rejouées, jugées avec toutes les menaces | porteurs exposés |
+|---|---|
+| avant | 17 |
+| `porteurExposeRiposte` | 9 |
+| + `piochePush: 2`, `pousseeLongue: 3` | 6 |
+
+`piochePush` et `pousseeLongue` 3 restent coupés : ils avaient été mesurés
+nuisibles en IA contre IA (avant le comptage des cartes et la correction du
+pousseur collé). Ils sont à trancher.
