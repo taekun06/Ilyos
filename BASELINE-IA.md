@@ -1527,3 +1527,21 @@ rejouées : 7 → 5.
 - `ILYOS_SELFPLAY` accepte des clés pointées (`PLAN_RIPOSTE.decisionsMax`,
   `PLAN_BUDGET.etatsMax`…) pour comparer des bornes de recherche sans toucher
   au jeu.
+
+### Plus de budget de recherche : peu d'effet mesurable
+
+Les 51 décisions du lot ont été rejouées, puis attaquées par l'IA elle-même avec
+les vraies cartes humaines et une grosse recherche (8 décisions, 4 000 états).
+Cinq configurations tournaient en parallèle sur 4 cœurs, d'où des temps gonflés.
+
+| Configuration | gardiens IA perdus | couronnes perdues | ms moyen |
+|---|---|---|---|
+| actuelle | 21 | 0 | 2 226 |
+| riposte 6 décisions, 1 000 états | 19 | 0 | 3 793 |
+| + recherche propre 8 décisions, 3 600 états | 21 | 2 | 4 049 |
+
+Écarts dans le bruit. Limite : le juge est le même planner, il ne trouve pas
+non plus les combinaisons humaines. La pose de « réception » ne change qu'un
+plan sur 51. Une couronne libre à côté d'un gardien IA, avec des PUSH en main,
+est rare dans ces positions : la combinaison complète (dépôt, pose, poussée,
+rotation, ramassage) est à instruire sur une position dédiée. Budgets inchangés.
