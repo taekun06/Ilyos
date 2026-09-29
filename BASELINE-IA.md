@@ -1480,3 +1480,20 @@ longues, avant que la force ne soit prêtée seulement pour les PUSH en RÉSERVE
 de quatre cases. Sur les 51 décisions rejouées, jugées avec toutes les menaces
 et une force jusqu'à 4, les porteurs laissés éjectables passent de 10 à 5, au
 même coût (1 145 → 1 109 ms par décision). Défaut : 4.
+
+### Coût du porteur éjecté : case de validation, et un essai non retenu
+
+`dm` et `dl` sont les distances de la case de chute aux VILLAGES, pas aux
+gardiens. L'exception « sûre » sur ma case de validation est supprimée : c'est
+un vestige de la règle V66 (couronne au sol validée sans porteur), abandonnée.
+Porteurs laissés éjectables sur les 51 décisions rejouées : 5 → 4.
+
+Essai non retenu, à la demande de juger ce qui reste au DÉBUT DE MON TOUR :
+coût = valeur de la couronne maintenant − valeur une fois ramassée et emportée
+(R = déplacements adverses − 1), même mesure pour la couronne au sol. Résultat :
+24 porteurs éjectables au lieu de 4. La table `couronneParDistance` vaut très
+peu loin des villages : une couronne emportée de deux cases au milieu du
+plateau n'y coûte qu'environ 770, contre 2 900 au barème. Dans les parties
+humaines, une couronne prise par un pousseur au milieu du plateau finit
+pourtant validée. L'accès de MES gardiens au porteur adverse au tour suivant
+(peut-on le repousser ?) reste à modéliser.
