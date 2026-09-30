@@ -908,6 +908,34 @@
         if (selectedMode === "3" || selectedMode === "4") {
           els.modeOptions.innerHTML = boardSizeControlHTML();
         }
+        if (selectedMode === "4") {
+          els.modeOptions.innerHTML += `
+          <label class="mode-option-row" for="teamSeatsSelect">
+            <span><b>Ordinateurs</b><small>Places tenues par l’IA.</small></span>
+            <select id="teamSeatsSelect">
+              <option value="none" selected>Aucun — 4 humains</option>
+              <option value="ai24">J2 et J4 — 2 humains contre l’IA</option>
+              <option value="ai234">J2, J3 et J4 — 1 humain contre 3 IA</option>
+            </select>
+          </label>
+          <label class="mode-option-row" for="aiDifficultySelect">
+            <span><b>Difficulté de l’ordinateur</b></span>
+            <select id="aiDifficultySelect">
+              <option value="easy">Facile</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Difficile</option>
+              <option value="expert">Expert</option>
+            </select>
+          </label>
+          <label class="mode-option-row" for="teamVillagesSelect">
+            <span><b>Villages</b><small>En équipe, J1 et J3 partagent les deux villages d’une diagonale, J2 et J4 ceux de l’autre.</small></span>
+            <select id="teamVillagesSelect">
+              <option value="solo" selected>Un village par joueur</option>
+              <option value="team">Diagonale partagée par l’équipe</option>
+            </select>
+          </label>
+        `;
+        }
 
         els.startBtn.textContent = "Lancer ILYOS — KayKit Edition";
       }
@@ -3263,7 +3291,18 @@
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
-        const villageAssignments = getVillageAssignments(count);
+        /* 2 contre 2 : chacun pour soi (score individuel), mais des places
+           peuvent être tenues par l'IA, et les deux villages d'une diagonale
+           peuvent être partagés par l'équipe (J1+J3, J2+J4) comme en duel. */
+        const teamMode = count === 4;
+        const siegesIA = !teamMode ? []
+          : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
+        const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
+        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `ORDINATEUR ${i + 1}`; });
+        const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
+        const villageAssignments = villagesEquipe
+          ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())
+          : getVillageAssignments(count);
         const startingPlayerIndex = Math.floor(gameRandom() * count);
 
         const players = names.map((name, i) => {
@@ -3273,8 +3312,8 @@
             name,
             color: PLAYER_COLORS[i],
             icon: PLAYER_ICONS[i],
-            isAI: soloMode && i === 1,
-            aiDifficulty: soloMode && i === 1 ? aiDifficulty : null,
+            isAI: estIA(i),
+            aiDifficulty: estIA(i) ? aiDifficulty : null,
             village: { ...villages[0] },
             villages,
             score: 0,

@@ -271,7 +271,12 @@
         return 1 / (1 + distance * 0.5);
       }
 
+      /* En 4 joueurs (2 contre 2), le planner reste à un adversaire : celui
+         qui joue juste après — c'est lui qui répond au tour, et avec l'ordre
+         J1, J2, J3, J4 il appartient toujours à l'autre équipe. */
       function plannerAdversaire(playerId) {
+        const n = state.players.length;
+        if (n > 2) return state.players[(playerId + 1) % n] || null;
         return state.players.find(p => p.id !== playerId) || null;
       }
 
@@ -3435,6 +3440,12 @@
         const entrant = state.players[state.currentPlayer];
         scoreCrownsAtTurnStart(entrant);
         if (state.winner !== null && state.winner !== undefined) {
+          return { vainqueur: state.winner };
+        }
+        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
+        if (finParPoseImpossible(entrant.id)) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return { vainqueur: state.winner };
         }
 

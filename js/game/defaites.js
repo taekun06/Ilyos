@@ -43,6 +43,7 @@
         if (typeof ilyosSimulationActive !== "undefined" && ilyosSimulationActive) return false;
         try { if (ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active) return false; } catch (erreur) { /* harnais absent */ }
         const joueurs = state.players || [];
+        if (joueurs.length !== 2) return false;
         return joueurs.some(j => !j.isAI) && joueurs.some(j => j.isAI && j.aiDifficulty === "expert");
       }
 
