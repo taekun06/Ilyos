@@ -1,0 +1,600 @@
+/* ILYOS — MENU DE JEU (en partie)
+   Mise en page de js/menu-jeu.js : #hudV2GearPopover devient un menu plein
+   écran. Chargée en dernier par ce script, et ancrée sur
+   #gameScreen > #hudV2GearPopover.mj-menu : les anciennes passes du popover ⚙
+   (hud-v2.css, hud-organique-v2.css, typography-g2c.css…) visent le même
+   élément avec un sélecteur moins spécifique et restent donc sans effet ici. */
+
+:root {
+  --mj-or: #e9bd5b;
+  --mj-or-clair: #f6dc97;
+  --mj-texte: #f1ead8;
+  --mj-texte-doux: rgba(241, 234, 216, .66);
+  --mj-fond-panneau: rgba(9, 18, 31, .94);
+  --mj-trait: rgba(233, 189, 91, .22);
+  --mj-titre: 'Cinzel Decorative', Georgia, serif;
+  --mj-info: 'Nunito Sans', Inter, system-ui, sans-serif;
+}
+
+/* ---------- Bouton MENU (HUD organique) ---------- */
+body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px 0 11px;
+  border: 1px solid rgba(233, 189, 91, .55);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 34, 52, .92), rgba(7, 15, 26, .9));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 236, 190, .14);
+  color: var(--mj-or-clair);
+  font: 800 13px/1 var(--mj-info);
+  letter-spacing: .16em;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn kbd {
+  padding: 3px 6px;
+  border: 1px solid rgba(233, 189, 91, .3);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .25);
+  color: var(--mj-texte-doux);
+  font: 700 10px/1 var(--mj-info);
+  letter-spacing: .04em;
+  text-transform: none;
+  align-self: center;
+}
+body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:hover,
+body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn[aria-expanded="true"] {
+  border-color: var(--mj-or);
+  background: linear-gradient(180deg, rgba(58, 45, 20, .95), rgba(22, 17, 8, .92));
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .4), 0 0 16px rgba(233, 189, 91, .35);
+  transform: translateX(-50%) translateY(-1px);
+}
+body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:focus-visible {
+  outline: 2px solid var(--mj-or-clair);
+  outline-offset: 3px;
+}
+@media (max-height: 800px) {
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn { top: 64px; height: 32px; }
+}
+/* Téléphone en portrait (css/portrait-mobile.css) : la plaque du tour, réduite
+   à 28 px, est suivie directement par la rangée des joueurs. Le bouton se range
+   dans le coin haut gauche, sur la même ligne que la plaque. */
+@media (orientation: portrait) and (max-width: 820px) {
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn {
+    top: max(6px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    transform: none;
+    height: 28px;
+    gap: 6px;
+    padding: 0 10px 0 8px;
+    font-size: 11px;
+    letter-spacing: .12em;
+  }
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:hover,
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn[aria-expanded="true"] { transform: none; }
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn svg { width: 15px; height: 15px; }
+}
+/* Écran tactile : pas de clavier, pas de touche à afficher. */
+@media (hover: none) and (pointer: coarse) {
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn kbd { display: none; }
+}
+
+/* La bascule « VUE 2D » (js/plateau-tactique.js) vit sur <body>, hors du jeu :
+   elle passerait au-dessus du menu ouvert. */
+body.mj-menu-ouvert #plateauTactiqueBtn { visibility: hidden !important; }
+
+/* ---------- Menu plein écran ---------- */
+body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  display: grid !important;
+  place-items: center !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  /* Au-dessus du HUD (100000) et du calque des énigmes (1500001), sous
+     l'iframe du menu principal. */
+  z-index: 1600000 !important;
+  pointer-events: auto !important;
+  color: var(--mj-texte);
+  font-family: var(--mj-info);
+  animation: mj-apparition .18s ease-out;
+}
+body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu.hidden {
+  display: none !important;
+}
+@keyframes mj-apparition { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mj-monte { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+
+#hudV2GearPopover.mj-menu .mj-fond {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(12, 24, 40, .45), rgba(3, 7, 13, .82) 70%),
+    rgba(3, 7, 13, .35);
+  -webkit-backdrop-filter: blur(7px) saturate(.85);
+  backdrop-filter: blur(7px) saturate(.85);
+}
+
+#hudV2GearPopover.mj-menu .mj-coque {
+  position: relative;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  width: min(960px, calc(100vw - 48px));
+  height: min(620px, calc(100vh - 48px));
+  border: 1px solid var(--mj-trait);
+  border-radius: 20px;
+  background: var(--mj-fond-panneau);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 236, 190, .08);
+  overflow: hidden;
+  animation: mj-monte .22s cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Colonne de navigation */
+#hudV2GearPopover.mj-menu .mj-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 24px 16px 18px;
+  border-right: 1px solid var(--mj-trait);
+  background: linear-gradient(180deg, rgba(233, 189, 91, .08), rgba(233, 189, 91, 0) 45%), rgba(3, 9, 17, .5);
+  overflow-y: auto;
+}
+#hudV2GearPopover.mj-menu .mj-entete {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px 14px;
+}
+#hudV2GearPopover.mj-menu .mj-marque {
+  color: var(--mj-or);
+  font: 800 11px/1 var(--mj-info);
+  letter-spacing: .32em;
+}
+#hudV2GearPopover.mj-menu .mj-titre {
+  color: var(--mj-texte);
+  font: 700 30px/1.15 var(--mj-titre);
+  letter-spacing: .03em;
+}
+#hudV2GearPopover.mj-menu .mj-contexte {
+  color: var(--mj-texte-doux);
+  font: 700 12px/1.3 var(--mj-info);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  min-height: 1em;
+}
+
+#hudV2GearPopover.mj-menu button {
+  font-family: var(--mj-info);
+  cursor: pointer;
+}
+#hudV2GearPopover.mj-menu kbd {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .25);
+  color: inherit;
+  font: 700 10.5px/1 var(--mj-info);
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+#hudV2GearPopover.mj-menu .mj-reprendre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  margin-bottom: 14px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 226, 150, .75);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f3d27c, #d19b35);
+  box-shadow: 0 8px 20px rgba(209, 155, 53, .25), inset 0 1px 0 rgba(255, 255, 255, .45);
+  color: #26180a;
+  font-weight: 900;
+  font-size: 14.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  text-align: left;
+  transition: filter .15s ease, transform .15s ease;
+}
+#hudV2GearPopover.mj-menu .mj-reprendre svg { width: 18px; height: 18px; flex: none; }
+#hudV2GearPopover.mj-menu .mj-reprendre span { flex: 1; }
+#hudV2GearPopover.mj-menu .mj-reprendre kbd { letter-spacing: .02em; text-transform: none; border-color: rgba(38, 24, 10, .3); background: rgba(38, 24, 10, .12); }
+#hudV2GearPopover.mj-menu .mj-reprendre:hover { filter: brightness(1.07); transform: translateY(-1px); }
+
+#hudV2GearPopover.mj-menu .mj-nav-label {
+  padding: 4px 10px 2px;
+  color: var(--mj-texte-doux);
+  font: 800 10.5px/1 var(--mj-info);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+}
+#hudV2GearPopover.mj-menu .mj-onglets {
+  display: grid;
+  gap: 3px;
+}
+#hudV2GearPopover.mj-menu .mj-onglet,
+#hudV2GearPopover.mj-menu .mj-nav-actions > button {
+  display: flex !important;
+  align-items: center;
+  gap: 11px;
+  width: 100% !important;
+  min-height: 42px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--mj-texte) !important;
+  font: 700 14.5px/1.2 var(--mj-info) !important;
+  letter-spacing: .02em !important;
+  text-align: left !important;
+  text-transform: none !important;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+#hudV2GearPopover.mj-menu .mj-onglet svg { width: 19px; height: 19px; flex: none; color: var(--mj-or); opacity: .8; }
+#hudV2GearPopover.mj-menu .mj-onglet:hover,
+#hudV2GearPopover.mj-menu .mj-nav-actions > button:hover {
+  background: rgba(255, 255, 255, .06) !important;
+}
+#hudV2GearPopover.mj-menu .mj-onglet[aria-selected="true"] {
+  border-color: rgba(233, 189, 91, .4) !important;
+  background: linear-gradient(90deg, rgba(233, 189, 91, .2), rgba(233, 189, 91, .04)) !important;
+  color: var(--mj-or-clair) !important;
+}
+#hudV2GearPopover.mj-menu .mj-onglet[aria-selected="true"] svg { opacity: 1; }
+
+#hudV2GearPopover.mj-menu .mj-nav-actions {
+  display: grid;
+  gap: 3px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+#hudV2GearPopover.mj-menu .mj-nav-actions > button.hidden { display: none !important; }
+#hudV2GearPopover.mj-menu .mj-nav-actions > #newGameBtn { color: #ffb4a4 !important; }
+#hudV2GearPopover.mj-menu .mj-nav-actions > #newGameBtn:hover { background: rgba(255, 110, 90, .1) !important; }
+
+#hudV2GearPopover.mj-menu .mj-onglet:focus-visible,
+#hudV2GearPopover.mj-menu .mj-nav-actions > button:focus-visible,
+#hudV2GearPopover.mj-menu .mj-reprendre:focus-visible,
+#hudV2GearPopover.mj-menu .mj-choix:focus-visible,
+#hudV2GearPopover.mj-menu .mj-fermer:focus-visible {
+  outline: 2px solid var(--mj-or-clair) !important;
+  outline-offset: 2px !important;
+}
+
+/* Panneau des onglets */
+#hudV2GearPopover.mj-menu .mj-panneau {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 30px 34px 30px;
+  scrollbar-color: rgba(233, 189, 91, .35) transparent;
+}
+#hudV2GearPopover.mj-menu .mj-page[hidden] { display: none !important; }
+#hudV2GearPopover.mj-menu .mj-page-titre {
+  margin: 0 0 18px;
+  color: var(--mj-texte) !important;
+  font: 700 24px/1.2 var(--mj-titre) !important;
+  letter-spacing: .03em !important;
+}
+#hudV2GearPopover.mj-menu .mj-fermer {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .05);
+  color: var(--mj-texte);
+  font-size: 22px;
+  line-height: 1;
+}
+#hudV2GearPopover.mj-menu .mj-fermer:hover { background: rgba(255, 255, 255, .12); }
+
+#hudV2GearPopover.mj-menu .mj-section {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 22px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .03);
+}
+#hudV2GearPopover.mj-menu .mj-section[hidden] { display: none !important; }
+#hudV2GearPopover.mj-menu .mj-section-titre {
+  margin: 0;
+  color: var(--mj-or-clair) !important;
+  font: 800 12px/1.2 var(--mj-info) !important;
+  letter-spacing: .2em !important;
+  text-transform: uppercase;
+}
+#hudV2GearPopover.mj-menu .mj-aide,
+#hudV2GearPopover.mj-menu .hud-v2-coordinate-help {
+  margin: -4px 0 2px !important;
+  color: var(--mj-texte-doux) !important;
+  font: 600 13px/1.45 var(--mj-info) !important;
+}
+#hudV2GearPopover.mj-menu .hud-v2-coordinate-help { margin: 2px 0 0 !important; font-size: 12px !important; }
+
+/* Cartes de choix : rendu du plateau, caméra */
+#hudV2GearPopover.mj-menu .hud-v2-popover-render-grid,
+#hudV2GearPopover.mj-menu .hud-v2-popover-camera-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+#hudV2GearPopover.mj-menu .mj-choix {
+  display: grid !important;
+  gap: 4px;
+  align-content: center;
+  min-height: 70px !important;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 12px 16px !important;
+  border: 1px solid rgba(255, 255, 255, .12) !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, .04) !important;
+  box-shadow: none !important;
+  color: var(--mj-texte) !important;
+  text-align: left !important;
+  transition: background .12s ease, border-color .12s ease;
+}
+#hudV2GearPopover.mj-menu .mj-choix b {
+  font: 800 14px/1.2 var(--mj-info);
+  letter-spacing: .1em;
+}
+#hudV2GearPopover.mj-menu .mj-choix small {
+  color: var(--mj-texte-doux);
+  font: 600 12.5px/1.3 var(--mj-info);
+}
+#hudV2GearPopover.mj-menu .mj-choix:hover {
+  border-color: rgba(233, 189, 91, .45) !important;
+  background: rgba(233, 189, 91, .08) !important;
+}
+#hudV2GearPopover.mj-menu .mj-choix[aria-pressed="true"] {
+  border-color: var(--mj-or) !important;
+  background: linear-gradient(180deg, rgba(233, 189, 91, .22), rgba(233, 189, 91, .08)) !important;
+  box-shadow: inset 0 0 0 1px rgba(233, 189, 91, .35) !important;
+}
+#hudV2GearPopover.mj-menu .mj-choix[aria-pressed="true"] b { color: var(--mj-or-clair); }
+#hudV2GearPopover.mj-menu .mj-choix[aria-pressed="true"] b::after { content: '  ✓'; }
+
+/* Commandes */
+#hudV2GearPopover.mj-menu .mj-commandes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+#hudV2GearPopover.mj-menu .mj-commandes > div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+#hudV2GearPopover.mj-menu .mj-commandes dt { display: flex; gap: 4px; }
+#hudV2GearPopover.mj-menu .mj-commandes dd { margin: 0; color: var(--mj-texte-doux); font: 600 13px/1.35 var(--mj-info); }
+
+/* Champs (pioche, ciel, horizon) */
+#hudV2GearPopover.mj-menu .mj-champ > span { color: var(--mj-texte-doux); font-size: 12.5px; }
+#hudV2GearPopover.mj-menu .mj-champ,
+#hudV2GearPopover.mj-menu .mj-section-pioche label {
+  display: grid !important;
+  gap: 6px;
+  margin: 0 !important;
+  color: var(--mj-texte) !important;
+  font: 700 13.5px/1.3 var(--mj-info) !important;
+}
+#hudV2GearPopover.mj-menu select {
+  width: 100% !important;
+  min-height: 42px;
+  padding: 8px 12px !important;
+  border: 1px solid rgba(255, 255, 255, .16) !important;
+  border-radius: 10px !important;
+  background: rgba(3, 9, 17, .7) !important;
+  color: var(--mj-texte) !important;
+  font: 700 13.5px/1.2 var(--mj-info) !important;
+  letter-spacing: 0 !important;
+}
+#hudV2GearPopover.mj-menu select:focus-visible { outline: 2px solid var(--mj-or-clair); outline-offset: 1px; }
+
+/* Graphismes : les panneaux se déplient seuls, leurs boutons de repli sont inutiles. */
+#hudV2GearPopover.mj-menu #hudV2SkyToggle,
+#hudV2GearPopover.mj-menu #hudV2TechToggle { display: none !important; }
+#hudV2GearPopover.mj-menu #hudV2SkyPanel,
+#hudV2GearPopover.mj-menu #hudV2TechInfo {
+  display: grid !important;
+  gap: 10px;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+#hudV2GearPopover.mj-menu #hudV2TechInfo {
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  background: rgba(0, 0, 0, .22) !important;
+}
+#hudV2GearPopover.mj-menu #hudV2TechInfo .kaykit-status,
+#hudV2GearPopover.mj-menu #hudV2TechInfo .v69-quality-pill {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: static !important;
+  transform: none !important;
+  width: auto !important;
+  max-width: 100% !important;
+  text-align: left !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  font: 600 12.5px/1.45 var(--mj-info) !important;
+  color: var(--mj-texte-doux) !important;
+}
+
+/* Audio : le panneau son d'origine, remis en flux dans l'onglet.
+   Il garde sa classe .hidden (d'autres scripts s'y fient pour savoir si une
+   fenêtre flotte au-dessus du jeu) : seul l'affichage est forcé ici. */
+body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu #soundMenu.mj-son,
+#hudV2GearPopover.mj-menu #soundMenu.mj-son {
+  position: static !important;
+  inset: auto !important;
+  display: grid !important;
+  gap: 16px !important;
+  width: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  overflow: visible !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  z-index: auto !important;
+  color: var(--mj-texte) !important;
+}
+#hudV2GearPopover.mj-menu #soundMenu.mj-son::before,
+#hudV2GearPopover.mj-menu #soundMenu.mj-son .sound-menu-head { display: none !important; }
+#hudV2GearPopover.mj-menu #soundMenu.mj-son label,
+#hudV2GearPopover.mj-menu #soundMenu.mj-son label b,
+#hudV2GearPopover.mj-menu #soundMenu.mj-son label span {
+  color: var(--mj-texte) !important;
+  font-family: var(--mj-info) !important;
+  font-size: 13.5px !important;
+}
+#hudV2GearPopover.mj-menu #soundMenu.mj-son output { color: var(--mj-or-clair) !important; }
+#hudV2GearPopover.mj-menu #soundMenu.mj-son small,
+#hudV2GearPopover.mj-menu #soundMenu.mj-son p { color: var(--mj-texte-doux) !important; text-align: left !important; }
+#hudV2GearPopover.mj-menu #soundMenu.mj-son > small,
+#hudV2GearPopover.mj-menu #soundMenu.mj-son > p { font: 600 12px/1.45 var(--mj-info) !important; margin: 0 !important; }
+#hudV2GearPopover.mj-menu #soundMenu.mj-son #soundToggleBtn {
+  min-height: 46px !important;
+  border: 1px solid rgba(233, 189, 91, .5) !important;
+  border-radius: 12px !important;
+  background: rgba(233, 189, 91, .12) !important;
+  box-shadow: none !important;
+  color: var(--mj-or-clair) !important;
+  font: 800 13.5px/1 var(--mj-info) !important;
+  letter-spacing: .12em !important;
+}
+#hudV2GearPopover.mj-menu #soundMenu.mj-son #soundToggleBtn:hover { background: rgba(233, 189, 91, .2) !important; }
+
+/* ---------- Tutoriel et énigmes ----------
+   Les règles de ces modes masquent déjà les boutons interdits
+   ([data-hud-render], #newGameBtn…). On retire en plus la section devenue vide. */
+#gameScreen.puzzle-on > #hudV2GearPopover.mj-menu .mj-section-rendu,
+#gameScreen.tutorial-on > #hudV2GearPopover.mj-menu .mj-section-rendu,
+#gameScreen.tutorial-eveil > #hudV2GearPopover.mj-menu .mj-section-rendu { display: none !important; }
+body[data-visual-mode] #gameScreen.puzzle-on > #hudV2GearPopover.mj-menu { margin: 0 !important; }
+
+/* ---------- Petits écrans ---------- */
+@media (max-width: 760px), (max-height: 520px) {
+  #hudV2GearPopover.mj-menu .mj-coque {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  #hudV2GearPopover.mj-menu .mj-nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 12px 14px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mj-trait);
+    overflow: visible;
+  }
+  #hudV2GearPopover.mj-menu .mj-entete { padding: 0; grid-template-columns: auto auto; align-items: baseline; justify-content: start; gap: 10px; }
+  #hudV2GearPopover.mj-menu .mj-marque { display: none; }
+  #hudV2GearPopover.mj-menu .mj-titre { font-size: 20px; }
+  #hudV2GearPopover.mj-menu .mj-reprendre { width: auto; min-height: 40px; margin: 0; font-size: 13px; }
+  #hudV2GearPopover.mj-menu .mj-reprendre kbd { display: none; }
+  #hudV2GearPopover.mj-menu .mj-nav-label { display: none; }
+  #hudV2GearPopover.mj-menu .mj-onglets,
+  #hudV2GearPopover.mj-menu .mj-nav-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #hudV2GearPopover.mj-menu .mj-onglets { grid-column: 1; }
+  #hudV2GearPopover.mj-menu .mj-nav-actions { grid-column: 2; margin: 0; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid rgba(255, 255, 255, .1); }
+  #hudV2GearPopover.mj-menu .mj-onglet,
+  #hudV2GearPopover.mj-menu .mj-nav-actions > button {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    border-color: rgba(255, 255, 255, .1) !important;
+    font-size: 13px !important;
+  }
+  #hudV2GearPopover.mj-menu .mj-onglet svg { display: none; }
+  #hudV2GearPopover.mj-menu .mj-reprendre { justify-self: end; margin-right: 46px; }
+  #hudV2GearPopover.mj-menu .mj-nav-actions > button { padding: 0 10px !important; font-size: 12px !important; }
+  #hudV2GearPopover.mj-menu .mj-panneau { padding: 18px 14px 28px; }
+  #hudV2GearPopover.mj-menu .mj-page-titre { display: none; }
+  #hudV2GearPopover.mj-menu .mj-section { padding: 14px; margin-bottom: 14px; }
+  #hudV2GearPopover.mj-menu .mj-commandes > div { grid-template-columns: 110px 1fr; }
+  #hudV2GearPopover.mj-menu .mj-fermer { top: 12px; right: 12px; }
+}
+@media (max-width: 600px) {
+  #hudV2GearPopover.mj-menu .mj-onglets,
+  #hudV2GearPopover.mj-menu .mj-nav-actions { grid-column: 1 / -1; }
+  #hudV2GearPopover.mj-menu .mj-nav-actions { padding: 0; border-left: 0; }
+  #hudV2GearPopover.mj-menu .mj-contexte { white-space: nowrap; }
+  #hudV2GearPopover.mj-menu .mj-onglet { padding: 0 11px !important; }
+  #hudV2GearPopover.mj-menu .mj-commandes > div { grid-template-columns: 96px 1fr; }
+}
+@media (max-width: 420px) {
+  #hudV2GearPopover.mj-menu .hud-v2-popover-render-grid,
+  #hudV2GearPopover.mj-menu .hud-v2-popover-camera-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+  #hudV2GearPopover.mj-menu .mj-choix { min-height: 60px !important; padding: 10px 12px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu,
+  #hudV2GearPopover.mj-menu .mj-coque { animation: none; }
+}

@@ -249,7 +249,9 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
        homonymes, elles, sont bien vivantes et restent chargées plus haut. */
     './js/hud-consolidation-v12.js?v=12.7',
     './js/ai-move-tail-guard-v12.js?v=12.7',
-    './js/hud-organique-v2-layout-v10.js?v=1'
+    './js/hud-organique-v2-layout-v10.js?v=1',
+    // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
+    './js/menu-jeu.js?v=1'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
