@@ -150,6 +150,9 @@ test('Découverte se joue jusqu’à la validation', async ({ page }) => {
   }
   await page.locator('.carrier-crown').waitFor({ state: 'attached', timeout: 5000 });
   await page.locator('.carrier-crown').dispatchEvent('click');
+  /* Attendre le mode « transmettre ou poser » : un clic sur l'allié arrivé
+     avant lui était ignoré, et le test échouait à chaque fois en CI. */
+  await page.waitForFunction(() => window.ILYOS_TUTORIAL?._debug()?.phase === 'DROP_TREASURE', null, { timeout: 5000 });
   await clickCell(page, otherGuardian.r, otherGuardian.c);
   await page.waitForFunction(previous => {
     const crown = window.ILYOS_TUTORIAL?._debug()?.crown;

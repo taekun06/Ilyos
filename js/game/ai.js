@@ -1031,6 +1031,31 @@
             await sleep(320);
             return true;
           }
+          case "DISSOLUTION": {
+            const applique = applyDissolutionCore(action.islandId);
+            if (!applique) return false;
+            benchJournaliser({ type: "DISSOLUTION", ile: action.islandId });
+            applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
+            if (kaykit3D) kaykit3D.lastStateSignature = "";
+            playSfx("magic");
+            showToast("ORDINATEUR dissout une île vide pour 1 magie.");
+            renderAll();
+            scheduleKayKitSync();
+            await sleep(620);
+            return true;
+          }
+          case "VOL": {
+            const applique = applyFreeStealCore(action.charId, action.artifactId);
+            if (!applique) return false;
+            benchJournaliser({ type: "VOL", gardien: action.charId, de: applique.deId });
+            renderAll();
+            const voleur = characterById(action.charId);
+            if (voleur) animateCellPulse(voleur.r, voleur.c, "crown-burst");
+            playSfx("crownTake");
+            showToast("ORDINATEUR vole la couronne d’un porteur adjacent !");
+            await sleep(520);
+            return true;
+          }
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;

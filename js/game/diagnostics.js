@@ -468,6 +468,21 @@
               });
             }
           });
+          /* PIOCHE : la composition publique RESTANTE (13 cartes moins la main
+             et la réserve), dans un ordre fixe — jamais un tirage au hasard.
+             Une pioche vide voulait dire « cartes inconnues » tant que l'IA
+             prêtait une main fixe (3 MOVE, 2 PUSH) à l'adversaire ; avec le
+             comptage des cartes (plannerPiocheProchaine), elle veut dire
+             « aucune carte au prochain tour », et les menaces qu'un banc
+             vérifie disparaissaient. `spec.pioches[index]` (liste d'actions,
+             éventuellement vide) fixe la pioche explicitement. */
+          const restantes = CARD_BLUEPRINTS.slice();
+          [...main, ...reserveDemandee].forEach(carte => {
+            const i = restantes.indexOf(carte.action);
+            if (i >= 0) restantes.splice(i, 1);
+          });
+          const pioche = (Array.isArray(spec.pioches?.[index]) ? spec.pioches[index] : restantes)
+            .map((action, i) => ({ id: `bench-P${index}-D${i}`, action, used: false }));
           return {
             id: index,
             name: index === 0 ? "BENCH IA" : "BENCH ADVERSAIRE",
@@ -480,8 +495,7 @@
             village: { ...villages[0] },
             villages,
             score: spec.scores?.[index] || 0,
-            // Pioche vide : un puzzle ne doit jamais dépendre d'un tirage.
-            deck: [],
+            deck: pioche,
             discard: [],
             hand: main,
             stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {}),
@@ -1381,12 +1395,18 @@
       /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
          rend. Sans restitution, un tournoi laisserait le jeu réel avec les
          poids du dernier candidat testé. */
+      /* Clés pointées pour les bornes de recherche, à comparer sans toucher au
+         jeu : « PLAN_RIPOSTE.decisionsMax », « PLAN_BUDGET.etatsMax »… */
+      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE };
       function selfplayAppliquerPoids(poids) {
         if (!poids) return null;
         const memoire = {};
         Object.keys(poids).forEach(cle => {
-          memoire[cle] = PLAN_POIDS[cle];
-          PLAN_POIDS[cle] = poids[cle];
+          const [table, champ] = cle.includes(".") ? cle.split(".") : [null, cle];
+          const cible = table ? SELFPLAY_TABLES[table] : PLAN_POIDS;
+          if (!cible) return;
+          memoire[cle] = cible[champ];
+          cible[champ] = poids[cle];
         });
         return memoire;
       }
@@ -1971,12 +1991,24 @@
             const push = availableActionCount("PUSH", adverse);
             const reel = { move, push, forceMax: Math.min(push, PLAN_POIDS.pousseeLongue || 1),
               portees: plannerPorteesAdverses(joueur, move) };
-            return plannerGardiensDe(joueur).map(g => ({
-              id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
-              forceReelle: push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0,
-              graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
-              mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
-            }));
+            const forces = plannerGardiensDe(joueur).map(g =>
+              push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0);
+            /* La gravité se juge comme l'IA l'a vue : AVANT la pioche adverse.
+               Remise de la main dans la pioche (composition seule compte). */
+            const main = adverse.hand, pioche = adverse.deck;
+            adverse.deck = [...(pioche || []), ...(main || []).filter(carte => !carte.used)];
+            adverse.hand = [];
+            try {
+              return plannerGardiensDe(joueur).map((g, i) => ({
+                id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+                forceReelle: forces[i],
+                graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
+                mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
+              }));
+            } finally {
+              adverse.hand = main;
+              adverse.deck = pioche;
+            }
           }));
         } finally {
           selfplayAppliquerPoids(memoire);
@@ -2002,6 +2034,11 @@
       };
 
       window.ILYOS_BENCH = {
+        /* Une action coûte-t-elle une carte ? La réponse du MOTEUR, pour que
+           les bancs ne recopient plus leur propre liste — celle de
+           verif-profondeur-gratuite avait oublié le dépôt, puis aurait oublié
+           le vol. */
+        actionGratuite: type => plannerActionGratuite({ type }),
         poussee: benchPoussee,
         validation: benchValidation,
         reserve: benchReserve,

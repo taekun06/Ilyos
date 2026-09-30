@@ -57,6 +57,10 @@ preuves et ne pas annoncer une validation non exécutée.
   Vérifier aussi le rendu visible pour une modification graphique.
 - Règles/IA : banc `scripts/verif-*.js` pertinent, serveur `npm start` port 8123,
   puis tests plus larges si nécessaire. Lire le banc avant de choisir sa commande.
+  Avant de livrer un changement d'IA : `npm run verif:ia` (tous les bancs, bilan).
+- Toute action de joueur ajoutée ou modifiée (`ui.js`) doit exister dans le
+  planner et dans `scripts/verif-couverture-regles.js`. Un banc ne recopie
+  jamais une règle : il interroge le moteur (ex. `ILYOS_BENCH.actionGratuite`).
 - `npm test` comprend une partie Expert longue ; pas à chaque changement de texte.
   Ne pas assouplir les assertions ou délais pour masquer un échec.
 - CSS de cascade : empreintes avant/après selon `tests/README.md`.

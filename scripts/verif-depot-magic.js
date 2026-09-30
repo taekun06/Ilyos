@@ -29,7 +29,7 @@ const hook = `window.TEST_CROWN = (spec, mode) => {
    if (!plannerAppliquerAction(a)) throw Error('Plan inexécutable');
    fingerprints.push(strategicStateFingerprint());
   }
-  return {plan:r.plan, states:r.etatsExplores, ms:r.dureeMs, note:r.noteArrivee,
+  return {plan:r.plan, states:r.etatsExplores, budget:PLAN_BUDGET.etatsMax, ms:r.dureeMs, note:r.noteArrivee,
    noCycle:new Set(fingerprints).size===fingerprints.length,
    finalists:r.finalistes.map(n=>n.plan.map(a=>a.type))};
  }
@@ -55,7 +55,7 @@ const spec = {seed:913,boardSize:11,islandPlacedThisTurn:true,hands:[['MAGIC'],[
   const source=fs.readFileSync(process.env.ILYOS_SOURCE || path.join(__dirname,'../js/game.js'),'utf8');
   return route.fulfill({contentType:'application/javascript',body:source.replace('window.ILYOS_BENCH = {',hook)});
  });
- await page.goto(process.env.ILYOS_BENCH_URL || 'http://localhost:8135/',{waitUntil:'domcontentloaded'});
+ await page.goto(process.env.ILYOS_BENCH_URL || 'http://localhost:8123/',{waitUntil:'domcontentloaded'});
  await page.waitForFunction(()=>!!window.TEST_CROWN);
  const output={};
  for(const carried of [false,true]) {
@@ -88,7 +88,7 @@ const spec = {seed:913,boardSize:11,islandPlacedThisTurn:true,hands:[['MAGIC'],[
   }
   for(const kind of Object.values(output)) for(const r of kind.runs) {
    assert.ok(r.noCycle,'pas de retour à un état identique');
-   assert.ok(r.states<=1201,'budget global respecté');
+   assert.ok(r.states<=r.budget+1,'budget global respecté (celui du moteur)');
   }
   output.rules=await page.evaluate(s=>TEST_CROWN(s,'rules'),ordinary);
   for(const [name,ok] of Object.entries(output.rules)) assert.ok(ok,name);

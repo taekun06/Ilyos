@@ -9,6 +9,7 @@
     "dev": "node scripts/dev.js",
     "doctor": "node scripts/doctor.js",
     "check": "npm run build:check && node scripts/check-syntax.js",
+    "verif:ia": "node scripts/verif-ia.js",
     "assets:audit": "node scripts/audit-assets.js",
     "build": "node scripts/build-game.js --write",
     "build:check": "node scripts/build-game.js",
