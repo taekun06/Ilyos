@@ -197,6 +197,10 @@
     const { mode } = reglagesPioche();
     if (mode === 'toujours') return true;
     if (mode === 'jamais') return false;
+    /* Mode auto seulement : un navigateur piloté (bancs Playwright) ne
+       cliquerait jamais « Compris ». ?pioche= ou le réglage « toujours »
+       restent actifs pour tester la pioche elle-même. */
+    if (navigator.webdriver) return false;
     const tour = tourDuJoueur();
     const parties = Number(lireStockage(PIOCHE_PARTIES_CLE, 0)) || 0;
     return tour > 0 && tour <= PIOCHE_TOURS_AUTO && parties <= PIOCHE_PARTIES_AUTO;
