@@ -24815,6 +24815,11 @@
         volCouronne: 1,
         // Faisceau trié avec le meilleur ramassage/vol gratuit immédiat de chaque nœud.
         fermetureGratuite: 1,
+        /* Même tri avec la meilleure ÉJECTION d'un gardien adverse jouable
+           aussitôt (carte POUSSER). Partie du 30/09, tour 10 : « aller en
+           (1,1) » était élagué avant « pousser le porteur dans le vide »
+           (−4 941 joué, +530 trouvé avec un faisceau de 80). */
+        fermeturePoussee: 1,
         /* Faisceau trié aussi sur le potentiel (sans menaces de fin de tour),
            plannerNotePotentiel. Mesuré sur la position jaune du 29/09 : 1 016
            après réplique au lieu de 4 222 — le faisceau se remplit de passages
@@ -26659,7 +26664,8 @@
               // Une poussée qui retire réellement un gardien vaut mieux qu'un
               // simple décalage : c'est le résultat qui le dit, pas la position.
               if (plan.chutes) indice += 90;
-              options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice });
+              options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice,
+                ejection: !!(cible && plan.chutes) });
             }
           }
         }
@@ -27938,6 +27944,15 @@
                     const essai = structuredClone(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
+                    if (n > noteTri) noteTri = n;
+                  }
+                }
+                if (PLAN_POIDS.fermeturePoussee) {
+                  for (const t of plannerCandidatsPush(playerId)) {
+                    if (!t.ejection) continue;
+                    const essai = structuredClone(state);
+                    const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
+                      : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
                   }
                 }

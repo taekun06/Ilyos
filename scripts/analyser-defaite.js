@@ -39,12 +39,13 @@ if (!fichier) {
 
 function lireDossiers(chemin) {
   const brut = JSON.parse(fs.readFileSync(chemin, 'utf8'));
-  if (brut.type === 'lot-defaites-expert') return brut.defaites;
-  if (brut.type === 'defaite-expert') return [brut];
-  if (brut.type === 'position-defaite-expert') return [brut];
-  // Analyse d'une partie IA contre IA exportée depuis la visionneuse (revue IA).
-  if (brut.type === 'revue-ia-contre-ia') return [brut];
-  throw new Error(`format inconnu : ${brut.type || 'sans type'}`);
+  // Lot de la bibliothèque : plusieurs dossiers.
+  if (Array.isArray(brut.defaites)) return brut.defaites;
+  /* Un dossier se reconnaît à sa forme, pas à son nom : défaite, revue IA
+     contre IA, revue de partie solo, position extraite… portent les mêmes
+     champs (tours avec instantanés, ou etat pour une position). */
+  if (Array.isArray(brut.tours) || brut.etat) return [brut];
+  throw new Error(`format inconnu : ${brut.type || 'sans type'} (ni tours ni etat)`);
 }
 
 /* Position jouable par le simulateur : l'instantané du tour, complété des
