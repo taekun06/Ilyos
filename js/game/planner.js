@@ -3437,6 +3437,12 @@
         if (state.winner !== null && state.winner !== undefined) {
           return { vainqueur: state.winner };
         }
+        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
+        if (finParPoseImpossible(entrant.id)) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
+          return { vainqueur: state.winner };
+        }
 
         const plausible = plannerPiocheProchaine(entrant.id).main;
         entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))

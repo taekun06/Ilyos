@@ -1344,8 +1344,8 @@
         scoreCrownsAtTurnStart(entrant);
         if (state.winner !== null && state.winner !== undefined) return false;
 
-        // Règle V68 : plus de place pour poser, la partie s'arrête.
-        if (plateauSansPlace()) {
+        // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
+        if (finParPoseImpossible(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return false;

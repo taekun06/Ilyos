@@ -4157,12 +4157,16 @@
         const nul = state.winner === MATCH_NUL;
         const gagnant = nul ? null : state.players[state.winner];
         const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+        // Qui ne peut plus poser : le joueur qui prenait la main (finParPoseImpossible).
+        const bloque = currentPlayer();
+        const cause = plateauSansPlace() ? "Plus aucune île ne peut être posée"
+          : `${bloque ? bloque.name : "Un joueur"} ne peut plus poser d'île`;
         showToast(nul
-          ? `Plateau saturé : match nul (${scores}).`
-          : `Plateau saturé : ${gagnant.name} l'emporte au décompte (${scores}).`);
+          ? `${cause} : match nul (${scores}).`
+          : `${cause} : ${gagnant.name} l'emporte au décompte (${scores}).`);
         setTimeout(() => {
           if (nul) showEgalite(scores);
-          else showVictory(gagnant, `Plus aucune île ne peut être posée. ${gagnant.name} l'emporte au décompte des couronnes.`);
+          else showVictory(gagnant, `${cause}. ${gagnant.name} l'emporte au décompte des couronnes.`);
         }, 450);
       }
 

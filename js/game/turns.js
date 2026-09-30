@@ -51,10 +51,11 @@
           renderAll();
           return;
         }
-        /* Plus aucune île ne peut être posée : la partie s'arrête ici (V68).
+        /* Le joueur qui prend la main ne peut plus poser d'île : la partie
+           s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
            Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
            tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (plateauSansPlace()) {
+        if (finParPoseImpossible(p.id)) {
           state.winner = vainqueurAuxCouronnes();
           if (state.winner === null) state.winner = MATCH_NUL;
           terminerPartiePlateauPlein();

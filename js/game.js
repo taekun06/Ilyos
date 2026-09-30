@@ -17746,10 +17746,11 @@
           renderAll();
           return;
         }
-        /* Plus aucune île ne peut être posée : la partie s'arrête ici (V68).
+        /* Le joueur qui prend la main ne peut plus poser d'île : la partie
+           s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
            Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
            tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (plateauSansPlace()) {
+        if (finParPoseImpossible(p.id)) {
           state.winner = vainqueurAuxCouronnes();
           if (state.winner === null) state.winner = MATCH_NUL;
           terminerPartiePlateauPlein();
@@ -23477,12 +23478,16 @@
         const nul = state.winner === MATCH_NUL;
         const gagnant = nul ? null : state.players[state.winner];
         const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+        // Qui ne peut plus poser : le joueur qui prenait la main (finParPoseImpossible).
+        const bloque = currentPlayer();
+        const cause = plateauSansPlace() ? "Plus aucune île ne peut être posée"
+          : `${bloque ? bloque.name : "Un joueur"} ne peut plus poser d'île`;
         showToast(nul
-          ? `Plateau saturé : match nul (${scores}).`
-          : `Plateau saturé : ${gagnant.name} l'emporte au décompte (${scores}).`);
+          ? `${cause} : match nul (${scores}).`
+          : `${cause} : ${gagnant.name} l'emporte au décompte (${scores}).`);
         setTimeout(() => {
           if (nul) showEgalite(scores);
-          else showVictory(gagnant, `Plus aucune île ne peut être posée. ${gagnant.name} l'emporte au décompte des couronnes.`);
+          else showVictory(gagnant, `${cause}. ${gagnant.name} l'emporte au décompte des couronnes.`);
         }, 450);
       }
 
@@ -24590,6 +24595,24 @@
           (!limite || shapeUsageCountForOwner(playerId, shapeKey) < limite)
           && formeTientSurPlateau(shapeKey)
         ));
+      }
+
+      /** FIN PAR POSE IMPOSSIBLE — règle unique, lue au début de chaque tour
+       *  (jeu, self-play, simulation du planner). Dès que le joueur qui prend
+       *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
+       *  stock qui tienne, stock épuisé, ou limite d'îles de la partie atteinte —
+       *  la partie s'arrête et le plus de couronnes l'emporte (égalité : nul).
+       *  Jusqu'au 30/09, seule la saturation du plateau entier arrêtait la
+       *  partie ; pour un seul joueur, la pose devenait facultative et la
+       *  partie continuait. Tutoriels et énigmes suivent leurs propres règles. */
+      function finParPoseImpossible(playerId) {
+        if (!state) return false;
+        if (plateauSansPlace()) return true;
+        if (state.tutorial || state.puzzle) return false;
+        const ecran = typeof els === "object" && els && els.gameScreen && els.gameScreen.classList;
+        if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
+          .some(mode => ecran.contains(mode))) return false;
+        return islandLimitReachedForPlayer(playerId) || poseImpossiblePour(playerId);
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
@@ -28037,6 +28060,12 @@
         const entrant = state.players[state.currentPlayer];
         scoreCrownsAtTurnStart(entrant);
         if (state.winner !== null && state.winner !== undefined) {
+          return { vainqueur: state.winner };
+        }
+        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
+        if (finParPoseImpossible(entrant.id)) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return { vainqueur: state.winner };
         }
 
@@ -45727,8 +45756,8 @@
         scoreCrownsAtTurnStart(entrant);
         if (state.winner !== null && state.winner !== undefined) return false;
 
-        // Règle V68 : plus de place pour poser, la partie s'arrête.
-        if (plateauSansPlace()) {
+        // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
+        if (finParPoseImpossible(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return false;
