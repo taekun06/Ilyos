@@ -25,10 +25,12 @@ window.ILYOS_MENU_CONFIG = {
     },
     team: {
       label: '2 CONTRE 2', subtitle: 'Équipes', playerCount: '4', playLabel: 'LANCER LE 2 CONTRE 2',
-      description: "Deux équipes s’affrontent avec un score commun. Première équipe à 3 couronnes.", dot: 2,
+      description: "Quatre joueurs, chacun ses couronnes. Des places peuvent être tenues par l’IA, et chaque équipe peut partager sa diagonale de villages.", dot: 2,
       controls: [
-        { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE']], fixed:true },
         { key:'size', label:'TAILLE', default:'11', options:[['11','11×11'],['13','13×13']] },
+        { key:'seats', label:'ORDINATEURS', default:'none', options:[['none','AUCUN'],['ai24','J2 + J4 (2 CONTRE IA)'],['ai234','J2 + J3 + J4']] },
+        { key:'difficulty', label:'DIFFICULTÉ CPU', default:'normal', options:[['easy','FACILE'],['normal','NORMAL'],['hard','DIFFICILE'],['expert','EXPERT']] },
+        { key:'villages', label:'VILLAGES', default:'solo', options:[['solo','UN PAR JOUEUR'],['team','DIAGONALE D’ÉQUIPE']] },
         { key:'name1', label:'JOUEUR 1', default:'JOUEUR 1', editable:true, kind:'name' },
         { key:'name2', label:'JOUEUR 2', default:'JOUEUR 2', editable:true, kind:'name' },
         { key:'name3', label:'JOUEUR 3', default:'JOUEUR 3', editable:true, kind:'name' },

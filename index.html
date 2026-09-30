@@ -90,7 +90,7 @@
       position: relative
     }
   </style>
-  <script src="./js/version-bootstrap.js?v=20260928-portrait"></script>
+  <script src="./js/version-bootstrap.js?v=20260930-pioche"></script>
 
   <style id="ilyos-v58-autoplay">
     .ilyos-autoplay-panel {
@@ -987,6 +987,7 @@
             <button id="soundBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Son</button>
             <button id="rulesBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide">Règles</button>
             <button id="newGameBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide">Nouvelle partie</button>
+            <button id="revueIaBtn" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide hidden">🧠 Revue IA</button>
             <div class="hud-v2-popover-divider" aria-hidden="true"></div>
             <button id="hudV2TechToggle" type="button" class="hud-v2-popover-btn hud-v2-popover-btn-wide" aria-expanded="false">Infos techniques ›</button>
             <div id="hudV2TechInfo" class="hud-v2-tech-info hidden" aria-hidden="true"></div>
@@ -1384,6 +1385,11 @@
         <li>Le sanctuaire de la couronne est une croix fixe de 5 cases. Il constitue un terrain permanent : aucune de
           ses cases ne peut être déplacée, tournée ou recouverte par une île.</li>
         <li>Chaque équipe est limitée à 6 gardiens sur le plateau.</li>
+        <li>Dès qu’un joueur ne peut plus poser d’île au début de son tour, la partie s’arrête : le joueur qui a
+          validé le plus de couronnes l’emporte, et une égalité donne un match nul.</li>
+        <li>2 contre 2 : chaque joueur marque ses propres couronnes (premier à 3). Des places peuvent être tenues par
+          l’ordinateur (J2 et J4 pour jouer à deux contre l’IA) et, avec l’option « Diagonale d’équipe », J1 et J3
+          valident dans les deux villages d’une diagonale, J2 et J4 dans ceux de l’autre.</li>
         <li>Recliquez sur la case de départ sélectionnée pour quitter l’action. Cliquez sur la couronne d’un adversaire
           pour la récupérer lorsqu’un de vos gardiens est adjacent.</li>
         <li>Par défaut, les tours ne sont pas chronométrés. L’option « Temps par tour » du menu de configuration permet

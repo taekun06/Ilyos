@@ -22,7 +22,8 @@
          défaites. On recopie donc les réglages de la partie qui s'achève. */
       function restaurerReglagesPartie(partie) {
         const humains = (partie.players || []).filter(j => !j.isAI);
-        const mode = partie.soloMode ? "1" : String(humains.length);
+        const joueurs = partie.players || [];
+        const mode = partie.soloMode ? "1" : String(joueurs.length === 4 ? 4 : humains.length);
         if (String(els.playerCount.value) !== mode
           && [...els.playerCount.options].some(option => option.value === mode)) {
           els.playerCount.value = mode;
@@ -34,12 +35,18 @@
           const voulu = String(valeur);
           if ([...liste.options].some(option => option.value === voulu)) liste.value = voulu;
         };
-        if (partie.soloMode) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (partie.soloMode || joueurs.some(j => j.isAI)) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (joueurs.length === 4) {
+          const ia = joueurs.map((j, i) => j.isAI ? i : null).filter(i => i !== null).join("");
+          fixer("teamSeatsSelect", ({ "13": "ai24", "123": "ai234" })[ia] || "none");
+          fixer("teamVillagesSelect", (joueurs[2]?.villages || []).length > 1 ? "team" : "solo");
+        }
         fixer("boardSizeSelect", GRID);
         fixer("startingBoardSelect", partie.startingBoardMode);
         fixer("turnTimerSelect", partie.turnDurationSeconds || 0);
         [...els.playersForm.querySelectorAll(".player-name")].forEach((champ, i) => {
-          if (humains[i] && humains[i].name) champ.value = humains[i].name;
+          const joueur = joueurs.length === 4 ? joueurs[i] : humains[i];
+          if (joueur && joueur.name && !joueur.isAI) champ.value = joueur.name;
         });
       }
 
@@ -468,6 +475,21 @@
               });
             }
           });
+          /* PIOCHE : la composition publique RESTANTE (13 cartes moins la main
+             et la réserve), dans un ordre fixe — jamais un tirage au hasard.
+             Une pioche vide voulait dire « cartes inconnues » tant que l'IA
+             prêtait une main fixe (3 MOVE, 2 PUSH) à l'adversaire ; avec le
+             comptage des cartes (plannerPiocheProchaine), elle veut dire
+             « aucune carte au prochain tour », et les menaces qu'un banc
+             vérifie disparaissaient. `spec.pioches[index]` (liste d'actions,
+             éventuellement vide) fixe la pioche explicitement. */
+          const restantes = CARD_BLUEPRINTS.slice();
+          [...main, ...reserveDemandee].forEach(carte => {
+            const i = restantes.indexOf(carte.action);
+            if (i >= 0) restantes.splice(i, 1);
+          });
+          const pioche = (Array.isArray(spec.pioches?.[index]) ? spec.pioches[index] : restantes)
+            .map((action, i) => ({ id: `bench-P${index}-D${i}`, action, used: false }));
           return {
             id: index,
             name: index === 0 ? "BENCH IA" : "BENCH ADVERSAIRE",
@@ -480,8 +502,7 @@
             village: { ...villages[0] },
             villages,
             score: spec.scores?.[index] || 0,
-            // Pioche vide : un puzzle ne doit jamais dépendre d'un tirage.
-            deck: [],
+            deck: pioche,
             discard: [],
             hand: main,
             stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {}),
@@ -1330,8 +1351,8 @@
         scoreCrownsAtTurnStart(entrant);
         if (state.winner !== null && state.winner !== undefined) return false;
 
-        // Règle V68 : plus de place pour poser, la partie s'arrête.
-        if (plateauSansPlace()) {
+        // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
+        if (finParPoseImpossible(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return false;
@@ -1381,12 +1402,18 @@
       /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
          rend. Sans restitution, un tournoi laisserait le jeu réel avec les
          poids du dernier candidat testé. */
+      /* Clés pointées pour les bornes de recherche, à comparer sans toucher au
+         jeu : « PLAN_RIPOSTE.decisionsMax », « PLAN_BUDGET.etatsMax »… */
+      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE };
       function selfplayAppliquerPoids(poids) {
         if (!poids) return null;
         const memoire = {};
         Object.keys(poids).forEach(cle => {
-          memoire[cle] = PLAN_POIDS[cle];
-          PLAN_POIDS[cle] = poids[cle];
+          const [table, champ] = cle.includes(".") ? cle.split(".") : [null, cle];
+          const cible = table ? SELFPLAY_TABLES[table] : PLAN_POIDS;
+          if (!cible) return;
+          memoire[cle] = cible[champ];
+          cible[champ] = poids[cle];
         });
         return memoire;
       }
@@ -1971,12 +1998,24 @@
             const push = availableActionCount("PUSH", adverse);
             const reel = { move, push, forceMax: Math.min(push, PLAN_POIDS.pousseeLongue || 1),
               portees: plannerPorteesAdverses(joueur, move) };
-            return plannerGardiensDe(joueur).map(g => ({
-              id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
-              forceReelle: push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0,
-              graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
-              mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
-            }));
+            const forces = plannerGardiensDe(joueur).map(g =>
+              push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0);
+            /* La gravité se juge comme l'IA l'a vue : AVANT la pioche adverse.
+               Remise de la main dans la pioche (composition seule compte). */
+            const main = adverse.hand, pioche = adverse.deck;
+            adverse.deck = [...(pioche || []), ...(main || []).filter(carte => !carte.used)];
+            adverse.hand = [];
+            try {
+              return plannerGardiensDe(joueur).map((g, i) => ({
+                id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+                forceReelle: forces[i],
+                graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
+                mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
+              }));
+            } finally {
+              adverse.hand = main;
+              adverse.deck = pioche;
+            }
           }));
         } finally {
           selfplayAppliquerPoids(memoire);
@@ -2002,6 +2041,11 @@
       };
 
       window.ILYOS_BENCH = {
+        /* Une action coûte-t-elle une carte ? La réponse du MOTEUR, pour que
+           les bancs ne recopient plus leur propre liste — celle de
+           verif-profondeur-gratuite avait oublié le dépôt, puis aurait oublié
+           le vol. */
+        actionGratuite: type => plannerActionGratuite({ type }),
         poussee: benchPoussee,
         validation: benchValidation,
         reserve: benchReserve,
@@ -2119,6 +2163,8 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
+          difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score })) : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.

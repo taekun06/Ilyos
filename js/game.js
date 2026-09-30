@@ -13473,6 +13473,34 @@
         if (selectedMode === "3" || selectedMode === "4") {
           els.modeOptions.innerHTML = boardSizeControlHTML();
         }
+        if (selectedMode === "4") {
+          els.modeOptions.innerHTML += `
+          <label class="mode-option-row" for="teamSeatsSelect">
+            <span><b>Ordinateurs</b><small>Places tenues par l’IA.</small></span>
+            <select id="teamSeatsSelect">
+              <option value="none" selected>Aucun — 4 humains</option>
+              <option value="ai24">J2 et J4 — 2 humains contre l’IA</option>
+              <option value="ai234">J2, J3 et J4 — 1 humain contre 3 IA</option>
+            </select>
+          </label>
+          <label class="mode-option-row" for="aiDifficultySelect">
+            <span><b>Difficulté de l’ordinateur</b></span>
+            <select id="aiDifficultySelect">
+              <option value="easy">Facile</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Difficile</option>
+              <option value="expert">Expert</option>
+            </select>
+          </label>
+          <label class="mode-option-row" for="teamVillagesSelect">
+            <span><b>Villages</b><small>En équipe, J1 et J3 partagent les deux villages d’une diagonale, J2 et J4 ceux de l’autre.</small></span>
+            <select id="teamVillagesSelect">
+              <option value="solo" selected>Un village par joueur</option>
+              <option value="team">Diagonale partagée par l’équipe</option>
+            </select>
+          </label>
+        `;
+        }
 
         els.startBtn.textContent = "Lancer ILYOS — KayKit Edition";
       }
@@ -15828,7 +15856,18 @@
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
-        const villageAssignments = getVillageAssignments(count);
+        /* 2 contre 2 : chacun pour soi (score individuel), mais des places
+           peuvent être tenues par l'IA, et les deux villages d'une diagonale
+           peuvent être partagés par l'équipe (J1+J3, J2+J4) comme en duel. */
+        const teamMode = count === 4;
+        const siegesIA = !teamMode ? []
+          : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
+        const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
+        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `ORDINATEUR ${i + 1}`; });
+        const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
+        const villageAssignments = villagesEquipe
+          ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())
+          : getVillageAssignments(count);
         const startingPlayerIndex = Math.floor(gameRandom() * count);
 
         const players = names.map((name, i) => {
@@ -15838,8 +15877,8 @@
             name,
             color: PLAYER_COLORS[i],
             icon: PLAYER_ICONS[i],
-            isAI: soloMode && i === 1,
-            aiDifficulty: soloMode && i === 1 ? aiDifficulty : null,
+            isAI: estIA(i),
+            aiDifficulty: estIA(i) ? aiDifficulty : null,
             village: { ...villages[0] },
             villages,
             score: 0,
@@ -17496,6 +17535,31 @@
             await sleep(320);
             return true;
           }
+          case "DISSOLUTION": {
+            const applique = applyDissolutionCore(action.islandId);
+            if (!applique) return false;
+            benchJournaliser({ type: "DISSOLUTION", ile: action.islandId });
+            applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
+            if (kaykit3D) kaykit3D.lastStateSignature = "";
+            playSfx("magic");
+            showToast("ORDINATEUR dissout une île vide pour 1 magie.");
+            renderAll();
+            scheduleKayKitSync();
+            await sleep(620);
+            return true;
+          }
+          case "VOL": {
+            const applique = applyFreeStealCore(action.charId, action.artifactId);
+            if (!applique) return false;
+            benchJournaliser({ type: "VOL", gardien: action.charId, de: applique.deId });
+            renderAll();
+            const voleur = characterById(action.charId);
+            if (voleur) animateCellPulse(voleur.r, voleur.c, "crown-burst");
+            playSfx("crownTake");
+            showToast("ORDINATEUR vole la couronne d’un porteur adjacent !");
+            await sleep(520);
+            return true;
+          }
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
@@ -17737,10 +17801,11 @@
           renderAll();
           return;
         }
-        /* Plus aucune île ne peut être posée : la partie s'arrête ici (V68).
+        /* Le joueur qui prend la main ne peut plus poser d'île : la partie
+           s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
            Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
            tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (plateauSansPlace()) {
+        if (finParPoseImpossible(p.id)) {
           state.winner = vainqueurAuxCouronnes();
           if (state.winner === null) state.winner = MATCH_NUL;
           terminerPartiePlateauPlein();
@@ -19651,8 +19716,15 @@
         // 4 joueurs/2v2 : toujours aucun champ d'équipe fiable identifié
         // dans state (voir startLocalGame(), core.js) — seuls les deux
         // premiers joueurs sont représentés, gap déjà documenté.
-        const leftPlayer = state.players[0] || null;
-        const rightPlayer = state.players.length > 1 ? state.players[1] : null;
+        /* 2 contre 2 : à gauche l'équipe or (J1/J3), à droite la violette
+           (J2/J4) — dans chaque camp, le joueur en cours ou celui qui vient de
+           jouer (l'ordre alterne les équipes). */
+        const tablee = state.players.length === 4;
+        const courant = state.currentPlayer;
+        const leftPlayer = tablee ? state.players[courant % 2 === 0 ? courant : (courant + 3) % 4]
+          : state.players[0] || null;
+        const rightPlayer = tablee ? state.players[courant % 2 === 1 ? courant : (courant + 3) % 4]
+          : state.players.length > 1 ? state.players[1] : null;
 
         // Portrait : aucun asset 2D circulaire trouvé dans assets/kaykit
         // (uniquement des modèles .glb + leurs atlas de texture, inexploitables
@@ -19681,7 +19753,7 @@
             }
           }
           if (nameEl) {
-            nameEl.textContent = p ? (p.isAI ? "CPU" : p.name) : "";
+            nameEl.textContent = p ? (p.isAI && !tablee ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
@@ -23476,12 +23548,16 @@
         const nul = state.winner === MATCH_NUL;
         const gagnant = nul ? null : state.players[state.winner];
         const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+        // Qui ne peut plus poser : le joueur qui prenait la main (finParPoseImpossible).
+        const bloque = currentPlayer();
+        const cause = plateauSansPlace() ? "Plus aucune île ne peut être posée"
+          : `${bloque ? bloque.name : "Un joueur"} ne peut plus poser d'île`;
         showToast(nul
-          ? `Plateau saturé : match nul (${scores}).`
-          : `Plateau saturé : ${gagnant.name} l'emporte au décompte (${scores}).`);
+          ? `${cause} : match nul (${scores}).`
+          : `${cause} : ${gagnant.name} l'emporte au décompte (${scores}).`);
         setTimeout(() => {
           if (nul) showEgalite(scores);
-          else showVictory(gagnant, `Plus aucune île ne peut être posée. ${gagnant.name} l'emporte au décompte des couronnes.`);
+          else showVictory(gagnant, `${cause}. ${gagnant.name} l'emporte au décompte des couronnes.`);
         }, 450);
       }
 
@@ -24591,6 +24667,24 @@
         ));
       }
 
+      /** FIN PAR POSE IMPOSSIBLE — règle unique, lue au début de chaque tour
+       *  (jeu, self-play, simulation du planner). Dès que le joueur qui prend
+       *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
+       *  stock qui tienne, stock épuisé, ou limite d'îles de la partie atteinte —
+       *  la partie s'arrête et le plus de couronnes l'emporte (égalité : nul).
+       *  Jusqu'au 30/09, seule la saturation du plateau entier arrêtait la
+       *  partie ; pour un seul joueur, la pose devenait facultative et la
+       *  partie continuait. Tutoriels et énigmes suivent leurs propres règles. */
+      function finParPoseImpossible(playerId) {
+        if (!state) return false;
+        if (plateauSansPlace()) return true;
+        if (state.tutorial || state.puzzle) return false;
+        const ecran = typeof els === "object" && els && els.gameScreen && els.gameScreen.classList;
+        if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
+          .some(mode => ecran.contains(mode))) return false;
+        return islandLimitReachedForPlayer(playerId) || poseImpossiblePour(playerId);
+      }
+
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
       function vainqueurAuxCouronnes() {
         const scores = (state.players || []).map(p => p.score || 0);
@@ -24669,8 +24763,12 @@
         // Voir « QUI JOUE ENSUITE » dans l'évaluateur (0 = ancien calcul).
         traitPerspective: 1,
         /* Force de poussée maximale prise en compte pour juger un gardien
-           éjectable (plannerVideAPortee). 1 = seul le vide juste derrière. */
-        pousseeLongue: 2,
+           éjectable (plannerVideAPortee). 1 = seul le vide juste derrière.
+           Quatre PUSH poussent de quatre cases : le plafond à 2 datait d'avant
+           la règle « force prêtée seulement si les cartes sont en réserve ».
+           Sur 4 défaites humaines (51 décisions rejouées), 2 → 4 fait passer
+           les porteurs laissés éjectables de 10 à 5, au même coût de calcul. */
+        pousseeLongue: 4,
         // Gravité d'une expulsion selon la force requise (1, 2, 3+).
         graviteParForce: [1, 0.75, 0.6],
         /* Poussée longue prêtée à l'adversaire selon sa PIOCHE probable
@@ -24678,9 +24776,12 @@
            porteurs, 2 = porteurs compris. Mesure REPRODUCTIBLE (départs
            canoniques), 80 parties contre 0 : mode 1 28-44-8, soit 40 % —
            nuisible en IA contre IA. Les séries bruitées d'avant (24-13 puis
-           18-19) l'avaient masqué. Reste à 0 ; l'option garde le calcul pour
-           mesurer contre des humains. */
-        piochePush: 0,
+           18-19) l'avaient masqué. Cette mesure précédait le comptage des
+           cartes (probabilité alors tirée d'un paquet neuf) et la correction du
+           pousseur collé ; l'IA adverse n'exploite presque jamais ces poussées,
+           un humain si. Contre des humains (4 défaites du 29/09), c'est la
+           cause des 4 dernières pertes invisibles : activé, porteurs compris. */
+        piochePush: 2,
         /* Pousseur apparu par une pose adverse (plannerGraviteExpulsion) :
            0 = ignoré, 1 = gardiens non porteurs, 2 = porteurs compris.
            Mesure reproductible, 80 parties contre 0 : mode 2 42-33-5
@@ -24689,13 +24790,20 @@
            de case d'apparition, plus bas) : sous ce nom, la clé était écrasée
            par la seconde et les premières mesures réglaient l'autre poids. */
         menacePoseAdverse: 2,
+        /* …et le pousseur apparu qui MARCHE jusqu'à un poste en terre libre :
+           l'île est posée contre le bord, le gardien y apparaît, se déplace,
+           pousse. 4 défaites humaines du 29/09 : 8 porteurs sur 32 gardiens
+           perdus ainsi, l'humain n'ayant parfois aucun gardien en jeu.
+           0 = ignoré (ancien calcul), 1 = compté. */
+        apparitionMarche: 1,
         /* Un de mes gardiens collé derrière un autre forme un bloc poussable,
            pas un rempart (plannerPosteDerriereBloc). 0 = ancien calcul.
            Juste selon la règle, mais mesuré contre 0 (80 parties
-           reproductibles) : 33-39-8 (46 %), pertes 418 contre 424. Sans gain
-           en IA contre IA : reste à 0, en option pour mesurer contre des
-           humains. */
-        posteDerriereBloc: 0,
+           reproductibles) : 33-39-8 (46 %), pertes 418 contre 424 — mesure
+           faite quand le mode 0 perdait aussi le pousseur COLLÉ (corrigé). Une
+           défaite humaine du 29/09 : trois gardiens alignés éjectés d'une seule
+           poussée, invisible au mode 0. Activé. */
+        posteDerriereBloc: 1,
 
         /* Mise en place du mode personnalisé (plannerDraftIle / Gardien).
            draftExpert : 0 = logique historique, pour la comparer. */
@@ -24723,6 +24831,19 @@
         depotLibre: 1,
         // Place réservée à la pose au contact qui ramène la couronne vers mon village.
         poseRetourVillage: 1,
+        // Pose qui reçoit une couronne poussée au-dessus du vide (plannerIntentionsPose).
+        poseReception: 1,
+        // Combinaison dépôt + poussée + pose + ramassage en un coup (plannerCandidatsLancer).
+        lancerCouronne: 1,
+        // Vol de la couronne d'un porteur adverse adjacent (gratuit), et son danger.
+        volCouronne: 1,
+        // Faisceau trié avec le meilleur ramassage/vol gratuit immédiat de chaque nœud.
+        fermetureGratuite: 1,
+        /* Faisceau trié aussi sur le potentiel (sans menaces de fin de tour),
+           plannerNotePotentiel. Mesuré sur la position jaune du 29/09 : 1 016
+           après réplique au lieu de 4 222 — le faisceau se remplit de passages
+           imprudents. Coupé ; gardé pour mesurer. */
+        triPotentiel: 0,
         // Places de riposte réservées aux meilleurs plans d'autres idées.
         riposteAutresIdees: 2,
         // La riposte jouée remplace l'estimation du péril d'une couronne au sol.
@@ -24776,6 +24897,14 @@
         exposeCouronneContestee: 900,
         exposeCouronneFavorableAdverse: 1600,
         exposeCatastrophe: 2400,
+        /* Porteur éjectable : c'est l'ADVERSAIRE qui joue, et son pousseur finit
+           collé à la couronne tombée — il la ramasse dans la foulée. Le cas
+           « sûr » (couronne à une case de mon village, ou sur ma case de
+           validation) ne vaut donc plus : 900 si elle tombe à une case de mon
+           village, 2 400 sinon, plus le gardien porteur perdu. Sur 4 défaites humaines, 17 décisions
+           rejouées sur 51 laissaient un porteur éjectable, vu mais sous-coté
+           (400 points). 0 = ancien calcul. */
+        porteurExposeRiposte: 1,
 
         // Gardien : présence faible, utilité positionnelle décisive.
         gardien: 200,
@@ -24837,7 +24966,12 @@
         return 1 / (1 + distance * 0.5);
       }
 
+      /* En 4 joueurs (2 contre 2), le planner reste à un adversaire : celui
+         qui joue juste après — c'est lui qui répond au tour, et avec l'ordre
+         J1, J2, J3, J4 il appartient toujours à l'autre équipe. */
       function plannerAdversaire(playerId) {
+        const n = state.players.length;
+        if (n > 2) return state.players[(playerId + 1) % n] || null;
         return state.players.find(p => p.id !== playerId) || null;
       }
 
@@ -24961,8 +25095,8 @@
         const adverse = plannerAdversaire(playerId);
         const reserve = (adverse && state.players[adverse.id] && state.players[adverse.id].stash) || {};
         return {
-          move: (reserve.MOVE || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length,
-          push: (reserve.PUSH || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "PUSH").length
+          move: (reserve.MOVE || 0) + plannerMainAdverse(playerId).MOVE,
+          push: (reserve.PUSH || 0) + plannerMainAdverse(playerId).PUSH
         };
       }
 
@@ -25114,9 +25248,12 @@
         const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
         const certaine = Math.max(1, enReserve);
         const longue = Math.max(1, PLAN_POIDS.pousseeLongue || 1);
-        // Gravité d'une poussée de force f, pondérée par la chance d'en avoir les cartes.
+        /* Gravité d'une poussée de force f, pondérée par la chance d'en avoir
+           les cartes : certaine jusqu'à la réserve, puis la pioche (comptage).
+           La force 1 passait pour certaine même sans aucune PUSH possible —
+           vestige de la main fixe, qui en contenait toujours deux. */
         const gravitePour = f => table[Math.min(f, table.length) - 1]
-          * (f <= certaine ? 1 : plannerProbaPiocherPush(f - enReserve));
+          * (f <= enReserve ? 1 : plannerProbaPiocherPush(playerId, f - enReserve));
         const actif = mode => mode === 2 || (mode === 1 && pourGardien);
         let pire = 0;
         /* Poussée longue grâce à la PIOCHE. plannerForceExpulsion ne prête une
@@ -25129,7 +25266,8 @@
            piochePush : 0 = ancien calcul, 1 = gardiens non porteurs seuls,
            2 = porteurs compris. */
         if (actif(PLAN_POIDS.piochePush || 0) && certaine < longue) {
-          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue });
+          // push : sinon la main moyenne (souvent 1 PUSH) replafonnait la force.
+          const forcePiochee = plannerForceExpulsion(playerId, r, c, { forceMax: longue, push: longue });
           if (forcePiochee > certaine) pire = gravitePour(forcePiochee);
         }
         /* Pousseur APPARU. Le poste de poussée est du vide : l'adversaire peut
@@ -25142,9 +25280,14 @@
            2 = porteurs compris. */
         if (actif(PLAN_POIDS.menacePoseAdverse || 0) && canCreateGuardian(adverse.id)
           && !plannerPoseImpossibleEnCache(adverse.id)) {
+          const marche = PLAN_POIDS.apparitionMarche ? plannerChampApparition() : null;
+          const budgetMove = marche ? plannerBudgetAdverse(playerId).move : 0;
           for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
             const [pr, pc] = plannerPosteDerriereBloc(playerId, r, c, dr, dc);
-            if (!inside(pr, pc) || isLand(pr, pc)) continue;
+            if (!inside(pr, pc)) continue;
+            // Poste en terre : il faut qu'il soit libre et à portée de marche.
+            if (isLand(pr, pc) && (!marche || characterAt(pr, pc)
+              || !((marche.get(key(pr, pc)) || Infinity) <= budgetMove))) continue;
             const f = plannerVideAPortee(r, c, dr, dc, longue);
             if (f) pire = Math.max(pire, gravitePour(f) * PLAN_POIDS.draftMenacePose);
           }
@@ -25152,28 +25295,116 @@
         return pire;
       }
 
-      /* Probabilité qu'une main de cinq cartes tirée du paquet PUBLIC
-         (CARD_BLUEPRINTS) contienne au moins `n` PUSH — loi hypergéométrique.
-         Composition publique, jamais le vrai paquet mélangé. */
-      const plannerProbaPushCache = [];
-      function plannerProbaPiocherPush(n) {
-        if (n <= 0) return 1;
-        if (plannerProbaPushCache[n] !== undefined) return plannerProbaPushCache[n];
-        const total = CARD_BLUEPRINTS.length;
-        const push = CARD_BLUEPRINTS.filter(a => a === "PUSH").length;
-        const main = PLAN_MAIN_PLAUSIBLE.length;
+      /* COMPTAGE DES CARTES. Chaque joueur a 8 MOVE, 4 PUSH, 1 MAGIC ; les
+         cartes jouées vont à la défausse, remélangée quand la pioche est vide.
+         La COMPOSITION de la pioche est donc publique (13 moins défausse,
+         réserve et main) ; seul son ORDRE est caché, et on ne le lit jamais.
+         Au début de son tour, le joueur pioche cinq cartes :
+           - pioche ≥ 5 : cinq cartes tirées de la pioche ;
+           - pioche < 5 : toutes ses cartes, SÛRES, puis le reste tiré de la
+             défausse remélangée.
+         D'où une main plausible (cartes sûres + espérance arrondie au plus
+         fort reste) et la chance de piocher n PUSH (loi hypergéométrique).
+         Paquet neuf : 3,1 / 1,5 / 0,4 donnent 3 MOVE, 2 PUSH, 0 MAGIC — l'ancienne
+         main fixe. Un simple décompte, mis en cache par composition. */
+      const PLAN_TYPES_CARTES = ["MOVE", "PUSH", "MAGIC"];
+      const plannerPiocheCache = new Map();
+      function plannerPiocheProchaine(joueurId) {
+        const joueur = state.players[joueurId] || {};
+        const compter = cartes => {
+          const n = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          (cartes || []).forEach(c => { if (n[c.action] !== undefined) n[c.action]++; });
+          return n;
+        };
+        const pioche = compter(joueur.deck), defausse = compter(joueur.discard);
+        const taille = PLAN_TYPES_CARTES.reduce((s, t) => s + pioche[t], 0);
+        const cle = PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
+        const connu = plannerPiocheCache.get(cle);
+        if (connu) return connu;
+
+        const MAIN = 5;
+        const sures = taille >= MAIN ? { MOVE: 0, PUSH: 0, MAGIC: 0 } : pioche;
+        const tas = taille >= MAIN ? pioche : defausse;
+        const tasTotal = PLAN_TYPES_CARTES.reduce((s, t) => s + tas[t], 0);
+        const tirees = Math.min(taille >= MAIN ? MAIN : MAIN - taille, tasTotal);
+
+        // Main plausible : sûres + espérance du tirage, arrondie au plus fort reste.
+        const main = { ...sures };
+        const esperance = PLAN_TYPES_CARTES.map(t => [t, tasTotal ? tirees * tas[t] / tasTotal : 0]);
+        esperance.forEach(([t, e]) => { main[t] += Math.floor(e); });
+        let reste = tirees - esperance.reduce((s, [, e]) => s + Math.floor(e), 0);
+        esperance.sort((a, b) => (b[1] % 1) - (a[1] % 1))
+          .forEach(([t]) => { if (reste > 0) { main[t]++; reste--; } });
+
+        // P(au moins n PUSH) = sûres + tirage hypergéométrique.
         const comb = (a, b) => {
           if (b < 0 || b > a) return 0;
           let v = 1;
           for (let i = 1; i <= b; i++) v = v * (a - b + i) / i;
           return v;
         };
-        let p = 0;
-        for (let k = n; k <= Math.min(push, main); k++) {
-          p += comb(push, k) * comb(total - push, main - k) / comb(total, main);
+        const auMoinsPush = [];
+        for (let n = 0; n <= MAIN; n++) {
+          let p = 0;
+          for (let k = Math.max(0, n - sures.PUSH); k <= Math.min(tas.PUSH, tirees); k++) {
+            p += comb(tas.PUSH, k) * comb(tasTotal - tas.PUSH, tirees - k) / comb(tasTotal, tirees);
+          }
+          auMoinsPush.push(n <= sures.PUSH ? 1 : tasTotal ? p : 0);
         }
-        plannerProbaPushCache[n] = p;
-        return p;
+        const resultat = { main, auMoinsPush };
+        if (plannerPiocheCache.size > 256) plannerPiocheCache.clear();
+        plannerPiocheCache.set(cle, resultat);
+        return resultat;
+      }
+
+      /** Main plausible de l'adversaire de `playerId` : { MOVE, PUSH, MAGIC }. */
+      function plannerMainAdverse(playerId) {
+        const adverse = plannerAdversaire(playerId);
+        return adverse ? plannerPiocheProchaine(adverse.id).main : { MOVE: 0, PUSH: 0, MAGIC: 0 };
+      }
+
+      /* Probabilité que l'adversaire de `playerId` pioche au moins `n` PUSH. */
+      function plannerProbaPiocherPush(playerId, n) {
+        if (n <= 0) return 1;
+        const adverse = plannerAdversaire(playerId);
+        if (!adverse) return 0;
+        return plannerPiocheProchaine(adverse.id).auMoinsPush[Math.min(n, 5)] ?? 0;
+      }
+
+      /* Déplacements qu'il faut à un gardien APPARU pour atteindre chaque case
+         de terre : il surgit sur une île posée contre un bord (1 déplacement
+         pour monter sur la terre), puis marche. Ne dépend que du terrain, donc
+         calculé une fois par forme de terrain. Occupation ignorée : c'est une
+         portée, pas un chemin. */
+      const plannerCacheApparition = new Map();
+      function plannerChampApparition() {
+        const cle = plannerEmpreinteTerrain();
+        let champ = plannerCacheApparition.get(cle);
+        if (champ) return champ;
+        champ = new Map();
+        let front = [];
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            if (isLand(r, c) && orthogonalNeighbors(r, c).some(([vr, vc]) => !isLand(vr, vc))) {
+              champ.set(key(r, c), 1);
+              front.push([r, c]);
+            }
+          }
+        }
+        for (let d = 2; front.length && d <= 8; d++) {
+          const suivant = [];
+          for (const [r, c] of front) {
+            for (const [vr, vc] of orthogonalNeighbors(r, c)) {
+              if (!isLand(vr, vc) || champ.has(key(vr, vc))) continue;
+              champ.set(key(vr, vc), d);
+              suivant.push([vr, vc]);
+            }
+          }
+          front = suivant;
+        }
+        if (plannerCacheApparition.size >= 64) plannerCacheApparition.clear();
+        plannerCacheApparition.set(cle, champ);
+        return champ;
       }
 
       /* Poste de poussée derrière la victime (r, c), pour une poussée vers
@@ -25187,10 +25418,13 @@
          adverse se tient déjà au bout du bloc. */
       function plannerPosteDerriereBloc(playerId, r, c, dr, dc) {
         let pr = r - dr, pc = c - dc;
-        while (PLAN_POIDS.posteDerriereBloc && inside(pr, pc) && isLand(pr, pc)) {
+        while (inside(pr, pc) && isLand(pr, pc)) {
           const occupant = characterAt(pr, pc);
           if (!occupant) break;
+          // Pousseur adverse en place, collé ou au bout du bloc.
           if (occupant.player !== playerId) return [pr, pc, true];
+          // Option coupée : mon gardien derrière reste un rempart (ancien calcul).
+          if (!PLAN_POIDS.posteDerriereBloc) break;
           pr -= dr; pc -= dc;
         }
         return [pr, pc, false];
@@ -25203,8 +25437,9 @@
         if (!adverse) return 0;
 
         const reserve = state.players[adverse.id] && state.players[adverse.id].stash || {};
-        const plausibleMove = PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
-        const plausiblePush = PLAN_MAIN_PLAUSIBLE.filter(a => a === "PUSH").length;
+        const plausible = plannerMainAdverse(playerId);
+        const plausibleMove = plausible.MOVE;
+        const plausiblePush = plausible.PUSH;
         const budgetMove = budget && budget.move !== undefined
           ? budget.move : (reserve.MOVE || 0) + plausibleMove;
         const budgetPush = budget && budget.push !== undefined
@@ -25532,7 +25767,7 @@
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
         const reserve = state.players[adverse.id]?.stash || {};
-        const budgetMove = (reserve.MOVE || 0) + PLAN_MAIN_PLAUSIBLE.filter(a => a === "MOVE").length;
+        const budgetMove = (reserve.MOVE || 0) + plannerMainAdverse(playerId).MOVE;
         const portees = plannerPorteesAdverses(playerId, budgetMove);
         let poseSeule = false;
         for (const [vr, vc] of orthogonalNeighbors(r, c)) {
@@ -25579,6 +25814,23 @@
         if (plannerGardiensDe(playerId).length) return true;
         return canCreateGuardian(playerId) && !islandLimitReachedForPlayer(playerId)
           && !poseImpossiblePour(playerId);
+      }
+
+      /* NOTE DE POTENTIEL d'une position INTERMÉDIAIRE du tour.
+
+         Une position au milieu du tour n'est pas une fin de tour : les cartes
+         qui restent peuvent encore abriter le porteur, reprendre la couronne,
+         poser l'île. La juger avec les menaces adverses, comme si l'adversaire
+         jouait maintenant, creusait la note de tout plan qui passe par un
+         moment exposé (voler puis s'éloigner : −2 752 au vol, 4 622 à la fin)
+         et le faisceau l'abandonnait au creux. Les plans sont désormais
+         classés en cours de route sur ce potentiel ; seule la position FINALE
+         est jugée avec les menaces, puis confrontée à la riposte. */
+      let plannerEvalPotentiel = false;
+      function plannerNotePotentiel(playerId) {
+        plannerEvalPotentiel = true;
+        try { return evaluateStrategicState(playerId); }
+        finally { plannerEvalPotentiel = false; }
       }
 
       function evaluerEtatStrategique(playerId) {
@@ -25633,7 +25885,11 @@
            parce qu'une simple POSE adverse faisait apparaître un gardien à
            côté du nouveau porteur — 1 543 points de « menace » sans aucune
            poussée. */
-        const lAdversaireJoue = !PLAN_POIDS.traitPerspective || state.currentPlayer === playerId;
+        /* En POTENTIEL (plannerNotePotentiel), la position est lue comme un
+           point de passage du tour : l'adversaire ne joue pas encore, ses
+           menaces n'y comptent pas. */
+        const lAdversaireJoue = !plannerEvalPotentiel
+          && (!PLAN_POIDS.traitPerspective || state.currentPlayer === playerId);
         const marqueMoi = plannerPeutEncoreMarquer(playerId);
         const marqueLui = !!adverse && plannerPeutEncoreMarquer(adverse.id);
         const distMoi = (r, c) => marqueMoi ? plannerLireChamp(terrain.champMoi, casesMoi, r, c) : Infinity;
@@ -25775,9 +26031,33 @@
           const graviteCouronne = porteur && porteur.player === playerId && lAdversaireJoue
             ? plannerGraviteExpulsion(playerId, r, c) : 0;
           if (graviteCouronne > 0) {
-            const cout = plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl);
+            /* Pas de cas « sûr » sur ma case de validation : une couronne au sol
+               n'y valide pas (règle V66 abandonnée), et son pousseur la ramasse. */
+            const cout = !PLAN_POIDS.porteurExposeRiposte
+              ? plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl)
+              : (dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe)
+                + PLAN_POIDS.gardienExpose;
             ajouter("porteurExpose", -cout * graviteCouronne,
               `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
+          }
+
+          /* PORTEUR VOLABLE : un gardien adverse qui arrive à côté de mon
+             porteur — en marchant, ou apparu d'une pose — lui prend sa
+             couronne gratuitement et repart avec. Même atteinte que pour une
+             couronne au sol (plannerPerilCouronneSol) ; on ne compte que
+             l'excédent sur l'éjection, les deux pertes ne s'additionnant pas. */
+          if (PLAN_POIDS.volCouronne && porteur && porteur.player === playerId && lAdversaireJoue && marqueLui) {
+            const volable = plannerPerilCouronneSol(playerId, r, c);
+            if (volable > 0) {
+              const coutVol = (dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe)
+                * volable * PLAN_POIDS.perilCouronneSol * (PLAN_POIDS.porteurVolable ?? 1);
+              const dejaCompte = graviteCouronne > 0
+                ? ((dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe) * graviteCouronne) : 0;
+              if (coutVol > dejaCompte) {
+                ajouter("porteurVolable", -(coutVol - dejaCompte),
+                  `(${r},${c}) — ${volable === 1 ? "un gardien adverse peut venir à côté" : "une pose peut y faire apparaître un gardien"}`);
+              }
+            }
           }
         }
 
@@ -26584,6 +26864,51 @@
            un village veut un gardien DESSUS (0). */
         const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
         ajouter("couronne", libres, 1);
+
+        /* RÉCEPTION : une couronne poussée survole le vide et se pose sur sa
+           case d'arrivée si c'est de la terre. Poser l'île LÀ, avant la
+           poussée, l'envoie loin d'un coup — puis une rotation magique ou un
+           gardien lointain la reprend. Aucune intention ne visait ces cases :
+           la combinaison n'était jamais examinée, quel que soit le budget. */
+        /* La couronne n'a pas besoin d'être déjà au sol : mon porteur la dépose
+           gratuitement sur une case voisine, puis la pousse depuis sa case.
+           Sur la terre, elle glisse : l'île sert alors à faire apparaître un
+           gardien À CÔTÉ de sa case d'arrivée, qui la ramasse gratuitement. */
+        if (PLAN_POIDS.poseReception) {
+          const force = availableActionCount("PUSH", moi);
+          const auVide = [], surTerre = [];
+          const lancer = (cr, cc, dr, dc) => {
+            for (let f = 1; f <= force; f++) {
+              const r = cr + dr * f, c = cc + dc * f;
+              if (!inside(r, c)) break;
+              if (!isLand(r, c)) auVide.push([r, c]);
+              else if (characterAt(r, c) || looseArtifactAt(r, c)) break;
+              else surTerre.push([r, c]);
+            }
+          };
+          for (const a of activeArtifacts()) {
+            const porteur = a.carrierId !== null ? characterById(a.carrierId) : null;
+            if (porteur && porteur.player === playerId) {
+              // Dépôt gratuit sur une case voisine libre, poussée depuis le porteur.
+              for (const [xr, xc] of orthogonalNeighbors(porteur.r, porteur.c)) {
+                if (!isLand(xr, xc) || characterAt(xr, xc) || looseArtifactAt(xr, xc)) continue;
+                lancer(xr, xc, xr - porteur.r, xc - porteur.c);
+              }
+              continue;
+            }
+            if (a.carrierId !== null) continue;
+            for (const pousseur of plannerGardiensDe(playerId)) {
+              const dr = a.r - pousseur.r, dc = a.c - pousseur.c;
+              if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
+              lancer(a.r, a.c, dr, dc);
+            }
+          }
+          ajouter("reception", auVide, 1);
+          // Au vide, l'île doit COUVRIR la case d'arrivée, pas seulement la jouxter.
+          const reception = intentions.find(i => i.but === "reception");
+          if (reception) reception.couvrir = true;
+          ajouter("receptionTerre", surTerre, 1);
+        }
         if ((state.couronnesEnAttente || []).length) ajouter("sanctuaire", [[CENTER.r, CENTER.c]], 1);
 
         if (adverse) {
@@ -26860,6 +27185,8 @@
         for (const intention of plannerIntentionsPose(playerId)) {
           const notees = [];
           for (const pose of toutes) {
+            if (intention.couvrir && !pose.cells.some(([r, c]) =>
+              intention.cibles.some(([tr, tc]) => tr === r && tc === c))) continue;
             let meilleurSpawn = null;
             let meilleurEcart = Infinity;
             for (const cellule of pose.cells) {
@@ -26957,6 +27284,90 @@
         return plannerRetenir(diversifiees, plafonds().poseTotal, "POSE");
       }
 
+      /* LANCER DE COURONNE — une combinaison, proposée comme UN coup.
+
+         Mon porteur dépose sa couronne sur une case voisine (gratuit) et la
+         pousse depuis sa case : elle glisse sur la terre, ou survole le vide
+         jusqu'à une île posée pour la recevoir. Une pose fait apparaître un
+         gardien à côté de sa case d'arrivée, qui la ramasse (gratuit).
+
+         Étape par étape, la recherche ne la trouvait jamais : déposer puis
+         pousser fait CHUTER la note (couronne au sol, exposée) avant que la
+         pose et le ramassage ne la relèvent, et le faisceau élaguait la
+         branche au milieu. Mesuré sur une position humaine : 1 970 → 1 023 →
+         758 → 4 130 → 4 457, puis 5 953 une fois sur la case de validation,
+         contre 4 514 pour le meilleur plan trouvé. Notée complète, la
+         combinaison est jugée sur ce qu'elle donne. */
+      const PLAN_LANCER_MAX = 8;
+      function plannerCandidatsLancer(playerId) {
+        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)) return [];
+        const moi = state.players[playerId];
+        const forceMax = Math.min(availableActionCount("PUSH", moi), Math.max(1, PLAN_POIDS.pousseeLongue || 1));
+        if (forceMax < 1) return [];
+        const porteurs = plannerGardiensDe(playerId).filter(g => characterCarriesCrown(g.id));
+        if (!porteurs.length) return [];
+        const validation = crownValidationCellsForPlayer(moi);
+        const versMoi = (r, c) => Math.min(...validation.map(([vr, vc]) => Math.abs(r - vr) + Math.abs(c - vc)));
+        const poses = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX, false) || [];
+        if (!poses.length) return [];
+        const options = [];
+        const essayer = actions => {
+          const clone = cloneStateForSimulation();
+          return withSimulatedState(clone, () => {
+            for (const action of actions) if (!plannerAppliquerAction(action)) return false;
+            return true;
+          });
+        };
+        for (const porteur of porteurs) {
+          const couronne = artifactCarriedBy(porteur.id);
+          const depart = versMoi(porteur.r, porteur.c);
+          for (const [xr, xc] of orthogonalNeighbors(porteur.r, porteur.c)) {
+            if (!isLand(xr, xc) || characterAt(xr, xc) || looseArtifactAt(xr, xc)) continue;
+            const dr = xr - porteur.r, dc = xc - porteur.c;
+            const depot = { type: "DEPOT", charId: porteur.id, artifactId: couronne.id, r: xr, c: xc };
+            for (let force = 1; force <= forceMax; force++) {
+              const [lr, lc] = [xr + dr * force, xc + dc * force];
+              if (!inside(lr, lc) || versMoi(lr, lc) >= depart) continue;
+              const pousse = { type: "PUSH", pusherId: porteur.id, r: xr, c: xc, force };
+              const auVide = !isLand(lr, lc);
+              // Poses qui font apparaître un gardien à côté de l'arrivée (et la
+              // couvrent si c'est du vide), les plus proches de mon village d'abord.
+              const retenues = [];
+              for (const pose of poses) {
+                if (auVide && !pose.cells.some(([r, c]) => r === lr && c === lc)) continue;
+                const spawns = pose.cells.filter(([r, c]) => Math.abs(r - lr) + Math.abs(c - lc) === 1
+                  && !characterAt(r, c));
+                for (const spawn of spawns) retenues.push({ pose, spawn, rang: versMoi(spawn[0], spawn[1]) });
+              }
+              retenues.sort((a, b) => a.rang - b.rang);
+              for (const { pose, spawn } of retenues.slice(0, 2)) {
+                const poser = { type: "POSE", shapeKey: pose.shapeKey, cells: pose.cells, relCells: pose.relCells,
+                  anchor: pose.anchor, owner: playerId, spawn, but: "lancer" };
+                const ordre = auVide ? [poser, depot, pousse] : [depot, pousse, poser];
+                // L'identifiant du gardien apparu se lit dans la simulation.
+                let nouveau = null;
+                const clone = cloneStateForSimulation();
+                const ok = withSimulatedState(clone, () => {
+                  for (const action of ordre) {
+                    const r = plannerAppliquerAction(action);
+                    if (!r) return false;
+                    if (action.type === "POSE") nouveau = r.gardienId;
+                  }
+                  const posee = [state.artifact, state.secondArtifact].find(a => a && a.id === couronne.id);
+                  return !!(posee && posee.carrierId === null && posee.r === lr && posee.c === lc);
+                });
+                if (!ok || !nouveau) continue;
+                const actions = [...ordre, { type: "RAMASSAGE", charId: nouveau, artifactId: couronne.id }];
+                if (!essayer(actions)) continue;
+                options.push({ type: "SEQUENCE", actions, gain: depart - versMoi(spawn[0], spawn[1]) });
+              }
+            }
+          }
+        }
+        options.sort((a, b) => b.gain - a.gain);
+        return options.slice(0, PLAN_LANCER_MAX);
+      }
+
       /* Transitions GRATUITES : elles ne consomment aucune carte et ne comptent
          pas comme une décision coûteuse. Elles ne sont plus des scripts joués
          avant le cerveau mais de vraies arêtes du graphe de recherche, ce qui
@@ -26972,6 +27383,23 @@
             if (couronne.carrierId !== null) continue;
             if (Math.abs(gardien.r - couronne.r) + Math.abs(gardien.c - couronne.c) !== 1) continue;
             transitions.push({ type: "RAMASSAGE", charId: gardien.id, artifactId: couronne.id });
+          }
+        }
+
+        /* VOL : un gardien à côté d'un porteur ADVERSE lui prend sa couronne,
+           gratuitement (règle de l'interface, ui.js : clic sur la couronne du
+           porteur adverse). L'IA ne le savait pas : elle ne volait jamais, et
+           sa riposte simulée ne volait pas non plus ses porteurs. */
+        if (PLAN_POIDS.volCouronne) {
+          for (const gardien of plannerGardiensDe(playerId)) {
+            if (characterCarriesCrown(gardien.id)) continue;
+            for (const couronne of activeArtifacts()) {
+              const porteur = couronne.carrierId ? characterById(couronne.carrierId) : null;
+              if (!porteur || porteur.player === playerId) continue;
+              if (Math.abs(gardien.r - porteur.r) + Math.abs(gardien.c - porteur.c) !== 1) continue;
+              if (porteur.r === CENTER.r && porteur.c === CENTER.c && state.centerCrownTakenThisTurn) continue;
+              transitions.push({ type: "VOL", charId: gardien.id, artifactId: couronne.id, deId: porteur.id });
+            }
           }
         }
 
@@ -27014,6 +27442,59 @@
         return giveArtifactToCharacter(couronne, gardien)
           ? { type: "RAMASSAGE", charId, artifactId }
           : null;
+      }
+
+      /* DISSOLUTION (option de partie allowDissolve) : 1 magie retire une île
+         VIDE — ni gardien ni couronne au sol (règle de dissolveSelectedIsland,
+         ui.js). L'IA l'ignorait : couper le pont d'un adversaire, isoler son
+         porteur, ou priver son gardien d'un poste de poussée lui échappaient. */
+      function applyDissolutionCore(islandId) {
+        if (!state.rules || !state.rules.allowDissolve) return null;
+        const ile = state.islands.find(i => i.id === islandId);
+        if (!ile || !islandIsEmpty(ile)) return null;
+        if (availableActionCount("MAGIC", state.players[state.currentPlayer]) < 1) return null;
+        state.islands = state.islands.filter(i => i.id !== islandId);
+        const depense = consumeSelectedActionCore("MAGIC", 1);
+        return { type: "DISSOLUTION", islandId, cellules: ile.cells.map(([r, c]) => [r, c]), cout: depense };
+      }
+
+      /* Candidats de dissolution : les îles vides les plus proches de l'action
+         (gardiens et couronnes), six au plus ; l'évaluateur tranche. */
+      function plannerCandidatsDissolution(playerId) {
+        if (!state.rules || !state.rules.allowDissolve) return [];
+        if (availableActionCount("MAGIC", state.players[playerId]) < 1) return [];
+        const reperes = [
+          ...(state.characters || []).map(g => [g.r, g.c]),
+          ...activeArtifacts().map(a => {
+            const p = a.carrierId ? characterById(a.carrierId) : null;
+            return p ? [p.r, p.c] : [a.r, a.c];
+          })
+        ].filter(([r, c]) => Number.isFinite(r) && Number.isFinite(c));
+        return state.islands.filter(islandIsEmpty)
+          .map(ile => ({
+            ile,
+            proximite: Math.min(...ile.cells.flatMap(([r, c]) => reperes.map(([pr, pc]) =>
+              Math.abs(r - pr) + Math.abs(c - pc))))
+          }))
+          .sort((a, b) => a.proximite - b.proximite)
+          .slice(0, 6)
+          .map(({ ile }) => ({ type: "DISSOLUTION", islandId: ile.id }));
+      }
+
+      /* Vol de la couronne d'un porteur adverse adjacent (même règle que
+         beginCrownRecovery, ui.js) : une seule prise au sanctuaire par tour. */
+      function applyFreeStealCore(charId, artifactId) {
+        const gardien = characterById(charId);
+        const couronne = [state.artifact, state.secondArtifact].find(a => a && a.id === artifactId);
+        const porteur = couronne && couronne.carrierId ? characterById(couronne.carrierId) : null;
+        if (!gardien || !porteur || porteur.player === gardien.player || !couronne.active) return null;
+        if (characterCarriesCrown(gardien.id)) return null;
+        if (Math.abs(gardien.r - porteur.r) + Math.abs(gardien.c - porteur.c) !== 1) return null;
+        const auSanctuaire = porteur.r === CENTER.r && porteur.c === CENTER.c;
+        if (auSanctuaire && state.centerCrownTakenThisTurn) return null;
+        if (!giveArtifactToCharacter(couronne, gardien)) return null;
+        if (auSanctuaire) state.centerCrownTakenThisTurn = true;
+        return { type: "VOL", charId, artifactId, deId: porteur.id };
       }
 
       function plannerCaseRelaisGratuit(porteur, allie) {
@@ -27077,14 +27558,21 @@
       }
 
       function plannerAppliquerAction(action) {
+        if (action.type === "SEQUENCE") {
+          for (const etape of action.actions) if (!plannerAppliquerAction(etape)) return null;
+          return action;
+        }
         if (action.type === "DEPOT") return applyFreeDropCore(action.charId, action.r, action.c);
+        if (action.type === "VOL") return applyFreeStealCore(action.charId, action.artifactId);
+        if (action.type === "DISSOLUTION") return applyDissolutionCore(action.islandId);
         if (action.type === "RAMASSAGE") return applyFreePickupCore(action.charId, action.artifactId);
         if (action.type === "TRANSMISSION") return applyFreeHandoffCore(action.deId, action.versId);
         return appliquerActionNoyau(action);
       }
 
       function plannerActionGratuite(action) {
-        return action.type === "DEPOT" || action.type === "RAMASSAGE" || action.type === "TRANSMISSION";
+        return action.type === "DEPOT" || action.type === "RAMASSAGE" || action.type === "TRANSMISSION"
+          || action.type === "VOL";
       }
 
       /* ---------------------------------------------------------------------
@@ -27121,7 +27609,8 @@
          limitent la recherche ; les temps ne sont plus que des sécurités contre
          un blocage — environ 7 s au total sur une machine lente. */
       const PLAN_SECURITE = {
-        principaleMs: 3000,
+        // Relevé avec le budget de recherche (PLAN_BUDGET) : un filet, pas une borne.
+        principaleMs: 7000,
         /* 700 ms tombait sur le coût NORMAL d'une riposte (250 états) dès que
            la machine était un peu lente ou « froide » : la riposte était
            coupée, la menace mesurée changeait, et la même position ne donnait
@@ -27130,8 +27619,10 @@
         riposteMs: 2000,
         critiqueMs: 1200,
         magieMs: 150,
-        // Échéance de tout le tour (recherche + ripostes), sous les 7 s admis.
-        tourMs: 6000
+        /* Échéance de tout le tour (recherche + ripostes). 6 s jusqu'au 29/09 ;
+           relevée avec le budget, les tours de l'IA restant rapides en pratique
+           (3,8 s au plus sur 55 décisions humaines). */
+        tourMs: 12000
       };
       /* Multiplicateur des plafonds de sécurité (PLAN_POIDS.securiteFacteur),
          pour les outils d'analyse : un plafond de temps atteint rend la
@@ -27149,9 +27640,15 @@
            idée — dix poses d'île presque identiques — remplissent les places et
            évincent les lignes d'une autre nature. Mesuré : A8, qui demande une
            parade précise, échouait pour cette seule raison. */
-        largeurFaisceau: 14,
-        decisionsMax: 6,
-        etatsMax: 1200,
+        /* 14 / 6 / 1 200 jusqu'au 29/09. Avec le vol et la fermeture gratuite,
+           une position humaine (capture du 29/09, côté jaune) montrait l'écart :
+           vol + lancer vers le village + second vol, 4 222 après la réplique
+           adverse, trouvé à 24 / 8 / 5 000 seulement (936 au budget d'avant).
+           Coût mesuré sur 55 décisions humaines : 1,5 → 1,9 s en moyenne,
+           3,8 s au plus, aucune coupure par le temps. */
+        largeurFaisceau: 24,
+        decisionsMax: 8,
+        etatsMax: 5000,
         tempsMaxMs: 500
       };
 
@@ -27436,7 +27933,9 @@
                 ...plannerCandidatsMove(playerId),
                 ...plannerCandidatsPush(playerId),
                 ...plannerCandidatsMagic(playerId),
-                ...plannerCandidatsPose(playerId)
+                ...plannerCandidatsPose(playerId),
+                ...plannerCandidatsLancer(playerId),
+                ...plannerCandidatsDissolution(playerId)
               ];
               return [...gratuites, ...payantes];
             }));
@@ -27450,8 +27949,24 @@
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
+                const note = evaluateStrategicState(playerId);
+                /* FERMETURE GRATUITE. Un nœud se classe au faisceau avec le
+                   meilleur ramassage ou vol GRATUIT qu'il permet aussitôt : ce
+                   gain ne coûte rien et suivra au niveau suivant. Sans cela,
+                   « pousser le porteur, aller à côté de sa couronne » était
+                   élagué au creux (−652) avant le ramassage qui le relevait. */
+                let noteTri = PLAN_POIDS.triPotentiel ? Math.max(note, plannerNotePotentiel(playerId)) : note;
+                if (PLAN_POIDS.fermetureGratuite) {
+                  for (const t of plannerTransitionsGratuites(playerId)) {
+                    if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
+                    const essai = structuredClone(state);
+                    const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
+                      : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
+                    if (n > noteTri) noteTri = n;
+                  }
+                }
                 return {
-                  note: evaluateStrategicState(playerId),
+                  note, noteTri,
                   prioriteDefense: clone.islandPlacedThisTurn
                     ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
@@ -27465,10 +27980,14 @@
 
               const enfant = {
                 etat: clone,
-                plan: [...noeud.plan, action],
+                // Une séquence s'inscrit au plan action par action.
+                plan: [...noeud.plan, ...(action.type === "SEQUENCE" ? action.actions : [action])],
                 // Une transition gratuite ne consomme pas de profondeur.
-                decisions: noeud.decisions + (plannerActionGratuite(action) ? 0 : 1),
+                decisions: noeud.decisions + (action.type === "SEQUENCE"
+                  ? action.actions.filter(a => !plannerActionGratuite(a)).length
+                  : plannerActionGratuite(action) ? 0 : 1),
                 note: resultat.note,
+                noteTri: resultat.noteTri,
                 prioriteDefense: resultat.prioriteDefense,
                 terminal: clone.islandPlacedThisTurn
               };
@@ -27484,8 +28003,19 @@
           }
 
           if (!suivants.length) break;
-          suivants.sort((a, b) => b.note - a.note);
-          faisceau = plannerFaisceauDiversifie(suivants, budget.largeurFaisceau);
+          /* Deux classements, deux moitiés du faisceau : la note complète
+             (menaces comprises) garde les plans sûrs, le potentiel garde ceux
+             qui passent par un moment exposé avant de se relever. L'un seul
+             perdait l'autre famille. */
+          const parNote = [...suivants].sort((a, b) => b.note - a.note);
+          const parPotentiel = [...suivants].sort((a, b) => (b.noteTri ?? b.note) - (a.noteTri ?? a.note));
+          const moitie = Math.ceil(budget.largeurFaisceau / 2);
+          const retenus = new Set(plannerFaisceauDiversifie(parNote, moitie));
+          for (const n of plannerFaisceauDiversifie(parPotentiel, budget.largeurFaisceau)) {
+            if (retenus.size >= budget.largeurFaisceau) break;
+            retenus.add(n);
+          }
+          faisceau = [...retenus];
           profondeurAtteinte = niveau + 1;
           if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
           if (etatsExplores > budget.etatsMax) break;
@@ -27574,24 +28104,11 @@
         });
       }
 
-      /* Main plausible prêtée à l'adversaire pour la simulation. Ce n'est PAS
-         sa vraie main future : `player.deck` est un tableau ordonné et
-         mélangé, le consulter serait tricher. On part de la composition
-         PUBLIQUE du paquet (CARD_BLUEPRINTS : 8 MOVE, 4 PUSH, 1 MAGIC sur 13),
-         arrondie sur cinq cartes en gardant les trois types représentés — un
-         adversaire dont on ne simulerait jamais la magie serait sous-estimé. */
-      /* Espérance arrondie d'un tirage de cinq cartes : 8/13 MOVE, 4/13 PUSH,
-         1/13 MAGIC donnent 3,1 / 1,5 / 0,4. D'où trois MOVE, deux PUSH, et
-         AUCUNE magie.
-
-         Ce dernier point a été mesuré. Prêter une magie garantie à chaque main
-         simulée rendait l'IA paranoïaque : l'adversaire faisait tourner l'île
-         sous les pieds du porteur, si bien qu'aucune case de validation ne
-         paraissait jamais tenable et qu'Expert renonçait à marquer. Or la magie
-         est UNE carte sur treize. Les menaces de magie restent modélisées quand
-         l'adversaire en a réellement une en RÉSERVE — information connue — mais
-         on ne lui suppose plus une pioche chanceuse. */
-      const PLAN_MAIN_PLAUSIBLE = ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"];
+      /* Main plausible prêtée au joueur qui entre en jeu : plannerPiocheProchaine
+         (comptage des cartes). Jamais sa vraie main : `player.deck` est ordonné,
+         seule sa composition est lue. La MAGIE n'y entre que si le décompte la
+         rend probable (pioche presque vide) : la prêter à chaque main rendait
+         l'IA paranoïaque — aucune case de validation ne paraissait tenable. */
 
       /** Transition de fin de tour réduite à ses effets de RÈGLE.
        *  Reproduit l'ordre réel du moteur — mise en réserve des cartes non
@@ -27620,10 +28137,16 @@
         if (state.winner !== null && state.winner !== undefined) {
           return { vainqueur: state.winner };
         }
+        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
+        if (finParPoseImpossible(entrant.id)) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
+          return { vainqueur: state.winner };
+        }
 
-        entrant.hand = PLAN_MAIN_PLAUSIBLE.map((action, i) => ({
-          id: "plausible-" + state.turn + "-" + i, action, used: false
-        }));
+        const plausible = plannerPiocheProchaine(entrant.id).main;
+        entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
+          .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
@@ -28156,6 +28679,10 @@
                 + ` (${a.turns} quart${a.turns > 1 ? "s" : ""} de tour)`;
             case "RAMASSAGE":
               return `ramasse la couronne avec le gardien ${depuis(a.charId)}`;
+            case "DISSOLUTION":
+              return `dissout l'île ${a.islandId} (1 magie)`;
+            case "VOL":
+              return `vole la couronne du porteur ${depuis(a.deId)} avec le gardien ${depuis(a.charId)}`;
             case "TRANSMISSION":
               return `passe la couronne de ${depuis(a.deId)} à ${depuis(a.versId)}`;
             case "DEPOT":
@@ -28951,12 +29478,15 @@
           };
           giveArtifactToCharacter = function (artifact, char) {
             const porteurAvant = artifact ? artifact.carrierId : null;
+            const ancien = porteurAvant ? characterById(porteurAvant) : null;
+            const vol = !!(ancien && char && ancien.player !== char.player);
             const resultat = revueNoyauxDorigine.couronne.apply(null, arguments);
             if (resultat && char) {
-              noter(porteurAvant
+              noter(vol ? `VOL par (${char.r},${char.c})`
+                : porteurAvant
                 ? `TRANSMISSION vers (${char.r},${char.c})`
                 : `RAMASSAGE par (${char.r},${char.c})`,
-                { type: porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
+                { type: vol ? "VOL" : porteurAvant ? "TRANSMISSION" : "RAMASSAGE", vers: [char.r, char.c] });
             }
             return resultat;
           };
@@ -29085,6 +29615,7 @@
         if (typeof ilyosSimulationActive !== "undefined" && ilyosSimulationActive) return false;
         try { if (ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active) return false; } catch (erreur) { /* harnais absent */ }
         const joueurs = state.players || [];
+        if (joueurs.length !== 2) return false;
         return joueurs.some(j => !j.isAI) && joueurs.some(j => j.isAI && j.aiDifficulty === "expert");
       }
 
@@ -29775,11 +30306,16 @@
         };
         giveArtifactToCharacter = function (artifact, char) {
           const porteurAvant = artifact ? artifact.carrierId : null;
+          const ancien = porteurAvant ? characterById(porteurAvant) : null;
+          const vol = !!(ancien && char && ancien.player !== char.player);
           const resultat = origine.couronne.apply(this, arguments);
           if (resultat && char) {
-            defaitesConsignerAction(porteurAvant
+            defaitesConsignerAction(vol
+              ? `vole la couronne du porteur (${ancien.r},${ancien.c}) avec le gardien (${char.r},${char.c})`
+              : porteurAvant
               ? `passe la couronne au gardien (${char.r},${char.c})`
-              : `ramasse la couronne avec le gardien (${char.r},${char.c})`, porteurAvant ? "TRANSMISSION" : "RAMASSAGE");
+              : `ramasse la couronne avec le gardien (${char.r},${char.c})`,
+              vol ? "VOL" : porteurAvant ? "TRANSMISSION" : "RAMASSAGE");
           }
           return resultat;
         };
@@ -29909,6 +30445,12 @@
               } else if (a.type === "DEPOT") {
                 ajouter({ type: "anneau", r: a.r, c: a.c, couleur: 0xf2c94c });
                 marque = [a.r, a.c];
+              } else if (a.type === "DISSOLUTION") {
+                const ile = (state.islands || []).find(i => i.id === a.islandId);
+                if (ile) { ile.cells.forEach(([r, c]) => ajouter({ type: "case", r, c, couleur })); marque = ile.cells[0]; }
+              } else if (a.type === "VOL") {
+                const de = characterById(a.deId), vers = characterById(a.charId);
+                if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }
               } else if (a.type === "TRANSMISSION") {
                 const de = characterById(a.deId), vers = characterById(a.versId);
                 if (de && vers) { ajouter({ type: "fleche", de: [de.r, de.c], vers: [vers.r, vers.c], couleur: 0xf2c94c }); marque = [vers.r, vers.c]; }
@@ -30338,6 +30880,8 @@
         const tour = dossier.tours[index];
         defaitesVueQuitter();
         if (!v.direct) { defaitesRejouer(dossier, index); return; }
+        // Partie solo : on revient toujours à la position mise de côté.
+        if (v.direct.solo) { revueRestaurerPartie(v); return; }
         revueRestaurerPartie(v, { etat: tour.actuelle ? null : tour.etat, journal: tour.actuelle ? null : tour.journalIndex });
         autopsieReprendre();
       }
@@ -30550,7 +31094,10 @@
         const annotation = (d.annotations || {})[v.index] || { texte: "", etiquettes: [] };
         const date = new Date(d.fin.date);
         const scores = d.fin.scores || [];
-        const titre = v.direct
+        const titre = v.direct && v.direct.solo
+          ? `<b>Revue IA — partie en cours</b>
+             <small>${defaitesEchapper(defaitesVueNom(d.humain))} ${scores[d.humain] ?? 0}-${scores[d.ia] ?? 0} IA Expert · tour ${d.fin.tours}</small>`
+          : v.direct
           ? `<b>Partie IA contre IA — ${state && v.direct ? "en pause" : ""}</b>
              <small>${(d.joueurs || []).map((j, k) => `${defaitesEchapper(j.nom)} ${scores[k] ?? 0}`).join(" · ")} · tour ${d.fin.tours}</small>`
           : `<b>Partie du ${date.toLocaleDateString("fr-FR")}</b>
@@ -30633,7 +31180,7 @@
               ${p.ecart && p.ecart.length ? `<details><summary>Où les deux coups diffèrent</summary><ul class="dv-termes">${
                 p.ecart.map(x => `<li><span>${defaitesEchapper(x.terme)}</span><b class="${x.delta >= 0 ? "dv-plus" : "dv-moins"}">${defaitesVueSigne(x.delta)}</b></li>`).join("")}</ul></details>` : ""}
               <button type="button" data-vue="tracer-proposition" data-k="${k}">${defaitesVuePastille("propose")} tracer votre coup</button>
-              ${v.direct ? `<button type="button" data-vue="continuer-proposition" data-k="${k}">▶ Continuer la partie depuis ce coup</button>` : ""}
+              ${v.direct && !v.direct.solo ? `<button type="button" data-vue="continuer-proposition" data-k="${k}">▶ Continuer la partie depuis ce coup</button>` : ""}
             </div>`).join("")}
           </section>` : ""}
           <section class="dv-bloc">
@@ -30647,7 +31194,7 @@
             <textarea readonly rows="8">${defaitesEchapper(v.texteBrut)}</textarea></section>` : ""}
           <footer class="dv-actions">
             ${tour.actuelle ? "" : `<button type="button" class="dv-principal" data-vue="proposer">✏ Proposer un meilleur coup</button>`}
-            <button type="button" data-vue="reprendre">▶ ${v.direct && tour.actuelle ? "Reprendre la partie" : "Reprendre la partie ici"}</button>
+            <button type="button" data-vue="reprendre">▶ ${v.direct && (tour.actuelle || v.direct.solo) ? "Reprendre la partie" : "Reprendre la partie ici"}</button>
             <button type="button" data-vue="exporter">⤓ Exporter</button>
             ${v.direct ? `<button type="button" data-vue="copier">⧉ Copier le résumé</button>` : ""}
           </footer>
@@ -30881,7 +31428,13 @@
         state.onlineMode = false;
         if (etat) applyStateSnapshot(JSON.parse(etat));
         if (Number.isInteger(journal)) ILYOS_AUTOPSIE_JOURNAL.length = journal;
-        state.players.forEach(j => { j.isAI = false; });
+        if (v.direct.solo) {
+          /* Partie solo : l'adversaire reste l'IA, et le journal des défaites
+             reprend le même fil (il suit l'objet state, remplacé ici). */
+          if (v.direct.journal) { v.direct.journal.etatRef = state; defaitesJournal = v.direct.journal; }
+        } else {
+          state.players.forEach(j => { j.isAI = false; });
+        }
         state.undoHistory = [];
         state.inputLocked = false;
         state.aiThinking = false;
@@ -30892,9 +31445,70 @@
         els.gameScreen.classList.remove("hidden");
         if (typeof syncKayKitScene === "function") syncKayKitScene();
         renderAll();
+        if (v.direct.solo) startTurnTimer(true);
         revueRendre();
         return true;
       }
+
+      /* PARTIE SOLO contre l'Expert : la visionneuse sur la partie en cours
+         (menu ⚙ → « Revue IA »). Le journal des défaites a déjà chaque tour
+         et chaque décision de l'IA ; à la fermeture, la partie reprend là où
+         elle était, contre la même IA. */
+      function revueDossierSolo(journal) {
+        const humain = state.players.find(j => !j.isAI);
+        const ia = state.players.find(j => j.isAI);
+        const tours = journal.tours.filter(t => t.etat).map(t => ({ ...t }));
+        tours.push({ tour: state.turn, joueur: state.currentPlayer, ia: false, etat: snapshotState(), actuelle: true });
+        return {
+          jeu: "ILYOS", type: "revue-partie-solo", schema: 1,
+          id: `revue-${Date.now().toString(36)}`,
+          debut: journal.debut,
+          fin: {
+            date: new Date().toISOString(), tours: state.turn, manches: state.round,
+            vainqueur: null, scores: state.players.map(j => j.score || 0)
+          },
+          version: journal.version, bundle: journal.bundle, regles: journal.regles, joueurs: journal.joueurs,
+          humain: humain ? humain.id : null, ia: ia ? ia.id : null,
+          reprise: journal.reprise, origine: journal.origine,
+          poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
+          tours, etatFinal: tours[tours.length - 1].etat,
+          cadre: serializeGameStateForSave(),
+          annotations: {}, propositions: [], analyse: { signales: [] }
+        };
+      }
+
+      function revueSoloDisponible() {
+        return !!(state && !defaitesVue && !revueAutoplayEnCours() && defaitesJournalCourant());
+      }
+
+      function revueOuvrirPartieSolo() {
+        if (!revueSoloDisponible()) { showToast("La revue IA suit les parties solo contre l’IA Expert."); return false; }
+        const joueur = state.players[state.currentPlayer];
+        if (!revuePartieAuRepos() || (joueur && joueur.isAI)) {
+          showToast("Revue IA disponible à votre tour, quand l’IA a fini de jouer.");
+          return false;
+        }
+        const journal = defaitesJournalCourant();
+        if (!journal.tours.some(t => t.decision && t.etat)) {
+          showToast("Aucune décision de l’IA relevée pour l’instant.");
+          return false;
+        }
+        const dossier = revueDossierSolo(journal);
+        const direct = { cadre: dossier.cadre, visuel: state.visualMode, solo: true, journal };
+        // Dernière décision de l'IA : c'est elle qu'on vient de subir.
+        let index = dossier.tours.length - 1;
+        while (index > 0 && !(dossier.tours[index].decision && dossier.tours[index].etat)) index--;
+        return defaitesVueOuvrir(dossier, index, direct);
+      }
+
+      document.getElementById("revueIaBtn")?.addEventListener("click", () => {
+        closeHudV2Drawer();
+        revueOuvrirPartieSolo();
+      });
+      // Le bouton n'apparaît que dans une partie solo suivie contre l'Expert.
+      document.getElementById("hudV2GearBtn")?.addEventListener("click", () => {
+        document.getElementById("revueIaBtn")?.classList.toggle("hidden", !revueSoloDisponible());
+      });
 
       function revueBarre() {
         let barre = document.querySelector(".revue-barre");
@@ -43896,7 +44510,8 @@
          défaites. On recopie donc les réglages de la partie qui s'achève. */
       function restaurerReglagesPartie(partie) {
         const humains = (partie.players || []).filter(j => !j.isAI);
-        const mode = partie.soloMode ? "1" : String(humains.length);
+        const joueurs = partie.players || [];
+        const mode = partie.soloMode ? "1" : String(joueurs.length === 4 ? 4 : humains.length);
         if (String(els.playerCount.value) !== mode
           && [...els.playerCount.options].some(option => option.value === mode)) {
           els.playerCount.value = mode;
@@ -43908,12 +44523,18 @@
           const voulu = String(valeur);
           if ([...liste.options].some(option => option.value === voulu)) liste.value = voulu;
         };
-        if (partie.soloMode) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (partie.soloMode || joueurs.some(j => j.isAI)) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (joueurs.length === 4) {
+          const ia = joueurs.map((j, i) => j.isAI ? i : null).filter(i => i !== null).join("");
+          fixer("teamSeatsSelect", ({ "13": "ai24", "123": "ai234" })[ia] || "none");
+          fixer("teamVillagesSelect", (joueurs[2]?.villages || []).length > 1 ? "team" : "solo");
+        }
         fixer("boardSizeSelect", GRID);
         fixer("startingBoardSelect", partie.startingBoardMode);
         fixer("turnTimerSelect", partie.turnDurationSeconds || 0);
         [...els.playersForm.querySelectorAll(".player-name")].forEach((champ, i) => {
-          if (humains[i] && humains[i].name) champ.value = humains[i].name;
+          const joueur = joueurs.length === 4 ? joueurs[i] : humains[i];
+          if (joueur && joueur.name && !joueur.isAI) champ.value = joueur.name;
         });
       }
 
@@ -44342,6 +44963,21 @@
               });
             }
           });
+          /* PIOCHE : la composition publique RESTANTE (13 cartes moins la main
+             et la réserve), dans un ordre fixe — jamais un tirage au hasard.
+             Une pioche vide voulait dire « cartes inconnues » tant que l'IA
+             prêtait une main fixe (3 MOVE, 2 PUSH) à l'adversaire ; avec le
+             comptage des cartes (plannerPiocheProchaine), elle veut dire
+             « aucune carte au prochain tour », et les menaces qu'un banc
+             vérifie disparaissaient. `spec.pioches[index]` (liste d'actions,
+             éventuellement vide) fixe la pioche explicitement. */
+          const restantes = CARD_BLUEPRINTS.slice();
+          [...main, ...reserveDemandee].forEach(carte => {
+            const i = restantes.indexOf(carte.action);
+            if (i >= 0) restantes.splice(i, 1);
+          });
+          const pioche = (Array.isArray(spec.pioches?.[index]) ? spec.pioches[index] : restantes)
+            .map((action, i) => ({ id: `bench-P${index}-D${i}`, action, used: false }));
           return {
             id: index,
             name: index === 0 ? "BENCH IA" : "BENCH ADVERSAIRE",
@@ -44354,8 +44990,7 @@
             village: { ...villages[0] },
             villages,
             score: spec.scores?.[index] || 0,
-            // Pioche vide : un puzzle ne doit jamais dépendre d'un tirage.
-            deck: [],
+            deck: pioche,
             discard: [],
             hand: main,
             stash: Object.assign({ MOVE: 0, PUSH: 0, MAGIC: 0 }, spec.stash?.[index] || {}),
@@ -45204,8 +45839,8 @@
         scoreCrownsAtTurnStart(entrant);
         if (state.winner !== null && state.winner !== undefined) return false;
 
-        // Règle V68 : plus de place pour poser, la partie s'arrête.
-        if (plateauSansPlace()) {
+        // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
+        if (finParPoseImpossible(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return false;
@@ -45255,12 +45890,18 @@
       /* Poids de l'évaluateur : PLAN_POIDS est partagé, on le prête puis on le
          rend. Sans restitution, un tournoi laisserait le jeu réel avec les
          poids du dernier candidat testé. */
+      /* Clés pointées pour les bornes de recherche, à comparer sans toucher au
+         jeu : « PLAN_RIPOSTE.decisionsMax », « PLAN_BUDGET.etatsMax »… */
+      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE };
       function selfplayAppliquerPoids(poids) {
         if (!poids) return null;
         const memoire = {};
         Object.keys(poids).forEach(cle => {
-          memoire[cle] = PLAN_POIDS[cle];
-          PLAN_POIDS[cle] = poids[cle];
+          const [table, champ] = cle.includes(".") ? cle.split(".") : [null, cle];
+          const cible = table ? SELFPLAY_TABLES[table] : PLAN_POIDS;
+          if (!cible) return;
+          memoire[cle] = cible[champ];
+          cible[champ] = poids[cle];
         });
         return memoire;
       }
@@ -45845,12 +46486,24 @@
             const push = availableActionCount("PUSH", adverse);
             const reel = { move, push, forceMax: Math.min(push, PLAN_POIDS.pousseeLongue || 1),
               portees: plannerPorteesAdverses(joueur, move) };
-            return plannerGardiensDe(joueur).map(g => ({
-              id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
-              forceReelle: push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0,
-              graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
-              mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
-            }));
+            const forces = plannerGardiensDe(joueur).map(g =>
+              push > 0 ? plannerForceExpulsion(joueur, g.r, g.c, reel) : 0);
+            /* La gravité se juge comme l'IA l'a vue : AVANT la pioche adverse.
+               Remise de la main dans la pioche (composition seule compte). */
+            const main = adverse.hand, pioche = adverse.deck;
+            adverse.deck = [...(pioche || []), ...(main || []).filter(carte => !carte.used)];
+            adverse.hand = [];
+            try {
+              return plannerGardiensDe(joueur).map((g, i) => ({
+                id: g.id, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+                forceReelle: forces[i],
+                graviteVue: plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)),
+                mainReelle: { move, push }, reserve: { ...(adverse.stash || {}) }
+              }));
+            } finally {
+              adverse.hand = main;
+              adverse.deck = pioche;
+            }
           }));
         } finally {
           selfplayAppliquerPoids(memoire);
@@ -45876,6 +46529,11 @@
       };
 
       window.ILYOS_BENCH = {
+        /* Une action coûte-t-elle une carte ? La réponse du MOTEUR, pour que
+           les bancs ne recopient plus leur propre liste — celle de
+           verif-profondeur-gratuite avait oublié le dépôt, puis aurait oublié
+           le vol. */
+        actionGratuite: type => plannerActionGratuite({ type }),
         poussee: benchPoussee,
         validation: benchValidation,
         reserve: benchReserve,
@@ -45993,6 +46651,8 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
+          difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score })) : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.

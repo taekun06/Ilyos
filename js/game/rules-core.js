@@ -659,6 +659,24 @@
         ));
       }
 
+      /** FIN PAR POSE IMPOSSIBLE — règle unique, lue au début de chaque tour
+       *  (jeu, self-play, simulation du planner). Dès que le joueur qui prend
+       *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
+       *  stock qui tienne, stock épuisé, ou limite d'îles de la partie atteinte —
+       *  la partie s'arrête et le plus de couronnes l'emporte (égalité : nul).
+       *  Jusqu'au 30/09, seule la saturation du plateau entier arrêtait la
+       *  partie ; pour un seul joueur, la pose devenait facultative et la
+       *  partie continuait. Tutoriels et énigmes suivent leurs propres règles. */
+      function finParPoseImpossible(playerId) {
+        if (!state) return false;
+        if (plateauSansPlace()) return true;
+        if (state.tutorial || state.puzzle) return false;
+        const ecran = typeof els === "object" && els && els.gameScreen && els.gameScreen.classList;
+        if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
+          .some(mode => ecran.contains(mode))) return false;
+        return islandLimitReachedForPlayer(playerId) || poseImpossiblePour(playerId);
+      }
+
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
       function vainqueurAuxCouronnes() {
         const scores = (state.players || []).map(p => p.score || 0);

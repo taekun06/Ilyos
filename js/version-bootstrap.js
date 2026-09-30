@@ -350,6 +350,9 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
       setPlayerNames(values);
     } else if (mode === 'team') {
       setSelect('boardSizeSelect', values.size || '11');
+      setSelect('teamSeatsSelect', values.seats || 'none');
+      setSelect('aiDifficultySelect', values.difficulty || 'normal');
+      setSelect('teamVillagesSelect', values.villages || 'solo');
       setPlayerNames(values);
     } else if (mode === 'online') {
       setSelect('onlineRoleSelect', values.role || 'host');

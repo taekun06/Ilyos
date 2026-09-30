@@ -1392,3 +1392,241 @@ neutre ou nuisible en IA contre IA (`piochePush` 40 %, `posteDerriereBloc`
 46 %), sauf `menacePoseAdverse` (55,6 %). Le self-play ne peut pas valider ce
 qui ne sert que contre un joueur qui exploite : ces options sont à juger
 contre des parties humaines.
+
+## Comptage des cartes adverses
+
+Avant : main adverse fixe (3 MOVE, 2 PUSH) et probabilité de pioche calculée
+sur un paquet neuf de 13 cartes, quel que soit l'état de la pioche.
+
+Maintenant (`plannerPiocheProchaine`) : décompte de la COMPOSITION de la pioche
+et de la défausse, jamais de leur ordre. Pioche ≥ 5 : cinq cartes tirées de la
+pioche. Pioche < 5 : ses cartes sont sûres, le reste est tiré de la défausse
+remélangée. Il en sort une main plausible (sûres + espérance arrondie au plus
+fort reste, 3/2/0 sur un paquet neuf) et P(≥ n PUSH). Le calcul est mis en cache
+par composition. Il sert au budget adverse, aux portées, à la gravité
+d'expulsion et à la main simulée du joueur entrant ; la MAGIE n'y entre que si
+le décompte la rend probable. Les poids sont inchangés et le comptage n'a pas
+été mesuré en self-play (banc `verif-gardien-expose.js` 7/7, une paire
+self-play sans erreur ni coupure).
+
+Corrigé au passage : avec `posteDerriereBloc: 0`, un pousseur adverse déjà
+COLLÉ à la victime n'était plus compté par `plannerForceExpulsion`. Il ne
+tenait plus qu'à `aiPushOffRisk`. Le banc `verif-gardien-expose.js` échouait
+sur `main`. Les mesures `posteDerriereBloc` et `menacePoseAdverse` ci-dessus ont
+été faites avec ce défaut.
+
+## Lot de 4 défaites humaines du 29/09 : le pousseur apparu qui marche
+
+Classement des 32 gardiens IA perdus (`scripts/pertes-defaites.js`). Avec le
+code de `main`, 19 d'entre eux étaient perdus sans que l'IA voie de menace
+(gravité 0). Le cas typique : un porteur IA sur le bord du plateau. L'humain,
+parfois sans aucun gardien en jeu, pose une île contre la terre, y fait
+apparaître un gardien, le déplace sur une case de terre libre derrière le
+porteur, puis pousse. `menacePoseAdverse` ne couvrait que le poste VIDE, que
+l'île posée comble.
+
+Correction (`apparitionMarche: 1`, `plannerChampApparition`) : un poste en
+terre libre compte aussi s'il est à portée de marche d'un gardien apparu (un
+déplacement pour monter sur la terre depuis l'île posée, puis la marche). Le
+budget pris est le budget de déplacement prêté à l'adversaire. C'est un champ de
+distances calculé une fois par forme de terrain.
+
+| Mesure sur le lot | `apparitionMarche` 0 | 1 |
+|---|---|---|
+| pertes invisibles pour l'IA (sur 32) | 19 | 7 |
+| décisions rejouées : porteurs laissés exposés (51 décisions) | 23 | 9 |
+| gardiens laissés exposés | 98 | 97 |
+| temps par décision | 1 143 ms | 1 211 ms |
+
+Non mesuré en self-play long. Une paire de contrôle s'est jouée sans erreur ni
+tour coupé. Reste : 25 pertes « vues et acceptées », à instruire (la gravité
+pèse-t-elle assez face au gain du coup ?).
+
+### Les 7 pertes restantes, et le porteur « vu mais accepté »
+
+Les 7 pertes encore invisibles viennent de deux réglages coupés : 4 poussées de
+force 2 faites avec des PUSH PIOCHÉES (`piochePush: 0`) et 3 poussées de
+FORCE 3 (`pousseeLongue: 2`). Si on juge avec ces deux menaces activées, il ne
+reste que 4 pertes invisibles.
+
+Mais la cause principale est ailleurs : 28 pertes sur 32 sont VUES par l'IA.
+Même en voyant tout, elle laisse un porteur éjectable dans 17 décisions
+rejouées sur 51. Son coût était celui d'une couronne « sûre » (400) dès qu'un
+de mes gardiens se tient à côté de la case où elle tomberait. Or c'est
+l'adversaire qui joue : son pousseur finit collé à la couronne tombée et la
+ramasse dans la foulée, ce que montrent les parties. Relever ce coût à 2400
+partout fait passer les porteurs exposés de 17 à 7 : c'est bien une affaire de
+poids, pas d'absence de refuge.
+
+Correction (`porteurExposeRiposte: 1`) : plus de cas « sûr » hors case de
+validation. Le coût vaut 900 si un de mes gardiens est à côté, 2400 sinon, plus
+`gardienExpose` (500) pour le gardien porteur perdu.
+
+| 51 décisions rejouées, jugées avec toutes les menaces | porteurs exposés |
+|---|---|
+| avant | 17 |
+| `porteurExposeRiposte` | 9 |
+| + `piochePush: 2`, `pousseeLongue: 3` | 6 |
+
+`piochePush` et `pousseeLongue` 3 restent coupés : ils avaient été mesurés
+nuisibles en IA contre IA (avant le comptage des cartes et la correction du
+pousseur collé). Ils sont à trancher.
+
+### Plafond de poussée : 2 → 4
+
+Le plafond `pousseeLongue: 2` datait de la première modélisation des poussées
+longues, avant que la force ne soit prêtée seulement pour les PUSH en RÉSERVE
+(visibles). Il n'avait jamais été mesuré contre 3 ou 4. Or quatre PUSH poussent
+de quatre cases. Sur les 51 décisions rejouées, jugées avec toutes les menaces
+et une force jusqu'à 4, les porteurs laissés éjectables passent de 10 à 5, au
+même coût (1 145 → 1 109 ms par décision). Défaut : 4.
+
+### Coût du porteur éjecté : case de validation, et un essai non retenu
+
+`dm` et `dl` sont les distances de la case de chute aux VILLAGES, pas aux
+gardiens. L'exception « sûre » sur ma case de validation est supprimée : c'est
+un vestige de la règle V66 (couronne au sol validée sans porteur), abandonnée.
+Porteurs laissés éjectables sur les 51 décisions rejouées : 5 → 4.
+
+Essai non retenu, à la demande de juger ce qui reste au DÉBUT DE MON TOUR :
+coût = valeur de la couronne maintenant − valeur une fois ramassée et emportée
+(R = déplacements adverses − 1), même mesure pour la couronne au sol. Résultat :
+24 porteurs éjectables au lieu de 4. La table `couronneParDistance` vaut très
+peu loin des villages : une couronne emportée de deux cases au milieu du
+plateau n'y coûte qu'environ 770, contre 2 900 au barème. Dans les parties
+humaines, une couronne prise par un pousseur au milieu du plateau finit
+pourtant validée. L'accès de MES gardiens au porteur adverse au tour suivant
+(peut-on le repousser ?) reste à modéliser.
+
+### `piochePush` activé (mode 2), et corrigé
+
+La mesure qui l'avait coupé (80 parties IA contre IA, 40 %) précédait le
+comptage des cartes et la correction du pousseur collé. L'IA adverse n'exploite
+presque jamais ces poussées, un humain si. Deux défauts corrigés au passage :
+
+- la branche « poussée piochée » replafonnait la force au nombre de PUSH de la
+  main moyenne (souvent 1) : la force 2 piochée n'était jamais examinée ;
+- `ILYOS_SELFPLAY.exposes` jugeait la gravité APRÈS la pioche adverse (le
+  comptage voyait une pioche amputée de la main). Elle se juge désormais
+  comme l'IA l'a vue, main remise dans la pioche.
+
+Lot du 29/09 : pertes invisibles 7 → 1 (reste un bloc de trois gardiens
+alignés, `posteDerriereBloc: 0`). Porteurs laissés éjectables sur 51 décisions
+rejouées : 7 → 5.
+
+### `posteDerriereBloc` activé, pose de « réception », budgets réglables
+
+- `posteDerriereBloc: 1` : la mesure qui l'avait coupé datait d'avant la
+  correction du pousseur collé. Dernière perte invisible du lot du 29/09 :
+  trois gardiens alignés éjectés d'une seule poussée.
+- Intention de pose « réception » (`poseReception: 1`) : une couronne poussée
+  survole le vide et se pose sur sa case d'arrivée si c'est de la terre.
+  Aucune intention ne proposait d'île sur ces cases : la combinaison « poser
+  une île lointaine, y pousser la couronne, pivoter, ramasser » n'était jamais
+  examinée. L'île doit COUVRIR une case d'arrivée. Effet en partie : non mesuré.
+- `ILYOS_SELFPLAY` accepte des clés pointées (`PLAN_RIPOSTE.decisionsMax`,
+  `PLAN_BUDGET.etatsMax`…) pour comparer des bornes de recherche sans toucher
+  au jeu.
+
+### Plus de budget de recherche : peu d'effet mesurable
+
+Les 51 décisions du lot ont été rejouées, puis attaquées par l'IA elle-même avec
+les vraies cartes humaines et une grosse recherche (8 décisions, 4 000 états).
+Cinq configurations tournaient en parallèle sur 4 cœurs, d'où des temps gonflés.
+
+| Configuration | gardiens IA perdus | couronnes perdues | ms moyen |
+|---|---|---|---|
+| actuelle | 21 | 0 | 2 226 |
+| riposte 6 décisions, 1 000 états | 19 | 0 | 3 793 |
+| + recherche propre 8 décisions, 3 600 états | 21 | 2 | 4 049 |
+
+Écarts dans le bruit. Limite : le juge est le même planner, il ne trouve pas
+non plus les combinaisons humaines. La pose de « réception » ne change qu'un
+plan sur 51. Une couronne libre à côté d'un gardien IA, avec des PUSH en main,
+est rare dans ces positions : la combinaison complète (dépôt, pose, poussée,
+rotation, ramassage) est à instruire sur une position dédiée. Budgets inchangés.
+
+### Lancer de couronne en un coup (`lancerCouronne: 1`)
+
+Technique humaine : le porteur DÉPOSE sa couronne sur une case voisine
+(gratuit), la POUSSE depuis sa case (elle glisse sur la terre, ou survole le
+vide jusqu'à une île posée pour la recevoir), une POSE fait apparaître un
+gardien à côté de l'arrivée, qui la RAMASSE (gratuit). Rotation magique ou
+marche ensuite.
+
+Sur la position de la capture du 29/09 (violet, 6 MOVE, 3 PUSH, 1 MAGIC), la
+ligne « porteur en (8,3), dépôt (8,2), poussée force 1, île avec apparition en
+(9,1), ramassage, pas en (9,0) » est légale et notée 5 953 par l'IA elle-même,
+contre 4 514 pour son choix. Pourtant la recherche ne la trouvait pas, même
+élargie. Les notes intermédiaires expliquent pourquoi : 1 970 → 1 023 (dépôt) →
+758 (poussée) → 4 130 (pose) → 4 457 (ramassage). Le faisceau élaguait la
+branche au creux. La poser d'abord n'y changeait rien non plus : les
+intentions de pose ne visaient pas l'arrivée d'une couronne poussée.
+
+`plannerCandidatsLancer` propose donc la combinaison comme UN coup
+(`type: "SEQUENCE"`, inscrite action par action au plan), notée complète.
+Pour chaque porteur, chaque case de dépôt et chaque force, il retient au plus
+deux poses par arrivée, les plus proches du village, et huit séquences en tout.
+Sur la capture, l'IA joue désormais : dépôt, poussée force 3 au-dessus du
+vide, île et apparition en (2,7), ramassage, rotation, pas vers son village
+haut-droite (`scripts/verif-lancer-couronne.js`).
+
+Lot du 29/09 (51 décisions rejouées) : 11 plans changent, 11 couronnes amenées
+sur une île posée au lieu de 8, 1 180 ms/décision au lieu de 1 147.
+Non mesuré en parties complètes.
+
+Bancs : `verif-profondeur-gratuite` comptait le DÉPÔT comme une action
+payante, alors qu'il est gratuit ; sa liste est complétée. `verif-spawn-sur`,
+`verif-depot-magic` et `verif-finalistes` échouent à l'identique sur `main`,
+avant cette branche.
+
+## Règles oubliées, bancs rouges : remise à plat (29/09)
+
+**Vol de couronne.** Un gardien à côté d'un porteur adverse lui prend sa
+couronne, gratuitement (règle de l'interface). L'IA l'ignorait : elle ne volait
+jamais, sa riposte simulée non plus, et un porteur que l'adversaire pouvait
+rejoindre ne lui paraissait pas en danger. Ajouts : transition gratuite `VOL`,
+terme « porteur volable » (même atteinte que la couronne au sol), exécution,
+description, tracé. Sur la position humaine côté jaune, l'IA vole, lance la
+couronne vers son village par une île et une rotation, puis vole la seconde :
+4 222 après réplique, contre 936.
+
+**Dissolution** (option `allowDissolve`) : ajoutée au planner.
+
+**Budget de recherche** 24 / 8 / 5 000 (était 14 / 6 / 1 200) : indispensable
+à la ligne ci-dessus. 55 décisions humaines : 1,5 → 1,9 s en moyenne, 3,8 s au
+plus. Sécurités de temps relevées (principale 7 s, tour 12 s).
+
+**Classement du faisceau.** Essai « potentiel » (positions intermédiaires lues
+sans les menaces de fin de tour) : 1 016 après réplique au lieu de 4 222 sur la
+même position, coupé (`triPotentiel: 0`). Le faisceau garde une moitié par note
+complète, une moitié par note + meilleur ramassage/vol gratuit immédiat.
+Garantie réelle : toute fin de tour rencontrée est jugée sur sa note finale ;
+les combinaisons connues (lancer, vol) sont proposées d'un bloc ; les positions
+humaines deviennent des bancs. Une recherche exhaustive (~10¹⁵ plans par tour)
+est hors de portée.
+
+**Bug corrigé** : la menace d'un pousseur apparu d'une pose comptait la force 1
+comme certaine même sans aucune PUSH possible (vestige de la main fixe).
+
+**Bancs.** Tous verts (`npm run verif:ia`, 18/18). Causes des rouges :
+- `verif-finalistes` : cassé par 8665a7c (dépôt gratuit, 24/09) sans mise à
+  jour ; attendu obsolète remplacé par son intention (le plan joué est le
+  meilleur après la riposte) ;
+- `verif-spawn-sur` : bug du pousseur collé (corrigé), puis pioche vide des
+  positions de banc lue comme « aucune carte » par le comptage — le
+  constructeur de positions donne désormais la composition restante ;
+- `verif-depot-magic` : même bug de force 1 certaine ; port et budget recopiés
+  en dur (8135, 1 200) remplacés par ceux du moteur ;
+- `verif-profondeur-gratuite` : liste recopiée des actions gratuites (oubli du
+  dépôt) → `ILYOS_BENCH.actionGratuite` ;
+- `verif-reserve`, `verif-pose-isolee` : échouaient sur une police Google
+  bloquée par un proxy ; les ressources externes ne comptent plus.
+- Nouveau : `verif-couverture-regles` (11/11 actions de joueur), `verif-vol-couronne`.
+
+**Poids du « porteur volable » (`porteurVolable`, défaut 1).** Un premier
+miroir (graine 7000, code intermédiaire) finissait 2-2 au tour 120 dans les
+deux parties. Sur le code livré : miroir 1 contre 1, graines 7300-7301, 4
+parties terminées en 32 à 56 tours (2-2) ; 0,5 contre 1 : 1-1 et 2 nuls. Aucun
+écart mesurable : le poids reste à 1 (danger compté en entier). Échantillons
+petits, à surveiller sur les prochaines défaites humaines.
