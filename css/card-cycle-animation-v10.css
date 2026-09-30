@@ -182,3 +182,187 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.card-cycle-v10-draw
 .card-cycle-v10-card .card-cycle-v7-kicker {
   opacity: .72;
 }
+
+/* ---------- PIOCHE DÉTAILLÉE (js/card-cycle-animation-v10.js) ----------
+   Premiers tours, ou réglage « toujours ». Les cartes sont grandes : leurs
+   textes suivent leur hauteur (unités de conteneur), qu'elles soient en
+   éventail (~190 px) ou zoomées au centre (~340 px). Chargé avant
+   card-art-v12.css, d'où le préfixe « body » pour garder la main. */
+body .card-cycle-v10-card.showcase.cc-detail {
+  container-type: size;
+  z-index: 100600 !important;
+  /* Pas de padding ici : sur le conteneur lui-même, cqh et % se
+     rapporteraient à la fenêtre, pas à la carte. L'espace intérieur est porté
+     par les enfants, en unités de la carte. */
+  gap: 3cqh !important;
+  padding: 0 !important;
+  justify-content: flex-start !important;
+  border-radius: 14px !important;
+}
+body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-icon {
+  width: 58cqw !important;
+  margin: 13cqh 0 0 !important;
+}
+body .card-cycle-v10-card.showcase.cc-detail > b {
+  font-size: min(9cqh, 14cqw) !important;
+  letter-spacing: .02em !important;
+}
+body .card-cycle-v10-card.showcase.cc-detail .cc-effet {
+  position: relative;
+  z-index: 3;
+  display: block;
+  margin: auto 9cqw 10cqh;
+  color: #f3e7cc;
+  font: 600 6.2cqh/1.25 Georgia, "Times New Roman", serif;
+  text-align: center;
+  text-wrap: balance;
+  opacity: 0;
+  transition: opacity .25s ease .12s;
+}
+body .card-cycle-v10-card.showcase.cc-detail.is-revealed .cc-effet { opacity: .92; }
+body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-rune { display: none !important; }
+
+.cc-pioche-voile {
+  position: fixed;
+  inset: 0;
+  z-index: 100500;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 46%, rgba(4, 10, 18, .30), rgba(2, 6, 12, .66) 70%);
+  opacity: 0;
+  transition: opacity .35s ease;
+}
+.cc-pioche-voile.is-on { opacity: 1; }
+.cc-pioche-voile.is-bloquant { pointer-events: auto; }
+
+.cc-pioche-titre,
+.cc-pioche-bas {
+  position: fixed;
+  left: 50%;
+  z-index: 100610;
+  transform: translate(-50%, 8px);
+  opacity: 0;
+  transition: opacity .3s ease, transform .3s ease;
+  pointer-events: none;
+  text-align: center;
+  color: #fff0c6;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .8);
+  width: min(92vw, 520px);
+}
+.cc-pioche-titre.is-on,
+.cc-pioche-bas.is-on { opacity: 1; transform: translate(-50%, 0); }
+.cc-pioche-titre b {
+  display: block;
+  font: 700 13px/1 Georgia, serif;
+  letter-spacing: .32em;
+  color: #e6b74b;
+}
+.cc-pioche-titre span {
+  display: block;
+  margin-top: 6px;
+  font: 700 clamp(24px, 4.2vh, 36px)/1.1 Georgia, serif;
+}
+.cc-pioche-titre em { font-style: normal; color: #ffd879; }
+.cc-pioche-bas { display: grid; justify-items: center; gap: 8px; }
+.cc-pioche-resume {
+  font: 700 clamp(15px, 2.2vh, 19px)/1.2 Georgia, serif;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.cc-pioche-bas small {
+  font: 500 14px/1.35 Georgia, serif;
+  color: #dfe8f0;
+  opacity: .9;
+}
+.cc-pioche-compris {
+  pointer-events: auto;
+  margin-top: 4px;
+  padding: 11px 34px;
+  border-radius: 999px;
+  border: 1.5px solid #f0c36b;
+  background: linear-gradient(180deg, #f2cf82, #b77a29 68%, #8e5b1a);
+  color: #211305;
+  font: 800 16px/1 Georgia, serif;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .4), 0 0 22px rgba(239, 186, 78, .28);
+  animation: ccComprisPulse 1.8s ease-in-out infinite;
+}
+@keyframes ccComprisPulse { 50% { box-shadow: 0 10px 24px rgba(0,0,0,.4), 0 0 36px rgba(239,186,78,.55); } }
+
+/* La pile PIOCHE s'allume pendant qu'on y tire. */
+#ilyosHudOrganicV2 .ov2-pile-hud.cc-pioche-source {
+  z-index: 100605 !important;
+  filter: drop-shadow(0 0 14px rgba(255, 214, 120, .75));
+}
+
+/* Légende de fin de tour, sous la réserve du joueur actif. */
+.cc-reserve-legende {
+  position: fixed;
+  left: 50%;
+  top: 110px;
+  z-index: 100610;
+  width: min(330px, 88vw);
+  transform: translate(-50%, 6px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(230, 183, 75, .5);
+  background: rgba(8, 16, 26, .9);
+  color: #f3e7cc;
+  font: 500 13px/1.4 Georgia, serif;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.cc-reserve-legende.is-on { opacity: 1; transform: translate(-50%, 0); }
+.cc-reserve-legende b { display: block; color: #e6b74b; letter-spacing: .14em; font-size: 11px; text-transform: uppercase; margin-bottom: 3px; }
+.cc-reserve-legende em { font-style: normal; color: #ffd879; font-weight: 700; }
+
+/* ---------- CARTES EMPILÉES DANS LES BOUTONS D'ACTION ----------
+   Une carte par action disponible, dos visible, qui dépasse du haut du
+   bouton en petit éventail. */
+.cc-pile {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 10px);
+  width: 0;
+  height: 30px;
+  pointer-events: none;
+  z-index: 0;
+}
+.cc-pile i {
+  position: absolute;
+  left: -10px;
+  bottom: 0;
+  width: 20px;
+  height: 29px;
+  border-radius: 4px;
+  border: 1px solid var(--cc-pile, #e8d6a0);
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--cc-pile, #e8d6a0) 55%, transparent) 0 3px, transparent 4px),
+    linear-gradient(180deg, #16303f, #08131c);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, .45);
+  transform-origin: 50% 120%;
+  transform: translateX(calc(var(--cc-d) * 9px)) rotate(calc(var(--cc-d) * 7deg));
+  animation: ccPileIn .32s ease-out both;
+}
+.cc-pile.type-push { --cc-pile: #d98a48; }
+.cc-pile.type-magic { --cc-pile: #bca1f1; }
+.cc-pile b {
+  position: absolute;
+  left: calc(50% + 34px);
+  bottom: 4px;
+  color: #ffd879;
+  font: 700 11px/1 Georgia, serif;
+  text-shadow: 0 1px 3px #000;
+}
+@keyframes ccPileIn { from { opacity: 0; transform: translateX(calc(var(--cc-d) * 9px)) translateY(8px) rotate(calc(var(--cc-d) * 7deg)); } }
+
+/* Téléphone en portrait : la rangée « fin du tour » est juste au-dessus des
+   actions, les cartes se rangent donc DANS le bouton, en haut. */
+@media (orientation: portrait) and (max-width: 820px) {
+  .cc-pile { bottom: auto; top: 3px; height: 16px; }
+  .cc-pile i { width: 11px; height: 16px; left: -5.5px; border-radius: 2px; transform: translateX(calc(var(--cc-d) * 6px)) rotate(calc(var(--cc-d) * 6deg)); }
+  .cc-pile b { left: calc(50% + 22px); bottom: 2px; font-size: 9px; }
+}

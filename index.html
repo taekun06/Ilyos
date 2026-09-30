@@ -1251,7 +1251,7 @@
 
   <div id="soundMenu" class="sound-menu hidden" role="dialog" aria-label="Réglages du son">
     <div class="sound-menu-head">
-      <strong>RÉGLAGES DU SON</strong>
+      <strong>RÉGLAGES</strong>
       <button id="closeSoundMenuBtn" type="button" aria-label="Fermer">×</button>
     </div>
 
@@ -1283,6 +1283,24 @@
     <label class="sound-slider">
       <span><b>Effets du jeu</b><output id="effectsVolumeValue">140 %</output></span>
       <input id="effectsVolumeSlider" type="range" min="0" max="160" value="140">
+    </label>
+
+    <!-- Pioche des cartes : lu et écrit par js/card-cycle-animation-v10.js
+         (localStorage « ilyosPiocheDetaillee »). -->
+    <label class="music-track-choice">
+      <span><b>Pioche des cartes</b></span>
+      <select id="piocheModeSelect">
+        <option value="auto">Détaillée les 6 premiers tours</option>
+        <option value="toujours">Toujours détaillée</option>
+        <option value="jamais">Toujours rapide</option>
+      </select>
+    </label>
+    <label class="music-track-choice">
+      <span><b>Présentation des cartes piochées</b></span>
+      <select id="piocheStyleSelect">
+        <option value="eventail">Éventail : les 5 cartes ensemble</option>
+        <option value="zoom">Zoom : une carte après l’autre</option>
+      </select>
     </label>
 
     <!-- Banc d'écoute. Classes volontairement préfixées ilyos-sfx- : la classe

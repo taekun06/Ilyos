@@ -5,6 +5,10 @@
    - éventail ouvert AU-DESSUS de la ligne d'instruction et du dock, jamais dessus
    - séquence bornée à ≈ 1,2 s et interruptible au premier geste du joueur
    - actions xN regroupées en une seule animation
+   - PIOCHE DÉTAILLÉE (premiers tours, ou sur demande dans les réglages) :
+     cartes tirées une par une, compteur de pioche qui descend, un son par
+     carte, grand éventail ou zoom carte par carte, cartes empilées dans les
+     boutons d'action, et rangement en réserve expliqué en fin de tour.
 */
 (() => {
   'use strict';
@@ -86,7 +90,7 @@
      jusqu'au jeu, sinon on volerait au joueur le coup qu'il vient de tenter. */
   function skipDeal() {
     const ticket = dealTicket;
-    if (!ticket || ticket.skipped) return;
+    if (!ticket || ticket.skipped || ticket.bloquant) return;
     ticket.skipped = true;
     ticket.anims.forEach(anim => { try { anim.finish(); } catch (_) {} });
     ticket.waiters.forEach(resume => resume());
@@ -104,6 +108,156 @@
       const timer = setTimeout(resume, ms);
       ticket.waiters.add(resume);
     });
+  }
+
+
+  /* ---------- PIOCHE DÉTAILLÉE ----------
+     Le joueur qui découvre le jeu ne voit pas, en 1,75 s, que cinq cartes
+     viennent d'être tirées de SA pioche, ni lesquelles. Pendant les premiers
+     tours on prend donc le temps : les cartes sortent une par une (un son,
+     le compteur de la pioche qui descend), restent en grand avec leur effet,
+     puis rejoignent des boutons qui montrent les cartes empilées.
+
+     Réglage (menu ⚙ → Pioche des cartes), gardé dans localStorage :
+       mode  : 'auto' (6 premiers tours de ses 3 premières parties),
+               'toujours' ou 'jamais' ;
+       style : 'eventail' (les cinq cartes en grand, ensemble) ou 'zoom'
+               (chaque carte passe en grand au centre, puis rejoint les autres).
+     `?pioche=eventail` ou `?pioche=zoom` dans l'adresse impose le style et
+     active la pioche détaillée, pour comparer les deux. */
+  const PIOCHE_CLE = 'ilyosPiocheDetaillee';
+  const PIOCHE_PARTIES_CLE = 'ilyosPiocheParties';
+  const PIOCHE_TOURS_AUTO = 6;
+  const PIOCHE_PARTIES_AUTO = 3;
+  const PIOCHE_EFFETS = {
+    MOVE: 'Avance un gardien d’une case',
+    PUSH: 'Pousse un voisin d’une case par carte',
+    MAGIC: 'Fait tourner une île'
+  };
+
+  function lireStockage(cle, repli) {
+    try { const v = localStorage.getItem(cle); return v == null ? repli : JSON.parse(v); } catch (_) { return repli; }
+  }
+  function ecrireStockage(cle, valeur) {
+    try { localStorage.setItem(cle, JSON.stringify(valeur)); } catch (_) {}
+  }
+
+  function styleImposeParAdresse() {
+    try {
+      const v = new URLSearchParams(location.search).get('pioche');
+      return v === 'eventail' || v === 'zoom' ? v : null;
+    } catch (_) { return null; }
+  }
+
+  function reglagesPioche() {
+    const lu = lireStockage(PIOCHE_CLE, {}) || {};
+    const r = {
+      mode: ['auto', 'toujours', 'jamais'].includes(lu.mode) ? lu.mode : 'auto',
+      style: lu.style === 'zoom' ? 'zoom' : 'eventail'
+    };
+    const impose = styleImposeParAdresse();
+    if (impose) { r.style = impose; r.mode = 'toujours'; }
+    return r;
+  }
+
+  function enregistrerReglagesPioche(changes) {
+    const actuel = lireStockage(PIOCHE_CLE, {}) || {};
+    ecrireStockage(PIOCHE_CLE, { ...actuel, ...changes });
+    majPiles();
+  }
+
+  function tourDuJoueur() {
+    try { return Number(window.ILYOS_PIOCHE?.tourJoueur?.()) || 0; } catch (_) { return 0; }
+  }
+
+  /* Une partie compte au premier tour du joueur. `partieComptee` évite de la
+     compter deux fois (plusieurs distributions au tour 1 en duel local). */
+  let partieComptee = false;
+  function compterPartieSiNouvelle() {
+    const tour = tourDuJoueur();
+    if (tour > 1) { partieComptee = false; return; }
+    if (tour === 1 && !partieComptee) {
+      partieComptee = true;
+      ecrireStockage(PIOCHE_PARTIES_CLE, (Number(lireStockage(PIOCHE_PARTIES_CLE, 0)) || 0) + 1);
+    }
+  }
+
+  /* Tutoriels et énigmes ont leur propre mise en scène (et leurs tests
+     pilotent des clics) : une pioche détaillée bloquante s'y intercalerait. */
+  function sequenceScenarisee() {
+    try {
+      if (window.ILYOS_TUTORIAL?.mode?.()) return true;
+      if (window.ILYOS_PUZZLE?._debug?.()?.active) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function piocheDetaillee() {
+    if (sequenceScenarisee()) return false;
+    const { mode } = reglagesPioche();
+    if (mode === 'toujours') return true;
+    if (mode === 'jamais') return false;
+    const tour = tourDuJoueur();
+    const parties = Number(lireStockage(PIOCHE_PARTIES_CLE, 0)) || 0;
+    return tour > 0 && tour <= PIOCHE_TOURS_AUTO && parties <= PIOCHE_PARTIES_AUTO;
+  }
+
+  function sonCarte() {
+    try { window.ILYOS_PIOCHE?.son?.('card'); } catch (_) {}
+  }
+
+  /* Compteur de la pile PIOCHE : on le fait descendre carte après carte.
+     Le rendu du HUD a déjà écrit la valeur d'arrivée ; on part donc de
+     « arrivée + cartes encore à tirer », puis on revient à l'arrivée. */
+  function compteurPioche() { return deckTarget()?.querySelector('.ov2-pile-count') || null; }
+
+  /* ---------- CARTES EMPILÉES DANS LES BOUTONS ----------
+     Le « ×3 » d'un bouton est une abstraction ; trois cartes dos contre dos
+     qui dépassent du bouton se comprennent sans lire. Actif avec la pioche
+     détaillée (premiers tours, ou réglage « toujours »). */
+  const PILE_BOUTONS = { MOVE: ['ov2Move', 'ov2MoveCount'], PUSH: ['ov2Push', 'ov2PushCount'], MAGIC: ['ov2Magic', 'ov2MagicCount'] };
+  const PILE_MAX = 6;
+  let pilesPlanifiees = false;
+
+  function majPiles() {
+    pilesPlanifiees = false;
+    const actif = piocheDetaillee();
+    document.body.classList.toggle('cc-piles-actives', actif);
+    Object.entries(PILE_BOUTONS).forEach(([type, [boutonId, compteId]]) => {
+      const bouton = byId(boutonId);
+      if (!bouton) return;
+      let pile = bouton.querySelector(':scope > .cc-pile');
+      const n = actif ? parseCount(byId(compteId)?.textContent) : 0;
+      if (!n) { pile?.remove(); return; }
+      if (!pile) {
+        pile = document.createElement('span');
+        pile.className = `cc-pile type-${type.toLowerCase()}`;
+        pile.setAttribute('aria-hidden', 'true');
+        bouton.appendChild(pile);
+      }
+      const visibles = Math.min(n, PILE_MAX);
+      if (pile.childElementCount !== visibles || pile.dataset.n !== String(n)) {
+        pile.dataset.n = String(n);
+        pile.innerHTML = '';
+        const milieu = (visibles - 1) / 2;
+        for (let i = 0; i < visibles; i++) {
+          const carte = document.createElement('i');
+          carte.style.setProperty('--cc-d', String(i - milieu));
+          pile.appendChild(carte);
+        }
+        if (n > PILE_MAX) {
+          const plus = document.createElement('b');
+          plus.textContent = `+${n - PILE_MAX}`;
+          pile.appendChild(plus);
+        }
+      }
+    });
+  }
+
+  function planifierPiles() {
+    if (pilesPlanifiees) return;
+    pilesPlanifiees = true;
+    requestAnimationFrame(majPiles);
   }
 
   function typeOf(card) {
@@ -236,6 +390,7 @@
       <span class="card-cycle-v7-kicker">ACTION</span>
       <span class="card-cycle-v7-icon">${meta.icon}</span>
       <b>${meta.label}</b>
+      ${extraClass.includes('cc-detail') ? `<small class="cc-effet">${PIOCHE_EFFETS[type] || ''}</small>` : ''}
       <i class="card-cycle-v7-rune"></i>
 `;
     document.body.appendChild(el);
@@ -328,6 +483,12 @@
     if (!isLocalVisualTurn()) return;
     const types = cards.slice(0, 5).map(typeOf).filter(Boolean);
     if (!types.length) return;
+    compterPartieSiNouvelle();
+    if (piocheDetaillee()) {
+      await runDealDetaille(types);
+      majPiles();
+      return;
+    }
 
     const compact = innerWidth < 980 || innerHeight < 720;
     const cardW = compact ? 70 : 86;
@@ -419,6 +580,181 @@
     });
   }
 
+
+  /* Séquence détaillée. Durées choisies pour être lues, pas subies :
+     ≈ 0,3 s entre deux cartes (on les compte), 3 s de lecture, et au tout
+     premier tour les cartes attendent « Compris ». Toujours interruptible au
+     premier geste, sauf au tour 1 où seul « Compris » ferme la présentation. */
+  const DETAIL = {
+    sortie: 520, ecart: 300,         // vol pioche → place, et écart entre deux cartes
+    zoom: 460, zoomLecture: 700,     // style « zoom » : arrivée au centre, puis lecture
+    versPlace: 380,                  // style « zoom » : du centre vers l'éventail
+    lecture: 3000,                   // tours 2 à 6
+    rangement: 560, rangementEcart: 90
+  };
+
+  function creerCouche(html, classe) {
+    const el = document.createElement('div');
+    el.className = classe;
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function resumeTypes(types) {
+    const n = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    types.forEach(t => n[t]++);
+    return ['MOVE', 'PUSH', 'MAGIC'].filter(t => n[t]).map(t => `${n[t]} ${META[t].label.toLowerCase()}`).join(' · ');
+  }
+
+  function attendreCompris(bouton, ticket) {
+    return new Promise(resolve => {
+      const fin = () => { ticket.waiters.delete(fin); resolve(); };
+      ticket.waiters.add(fin);
+      bouton.addEventListener('click', event => { event.stopPropagation(); fin(); }, { once: true });
+    });
+  }
+
+  async function runDealDetaille(types) {
+    const zoom = reglagesPioche().style === 'zoom';
+    const premierTour = tourDuJoueur() === 1;
+    const n = types.length;
+    const compact = innerWidth < 980 || innerHeight < 720;
+    const cardH = Math.round(clamp(innerHeight * .26, 120, 210));
+    const cardW = Math.round(cardH * .63);
+    // Écartement : la place disponible décide, et les cartes se chevauchent
+    // plutôt que de sortir de l'écran sur un téléphone.
+    const marge = 16;
+    const pasIdeal = cardW + (compact ? 14 : 22);
+    const pasMax = n > 1 ? (innerWidth - 2 * marge - cardW) / (n - 1) : pasIdeal;
+    const spacing = Math.min(pasIdeal, pasMax);
+    const tilt = 3;
+    const mid = (n - 1) / 2;
+    const centreY = Math.round(innerHeight * .46);
+    const fanRects = types.map((_, i) => {
+      const d = i - mid;
+      const lift = (mid - Math.abs(d)) * 8;
+      return syntheticRect(innerWidth / 2 + d * spacing, centreY - lift, cardW, cardH);
+    });
+    const zoomH = Math.round(Math.min(innerHeight * .46, 340));
+    const zoomRect = syntheticRect(innerWidth / 2, centreY - 10, Math.round(zoomH * .63), zoomH);
+
+    const source = deckSourceRect(cardW, cardH);
+    const sourceHud = deckTarget();
+    const compteur = compteurPioche();
+    const compteurFinal = compteur ? parseCount(compteur.textContent) : null;
+    const ticket = openTicket();
+    ticket.bloquant = premierTour;
+
+    const voile = creerCouche('', 'cc-pioche-voile');
+    const titre = creerCouche(`<b>PIOCHE</b><span>+<em>0</em> carte</span>`, 'cc-pioche-titre');
+    // Au-dessus de la plus grande carte affichée : l'éventail, ou la carte
+    // zoomée au centre dans le style « zoom ».
+    const hautCartes = zoom ? zoomRect.top : centreY - cardH / 2;
+    titre.style.top = `${Math.max(12, hautCartes - 78)}px`;
+    const bas = creerCouche('', 'cc-pioche-bas');
+    bas.style.top = `${centreY + cardH / 2 + 22}px`;
+    const compteTitre = titre.querySelector('em');
+    const libelle = titre.querySelector('span');
+    const ghosts = [];
+    sourceHud?.classList.add('card-cycle-v10-drawing', 'cc-pioche-source');
+    requestAnimationFrame(() => { voile.classList.add('is-on'); titre.classList.add('is-on'); });
+
+    try {
+      for (let i = 0; i < n; i++) {
+        const ghost = makeCard(types[i], 'showcase cc-detail', 1, i + 1, n);
+        ghosts.push(ghost);
+        pulse(sourceHud, 'ov2-pile-hit');
+        sonCarte();
+        if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal + (n - i - 1));
+        compteTitre.textContent = String(i + 1);
+        libelle.lastChild.textContent = i ? ' cartes' : ' carte';
+        const arrivee = zoom ? zoomRect : fanRects[i];
+        const vol = fly(ghost, source, arrivee, {
+          ticket,
+          size: zoom ? { width: zoomRect.width, height: zoomRect.height } : { width: cardW, height: cardH },
+          duration: zoom ? DETAIL.zoom : DETAIL.sortie,
+          arc: 70,
+          startScale: .32,
+          endScale: 1,
+          startOpacity: .3,
+          endOpacity: 1,
+          startRotate: -8,
+          endRotate: zoom ? 0 : (i - mid) * tilt
+        });
+        setTimeout(() => ghost.classList.add('is-revealed'), (ticket.skipped ? 0 : (zoom ? DETAIL.zoom : DETAIL.sortie) * .55));
+        if (zoom) {
+          await vol;
+          ghost.classList.add('is-revealed');
+          await wait(DETAIL.zoomLecture, ticket);
+          await fly(ghost, zoomRect, fanRects[i], {
+            ticket,
+            size: { width: cardW, height: cardH },
+            duration: DETAIL.versPlace,
+            arc: 20,
+            startScale: zoomRect.width / cardW,
+            endScale: 1,
+            startOpacity: 1,
+            endOpacity: 1,
+            endRotate: (i - mid) * tilt
+          });
+        } else {
+          await wait(DETAIL.ecart, ticket);
+          if (i === n - 1) await vol;
+        }
+      }
+      ghosts.forEach(g => g.classList.add('is-revealed'));
+      if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal);
+
+      bas.innerHTML = `<span class="cc-pioche-resume">${resumeTypes(types)}</span>`
+        + (premierTour
+          ? `<small>Ces 5 cartes sont tes actions de ce tour. Elles vont dans les boutons du bas.</small><button type="button" class="cc-pioche-compris">Compris</button>`
+          : `<small>Touche l’écran pour continuer</small>`);
+      bas.classList.add('is-on');
+      if (premierTour) {
+        voile.classList.add('is-bloquant');
+        await attendreCompris(bas.querySelector('.cc-pioche-compris'), ticket);
+        ticket.bloquant = false;
+      } else {
+        await wait(DETAIL.lecture, ticket);
+      }
+
+      bas.classList.remove('is-on');
+      titre.classList.remove('is-on');
+      voile.classList.remove('is-on', 'is-bloquant');
+      await Promise.all(ghosts.map(async (ghost, i) => {
+        const to = rectOf(bottomTarget(types[i]));
+        if (!to) return;
+        await fly(ghost, fanRects[i], to, {
+          ticket,
+          size: { width: cardW, height: cardH },
+          duration: DETAIL.rangement,
+          delay: i * DETAIL.rangementEcart,
+          arc: 40,
+          startScale: 1,
+          endScale: .24,
+          endOpacity: .05,
+          startRotate: (i - mid) * tilt
+        });
+      }));
+    } finally {
+      ghosts.forEach(g => g.remove());
+      [voile, titre, bas].forEach(el => el.remove());
+      sourceHud?.classList.remove('card-cycle-v10-drawing', 'cc-pioche-source');
+      if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal);
+      if (dealTicket === ticket) dealTicket = null;
+    }
+
+    const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+    types.forEach(type => counts[type]++);
+    Object.entries(counts).forEach(([type, count]) => {
+      if (!count) return;
+      const target = bottomTarget(type);
+      pulse(target);
+      floatCount(target, `+${count}`);
+    });
+  }
+
   function reserveCurrent(type) {
     return parseCount(reserveCountNode(type)?.textContent);
   }
@@ -460,6 +796,22 @@
       if (type) counts[type]++;
     });
 
+    /* Pioche détaillée : le rangement se lit aussi. Vols plus lents et une
+       phrase près de la réserve, qui dit où vont les cartes non jouées. */
+    const detail = piocheDetaillee() && Object.values(counts).some(Boolean);
+    const lent = detail ? 1.9 : 1;
+    let legende = null;
+    if (detail) {
+      const cible = rectOf(activeReserveBadge()) || rectOf(discardTarget());
+      legende = creerCouche('<b>Fin du tour</b><span>Tes cartes non jouées vont dans ta <em>réserve</em> (5 par type au plus) : tu les retrouveras au prochain tour. Le surplus va à la défausse.</span>', 'cc-reserve-legende');
+      if (cible) {
+        legende.style.left = `${clamp(cible.left + cible.width / 2, 170, innerWidth - 170)}px`;
+        legende.style.top = `${cible.top + cible.height + 12}px`;
+      }
+      requestAnimationFrame(() => legende.classList.add('is-on'));
+      await sleep(700);
+    }
+
     for (const type of ['MOVE', 'PUSH', 'MAGIC']) {
       const total = counts[type];
       if (!total) continue;
@@ -471,7 +823,7 @@
         const to = rectOf(reserveTarget(type));
         if (from && to) {
           const ghost = makeCard(type, 'transfer', bank);
-          await fly(ghost, from, to, { duration: 500, arc: 48, startScale: .54, endScale: .22 });
+          await fly(ghost, from, to, { duration: 500 * lent, arc: 48, startScale: .54, endScale: .22 });
           ghost.remove();
           incrementReserveVisual(type, bank);
           pulse(reserveTarget(type), 'card-cycle-v7-reserve-hit');
@@ -484,13 +836,18 @@
         const to = rectOf(discardTarget());
         if (from && to) {
           const ghost = makeCard(type, 'transfer', overflow);
-          await fly(ghost, from, to, { duration: 430, arc: 38, startScale: .54, endScale: .20 });
+          await fly(ghost, from, to, { duration: 430 * lent, arc: 38, startScale: .54, endScale: .20 });
           ghost.remove();
           pulse(discardTarget(), 'ov2-pile-hit');
           floatCount(discardTarget(), `+${overflow}`);
         }
       }
-      await sleep(45);
+      await sleep(detail ? 220 : 45);
+    }
+    if (legende) {
+      await sleep(1400);
+      legende.classList.remove('is-on');
+      setTimeout(() => legende.remove(), 400);
     }
     pulse(endTarget(), 'card-cycle-v7-end-hit');
   }
@@ -540,14 +897,37 @@
     }, true);
   }
 
+  function brancherReglages() {
+    const mode = byId('piocheModeSelect');
+    const style = byId('piocheStyleSelect');
+    if (!mode || !style) return;
+    const r = reglagesPioche();
+    mode.value = r.mode;
+    style.value = r.style;
+    mode.addEventListener('change', () => enregistrerReglagesPioche({ mode: mode.value }));
+    style.addEventListener('change', () => enregistrerReglagesPioche({ style: style.value }));
+  }
+
   function start() {
     const root = deckRoot();
     if (!root) { setTimeout(start, 120); return; }
     bindEvents();
+    brancherReglages();
     observer = new MutationObserver(inspectDeck);
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     inspectDeck();
-    window.ILYOS_CARD_CYCLE_V10 = { inspect: inspectDeck, stop: () => observer?.disconnect() };
+    // Les compteurs ×N des boutons sont réécrits par le HUD à chaque rendu :
+    // les piles de cartes suivent.
+    const hud = byId('ilyosHudOrganicV2') || byId('gameScreen');
+    if (hud) new MutationObserver(planifierPiles).observe(hud, { childList: true, subtree: true, characterData: true });
+    planifierPiles();
+    window.ILYOS_CARD_CYCLE_V10 = {
+      inspect: inspectDeck,
+      stop: () => observer?.disconnect(),
+      reglages: reglagesPioche,
+      regler: enregistrerReglagesPioche,
+      detaillee: piocheDetaillee
+    };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
