@@ -332,8 +332,15 @@
         // 4 joueurs/2v2 : toujours aucun champ d'équipe fiable identifié
         // dans state (voir startLocalGame(), core.js) — seuls les deux
         // premiers joueurs sont représentés, gap déjà documenté.
-        const leftPlayer = state.players[0] || null;
-        const rightPlayer = state.players.length > 1 ? state.players[1] : null;
+        /* 2 contre 2 : à gauche l'équipe or (J1/J3), à droite la violette
+           (J2/J4) — dans chaque camp, le joueur en cours ou celui qui vient de
+           jouer (l'ordre alterne les équipes). */
+        const tablee = state.players.length === 4;
+        const courant = state.currentPlayer;
+        const leftPlayer = tablee ? state.players[courant % 2 === 0 ? courant : (courant + 3) % 4]
+          : state.players[0] || null;
+        const rightPlayer = tablee ? state.players[courant % 2 === 1 ? courant : (courant + 3) % 4]
+          : state.players.length > 1 ? state.players[1] : null;
 
         // Portrait : aucun asset 2D circulaire trouvé dans assets/kaykit
         // (uniquement des modèles .glb + leurs atlas de texture, inexploitables
@@ -362,7 +369,7 @@
             }
           }
           if (nameEl) {
-            nameEl.textContent = p ? (p.isAI ? "CPU" : p.name) : "";
+            nameEl.textContent = p ? (p.isAI && !tablee ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";

@@ -13457,6 +13457,34 @@
         if (selectedMode === "3" || selectedMode === "4") {
           els.modeOptions.innerHTML = boardSizeControlHTML();
         }
+        if (selectedMode === "4") {
+          els.modeOptions.innerHTML += `
+          <label class="mode-option-row" for="teamSeatsSelect">
+            <span><b>Ordinateurs</b><small>Places tenues par l’IA.</small></span>
+            <select id="teamSeatsSelect">
+              <option value="none" selected>Aucun — 4 humains</option>
+              <option value="ai24">J2 et J4 — 2 humains contre l’IA</option>
+              <option value="ai234">J2, J3 et J4 — 1 humain contre 3 IA</option>
+            </select>
+          </label>
+          <label class="mode-option-row" for="aiDifficultySelect">
+            <span><b>Difficulté de l’ordinateur</b></span>
+            <select id="aiDifficultySelect">
+              <option value="easy">Facile</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Difficile</option>
+              <option value="expert">Expert</option>
+            </select>
+          </label>
+          <label class="mode-option-row" for="teamVillagesSelect">
+            <span><b>Villages</b><small>En équipe, J1 et J3 partagent les deux villages d’une diagonale, J2 et J4 ceux de l’autre.</small></span>
+            <select id="teamVillagesSelect">
+              <option value="solo" selected>Un village par joueur</option>
+              <option value="team">Diagonale partagée par l’équipe</option>
+            </select>
+          </label>
+        `;
+        }
 
         els.startBtn.textContent = "Lancer ILYOS — KayKit Edition";
       }
@@ -15812,7 +15840,18 @@
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
-        const villageAssignments = getVillageAssignments(count);
+        /* 2 contre 2 : chacun pour soi (score individuel), mais des places
+           peuvent être tenues par l'IA, et les deux villages d'une diagonale
+           peuvent être partagés par l'équipe (J1+J3, J2+J4) comme en duel. */
+        const teamMode = count === 4;
+        const siegesIA = !teamMode ? []
+          : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
+        const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
+        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `ORDINATEUR ${i + 1}`; });
+        const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
+        const villageAssignments = villagesEquipe
+          ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())
+          : getVillageAssignments(count);
         const startingPlayerIndex = Math.floor(gameRandom() * count);
 
         const players = names.map((name, i) => {
@@ -15822,8 +15861,8 @@
             name,
             color: PLAYER_COLORS[i],
             icon: PLAYER_ICONS[i],
-            isAI: soloMode && i === 1,
-            aiDifficulty: soloMode && i === 1 ? aiDifficulty : null,
+            isAI: estIA(i),
+            aiDifficulty: estIA(i) ? aiDifficulty : null,
             village: { ...villages[0] },
             villages,
             score: 0,
@@ -19653,8 +19692,15 @@
         // 4 joueurs/2v2 : toujours aucun champ d'équipe fiable identifié
         // dans state (voir startLocalGame(), core.js) — seuls les deux
         // premiers joueurs sont représentés, gap déjà documenté.
-        const leftPlayer = state.players[0] || null;
-        const rightPlayer = state.players.length > 1 ? state.players[1] : null;
+        /* 2 contre 2 : à gauche l'équipe or (J1/J3), à droite la violette
+           (J2/J4) — dans chaque camp, le joueur en cours ou celui qui vient de
+           jouer (l'ordre alterne les équipes). */
+        const tablee = state.players.length === 4;
+        const courant = state.currentPlayer;
+        const leftPlayer = tablee ? state.players[courant % 2 === 0 ? courant : (courant + 3) % 4]
+          : state.players[0] || null;
+        const rightPlayer = tablee ? state.players[courant % 2 === 1 ? courant : (courant + 3) % 4]
+          : state.players.length > 1 ? state.players[1] : null;
 
         // Portrait : aucun asset 2D circulaire trouvé dans assets/kaykit
         // (uniquement des modèles .glb + leurs atlas de texture, inexploitables
@@ -19683,7 +19729,7 @@
             }
           }
           if (nameEl) {
-            nameEl.textContent = p ? (p.isAI ? "CPU" : p.name) : "";
+            nameEl.textContent = p ? (p.isAI && !tablee ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
@@ -24896,7 +24942,12 @@
         return 1 / (1 + distance * 0.5);
       }
 
+      /* En 4 joueurs (2 contre 2), le planner reste à un adversaire : celui
+         qui joue juste après — c'est lui qui répond au tour, et avec l'ordre
+         J1, J2, J3, J4 il appartient toujours à l'autre équipe. */
       function plannerAdversaire(playerId) {
+        const n = state.players.length;
+        if (n > 2) return state.players[(playerId + 1) % n] || null;
         return state.players.find(p => p.id !== playerId) || null;
       }
 
@@ -29540,6 +29591,7 @@
         if (typeof ilyosSimulationActive !== "undefined" && ilyosSimulationActive) return false;
         try { if (ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active) return false; } catch (erreur) { /* harnais absent */ }
         const joueurs = state.players || [];
+        if (joueurs.length !== 2) return false;
         return joueurs.some(j => !j.isAI) && joueurs.some(j => j.isAI && j.aiDifficulty === "expert");
       }
 
@@ -44434,7 +44486,8 @@
          défaites. On recopie donc les réglages de la partie qui s'achève. */
       function restaurerReglagesPartie(partie) {
         const humains = (partie.players || []).filter(j => !j.isAI);
-        const mode = partie.soloMode ? "1" : String(humains.length);
+        const joueurs = partie.players || [];
+        const mode = partie.soloMode ? "1" : String(joueurs.length === 4 ? 4 : humains.length);
         if (String(els.playerCount.value) !== mode
           && [...els.playerCount.options].some(option => option.value === mode)) {
           els.playerCount.value = mode;
@@ -44446,12 +44499,18 @@
           const voulu = String(valeur);
           if ([...liste.options].some(option => option.value === voulu)) liste.value = voulu;
         };
-        if (partie.soloMode) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (partie.soloMode || joueurs.some(j => j.isAI)) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (joueurs.length === 4) {
+          const ia = joueurs.map((j, i) => j.isAI ? i : null).filter(i => i !== null).join("");
+          fixer("teamSeatsSelect", ({ "13": "ai24", "123": "ai234" })[ia] || "none");
+          fixer("teamVillagesSelect", (joueurs[2]?.villages || []).length > 1 ? "team" : "solo");
+        }
         fixer("boardSizeSelect", GRID);
         fixer("startingBoardSelect", partie.startingBoardMode);
         fixer("turnTimerSelect", partie.turnDurationSeconds || 0);
         [...els.playersForm.querySelectorAll(".player-name")].forEach((champ, i) => {
-          if (humains[i] && humains[i].name) champ.value = humains[i].name;
+          const joueur = joueurs.length === 4 ? joueurs[i] : humains[i];
+          if (joueur && joueur.name && !joueur.isAI) champ.value = joueur.name;
         });
       }
 
@@ -46568,6 +46627,8 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
+          difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score })) : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.

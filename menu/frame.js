@@ -111,7 +111,11 @@
   function duelContext(mode,values){
     if(mode==='solo') return {kicker:'DUEL CONTRE LE CPU',leftTop:'CHEVALIER OR',leftBottom:'VOUS',rightTop:'MAGE VIOLET',rightBottom:labelFor(mode,'difficulty',values.difficulty)};
     if(mode==='duel') return {kicker:'FACE À FACE LOCAL',leftTop:'CHEVALIER OR',leftBottom:values.name1||'JOUEUR 1',rightTop:'MAGE VIOLET',rightBottom:values.name2||'JOUEUR 2'};
-    if(mode==='team') return {kicker:'BATAILLE D’ÉQUIPES',leftTop:'ÉQUIPE OR',leftBottom:`${values.name1||'J1'} + ${values.name3||'J3'}`,rightTop:'ÉQUIPE VIOLETTE',rightBottom:`${values.name2||'J2'} + ${values.name4||'J4'}`};
+    if(mode==='team'){
+      const ia=({ai24:[2,4],ai234:[2,3,4]})[values.seats]||[];
+      const nom=i=>ia.includes(i)?'IA':(values['name'+i]||'J'+i);
+      return {kicker:'BATAILLE D’ÉQUIPES',leftTop:'ÉQUIPE OR',leftBottom:`${nom(1)} + ${nom(3)}`,rightTop:'ÉQUIPE VIOLETTE',rightBottom:`${nom(2)} + ${nom(4)}`};
+    }
     return {kicker:values.role==='guest'?'REJOINDRE UN DUEL':'OUVRIR UN DUEL',leftTop:'CHEVALIER OR',leftBottom:values.name1||'VOUS',rightTop:'MAGE VIOLET',rightBottom:values.role==='guest'?'HÔTE':'INVITÉ'};
   }
 
@@ -131,6 +135,7 @@
     if(values.size!=null) items.push(['TAILLE',labelFor(mode,'size',values.size)]);
     if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
     if(mode==='solo') items.push(['CPU',labelFor(mode,'difficulty',values.difficulty)]);
+    if(mode==='team'&&values.seats&&values.seats!=='none') items.push(['CPU',labelFor(mode,'difficulty',values.difficulty)]);
     if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);
     if(mode==='online') items.push(['SESSION',values.role==='guest'?'REJOINDRE':'CRÉER']);
     return `<div class="match-recap">${items.map(([k,v])=>`<span><small>${safeText(k)}</small><b>${safeText(v)}</b></span>`).join('')}</div>`;
@@ -204,6 +209,7 @@
     const bodyControls=controls.filter(control=>{
       if(control.editable&&control.kind==='name') return false;
       if(mode==='solo'&&control.key==='difficulty') return false;
+      if(mode==='team'&&control.key==='difficulty'&&values.seats==='none') return false;
       return true;
     });
     const renderedControls=bodyControls.map(control=>control.editable?editableField(control,values):selectorField(control,values)).join('');

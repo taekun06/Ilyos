@@ -22,7 +22,8 @@
          défaites. On recopie donc les réglages de la partie qui s'achève. */
       function restaurerReglagesPartie(partie) {
         const humains = (partie.players || []).filter(j => !j.isAI);
-        const mode = partie.soloMode ? "1" : String(humains.length);
+        const joueurs = partie.players || [];
+        const mode = partie.soloMode ? "1" : String(joueurs.length === 4 ? 4 : humains.length);
         if (String(els.playerCount.value) !== mode
           && [...els.playerCount.options].some(option => option.value === mode)) {
           els.playerCount.value = mode;
@@ -34,12 +35,18 @@
           const voulu = String(valeur);
           if ([...liste.options].some(option => option.value === voulu)) liste.value = voulu;
         };
-        if (partie.soloMode) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (partie.soloMode || joueurs.some(j => j.isAI)) fixer("aiDifficultySelect", partie.aiDifficulty);
+        if (joueurs.length === 4) {
+          const ia = joueurs.map((j, i) => j.isAI ? i : null).filter(i => i !== null).join("");
+          fixer("teamSeatsSelect", ({ "13": "ai24", "123": "ai234" })[ia] || "none");
+          fixer("teamVillagesSelect", (joueurs[2]?.villages || []).length > 1 ? "team" : "solo");
+        }
         fixer("boardSizeSelect", GRID);
         fixer("startingBoardSelect", partie.startingBoardMode);
         fixer("turnTimerSelect", partie.turnDurationSeconds || 0);
         [...els.playersForm.querySelectorAll(".player-name")].forEach((champ, i) => {
-          if (humains[i] && humains[i].name) champ.value = humains[i].name;
+          const joueur = joueurs.length === 4 ? joueurs[i] : humains[i];
+          if (joueur && joueur.name && !joueur.isAI) champ.value = joueur.name;
         });
       }
 
@@ -2156,6 +2163,8 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
+          difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score })) : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.
