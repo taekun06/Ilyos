@@ -34,6 +34,18 @@
     top: max(10px, env(safe-area-inset-top)) !important;
     gap: 8px !important;
   }
+  .profil-badge {
+    left: 12px !important;
+    top: max(10px, env(safe-area-inset-top)) !important;
+    min-width: 96px !important;
+    padding: 8px 12px 9px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+  }
+  .profil-badge .profil-barre {
+    height: 4px !important;
+    margin-top: 6px !important;
+  }
   .round {
     width: 40px !important;
     height: 40px !important;

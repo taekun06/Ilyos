@@ -9,11 +9,16 @@
     body{position:fixed;inset:0}
     .resume-pill{margin:0 auto 14px;background:linear-gradient(180deg,rgba(216,170,76,.22),rgba(216,170,76,.08));border-color:rgba(216,170,76,.55)}
     .resume-pill[hidden]{display:none}
+    /* Niveau du joueur (js/game/progression.js), en miroir des icônes de droite. */
+    .profil-badge{position:absolute;left:1.55%;top:2.1%;min-width:8.8cqw;padding:.7cqh .9cqw .8cqh;border-radius:1cqw;border:2px solid rgba(225,176,71,.94);background:rgba(5,13,21,.70);color:var(--gold2);box-shadow:0 8px 22px rgba(0,0,0,.27),inset 0 0 0 1px rgba(255,230,166,.13);font-size:.82cqw;font-weight:700;letter-spacing:.06em;line-height:1}
+    .profil-badge[hidden]{display:none}
+    .profil-badge .profil-barre{display:block;height:.55cqh;min-height:3px;margin-top:.6cqh;border-radius:999px;background:rgba(255,230,166,.16);overflow:hidden}
+    .profil-badge .profil-barre i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#c9a45d,#f4d28e)}
   </style>
   <link rel="stylesheet" href="./menu.css?v=menu-duel-16">
   <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-16">
   <link rel="stylesheet" href="./menu-typography-g2c.css?v=g2c-1">
-  <link rel="stylesheet" href="./menu-portrait.css?v=1">
+  <link rel="stylesheet" href="./menu-portrait.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -21,6 +26,7 @@
     <div class="art"></div><div class="shade"></div><div class="fog"></div><div class="halo"></div><canvas id="particles"></canvas>
     <div class="ui home-layout">
       <img class="logo-home" src="./assets/ilyos-logo.svg" alt="ILYOS">
+      <div class="profil-badge" id="profilBadge" hidden><span class="profil-niveau">NIVEAU 1</span><span class="profil-barre"><i></i></span></div>
       <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button><button class="round" id="fullscreenBtnHome" data-action="fullscreen" aria-label="Plein écran">⛶</button></div>
       <div class="mode-grid">
         <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez le CPU</div></button>
@@ -53,7 +59,7 @@
   <div class="veil" id="veil"></div>
 </div>
 <script src="./menu-config.js?v=menu-duel-17"></script>
-<script src="./frame.js?v=menu-duel-17"></script>
+<script src="./frame.js?v=menu-duel-18"></script>
 <script src="../js/gamepad-navigation.js?v=20260911-manette-feel"></script>
 <script src="./gamepad.js?v=menu-duel-16"></script>
 </body>

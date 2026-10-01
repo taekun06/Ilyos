@@ -67,6 +67,30 @@
     }catch(_){ btn.hidden=true; }
   }
   checkResumableSession();
+
+  /* Niveau du joueur : lu dans le jeu parent (window.ILYOS_PROGRESSION, même
+     origine). Le profil s'écrit dans le document parent ; l'événement
+     « storage » arrive donc ici à chaque gain, sans rien relayer. */
+  function renderProfileBadge(){
+    const badge=document.getElementById('profilBadge');
+    if(!badge) return;
+    let profil=null;
+    try{ profil=parent?.ILYOS_PROGRESSION?.profil?.()||null; }catch(_){ profil=null; }
+    if(!profil){ badge.hidden=true; return; }
+    const part=Math.round(100*profil.xpDansNiveau/Math.max(1,profil.xpPourSuivant));
+    badge.querySelector('.profil-niveau').textContent=`NIVEAU ${profil.niveau}`;
+    badge.querySelector('.profil-barre i').style.width=`${part}%`;
+    badge.title=`${profil.xpDansNiveau} / ${profil.xpPourSuivant} XP vers le niveau ${profil.niveau+1}`;
+    badge.hidden=false;
+  }
+  (function waitProgression(tries){
+    let ready=false;
+    try{ ready=!!parent?.ILYOS_PROGRESSION; }catch(_){}
+    if(ready) renderProfileBadge();
+    else if(tries>0) setTimeout(()=>waitProgression(tries-1),250);
+  })(40);
+  window.addEventListener('storage',e=>{ if(!e.key||e.key==='ilyos-profil-v1') renderProfileBadge(); });
+  document.addEventListener('visibilitychange',renderProfileBadge);
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
     if(!selections[mode]) selections[mode]={};

@@ -4211,6 +4211,7 @@
         els.victoryText.textContent = "Plus aucune île ne peut être posée, et les couronnes sont à égalité.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
         defaitesFinPartie(null);
+        progressionFinPartie(null);
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
@@ -4248,6 +4249,8 @@
         renderVictoryRecap(player);
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);
+        // Profil de l'appareil : XP et niveau, affichés sous le bilan.
+        progressionFinPartie(player);
 
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;
