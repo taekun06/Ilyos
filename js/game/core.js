@@ -2954,8 +2954,11 @@
          d'une île appartenant au joueur, ou sa case de village. */
       function draftGuardianCellAllowed(playerId, r, c) {
         if (!inside(r, c) || characterAt(r, c)) return false;
+        // villageAt renvoie le JOUEUR propriétaire (objet), pas son id : la
+        // comparaison à playerId échouait toujours, et le village restait
+        // interdit au gardien du draft, pour l'humain comme pour l'IA.
         const village = villageAt(r, c);
-        if (village !== undefined && village === playerId) return true;
+        if (village && village.id === playerId) return true;
         const island = islandAt(r, c);
         return !!island && island.owner === playerId;
       }

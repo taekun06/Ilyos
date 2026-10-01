@@ -27,3 +27,12 @@ jobs:
         run: npm run build:check
       - name: Lancer les smoke tests tutoriel
         run: npx playwright test tests/tutorial-discovery-smoke.spec.js --project=chromium
+      # Sans la trace, un échec qui ne se reproduit qu'en CI (délais qui
+      # changent d'étape d'un passage à l'autre, PR #130) reste opaque.
+      - name: Conserver la trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-smoke-tutoriel
+          path: test-results/
+          retention-days: 7
