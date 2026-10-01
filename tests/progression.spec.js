@@ -52,6 +52,37 @@ test('moteur de progression : courbe, gains et journée', async ({ page }) => {
   expect(r.jour0400).toBe('2026-10-02');
 });
 
+test('quêtes : trois par jour, rien ne se perd, avancement sur les compteurs', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.ILYOS_PROGRESSION, null, { timeout: 45000 });
+  const r = await page.evaluate(() => {
+    const P = window.ILYOS_PROGRESSION;
+    const profil = P.profilVide();
+    P.renouvelerQuetes(profil, '2026-10-01');
+    const types = profil.quetes.actives.map(q => q.type);
+    // Jamais de quête dans un mode jamais essayé.
+    const sansModeInconnu = !types.includes('cpuFort') && !types.includes('ensemble');
+    profil.quetes.actives[0] = { type: 'poussees', fait: 0, finie: false };
+    profil.quetes.actives[1] = { type: 'parties', fait: 0, finie: false };
+    const finies = P.avancerQuetes(profil, { partie: true, resultat: 'defaite', stats: { poussees: 7, couronnes: 0, chutes: 1 } });
+    // Le lendemain : la quête finie part, celle en cours reste.
+    P.renouvelerQuetes(profil, '2026-10-02');
+    return {
+      nombre: types.length, sansModeInconnu,
+      finies: finies.filter(q => !q.semaine).map(q => q.texte),
+      parties: profil.quetes.actives.find(q => q.type === 'parties'),
+      apres: profil.quetes.actives.length,
+      semaine: P.semaine('2026-10-01')
+    };
+  });
+  expect(r.nombre).toBe(3);
+  expect(r.sansModeInconnu).toBe(true);
+  expect(r.finies).toEqual(['Pousser 6 fois']);
+  expect(r.parties).toEqual({ type: 'parties', fait: 1, finie: false });
+  expect(r.apres).toBe(3);
+  expect(r.semaine).toBe('2026-09-28');
+});
+
 test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', async ({ page }) => {
   const incidents = [];
   page.on('pageerror', erreur => incidents.push(erreur.message));
@@ -77,19 +108,20 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
   await expect(bloc).toBeVisible({ timeout: 20000 });
   // Partie de moins de 4 manches : (50 + 50) × 0,5, puis +100 pour la
   // première victoire du jour, au CPU Normal par défaut.
-  await expect(bloc.locator('.progression-total')).toHaveText('+150 XP', { timeout: 5000 });
   await expect(bloc.locator('.progression-lignes li')).toHaveCount(4);
-  await expect(bloc.locator('.progression-titre')).toHaveText('Niveau 1');
+  await expect(bloc.locator('.progression-quetes li')).toHaveCount(4);
+  await expect(bloc.locator('.progression-titre')).toHaveText(/Niveau \d/);
 
   const profil = await page.evaluate(() => window.ILYOS_PROGRESSION.profil());
-  expect(profil.xp).toBe(150);
+  // 150 XP de partie, plus les quêtes que cette victoire a pu accomplir.
+  expect(profil.xp).toBeGreaterThanOrEqual(150);
   expect(profil.parties).toBe(1);
   expect(profil.victoires).toBe(1);
 
   // Le badge du menu relit le profil enregistré.
   await page.reload();
   await expect(page.frameLocator('iframe[src*="menu/frame.html"]').locator('#profilBadge'))
-    .toHaveAttribute('title', '150 / 200 XP vers le niveau 2', { timeout: 45000 });
+    .toHaveAttribute('title', /XP vers le niveau/, { timeout: 45000 });
 
   expect(incidents).toEqual([]);
 });

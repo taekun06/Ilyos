@@ -14102,6 +14102,7 @@
         if (ilyosSimulationActive) return;
         const stats = statistiquesDuJoueur(indexJoueur);
         if (stats) stats[cle] = (stats[cle] || 0) + 1;
+        progressionSuiviEnJeu(indexJoueur, cle);
       }
 
       /* Îles réellement posées pendant la partie : celles de la mise en place
@@ -43123,7 +43124,7 @@
         }
       );
       /* =====================================================================
-         PROGRESSION DU JOUEUR — niveau et XP (étape 1 du plan de gamification)
+         PROGRESSION DU JOUEUR — niveau, XP, quêtes et offrande du jour
 
          Chaque partie terminée rapporte de l'XP, perdue, nulle ou gagnée ; la
          victoire en rapporte davantage, la première du jour encore plus. Le
@@ -43163,6 +43164,48 @@
          compte encore pour la veille. */
       const PROGRESSION_HEURE_BASCULE = 4;
 
+      /* QUÊTES. Chacune se compte sur un « événement » : la fin d'une partie
+         (bilan, compteurs finaux) ou un puzzle résolu. Trois quêtes du jour au
+         plus : chaque nouvelle journée complète les places libres, et une
+         quête non faite reste en attente — manquer un jour ne fait rien
+         perdre. « requiert » : jamais de quête dans un mode jamais essayé. */
+      const PROGRESSION_QUETES_JOUR = [
+        { type: "parties", cible: 2, xp: 75, texte: "Terminer 2 parties", compte: e => e.partie ? 1 : 0 },
+        { type: "poussees", cible: 6, xp: 75, texte: "Pousser 6 fois", compte: e => e.stats ? e.stats.poussees || 0 : 0 },
+        { type: "couronnes", cible: 3, xp: 75, texte: "Ramasser 3 couronnes", compte: e => e.stats ? e.stats.couronnes || 0 : 0 },
+        { type: "iles", cible: 8, xp: 75, texte: "Poser 8 îles", compte: e => e.iles || 0 },
+        { type: "sansChute", cible: 1, xp: 100, texte: "Gagner sans qu'un de ses gardiens tombe",
+          compte: e => e.resultat === "victoire" && e.stats && !e.stats.chutes ? 1 : 0 },
+        { type: "cpuFort", cible: 1, xp: 150, texte: "Battre le CPU Difficile ou Expert", requiert: "solo",
+          compte: e => e.resultat === "victoire" && (e.difficulte === "hard" || e.difficulte === "expert") ? 1 : 0 },
+        { type: "grand", cible: 1, xp: 75, texte: "Jouer en 13×13 ou en duel symétrique",
+          compte: e => e.partie && (e.taille === 13 || e.plateau === "symmetric") ? 1 : 0 },
+        { type: "puzzle", cible: 1, xp: 75, texte: "Résoudre un puzzle", compte: e => e.puzzle ? 1 : 0 },
+        { type: "ensemble", cible: 1, xp: 100, texte: "Jouer en ligne ou en 2 contre 2", requiert: "multi",
+          compte: e => e.partie && (e.mode === "online" || e.mode === "team") ? 1 : 0 }
+      ];
+      const PROGRESSION_QUETES_SEMAINE = [
+        { type: "victoires", cible: 5, xp: 300, texte: "Gagner 5 parties", compte: e => e.resultat === "victoire" ? 1 : 0 },
+        { type: "poussees", cible: 30, xp: 300, texte: "Pousser 30 fois", compte: e => e.stats ? e.stats.poussees || 0 : 0 },
+        { type: "parties", cible: 8, xp: 300, texte: "Terminer 8 parties", compte: e => e.partie ? 1 : 0 },
+        { type: "puzzles", cible: 3, xp: 250, texte: "Résoudre 3 puzzles", compte: e => e.puzzle ? 1 : 0 }
+      ];
+      const PROGRESSION_QUETES_MAX = 3;
+
+      /* OFFRANDE DU JOUR : un calendrier de 7 cases qui compte les jours de
+         présence, pas les jours consécutifs. Revenir après une absence reprend
+         simplement à la case suivante ; rien ne retombe à zéro. */
+      const PROGRESSION_OFFRANDES = [
+        { xp: 30, texte: "30 XP" },
+        { xp: 40, texte: "40 XP" },
+        { xp: 50, texte: "50 XP" },
+        { vent: 2, texte: "Vent porteur : +50 % d'XP sur 2 parties" },
+        { xp: 60, texte: "60 XP" },
+        { xp: 75, texte: "75 XP" },
+        { xp: 150, texte: "150 XP" }
+      ];
+      const PROGRESSION_VENT_BONUS = .5;
+
       let progressionDernierePartie = null;
       let progressionPersistanceDemandee = false;
 
@@ -43195,7 +43238,10 @@
           victoires: 0,
           derniereVictoireJour: null,
           puzzles: { jour: null, rejoues: 0 },
-          tutorielRecompense: false
+          tutorielRecompense: false,
+          modes: {},
+          quetes: { jour: null, actives: [], changeeLe: null, semaine: null },
+          offrande: { prochaine: 0, dernierJour: null, vent: 0 }
         };
       }
 
@@ -43215,6 +43261,22 @@
           profil.puzzles.rejoues = Number.isFinite(brut.puzzles.rejoues) ? brut.puzzles.rejoues : 0;
         }
         profil.tutorielRecompense = brut.tutorielRecompense === true;
+        if (brut.modes && typeof brut.modes === "object") profil.modes = { ...brut.modes };
+        const q = brut.quetes;
+        if (q && typeof q === "object") {
+          profil.quetes.jour = typeof q.jour === "string" ? q.jour : null;
+          profil.quetes.changeeLe = typeof q.changeeLe === "string" ? q.changeeLe : null;
+          profil.quetes.actives = Array.isArray(q.actives)
+            ? q.actives.filter(a => a && progressionModeleQuete(PROGRESSION_QUETES_JOUR, a.type)).slice(0, PROGRESSION_QUETES_MAX)
+            : [];
+          profil.quetes.semaine = q.semaine && progressionModeleQuete(PROGRESSION_QUETES_SEMAINE, q.semaine.type) ? q.semaine : null;
+        }
+        const o = brut.offrande;
+        if (o && typeof o === "object") {
+          profil.offrande.prochaine = Number.isInteger(o.prochaine) ? ((o.prochaine % 7) + 7) % 7 : 0;
+          profil.offrande.dernierJour = typeof o.dernierJour === "string" ? o.dernierJour : null;
+          profil.offrande.vent = Number.isFinite(o.vent) ? Math.max(0, o.vent) : 0;
+        }
         return profil;
       }
 
@@ -43224,6 +43286,126 @@
           progressionPersistanceDemandee = true;
           try { navigator.storage?.persist?.().catch(() => { }); } catch (_) { }
         }
+      }
+
+      /* ---------- Quêtes ---------------------------------------------- */
+      function progressionModeleQuete(catalogue, type) {
+        return catalogue.find(modele => modele.type === type) || null;
+      }
+
+      /* Le lundi de la semaine du jour donné, comme clé de semaine. */
+      function progressionSemaine(jour) {
+        const [a, m, j] = jour.split("-").map(Number);
+        const date = new Date(a, m - 1, j, 12);
+        date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+        return progressionJour(new Date(date.getTime() + PROGRESSION_HEURE_BASCULE * 3600 * 1000));
+      }
+
+      function progressionQuetePermise(profil, modele) {
+        if (modele.requiert === "solo") return !!profil.modes.solo;
+        if (modele.requiert === "multi") return !!(profil.modes.online || profil.modes.team);
+        return true;
+      }
+
+      function progressionTirerQuete(profil, exclus) {
+        const choix = PROGRESSION_QUETES_JOUR.filter(modele =>
+          !exclus.includes(modele.type) && progressionQuetePermise(profil, modele));
+        if (!choix.length) return null;
+        const modele = choix[Math.floor(Math.random() * choix.length)];
+        return { type: modele.type, fait: 0, finie: false };
+      }
+
+      /* Nouvelle journée : les quêtes finies s'en vont, les places libres se
+         remplissent. Nouvelle semaine : une nouvelle quête de la semaine. */
+      function progressionRenouvelerQuetes(profil, jour = progressionJour()) {
+        const q = profil.quetes;
+        let change = false;
+        if (q.jour !== jour) {
+          q.actives = q.actives.filter(a => !a.finie);
+          while (q.actives.length < PROGRESSION_QUETES_MAX) {
+            const nouvelle = progressionTirerQuete(profil, q.actives.map(a => a.type));
+            if (!nouvelle) break;
+            q.actives.push(nouvelle);
+          }
+          q.jour = jour;
+          change = true;
+        }
+        const semaine = progressionSemaine(jour);
+        if (!q.semaine || q.semaine.cle !== semaine) {
+          const modele = PROGRESSION_QUETES_SEMAINE[Math.floor(Math.random() * PROGRESSION_QUETES_SEMAINE.length)];
+          q.semaine = { cle: semaine, type: modele.type, fait: 0, finie: false };
+          change = true;
+        }
+        return change;
+      }
+
+      /* Fait avancer chaque quête sur un événement ; renvoie celles qui
+         viennent de s'achever, avec leur XP (pas encore ajoutée). */
+      function progressionAvancerQuetes(profil, evenement) {
+        const finies = [];
+        const avancer = (quete, catalogue) => {
+          const modele = quete && progressionModeleQuete(catalogue, quete.type);
+          if (!modele || quete.finie) return;
+          const pas = Math.max(0, Number(modele.compte(evenement)) || 0);
+          if (!pas) return;
+          quete.fait = Math.min(modele.cible, (quete.fait || 0) + pas);
+          if (quete.fait >= modele.cible) {
+            quete.finie = true;
+            finies.push({ texte: modele.texte, xp: modele.xp, semaine: catalogue === PROGRESSION_QUETES_SEMAINE });
+          }
+        };
+        profil.quetes.actives.forEach(quete => avancer(quete, PROGRESSION_QUETES_JOUR));
+        avancer(profil.quetes.semaine, PROGRESSION_QUETES_SEMAINE);
+        return finies;
+      }
+
+      /* Vue lisible des quêtes, pour la fenêtre de fin et le menu. */
+      function progressionVueQuetes(profil) {
+        const vue = (quete, catalogue) => {
+          const modele = quete && progressionModeleQuete(catalogue, quete.type);
+          return modele ? { texte: modele.texte, xp: modele.xp, cible: modele.cible,
+            fait: Math.min(modele.cible, quete.fait || 0), finie: !!quete.finie } : null;
+        };
+        return {
+          jour: profil.quetes.actives.map(q => vue(q, PROGRESSION_QUETES_JOUR)).filter(Boolean),
+          semaine: vue(profil.quetes.semaine, PROGRESSION_QUETES_SEMAINE),
+          changementDispo: profil.quetes.changeeLe !== progressionJour()
+            && profil.quetes.actives.some(q => !q.finie)
+        };
+      }
+
+      /* Une fois par jour, remplacer une quête non finie par une autre. */
+      function progressionChangerQuete(index) {
+        const profil = progressionCharger();
+        progressionRenouvelerQuetes(profil);
+        const jour = progressionJour();
+        const quete = profil.quetes.actives[index];
+        if (!quete || quete.finie || profil.quetes.changeeLe === jour) return false;
+        const exclus = profil.quetes.actives.map(a => a.type);
+        const nouvelle = progressionTirerQuete(profil, exclus);
+        if (!nouvelle) return false;
+        profil.quetes.actives[index] = nouvelle;
+        profil.quetes.changeeLe = jour;
+        progressionEnregistrer(profil);
+        return true;
+      }
+
+      /* ---------- Offrande du jour ------------------------------------- */
+      function progressionOffrandeDispo(profil) {
+        return profil.offrande.dernierJour !== progressionJour();
+      }
+
+      function progressionReclamerOffrande() {
+        const profil = progressionCharger();
+        if (!progressionOffrandeDispo(profil)) return null;
+        const indice = profil.offrande.prochaine;
+        const offrande = PROGRESSION_OFFRANDES[indice];
+        profil.offrande.dernierJour = progressionJour();
+        profil.offrande.prochaine = (indice + 1) % PROGRESSION_OFFRANDES.length;
+        if (offrande.vent) profil.offrande.vent += offrande.vent;
+        const changement = progressionAjouterXp(profil, offrande.xp || 0);
+        progressionEnregistrer(profil);
+        return { indice, texte: offrande.texte, ...changement };
       }
 
       /* Moteur pur : le gain d'une partie, ligne par ligne, sans rien écrire.
@@ -43272,6 +43454,41 @@
         return state.players.find(joueur => !joueur.isAI) || null;
       }
 
+      function progressionModeDeLaPartie() {
+        if (state.onlineMode) return "online";
+        if (state.players.length === 4) return "team";
+        return state.soloMode ? "solo" : "duel";
+      }
+
+      /* Pendant la partie : prévenir dès qu'une quête est remplie, sans rien
+         enregistrer (le compte officiel se fait sur les compteurs finaux).
+         Appelée par compterStatistique (core.js). */
+      let progressionAnnoncees = { partie: null, types: new Set() };
+      function progressionSuiviEnJeu(indexJoueur, cle) {
+        try {
+          if (cle !== "poussees" && cle !== "couronnes") return;
+          if (!state || state.winner !== null || progressionContexteHorsJeu()) return;
+          const moi = progressionJoueurDeLAppareil();
+          if (!moi || moi.id !== indexJoueur) return;
+          if (progressionAnnoncees.partie !== state) progressionAnnoncees = { partie: state, types: new Set() };
+          const profil = progressionCharger();
+          progressionRenouvelerQuetes(profil);
+          const enCours = statistiquesDuJoueur(indexJoueur)[cle] || 0;
+          const verifier = (quete, catalogue, cleAnnonce) => {
+            const modele = quete && progressionModeleQuete(catalogue, quete.type);
+            if (!modele || quete.finie || modele.type !== cle) return;
+            if (progressionAnnoncees.types.has(cleAnnonce)) return;
+            const total = (quete.fait || 0) + enCours;
+            if (total >= modele.cible) {
+              progressionAnnoncees.types.add(cleAnnonce);
+              showToast(`✦ Quête accomplie : ${modele.texte} (+${modele.xp} XP en fin de partie)`);
+            }
+          };
+          profil.quetes.actives.forEach(q => verifier(q, PROGRESSION_QUETES_JOUR, `j-${q.type}`));
+          verifier(profil.quetes.semaine, PROGRESSION_QUETES_SEMAINE, `s-${cle}`);
+        } catch (_) { }
+      }
+
       function progressionContexteHorsJeu() {
         if (ilyosSimulationActive) return true;
         try { if (TUTO.active) return true; } catch (_) { }
@@ -43299,15 +43516,33 @@
 
           const profil = progressionCharger();
           const jour = progressionJour();
+          const mode = progressionModeDeLaPartie();
+          profil.modes[mode] = true;
+          progressionRenouvelerQuetes(profil, jour);
           gain = progressionCalculerGainPartie(
             { resultat, difficulte, manches: state.round },
             profil.derniereVictoireJour === jour
           );
+          if (profil.offrande.vent > 0) {
+            const bonus = Math.round(gain.total * PROGRESSION_VENT_BONUS);
+            gain.lignes.push({ libelle: "Vent porteur +50 %", xp: bonus });
+            gain.total += bonus;
+            profil.offrande.vent--;
+          }
+          const finies = progressionAvancerQuetes(profil, {
+            partie: true, resultat, difficulte, mode,
+            taille: Number(state.boardSize || GRID), plateau: state.startingBoardMode,
+            stats: { ...statistiquesDuJoueur(moi.id) }, iles: ilesPoseesPar(moi.id)
+          });
+          finies.forEach(quete => {
+            gain.lignes.push({ libelle: `Quête : ${quete.texte}`, xp: quete.xp, quete: true });
+            gain.total += quete.xp;
+          });
           const changement = progressionAjouterXp(profil, gain.total);
           profil.parties++;
           if (resultat === "victoire") { profil.victoires++; profil.derniereVictoireJour = jour; }
           progressionEnregistrer(profil);
-          gain = { ...gain, ...changement };
+          gain = { ...gain, ...changement, quetes: progressionVueQuetes(profil) };
         } catch (erreur) {
           console.warn("[ILYOS] progression : gain non calculé", erreur);
           gain = null;
@@ -43317,7 +43552,7 @@
 
       /* Récompense hors partie (puzzle, tutoriel) : un toast, pas de fenêtre. */
       function progressionGainHorsPartie(profil, xp, libelle) {
-        if (!(xp > 0)) return;
+        if (!(xp > 0)) { progressionEnregistrer(profil); return; }
         const changement = progressionAjouterXp(profil, xp);
         progressionEnregistrer(profil);
         try {
@@ -43336,11 +43571,15 @@
           if (!premiereFois) {
             const jour = progressionJour();
             if (profil.puzzles.jour !== jour) profil.puzzles = { jour, rejoues: 0 };
-            if (profil.puzzles.rejoues >= PROGRESSION_XP.puzzleRejouesParJour) return;
-            profil.puzzles.rejoues++;
-            xp = PROGRESSION_XP.puzzleRejoue;
+            if (profil.puzzles.rejoues >= PROGRESSION_XP.puzzleRejouesParJour) xp = 0;
+            else { profil.puzzles.rejoues++; xp = PROGRESSION_XP.puzzleRejoue; }
           }
-          progressionGainHorsPartie(profil, xp, premiereFois ? "Puzzle résolu" : "Puzzle rejoué");
+          progressionRenouvelerQuetes(profil);
+          const finies = progressionAvancerQuetes(profil, { puzzle: true });
+          finies.forEach(quete => { xp += quete.xp; });
+          progressionGainHorsPartie(profil, xp, finies.length
+            ? `Quête accomplie : ${finies.map(q => q.texte).join(", ")}`
+            : (premiereFois ? "Puzzle résolu" : "Puzzle rejoué"));
         } catch (erreur) {
           console.warn("[ILYOS] progression : puzzle non compté", erreur);
         }
@@ -43377,7 +43616,8 @@
         /* La barre part de l'état d'avant la partie ; si un niveau est
            franchi, elle repart de zéro dans le nouveau niveau. */
         const depart = monte ? 0 : part(avant);
-        const pastilles = gain.lignes.map(ligne =>
+        const quetesHtml = progressionHtmlQuetes(gain.quetes);
+        const pastilles = gain.lignes.filter(ligne => !ligne.quete).map(ligne =>
           `<li${ligne.xp < 0 ? ' class="progression-moins"' : ""}><span>${ligne.libelle}</span><b>${ligne.xp >= 0 ? "+" : "−"}${Math.abs(ligne.xp)}</b></li>`).join("");
         bloc.innerHTML = `
           <div class="progression-embleme" aria-hidden="true">
@@ -43398,7 +43638,8 @@
             </div>
             <small class="progression-reste">${apres.xpDansNiveau} / ${apres.xpPourSuivant} XP · niveau ${apres.niveau + 1} ensuite</small>
             <ul class="progression-lignes">${pastilles}</ul>
-          </div>`;
+          </div>
+          ${quetesHtml}`;
         const barre = bloc.querySelector(".progression-barre i");
         const compteur = bloc.querySelector(".progression-total b");
         const duree = 1200, debut = performance.now();
@@ -43413,6 +43654,22 @@
         }));
       }
 
+      /* Quêtes sous le gain : une ligne par quête, sa barre, et l'éclat
+         « accomplie » pour celles de la partie. */
+      function progressionHtmlQuetes(vue) {
+        if (!vue) return "";
+        const ligne = (q, semaine) => {
+          const pct = Math.round(100 * q.fait / q.cible);
+          return `<li class="${q.finie ? "progression-quete-finie" : ""}">
+            <span class="progression-quete-texte">${semaine ? "<em>Semaine</em> " : ""}${q.texte}</span>
+            <span class="progression-quete-barre"><i style="width:${pct}%"></i></span>
+            <b>${q.finie ? `✓ +${q.xp}` : `${q.fait}/${q.cible}`}</b>
+          </li>`;
+        };
+        const lignes = vue.jour.map(q => ligne(q, false)).join("") + (vue.semaine ? ligne(vue.semaine, true) : "");
+        return lignes ? `<ul class="progression-quetes">${lignes}</ul>` : "";
+      }
+
       window.ILYOS_PROGRESSION = {
         profil: () => {
           const profil = progressionCharger();
@@ -43422,6 +43679,28 @@
         xpPourPasser: progressionXpPourPasser,
         niveauDepuisXp: progressionNiveauDepuisXp,
         jour: date => progressionJour(date ? new Date(date) : new Date()),
+        semaine: jour => progressionSemaine(jour),
+        /* Pour le menu : renouvelle les quêtes du jour si besoin, puis dit
+           tout ce qu'il faut afficher. */
+        etat: () => {
+          const profil = progressionCharger();
+          if (progressionRenouvelerQuetes(profil)) progressionEnregistrer(profil);
+          return {
+            ...progressionNiveauDepuisXp(profil.xp),
+            quetes: progressionVueQuetes(profil),
+            offrande: {
+              dispo: progressionOffrandeDispo(profil),
+              prochaine: profil.offrande.prochaine,
+              vent: profil.offrande.vent,
+              cases: PROGRESSION_OFFRANDES.map(o => o.texte)
+            }
+          };
+        },
+        reclamerOffrande: progressionReclamerOffrande,
+        changerQuete: progressionChangerQuete,
+        avancerQuetes: (profil, evenement) => progressionAvancerQuetes(profil, evenement),
+        renouvelerQuetes: (profil, jour) => progressionRenouvelerQuetes(profil, jour),
+        profilVide: progressionProfilVide,
         cle: PROGRESSION_STORAGE_KEY
       };
       /* ILYOS — Manette (Gamepad API native)

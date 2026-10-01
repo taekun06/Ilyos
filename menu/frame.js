@@ -68,30 +68,80 @@
   }
   checkResumableSession();
 
-  /* Niveau du joueur : lu dans le jeu parent (window.ILYOS_PROGRESSION, même
-     origine). Le profil s'écrit dans le document parent ; l'événement
+  /* Progression du joueur : lue dans le jeu parent (window.ILYOS_PROGRESSION,
+     même origine). Le profil s'écrit dans le document parent ; l'événement
      « storage » arrive donc ici à chaque gain, sans rien relayer. */
+  function progressionApi(){ try{ return parent?.ILYOS_PROGRESSION||null; }catch(_){ return null; } }
   function renderProfileBadge(){
     const badge=document.getElementById('profilBadge');
+    const pill=document.getElementById('offrandePill');
     if(!badge) return;
-    let profil=null;
-    try{ profil=parent?.ILYOS_PROGRESSION?.profil?.()||null; }catch(_){ profil=null; }
-    if(!profil){ badge.hidden=true; return; }
-    const part=Math.round(100*profil.xpDansNiveau/Math.max(1,profil.xpPourSuivant));
-    badge.querySelector('.profil-num').textContent=String(profil.niveau);
+    let etat=null;
+    try{ etat=progressionApi()?.etat?.()||null; }catch(_){ etat=null; }
+    if(!etat){ badge.hidden=true; if(pill) pill.hidden=true; return; }
+    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
+    badge.querySelector('.profil-num').textContent=String(etat.niveau);
     badge.querySelector('.profil-anneau').style.setProperty('--p',`${part}%`);
-    badge.querySelector('.profil-xp').textContent=`${profil.xpDansNiveau} / ${profil.xpPourSuivant} XP`;
-    badge.title=`${profil.xpDansNiveau} / ${profil.xpPourSuivant} XP vers le niveau ${profil.niveau+1}`;
+    badge.querySelector('.profil-xp').textContent=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP`;
+    badge.title=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}`;
+    badge.querySelector('.profil-alerte').hidden=!etat.offrande.dispo;
     badge.hidden=false;
+    if(pill) pill.hidden=!etat.offrande.dispo;
+    if(modal.classList.contains('open')&&modal.dataset.vue==='progression') renderProgressionPanel(etat);
+  }
+  function cellLabel(texte){ return /^Vent/.test(texte)?'VENT PORTEUR':texte; }
+  function questHtml(q,index,semaine,changer){
+    const pct=Math.round(100*q.fait/Math.max(1,q.cible));
+    const bouton=changer&&!q.finie&&!semaine?`<button type="button" class="quete-changer" data-index="${index}" title="Changer cette quête (une fois par jour)" aria-label="Changer cette quête">↻</button>`:'';
+    return `<li class="quete${q.finie?' finie':''}${semaine?' semaine':''}"><div class="quete-haut"><span class="quete-texte">${safeText(q.texte)}</span><span class="quete-xp">${q.finie?'✓ ':''}+${q.xp} XP</span>${bouton}</div><div class="quete-barre"><i style="width:${pct}%"></i></div><small>${q.finie?'Accomplie':`${q.fait} / ${q.cible}`}</small></li>`;
+  }
+  function renderProgressionPanel(etat,annonce){
+    const o=etat.offrande;
+    const recue=i=>i<o.prochaine;
+    const cases=o.cases.map((texte,i)=>{
+      const courante=i===o.prochaine;
+      const classe=recue(i)?'recue':(courante?(o.dispo?'prete':'demain'):'');
+      const bas=recue(i)?'✓':(courante?(o.dispo?'<button type="button" class="offrande-prendre">RÉCUPÉRER</button>':'DEMAIN'):'');
+      return `<li class="offrande-case ${classe}${i===6?' grande':''}"><small>JOUR ${i+1}</small><b>${safeText(cellLabel(texte))}</b><span>${bas}</span></li>`;
+    }).join('');
+    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
+    modalTitle.textContent='PROGRESSION';
+    modalBody.innerHTML=`<div class="progression-panel">
+      <div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b><div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${o.vent?` · Vent porteur actif (${o.vent} partie${o.vent>1?'s':''})`:''}</small></div></div>
+      ${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}
+      <section><h3>OFFRANDE DU JOUR</h3><ol class="offrande-cases">${cases}</ol></section>
+      <section><h3>QUÊTES DU JOUR</h3><ul class="quetes">${etat.quetes.jour.map((q,i)=>questHtml(q,i,false,etat.quetes.changementDispo)).join('')||'<li class="quete vide">Nouvelles quêtes demain.</li>'}</ul></section>
+      ${etat.quetes.semaine?`<section><h3>QUÊTE DE LA SEMAINE</h3><ul class="quetes">${questHtml(etat.quetes.semaine,0,true,false)}</ul></section>`:''}
+    </div>`;
+    modalBody.querySelector('.offrande-prendre')?.addEventListener('click',()=>{
+      const r=progressionApi()?.reclamerOffrande?.();
+      const nouvel=progressionApi()?.etat?.();
+      if(nouvel) renderProgressionPanel(nouvel,r?`Offrande reçue : ${r.texte}${r.niveauxGagnes>0?` · Niveau ${r.apres.niveau} atteint !`:''}`:null);
+      renderProfileBadge();
+    });
+    modalBody.querySelectorAll('.quete-changer').forEach(btn=>btn.addEventListener('click',()=>{
+      if(progressionApi()?.changerQuete?.(Number(btn.dataset.index))){
+        const nouvel=progressionApi()?.etat?.();
+        if(nouvel) renderProgressionPanel(nouvel,'Quête remplacée.');
+      }
+    }));
+  }
+  function openProgression(){
+    const etat=progressionApi()?.etat?.();
+    if(!etat) return;
+    modal.dataset.vue='progression';
+    modal.querySelector('.menu-modal-card').classList.add('progression-card');
+    renderProgressionPanel(etat);
+    modal.classList.add('open');
   }
   (function waitProgression(tries){
-    let ready=false;
-    try{ ready=!!parent?.ILYOS_PROGRESSION; }catch(_){}
-    if(ready) renderProfileBadge();
+    if(progressionApi()) renderProfileBadge();
     else if(tries>0) setTimeout(()=>waitProgression(tries-1),250);
   })(40);
   window.addEventListener('storage',e=>{ if(!e.key||e.key==='ilyos-profil-v1') renderProfileBadge(); });
   document.addEventListener('visibilitychange',renderProfileBadge);
+  document.getElementById('profilBadge')?.addEventListener('click',openProgression);
+  document.getElementById('offrandePill')?.addEventListener('click',openProgression);
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
     if(!selections[mode]) selections[mode]={};
@@ -279,6 +329,7 @@
   }
 
   function openRules(){
+    resetModalView();
     modalTitle.textContent='RÈGLES D’ILYOS';
     modalBody.innerHTML=`<div class="rules-grid"><section><b>OBJECTIF</b><p>Validez 3 couronnes avant votre adversaire.</p></section><section><b>VOTRE TOUR</b><p>Posez une île, puis utilisez vos actions de déplacement, poussée et magie.</p></section><section><b>COURONNES</b><p>Récupérez, transmettez et ramenez les couronnes jusqu’à votre zone de validation.</p></section><section><b>2 CONTRE 2</b><p>Les deux partenaires partagent le même score. La première équipe à 3 couronnes gagne.</p></section></div>`;
     modal.classList.add('open');
@@ -288,6 +339,7 @@
      Même structure que les règles, donc même mise en forme sans une ligne de
      CSS supplémentaire. */
   function openCredits(){
+    resetModalView();
     modalTitle.textContent='CRÉDITS';
     modalBody.innerHTML=`<div class="rules-grid">`
       +`<section><b>MODÈLES 3D</b><p>KayKit — Medieval Builder, Adventurers et Dungeon Remastered, par Kay Lousberg. Packs libres d’usage.</p></section>`
@@ -300,7 +352,8 @@
     modal.classList.add('open');
   }
 
-  function openComingSoon(label){modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
+  function resetModalView(){delete modal.dataset.vue;modal.querySelector('.menu-modal-card').classList.remove('progression-card')}
+  function openComingSoon(label){resetModalView();modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
   document.getElementById('back').addEventListener('click',()=>{flash();setTimeout(()=>{duel.classList.remove('active','enter');home.classList.add('active')},430)});

@@ -1537,6 +1537,7 @@
         if (ilyosSimulationActive) return;
         const stats = statistiquesDuJoueur(indexJoueur);
         if (stats) stats[cle] = (stats[cle] || 0) + 1;
+        progressionSuiviEnJeu(indexJoueur, cle);
       }
 
       /* Îles réellement posées pendant la partie : celles de la mise en place

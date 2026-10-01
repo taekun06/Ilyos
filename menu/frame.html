@@ -11,7 +11,8 @@
     .resume-pill[hidden]{display:none}
     /* Niveau du joueur (js/game/progression.js), en miroir des icônes de droite :
        un anneau doré qui se remplit autour du numéro, puis le libellé. */
-    .profil-badge{position:absolute;left:1.55%;top:2.1%;display:flex;align-items:center;gap:.7cqw;padding:.35cqw 1.1cqw .35cqw .35cqw;border-radius:999px;border:2px solid rgba(225,176,71,.94);background:linear-gradient(180deg,rgba(14,30,46,.86),rgba(5,13,21,.82));box-shadow:0 8px 22px rgba(0,0,0,.3),inset 0 0 0 1px rgba(255,230,166,.13),0 0 18px rgba(255,206,99,.12);color:var(--gold2);line-height:1}
+    .profil-zone{position:absolute;left:1.55%;top:2.1%;display:flex;flex-direction:column;align-items:flex-start;gap:.8cqh}
+    .profil-badge{position:relative;cursor:pointer;font:inherit;display:flex;align-items:center;gap:.7cqw;padding:.35cqw 1.1cqw .35cqw .35cqw;border-radius:999px;border:2px solid rgba(225,176,71,.94);background:linear-gradient(180deg,rgba(14,30,46,.86),rgba(5,13,21,.82));box-shadow:0 8px 22px rgba(0,0,0,.3),inset 0 0 0 1px rgba(255,230,166,.13),0 0 18px rgba(255,206,99,.12);color:var(--gold2);line-height:1}
     .profil-badge[hidden]{display:none}
     .profil-anneau{--p:0%;position:relative;width:3.9cqw;height:3.9cqw;border-radius:50%;background:conic-gradient(#f4d28e var(--p),rgba(255,230,166,.14) 0);display:grid;place-items:center;box-shadow:0 0 12px rgba(244,210,142,.35)}
     .profil-anneau::before{content:"";position:absolute;inset:.32cqw;border-radius:50%;background:radial-gradient(circle at 50% 30%,#2a4d66,#0b1a28)}
@@ -24,6 +25,7 @@
   <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-16">
   <link rel="stylesheet" href="./menu-typography-g2c.css?v=g2c-1">
   <link rel="stylesheet" href="./menu-portrait.css?v=3">
+  <link rel="stylesheet" href="./progression-menu.css?v=1">
 </head>
 <body>
 <div class="app">
@@ -31,7 +33,7 @@
     <div class="art"></div><div class="shade"></div><div class="fog"></div><div class="halo"></div><canvas id="particles"></canvas>
     <div class="ui home-layout">
       <img class="logo-home" src="./assets/ilyos-logo.svg" alt="ILYOS">
-      <div class="profil-badge" id="profilBadge" hidden><span class="profil-anneau"><b class="profil-num">1</b></span><span class="profil-texte"><span class="profil-mot">NIVEAU</span><span class="profil-xp">0 / 200 XP</span></span></div>
+      <div class="profil-zone"><button type="button" class="profil-badge" id="profilBadge" hidden aria-label="Progression : niveau, quêtes et offrande"><span class="profil-anneau"><b class="profil-num">1</b></span><span class="profil-texte"><span class="profil-mot">NIVEAU</span><span class="profil-xp">0 / 200 XP</span></span><i class="profil-alerte" hidden></i></button><button type="button" class="offrande-pill" id="offrandePill" hidden>🎁 OFFRANDE DU JOUR</button></div>
       <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button><button class="round" id="fullscreenBtnHome" data-action="fullscreen" aria-label="Plein écran">⛶</button></div>
       <div class="mode-grid">
         <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez le CPU</div></button>
@@ -64,7 +66,7 @@
   <div class="veil" id="veil"></div>
 </div>
 <script src="./menu-config.js?v=menu-duel-17"></script>
-<script src="./frame.js?v=menu-duel-19"></script>
+<script src="./frame.js?v=menu-duel-20"></script>
 <script src="../js/gamepad-navigation.js?v=20260911-manette-feel"></script>
 <script src="./gamepad.js?v=menu-duel-16"></script>
 </body>

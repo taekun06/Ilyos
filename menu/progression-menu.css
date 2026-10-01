@@ -1,0 +1,64 @@
+/* ILYOS — PANNEAU PROGRESSION DU MENU (menu/frame.js)
+   Niveau, offrande du jour (calendrier de 7 cases) et quêtes, dans la fenêtre
+   modale existante du menu. Mêmes ors et même nuit que le reste du menu. */
+
+.profil-badge{color:var(--gold2)}
+.profil-badge:hover{filter:brightness(1.12);transform:translateY(-1px)}
+.profil-alerte{position:absolute;right:-3px;top:-3px;width:12px;height:12px;border-radius:50%;background:#ff6a4d;border:2px solid #0b1a28;box-shadow:0 0 10px rgba(255,106,77,.8);animation:pp-pulse 1.6s ease-in-out infinite}
+.profil-alerte[hidden]{display:none}
+.offrande-pill{padding:.55cqh .9cqw;border-radius:999px;border:2px solid rgba(255,214,120,.95);background:linear-gradient(180deg,#7a4b12,#3b2207);color:#ffe3a2;font:700 .72cqw/1 'Cinzel Decorative',Georgia,serif;letter-spacing:.06em;cursor:pointer;box-shadow:0 0 0 0 rgba(255,214,120,.6),0 8px 18px rgba(0,0,0,.35);animation:pp-appel 2.2s ease-out infinite}
+.offrande-pill[hidden]{display:none}
+@keyframes pp-pulse{50%{transform:scale(1.25)}}
+@keyframes pp-appel{0%{box-shadow:0 0 0 0 rgba(255,214,120,.6),0 8px 18px rgba(0,0,0,.35)}70%{box-shadow:0 0 0 12px rgba(255,214,120,0),0 8px 18px rgba(0,0,0,.35)}100%{box-shadow:0 0 0 0 rgba(255,214,120,0),0 8px 18px rgba(0,0,0,.35)}}
+
+.menu-modal-card.progression-card{width:min(760px,64vw);max-height:90vh;overflow:auto}
+.progression-panel{display:grid;gap:18px;font-family:'Nunito Sans',Inter,sans-serif}
+.progression-panel h3{margin:0 0 10px;font:700 13px/1 'Cinzel Decorative',Georgia,serif;letter-spacing:.14em;color:#efc979}
+
+.pp-niveau{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid rgba(221,169,64,.45);border-radius:16px;background:radial-gradient(120% 160% at 0% 50%,rgba(244,210,142,.16),transparent 60%),rgba(255,255,255,.02)}
+.pp-anneau{width:64px!important;height:64px!important;flex:none}
+.pp-anneau::before{inset:5px!important}
+.pp-anneau b{font-size:26px!important}
+.pp-niveau-texte{flex:1;min-width:0}
+.pp-niveau-texte>b{font:900 18px/1 'Cinzel Decorative',Georgia,serif;color:#f4d28e;letter-spacing:.06em}
+.pp-barre{height:12px;margin:8px 0 6px;border-radius:999px;background:linear-gradient(180deg,#0c1c2a,#16304a);box-shadow:inset 0 2px 4px rgba(0,0,0,.5),0 0 0 1px rgba(221,169,64,.5);overflow:hidden}
+.pp-barre i{display:block;height:100%;border-radius:inherit;background:linear-gradient(180deg,#f4d28e,#c9a45d 60%,#a37a2c);box-shadow:0 0 12px rgba(244,210,142,.7)}
+.pp-niveau-texte small{color:#cdbf9f;font-size:12.5px}
+.pp-annonce{padding:10px 14px;border-radius:12px;border:1px solid rgba(255,214,120,.7);background:linear-gradient(90deg,rgba(255,214,120,.22),rgba(255,214,120,.04));color:#ffe3a2;font-weight:800;text-align:center;animation:pp-arrivee .5s ease-out}
+@keyframes pp-arrivee{from{transform:scale(.94);opacity:0}}
+
+.offrande-cases{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;list-style:none;margin:0;padding:0}
+.offrande-case{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:6px;min-height:92px;padding:10px 6px;border:1px solid rgba(221,169,64,.35);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.18));text-align:center}
+.offrande-case small{font-size:10px;font-weight:800;letter-spacing:.1em;color:#a99a7c}
+.offrande-case b{font-size:13px;line-height:1.15;color:#f5e5c4}
+.offrande-case span{font-size:11px;font-weight:800;color:#a99a7c}
+.offrande-case.grande{border-color:rgba(255,214,120,.75);background:radial-gradient(circle at 50% 30%,rgba(255,214,120,.22),rgba(0,0,0,.18))}
+.offrande-case.recue{opacity:.55}
+.offrande-case.recue span{color:#9be07a;font-size:16px}
+.offrande-case.prete{border:2px solid #ffd678;background:radial-gradient(circle at 50% 30%,rgba(255,214,120,.35),rgba(60,34,7,.6));box-shadow:0 0 22px rgba(255,214,120,.35);transform:translateY(-3px)}
+.offrande-case.demain span{color:#efc979}
+.offrande-prendre{padding:6px 8px;border-radius:999px;border:0;background:linear-gradient(180deg,#ffe3a2,#d8aa4c);color:#2b1a05;font:900 10px/1 'Nunito Sans',sans-serif;letter-spacing:.06em;cursor:pointer;animation:pp-pulse 1.6s ease-in-out infinite}
+
+.quetes{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.quete{padding:10px 12px;border:1px solid rgba(221,169,64,.3);border-radius:12px;background:rgba(255,255,255,.03)}
+.quete.vide{color:#a99a7c;text-align:center}
+.quete-haut{display:flex;align-items:center;gap:10px}
+.quete-texte{flex:1;min-width:0;font-weight:700;color:#f5e5c4}
+.quete-xp{font-weight:900;color:#efc979;white-space:nowrap}
+.quete-changer{width:28px;height:28px;flex:none;border-radius:50%;border:1px solid rgba(221,169,64,.6);background:#07131f;color:#e8c779;font-size:15px;cursor:pointer}
+.quete-changer:hover{filter:brightness(1.25)}
+.quete-barre{height:7px;margin:8px 0 4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.quete-barre i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#c9a45d,#f4d28e)}
+.quete small{color:#a99a7c;font-size:11.5px}
+.quete.finie{border-color:rgba(155,224,122,.6);background:linear-gradient(90deg,rgba(155,224,122,.14),rgba(255,255,255,.02))}
+.quete.finie .quete-xp,.quete.finie small{color:#9be07a}
+.quete.finie .quete-barre i{background:linear-gradient(90deg,#6dbf4f,#9be07a)}
+.quete.semaine{border-color:rgba(207,150,255,.45)}
+
+@media (orientation:portrait) and (max-width:820px){
+  .menu-modal-card.progression-card{width:94vw;padding:22px 14px 18px}
+  .offrande-cases{grid-template-columns:repeat(4,1fr)}
+  .offrande-case{min-height:80px}
+  .offrande-pill{font-size:11px}
+}
+@media (prefers-reduced-motion:reduce){.profil-alerte,.offrande-pill,.offrande-prendre{animation:none}}

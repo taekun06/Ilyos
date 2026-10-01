@@ -34,9 +34,16 @@
     top: max(10px, env(safe-area-inset-top)) !important;
     gap: 8px !important;
   }
-  .profil-badge {
+  .profil-zone {
     left: 12px !important;
     top: max(10px, env(safe-area-inset-top)) !important;
+    gap: 6px !important;
+  }
+  .offrande-pill {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+  }
+  .profil-badge {
     gap: 8px !important;
     padding: 4px 12px 4px 4px !important;
   }
