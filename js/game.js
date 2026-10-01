@@ -24815,6 +24815,13 @@
         volCouronne: 1,
         // Faisceau trié avec le meilleur ramassage/vol gratuit immédiat de chaque nœud.
         fermetureGratuite: 1,
+        /* Même tri avec la meilleure ÉJECTION d'un gardien adverse jouable
+           aussitôt (carte POUSSER). Partie du 30/09, tour 10 : « aller en
+           (1,1) » était élagué avant « pousser le porteur dans le vide »
+           (−4 941 joué, +530 trouvé avec un faisceau de 80). */
+        fermeturePoussee: 1,
+        // Postes de poussée longue (bloc éjecté plus loin) parmi les intentions.
+        pousseeLongueCandidate: 1,
         /* Faisceau trié aussi sur le potentiel (sans menaces de fin de tour),
            plannerNotePotentiel. Mesuré sur la position jaune du 29/09 : 1 016
            après réplique au lieu de 4 222 — le faisceau se remplit de passages
@@ -26535,12 +26542,25 @@
            que par hasard, en poursuivant un autre but. */
         if (adverse) {
           const postes = [];
+          /* Poussée LONGUE : le vide peut être plusieurs cases plus loin, au
+             bout d'un bloc de gardiens. Partie du 30/09, tour 5 : deux
+             gardiens alignés éjectés d'une poussée de force 4 depuis (5,2) —
+             case jamais proposée, ni à l'IA ni à sa lecture de la riposte. */
+          const forceMax = PLAN_POIDS.pousseeLongueCandidate
+            ? Math.min(5, availableActionCount("PUSH", moi)) : 1;
           for (const ennemi of plannerGardiensDe(adverse.id)) {
             for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
               // Se placer du côté opposé au vide : c'est de là qu'on pousse.
-              if (isLand(ennemi.r + dr, ennemi.c + dc)) continue;
               const poste = [ennemi.r - dr, ennemi.c - dc];
-              if (isLand(poste[0], poste[1])) postes.push(poste);
+              if (!isLand(poste[0], poste[1])) continue;
+              if (!isLand(ennemi.r + dr, ennemi.c + dc)) { postes.push(poste); continue; }
+              for (let force = 2; force <= forceMax; force++) {
+                const plan = resoudrePousseeBloc(ennemi.r, ennemi.c, dr, dc, force);
+                if (plan && plan.mouvements.some(mv => mv.chute && mv.id === ennemi.id)) {
+                  postes.push(poste);
+                  break;
+                }
+              }
             }
           }
           ajouter("poussee", postes);
@@ -26659,7 +26679,8 @@
               // Une poussée qui retire réellement un gardien vaut mieux qu'un
               // simple décalage : c'est le résultat qui le dit, pas la position.
               if (plan.chutes) indice += 90;
-              options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice });
+              options.push({ type: "PUSH", pusherId: pousseur.id, r, c, force, indice,
+                ejection: !!(cible && plan.chutes) });
             }
           }
         }
@@ -27938,6 +27959,15 @@
                     const essai = structuredClone(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
+                    if (n > noteTri) noteTri = n;
+                  }
+                }
+                if (PLAN_POIDS.fermeturePoussee) {
+                  for (const t of plannerCandidatsPush(playerId)) {
+                    if (!t.ejection) continue;
+                    const essai = structuredClone(state);
+                    const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
+                      : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
                   }
                 }
