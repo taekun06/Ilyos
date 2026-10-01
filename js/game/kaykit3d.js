@@ -6503,6 +6503,21 @@
         resizeKayKit3D(refitCamera);
       }
 
+      /* CHAMP DE VISION SELON LE FORMAT.
+         Les 33° verticaux sont calibrés pour un écran en largeur. Sur un
+         téléphone tenu en portrait, le même champ vertical ne laisse que
+         ~20° en horizontal : le plateau déborde des deux côtés, et le recul
+         qu'il faudrait pour le faire tenir dépasse maxZoom. On garantit donc
+         un champ horizontal minimal (~36°) en ouvrant le champ vertical.
+         En paysage (format ≥ ~1,1), la valeur reste exactement 33°. */
+      const KAYKIT_FOV_VERTICAL = 33;
+      const KAYKIT_TAN_DEMI_CHAMP_HORIZONTAL_MIN = Math.tan(THREE.MathUtils.degToRad(18));
+      function kaykitFovPourFormat(aspect) {
+        const format = Math.max(.25, aspect || 1);
+        const pourLargeur = THREE.MathUtils.radToDeg(2 * Math.atan(KAYKIT_TAN_DEMI_CHAMP_HORIZONTAL_MIN / format));
+        return Math.max(KAYKIT_FOV_VERTICAL, pourLargeur);
+      }
+
       function resizeKayKit3D(forceFit = false) {
         if (!kaykit3D || !isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
@@ -6522,6 +6537,7 @@
           const aspectChanged = Math.abs(nextAspect - kaykit3D.lastAspect) > .035;
           kaykit3D.lastAspect = nextAspect;
           kaykit3D.camera.aspect = nextAspect;
+          kaykit3D.camera.fov = kaykitFovPourFormat(nextAspect);
           kaykit3D.camera.updateProjectionMatrix();
           if (forceFit || (kaykit3D.autoFit && aspectChanged)) {
             kaykit3D.zoomDistance = kaykitFitDistance(nextAspect, kaykit3D.viewMode);

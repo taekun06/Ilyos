@@ -6876,6 +6876,21 @@
         resizeKayKit3D(refitCamera);
       }
 
+      /* CHAMP DE VISION SELON LE FORMAT.
+         Les 33° verticaux sont calibrés pour un écran en largeur. Sur un
+         téléphone tenu en portrait, le même champ vertical ne laisse que
+         ~20° en horizontal : le plateau déborde des deux côtés, et le recul
+         qu'il faudrait pour le faire tenir dépasse maxZoom. On garantit donc
+         un champ horizontal minimal (~36°) en ouvrant le champ vertical.
+         En paysage (format ≥ ~1,1), la valeur reste exactement 33°. */
+      const KAYKIT_FOV_VERTICAL = 33;
+      const KAYKIT_TAN_DEMI_CHAMP_HORIZONTAL_MIN = Math.tan(THREE.MathUtils.degToRad(18));
+      function kaykitFovPourFormat(aspect) {
+        const format = Math.max(.25, aspect || 1);
+        const pourLargeur = THREE.MathUtils.radToDeg(2 * Math.atan(KAYKIT_TAN_DEMI_CHAMP_HORIZONTAL_MIN / format));
+        return Math.max(KAYKIT_FOV_VERTICAL, pourLargeur);
+      }
+
       function resizeKayKit3D(forceFit = false) {
         if (!kaykit3D || !isKayKitBoardActive()) return;
         requestAnimationFrame(() => {
@@ -6895,6 +6910,7 @@
           const aspectChanged = Math.abs(nextAspect - kaykit3D.lastAspect) > .035;
           kaykit3D.lastAspect = nextAspect;
           kaykit3D.camera.aspect = nextAspect;
+          kaykit3D.camera.fov = kaykitFovPourFormat(nextAspect);
           kaykit3D.camera.updateProjectionMatrix();
           if (forceFit || (kaykit3D.autoFit && aspectChanged)) {
             kaykit3D.zoomDistance = kaykitFitDistance(nextAspect, kaykit3D.viewMode);
@@ -19458,6 +19474,14 @@
         }
       }
 
+      /* Consigne de pose : Q/E n'existe pas sur un écran tactile, où l'on
+         tourne l'île avec les boutons ↺/↻ du panneau et où un toucher montre
+         l'aperçu avant « Confirmer ». */
+      function consignePoseIle() {
+        const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
+      }
+
       function turnContextInfo() {
         const amount = state.selectedActionType ? selectedBatchSize() : 1;
         const action = state.selectedActionType ? ACTIONS[state.selectedActionType] : null;
@@ -19481,7 +19505,7 @@
               kicker: "MISE EN PLACE",
               title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
               next: state.phase === "PLACE_ISLAND"
-                ? `Rotation ${degrees}° — Q/E pour tourner, clic pour poser.`
+                ? `Rotation ${degrees}° — ${consignePoseIle()}`
                 : "Choisissez une forme d’île."
             };
           }
@@ -19503,7 +19527,7 @@
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
-          return { kind: "build", kicker: "ÎLE À POSER", title: `Rotation : ${degrees}°`, next: "Q/E pour tourner, clic pour poser." };
+          return { kind: "build", kicker: "ÎLE À POSER", title: `Rotation : ${degrees}°`, next: consignePoseIle() };
         }
         if (state.phase === "PLACE_SPAWN") {
           return { kind: "build", kicker: "INVOCATION", title: "Choisir une case", next: "Cliquez une case en surbrillance." };
@@ -46630,6 +46654,19 @@
            (lisibilité du tour pour un spectateur humain). Les réduire pendant
            le banc d'essai ne change aucune décision, seulement la durée. */
         vitesse: (facteur = 1) => { benchSpeedFactor = Math.max(0, Number(facteur) || 0); return benchSpeedFactor; }
+      };
+
+      /* Pour la couche d'animation de la pioche (js/card-cycle-animation-v10.js),
+         qui vit hors de cette fermeture : le numéro du tour du joueur actif et
+         le son d'une carte. `state.turn` compte les tours de tous, dans
+         l'ordre : les n premiers sont le premier tour de chacun, quel que soit
+         celui qui commence (`state.round`, lui, compte déjà 2 au premier tour
+         du second joueur). */
+      window.ILYOS_PIOCHE = {
+        tourJoueur: () => (state && Number.isFinite(state.turn)
+          ? Math.floor((state.turn - 1) / Math.max(1, state.players?.length || 1)) + 1
+          : 0),
+        son: type => playSfx(type)
       };
 
       window.ILYOS_TEST = {

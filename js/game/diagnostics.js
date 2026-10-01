@@ -2138,6 +2138,19 @@
         vitesse: (facteur = 1) => { benchSpeedFactor = Math.max(0, Number(facteur) || 0); return benchSpeedFactor; }
       };
 
+      /* Pour la couche d'animation de la pioche (js/card-cycle-animation-v10.js),
+         qui vit hors de cette fermeture : le numéro du tour du joueur actif et
+         le son d'une carte. `state.turn` compte les tours de tous, dans
+         l'ordre : les n premiers sont le premier tour de chacun, quel que soit
+         celui qui commence (`state.round`, lui, compte déjà 2 au premier tour
+         du second joueur). */
+      window.ILYOS_PIOCHE = {
+        tourJoueur: () => (state && Number.isFinite(state.turn)
+          ? Math.floor((state.turn - 1) / Math.max(1, state.players?.length || 1)) + 1
+          : 0),
+        son: type => playSfx(type)
+      };
+
       window.ILYOS_TEST = {
         launchSpiral: launchIlyosSpiralDiagnostic,
         playSpiral: launchIlyosSpiralAutoplay,
