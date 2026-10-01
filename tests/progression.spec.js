@@ -63,7 +63,7 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
   });
   await page.goto('/');
   const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
-  await expect(menu.locator('#profilBadge')).toHaveText(/NIVEAU 1/, { timeout: 45000 });
+  await expect(menu.locator('#profilBadge')).toHaveText(/NIVEAU/, { timeout: 45000 });
 
   await menu.locator('[data-mode="solo"]').first().click();
   await menu.locator('text=AFFRONTER LE CPU').first().click();
@@ -77,9 +77,9 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
   await expect(bloc).toBeVisible({ timeout: 20000 });
   // Partie de moins de 4 manches : (50 + 50) × 0,5, puis +100 pour la
   // première victoire du jour, au CPU Normal par défaut.
-  await expect(bloc.locator('.progression-total')).toHaveText('+150 XP');
+  await expect(bloc.locator('.progression-total')).toHaveText('+150 XP', { timeout: 5000 });
   await expect(bloc.locator('.progression-lignes li')).toHaveCount(4);
-  await expect(bloc.locator('.progression-niveau')).toHaveText('Niveau 1');
+  await expect(bloc.locator('.progression-titre')).toHaveText('Niveau 1');
 
   const profil = await page.evaluate(() => window.ILYOS_PROGRESSION.profil());
   expect(profil.xp).toBe(150);

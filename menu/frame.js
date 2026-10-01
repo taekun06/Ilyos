@@ -78,8 +78,9 @@
     try{ profil=parent?.ILYOS_PROGRESSION?.profil?.()||null; }catch(_){ profil=null; }
     if(!profil){ badge.hidden=true; return; }
     const part=Math.round(100*profil.xpDansNiveau/Math.max(1,profil.xpPourSuivant));
-    badge.querySelector('.profil-niveau').textContent=`NIVEAU ${profil.niveau}`;
-    badge.querySelector('.profil-barre i').style.width=`${part}%`;
+    badge.querySelector('.profil-num').textContent=String(profil.niveau);
+    badge.querySelector('.profil-anneau').style.setProperty('--p',`${part}%`);
+    badge.querySelector('.profil-xp').textContent=`${profil.xpDansNiveau} / ${profil.xpPourSuivant} XP`;
     badge.title=`${profil.xpDansNiveau} / ${profil.xpPourSuivant} XP vers le niveau ${profil.niveau+1}`;
     badge.hidden=false;
   }

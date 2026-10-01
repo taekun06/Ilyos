@@ -37,15 +37,17 @@
   .profil-badge {
     left: 12px !important;
     top: max(10px, env(safe-area-inset-top)) !important;
-    min-width: 96px !important;
-    padding: 8px 12px 9px !important;
-    border-radius: 12px !important;
-    font-size: 12px !important;
+    gap: 8px !important;
+    padding: 4px 12px 4px 4px !important;
   }
-  .profil-badge .profil-barre {
-    height: 4px !important;
-    margin-top: 6px !important;
+  .profil-anneau {
+    width: 36px !important;
+    height: 36px !important;
   }
+  .profil-anneau::before { inset: 3px !important; }
+  .profil-anneau b { font-size: 15px !important; }
+  .profil-mot { font-size: 11px !important; }
+  .profil-xp { font-size: 10px !important; }
   .round {
     width: 40px !important;
     height: 40px !important;

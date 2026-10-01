@@ -234,8 +234,9 @@
         }
       }
 
-      /* Bloc de la fenêtre de fin, sous le bilan : niveau, barre qui se
-         remplit, détail du gain. */
+      /* Bloc de la fenêtre de fin, sous le bilan : emblème du niveau, gain
+         qui se compte, barre qui se remplit, détail en pastilles. Un niveau
+         franchi fait briller l'emblème. */
       function progressionRendreVictoire(gain) {
         const carte = els.victoryModal && els.victoryModal.querySelector(".victory-card");
         if (!carte) return;
@@ -243,31 +244,49 @@
         if (!gain) { if (bloc) bloc.remove(); return; }
         if (!bloc) {
           bloc = document.createElement("div");
-          bloc.className = "progression-gain";
           carte.insertBefore(bloc, carte.querySelector(".modal-actions") || null);
         }
         const { avant, apres, niveauxGagnes } = gain;
+        const monte = niveauxGagnes > 0;
+        bloc.className = `progression-gain${monte ? " progression-monte" : ""}`;
         const part = info => Math.round(100 * info.xpDansNiveau / info.xpPourSuivant);
         /* La barre part de l'état d'avant la partie ; si un niveau est
            franchi, elle repart de zéro dans le nouveau niveau. */
-        const depart = niveauxGagnes > 0 ? 0 : part(avant);
-        const lignes = gain.lignes.map(ligne =>
-          `<li><span>${ligne.libelle}</span><b>${ligne.xp >= 0 ? "+" : "−"}${Math.abs(ligne.xp)}</b></li>`).join("");
+        const depart = monte ? 0 : part(avant);
+        const pastilles = gain.lignes.map(ligne =>
+          `<li${ligne.xp < 0 ? ' class="progression-moins"' : ""}><span>${ligne.libelle}</span><b>${ligne.xp >= 0 ? "+" : "−"}${Math.abs(ligne.xp)}</b></li>`).join("");
         bloc.innerHTML = `
-          <div class="progression-tete">
-            <span class="progression-niveau">Niveau ${apres.niveau}</span>
-            <span class="progression-total">+${gain.total} XP</span>
+          <div class="progression-embleme" aria-hidden="true">
+            <span class="progression-rayons"></span>
+            <span class="progression-hexagone">
+              <small>NIV.</small><strong>${apres.niveau}</strong>
+            </span>
           </div>
-          <div class="progression-barre" role="progressbar" aria-valuemin="0"
-               aria-valuemax="${apres.xpPourSuivant}" aria-valuenow="${apres.xpDansNiveau}"
-               aria-label="Progression vers le niveau ${apres.niveau + 1}">
-            <i style="width:${depart}%"></i>
-          </div>
-          <small class="progression-reste">${apres.xpDansNiveau} / ${apres.xpPourSuivant} XP vers le niveau ${apres.niveau + 1}</small>
-          ${niveauxGagnes > 0 ? `<p class="progression-palier">Niveau ${apres.niveau} atteint !</p>` : ""}
-          <ul class="progression-lignes">${lignes}</ul>`;
+          <div class="progression-corps">
+            <div class="progression-tete">
+              <span class="progression-titre">${monte ? `Niveau ${apres.niveau} atteint&nbsp;!` : `Niveau ${apres.niveau}`}</span>
+              <span class="progression-total">+<b>0</b> XP</span>
+            </div>
+            <div class="progression-barre" role="progressbar" aria-valuemin="0"
+                 aria-valuemax="${apres.xpPourSuivant}" aria-valuenow="${apres.xpDansNiveau}"
+                 aria-label="Progression vers le niveau ${apres.niveau + 1}">
+              <i style="width:${depart}%"></i>
+            </div>
+            <small class="progression-reste">${apres.xpDansNiveau} / ${apres.xpPourSuivant} XP · niveau ${apres.niveau + 1} ensuite</small>
+            <ul class="progression-lignes">${pastilles}</ul>
+          </div>`;
         const barre = bloc.querySelector(".progression-barre i");
-        requestAnimationFrame(() => requestAnimationFrame(() => { barre.style.width = `${part(apres)}%`; }));
+        const compteur = bloc.querySelector(".progression-total b");
+        const duree = 1200, debut = performance.now();
+        const compter = maintenant => {
+          const t = Math.min(1, (maintenant - debut) / duree);
+          compteur.textContent = String(Math.round(gain.total * (1 - Math.pow(1 - t, 3))));
+          if (t < 1) requestAnimationFrame(compter);
+        };
+        requestAnimationFrame(() => requestAnimationFrame(maintenant => {
+          barre.style.width = `${part(apres)}%`;
+          compter(maintenant);
+        }));
       }
 
       window.ILYOS_PROGRESSION = {
