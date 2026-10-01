@@ -1932,6 +1932,14 @@
         const targetCrown = looseArtifactAt(r, c);
         const adjacent = Math.abs(actor.r - r) + Math.abs(actor.c - c) === 1;
 
+        /* Couronne au sol adjacente : le clic la RAMASSE (gratuit), comme un
+           clic direct sur la couronne. Elle n'était proposée qu'à la poussée,
+           et rien du tout sans carte POUSSER. Un porteur ne peut pas en
+           prendre une seconde : la poussée reste alors le geste offert. */
+        if (adjacent && targetCrown && !characterCarriesCrown(actor.id)) {
+          return { type: "PICKUP", path: [] };
+        }
+
         if (adjacent && (targetChar || targetCrown) && availableActionCount("PUSH") > 0) {
           return { type: "PUSH", path: [] };
         }
@@ -1951,7 +1959,7 @@
         return { type: null, path: [] };
       }
 
-      function handleSmartCharacterClick(r, c) {
+      function handleSmartCharacterClick(r, c, { badgeCouronne = false } = {}) {
         const actor = characterById(state.selectedCharId);
         if (!actor) {
           cancelSmartCharacterAction(false);
@@ -1966,6 +1974,29 @@
         const preview = previewSmartCharacterTarget(r, c);
         const clickedChar = characterAt(r, c);
         const clickedCrown = looseArtifactAt(r, c);
+        const adjacent = Math.abs(actor.r - r) + Math.abs(actor.c - c) === 1;
+
+        /* Ramasser une couronne au sol, ou reprendre celle d'un porteur
+           adverse en cliquant sa couronne : avec CE gardien, gratuitement. */
+        const volPossible = badgeCouronne && adjacent && clickedChar
+          && clickedChar.player !== state.currentPlayer && !!artifactCarriedBy(clickedChar.id)
+          && !characterCarriesCrown(actor.id);
+        if (preview.type === "PICKUP" || volPossible) {
+          clearSmartHover();
+          clearUnifiedPushOptions();
+          state.smartPushTargets = new Set();
+          beginCrownRecovery([actor], volPossible ? {
+            crownCell: [r, c],
+            stealTargetId: clickedChar.id,
+            artifactId: artifactCarriedBy(clickedChar.id)?.id || null,
+            singleMessage: `${currentPlayer().name} récupère la couronne adverse !`
+          } : {
+            crownCell: [r, c],
+            artifactId: clickedCrown?.id || null,
+            singleMessage: "Couronne récupérée."
+          });
+          return;
+        }
 
         if (preview.type === "PUSH") {
           const options = collectUnifiedPushOptions({
