@@ -355,11 +355,13 @@ test("dans une énigme, le clic droit annule le dernier coup et rend la carte", 
    privait le joueur des Règles, du Son et du réglage de Ciel pendant tout le
    mode où l'on passe le plus de temps sur la même position.
 
-   Le bouton à viser est `#ov2Gear`, celui du HUD organique. L'ancienne roue
-   `#hudV2GearBtn` reste dans le DOM — c'est elle qui porte la logique du
-   popover — mais js/hud-organique-v2.js la neutralise avec un style EN LIGNE
+   Le bouton à viser est `#ov2Gear`, le bouton MENU du HUD organique. L'ancienne
+   roue `#hudV2GearBtn` reste dans le DOM — c'est elle qui porte la logique
+   d'ouverture — mais js/hud-organique-v2.js la neutralise avec un style EN LIGNE
    (opacity 0, pointer-events none) et lui relaie le clic. Un test qui viserait
-   l'ancienne attendrait indéfiniment qu'elle devienne cliquable. */
+   l'ancienne attendrait indéfiniment qu'elle devienne cliquable.
+   Le menu lui-même est #hudV2GearPopover, restructuré par js/menu-jeu.js :
+   le son y est un onglet, plus un bouton qui ouvre une seconde fenêtre. */
 test("dans une énigme, la roue ouvre le menu", async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
@@ -371,7 +373,9 @@ test("dans une énigme, la roue ouvre le menu", async ({ page }) => {
   await page.locator('#ov2Gear').click();
   await expect(page.locator('#hudV2GearPopover')).not.toHaveClass(/hidden/);
   await expect(page.locator('#rulesBtn')).toBeVisible();
-  await expect(page.locator('#soundBtn')).toBeVisible();
+  await page.locator('[data-mj-onglet="audio"]').click();
+  await expect(page.locator('#masterVolumeSlider')).toBeVisible();
+  await page.locator('[data-mj-onglet="partie"]').click();
 
   /* Deux entrées restent interdites : « Nouvelle partie », qui n'a aucun sens
      ici, et la bascule 2D, qui casse six énigmes — le plateau tactique écarte

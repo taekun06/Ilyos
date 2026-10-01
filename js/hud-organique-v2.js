@@ -131,13 +131,18 @@
           <div class="ov2-ribbon"><div class="ov2-player-main"><span id="ov2LeftName" class="ov2-pname">JOUEUR 1</span><span id="ov2LeftScore" class="ov2-score"></span></div></div>
           <div id="ov2LeftActive" class="ov2-active ov2-off">À VOUS</div>
         </div>
-        <div class="ov2-turn"><strong id="ov2Turn">TOUR 1</strong><button id="ov2Gear" class="ov2-gem ov2-interactive" type="button" aria-label="Menu HUD"></button><span id="ov2Timer" class="ov2-timer ov2-off"></span></div>
+        <div class="ov2-turn"><strong id="ov2Turn">TOUR 1</strong><span id="ov2Timer" class="ov2-timer ov2-off"></span></div>
         <div class="ov2-side ov2-right">
           <div class="ov2-avatar">${mageSvg}</div>
           <div class="ov2-ribbon"><div class="ov2-player-main"><span id="ov2RightName" class="ov2-pname">IA</span><span id="ov2RightScore" class="ov2-score"></span></div></div>
           <div id="ov2RightActive" class="ov2-active ov2-off">À VOUS</div>
         </div>
       </div>
+
+      <!-- Bouton MENU : suspendu sous la plaque du tour, libellé en toutes lettres.
+           Le petit rubis de la plaque, seul et sans texte, n'était ni vu ni compris.
+           Le menu lui-même : js/menu-jeu.js. -->
+      <button id="ov2Gear" class="ov2-menu-btn ov2-interactive" type="button" aria-label="Ouvrir le menu" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>MENU</span><kbd>Échap</kbd></button>
 
       <aside id="ov2Guardian" class="ov2-guardian ov2-hidden-context" aria-live="polite">
         <div class="ov2-gh"><div class="ov2-gportrait">${knightSvg}</div><div><b>GARDIEN</b><small id="ov2GuardianOwner">Équipe active</small></div></div>
