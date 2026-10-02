@@ -26,6 +26,10 @@ const CONFIGS = {
   riposte6: { 'PLAN_RIPOSTE.decisionsMax': 6, 'PLAN_RIPOSTE.largeurFaisceau': 8,
     'PLAN_RIPOSTE.etatsMax': 800, 'PLAN_RIPOSTE.tempsMaxMs': 300 },
   faisceau48: { 'PLAN_BUDGET.largeurFaisceau': 48, 'PLAN_BUDGET.etatsMax': 12000 },
+  faisceau48_riposte6: { 'PLAN_BUDGET.largeurFaisceau': 48, 'PLAN_BUDGET.etatsMax': 12000,
+    'PLAN_RIPOSTE.decisionsMax': 6, 'PLAN_RIPOSTE.largeurFaisceau': 8,
+    'PLAN_RIPOSTE.etatsMax': 800, 'PLAN_RIPOSTE.tempsMaxMs': 300 },
+  faisceau64: { 'PLAN_BUDGET.largeurFaisceau': 64, 'PLAN_BUDGET.etatsMax': 16000 },
   tout: { 'PLAN_RIPOSTE.finalistes': 8, 'PLAN_RIPOSTE.decisionsMax': 6, 'PLAN_RIPOSTE.largeurFaisceau': 8,
     'PLAN_RIPOSTE.etatsMax': 800, 'PLAN_RIPOSTE.tempsMaxMs': 300,
     'PLAN_BUDGET.largeurFaisceau': 48, 'PLAN_BUDGET.etatsMax': 12000 }
@@ -75,6 +79,11 @@ function lireDecisions(chemin) {
 
   const resultats = Object.fromEntries(noms.map(n => [n, []]));
   for (const [i, d] of decisions.entries()) {
+    if (process.env.ILYOS_SANS_PERDUES) {
+      const depart = await page.evaluate(([j, g]) => window.ILYOS_SELFPLAY.analyser(j, { graine: 1, grille: g,
+        budget: { etatsMax: 50 } }), [d.etat, d.grille]).catch(() => null);
+      if (depart && depart.noteDepart && depart.noteDepart.note <= -500000) continue;
+    }
     const ligne = [];
     for (const nom of noms) {
       const r = await page.evaluate(([j, p, g]) => window.ILYOS_SELFPLAY.analyser(j, { graine: 1, grille: g, poids: p }),
