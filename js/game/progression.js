@@ -640,7 +640,77 @@
         profil.exploits.offrandes++;
         const changement = progressionAjouterXp(profil, offrande.xp || 0);
         progressionEnregistrer(profil);
+        if (offrande.xp) progressionJournalNoter({ type: "bonus", libelle: "Offrande", xp: offrande.xp });
         return { indice, texte: offrande.texte, ...changement, debloques: progressionNouveauxObjets(avant, profil) };
+      }
+
+      /* ---------- Journal des parties --------------------------------
+         Gardé sur l'appareil, à part du profil : il montre au joueur ses
+         dernières parties et son rythme, et sert à régler la cadence de la
+         progression (étape 5 du plan). Les 200 dernières entrées. */
+      const PROGRESSION_JOURNAL_KEY = "ilyos-journal-v1";
+      const PROGRESSION_JOURNAL_MAX = 200;
+
+      function progressionJournalCharger() {
+        try {
+          const liste = JSON.parse(localStorage.getItem(PROGRESSION_JOURNAL_KEY) || "[]");
+          return Array.isArray(liste) ? liste.filter(entree => entree && typeof entree === "object") : [];
+        } catch (_) { return []; }
+      }
+
+      function progressionJournalNoter(entree) {
+        try {
+          const liste = progressionJournalCharger();
+          liste.push({ t: Date.now(), jour: progressionJour(), ...entree });
+          localStorage.setItem(PROGRESSION_JOURNAL_KEY, JSON.stringify(liste.slice(-PROGRESSION_JOURNAL_MAX)));
+        } catch (_) { }
+      }
+
+      /* Ce que montre l'onglet Journal : les 14 derniers jours (XP et parties),
+         le bilan des 7 derniers, les dernières parties et, pendant une saison,
+         la date où la piste serait finie au rythme actuel. */
+      function progressionVueJournal(maintenant = new Date(), liste = progressionJournalCharger(), profil = progressionCharger()) {
+        const jourDe = decalage => progressionJour(new Date(maintenant.getTime() - decalage * 86400000));
+        const jours = [];
+        for (let i = 13; i >= 0; i--) jours.push({ jour: jourDe(i), xp: 0, parties: 0 });
+        const parJour = new Map(jours.map(j => [j.jour, j]));
+        liste.forEach(entree => {
+          const j = parJour.get(entree.jour);
+          if (!j) return;
+          j.xp += Number(entree.xp) || 0;
+          if (entree.type === "partie") j.parties++;
+        });
+        const semaine = new Set(jours.slice(-7).map(j => j.jour));
+        const recentes = liste.filter(e => e.type === "partie" && semaine.has(e.jour));
+        const durees = recentes.map(e => e.duree).filter(d => d > 0);
+        const xpSemaine = jours.slice(-7).reduce((somme, j) => somme + j.xp, 0);
+        const bilan = {
+          parties: recentes.length,
+          victoires: recentes.filter(e => e.resultat === "victoire").length,
+          xpParPartie: recentes.length ? Math.round(recentes.reduce((s, e) => s + (Number(e.xp) || 0), 0) / recentes.length) : 0,
+          dureeMoyenne: durees.length ? Math.round(durees.reduce((s, d) => s + d, 0) / durees.length) : null,
+          joursJoues: jours.slice(-7).filter(j => j.xp > 0).length,
+          xpParJour: Math.round(xpSemaine / 7)
+        };
+
+        let rythme = null;
+        const saison = progressionVueSaison(profil);
+        if (saison && saison.active && saison.palier < saison.paliers.length) {
+          const reste = (saison.paliers.length - saison.palier) * saison.xpParPalier - saison.xpDansPalier;
+          if (bilan.xpParJour > 0) {
+            const joursNecessaires = Math.ceil(reste / bilan.xpParJour);
+            const fin = new Date(maintenant.getTime() + joursNecessaires * 86400000);
+            const atteint = Math.min(saison.paliers.length, saison.palier
+              + Math.floor((saison.xpDansPalier + bilan.xpParJour * saison.joursRestants) / saison.xpParPalier));
+            rythme = { reste, joursNecessaires, date: progressionJour(fin),
+              aTemps: joursNecessaires <= saison.joursRestants, palierFinal: atteint, total: saison.paliers.length };
+          } else {
+            rythme = { reste, joursNecessaires: null, total: saison.paliers.length };
+          }
+        }
+
+        const dernieres = liste.filter(e => e.type === "partie").slice(-12).reverse();
+        return { jours, bilan, rythme, dernieres, total: liste.filter(e => e.type === "partie").length };
       }
 
       /* Moteur pur : le gain d'une partie, ligne par ligne, sans rien écrire.
@@ -780,6 +850,9 @@
           if (resultat === "victoire") { profil.victoires++; profil.derniereVictoireJour = jour; }
           if (resultat === "victoire" && difficulte === "expert") profil.exploits.expert++;
           progressionEnregistrer(profil);
+          progressionJournalNoter({ type: "partie", mode, difficulte, resultat, manches: state.round,
+            duree: state.debutPartie ? Math.round((Date.now() - state.debutPartie) / 1000) : null,
+            xp: gain.total, quetes: finies.length, niveau: changement.apres.niveau });
           gain = { ...gain, ...changement, quetes: progressionVueQuetes(profil),
             debloques: progressionNouveauxObjets(debloquesAvant, profil),
             saison: progressionVueSaison(profil),
@@ -797,6 +870,7 @@
         if (!(xp > 0)) { progressionEnregistrer(profil); return; }
         const changement = progressionAjouterXp(profil, xp);
         progressionEnregistrer(profil);
+        progressionJournalNoter({ type: "bonus", libelle, xp });
         try {
           const nouveaux = debloquesAvant ? progressionNouveauxObjets(debloquesAvant, profil, puzzlesEnPlus) : [];
           showToast((changement.niveauxGagnes > 0
@@ -1024,5 +1098,9 @@
         profilVide: progressionProfilVide,
         /* Pour les bancs : ajouter de l'XP à un profil donné, un jour donné. */
         ajouterXp: (profil, xp, jour) => progressionAjouterXp(profil, xp, jour),
+        journal: () => progressionVueJournal(),
+        /* Pour les bancs : la vue calculée sur une liste et une date données. */
+        vueJournal: (liste, date, profil) => progressionVueJournal(date ? new Date(date) : new Date(), liste, profil || progressionCharger()),
+        cleJournal: PROGRESSION_JOURNAL_KEY,
         cle: PROGRESSION_STORAGE_KEY
       };

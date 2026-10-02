@@ -14,7 +14,9 @@
       la saison.
    5. En ligne : l'apparence de chaque joueur voyage avec la connexion. Un
       faux PeerJS relie deux onglets par BroadcastChannel ; l'hôte et
-      l'invité voient la même couleur, le même gardien et le même titre. */
+      l'invité voient la même couleur, le même gardien et le même titre.
+   6. Le journal : bilan des 7 jours, graphe des 14 jours et rythme de saison
+      calculés sur une liste donnée. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -100,6 +102,7 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
     if (!sessionStorage.getItem('progression-test')) {
       sessionStorage.setItem('progression-test', '1');
       localStorage.removeItem('ilyos-profil-v1');
+      localStorage.removeItem('ilyos-journal-v1');
     }
   });
   await page.goto('/');
@@ -127,6 +130,13 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
   expect(profil.xp).toBeGreaterThanOrEqual(150);
   expect(profil.parties).toBe(1);
   expect(profil.victoires).toBe(1);
+
+  // La partie est notée au journal, avec son gain et son mode.
+  const journal = await page.evaluate(() => window.ILYOS_PROGRESSION.journal());
+  expect(journal.total).toBe(1);
+  expect(journal.dernieres[0]).toMatchObject({ type: 'partie', mode: 'solo', resultat: 'victoire', difficulte: 'normal' });
+  expect(journal.dernieres[0].xp).toBe(profil.xp);
+  expect(journal.bilan).toMatchObject({ parties: 1, victoires: 1, joursJoues: 1 });
 
   // Le badge du menu relit le profil enregistré.
   await page.reload();
@@ -295,4 +305,39 @@ test('en ligne : couleur, gardien et titre vus des deux côtés', async ({ brows
   }
   expect(erreurs).toEqual([]);
   await contexte.close();
+});
+
+test('journal : bilan de la semaine et rythme de saison', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.ILYOS_PROGRESSION, null, { timeout: 45000 });
+  const r = await page.evaluate(() => {
+    const P = window.ILYOS_PROGRESSION;
+    const partie = (jour, resultat, xp, duree) => ({ t: 0, jour, type: 'partie', mode: 'solo', resultat, xp, duree });
+    const liste = [
+      partie('2026-09-20', 'victoire', 999, 600), // hors des 14 jours
+      partie('2026-09-28', 'defaite', 60, 300), // dans les 14 jours, hors des 7
+      partie('2026-10-08', 'victoire', 200, 600),
+      partie('2026-10-08', 'defaite', 60, 900),
+      { t: 0, jour: '2026-10-09', type: 'bonus', libelle: 'Offrande', xp: 40 },
+      partie('2026-10-10', 'nul', 90, null)
+    ];
+    const profil = P.profilVide();
+    profil.saisons = { s1: { xp: 2000, paye: 4 } };
+    const v = P.vueJournal(liste, '2026-10-10T12:00:00', profil);
+    return { jours: v.jours.length, premier: v.jours[0].jour, dernier: v.jours[13], xp28: v.jours.find(j => j.jour === '2026-09-28').xp,
+      bilan: v.bilan, total: v.total, dernieres: v.dernieres.map(e => e.jour), rythme: v.rythme };
+  });
+  expect(r.jours).toBe(14);
+  expect(r.premier).toBe('2026-09-27');
+  expect(r.dernier).toEqual({ jour: '2026-10-10', xp: 90, parties: 1 });
+  expect(r.xp28).toBe(60);
+  // 7 jours : 3 parties, 1 victoire, 350 XP de partie + 40 d'offrande.
+  expect(r.bilan).toEqual({ parties: 3, victoires: 1, xpParPartie: 117, dureeMoyenne: 750, joursJoues: 3, xpParJour: 56 });
+  expect(r.total).toBe(5);
+  expect(r.dernieres).toEqual(['2026-10-10', '2026-10-08', '2026-10-08', '2026-09-28', '2026-09-20']);
+  // Saison 1 : palier 4 sur 30, 13 000 XP restants à 56 XP par jour : la
+  // piste ne serait pas finie à temps.
+  expect(r.rythme).toMatchObject({ reste: 13000, total: 30, aTemps: false });
+  expect(r.rythme.palierFinal).toBeGreaterThanOrEqual(4);
+  expect(r.rythme.palierFinal).toBeLessThan(30);
 });

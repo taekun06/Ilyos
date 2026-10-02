@@ -134,12 +134,72 @@
       <ol class="sp-piste">${cases}</ol>
       <p class="coll-note">Toute l’XP gagnée pendant la saison la fait avancer : un palier tous les ${v.xpParPalier} XP. Ce qui est gagné reste à vous.</p>`;
   }
+  /* Journal : les parties notées sur cet appareil (js/game/progression.js). */
+  const JOURNAL_MODES={solo:'Contre le CPU',duel:'Duel',team:'2 contre 2',online:'En ligne'};
+  const JOURNAL_NIVEAUX={easy:'Facile',normal:'Normal',hard:'Difficile',expert:'Expert'};
+  const JOURNAL_RESULTATS={victoire:'VICTOIRE',defaite:'DÉFAITE',nul:'NUL'};
+  const JOURNAL_MOIS=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  function journalDate(jour,aujourdhui,hier){
+    if(jour===aujourdhui) return 'Aujourd’hui';
+    if(jour===hier) return 'Hier';
+    const [,m,j]=String(jour).split('-').map(Number);
+    return m?`${j} ${JOURNAL_MOIS[m-1]}`:'';
+  }
+  function journalDuree(s){
+    if(!(s>0)) return '';
+    const min=Math.round(s/60);
+    return min<1?'< 1 min':(min<60?`${min} min`:`${Math.floor(min/60)} h ${String(min%60).padStart(2,'0')}`);
+  }
+  function journalHtml(v){
+    if(!v) return '';
+    const b=v.bilan;
+    const aujourdhui=v.jours[v.jours.length-1].jour, hier=v.jours[v.jours.length-2].jour;
+    const max=Math.max(1,...v.jours.map(j=>j.xp));
+    const lettres=['D','L','M','M','J','V','S'];
+    const barres=v.jours.map(j=>{
+      const [a,m,d]=j.jour.split('-').map(Number);
+      const lettre=lettres[new Date(Date.UTC(a,m-1,d)).getUTCDay()];
+      const h=j.xp?Math.max(5,Math.round(74*j.xp/max)):0;
+      return `<li class="jn-jour${j.jour===aujourdhui?' auj':''}${j.xp?'':' vide'}" title="${journalDate(j.jour,aujourdhui,hier)} : ${j.xp} XP, ${j.parties} partie${j.parties>1?'s':''}"><span class="jn-xp">${j.xp||''}</span><i style="height:${h}%"></i><small>${lettre}</small></li>`;
+    }).join('');
+    const taux=b.parties?Math.round(100*b.victoires/b.parties):0;
+    const tuiles=[
+      ['PARTIES',b.parties,`${b.joursJoues} jour${b.joursJoues>1?'s':''} sur 7`],
+      ['VICTOIRES',b.parties?`${taux} %`:'–',b.parties?`${b.victoires} sur ${b.parties}`:'aucune partie'],
+      ['XP PAR PARTIE',b.parties?b.xpParPartie:'–',`${b.xpParJour} XP par jour`],
+      ['DURÉE MOYENNE',b.dureeMoyenne?journalDuree(b.dureeMoyenne):'–','par partie']
+    ].map(([t,val,sous])=>`<li><small>${t}</small><b>${val}</b><span>${sous}</span></li>`).join('');
+    let rythme='';
+    const r=v.rythme;
+    if(r){
+      const texte=r.joursNecessaires===null
+        ?`Encore ${r.reste} XP jusqu’au palier ${r.total}. Jouez une partie pour voir votre rythme.`
+        :(r.aTemps
+          ?`À votre rythme, le palier ${r.total} tombe vers le <b>${journalDate(r.date,aujourdhui,hier)}</b>, avant la fin de la saison.`
+          :`À votre rythme, vous finirez la saison vers le <b>palier ${r.palierFinal}</b> sur ${r.total}.`);
+      rythme=`<div class="jn-rythme${r.aTemps?' a-temps':''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17c4-1 6-5 9-9 2 3 4 5 9 6"/><circle cx="12" cy="8" r="2.2"/></svg><p>${texte}</p></div>`;
+    }
+    const lignes=v.dernieres.map(e=>{
+      const sous=[e.difficulte?JOURNAL_NIVEAUX[e.difficulte]:'',e.manches?`${e.manches} manche${e.manches>1?'s':''}`:'',journalDuree(e.duree)].filter(Boolean).join(' · ');
+      return `<li class="jn-partie ${safeText(e.resultat)}"><em>${JOURNAL_RESULTATS[e.resultat]||''}</em><div><b>${safeText(JOURNAL_MODES[e.mode]||'Partie')}</b><small>${safeText(sous)}</small></div><span class="jn-quand">${journalDate(e.jour,aujourdhui,hier)}</span><strong>+${Number(e.xp)||0} XP</strong></li>`;
+    }).join('');
+    return `<section><h3>CES 7 DERNIERS JOURS</h3><ul class="jn-tuiles">${tuiles}</ul></section>
+      ${rythme}
+      <section><h3>XP GAGNÉE · 14 JOURS</h3><ol class="jn-graphe">${barres}</ol></section>
+      <section><h3>DERNIÈRES PARTIES${v.total>v.dernieres.length?` <small class="jn-total">${v.total} au total</small>`:''}</h3>${lignes?`<ul class="jn-parties">${lignes}</ul>`:'<p class="coll-note">Aucune partie notée pour l’instant. Vos parties terminées apparaîtront ici.</p>'}</section>
+      <p class="coll-note">Le journal reste sur cet appareil.</p>`;
+  }
   function renderProgressionPanel(etat,annonce){
-    const onglet=['collection','saison'].includes(modal.dataset.onglet)?modal.dataset.onglet:'progression';
+    const onglet=['collection','saison','journal'].includes(modal.dataset.onglet)?modal.dataset.onglet:'progression';
     const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
     modalTitle.textContent='PROGRESSION';
     const tete=`<div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b>${etat.titre?`<span class="pp-titre">${safeText(etat.titre)}</span>`:''}<div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${etat.offrande.vent?` · Vent porteur actif (${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''})`:''}</small></div></div>`;
-    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button>${etat.saison?`<button type="button" role="tab" data-onglet="saison" aria-selected="${onglet==='saison'}">SAISON</button>`:''}<button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button></div>`;
+    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button>${etat.saison?`<button type="button" role="tab" data-onglet="saison" aria-selected="${onglet==='saison'}">SAISON</button>`:''}<button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button><button type="button" role="tab" data-onglet="journal" aria-selected="${onglet==='journal'}">JOURNAL</button></div>`;
+    if(onglet==='journal'){
+      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${journalHtml(progressionApi()?.journal?.())}</div>`;
+      bindProgressionTabs();
+      return;
+    }
     if(onglet==='saison'){
       modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${saisonHtml(etat.saison)}</div>`;
       bindProgressionTabs();

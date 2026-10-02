@@ -3119,6 +3119,7 @@
           players,
           soloMode: false,
           onlineMode: true,
+          debutPartie: Date.now(),
           visualMode: pendingVisualMode,
           startingBoardMode: pendingOnlineStartingBoard,
           startingBoardPreset: null,
@@ -3358,6 +3359,8 @@
           players,
           soloMode,
           onlineMode: false,
+          // Heure de début, pour la durée notée au journal (progression.js).
+          debutPartie: Date.now(),
           visualMode: pendingVisualMode,
           startingBoardMode,
           startingBoardPreset,
