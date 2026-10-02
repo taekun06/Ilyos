@@ -117,7 +117,9 @@ test('le prologue de La Première Lueur s’affiche en sous-titres, sans voix, e
   });
 
   await expect(page.locator('#puzzleLayer')).toHaveClass(/reveil/);
-  await expect(page.locator('#puzzleLayer .pz-caption')).toHaveText("Ton village s'est éteint.");
+  /* L'ouverture des voies (puzzleOuvertureVoies) passe AVANT le prologue :
+     sa cinématique dure plus que les 15 s d'attente par défaut sans GPU. */
+  await expect(page.locator('#puzzleLayer .pz-caption')).toHaveText("Ton village s'est éteint.", { timeout: 45000 });
   // La voix de synthèse est coupée (demande du 02/10) : aucun énoncé.
   expect(await page.evaluate(() => window.__ilyosVoixTest)).toEqual([]);
 

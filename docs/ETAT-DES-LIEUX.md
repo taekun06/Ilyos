@@ -12,13 +12,15 @@ Légende : 🔴 bloque / casse · 🟠 défaut visible · 🟡 amélioration · 
 |---|---|---|---|---|
 | 1.1 | ✅ | CI `smoke` (tutoriel Découverte) rouge sur la PR #130 : délai dépassé, à une étape différente à chaque passage. | Trace CI conservée : le test cliquait la couronne 12 ms après l'arrivée du porteur, pendant le verrou d'animation (`inputLocked`) — clic ignoré sur un runner lent. | Test corrigé : attendre la fin du verrou, et la poussée engagée avant de viser. **Vert en CI** (4092b8f). |
 | 1.2 | ✅ | Workflow « Partie de bout en bout » **annulé à chaque push sur `main`** depuis au moins le 24/09 : il lançait `playwright test` sans fichier, donc toute la suite (~45 tests), qui ne tient pas en 25 min. | Jobs de `main` : « cancelled » à chaque fusion ; 8,7 min d'installation + 16 min de tests. | Corrigé ici : ne joue plus que `tests/partie-ia-contre-ia.spec.js`. Durée réelle de la partie à vérifier sur le prochain push. |
-| 1.3 | 🟠 | Manette : « dans une énigme, une poussée se vise et s'exécute » échoue. | Passe à 67c7e84 et après #125 seule (3ba9af0), échoue sur `main` : **régression de #128**. | Le stick n'atteint plus les destinations de poussée ; piste : le nouveau bouton MENU (haut d'écran) entre dans la navigation du stick (`js/game/gamepad.js`). |
-| 1.4 | 🟠 | Manette : « Y n'ouvre un choix que si plusieurs couronnes sont jouables » échoue. | Passe à 67c7e84 et après #125 seule, échoue sur `main` : **régression de #128**. | Depuis #128, Échap ouvre le menu quand aucune *phase* n'est engagée ; le choix de couronne de la manette (`pad.crownMode`) n'en fait pas partie, le menu s'ouvre par-dessus et bloque la suite. Aligner la liste sur `gesteEnCours()` de `gamepad.js`. |
+| 1.3 | 🟡 | Manette : « dans une énigme, une poussée se vise et s'exécute ». | Passe 3/3 sur `main` et sur la branche du 02/10 : instable, pas une régression. | Rendre l'attente robuste (attendre l'état, pas un délai). |
+| 1.4 | ✅ | Manette : « Y n'ouvre un choix que si plusieurs couronnes sont jouables ». | Échap ouvrait le menu par-dessus le choix de couronne de la manette. | Échap n'ouvre plus le menu (02/10) et quitte d'abord un geste de manette en cours ; 3/3. |
 | 1.5 | 🟠 | Manette : « l'annulation remonte jusqu'au début du tour » échoue (« un appui court ne doit pas défaire la pose »). | Échoue déjà à 67c7e84 : plus ancien que #125/#128. | Dater par bissection. |
 | 1.6 | 🟡 | Manette : « le tiroir d'îles… RT tourne l'île » a échoué une fois sur la branche #130. | Passe sur `main`, à 67c7e84, et 2 fois sur 2 sur la branche #130 : **test instable**, pas une régression. | Rendre l'attente de rotation robuste (attendre l'état, pas un délai). |
-| 1.7 | 🟠 | Énigmes : le sous-titre du prologue vocal (« Ton village s'est éteint. ») reste vide. | Échoue aussi sur `main` sans les PR récentes. | La séquence est sautée ou le prologue n'est plus porté par p01 : à lire dans `puzzle.js` (`puzzleApproche`). |
+| 1.7 | ✅ | Énigmes : le sous-titre du prologue (« Ton village s'est éteint. ») restait vide dans le test. | Le prologue suit la cinématique d'ouverture, plus longue que les 15 s d'attente du test. | Test : attente portée à 45 s. Voix de synthèse coupée (02/10), sous-titres seuls. |
 | 1.8 | 🟡 | L'Éveil dépasse son délai de 5 min (étape « limite » ≈ 71 s). | Échoue aussi sur `main`. | Durée du test, pas du tutoriel : à confirmer, puis ajuster l'attente de l'étape lente (sans masquer un vrai blocage). |
 | 1.9 | — | En local (bac à sable), « Découverte jusqu'à la validation » échoue sur deux ressources externes bloquées (certificat). | Environnement de développement, pas le jeu. | Rien à faire côté jeu. |
+
+Également instable des deux côtés (02/10) : « sous Magie, le pivot se choisit à la manette » (2/4 sur la branche, 1/3 sur `main`).
 
 ## 2. Bugs de jeu
 
@@ -26,7 +28,7 @@ Légende : 🔴 bloque / casse · 🟠 défaut visible · 🟡 amélioration · 
 |---|---|---|---|---|
 | 2.1 | ✅ | Mode Personnalisé : un gardien ne pouvait **jamais** se poser sur son propre village (humain comme IA) — `villageAt` renvoie le joueur, comparé à un identifiant. | `scripts/verif-draft-village.js` : échoue avant, passe après. | Corrigé (`core.js`, `draftGuardianCellAllowed`). |
 | 2.2 | ✅ | Gardien sélectionné puis clic sur la couronne voisine : rien (ou une poussée) au lieu du ramassage. | `tests/clic-couronne.spec.js`. | PR #130. |
-| 2.3 | 🟠 | Ouvrir le menu en partie ne met en pause ni le minuteur du tour ni l'IA. | Limite déclarée de #128. | Suspendre `startTurnTimer`/IA à l'ouverture du menu. |
+| 2.3 | ✅ | Ouvrir le menu en partie ne mettait en pause ni le minuteur ni l'IA. | Limite déclarée de #128. | Menu = pause hors partie en ligne (02/10) ; `tests/menu-pause.spec.js`. |
 | 2.4 | 🟡 | Jeu en portrait (#125) jamais essayé sur un vrai téléphone. | Déclaré dans #125. | Essai réel. |
 
 ## 3. 2 contre 2
