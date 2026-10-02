@@ -30,6 +30,7 @@ const CONFIGS = {
     'PLAN_RIPOSTE.decisionsMax': 6, 'PLAN_RIPOSTE.largeurFaisceau': 8,
     'PLAN_RIPOSTE.etatsMax': 800, 'PLAN_RIPOSTE.tempsMaxMs': 300 },
   faisceau64: { 'PLAN_BUDGET.largeurFaisceau': 64, 'PLAN_BUDGET.etatsMax': 16000 },
+  faisceau24: { 'PLAN_BUDGET.largeurFaisceau': 24, 'PLAN_BUDGET.etatsMax': 5000 },
   tout: { 'PLAN_RIPOSTE.finalistes': 8, 'PLAN_RIPOSTE.decisionsMax': 6, 'PLAN_RIPOSTE.largeurFaisceau': 8,
     'PLAN_RIPOSTE.etatsMax': 800, 'PLAN_RIPOSTE.tempsMaxMs': 300,
     'PLAN_BUDGET.largeurFaisceau': 48, 'PLAN_BUDGET.etatsMax': 12000 }
@@ -91,7 +92,13 @@ function lireDecisions(chemin) {
       const juge = await page.evaluate(([j, plan, g, p]) => window.ILYOS_SELFPLAY.robustesse(j, plan, { graine: 1, grille: g, poids: p }),
         [d.etat, r.detail, d.grille, JUGE]);
       const note = juge.erreur ? null : juge.noteRobuste;
-      resultats[nom].push({ note, ms: r.dureeMs });
+      /* Ce que l'IA croyait de son propre plan (sa riposte, plus courte que
+         celle du juge) : l'écart avec le juge mesure sa surestimation. */
+      const propre = r.anticipation && Number.isFinite(r.anticipation.noteRobuste) ? r.anticipation.noteRobuste : null;
+      resultats[nom].push({ note, ms: r.dureeMs, propre, finTour: Math.round(r.noteArrivee.note) });
+      if (process.env.ILYOS_SORTIE) fs.appendFileSync(process.env.ILYOS_SORTIE, JSON.stringify({
+        decision: d.source, config: nom, juge: note, propre, finTour: Math.round(r.noteArrivee.note),
+        ms: r.dureeMs, plan: r.detail.map(a => a.type).join(' ') }) + '\n');
       ligne.push(`${nom} ${note} (${r.dureeMs} ms)`);
     }
     console.log(`${String(i + 1).padStart(3)} ${d.source.padEnd(28)} ${ligne.join(' · ')}`);
