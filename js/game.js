@@ -16108,11 +16108,23 @@
         }, 1450);
       }
 
-      function sleep(ms) {
+      /* MENU = PAUSE. Tant que le menu de jeu est ouvert (js/menu-jeu.js pose
+         `mj-menu-ouvert`), la partie attend : le minuteur du tour est gelé et
+         l'IA ne fait pas son geste suivant. Jamais en ligne : l'autre joueur,
+         lui, n'a pas ouvert de menu. */
+      function jeuEnPause() {
+        return !!state && !state.onlineMode && state.winner === null
+          && document.body.classList.contains("mj-menu-ouvert");
+      }
+
+      async function sleep(ms) {
         // benchSpeedFactor vaut 1 en jeu normal : aucun changement de rythme
         // hors banc d'essai (voir sa déclaration dans bootstrap.js).
         const duree = benchSpeedFactor === 1 ? ms : Math.round(ms * benchSpeedFactor);
-        return new Promise(resolve => setTimeout(resolve, duree));
+        await new Promise(resolve => setTimeout(resolve, duree));
+        // Les tours d'IA et les animations avancent par sleep() : le menu ouvert
+        // les retient ici, au prochain pas, sans rien interrompre en plein geste.
+        while (jeuEnPause()) await new Promise(resolve => setTimeout(resolve, 150));
       }
 
       function showTurnRibbon(player) {
@@ -16238,6 +16250,11 @@
             return;
           }
 
+          if (jeuEnPause()) {
+            // Temps gelé : l'échéance recule d'autant que dure la pause.
+            state.turnDeadline = Date.now() + (state.turnTimeLeft ?? 0) * 1000;
+            return;
+          }
           state.turnTimeLeft = Math.max(0, (state.turnDeadline - Date.now()) / 1000);
           updateTurnTimerDisplay();
 
@@ -40142,45 +40159,40 @@
         }
       }
 
-      /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
-         l'ancienne Première Ascension. Il passe par puzzleSequence : un clic
+      /* L'APPROCHE. Le premier Sanctuaire reprend le prologue de l'ancienne
+         Première Ascension, en sous-titres. Il passe par puzzleSequence : un clic
          ou une touche rend donc immédiatement la main, sans nouveau système.
          Les autres approches gardent leur phrase courte et silencieuse. */
       function puzzleApproche(def) {
         if (!def.avant && !def.prologue) return;
         return puzzleSequence(async (dom, attendre) => {
           if (def.prologue) {
+            // Sous-titres seuls : la voix de synthèse est coupée (demande du 02/10).
             const dire = async (texte, duree) => {
               dom.caption.textContent = texte;
               dom.caption.classList.add("show");
-              try { tutoSpeak(texte); } catch (_) { }
               await attendre(duree);
               dom.caption.classList.remove("show");
-              try { tutoStopSpeak(); } catch (_) { }
             };
 
+            await attendre(450);
+            if (PUZZLE.sequenceSaute) return;
+            await dire("Ton village s'est éteint.", 2600);
+            if (PUZZLE.sequenceSaute) return;
+            await attendre(500);
+            if (PUZZLE.sequenceSaute) return;
             try {
-              await attendre(450);
-              if (PUZZLE.sequenceSaute) return;
-              await dire("Ton village s'est éteint.", 2600);
-              if (PUZZLE.sequenceSaute) return;
-              await attendre(500);
-              if (PUZZLE.sequenceSaute) return;
-              try {
-                if (typeof kaykitFollowCell === "function") {
-                  kaykitFollowCell(6, 6, {
-                    duration: 3600, force: true, cinematique: true, zoomBoost: -1.4
-                  });
-                }
-              } catch (_) { }
-              await attendre(1100);
-              if (PUZZLE.sequenceSaute) return;
-              await dire("Rien ne mène plus jusqu'à lui.", 3200);
-              if (PUZZLE.sequenceSaute) return;
-              await attendre(500);
-            } finally {
-              try { tutoStopSpeak(); } catch (_) { }
-            }
+              if (typeof kaykitFollowCell === "function") {
+                kaykitFollowCell(6, 6, {
+                  duration: 3600, force: true, cinematique: true, zoomBoost: -1.4
+                });
+              }
+            } catch (_) { }
+            await attendre(1100);
+            if (PUZZLE.sequenceSaute) return;
+            await dire("Rien ne mène plus jusqu'à lui.", 3200);
+            if (PUZZLE.sequenceSaute) return;
+            await attendre(500);
             return;
           }
 
@@ -43221,6 +43233,12 @@
          ou un gardien est pris, le meme stick navigue sur le plateau. La croix
          directionnelle double le stick et n'est jamais obligatoire.
       */
+      /* Échap (diagnostics.js) quitte d'abord un geste de MANETTE en cours —
+         choix de couronne, liste de choix — avant d'ouvrir le menu. Ces gestes
+         vivent dans `pad`, que le moteur ne voit pas : sans ce relais, Échap
+         ouvrait le menu par-dessus le choix et bloquait la suite. */
+      let manetteQuitterGeste = () => false;
+
       (function setupIlyosGamepad() {
         if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return;
 
@@ -43863,6 +43881,14 @@
           if (drawerOpen()) { closeHudV2Drawer(); return; }
           handleCancelButton();
         }
+
+        manetteQuitterGeste = () => {
+          if (!pad.crownMode && pad.choiceIndex < 0) return false;
+          clearChoice();
+          pad.crownMode = false;
+          setHud(null);
+          return true;
+        };
 
         /* ---- Surlignage ------------------------------------------------- */
 
@@ -46835,9 +46861,10 @@
           return;
         }
         // Menu de jeu (js/menu-jeu.js, bâti sur #hudV2GearPopover) : Échap le
-        // referme. Quand il n'y a aucune sélection à abandonner, Échap l'ouvre,
-        // comme dans la plupart des jeux ; l'annulation d'une action jouée
-        // reste sur le bouton ↶, elle n'est plus déclenchée par Échap.
+        // referme, mais ne l'OUVRE plus — le bouton MENU suffit, et un Échap qui
+        // ouvrait le menu par-dessus un geste en cours (choix de couronne à la
+        // manette) bloquait la partie. Sans sélection à abandonner, Échap ne
+        // fait rien : l'annulation d'une action jouée reste sur le bouton ↶.
         const menuJeu = document.getElementById("hudV2GearPopover");
         if (menuJeu && !menuJeu.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -46845,11 +46872,11 @@
         }
         const selectionEnCours = (state?.phase === "ACTION" && state?.selectedActionType)
           || ["PLACE_ISLAND", "DROP_TREASURE", "PICKUP_CROWN", "SMART_CHAR"].includes(state?.phase);
-        const boutonMenu = document.getElementById("ov2Gear");
-        if (!selectionEnCours || state?.inputLocked) {
-          if (boutonMenu && boutonMenu.getClientRects().length) boutonMenu.click();
+        if (!selectionEnCours) {
+          manetteQuitterGeste();
           return;
         }
+        if (state?.inputLocked) return;
         handleCancelButton();
       });
 

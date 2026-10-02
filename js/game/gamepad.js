@@ -29,6 +29,12 @@
          ou un gardien est pris, le meme stick navigue sur le plateau. La croix
          directionnelle double le stick et n'est jamais obligatoire.
       */
+      /* Échap (diagnostics.js) quitte d'abord un geste de MANETTE en cours —
+         choix de couronne, liste de choix — avant d'ouvrir le menu. Ces gestes
+         vivent dans `pad`, que le moteur ne voit pas : sans ce relais, Échap
+         ouvrait le menu par-dessus le choix et bloquait la suite. */
+      let manetteQuitterGeste = () => false;
+
       (function setupIlyosGamepad() {
         if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return;
 
@@ -671,6 +677,14 @@
           if (drawerOpen()) { closeHudV2Drawer(); return; }
           handleCancelButton();
         }
+
+        manetteQuitterGeste = () => {
+          if (!pad.crownMode && pad.choiceIndex < 0) return false;
+          clearChoice();
+          pad.crownMode = false;
+          setHud(null);
+          return true;
+        };
 
         /* ---- Surlignage ------------------------------------------------- */
 

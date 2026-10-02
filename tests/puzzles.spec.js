@@ -106,7 +106,7 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   expect(erreurs).toEqual([]);
 });
 
-test('le prologue vocal de La Première Lueur accompagne le puzzle et reste passable', async ({ page }) => {
+test('le prologue de La Première Lueur s’affiche en sous-titres, sans voix, et reste passable', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
   await page.evaluate(() => {
@@ -118,7 +118,8 @@ test('le prologue vocal de La Première Lueur accompagne le puzzle et reste pass
 
   await expect(page.locator('#puzzleLayer')).toHaveClass(/reveil/);
   await expect(page.locator('#puzzleLayer .pz-caption')).toHaveText("Ton village s'est éteint.");
-  await expect.poll(() => page.evaluate(() => window.__ilyosVoixTest)).toContain("Ton village s'est éteint.");
+  // La voix de synthèse est coupée (demande du 02/10) : aucun énoncé.
+  expect(await page.evaluate(() => window.__ilyosVoixTest)).toEqual([]);
 
   await page.keyboard.press('Space');
   await expect(page.locator('#puzzleLayer')).not.toHaveClass(/reveil/, { timeout: 3000 });

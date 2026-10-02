@@ -142,7 +142,7 @@
       <!-- Bouton MENU : suspendu sous la plaque du tour, libellé en toutes lettres.
            Le petit rubis de la plaque, seul et sans texte, n'était ni vu ni compris.
            Le menu lui-même : js/menu-jeu.js. -->
-      <button id="ov2Gear" class="ov2-menu-btn ov2-interactive" type="button" aria-label="Ouvrir le menu" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>MENU</span><kbd>Échap</kbd></button>
+      <button id="ov2Gear" class="ov2-menu-btn ov2-interactive" type="button" aria-label="Ouvrir le menu" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>MENU</span></button>
 
       <aside id="ov2Guardian" class="ov2-guardian ov2-hidden-context" aria-live="polite">
         <div class="ov2-gh"><div class="ov2-gportrait">${knightSvg}</div><div><b>GARDIEN</b><small id="ov2GuardianOwner">Équipe active</small></div></div>

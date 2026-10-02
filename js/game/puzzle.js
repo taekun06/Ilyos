@@ -2487,45 +2487,40 @@
         }
       }
 
-      /* L'APPROCHE. Le premier Sanctuaire reprend le prologue vocal de
-         l'ancienne Première Ascension. Il passe par puzzleSequence : un clic
+      /* L'APPROCHE. Le premier Sanctuaire reprend le prologue de l'ancienne
+         Première Ascension, en sous-titres. Il passe par puzzleSequence : un clic
          ou une touche rend donc immédiatement la main, sans nouveau système.
          Les autres approches gardent leur phrase courte et silencieuse. */
       function puzzleApproche(def) {
         if (!def.avant && !def.prologue) return;
         return puzzleSequence(async (dom, attendre) => {
           if (def.prologue) {
+            // Sous-titres seuls : la voix de synthèse est coupée (demande du 02/10).
             const dire = async (texte, duree) => {
               dom.caption.textContent = texte;
               dom.caption.classList.add("show");
-              try { tutoSpeak(texte); } catch (_) { }
               await attendre(duree);
               dom.caption.classList.remove("show");
-              try { tutoStopSpeak(); } catch (_) { }
             };
 
+            await attendre(450);
+            if (PUZZLE.sequenceSaute) return;
+            await dire("Ton village s'est éteint.", 2600);
+            if (PUZZLE.sequenceSaute) return;
+            await attendre(500);
+            if (PUZZLE.sequenceSaute) return;
             try {
-              await attendre(450);
-              if (PUZZLE.sequenceSaute) return;
-              await dire("Ton village s'est éteint.", 2600);
-              if (PUZZLE.sequenceSaute) return;
-              await attendre(500);
-              if (PUZZLE.sequenceSaute) return;
-              try {
-                if (typeof kaykitFollowCell === "function") {
-                  kaykitFollowCell(6, 6, {
-                    duration: 3600, force: true, cinematique: true, zoomBoost: -1.4
-                  });
-                }
-              } catch (_) { }
-              await attendre(1100);
-              if (PUZZLE.sequenceSaute) return;
-              await dire("Rien ne mène plus jusqu'à lui.", 3200);
-              if (PUZZLE.sequenceSaute) return;
-              await attendre(500);
-            } finally {
-              try { tutoStopSpeak(); } catch (_) { }
-            }
+              if (typeof kaykitFollowCell === "function") {
+                kaykitFollowCell(6, 6, {
+                  duration: 3600, force: true, cinematique: true, zoomBoost: -1.4
+                });
+              }
+            } catch (_) { }
+            await attendre(1100);
+            if (PUZZLE.sequenceSaute) return;
+            await dire("Rien ne mène plus jusqu'à lui.", 3200);
+            if (PUZZLE.sequenceSaute) return;
+            await attendre(500);
             return;
           }
 

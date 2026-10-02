@@ -2242,9 +2242,10 @@
           return;
         }
         // Menu de jeu (js/menu-jeu.js, bâti sur #hudV2GearPopover) : Échap le
-        // referme. Quand il n'y a aucune sélection à abandonner, Échap l'ouvre,
-        // comme dans la plupart des jeux ; l'annulation d'une action jouée
-        // reste sur le bouton ↶, elle n'est plus déclenchée par Échap.
+        // referme, mais ne l'OUVRE plus — le bouton MENU suffit, et un Échap qui
+        // ouvrait le menu par-dessus un geste en cours (choix de couronne à la
+        // manette) bloquait la partie. Sans sélection à abandonner, Échap ne
+        // fait rien : l'annulation d'une action jouée reste sur le bouton ↶.
         const menuJeu = document.getElementById("hudV2GearPopover");
         if (menuJeu && !menuJeu.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -2252,11 +2253,11 @@
         }
         const selectionEnCours = (state?.phase === "ACTION" && state?.selectedActionType)
           || ["PLACE_ISLAND", "DROP_TREASURE", "PICKUP_CROWN", "SMART_CHAR"].includes(state?.phase);
-        const boutonMenu = document.getElementById("ov2Gear");
-        if (!selectionEnCours || state?.inputLocked) {
-          if (boutonMenu && boutonMenu.getClientRects().length) boutonMenu.click();
+        if (!selectionEnCours) {
+          manetteQuitterGeste();
           return;
         }
+        if (state?.inputLocked) return;
         handleCancelButton();
       });
 
