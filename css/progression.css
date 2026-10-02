@@ -411,8 +411,8 @@
 }
 
 #victoryModal .progression-debloques .progression-vignette-heros {
-  background-size: 210%;
-  background-position: 50% 12%;
+  background-size: cover;
+  background-position: 50% 30%;
   background-color: #17344a;
 }
 
@@ -433,4 +433,118 @@
 /* ---------- HUD : portrait d'un gardien choisi dans la collection ---------- */
 #ilyosHudOrganicV2 .ov2-avatar .ov2-portrait-img.ov2-portrait-collection {
   object-fit: cover;
+}
+
+/* ---------- Saison : palier et barre, sous le niveau ---------- */
+#victoryModal .progression-saison {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(128, 82, 188, .14), rgba(244, 210, 142, .18));
+  box-shadow: inset 0 0 0 1px rgba(128, 82, 188, .3);
+}
+
+#victoryModal .progression-saison-nom {
+  display: grid;
+  font-weight: 800;
+  font-size: 12.5px;
+  line-height: 1.1;
+  color: var(--prog-encre);
+}
+
+#victoryModal .progression-saison-nom small {
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #7a4fb0;
+}
+
+#victoryModal .progression-saison-barre {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(23, 56, 74, .12);
+  overflow: hidden;
+}
+
+#victoryModal .progression-saison-barre i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #9a6be0, #f4d28e);
+  transition: width 1.2s cubic-bezier(.2, .8, .2, 1) .2s;
+}
+
+#victoryModal .progression-saison b {
+  font-size: 11.5px;
+  color: var(--prog-adouci);
+}
+
+#victoryModal .progression-saison-franchie {
+  background: linear-gradient(90deg, rgba(154, 107, 224, .3), rgba(244, 210, 142, .45));
+  animation: progression-eclat 1.4s ease-out .4s both;
+}
+
+#victoryModal .progression-debloques .progression-vignette-saison {
+  font: 900 13px/1 Inter, sans-serif;
+  font-style: normal;
+  color: #2b1a05;
+  background: linear-gradient(160deg, #f4d28e, #c9a45d 55%, #8a6418);
+}
+
+/* ---------- Effets de victoire (collection) ---------- */
+#victoryModal .progression-effet {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#victoryModal .progression-effet i {
+  position: absolute;
+  left: var(--x);
+  top: -8%;
+  width: calc(26px * var(--taille));
+  height: calc(52px * var(--taille));
+  opacity: 0;
+  animation: progression-plume var(--duree) cubic-bezier(.35, .1, .55, .95) var(--retard) forwards;
+}
+
+#victoryModal .progression-effet-plumes i {
+  background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 52'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe7a0'/%3E%3Cstop offset='.45' stop-color='%23ff9a3d'/%3E%3Cstop offset='1' stop-color='%23d4372b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1C4 10 2 24 6 36c2 6 5 10 7 13 2-3 5-7 7-13 4-12 2-26-7-35Z' fill='url(%23g)'/%3E%3Cpath d='M13 4v47' stroke='%23fff2c8' stroke-width='1.2' stroke-linecap='round' opacity='.85'/%3E%3Cpath d='M13 16l-5 4M13 24l-6 4M13 32l-5 4M13 16l5 4M13 24l6 4M13 32l5 4' stroke='%23fff2c8' stroke-width='.8' opacity='.55'/%3E%3C/svg%3E");
+  filter: drop-shadow(0 0 6px rgba(255, 154, 61, .55));
+}
+
+#victoryModal .progression-effet-etincelles i {
+  top: auto;
+  bottom: -4%;
+  width: calc(10px * var(--taille));
+  height: calc(10px * var(--taille));
+  border-radius: 50%;
+  background: radial-gradient(circle, #fffbe6 0 20%, #ffd66b 45%, rgba(255, 190, 70, 0) 72%);
+  animation-name: progression-etincelle;
+}
+
+@keyframes progression-plume {
+  0% { opacity: 0; transform: translate(0, 0) rotate(-25deg); }
+  10% { opacity: 1; }
+  50% { transform: translate(var(--derive), 55vh) rotate(25deg); }
+  85% { opacity: .9; }
+  100% { opacity: 0; transform: translate(calc(var(--derive) * -.4), 112vh) rotate(-15deg); }
+}
+
+@keyframes progression-etincelle {
+  0% { opacity: 0; transform: translate(0, 0) scale(.6); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--derive), -78vh) scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #victoryModal .progression-effet { display: none; }
+  #victoryModal .progression-saison-franchie { animation: none; }
 }

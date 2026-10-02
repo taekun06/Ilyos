@@ -97,19 +97,28 @@
           { id: "corail", nom: "Corail de l'aube", valeur: "#f2865e", niveau: 3 },
           { id: "lagon", nom: "Lagon", valeur: "#38c6cf", niveau: 6 },
           { id: "braise", nom: "Braise", valeur: "#e2503f", niveau: 10 },
-          { id: "givre", nom: "Givre", valeur: "#dfeaff", niveau: 15 }
+          { id: "givre", nom: "Givre", valeur: "#dfeaff", niveau: 15 },
+          { id: "rose", nom: "Rose d'aube", valeur: "#ff8fb8", saison: { id: "s1", palier: 3 } },
+          { id: "saphir", nom: "Saphir", valeur: "#4f7dff", saison: { id: "s1", palier: 13 } },
+          { id: "rubis", nom: "Rubis", valeur: "#c72d6b", saison: { id: "s1", palier: 23 } }
         ] },
         { cle: "heros", nom: "Gardiens", objets: [
           { id: "chevalier", nom: "Chevalier", valeur: "hero0", image: "assets/collection/heros-knight.webp", niveau: 1 },
           { id: "rodeuse", nom: "Rôdeuse", valeur: "hero2", image: "assets/collection/heros-rogue.webp", portrait: "assets/collection/portrait-rogue.webp", niveau: 4 },
           { id: "capuche", nom: "Rôdeuse encapuchonnée", valeur: "hero2Hooded", image: "assets/collection/heros-rogue-hooded.webp", portrait: "assets/collection/portrait-rogue-hooded.webp", niveau: 8 },
-          { id: "barbare", nom: "Barbare", valeur: "hero3", image: "assets/collection/heros-barbarian.webp", portrait: "assets/collection/portrait-barbarian.webp", niveau: 12 }
+          { id: "barbare", nom: "Barbare", valeur: "hero3", image: "assets/collection/heros-barbarian.webp", portrait: "assets/collection/portrait-barbarian.webp", niveau: 12 },
+          { id: "squelette", nom: "Squelette guerrier", valeur: "heroSkeletonWarrior", image: "assets/collection/heros-skeleton-warrior.webp", portrait: "assets/collection/portrait-skeleton-warrior.webp", saison: { id: "s1", palier: 10 } },
+          { id: "squelette-rodeur", nom: "Squelette rôdeur", valeur: "heroSkeletonRogue", image: "assets/collection/heros-skeleton-rogue.webp", portrait: "assets/collection/portrait-skeleton-rogue.webp", saison: { id: "s1", palier: 20 } },
+          { id: "squelette-mage", nom: "Squelette mage", valeur: "heroSkeletonMage", image: "assets/collection/heros-skeleton-mage.webp", portrait: "assets/collection/portrait-skeleton-mage.webp", saison: { id: "s1", palier: 28 } }
         ] },
         { cle: "ciel", nom: "Ciel", objets: [
           { id: "aube", nom: "Aube dorée", valeur: "blend0223", image: "assets/sky/sky-band-blend-02-23.webp", niveau: 1 },
           { id: "azur", nom: "Azur profond", valeur: "sky05", image: "assets/sky/sky-band-05.webp", niveau: 5 },
           { id: "rose", nom: "Rose des vents", valeur: "blend0223v2", image: "assets/sky/sky-band-blend-02-23-v2.webp", niveau: 9 },
-          { id: "nuit", nom: "Nuit étoilée", valeur: "sky11", image: "assets/sky/sky-band-11.webp", niveau: 13 }
+          { id: "nuit", nom: "Nuit étoilée", valeur: "sky11", image: "assets/sky/sky-band-11.webp", niveau: 13 },
+          { id: "crepuscule", nom: "Crépuscule", valeur: "sky23", image: "assets/sky/sky-band-23.webp", saison: { id: "s1", palier: 5 } },
+          { id: "aurore", nom: "Aurore boréale", valeur: "sky14", image: "assets/sky/sky-band-14.webp", saison: { id: "s1", palier: 15 } },
+          { id: "or-ancien", nom: "Or ancien", valeur: "sky02", image: "assets/sky/sky-band-02.webp", saison: { id: "s1", palier: 25 } }
         ] },
         { cle: "titre", nom: "Titre", objets: [
           { id: "voyageur", nom: "Voyageur des îles", niveau: 1 },
@@ -117,8 +126,43 @@
           { id: "fidele", nom: "Fidèle de l'offrande", exploit: { cle: "offrandes", cible: 7, texte: "Recevoir 7 offrandes" } },
           { id: "enigmes", nom: "Esprit des énigmes", exploit: { cle: "puzzles", cible: 5, texte: "Résoudre 5 puzzles" } },
           { id: "expert", nom: "Tombeur d'Expert", exploit: { cle: "expert", cible: 1, texte: "Battre le CPU Expert" } },
-          { id: "gardien", nom: "Gardien de l'aube", niveau: 20 }
+          { id: "gardien", nom: "Gardien de l'aube", niveau: 20 },
+          { id: "eveille", nom: "Âme éveillée", saison: { id: "s1", palier: 1 } },
+          { id: "brise", nom: "Brise-nuages", saison: { id: "s1", palier: 8 } },
+          { id: "heraut", nom: "Héraut de l'aube", saison: { id: "s1", palier: 18 } },
+          { id: "phenix", nom: "Phénix d'Ilyos", saison: { id: "s1", palier: 27 } }
+        ] },
+        /* Effet de la fenêtre de victoire, quand le joueur de l'appareil gagne. */
+        { cle: "effet", nom: "Effet de victoire", objets: [
+          { id: "sobre", nom: "Sobre", niveau: 1 },
+          { id: "etincelles", nom: "Étincelles dorées", valeur: "etincelles", niveau: 7 },
+          { id: "plumes", nom: "Plume de phénix", valeur: "plumes", saison: { id: "s1", palier: 30 } }
         ] }
+      ];
+
+      /* SAISONS : une piste gratuite de 30 paliers sur 8 semaines. Toute l'XP
+         gagnée pendant la saison la fait avancer ; un palier tous les
+         xpParPalier points. Chaque palier donne quelque chose : un cosmétique
+         de saison (déclaré plus haut avec « saison: { id, palier } »), un
+         vent porteur ou un coffre d'XP. Après le palier 30, chaque palier
+         donne encore un vent porteur. Ce qui est gagné reste acquis après la
+         fin de la saison. Les dates sont des journées de jeu (bascule à 4 h) :
+         une nouvelle saison se publie comme une mise à jour du site. */
+      const PROGRESSION_SAISONS = [
+        {
+          id: "s1", numero: 1, nom: "L'Éveil des îles", debut: "2026-10-01", fin: "2026-11-26", xpParPalier: 500,
+          paliers: [
+            { cosmetique: "titre:eveille" }, { vent: 1 }, { cosmetique: "couleur:rose" }, { xp: 150 },
+            { cosmetique: "ciel:crepuscule" }, { vent: 1 }, { xp: 150 }, { cosmetique: "titre:brise" },
+            { vent: 1 }, { cosmetique: "heros:squelette" }, { xp: 200 }, { vent: 1 },
+            { cosmetique: "couleur:saphir" }, { xp: 200 }, { cosmetique: "ciel:aurore" }, { vent: 1 },
+            { xp: 200 }, { cosmetique: "titre:heraut" }, { vent: 1 }, { cosmetique: "heros:squelette-rodeur" },
+            { xp: 250 }, { vent: 2 }, { cosmetique: "couleur:rubis" }, { xp: 250 },
+            { cosmetique: "ciel:or-ancien" }, { vent: 2 }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
+            { xp: 300 }, { cosmetique: "effet:plumes" }
+          ],
+          apres: { vent: 1 }
+        }
       ];
 
       let progressionDernierePartie = null;
@@ -158,6 +202,8 @@
           quetes: { jour: null, actives: [], changeeLe: null, semaine: null },
           offrande: { prochaine: 0, dernierJour: null, vent: 0 },
           exploits: { offrandes: 0, expert: 0 },
+          /* XP de chaque saison et dernier palier dont la récompense est donnée. */
+          saisons: {},
           equipement: progressionEquipementParDefaut(),
           /* Objets déjà montrés au joueur : les autres portent « nouveau ». */
           vus: progressionCollectionParDefaut()
@@ -208,6 +254,12 @@
           PROGRESSION_COLLECTION.forEach(categorie => {
             const id = brut.equipement[categorie.cle];
             if (categorie.objets.some(objet => objet.id === id)) profil.equipement[categorie.cle] = id;
+          });
+        }
+        if (brut.saisons && typeof brut.saisons === "object") {
+          PROGRESSION_SAISONS.forEach(saison => {
+            const sv = brut.saisons[saison.id];
+            if (sv && Number.isFinite(sv.xp)) profil.saisons[saison.id] = { xp: Math.max(0, sv.xp), paye: Number.isInteger(sv.paye) ? sv.paye : 0 };
           });
         }
         if (Array.isArray(brut.vus)) profil.vus = [...new Set([...profil.vus, ...brut.vus.filter(v => typeof v === "string")])];
@@ -350,6 +402,13 @@
 
       /* Où en est le joueur pour un objet : débloqué ou non, et le chemin. */
       function progressionCondition(profil, objet, niveau, puzzles) {
+        if (objet.saison) {
+          const saison = progressionSaison(objet.saison.id);
+          const palier = saison ? progressionPalierAtteint(profil, saison) : 0;
+          return { debloque: palier >= objet.saison.palier,
+            texte: `Saison ${saison ? saison.numero : ""} · palier ${objet.saison.palier}`,
+            fait: Math.min(palier, objet.saison.palier), cible: objet.saison.palier, saison: true };
+        }
         if (objet.exploit) {
           const valeur = objet.exploit.cle === "puzzles" ? puzzles : (profil.exploits[objet.exploit.cle] || 0);
           return { debloque: valeur >= objet.exploit.cible, texte: objet.exploit.texte,
@@ -398,7 +457,7 @@
         return progressionDebloques(profil, puzzlesEnPlus).filter(cle => !deja.has(cle)).map(cle => {
           const [categorie, id] = cle.split(":");
           const objet = progressionObjet(categorie, id);
-          return { categorie, id, nom: objet.nom, valeur: objet.valeur || null, image: objet.image || null };
+          return { categorie, id, nom: objet.nom, valeur: objet.valeur || null, image: objet.portrait || objet.image || null };
         });
       }
 
@@ -459,6 +518,86 @@
         return objet ? objet.portrait || null : null;
       }
 
+      /* ---------- Saison ---------------------------------------------- */
+      function progressionSaison(id) {
+        return PROGRESSION_SAISONS.find(saison => saison.id === id) || null;
+      }
+
+      /* La saison en cours, ou à défaut la dernière terminée (pour montrer ce
+         qui a été gagné). Aucune si aucune n'a commencé. */
+      function progressionSaisonCourante(jour = progressionJour()) {
+        const commencees = PROGRESSION_SAISONS.filter(saison => saison.debut <= jour);
+        return commencees[commencees.length - 1] || null;
+      }
+
+      function progressionSaisonActive(saison, jour = progressionJour()) {
+        return !!saison && saison.debut <= jour && jour < saison.fin;
+      }
+
+      function progressionPalierAtteint(profil, saison) {
+        const xp = profil.saisons[saison.id]?.xp || 0;
+        return Math.floor(xp / saison.xpParPalier);
+      }
+
+      function progressionRecompensePalier(saison, n) {
+        return saison.paliers[n - 1] || saison.apres;
+      }
+
+      function progressionTexteRecompense(recompense) {
+        if (recompense.cosmetique) {
+          const [categorie, id] = recompense.cosmetique.split(":");
+          return progressionObjet(categorie, id)?.nom || "";
+        }
+        if (recompense.vent) return `Vent porteur : ${recompense.vent} partie${recompense.vent > 1 ? "s" : ""} à +50 %`;
+        return `Coffre de ${recompense.xp} XP`;
+      }
+
+      /* XP gagnée pendant la saison : avance la piste et donne les
+         récompenses des paliers franchis (les cosmétiques n'ont rien à
+         donner : leur déblocage se lit sur le palier). Renvoie les paliers. */
+      function progressionAvancerSaison(profil, xp, jour = progressionJour()) {
+        const saison = progressionSaisonCourante(jour);
+        if (!progressionSaisonActive(saison, jour) || !(xp > 0)) return [];
+        const etat = profil.saisons[saison.id] || (profil.saisons[saison.id] = { xp: 0, paye: 0 });
+        etat.xp += Math.round(xp);
+        const franchis = [];
+        while (etat.paye < Math.floor(etat.xp / saison.xpParPalier)) {
+          etat.paye++;
+          const recompense = progressionRecompensePalier(saison, etat.paye);
+          if (recompense.vent) profil.offrande.vent += recompense.vent;
+          /* Le coffre compte pour le niveau, pas pour la saison : pas de
+             réaction en chaîne d'un palier à l'autre. */
+          if (recompense.xp) profil.xp += recompense.xp;
+          franchis.push({ palier: etat.paye, texte: progressionTexteRecompense(recompense), cosmetique: !!recompense.cosmetique });
+        }
+        return franchis;
+      }
+
+      function progressionVueSaison(profil) {
+        const saison = progressionSaisonCourante();
+        if (!saison) return null;
+        const jour = progressionJour();
+        const xp = profil.saisons[saison.id]?.xp || 0;
+        const palier = Math.floor(xp / saison.xpParPalier);
+        const [a, m, j] = saison.fin.split("-").map(Number);
+        const [a2, m2, j2] = jour.split("-").map(Number);
+        const joursRestants = Math.max(0, Math.round((Date.UTC(a, m - 1, j) - Date.UTC(a2, m2 - 1, j2)) / 86400000));
+        return {
+          id: saison.id, numero: saison.numero, nom: saison.nom,
+          active: progressionSaisonActive(saison, jour), joursRestants,
+          palier, xpDansPalier: xp - palier * saison.xpParPalier, xpParPalier: saison.xpParPalier,
+          paliers: saison.paliers.map((recompense, i) => {
+            const vue = { palier: i + 1, texte: progressionTexteRecompense(recompense), obtenu: palier >= i + 1 };
+            if (recompense.cosmetique) {
+              const [categorie, id] = recompense.cosmetique.split(":");
+              const objet = progressionObjet(categorie, id);
+              Object.assign(vue, { categorie, valeur: objet.valeur || null, image: objet.image || null });
+            } else vue.categorie = recompense.vent ? "vent" : "coffre";
+            return vue;
+          })
+        };
+      }
+
       /* ---------- Offrande du jour ------------------------------------- */
       function progressionOffrandeDispo(profil) {
         return profil.offrande.dernierJour !== progressionJour();
@@ -509,11 +648,12 @@
       }
 
       /* Ajoute de l'XP au profil et dit ce qui a changé. */
-      function progressionAjouterXp(profil, xp) {
+      function progressionAjouterXp(profil, xp, jour = progressionJour()) {
         const avant = progressionNiveauDepuisXp(profil.xp);
         profil.xp += Math.max(0, Math.round(xp));
+        const paliers = progressionAvancerSaison(profil, xp, jour);
         const apres = progressionNiveauDepuisXp(profil.xp);
-        return { avant, apres, niveauxGagnes: apres.niveau - avant.niveau };
+        return { avant, apres, niveauxGagnes: apres.niveau - avant.niveau, paliers };
       }
 
       /* Le joueur dont cet appareil tient le profil : en ligne, sa place ; en
@@ -617,6 +757,8 @@
           progressionEnregistrer(profil);
           gain = { ...gain, ...changement, quetes: progressionVueQuetes(profil),
             debloques: progressionNouveauxObjets(debloquesAvant, profil),
+            saison: progressionVueSaison(profil),
+            effet: resultat === "victoire" ? progressionObjet("effet", profil.equipement.effet)?.valeur || null : null,
             titre: progressionObjet("titre", profil.equipement.titre)?.nom || null };
         } catch (erreur) {
           console.warn("[ILYOS] progression : gain non calculé", erreur);
@@ -635,6 +777,7 @@
           showToast((changement.niveauxGagnes > 0
             ? `${libelle} : +${xp} XP · Niveau ${changement.apres.niveau} atteint !`
             : `${libelle} : +${xp} XP`)
+            + (changement.paliers.length ? ` · Saison : palier ${changement.paliers[changement.paliers.length - 1].palier}` : "")
             + (nouveaux.length ? ` · Débloqué : ${nouveaux.map(o => o.nom).join(", ")}` : ""));
         } catch (_) { }
       }
@@ -697,7 +840,10 @@
            franchi, elle repart de zéro dans le nouveau niveau. */
         const depart = monte ? 0 : part(avant);
         const quetesHtml = progressionHtmlQuetes(gain.quetes);
-        const debloquesHtml = progressionHtmlDebloques(gain.debloques);
+        const autresPaliers = (gain.paliers || []).filter(p => !p.cosmetique)
+          .map(p => ({ categorie: "saison", nom: p.texte, palier: p.palier }));
+        const debloquesHtml = progressionHtmlDebloques([...(gain.debloques || []), ...autresPaliers]);
+        const saisonHtml = progressionHtmlSaison(gain.saison, gain.paliers);
         const pastilles = gain.lignes.filter(ligne => !ligne.quete).map(ligne =>
           `<li${ligne.xp < 0 ? ' class="progression-moins"' : ""}><span>${ligne.libelle}</span><b>${ligne.xp >= 0 ? "+" : "−"}${Math.abs(ligne.xp)}</b></li>`).join("");
         bloc.innerHTML = `
@@ -720,6 +866,7 @@
             <small class="progression-reste">${apres.xpDansNiveau} / ${apres.xpPourSuivant} XP · niveau ${apres.niveau + 1} ensuite</small>
             <ul class="progression-lignes">${pastilles}</ul>
           </div>
+          ${saisonHtml}
           ${debloquesHtml}
           ${quetesHtml}`;
         const barre = bloc.querySelector(".progression-barre i");
@@ -732,8 +879,49 @@
         };
         requestAnimationFrame(() => requestAnimationFrame(maintenant => {
           barre.style.width = `${part(apres)}%`;
+          const barreSaison = bloc.querySelector(".progression-saison-barre i");
+          if (barreSaison) barreSaison.style.width = barreSaison.dataset.fin;
           compter(maintenant);
         }));
+        progressionLancerEffet(gain.effet);
+      }
+
+      /* Ligne de saison sous le niveau : palier, barre vers le suivant. */
+      function progressionHtmlSaison(vue, paliers) {
+        if (!vue || !vue.active) return "";
+        const franchi = paliers && paliers.length;
+        const pct = Math.round(100 * vue.xpDansPalier / vue.xpParPalier);
+        return `<div class="progression-saison${franchi ? " progression-saison-franchie" : ""}">
+          <span class="progression-saison-nom"><small>Saison ${vue.numero}</small>${franchi ? `Palier ${vue.palier} atteint&nbsp;!` : `Palier ${vue.palier}`}</span>
+          <span class="progression-saison-barre"><i style="width:${franchi ? 0 : pct}%" data-fin="${pct}%"></i></span>
+          <b>${vue.xpDansPalier}/${vue.xpParPalier}</b>
+        </div>`;
+      }
+
+      /* Effet de victoire équipé : une pluie de plumes ou d'étincelles par
+         dessus la fenêtre de fin, quelques secondes, puis plus rien. */
+      function progressionLancerEffet(effet) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.querySelector(".progression-effet")?.remove();
+        if (!effet) return;
+        try { if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return; } catch (_) { }
+        const couche = document.createElement("div");
+        couche.className = `progression-effet progression-effet-${effet}`;
+        couche.setAttribute("aria-hidden", "true");
+        const nombre = effet === "plumes" ? 26 : 40;
+        let html = "";
+        for (let i = 0; i < nombre; i++) {
+          const x = Math.round(Math.random() * 100);
+          const retard = (Math.random() * 2.4).toFixed(2);
+          const duree = (effet === "plumes" ? 4.2 + Math.random() * 2.6 : 2.2 + Math.random() * 1.6).toFixed(2);
+          const taille = (effet === "plumes" ? .7 + Math.random() * .7 : .5 + Math.random() * .9).toFixed(2);
+          const derive = Math.round((Math.random() - .5) * 160);
+          html += `<i style="--x:${x}%;--retard:${retard}s;--duree:${duree}s;--taille:${taille};--derive:${derive}px"></i>`;
+        }
+        couche.innerHTML = html;
+        modal.appendChild(couche);
+        setTimeout(() => couche.remove(), 9500);
       }
 
       /* Ce que la partie vient d'ouvrir dans la collection : une vignette
@@ -741,12 +929,14 @@
       function progressionVignette(objet) {
         if (objet.categorie === "couleur") return `<i class="progression-vignette progression-vignette-couleur" style="--c:${objet.valeur}"></i>`;
         if (objet.image) return `<i class="progression-vignette progression-vignette-${objet.categorie}" style="background-image:url('${objet.image}')"></i>`;
+        if (objet.categorie === "saison") return `<i class="progression-vignette progression-vignette-saison">${objet.palier}</i>`;
+        if (objet.categorie === "effet") return `<i class="progression-vignette progression-vignette-titre">✦</i>`;
         return `<i class="progression-vignette progression-vignette-titre">❦</i>`;
       }
 
       function progressionHtmlDebloques(objets) {
         if (!objets || !objets.length) return "";
-        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", titre: "Titre" };
+        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
         return `<div class="progression-debloques">
           <div class="progression-debloques-tete"><b>Débloqué</b><small>À équiper dans le menu, Progression › Collection</small></div>
           <ul>${objets.map(objet => `<li>${progressionVignette(objet)}<span><small>${categories[objet.categorie] || ""}</small>${objet.nom}</span></li>`).join("")}</ul>
@@ -788,6 +978,7 @@
             ...progressionNiveauDepuisXp(profil.xp),
             titre: progressionObjet("titre", profil.equipement.titre)?.nom || null,
             nouveautes: progressionNouveautes(profil),
+            saison: progressionVueSaison(profil),
             quetes: progressionVueQuetes(profil),
             offrande: {
               dispo: progressionOffrandeDispo(profil),
@@ -799,11 +990,14 @@
         },
         collection: () => progressionVueCollection(progressionCharger()),
         equiper: progressionEquiper,
+        saisons: PROGRESSION_SAISONS,
         marquerVus: progressionMarquerVus,
         reclamerOffrande: progressionReclamerOffrande,
         changerQuete: progressionChangerQuete,
         avancerQuetes: (profil, evenement) => progressionAvancerQuetes(profil, evenement),
         renouvelerQuetes: (profil, jour) => progressionRenouvelerQuetes(profil, jour),
         profilVide: progressionProfilVide,
+        /* Pour les bancs : ajouter de l'XP à un profil donné, un jour donné. */
+        ajouterXp: (profil, xp, jour) => progressionAjouterXp(profil, xp, jour),
         cle: PROGRESSION_STORAGE_KEY
       };

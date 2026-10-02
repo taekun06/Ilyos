@@ -8,7 +8,10 @@
       sous le bilan, le profil est enregistré, et le badge du menu montre le
       niveau après rechargement.
    3. La collection : déblocage par niveau, équipement refusé pour un objet
-      verrouillé, puis couleur et gardien portés dans une vraie partie solo. */
+      verrouillé, puis couleur et gardien portés dans une vraie partie solo.
+   4. La saison : l'XP fait avancer la piste pendant la saison seulement, les
+      paliers donnent leur récompense une fois, le coffre ne compte pas pour
+      la saison. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -66,6 +69,8 @@ test('quêtes : trois par jour, rien ne se perd, avancement sur les compteurs', 
     const sansModeInconnu = !types.includes('cpuFort') && !types.includes('ensemble');
     profil.quetes.actives[0] = { type: 'poussees', fait: 0, finie: false };
     profil.quetes.actives[1] = { type: 'parties', fait: 0, finie: false };
+    // La troisième, tirée au hasard, pourrait doubler l'une des deux.
+    profil.quetes.actives[2] = { type: 'grand', fait: 0, finie: false };
     const finies = P.avancerQuetes(profil, { partie: true, resultat: 'defaite', stats: { poussees: 7, couronnes: 0, chutes: 1 } });
     // Le lendemain : la quête finie part, celle en cours reste.
     P.renouvelerQuetes(profil, '2026-10-02');
@@ -171,4 +176,36 @@ test('collection : déblocage par niveau, équipement porté en partie', async (
   // L'adversaire garde son apparence d'origine.
   expect(joueurs.find(j => j.ia)).toMatchObject({ heros: null });
   expect(incidents).toEqual([]);
+});
+
+test('saison : paliers, récompenses et dates', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.ILYOS_PROGRESSION, null, { timeout: 45000 });
+  const r = await page.evaluate(() => {
+    const P = window.ILYOS_PROGRESSION;
+    const s1 = P.saisons.find(s => s.id === 's1');
+    const pendant = s1.debut;
+    const profil = P.profilVide();
+    const a = P.ajouterXp(profil, 1100, pendant);
+    const apresDeux = { xp: profil.saisons.s1.xp, paye: profil.saisons.s1.paye, vent: profil.offrande.vent };
+    // Palier 4 : coffre de 150 XP, compté pour le niveau seulement.
+    const b = P.ajouterXp(profil, 900, pendant);
+    const avantSaison = P.profilVide();
+    P.ajouterXp(avantSaison, 5000, '2026-09-01');
+    const apresSaison = P.profilVide();
+    P.ajouterXp(apresSaison, 5000, s1.fin);
+    return {
+      paliers: s1.paliers.length,
+      a: a.paliers.map(p => p.palier), apresDeux,
+      b: b.paliers.map(p => p.texte), xpTotal: profil.xp, saisonXp: profil.saisons.s1.xp,
+      horsSaison: [avantSaison.saisons.s1 || null, apresSaison.saisons.s1 || null]
+    };
+  });
+  expect(r.paliers).toBe(30);
+  expect(r.a).toEqual([1, 2]);
+  expect(r.apresDeux).toEqual({ xp: 1100, paye: 2, vent: 1 });
+  expect(r.b).toEqual(['Rose d\'aube', 'Coffre de 150 XP']);
+  expect(r.xpTotal).toBe(2000 + 150);
+  expect(r.saisonXp).toBe(2000);
+  expect(r.horsSaison).toEqual([null, null]);
 });

@@ -35,7 +35,7 @@ Ils ne constituent pas une vérification fichier par fichier de toutes les varia
 | `assets/sky/sky-band-*` | Source et transformations consignées dans `assets/sky/LICENSE.txt` |
 | `assets/sky/ilyos-horizon-*` | Images générées pour ILYOS d'après le même fichier de provenance |
 | `assets/sky/source/*`, atlas et manifeste | Pipeline local `scripts/build-horizon-islands.js` ; historique de génération à compléter |
-| `assets/collection/heros-*.webp`, `portrait-*.webp` | Portraits rendus le 2026-10-01 depuis les modèles locaux du pack Adventurers (CC0) avec `three.min.js` ; accessoires réduits à une arme et un bouclier par héros. Servent aux cartes de la Collection du menu et au HUD (`portrait-*`) quand le joueur change de gardien |
+| `assets/collection/heros-*.webp`, `portrait-*.webp` | Portraits rendus le 2026-10-01 depuis les modèles locaux des packs Adventurers et Skeletons (CC0) avec `three.min.js` ; accessoires réduits à une arme et un bouclier par héros. Servent aux cartes de la Collection du menu et au HUD (`portrait-*`) quand le joueur change de gardien |
 | `assets/hud`, `assets/image-*`, icônes et `menu/assets/*` | Provenance détaillée à compléter ; ne pas les déclarer CC0 par défaut |
 | `vendor/*` | Bibliothèques embarquées ; conserver leurs notices, distinctes des licences des images/modèles |
 

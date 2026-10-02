@@ -101,6 +101,7 @@
     if(cle==='couleur') return `<span class="coll-apercu coll-gemme" style="--c:${safeText(objet.valeur)}"></span>`;
     if(cle==='heros') return `<span class="coll-apercu coll-portrait"><img src="../${safeText(objet.image)}" alt="" loading="lazy"></span>`;
     if(cle==='ciel') return `<span class="coll-apercu coll-ciel" style="background-image:url('../${safeText(objet.image)}')"></span>`;
+    if(cle==='effet') return `<span class="coll-apercu coll-effet coll-effet-${safeText(objet.valeur||'sobre')}"><i></i><i></i><i></i><i></i><i></i></span>`;
     return `<span class="coll-apercu coll-plaque"><span>${safeText(objet.nom)}</span></span>`;
   }
   function collectionObjetHtml(cle,objet){
@@ -108,16 +109,45 @@
     return `<li class="coll-objet${objet.debloque?'':' verrou'}${objet.equipe?' equipe':''}"><button type="button" data-cat="${cle}" data-id="${safeText(objet.id)}"${objet.debloque&&!objet.equipe?'':' disabled'} aria-pressed="${objet.equipe}">${collectionApercu(cle,objet)}<b>${safeText(objet.nom)}</b><small>${etatTexte}</small>${objet.nouveau?'<em class="coll-nouveau">NOUVEAU</em>':''}</button></li>`;
   }
   function collectionHtml(categories){
-    const notes={couleur:'Vos pions, drapeaux et villages.',heros:'Les gardiens de votre camp.',ciel:'Le ciel autour du plateau.',titre:'Affiché avec votre niveau.'};
+    const notes={couleur:'Vos pions, drapeaux et villages.',heros:'Les gardiens de votre camp.',ciel:'Le ciel autour du plateau.',titre:'Affiché avec votre niveau.',effet:'Quand vous gagnez une partie.'};
     return categories.map(c=>`<section class="coll-section"><h3>${safeText(c.nom.toUpperCase())}<small>${notes[c.cle]||''}</small></h3><ul class="coll-grille coll-grille-${c.cle}">${c.objets.map(o=>collectionObjetHtml(c.cle,o)).join('')}</ul></section>`).join('')
       +'<p class="coll-note">Couleur et gardiens s’appliquent en solo, en duel et en 2 contre 2, à partir de la prochaine partie.</p>';
   }
+  /* Piste de saison : une case par palier, l'aperçu de sa récompense. */
+  function saisonApercu(p){
+    if(p.categorie==='couleur') return `<span class="sp-apercu sp-gemme" style="--c:${safeText(p.valeur)}"></span>`;
+    if(p.categorie==='heros') return `<span class="sp-apercu sp-portrait"><img src="../${safeText(p.image)}" alt="" loading="lazy"></span>`;
+    if(p.categorie==='ciel') return `<span class="sp-apercu sp-ciel" style="background-image:url('../${safeText(p.image)}')"></span>`;
+    if(p.categorie==='titre') return `<span class="sp-apercu sp-plaque"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18l-2 3 2 3H3l2-3-2-3Z" fill="#2b1a05" opacity=".85"/><path d="M8 5l4-2 4 2M8 19l4 2 4-2" stroke="#2b1a05" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></span>`;
+    if(p.categorie==='effet') return `<span class="sp-apercu sp-effet"></span>`;
+    if(p.categorie==='vent') return `<span class="sp-apercu sp-vent"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#effcff" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg></span>`;
+    return `<span class="sp-apercu sp-coffre"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v1H3v-1Z" fill="#7a4b12"/><rect x="3" y="11" width="18" height="8" rx="1.5" fill="#5a3509"/><rect x="10" y="9.5" width="4" height="5" rx="1" fill="#ffe9a8"/><path d="M3 11h18" stroke="#ffe9a8" stroke-width="1.2"/></svg></span>`;
+  }
+  function saisonHtml(v){
+    if(!v) return '<p class="coll-note">Aucune saison en cours.</p>';
+    const pct=Math.round(100*v.xpDansPalier/Math.max(1,v.xpParPalier));
+    const courant=Math.min(v.palier+1,v.paliers.length);
+    const cases=v.paliers.map(p=>`<li class="sp-case${p.obtenu?' obtenu':''}${p.palier===courant&&!p.obtenu?' courant':''}${p.palier%5===0?' grand':''}" data-palier="${p.palier}"><small>${p.palier}</small>${saisonApercu(p)}<b>${safeText(p.texte)}</b><span>${p.obtenu?'✓ OBTENU':(p.palier===courant?`${v.xpDansPalier} / ${v.xpParPalier}`:'')}</span></li>`).join('');
+    const duree=v.active?(v.joursRestants>1?`Encore ${v.joursRestants} jours`:'Dernier jour'):'Saison terminée';
+    return `<section class="sp-tete"><div><small>SAISON ${v.numero} · PASSE GRATUIT</small><b>${safeText(v.nom)}</b><span>${duree}</span></div><div class="sp-palier"><small>PALIER</small><b>${v.palier}</b></div></section>
+      <div class="sp-progres"><div class="pp-barre"><i style="width:${v.palier>=v.paliers.length?100:pct}%"></i></div><small>${v.palier>=v.paliers.length?`Piste terminée · chaque palier donne encore un vent porteur · ${v.xpDansPalier} / ${v.xpParPalier} XP`:`${v.xpDansPalier} / ${v.xpParPalier} XP vers le palier ${v.palier+1}`}</small></div>
+      <ol class="sp-piste">${cases}</ol>
+      <p class="coll-note">Toute l’XP gagnée pendant la saison la fait avancer : un palier tous les ${v.xpParPalier} XP. Ce qui est gagné reste à vous.</p>`;
+  }
   function renderProgressionPanel(etat,annonce){
-    const onglet=modal.dataset.onglet==='collection'?'collection':'progression';
+    const onglet=['collection','saison'].includes(modal.dataset.onglet)?modal.dataset.onglet:'progression';
     const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
     modalTitle.textContent='PROGRESSION';
     const tete=`<div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b>${etat.titre?`<span class="pp-titre">${safeText(etat.titre)}</span>`:''}<div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${etat.offrande.vent?` · Vent porteur actif (${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''})`:''}</small></div></div>`;
-    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button><button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button></div>`;
+    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button>${etat.saison?`<button type="button" role="tab" data-onglet="saison" aria-selected="${onglet==='saison'}">SAISON</button>`:''}<button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button></div>`;
+    if(onglet==='saison'){
+      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${saisonHtml(etat.saison)}</div>`;
+      bindProgressionTabs();
+      const piste=modalBody.querySelector('.sp-piste');
+      const cible=piste?.querySelector('.courant')||piste?.querySelector('.obtenu:last-of-type');
+      if(piste&&cible) piste.scrollLeft=Math.max(0,cible.offsetLeft-piste.clientWidth/2+cible.clientWidth/2);
+      return;
+    }
     if(onglet==='collection'){
       const categories=progressionApi()?.collection?.()||[];
       modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}${collectionHtml(categories)}</div>`;
