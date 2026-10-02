@@ -959,6 +959,7 @@
 
       function discFinish() {
         try { localStorage.setItem(TUTO_STORAGE_KEY, "1"); } catch (_) { }
+        progressionTutorielTermine();
         tutoDisarm();
         clearTimeout(DISCOVERY.advanceTimer);
         discSetHud([]);

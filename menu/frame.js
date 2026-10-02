@@ -67,6 +67,218 @@
     }catch(_){ btn.hidden=true; }
   }
   checkResumableSession();
+
+  /* Progression du joueur : lue dans le jeu parent (window.ILYOS_PROGRESSION,
+     même origine). Le profil s'écrit dans le document parent ; l'événement
+     « storage » arrive donc ici à chaque gain, sans rien relayer. */
+  function progressionApi(){ try{ return parent?.ILYOS_PROGRESSION||null; }catch(_){ return null; } }
+  function renderProfileBadge(){
+    const badge=document.getElementById('profilBadge');
+    const pill=document.getElementById('offrandePill');
+    if(!badge) return;
+    let etat=null;
+    try{ etat=progressionApi()?.etat?.()||null; }catch(_){ etat=null; }
+    if(!etat){ badge.hidden=true; if(pill) pill.hidden=true; return; }
+    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
+    badge.querySelector('.profil-num').textContent=String(etat.niveau);
+    badge.querySelector('.profil-anneau').style.setProperty('--p',`${part}%`);
+    badge.querySelector('.profil-xp').textContent=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP`;
+    badge.title=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}`;
+    badge.querySelector('.profil-alerte').hidden=!etat.offrande.dispo&&!etat.nouveautes;
+    badge.hidden=false;
+    if(pill) pill.hidden=!etat.offrande.dispo;
+    if(modal.classList.contains('open')&&modal.dataset.vue==='progression'&&modal.dataset.onglet!=='collection') renderProgressionPanel(etat);
+  }
+  function cellLabel(texte){ return /^Vent/.test(texte)?'VENT PORTEUR':texte; }
+  function questHtml(q,index,semaine,changer){
+    const pct=Math.round(100*q.fait/Math.max(1,q.cible));
+    const bouton=changer&&!q.finie&&!semaine?`<button type="button" class="quete-changer" data-index="${index}" title="Changer cette quête (une fois par jour)" aria-label="Changer cette quête">↻</button>`:'';
+    return `<li class="quete${q.finie?' finie':''}${semaine?' semaine':''}"><div class="quete-haut"><span class="quete-texte">${safeText(q.texte)}</span><span class="quete-xp">${q.finie?'✓ ':''}+${q.xp} XP</span>${bouton}</div><div class="quete-barre"><i style="width:${pct}%"></i></div><small>${q.finie?'Accomplie':`${q.fait} / ${q.cible}`}</small></li>`;
+  }
+  /* Aperçu d'un objet de la collection : pastille de couleur, portrait du
+     gardien, bande de ciel ou plaque de titre. */
+  function collectionApercu(cle,objet){
+    if(cle==='couleur') return `<span class="coll-apercu coll-gemme" style="--c:${safeText(objet.valeur)}"></span>`;
+    if(cle==='heros') return `<span class="coll-apercu coll-portrait"><img src="../${safeText(objet.image)}" alt="" loading="lazy"></span>`;
+    if(cle==='ciel') return `<span class="coll-apercu coll-ciel" style="background-image:url('../${safeText(objet.image)}')"></span>`;
+    if(cle==='effet') return `<span class="coll-apercu coll-effet coll-effet-${safeText(objet.valeur||'sobre')}"><i></i><i></i><i></i><i></i><i></i></span>`;
+    return `<span class="coll-apercu coll-plaque"><span>${safeText(objet.nom)}</span></span>`;
+  }
+  function collectionObjetHtml(cle,objet){
+    const etatTexte=objet.equipe?'ÉQUIPÉ':(objet.debloque?'ÉQUIPER':`🔒 ${safeText(objet.texte)}${objet.cible?` · ${objet.fait}/${objet.cible}`:''}`);
+    return `<li class="coll-objet${objet.debloque?'':' verrou'}${objet.equipe?' equipe':''}"><button type="button" data-cat="${cle}" data-id="${safeText(objet.id)}"${objet.debloque&&!objet.equipe?'':' disabled'} aria-pressed="${objet.equipe}">${collectionApercu(cle,objet)}<b>${safeText(objet.nom)}</b><small>${etatTexte}</small>${objet.nouveau?'<em class="coll-nouveau">NOUVEAU</em>':''}</button></li>`;
+  }
+  function collectionHtml(categories){
+    const notes={couleur:'Vos pions, drapeaux et villages.',heros:'Les gardiens de votre camp.',ciel:'Le ciel autour du plateau.',titre:'Affiché avec votre niveau.',effet:'Quand vous gagnez une partie.'};
+    return categories.map(c=>`<section class="coll-section"><h3>${safeText(c.nom.toUpperCase())}<small>${notes[c.cle]||''}</small></h3><ul class="coll-grille coll-grille-${c.cle}">${c.objets.map(o=>collectionObjetHtml(c.cle,o)).join('')}</ul></section>`).join('')
+      +'<p class="coll-note">Couleur et gardiens s’appliquent en solo, en duel et en 2 contre 2, à partir de la prochaine partie.</p>';
+  }
+  /* Piste de saison : une case par palier, l'aperçu de sa récompense. */
+  function saisonApercu(p){
+    if(p.categorie==='couleur') return `<span class="sp-apercu sp-gemme" style="--c:${safeText(p.valeur)}"></span>`;
+    if(p.categorie==='heros') return `<span class="sp-apercu sp-portrait"><img src="../${safeText(p.image)}" alt="" loading="lazy"></span>`;
+    if(p.categorie==='ciel') return `<span class="sp-apercu sp-ciel" style="background-image:url('../${safeText(p.image)}')"></span>`;
+    if(p.categorie==='titre') return `<span class="sp-apercu sp-plaque"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18l-2 3 2 3H3l2-3-2-3Z" fill="#2b1a05" opacity=".85"/><path d="M8 5l4-2 4 2M8 19l4 2 4-2" stroke="#2b1a05" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></span>`;
+    if(p.categorie==='effet') return `<span class="sp-apercu sp-effet"></span>`;
+    if(p.categorie==='vent') return `<span class="sp-apercu sp-vent"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#effcff" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg></span>`;
+    return `<span class="sp-apercu sp-coffre"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v1H3v-1Z" fill="#7a4b12"/><rect x="3" y="11" width="18" height="8" rx="1.5" fill="#5a3509"/><rect x="10" y="9.5" width="4" height="5" rx="1" fill="#ffe9a8"/><path d="M3 11h18" stroke="#ffe9a8" stroke-width="1.2"/></svg></span>`;
+  }
+  function saisonHtml(v){
+    if(!v) return '<p class="coll-note">Aucune saison en cours.</p>';
+    const pct=Math.round(100*v.xpDansPalier/Math.max(1,v.xpParPalier));
+    const courant=Math.min(v.palier+1,v.paliers.length);
+    const cases=v.paliers.map(p=>`<li class="sp-case${p.obtenu?' obtenu':''}${p.palier===courant&&!p.obtenu?' courant':''}${p.palier%5===0?' grand':''}" data-palier="${p.palier}"><small>${p.palier}</small>${saisonApercu(p)}<b>${safeText(p.texte)}</b><span>${p.obtenu?'✓ OBTENU':(p.palier===courant?`${v.xpDansPalier} / ${v.xpParPalier}`:'')}</span></li>`).join('');
+    const duree=v.active?(v.joursRestants>1?`Encore ${v.joursRestants} jours`:'Dernier jour'):'Saison terminée';
+    return `<section class="sp-tete"><div><small>SAISON ${v.numero} · PASSE GRATUIT</small><b>${safeText(v.nom)}</b><span>${duree}</span></div><div class="sp-palier"><small>PALIER</small><b>${v.palier}</b></div></section>
+      <div class="sp-progres"><div class="pp-barre"><i style="width:${v.palier>=v.paliers.length?100:pct}%"></i></div><small>${v.palier>=v.paliers.length?`Piste terminée · chaque palier donne encore un vent porteur · ${v.xpDansPalier} / ${v.xpParPalier} XP`:`${v.xpDansPalier} / ${v.xpParPalier} XP vers le palier ${v.palier+1}`}</small></div>
+      <ol class="sp-piste">${cases}</ol>
+      <p class="coll-note">Toute l’XP gagnée pendant la saison la fait avancer : un palier tous les ${v.xpParPalier} XP. Ce qui est gagné reste à vous.</p>`;
+  }
+  /* Journal : les parties notées sur cet appareil (js/game/progression.js). */
+  const JOURNAL_MODES={solo:'Contre le CPU',duel:'Duel',team:'2 contre 2',online:'En ligne'};
+  const JOURNAL_NIVEAUX={easy:'Facile',normal:'Normal',hard:'Difficile',expert:'Expert'};
+  const JOURNAL_RESULTATS={victoire:'VICTOIRE',defaite:'DÉFAITE',nul:'NUL'};
+  const JOURNAL_MOIS=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  function journalDate(jour,aujourdhui,hier){
+    if(jour===aujourdhui) return 'Aujourd’hui';
+    if(jour===hier) return 'Hier';
+    const [,m,j]=String(jour).split('-').map(Number);
+    return m?`${j} ${JOURNAL_MOIS[m-1]}`:'';
+  }
+  function journalDuree(s){
+    if(!(s>0)) return '';
+    const min=Math.round(s/60);
+    return min<1?'< 1 min':(min<60?`${min} min`:`${Math.floor(min/60)} h ${String(min%60).padStart(2,'0')}`);
+  }
+  function journalHtml(v){
+    if(!v) return '';
+    const b=v.bilan;
+    const aujourdhui=v.jours[v.jours.length-1].jour, hier=v.jours[v.jours.length-2].jour;
+    const max=Math.max(1,...v.jours.map(j=>j.xp));
+    const lettres=['D','L','M','M','J','V','S'];
+    const barres=v.jours.map(j=>{
+      const [a,m,d]=j.jour.split('-').map(Number);
+      const lettre=lettres[new Date(Date.UTC(a,m-1,d)).getUTCDay()];
+      const h=j.xp?Math.max(5,Math.round(74*j.xp/max)):0;
+      return `<li class="jn-jour${j.jour===aujourdhui?' auj':''}${j.xp?'':' vide'}" title="${journalDate(j.jour,aujourdhui,hier)} : ${j.xp} XP, ${j.parties} partie${j.parties>1?'s':''}"><span class="jn-xp">${j.xp||''}</span><i style="height:${h}%"></i><small>${lettre}</small></li>`;
+    }).join('');
+    const taux=b.parties?Math.round(100*b.victoires/b.parties):0;
+    const tuiles=[
+      ['PARTIES',b.parties,`${b.joursJoues} jour${b.joursJoues>1?'s':''} sur 7`],
+      ['VICTOIRES',b.parties?`${taux} %`:'–',b.parties?`${b.victoires} sur ${b.parties}`:'aucune partie'],
+      ['XP PAR PARTIE',b.parties?b.xpParPartie:'–',`${b.xpParJour} XP par jour`],
+      ['DURÉE MOYENNE',b.dureeMoyenne?journalDuree(b.dureeMoyenne):'–','par partie']
+    ].map(([t,val,sous])=>`<li><small>${t}</small><b>${val}</b><span>${sous}</span></li>`).join('');
+    let rythme='';
+    const r=v.rythme;
+    if(r){
+      const texte=r.joursNecessaires===null
+        ?`Encore ${r.reste} XP jusqu’au palier ${r.total}. Jouez une partie pour voir votre rythme.`
+        :(r.aTemps
+          ?`À votre rythme, le palier ${r.total} tombe vers le <b>${journalDate(r.date,aujourdhui,hier)}</b>, avant la fin de la saison.`
+          :`À votre rythme, vous finirez la saison vers le <b>palier ${r.palierFinal}</b> sur ${r.total}.`);
+      rythme=`<div class="jn-rythme${r.aTemps?' a-temps':''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17c4-1 6-5 9-9 2 3 4 5 9 6"/><circle cx="12" cy="8" r="2.2"/></svg><p>${texte}</p></div>`;
+    }
+    const lignes=v.dernieres.map(e=>{
+      const sous=[e.difficulte?JOURNAL_NIVEAUX[e.difficulte]:'',e.manches?`${e.manches} manche${e.manches>1?'s':''}`:'',journalDuree(e.duree)].filter(Boolean).join(' · ');
+      return `<li class="jn-partie ${safeText(e.resultat)}"><em>${JOURNAL_RESULTATS[e.resultat]||''}</em><div><b>${safeText(JOURNAL_MODES[e.mode]||'Partie')}</b><small>${safeText(sous)}</small></div><span class="jn-quand">${journalDate(e.jour,aujourdhui,hier)}</span><strong>+${Number(e.xp)||0} XP</strong></li>`;
+    }).join('');
+    return `<section><h3>CES 7 DERNIERS JOURS</h3><ul class="jn-tuiles">${tuiles}</ul></section>
+      ${rythme}
+      <section><h3>XP GAGNÉE · 14 JOURS</h3><ol class="jn-graphe">${barres}</ol></section>
+      <section><h3>DERNIÈRES PARTIES${v.total>v.dernieres.length?` <small class="jn-total">${v.total} au total</small>`:''}</h3>${lignes?`<ul class="jn-parties">${lignes}</ul>`:'<p class="coll-note">Aucune partie notée pour l’instant. Vos parties terminées apparaîtront ici.</p>'}</section>
+      <p class="coll-note">Le journal reste sur cet appareil.</p>`;
+  }
+  function renderProgressionPanel(etat,annonce){
+    const onglet=['collection','saison','journal'].includes(modal.dataset.onglet)?modal.dataset.onglet:'progression';
+    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
+    modalTitle.textContent='PROGRESSION';
+    const tete=`<div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b>${etat.titre?`<span class="pp-titre">${safeText(etat.titre)}</span>`:''}<div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${etat.offrande.vent?` · Vent porteur actif (${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''})`:''}</small></div></div>`;
+    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button>${etat.saison?`<button type="button" role="tab" data-onglet="saison" aria-selected="${onglet==='saison'}">SAISON</button>`:''}<button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button><button type="button" role="tab" data-onglet="journal" aria-selected="${onglet==='journal'}">JOURNAL</button></div>`;
+    if(onglet==='journal'){
+      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${journalHtml(progressionApi()?.journal?.())}</div>`;
+      bindProgressionTabs();
+      return;
+    }
+    if(onglet==='saison'){
+      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${saisonHtml(etat.saison)}</div>`;
+      bindProgressionTabs();
+      const piste=modalBody.querySelector('.sp-piste');
+      const cible=piste?.querySelector('.courant')||piste?.querySelector('.obtenu:last-of-type');
+      if(piste&&cible) piste.scrollLeft=Math.max(0,cible.offsetLeft-piste.clientWidth/2+cible.clientWidth/2);
+      return;
+    }
+    if(onglet==='collection'){
+      const categories=progressionApi()?.collection?.()||[];
+      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}${collectionHtml(categories)}</div>`;
+      bindProgressionTabs();
+      modalBody.querySelectorAll('.coll-objet button:not([disabled])').forEach(btn=>btn.addEventListener('click',()=>{
+        if(!progressionApi()?.equiper?.(btn.dataset.cat,btn.dataset.id)) return;
+        const nom=btn.querySelector('b')?.textContent||'';
+        const nouvel=progressionApi()?.etat?.();
+        if(nouvel) renderProgressionPanel(nouvel,`${nom} équipé.`);
+      }));
+      /* Les « nouveau » restent visibles pendant cette visite, puis s'éteignent. */
+      try{ progressionApi()?.marquerVus?.(); }catch(_){}
+      return;
+    }
+    const o=etat.offrande;
+    const recue=i=>i<o.prochaine;
+    const cases=o.cases.map((texte,i)=>{
+      const courante=i===o.prochaine;
+      const classe=recue(i)?'recue':(courante?(o.dispo?'prete':'demain'):'');
+      const bas=recue(i)?'✓':(courante?(o.dispo?'<button type="button" class="offrande-prendre">RÉCUPÉRER</button>':'DEMAIN'):'');
+      return `<li class="offrande-case ${classe}${i===6?' grande':''}"><small>JOUR ${i+1}</small><b>${safeText(cellLabel(texte))}</b><span>${bas}</span></li>`;
+    }).join('');
+    modalBody.innerHTML=`<div class="progression-panel">
+      ${tete}${onglets}
+      ${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}
+      <section><h3>OFFRANDE DU JOUR</h3><ol class="offrande-cases">${cases}</ol></section>
+      <section><h3>QUÊTES DU JOUR</h3><ul class="quetes">${etat.quetes.jour.map((q,i)=>questHtml(q,i,false,etat.quetes.changementDispo)).join('')||'<li class="quete vide">Nouvelles quêtes demain.</li>'}</ul></section>
+      ${etat.quetes.semaine?`<section><h3>QUÊTE DE LA SEMAINE</h3><ul class="quetes">${questHtml(etat.quetes.semaine,0,true,false)}</ul></section>`:''}
+    </div>`;
+    bindProgressionTabs();
+    modalBody.querySelector('.offrande-prendre')?.addEventListener('click',()=>{
+      const r=progressionApi()?.reclamerOffrande?.();
+      const nouvel=progressionApi()?.etat?.();
+      const ouverts=r?.debloques?.length?` · Débloqué : ${r.debloques.map(d=>d.nom).join(', ')}`:'';
+      if(nouvel) renderProgressionPanel(nouvel,r?`Offrande reçue : ${r.texte}${r.niveauxGagnes>0?` · Niveau ${r.apres.niveau} atteint !`:''}${ouverts}`:null);
+      renderProfileBadge();
+    });
+    modalBody.querySelectorAll('.quete-changer').forEach(btn=>btn.addEventListener('click',()=>{
+      if(progressionApi()?.changerQuete?.(Number(btn.dataset.index))){
+        const nouvel=progressionApi()?.etat?.();
+        if(nouvel) renderProgressionPanel(nouvel,'Quête remplacée.');
+      }
+    }));
+  }
+  function bindProgressionTabs(){
+    modalBody.querySelectorAll('.pp-onglets [data-onglet]').forEach(btn=>btn.addEventListener('click',()=>{
+      if(modal.dataset.onglet===btn.dataset.onglet) return;
+      modal.dataset.onglet=btn.dataset.onglet;
+      const etat=progressionApi()?.etat?.();
+      if(etat) renderProgressionPanel(etat);
+      renderProfileBadge();
+    }));
+  }
+  function openProgression(onglet){
+    const etat=progressionApi()?.etat?.();
+    if(!etat) return;
+    modal.dataset.vue='progression';
+    /* Le badge mène à la collection quand elle a du nouveau ; sinon aux quêtes. */
+    modal.dataset.onglet=onglet||(etat.nouveautes&&!etat.offrande.dispo?'collection':'progression');
+    modal.querySelector('.menu-modal-card').classList.add('progression-card');
+    renderProgressionPanel(etat);
+    modal.classList.add('open');
+  }
+  (function waitProgression(tries){
+    if(progressionApi()) renderProfileBadge();
+    else if(tries>0) setTimeout(()=>waitProgression(tries-1),250);
+  })(40);
+  window.addEventListener('storage',e=>{ if(!e.key||e.key==='ilyos-profil-v1') renderProfileBadge(); });
+  document.addEventListener('visibilitychange',renderProfileBadge);
+  document.getElementById('profilBadge')?.addEventListener('click',()=>openProgression());
+  document.getElementById('offrandePill')?.addEventListener('click',()=>openProgression('progression'));
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
     if(!selections[mode]) selections[mode]={};
@@ -254,6 +466,7 @@
   }
 
   function openRules(){
+    resetModalView();
     modalTitle.textContent='RÈGLES D’ILYOS';
     modalBody.innerHTML=`<div class="rules-grid"><section><b>OBJECTIF</b><p>Validez 3 couronnes avant votre adversaire.</p></section><section><b>VOTRE TOUR</b><p>Posez une île, puis utilisez vos actions de déplacement, poussée et magie.</p></section><section><b>COURONNES</b><p>Récupérez, transmettez et ramenez les couronnes jusqu’à votre zone de validation.</p></section><section><b>2 CONTRE 2</b><p>Les deux partenaires partagent le même score. La première équipe à 3 couronnes gagne.</p></section></div>`;
     modal.classList.add('open');
@@ -263,6 +476,7 @@
      Même structure que les règles, donc même mise en forme sans une ligne de
      CSS supplémentaire. */
   function openCredits(){
+    resetModalView();
     modalTitle.textContent='CRÉDITS';
     modalBody.innerHTML=`<div class="rules-grid">`
       +`<section><b>MODÈLES 3D</b><p>KayKit — Medieval Builder, Adventurers et Dungeon Remastered, par Kay Lousberg. Packs libres d’usage.</p></section>`
@@ -275,7 +489,8 @@
     modal.classList.add('open');
   }
 
-  function openComingSoon(label){modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
+  function resetModalView(){delete modal.dataset.vue;delete modal.dataset.onglet;modal.querySelector('.menu-modal-card').classList.remove('progression-card')}
+  function openComingSoon(label){resetModalView();modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
   document.getElementById('back').addEventListener('click',()=>{flash();setTimeout(()=>{duel.classList.remove('active','enter');home.classList.add('active')},430)});

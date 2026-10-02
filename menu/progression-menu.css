@@ -1,0 +1,194 @@
+/* ILYOS — PANNEAU PROGRESSION DU MENU (menu/frame.js)
+   Niveau, offrande du jour (calendrier de 7 cases) et quêtes, dans la fenêtre
+   modale existante du menu. Mêmes ors et même nuit que le reste du menu. */
+
+.profil-badge{color:var(--gold2)}
+.profil-badge:hover{filter:brightness(1.12);transform:translateY(-1px)}
+.profil-alerte{position:absolute;right:-3px;top:-3px;width:12px;height:12px;border-radius:50%;background:#ff6a4d;border:2px solid #0b1a28;box-shadow:0 0 10px rgba(255,106,77,.8);animation:pp-pulse 1.6s ease-in-out infinite}
+.profil-alerte[hidden]{display:none}
+.offrande-pill{padding:.55cqh .9cqw;border-radius:999px;border:2px solid rgba(255,214,120,.95);background:linear-gradient(180deg,#7a4b12,#3b2207);color:#ffe3a2;font:700 .72cqw/1 'Cinzel Decorative',Georgia,serif;letter-spacing:.06em;cursor:pointer;box-shadow:0 0 0 0 rgba(255,214,120,.6),0 8px 18px rgba(0,0,0,.35);animation:pp-appel 2.2s ease-out infinite}
+.offrande-pill[hidden]{display:none}
+@keyframes pp-pulse{50%{transform:scale(1.25)}}
+@keyframes pp-appel{0%{box-shadow:0 0 0 0 rgba(255,214,120,.6),0 8px 18px rgba(0,0,0,.35)}70%{box-shadow:0 0 0 12px rgba(255,214,120,0),0 8px 18px rgba(0,0,0,.35)}100%{box-shadow:0 0 0 0 rgba(255,214,120,0),0 8px 18px rgba(0,0,0,.35)}}
+
+.menu-modal-card.progression-card{width:min(760px,64vw);max-height:90vh;overflow:auto}
+.progression-panel{display:grid;gap:18px;font-family:'Nunito Sans',Inter,sans-serif}
+.progression-panel h3{margin:0 0 10px;font:700 13px/1 'Cinzel Decorative',Georgia,serif;letter-spacing:.14em;color:#efc979}
+
+.pp-niveau{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid rgba(221,169,64,.45);border-radius:16px;background:radial-gradient(120% 160% at 0% 50%,rgba(244,210,142,.16),transparent 60%),rgba(255,255,255,.02)}
+.pp-anneau{width:64px!important;height:64px!important;flex:none}
+.pp-anneau::before{inset:5px!important}
+.pp-anneau b{font-size:26px!important}
+.pp-niveau-texte{flex:1;min-width:0}
+.pp-niveau-texte>b{font:900 18px/1 'Cinzel Decorative',Georgia,serif;color:#f4d28e;letter-spacing:.06em}
+.pp-barre{height:12px;margin:8px 0 6px;border-radius:999px;background:linear-gradient(180deg,#0c1c2a,#16304a);box-shadow:inset 0 2px 4px rgba(0,0,0,.5),0 0 0 1px rgba(221,169,64,.5);overflow:hidden}
+.pp-barre i{display:block;height:100%;border-radius:inherit;background:linear-gradient(180deg,#f4d28e,#c9a45d 60%,#a37a2c);box-shadow:0 0 12px rgba(244,210,142,.7)}
+.pp-niveau-texte small{color:#cdbf9f;font-size:12.5px}
+.pp-annonce{padding:10px 14px;border-radius:12px;border:1px solid rgba(255,214,120,.7);background:linear-gradient(90deg,rgba(255,214,120,.22),rgba(255,214,120,.04));color:#ffe3a2;font-weight:800;text-align:center;animation:pp-arrivee .5s ease-out}
+@keyframes pp-arrivee{from{transform:scale(.94);opacity:0}}
+
+.offrande-cases{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;list-style:none;margin:0;padding:0}
+.offrande-case{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:6px;min-height:92px;padding:10px 6px;border:1px solid rgba(221,169,64,.35);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.18));text-align:center}
+.offrande-case small{font-size:10px;font-weight:800;letter-spacing:.1em;color:#a99a7c}
+.offrande-case b{font-size:13px;line-height:1.15;color:#f5e5c4}
+.offrande-case span{font-size:11px;font-weight:800;color:#a99a7c}
+.offrande-case.grande{border-color:rgba(255,214,120,.75);background:radial-gradient(circle at 50% 30%,rgba(255,214,120,.22),rgba(0,0,0,.18))}
+.offrande-case.recue{opacity:.55}
+.offrande-case.recue span{color:#9be07a;font-size:16px}
+.offrande-case.prete{border:2px solid #ffd678;background:radial-gradient(circle at 50% 30%,rgba(255,214,120,.35),rgba(60,34,7,.6));box-shadow:0 0 22px rgba(255,214,120,.35);transform:translateY(-3px)}
+.offrande-case.demain span{color:#efc979}
+.offrande-prendre{padding:6px 8px;border-radius:999px;border:0;background:linear-gradient(180deg,#ffe3a2,#d8aa4c);color:#2b1a05;font:900 10px/1 'Nunito Sans',sans-serif;letter-spacing:.06em;cursor:pointer;animation:pp-pulse 1.6s ease-in-out infinite}
+
+.quetes{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.quete{padding:10px 12px;border:1px solid rgba(221,169,64,.3);border-radius:12px;background:rgba(255,255,255,.03)}
+.quete.vide{color:#a99a7c;text-align:center}
+.quete-haut{display:flex;align-items:center;gap:10px}
+.quete-texte{flex:1;min-width:0;font-weight:700;color:#f5e5c4}
+.quete-xp{font-weight:900;color:#efc979;white-space:nowrap}
+.quete-changer{width:28px;height:28px;flex:none;border-radius:50%;border:1px solid rgba(221,169,64,.6);background:#07131f;color:#e8c779;font-size:15px;cursor:pointer}
+.quete-changer:hover{filter:brightness(1.25)}
+.quete-barre{height:7px;margin:8px 0 4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.quete-barre i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#c9a45d,#f4d28e)}
+.quete small{color:#a99a7c;font-size:11.5px}
+.quete.finie{border-color:rgba(155,224,122,.6);background:linear-gradient(90deg,rgba(155,224,122,.14),rgba(255,255,255,.02))}
+.quete.finie .quete-xp,.quete.finie small{color:#9be07a}
+.quete.finie .quete-barre i{background:linear-gradient(90deg,#6dbf4f,#9be07a)}
+.quete.semaine{border-color:rgba(207,150,255,.45)}
+
+.pp-titre{display:block;margin-top:4px;font:italic 700 13px/1.1 'Cinzel Decorative',Georgia,serif;color:#e7cfa0;letter-spacing:.04em}
+
+/* Onglets du panneau : quêtes et offrande / collection */
+.pp-onglets{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;padding:5px;border-radius:999px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(221,169,64,.35)}
+.pp-onglets button{position:relative;white-space:nowrap;padding:10px 12px;border:0;border-radius:999px;background:transparent;color:#cdbf9f;font:800 12px/1 'Cinzel Decorative',Georgia,serif;letter-spacing:.1em;cursor:pointer;transition:background .2s,color .2s}
+.pp-onglets button:hover{color:#f5e5c4}
+.pp-onglets button[aria-selected="true"]{background:linear-gradient(180deg,#f4d28e,#c9a45d 60%,#a37a2c);color:#2b1a05;box-shadow:0 4px 14px rgba(244,210,142,.35)}
+.pp-pastille{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:8px;padding:0 5px;border-radius:999px;background:#ff6a4d;color:#fff;font:900 11px/1 'Nunito Sans',sans-serif;font-style:normal;letter-spacing:0;vertical-align:1px;box-shadow:0 0 10px rgba(255,106,77,.7)}
+
+/* Collection */
+.coll-section h3{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.coll-section h3 small{font:600 12px/1 'Nunito Sans',sans-serif;letter-spacing:0;color:#a99a7c}
+.coll-grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;list-style:none;margin:0;padding:0}
+.coll-grille-titre{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.coll-objet button{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;gap:7px;padding:10px 8px 9px;border:1px solid rgba(221,169,64,.32);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.22));color:#f5e5c4;font-family:'Nunito Sans',Inter,sans-serif;text-align:center;cursor:pointer;transition:transform .18s ease,border-color .18s,box-shadow .18s}
+.coll-objet button:not([disabled]):hover{transform:translateY(-3px);border-color:rgba(255,214,120,.8);box-shadow:0 10px 22px rgba(0,0,0,.35),0 0 18px rgba(255,214,120,.18)}
+.coll-objet button[disabled]{cursor:default}
+.coll-objet b{font-size:13px;line-height:1.15}
+.coll-objet small{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:#efc979}
+.coll-objet.equipe button{border:2px solid #ffd678;background:radial-gradient(120% 90% at 50% 0%,rgba(255,214,120,.28),rgba(0,0,0,.2) 70%);box-shadow:0 0 22px rgba(255,214,120,.3)}
+.coll-objet.equipe small{color:#2b1a05;background:linear-gradient(180deg,#ffe3a2,#d8aa4c);padding:3px 8px;border-radius:999px}
+.coll-objet.verrou small{color:#a99a7c;letter-spacing:.02em;font-weight:700}
+.coll-objet.verrou .coll-apercu{filter:grayscale(.85) brightness(.6)}
+.coll-objet.verrou b{color:#b9ab8d}
+.coll-nouveau{position:absolute;top:-7px;right:-5px;padding:3px 7px;border-radius:999px;background:linear-gradient(180deg,#ff8a6a,#e0523a);color:#fff;font:900 9.5px/1 'Nunito Sans',sans-serif;font-style:normal;letter-spacing:.08em;box-shadow:0 0 12px rgba(255,106,77,.7);animation:pp-pulse 1.6s ease-in-out infinite}
+
+.coll-apercu{display:block;flex:none}
+.coll-gemme{width:62px;height:62px;margin:4px 0 2px;border-radius:50%;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.95) 0 6%,rgba(255,255,255,.35) 16%,var(--c) 42%,color-mix(in srgb,var(--c) 55%,#000) 100%);box-shadow:0 0 0 3px rgba(11,26,40,.9),0 0 0 5px rgba(221,169,64,.75),0 6px 16px rgba(0,0,0,.45),0 0 20px color-mix(in srgb,var(--c) 50%,transparent)}
+.coll-portrait{width:100%;aspect-ratio:5/6;border-radius:10px;overflow:hidden;background:radial-gradient(circle at 50% 30%,rgba(255,226,145,.22),transparent 55%),linear-gradient(160deg,#1d4560,#07131e 75%);box-shadow:inset 0 0 0 1px rgba(221,169,64,.35)}
+.coll-portrait img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 20%}
+.coll-ciel{width:100%;height:74px;border-radius:10px;background:#0d1d2b center 62%/cover no-repeat;box-shadow:inset 0 0 0 1px rgba(221,169,64,.35),inset 0 -18px 24px rgba(0,0,0,.25)}
+.coll-plaque{display:grid;place-items:center;width:100%;min-height:54px;padding:8px 10px;border-radius:8px;background:linear-gradient(180deg,#f4d28e,#c9a45d 55%,#9c7428);clip-path:polygon(6% 0,94% 0,100% 50%,94% 100%,6% 100%,0 50%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.coll-plaque span{font:italic 800 12.5px/1.15 'Cinzel Decorative',Georgia,serif;color:#2b1a05;letter-spacing:.02em}
+.coll-grille-titre .coll-objet b{display:none}
+.coll-note{margin:0;color:#a99a7c;font-size:12px;text-align:center}
+
+/* Effets de victoire dans la collection : une petite pluie figée */
+.coll-effet{position:relative;width:100%;height:74px;border-radius:10px;overflow:hidden;background:radial-gradient(circle at 50% 120%,rgba(255,214,120,.35),transparent 60%),linear-gradient(180deg,#14283b,#07131e);box-shadow:inset 0 0 0 1px rgba(221,169,64,.35)}
+.coll-effet i{position:absolute;display:block}
+.coll-effet-sobre i{display:none}
+.coll-effet-sobre::after{content:"—";position:absolute;inset:0;display:grid;place-items:center;color:#a99a7c;font-size:20px}
+.coll-effet-etincelles i{width:8px;height:8px;border-radius:50%;background:radial-gradient(circle,#fffbe6 0 20%,#ffd66b 45%,rgba(255,190,70,0) 72%);animation:coll-monte 2.4s ease-in infinite}
+.coll-effet-plumes i{width:14px;height:28px;background:center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 52'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe7a0'/%3E%3Cstop offset='.45' stop-color='%23ff9a3d'/%3E%3Cstop offset='1' stop-color='%23d4372b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1C4 10 2 24 6 36c2 6 5 10 7 13 2-3 5-7 7-13 4-12 2-26-7-35Z' fill='url(%23g)'/%3E%3Cpath d='M13 4v47' stroke='%23fff2c8' stroke-width='1.2' opacity='.85'/%3E%3C/svg%3E");filter:drop-shadow(0 0 4px rgba(255,154,61,.6));animation:coll-tombe 3.2s linear infinite}
+.coll-effet i:nth-child(1){left:12%;animation-delay:0s}.coll-effet i:nth-child(2){left:32%;animation-delay:-.9s}.coll-effet i:nth-child(3){left:52%;animation-delay:-1.7s}.coll-effet i:nth-child(4){left:70%;animation-delay:-.4s}.coll-effet i:nth-child(5){left:86%;animation-delay:-2.3s}
+@keyframes coll-monte{from{top:100%;opacity:0}20%{opacity:1}to{top:-12%;opacity:0}}
+@keyframes coll-tombe{from{top:-40%;transform:rotate(-20deg)}50%{transform:rotate(20deg)}to{top:110%;transform:rotate(-10deg)}}
+.coll-objet.verrou .coll-effet i{animation-play-state:paused}
+
+/* Onglet Saison : la piste gratuite */
+.sp-tete{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 18px;border-radius:16px;border:1px solid rgba(190,140,255,.45);background:radial-gradient(120% 160% at 100% 0%,rgba(190,140,255,.28),transparent 60%),radial-gradient(90% 140% at 0% 100%,rgba(255,170,110,.22),transparent 60%),linear-gradient(135deg,#1b2347,#0b1a28)}
+.sp-tete>div:first-child{display:grid;gap:4px}
+.sp-tete small{font:800 10.5px/1 'Nunito Sans',sans-serif;letter-spacing:.16em;color:#cfa8ff}
+.sp-tete b{font:900 21px/1.1 'Cinzel Decorative',Georgia,serif;color:#ffe3a2;letter-spacing:.03em}
+.sp-tete span{font-size:12.5px;color:#d9c9a6}
+.sp-palier{display:grid;place-items:center;flex:none;width:72px;height:80px;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);background:linear-gradient(160deg,#f4d28e,#c9a45d 45%,#8a6418)}
+.sp-palier small{color:#3b2207;letter-spacing:.12em;font-size:9px}
+.sp-palier b{font:900 28px/1 'Cinzel Decorative',Georgia,serif;color:#2b1a05;margin-top:-14px}
+.sp-progres small{color:#cdbf9f;font-size:12.5px}
+.sp-piste{display:flex;gap:10px;list-style:none;margin:0;padding:6px 4px 12px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#c9a45d transparent}
+.sp-case{position:relative;flex:0 0 116px;display:flex;flex-direction:column;align-items:center;gap:7px;padding:22px 8px 10px;border:1px solid rgba(221,169,64,.3);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.22));text-align:center;scroll-snap-align:center}
+.sp-case>small{position:absolute;top:-1px;left:50%;transform:translateX(-50%);min-width:30px;padding:4px 8px;border-radius:0 0 10px 10px;background:#0b1a28;box-shadow:inset 0 0 0 1px rgba(221,169,64,.45);font:900 11px/1 'Nunito Sans',sans-serif;color:#efc979}
+.sp-case b{font-size:12px;line-height:1.2;color:#f5e5c4}
+.sp-case span{min-height:13px;font-size:10.5px;font-weight:800;letter-spacing:.06em;color:#a99a7c}
+.sp-case.grand{flex-basis:132px;border-color:rgba(255,214,120,.65);background:radial-gradient(120% 80% at 50% 0%,rgba(255,214,120,.18),rgba(0,0,0,.22) 70%)}
+.sp-case.obtenu{border-color:rgba(155,224,122,.55)}
+.sp-case.obtenu span{color:#9be07a}
+.sp-case.obtenu>small{background:#9be07a;color:#0b1a28}
+.sp-case.courant{border:2px solid #ffd678;box-shadow:0 0 22px rgba(255,214,120,.3);transform:translateY(-3px)}
+.sp-case.courant span{color:#ffe3a2}
+.sp-case:not(.obtenu):not(.courant) .sp-apercu{filter:saturate(.55) brightness(.75)}
+.sp-apercu{display:grid;place-items:center;flex:none}
+.sp-gemme{width:52px;height:52px;border-radius:50%;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.95) 0 6%,rgba(255,255,255,.35) 16%,var(--c) 42%,color-mix(in srgb,var(--c) 55%,#000) 100%);box-shadow:0 0 0 3px rgba(11,26,40,.9),0 0 0 5px rgba(221,169,64,.75)}
+.sp-portrait{width:76px;height:84px;border-radius:10px;overflow:hidden;background:radial-gradient(circle at 50% 30%,rgba(255,226,145,.22),transparent 55%),linear-gradient(160deg,#1d4560,#07131e 75%)}
+.sp-portrait img{width:100%;height:100%;object-fit:cover;object-position:50% 20%}
+.sp-ciel{width:96px;height:56px;border-radius:10px;background:#0d1d2b center 62%/cover no-repeat;box-shadow:inset 0 0 0 1px rgba(221,169,64,.35)}
+.sp-plaque,.sp-vent,.sp-coffre,.sp-effet{width:52px;height:52px;border-radius:50%}
+.sp-apercu svg{width:30px;height:30px}
+.sp-plaque{background:linear-gradient(160deg,#f4d28e,#c9a45d 55%,#8a6418);color:#2b1a05}
+.sp-vent{background:radial-gradient(circle at 40% 30%,#bff3ff,#3fb6d6 60%,#14607a);color:#effcff;font-family:'Nunito Sans',sans-serif}
+.sp-coffre{background:radial-gradient(circle at 40% 30%,#ffe9a8,#d8a33c 60%,#7a4b12);color:#3b2207;font:900 14px/1 'Nunito Sans',sans-serif}
+.sp-effet{background:center/58% no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 52'%3E%3Cpath d='M13 1C4 10 2 24 6 36c2 6 5 10 7 13 2-3 5-7 7-13 4-12 2-26-7-35Z' fill='%23ff9a3d'/%3E%3Cpath d='M13 4v47' stroke='%23fff2c8' stroke-width='1.2'/%3E%3C/svg%3E"),radial-gradient(circle at 50% 40%,#5a2a1a,#1e0d10);box-shadow:0 0 0 2px #ffb15a,0 0 18px rgba(255,140,60,.6)}
+
+/* Journal des parties */
+.jn-tuiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;list-style:none;margin:0;padding:0}
+.jn-tuiles li{display:grid;gap:5px;padding:12px 12px 11px;border:1px solid rgba(221,169,64,.32);border-radius:14px;background:radial-gradient(120% 120% at 0% 0%,rgba(244,210,142,.12),transparent 60%),linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.2))}
+.jn-tuiles small{font:800 10px/1 'Nunito Sans',sans-serif;letter-spacing:.14em;color:#a99a7c}
+.jn-tuiles b{font:900 24px/1 'Cinzel Decorative',Georgia,serif;color:#f4d28e}
+.jn-tuiles span{font-size:11.5px;color:#cdbf9f}
+.jn-rythme{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;border:1px solid rgba(190,140,255,.45);background:radial-gradient(120% 160% at 100% 0%,rgba(190,140,255,.24),transparent 60%),linear-gradient(135deg,#1b2347,#0b1a28)}
+.jn-rythme.a-temps{border-color:rgba(255,214,120,.6)}
+.jn-rythme svg{width:30px;height:30px;flex:none;fill:none;stroke:#e3cbff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.jn-rythme.a-temps svg{stroke:#f4d28e}
+.jn-rythme p{margin:0;font-size:13.5px;line-height:1.35;color:#f0e2c4}
+.jn-rythme p b{color:#ffe3a2}
+.jn-graphe{display:grid;grid-template-columns:repeat(14,1fr);gap:6px;align-items:end;height:150px;list-style:none;margin:0;padding:10px 12px 8px;border:1px solid rgba(221,169,64,.25);border-radius:14px;background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.26)),repeating-linear-gradient(0deg,transparent 0 29px,rgba(221,169,64,.08) 29px 30px)}
+.jn-jour{position:relative;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%;min-width:0}
+.jn-jour i{width:100%;max-width:26px;flex:none;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,#f4d28e,#c9a45d 70%,#8e6626);box-shadow:0 0 10px rgba(244,210,142,.25)}
+.jn-jour.vide i{height:3px!important;background:rgba(221,169,64,.22);box-shadow:none}
+.jn-jour.auj i{background:linear-gradient(180deg,#ffe9b8,#f4c35f 70%,#b07a22);box-shadow:0 0 16px rgba(255,214,120,.55)}
+.jn-jour small{font:800 10px/16px 'Nunito Sans',sans-serif;color:#a99a7c}
+.jn-jour.auj small{color:#ffe3a2}
+.jn-xp{font:800 9.5px/16px 'Nunito Sans',sans-serif;color:#cdbf9f;white-space:nowrap}
+.jn-parties{display:grid;gap:7px;list-style:none;margin:0;padding:0}
+.jn-partie{display:grid;grid-template-columns:86px minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:9px 12px;border:1px solid rgba(221,169,64,.25);border-radius:12px;background:rgba(255,255,255,.03)}
+.jn-partie em{font:900 10.5px/1 'Nunito Sans',sans-serif;font-style:normal;letter-spacing:.1em;text-align:center;padding:6px 0;border-radius:999px;color:#cdbf9f;background:rgba(255,255,255,.07)}
+.jn-partie.victoire{border-color:rgba(244,210,142,.45);background:linear-gradient(90deg,rgba(244,210,142,.12),rgba(255,255,255,.02))}
+.jn-partie.victoire em{color:#2b1a05;background:linear-gradient(180deg,#ffe3a2,#d8aa4c)}
+.jn-partie.defaite em{color:#f0c7c0;background:rgba(201,74,68,.28)}
+.jn-partie div{display:grid;gap:3px;min-width:0}
+.jn-partie div b{font-size:13.5px;color:#f5e5c4}
+.jn-partie div small{font-size:11.5px;color:#a99a7c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jn-quand{font-size:11.5px;color:#a99a7c;white-space:nowrap}
+.jn-partie strong{font-weight:900;color:#efc979;white-space:nowrap}
+.jn-total{font:600 12px/1 'Nunito Sans',sans-serif;letter-spacing:0;color:#a99a7c;margin-left:8px}
+
+@media (orientation:portrait) and (max-width:820px){
+  .menu-modal-card.progression-card{width:94vw;padding:22px 14px 18px}
+  .offrande-cases{grid-template-columns:repeat(4,1fr)}
+  .offrande-case{min-height:80px}
+  .offrande-pill{font-size:11px}
+  .coll-grille{grid-template-columns:repeat(2,1fr)}
+  .coll-grille-titre{grid-template-columns:1fr 1fr}
+  .pp-onglets{grid-auto-columns:auto;gap:2px;padding:4px}
+  .pp-onglets button{font-size:10px;padding:9px 6px;letter-spacing:.03em}
+  .pp-onglets .pp-pastille{min-width:15px;height:15px;margin-left:4px;padding:0 3px;font-size:9.5px}
+  .pp-long{display:none}
+  .sp-tete b{font-size:17px}
+  .sp-case{flex-basis:104px}
+  .jn-tuiles{grid-template-columns:1fr 1fr}
+  .jn-graphe{gap:3px;padding:8px 6px 6px}
+  .jn-xp{display:none}
+  .jn-partie{grid-template-columns:66px minmax(0,1fr) auto;gap:8px;padding:8px 10px}
+  .jn-partie em{font-size:9.5px;letter-spacing:.04em;grid-row:1 / span 2}
+  .jn-quand{grid-column:2;grid-row:2;margin-top:-2px}
+  .jn-partie strong{grid-row:1 / span 2;grid-column:3}
+}
+@media (prefers-reduced-motion:reduce){.profil-alerte,.offrande-pill,.offrande-prendre,.coll-nouveau,.coll-effet i{animation:none}}

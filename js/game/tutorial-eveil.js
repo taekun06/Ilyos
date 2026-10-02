@@ -2932,6 +2932,7 @@
         eveilDesarmer();
         eveilAideStop();
         try { localStorage.setItem(TUTO_STORAGE_KEY, "1"); } catch (_) { }
+        progressionTutorielTermine();
         try { localStorage.removeItem(EVEIL_STORAGE_KEY); } catch (_) { }
 
         /* LE SEUIL. Les quatre actes sont faits : le joueur sait tout ce

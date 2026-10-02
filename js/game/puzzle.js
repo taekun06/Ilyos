@@ -2171,6 +2171,7 @@
       function puzzleRecordSolved(def, depense, etoiles) {
         const progress = puzzleLoadProgress();
         const avant = progress[def.id] || {};
+        progressionPuzzleResolu(!avant.solved);
         progress[def.id] = {
           solved: true,
           best: Number.isFinite(avant.best) ? Math.min(avant.best, depense) : depense,

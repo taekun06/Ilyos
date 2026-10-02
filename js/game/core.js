@@ -1537,6 +1537,7 @@
         if (ilyosSimulationActive) return;
         const stats = statistiquesDuJoueur(indexJoueur);
         if (stats) stats[cle] = (stats[cle] || 0) + 1;
+        progressionSuiviEnJeu(indexJoueur, cle);
       }
 
       /* Îles réellement posées pendant la partie : celles de la mise en place
@@ -2287,7 +2288,8 @@
             sendOnlineMessage({
               type: "hello",
               name: onlineLocalName,
-              revision: networkRevision
+              revision: networkRevision,
+              apparence: progressionApparenceLocale()
             });
             sendOnlineMessage({ type: "request-state" });
           } else if (state?.onlineMode) {
@@ -2298,7 +2300,8 @@
             });
           }
           saveOnlineSession();
-          renderAll();
+          // L'invité n'a pas encore d'état : il arrive avec la réponse de l'hôte.
+          if (state) renderAll();
           showToast("Connexion en ligne établie.");
         });
 
@@ -2309,7 +2312,8 @@
             if (!state?.onlineMode) {
               createOnlineGame(
                 onlineLocalName || "JOUEUR 1",
-                String(message.name || "JOUEUR 2").toLocaleUpperCase("fr-FR")
+                String(message.name || "JOUEUR 2").toLocaleUpperCase("fr-FR"),
+                message.apparence
               );
             } else {
               sendOnlineMessage({
@@ -3103,7 +3107,7 @@
         state.nextCharId = 200;
       }
 
-      function createOnlineGame(hostName, guestName) {
+      function createOnlineGame(hostName, guestName, apparenceInvite = null) {
         stopTurnTimer();
         aiRunToken++;
 
@@ -3138,10 +3142,18 @@
           };
         });
 
+        /* Cosmétiques : l'hôte s'habille lui-même, l'invité avec l'apparence
+           reçue dans son « hello ». La synchronisation d'état les transmet. */
+        try {
+          progressionAppliquerApparence(players[0], progressionApparenceLocale(), players);
+          progressionAppliquerApparence(players[1], apparenceInvite, players);
+        } catch (_) { }
+
         state = {
           players,
           soloMode: false,
           onlineMode: true,
+          debutPartie: Date.now(),
           visualMode: pendingVisualMode,
           startingBoardMode: pendingOnlineStartingBoard,
           startingBoardPreset: null,
@@ -3357,6 +3369,8 @@
             stash: { MOVE: 0, PUSH: 0, MAGIC: 0 }
           };
         });
+        // Couleur et gardiens choisis dans la collection (progression.js).
+        progressionHabillerJoueurs(players);
 
         // Plateau classique : on démarre sans aucun gardien. Le premier tour
         // impose déjà de poser une île, ce qui déclenche l'invocation — chaque
@@ -3379,6 +3393,8 @@
           players,
           soloMode,
           onlineMode: false,
+          // Heure de début, pour la durée notée au journal (progression.js).
+          debutPartie: Date.now(),
           visualMode: pendingVisualMode,
           startingBoardMode,
           startingBoardPreset,
