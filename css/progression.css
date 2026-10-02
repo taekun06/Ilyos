@@ -316,3 +316,121 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* ---------- Débloqué : ce que la partie vient d'ouvrir ---------- */
+#victoryModal .progression-debloques {
+  flex-basis: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background:
+    radial-gradient(70% 120% at 12% 0%, rgba(244, 210, 142, .28), transparent 70%),
+    linear-gradient(135deg, #24345a, #13283a 60%, #1d1838);
+  box-shadow: inset 0 0 0 1px rgba(244, 210, 142, .7), 0 6px 16px rgba(19, 40, 58, .25);
+  color: #fff5dc;
+  animation: progression-ouverture .6s cubic-bezier(.2, 1.4, .4, 1) .5s both;
+}
+
+#victoryModal .progression-debloques-tete {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+#victoryModal .progression-debloques-tete b {
+  font: 800 12px/1 "Cinzel Decorative", Georgia, serif;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #f4d28e;
+}
+
+#victoryModal .progression-debloques-tete small {
+  font-size: 11px;
+  color: #d9c9a6;
+  text-align: right;
+}
+
+#victoryModal .progression-debloques ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#victoryModal .progression-debloques li {
+  margin: 0;
+  color: #fff5dc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 0 0 1px rgba(244, 210, 142, .45);
+}
+
+/* .modal-card li impose sa couleur (index.html, !important) : le texte
+   porte donc la sienne. */
+#victoryModal .progression-debloques li span {
+  color: #fff5dc;
+  display: grid;
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+#victoryModal .progression-debloques li small {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #f4d28e;
+}
+
+#victoryModal .progression-debloques .progression-vignette {
+  flex: none;
+  box-sizing: content-box;
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #0d1d2b center / cover no-repeat;
+  box-shadow: 0 0 0 2px #f4d28e, 0 0 12px rgba(244, 210, 142, .6);
+}
+
+#victoryModal .progression-debloques .progression-vignette-couleur {
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .85), var(--c) 38%, color-mix(in srgb, var(--c) 55%, #000) 100%);
+}
+
+#victoryModal .progression-debloques .progression-vignette-heros {
+  background-size: 210%;
+  background-position: 50% 12%;
+  background-color: #17344a;
+}
+
+#victoryModal .progression-debloques .progression-vignette-titre {
+  font-style: normal;
+  color: #f4d28e;
+  font-size: 18px;
+}
+
+@keyframes progression-ouverture {
+  from { transform: scale(.9); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #victoryModal .progression-debloques { animation: none; }
+}
+
+/* ---------- HUD : portrait d'un gardien choisi dans la collection ---------- */
+#ilyosHudOrganicV2 .ov2-avatar .ov2-portrait-img.ov2-portrait-collection {
+  object-fit: cover;
+}

@@ -1269,6 +1269,9 @@
           console.warn("Three.js indisponible : conservation du plateau HTML de secours.");
           return;
         }
+        // Ciel choisi dans la collection du joueur (progression.js).
+        const cielDuProfil = progressionCielEquipe();
+        if (cielDuProfil && KAYKIT_SKY_BAND_VARIANTS[cielDuProfil]) kaykitSkyBandActiveVariant = cielDuProfil;
 
         const canvas = document.createElement("canvas");
         canvas.id = "kaykitCanvas";
@@ -10409,6 +10412,10 @@
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
         const playerId = character.player ?? 0;
+        // Gardien choisi dans la collection (progression.js) : tous les
+        // gardiens de ce joueur prennent ce modèle.
+        const choisi = state.players[playerId]?.heros;
+        if (choisi && KAYKIT_ASSETS[choisi]) return choisi;
         const teamHeroPools = state.players.length === 2
           ? { 0: ["hero0"], 1: ["hero1"] }
           : {
@@ -15889,6 +15896,8 @@
             stash: { MOVE: 0, PUSH: 0, MAGIC: 0 }
           };
         });
+        // Couleur et gardiens choisis dans la collection (progression.js).
+        progressionHabillerJoueurs(players);
 
         // Plateau classique : on démarre sans aucun gardien. Le premier tour
         // impose déjà de poser une île, ce qui déclenche l'invocation — chaque
@@ -19749,6 +19758,9 @@
                 iconEl.dataset.filled = "1";
               }
               portraitEl.classList.toggle("hud-v2-portrait-active", !!isActiveTurn);
+              /* Gardien choisi dans la collection : le HUD organique lit ce
+                 portrait (js/hud-organique-v2.js). */
+              portraitEl.dataset.heros = progressionPortraitDuJoueur(p) || "";
             } else {
               portraitEl.classList.add("hidden");
             }
@@ -43128,8 +43140,9 @@
 
          Chaque partie terminée rapporte de l'XP, perdue, nulle ou gagnée ; la
          victoire en rapporte davantage, la première du jour encore plus. Le
-         niveau ne redescend jamais. Les quêtes, l'offrande du jour, la saison
-         et les cosmétiques viendront se brancher sur ce même profil.
+         niveau ne redescend jamais. Les quêtes, l'offrande du jour et la
+         collection de cosmétiques vivent dans ce même profil ; la saison
+         viendra s'y brancher.
 
          Le profil vit sur l'appareil, sous une seule clé. La sauvegarde est
          automatique : pas d'export, pas d'import, rien à demander au joueur.
@@ -43206,6 +43219,45 @@
       ];
       const PROGRESSION_VENT_BONUS = .5;
 
+      /* COLLECTION. Les cosmétiques ne changent rien aux règles : ils
+         habillent le joueur de l'appareil (sa couleur, ses gardiens, son
+         titre) et son ciel. Tous viennent d'assets déjà présents (KayKit et
+         bandes de ciel CC0, voir docs/ASSETS.md). Chacun se débloque par un
+         niveau ou par un exploit, et son déblocage est calculé à partir du
+         profil : rien à stocker, rien qui puisse se désynchroniser. Le premier
+         de chaque catégorie est l'apparence d'origine, toujours disponible.
+         « valeur » est ce que le rendu consomme : une couleur, une clé de
+         KAYKIT_ASSETS, une variante de KAYKIT_SKY_BAND_VARIANTS. */
+      const PROGRESSION_COLLECTION = [
+        { cle: "couleur", nom: "Couleur", objets: [
+          { id: "or", nom: "Or d'Ilyos", valeur: "#ddb653", niveau: 1 },
+          { id: "corail", nom: "Corail de l'aube", valeur: "#f2865e", niveau: 3 },
+          { id: "lagon", nom: "Lagon", valeur: "#38c6cf", niveau: 6 },
+          { id: "braise", nom: "Braise", valeur: "#e2503f", niveau: 10 },
+          { id: "givre", nom: "Givre", valeur: "#dfeaff", niveau: 15 }
+        ] },
+        { cle: "heros", nom: "Gardiens", objets: [
+          { id: "chevalier", nom: "Chevalier", valeur: "hero0", image: "assets/collection/heros-knight.webp", niveau: 1 },
+          { id: "rodeuse", nom: "Rôdeuse", valeur: "hero2", image: "assets/collection/heros-rogue.webp", portrait: "assets/collection/portrait-rogue.webp", niveau: 4 },
+          { id: "capuche", nom: "Rôdeuse encapuchonnée", valeur: "hero2Hooded", image: "assets/collection/heros-rogue-hooded.webp", portrait: "assets/collection/portrait-rogue-hooded.webp", niveau: 8 },
+          { id: "barbare", nom: "Barbare", valeur: "hero3", image: "assets/collection/heros-barbarian.webp", portrait: "assets/collection/portrait-barbarian.webp", niveau: 12 }
+        ] },
+        { cle: "ciel", nom: "Ciel", objets: [
+          { id: "aube", nom: "Aube dorée", valeur: "blend0223", image: "assets/sky/sky-band-blend-02-23.webp", niveau: 1 },
+          { id: "azur", nom: "Azur profond", valeur: "sky05", image: "assets/sky/sky-band-05.webp", niveau: 5 },
+          { id: "rose", nom: "Rose des vents", valeur: "blend0223v2", image: "assets/sky/sky-band-blend-02-23-v2.webp", niveau: 9 },
+          { id: "nuit", nom: "Nuit étoilée", valeur: "sky11", image: "assets/sky/sky-band-11.webp", niveau: 13 }
+        ] },
+        { cle: "titre", nom: "Titre", objets: [
+          { id: "voyageur", nom: "Voyageur des îles", niveau: 1 },
+          { id: "pousseur", nom: "Pousseur de nuages", niveau: 5 },
+          { id: "fidele", nom: "Fidèle de l'offrande", exploit: { cle: "offrandes", cible: 7, texte: "Recevoir 7 offrandes" } },
+          { id: "enigmes", nom: "Esprit des énigmes", exploit: { cle: "puzzles", cible: 5, texte: "Résoudre 5 puzzles" } },
+          { id: "expert", nom: "Tombeur d'Expert", exploit: { cle: "expert", cible: 1, texte: "Battre le CPU Expert" } },
+          { id: "gardien", nom: "Gardien de l'aube", niveau: 20 }
+        ] }
+      ];
+
       let progressionDernierePartie = null;
       let progressionPersistanceDemandee = false;
 
@@ -43241,7 +43293,11 @@
           tutorielRecompense: false,
           modes: {},
           quetes: { jour: null, actives: [], changeeLe: null, semaine: null },
-          offrande: { prochaine: 0, dernierJour: null, vent: 0 }
+          offrande: { prochaine: 0, dernierJour: null, vent: 0 },
+          exploits: { offrandes: 0, expert: 0 },
+          equipement: progressionEquipementParDefaut(),
+          /* Objets déjà montrés au joueur : les autres portent « nouveau ». */
+          vus: progressionCollectionParDefaut()
         };
       }
 
@@ -43277,6 +43333,21 @@
           profil.offrande.dernierJour = typeof o.dernierJour === "string" ? o.dernierJour : null;
           profil.offrande.vent = Number.isFinite(o.vent) ? Math.max(0, o.vent) : 0;
         }
+        const ex = brut.exploits;
+        if (ex && typeof ex === "object") {
+          profil.exploits.offrandes = Number.isFinite(ex.offrandes) ? ex.offrandes : 0;
+          profil.exploits.expert = Number.isFinite(ex.expert) ? ex.expert : 0;
+        } else {
+          /* Profil d'avant la collection : les offrandes déjà reçues comptent. */
+          profil.exploits.offrandes = profil.offrande.prochaine;
+        }
+        if (brut.equipement && typeof brut.equipement === "object") {
+          PROGRESSION_COLLECTION.forEach(categorie => {
+            const id = brut.equipement[categorie.cle];
+            if (categorie.objets.some(objet => objet.id === id)) profil.equipement[categorie.cle] = id;
+          });
+        }
+        if (Array.isArray(brut.vus)) profil.vus = [...new Set([...profil.vus, ...brut.vus.filter(v => typeof v === "string")])];
         return profil;
       }
 
@@ -43390,6 +43461,141 @@
         return true;
       }
 
+      /* ---------- Collection ------------------------------------------ */
+      function progressionEquipementParDefaut() {
+        const equipement = {};
+        PROGRESSION_COLLECTION.forEach(categorie => { equipement[categorie.cle] = categorie.objets[0].id; });
+        return equipement;
+      }
+
+      function progressionCollectionParDefaut() {
+        return PROGRESSION_COLLECTION.map(categorie => `${categorie.cle}:${categorie.objets[0].id}`);
+      }
+
+      function progressionObjet(cleCategorie, id) {
+        const categorie = PROGRESSION_COLLECTION.find(c => c.cle === cleCategorie);
+        return categorie ? categorie.objets.find(objet => objet.id === id) || null : null;
+      }
+
+      /* Puzzles résolus au moins une fois : lus dans la sauvegarde du cabinet
+         d'énigmes, qui les compte déjà (même ceux d'avant la collection). */
+      function progressionPuzzlesResolus() {
+        try {
+          return Object.values(puzzleLoadProgress()).filter(entree => entree && entree.solved).length;
+        } catch (_) { return 0; }
+      }
+
+      /* Où en est le joueur pour un objet : débloqué ou non, et le chemin. */
+      function progressionCondition(profil, objet, niveau, puzzles) {
+        if (objet.exploit) {
+          const valeur = objet.exploit.cle === "puzzles" ? puzzles : (profil.exploits[objet.exploit.cle] || 0);
+          return { debloque: valeur >= objet.exploit.cible, texte: objet.exploit.texte,
+            fait: Math.min(valeur, objet.exploit.cible), cible: objet.exploit.cible };
+        }
+        return { debloque: niveau >= (objet.niveau || 1), texte: `Niveau ${objet.niveau || 1}` };
+      }
+
+      /* puzzlesEnPlus : un puzzle résolu à l'instant, pas encore inscrit. */
+      function progressionVueCollection(profil, puzzlesEnPlus = 0) {
+        const niveau = progressionNiveauDepuisXp(profil.xp).niveau;
+        const puzzles = progressionPuzzlesResolus() + puzzlesEnPlus;
+        const vus = new Set(profil.vus);
+        return PROGRESSION_COLLECTION.map(categorie => ({
+          cle: categorie.cle,
+          nom: categorie.nom,
+          objets: categorie.objets.map(objet => {
+            const condition = progressionCondition(profil, objet, niveau, puzzles);
+            return {
+              id: objet.id, nom: objet.nom, valeur: objet.valeur || null, image: objet.image || null,
+              ...condition,
+              equipe: profil.equipement[categorie.cle] === objet.id,
+              nouveau: condition.debloque && !vus.has(`${categorie.cle}:${objet.id}`)
+            };
+          })
+        }));
+      }
+
+      /* Clés « categorie:id » de tout ce qui est débloqué. */
+      function progressionDebloques(profil, puzzlesEnPlus = 0) {
+        const cles = [];
+        progressionVueCollection(profil, puzzlesEnPlus).forEach(categorie => categorie.objets.forEach(objet => {
+          if (objet.debloque) cles.push(`${categorie.cle}:${objet.id}`);
+        }));
+        return cles;
+      }
+
+      function progressionNouveautes(profil) {
+        const vus = new Set(profil.vus);
+        return progressionDebloques(profil).filter(cle => !vus.has(cle)).length;
+      }
+
+      /* Ce qu'un gain vient d'ouvrir, pour l'annoncer dans la fenêtre de fin. */
+      function progressionNouveauxObjets(avant, profil, puzzlesEnPlus = 0) {
+        const deja = new Set(avant);
+        return progressionDebloques(profil, puzzlesEnPlus).filter(cle => !deja.has(cle)).map(cle => {
+          const [categorie, id] = cle.split(":");
+          const objet = progressionObjet(categorie, id);
+          return { categorie, id, nom: objet.nom, valeur: objet.valeur || null, image: objet.image || null };
+        });
+      }
+
+      function progressionMarquerVus() {
+        const profil = progressionCharger();
+        const avant = profil.vus.length;
+        profil.vus = [...new Set([...profil.vus, ...progressionDebloques(profil)])];
+        if (profil.vus.length !== avant) progressionEnregistrer(profil);
+      }
+
+      /* Équiper un objet débloqué. Le ciel change aussitôt si la scène 3D
+         existe ; couleur et gardiens s'appliquent à la prochaine partie. */
+      function progressionEquiper(cleCategorie, id) {
+        const profil = progressionCharger();
+        const vue = progressionVueCollection(profil).find(c => c.cle === cleCategorie);
+        const objet = vue && vue.objets.find(o => o.id === id);
+        if (!objet || !objet.debloque) return false;
+        profil.equipement[cleCategorie] = id;
+        if (!profil.vus.includes(`${cleCategorie}:${id}`)) profil.vus.push(`${cleCategorie}:${id}`);
+        progressionEnregistrer(profil);
+        if (cleCategorie === "ciel") {
+          try { if (kaykit3D) window.ILYOS_SKY?.variante?.(objet.valeur); } catch (_) { }
+        }
+        return true;
+      }
+
+      function progressionValeurEquipee(profil, cleCategorie) {
+        const objet = progressionObjet(cleCategorie, profil.equipement[cleCategorie]);
+        return objet ? objet.valeur || objet.nom : null;
+      }
+
+      /* Ciel du profil, lu par la scène 3D à son ouverture (kaykit3d.js). */
+      function progressionCielEquipe() {
+        try { return progressionValeurEquipee(progressionCharger(), "ciel"); } catch (_) { return null; }
+      }
+
+      /* Partie locale (solo, duel, 2 contre 2) : le premier humain, celui de
+         l'appareil, porte sa couleur et ses gardiens. En ligne, rien ne
+         change encore : l'adversaire verrait une autre apparence que la
+         nôtre tant que l'équipement ne voyage pas avec PeerJS. */
+      function progressionHabillerJoueurs(joueurs) {
+        try {
+          const moi = joueurs.find(joueur => !joueur.isAI);
+          if (!moi) return;
+          const profil = progressionCharger();
+          const couleur = progressionValeurEquipee(profil, "couleur");
+          if (couleur && !joueurs.some(j => j !== moi && String(j.color).toLowerCase() === couleur.toLowerCase())) moi.color = couleur;
+          const heros = progressionValeurEquipee(profil, "heros");
+          if (heros && heros !== "hero0") moi.heros = heros;
+        } catch (_) { }
+      }
+
+      /* Portrait du HUD pour un gardien choisi dans la collection. */
+      function progressionPortraitDuJoueur(joueur) {
+        if (!joueur || !joueur.heros) return null;
+        const categorie = PROGRESSION_COLLECTION.find(c => c.cle === "heros");
+        const objet = categorie.objets.find(o => o.valeur === joueur.heros);
+        return objet ? objet.portrait || null : null;
+      }
+
       /* ---------- Offrande du jour ------------------------------------- */
       function progressionOffrandeDispo(profil) {
         return profil.offrande.dernierJour !== progressionJour();
@@ -43403,9 +43609,11 @@
         profil.offrande.dernierJour = progressionJour();
         profil.offrande.prochaine = (indice + 1) % PROGRESSION_OFFRANDES.length;
         if (offrande.vent) profil.offrande.vent += offrande.vent;
+        const avant = progressionDebloques(profil);
+        profil.exploits.offrandes++;
         const changement = progressionAjouterXp(profil, offrande.xp || 0);
         progressionEnregistrer(profil);
-        return { indice, texte: offrande.texte, ...changement };
+        return { indice, texte: offrande.texte, ...changement, debloques: progressionNouveauxObjets(avant, profil) };
       }
 
       /* Moteur pur : le gain d'une partie, ligne par ligne, sans rien écrire.
@@ -43515,6 +43723,7 @@
           const difficulte = difficultes.sort((a, b) => (PROGRESSION_DIFFICULTE[b] || 0) - (PROGRESSION_DIFFICULTE[a] || 0))[0] || null;
 
           const profil = progressionCharger();
+          const debloquesAvant = progressionDebloques(profil);
           const jour = progressionJour();
           const mode = progressionModeDeLaPartie();
           profil.modes[mode] = true;
@@ -43541,8 +43750,11 @@
           const changement = progressionAjouterXp(profil, gain.total);
           profil.parties++;
           if (resultat === "victoire") { profil.victoires++; profil.derniereVictoireJour = jour; }
+          if (resultat === "victoire" && difficulte === "expert") profil.exploits.expert++;
           progressionEnregistrer(profil);
-          gain = { ...gain, ...changement, quetes: progressionVueQuetes(profil) };
+          gain = { ...gain, ...changement, quetes: progressionVueQuetes(profil),
+            debloques: progressionNouveauxObjets(debloquesAvant, profil),
+            titre: progressionObjet("titre", profil.equipement.titre)?.nom || null };
         } catch (erreur) {
           console.warn("[ILYOS] progression : gain non calculé", erreur);
           gain = null;
@@ -43551,14 +43763,16 @@
       }
 
       /* Récompense hors partie (puzzle, tutoriel) : un toast, pas de fenêtre. */
-      function progressionGainHorsPartie(profil, xp, libelle) {
+      function progressionGainHorsPartie(profil, xp, libelle, debloquesAvant = null, puzzlesEnPlus = 0) {
         if (!(xp > 0)) { progressionEnregistrer(profil); return; }
         const changement = progressionAjouterXp(profil, xp);
         progressionEnregistrer(profil);
         try {
-          showToast(changement.niveauxGagnes > 0
+          const nouveaux = debloquesAvant ? progressionNouveauxObjets(debloquesAvant, profil, puzzlesEnPlus) : [];
+          showToast((changement.niveauxGagnes > 0
             ? `${libelle} : +${xp} XP · Niveau ${changement.apres.niveau} atteint !`
-            : `${libelle} : +${xp} XP`);
+            : `${libelle} : +${xp} XP`)
+            + (nouveaux.length ? ` · Débloqué : ${nouveaux.map(o => o.nom).join(", ")}` : ""));
         } catch (_) { }
       }
 
@@ -43567,6 +43781,9 @@
       function progressionPuzzleResolu(premiereFois) {
         try {
           const profil = progressionCharger();
+          /* Le puzzle n'est inscrit qu'après cet appel : un premier succès
+             compte donc d'avance pour « Résoudre 5 puzzles » (puzzlesEnPlus). */
+          const debloquesAvant = progressionDebloques(profil);
           let xp = PROGRESSION_XP.puzzle;
           if (!premiereFois) {
             const jour = progressionJour();
@@ -43579,7 +43796,7 @@
           finies.forEach(quete => { xp += quete.xp; });
           progressionGainHorsPartie(profil, xp, finies.length
             ? `Quête accomplie : ${finies.map(q => q.texte).join(", ")}`
-            : (premiereFois ? "Puzzle résolu" : "Puzzle rejoué"));
+            : (premiereFois ? "Puzzle résolu" : "Puzzle rejoué"), debloquesAvant, premiereFois ? 1 : 0);
         } catch (erreur) {
           console.warn("[ILYOS] progression : puzzle non compté", erreur);
         }
@@ -43591,7 +43808,7 @@
           const profil = progressionCharger();
           if (profil.tutorielRecompense) return;
           profil.tutorielRecompense = true;
-          progressionGainHorsPartie(profil, PROGRESSION_XP.tutoriel, "Tutoriel terminé");
+          progressionGainHorsPartie(profil, PROGRESSION_XP.tutoriel, "Tutoriel terminé", progressionDebloques(profil));
         } catch (erreur) {
           console.warn("[ILYOS] progression : tutoriel non compté", erreur);
         }
@@ -43617,6 +43834,7 @@
            franchi, elle repart de zéro dans le nouveau niveau. */
         const depart = monte ? 0 : part(avant);
         const quetesHtml = progressionHtmlQuetes(gain.quetes);
+        const debloquesHtml = progressionHtmlDebloques(gain.debloques);
         const pastilles = gain.lignes.filter(ligne => !ligne.quete).map(ligne =>
           `<li${ligne.xp < 0 ? ' class="progression-moins"' : ""}><span>${ligne.libelle}</span><b>${ligne.xp >= 0 ? "+" : "−"}${Math.abs(ligne.xp)}</b></li>`).join("");
         bloc.innerHTML = `
@@ -43639,6 +43857,7 @@
             <small class="progression-reste">${apres.xpDansNiveau} / ${apres.xpPourSuivant} XP · niveau ${apres.niveau + 1} ensuite</small>
             <ul class="progression-lignes">${pastilles}</ul>
           </div>
+          ${debloquesHtml}
           ${quetesHtml}`;
         const barre = bloc.querySelector(".progression-barre i");
         const compteur = bloc.querySelector(".progression-total b");
@@ -43652,6 +43871,23 @@
           barre.style.width = `${part(apres)}%`;
           compter(maintenant);
         }));
+      }
+
+      /* Ce que la partie vient d'ouvrir dans la collection : une vignette
+         par objet (pastille de couleur, portrait, ciel ou titre). */
+      function progressionVignette(objet) {
+        if (objet.categorie === "couleur") return `<i class="progression-vignette progression-vignette-couleur" style="--c:${objet.valeur}"></i>`;
+        if (objet.image) return `<i class="progression-vignette progression-vignette-${objet.categorie}" style="background-image:url('${objet.image}')"></i>`;
+        return `<i class="progression-vignette progression-vignette-titre">❦</i>`;
+      }
+
+      function progressionHtmlDebloques(objets) {
+        if (!objets || !objets.length) return "";
+        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", titre: "Titre" };
+        return `<div class="progression-debloques">
+          <div class="progression-debloques-tete"><b>Débloqué</b><small>À équiper dans le menu, Progression › Collection</small></div>
+          <ul>${objets.map(objet => `<li>${progressionVignette(objet)}<span><small>${categories[objet.categorie] || ""}</small>${objet.nom}</span></li>`).join("")}</ul>
+        </div>`;
       }
 
       /* Quêtes sous le gain : une ligne par quête, sa barre, et l'éclat
@@ -43687,6 +43923,8 @@
           if (progressionRenouvelerQuetes(profil)) progressionEnregistrer(profil);
           return {
             ...progressionNiveauDepuisXp(profil.xp),
+            titre: progressionObjet("titre", profil.equipement.titre)?.nom || null,
+            nouveautes: progressionNouveautes(profil),
             quetes: progressionVueQuetes(profil),
             offrande: {
               dispo: progressionOffrandeDispo(profil),
@@ -43696,6 +43934,9 @@
             }
           };
         },
+        collection: () => progressionVueCollection(progressionCharger()),
+        equiper: progressionEquiper,
+        marquerVus: progressionMarquerVus,
         reclamerOffrande: progressionReclamerOffrande,
         changerQuete: progressionChangerQuete,
         avancerQuetes: (profil, evenement) => progressionAvancerQuetes(profil, evenement),
@@ -47283,7 +47524,8 @@
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
         joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
-          difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score })) : null,
+          difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score,
+          couleur: j.color, heros: j.heros || null })) : null,
         /* Audition des bruitages sans avoir à provoquer la situation de jeu
            correspondante — indispensable pour régler un son : une chute ou une
            victoire sont autrement pénibles à déclencher à volonté.

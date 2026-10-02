@@ -3324,6 +3324,8 @@
             stash: { MOVE: 0, PUSH: 0, MAGIC: 0 }
           };
         });
+        // Couleur et gardiens choisis dans la collection (progression.js).
+        progressionHabillerJoueurs(players);
 
         // Plateau classique : on démarre sans aucun gardien. Le premier tour
         // impose déjà de poser une île, ce qui déclenche l'invocation — chaque

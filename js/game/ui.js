@@ -372,6 +372,9 @@
                 iconEl.dataset.filled = "1";
               }
               portraitEl.classList.toggle("hud-v2-portrait-active", !!isActiveTurn);
+              /* Gardien choisi dans la collection : le HUD organique lit ce
+                 portrait (js/hud-organique-v2.js). */
+              portraitEl.dataset.heros = progressionPortraitDuJoueur(p) || "";
             } else {
               portraitEl.classList.add("hidden");
             }

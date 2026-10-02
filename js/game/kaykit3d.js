@@ -896,6 +896,9 @@
           console.warn("Three.js indisponible : conservation du plateau HTML de secours.");
           return;
         }
+        // Ciel choisi dans la collection du joueur (progression.js).
+        const cielDuProfil = progressionCielEquipe();
+        if (cielDuProfil && KAYKIT_SKY_BAND_VARIANTS[cielDuProfil]) kaykitSkyBandActiveVariant = cielDuProfil;
 
         const canvas = document.createElement("canvas");
         canvas.id = "kaykitCanvas";
@@ -10036,6 +10039,10 @@
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
         const playerId = character.player ?? 0;
+        // Gardien choisi dans la collection (progression.js) : tous les
+        // gardiens de ce joueur prennent ce modèle.
+        const choisi = state.players[playerId]?.heros;
+        if (choisi && KAYKIT_ASSETS[choisi]) return choisi;
         const teamHeroPools = state.players.length === 2
           ? { 0: ["hero0"], 1: ["hero1"] }
           : {

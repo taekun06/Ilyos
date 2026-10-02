@@ -6,7 +6,9 @@
    2. De bout en bout : une vraie partie solo lancée par le menu, gagnée par
       le vrai chemin de validation (ILYOS_TEST.marquer). Le gain s'affiche
       sous le bilan, le profil est enregistré, et le badge du menu montre le
-      niveau après rechargement. */
+      niveau après rechargement.
+   3. La collection : déblocage par niveau, équipement refusé pour un objet
+      verrouillé, puis couleur et gardien portés dans une vraie partie solo. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -123,5 +125,50 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
   await expect(page.frameLocator('iframe[src*="menu/frame.html"]').locator('#profilBadge'))
     .toHaveAttribute('title', /XP vers le niveau/, { timeout: 45000 });
 
+  expect(incidents).toEqual([]);
+});
+
+test('collection : déblocage par niveau, équipement porté en partie', async ({ page }) => {
+  const incidents = [];
+  page.on('pageerror', erreur => incidents.push(erreur.message));
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('collection-test')) {
+      sessionStorage.setItem('collection-test', '1');
+      // 3 000 XP : niveau 9.
+      localStorage.setItem('ilyos-profil-v1', JSON.stringify({ version: 1, xp: 3000 }));
+    }
+  });
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.ILYOS_PROGRESSION, null, { timeout: 45000 });
+  const r = await page.evaluate(() => {
+    const P = window.ILYOS_PROGRESSION;
+    const objet = (cat, id) => P.collection().find(c => c.cle === cat).objets.find(o => o.id === id);
+    return {
+      niveau: P.etat().niveau,
+      corail: objet('couleur', 'corail').debloque,
+      braise: objet('couleur', 'braise'),
+      refuse: P.equiper('couleur', 'braise'),
+      couleur: P.equiper('couleur', 'corail'),
+      heros: P.equiper('heros', 'capuche'),
+      equipe: objet('heros', 'capuche').equipe
+    };
+  });
+  expect(r.niveau).toBe(9);
+  expect(r.corail).toBe(true);
+  expect(r.braise).toMatchObject({ debloque: false, texte: 'Niveau 10' });
+  expect(r.refuse).toBe(false);
+  expect(r.couleur).toBe(true);
+  expect(r.heros).toBe(true);
+  expect(r.equipe).toBe(true);
+
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().click();
+  await menu.locator('text=AFFRONTER LE CPU').first().click();
+  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 40000 });
+  await page.waitForFunction(() => !!window.ILYOS_TEST?.joueurCourant?.(), null, { timeout: 60000 });
+  const joueurs = await page.evaluate(() => window.ILYOS_TEST.joueurs());
+  expect(joueurs.find(j => !j.ia)).toMatchObject({ couleur: '#f2865e', heros: 'hero2Hooded' });
+  // L'adversaire garde son apparence d'origine.
+  expect(joueurs.find(j => j.ia)).toMatchObject({ heros: null });
   expect(incidents).toEqual([]);
 });

@@ -84,10 +84,10 @@
     badge.querySelector('.profil-anneau').style.setProperty('--p',`${part}%`);
     badge.querySelector('.profil-xp').textContent=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP`;
     badge.title=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}`;
-    badge.querySelector('.profil-alerte').hidden=!etat.offrande.dispo;
+    badge.querySelector('.profil-alerte').hidden=!etat.offrande.dispo&&!etat.nouveautes;
     badge.hidden=false;
     if(pill) pill.hidden=!etat.offrande.dispo;
-    if(modal.classList.contains('open')&&modal.dataset.vue==='progression') renderProgressionPanel(etat);
+    if(modal.classList.contains('open')&&modal.dataset.vue==='progression'&&modal.dataset.onglet!=='collection') renderProgressionPanel(etat);
   }
   function cellLabel(texte){ return /^Vent/.test(texte)?'VENT PORTEUR':texte; }
   function questHtml(q,index,semaine,changer){
@@ -95,7 +95,43 @@
     const bouton=changer&&!q.finie&&!semaine?`<button type="button" class="quete-changer" data-index="${index}" title="Changer cette quête (une fois par jour)" aria-label="Changer cette quête">↻</button>`:'';
     return `<li class="quete${q.finie?' finie':''}${semaine?' semaine':''}"><div class="quete-haut"><span class="quete-texte">${safeText(q.texte)}</span><span class="quete-xp">${q.finie?'✓ ':''}+${q.xp} XP</span>${bouton}</div><div class="quete-barre"><i style="width:${pct}%"></i></div><small>${q.finie?'Accomplie':`${q.fait} / ${q.cible}`}</small></li>`;
   }
+  /* Aperçu d'un objet de la collection : pastille de couleur, portrait du
+     gardien, bande de ciel ou plaque de titre. */
+  function collectionApercu(cle,objet){
+    if(cle==='couleur') return `<span class="coll-apercu coll-gemme" style="--c:${safeText(objet.valeur)}"></span>`;
+    if(cle==='heros') return `<span class="coll-apercu coll-portrait"><img src="../${safeText(objet.image)}" alt="" loading="lazy"></span>`;
+    if(cle==='ciel') return `<span class="coll-apercu coll-ciel" style="background-image:url('../${safeText(objet.image)}')"></span>`;
+    return `<span class="coll-apercu coll-plaque"><span>${safeText(objet.nom)}</span></span>`;
+  }
+  function collectionObjetHtml(cle,objet){
+    const etatTexte=objet.equipe?'ÉQUIPÉ':(objet.debloque?'ÉQUIPER':`🔒 ${safeText(objet.texte)}${objet.cible?` · ${objet.fait}/${objet.cible}`:''}`);
+    return `<li class="coll-objet${objet.debloque?'':' verrou'}${objet.equipe?' equipe':''}"><button type="button" data-cat="${cle}" data-id="${safeText(objet.id)}"${objet.debloque&&!objet.equipe?'':' disabled'} aria-pressed="${objet.equipe}">${collectionApercu(cle,objet)}<b>${safeText(objet.nom)}</b><small>${etatTexte}</small>${objet.nouveau?'<em class="coll-nouveau">NOUVEAU</em>':''}</button></li>`;
+  }
+  function collectionHtml(categories){
+    const notes={couleur:'Vos pions, drapeaux et villages.',heros:'Les gardiens de votre camp.',ciel:'Le ciel autour du plateau.',titre:'Affiché avec votre niveau.'};
+    return categories.map(c=>`<section class="coll-section"><h3>${safeText(c.nom.toUpperCase())}<small>${notes[c.cle]||''}</small></h3><ul class="coll-grille coll-grille-${c.cle}">${c.objets.map(o=>collectionObjetHtml(c.cle,o)).join('')}</ul></section>`).join('')
+      +'<p class="coll-note">Couleur et gardiens s’appliquent en solo, en duel et en 2 contre 2, à partir de la prochaine partie.</p>';
+  }
   function renderProgressionPanel(etat,annonce){
+    const onglet=modal.dataset.onglet==='collection'?'collection':'progression';
+    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
+    modalTitle.textContent='PROGRESSION';
+    const tete=`<div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b>${etat.titre?`<span class="pp-titre">${safeText(etat.titre)}</span>`:''}<div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${etat.offrande.vent?` · Vent porteur actif (${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''})`:''}</small></div></div>`;
+    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button><button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button></div>`;
+    if(onglet==='collection'){
+      const categories=progressionApi()?.collection?.()||[];
+      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}${collectionHtml(categories)}</div>`;
+      bindProgressionTabs();
+      modalBody.querySelectorAll('.coll-objet button:not([disabled])').forEach(btn=>btn.addEventListener('click',()=>{
+        if(!progressionApi()?.equiper?.(btn.dataset.cat,btn.dataset.id)) return;
+        const nom=btn.querySelector('b')?.textContent||'';
+        const nouvel=progressionApi()?.etat?.();
+        if(nouvel) renderProgressionPanel(nouvel,`${nom} équipé.`);
+      }));
+      /* Les « nouveau » restent visibles pendant cette visite, puis s'éteignent. */
+      try{ progressionApi()?.marquerVus?.(); }catch(_){}
+      return;
+    }
     const o=etat.offrande;
     const recue=i=>i<o.prochaine;
     const cases=o.cases.map((texte,i)=>{
@@ -104,19 +140,19 @@
       const bas=recue(i)?'✓':(courante?(o.dispo?'<button type="button" class="offrande-prendre">RÉCUPÉRER</button>':'DEMAIN'):'');
       return `<li class="offrande-case ${classe}${i===6?' grande':''}"><small>JOUR ${i+1}</small><b>${safeText(cellLabel(texte))}</b><span>${bas}</span></li>`;
     }).join('');
-    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
-    modalTitle.textContent='PROGRESSION';
     modalBody.innerHTML=`<div class="progression-panel">
-      <div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b><div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${o.vent?` · Vent porteur actif (${o.vent} partie${o.vent>1?'s':''})`:''}</small></div></div>
+      ${tete}${onglets}
       ${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}
       <section><h3>OFFRANDE DU JOUR</h3><ol class="offrande-cases">${cases}</ol></section>
       <section><h3>QUÊTES DU JOUR</h3><ul class="quetes">${etat.quetes.jour.map((q,i)=>questHtml(q,i,false,etat.quetes.changementDispo)).join('')||'<li class="quete vide">Nouvelles quêtes demain.</li>'}</ul></section>
       ${etat.quetes.semaine?`<section><h3>QUÊTE DE LA SEMAINE</h3><ul class="quetes">${questHtml(etat.quetes.semaine,0,true,false)}</ul></section>`:''}
     </div>`;
+    bindProgressionTabs();
     modalBody.querySelector('.offrande-prendre')?.addEventListener('click',()=>{
       const r=progressionApi()?.reclamerOffrande?.();
       const nouvel=progressionApi()?.etat?.();
-      if(nouvel) renderProgressionPanel(nouvel,r?`Offrande reçue : ${r.texte}${r.niveauxGagnes>0?` · Niveau ${r.apres.niveau} atteint !`:''}`:null);
+      const ouverts=r?.debloques?.length?` · Débloqué : ${r.debloques.map(d=>d.nom).join(', ')}`:'';
+      if(nouvel) renderProgressionPanel(nouvel,r?`Offrande reçue : ${r.texte}${r.niveauxGagnes>0?` · Niveau ${r.apres.niveau} atteint !`:''}${ouverts}`:null);
       renderProfileBadge();
     });
     modalBody.querySelectorAll('.quete-changer').forEach(btn=>btn.addEventListener('click',()=>{
@@ -126,10 +162,21 @@
       }
     }));
   }
-  function openProgression(){
+  function bindProgressionTabs(){
+    modalBody.querySelectorAll('.pp-onglets [data-onglet]').forEach(btn=>btn.addEventListener('click',()=>{
+      if(modal.dataset.onglet===btn.dataset.onglet) return;
+      modal.dataset.onglet=btn.dataset.onglet;
+      const etat=progressionApi()?.etat?.();
+      if(etat) renderProgressionPanel(etat);
+      renderProfileBadge();
+    }));
+  }
+  function openProgression(onglet){
     const etat=progressionApi()?.etat?.();
     if(!etat) return;
     modal.dataset.vue='progression';
+    /* Le badge mène à la collection quand elle a du nouveau ; sinon aux quêtes. */
+    modal.dataset.onglet=onglet||(etat.nouveautes&&!etat.offrande.dispo?'collection':'progression');
     modal.querySelector('.menu-modal-card').classList.add('progression-card');
     renderProgressionPanel(etat);
     modal.classList.add('open');
@@ -140,8 +187,8 @@
   })(40);
   window.addEventListener('storage',e=>{ if(!e.key||e.key==='ilyos-profil-v1') renderProfileBadge(); });
   document.addEventListener('visibilitychange',renderProfileBadge);
-  document.getElementById('profilBadge')?.addEventListener('click',openProgression);
-  document.getElementById('offrandePill')?.addEventListener('click',openProgression);
+  document.getElementById('profilBadge')?.addEventListener('click',()=>openProgression());
+  document.getElementById('offrandePill')?.addEventListener('click',()=>openProgression('progression'));
   function ensureSelections(mode){
     const c=cfg[mode]; if(!c) return {};
     if(!selections[mode]) selections[mode]={};
@@ -352,7 +399,7 @@
     modal.classList.add('open');
   }
 
-  function resetModalView(){delete modal.dataset.vue;modal.querySelector('.menu-modal-card').classList.remove('progression-card')}
+  function resetModalView(){delete modal.dataset.vue;delete modal.dataset.onglet;modal.querySelector('.menu-modal-card').classList.remove('progression-card')}
   function openComingSoon(label){resetModalView();modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
