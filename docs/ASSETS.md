@@ -1,5 +1,10 @@
 # Assets ILYOS — catalogue de travail
 
+Prototype Knight Sentinel : emplacement réservé dans
+`assets/prototypes/knight-sentinel/`, sans GLB téléchargé ni remplacement KayKit.
+Provenance et statut de licence documentés dans son README ; guide dans
+`docs/KNIGHT-AB.md`.
+
 Relevé initial du 7 septembre 2026 : **801 fichiers / 81,00 Mo dans `assets/`** ;
 **810 fichiers / 83,19 Mo** en incluant `menu/assets/` et `vendor/`.
 Mo = 1 000 000 octets. C'est le stockage local, pas le téléchargement initial.

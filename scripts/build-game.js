@@ -54,6 +54,7 @@ const fragmentNames = [
   // deja definies (dispatchKayKitClick, handleCancelButton, zoomKayKitCamera).
   // Placee en dernier pour que son IIFE s'execute quand tout est declare.
   'gamepad.js',
+  'knight-ab.js',
   'diagnostics.js',
 ];
 
