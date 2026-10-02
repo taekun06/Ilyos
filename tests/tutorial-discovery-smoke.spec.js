@@ -148,6 +148,10 @@ test('Découverte se joue jusqu’à la validation', async ({ page }) => {
     }, adjacent, { timeout: 5000 });
     firstCarrier = adjacent;
   }
+  /* L'arrivée du porteur est écrite AVANT la fin de son animation, qui
+     verrouille encore les clics : sur un runner lent, le clic sur la couronne
+     tombait dans ce verrou et était ignoré (trace CI du 01/10, PR #130). */
+  await page.waitForFunction(() => !window.ILYOS_TUTORIAL?._debug()?.inputLocked, null, { timeout: 15000 });
   await page.locator('.carrier-crown').waitFor({ state: 'attached', timeout: 5000 });
   await page.locator('.carrier-crown').dispatchEvent('click');
   /* Attendre le mode « transmettre ou poser » : un clic sur l'allié arrivé
@@ -181,6 +185,8 @@ test('Découverte se joue jusqu’à la validation', async ({ page }) => {
   await page.waitForFunction(() => !window.ILYOS_TUTORIAL?._debug()?.inputLocked, null, { timeout: 15000 });
 
   await page.locator('#ov2Push').click({ force: true });
+  // Viser seulement une fois la poussée engagée, pas pendant sa mise en place.
+  await page.waitForFunction(() => window.ILYOS_TUTORIAL?._debug()?.phase === 'ACTION', null, { timeout: 5000 });
   await clickCell(page, 0, 2);
   await page.waitForFunction(() => window.ILYOS_TUTORIAL?._debug()?.chars
     ?.some(ch => ch.p === 1 && ch.r === 0 && ch.c === 2), null, { timeout: 5000 });

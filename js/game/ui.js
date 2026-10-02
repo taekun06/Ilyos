@@ -1765,7 +1765,7 @@
         }
 
         if (state.phase === "SMART_CHAR") {
-          handleSmartCharacterClick(r, c);
+          handleSmartCharacterClick(r, c, { badgeCouronne: clickedCrownBadge });
           return;
         }
 

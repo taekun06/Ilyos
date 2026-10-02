@@ -52,8 +52,11 @@ jobs:
       - name: Installer Chromium
         run: npx playwright install --with-deps chromium
 
+      # Le fichier est nommé : sans lui, `playwright test` lançait TOUTE la
+      # suite (Éveil, manette, énigmes…), qui ne tient pas en 25 min. Le job
+      # était annulé à chaque push sur main sans rien avoir mesuré.
       - name: Jouer la partie
-        run: npx playwright test
+        run: npx playwright test tests/partie-ia-contre-ia.spec.js --project=chromium
 
       # En cas d'échec, la trace Playwright rejoue la partie pas à pas, avec le
       # DOM, la console et le réseau de chaque instant — nettement plus utile
