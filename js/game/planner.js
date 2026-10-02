@@ -151,6 +151,8 @@
         fermeturePoussee: 1,
         // Postes de poussée longue (bloc éjecté plus loin) parmi les intentions.
         pousseeLongueCandidate: 1,
+        // Riposte rejouée avec une MAGIE adverse, pondérée par sa probabilité.
+        magieAdverseProbable: 1,
         /* Faisceau trié aussi sur le potentiel (sans menaces de fin de tour),
            plannerNotePotentiel. Mesuré sur la position jaune du 29/09 : 1 016
            après réplique au lieu de 4 222 — le faisceau se remplit de passages
@@ -663,7 +665,10 @@
           }
           auMoinsPush.push(n <= sures.PUSH ? 1 : tasTotal ? p : 0);
         }
-        const resultat = { main, auMoinsPush };
+        // P(au moins une MAGIE) : sûre, ou au moins une tirée.
+        const auMoinsMagie = sures.MAGIC > 0 ? 1
+          : tasTotal && tas.MAGIC > 0 ? 1 - comb(tasTotal - tas.MAGIC, tirees) / comb(tasTotal, tirees) : 0;
+        const resultat = { main, auMoinsPush, auMoinsMagie };
         if (plannerPiocheCache.size > 256) plannerPiocheCache.clear();
         plannerPiocheCache.set(cle, resultat);
         return resultat;
@@ -3505,7 +3510,29 @@
         finally { PLAN_POIDS.perilCouronneSol = poids; }
       }
 
+      /* MAGIE ADVERSE PROBABLE. La main plausible arrondit l'espérance : une
+         seule MAGIE sur treize cartes n'y entre presque jamais (5/13 ≈ 0,38
+         → 0), et la riposte ignorait donc tout pivot adverse. La lui prêter
+         à chaque fois rendait l'IA paranoïaque. On joue donc la riposte une
+         seconde fois avec une MAGIE en main et l'on pondère par la chance
+         réelle de la piocher (comptage des cartes, plannerPiocheProchaine).
+         Partie du 30/09, tour 6 : pivot jaune amenant deux couronnes à son
+         village, non anticipé (+397 prévu, −7 647 réel). */
       function plannerEvaluerRobustesse(noeudFinal, playerId, budget = {}) {
+        const sans = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, false);
+        const adverse = plannerAdversaire(playerId);
+        if (!PLAN_POIDS.magieAdverseProbable || !adverse || sans.magieCertaine) return sans;
+        const p = withSimulatedState(structuredClone(noeudFinal.etat),
+          () => plannerPiocheProchaine(adverse.id).auMoinsMagie || 0);
+        if (p <= 0) return sans;
+        const avec = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, true);
+        if (avec.note >= sans.note) return sans;
+        const note = (1 - p) * sans.note + p * avec.note;
+        return { ...sans, note, menace: Math.round(sans.menace + (sans.note - note)),
+          magie: { proba: Math.round(p * 100) / 100, note: avec.note, riposte: avec.riposte } };
+      }
+
+      function plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, avecMagie = false) {
         const apres = structuredClone(noeudFinal.etat);
         return withSimulatedState(apres, () => {
           const adverse = plannerAdversaire(playerId);
@@ -3528,8 +3555,22 @@
           if (transition && transition.vainqueur !== null && transition.vainqueur !== undefined) {
             return {
               note: evaluateStrategicState(playerId),
-              riposte: ["FIN DE PARTIE"], menace: 0, garantie: true
+              riposte: ["FIN DE PARTIE"], menace: 0, garantie: true, magieCertaine: true
             };
+          }
+
+          // La MAGIE est-elle déjà acquise (réserve ou main plausible) ?
+          const entrant = state.players[adverse.id];
+          const magieCertaine = (reserveGarantie.MAGIC || 0) > 0
+            || (entrant.hand || []).some(carte => carte.action === "MAGIC");
+          if (avecMagie && !magieCertaine) {
+            // Une carte de la main plausible devient la MAGIE : le type le
+            // plus fourni, pour que la main garde sa taille.
+            const parType = t => entrant.hand.filter(carte => carte.action === t).length;
+            const cede = parType("MOVE") >= parType("PUSH") ? "MOVE" : "PUSH";
+            const carte = entrant.hand.find(x => x.action === cede);
+            if (carte) carte.action = "MAGIC";
+            else entrant.hand.push({ id: "plausible-magie-" + state.turn, action: "MAGIC", used: false });
           }
 
           const avantRiposte = evaluateStrategicState(playerId);
@@ -3563,14 +3604,14 @@
           const candidates = reponse.finalistes || [];
           if (!candidates.length) {
             for (const action of reponse.plan) plannerAppliquerAction(action);
-            return { ...mesurer(reponse.plan), ripostesComparees: 1, coupee };
+            return { ...mesurer(reponse.plan), ripostesComparees: 1, coupee, magieCertaine };
           }
           let pire = null;
           for (const candidate of candidates) {
             const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
             if (!pire || resultat.note < pire.note) pire = resultat;
           }
-          return { ...pire, ripostesComparees: candidates.length, coupee };
+          return { ...pire, ripostesComparees: candidates.length, coupee, magieCertaine };
         });
       }
 
