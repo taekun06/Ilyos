@@ -8,7 +8,8 @@
    riposte). Le coup juste — se poster en (1,1) et pousser (1,0) dans le
    vide — était généré mais élagué du faisceau : « aller en (1,1) » ne valait
    rien avant la poussée. La fermeture de tri PLAN_POIDS.fermeturePoussee le
-   garde (−475 après riposte, ~+530 avec un faisceau de 80). */
+   garde (−475 après riposte, ~+530 avec un faisceau de 80). Depuis le
+   faisceau 48 (02/10), l'IA vole d'abord puis éjecte (−460). */
 
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -29,8 +30,16 @@ const assert = require('node:assert/strict');
 
     const r = await page.evaluate(j => window.ILYOS_SELFPLAY.analyser(j, { graine: 1, grille: 11 }), position.etat);
     const [er, ec] = position.attendu.ejecterPorteur;
-    const ejecte = r.detail.some(a => a.type === 'PUSH' && a.r === er && a.c === ec
-      && !(a.pusherId && r.detail.some(v => v.type === 'VOL' && v.charId === a.pusherId)));
+    /* Éjecter = pousser (1,0) depuis (1,1), vers le vide de l'ouest. On suit
+       la case de chaque pousseur au fil du plan : l'ancienne erreur poussait
+       aussi (1,0), mais depuis le coin (0,0), vers le bas — sans éjecter.
+       Voler d'abord puis éjecter est permis (et meilleur : −460, 02/10). */
+    const cases = {};
+    const ejecte = r.detail.some(a => {
+      if (a.type === 'MOVE') cases[a.charId] = [a.r, a.c];
+      return a.type === 'PUSH' && a.r === er && a.c === ec
+        && cases[a.pusherId] && cases[a.pusherId][0] === er && cases[a.pusherId][1] === ec + 1;
+    });
     const robuste = r.anticipation && r.anticipation.noteRobuste;
     console.log(`plan : ${r.detail.map(a => a.type).join(' ')} · après riposte ${robuste}`);
     assert.ok(ejecte, 'le porteur adossé au vide doit être éjecté');

@@ -27723,9 +27723,15 @@
            adverse, trouvé à 24 / 8 / 5 000 seulement (936 au budget d'avant).
            Coût mesuré sur 55 décisions humaines : 1,5 → 1,9 s en moyenne,
            3,8 s au plus, aucune coupure par le temps. */
-        largeurFaisceau: 24,
+        /* 24 / 5 000 jusqu'au 02/10. Mesuré sur 63 décisions réelles de
+           l'Expert jugées par une riposte forte et fixe
+           (scripts/mesure-recherche.js) : la recherche s'arrêtait par
+           faisceau épuisé en ~1 s sur les 7 s disponibles. 48 / 12 000 :
+           +322 en moyenne, 23 décisions meilleures pour 7 pires ; 64 fait
+           moins bien (+270). */
+        largeurFaisceau: 48,
         decisionsMax: 8,
-        etatsMax: 5000,
+        etatsMax: 12000,
         tempsMaxMs: 500
       };
 
@@ -28160,10 +28166,15 @@
 
       const PLAN_RIPOSTE = {
         finalistes: 4,
-        largeurFaisceau: 5,
-        decisionsMax: 3,
-        etatsMax: 250,
-        tempsMaxMs: 90,
+        /* 5 / 3 / 250 / 90 ms jusqu'au 02/10 : la riposte s'arrêtait à 3
+           décisions quand les vraies ripostes humaines en font 6 (partie du
+           30/09, tour 6 : −1 617 prévu, −7 647 réel). Avec le faisceau 48,
+           6 décisions portent le gain mesuré de +322 à +427 (30 décisions
+           meilleures pour 9 pires). Plus de finalistes (8) n'aidait pas (−29). */
+        largeurFaisceau: 8,
+        decisionsMax: 6,
+        etatsMax: 800,
+        tempsMaxMs: 300,
         /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
            Une menace qui a besoin de cartes encore à piocher n'est que
            plausible et pèse moins — sans quoi l'IA se paralyserait devant des

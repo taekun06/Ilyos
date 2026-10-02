@@ -42,9 +42,9 @@ Légende : 🔴 bloque / casse · 🟠 défaut visible · 🟡 amélioration · 
 
 | # | État | Constat | Preuve | Piste |
 |---|---|---|---|---|
-| 4.1 | 🔴 | **Riposte trop courte** : 3 décisions, faisceau 5, 90 ms. Les ripostes humaines réelles en demandent 6 (tour 6 : −1 617 prévu, −7 647 réel). | `analyser-defaite.js` sur la revue du 30/09. | La rallonger seule ne changeait pas le choix : il faut aussi que la recherche principale garde plus de candidats robustes (4.3). |
-| 4.2 | 🟠 | La recherche s'arrête en 0,5–1,3 s sur 7 s disponibles : la largeur du faisceau limite, pas le temps. | `etatsExplores`/`dureeMs` des décisions du 30/09 ; faisceau 80 trouvait seul le bon coup au tour 10. | Faisceau adaptatif tant que le temps le permet. Mesurer en self-play avant d'adopter. |
-| 4.3 | 🟠 | Tour 6 : le code actuel choisit un plan moins robuste (−1 826) que celui qu'il avait joué (−1 617). | `analyser-defaite.js`. | Le plan joué n'entre plus dans les finalistes : examiner `plannerFinalistesDiversifies`. |
+| 4.1 | ✅ | Riposte trop courte : 3 décisions, faisceau 5, 90 ms (tour 6 : −1 617 prévu, −7 647 réel). | `scripts/mesure-recherche.js`, 63 décisions jugées par une riposte forte. | Riposte 6 décisions / faisceau 8 / 800 états, avec le faisceau 48 : +427 en moyenne (30 meilleures, 9 pires). Voir BASELINE-IA.md (02/10). |
+| 4.2 | ✅ | La recherche s'arrêtait en ~1 s sur 7 : faisceau épuisé. | Même banc. | Faisceau 48 / 12 000 états : +322 seul ; 64 fait moins bien. |
+| 4.3 | 🟡 | Tour 6 : plan moins robuste que celui joué. | Même banc : plus de finalistes (8) n'aide pas en moyenne (−29) ; faisceau 48 + riposte 6 améliore ce tour (−2 445 → −2 238). | Suivre sur les prochaines défaites. |
 | 4.4 | 🟠 | Couronnes laissées au sol près de l'adversaire (tours 6 et 8), et aucune couronne amenée vers ses propres villages de la partie. | Revue du 30/09. | Tâche « terme de course » : chaque case gagnée vers son village compte. |
 | 4.5 | ✅ | Éjection du porteur adossé au vide élaguée ; poussées longues invisibles ; magie adverse jamais anticipée. | Bancs `verif-ejection-porteur`, analyse du 30/09. | PR #129 et #130. |
 
