@@ -435,6 +435,29 @@
   object-fit: cover;
 }
 
+/* ---------- HUD : titre de collection, sous le nom du joueur ---------- */
+#ilyosHudOrganicV2 .ov2-side .ov2-ptitre {
+  position: absolute;
+  top: 54px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 14px;
+  letter-spacing: .03em;
+  color: #f7dc9c;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .95), 0 0 8px rgba(0, 0, 0, .6);
+  pointer-events: none;
+}
+#ilyosHudOrganicV2 .ov2-left .ov2-ptitre { left: 156px; }
+#ilyosHudOrganicV2 .ov2-right .ov2-ptitre { right: 156px; color: #e3cbff; }
+#ilyosHudOrganicV2 .ov2-side .ov2-ptitre::before { content: "❦ "; font-style: normal; opacity: .75; }
+@media (max-width: 720px) {
+  #ilyosHudOrganicV2 .ov2-side .ov2-ptitre { display: none; }
+}
+
 /* ---------- Saison : palier et barre, sous le niveau ---------- */
 #victoryModal .progression-saison {
   flex-basis: 100%;

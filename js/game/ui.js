@@ -382,6 +382,7 @@
           if (nameEl) {
             nameEl.textContent = p ? (p.isAI && !tablee ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
+            nameEl.dataset.titre = p && p.titre ? p.titre : "";
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
         };

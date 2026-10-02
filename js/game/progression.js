@@ -494,19 +494,44 @@
         try { return progressionValeurEquipee(progressionCharger(), "ciel"); } catch (_) { return null; }
       }
 
+      /* Apparence équipée sur cet appareil, en identifiants du catalogue :
+         c'est ce qui voyage avec le « hello » d'une partie en ligne. */
+      function progressionApparenceLocale() {
+        try {
+          const equipement = progressionCharger().equipement;
+          return { couleur: equipement.couleur, heros: equipement.heros, titre: equipement.titre };
+        } catch (_) { return null; }
+      }
+
+      /* Habille un joueur d'après une apparence (locale ou reçue en ligne).
+         Seuls les identifiants du catalogue sont acceptés ; les choix par
+         défaut ne changent rien, pour que l'adversaire garde sa couleur et
+         son mage habituels. Une couleur déjà portée par un autre joueur est
+         ignorée. */
+      function progressionAppliquerApparence(joueur, apparence, joueurs = []) {
+        if (!joueur || !apparence || typeof apparence !== "object") return;
+        const defaut = progressionEquipementParDefaut();
+        const choisi = cle => {
+          const id = typeof apparence[cle] === "string" ? apparence[cle] : "";
+          return id && id !== defaut[cle] ? progressionObjet(cle, id) : null;
+        };
+        const couleur = choisi("couleur");
+        if (couleur && !joueurs.some(j => j !== joueur && String(j.color).toLowerCase() === couleur.valeur.toLowerCase())) {
+          joueur.color = couleur.valeur;
+        }
+        const heros = choisi("heros");
+        if (heros) joueur.heros = heros.valeur;
+        const titre = choisi("titre");
+        if (titre) joueur.titre = titre.nom;
+      }
+
       /* Partie locale (solo, duel, 2 contre 2) : le premier humain, celui de
-         l'appareil, porte sa couleur et ses gardiens. En ligne, rien ne
-         change encore : l'adversaire verrait une autre apparence que la
-         nôtre tant que l'équipement ne voyage pas avec PeerJS. */
+         l'appareil, porte sa couleur, son gardien et son titre. En ligne,
+         voir createOnlineGame() (core.js). */
       function progressionHabillerJoueurs(joueurs) {
         try {
           const moi = joueurs.find(joueur => !joueur.isAI);
-          if (!moi) return;
-          const profil = progressionCharger();
-          const couleur = progressionValeurEquipee(profil, "couleur");
-          if (couleur && !joueurs.some(j => j !== moi && String(j.color).toLowerCase() === couleur.toLowerCase())) moi.color = couleur;
-          const heros = progressionValeurEquipee(profil, "heros");
-          if (heros && heros !== "hero0") moi.heros = heros;
+          if (moi) progressionAppliquerApparence(moi, progressionApparenceLocale(), joueurs);
         } catch (_) { }
       }
 

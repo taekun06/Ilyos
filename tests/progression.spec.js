@@ -11,7 +11,10 @@
       verrouillé, puis couleur et gardien portés dans une vraie partie solo.
    4. La saison : l'XP fait avancer la piste pendant la saison seulement, les
       paliers donnent leur récompense une fois, le coffre ne compte pas pour
-      la saison. */
+      la saison.
+   5. En ligne : l'apparence de chaque joueur voyage avec la connexion. Un
+      faux PeerJS relie deux onglets par BroadcastChannel ; l'hôte et
+      l'invité voient la même couleur, le même gardien et le même titre. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -208,4 +211,88 @@ test('saison : paliers, récompenses et dates', async ({ page }) => {
   expect(r.xpTotal).toBe(2000 + 150);
   expect(r.saisonXp).toBe(2000);
   expect(r.horsSaison).toEqual([null, null]);
+});
+
+/* Faux PeerJS : même interface que le SDK pour ce qu'utilise core.js, deux
+   onglets du même contexte reliés par BroadcastChannel. Le profil est rangé
+   par onglet (sessionStorage), sinon les deux joueurs partageraient le leur. */
+function fauxPeer() {
+  const lire = Storage.prototype.getItem, ecrire = Storage.prototype.setItem;
+  Storage.prototype.getItem = function (k) { return lire.call(k === 'ilyos-profil-v1' && this === localStorage ? sessionStorage : this, k); };
+  Storage.prototype.setItem = function (k, v) { return ecrire.call(k === 'ilyos-profil-v1' && this === localStorage ? sessionStorage : this, k, v); };
+  class Emetteur {
+    constructor() { this.h = {}; }
+    on(e, f) { (this.h[e] = this.h[e] || []).push(f); return this; }
+    emit(e, ...a) { (this.h[e] || []).forEach(f => f(...a)); }
+  }
+  const canal = new BroadcastChannel('ilyos-faux-peer');
+  class Connexion extends Emetteur {
+    constructor(moi, autre) {
+      super(); this.moi = moi; this.autre = autre; this.open = false;
+      canal.addEventListener('message', ({ data: m }) => {
+        if (m.to !== this.moi) return;
+        if (m.k === 'open' && !this.open) { this.open = true; setTimeout(() => this.emit('open'), 20); }
+        if (m.k === 'data') this.emit('data', JSON.parse(m.d));
+      });
+    }
+    send(d) { canal.postMessage({ to: this.autre, k: 'data', d: JSON.stringify(d) }); }
+    close() { }
+  }
+  class Peer extends Emetteur {
+    constructor(id) {
+      super(); this.id = id || 'invite';
+      setTimeout(() => this.emit('open', this.id), 50);
+      canal.addEventListener('message', ({ data: m }) => {
+        if (m.k !== 'connect' || m.to !== this.id) return;
+        const c = new Connexion(`${this.id}:h`, m.from);
+        this.emit('connection', c);
+        setTimeout(() => { canal.postMessage({ to: m.from, k: 'open' }); c.open = true; c.emit('open'); }, 30);
+      });
+    }
+    connect(hote) { const c = new Connexion('invite:c', `${hote}:h`); canal.postMessage({ k: 'connect', to: hote, from: 'invite:c' }); return c; }
+    reconnect() { }
+    destroy() { }
+  }
+  Object.defineProperty(window, 'Peer', { value: Peer, writable: false, configurable: false });
+}
+
+test('en ligne : couleur, gardien et titre vus des deux côtés', async ({ browser }, testInfo) => {
+  test.setTimeout(150000);
+  const contexte = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+  await contexte.addInitScript(fauxPeer);
+  const profils = {
+    host: { version: 1, xp: 20000, equipement: { couleur: 'lagon', heros: 'barbare', titre: 'gardien' } },
+    guest: { version: 1, xp: 0, saisons: { s1: { xp: 15000, paye: 30 } }, equipement: { couleur: 'rubis', heros: 'squelette-mage', titre: 'phenix' } }
+  };
+  const pages = {};
+  const erreurs = [];
+  for (const role of ['host', 'guest']) {
+    const page = await contexte.newPage();
+    page.on('pageerror', e => erreurs.push(`${role} : ${e.message}`));
+    await page.goto('/');
+    await page.waitForFunction(() => !!window.ILYOS_PROGRESSION, null, { timeout: 45000 });
+    await page.evaluate(profil => localStorage.setItem('ilyos-profil-v1', JSON.stringify(profil)), profils[role]);
+    await page.evaluate(r => {
+      const choix = document.getElementById('playerCount');
+      choix.value = 'online';
+      choix.dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('onlineRoleSelect').value = r;
+      document.getElementById('onlineRoomInput').value = 'TEST7';
+      document.getElementById('startBtn').click();
+    }, role);
+    pages[role] = page;
+  }
+  for (const role of ['host', 'guest']) {
+    const page = pages[role];
+    await page.waitForFunction(() => window.ILYOS_TEST?.joueurs?.()?.length === 2, null, { timeout: 45000 });
+    const joueurs = await page.evaluate(() => window.ILYOS_TEST.joueurs().map(j => ({ couleur: j.couleur, heros: j.heros })));
+    expect(joueurs, role).toEqual([
+      { couleur: '#38c6cf', heros: 'hero3' },
+      { couleur: '#c72d6b', heros: 'heroSkeletonMage' }
+    ]);
+    await expect(page.locator('#ilyosHudOrganicV2 .ov2-left .ov2-ptitre')).toHaveText('Gardien de l\'aube');
+    await expect(page.locator('#ilyosHudOrganicV2 .ov2-right .ov2-ptitre')).toHaveText('Phénix d\'Ilyos');
+  }
+  expect(erreurs).toEqual([]);
+  await contexte.close();
 });

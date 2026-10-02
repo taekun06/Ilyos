@@ -2257,7 +2257,8 @@
             sendOnlineMessage({
               type: "hello",
               name: onlineLocalName,
-              revision: networkRevision
+              revision: networkRevision,
+              apparence: progressionApparenceLocale()
             });
             sendOnlineMessage({ type: "request-state" });
           } else if (state?.onlineMode) {
@@ -2268,7 +2269,8 @@
             });
           }
           saveOnlineSession();
-          renderAll();
+          // L'invité n'a pas encore d'état : il arrive avec la réponse de l'hôte.
+          if (state) renderAll();
           showToast("Connexion en ligne établie.");
         });
 
@@ -2279,7 +2281,8 @@
             if (!state?.onlineMode) {
               createOnlineGame(
                 onlineLocalName || "JOUEUR 1",
-                String(message.name || "JOUEUR 2").toLocaleUpperCase("fr-FR")
+                String(message.name || "JOUEUR 2").toLocaleUpperCase("fr-FR"),
+                message.apparence
               );
             } else {
               sendOnlineMessage({
@@ -3070,7 +3073,7 @@
         state.nextCharId = 200;
       }
 
-      function createOnlineGame(hostName, guestName) {
+      function createOnlineGame(hostName, guestName, apparenceInvite = null) {
         stopTurnTimer();
         aiRunToken++;
 
@@ -3104,6 +3107,13 @@
             stash: { MOVE: 0, PUSH: 0, MAGIC: 0 }
           };
         });
+
+        /* Cosmétiques : l'hôte s'habille lui-même, l'invité avec l'apparence
+           reçue dans son « hello ». La synchronisation d'état les transmet. */
+        try {
+          progressionAppliquerApparence(players[0], progressionApparenceLocale(), players);
+          progressionAppliquerApparence(players[1], apparenceInvite, players);
+        } catch (_) { }
 
         state = {
           players,
