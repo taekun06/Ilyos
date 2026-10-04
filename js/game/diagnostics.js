@@ -2022,8 +2022,21 @@
         }
       }
 
+      /* La note d'une position vue par `joueur`, terme par terme, sans rien
+         jouer ni changer le trait : sert à comprendre l'écart entre ce que
+         l'IA prévoyait et ce qui est arrivé. */
+      function selfplayEvaluer(json, joueur, { poids = null } = {}) {
+        const memoire = selfplayAppliquerPoids(poids);
+        try {
+          return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => evaluerAvecDetail(joueur)));
+        } finally {
+          selfplayAppliquerPoids(memoire);
+        }
+      }
+
       window.ILYOS_SELFPLAY = {
         exposes: selfplayExposes,
+        evaluer: selfplayEvaluer,
         departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
         robustesse: selfplayRobustesse,
