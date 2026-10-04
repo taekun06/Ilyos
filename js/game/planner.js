@@ -239,8 +239,13 @@
         blocageValidation: 900,
         // Gardien adverse sur une case de mes villages : miroir du blocage (0 = ignoré).
         blocageSubi: 1,
-        // Validation prête escomptée des parades blocage et pivot (0 = ancien calcul).
-        validationRisques: 1,
+        /* Validation prête escomptée des parades blocage et pivot
+           (plannerRisquesValidation). MESURÉ NUISIBLE : self-play 20 parties,
+           avec blocageSubi, 30 % ± 10 (1-9-10, couronnes 3 contre 14) ;
+           blocageSubi seul 45 % ± 11. La riposte JOUE déjà le blocage et le
+           pivot adverses : l'escompte comptait deux fois le même danger (même
+           leçon que riposteRemplacePeril). Coupé ; gardé pour mesurer. */
+        validationRisques: 0,
         // Un second gardien dans le même village : réserve contre l'expulsion.
         blocageRedondance: 0.25,
 

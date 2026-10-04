@@ -1,29 +1,25 @@
-/* VALIDATION GARANTIE et BLOCAGE SUBI — ce que l'évaluateur en dit.
+/* BLOCAGE SUBI — ce que l'évaluateur en dit.
 
-     npm start   puis   node scripts/verif-validation-garantie.js
+     npm start   puis   node scripts/verif-blocage-subi.js
 
-   1. Un porteur prêt à valider sur la case du village, que l'adversaire ne
-      peut ni éjecter, ni voler, ni bloquer, ni faire pivoter, vaut la
-      validation PLEINE (validationPrete). Témoin positif.
-   2. Le même porteur, quand un gardien adverse peut rejoindre une autre case
-      du village (blocage), vaut MOINS.
-   3. Un porteur sur une case d'île, adversaire avec une MAGIE en réserve
-      (pivot), vaut MOINS que sur la case du village.
-   4. Un gardien adverse posté sur une case de mon village me COÛTE
-      (blocageSubi), et exactement ce qu'il rapporte à son camp
-      (blocageValidation vu de lui) : la note reste à somme nulle.
+   1. Témoin : sans gardien adverse dans mon village, aucun blocage subi.
+   2. Un gardien adverse posté sur une case de mon village me COÛTE
+      (blocageSubi)…
+   3. …exactement ce qu'il rapporte à son camp (blocageValidation vu de lui) :
+      la note reste à somme nulle.
 
-   Partie du 03/10 (graine 7) : mon porteur au coin (10,10) était un point
-   acquis, noté comme un point contestable ; mes gardiens ont tenu ses deux
-   villages pendant des tours sans que l'IA cherche à les en chasser.
+   Partie du 03/10 (graine 7) : mes gardiens ont tenu ses deux villages pendant
+   des tours sans que l'IA cherche à les en chasser — le terme manquait.
+
+   (L'escompte de la validation prête par les parades blocage et pivot,
+   validationRisques, est coupé : mesuré nuisible, voir planner.js.)
 
    Repères (plateau 11×11) : village J0 en (0,0), cases (0,0) (1,0) (0,1). */
 
 const { chromium } = require('playwright');
 const ORIGINE = process.env.ILYOS_BENCH_URL || 'http://localhost:8123/';
 
-// Le coin (0,0) entouré de terre : aucune case vide où poser une île contre
-// le village, donc aucun gardien apparu pour le bloquer.
+// Le coin (0,0) entouré de terre.
 const COIN = [
   { shapeKey: "square", owner: 0, cells: [[0, 1], [1, 0], [1, 1], [0, 2]] },
   { shapeKey: "square", owner: 0, cells: [[2, 0], [2, 1], [1, 2], [2, 2]] }
@@ -33,19 +29,9 @@ const SANS_CARTES = { pioches: { 0: [], 1: [] }, hands: { 0: [], 1: [] } };
 const position = (extra) => Object.assign({ seed: 1, islandPlacedThisTurn: true, islands: COIN }, SANS_CARTES, extra);
 
 const CAS = {
-  garanti: position({
-    characters: [{ id: "porteur", player: 0, r: 0, c: 0 }, { id: "loin", player: 1, r: 8, c: 8 }],
-    crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
-  }),
-  blocable: position({
-    characters: [{ id: "porteur", player: 0, r: 0, c: 0 }, { id: "marcheur", player: 1, r: 2, c: 2 }],
-    crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }],
-    stash: { 1: { MOVE: 3 } }
-  }),
-  pivotable: position({
-    characters: [{ id: "porteur", player: 0, r: 1, c: 0 }, { id: "loin", player: 1, r: 8, c: 8 }],
-    crowns: [{ r: 1, c: 0, active: true, carrierId: "porteur" }],
-    stash: { 1: { MAGIC: 1 } }
+  libre: position({
+    characters: [{ id: "mien", player: 0, r: 2, c: 2 }, { id: "loin", player: 1, r: 8, c: 8 }],
+    crowns: [{ r: 2, c: 1, active: true }]
   }),
   bloque: position({
     characters: [{ id: "mien", player: 0, r: 2, c: 2 }, { id: "bloqueur", player: 1, r: 0, c: 1 }],
@@ -72,26 +58,20 @@ async function main() {
     window.ILYOS_BENCH.evaluation(Object.assign({}, s, { aiPlayer: j })), [spec, joueur]);
   const terme = (r, t) => r.termes[t] || 0;
 
-  const garanti = await evaluer(CAS.garanti);
-  const blocable = await evaluer(CAS.blocable);
-  const pivotable = await evaluer(CAS.pivotable);
+  const libre = await evaluer(CAS.libre);
   const bloqueMoi = await evaluer(CAS.bloque, 0);
   const bloqueLui = await evaluer(CAS.bloque, 1);
 
-  const v = r => terme(r, 'validationPrete');
   const controles = [
-    ['Porteur garanti : validation pleine', v(garanti) === 1000, `validationPrete ${v(garanti)}`],
-    ['Village blocable : validation escomptée', v(blocable) > 0 && v(blocable) < v(garanti),
-      `validationPrete ${v(blocable)} contre ${v(garanti)}`],
-    ['Porteur sur île pivotable : validation escomptée', v(pivotable) > 0 && v(pivotable) < v(garanti),
-      `validationPrete ${v(pivotable)} contre ${v(garanti)}`],
+    ['Témoin : village libre, aucun blocage subi', terme(libre, 'blocageSubi') === 0,
+      `blocageSubi ${terme(libre, 'blocageSubi')}`],
     ['Bloqueur dans mon village : il me coûte', terme(bloqueMoi, 'blocageSubi') < 0,
       `blocageSubi ${terme(bloqueMoi, 'blocageSubi')}`],
     ['Somme nulle : mon coût = son gain', terme(bloqueMoi, 'blocageSubi') === -terme(bloqueLui, 'blocageValidation'),
       `${terme(bloqueMoi, 'blocageSubi')} contre ${terme(bloqueLui, 'blocageValidation')}`]
   ];
 
-  console.log('\nVALIDATION GARANTIE ET BLOCAGE SUBI');
+  console.log('\nBLOCAGE SUBI');
   console.log('='.repeat(72));
   let reussis = 0;
   for (const [nom, ok, detail] of controles) {
