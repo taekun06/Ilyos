@@ -271,6 +271,34 @@
        « À VOUS » et à partir de la même donnée — il ne peut donc pas se désynchroniser. */
     leftTag.closest('.ov2-side')?.classList.toggle('ov2-side-active', !!leftActive);
     rightTag.closest('.ov2-side')?.classList.toggle('ov2-side-active', !!rightActive);
+    syncPortrait('.ov2-left .ov2-avatar img', legacy('hudV2ActivePortrait')?.dataset.heros, './assets/hud/knight-portrait.png');
+    syncPortrait('.ov2-right .ov2-avatar img', legacy('hudV2OpponentPortrait')?.dataset.heros, './assets/hud/mage-portrait.png');
+    syncTitre('.ov2-left', legacy('hudV2ActiveName')?.dataset.titre);
+    syncTitre('.ov2-right', legacy('hudV2OpponentName')?.dataset.titre);
+  }
+
+  /* Titre de collection porté par le joueur, affiché au-dessus de son nom. */
+  function syncTitre(selector, titre){
+    const side = root?.querySelector(selector);
+    if (!side) return;
+    let el = side.querySelector('.ov2-ptitre');
+    if (!titre) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement('span');
+      el.className = 'ov2-ptitre';
+      side.appendChild(el);
+    }
+    if (el.textContent !== titre) el.textContent = titre;
+  }
+
+  /* Gardien choisi dans la collection du joueur (js/game/progression.js) :
+     son portrait rendu remplace l'illustration d'origine. */
+  function syncPortrait(selector, image, defaut){
+    const img = root?.querySelector(selector);
+    if (!img) return;
+    const voulu = image ? `./${image}` : defaut;
+    if (img.getAttribute('src') !== voulu) img.setAttribute('src', voulu);
+    img.classList.toggle('ov2-portrait-collection', !!image);
   }
 
   function syncActions(){

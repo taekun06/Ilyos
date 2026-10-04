@@ -1315,6 +1315,7 @@
       /* ---------- Fin ------------------------------------------------- */
       async function tutoFinish() {
         try { localStorage.setItem(TUTO_STORAGE_KEY, "1"); } catch (_) { }
+        progressionTutorielTermine();
         tutoDisarm();
         TUTO.gateAllows = () => false;
         const d = TUTO.dom;

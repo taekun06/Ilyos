@@ -252,7 +252,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=12.7',
+    './js/hud-organique-v2.js?v=12.9-titre',
     './js/hud-organique-v2-final-v8.js?v=12.7',
     /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
        les lumières de scène, jamais le HUD malgré leur nom, et ces réglages

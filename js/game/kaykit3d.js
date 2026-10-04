@@ -159,7 +159,7 @@
          Ils restent déclarés dans KAYKIT_ASSETS : seul le lancement groupé les
          ignore. Toute demande ultérieure passe par ensureKayKitAsset(), qui
          mémoïse via kaykit3D.assetPromises. */
-      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3"]);
+      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage"]);
 
       const KAYKIT_CATALOG_CACHE_VERSION = "v45-local-2026-08";
       const KAYKIT_ASSET_MODE = "local-verified";
@@ -194,6 +194,11 @@
         hero2: kaykitAssetSpec("characters", "Rogue.glb", KAYKIT_CDN.characters + "rogue_texture.png"),
         hero2Hooded: kaykitAssetSpec("characters", "Rogue_Hooded.glb", KAYKIT_CDN.characters + "rogue_texture.png"),
         hero3: kaykitAssetSpec("characters", "Barbarian.glb", KAYKIT_CDN.characters + "barbarian_texture.png"),
+        // Gardiens de la Saison 1 (collection, progression.js) : différés comme
+        // les héros 2 et 3, chargés seulement si le joueur les a équipés.
+        heroSkeletonWarrior: kaykitAssetSpec("skeletonCharacters", "Skeleton_Warrior.glb"),
+        heroSkeletonRogue: kaykitAssetSpec("skeletonCharacters", "Skeleton_Rogue.glb"),
+        heroSkeletonMage: kaykitAssetSpec("skeletonCharacters", "Skeleton_Mage.glb"),
 
         /* Le pack Squelettes (4 GLB, 18,4 Mo) était chargé ici avec tout le
            reste au démarrage de la scène. Il ne servait qu'au navigateur de
@@ -896,6 +901,9 @@
           console.warn("Three.js indisponible : conservation du plateau HTML de secours.");
           return;
         }
+        // Ciel choisi dans la collection du joueur (progression.js).
+        const cielDuProfil = progressionCielEquipe();
+        if (cielDuProfil && KAYKIT_SKY_BAND_VARIANTS[cielDuProfil]) kaykitSkyBandActiveVariant = cielDuProfil;
 
         const canvas = document.createElement("canvas");
         canvas.id = "kaykitCanvas";
@@ -3392,7 +3400,14 @@
           // considérerait le ciel comme déjà « repris » depuis le chargement initial
           // et n'upgraderait jamais cette nouvelle variante une fois prête.
           kaykit3D.cielImageRepris = false;
-          const rendu = this.regenerer();
+          // regenerer() relit la texture en cache : on la reconstruit ici, et la
+          // reprise se déclenche au chargement de l'image, même partie à l'arrêt
+          // (la passe de synchronisation ne tourne qu'à chaque coup joué).
+          const rendu = source.ready ? (kaykitReprendreCielImage() ? "ciel régénéré" : this.regenerer()) : "ciel en attente";
+          if (source.ready) kaykit3D.cielImageRepris = true;
+          else source.img?.addEventListener("load", () => {
+            if (kaykit3D && kaykitSkyBandActiveVariant === nom) kaykit3D.cielImageRepris = kaykitReprendreCielImage();
+          }, { once: true });
           return source.ready
             ? rendu + " (variante « " + nom + " » appliquée)"
             : rendu + " (variante « " + nom + " » en cours de chargement — reprise automatique dès qu'elle est prête)";
@@ -10036,6 +10051,10 @@
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
         const playerId = character.player ?? 0;
+        // Gardien choisi dans la collection (progression.js) : tous les
+        // gardiens de ce joueur prennent ce modèle.
+        const choisi = state.players[playerId]?.heros;
+        if (choisi && KAYKIT_ASSETS[choisi]) return choisi;
         const teamHeroPools = state.players.length === 2
           ? { 0: ["hero0"], 1: ["hero1"] }
           : {

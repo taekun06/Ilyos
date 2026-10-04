@@ -372,6 +372,9 @@
                 iconEl.dataset.filled = "1";
               }
               portraitEl.classList.toggle("hud-v2-portrait-active", !!isActiveTurn);
+              /* Gardien choisi dans la collection : le HUD organique lit ce
+                 portrait (js/hud-organique-v2.js). */
+              portraitEl.dataset.heros = progressionPortraitDuJoueur(p) || "";
             } else {
               portraitEl.classList.add("hidden");
             }
@@ -379,6 +382,7 @@
           if (nameEl) {
             nameEl.textContent = p ? (p.isAI && !tablee ? "CPU" : p.name) : "";
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
+            nameEl.dataset.titre = p && p.titre ? p.titre : "";
           }
           if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
         };
@@ -4211,6 +4215,7 @@
         els.victoryText.textContent = "Plus aucune île ne peut être posée, et les couronnes sont à égalité.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
         defaitesFinPartie(null);
+        progressionFinPartie(null);
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
@@ -4248,6 +4253,8 @@
         renderVictoryRecap(player);
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);
+        // Profil de l'appareil : XP et niveau, affichés sous le bilan.
+        progressionFinPartie(player);
 
         els.victoryModal.classList.remove("hidden");
         void els.victoryModal.offsetWidth;
