@@ -172,8 +172,12 @@
         cachesPlanner: 15,
         // Multiplie les plafonds de temps de sécurité (analyse hors partie).
         securiteFacteur: 1,
-        // Course des couronnes : points par case d'écart (lui − moi), bornée.
-        courseParCase: 0,
+        /* Course des couronnes : points par case d'écart (lui − moi), bornée.
+           Self-play 20 parties (04/10) : 60 contre 0, 57,5 % ± 11, couronnes
+           12 contre 10 ; avec la poussée adverse probable et le blocage subi,
+           contre la version du 03/10 : 40 parties, 60 % ± 7,7 (15-7-18),
+           couronnes 26 contre 13, pertes de gardiens égales. */
+        courseParCase: 60,
         courseHorizon: 16,
         perilCouronneSol: 1,
         perilParPose: 0.5,

@@ -1663,3 +1663,36 @@ finalistes.
 **Retenu** : `PLAN_BUDGET` 48 / 8 / 12 000 ; `PLAN_RIPOSTE` faisceau 8,
 6 décisions, 800 états, 90 → 300 ms. `PLAN_RIPOSTE_CRITIQUE` inchangé (mesuré
 tel quel).
+
+## Partie gagnée contre l'Expert : main adverse, blocage subi, course (04/10)
+
+Partie du 03/10 (graine 7, Expert battu 1–0 au tour 27) analysée tour par
+tour (`ILYOS_SELFPLAY.evaluer`, note d'une position terme par terme). Trois
+pistes retenues, chacune mesurée en self-play rapide
+(`scripts/selfplay-rapide.js`, même build des deux côtés, poids par camp).
+
+**Riposte avec un POUSSER de plus** (`pousseeAdverseProbable`). Le seul gros
+écart prévu/réel de la partie (tour 12 : −3 045 prévu, −6 870 réel) venait de
+la main plausible unique : 4 MOVE + 1 PUSH prêtés, 3 + 2 réels (une chance
+sur deux). Une riposte plus large (16 ou 32 pistes) ne trouvait rien de plus.
+La riposte est rejouée avec un POUSSER de plus quand cette main a au moins
+25 % de chances, pondérée comme la MAGIE. 20 parties : 57,5 % ± 11 (5-2-13),
+temps par tour +16 %.
+
+**Blocage subi** (`blocageSubi`). Un gardien adverse sur une case de mon
+village ne coûtait rien, le mien sur le sien rapportait jusqu'à 1 350 : la
+note n'était pas à somme nulle. Miroir exact ajouté. 20 parties : 45 % ± 11
+(5-7-8), neutre contre une IA qui bloque peu ; gardé pour les humains (mes
+gardiens ont tenu ses deux villages de la partie). Banc `verif-blocage-subi`.
+
+**Validation garantie** (`validationRisques`, coupé). Escompter la
+validation prête des parades blocage et pivot : avec le blocage subi, 30 %
+± 10 (1-9-10, couronnes 3 contre 14). La riposte joue déjà ces parades ;
+l'escompte les comptait deux fois.
+
+**Course des couronnes** (`courseParCase` 0 → 60). 20 parties : 57,5 % ± 11
+(8-5-7), couronnes 12 contre 10.
+
+**Confirmation** (graines 6000+, 40 parties) : les trois réglages retenus
+contre la version du 03/10 — **60 % ± 7,7 (15-7-18), couronnes 26 contre 13**,
+gardiens perdus avant le tour 20 : 218 contre 213, 7,1 s par tour contre 6,2.
