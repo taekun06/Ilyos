@@ -50,7 +50,9 @@ const HORIZON = 4;
   await page.waitForTimeout(3000);
   await page.evaluate(() => { window.ILYOS_TEST.stopAutoplay?.(); window.ILYOS_BENCH.reinitialiser(); window.requestAnimationFrame = () => 0; });
 
-  const couronnes = [], gardiens = [], notes = [];
+  const couronnes = [], gardiens = [], notes = [], prets = [];
+  // Contrôle : validations détectées contre points réellement marqués.
+  const controle = { detectees: 0, marques: 0 };
   let n = 0;
   for (const [, plis] of parties) {
     plis.sort((a, b) => a.i - b.i);
@@ -72,6 +74,8 @@ const HORIZON = 4;
       for (const c of pretes.slice(0, gain)) validations.push({ k, P, id: c.id });
     }
     const final = vues[vues.length - 1].scores;
+    controle.detectees += validations.length;
+    controle.marques += final[0] + final[1];
 
     for (let t = 0; t < vues.length; t++) {
       const X = plis[t].joueur, Y = 1 - X, v = vues[t];
@@ -92,11 +96,26 @@ const HORIZON = 4;
         }
       }
       notes.push({ note: v.note, resultat: Math.sign(final[X] - final[Y]) });
+      // D. Porteurs prêts : que devient le point au tour suivant ?
+      if (t + 2 < vues.length) {
+        for (const c of v.couronnes.filter(c => c.porteur === 'moi' && c.surValidation)) {
+          const w = vues[t + 1], z = vues[t + 2];
+          const g = w.gardiens.find(x => x.id === c.porteurId);
+          const cw = w.couronnes.find(x => x.id === c.id);
+          const issue = z.scores[X] > w.scores[X] ? 'marqué'
+            : !g ? 'porteur éjecté'
+            : !cw || cw.porteurId !== c.porteurId ? 'couronne volée ou perdue'
+            : g.r !== c.r || g.c !== c.c ? 'porteur déplacé (pivot, poussée)'
+            : 'village bloqué ou autre';
+          prets.push({ issue, gravite: c.gravite });
+        }
+      }
     }
   }
   await navigateur.close();
 
-  console.log(`\n${parties.size} parties, ${n} positions de fin de tour\n`);
+  console.log(`\n${parties.size} parties, ${n} positions de fin de tour`);
+  console.log(`validations attribuées à une couronne : ${controle.detectees} sur ${controle.marques} points marqués\n`);
 
   console.log(`A. COURONNES — vue par X qui vient de jouer ; « prête » = porteur sur une case de validation libre`);
   console.log(`   valeur réelle = 4000 × (P(X valide d'ici la fin) − P(Y valide d'ici la fin)) ; note = table + course ${COURSE}`);
@@ -117,6 +136,14 @@ const HORIZON = 4;
   if (pretes.length) {
     const p = f => pretes.filter(f).length / pretes.length;
     console.log(`porteur PRÊT (moi, sur validation libre) : n ${pretes.length}, validée au tour suivant ${pct(p(c => c.moiH))}, reprise par lui ${pct(p(c => c.luiFin))}`);
+  }
+
+  console.log(`\nD. PORTEURS PRÊTS en fin de tour (${prets.length}) : issue au tour suivant`);
+  const issues = {};
+  prets.forEach(x => { issues[x.issue] = (issues[x.issue] || 0) + 1; });
+  for (const [k, v] of Object.entries(issues).sort((a, b) => b[1] - a[1])) {
+    const g = prets.filter(x => x.issue === k).reduce((s, x) => s + x.gravite, 0) / v;
+    console.log(`  ${k.padEnd(34)} ${String(v).padStart(4)}  ${pct(v / prets.length)}   gravité estimée moyenne ${g.toFixed(2)}`);
   }
 
   console.log('\nB. GARDIENS DE X — gravité d\'expulsion estimée contre éjection réelle au demi-tour adverse');

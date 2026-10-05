@@ -1696,3 +1696,43 @@ l'escompte les comptait deux fois.
 **Confirmation** (graines 6000+, 40 parties) : les trois réglages retenus
 contre la version du 03/10 — **60 % ± 7,7 (15-7-18), couronnes 26 contre 13**,
 gardiens perdus avant le tour 20 : 218 contre 213, 7,1 s par tour contre 6,2.
+
+## Calibrage des enjeux : ce que valent vraiment les situations (05/10)
+
+`scripts/calibrage-enjeux.js` sur 95 parties Expert contre Expert (graines
+7000+, 2 624 positions de fin de tour, 63 points marqués, tous retrouvés).
+Chaque situation vue par le joueur X qui vient de jouer, confrontée à la
+suite réelle de la partie. Valeur réelle d'une couronne pour X =
+4 000 × (P(X la valide d'ici la fin) − P(Y la valide)).
+
+**Couronnes** (extrait) :
+
+| situation | n | X la valide | Y la valide | valeur réelle | note de l'IA |
+|---|---|---|---|---|---|
+| portée par moi, sur ma case de validation | 222 | 40 % | 3 % | 1 477 | 3 267 |
+| au sol sur ma case de validation | 596 | 11 % | 9 % | 81 | 3 257 |
+| au sol à 1 case | 209 | 12 % | 14 % | −96 | 2 635 |
+| au sol à 2 cases | 167 | 8 % | 7 % | 72 | 2 157 |
+| au sol à 7+ cases (près de lui) | 1 138 | 7 % | 11 % | −169 | −1 483 |
+| portée par lui, près de son village | 209 | 8 % | 34 % | −1 072 | −1 332 |
+
+**Porteurs prêts** en fin de tour (181) : marqué 35 %, **éjecté 54 %**
+(gravité estimée moyenne 0,71 : le danger était vu), volé 9 %, déplacé 2 %,
+village bloqué 1 %.
+
+**Gravité d'expulsion** contre éjection réelle au tour adverse : porteurs
+4 % / 7 % / 39 % / 80 % (gravité 0, <0,3, <0,7, ≥0,7) — bien calibrée ;
+autres gardiens 3 % / 8 % / 23 % / 32 % — surestimée d'environ deux fois
+au-delà de 0,3 (l'adversaire éjecte d'abord les porteurs).
+
+**Note de fin de tour** contre résultat : monotone (> 6 000 : 62 % de
+victoires, 0 % de défaites ; < −6 000 : 7 % / 42 %).
+
+**Lecture.** Une partie Expert contre Expert ne marque que 0,66 point en
+~29 demi-tours (fin par plateau saturé). Une couronne AU SOL ne vaut presque
+rien, même sur ma case de validation (81 contre 3 257 dans la note) : la
+table de distance la juge « objet commun » sans tenir compte du porteur, ce
+qui explique les dépôts au sol près de son village (4.4). Seule une couronne
+PORTÉE et qui SURVIT au tour adverse marque ; la note d'un porteur prêt
+(3 267) double sa valeur réelle (1 477) et récompense des postes où il est
+éjecté une fois sur deux.
