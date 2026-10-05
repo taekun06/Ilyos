@@ -24853,6 +24853,8 @@
            invoqué sur place peut la reprendre. Elle vaut la moitié d'une
            couronne à la même distance à vol d'oiseau, plus deux cases. */
         couronneIsoleeFacteur: 0.5,
+        // Valeur de position d'une couronne au sol, relative à une couronne portée.
+        couronneSolFacteur: 1,
         // Voir « QUI JOUE ENSUITE » dans l'évaluateur (0 = ancien calcul).
         traitPerspective: 1,
         /* Force de poussée maximale prise en compte pour juger un gardien
@@ -26072,9 +26074,15 @@
 
           /* POSITION : ce qui compte d'abord. Qui la porte n'entre pas ici —
              une couronne est un objet commun. */
+          /* Couronne AU SOL : facteur réglable (couronneSolFacteur, 1 = même
+             valeur que portée). Calibrage du 05/10 : au sol sur ma case de
+             validation, aucun avantage mesuré sur la suite (Expert contre
+             Expert) ; à trancher en match, la pression qu'elle impose pouvant
+             valoir davantage contre un humain. */
+          const facteurSol = porteur ? 1 : (PLAN_POIDS.couronneSolFacteur ?? 1);
           ajouter("positionCouronne",
-            valeurCouronneADistance(dm) - valeurCouronneADistance(dl),
-            `(${r},${c}) — moi ${dm}, lui ${dl}`);
+            facteurSol * (valeurCouronneADistance(dm) - valeurCouronneADistance(dl)),
+            `(${r},${c}) — moi ${dm}, lui ${dl}${porteur ? "" : ", au sol"}`);
 
           /* COURSE : chaque case compte, partout. La table ci-dessus est raide
              près des villages et presque plate au-delà de six cases : au
