@@ -81,10 +81,19 @@ const HORIZON = 4;
       const X = plis[t].joueur, Y = 1 - X, v = vues[t];
       const apres = (P, id, h) => validations.some(e => e.P === P && e.id === id && e.k > t && e.k <= t + h);
       for (const c of v.couronnes) {
+        /* Au sol : déposée par X CE tour (portée par l'un de ses gardiens à la
+           fin du demi-tour précédent), ou là pour une autre raison — souvent
+           l'éjection de son porteur, une tout autre situation. */
+        const avant = t > 0 ? vues[t - 1].couronnes.find(k => k.id === c.id) : null;
+        const deposee = !c.porteur && !!avant && !!avant.porteurId
+          && vues[t - 1].gardiens.find(g => g.id === avant.porteurId)?.player === X;
         couronnes.push({
-          porteur: c.porteur || 'sol', dm: c.dm, dl: c.dl, prete: c.surValidation,
+          porteur: c.porteur || (deposee ? 'déposée' : 'sol'), dm: c.dm, dl: c.dl, prete: c.surValidation,
           moiH: apres(X, c.id, HORIZON), luiH: apres(Y, c.id, HORIZON),
           moiFin: apres(X, c.id, 1e9), luiFin: apres(Y, c.id, 1e9),
+          // Avantage sur TOUTE la suite : points marqués ensuite par X moins Y.
+          futur: (final[X] - final[Y]) - (v.scores[X] - v.scores[Y]),
+          gagne: final[X] > final[Y], perd: final[X] < final[Y],
           note: c.valeur + COURSE * (eff(c.dl) - eff(c.dm))
         });
       }
@@ -119,17 +128,19 @@ const HORIZON = 4;
 
   console.log(`A. COURONNES — vue par X qui vient de jouer ; « prête » = porteur sur une case de validation libre`);
   console.log(`   valeur réelle = 4000 × (P(X valide d'ici la fin) − P(Y valide d'ici la fin)) ; note = table + course ${COURSE}`);
-  console.log('porteur  dist.moi  n     X≤4   Y≤4   X fin  Y fin   réelle   note');
+  console.log('   avantage = 4000 × (points marqués ensuite par X − par Y), toutes couronnes : la suite de la partie');
+  console.log('porteur  dist.moi  n     X≤4   Y≤4   X fin  Y fin   réelle avantage gagne perd   note');
   const tranche = d => !Number.isFinite(d) || d >= 30 ? '30+' : d >= 7 ? '7-29' : d >= 4 ? '4-6' : String(Math.round(d));
   const ordreT = ['0', '1', '2', '3', '4-6', '7-29', '30+'];
-  for (const porteur of ['moi', 'sol', 'lui']) {
+  for (const porteur of ['moi', 'déposée', 'sol', 'lui']) {
     for (const t of ordreT) {
       const lot = couronnes.filter(c => c.porteur === porteur && tranche(c.dm) === t);
       if (lot.length < 5) continue;
       const p = f => lot.filter(f).length / lot.length;
       const reelle = 4000 * (p(c => c.moiFin) - p(c => c.luiFin));
       const note = lot.reduce((s, c) => s + c.note, 0) / lot.length;
-      console.log(`${porteur.padEnd(8)} ${t.padStart(6)}  ${String(lot.length).padStart(5)} ${pct(p(c => c.moiH))} ${pct(p(c => c.luiH))} ${pct(p(c => c.moiFin))} ${pct(p(c => c.luiFin))} ${String(Math.round(reelle)).padStart(8)} ${String(Math.round(note)).padStart(6)}`);
+      const avantage = 4000 * lot.reduce((s, c) => s + c.futur, 0) / lot.length;
+      console.log(`${porteur.padEnd(9)}${t.padStart(6)}  ${String(lot.length).padStart(5)} ${pct(p(c => c.moiH))} ${pct(p(c => c.luiH))} ${pct(p(c => c.moiFin))} ${pct(p(c => c.luiFin))} ${String(Math.round(reelle)).padStart(8)} ${String(Math.round(avantage)).padStart(8)} ${pct(p(c => c.gagne))} ${pct(p(c => c.perd))} ${String(Math.round(note)).padStart(6)}`);
     }
   }
   const pretes = couronnes.filter(c => c.porteur === 'moi' && c.prete);
