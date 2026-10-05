@@ -3559,11 +3559,23 @@
         }, 1450);
       }
 
-      function sleep(ms) {
+      /* MENU = PAUSE. Tant que le menu de jeu est ouvert (js/menu-jeu.js pose
+         `mj-menu-ouvert`), la partie attend : le minuteur du tour est gelé et
+         l'IA ne fait pas son geste suivant. Jamais en ligne : l'autre joueur,
+         lui, n'a pas ouvert de menu. */
+      function jeuEnPause() {
+        return !!state && !state.onlineMode && state.winner === null
+          && document.body.classList.contains("mj-menu-ouvert");
+      }
+
+      async function sleep(ms) {
         // benchSpeedFactor vaut 1 en jeu normal : aucun changement de rythme
         // hors banc d'essai (voir sa déclaration dans bootstrap.js).
         const duree = benchSpeedFactor === 1 ? ms : Math.round(ms * benchSpeedFactor);
-        return new Promise(resolve => setTimeout(resolve, duree));
+        await new Promise(resolve => setTimeout(resolve, duree));
+        // Les tours d'IA et les animations avancent par sleep() : le menu ouvert
+        // les retient ici, au prochain pas, sans rien interrompre en plein geste.
+        while (jeuEnPause()) await new Promise(resolve => setTimeout(resolve, 150));
       }
 
       function showTurnRibbon(player) {
@@ -3689,6 +3701,11 @@
             return;
           }
 
+          if (jeuEnPause()) {
+            // Temps gelé : l'échéance recule d'autant que dure la pause.
+            state.turnDeadline = Date.now() + (state.turnTimeLeft ?? 0) * 1000;
+            return;
+          }
           state.turnTimeLeft = Math.max(0, (state.turnDeadline - Date.now()) / 1000);
           updateTurnTimerDisplay();
 

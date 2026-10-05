@@ -135,7 +135,7 @@
         <div><dt><kbd>Espace</kbd></dt><dd>Revenir à la vue de face</dd></div>
         <div><dt><kbd>Molette</kbd></dt><dd>Zoomer</dd></div>
         <div><dt><kbd>T</kbd></dt><dd>Plateau tactique à plat</dd></div>
-        <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection, sinon ouvrir ce menu</dd></div>
+        <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, fermer ce menu</dd></div>
       </dl>`);
     page('partie').appendChild(commandes);
 

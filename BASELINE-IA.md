@@ -1630,3 +1630,69 @@ deux parties. Sur le code livré : miroir 1 contre 1, graines 7300-7301, 4
 parties terminées en 32 à 56 tours (2-2) ; 0,5 contre 1 : 1-1 et 2 nuls. Aucun
 écart mesurable : le poids reste à 1 (danger compté en entier). Échantillons
 petits, à surveiller sur les prochaines défaites humaines.
+
+## Recherche élargie : faisceau 48, riposte de 6 décisions (02/10)
+
+Trois constats de la partie du 30/09 : la riposte simulée s'arrêtait à 3
+décisions quand les vraies ripostes en font 6 ; la recherche principale
+s'arrêtait en ~1 s sur 7 (faisceau épuisé, pas le temps) ; au tour 6, le code
+choisissait un plan moins robuste que celui joué.
+
+**Méthode** (`scripts/mesure-recherche.js`) : 77 décisions réelles de l'Expert
+(revue du 30/09, défaite du 27/09, lot du 29/09), dont 63 encore jouables.
+Chaque réglage choisit son plan ; ce plan est noté par un JUGE fixe — riposte
+de 7 décisions, faisceau 10, 3 000 états — identique pour tous. On ne juge
+donc pas une configuration avec sa propre riposte courte. Temps mesurés dans
+le bac à sable, ~3× plus lent qu'une machine de jeu (réglage d'avant :
+3,6 s médian ici, ~1 s en partie).
+
+| réglage | écart moyen | mieux / pire | temps médian |
+|---|---|---|---|
+| finalistes 8 | −29 | 12 / 8 | 3,8 s |
+| riposte 6 (seule) | +80 | 15 / 6 | 4,8 s |
+| faisceau 48 | +322 | 23 / 7 | 4,9 s |
+| **faisceau 48 + riposte 6** | **+427** | **30 / 9** | 6,5 s |
+| faisceau 64 | +270 | 22 / 10 | 5,3 s |
+| tout (48, riposte 6, finalistes 8) | +334 | 29 / 14 | 8,7 s |
+
+Deux passages indépendants donnent le même classement (faisceau 48 : +314 puis
++322). Élargir au-delà de 48 dégrade ; plus de finalistes n'aide pas — le
+point « tour 6 » relève donc du faisceau et de la riposte, pas du nombre de
+finalistes.
+
+**Retenu** : `PLAN_BUDGET` 48 / 8 / 12 000 ; `PLAN_RIPOSTE` faisceau 8,
+6 décisions, 800 états, 90 → 300 ms. `PLAN_RIPOSTE_CRITIQUE` inchangé (mesuré
+tel quel).
+
+## Partie gagnée contre l'Expert : main adverse, blocage subi, course (04/10)
+
+Partie du 03/10 (graine 7, Expert battu 1–0 au tour 27) analysée tour par
+tour (`ILYOS_SELFPLAY.evaluer`, note d'une position terme par terme). Trois
+pistes retenues, chacune mesurée en self-play rapide
+(`scripts/selfplay-rapide.js`, même build des deux côtés, poids par camp).
+
+**Riposte avec un POUSSER de plus** (`pousseeAdverseProbable`). Le seul gros
+écart prévu/réel de la partie (tour 12 : −3 045 prévu, −6 870 réel) venait de
+la main plausible unique : 4 MOVE + 1 PUSH prêtés, 3 + 2 réels (une chance
+sur deux). Une riposte plus large (16 ou 32 pistes) ne trouvait rien de plus.
+La riposte est rejouée avec un POUSSER de plus quand cette main a au moins
+25 % de chances, pondérée comme la MAGIE. 20 parties : 57,5 % ± 11 (5-2-13),
+temps par tour +16 %.
+
+**Blocage subi** (`blocageSubi`). Un gardien adverse sur une case de mon
+village ne coûtait rien, le mien sur le sien rapportait jusqu'à 1 350 : la
+note n'était pas à somme nulle. Miroir exact ajouté. 20 parties : 45 % ± 11
+(5-7-8), neutre contre une IA qui bloque peu ; gardé pour les humains (mes
+gardiens ont tenu ses deux villages de la partie). Banc `verif-blocage-subi`.
+
+**Validation garantie** (`validationRisques`, coupé). Escompter la
+validation prête des parades blocage et pivot : avec le blocage subi, 30 %
+± 10 (1-9-10, couronnes 3 contre 14). La riposte joue déjà ces parades ;
+l'escompte les comptait deux fois.
+
+**Course des couronnes** (`courseParCase` 0 → 60). 20 parties : 57,5 % ± 11
+(8-5-7), couronnes 12 contre 10.
+
+**Confirmation** (graines 6000+, 40 parties) : les trois réglages retenus
+contre la version du 03/10 — **60 % ± 7,7 (15-7-18), couronnes 26 contre 13**,
+gardiens perdus avant le tour 20 : 218 contre 213, 7,1 s par tour contre 6,2.

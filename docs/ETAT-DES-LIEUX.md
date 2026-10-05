@@ -12,13 +12,15 @@ Légende : 🔴 bloque / casse · 🟠 défaut visible · 🟡 amélioration · 
 |---|---|---|---|---|
 | 1.1 | ✅ | CI `smoke` (tutoriel Découverte) rouge sur la PR #130 : délai dépassé, à une étape différente à chaque passage. | Trace CI conservée : le test cliquait la couronne 12 ms après l'arrivée du porteur, pendant le verrou d'animation (`inputLocked`) — clic ignoré sur un runner lent. | Test corrigé : attendre la fin du verrou, et la poussée engagée avant de viser. **Vert en CI** (4092b8f). |
 | 1.2 | ✅ | Workflow « Partie de bout en bout » **annulé à chaque push sur `main`** depuis au moins le 24/09 : il lançait `playwright test` sans fichier, donc toute la suite (~45 tests), qui ne tient pas en 25 min. | Jobs de `main` : « cancelled » à chaque fusion ; 8,7 min d'installation + 16 min de tests. | Corrigé ici : ne joue plus que `tests/partie-ia-contre-ia.spec.js`. Durée réelle de la partie à vérifier sur le prochain push. |
-| 1.3 | 🟠 | Manette : « dans une énigme, une poussée se vise et s'exécute » échoue. | Passe à 67c7e84 et après #125 seule (3ba9af0), échoue sur `main` : **régression de #128**. | Le stick n'atteint plus les destinations de poussée ; piste : le nouveau bouton MENU (haut d'écran) entre dans la navigation du stick (`js/game/gamepad.js`). |
-| 1.4 | 🟠 | Manette : « Y n'ouvre un choix que si plusieurs couronnes sont jouables » échoue. | Passe à 67c7e84 et après #125 seule, échoue sur `main` : **régression de #128**. | Depuis #128, Échap ouvre le menu quand aucune *phase* n'est engagée ; le choix de couronne de la manette (`pad.crownMode`) n'en fait pas partie, le menu s'ouvre par-dessus et bloque la suite. Aligner la liste sur `gesteEnCours()` de `gamepad.js`. |
+| 1.3 | 🟡 | Manette : « dans une énigme, une poussée se vise et s'exécute ». | Passe 3/3 sur `main` et sur la branche du 02/10 : instable, pas une régression. | Rendre l'attente robuste (attendre l'état, pas un délai). |
+| 1.4 | ✅ | Manette : « Y n'ouvre un choix que si plusieurs couronnes sont jouables ». | Échap ouvrait le menu par-dessus le choix de couronne de la manette. | Échap n'ouvre plus le menu (02/10) et quitte d'abord un geste de manette en cours ; 3/3. |
 | 1.5 | 🟠 | Manette : « l'annulation remonte jusqu'au début du tour » échoue (« un appui court ne doit pas défaire la pose »). | Échoue déjà à 67c7e84 : plus ancien que #125/#128. | Dater par bissection. |
 | 1.6 | 🟡 | Manette : « le tiroir d'îles… RT tourne l'île » a échoué une fois sur la branche #130. | Passe sur `main`, à 67c7e84, et 2 fois sur 2 sur la branche #130 : **test instable**, pas une régression. | Rendre l'attente de rotation robuste (attendre l'état, pas un délai). |
-| 1.7 | 🟠 | Énigmes : le sous-titre du prologue vocal (« Ton village s'est éteint. ») reste vide. | Échoue aussi sur `main` sans les PR récentes. | La séquence est sautée ou le prologue n'est plus porté par p01 : à lire dans `puzzle.js` (`puzzleApproche`). |
+| 1.7 | ✅ | Énigmes : le sous-titre du prologue (« Ton village s'est éteint. ») restait vide dans le test. | Le prologue suit la cinématique d'ouverture, plus longue que les 15 s d'attente du test. | Test : attente portée à 45 s. Voix de synthèse coupée (02/10), sous-titres seuls. |
 | 1.8 | 🟡 | L'Éveil dépasse son délai de 5 min (étape « limite » ≈ 71 s). | Échoue aussi sur `main`. | Durée du test, pas du tutoriel : à confirmer, puis ajuster l'attente de l'étape lente (sans masquer un vrai blocage). |
 | 1.9 | — | En local (bac à sable), « Découverte jusqu'à la validation » échoue sur deux ressources externes bloquées (certificat). | Environnement de développement, pas le jeu. | Rien à faire côté jeu. |
+
+Également instable des deux côtés (02/10) : « sous Magie, le pivot se choisit à la manette » (2/4 sur la branche, 1/3 sur `main`).
 
 ## 2. Bugs de jeu
 
@@ -26,7 +28,7 @@ Légende : 🔴 bloque / casse · 🟠 défaut visible · 🟡 amélioration · 
 |---|---|---|---|---|
 | 2.1 | ✅ | Mode Personnalisé : un gardien ne pouvait **jamais** se poser sur son propre village (humain comme IA) — `villageAt` renvoie le joueur, comparé à un identifiant. | `scripts/verif-draft-village.js` : échoue avant, passe après. | Corrigé (`core.js`, `draftGuardianCellAllowed`). |
 | 2.2 | ✅ | Gardien sélectionné puis clic sur la couronne voisine : rien (ou une poussée) au lieu du ramassage. | `tests/clic-couronne.spec.js`. | PR #130. |
-| 2.3 | 🟠 | Ouvrir le menu en partie ne met en pause ni le minuteur du tour ni l'IA. | Limite déclarée de #128. | Suspendre `startTurnTimer`/IA à l'ouverture du menu. |
+| 2.3 | ✅ | Ouvrir le menu en partie ne mettait en pause ni le minuteur ni l'IA. | Limite déclarée de #128. | Menu = pause hors partie en ligne (02/10) ; `tests/menu-pause.spec.js`. |
 | 2.4 | 🟡 | Jeu en portrait (#125) jamais essayé sur un vrai téléphone. | Déclaré dans #125. | Essai réel. |
 
 ## 3. 2 contre 2
@@ -40,11 +42,16 @@ Légende : 🔴 bloque / casse · 🟠 défaut visible · 🟡 amélioration · 
 
 | # | État | Constat | Preuve | Piste |
 |---|---|---|---|---|
-| 4.1 | 🔴 | **Riposte trop courte** : 3 décisions, faisceau 5, 90 ms. Les ripostes humaines réelles en demandent 6 (tour 6 : −1 617 prévu, −7 647 réel). | `analyser-defaite.js` sur la revue du 30/09. | La rallonger seule ne changeait pas le choix : il faut aussi que la recherche principale garde plus de candidats robustes (4.3). |
-| 4.2 | 🟠 | La recherche s'arrête en 0,5–1,3 s sur 7 s disponibles : la largeur du faisceau limite, pas le temps. | `etatsExplores`/`dureeMs` des décisions du 30/09 ; faisceau 80 trouvait seul le bon coup au tour 10. | Faisceau adaptatif tant que le temps le permet. Mesurer en self-play avant d'adopter. |
-| 4.3 | 🟠 | Tour 6 : le code actuel choisit un plan moins robuste (−1 826) que celui qu'il avait joué (−1 617). | `analyser-defaite.js`. | Le plan joué n'entre plus dans les finalistes : examiner `plannerFinalistesDiversifies`. |
-| 4.4 | 🟠 | Couronnes laissées au sol près de l'adversaire (tours 6 et 8), et aucune couronne amenée vers ses propres villages de la partie. | Revue du 30/09. | Tâche « terme de course » : chaque case gagnée vers son village compte. |
+| 4.1 | ✅ | Riposte trop courte : 3 décisions, faisceau 5, 90 ms (tour 6 : −1 617 prévu, −7 647 réel). | `scripts/mesure-recherche.js`, 63 décisions jugées par une riposte forte. | Riposte 6 décisions / faisceau 8 / 800 états, avec le faisceau 48 : +427 en moyenne (30 meilleures, 9 pires). Voir BASELINE-IA.md (02/10). |
+| 4.2 | ✅ | La recherche s'arrêtait en ~1 s sur 7 : faisceau épuisé. | Même banc. | Faisceau 48 / 12 000 états : +322 seul ; 64 fait moins bien. |
+| 4.3 | 🟡 | Tour 6 : plan moins robuste que celui joué. | Même banc : plus de finalistes (8) n'aide pas en moyenne (−29) ; faisceau 48 + riposte 6 améliore ce tour (−2 445 → −2 238). | Suivre sur les prochaines défaites. |
+| 4.4 | ✅ | Couronnes laissées au sol près de l'adversaire (tours 6 et 8), et aucune couronne amenée vers ses propres villages de la partie. | Revue du 30/09. | `courseParCase` 60 (04/10), voir 4.9. |
 | 4.5 | ✅ | Éjection du porteur adossé au vide élaguée ; poussées longues invisibles ; magie adverse jamais anticipée. | Bancs `verif-ejection-porteur`, analyse du 30/09. | PR #129 et #130. |
+| 4.6 | 🔴 | **Fin par pose impossible invisible.** Partie du 03/10 (graine 7) perdue 0–1 au tour 27 : ma pose a laissé l'IA sans forme qui tienne, fin au décompte. L'IA prévoyait −3 812, pas une défaite. | `plannerEvaluerRobustesseMain` → `mesurer` note l'état après riposte sans tester `finParPoseImpossible` pour l'IA ; la recherche ne le teste pas non plus sur ses nœuds terminaux. Le juge (riposte 7 décisions) donne aussi −3 812 : ce n'est pas la profondeur. | Tester la fin par pose impossible du joueur suivant aux nœuds terminaux et après la riposte, seulement quand ses places de pose sont peu nombreuses (coût). |
+| 4.7 | 🟠 | Stock de formes : menée, l'IA a usé ses petites formes (dominos, carrés) et posé des îles qui réduisaient sa propre place ; restaient t4, croix creuse, ligne de 3, qui ne tenaient plus. | Même partie, îles par propriétaire en fin de partie. | Terme « places de pose restantes pour mes formes », pesé par l'écart de score. |
+| 4.8 | ✅ | La riposte ne prête à l'adversaire qu'**une** main : la plausible. Tour 12 : main prêtée 4 MOVE + 1 PUSH, main réelle 3 + 2 (une chance sur deux) ; ma poussée de force 2 vers le coin (10,10) n'existait pas pour l'IA (−3 045 prévu, −6 870 réel). Ailleurs, écart prévu/réel de −300 à −1 600 (mesuré du même point de vue ; un premier relevé, comparé à la note de départ du tour suivant, le gonflait). | Rejugé avec une riposte plus **large** (16, 32 pistes) : rien de trouvé de plus au tour 12 → c'est la main, pas la largeur. | En cours (04/10) : riposte rejouée avec un POUSSER de plus, pondérée par sa probabilité (`pousseeAdverseProbable`). Self-play 20 parties : 57,5 % ± 11. ✅ retenu (BASELINE-IA.md, 04/10). |
+| 4.9 | ✅ | Couronnes : 12 tours sur 13 finis sans porteur ; aucun porteur posé sur une case de validation. Mes gardiens bloquaient ses deux villages sans qu'il cherche à les en chasser. | Même partie ; un gardien adverse dans son village ne lui coûtait rien (blocage compté d'un seul côté). | 04/10 : `blocageSubi` (miroir) et `courseParCase` 60. Confirmation 40 parties contre la version du 03/10 : 60 % ± 7,7, couronnes 26 contre 13. |
+| 4.10 | — | Horizon : porteur au coin (10,10) noté comme une menace (tour 12). | L'évaluateur donne déjà la validation pleine à un porteur sans parade ; l'écart du tour 12 venait de la main prêtée (4.8). Escompter blocage et pivot (`validationRisques`) : mesuré nuisible (30 % ± 10), coupé. | Rien de plus. |
 
 ## 5. Décisions en attente
 

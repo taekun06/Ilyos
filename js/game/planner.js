@@ -153,6 +153,10 @@
         pousseeLongueCandidate: 1,
         // Riposte rejouée avec une MAGIE adverse, pondérée par sa probabilité.
         magieAdverseProbable: 1,
+        /* …et avec un POUSSER de plus que la main plausible, quand cette main
+           a au moins `pousseeAdverseSeuil` de chances (plannerEvaluerRobustesse). */
+        pousseeAdverseProbable: 1,
+        pousseeAdverseSeuil: 0.25,
         /* Faisceau trié aussi sur le potentiel (sans menaces de fin de tour),
            plannerNotePotentiel. Mesuré sur la position jaune du 29/09 : 1 016
            après réplique au lieu de 4 222 — le faisceau se remplit de passages
@@ -168,8 +172,12 @@
         cachesPlanner: 15,
         // Multiplie les plafonds de temps de sécurité (analyse hors partie).
         securiteFacteur: 1,
-        // Course des couronnes : points par case d'écart (lui − moi), bornée.
-        courseParCase: 0,
+        /* Course des couronnes : points par case d'écart (lui − moi), bornée.
+           Self-play 20 parties (04/10) : 60 contre 0, 57,5 % ± 11, couronnes
+           12 contre 10 ; avec la poussée adverse probable et le blocage subi,
+           contre la version du 03/10 : 40 parties, 60 % ± 7,7 (15-7-18),
+           couronnes 26 contre 13, pertes de gardiens égales. */
+        courseParCase: 60,
         courseHorizon: 16,
         perilCouronneSol: 1,
         perilParPose: 0.5,
@@ -233,6 +241,15 @@
         utiliteMenace: 450,
         utiliteMenaceMultiple: 900,
         blocageValidation: 900,
+        // Gardien adverse sur une case de mes villages : miroir du blocage (0 = ignoré).
+        blocageSubi: 1,
+        /* Validation prête escomptée des parades blocage et pivot
+           (plannerRisquesValidation). MESURÉ NUISIBLE : self-play 20 parties,
+           avec blocageSubi, 30 % ± 10 (1-9-10, couronnes 3 contre 14) ;
+           blocageSubi seul 45 % ± 11. La riposte JOUE déjà le blocage et le
+           pivot adverses : l'escompte comptait deux fois le même danger (même
+           leçon que riposteRemplacePeril). Coupé ; gardé pour mesurer. */
+        validationRisques: 0,
         // Un second gardien dans le même village : réserve contre l'expulsion.
         blocageRedondance: 0.25,
 
@@ -1150,6 +1167,44 @@
         finally { plannerEvalPotentiel = false; }
       }
 
+      /* VALIDATION GARANTIE. Un porteur prêt à valider ne marque qu'au début
+         de mon prochain tour : l'adversaire joue entre-temps. L'éjection et le
+         vol ont leurs termes ; restaient deux parades invisibles, qui faisaient
+         payer le même prix à un point acquis et à un point qu'une simple
+         marche annule :
+         - BLOCAGE : un de ses gardiens rejoint une case libre de ce village
+           (marche, ou apparition sur une île posée contre une de ces cases puis
+           un pas) — la validation est interdite ;
+         - PIVOT : le porteur se tient sur une île, qu'une MAGIE adverse peut
+           faire tourner et l'emporter. La case du village n'est pas une île.
+         Chaque risque vaut 1 (certain), une fraction (possible), 0 (exclu).
+         Partie du 03/10, tour 13 : mon porteur au coin (10,10), ni éjectable,
+         ni volable, ni blocable, ni pivotable — un point acquis. */
+      function plannerRisquesValidation(playerId, r, c) {
+        const adverse = plannerAdversaire(playerId);
+        const resultat = { blocage: 0, pivot: 0 };
+        if (!adverse) return resultat;
+        const cases = villageCellsContaining(state.players[playerId], r, c) || [];
+        const reserve = state.players[adverse.id]?.stash || {};
+        const budgetMove = (reserve.MOVE || 0) + plannerMainAdverse(playerId).MOVE;
+        if (budgetMove > 0) {
+          const portees = plannerPorteesAdverses(playerId, budgetMove);
+          let parPose = false;
+          for (const [vr, vc] of cases) {
+            if ((vr === r && vc === c) || characterAt(vr, vc) || !isLand(vr, vc)) continue;
+            if (portees.some(p => p.has(key(vr, vc)))) { resultat.blocage = 1; break; }
+            if (orthogonalNeighbors(vr, vc).some(([nr, nc]) => !isLand(nr, nc))) parPose = true;
+          }
+          if (!resultat.blocage && parPose && canCreateGuardian(adverse.id)
+            && !plannerPoseImpossibleEnCache(adverse.id)) resultat.blocage = PLAN_POIDS.perilParPose;
+        }
+        const ile = islandAt(r, c);
+        if (ile && ile.cells.length > 1) {
+          resultat.pivot = (reserve.MAGIC || 0) > 0 ? 1 : plannerPiocheProchaine(adverse.id).auMoinsMagie || 0;
+        }
+        return resultat;
+      }
+
       function evaluerEtatStrategique(playerId) {
         const moi = state.players[playerId];
         if (!moi) return 0;
@@ -1314,8 +1369,14 @@
           if (porteur && isCrownValidationCell(state.players[porteur.player], r, c)
             && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
             if (porteur.player === playerId) {
+              const risques = lAdversaireJoue && PLAN_POIDS.validationRisques
+                ? plannerRisquesValidation(playerId, r, c) : { blocage: 0, pivot: 0 };
               ajouter("validationPrete", PLAN_POIDS.validationPrete
-                * (lAdversaireJoue ? 1 - 0.65 * plannerGraviteExpulsion(playerId, r, c) : 1), porteur.id);
+                * (lAdversaireJoue ? 1 - 0.65 * plannerGraviteExpulsion(playerId, r, c) : 1)
+                * (1 - 0.65 * risques.blocage) * (1 - 0.65 * risques.pivot),
+                risques.blocage || risques.pivot
+                  ? `${porteur.id} — blocage ${risques.blocage}, pivot ${Math.round(risques.pivot * 100) / 100}`
+                  : `${porteur.id} — garantie`);
             } else {
               ajouter("validationPreteAdverse", -PLAN_POIDS.validationPrete, porteur.id);
             }
@@ -1518,6 +1579,29 @@
         }
         ajouter("utiliteGardiens", utiliteTotale, `${miens.length} gardien(s)`);
         ajouter("blocageValidation", blocageTotal, `menace ${menaceReelle}`);
+
+        /* BLOCAGE SUBI : le miroir exact du terme précédent. Il manquait : un
+           gardien adverse posté sur une case de MON village ne me coûtait
+           rien, alors que le mien sur le sien rapportait jusqu'à 1 350. La
+           note n'était plus à somme nulle, et chasser un bloqueur ne
+           rapportait que ce qu'en dit l'utilité de mon pousseur. Partie du
+           03/10 : mes gardiens ont tenu ses deux villages ((10,1) du tour 9
+           au tour 22, (1,10) dès le 19) sans qu'il cherche à les en chasser,
+           et il n'a jamais validé. Même pondération par la proximité de
+           MES couronnes que la sienne par celle des siennes. */
+        if (adverse && PLAN_POIDS.blocageSubi) {
+          const menaceMienne = !marqueMoi ? 0
+            : minMoi <= 2 ? (minMoi === 0 ? 1.5 : 1) : (minMoi <= 4 ? 0.6 : 0.3);
+          let subi = 0;
+          for (const village of villagesForPlayer(moi)) {
+            const cases = cornerCrownCellsForVillage(village);
+            const occupants = siens.filter(g => cases.some(([r, c]) => r === g.r && c === g.c)).length;
+            if (!occupants) continue;
+            subi += PLAN_POIDS.blocageValidation * menaceMienne
+              * (occupants > 1 ? 1 + PLAN_POIDS.blocageRedondance : 1);
+          }
+          ajouter("blocageSubi", -subi * PLAN_POIDS.blocageSubi, `menace ${menaceMienne}`);
+        }
 
         /* Défense de repli : être à portée du village menacé quand on ne le
            tient pas encore. */
@@ -2977,9 +3061,15 @@
            adverse, trouvé à 24 / 8 / 5 000 seulement (936 au budget d'avant).
            Coût mesuré sur 55 décisions humaines : 1,5 → 1,9 s en moyenne,
            3,8 s au plus, aucune coupure par le temps. */
-        largeurFaisceau: 24,
+        /* 24 / 5 000 jusqu'au 02/10. Mesuré sur 63 décisions réelles de
+           l'Expert jugées par une riposte forte et fixe
+           (scripts/mesure-recherche.js) : la recherche s'arrêtait par
+           faisceau épuisé en ~1 s sur les 7 s disponibles. 48 / 12 000 :
+           +322 en moyenne, 23 décisions meilleures pour 7 pires ; 64 fait
+           moins bien (+270). */
+        largeurFaisceau: 48,
         decisionsMax: 8,
-        etatsMax: 5000,
+        etatsMax: 12000,
         tempsMaxMs: 500
       };
 
@@ -3414,10 +3504,15 @@
 
       const PLAN_RIPOSTE = {
         finalistes: 4,
-        largeurFaisceau: 5,
-        decisionsMax: 3,
-        etatsMax: 250,
-        tempsMaxMs: 90,
+        /* 5 / 3 / 250 / 90 ms jusqu'au 02/10 : la riposte s'arrêtait à 3
+           décisions quand les vraies ripostes humaines en font 6 (partie du
+           30/09, tour 6 : −1 617 prévu, −7 647 réel). Avec le faisceau 48,
+           6 décisions portent le gain mesuré de +322 à +427 (30 décisions
+           meilleures pour 9 pires). Plus de finalistes (8) n'aidait pas (−29). */
+        largeurFaisceau: 8,
+        decisionsMax: 6,
+        etatsMax: 800,
+        tempsMaxMs: 300,
         /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
            Une menace qui a besoin de cartes encore à piocher n'est que
            plausible et pèse moins — sans quoi l'IA se paralyserait devant des
@@ -3519,20 +3614,48 @@
          Partie du 30/09, tour 6 : pivot jaune amenant deux couronnes à son
          village, non anticipé (+397 prévu, −7 647 réel). */
       function plannerEvaluerRobustesse(noeudFinal, playerId, budget = {}) {
-        const sans = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, false);
+        const sans = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
-        if (!PLAN_POIDS.magieAdverseProbable || !adverse || sans.magieCertaine) return sans;
-        const p = withSimulatedState(structuredClone(noeudFinal.etat),
-          () => plannerPiocheProchaine(adverse.id).auMoinsMagie || 0);
-        if (p <= 0) return sans;
-        const avec = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, true);
-        if (avec.note >= sans.note) return sans;
-        const note = (1 - p) * sans.note + p * avec.note;
-        return { ...sans, note, menace: Math.round(sans.menace + (sans.note - note)),
-          magie: { proba: Math.round(p * 100) / 100, note: avec.note, riposte: avec.riposte } };
+        if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
+        const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
+          () => plannerPiocheProchaine(adverse.id));
+        /* POUSSÉE ADVERSE DE PLUS. Même arrondi, même angle mort que la
+           MAGIE : la main plausible ne prête qu'un nombre fixe de POUSSER.
+           Partie du 03/10, tour 12 : main prêtée 4 MOVE + 1 PUSH, main réelle
+           3 + 2 (une chance sur deux) ; la poussée de force 2 qui amenait la
+           couronne à mon porteur du coin (10,10) n'existait pas pour l'IA
+           (−3 045 prévu, −6 870 réel). Une riposte plus LARGE (16 ou 32
+           pistes) ne la trouvait pas non plus : c'est la main, pas la
+           recherche. On rejoue donc la riposte avec un POUSSER de plus quand
+           cette main a une chance réelle (au moins un quart). */
+        const variantes = [];
+        if (PLAN_POIDS.magieAdverseProbable && !sans.magieCertaine && pioche.auMoinsMagie > 0) {
+          variantes.push({ type: "MAGIC", proba: pioche.auMoinsMagie });
+        }
+        if (PLAN_POIDS.pousseeAdverseProbable) {
+          const p = pioche.auMoinsPush[Math.min(5, (pioche.main.PUSH || 0) + 1)] || 0;
+          if (p >= PLAN_POIDS.pousseeAdverseSeuil) variantes.push({ type: "PUSH", proba: p });
+        }
+        if (!variantes.length) return sans;
+        /* Les mains alternatives sont traitées comme exclusives : perte
+           espérée = somme des probabilités × pertes, probabilités ramenées à 1
+           au plus si leur somme le dépasse. */
+        const total = variantes.reduce((s, v) => s + v.proba, 0);
+        const echelle = total > 1 ? 1 / total : 1;
+        let note = sans.note;
+        const resultat = { ...sans };
+        for (const v of variantes) {
+          const avec = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, v.type);
+          if (avec.note >= sans.note) continue;
+          note -= v.proba * echelle * (sans.note - avec.note);
+          resultat[v.type === "MAGIC" ? "magie" : "poussee"] = {
+            proba: Math.round(v.proba * 100) / 100, note: avec.note, riposte: avec.riposte };
+        }
+        if (note === sans.note) return sans;
+        return { ...resultat, note, menace: Math.round(sans.menace + (sans.note - note)) };
       }
 
-      function plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, avecMagie = false) {
+      function plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
         const apres = structuredClone(noeudFinal.etat);
         return withSimulatedState(apres, () => {
           const adverse = plannerAdversaire(playerId);
@@ -3563,7 +3686,13 @@
           const entrant = state.players[adverse.id];
           const magieCertaine = (reserveGarantie.MAGIC || 0) > 0
             || (entrant.hand || []).some(carte => carte.action === "MAGIC");
-          if (avecMagie && !magieCertaine) {
+          if (variante === "PUSH") {
+            // Un MOVE de la main plausible devient un POUSSER (taille gardée).
+            const carte = entrant.hand.find(x => x.action === "MOVE");
+            if (carte) carte.action = "PUSH";
+            else entrant.hand.push({ id: "plausible-poussee-" + state.turn, action: "PUSH", used: false });
+          }
+          if (variante === "MAGIC" && !magieCertaine) {
             // Une carte de la main plausible devient la MAGIE : le type le
             // plus fourni, pour que la main garde sa taille.
             const parType = t => entrant.hand.filter(carte => carte.action === t).length;
