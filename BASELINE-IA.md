@@ -1736,3 +1736,15 @@ qui explique les dépôts au sol près de son village (4.4). Seule une couronne
 PORTÉE et qui SURVIT au tour adverse marque ; la note d'un porteur prêt
 (3 267) double sa valeur réelle (1 477) et récompense des postes où il est
 éjecté une fois sur deux.
+
+**Match tranché (05/10).** Lecture contestée par le concepteur : une couronne
+au sol dans son village est une menace qui coûte des ressources à
+l'adversaire, et elle protège aussi d'une éjection (une couronne ne tombe pas
+et arrête le bloc poussé — déjà connu de `plannerVideAPortee`). Mesuré sur
+toute la suite de la partie (points marqués ensuite, résultat final), l'écart
+restait non significatif : déposée sur ma case, −381 sur 42 cas (±~300).
+Tranché en match, `couronneSolFacteur` 1 (actuel) contre 0,3 : **40 parties,
+A 12 – B 6 – 18 nuls, 57,5 % ± 7,8 pour la valeur actuelle**, couronnes 23
+contre 18. La valeur actuelle est gardée. Leçon : une statistique par
+situation, biaisée par les choix de l'IA qui la produit, ne remplace pas le
+match.
