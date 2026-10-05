@@ -15,6 +15,7 @@
    agit avant l'autre, et le tirage des cartes doit être le même des deux côtés
    pour qu'une différence vienne du cerveau et non de la chance. */
 
+const fs = require('fs');
 const { chromium } = require('playwright');
 
 const URL_A = process.env.ILYOS_URL_A || 'http://localhost:8123/';
@@ -24,6 +25,9 @@ const GRAINE = Number(process.argv[3]) || 5000;
 const PARALLELE = Math.max(1, Number(process.argv[4]) || 2);
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 120;
 const TOURS_PERTES = 20;
+/* ILYOS_POSITIONS=fichier.jsonl : chaque position de fin de tour y est
+   ajoutée (calibrage de l'évaluateur, scripts/calibrage-enjeux.js). */
+const POSITIONS = process.env.ILYOS_POSITIONS || null;
 /* Budget de recherche propre à chaque camp (JSON, ex. '{"tempsMaxMs":1000}'),
    pour mesurer ce qu'apporte plus de réflexion dans un même build. */
 /* Poids de l'évaluateur propres à chaque camp (JSON, clés de PLAN_POIDS). */
@@ -83,9 +87,12 @@ async function jouerPartie(pages, depart, campA, graine) {
     const avant = JSON.parse(etat);
     const joueur = avant.currentPlayer;
     const qui = joueur === campA ? 'A' : 'B';
-    const r = await pages[qui].evaluate(([json, g, budget, poids]) =>
-      window.ILYOS_SELFPLAY.tour(json, { graine: g, budget, poids }),
-      [etat, graine * 1000 + i, BUDGETS[qui], POIDS[qui]]);
+    const r = await pages[qui].evaluate(([json, g, budget, poids, finDeTour]) =>
+      window.ILYOS_SELFPLAY.tour(json, { graine: g, budget, poids, finDeTour }),
+      [etat, graine * 1000 + i, BUDGETS[qui], POIDS[qui], !!POSITIONS]);
+    // Positions de fin de tour, pour le calibrage (scripts/calibrage-enjeux.js).
+    if (POSITIONS) fs.appendFileSync(POSITIONS, JSON.stringify({ graine, campA, i, joueur, qui,
+      fin: r.etatFinTour }) + '\n');
     temps[qui].push(r.dureeMs);
     if (r.coupures && (r.coupures.principale || r.coupures.ripostes || r.coupures.magie)) coupes[qui]++;
     const apres = JSON.parse(r.etat);

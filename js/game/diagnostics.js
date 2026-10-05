@@ -1618,7 +1618,7 @@
          défaut) : c'est la force qu'affronte un joueur humain qu'on mesure.
          Chaque build joue ses tours ; `scripts/selfplay-rapide.js` transporte
          l'état de l'un à l'autre. */
-      function selfplayTourIsole(json, { graine = null, budget, poids = null } = {}) {
+      function selfplayTourIsole(json, { graine = null, budget, poids = null, finDeTour = false } = {}) {
         const clone = JSON.parse(json);
         if (graine !== null) setTestRandomSeed(graine);
         const memoire = selfplayAppliquerPoids(poids);
@@ -1632,10 +1632,12 @@
             const a = plannerDernierRapport && plannerDernierRapport.anticipation;
             const coupures = a ? { principale: !!a.principaleCoupee, ripostes: a.ripostesCoupees || 0,
               magie: a.magieCoupee || 0 } : null;
+            // Position de fin de tour, AVANT la transition (calibrage).
+            const etatFinTour = finDeTour ? snapshotState() : undefined;
             const continuer = selfplayTransitionTour();
             return {
               etat: snapshotState(), vainqueur: state.winner ?? null,
-              tour: state.turn, actions, dureeMs, fin: !continuer, coupures
+              tour: state.turn, actions, dureeMs, fin: !continuer, coupures, etatFinTour
             };
           });
         } finally {
@@ -2034,9 +2036,52 @@
         }
       }
 
+      /* CARACTÉRISTIQUES d'une position vue par `joueur` : ce que l'évaluateur
+         lit (distances des couronnes aux villages, porteurs, gravité
+         d'expulsion de mes gardiens) et sa note terme par terme. Sert au
+         calibrage (scripts/calibrage-enjeux.js) : confronter ces lectures à ce
+         qui s'est réellement passé ensuite. */
+      function selfplayCaracteristiques(json, joueur) {
+        return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => {
+          const moi = state.players[joueur];
+          const adverse = plannerAdversaire(joueur);
+          const terrain = plannerTerrain(joueur);
+          const casesMoi = crownValidationCellsForPlayer(moi).filter(([r, c]) => isLand(r, c));
+          const casesLui = adverse ? crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c)) : [];
+          const couronnes = activeArtifacts().map(a => {
+            const porteur = a.carrierId ? characterById(a.carrierId) : null;
+            const r = porteur ? porteur.r : a.r;
+            const c = porteur ? porteur.c : a.c;
+            if (!Number.isFinite(r) || !Number.isFinite(c)) return null;
+            const dm = plannerLireChamp(terrain.champMoi, casesMoi, r, c);
+            const dl = plannerLireChamp(terrain.champAdverse, casesLui, r, c);
+            const camp = porteur ? state.players[porteur.player] : null;
+            return {
+              id: a.id, r, c, dm, dl,
+              porteur: porteur ? (porteur.player === joueur ? "moi" : "lui") : null,
+              porteurId: porteur ? porteur.id : null,
+              surValidation: !!camp && isCrownValidationCell(camp, r, c) && !validationBloqueeParAdversaire(camp, r, c),
+              gravite: porteur && porteur.player === joueur ? plannerGraviteExpulsion(joueur, r, c) : 0,
+              valeur: valeurCouronneADistance(dm) - valeurCouronneADistance(dl)
+            };
+          }).filter(Boolean);
+          const gardiens = state.characters.map(g => ({
+            id: g.id, player: g.player, r: g.r, c: g.c, porteur: characterCarriesCrown(g.id),
+            gravite: g.player === joueur ? plannerGraviteExpulsion(joueur, g.r, g.c, !characterCarriesCrown(g.id)) : null
+          }));
+          const detail = evaluerAvecDetail(joueur);
+          return {
+            joueur, tour: state.turn, scores: state.players.map(p => p.score || 0),
+            couronnes, gardiens, note: detail.note,
+            termes: Object.fromEntries(detail.termes.map(t => [t.terme, t.montant]))
+          };
+        }));
+      }
+
       window.ILYOS_SELFPLAY = {
         exposes: selfplayExposes,
         evaluer: selfplayEvaluer,
+        caracteristiques: selfplayCaracteristiques,
         departPerso: selfplayDepartPerso,
         analyser: selfplayAnalyser,
         robustesse: selfplayRobustesse,
