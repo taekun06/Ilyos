@@ -691,6 +691,11 @@
       // Seul l'espacement visuel 3D est réduit pour correspondre à la taille
       // réelle des Block Bits, sans modifier les règles ni les coordonnées.
       const KAYKIT_CELL_SPACING = .925;
+      // Refonte « Archipel de pierre » : `?rendu=ancien` rend l'ancien plateau
+      // (cubes d'herbe, coque brune) pour comparer sur une même préversion.
+      const ILYOS_RENDU_ANCIEN = (() => {
+        try { return /[?&]rendu=ancien(&|$)/.test(location.search); } catch (_) { return false; }
+      })();
       const KAYKIT_BLOCK_SIZE = .932;
       /* Fonction et non constante : figée au chargement, elle gardait la
          valeur du 11×11 après un passage en 13×13, et tout ce qui en dépend —
@@ -3951,6 +3956,7 @@
             child.castShadow = false;
             child.receiveShadow = false;
           });
+          kaykitTeinterRocheLavande(roche);
           socle.add(roche);
           socle.userData.ilyosSocleRocheux = true;
           reprises++;
@@ -7381,6 +7387,27 @@
         return texture;
       }
 
+      // Archipel de pierre : la montagne KayKit retournée sous les châteaux est
+      // blanc-gris ; on la passe dans la roche lavande des coques d'îles.
+      // Matériau cloné une fois par matériau source (cache), jamais modifié
+      // sur place : le même asset sert à l'archipel lointain.
+      function kaykitTeinterRocheLavande(objet) {
+        if (ILYOS_RENDU_ANCIEN || !objet || !kaykit3D) return;
+        kaykit3D.rocheLavande = kaykit3D.rocheLavande || new Map();
+        objet.traverse(child => {
+          if (!child.isMesh || !child.material) return;
+          const teinter = materiau => {
+            if (!kaykit3D.rocheLavande.has(materiau.uuid)) {
+              const copie = materiau.clone();
+              copie.color?.multiply(new THREE.Color(0x8c7aa0));
+              kaykit3D.rocheLavande.set(materiau.uuid, copie);
+            }
+            return kaykit3D.rocheLavande.get(materiau.uuid);
+          };
+          child.material = Array.isArray(child.material) ? child.material.map(teinter) : teinter(child.material);
+        });
+      }
+
       function makeKayKitPedestal(ownerColor = null, { sanctuary = false } = {}) {
         // FUITE (corrigee) : appelee une fois par case en terre non-île a
         // CHAQUE synchronisation de scene (survol, selection, deplacement...),
@@ -7396,15 +7423,25 @@
           shape.moveTo(-.46, -.46); shape.lineTo(.46, -.46); shape.lineTo(.46, .46); shape.lineTo(-.46, .46); shape.closePath();
           return new THREE.ExtrudeGeometry(shape, { depth: .42, bevelEnabled: true, bevelSegments: 2, bevelSize: .055, bevelThickness: .05, steps: 1 });
         });
-        const topColor = sanctuary ? 0x8fd8d4 : 0x70bd72;
-        const sideColor = sanctuary ? 0x496f77 : 0x506949;
-        const topMat = new THREE.MeshStandardMaterial({ color: topColor, map: kaykitCanvasTexture(sanctuary ? 'sanctuary' : 'pedestal', sanctuary ? '#9fe8df' : '#79c77b', sanctuary ? '#5aaeb1' : '#4f9e61'), roughness: .82 });
-        const sideMat = new THREE.MeshStandardMaterial({ color: sideColor, roughness: .96 });
-        const mesh = new THREE.Mesh(geometry, [topMat, sideMat]);
-        mesh.rotation.x = Math.PI / 2;
-        mesh.position.y = .47;
-        mesh.castShadow = true; mesh.receiveShadow = true;
-        group.add(mesh);
+        if (!ILYOS_RENDU_ANCIEN && !sanctuary) {
+          // Archipel de pierre : le parvis du château est une dalle de marbre
+          // pâle, la même matière que les îles (variante 4), au lieu de
+          // l'ancien carré vert menthe.
+          const dalle = new THREE.Mesh(kaykitDalleGeometrie(), kaykitDalleMateriaux(4));
+          dalle.position.y = KAYKIT_LEVELS.board;
+          dalle.castShadow = true; dalle.receiveShadow = true;
+          group.add(dalle);
+        } else {
+          const topColor = sanctuary ? 0x8fd8d4 : 0x70bd72;
+          const sideColor = sanctuary ? 0x496f77 : 0x506949;
+          const topMat = new THREE.MeshStandardMaterial({ color: topColor, map: kaykitCanvasTexture(sanctuary ? 'sanctuary' : 'pedestal', sanctuary ? '#9fe8df' : '#79c77b', sanctuary ? '#5aaeb1' : '#4f9e61'), roughness: .82 });
+          const sideMat = new THREE.MeshStandardMaterial({ color: sideColor, roughness: .96 });
+          const mesh = new THREE.Mesh(geometry, [topMat, sideMat]);
+          mesh.rotation.x = Math.PI / 2;
+          mesh.position.y = .47;
+          mesh.castShadow = true; mesh.receiveShadow = true;
+          group.add(mesh);
+        }
         if (ownerColor !== null) {
           const outline = new THREE.LineLoop(
             kaykitGeometry("pedestal-outline-v1", () => new THREE.BufferGeometry().setFromPoints([
@@ -7440,6 +7477,7 @@
               child.castShadow = false;
               child.receiveShadow = false;
             });
+            kaykitTeinterRocheLavande(roche);
             group.add(roche);
             group.userData.ilyosSocleRocheux = true;
           } else {
@@ -9200,9 +9238,11 @@
       // orientées vers le bas de la coque que le flanc KayKit (faces plus
       // variées). But : rester crédible côté soleil ET côté ombre, pas un
       // calibrage parfait dans un seul cas.
-      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(0xaf5f37);    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
-      const KAYKIT_HULL_COLOR_MID = new THREE.Color(0x8f5228);    // moins orangé, plus minéral — même famille
-      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(0x4a3223); // roche profonde, jamais noire
+      // Archipel de pierre : la coque prolonge le flanc lavande des dalles et
+      // descend vers une roche violette profonde, comme les îles du ciel peint.
+      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(ILYOS_RENDU_ANCIEN ? 0xaf5f37 : 0x7d6c88);    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLOR_MID = new THREE.Color(ILYOS_RENDU_ANCIEN ? 0x8f5228 : 0x5f4f78);    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(ILYOS_RENDU_ANCIEN ? 0x4a3223 : 0x2e2440); // roche profonde, jamais noire
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -9616,6 +9656,230 @@
         return material;
       }
 
+
+      /* ==================================================================
+         ARCHIPEL DE PIERRE — dalles des îles jouables (refonte visuelle).
+
+         Le cube d'herbe Block Bits se lisait comme un jouet (aplat vert
+         menthe, terre orange) et contredisait le ciel peint, qui montre des
+         îles de pierre claire et de roche lavande. Chaque case devient ici
+         une dalle de pierre usée, chanfreinée, avec de la mousse qui gagne
+         les bords : même famille de matière que le décor lointain.
+
+         Les six variantes gardent le rôle de ILYOS_ISLAND_TINTS : deux îles
+         voisines ne prennent jamais la même (buildIlyosIslandColorMap). On
+         les distingue par la chaleur de la pierre et la couleur/quantité de
+         mousse, pas par une teinte criarde.
+
+         Textures : Poly Haven (CC0), réduites en 512 px dans assets/pierre/
+         — voir docs/ASSETS.md. Tant qu'elles chargent, la dalle s'affiche
+         avec la pierre et la mousse procédurales seules : même canvas,
+         redessiné à l'arrivée de l'image (aucune reconstruction de l'île).
+
+         `?rendu=ancien` dans l'URL rend les cubes Block Bits d'origine, pour
+         comparer avant/après sur une même préversion (ILYOS_RENDU_ANCIEN).
+         ================================================================== */
+      const ILYOS_PIERRE_VARIANTES = [
+        { pierre: 0xc8b48e, mousse: 0x5f7434, part: .60, flanc: 0x54475e }, // calcaire miel, mousse sauge
+        { pierre: 0x9d978f, mousse: 0x345428, part: .85, flanc: 0x423c52 }, // pierre grise, mousse profonde
+        { pierre: 0xd2ad78, mousse: 0x66702e, part: .38, flanc: 0x584852 }, // grès doré, peu de mousse
+        { pierre: 0xa597ad, mousse: 0x44604a, part: .66, flanc: 0x433856 }, // pierre lavande froide
+        { pierre: 0xd8ccb6, mousse: 0x7f8a44, part: .30, flanc: 0x564e5e }, // marbre pâle, lichen clair
+        { pierre: 0xb39370, mousse: 0x4d6a2a, part: .72, flanc: 0x4c3e50 }  // pierre brune, mousse olive
+      ];
+
+      const KAYKIT_DALLE_DEMI = KAYKIT_CELL_SPACING / 2 - .004; // emprise au milieu du chanfrein
+      const KAYKIT_DALLE_BISEAU = .04;
+      const KAYKIT_DALLE_FORME = KAYKIT_DALLE_DEMI - KAYKIT_DALLE_BISEAU; // contour des faces haut/bas
+
+      function kaykitPierreImage(nom) {
+        if (!kaykit3D) return null;
+        kaykit3D.pierreImages = kaykit3D.pierreImages || new Map();
+        if (kaykit3D.pierreImages.has(nom)) return kaykit3D.pierreImages.get(nom);
+        const entree = { image: null, abonnes: [] };
+        kaykit3D.pierreImages.set(nom, entree);
+        const image = new Image();
+        image.onload = () => {
+          entree.image = image;
+          entree.abonnes.splice(0).forEach(rappel => { try { rappel(image); } catch (erreur) { console.warn(erreur); } });
+          scheduleKayKitSync();
+        };
+        image.onerror = () => console.warn(`Texture de pierre introuvable : ${nom}`);
+        image.src = `./assets/pierre/${nom}.jpg`;
+        return entree;
+      }
+
+      function kaykitQuandPierrePrete(nom, rappel) {
+        const entree = kaykitPierreImage(nom);
+        if (!entree) return;
+        if (entree.image) rappel(entree.image);
+        else entree.abonnes.push(rappel);
+      }
+
+      // Bruit de valeur lissé, déterministe : de quoi poser des plaques de
+      // mousse organiques sans dépendance ni texture supplémentaire.
+      function kaykitBruitPierre(graine) {
+        const h = (x, y) => {
+          const s = Math.sin(x * 127.1 + y * 311.7 + graine * 74.7) * 43758.5453;
+          return s - Math.floor(s);
+        };
+        const lisse = t => t * t * (3 - 2 * t);
+        const valeur = (x, y) => {
+          const xi = Math.floor(x), yi = Math.floor(y);
+          const xf = lisse(x - xi), yf = lisse(y - yi);
+          const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+          return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
+        };
+        return (x, y) => valeur(x, y) * .55 + valeur(x * 2.1, y * 2.1) * .3 + valeur(x * 4.3, y * 4.3) * .15;
+      }
+
+      function kaykitDessinerDalle(canvas, variante, index, image) {
+        const T = canvas.width;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const pierre = new THREE.Color(variante.pierre);
+        const mousse = new THREE.Color(variante.mousse);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = `#${pierre.getHexString()}`;
+        ctx.fillRect(0, 0, T, T);
+        if (image) {
+          // Grain réel de la pierre, recadré différemment par variante, puis
+          // recoloré : la photo donne le relief et les veines, la variante la
+          // teinte (mode « luminosity » : on garde la lumière de la photo).
+          const cote = image.width * .34;
+          const ox = (image.width - cote) * ((index * .37) % 1);
+          const oy = (image.height - cote) * ((index * .61) % 1);
+          ctx.globalCompositeOperation = "luminosity";
+          ctx.globalAlpha = .62;
+          ctx.drawImage(image, ox, oy, cote, cote, 0, 0, T, T);
+          ctx.globalCompositeOperation = "soft-light";
+          ctx.globalAlpha = .55;
+          ctx.fillStyle = `#${pierre.getHexString()}`;
+          ctx.fillRect(0, 0, T, T);
+          ctx.globalAlpha = 1;
+          ctx.globalCompositeOperation = "source-over";
+        }
+        const donnees = ctx.getImageData(0, 0, T, T);
+        const px = donnees.data;
+        const bruit = kaykitBruitPierre(index + 1);
+        const bruitFin = kaykitBruitPierre(index + 11);
+        for (let y = 0; y < T; y++) {
+          for (let x = 0; x < T; x++) {
+            const u = x / (T - 1), v = y / (T - 1);
+            const bord = Math.min(u, v, 1 - u, 1 - v); // 0 au bord, .5 au centre
+            const n = bruit(u * 5.5, v * 5.5);
+            const nf = bruitFin(u * 22, v * 22);
+            // La mousse part des joints et remonte en langues irrégulières.
+            const seuilBord = .05 + variante.part * .16;
+            const vers = Math.max(0, 1 - bord / seuilBord);
+            let m = Math.min(1, Math.max(0, (vers * 1.1 + (n - .66 + variante.part * .22) * 3.2) * (.7 + nf * .6)));
+            m = m * m * (3 - 2 * m);
+            const i = (y * T + x) * 4;
+            // Usure : la pierre fonce légèrement en plaques (pas de bruit fin).
+            const usure = .8 + n * .18;
+            let r = px[i] * usure, g = px[i + 1] * usure, b = px[i + 2] * usure;
+            const mr = mousse.r * 255 * (.7 + nf * .55), mg = mousse.g * 255 * (.7 + nf * .55), mb = mousse.b * 255 * (.7 + nf * .55);
+            r += (mr - r) * m * .88; g += (mg - g) * m * .88; b += (mb - b) * m * .88;
+            // Ombre de chanfrein sur le pourtour immédiat : la dalle se détache.
+            const ombre = bord < .025 ? .72 + bord / .025 * .28 : 1;
+            px[i] = Math.min(255, r * ombre); px[i + 1] = Math.min(255, g * ombre); px[i + 2] = Math.min(255, b * ombre);
+          }
+        }
+        ctx.putImageData(donnees, 0, 0);
+      }
+
+      function kaykitDalleMateriaux(variantIndex) {
+        const index = Math.max(0, Number(variantIndex) || 0) % ILYOS_PIERRE_VARIANTES.length;
+        kaykit3D.dalleMateriaux = kaykit3D.dalleMateriaux || new Map();
+        if (kaykit3D.dalleMateriaux.has(index)) return kaykit3D.dalleMateriaux.get(index);
+        const variante = ILYOS_PIERRE_VARIANTES[index];
+
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 256;
+        kaykitDessinerDalle(canvas, variante, index, null);
+        const carte = new THREE.CanvasTexture(canvas);
+        carte.encoding = THREE.sRGBEncoding;
+        carte.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+        const dessus = new THREE.MeshStandardMaterial({ color: 0xffffff, map: carte, roughness: .88, metalness: 0 });
+
+        // Flanc : roche de falaise striée, tirée vers le lavande des îles du
+        // ciel. Le chanfrein du haut appartient aussi à ce groupe de faces.
+        const flanc = new THREE.MeshStandardMaterial({ color: variante.flanc, roughness: .92, metalness: 0 });
+
+        kaykitQuandPierrePrete("dalle-couleur", image => {
+          canvas.width = canvas.height = 512;
+          kaykitDessinerDalle(canvas, variante, index, image);
+          carte.needsUpdate = true;
+        });
+        const normaleDessus = kaykitPierreTexture("dalle-normale", false, 1);
+        if (normaleDessus) { dessus.normalMap = normaleDessus; dessus.normalScale = new THREE.Vector2(.9, .9); }
+        const couleurFlanc = kaykitPierreTexture("falaise-couleur", true, 2.2);
+        const normaleFlanc = kaykitPierreTexture("falaise-normale", false, 2.2);
+        if (couleurFlanc) flanc.map = couleurFlanc;
+        if (normaleFlanc) { flanc.normalMap = normaleFlanc; flanc.normalScale = new THREE.Vector2(1.1, 1.1); }
+
+        const materiaux = [dessus, flanc];
+        materiaux.forEach(materiau => { materiau.userData.ilyosSharedIslandTint = true; });
+        kaykit3D.dalleMateriaux.set(index, materiaux);
+        return materiaux;
+      }
+
+      function kaykitPierreTexture(nom, couleur, repetition) {
+        if (!kaykit3D?.textureLoader) return null;
+        const cle = `pierre:${nom}:${repetition}`;
+        if (kaykit3D.textureCache.has(cle)) return kaykit3D.textureCache.get(cle);
+        const texture = kaykit3D.textureLoader.load(`./assets/pierre/${nom}.jpg`, () => scheduleKayKitSync());
+        texture.encoding = couleur ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(repetition, repetition);
+        texture.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+        kaykit3D.textureCache.set(cle, texture);
+        return texture;
+      }
+
+      function kaykitDalleGeometrie() {
+        return kaykitGeometry("dalle-pierre-v1", () => {
+          const d = KAYKIT_DALLE_FORME, r = .05;
+          const forme = new THREE.Shape();
+          forme.moveTo(-d + r, -d);
+          forme.lineTo(d - r, -d); forme.quadraticCurveTo(d, -d, d, -d + r);
+          forme.lineTo(d, d - r); forme.quadraticCurveTo(d, d, d - r, d);
+          forme.lineTo(-d + r, d); forme.quadraticCurveTo(-d, d, -d, d - r);
+          forme.lineTo(-d, -d + r); forme.quadraticCurveTo(-d, -d, -d + r, -d);
+          const uvDessus = (x, y) => new THREE.Vector2((x + d) / (2 * d), (y + d) / (2 * d));
+          const generateur = {
+            generateTopUV(geometry, v, a, b, c) {
+              return [uvDessus(v[a * 3], v[a * 3 + 1]), uvDessus(v[b * 3], v[b * 3 + 1]), uvDessus(v[c * 3], v[c * 3 + 1])];
+            },
+            generateSideWallUV(geometry, v, a, b, c, dd) {
+              // Coordonnée le long du pourtour (x + y) et hauteur : la strie
+              // de la falaise reste horizontale tout autour de la dalle.
+              const uv = i => new THREE.Vector2((v[i * 3] + v[i * 3 + 1]) * 1.1, v[i * 3 + 2] * 1.1);
+              return [uv(a), uv(b), uv(c), uv(dd)];
+            }
+          };
+          const epaisseur = .46 - KAYKIT_DALLE_BISEAU * 2;
+          const geometrie = new THREE.ExtrudeGeometry(forme, {
+            depth: epaisseur, steps: 1, curveSegments: 3,
+            bevelEnabled: true, bevelSegments: 2, bevelSize: KAYKIT_DALLE_BISEAU, bevelThickness: KAYKIT_DALLE_BISEAU,
+            UVGenerator: generateur
+          });
+          // Extrusion le long de -Y : dessus à y = 0, dessous à y = -.46 —
+          // puis remontée pour poser la dalle sur targetFloor 0 comme le bloc.
+          geometrie.rotateX(Math.PI / 2);
+          geometrie.translate(0, .46 - KAYKIT_DALLE_BISEAU, 0);
+          return geometrie;
+        });
+      }
+
+      function makeKayKitDalle(island, r, c) {
+        const dalle = new THREE.Mesh(kaykitDalleGeometrie(), kaykitDalleMateriaux(island?.visualVariant));
+        // Quart de tour tiré de la case : la même photo ne se répète pas à
+        // l'identique d'une dalle à l'autre.
+        dalle.rotation.y = Math.floor(kaykitHash("dalle-rotation", r, c) * 4) * Math.PI / 2;
+        dalle.castShadow = true;
+        dalle.receiveShadow = true;
+        return dalle;
+      }
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
         const group = new THREE.Group();
         group.userData.islandBlock = true;
@@ -9653,6 +9917,16 @@
 
         cells.forEach(([r, c]) => {
           const p = kaykitCellPosition(r, c, 0);
+          if (!ILYOS_RENDU_ANCIEN) {
+            const dalle = makeKayKitDalle(island, r, c);
+            tintPreview(dalle);
+            if (preview) dalle.castShadow = false;
+            dalle.position.set(p.x, KAYKIT_LEVELS.board, p.z);
+            dalle.renderOrder = preview ? 20 : 4;
+            group.add(dalle);
+            if (!preview) registerKayKitCellVisual(r, c, dalle);
+            return;
+          }
           let block = cloneKayKitAsset('blockBitsGrassDirt', {
             exactWidth: KAYKIT_BLOCK_SIZE,
             exactDepth: KAYKIT_BLOCK_SIZE,
@@ -11884,8 +12158,11 @@
         const amount = cells.length >= 7 ? 2 : 1;
         for (let index = 0; index < Math.min(amount, cells.length); index++) {
           const [r, c] = cells[index];
-          const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * KAYKIT_FOREST_ASSETS.length) % KAYKIT_FOREST_ASSETS.length;
-          const spec = KAYKIT_FOREST_ASSETS[pick];
+          // Archipel de pierre : l'arbre KayKit (cube vert sur bâton) et le
+          // rocher cubique jurent avec la pierre ; on ne garde que l'herbe.
+          const decors = ILYOS_RENDU_ANCIEN ? KAYKIT_FOREST_ASSETS : KAYKIT_FOREST_ASSETS.filter(decor => decor.key === "forestGrass");
+          const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * decors.length) % decors.length;
+          const spec = decors[pick];
           const object = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
           if (!object) continue;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
@@ -11994,7 +12271,9 @@
           // (même principe que châteaux/gardiens : jamais de secours à remplacer
           // à chaud, on attend juste que l'asset soit prêt).
           if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
-            buildKayKitBoardClouds(dynamic);
+            // Archipel de pierre : les nuages KayKit en boule (style jouet) au
+            // ras du plateau sont retirés ; le ciel peint porte déjà les nuages.
+            if (ILYOS_RENDU_ANCIEN) buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
           }
 
