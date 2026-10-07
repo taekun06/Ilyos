@@ -24935,9 +24935,15 @@
         depotLibre: 1,
         // Place réservée à la pose au contact qui ramène la couronne vers mon village.
         poseRetourVillage: 1,
-        // Intentions de pose « couronne » : une par couronne au sol (0 = une pour toutes).
-        poseParCouronne: 1,
-        // Le niveau de l'IA suit la position simulée (0 = ancien défaut : « normal »).
+        /* Intentions de pose « couronne » : une par couronne au sol (0 = une pour
+           toutes). Trouve la pose défensive du tour 20 (défaite du 07/10), mais
+           mesurée défavorable : 40 parties, 38,8 % ± 7,7 (3-12-25), couronnes
+           8 contre 19 — sous forte contention (85 % des tours coupés par le
+           temps). Coupée en attendant une mesure sur machine libre. */
+        poseParCouronne: 0,
+        /* Le niveau de l'IA suit la position simulée (0 = ancien défaut :
+           « normal »). Correction de fond (décisions reproductibles) ; neutre
+           en match : 40 parties, 52,5 % ± 7,9 (12-10-18). */
         difficulteSimulee: 1,
         // Pose qui reçoit une couronne poussée au-dessus du vide (plannerIntentionsPose).
         poseReception: 1,
