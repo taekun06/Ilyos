@@ -1748,3 +1748,33 @@ A 12 – B 6 – 18 nuls, 57,5 % ± 7,8 pour la valeur actuelle**, couronnes 23
 contre 18. La valeur actuelle est gardée. Leçon : une statistique par
 situation, biaisée par les choix de l'IA qui la produit, ne remplace pas le
 match.
+
+## Défaite du 07/10 : analyse, corrections et matchs (07/10)
+
+Dossier annoté par le joueur (5 annotations, 9 coups proposés), rejoué avec
+`scripts/analyser-defaite.js` et des outils ponctuels (séquence rejouée pas à
+pas, recherche relancée depuis chaque étape, coups générés à la racine).
+
+- **Niveau simulé** (`difficulteSimulee`) : `cloneStateForSimulation` perdait
+  `aiDifficulty` ; toute simulation de l'Expert tournait au niveau « normal »
+  (poses classées au hasard, Math.random en partie). Tour 18 : même riposte
+  −7 707 ou −16 015 selon le tirage ; corrigé, −15 946 à toute graine.
+  Match 40 parties : 52,5 % ± 7,9 (12-10-18), neutre. Gardé.
+- **Une famille de poses par couronne** (`poseParCouronne`) : trouve la pose
+  défensive du tour 20 (−23 922 → −17 024), mais match 40 parties : 38,8 %
+  ± 7,7 (3-12-25), couronnes 8 contre 19. Coupé (mesure sous contention :
+  85 % des tours coupés par le temps, à refaire sur machine libre).
+- **Note de départ** lue en potentiel : le « perilCouronneSol −4 000 » du
+  départ de son propre tour était un artefact de point de vue.
+- **Tour 4, navette à deux couronnes** (un gardien porte, dépose, reprend
+  l'autre, avance) : séquence reconstituée à l'identique ; relancée depuis
+  chaque étape, l'IA ne la termine qu'à partir de l'étape 7. Sans le péril
+  estimé des couronnes au sol, dès l'étape 3 (−1 028 contre −1 045 joué).
+  Le déplacement décisif est bien généré ; c'est la note de fin de tour,
+  péril estimé compris (−1 600 ici, pour des couronnes valant +425), qui
+  écarte le plan des 4 finalistes soumis à la riposte.
+- **Sans péril des couronnes au sol** (`perilCouronneSol` 0, malus du porteur
+  volable découplé) : match 40 parties, 43,8 % ± 7,8 (7-12-21), couronnes 11
+  contre 18, gardiens perdus 204 contre 242. Pas d'avantage mesuré : gardé.
+  Piste suivante : réserver des places de riposte aux meilleurs plans classés
+  sans ce péril, pour que la riposte — qui le mesure vraiment — tranche.
