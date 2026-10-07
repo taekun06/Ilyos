@@ -1440,7 +1440,7 @@
             const volable = plannerPerilCouronneSol(playerId, r, c);
             if (volable > 0) {
               const coutVol = (dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe)
-                * volable * PLAN_POIDS.perilCouronneSol * (PLAN_POIDS.porteurVolable ?? 1);
+                * volable * (PLAN_POIDS.porteurVolable ?? 1);
               const dejaCompte = graviteCouronne > 0
                 ? ((dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe) * graviteCouronne) : 0;
               if (coutVol > dejaCompte) {
