@@ -1745,6 +1745,10 @@
               anticipation: rapport.anticipation,
               // Coût de chaque générateur à la racine (sous `chronos` seulement).
               chronos: rapport.releveCandidats ? rapport.releveCandidats.chronos : null,
+              // Sous `chronos` : les coups générés à la racine, retenus ou écartés par les plafonds.
+              listeCandidats: rapport.releveCandidats
+                ? rapport.releveCandidats.map(c => ({ retenu: c.retenu, type: c.type, note: c.note, action: c.action }))
+                : null,
               candidats: rapport.releveCandidats ? rapport.releveCandidats.length : null,
               finalistes: (rapport.finalistes || []).slice(0, 8).map(n => ({
                 note: Math.round(n.note), plan: decrire(n.plan), detail: n.plan

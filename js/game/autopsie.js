@@ -849,6 +849,9 @@
             poseHumaine: placeIsland,
             // Ramassage gratuit ET transmission passent tous deux par là.
             couronne: giveArtifactToCharacter,
+            // Dépôt d'une couronne au sol (gratuit) : absent jusqu'au 07/10, d'où
+            // des ramassages apparemment « en double » dans les coups proposés.
+            depot: applyFreeDropCore,
             instantane: saveUndoSnapshot,
             oubliInstantane: discardLastUndoSnapshot,
             annulation: restoreUndoSnapshot
@@ -934,6 +937,13 @@
             return resultat;
           };
 
+          applyFreeDropCore = function (charId, r, c) {
+            const g = characterById(charId);
+            const de = g ? `(${g.r},${g.c})` : "?";
+            const resultat = revueNoyauxDorigine.depot.apply(null, arguments);
+            if (resultat) noter(`DEPOT en (${r},${c}) depuis ${de}`, { type: "DEPOT", de, vers: [r, c] });
+            return resultat;
+          };
           placeIsland = function (ancreR, ancreC) {
             const avant = (state.islands || []).length;
             const resultat = revueNoyauxDorigine.poseHumaine.apply(null, arguments);
@@ -951,6 +961,7 @@
         discardLastUndoSnapshot = revueNoyauxDorigine.oubliInstantane;
         restoreUndoSnapshot = revueNoyauxDorigine.annulation;
         revueLongueursAnnulation = [];
+        applyFreeDropCore = revueNoyauxDorigine.depot;
         placeIsland = revueNoyauxDorigine.poseHumaine;
         giveArtifactToCharacter = revueNoyauxDorigine.couronne;
         applyMoveCore = revueNoyauxDorigine.move;

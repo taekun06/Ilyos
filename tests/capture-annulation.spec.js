@@ -4,7 +4,7 @@
    l'évaluation, faite sur la position réelle, était juste ; le texte non. */
 const { test, expect } = require('@playwright/test');
 
-test('une action annulée sort de la liste du coup proposé', async ({ page }) => {
+test('coup proposé : une action annulée sort de la liste, un dépôt y entre', async ({ page }) => {
   const erreurs = [];
   page.on('pageerror', e => erreurs.push(e.message));
   await page.goto('/');
@@ -41,6 +41,13 @@ test('une action annulée sort de la liste du coup proposé', async ({ page }) =
   // Rejoué : une seule fois dans la liste.
   await ramasser();
   await expect.poll(capture).toEqual(['RAMASSAGE par (2,2)']);
+
+  // Dépôt : clic sur la couronne du porteur, puis sur une case libre voisine.
+  // Absent de la liste jusqu'au 07/10 (d'où des ramassages « en double »).
+  await page.locator('.cell[data-r="2"][data-c="2"] .carrier-crown').dispatchEvent('click');
+  await page.locator('.cell[data-r="2"][data-c="3"]').dispatchEvent('click');
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.ILYOS_BENCH.etatComplet()).artifact.carrierId)).toBeNull();
+  await expect.poll(capture).toEqual(['RAMASSAGE par (2,2)', 'DEPOT en (2,3) depuis (2,2)']);
 
   await page.evaluate(() => window.ILYOS_AUTOPSIE.capture(false));
   expect(erreurs).toEqual([]);
