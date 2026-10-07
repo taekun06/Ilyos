@@ -29723,6 +29723,12 @@
          lui reste seulement à dire POURQUOI ils sont meilleurs. */
       let revueActionsJouees = null;
       let revueNoyauxDorigine = null;
+      /* Longueur de la liste au moment de chaque instantané d'annulation : une
+         action annulée sortait de la partie mais restait dans la liste (dossier
+         du 07/10 : un ramassage en double au tour 4, deux poses au tour 16 pour
+         une seule île). L'annulation ramène maintenant la liste à cette
+         longueur. Pile parallèle à state.undoHistory, alignée par le haut. */
+      let revueLongueursAnnulation = [];
 
       function autopsieEnregistrerActions(actif) {
         if (actif) {
@@ -29735,7 +29741,36 @@
             // pose à la souris a son propre chemin dans l interface.
             poseHumaine: placeIsland,
             // Ramassage gratuit ET transmission passent tous deux par là.
-            couronne: giveArtifactToCharacter
+            couronne: giveArtifactToCharacter,
+            instantane: saveUndoSnapshot,
+            oubliInstantane: discardLastUndoSnapshot,
+            annulation: restoreUndoSnapshot
+          };
+          revueLongueursAnnulation = [];
+          saveUndoSnapshot = function () {
+            const resultat = revueNoyauxDorigine.instantane.apply(null, arguments);
+            if (!ilyosSimulationActive && revueActionsJouees) {
+              revueLongueursAnnulation.push(revueActionsJouees.length);
+              // L'historique est plafonné : il perd ses plus anciens instantanés.
+              const pile = (state.undoHistory || []).length;
+              while (revueLongueursAnnulation.length > pile) revueLongueursAnnulation.shift();
+            }
+            return resultat;
+          };
+          discardLastUndoSnapshot = function () {
+            const resultat = revueNoyauxDorigine.oubliInstantane.apply(null, arguments);
+            revueLongueursAnnulation.pop();
+            return resultat;
+          };
+          restoreUndoSnapshot = function () {
+            const resultat = revueNoyauxDorigine.annulation.apply(null, arguments);
+            if (resultat) {
+              const longueur = revueLongueursAnnulation.pop();
+              if (revueActionsJouees && Number.isFinite(longueur) && longueur < revueActionsJouees.length) {
+                revueActionsJouees.length = longueur;
+              }
+            }
+            return resultat;
           };
           /* Ne consigner QUE ce qui arrive pour de bon.
 
@@ -29805,6 +29840,10 @@
           return;
         }
         if (!revueNoyauxDorigine) return;
+        saveUndoSnapshot = revueNoyauxDorigine.instantane;
+        discardLastUndoSnapshot = revueNoyauxDorigine.oubliInstantane;
+        restoreUndoSnapshot = revueNoyauxDorigine.annulation;
+        revueLongueursAnnulation = [];
         placeIsland = revueNoyauxDorigine.poseHumaine;
         giveArtifactToCharacter = revueNoyauxDorigine.couronne;
         applyMoveCore = revueNoyauxDorigine.move;
@@ -29840,6 +29879,11 @@
           return e ? e.candidats : [];
         },
         journal: () => ILYOS_AUTOPSIE_JOURNAL,
+        /* Capture des actions jouées (coup proposé) : pour les tests. */
+        capture: (actif) => {
+          if (actif !== undefined) autopsieEnregistrerActions(!!actif);
+          return (revueActionsJouees || []).map(a => a.texte);
+        },
         // Réaffiche le panneau s'il a été fermé.
         panneau: revueRendre,
 
