@@ -1404,7 +1404,9 @@
          poids du dernier candidat testé. */
       /* Clés pointées pour les bornes de recherche, à comparer sans toucher au
          jeu : « PLAN_RIPOSTE.decisionsMax », « PLAN_BUDGET.etatsMax »… */
-      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE };
+      const SELFPLAY_TABLES = { PLAN_BUDGET, PLAN_RIPOSTE, PLAN_RIPOSTE_CRITIQUE, PLAN_SECURITE,
+        // Plafonds de génération des candidats, à la racine et en profondeur.
+        CANDIDATS_RACINE: PLAN_CANDIDATS.racine, CANDIDATS_PROFOND: PLAN_CANDIDATS.profond };
       function selfplayAppliquerPoids(poids) {
         if (!poids) return null;
         const memoire = {};
@@ -1715,7 +1717,10 @@
         try {
           return withSimulatedState(clone, () => {
             const joueur = state.currentPlayer;
-            const depart = evaluerAvecDetail(joueur);
+            // Au départ du tour : lue en potentiel (voir noteDepart du planner).
+            plannerEvalPotentiel = true;
+            let depart;
+            try { depart = evaluerAvecDetail(joueur); } finally { plannerEvalPotentiel = false; }
             if (chronos) plannerActiverAutopsie(true);
             const rapport = plannerChercherPlanRobuste(joueur, budget);
             plannerActiverAutopsie(autopsieAvant);

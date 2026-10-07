@@ -352,7 +352,16 @@
           selectedActionCount: source.selectedActionCount,
           selectedCharId: source.selectedCharId,
           selectedIslandId: source.selectedIslandId,
-          pushForceChoice: source.pushForceChoice || 1
+          pushForceChoice: source.pushForceChoice || 1,
+          /* Le NIVEAU de l'IA voyage avec la position. Absent, aiConfig()
+             retombait sur « normal » dans toute simulation : la recherche de
+             l'Expert classait ses poses d'île avec le hasard du niveau Normal
+             (randomness 0,28, Math.random en partie : décisions et ripostes
+             non reproductibles) et perdait la pose vers un porteur adverse
+             prêt à valider (crownTactics ≥ 2). Défaite du 07/10, tour 18 : la
+             même riposte notée −7 707 ou −16 015 selon le tirage. */
+          aiDifficulty: (typeof PLAN_POIDS === "undefined" || PLAN_POIDS.difficulteSimulee)
+            ? source.aiDifficulty : undefined
         });
         // Champs attendus par les fonctions de règles, reconstruits vides : ils
         // ne portent aucune information de jeu.

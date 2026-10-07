@@ -138,6 +138,10 @@
         depotLibre: 1,
         // Place réservée à la pose au contact qui ramène la couronne vers mon village.
         poseRetourVillage: 1,
+        // Intentions de pose « couronne » : une par couronne au sol (0 = une pour toutes).
+        poseParCouronne: 1,
+        // Le niveau de l'IA suit la position simulée (0 = ancien défaut : « normal »).
+        difficulteSimulee: 1,
         // Pose qui reçoit une couronne poussée au-dessus du vide (plannerIntentionsPose).
         poseReception: 1,
         // Combinaison dépôt + poussée + pose + ramassage en un coup (plannerCandidatsLancer).
@@ -2285,8 +2289,17 @@
         /* `contact` = distance IDÉALE entre la case d'apparition et la cible.
            Ramasser une couronne veut un gardien À CÔTÉ d'elle (1) ; bloquer
            un village veut un gardien DESSUS (0). */
+        /* UNE FAMILLE PAR COURONNE. Réunies en une seule intention, les deux
+           couronnes se disputaient les mêmes places : elles allaient toutes à
+           celle qu'une pose touche au plus près, et l'autre n'était jamais
+           visée. Défaite du 07/10, tour 20 : l'adversaire à un point de la
+           victoire, une couronne au sol près de son village ; la pose qui fait
+           apparaître un gardien à trois pas d'elle pour l'éloigner n'était
+           jamais candidate (−23 922 joué ; −19 137 une fois cette pose
+           imposée, la suite trouvée seule). */
         const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
-        ajouter("couronne", libres, 1);
+        if (PLAN_POIDS.poseParCouronne) libres.forEach(cible => ajouter("couronne", [cible], 1));
+        else ajouter("couronne", libres, 1);
 
         /* RÉCEPTION : une couronne poussée survole le vide et se pose sur sa
            case d'arrivée si c'est de la terre. Poser l'île LÀ, avant la
@@ -3468,7 +3481,14 @@
         plannerDernierRapport = {
           joueur: playerId,
           plan: meilleur ? meilleur.plan : [],
-          noteDepart: racine.note,
+          /* Note de DÉPART lue en potentiel : au début de mon tour, c'est moi
+             qui joue — le danger de mes couronnes au sol ne compte pas encore.
+             Lue comme une fin de tour (racine.note), elle prêtait le trait à
+             l'adversaire : défaite du 07/10, tour 2, « perilCouronneSol
+             −4 000 » au départ, et des alertes « menace non anticipée »
+             gonflées d'autant (prévu après riposte contre départ suivant). */
+          noteDepart: racine.terminal ? racine.note
+            : withSimulatedState(racine.etat, () => plannerNotePotentiel(playerId)),
           noteArrivee: meilleur ? meilleur.note : racine.note,
           etatsExplores,
           coupeParTemps,
