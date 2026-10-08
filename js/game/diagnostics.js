@@ -1707,7 +1707,7 @@
          finalistes, riposte, et décomposition de la note de départ et d'arrivée.
          L'outil qui répond à « pourquoi n'a-t-il rien fait ici ? » sur une
          position tirée d'un self-play. */
-      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null, grille = null } = {}) {
+      function selfplayAnalyser(json, { graine = 1, budget, chronos = false, poids = null, grille = null, suivre = null } = {}) {
         // Une position d'une autre taille de plateau (défaite archivée en 13×13).
         if (grille && GRID !== grille) setBoardSize(grille);
         const clone = JSON.parse(json);
@@ -1722,7 +1722,20 @@
             let depart;
             try { depart = evaluerAvecDetail(joueur); } finally { plannerEvalPotentiel = false; }
             if (chronos) plannerActiverAutopsie(true);
-            const rapport = plannerChercherPlanRobuste(joueur, budget);
+            /* suivre : un plan (actions) dont on suit les positions successives
+               dans la recherche principale (voir plannerChercherPlan). */
+            let empreintes = null;
+            if (suivre) {
+              empreintes = withSimulatedState(structuredClone(clone), () => {
+                const liste = [];
+                for (const action of suivre) {
+                  if (!plannerAppliquerAction(action)) break;
+                  liste.push(strategicStateFingerprint(state));
+                }
+                return liste;
+              });
+            }
+            const rapport = plannerChercherPlanRobuste(joueur, empreintes ? { ...(budget || {}), suivre: empreintes } : budget);
             plannerActiverAutopsie(autopsieAvant);
             const decrire = plan => plan.map(a => {
               const { type, ...reste } = a;
@@ -1746,6 +1759,7 @@
               // Coût de chaque générateur à la racine (sous `chronos` seulement).
               chronos: rapport.releveCandidats ? rapport.releveCandidats.chronos : null,
               // Sous `chronos` : les coups générés à la racine, retenus ou écartés par les plafonds.
+              suivi: rapport.suivi || null,
               listeCandidats: rapport.releveCandidats
                 ? rapport.releveCandidats.map(c => ({ retenu: c.retenu, type: c.type, note: c.note, action: c.action }))
                 : null,

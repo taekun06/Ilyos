@@ -148,6 +148,12 @@
         depotLibre: 1,
         // Place réservée à la pose au contact qui ramène la couronne vers mon village.
         poseRetourVillage: 1,
+        /* Intention de déplacement « navette » : un porteur rejoint l'autre
+           couronne au sol ; et la fermeture gratuite compte aussi le dépôt.
+           Défaite du 07/10, tour 4 : −1 904 → −1 612 (avec isolement et péril
+           plafonné : −1 276 ; coup du joueur −1 045). En attente de match. */
+        navetteCouronne: 0,
+        fermetureDepot: 0,
         /* Intentions de pose « couronne » : une par couronne au sol (0 = une pour
            toutes). Trouve la pose défensive du tour 20 (défaite du 07/10), mais
            mesurée défavorable : 40 parties, 38,8 % ± 7,7 (3-12-25), couronnes
@@ -1955,6 +1961,18 @@
         if (porte) {
           // Porter, c'est aller marquer.
           ajouter("validation", aiValidationTargetsForPlayer(moi));
+          /* NAVETTE : rejoindre l'AUTRE couronne, au sol. Le porteur y dépose la
+             sienne, prend l'autre et repart — les deux couronnes avancent à
+             tour de rôle, sans autre gardien. Défaite du 07/10, tour 4 : le
+             joueur ramène ainsi les deux couronnes vers le village de l'IA ;
+             suivi dans la recherche, le chemin mourait à ce pas, que ni
+             « validation » ni « sécurité » ne classaient parmi leurs places
+             (déplacement vers (9,6) écarté par les plafonds, même à la racine). */
+          if (PLAN_POIDS.navetteCouronne) {
+            const autres = activeArtifacts().filter(a => a.carrierId === null && Number.isFinite(a.r));
+            ajouter("navette", autres.flatMap(a => orthogonalNeighbors(a.r, a.c)
+              .filter(([r, c]) => isLand(r, c))));
+          }
         } else {
           const libres = activeArtifacts().filter(a => a.carrierId === null).map(a => [a.r, a.c]);
           ajouter("couronne", libres);
@@ -3366,6 +3384,13 @@
           debut += coutObservation;
         }
 
+        /* SUIVI D'UN CHEMIN (diagnostic) : options.suivre liste les empreintes
+           des positions d'un plan donné, étape par étape. À chaque niveau, on
+           relève si la recherche les atteint, leur rang et si le faisceau les
+           garde — pour savoir OÙ une idée meurt. Sans effet sur la décision. */
+        const suivre = options.suivre ? new Map(options.suivre.map((e, i) => [e, i])) : null;
+        const suivi = suivre ? [] : null;
+
         let meilleur = racine.terminal ? racine : null;
         /* Tous les états terminaux rencontrés, pas seulement le meilleur :
            l'anticipation adverse a besoin de plusieurs finalistes à
@@ -3421,7 +3446,13 @@
                 let noteTri = PLAN_POIDS.triPotentiel ? Math.max(note, plannerNotePotentiel(playerId)) : note;
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
-                    if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
+                    /* Le DÉPÔT aussi : un porteur qui vient de se placer est noté
+                       exposé, alors qu'il peut lâcher sa couronne aussitôt, sans
+                       carte. Sans lui, la navette à deux couronnes (défaite du
+                       07/10, tour 4) mourait au faisceau dès son premier pas :
+                       −834 en porteur, +882 une fois la couronne déposée. */
+                    if (t.type !== "RAMASSAGE" && t.type !== "VOL"
+                      && !(t.type === "DEPOT" && PLAN_POIDS.fermetureDepot)) continue;
                     const essai = structuredClone(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
@@ -3461,7 +3492,8 @@
                 note: resultat.note,
                 noteTri: resultat.noteTri,
                 prioriteDefense: resultat.prioriteDefense,
-                terminal: clone.islandPlacedThisTurn
+                terminal: clone.islandPlacedThisTurn,
+                empreinte: suivre ? resultat.empreinte : undefined
               };
               suivants.push(enfant);
 
@@ -3488,6 +3520,18 @@
             retenus.add(n);
           }
           faisceau = [...retenus];
+          if (suivi) {
+            const triTri = parPotentiel;
+            for (const n of suivants) {
+              if (!suivre.has(n.empreinte)) continue;
+              suivi.push({
+                niveau, etape: suivre.get(n.empreinte), note: Math.round(n.note),
+                rangNote: parNote.indexOf(n) + 1, rangTri: triTri.indexOf(n) + 1,
+                candidats: suivants.length, garde: retenus.has(n),
+                meilleureNote: Math.round(parNote[0].note), dernierGarde: Math.round(Math.min(...faisceau.map(x => x.note)))
+              });
+            }
+          }
           profondeurAtteinte = niveau + 1;
           if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
           if (etatsExplores > budget.etatsMax) break;
@@ -3526,6 +3570,7 @@
           finalistes,
           finalistesARiposter: finalistes.aExaminer || PLAN_RIPOSTE.finalistes,
           releveCandidats,
+          suivi,
           /* Conservés pour la décomposition de score de l'autopsie. Hors
              autopsie ils restent nuls : garder des clones d'état complets à
              chaque décision coûterait de la mémoire pour rien. */
