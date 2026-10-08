@@ -24872,6 +24872,8 @@
            position pour les deux camps (0 = échelle fixe, ancien calcul).
            Même défaite : −800 par couronne valant à peine +65. */
         perilPlafonne: 0,
+        // Même plafond pour le porteur expulsable (porteurExpose) : 0 = ancien calcul.
+        porteurPlafonne: 0,
         // Valeur de position d'une couronne au sol, relative à une couronne portée.
         couronneSolFacteur: 1,
         // Voir « QUI JOUE ENSUITE » dans l'évaluateur (0 = ancien calcul).
@@ -26247,10 +26249,19 @@
           if (graviteCouronne > 0) {
             /* Pas de cas « sûr » sur ma case de validation : une couronne au sol
                n'y valide pas (règle V66 abandonnée), et son pousseur la ramasse. */
-            const cout = !PLAN_POIDS.porteurExposeRiposte
+            let cout = !PLAN_POIDS.porteurExposeRiposte
               ? plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl)
               : (dm <= 1 ? PLAN_POIDS.exposeCouronneContestee : PLAN_POIDS.exposeCatastrophe)
                 + PLAN_POIDS.gardienExpose;
+            /* Plafonné par l'ENJEU de la couronne (porteurPlafonne) : on perd le
+               gardien, et au plus ce que vaut sa position pour les deux camps.
+               Défaite du 07/10, tour 4 : une couronne isolée, à 35 cases du
+               village adverse, coûtait −2 320 à chaque ramassage — d'où des
+               chutes de 2 000 points au milieu d'un bon plan. */
+            if (PLAN_POIDS.porteurPlafonne) {
+              cout = Math.min(cout, PLAN_POIDS.gardienExpose + Math.max(0, valeurCouronneADistance(dm))
+                + Math.max(0, valeurCouronneADistance(dl)));
+            }
             ajouter("porteurExpose", -cout * graviteCouronne,
               `(${r},${c}) — resterait à ${dm} de moi, ${dl} de lui`);
           }
