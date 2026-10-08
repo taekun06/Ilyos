@@ -28,6 +28,10 @@ const TOURS_PERTES = 20;
 /* ILYOS_POSITIONS=fichier.jsonl : chaque position de fin de tour y est
    ajoutée (calibrage de l'évaluateur, scripts/calibrage-enjeux.js). */
 const POSITIONS = process.env.ILYOS_POSITIONS || null;
+/* ILYOS_PARTIES="14000/0,14003/1" : ne rejouer que ces parties (graine/camp
+   de A), par exemple les défaites d'un match à analyser. */
+const PARTIES = process.env.ILYOS_PARTIES
+  ? process.env.ILYOS_PARTIES.split(',').map(x => x.split('/').map(Number)) : null;
 /* Budget de recherche propre à chaque camp (JSON, ex. '{"tempsMaxMs":1000}'),
    pour mesurer ce qu'apporte plus de réflexion dans un même build. */
 /* Poids de l'évaluateur propres à chaque camp (JSON, clés de PLAN_POIDS). */
@@ -92,7 +96,7 @@ async function jouerPartie(pages, depart, campA, graine) {
       [etat, graine * 1000 + i, BUDGETS[qui], POIDS[qui], !!POSITIONS]);
     // Positions de fin de tour, pour le calibrage (scripts/calibrage-enjeux.js).
     if (POSITIONS) fs.appendFileSync(POSITIONS, JSON.stringify({ graine, campA, i, joueur, qui,
-      fin: r.etatFinTour }) + '\n');
+      debut: etat, fin: r.etatFinTour, actions: r.actions }) + '\n');
     temps[qui].push(r.dureeMs);
     if (r.coupures && (r.coupures.principale || r.coupures.ripostes || r.coupures.magie)) coupes[qui]++;
     const apres = JSON.parse(r.etat);
@@ -128,6 +132,7 @@ async function travailleur(navigateur, file, bilan, depart0) {
     const departClassique = PERSO ? null
       : await baseDepart.evaluate(g => window.ILYOS_SELFPLAY.departMelange(g), graine);
     for (const campA of [0, 1]) {
+      if (PARTIES && !PARTIES.some(([g, c]) => g === graine && c === campA)) continue;
       const depart = departClassique || await baseDepart.evaluate(([g, iles, gardiens, poids]) =>
         window.ILYOS_SELFPLAY.departPerso(g, { iles, gardiens, poids }),
         [graine, PERSO[0], PERSO[1], campA === 0 ? [DRAFT.A, DRAFT.B] : [DRAFT.B, DRAFT.A]]);
@@ -159,7 +164,8 @@ async function travailleur(navigateur, file, bilan, depart0) {
 
 async function main() {
   const navigateur = await chromium.launch({ headless: true });
-  const file = Array.from({ length: PAIRES }, (_, i) => GRAINE + i);
+  const file = PARTIES ? [...new Set(PARTIES.map(([g]) => g))]
+    : Array.from({ length: PAIRES }, (_, i) => GRAINE + i);
   const bilan = { A: 0, B: 0, nul: 0, couronnesA: 0, couronnesB: 0, pertesA: 0, pertesB: 0, coupesA: 0, coupesB: 0, toursA: 0, toursB: 0,
     tours: [], msA: [], msB: [] };
   /* La position de départ vient toujours de la même page, pour que toutes les
