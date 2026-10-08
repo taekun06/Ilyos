@@ -131,6 +131,8 @@
         draftGardiens: 1,
         draftAcces: 600,
         draftVulnerabilite: 900,
+        // Proximité de la couronne pondérée par la survie du gardien (0 = ancien calcul).
+        draftEsperance: 0,
         draftRoute: 300,
         // Surcoût d'une case de vide sur la route estimée (une pose à faire).
         draftCoutVide: 3,
@@ -153,8 +155,10 @@
         /* Intention de déplacement « navette » : un porteur rejoint l'autre
            couronne au sol ; et la fermeture gratuite compte aussi le dépôt.
            Défaite du 07/10, tour 4 : −1 904 → −1 612 (avec isolement et péril
-           plafonné : −1 276 ; coup du joueur −1 045). En attente de match. */
-        navetteCouronne: 0,
+           plafonné : −1 276 ; coup du joueur −1 045). Navette activée (08/10,
+           décision du concepteur ; sans effet mesuré sur les défaites du match
+           des cinq réglages). Dépôt : en attente de match. */
+        navetteCouronne: 1,
         fermetureDepot: 0,
         /* Intentions de pose « couronne » : une par couronne au sol (0 = une pour
            toutes). Trouve la pose défensive du tour 20 (défaite du 07/10), mais
@@ -4064,8 +4068,10 @@
       function plannerDraftNoteCase(playerId, r, c, champs) {
         const adverse = plannerAdversaire(playerId);
         const dCouronne = champs.couronne.get(key(r, c));
-        let note = PLAN_POIDS.draftAcces * plannerProximite(dCouronne === undefined ? Infinity : dCouronne);
-        note -= PLAN_POIDS.draftVulnerabilite * plannerDraftVulnerabilite(playerId, r, c, champs.adverse);
+        const vulnerable = plannerDraftVulnerabilite(playerId, r, c, champs.adverse);
+        let note = PLAN_POIDS.draftAcces * plannerProximite(dCouronne === undefined ? Infinity : dCouronne)
+          * (PLAN_POIDS.draftEsperance ? 1 - vulnerable : 1);
+        note -= PLAN_POIDS.draftVulnerabilite * vulnerable;
         if (adverse && isCrownValidationCell(adverse, r, c)) note += PLAN_POIDS.blocageValidation * 0.6;
         return note;
       }
@@ -4191,10 +4197,17 @@
             state.currentPlayer = playerId;
             const evaluation = evaluateStrategicState(playerId);
             const d = champCouronne.get(key(r, c));
+            const vulnerable = avecGrilleTerre(() =>
+              plannerDraftVulnerabilite(playerId, r, c, plannerDraftChampAdverse(playerId)));
+            /* ESPÉRANCE (draftEsperance) : un gardien éjecté avant d'avoir bougé
+               ne profite jamais de sa proximité de la couronne. Partie
+               personnalisée du 08/10 : deux gardiens posés sur des îlots isolés
+               près de la couronne (proximité ~+1 200, vulnérabilité −720 au
+               plus), éjectés tous deux au premier tour du joueur. */
             const course = PLAN_POIDS.draftAccesGardien
-              * plannerProximite(d === undefined ? Infinity : d);
-            return evaluation + course - avecGrilleTerre(() => PLAN_POIDS.draftVulnerabilite
-              * plannerDraftVulnerabilite(playerId, r, c, plannerDraftChampAdverse(playerId)));
+              * plannerProximite(d === undefined ? Infinity : d)
+              * (PLAN_POIDS.draftEsperance ? 1 - vulnerable : 1);
+            return evaluation + course - PLAN_POIDS.draftVulnerabilite * vulnerable;
           });
           if (note > meilleureNote) { meilleureNote = note; meilleure = [r, c]; }
         }
