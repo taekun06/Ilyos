@@ -65,6 +65,16 @@
            invoqué sur place peut la reprendre. Elle vaut la moitié d'une
            couronne à la même distance à vol d'oiseau, plus deux cases. */
         couronneIsoleeFacteur: 0.5,
+        /* Cases ajoutées à la distance à vol d'oiseau d'une couronne isolée
+           (position et course). Défaite du 07/10, tour 4 : deux couronnes à
+           5 cases de son village, sans chemin de terre, comptées comme à 7
+           cases et à moitié prix — +65 au lieu de +785, alors qu'une pose et
+           une apparition suffisent à les relier au tour suivant. */
+        couronneIsoleeSurcout: 2,
+        /* Péril d'une couronne au sol plafonné par son ENJEU : ce que vaut sa
+           position pour les deux camps (0 = échelle fixe, ancien calcul).
+           Même défaite : −800 par couronne valant à peine +65. */
+        perilPlafonne: 0,
         // Valeur de position d'une couronne au sol, relative à une couronne portée.
         couronneSolFacteur: 1,
         // Voir « QUI JOUE ENSUITE » dans l'évaluateur (0 = ancien calcul).
@@ -1059,7 +1069,8 @@
         if (!Number.isFinite(d) || d < 0 || d >= 99) return 0;
         // Repli de plannerLireChamp : 30 + distance à vol d'oiseau, pour une
         // case qu'aucune route terrestre ne relie aux cibles.
-        if (d >= 30) return PLAN_POIDS.couronneIsoleeFacteur * valeurCouronneADistance(d - 30 + 2);
+        if (d >= 30) return PLAN_POIDS.couronneIsoleeFacteur
+          * valeurCouronneADistance(d - 30 + (PLAN_POIDS.couronneIsoleeSurcout ?? 2));
         const rang = Math.round(d);
         if (rang < table.length) return table[rang];
         const loin = PLAN_POIDS.couronneLointaine || [];
@@ -1318,7 +1329,7 @@
           if (PLAN_POIDS.courseParCase) {
             const effective = d => !Number.isFinite(d) || d >= 99
               ? PLAN_POIDS.courseHorizon
-              : Math.min(PLAN_POIDS.courseHorizon, d >= 30 ? d - 30 + 2 : d);
+              : Math.min(PLAN_POIDS.courseHorizon, d >= 30 ? d - 30 + (PLAN_POIDS.couronneIsoleeSurcout ?? 2) : d);
             ajouter("courseCouronne",
               PLAN_POIDS.courseParCase * (effective(dl) - effective(dm)),
               `(${r},${c}) — écart ${effective(dl) - effective(dm)}`);
@@ -1416,7 +1427,11 @@
               const echelle = [PLAN_POIDS.exposeCouronneSure, PLAN_POIDS.exposeCouronneContestee,
                 PLAN_POIDS.exposeCouronneFavorableAdverse, PLAN_POIDS.exposeCatastrophe];
               const rang = echelle.indexOf(plannerCoutExpositionPorteur(isCrownValidationCell(moi, r, c), dm, dl));
-              const cout = echelle[Math.min(rang + 1, echelle.length - 1)];
+              let cout = echelle[Math.min(rang + 1, echelle.length - 1)];
+              // Jamais plus que ce que la couronne met en jeu, de part et d'autre.
+              if (PLAN_POIDS.perilPlafonne) {
+                cout = Math.min(cout, Math.max(0, valeurCouronneADistance(dm)) + Math.max(0, valeurCouronneADistance(dl)));
+              }
               ajouter("perilCouronneSol", -cout * peril * PLAN_POIDS.perilCouronneSol,
                 `(${r},${c}) — atteinte ${peril === 1 ? "certaine" : "par une pose"}`);
             }
