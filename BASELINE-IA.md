@@ -1778,3 +1778,30 @@ pas, recherche relancée depuis chaque étape, coups générés à la racine).
   contre 18, gardiens perdus 204 contre 242. Pas d'avantage mesuré : gardé.
   Piste suivante : réserver des places de riposte aux meilleurs plans classés
   sans ce péril, pour que la riposte — qui le mesure vraiment — tranche.
+
+## Chutes de note pendant un bon plan : diagnostic et match (08/10)
+
+Défaite du 07/10, tour 4 (navette à deux couronnes du joueur), note relevée à
+chaque étape : chaque RAMASSAGE coûtait −1 800 à −2 500 (porteurExpose
+−2 320 au tarif fixe « catastrophe », pour une couronne isolée à 35 cases du
+village adverse), chaque DÉPÔT le rendait (perilCouronneSol −800 fixe).
+Outil : `ILYOS_SELFPLAY.analyser(…, { suivre: plan })` suit les positions
+d'un plan dans la recherche — le chemin mourait au premier pas du porteur
+vers l'autre couronne (aucune intention ne le générait), puis à l'élagage.
+
+Réglages ajoutés, tous désactivés par défaut : `navetteCouronne` (intention
+« rejoindre l'autre couronne »), `fermetureDepot` (le dépôt compte dans la
+fermeture gratuite), `couronneIsoleeSurcout` 2 → 1 avec
+`couronneIsoleeFacteur` 1, `perilPlafonne`, `porteurPlafonne` (malus
+plafonnés par l'enjeu de la couronne). Ensemble, la courbe de la navette
+monte sans chute (−1 824 → +1 888) et l'IA joue au tour 4 un plan à deux
+couronnes jugé −1 276 (avant −1 904, joueur −1 045).
+
+Match des cinq ensemble contre l'IA actuelle, 40 parties :
+- avec coupure par le temps (machine ralentie : 71 % des tours coupés
+  contre 47 %) : 42,5 % ± 7,8 (8-14-18), couronnes 16 contre 26 ;
+- **sans coupure** (`securiteFacteur` 10 des deux côtés, 0 tour coupé) :
+  **43,8 % ± 7,8 (8-13-19)**, couronnes 20 contre 22, gardiens perdus avant le
+  tour 20 : 205 contre 238 ; 19 s par tour contre 13 s.
+Non retenu en bloc. Les matchs « poseParCouronne » (85 % de tours coupés) et
+« sans péril » (≈ 40 %) sont à refaire sans coupure.
