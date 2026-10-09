@@ -9855,6 +9855,11 @@
         });
         block.position.y = .055;
         block.userData.magicRotationPreview = true;
+        // La rotation visée prend la couleur de son étiquette (↻ 90°, 180°, ↺ 90°).
+        const crans = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
+        if (state.magicPreviewValid && KAYKIT_MAGIC_OPTION_STYLE[crans]) {
+          kaykitTeinterFantome(block, KAYKIT_MAGIC_OPTION_STYLE[crans].couleur, .86);
+        }
         kaykit3D.dynamicGroup.add(block);
 
         renderKayKitMagicRotationGhosts(originalIsland);
@@ -9875,55 +9880,130 @@
 
       /* CE QUE LA ROTATION EMPORTE, ET CE QU'ELLE PERMET.
 
-         1. Les gardiens et couronnes posés sur l'île tournent avec elle. L'aperçu
-            ne montrait que la forme d'arrivée : il fallait deviner où chacun
-            atterrirait. Un fantôme par pièce le dit, comme pour la poussée.
+         1. Les gardiens et couronnes posés sur l'île tournent avec elle. Un
+            fantôme par pièce montre où chacun atterrit, comme pour la poussée.
          2. Les AUTRES rotations légales autour du même pivot sont dessinées
-            d'emblée, en contour doré et voile léger : on voit tout de suite ce
-            que la magie permet depuis ce pivot, au lieu de le découvrir cran par
-            cran à la molette. Celle qu'on vise reste l'île pleine.
+            d'emblée. Chacune a SA couleur et SON étiquette (↻ 90°, 180°,
+            ↺ 90°) : trois fantômes de la même teinte se confondaient dès
+            qu'ils se chevauchaient (signalé). Cliquer un fantôme joue cette
+            rotation (voir magicRotationStepsAtCell, ui.js).
 
-         Rien n'est recalculé ici : calculateIslandRotationAroundPivot (ui.js)
-         est la règle même qu'applique confirmMagicRotation. */
+         Rien n'est recalculé ici : magicRotationOptions (ui.js) appelle
+         calculateIslandRotationAroundPivot, la règle même qu'applique
+         confirmMagicRotation. */
+      const KAYKIT_MAGIC_OPTION_STYLE = {
+        1: { couleur: 0x1fb4ff, css: "#1fb4ff", texte: "↻ 90°" },
+        2: { couleur: 0xffaa12, css: "#ffaa12", texte: "180°" },
+        3: { couleur: 0xb04dff, css: "#b04dff", texte: "↺ 90°" }
+      };
+
+      function kaykitMagicOptionLabel(style, actif) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 256;
+        canvas.height = 104;
+        const ctx = canvas.getContext("2d");
+        const x = 10, y = 10, w = 236, h = 84, rayon = 42;
+        ctx.beginPath();
+        ctx.moveTo(x + rayon, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rayon);
+        ctx.arcTo(x + w, y + h, x, y + h, rayon);
+        ctx.arcTo(x, y + h, x, y, rayon);
+        ctx.arcTo(x, y, x + w, y, rayon);
+        ctx.closePath();
+        ctx.fillStyle = style.css;
+        ctx.fill();
+        ctx.lineWidth = actif ? 9 : 6;
+        ctx.strokeStyle = actif ? "#ffffff" : "rgba(8,12,26,.9)";
+        ctx.stroke();
+        ctx.fillStyle = "#0b0f1d";
+        ctx.font = "900 46px 'Nunito Sans', Inter, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(style.texte, 128, 54);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.userData = { ...(texture.userData || {}), ilyosTransient: true };
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, toneMapped: false });
+        material.userData = { ...(material.userData || {}), ilyosTransient: true };
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(actif ? 1.05 : .9, actif ? .43 : .37, 1);
+        sprite.renderOrder = 62;
+        return sprite;
+      }
+
+      /* Teinte franche d'un fantôme d'île. toneMapped:false : sans lui, le
+         rendu tonal du ciel lavait les couleurs et les trois fantômes
+         redevenaient trois voiles pâles indiscernables. */
+      function kaykitTeinterFantome(objet, couleur, opacite) {
+        const teinte = new THREE.Color(couleur);
+        objet.traverse(obj => {
+          if (!obj.isMesh || !obj.material) return;
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          const teintes = materials.map(mat => {
+            const copie = mat.clone();
+            copie.transparent = true;
+            copie.opacity = opacite;
+            copie.depthWrite = false;
+            copie.toneMapped = false;
+            // Sans sa texture : herbe et terre, multipliées par la teinte,
+            // donnaient du cyan et du rose quelle que soit la couleur voulue.
+            copie.map = null;
+            copie.vertexColors = false;
+            if (copie.color) copie.color.copy(teinte);
+            if ("emissive" in copie && copie.emissive) { copie.emissive = teinte.clone(); copie.emissiveIntensity = .18; }
+            copie.needsUpdate = true;
+            copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
+            return copie;
+          });
+          obj.material = Array.isArray(obj.material) ? teintes : teintes[0];
+        });
+      }
+
       function renderKayKitMagicRotationGhosts(island) {
-        if (!island || !Array.isArray(state.selectedMagicPivot)) return;
-        if (typeof calculateIslandRotationAroundPivot !== "function") return;
-        const [pr, pc] = state.selectedMagicPivot;
+        if (!island || typeof magicRotationOptions !== "function") return;
         const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
         const sol = KAYKIT_LEVELS.islandTop + .014 + .055;
         const group = kaykit3D.dynamicGroup;
+        let options = [];
+        try { options = magicRotationOptions(); } catch (_) { return; }
 
-        [1, 2, 3].forEach(steps => {
-          const direction = steps === 3 ? -1 : 1;
-          const turns = steps === 3 ? 1 : steps;
-          let rotation = null;
-          try { rotation = calculateIslandRotationAroundPivot(island, pr, pc, direction, turns); } catch (_) { return; }
-          if (!rotation?.valid) return;
+        options.forEach(({ steps, rotation }) => {
+          const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
+          const actif = steps === courant;
 
-          if (steps === courant) {
+          // Étiquette au-dessus du centre de la forme d'arrivée.
+          const centre = rotation.absCells.reduce((acc, [r, c]) => {
+            const p = kaykitCellPosition(r, c, 0);
+            acc.x += p.x; acc.z += p.z;
+            return acc;
+          }, { x: 0, z: 0 });
+          const etiquette = kaykitMagicOptionLabel(style, actif);
+          etiquette.position.set(centre.x / rotation.absCells.length, sol + 1.15, centre.z / rotation.absCells.length);
+          group.add(etiquette);
+
+          if (actif) {
             (rotation.characterMoves || []).forEach(move => {
               if (move.r === move.char.r && move.c === move.char.c) return;
-              const ghost = makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, opacity: .62, surfaceY: sol });
+              const ghost = makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, opacity: .72, surfaceY: sol });
               if (ghost) group.add(ghost);
               // Sa couronne voyage avec lui : on la montre au-dessus du fantôme.
               let portee = null;
               try { portee = artifactCarriedBy(move.char.id); } catch (_) { }
               if (!portee) return;
-              const couronne = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .8, surfaceY: sol + .74 });
+              const couronne = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .85, surfaceY: sol + .74 });
               if (!couronne) return;
               couronne.scale.multiplyScalar(.62);
               group.add(couronne);
             });
             (rotation.artifactMoves || []).forEach(move => {
               if (move.r === move.artifact.r && move.c === move.artifact.c) return;
-              const ghost = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .7, surfaceY: sol });
+              const ghost = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .75, surfaceY: sol });
               if (ghost) group.add(ghost);
             });
             return;
           }
 
-          /* Même bloc fantôme que l'aperçu principal, nettement plus effacé :
-             un voile plat se perdait sur le ciel doré. */
+          /* Même bloc fantôme que l'aperçu principal, teinté de la couleur
+             de son étiquette, et assez opaque pour se lire sur le ciel doré. */
           const option = makeKayKitIslandBlock({
             id: `magic-option-${island.id}-${steps}`,
             owner: null,
@@ -9931,20 +10011,21 @@
           }, { preview: true, valid: true, previewMode: "magic" });
           option.position.y = .045;
           option.userData.magicRotationPreview = true;
-          option.traverse(obj => {
-            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-            const attenues = materials.filter(Boolean).map(mat => {
-              const copie = mat.clone();
-              copie.transparent = true;
-              copie.opacity = (Number.isFinite(mat.opacity) ? mat.opacity : 1) * .5;
-              copie.depthWrite = false;
-              copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
-              return copie;
-            });
-            if (!attenues.length) return;
-            obj.material = Array.isArray(obj.material) ? attenues : attenues[0];
-          });
+          kaykitTeinterFantome(option, style.couleur, .62);
           group.add(option);
+
+          // Contour franc de sa couleur, pour séparer deux fantômes qui se touchent.
+          kaykitIslandComponents(rotation.absCells).forEach(component => {
+            const boundary = kaykitIslandBoundary(component);
+            if (boundary.length < 2) return;
+            const geometry = new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, sol + .02, z)));
+            geometry.userData = { ...(geometry.userData || {}), ilyosTransient: true };
+            const material = new THREE.LineBasicMaterial({ color: style.couleur, transparent: true, opacity: .95, depthWrite: false, depthTest: false });
+            material.userData = { ...(material.userData || {}), ilyosTransient: true };
+            const contour = new THREE.LineLoop(geometry, material);
+            contour.renderOrder = 46;
+            group.add(contour);
+          });
         });
       }
 
