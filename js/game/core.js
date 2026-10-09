@@ -2736,9 +2736,26 @@
             : "Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le même nombre de gardiens.";
         }
 
+        // Le miroir n'a de sens qu'à deux, et seulement dans le Personnalisé :
+        // « Créer son duel » est déjà en miroir.
+        const miroirPossible = custom && state?.players?.length === 2;
+        document.getElementById("customMirrorRow")?.classList.toggle("hidden", !miroirPossible);
+
         if (custom) {
           if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
           if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
+          const miroirSelect = document.getElementById("customMirrorSelect");
+          if (miroirSelect) {
+            miroirSelect.disabled = waiting;
+            const majIntro = () => {
+              if (!els.setupOverlayIntro) return;
+              els.setupOverlayIntro.textContent = miroirPossible && miroirSelect.value === "miroir"
+                ? "Le joueur 1 pose ses îles puis ses gardiens ; chaque pose se reflète aussitôt dans le camp adverse."
+                : "Chaque joueur pose lui-même ses îles puis ses gardiens, à tour de rôle, avant le premier tour.";
+            };
+            miroirSelect.onchange = majIntro;
+            majIntro();
+          }
           [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
             els.customDrawCountSelect, els.customPaidIslandsCheckbox]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
@@ -2845,7 +2862,8 @@
           closeSymmetricSetupOverlay();
           startCustomDraft(
             Number(els.customIslandCountSelect?.value),
-            Number(els.customGuardianCountSelect?.value)
+            Number(els.customGuardianCountSelect?.value),
+            { miroir: document.getElementById("customMirrorSelect")?.value === "miroir" }
           );
           startAmbient();
           if (state.onlineMode) forceOnlineSync();
