@@ -10,7 +10,8 @@
    de joueur (ui.js) s'ajoute ici.
 
    La dissolution d'une île vide (option de partie `allowDissolve`) est
-   couverte depuis le 29/09 ; l'IA l'ignorait auparavant.                   */
+   couverte depuis le 29/09 ; l'IA l'ignorait auparavant. Les îles payantes
+   du mode personnalisé (2 cartes, pose facultative) depuis le 09/10.      */
 
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -90,6 +91,33 @@ const assert = require('node:assert/strict');
         state.currentPlayer = 0;
         const dissolution = plannerCandidatsDissolution(0)[0] || null;
         resultat.DISSOLUTION = { genere: !!dissolution, applique: dissolution ? essayer(dissolution) : false };
+        /* ÎLES PAYANTES (mode personnalisé) : poser coûte 2 cartes et n'est plus
+           obligatoire. Pose générée et payée avec 2 cartes, aucune pose sans
+           elles, fin de tour possible sans île. */
+        const posePayante = main => {
+          benchPoserPosition({ seed: 7, islandPlacedThisTurn: false, aiPlayer: 0, rules: { ilesPayantes: true },
+            islands: [{ owner: 0, cells: [[5,0],[5,1],[5,2]] }, { owner: 1, cells: [[8,8]] }],
+            characters: [{ id: 'A', player: 0, r: 5, c: 1 }, { id: 'E', player: 1, r: 8, c: 8 }],
+            crowns: [null, null], hands: [main, []] });
+          state.currentPlayer = 0;
+          const pose = avecGrilleTerre(() => plannerCandidatsPose(0))[0] || null;
+          const avant = cartesDisponibles(state.players[0]);
+          const apres = pose ? withSimulatedState(cloneStateForSimulation(), () =>
+            plannerAppliquerAction(pose) ? cartesDisponibles(state.players[0]) : null) : null;
+          return { pose, avant, apres, sansObligation: obligationIleRemplie() };
+        };
+        const payante = posePayante(['MOVE', 'PUSH', 'MAGIC']);
+        resultat['POSE payante (2 cartes)'] = { genere: !!payante.pose && payante.sansObligation,
+          applique: payante.apres === payante.avant - 2 };
+        const fauchee = posePayante(['MAGIC']);
+        resultat['pas de POSE sans 2 cartes'] = { genere: !fauchee.pose, applique: !fauchee.pose };
+        /* Paquet et pioche réglables : le moteur suit les règles de la partie. */
+        const paquet = compositionPaquet({ paquet: { MOVE: 6, PUSH: 3, MAGIC: 2 } });
+        resultat['paquet et pioche réglés'] = {
+          genere: paquet.length === 11 && paquet.filter(t => t === 'MAGIC').length === 2,
+          applique: cartesPiocheesParTour({ rules: { cartesPiochees: 7 } }) === 7
+            && cartesPiocheesParTour({ rules: {} }) === 5 && compositionPaquet({}).length === CARD_BLUEPRINTS.length
+        };
         // Les gratuites selon le moteur.
         resultat.gratuites = ['RAMASSAGE', 'DEPOT', 'TRANSMISSION', 'VOL']
           .filter(t => !plannerActionGratuite({ type: t }));

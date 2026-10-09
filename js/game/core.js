@@ -1015,7 +1015,7 @@
             ? player.villages
             : [player.village || CORNERS[index] || CORNERS[0]],
           score: Number(player.score || 0),
-          deck: (Array.isArray(player.deck) ? player.deck : createDeck(index))
+          deck: (Array.isArray(player.deck) ? player.deck : createDeck(index, compositionPaquet(raw.rules)))
             .filter(card => !card.fromStash)
             .map(card => ({ ...card, used: false, fromStash: false })),
           discard: (Array.isArray(player.discard) ? player.discard : [])
@@ -1023,7 +1023,7 @@
             .map(card => ({ ...card, used: false, fromStash: false })),
           hand: (Array.isArray(player.hand) ? player.hand : [])
             .filter(card => !card.fromStash)
-            .slice(0, 5)
+            .slice(0, cartesPiocheesParTour(raw))
             .map(card => ({ ...card, fromStash: false })),
           stash: {
             MOVE: Math.max(0, Math.min(5, Number(player.stash?.MOVE || 0))),
@@ -1033,19 +1033,24 @@
         }));
 
         /*
-         * Migration V64 : chaque joueur doit posséder exactement 13 cartes
-         * (8 déplacements, 4 poussées et 1 magie), toutes zones confondues.
-         * Une ancienne composition est reconstruite proprement au prochain tour.
+         * Migration V64 : chaque joueur doit posséder exactement son paquet —
+         * 13 cartes (8 déplacements, 4 poussées et 1 magie) en partie
+         * classique, ou la composition choisie en mode personnalisé
+         * (compositionPaquet), toutes zones confondues. Une ancienne
+         * composition est reconstruite proprement au prochain tour.
          */
+        const paquetAttendu = compositionPaquet(raw.rules);
+        const attendu = paquetAttendu.reduce((acc, type) => { acc[type]++; return acc; }, { MOVE: 0, PUSH: 0, MAGIC: 0 });
         restored.players.forEach((player, index) => {
           const allCards = [...(player.deck || []), ...(player.hand || []), ...(player.discard || [])];
           const counts = allCards.reduce((acc, card) => {
             if (card?.action in acc) acc[card.action]++;
             return acc;
           }, { MOVE: 0, PUSH: 0, MAGIC: 0 });
-          const valid = allCards.length === 13 && counts.MOVE === 8 && counts.PUSH === 4 && counts.MAGIC === 1;
+          const valid = allCards.length === paquetAttendu.length
+            && counts.MOVE === attendu.MOVE && counts.PUSH === attendu.PUSH && counts.MAGIC === attendu.MAGIC;
           if (!valid) {
-            player.deck = createDeck(index);
+            player.deck = createDeck(index, paquetAttendu);
             player.hand = [];
             player.discard = [];
           }
@@ -1296,8 +1301,8 @@
         }
       }
 
-      function createDeck(playerIndex) {
-        return shuffle(CARD_BLUEPRINTS.map((action, i) => ({
+      function createDeck(playerIndex, composition = CARD_BLUEPRINTS) {
+        return shuffle(composition.map((action, i) => ({
           id: `P${playerIndex}-C${i}-${gameRandom().toString(36).slice(2, 7)}`,
           action,
           used: false
@@ -2693,6 +2698,7 @@
         els.symmetricPresetControls?.classList.toggle("hidden", custom);
         els.symmetricPresetContent?.classList.toggle("hidden", custom);
         els.customSetupControls?.classList.toggle("hidden", !custom);
+        els.customRulesControls?.classList.toggle("hidden", !custom);
 
         if (els.setupOverlayKicker) {
           els.setupOverlayKicker.textContent = custom ? "PERSONNALISÉ" : "DUEL SYMÉTRIQUE";
@@ -2711,6 +2717,10 @@
         if (custom) {
           if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
           if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
+          [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox]
+            .forEach(champ => { if (champ) champ.disabled = waiting; });
+          majResumePaquetPersonnalise();
         } else {
           populateSymmetricSetupOverlay(selectedId);
           if (els.symmetricSetupSelect) els.symmetricSetupSelect.disabled = waiting;
@@ -2755,6 +2765,46 @@
         els.randomSymmetricSetupBtn.classList.add("random-picked");
       }
 
+      /* Règles de la partie du mode personnalisé (index.html,
+         #customRulesControls). Une clé n'est écrite que si elle s'écarte du
+         classique : une partie réglée comme d'habitude reste indiscernable
+         d'une partie classique, sauvegardes et parties en ligne comprises. */
+      function lireReglesPersonnalisees() {
+        const regles = {};
+        const paquet = {
+          MOVE: Number(els.customDeckMoveSelect?.value ?? 8),
+          PUSH: Number(els.customDeckPushSelect?.value ?? 4),
+          MAGIC: Number(els.customDeckMagicSelect?.value ?? 1)
+        };
+        if (paquet.MOVE !== 8 || paquet.PUSH !== 4 || paquet.MAGIC !== 1) regles.paquet = paquet;
+        const pioche = Number(els.customDrawCountSelect?.value ?? PIOCHE_CLASSIQUE);
+        if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
+        if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
+        return regles;
+      }
+
+      function majResumePaquetPersonnalise() {
+        if (!els.customDeckSummary) return;
+        const paquet = compositionPaquet(lireReglesPersonnalisees());
+        const pioche = cartesPiocheesParTour({ rules: lireReglesPersonnalisees() });
+        els.customDeckSummary.textContent = paquet.length < pioche
+          ? `Paquet de ${paquet.length} cartes : moins qu’une main de ${pioche}, la défausse sera remélangée à chaque tour.`
+          : `Paquet de ${paquet.length} cartes · main de ${pioche}`;
+      }
+
+      /** Paquets refaits selon les règles de la partie, avant la première pioche. */
+      function appliquerPaquetDesRegles() {
+        if (!state?.players) return;
+        const paquet = compositionPaquet(state.rules);
+        state.players.forEach((joueur, index) => {
+          joueur.deck = createDeck(index, paquet);
+          joueur.hand = [];
+          joueur.discard = [];
+          joueur.reserveCards = [];
+          joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        });
+      }
+
       function confirmSymmetricSetup() {
         if (!state || !state.setupSelectionPending) return;
         if (state.onlineMode && onlineRole === "guest") return;
@@ -2763,8 +2813,10 @@
           state.rules = {
             allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
             islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
+            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0,
+            ...lireReglesPersonnalisees()
           };
+          appliquerPaquetDesRegles();
           state.setupSelectionPending = false;
           state.inputLocked = false;
           closeSymmetricSetupOverlay();
@@ -3729,7 +3781,8 @@
         els.gameScreen.classList.remove("ai-turn");
         showToast("Temps écoulé : le tour va se terminer automatiquement.");
 
-        if (!state.islandPlacedThisTurn) {
+        // Îles payantes : la pose est facultative, le temps écoulé n'en impose aucune.
+        if (!obligationIleRemplie()) {
           createAutomaticIslandAndSpawn(state.currentPlayer, true);
           await sleep(520);
         }

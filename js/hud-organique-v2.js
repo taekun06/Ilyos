@@ -322,6 +322,11 @@
       island.disabled = !oldIsland || !!oldIsland.disabled;
       const drawerOpen = !!drawer && !drawer.classList.contains('hidden');
       island.classList.toggle('ov2-selected',drawerOpen || oldIsland?.getAttribute('aria-expanded') === 'true');
+      /* Sous-titre fourni par le jeu : « OBLIGATOIRE », ou « 2 CARTES » quand
+         les îles sont payantes (mode personnalisé, js/game/ui.js). */
+      const sousTitre = island.querySelector('small');
+      const voulu = oldIsland?.dataset.sousTitre || 'OBLIGATOIRE';
+      if (sousTitre && sousTitre.textContent !== voulu) sousTitre.textContent = voulu;
     }
     const end = legacy('ov2End'), oldEnd = legacy('endTurnBtn');
     if (end) end.disabled = !oldEnd || !!oldEnd.disabled;
