@@ -101,6 +101,7 @@
     if(cle==='couleur') return `<span class="coll-apercu coll-gemme" style="--c:${safeText(objet.valeur)}"></span>`;
     if(cle==='heros') return `<span class="coll-apercu coll-portrait"><img src="../${safeText(objet.image)}" alt="" loading="lazy"></span>`;
     if(cle==='ciel') return `<span class="coll-apercu coll-ciel" style="background-image:url('../${safeText(objet.image)}')"></span>`;
+    if(cle==='plateau') return `<span class="coll-apercu coll-ciel coll-iles" style="background-image:url('../${safeText(objet.image)}')"></span>`;
     if(cle==='effet') return `<span class="coll-apercu coll-effet coll-effet-${safeText(objet.valeur||'sobre')}"><i></i><i></i><i></i><i></i><i></i></span>`;
     return `<span class="coll-apercu coll-plaque"><span>${safeText(objet.nom)}</span></span>`;
   }
@@ -109,7 +110,7 @@
     return `<li class="coll-objet${objet.debloque?'':' verrou'}${objet.equipe?' equipe':''}"><button type="button" data-cat="${cle}" data-id="${safeText(objet.id)}"${objet.debloque&&!objet.equipe?'':' disabled'} aria-pressed="${objet.equipe}">${collectionApercu(cle,objet)}<b>${safeText(objet.nom)}</b><small>${etatTexte}</small>${objet.nouveau?'<em class="coll-nouveau">NOUVEAU</em>':''}</button></li>`;
   }
   function collectionHtml(categories){
-    const notes={couleur:'Vos pions, drapeaux et villages.',heros:'Les gardiens de votre camp.',ciel:'Le ciel autour du plateau.',titre:'Affiché avec votre niveau.',effet:'Quand vous gagnez une partie.'};
+    const notes={couleur:'Vos pions, drapeaux et villages.',heros:'Les gardiens de votre camp.',ciel:'Le ciel autour du plateau.',plateau:'Les îles du plateau.',titre:'Affiché avec votre niveau.',effet:'Quand vous gagnez une partie.'};
     return categories.map(c=>`<section class="coll-section"><h3>${safeText(c.nom.toUpperCase())}<small>${notes[c.cle]||''}</small></h3><ul class="coll-grille coll-grille-${c.cle}">${c.objets.map(o=>collectionObjetHtml(c.cle,o)).join('')}</ul></section>`).join('')
       +'<p class="coll-note">Couleur et gardiens s’appliquent en solo, en duel et en 2 contre 2, à partir de la prochaine partie.</p>';
   }
@@ -117,7 +118,7 @@
   function saisonApercu(p){
     if(p.categorie==='couleur') return `<span class="sp-apercu sp-gemme" style="--c:${safeText(p.valeur)}"></span>`;
     if(p.categorie==='heros') return `<span class="sp-apercu sp-portrait"><img src="../${safeText(p.image)}" alt="" loading="lazy"></span>`;
-    if(p.categorie==='ciel') return `<span class="sp-apercu sp-ciel" style="background-image:url('../${safeText(p.image)}')"></span>`;
+    if(p.categorie==='ciel'||p.categorie==='plateau') return `<span class="sp-apercu sp-ciel" style="background-image:url('../${safeText(p.image)}')"></span>`;
     if(p.categorie==='titre') return `<span class="sp-apercu sp-plaque"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18l-2 3 2 3H3l2-3-2-3Z" fill="#2b1a05" opacity=".85"/><path d="M8 5l4-2 4 2M8 19l4 2 4-2" stroke="#2b1a05" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></span>`;
     if(p.categorie==='effet') return `<span class="sp-apercu sp-effet"></span>`;
     if(p.categorie==='vent') return `<span class="sp-apercu sp-vent"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#effcff" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg></span>`;

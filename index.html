@@ -1160,6 +1160,69 @@
           </label>
         </div>
 
+        <!-- Mode Personnalisé : règles de la partie. Les valeurs par défaut sont
+             celles de la partie classique (paquet 8/4/1, pioche de 5, île
+             obligatoire et gratuite) ; voir compositionPaquet,
+             cartesPiocheesParTour et ilesPayantes (js/game/rules-core.js). -->
+        <div id="customRulesControls" class="symmetric-setup-custom custom-rules hidden">
+          <strong class="symmetric-setup-custom-title">Règles de la partie</strong>
+          <label for="customDeckMoveSelect">
+            <span>Déplacer</span>
+            <select id="customDeckMoveSelect">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8" selected>8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="11">11</option>
+              <option value="12">12</option>
+            </select>
+          </label>
+          <label for="customDeckPushSelect">
+            <span>Pousser</span>
+            <select id="customDeckPushSelect">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+            </select>
+          </label>
+          <label for="customDeckMagicSelect">
+            <span>Magie</span>
+            <select id="customDeckMagicSelect">
+              <option value="0">0</option>
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </label>
+          <label for="customDrawCountSelect">
+            <span>Cartes piochées</span>
+            <select id="customDrawCountSelect">
+              <option value="5" selected>5 par tour</option>
+              <option value="6">6 par tour</option>
+              <option value="7">7 par tour</option>
+              <option value="8">8 par tour</option>
+            </select>
+          </label>
+          <p id="customDeckSummary" class="custom-rules-summary" aria-live="polite">Paquet de 13 cartes</p>
+          <label class="symmetric-setup-toggle" for="customPaidIslandsCheckbox">
+            <input type="checkbox" id="customPaidIslandsCheckbox">
+            <span>Îles payantes : poser une île coûte 2 cartes, mais n’est plus obligatoire</span>
+          </label>
+        </div>
+
         <div id="symmetricPresetControls" class="symmetric-board-controls">
           <label for="symmetricSetupSelect">
             <span>Configuration</span>
@@ -1478,7 +1541,7 @@
        première synchronisation de scène. -->
   <script id="v76-animation-system" src="./js/animation-system.js?v=20260815-gameplay-fixes2"></script>
     <script src="./js/gamepad-navigation.js?v=20260911-manette-feel"></script>
-    <script src="./js/game.js?v=20261002-journal"></script>
+    <script src="./js/game.js?v=20261009-regles-perso"></script>
   <!-- Plateau tactique 2D : lit l'état, dessine, et relaie les clics aux vraies
        cases. Chargé APRÈS game.js, dont il utilise le plateau et l'état. -->
   <script src="./js/plateau-tactique.js?v=20260907-board13"></script>

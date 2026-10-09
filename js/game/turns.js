@@ -69,7 +69,7 @@
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, 5);
+        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
         state.phase = "ACTION_SELECT";
         // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
