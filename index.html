@@ -1160,6 +1160,69 @@
           </label>
         </div>
 
+        <!-- Mode Personnalisé : règles de la partie. Les valeurs par défaut sont
+             celles de la partie classique (paquet 8/4/1, pioche de 5, île
+             obligatoire et gratuite) ; voir compositionPaquet,
+             cartesPiocheesParTour et ilesPayantes (js/game/rules-core.js). -->
+        <div id="customRulesControls" class="symmetric-setup-custom custom-rules hidden">
+          <strong class="symmetric-setup-custom-title">Règles de la partie</strong>
+          <label for="customDeckMoveSelect">
+            <span>Déplacer</span>
+            <select id="customDeckMoveSelect">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8" selected>8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="11">11</option>
+              <option value="12">12</option>
+            </select>
+          </label>
+          <label for="customDeckPushSelect">
+            <span>Pousser</span>
+            <select id="customDeckPushSelect">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+            </select>
+          </label>
+          <label for="customDeckMagicSelect">
+            <span>Magie</span>
+            <select id="customDeckMagicSelect">
+              <option value="0">0</option>
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </label>
+          <label for="customDrawCountSelect">
+            <span>Cartes piochées</span>
+            <select id="customDrawCountSelect">
+              <option value="5" selected>5 par tour</option>
+              <option value="6">6 par tour</option>
+              <option value="7">7 par tour</option>
+              <option value="8">8 par tour</option>
+            </select>
+          </label>
+          <p id="customDeckSummary" class="custom-rules-summary" aria-live="polite">Paquet de 13 cartes</p>
+          <label class="symmetric-setup-toggle" for="customPaidIslandsCheckbox">
+            <input type="checkbox" id="customPaidIslandsCheckbox">
+            <span>Îles payantes : poser une île coûte 2 cartes, mais n’est plus obligatoire</span>
+          </label>
+        </div>
+
         <div id="symmetricPresetControls" class="symmetric-board-controls">
           <label for="symmetricSetupSelect">
             <span>Configuration</span>
@@ -1407,7 +1470,9 @@
           validé le plus de couronnes l’emporte, et une égalité donne un match nul.</li>
         <li>2 contre 2 : chaque joueur marque ses propres couronnes (premier à 3). Des places peuvent être tenues par
           l’ordinateur (J2 et J4 pour jouer à deux contre l’IA) et, avec l’option « Diagonale d’équipe », J1 et J3
-          valident dans les deux villages d’une diagonale, J2 et J4 dans ceux de l’autre.</li>
+          valident dans les deux villages d’une diagonale, J2 et J4 dans ceux de l’autre. Avec cette option, l’équipe
+          joue aussi les mêmes gardiens (chacun commande ceux de son coéquipier) et partage ses couronnes : la
+          première équipe à 3 gagne.</li>
         <li>Recliquez sur la case de départ sélectionnée pour quitter l’action. Cliquez sur la couronne d’un adversaire
           pour la récupérer lorsqu’un de vos gardiens est adjacent.</li>
         <li>Par défaut, les tours ne sont pas chronométrés. L’option « Temps par tour » du menu de configuration permet
@@ -1476,7 +1541,7 @@
        première synchronisation de scène. -->
   <script id="v76-animation-system" src="./js/animation-system.js?v=20260815-gameplay-fixes2"></script>
     <script src="./js/gamepad-navigation.js?v=20260911-manette-feel"></script>
-    <script src="./js/game.js?v=20261002-journal"></script>
+    <script src="./js/game.js?v=20261009-regles-perso"></script>
   <!-- Plateau tactique 2D : lit l'état, dessine, et relaie les clics aux vraies
        cases. Chargé APRÈS game.js, dont il utilise le plateau et l'état. -->
   <script src="./js/plateau-tactique.js?v=20260907-board13"></script>
@@ -3310,9 +3375,14 @@
     /* Fenêtres et menus unifiés */
     .modal,
     .symmetric-board-overlay {
-      z-index: var(--ilyos-z-modal) !important;
       background: rgba(33, 72, 86, .44) !important;
       backdrop-filter: blur(8px) !important
+    }
+
+    /* Le choix du plateau garde le z-index de css/base.css (au-dessus de la
+       barre HUD fixe) : à 1200, le HUD recouvrait le titre et les boutons. */
+    .modal {
+      z-index: var(--ilyos-z-modal) !important
     }
 
     .modal-card,
@@ -3492,6 +3562,58 @@
       color: #6c8690;
       font-size: 9px;
       line-height: 1.25
+    }
+
+    /* Créer son duel : la carte qui ouvre l'atelier, dorée pour se
+       distinguer des préréglages. */
+    .v64-setup-card[data-value="creer"] {
+      position: relative;
+      padding-left: 40px !important;
+      border-color: #d8aa4c !important;
+      background: linear-gradient(135deg, #fff8e6, #f6e3b4) !important
+    }
+
+    .v64-setup-card[data-value="creer"]::before {
+      content: "✦";
+      position: absolute;
+      left: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #f7d98e, #b27f2a);
+      color: #2a1a07;
+      font-size: 12px;
+      box-shadow: 0 2px 6px rgba(120, 80, 20, .3)
+    }
+
+    .v64-setup-card[data-value="creer"] small {
+      color: #8a6420
+    }
+
+    .v64-setup-card[data-value="creer"][aria-pressed="true"] {
+      border-color: #b27f2a !important;
+      background: linear-gradient(135deg, #fff3d1, #f1d48f) !important;
+      box-shadow: 0 0 0 3px rgba(216, 170, 76, .25), var(--ilyos-shadow-1) !important
+    }
+
+    /* Aperçu de Créer son duel : plateau vide, axe du miroir en pointillés. */
+    .symmetric-setup-preview.preview-miroir {
+      position: relative
+    }
+
+    .symmetric-setup-preview.preview-miroir::after {
+      content: "";
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      left: 50%;
+      border-left: 2px dashed rgba(178, 127, 42, .85);
+      transform: translateX(-1px);
+      pointer-events: none
     }
 
     /* Panneaux de diagnostic : jamais au-dessus des commandes de jeu. */

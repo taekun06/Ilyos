@@ -46,6 +46,9 @@
 
       function beginTurn() {
         const p = currentPlayer();
+        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
+        // qui prend la main, avant même la validation des couronnes.
+        confierGardiensEquipe(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();
@@ -66,7 +69,7 @@
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, 5);
+        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
         state.phase = "ACTION_SELECT";
         // Limite d'îles par équipe (duel symétrique personnalisé) : une fois

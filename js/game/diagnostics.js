@@ -58,6 +58,8 @@
       });
       els.randomSymmetricSetupBtn?.addEventListener("click", chooseRandomSymmetricSetup);
       els.confirmSymmetricSetupBtn?.addEventListener("click", confirmSymmetricSetup);
+      [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect, els.customDrawCountSelect]
+        .forEach(champ => champ?.addEventListener("change", majResumePaquetPersonnalise));
 
 
       function collectIlyosDiagnosticReport() {
@@ -1359,7 +1361,7 @@
         }
 
         entrant.hand = [];
-        drawCards(entrant, 5);
+        drawCards(entrant, cartesPiocheesParTour());
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
@@ -1388,8 +1390,9 @@
           appliquees++;
         }
         /* La pose est obligatoire : si le plan ne l'a pas faite, on retombe sur
-           la pose automatique, exactement comme le jeu réel le fait. */
-        if (!state.islandPlacedThisTurn) {
+           la pose automatique, exactement comme le jeu réel le fait. (Îles
+           payantes : la pose est facultative, rien à rattraper.) */
+        if (!obligationIleRemplie()) {
           const pose = findAutomaticIslandPlacement(playerId);
           if (pose) {
             applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor);
@@ -1584,7 +1587,7 @@
                fait. Cette pose-là est choisie par une heuristique et n'est pas
                dans le journal : on ne peut donc pas la reproduire, et on le dit
                au lieu de compter une fausse divergence. */
-            if (!state.islandPlacedThisTurn) return "POSE AUTOMATIQUE";
+            if (!obligationIleRemplie()) return "POSE AUTOMATIQUE";
             selfplayTransitionTour();
             return empreintePlateau(snapshotState());
           });
@@ -1825,7 +1828,7 @@
             state.turn = 1;
             state.round = 1;
             const entrant = state.players[0];
-            drawCards(entrant, 5);
+            drawCards(entrant, cartesPiocheesParTour());
             state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
             state.centerCrownTakenThisTurn = false;
             faireEntrerCouronnesEnAttente();
@@ -1976,7 +1979,7 @@
           }
           // Aperçu : la position après ces actions, sans finir le tour.
           if (apercu) return { etat: snapshotState(), journal };
-          if (!state.islandPlacedThisTurn && !poseImpossiblePour(moi)) {
+          if (!obligationIleRemplie() && !poseImpossiblePour(moi)) {
             return { erreur: "la pose d'île est obligatoire ce tour", journal };
           }
           const continuer = selfplayTransitionTour();
@@ -2189,6 +2192,18 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        /* Gardiens : joueur qui les commande (char.player) et camp d'origine,
+           distincts en 2 contre 2 à gardiens communs (rules-core.js). */
+        gardiens: () => state ? state.characters.map(ch => ({ id: ch.id, joueur: ch.player, camp: proprietaireGardien(ch) })) : null,
+        gardiensPartages: () => gardiensPartages(),
+        /* Plateau et mise en place (tests/creer-son-duel.spec.js). */
+        plateau: () => state ? {
+          taille: GRID, phase: state.phase, trait: state.currentPlayer,
+          miseEnPlace: state.draft ? { miroir: !!state.draft.miroir, index: state.draft.index, total: state.draft.order.length } : null,
+          iles: state.islands.map(i => ({ id: i.id, proprietaire: i.owner, cases: i.cells.map(([r, c]) => [r, c]) })),
+          gardiens: state.characters.map(ch => ({ joueur: ch.player, r: ch.r, c: ch.c })),
+          villages: state.players.map(j => villagesForPlayer(j).map(v => [v.r, v.c]))
+        } : null,
         joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
           difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score,
           couleur: j.color, heros: j.heros || null })) : null,

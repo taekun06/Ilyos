@@ -235,6 +235,13 @@
         customSetupControls: document.getElementById("customSetupControls"),
         customIslandCountSelect: document.getElementById("customIslandCountSelect"),
         customGuardianCountSelect: document.getElementById("customGuardianCountSelect"),
+        customRulesControls: document.getElementById("customRulesControls"),
+        customDeckMoveSelect: document.getElementById("customDeckMoveSelect"),
+        customDeckPushSelect: document.getElementById("customDeckPushSelect"),
+        customDeckMagicSelect: document.getElementById("customDeckMagicSelect"),
+        customDrawCountSelect: document.getElementById("customDrawCountSelect"),
+        customDeckSummary: document.getElementById("customDeckSummary"),
+        customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),
@@ -691,6 +698,25 @@
       // Seul l'espacement visuel 3D est réduit pour correspondre à la taille
       // réelle des Block Bits, sans modifier les règles ni les coordonnées.
       const KAYKIT_CELL_SPACING = .925;
+      // Îles « Archipel de pierre » : cosmétique de saison (catégorie « plateau »
+      // de progression.js). Les îles d'herbe KayKit restent le rendu par défaut.
+      // `?rendu=archipel` ou `?rendu=ancien` forcent l'un ou l'autre pour comparer
+      // sur une même préversion. Relu à chaque sync de scène : équiper l'archipel
+      // dans la collection change le plateau sans recharger la page.
+      let ILYOS_RENDU_ANCIEN = true;
+      let kaykitIlesDuProfil = null;
+      const KAYKIT_RENDU_FORCE = (() => {
+        try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+      })();
+      function kaykitArchipelDemande() {
+        if (KAYKIT_RENDU_FORCE) return KAYKIT_RENDU_FORCE === "archipel";
+        return kaykitIlesDuProfil === "archipel";
+      }
+      /* Appelé par progressionEquiper : la prochaine sync reconstruit le plateau. */
+      function kaykitChoisirIles(valeur) {
+        kaykitIlesDuProfil = valeur || null;
+        try { if (kaykit3D) scheduleKayKitSync(); } catch (_) { }
+      }
       const KAYKIT_BLOCK_SIZE = .932;
       /* Fonction et non constante : figée au chargement, elle gardait la
          valeur du 11×11 après un passage en 13×13, et tout ce qui en dépend —
@@ -1277,6 +1303,8 @@
         // Ciel choisi dans la collection du joueur (progression.js).
         const cielDuProfil = progressionCielEquipe();
         if (cielDuProfil && KAYKIT_SKY_BAND_VARIANTS[cielDuProfil]) kaykitSkyBandActiveVariant = cielDuProfil;
+        // Îles choisies dans la collection (herbe KayKit ou Archipel de pierre).
+        kaykitIlesDuProfil = progressionPlateauEquipe();
 
         const canvas = document.createElement("canvas");
         canvas.id = "kaykitCanvas";
@@ -3951,6 +3979,7 @@
             child.castShadow = false;
             child.receiveShadow = false;
           });
+          kaykitTeinterRocheIle(roche);
           socle.add(roche);
           socle.userData.ilyosSocleRocheux = true;
           reprises++;
@@ -7393,6 +7422,27 @@
         return texture;
       }
 
+      // Archipel de pierre : la montagne KayKit retournée sous les châteaux est
+      // blanc-gris ; on la passe dans la roche gris-brun des coques d'îles.
+      // Matériau cloné une fois par matériau source (cache), jamais modifié
+      // sur place : le même asset sert à l'archipel lointain.
+      function kaykitTeinterRocheIle(objet) {
+        if (ILYOS_RENDU_ANCIEN || !objet || !kaykit3D) return;
+        kaykit3D.rocheIle = kaykit3D.rocheIle || new Map();
+        objet.traverse(child => {
+          if (!child.isMesh || !child.material) return;
+          const teinter = materiau => {
+            if (!kaykit3D.rocheIle.has(materiau.uuid)) {
+              const copie = materiau.clone();
+              copie.color?.multiply(new THREE.Color(0x8a8278));
+              kaykit3D.rocheIle.set(materiau.uuid, copie);
+            }
+            return kaykit3D.rocheIle.get(materiau.uuid);
+          };
+          child.material = Array.isArray(child.material) ? child.material.map(teinter) : teinter(child.material);
+        });
+      }
+
       function makeKayKitPedestal(ownerColor = null, { sanctuary = false } = {}) {
         // FUITE (corrigee) : appelee une fois par case en terre non-île a
         // CHAQUE synchronisation de scene (survol, selection, deplacement...),
@@ -7408,15 +7458,25 @@
           shape.moveTo(-.46, -.46); shape.lineTo(.46, -.46); shape.lineTo(.46, .46); shape.lineTo(-.46, .46); shape.closePath();
           return new THREE.ExtrudeGeometry(shape, { depth: .42, bevelEnabled: true, bevelSegments: 2, bevelSize: .055, bevelThickness: .05, steps: 1 });
         });
-        const topColor = sanctuary ? 0x8fd8d4 : 0x70bd72;
-        const sideColor = sanctuary ? 0x496f77 : 0x506949;
-        const topMat = new THREE.MeshStandardMaterial({ color: topColor, map: kaykitCanvasTexture(sanctuary ? 'sanctuary' : 'pedestal', sanctuary ? '#9fe8df' : '#79c77b', sanctuary ? '#5aaeb1' : '#4f9e61'), roughness: .82 });
-        const sideMat = new THREE.MeshStandardMaterial({ color: sideColor, roughness: .96 });
-        const mesh = new THREE.Mesh(geometry, [topMat, sideMat]);
-        mesh.rotation.x = Math.PI / 2;
-        mesh.position.y = .47;
-        mesh.castShadow = true; mesh.receiveShadow = true;
-        group.add(mesh);
+        if (!ILYOS_RENDU_ANCIEN && !sanctuary) {
+          // Archipel de pierre : le parvis du château est une dalle de marbre
+          // pâle, la même matière que les îles (variante 4), au lieu de
+          // l'ancien carré vert menthe.
+          const dalle = new THREE.Mesh(kaykitDalleGeometrie(), kaykitDalleMateriaux(4));
+          dalle.position.y = KAYKIT_LEVELS.board;
+          dalle.castShadow = true; dalle.receiveShadow = true;
+          group.add(dalle);
+        } else {
+          const topColor = sanctuary ? 0x8fd8d4 : 0x70bd72;
+          const sideColor = sanctuary ? 0x496f77 : 0x506949;
+          const topMat = new THREE.MeshStandardMaterial({ color: topColor, map: kaykitCanvasTexture(sanctuary ? 'sanctuary' : 'pedestal', sanctuary ? '#9fe8df' : '#79c77b', sanctuary ? '#5aaeb1' : '#4f9e61'), roughness: .82 });
+          const sideMat = new THREE.MeshStandardMaterial({ color: sideColor, roughness: .96 });
+          const mesh = new THREE.Mesh(geometry, [topMat, sideMat]);
+          mesh.rotation.x = Math.PI / 2;
+          mesh.position.y = .47;
+          mesh.castShadow = true; mesh.receiveShadow = true;
+          group.add(mesh);
+        }
         if (ownerColor !== null) {
           const outline = new THREE.LineLoop(
             kaykitGeometry("pedestal-outline-v1", () => new THREE.BufferGeometry().setFromPoints([
@@ -7452,6 +7512,7 @@
               child.castShadow = false;
               child.receiveShadow = false;
             });
+            kaykitTeinterRocheIle(roche);
             group.add(roche);
             group.userData.ilyosSocleRocheux = true;
           } else {
@@ -7462,7 +7523,7 @@
             // qu'au premier changement de couche d'île, ce qui serait trop tard.
             const underRock = new THREE.Mesh(
               kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
-              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
+              new THREE.MeshStandardMaterial({ color: kaykitHullTeinte(KAYKIT_HULL_COLORS_MID).getHex(), roughness: .92 })
             );
             underRock.rotation.x = Math.PI;
             underRock.position.y = -.36;
@@ -9224,9 +9285,14 @@
       // orientées vers le bas de la coque que le flanc KayKit (faces plus
       // variées). But : rester crédible côté soleil ET côté ombre, pas un
       // calibrage parfait dans un seul cas.
-      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(0xaf5f37);    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
-      const KAYKIT_HULL_COLOR_MID = new THREE.Color(0x8f5228);    // moins orangé, plus minéral — même famille
-      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(0x4a3223); // roche profonde, jamais noire
+      // Archipel de pierre : la coque prolonge la maçonnerie grise des dalles et
+      // descend vers une roche brune profonde (texture falaise, voir
+      // kaykitIslandHullMaterial).
+      // [îles d'herbe KayKit, Archipel de pierre] : la roche de l'archipel est grise.
+      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c)];    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c)]; // roche profonde, jamais noire
+      const kaykitHullTeinte = couleurs => couleurs[ILYOS_RENDU_ANCIEN ? 0 : 1];
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -9238,8 +9304,9 @@
         const span = yTop - yBottom || 1;
         const t = Math.min(1, Math.max(0, (yTop - y) / span));
         const color = new THREE.Color();
-        if (t <= KAYKIT_HULL_COLOR_MID_T) color.lerpColors(KAYKIT_HULL_COLOR_TOP, KAYKIT_HULL_COLOR_MID, t / KAYKIT_HULL_COLOR_MID_T);
-        else color.lerpColors(KAYKIT_HULL_COLOR_MID, KAYKIT_HULL_COLOR_BOTTOM, (t - KAYKIT_HULL_COLOR_MID_T) / (1 - KAYKIT_HULL_COLOR_MID_T));
+        const top = kaykitHullTeinte(KAYKIT_HULL_COLORS_TOP), mid = kaykitHullTeinte(KAYKIT_HULL_COLORS_MID);
+        if (t <= KAYKIT_HULL_COLOR_MID_T) color.lerpColors(top, mid, t / KAYKIT_HULL_COLOR_MID_T);
+        else color.lerpColors(mid, kaykitHullTeinte(KAYKIT_HULL_COLORS_BOTTOM), (t - KAYKIT_HULL_COLOR_MID_T) / (1 - KAYKIT_HULL_COLOR_MID_T));
         // Variation de luminosité très subtile et déterministe (±4%) pour
         // casser l'uniformité plate sans bruit visible ni texture — un
         // multiplicateur par sommet, pas un motif.
@@ -9432,12 +9499,18 @@
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
         geometry.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        // UV « falaise » : le long du pourtour (x + z) et en hauteur, pour que
+        // la roche striée de l'Archipel de pierre habille la coque.
+        const uv = [];
+        for (let i = 0; i < pos.length; i += 3) uv.push((pos[i] + pos[i + 2]) * 1.1, pos[i + 1] * 1.1);
+        geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
         geometry.computeVertexNormals();
         return geometry;
       }
 
-      let kaykitHullMaterialCache = null;
+      const kaykitHullMaterialCache = { herbe: null, archipel: null };
       function kaykitIslandHullMaterial() {
+        const rendu = ILYOS_RENDU_ANCIEN ? "herbe" : "archipel";
         // Matériau construit directement (pas via kaykitMaterial, qui ne
         // propage pas vertexColors et n'en tient pas compte dans sa clé de
         // cache) : un seul matériau pour toute la coque, dégradé terre KayKit
@@ -9447,15 +9520,20 @@
         // géométrie main-codée n'a pas un winding garanti cohérent sur
         // chaque face (parois + fond triangulé indépendamment) ; DoubleSide
         // élimine tout risque de face culled selon l'angle de vue.
-        if (kaykitHullMaterialCache) return kaykitHullMaterialCache;
+        if (kaykitHullMaterialCache[rendu]) return kaykitHullMaterialCache[rendu];
         // roughness légèrement relevée (.85 → .90) : matière mate, réduit le
         // léger lobe spéculaire résiduel sur les faces quasi verticales
         // (ringA) directement face au soleil de la scène B, sans toucher à
         // l'éclairage global — la réponse du matériau, pas la lumière.
-        kaykitHullMaterialCache = new THREE.MeshStandardMaterial({
+        const materiau = new THREE.MeshStandardMaterial({
           color: 0xffffff, roughness: .90, metalness: 0, side: THREE.DoubleSide, vertexColors: true
         });
-        return kaykitHullMaterialCache;
+        if (!ILYOS_RENDU_ANCIEN) {
+          materiau.map = kaykitPierreTexture("falaise-couleur", true, 1);
+          materiau.normalMap = kaykitPierreTexture("falaise-normale", false, 1);
+          materiau.normalScale = new THREE.Vector2(1.4, 1.4);
+        }
+        return (kaykitHullMaterialCache[rendu] = materiau);
       }
 
       // Une coque par composante connexe (jamais un polygone reliant deux
@@ -9473,7 +9551,7 @@
           const anchor = kaykitCellPosition(anchorR, anchorC, 0);
           const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
           const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
-          const geometry = kaykitGeometry(`island-hull-v2:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          const geometry = kaykitGeometry(`island-hull-v3:${ILYOS_RENDU_ANCIEN ? "herbe" : "archipel"}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
           hull.castShadow = false;
@@ -9640,6 +9718,344 @@
         return material;
       }
 
+
+      /* ==================================================================
+         ARCHIPEL DE PIERRE — dalles des îles jouables (refonte visuelle).
+
+         Le cube d'herbe Block Bits se lisait comme un jouet (aplat vert
+         menthe, terre orange). Chaque case devient une dalle de pierre grise
+         gravée (liseré + médaillon), plus ou moins gagnée par l'herbe, posée
+         sur une île de roche dont les bords laissent retomber du lierre —
+         direction validée sur l'image de référence de Taekun (2026-10-07).
+
+         Les six variantes gardent le rôle de ILYOS_ISLAND_TINTS : deux îles
+         voisines ne prennent jamais la même (buildIlyosIslandColorMap). On
+         les distingue par la teinte de la pierre et le vert de l'herbe.
+
+         Textures : Poly Haven (CC0), réduites en 512 px dans assets/pierre/
+         — voir docs/ASSETS.md. Tant qu'elles chargent, la dalle s'affiche
+         avec la pierre et la mousse procédurales seules : même canvas,
+         redessiné à l'arrivée de l'image (aucune reconstruction de l'île).
+
+         `?rendu=ancien` dans l'URL rend les cubes Block Bits d'origine, pour
+         comparer avant/après sur une même préversion (ILYOS_RENDU_ANCIEN).
+         ================================================================== */
+      // Pierre grise de dallage, légèrement chaude ou froide selon l'île ;
+      // `mousse` : part de la dalle gagnée par l'herbe (moyenne, la case
+      // tire ensuite « peu » ou « beaucoup » autour de cette valeur).
+      const ILYOS_PIERRE_VARIANTES = [
+        { pierre: 0x77736b, herbe: 0x3d5c1d, mousse: .42, flanc: 0x5a534b }, // gris chaud
+        { pierre: 0x6a6d70, herbe: 0x33521b, mousse: .55, flanc: 0x4d4e52 }, // gris froid
+        { pierre: 0x82786a, herbe: 0x465c22, mousse: .34, flanc: 0x5e5449 }, // gris beige
+        { pierre: 0x686b76, herbe: 0x315020, mousse: .48, flanc: 0x4b4b56 }, // gris bleuté
+        { pierre: 0x8a867d, herbe: 0x4a6424, mousse: .28, flanc: 0x635e57 }, // pierre claire
+        { pierre: 0x6f675c, herbe: 0x38521a, mousse: .60, flanc: 0x534a42 }  // gris brun
+      ];
+
+      const KAYKIT_DALLE_DEMI = KAYKIT_CELL_SPACING / 2 - .004; // emprise au milieu du chanfrein
+      const KAYKIT_DALLE_BISEAU = .025;
+      // Dessus à KAYKIT_LEVELS.islandTop : les gardiens (kaykitCellSurfaceY)
+      // posent les pieds sur la pierre au lieu de s'y enfoncer.
+      const KAYKIT_DALLE_HAUTEUR = KAYKIT_LEVELS.islandTop - KAYKIT_LEVELS.board;
+      const KAYKIT_DALLE_FORME = KAYKIT_DALLE_DEMI - KAYKIT_DALLE_BISEAU; // contour des faces haut/bas
+
+      function kaykitPierreImage(nom) {
+        if (!kaykit3D) return null;
+        kaykit3D.pierreImages = kaykit3D.pierreImages || new Map();
+        if (kaykit3D.pierreImages.has(nom)) return kaykit3D.pierreImages.get(nom);
+        const entree = { image: null, abonnes: [] };
+        kaykit3D.pierreImages.set(nom, entree);
+        const image = new Image();
+        image.onload = () => {
+          entree.image = image;
+          entree.abonnes.splice(0).forEach(rappel => { try { rappel(image); } catch (erreur) { console.warn(erreur); } });
+          scheduleKayKitSync();
+        };
+        image.onerror = () => console.warn(`Texture de pierre introuvable : ${nom}`);
+        image.src = `./assets/pierre/${nom}.jpg`;
+        return entree;
+      }
+
+      function kaykitQuandPierrePrete(nom, rappel) {
+        const entree = kaykitPierreImage(nom);
+        if (!entree) return;
+        if (entree.image) rappel(entree.image);
+        else entree.abonnes.push(rappel);
+      }
+
+      // Bruit de valeur lissé, déterministe : de quoi poser des plaques de
+      // mousse organiques sans dépendance ni texture supplémentaire.
+      function kaykitBruitPierre(graine) {
+        const h = (x, y) => {
+          const s = Math.sin(x * 127.1 + y * 311.7 + graine * 74.7) * 43758.5453;
+          return s - Math.floor(s);
+        };
+        const lisse = t => t * t * (3 - 2 * t);
+        const valeur = (x, y) => {
+          const xi = Math.floor(x), yi = Math.floor(y);
+          const xf = lisse(x - xi), yf = lisse(y - yi);
+          const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+          return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
+        };
+        return (x, y) => valeur(x, y) * .55 + valeur(x * 2.1, y * 2.1) * .3 + valeur(x * 4.3, y * 4.3) * .15;
+      }
+
+      // Dalle gravée : un liseré en creux à 9 % du bord et un médaillon
+      // (deux cercles) au centre, comme un dallage de sanctuaire ancien.
+      // Le creux est un trait sombre doublé d'un trait clair décalé vers
+      // la lumière : la gravure se lit sans géométrie supplémentaire.
+      function kaykitGraverDalle(ctx, T) {
+        const trait = (dessin, couleur, decalage, largeur) => {
+          ctx.save();
+          ctx.translate(decalage, decalage);
+          ctx.strokeStyle = couleur;
+          ctx.lineWidth = largeur;
+          ctx.beginPath();
+          dessin();
+          ctx.stroke();
+          ctx.restore();
+        };
+        const m = T * .09, rayon = T * .2, rayon2 = T * .13;
+        const cadre = () => ctx.rect(m, m, T - 2 * m, T - 2 * m);
+        const medaillon = () => { ctx.moveTo(T / 2 + rayon, T / 2); ctx.arc(T / 2, T / 2, rayon, 0, Math.PI * 2); ctx.moveTo(T / 2 + rayon2, T / 2); ctx.arc(T / 2, T / 2, rayon2, 0, Math.PI * 2); };
+        const croisillons = () => {
+          [[T / 2, m, T / 2, T / 2 - rayon], [T / 2, T / 2 + rayon, T / 2, T - m], [m, T / 2, T / 2 - rayon, T / 2], [T / 2 + rayon, T / 2, T - m, T / 2]]
+            .forEach(([x1, y1, x2, y2]) => { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); });
+        };
+        [cadre, medaillon, croisillons].forEach((dessin, i) => {
+          const l = T * (i === 2 ? .006 : .009);
+          trait(dessin, "rgba(255,248,232,.35)", T * .005, l);
+          trait(dessin, "rgba(20,17,14,.7)", 0, l);
+        });
+      }
+
+      function kaykitPixelsImage(image, T, recadrage = 1, ox = 0, oy = 0) {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = T;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const cote = image.width * recadrage;
+        ctx.drawImage(image, (image.width - cote) * ox, (image.height - cote) * oy, cote, cote, 0, 0, T, T);
+        return ctx.getImageData(0, 0, T, T).data;
+      }
+
+      function kaykitDessinerDalle(canvas, variante, index, moussue, images) {
+        const T = canvas.width;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const pierre = new THREE.Color(variante.pierre);
+        const herbe = new THREE.Color(variante.herbe);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = `#${pierre.getHexString()}`;
+        ctx.fillRect(0, 0, T, T);
+        if (images.pierre) {
+          // Grain réel de la pierre (photo), recoloré par la variante.
+          ctx.globalCompositeOperation = "luminosity";
+          ctx.globalAlpha = .7;
+          const cote = images.pierre.width * .4;
+          ctx.drawImage(images.pierre, (images.pierre.width - cote) * ((index * .37) % 1), (images.pierre.height - cote) * ((index * .61) % 1), cote, cote, 0, 0, T, T);
+          ctx.globalCompositeOperation = "soft-light";
+          ctx.globalAlpha = .5;
+          ctx.fillRect(0, 0, T, T);
+          ctx.globalAlpha = 1;
+          ctx.globalCompositeOperation = "source-over";
+        }
+        kaykitGraverDalle(ctx, T);
+        const donnees = ctx.getImageData(0, 0, T, T);
+        const px = donnees.data;
+        const brins = images.herbe ? kaykitPixelsImage(images.herbe, T, .5, (index * .29) % 1, (index * .53) % 1) : null;
+        const graine = index * 2 + (moussue ? 1 : 0) + 1;
+        const bruit = kaykitBruitPierre(graine);
+        const bruitFin = kaykitBruitPierre(graine + 17);
+        const part = Math.min(.72, variante.mousse * (moussue ? 1.3 : .6));
+        for (let y = 0; y < T; y++) {
+          for (let x = 0; x < T; x++) {
+            const u = x / (T - 1), v = y / (T - 1);
+            const bord = Math.min(u, v, 1 - u, 1 - v); // 0 au bord, .5 au centre
+            const n = bruit(u * 4.2, v * 4.2);
+            const nf = bruitFin(u * 26, v * 26);
+            // L'herbe sort des joints puis s'étale en plaques : bord + bruit.
+            const versBord = Math.max(0, 1 - bord / (.06 + part * .12));
+            let m = (n - (1 - part) * .9) * 4 + versBord * 1.2;
+            m = Math.min(1, Math.max(0, m + (nf - .5) * .6));
+            m = m * m * (3 - 2 * m);
+            const i = (y * T + x) * 4;
+            const usure = .82 + n * .2;
+            let r = px[i] * usure, g = px[i + 1] * usure, b = px[i + 2] * usure;
+            let hr, hg, hb;
+            if (brins) {
+              // La photo d'herbe donne les brins ; la variante, le vert.
+              const l = .5 + (brins[i] * .3 + brins[i + 1] * .59 + brins[i + 2] * .11) / 240;
+              hr = herbe.r * 255 * l; hg = herbe.g * 255 * l; hb = herbe.b * 255 * l;
+            } else {
+              const l = .75 + nf * .5;
+              hr = herbe.r * 255 * l; hg = herbe.g * 255 * l; hb = herbe.b * 255 * l;
+            }
+            r += (hr - r) * m; g += (hg - g) * m; b += (hb - b) * m;
+            const ombre = bord < .02 ? .7 + bord / .02 * .3 : 1;
+            px[i] = Math.min(255, r * ombre); px[i + 1] = Math.min(255, g * ombre); px[i + 2] = Math.min(255, b * ombre);
+          }
+        }
+        ctx.putImageData(donnees, 0, 0);
+      }
+
+      function kaykitDalleMateriaux(variantIndex, moussue = false) {
+        const index = Math.max(0, Number(variantIndex) || 0) % ILYOS_PIERRE_VARIANTES.length;
+        const cle = `${index}:${moussue ? 1 : 0}`;
+        kaykit3D.dalleMateriaux = kaykit3D.dalleMateriaux || new Map();
+        if (kaykit3D.dalleMateriaux.has(cle)) return kaykit3D.dalleMateriaux.get(cle);
+        const variante = ILYOS_PIERRE_VARIANTES[index];
+
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 256;
+        const images = {};
+        kaykitDessinerDalle(canvas, variante, index, moussue, images);
+        const carte = new THREE.CanvasTexture(canvas);
+        carte.encoding = THREE.sRGBEncoding;
+        carte.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+        const dessus = new THREE.MeshStandardMaterial({ color: 0xffffff, map: carte, roughness: .9, metalness: 0 });
+        // Flanc : maçonnerie de la même pierre, plus sombre ; le chanfrein
+        // du haut appartient aussi à ce groupe de faces.
+        const flanc = new THREE.MeshStandardMaterial({ color: variante.flanc, roughness: .94, metalness: 0 });
+
+        const redessiner = () => {
+          canvas.width = canvas.height = 512;
+          kaykitDessinerDalle(canvas, variante, index, moussue, images);
+          carte.needsUpdate = true;
+        };
+        kaykitQuandPierrePrete("dalle-couleur", image => { images.pierre = image; redessiner(); });
+        kaykitQuandPierrePrete("herbe-couleur", image => { images.herbe = image; redessiner(); });
+        const normaleDessus = kaykitPierreTexture("dalle-normale", false, 1);
+        if (normaleDessus) { dessus.normalMap = normaleDessus; dessus.normalScale = new THREE.Vector2(.8, .8); }
+        const couleurFlanc = kaykitPierreTexture("falaise-couleur", true, 2.2);
+        const normaleFlanc = kaykitPierreTexture("falaise-normale", false, 2.2);
+        if (couleurFlanc) flanc.map = couleurFlanc;
+        if (normaleFlanc) { flanc.normalMap = normaleFlanc; flanc.normalScale = new THREE.Vector2(1.1, 1.1); }
+
+        const materiaux = [dessus, flanc];
+        materiaux.forEach(materiau => { materiau.userData.ilyosSharedIslandTint = true; });
+        kaykit3D.dalleMateriaux.set(cle, materiaux);
+        return materiaux;
+      }
+
+      function kaykitPierreTexture(nom, couleur, repetition) {
+        if (!kaykit3D?.textureLoader) return null;
+        const cle = `pierre:${nom}:${repetition}`;
+        if (kaykit3D.textureCache.has(cle)) return kaykit3D.textureCache.get(cle);
+        const texture = kaykit3D.textureLoader.load(`./assets/pierre/${nom}.jpg`, () => scheduleKayKitSync());
+        texture.encoding = couleur ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(repetition, repetition);
+        texture.anisotropy = Math.min(8, kaykit3D?.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+        kaykit3D.textureCache.set(cle, texture);
+        return texture;
+      }
+
+      function kaykitDalleGeometrie() {
+        return kaykitGeometry("dalle-pierre-v3", () => {
+          const d = KAYKIT_DALLE_FORME, r = .05;
+          const forme = new THREE.Shape();
+          forme.moveTo(-d + r, -d);
+          forme.lineTo(d - r, -d); forme.quadraticCurveTo(d, -d, d, -d + r);
+          forme.lineTo(d, d - r); forme.quadraticCurveTo(d, d, d - r, d);
+          forme.lineTo(-d + r, d); forme.quadraticCurveTo(-d, d, -d, d - r);
+          forme.lineTo(-d, -d + r); forme.quadraticCurveTo(-d, -d, -d + r, -d);
+          const uvDessus = (x, y) => new THREE.Vector2((x + d) / (2 * d), (y + d) / (2 * d));
+          const generateur = {
+            generateTopUV(geometry, v, a, b, c) {
+              return [uvDessus(v[a * 3], v[a * 3 + 1]), uvDessus(v[b * 3], v[b * 3 + 1]), uvDessus(v[c * 3], v[c * 3 + 1])];
+            },
+            generateSideWallUV(geometry, v, a, b, c, dd) {
+              // Coordonnée le long du pourtour (x + y) et hauteur : la strie
+              // de la falaise reste horizontale tout autour de la dalle.
+              const uv = i => new THREE.Vector2((v[i * 3] + v[i * 3 + 1]) * 1.1, v[i * 3 + 2] * 1.1);
+              return [uv(a), uv(b), uv(c), uv(dd)];
+            }
+          };
+          const epaisseur = KAYKIT_DALLE_HAUTEUR - KAYKIT_DALLE_BISEAU * 2;
+          const geometrie = new THREE.ExtrudeGeometry(forme, {
+            depth: epaisseur, steps: 1, curveSegments: 3,
+            bevelEnabled: true, bevelSegments: 2, bevelSize: KAYKIT_DALLE_BISEAU, bevelThickness: KAYKIT_DALLE_BISEAU,
+            UVGenerator: generateur
+          });
+          // Extrusion le long de -Y : dessus à y = 0, dessous à y = -.46 —
+          // puis remontée pour poser la dalle sur targetFloor 0 comme le bloc.
+          geometrie.rotateX(Math.PI / 2);
+          geometrie.translate(0, KAYKIT_DALLE_HAUTEUR - KAYKIT_DALLE_BISEAU, 0);
+          return geometrie;
+        });
+      }
+
+      function makeKayKitDalle(island, r, c) {
+        // Une case sur trois environ est franchement gagnée par l'herbe.
+        const moussue = kaykitHash("dalle-mousse", r, c) < .38;
+        const dalle = new THREE.Mesh(kaykitDalleGeometrie(), kaykitDalleMateriaux(island?.visualVariant, moussue));
+        // Quart de tour tiré de la case : la même photo ne se répète pas à
+        // l'identique d'une dalle à l'autre.
+        dalle.rotation.y = Math.floor(kaykitHash("dalle-rotation", r, c) * 4) * Math.PI / 2;
+        dalle.castShadow = true;
+        dalle.receiveShadow = true;
+        return dalle;
+      }
+      /* Lierre et mousse qui retombent des bords d'île : un rideau découpé
+         (alphaTest) posé contre chaque flanc extérieur. Trois motifs
+         générés une fois, tirés par arête ; une arête sur trois reste nue. */
+      function kaykitLierreMateriau(motif) {
+        kaykit3D.lierreMateriaux = kaykit3D.lierreMateriaux || new Map();
+        if (kaykit3D.lierreMateriaux.has(motif)) return kaykit3D.lierreMateriaux.get(motif);
+        const L = 256, H = 128;
+        const canvas = document.createElement("canvas");
+        canvas.width = L; canvas.height = H;
+        const ctx = canvas.getContext("2d");
+        const alea = i => { const x = Math.sin((i + 1) * 91.7 + motif * 37.3) * 43758.5453; return x - Math.floor(x); };
+        // Bande de mousse continue en haut, plus ou moins épaisse.
+        for (let x = 0; x < L; x += 2) {
+          const h = 10 + alea(x) * 14 + Math.sin(x * .07 + motif) * 5;
+          ctx.fillStyle = `hsl(${88 + alea(x + 500) * 18}, ${32 + alea(x + 900) * 12}%, ${13 + alea(x + 300) * 9}%)`;
+          ctx.fillRect(x, 0, 2, h);
+        }
+        // Lianes : traits ondulés semés de feuilles.
+        for (let k = 0; k < 14; k++) {
+          let x = alea(k * 7) * L;
+          const longueur = 25 + alea(k * 11) * (H - 30);
+          for (let y = 8; y < longueur; y += 3) {
+            x += (alea(k * 13 + y) - .5) * 2.2;
+            const t = 1 - y / H;
+            ctx.fillStyle = `hsl(${84 + alea(k + y) * 24}, 36%, ${11 + alea(y * 3 + k) * 11}%)`;
+            ctx.beginPath();
+            ctx.ellipse(x, y, 2.6 * t + 1.2, 2 * t + 1, alea(y + k) * 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        const materiau = new THREE.MeshStandardMaterial({ map: texture, alphaTest: .5, transparent: false, side: THREE.DoubleSide, roughness: .95, metalness: 0 });
+        kaykit3D.lierreMateriaux.set(motif, materiau);
+        return materiau;
+      }
+
+      function addKayKitIslandLierre(group, island, cells) {
+        const dans = new Set(cells.map(([r, c]) => `${r},${c}`));
+        const largeur = KAYKIT_CELL_SPACING, hauteur = .3;
+        const geometrie = kaykitGeometry("lierre-rideau-v1", () => new THREE.PlaneGeometry(largeur, hauteur));
+        cells.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dr, dc]) => {
+            if (dans.has(`${r + dr},${c + dc}`)) return;
+            const tirage = kaykitHash("lierre", island?.id, r, c, dr, dc);
+            if (tirage < .33) return;
+            const rideau = new THREE.Mesh(geometrie, kaykitLierreMateriau(Math.floor(tirage * 30) % 3));
+            const ecart = KAYKIT_CELL_SPACING / 2 + .006;
+            rideau.position.set(p.x + dc * ecart, KAYKIT_LEVELS.islandTop - hauteur / 2 + .012, p.z + dr * ecart);
+            // Voisin manquant en ligne : rideau face à ±Z ; en colonne : ±X.
+            rideau.rotation.y = dr === 0 ? Math.PI / 2 : 0;
+            rideau.castShadow = false;
+            rideau.receiveShadow = true;
+            rideau.raycast = () => {};
+            group.add(rideau);
+          });
+        });
+      }
+
       function makeKayKitIslandBlock(island, { preview = false, valid = true, previewMode = "placement" } = {}) {
         const group = new THREE.Group();
         group.userData.islandBlock = true;
@@ -9677,6 +10093,16 @@
 
         cells.forEach(([r, c]) => {
           const p = kaykitCellPosition(r, c, 0);
+          if (!ILYOS_RENDU_ANCIEN) {
+            const dalle = makeKayKitDalle(island, r, c);
+            tintPreview(dalle);
+            if (preview) dalle.castShadow = false;
+            dalle.position.set(p.x, KAYKIT_LEVELS.board, p.z);
+            dalle.renderOrder = preview ? 20 : 4;
+            group.add(dalle);
+            if (!preview) registerKayKitCellVisual(r, c, dalle);
+            return;
+          }
           let block = cloneKayKitAsset('blockBitsGrassDirt', {
             exactWidth: KAYKIT_BLOCK_SIZE,
             exactDepth: KAYKIT_BLOCK_SIZE,
@@ -9714,6 +10140,7 @@
         });
 
         if (!preview) addKayKitIslandHull(group, island, cells);
+        if (!preview && !ILYOS_RENDU_ANCIEN) addKayKitIslandLierre(group, island, cells);
 
         if (preview) {
           // FUITE (corrigee) : contour d'île, sa forme varie a chaque case
@@ -10178,6 +10605,11 @@
         const previewIsland = { id: "placement-preview", owner: null, cells: previewCells };
         const block = makeKayKitIslandBlock(previewIsland, { preview: true, valid, previewMode: "placement" });
         kaykit3D.dynamicGroup.add(block);
+        // Créer son duel : le reflet que recevra l'adversaire, même verdict.
+        if (state.draft?.miroir) {
+          const reflet = { id: "placement-preview-miroir", owner: null, cells: mirrorPresetCells(previewCells) };
+          kaykit3D.dynamicGroup.add(makeKayKitIslandBlock(reflet, { preview: true, valid, previewMode: "placement" }));
+        }
         // Pas de fondu ici : ce ghost est reconstruit à chaque déplacement de
         // souris via un resync complet de la scène (déjà coûteux en soi), et
         // traverser+enregistrer chaque mesh du bloc dans animatedObjects à
@@ -10605,7 +11037,9 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
-        const playerId = character.player ?? 0;
+        // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
+        // char.player suit le joueur qui commande (voir confierGardiensEquipe).
+        const playerId = proprietaireGardien(character) ?? 0;
         // Gardien choisi dans la collection (progression.js) : tous les
         // gardiens de ce joueur prennent ce modèle.
         const choisi = state.players[playerId]?.heros;
@@ -10619,7 +11053,7 @@
             3: ["hero3", "hero1"]
           };
         const teamPool = teamHeroPools[playerId] || teamHeroPools[0];
-        const teamIndex = state.characters.filter((item, itemIndex) => itemIndex < index && (item.player ?? 0) === playerId).length;
+        const teamIndex = state.characters.filter((item, itemIndex) => itemIndex < index && (proprietaireGardien(item) ?? 0) === playerId).length;
         return teamPool[teamIndex % teamPool.length];
       }
 
@@ -10639,7 +11073,7 @@
       }
 
       function createCharacterVisual(character, index) {
-        const playerId = character.player ?? 0;
+        const playerId = proprietaireGardien(character) ?? 0;
         const assetKey = resolveHeroAssetKey(character, index);
         // Modèle encore en cours de chargement (pas encore dans assets, pas
         // encore marqué en échec) : on attend plutôt que de poser un modèle
@@ -10898,6 +11332,61 @@
       /* ----------------------------------------------------------------
        * Synchronisation : mise à jour incrémentale du registre.
        * ---------------------------------------------------------------- */
+      /* Plaque d'équipe : un carré lumineux à la couleur du joueur sous
+         chaque gardien (Archipel de pierre). On lit d'un coup d'œil à qui
+         appartient chaque figurine, même de loin. La plaque est enfant du
+         gardien pour le suivre pendant ses déplacements, mais reste alignée
+         sur la grille (contre-rotation dans la boucle d'animation). */
+      function kaykitPlaqueTexture() {
+        const cle = "plaque-equipe-v1";
+        if (kaykit3D.materials.has(cle)) return kaykit3D.materials.get(cle);
+        const T = 128;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = T;
+        const ctx = canvas.getContext("2d");
+        const fond = ctx.createRadialGradient(T / 2, T / 2, T * .1, T / 2, T / 2, T * .62);
+        fond.addColorStop(0, "rgba(255,255,255,.18)");
+        fond.addColorStop(1, "rgba(255,255,255,.6)");
+        ctx.fillStyle = fond;
+        ctx.fillRect(T * .06, T * .06, T * .88, T * .88);
+        ctx.strokeStyle = "rgba(255,255,255,1)";
+        ctx.lineWidth = T * .035;
+        ctx.strokeRect(T * .07, T * .07, T * .86, T * .86);
+        ctx.lineWidth = T * .012;
+        ctx.strokeStyle = "rgba(255,255,255,.6)";
+        ctx.strokeRect(T * .15, T * .15, T * .7, T * .7);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.encoding = THREE.sRGBEncoding;
+        kaykit3D.materials.set(cle, texture);
+        return texture;
+      }
+
+      /* Ce qui ne se rebâtit pas avec le calque d'îles : les nuages KayKit en
+         boule au ras du plateau, retirés de l'archipel (le ciel peint porte
+         déjà ses nuages). */
+      function kaykitAppliquerRenduIles() {
+        const nuages = kaykit3D?.dynamicGroup?.getObjectByName("ilyos-board-clouds");
+        if (nuages) nuages.visible = ILYOS_RENDU_ANCIEN;
+      }
+
+      function attacherPlaqueEquipe(visual, character) {
+        const couleur = state?.players?.[character.player]?.color;
+        if (couleur === undefined || couleur === null) return;
+        const plaque = new THREE.Mesh(
+          kaykitGeometry("plaque-equipe-v1", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .86, KAYKIT_CELL_SPACING * .86)),
+          new THREE.MeshBasicMaterial({ map: kaykitPlaqueTexture(), color: new THREE.Color(couleur).offsetHSL(0, .15, .05), transparent: true, opacity: .9, depthWrite: false, toneMapped: false })
+        );
+        plaque.rotation.x = -Math.PI / 2;
+        const pivot = new THREE.Group();
+        pivot.position.y = .014;
+        pivot.add(plaque);
+        pivot.raycast = () => {};
+        plaque.raycast = () => {};
+        plaque.renderOrder = 6;
+        visual.wrapper.add(pivot);
+        visual.plaque = pivot;
+      }
+
       function syncKayKitCharacters(artifactByCarrier, nextCharacterHistory) {
         if (!kaykit3D?.characterGroup) return;
         const seen = new Set();
@@ -10922,6 +11411,12 @@
           // apparaîtra dès que son modèle sera prêt, à la prochaine
           // synchronisation (assets locaux, attente très brève).
           if (!visual) return;
+          if (!ILYOS_RENDU_ANCIEN && !visual.plaque) attacherPlaqueEquipe(visual, character);
+          else if (ILYOS_RENDU_ANCIEN && visual.plaque) {
+            visual.plaque.traverse(o => { if (o.isMesh) o.material.dispose(); });
+            visual.plaque.parent?.remove(visual.plaque);
+            visual.plaque = null;
+          }
 
           // Un gardien réellement nouveau (pose d'île) joue son apparition ;
           // ceux reconstruits au chargement d'une sauvegarde ou à la reprise
@@ -11824,6 +12319,8 @@
             }
           }
 
+          if (visual.plaque) visual.plaque.rotation.y = -visual.wrapper.rotation.y;
+
           /* --- 2. Orientation --------------------------------------- */
           // Une rotation progressive, jamais instantanée : c'est l'anticipation
           // qui rend un déplacement lisible. ~10 rad/s couvre un demi-tour en
@@ -12066,8 +12563,11 @@
         const amount = cells.length >= 7 ? 2 : 1;
         for (let index = 0; index < Math.min(amount, cells.length); index++) {
           const [r, c] = cells[index];
-          const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * KAYKIT_FOREST_ASSETS.length) % KAYKIT_FOREST_ASSETS.length;
-          const spec = KAYKIT_FOREST_ASSETS[pick];
+          // Archipel de pierre : l'arbre KayKit (cube vert sur bâton) et le
+          // rocher cubique jurent avec la pierre ; on ne garde que l'herbe.
+          const decors = ILYOS_RENDU_ANCIEN ? KAYKIT_FOREST_ASSETS : KAYKIT_FOREST_ASSETS.filter(decor => decor.key === "forestGrass");
+          const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * decors.length) % decors.length;
+          const spec = decors[pick];
           const object = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
           if (!object) continue;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
@@ -12126,6 +12626,15 @@
         const __perfStart = window.ILYOS_PERF ? performance.now() : 0;
         try {
           resizeKayKit3D();
+          // Îles d'herbe ↔ Archipel de pierre (collection) : tout le calque
+          // d'îles est rebâti, avec piédestaux et décor.
+          if (ILYOS_RENDU_ANCIEN === kaykitArchipelDemande()) {
+            ILYOS_RENDU_ANCIEN = !ILYOS_RENDU_ANCIEN;
+            kaykit3D.islandObjectRegistry.forEach(entry => disposeKayKitObjects(entry.objects));
+            kaykit3D.islandObjectRegistry.clear();
+            kaykit3D.islandsSignature = null;
+            kaykitAppliquerRenduIles();
+          }
           // Rebâtit grille + cases-cibles si la taille du plateau a changé.
           syncKayKitBoardGrid();
           // SYNCHRONISATION INCRÉMENTALE (V77) : dynamicGroup n'est plus vidé en
@@ -12178,6 +12687,7 @@
           if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
             buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
+            kaykitAppliquerRenduIles();
           }
 
           // Ciel : bascule vers l'image équirectangulaire dès qu'elle a fini de charger
@@ -13403,6 +13913,8 @@
       }
 
 
+      const CREER_SON_DUEL = "creer";
+
       function symmetricSetupOptionsHTML() {
         return Object.keys(SYMMETRIC_DUEL_SETUPS)
           .map(id => {
@@ -13412,7 +13924,10 @@
             ).length;
             return `<option value="${id}">${setup.name} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
           })
-          .join("");
+          .join("")
+          // Créer son duel : pas de préréglage, le joueur 1 pose sa moitié et
+          // la pose se reflète chez l'adversaire (startCustomDraft, miroir).
+          + `<option value="${CREER_SON_DUEL}">Créer son duel — À vous de poser, en miroir</option>`;
       }
 
       function boardSizeControlHTML() {
@@ -13475,7 +13990,21 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const setup = symmetricSetup(setupId);
+        const creer = setupId === CREER_SON_DUEL;
+        const setup = creer
+          ? {
+            name: "Créer son duel",
+            description: "Composez le plateau de départ : posez vos îles puis vos gardiens sur votre moitié, chaque pose se reflète aussitôt dans le camp adverse. Les deux camps restent parfaitement symétriques.",
+            style: "Miroir",
+            islands: [],
+            characters: []
+          }
+          : symmetricSetup(setupId);
+        /* Les quantités du Personnalisé servent aussi à Créer son duel. */
+        els.customSetupControls?.classList.toggle("hidden", !creer && !setupOverlayIsCustom());
+        if (els.confirmSymmetricSetupBtn && !els.confirmSymmetricSetupBtn.disabled && !setupOverlayIsCustom()) {
+          els.confirmSymmetricSetupBtn.textContent = creer ? "Créer mon duel" : "Lancer ce setup";
+        }
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -13488,12 +14017,15 @@
 
         if (name) name.textContent = setup.name;
         if (description) description.textContent = setup.description;
-        if (islandCount) islandCount.textContent = `${setup.islands.length} îles`;
+        if (islandCount) islandCount.textContent = creer ? "Vos îles" : `${setup.islands.length} îles`;
         if (characterCount) {
-          characterCount.textContent = `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
+          characterCount.textContent = creer
+            ? "Vos gardiens"
+            : `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
         }
         if (style) style.textContent = setup.style;
         if (!preview) return;
+        preview.classList.toggle("preview-miroir", creer);
 
         const islandMap = new Map();
         setup.islands.forEach(island => {
@@ -13694,7 +14226,7 @@
             </select>
           </label>
           <label class="mode-option-row" for="teamVillagesSelect">
-            <span><b>Villages</b><small>En équipe, J1 et J3 partagent les deux villages d’une diagonale, J2 et J4 ceux de l’autre.</small></span>
+            <span><b>Villages</b><small>En diagonale d’équipe, J1 et J3 partagent les deux villages d’une diagonale, leurs gardiens et leurs couronnes ; J2 et J4 de même.</small></span>
             <select id="teamVillagesSelect">
               <option value="solo" selected>Un village par joueur</option>
               <option value="team">Diagonale partagée par l’équipe</option>
@@ -13781,7 +14313,7 @@
             ? player.villages
             : [player.village || CORNERS[index] || CORNERS[0]],
           score: Number(player.score || 0),
-          deck: (Array.isArray(player.deck) ? player.deck : createDeck(index))
+          deck: (Array.isArray(player.deck) ? player.deck : createDeck(index, compositionPaquet(raw.rules)))
             .filter(card => !card.fromStash)
             .map(card => ({ ...card, used: false, fromStash: false })),
           discard: (Array.isArray(player.discard) ? player.discard : [])
@@ -13789,7 +14321,7 @@
             .map(card => ({ ...card, used: false, fromStash: false })),
           hand: (Array.isArray(player.hand) ? player.hand : [])
             .filter(card => !card.fromStash)
-            .slice(0, 5)
+            .slice(0, cartesPiocheesParTour(raw))
             .map(card => ({ ...card, fromStash: false })),
           stash: {
             MOVE: Math.max(0, Math.min(5, Number(player.stash?.MOVE || 0))),
@@ -13799,19 +14331,24 @@
         }));
 
         /*
-         * Migration V64 : chaque joueur doit posséder exactement 13 cartes
-         * (8 déplacements, 4 poussées et 1 magie), toutes zones confondues.
-         * Une ancienne composition est reconstruite proprement au prochain tour.
+         * Migration V64 : chaque joueur doit posséder exactement son paquet —
+         * 13 cartes (8 déplacements, 4 poussées et 1 magie) en partie
+         * classique, ou la composition choisie en mode personnalisé
+         * (compositionPaquet), toutes zones confondues. Une ancienne
+         * composition est reconstruite proprement au prochain tour.
          */
+        const paquetAttendu = compositionPaquet(raw.rules);
+        const attendu = paquetAttendu.reduce((acc, type) => { acc[type]++; return acc; }, { MOVE: 0, PUSH: 0, MAGIC: 0 });
         restored.players.forEach((player, index) => {
           const allCards = [...(player.deck || []), ...(player.hand || []), ...(player.discard || [])];
           const counts = allCards.reduce((acc, card) => {
             if (card?.action in acc) acc[card.action]++;
             return acc;
           }, { MOVE: 0, PUSH: 0, MAGIC: 0 });
-          const valid = allCards.length === 13 && counts.MOVE === 8 && counts.PUSH === 4 && counts.MAGIC === 1;
+          const valid = allCards.length === paquetAttendu.length
+            && counts.MOVE === attendu.MOVE && counts.PUSH === attendu.PUSH && counts.MAGIC === attendu.MAGIC;
           if (!valid) {
-            player.deck = createDeck(index);
+            player.deck = createDeck(index, paquetAttendu);
             player.hand = [];
             player.discard = [];
           }
@@ -14062,8 +14599,8 @@
         }
       }
 
-      function createDeck(playerIndex) {
-        return shuffle(CARD_BLUEPRINTS.map((action, i) => ({
+      function createDeck(playerIndex, composition = CARD_BLUEPRINTS) {
+        return shuffle(composition.map((action, i) => ({
           id: `P${playerIndex}-C${i}-${gameRandom().toString(36).slice(2, 7)}`,
           action,
           used: false
@@ -14201,7 +14738,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => char.player === playerId).length;
+        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
@@ -15459,6 +15996,7 @@
         els.symmetricPresetControls?.classList.toggle("hidden", custom);
         els.symmetricPresetContent?.classList.toggle("hidden", custom);
         els.customSetupControls?.classList.toggle("hidden", !custom);
+        els.customRulesControls?.classList.toggle("hidden", !custom);
 
         if (els.setupOverlayKicker) {
           els.setupOverlayKicker.textContent = custom ? "PERSONNALISÉ" : "DUEL SYMÉTRIQUE";
@@ -15477,6 +16015,10 @@
         if (custom) {
           if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
           if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
+          [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox]
+            .forEach(champ => { if (champ) champ.disabled = waiting; });
+          majResumePaquetPersonnalise();
         } else {
           populateSymmetricSetupOverlay(selectedId);
           if (els.symmetricSetupSelect) els.symmetricSetupSelect.disabled = waiting;
@@ -15521,11 +16063,73 @@
         els.randomSymmetricSetupBtn.classList.add("random-picked");
       }
 
+      /* Règles de la partie du mode personnalisé (index.html,
+         #customRulesControls). Une clé n'est écrite que si elle s'écarte du
+         classique : une partie réglée comme d'habitude reste indiscernable
+         d'une partie classique, sauvegardes et parties en ligne comprises. */
+      function lireReglesPersonnalisees() {
+        const regles = {};
+        const paquet = {
+          MOVE: Number(els.customDeckMoveSelect?.value ?? 8),
+          PUSH: Number(els.customDeckPushSelect?.value ?? 4),
+          MAGIC: Number(els.customDeckMagicSelect?.value ?? 1)
+        };
+        if (paquet.MOVE !== 8 || paquet.PUSH !== 4 || paquet.MAGIC !== 1) regles.paquet = paquet;
+        const pioche = Number(els.customDrawCountSelect?.value ?? PIOCHE_CLASSIQUE);
+        if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
+        if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
+        return regles;
+      }
+
+      function majResumePaquetPersonnalise() {
+        if (!els.customDeckSummary) return;
+        const paquet = compositionPaquet(lireReglesPersonnalisees());
+        const pioche = cartesPiocheesParTour({ rules: lireReglesPersonnalisees() });
+        els.customDeckSummary.textContent = paquet.length < pioche
+          ? `Paquet de ${paquet.length} cartes : moins qu’une main de ${pioche}, la défausse sera remélangée à chaque tour.`
+          : `Paquet de ${paquet.length} cartes · main de ${pioche}`;
+      }
+
+      /** Paquets refaits selon les règles de la partie, avant la première pioche. */
+      function appliquerPaquetDesRegles() {
+        if (!state?.players) return;
+        const paquet = compositionPaquet(state.rules);
+        state.players.forEach((joueur, index) => {
+          joueur.deck = createDeck(index, paquet);
+          joueur.hand = [];
+          joueur.discard = [];
+          joueur.reserveCards = [];
+          joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        });
+      }
+
       function confirmSymmetricSetup() {
         if (!state || !state.setupSelectionPending) return;
         if (state.onlineMode && onlineRole === "guest") return;
 
         if (setupOverlayIsCustom()) {
+          state.rules = {
+            allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
+            islandLimitPerPlayer: 0,
+            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0,
+            gardiensPartages: !!state.rules?.gardiensPartages,
+            ...lireReglesPersonnalisees()
+          };
+          appliquerPaquetDesRegles();
+          state.setupSelectionPending = false;
+          state.inputLocked = false;
+          closeSymmetricSetupOverlay();
+          startCustomDraft(
+            Number(els.customIslandCountSelect?.value),
+            Number(els.customGuardianCountSelect?.value)
+          );
+          startAmbient();
+          if (state.onlineMode) forceOnlineSync();
+          return;
+        }
+
+        if (els.symmetricSetupSelect?.value === CREER_SON_DUEL) {
+          state.startingBoardPreset = CREER_SON_DUEL;
           state.rules = {
             allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
             islandLimitPerPlayer: 0,
@@ -15536,7 +16140,8 @@
           closeSymmetricSetupOverlay();
           startCustomDraft(
             Number(els.customIslandCountSelect?.value),
-            Number(els.customGuardianCountSelect?.value)
+            Number(els.customGuardianCountSelect?.value),
+            { miroir: true }
           );
           startAmbient();
           if (state.onlineMode) forceOnlineSync();
@@ -15611,7 +16216,9 @@
           order,
           index,
           placedIslands: compteur(draft.placedIslands),
-          placedGuardians: compteur(draft.placedGuardians)
+          placedGuardians: compteur(draft.placedGuardians),
+          miroir: !!draft.miroir && playerCount === 2,
+          premier: Number.isInteger(draft.premier) && draft.premier < playerCount ? draft.premier : 0
         };
       }
 
@@ -15625,9 +16232,14 @@
         return order;
       }
 
-      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer) {
+      /* Créer son duel (options.miroir) : seul le joueur 1 pose, et chaque île
+         ou gardien posé est aussitôt reflété pour le joueur 2 par rapport à
+         l'axe vertical du plateau — le même miroir que les préréglages du
+         duel symétrique (mirrorPresetCells). */
+      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer, options = {}) {
         if (!state) return;
         const playerCount = state.players.length;
+        const miroir = !!options.miroir && playerCount === 2;
         const iles = Math.max(1, Math.min(6, Math.round(Number(islandsPerPlayer)) || 4));
         const gardiens = Math.max(
           1,
@@ -15637,10 +16249,14 @@
         state.draft = {
           islandsPerPlayer: iles,
           guardiansPerPlayer: gardiens,
-          order: buildDraftOrder(playerCount, iles + gardiens),
+          order: miroir ? new Array(iles + gardiens).fill(0) : buildDraftOrder(playerCount, iles + gardiens),
           index: 0,
           placedIslands: new Array(playerCount).fill(0),
-          placedGuardians: new Array(playerCount).fill(0)
+          placedGuardians: new Array(playerCount).fill(0),
+          miroir,
+          // Qui ouvre la partie une fois le plateau composé : le tirage au
+          // sort fait à la création, comme pour les préréglages.
+          premier: state.currentPlayer || 0
         };
 
         /* Le plateau personnalisé démarre nu. startLocalGame place d'office un
@@ -15708,11 +16324,13 @@
 
       function finishCustomDraft() {
         if (!state) return;
+        const miroir = state.draft?.miroir ? state.draft : null;
         state.draft = null;
         state.phase = "ACTION_SELECT";
         // Celui qui a posé en premier ouvre la partie : le serpentin lui a
-        // déjà fait payer le fait de poser à l'aveugle.
-        state.currentPlayer = 0;
+        // déjà fait payer le fait de poser à l'aveugle. En miroir, aucun
+        // désavantage à compenser : on garde le tirage au sort.
+        state.currentPlayer = miroir ? miroir.premier : 0;
         state.turn = 1;
         state.round = 1;
         beginTurn();
@@ -15723,6 +16341,15 @@
       /* Placement d'un gardien pendant le draft : n'importe quelle case libre
          d'une île appartenant au joueur, ou sa case de village. */
       function draftGuardianCellAllowed(playerId, r, c) {
+        if (!draftCaseGardienLibre(playerId, r, c)) return false;
+        if (!state.draft?.miroir) return true;
+        // En miroir, le reflet doit lui aussi être libre, et distinct : une
+        // case de la colonne centrale serait son propre reflet.
+        const reflet = GRID - 1 - c;
+        return reflet !== c && draftCaseGardienLibre(1 - playerId, r, reflet);
+      }
+
+      function draftCaseGardienLibre(playerId, r, c) {
         if (!inside(r, c) || characterAt(r, c)) return false;
         // villageAt renvoie le JOUEUR propriétaire (objet), pas son id : la
         // comparaison à playerId échouait toujours, et le village restait
@@ -15744,10 +16371,44 @@
         const char = { id: `char-${state.nextCharId++}`, player: pick.player, r, c };
         state.characters.push(char);
         state.draft.placedGuardians[pick.player]++;
+        refleterPoseDraft("guardian", char);
         playSfx("spawn");
         animateCellPulse(r, c, "spawn-arrival");
         advanceDraft();
         return true;
+      }
+
+      /* Créer son duel : reflète pour l'adversaire l'île ou le gardien que le
+         joueur 1 vient de poser. Rend la pièce créée, ou null hors miroir. */
+      function refleterPoseDraft(kind, piece) {
+        if (!state?.draft?.miroir || !piece) return null;
+        const adverse = 1 - (kind === "island" ? piece.owner : piece.player);
+        let reflet;
+        if (kind === "island") {
+          reflet = {
+            ...makeSymmetricPresetIsland(state.nextIslandId++, adverse, mirrorPresetCells(piece.cells)),
+            fromSetup: true
+          };
+          reflet.visualVariant = chooseIslandVisualVariant(reflet.cells, reflet.id, state.islands);
+          state.islands.push(reflet);
+          state.draft.placedIslands[adverse]++;
+          animateIslandArrival(reflet);
+        } else {
+          reflet = { id: `char-${state.nextCharId++}`, player: adverse, r: piece.r, c: GRID - 1 - piece.c };
+          state.characters.push(reflet);
+          state.draft.placedGuardians[adverse]++;
+          animateCellPulse(reflet.r, reflet.c, "spawn-arrival");
+        }
+        return reflet;
+      }
+
+      /* Créer son duel : le reflet d'une île doit tenir sur le plateau, sur
+         des cases libres, sans recouvrir l'île elle-même. */
+      function refletIleValide(cells) {
+        if (!state?.draft?.miroir) return true;
+        const propres = new Set(cells.map(([r, c]) => key(r, c)));
+        return mirrorPresetCells(cells).every(([r, c]) =>
+          inside(r, c) && !isLand(r, c) && !propres.has(key(r, c)));
       }
 
       /* IA DE MISE EN PLACE — décision et application séparées.
@@ -15815,11 +16476,13 @@
           };
           state.islands.push(cree);
           state.draft.placedIslands[decision.player]++;
+          if (refletIleValide(cree.cells)) refleterPoseDraft("island", cree);
         } else if (decision.kind === "guardian" && decision.cell
           && draftGuardianCellAllowed(decision.player, decision.cell[0], decision.cell[1])) {
           cree = { id: `char-${state.nextCharId++}`, player: decision.player, r: decision.cell[0], c: decision.cell[1] };
           state.characters.push(cree);
           state.draft.placedGuardians[decision.player]++;
+          refleterPoseDraft("guardian", cree);
         }
         return cree;
       }
@@ -16103,9 +16766,10 @@
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
-        /* 2 contre 2 : chacun pour soi (score individuel), mais des places
-           peuvent être tenues par l'IA, et les deux villages d'une diagonale
-           peuvent être partagés par l'équipe (J1+J3, J2+J4) comme en duel. */
+        /* 2 contre 2 : des places peuvent être tenues par l'IA. Par défaut
+           chacun marque pour soi ; avec la diagonale d'équipe (J1+J3, J2+J4),
+           l'équipe partage villages, gardiens et couronnes (rules-core.js,
+           confierGardiensEquipe). */
         const teamMode = count === 4;
         const siegesIA = !teamMode ? []
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
@@ -16178,7 +16842,7 @@
           phase: "ACTION_SELECT",
           // Règles optionnelles : jamais activées en classique. Le duel
           // symétrique peut les personnaliser via confirmSymmetricSetup().
-          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0, gardiensPartages: villagesEquipe },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           couronnesEnAttente: [],
@@ -16495,7 +17159,8 @@
         els.gameScreen.classList.remove("ai-turn");
         showToast("Temps écoulé : le tour va se terminer automatiquement.");
 
-        if (!state.islandPlacedThisTurn) {
+        // Îles payantes : la pose est facultative, le temps écoulé n'en impose aucune.
+        if (!obligationIleRemplie()) {
           createAutomaticIslandAndSpawn(state.currentPlayer, true);
           await sleep(520);
         }
@@ -17696,7 +18361,7 @@
           return false;
         }
         if (!rapport || !rapport.plan.length) {
-          const repli = state.islandPlacedThisTurn
+          const repli = obligationIleRemplie()
             ? "aucune action jugée meilleure que l'arrêt"
             : "plan vide et île non posée : main rendue à la logique historique";
           autopsieConsigner(joueur, instantaneAutopsie, rapport, repli);
@@ -17704,7 +18369,7 @@
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
           // soit faite. Sinon on laisse la voie historique s'en charger.
-          return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
+          return obligationIleRemplie() ? await terminerTourExpert(token) : false;
         }
 
         autopsieConsigner(joueur, instantaneAutopsie, rapport, null);
@@ -17889,7 +18554,12 @@
           // retombe sur la logique historique plutôt que de passer le tour.
         }
 
-        if (!state.islandPlacedThisTurn) {
+        /* Îles payantes (mode personnalisé) : la pose est facultative. Les
+           niveaux sans planner ne paient 2 cartes que pour ce qui le vaut
+           sûrement, un gardien de plus. */
+        const poserIle = !ilesPayantes()
+          || (canCreateGuardian(state.currentPlayer) && peutPayerIle(currentPlayer()));
+        if (!state.islandPlacedThisTurn && poserIle) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);
           benchJournaliser({ type: "POSE", automatique: true, avantActions: true });
           await sleep(760);
@@ -18064,6 +18734,9 @@
 
       function beginTurn() {
         const p = currentPlayer();
+        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
+        // qui prend la main, avant même la validation des couronnes.
+        confierGardiensEquipe(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();
@@ -18084,7 +18757,7 @@
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, 5);
+        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
         state.phase = "ACTION_SELECT";
         // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
@@ -19684,15 +20357,17 @@
           const reste = pick ? draftPicksRemainingFor(pick.player) : null;
           if (pick?.kind === "island") {
             return {
-              label: `Formation · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
               instruction: state.phase === "PLACE_ISLAND"
-                ? "Prochain clic : une zone verte du plateau."
+                ? (state.draft.miroir
+                  ? "Prochain clic : une zone verte, son reflet ira chez l’adversaire."
+                  : "Prochain clic : une zone verte du plateau.")
                 : "Choisissez une forme d’île dans le panneau de gauche."
             };
           }
           if (pick?.kind === "guardian") {
             return {
-              label: `Formation · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
               instruction: "Prochain clic : une case libre de vos îles ou de votre village."
             };
           }
@@ -19714,6 +20389,9 @@
           case "SMART_CHAR":
             return { label: "Gardien sélectionné", instruction: "Prochain clic : une destination éclairée ou une cible adjacente." };
           case "ACTION_SELECT":
+            if (!state.islandPlacedThisTurn && ilesPayantes()) {
+              return { label: "Choisir une action", instruction: `Choisissez une action, ou posez une île pour ${COUT_ILE_PAYANTE} cartes.` };
+            }
             return state.islandPlacedThisTurn
               ? { label: "Choisir une action", instruction: "Choisissez une action ou cliquez directement une cible valide." }
               : { label: "Île obligatoire", instruction: "Commencez par choisir une forme d’île. Vous pourrez agir avant ou après sa pose." };
@@ -19770,7 +20448,7 @@
             const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
               next: state.phase === "PLACE_ISLAND"
                 ? `Rotation ${degrees}° — ${consignePoseIle()}`
@@ -19780,18 +20458,19 @@
           if (pick?.kind === "guardian") {
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""} à placer`,
               next: "Cliquez une case libre de vos îles ou votre village."
             };
           }
         }
 
-        if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
+        if (!obligationIleRemplie() && state.phase === "ACTION_SELECT") {
           return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "CHOOSE_ISLAND_SHAPE") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Choisissez une forme d’île." };
+          return { kind: "build", kicker: ilesPayantes() ? `ÎLE · ${COUT_ILE_PAYANTE} CARTES` : "ÉTAPE OBLIGATOIRE",
+            title: "Choisir une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
@@ -19827,6 +20506,10 @@
         }
         if (state.islandPlacedThisTurn) {
           return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Choisissez une action ou terminez votre tour." };
+        }
+        if (ilesPayantes()) {
+          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Agir, bâtir ou terminer",
+            next: `Jouez une action, posez une île (${COUT_ILE_PAYANTE} cartes) ou terminez votre tour.` };
         }
         return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
       }
@@ -20039,6 +20722,14 @@
         if (islandStatusEl) {
           islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
+          /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
+             organique lit ce sous-titre (js/hud-organique-v2.js). */
+          const payante = ilesPayantes() && !state.draft;
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.disabled = payante && !peutPayerIle(active);
+          islandStatusEl.title = islandStatusEl.disabled
+            ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`
+            : (payante ? `Poser une île (facultatif) : ${COUT_ILE_PAYANTE} cartes.` : "Poser une île");
         }
         if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -20234,7 +20925,7 @@
 
         const islandPickPhase = !state.islandPlacedThisTurn;
         if (els.leftPanel) els.leftPanel.classList.toggle("choice-focus", islandPickPhase);
-        els.gameScreen.classList.toggle("island-required", !state.islandPlacedThisTurn);
+        els.gameScreen.classList.toggle("island-required", !obligationIleRemplie());
 
         if (previousPlayer !== String(p.id)) {
           els.gameScreen.dataset.player = String(p.id);
@@ -20299,7 +20990,8 @@
 
       function renderIslandSelector() {
         els.islandSelector.innerHTML = "";
-        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase);
+        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)
+          && (!!state.draft || peutPayerIle(currentPlayer()));
         const emphasize = !state.islandPlacedThisTurn;
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
@@ -20333,6 +21025,10 @@
         if (!canLocalPlayerAct()) return;
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
+        if (!state.draft && !peutPayerIle(currentPlayer())) {
+          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          return;
+        }
         if (shapeLimitReached(shapeKey)) {
           showToast(`Limite atteinte : ${shapeLimitPerOwner()} île${shapeLimitPerOwner() > 1 ? "s" : ""} « ${SHAPES[shapeKey].name} » maximum.`);
           return;
@@ -20368,7 +21064,8 @@
 
         // Une île peut être posée n'importe où :
         // elle doit seulement rester dans la grille et ne rien chevaucher.
-        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c));
+        // En Créer son duel, son reflet aussi (refletIleValide, core.js).
+        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c)) && refletIleValide(cells);
       }
 
       function recomputeValidAnchors() {
@@ -21237,6 +21934,10 @@
 
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
+          if (!state.draft && !peutPayerIle(currentPlayer())) {
+            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            return;
+          }
           if (isValidPlacement(r, c)) {
             /* La pose d'île n'entrait pas dans l'historique : on pouvait annuler
                un déplacement ou une poussée, mais pas le geste qui ouvre le tour.
@@ -21639,6 +22340,10 @@
       }
 
       function placeIsland(anchorR, anchorC) {
+        /* Îles payantes (mode personnalisé) : 2 cartes, prélevées avant la
+           pose. La mise en place, elle, ne coûte rien. */
+        const paiement = state.draft ? [] : payerIle(currentPlayer());
+        if (!paiement) return;
         const absCells = previewAbsoluteCells(anchorR, anchorC);
         const islandId = state.nextIslandId++;
         const island = {
@@ -21678,6 +22383,7 @@
 
         if (state.draft) {
           state.draft.placedIslands[island.owner]++;
+          refleterPoseDraft("island", island);
           state.selectedIslandShape = null;
           state.placementCells = null;
           state.placementOriginIndex = 0;
@@ -21690,6 +22396,9 @@
         }
 
         state.islandPlacedThisTurn = true;
+        if (paiement.length) {
+          showToast(`Île posée : ${paiement.map(type => ACTIONS[type].name).join(" et ")} payés.`);
+        }
 
         if (canCreateGuardian(state.currentPlayer)) {
           state.phase = "PLACE_SPAWN";
@@ -23408,7 +24117,7 @@
             <span title="Poussées disponibles"><em>P</em><b>${availableActionCount("PUSH", p)}</b></span>
             <span title="Magies disponibles"><em>M</em><b>${availableActionCount("MAGIC", p)}</b></span>
           </div>
-          <small>${state.characters.filter(ch => ch.player === p.id).length} gardien(s)</small>
+          <small>${state.characters.filter(ch => proprietaireGardien(ch) === p.id).length} gardien(s)</small>
         `;
           els.scoreList.appendChild(card);
         });
@@ -23463,7 +24172,7 @@
         const canRotateMagic = !aiLocked && state.phase === "ACTION" && state.selectedActionType === "MAGIC" && !!state.selectedIslandId && !!state.selectedMagicPivot;
         const canCancel = !aiLocked && (state.phase === "PLACE_ISLAND" || state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType) || state.phase === "DROP_TREASURE" || state.phase === "PICKUP_CROWN" || !!state.undoHistory?.length);
         const canEndFromSelection = state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType);
-        const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
+        const canEnd = obligationIleRemplie() && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         // Le miroir n'a de sens que pour une forme chirale (ex. Serpent) : les
@@ -23513,7 +24222,7 @@
         els.endTurnBtn.textContent = "Fin du tour";
         if (state.draft) {
           els.endTurnBtn.title = "La partie commence une fois la mise en place terminée.";
-        } else if (!state.islandPlacedThisTurn) {
+        } else if (!obligationIleRemplie()) {
           els.endTurnBtn.title = "Posez d’abord une île.";
         } else if (state.phase === "PLACE_SPAWN") {
           els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire.";
@@ -23527,7 +24236,7 @@
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
         if (ch) {
-          const p = state.players[ch.player];
+          const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
           els.unitCard.innerHTML = `
           <div class="big-icon">${p.icon}</div>
@@ -23670,6 +24379,16 @@
       function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
         player.score++;
         triggerScoreAnimation(player.id);
+        /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
+           marque avec lui, la victoire est celle de l'équipe. */
+        const coequipier = gardiensPartages()
+          ? state.players.find(j => j.id !== player.id && memeEquipe(j.id, player.id))
+          : null;
+        if (coequipier) {
+          coequipier.score = player.score;
+          triggerScoreAnimation(coequipier.id);
+        }
+        const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
         if (artifact) artifact.carrierId = null;
 
@@ -23677,7 +24396,9 @@
           respawnCharacter(char);
           showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
         } else {
-          showToast(`${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+          showToast(coequipier
+            ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
+            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
@@ -23689,7 +24410,9 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
-            setTimeout(() => showVictory(player), 450);
+            setTimeout(() => showVictory(player, coequipier
+              ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
+              : null), 450);
           }
         } else {
           // Un gardien qui valide une couronne (dépôt au village, hors sortie
@@ -23720,12 +24443,12 @@
       async function endTurn(force = false) {
         if (!state || state.winner !== null || state.turnTransitioning) return;
         if (!force && state.phase !== "ACTION_SELECT") {
-          const cancellableSelection = state.islandPlacedThisTurn
+          const cancellableSelection = obligationIleRemplie()
             && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
           if (!cancellableSelection || !prepareActionSwitch()) return;
         }
 
-        if (!state.islandPlacedThisTurn) {
+        if (!obligationIleRemplie()) {
           if (force) {
             createAutomaticIslandAndSpawn(state.currentPlayer, true);
           } else {
@@ -23930,7 +24653,9 @@
 
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
-        els.victoryTitle.textContent = player.name;
+        els.victoryTitle.textContent = gardiensPartages()
+          ? (player.id % 2 === 0 ? "Équipe or" : "Équipe violette")
+          : player.name;
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
@@ -24233,11 +24958,11 @@
           /* Même garde que la fonction historique, exécutée AVANT de déplacer
              une carte pour qu'un clic invalide ne modifie jamais la réserve. */
           if (!force && state.phase !== "ACTION_SELECT") {
-            const cancellableSelection = state.islandPlacedThisTurn
+            const cancellableSelection = obligationIleRemplie()
               && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
             if (!cancellableSelection || !prepareActionSwitch()) return;
           }
-          if (!state.islandPlacedThisTurn && !force) {
+          if (!obligationIleRemplie() && !force) {
             showToast("Vous devez poser une île avant de terminer le tour.");
             return;
           }
@@ -24269,7 +24994,7 @@
             Array.isArray(player.reserveCards) ? JSON.parse(JSON.stringify(player.reserveCards)) : null
           );
 
-          /* La normalisation V64 compte 13 cartes seulement dans deck/main/
+          /* La normalisation V64 compte le paquet seulement dans deck/main/
              discard. On y remet temporairement les cartes de réserve pour que
              cette vérification voie bien l'intégralité du paquet physique. */
           prepared.players.forEach((player, index) => {
@@ -24497,6 +25222,9 @@
          libre la plus proche de la cible automatique. */
       function applyIslandPlacementCore(shapeKey, cells, ownerId, relCells = null, anchor = null, spawnCell = null) {
         if (!state || !Array.isArray(cells) || !cells.length) return null;
+        // Îles payantes : sans les 2 cartes, la pose n'a pas lieu.
+        const paiement = payerIle(state.players[ownerId]);
+        if (!paiement) return null;
 
         const cellules = cloneCells(cells);
         const identifiant = state.nextIslandId++;
@@ -24546,7 +25274,8 @@
           cellules: ile.cells.map(([r, c]) => [r, c]),
           gardienId: gardien ? gardien.id : null,
           gardienCase: gardien ? [gardien.r, gardien.c] : null,
-          couronneRamassee: couronneRamassee ? couronneRamassee.id : null
+          couronneRamassee: couronneRamassee ? couronneRamassee.id : null,
+          cartesPayees: paiement
         };
       }
 
@@ -24889,6 +25618,40 @@
       }
 
       /* ==================================================================
+         2 CONTRE 2, DIAGONALE D'ÉQUIPE — gardiens et couronnes en commun
+
+         Avec les villages d'équipe (J1+J3, J2+J4), l'équipe joue comme un
+         seul camp : chaque joueur commande aussi les gardiens de son
+         coéquipier, et une couronne validée compte pour les deux.
+
+         Plutôt que de réécrire chaque contrôle « ce gardien est-il à moi ? »
+         (interface, IA, planner), on confie au début de chaque tour tous les
+         gardiens de l'équipe au joueur qui prend la main (char.player). Le
+         camp d'origine reste dans char.proprietaire, qui ne sert qu'à
+         l'apparence et au plafond de gardiens par joueur.
+      ================================================================== */
+      function gardiensPartages() {
+        return !!state?.rules?.gardiensPartages && state.players?.length === 4;
+      }
+
+      function memeEquipe(a, b) {
+        return a === b || (gardiensPartages() && a % 2 === b % 2);
+      }
+
+      function proprietaireGardien(char) {
+        return char?.proprietaire ?? char?.player;
+      }
+
+      function confierGardiensEquipe(playerId) {
+        if (!gardiensPartages()) return;
+        (state.characters || []).forEach(char => {
+          if (char.player === playerId || !memeEquipe(char.player, playerId)) return;
+          char.proprietaire ??= char.player;
+          char.player = playerId;
+        });
+      }
+
+      /* ==================================================================
          BLOCAGE DE ZONE (règle V67)
 
          Un gardien adverse posté sur l'une des trois cases d'un village y
@@ -24983,6 +25746,82 @@
         ));
       }
 
+      /* ---------------------------------------------------------------------
+         RÈGLES DE PARTIE RÉGLABLES (mode personnalisé)
+
+         Trois réglages, tous lus dans `state.rules`, dont les valeurs par
+         défaut redonnent exactement la partie classique :
+         — `paquet` : nombre de cartes Déplacer / Pousser / Magie du paquet
+           (classique : 8 / 4 / 1, voir CARD_BLUEPRINTS) ;
+         — `cartesPiochees` : main tirée au début du tour, de 5 à 8 ;
+         — `ilesPayantes` : poser une île coûte 2 cartes ; en échange, la pose
+           n'est plus obligatoire. Une seule île par tour, comme avant, et le
+           gardien apparaît toujours sur l'île posée.
+         La partie classique, les tutoriels et les énigmes n'ont aucune de ces
+         clés : chaque lecteur retombe sur la valeur classique.
+         ------------------------------------------------------------------- */
+      const PIOCHE_CLASSIQUE = 5;
+      const PIOCHE_MIN = 5;
+      const PIOCHE_MAX = 8;
+      const COUT_ILE_PAYANTE = 2;
+      const PAQUET_LIMITES = { MOVE: [2, 12], PUSH: [0, 8], MAGIC: [0, 5] };
+
+      function cartesPiocheesParTour(source = state) {
+        const n = Math.round(Number(source?.rules?.cartesPiochees));
+        return Number.isFinite(n) && n > 0 ? Math.max(PIOCHE_MIN, Math.min(PIOCHE_MAX, n)) : PIOCHE_CLASSIQUE;
+      }
+
+      /** Paquet classique, ou celui que les règles de la partie fixent. */
+      function compositionPaquet(rules = state?.rules) {
+        const choisi = rules?.paquet;
+        if (!choisi) return CARD_BLUEPRINTS.slice();
+        return ["MOVE", "PUSH", "MAGIC"].flatMap(type => {
+          const [min, max] = PAQUET_LIMITES[type];
+          const n = Math.max(min, Math.min(max, Math.round(Number(choisi[type])) || 0));
+          return Array(n).fill(type);
+        });
+      }
+
+      function ilesPayantes(source = state) {
+        return !!source?.rules?.ilesPayantes;
+      }
+
+      /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
+       *  qui autorise à finir le tour, et au planner à s'arrêter. */
+      function obligationIleRemplie(source = state) {
+        return !!source?.islandPlacedThisTurn || ilesPayantes(source);
+      }
+
+      /** Cartes jouables (main et réserve) que le joueur peut engager. */
+      function cartesDisponibles(player) {
+        return ["MOVE", "PUSH", "MAGIC"].reduce((total, type) => total + availableActionCount(type, player), 0);
+      }
+
+      /** Le joueur peut-il payer une île ? Toujours vrai hors îles payantes. */
+      function peutPayerIle(player) {
+        return !ilesPayantes() || cartesDisponibles(player) >= COUT_ILE_PAYANTE;
+      }
+
+      /* Ordre de paiement : Déplacer d'abord (le paquet en compte le plus),
+         puis Pousser, puis Magie — la carte la plus rare part en dernier. Une
+         règle fixe et annoncée vaut mieux qu'un choix à chaque pose : en jeu de
+         plateau, on défausserait simplement deux cartes au choix. */
+      const ORDRE_PAIEMENT_ILE = ["MOVE", "PUSH", "MAGIC"];
+
+      /** Prélève le coût d'une île ; rend les types payés, ou null. */
+      function payerIle(player) {
+        if (!ilesPayantes()) return [];
+        if (!player || cartesDisponibles(player) < COUT_ILE_PAYANTE) return null;
+        const payes = [];
+        for (const type of ORDRE_PAIEMENT_ILE) {
+          while (payes.length < COUT_ILE_PAYANTE && availableActionCount(type, player) > 0) {
+            if (consumeAvailableActions(type, 1, player) < 1) break;
+            payes.push(type);
+          }
+        }
+        return payes;
+      }
+
       /** FIN PAR POSE IMPOSSIBLE — règle unique, lue au début de chaque tour
        *  (jeu, self-play, simulation du planner). Dès que le joueur qui prend
        *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
@@ -25003,7 +25842,10 @@
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
       function vainqueurAuxCouronnes() {
-        const scores = (state.players || []).map(p => p.score || 0);
+        /* Équipe à couronnes communes : les deux coéquipiers ont toujours le
+           même score, ce n'est pas une égalité. On compare J1 à J2. */
+        const scores = (gardiensPartages() ? state.players.slice(0, 2) : state.players || [])
+          .map(p => p.score || 0);
         const meilleur = Math.max(...scores);
         const exaequo = scores.filter(s => s === meilleur).length;
         return exaequo > 1 ? null : scores.indexOf(meilleur);
@@ -25660,11 +26502,12 @@
         };
         const pioche = compter(joueur.deck), defausse = compter(joueur.discard);
         const taille = PLAN_TYPES_CARTES.reduce((s, t) => s + pioche[t], 0);
-        const cle = PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
+        // Taille de la main : 5 en classique, de 5 à 8 en mode personnalisé.
+        const MAIN = cartesPiocheesParTour();
+        const cle = MAIN + ":" + PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
         const connu = plannerPiocheCache.get(cle);
         if (connu) return connu;
 
-        const MAIN = 5;
         const sures = taille >= MAIN ? { MOVE: 0, PUSH: 0, MAGIC: 0 } : pioche;
         const tas = taille >= MAIN ? pioche : defausse;
         const tasTotal = PLAN_TYPES_CARTES.reduce((s, t) => s + tas[t], 0);
@@ -25713,7 +26556,8 @@
         if (n <= 0) return 1;
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
-        return plannerPiocheProchaine(adverse.id).auMoinsPush[Math.min(n, 5)] ?? 0;
+        const auMoins = plannerPiocheProchaine(adverse.id).auMoinsPush;
+        return auMoins[Math.min(n, auMoins.length - 1)] ?? 0;
       }
 
       /* Déplacements qu'il faut à un gardien APPARU pour atteindre chaque case
@@ -26234,7 +27078,7 @@
             if (trace) trace.push({ terme: "matchNul", montant: 0, note: null });
             return 0;
           }
-          const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
+          const terminal = memeEquipe(state.winner, playerId) ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
           if (trace) trace.push({ terme: "victoire", montant: terminal, note: null });
           return terminal;
         }
@@ -27569,7 +28413,8 @@
       }
 
       function plannerCandidatsPose(playerId) {
-        if (state.islandPlacedThisTurn) return [];
+        // Îles payantes : sans 2 cartes jouables, aucune pose n'est possible.
+        if (state.islandPlacedThisTurn || !peutPayerIle(state.players[playerId])) return [];
         /* Le biais vers la zone adverse ne s'active que sous menace réelle.
            Permanent, il détournait la pose de l'action : l'IA allait camper au
            village adverse pendant qu'une couronne libre attendait ailleurs. */
@@ -27726,7 +28571,8 @@
          combinaison est jugée sur ce qu'elle donne. */
       const PLAN_LANCER_MAX = 8;
       function plannerCandidatsLancer(playerId) {
-        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)) return [];
+        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)
+          || !peutPayerIle(state.players[playerId])) return [];
         const moi = state.players[playerId];
         const forceMax = Math.min(availableActionCount("PUSH", moi), Math.max(1, PLAN_POIDS.pousseeLongue || 1));
         if (forceMax < 1) return [];
@@ -28309,7 +29155,8 @@
           racine.etat.islandPlacedThisTurn = true;
         }
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
-        racine.terminal = racine.etat.islandPlacedThisTurn;
+        // Îles payantes : la pose est facultative, s'arrêter est permis d'emblée.
+        racine.terminal = obligationIleRemplie(racine.etat);
         racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
 
         /* Sous autopsie, on relève AVANT la recherche : la position de départ
@@ -28408,7 +29255,7 @@
                 }
                 return {
                   note, noteTri,
-                  prioriteDefense: clone.islandPlacedThisTurn
+                  prioriteDefense: obligationIleRemplie(clone)
                     ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
                 };
@@ -28430,7 +29277,7 @@
                 note: resultat.note,
                 noteTri: resultat.noteTri,
                 prioriteDefense: resultat.prioriteDefense,
-                terminal: clone.islandPlacedThisTurn
+                terminal: obligationIleRemplie(clone)
               };
               suivants.push(enfant);
 
@@ -43834,6 +44681,11 @@
           { id: "heraut", nom: "Héraut de l'aube", saison: { id: "s1", palier: 18 } },
           { id: "phenix", nom: "Phénix d'Ilyos", saison: { id: "s1", palier: 27 } }
         ] },
+        /* Îles du plateau, lues par la scène 3D (kaykit3d.js). */
+        { cle: "plateau", nom: "Îles", objets: [
+          { id: "herbe", nom: "Îles d'herbe", valeur: "kaykit", image: "assets/collection/iles-herbe.webp", niveau: 1 },
+          { id: "archipel", nom: "Archipel de pierre", valeur: "archipel", image: "assets/collection/iles-archipel.webp", saison: { id: "s1", palier: 29 } }
+        ] },
         /* Effet de la fenêtre de victoire, quand le joueur de l'appareil gagne. */
         { cle: "effet", nom: "Effet de victoire", objets: [
           { id: "sobre", nom: "Sobre", niveau: 1 },
@@ -43861,7 +44713,7 @@
             { xp: 200 }, { cosmetique: "titre:heraut" }, { vent: 1 }, { cosmetique: "heros:squelette-rodeur" },
             { xp: 250 }, { vent: 2 }, { cosmetique: "couleur:rubis" }, { xp: 250 },
             { cosmetique: "ciel:or-ancien" }, { vent: 2 }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
-            { xp: 300 }, { cosmetique: "effet:plumes" }
+            { cosmetique: "plateau:archipel" }, { cosmetique: "effet:plumes" }
           ],
           apres: { vent: 1 }
         }
@@ -44170,8 +45022,8 @@
         if (profil.vus.length !== avant) progressionEnregistrer(profil);
       }
 
-      /* Équiper un objet débloqué. Le ciel change aussitôt si la scène 3D
-         existe ; couleur et gardiens s'appliquent à la prochaine partie. */
+      /* Équiper un objet débloqué. Le ciel et les îles changent aussitôt si la
+         scène 3D existe ; couleur et gardiens s'appliquent à la prochaine partie. */
       function progressionEquiper(cleCategorie, id) {
         const profil = progressionCharger();
         const vue = progressionVueCollection(profil).find(c => c.cle === cleCategorie);
@@ -44183,6 +45035,7 @@
         if (cleCategorie === "ciel") {
           try { if (kaykit3D) window.ILYOS_SKY?.variante?.(objet.valeur); } catch (_) { }
         }
+        if (cleCategorie === "plateau") kaykitChoisirIles(objet.valeur);
         return true;
       }
 
@@ -44194,6 +45047,11 @@
       /* Ciel du profil, lu par la scène 3D à son ouverture (kaykit3d.js). */
       function progressionCielEquipe() {
         try { return progressionValeurEquipee(progressionCharger(), "ciel"); } catch (_) { return null; }
+      }
+
+      /* Îles du profil, lues par la scène 3D à son ouverture (kaykit3d.js). */
+      function progressionPlateauEquipe() {
+        try { return progressionValeurEquipee(progressionCharger(), "plateau"); } catch (_) { return null; }
       }
 
       /* Apparence équipée sur cet appareil, en identifiants du catalogue :
@@ -44518,7 +45376,7 @@
           if (!moi) { progressionRendreVictoire(null); return; }
           progressionDernierePartie = state;
 
-          const resultat = !vainqueur ? "nul" : (vainqueur === moi || vainqueur.id === moi.id ? "victoire" : "defaite");
+          const resultat = !vainqueur ? "nul" : (vainqueur === moi || memeEquipe(vainqueur.id, moi.id) ? "victoire" : "defaite");
           const difficultes = state.players.filter(j => j.isAI && j.aiDifficulty).map(j => j.aiDifficulty);
           const difficulte = difficultes.sort((a, b) => (PROGRESSION_DIFFICULTE[b] || 0) - (PROGRESSION_DIFFICULTE[a] || 0))[0] || null;
 
@@ -44737,7 +45595,7 @@
 
       function progressionHtmlDebloques(objets) {
         if (!objets || !objets.length) return "";
-        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
+        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", plateau: "Îles", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
         return `<div class="progression-debloques">
           <div class="progression-debloques-tete"><b>Débloqué</b><small>À équiper dans le menu, Progression › Collection</small></div>
           <ul>${objets.map(objet => `<li>${progressionVignette(objet)}<span><small>${categories[objet.categorie] || ""}</small>${objet.nom}</span></li>`).join("")}</ul>
@@ -46281,6 +47139,8 @@
       });
       els.randomSymmetricSetupBtn?.addEventListener("click", chooseRandomSymmetricSetup);
       els.confirmSymmetricSetupBtn?.addEventListener("click", confirmSymmetricSetup);
+      [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect, els.customDrawCountSelect]
+        .forEach(champ => champ?.addEventListener("change", majResumePaquetPersonnalise));
 
 
       function collectIlyosDiagnosticReport() {
@@ -47582,7 +48442,7 @@
         }
 
         entrant.hand = [];
-        drawCards(entrant, 5);
+        drawCards(entrant, cartesPiocheesParTour());
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
@@ -47611,8 +48471,9 @@
           appliquees++;
         }
         /* La pose est obligatoire : si le plan ne l'a pas faite, on retombe sur
-           la pose automatique, exactement comme le jeu réel le fait. */
-        if (!state.islandPlacedThisTurn) {
+           la pose automatique, exactement comme le jeu réel le fait. (Îles
+           payantes : la pose est facultative, rien à rattraper.) */
+        if (!obligationIleRemplie()) {
           const pose = findAutomaticIslandPlacement(playerId);
           if (pose) {
             applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor);
@@ -47807,7 +48668,7 @@
                fait. Cette pose-là est choisie par une heuristique et n'est pas
                dans le journal : on ne peut donc pas la reproduire, et on le dit
                au lieu de compter une fausse divergence. */
-            if (!state.islandPlacedThisTurn) return "POSE AUTOMATIQUE";
+            if (!obligationIleRemplie()) return "POSE AUTOMATIQUE";
             selfplayTransitionTour();
             return empreintePlateau(snapshotState());
           });
@@ -48048,7 +48909,7 @@
             state.turn = 1;
             state.round = 1;
             const entrant = state.players[0];
-            drawCards(entrant, 5);
+            drawCards(entrant, cartesPiocheesParTour());
             state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
             state.centerCrownTakenThisTurn = false;
             faireEntrerCouronnesEnAttente();
@@ -48199,7 +49060,7 @@
           }
           // Aperçu : la position après ces actions, sans finir le tour.
           if (apercu) return { etat: snapshotState(), journal };
-          if (!state.islandPlacedThisTurn && !poseImpossiblePour(moi)) {
+          if (!obligationIleRemplie() && !poseImpossiblePour(moi)) {
             return { erreur: "la pose d'île est obligatoire ce tour", journal };
           }
           const continuer = selfplayTransitionTour();
@@ -48412,6 +49273,18 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        /* Gardiens : joueur qui les commande (char.player) et camp d'origine,
+           distincts en 2 contre 2 à gardiens communs (rules-core.js). */
+        gardiens: () => state ? state.characters.map(ch => ({ id: ch.id, joueur: ch.player, camp: proprietaireGardien(ch) })) : null,
+        gardiensPartages: () => gardiensPartages(),
+        /* Plateau et mise en place (tests/creer-son-duel.spec.js). */
+        plateau: () => state ? {
+          taille: GRID, phase: state.phase, trait: state.currentPlayer,
+          miseEnPlace: state.draft ? { miroir: !!state.draft.miroir, index: state.draft.index, total: state.draft.order.length } : null,
+          iles: state.islands.map(i => ({ id: i.id, proprietaire: i.owner, cases: i.cells.map(([r, c]) => [r, c]) })),
+          gardiens: state.characters.map(ch => ({ joueur: ch.player, r: ch.r, c: ch.c })),
+          villages: state.players.map(j => villagesForPlayer(j).map(v => [v.r, v.c]))
+        } : null,
         joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
           difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score,
           couleur: j.color, heros: j.heros || null })) : null,

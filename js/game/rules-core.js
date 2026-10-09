@@ -173,6 +173,9 @@
          libre la plus proche de la cible automatique. */
       function applyIslandPlacementCore(shapeKey, cells, ownerId, relCells = null, anchor = null, spawnCell = null) {
         if (!state || !Array.isArray(cells) || !cells.length) return null;
+        // Îles payantes : sans les 2 cartes, la pose n'a pas lieu.
+        const paiement = payerIle(state.players[ownerId]);
+        if (!paiement) return null;
 
         const cellules = cloneCells(cells);
         const identifiant = state.nextIslandId++;
@@ -222,7 +225,8 @@
           cellules: ile.cells.map(([r, c]) => [r, c]),
           gardienId: gardien ? gardien.id : null,
           gardienCase: gardien ? [gardien.r, gardien.c] : null,
-          couronneRamassee: couronneRamassee ? couronneRamassee.id : null
+          couronneRamassee: couronneRamassee ? couronneRamassee.id : null,
+          cartesPayees: paiement
         };
       }
 
@@ -565,6 +569,40 @@
       }
 
       /* ==================================================================
+         2 CONTRE 2, DIAGONALE D'ÉQUIPE — gardiens et couronnes en commun
+
+         Avec les villages d'équipe (J1+J3, J2+J4), l'équipe joue comme un
+         seul camp : chaque joueur commande aussi les gardiens de son
+         coéquipier, et une couronne validée compte pour les deux.
+
+         Plutôt que de réécrire chaque contrôle « ce gardien est-il à moi ? »
+         (interface, IA, planner), on confie au début de chaque tour tous les
+         gardiens de l'équipe au joueur qui prend la main (char.player). Le
+         camp d'origine reste dans char.proprietaire, qui ne sert qu'à
+         l'apparence et au plafond de gardiens par joueur.
+      ================================================================== */
+      function gardiensPartages() {
+        return !!state?.rules?.gardiensPartages && state.players?.length === 4;
+      }
+
+      function memeEquipe(a, b) {
+        return a === b || (gardiensPartages() && a % 2 === b % 2);
+      }
+
+      function proprietaireGardien(char) {
+        return char?.proprietaire ?? char?.player;
+      }
+
+      function confierGardiensEquipe(playerId) {
+        if (!gardiensPartages()) return;
+        (state.characters || []).forEach(char => {
+          if (char.player === playerId || !memeEquipe(char.player, playerId)) return;
+          char.proprietaire ??= char.player;
+          char.player = playerId;
+        });
+      }
+
+      /* ==================================================================
          BLOCAGE DE ZONE (règle V67)
 
          Un gardien adverse posté sur l'une des trois cases d'un village y
@@ -659,6 +697,82 @@
         ));
       }
 
+      /* ---------------------------------------------------------------------
+         RÈGLES DE PARTIE RÉGLABLES (mode personnalisé)
+
+         Trois réglages, tous lus dans `state.rules`, dont les valeurs par
+         défaut redonnent exactement la partie classique :
+         — `paquet` : nombre de cartes Déplacer / Pousser / Magie du paquet
+           (classique : 8 / 4 / 1, voir CARD_BLUEPRINTS) ;
+         — `cartesPiochees` : main tirée au début du tour, de 5 à 8 ;
+         — `ilesPayantes` : poser une île coûte 2 cartes ; en échange, la pose
+           n'est plus obligatoire. Une seule île par tour, comme avant, et le
+           gardien apparaît toujours sur l'île posée.
+         La partie classique, les tutoriels et les énigmes n'ont aucune de ces
+         clés : chaque lecteur retombe sur la valeur classique.
+         ------------------------------------------------------------------- */
+      const PIOCHE_CLASSIQUE = 5;
+      const PIOCHE_MIN = 5;
+      const PIOCHE_MAX = 8;
+      const COUT_ILE_PAYANTE = 2;
+      const PAQUET_LIMITES = { MOVE: [2, 12], PUSH: [0, 8], MAGIC: [0, 5] };
+
+      function cartesPiocheesParTour(source = state) {
+        const n = Math.round(Number(source?.rules?.cartesPiochees));
+        return Number.isFinite(n) && n > 0 ? Math.max(PIOCHE_MIN, Math.min(PIOCHE_MAX, n)) : PIOCHE_CLASSIQUE;
+      }
+
+      /** Paquet classique, ou celui que les règles de la partie fixent. */
+      function compositionPaquet(rules = state?.rules) {
+        const choisi = rules?.paquet;
+        if (!choisi) return CARD_BLUEPRINTS.slice();
+        return ["MOVE", "PUSH", "MAGIC"].flatMap(type => {
+          const [min, max] = PAQUET_LIMITES[type];
+          const n = Math.max(min, Math.min(max, Math.round(Number(choisi[type])) || 0));
+          return Array(n).fill(type);
+        });
+      }
+
+      function ilesPayantes(source = state) {
+        return !!source?.rules?.ilesPayantes;
+      }
+
+      /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
+       *  qui autorise à finir le tour, et au planner à s'arrêter. */
+      function obligationIleRemplie(source = state) {
+        return !!source?.islandPlacedThisTurn || ilesPayantes(source);
+      }
+
+      /** Cartes jouables (main et réserve) que le joueur peut engager. */
+      function cartesDisponibles(player) {
+        return ["MOVE", "PUSH", "MAGIC"].reduce((total, type) => total + availableActionCount(type, player), 0);
+      }
+
+      /** Le joueur peut-il payer une île ? Toujours vrai hors îles payantes. */
+      function peutPayerIle(player) {
+        return !ilesPayantes() || cartesDisponibles(player) >= COUT_ILE_PAYANTE;
+      }
+
+      /* Ordre de paiement : Déplacer d'abord (le paquet en compte le plus),
+         puis Pousser, puis Magie — la carte la plus rare part en dernier. Une
+         règle fixe et annoncée vaut mieux qu'un choix à chaque pose : en jeu de
+         plateau, on défausserait simplement deux cartes au choix. */
+      const ORDRE_PAIEMENT_ILE = ["MOVE", "PUSH", "MAGIC"];
+
+      /** Prélève le coût d'une île ; rend les types payés, ou null. */
+      function payerIle(player) {
+        if (!ilesPayantes()) return [];
+        if (!player || cartesDisponibles(player) < COUT_ILE_PAYANTE) return null;
+        const payes = [];
+        for (const type of ORDRE_PAIEMENT_ILE) {
+          while (payes.length < COUT_ILE_PAYANTE && availableActionCount(type, player) > 0) {
+            if (consumeAvailableActions(type, 1, player) < 1) break;
+            payes.push(type);
+          }
+        }
+        return payes;
+      }
+
       /** FIN PAR POSE IMPOSSIBLE — règle unique, lue au début de chaque tour
        *  (jeu, self-play, simulation du planner). Dès que le joueur qui prend
        *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
@@ -679,7 +793,10 @@
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
       function vainqueurAuxCouronnes() {
-        const scores = (state.players || []).map(p => p.score || 0);
+        /* Équipe à couronnes communes : les deux coéquipiers ont toujours le
+           même score, ce n'est pas une égalité. On compare J1 à J2. */
+        const scores = (gardiensPartages() ? state.players.slice(0, 2) : state.players || [])
+          .map(p => p.score || 0);
         const meilleur = Math.max(...scores);
         const exaequo = scores.filter(s => s === meilleur).length;
         return exaequo > 1 ? null : scores.indexOf(meilleur);

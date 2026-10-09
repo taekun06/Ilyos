@@ -265,11 +265,11 @@
           /* Même garde que la fonction historique, exécutée AVANT de déplacer
              une carte pour qu'un clic invalide ne modifie jamais la réserve. */
           if (!force && state.phase !== "ACTION_SELECT") {
-            const cancellableSelection = state.islandPlacedThisTurn
+            const cancellableSelection = obligationIleRemplie()
               && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
             if (!cancellableSelection || !prepareActionSwitch()) return;
           }
-          if (!state.islandPlacedThisTurn && !force) {
+          if (!obligationIleRemplie() && !force) {
             showToast("Vous devez poser une île avant de terminer le tour.");
             return;
           }
@@ -301,7 +301,7 @@
             Array.isArray(player.reserveCards) ? JSON.parse(JSON.stringify(player.reserveCards)) : null
           );
 
-          /* La normalisation V64 compte 13 cartes seulement dans deck/main/
+          /* La normalisation V64 compte le paquet seulement dans deck/main/
              discard. On y remet temporairement les cartes de réserve pour que
              cette vérification voie bien l'intégralité du paquet physique. */
           prepared.players.forEach((player, index) => {

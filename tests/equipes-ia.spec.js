@@ -1,6 +1,7 @@
 /* 2 contre 2 avec l'IA : le menu règle les places tenues par l'ordinateur et
    les villages d'équipe (diagonale partagée J1+J3, J2+J4) ; la partie démarre
-   avec ces réglages et les tours de l'IA passent sans erreur. */
+   avec ces réglages et les tours de l'IA passent sans erreur. En diagonale
+   d'équipe, les coéquipiers partagent aussi gardiens et couronnes. */
 const { test, expect } = require('@playwright/test');
 
 async function regler(menu, cle, valeur) {
@@ -43,5 +44,23 @@ test("2 contre 2 : deux humains contre deux IA, villages d'équipe", async ({ pa
     if (courant && !courant.ia) await page.evaluate(() => window.ILYOS_TEST.terminerTourHumain());
     return courant ? courant.tour - tourDepart : 0;
   }, { timeout: 90000, intervals: [1000] }).toBeGreaterThanOrEqual(4);
+
+  /* Gardiens communs : au trait, le joueur commande tous les gardiens de son
+     équipe (J1+J3 ou J2+J4), et aucun de l'équipe adverse. */
+  expect(await page.evaluate(() => window.ILYOS_TEST.gardiensPartages())).toBe(true);
+  const { courant, gardiens } = await page.evaluate(() => ({
+    courant: window.ILYOS_TEST.joueurCourant(), gardiens: window.ILYOS_TEST.gardiens()
+  }));
+  expect(gardiens.length).toBeGreaterThan(0);
+  for (const g of gardiens) {
+    if (g.camp % 2 === courant.id % 2) expect(g.joueur).toBe(courant.id);
+    else expect(g.joueur % 2).not.toBe(courant.id % 2);
+  }
+
+  /* Couronnes communes : J1 marque, J3 marque avec lui. */
+  await page.evaluate(() => window.ILYOS_TEST.marquer(0));
+  const scores = (await page.evaluate(() => window.ILYOS_TEST.joueurs())).map(j => j.score);
+  expect(scores[2]).toBe(scores[0]);
+  expect(scores[0]).toBeGreaterThan(scores[1]);
   expect(incidents).toEqual([]);
 });

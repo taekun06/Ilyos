@@ -40,15 +40,17 @@
           const reste = pick ? draftPicksRemainingFor(pick.player) : null;
           if (pick?.kind === "island") {
             return {
-              label: `Formation · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
               instruction: state.phase === "PLACE_ISLAND"
-                ? "Prochain clic : une zone verte du plateau."
+                ? (state.draft.miroir
+                  ? "Prochain clic : une zone verte, son reflet ira chez l’adversaire."
+                  : "Prochain clic : une zone verte du plateau.")
                 : "Choisissez une forme d’île dans le panneau de gauche."
             };
           }
           if (pick?.kind === "guardian") {
             return {
-              label: `Formation · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
               instruction: "Prochain clic : une case libre de vos îles ou de votre village."
             };
           }
@@ -70,6 +72,9 @@
           case "SMART_CHAR":
             return { label: "Gardien sélectionné", instruction: "Prochain clic : une destination éclairée ou une cible adjacente." };
           case "ACTION_SELECT":
+            if (!state.islandPlacedThisTurn && ilesPayantes()) {
+              return { label: "Choisir une action", instruction: `Choisissez une action, ou posez une île pour ${COUT_ILE_PAYANTE} cartes.` };
+            }
             return state.islandPlacedThisTurn
               ? { label: "Choisir une action", instruction: "Choisissez une action ou cliquez directement une cible valide." }
               : { label: "Île obligatoire", instruction: "Commencez par choisir une forme d’île. Vous pourrez agir avant ou après sa pose." };
@@ -126,7 +131,7 @@
             const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
               next: state.phase === "PLACE_ISLAND"
                 ? `Rotation ${degrees}° — ${consignePoseIle()}`
@@ -136,18 +141,19 @@
           if (pick?.kind === "guardian") {
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""} à placer`,
               next: "Cliquez une case libre de vos îles ou votre village."
             };
           }
         }
 
-        if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
+        if (!obligationIleRemplie() && state.phase === "ACTION_SELECT") {
           return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "CHOOSE_ISLAND_SHAPE") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Choisissez une forme d’île." };
+          return { kind: "build", kicker: ilesPayantes() ? `ÎLE · ${COUT_ILE_PAYANTE} CARTES` : "ÉTAPE OBLIGATOIRE",
+            title: "Choisir une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
@@ -183,6 +189,10 @@
         }
         if (state.islandPlacedThisTurn) {
           return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Choisissez une action ou terminez votre tour." };
+        }
+        if (ilesPayantes()) {
+          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Agir, bâtir ou terminer",
+            next: `Jouez une action, posez une île (${COUT_ILE_PAYANTE} cartes) ou terminez votre tour.` };
         }
         return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
       }
@@ -395,6 +405,14 @@
         if (islandStatusEl) {
           islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
+          /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
+             organique lit ce sous-titre (js/hud-organique-v2.js). */
+          const payante = ilesPayantes() && !state.draft;
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.disabled = payante && !peutPayerIle(active);
+          islandStatusEl.title = islandStatusEl.disabled
+            ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`
+            : (payante ? `Poser une île (facultatif) : ${COUT_ILE_PAYANTE} cartes.` : "Poser une île");
         }
         if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -590,7 +608,7 @@
 
         const islandPickPhase = !state.islandPlacedThisTurn;
         if (els.leftPanel) els.leftPanel.classList.toggle("choice-focus", islandPickPhase);
-        els.gameScreen.classList.toggle("island-required", !state.islandPlacedThisTurn);
+        els.gameScreen.classList.toggle("island-required", !obligationIleRemplie());
 
         if (previousPlayer !== String(p.id)) {
           els.gameScreen.dataset.player = String(p.id);
@@ -655,7 +673,8 @@
 
       function renderIslandSelector() {
         els.islandSelector.innerHTML = "";
-        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase);
+        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)
+          && (!!state.draft || peutPayerIle(currentPlayer()));
         const emphasize = !state.islandPlacedThisTurn;
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
@@ -689,6 +708,10 @@
         if (!canLocalPlayerAct()) return;
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
+        if (!state.draft && !peutPayerIle(currentPlayer())) {
+          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          return;
+        }
         if (shapeLimitReached(shapeKey)) {
           showToast(`Limite atteinte : ${shapeLimitPerOwner()} île${shapeLimitPerOwner() > 1 ? "s" : ""} « ${SHAPES[shapeKey].name} » maximum.`);
           return;
@@ -724,7 +747,8 @@
 
         // Une île peut être posée n'importe où :
         // elle doit seulement rester dans la grille et ne rien chevaucher.
-        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c));
+        // En Créer son duel, son reflet aussi (refletIleValide, core.js).
+        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c)) && refletIleValide(cells);
       }
 
       function recomputeValidAnchors() {
@@ -1593,6 +1617,10 @@
 
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
+          if (!state.draft && !peutPayerIle(currentPlayer())) {
+            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            return;
+          }
           if (isValidPlacement(r, c)) {
             /* La pose d'île n'entrait pas dans l'historique : on pouvait annuler
                un déplacement ou une poussée, mais pas le geste qui ouvre le tour.
@@ -1995,6 +2023,10 @@
       }
 
       function placeIsland(anchorR, anchorC) {
+        /* Îles payantes (mode personnalisé) : 2 cartes, prélevées avant la
+           pose. La mise en place, elle, ne coûte rien. */
+        const paiement = state.draft ? [] : payerIle(currentPlayer());
+        if (!paiement) return;
         const absCells = previewAbsoluteCells(anchorR, anchorC);
         const islandId = state.nextIslandId++;
         const island = {
@@ -2034,6 +2066,7 @@
 
         if (state.draft) {
           state.draft.placedIslands[island.owner]++;
+          refleterPoseDraft("island", island);
           state.selectedIslandShape = null;
           state.placementCells = null;
           state.placementOriginIndex = 0;
@@ -2046,6 +2079,9 @@
         }
 
         state.islandPlacedThisTurn = true;
+        if (paiement.length) {
+          showToast(`Île posée : ${paiement.map(type => ACTIONS[type].name).join(" et ")} payés.`);
+        }
 
         if (canCreateGuardian(state.currentPlayer)) {
           state.phase = "PLACE_SPAWN";
@@ -3764,7 +3800,7 @@
             <span title="Poussées disponibles"><em>P</em><b>${availableActionCount("PUSH", p)}</b></span>
             <span title="Magies disponibles"><em>M</em><b>${availableActionCount("MAGIC", p)}</b></span>
           </div>
-          <small>${state.characters.filter(ch => ch.player === p.id).length} gardien(s)</small>
+          <small>${state.characters.filter(ch => proprietaireGardien(ch) === p.id).length} gardien(s)</small>
         `;
           els.scoreList.appendChild(card);
         });
@@ -3819,7 +3855,7 @@
         const canRotateMagic = !aiLocked && state.phase === "ACTION" && state.selectedActionType === "MAGIC" && !!state.selectedIslandId && !!state.selectedMagicPivot;
         const canCancel = !aiLocked && (state.phase === "PLACE_ISLAND" || state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType) || state.phase === "DROP_TREASURE" || state.phase === "PICKUP_CROWN" || !!state.undoHistory?.length);
         const canEndFromSelection = state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType);
-        const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
+        const canEnd = obligationIleRemplie() && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         // Le miroir n'a de sens que pour une forme chirale (ex. Serpent) : les
@@ -3869,7 +3905,7 @@
         els.endTurnBtn.textContent = "Fin du tour";
         if (state.draft) {
           els.endTurnBtn.title = "La partie commence une fois la mise en place terminée.";
-        } else if (!state.islandPlacedThisTurn) {
+        } else if (!obligationIleRemplie()) {
           els.endTurnBtn.title = "Posez d’abord une île.";
         } else if (state.phase === "PLACE_SPAWN") {
           els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire.";
@@ -3883,7 +3919,7 @@
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
         if (ch) {
-          const p = state.players[ch.player];
+          const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
           els.unitCard.innerHTML = `
           <div class="big-icon">${p.icon}</div>
@@ -4026,6 +4062,16 @@
       function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
         player.score++;
         triggerScoreAnimation(player.id);
+        /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
+           marque avec lui, la victoire est celle de l'équipe. */
+        const coequipier = gardiensPartages()
+          ? state.players.find(j => j.id !== player.id && memeEquipe(j.id, player.id))
+          : null;
+        if (coequipier) {
+          coequipier.score = player.score;
+          triggerScoreAnimation(coequipier.id);
+        }
+        const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
         if (artifact) artifact.carrierId = null;
 
@@ -4033,7 +4079,9 @@
           respawnCharacter(char);
           showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
         } else {
-          showToast(`${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+          showToast(coequipier
+            ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
+            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
@@ -4045,7 +4093,9 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
-            setTimeout(() => showVictory(player), 450);
+            setTimeout(() => showVictory(player, coequipier
+              ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
+              : null), 450);
           }
         } else {
           // Un gardien qui valide une couronne (dépôt au village, hors sortie
@@ -4076,12 +4126,12 @@
       async function endTurn(force = false) {
         if (!state || state.winner !== null || state.turnTransitioning) return;
         if (!force && state.phase !== "ACTION_SELECT") {
-          const cancellableSelection = state.islandPlacedThisTurn
+          const cancellableSelection = obligationIleRemplie()
             && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
           if (!cancellableSelection || !prepareActionSwitch()) return;
         }
 
-        if (!state.islandPlacedThisTurn) {
+        if (!obligationIleRemplie()) {
           if (force) {
             createAutomaticIslandAndSpawn(state.currentPlayer, true);
           } else {
@@ -4286,7 +4336,9 @@
 
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
-        els.victoryTitle.textContent = player.name;
+        els.victoryTitle.textContent = gardiensPartages()
+          ? (player.id % 2 === 0 ? "Équipe or" : "Équipe violette")
+          : player.name;
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;

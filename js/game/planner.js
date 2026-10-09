@@ -649,11 +649,12 @@
         };
         const pioche = compter(joueur.deck), defausse = compter(joueur.discard);
         const taille = PLAN_TYPES_CARTES.reduce((s, t) => s + pioche[t], 0);
-        const cle = PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
+        // Taille de la main : 5 en classique, de 5 à 8 en mode personnalisé.
+        const MAIN = cartesPiocheesParTour();
+        const cle = MAIN + ":" + PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
         const connu = plannerPiocheCache.get(cle);
         if (connu) return connu;
 
-        const MAIN = 5;
         const sures = taille >= MAIN ? { MOVE: 0, PUSH: 0, MAGIC: 0 } : pioche;
         const tas = taille >= MAIN ? pioche : defausse;
         const tasTotal = PLAN_TYPES_CARTES.reduce((s, t) => s + tas[t], 0);
@@ -702,7 +703,8 @@
         if (n <= 0) return 1;
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
-        return plannerPiocheProchaine(adverse.id).auMoinsPush[Math.min(n, 5)] ?? 0;
+        const auMoins = plannerPiocheProchaine(adverse.id).auMoinsPush;
+        return auMoins[Math.min(n, auMoins.length - 1)] ?? 0;
       }
 
       /* Déplacements qu'il faut à un gardien APPARU pour atteindre chaque case
@@ -1223,7 +1225,7 @@
             if (trace) trace.push({ terme: "matchNul", montant: 0, note: null });
             return 0;
           }
-          const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
+          const terminal = memeEquipe(state.winner, playerId) ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
           if (trace) trace.push({ terme: "victoire", montant: terminal, note: null });
           return terminal;
         }
@@ -2558,7 +2560,8 @@
       }
 
       function plannerCandidatsPose(playerId) {
-        if (state.islandPlacedThisTurn) return [];
+        // Îles payantes : sans 2 cartes jouables, aucune pose n'est possible.
+        if (state.islandPlacedThisTurn || !peutPayerIle(state.players[playerId])) return [];
         /* Le biais vers la zone adverse ne s'active que sous menace réelle.
            Permanent, il détournait la pose de l'action : l'IA allait camper au
            village adverse pendant qu'une couronne libre attendait ailleurs. */
@@ -2715,7 +2718,8 @@
          combinaison est jugée sur ce qu'elle donne. */
       const PLAN_LANCER_MAX = 8;
       function plannerCandidatsLancer(playerId) {
-        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)) return [];
+        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)
+          || !peutPayerIle(state.players[playerId])) return [];
         const moi = state.players[playerId];
         const forceMax = Math.min(availableActionCount("PUSH", moi), Math.max(1, PLAN_POIDS.pousseeLongue || 1));
         if (forceMax < 1) return [];
@@ -3298,7 +3302,8 @@
           racine.etat.islandPlacedThisTurn = true;
         }
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
-        racine.terminal = racine.etat.islandPlacedThisTurn;
+        // Îles payantes : la pose est facultative, s'arrêter est permis d'emblée.
+        racine.terminal = obligationIleRemplie(racine.etat);
         racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
 
         /* Sous autopsie, on relève AVANT la recherche : la position de départ
@@ -3397,7 +3402,7 @@
                 }
                 return {
                   note, noteTri,
-                  prioriteDefense: clone.islandPlacedThisTurn
+                  prioriteDefense: obligationIleRemplie(clone)
                     ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
                 };
@@ -3419,7 +3424,7 @@
                 note: resultat.note,
                 noteTri: resultat.noteTri,
                 prioriteDefense: resultat.prioriteDefense,
-                terminal: clone.islandPlacedThisTurn
+                terminal: obligationIleRemplie(clone)
               };
               suivants.push(enfant);
 
