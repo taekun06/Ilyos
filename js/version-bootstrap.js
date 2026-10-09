@@ -237,8 +237,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './css/hud-organique-v2-final-v8.css?v=12.7',
     './css/hud-organique-v2-depth-v9.css?v=12.7',
     './css/hud-organique-v2-depth-v10.css?v=12.7',
-    './css/hud-consolidation-v12.css?v=12.7',
-    './css/hud-organique-v2-layout-v10.css?v=1',
+    './css/hud-consolidation-v12.css?v=12.8',
+    './css/hud-organique-v2-layout-v10.css?v=2',
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.

@@ -3520,8 +3520,49 @@
         useSelectedCard(1);
       }
 
+      /* Les rotations LÉGALES de l'île choisie autour de son pivot, en crans
+         de magicPreviewSteps : 1 = ↻ 90°, 2 = 180°, 3 = ↺ 90° (même convention
+         que rotateSelectedIsland et confirmMagicRotation). Source unique de
+         l'aperçu 3D, qui en dessine un fantôme par entrée, et du clic sur
+         fantôme ci-dessous. */
+      function magicRotationOptions() {
+        if (!(state.phase === "ACTION" && state.selectedActionType === "MAGIC")) return [];
+        if (!state.selectedIslandId || !state.selectedMagicPivot) return [];
+        const island = state.islands.find(is => is.id === state.selectedIslandId);
+        if (!island) return [];
+        const [pr, pc] = state.selectedMagicPivot;
+        const options = [];
+        [1, 2, 3].forEach(steps => {
+          const direction = steps === 3 ? -1 : 1;
+          const turns = steps === 3 ? 1 : steps;
+          const rotation = calculateIslandRotationAroundPivot(island, pr, pc, direction, turns);
+          if (rotation.valid) options.push({ steps, rotation });
+        });
+        return options;
+      }
+
+      /* Cliquer un fantôme = jouer cette rotation. Le fantôme visé en premier
+         (celui des boutons ↺ ↻) l'emporte sur les autres quand des cases se
+         chevauchent ; le pivot, lui, reste le geste « quitter la magie ». */
+      function magicRotationStepsAtCell(r, c) {
+        if (state.selectedMagicPivot && isSameCell(state.selectedMagicPivot, [r, c])) return 0;
+        const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
+        const options = magicRotationOptions()
+          .sort((a, b) => (b.steps === courant) - (a.steps === courant));
+        const option = options.find(item => cellInPreviewSet(item.rotation.absCells, r, c));
+        return option ? option.steps : 0;
+      }
+
       function handleMagicClick(r, c) {
         if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
+          confirmMagicRotation();
+          return;
+        }
+
+        const fantome = magicRotationStepsAtCell(r, c);
+        if (fantome) {
+          state.magicPreviewSteps = fantome;
+          updateMagicPreview();
           confirmMagicRotation();
           return;
         }

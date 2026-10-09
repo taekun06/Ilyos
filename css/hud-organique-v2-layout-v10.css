@@ -9,8 +9,9 @@ body[data-visual-mode="alternative"] #gameScreen{
   --ov2-context-bottom:188px;
 }
 
+/* #hudV2MagicRow n'est plus ici : les barres de rotation sont rangées en bas à
+   droite par css/hud-consolidation-v12.css. */
 body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
-body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
 body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow,
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow{
   position:fixed!important;
