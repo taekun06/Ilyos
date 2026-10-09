@@ -827,7 +827,7 @@
           if (!moi) { progressionRendreVictoire(null); return; }
           progressionDernierePartie = state;
 
-          const resultat = !vainqueur ? "nul" : (vainqueur === moi || vainqueur.id === moi.id ? "victoire" : "defaite");
+          const resultat = !vainqueur ? "nul" : (vainqueur === moi || memeEquipe(vainqueur.id, moi.id) ? "victoire" : "defaite");
           const difficultes = state.players.filter(j => j.isAI && j.aiDifficulty).map(j => j.aiDifficulty);
           const difficulte = difficultes.sort((a, b) => (PROGRESSION_DIFFICULTE[b] || 0) - (PROGRESSION_DIFFICULTE[a] || 0))[0] || null;
 

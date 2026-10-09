@@ -2192,6 +2192,18 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        /* Gardiens : joueur qui les commande (char.player) et camp d'origine,
+           distincts en 2 contre 2 à gardiens communs (rules-core.js). */
+        gardiens: () => state ? state.characters.map(ch => ({ id: ch.id, joueur: ch.player, camp: proprietaireGardien(ch) })) : null,
+        gardiensPartages: () => gardiensPartages(),
+        /* Plateau et mise en place (tests/creer-son-duel.spec.js). */
+        plateau: () => state ? {
+          taille: GRID, phase: state.phase, trait: state.currentPlayer,
+          miseEnPlace: state.draft ? { miroir: !!state.draft.miroir, index: state.draft.index, total: state.draft.order.length } : null,
+          iles: state.islands.map(i => ({ id: i.id, proprietaire: i.owner, cases: i.cells.map(([r, c]) => [r, c]) })),
+          gardiens: state.characters.map(ch => ({ joueur: ch.player, r: ch.r, c: ch.c })),
+          villages: state.players.map(j => villagesForPlayer(j).map(v => [v.r, v.c]))
+        } : null,
         joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
           difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score,
           couleur: j.color, heros: j.heros || null })) : null,

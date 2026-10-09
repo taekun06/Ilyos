@@ -637,6 +637,8 @@
       }
 
 
+      const CREER_SON_DUEL = "creer";
+
       function symmetricSetupOptionsHTML() {
         return Object.keys(SYMMETRIC_DUEL_SETUPS)
           .map(id => {
@@ -646,7 +648,10 @@
             ).length;
             return `<option value="${id}">${setup.name} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
           })
-          .join("");
+          .join("")
+          // Créer son duel : pas de préréglage, le joueur 1 pose sa moitié et
+          // la pose se reflète chez l'adversaire (startCustomDraft, miroir).
+          + `<option value="${CREER_SON_DUEL}">Créer son duel — À vous de poser, en miroir</option>`;
       }
 
       function boardSizeControlHTML() {
@@ -709,7 +714,21 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const setup = symmetricSetup(setupId);
+        const creer = setupId === CREER_SON_DUEL;
+        const setup = creer
+          ? {
+            name: "Créer son duel",
+            description: "Composez le plateau de départ : posez vos îles puis vos gardiens sur votre moitié, chaque pose se reflète aussitôt dans le camp adverse. Les deux camps restent parfaitement symétriques.",
+            style: "Miroir",
+            islands: [],
+            characters: []
+          }
+          : symmetricSetup(setupId);
+        /* Les quantités du Personnalisé servent aussi à Créer son duel. */
+        els.customSetupControls?.classList.toggle("hidden", !creer && !setupOverlayIsCustom());
+        if (els.confirmSymmetricSetupBtn && !els.confirmSymmetricSetupBtn.disabled && !setupOverlayIsCustom()) {
+          els.confirmSymmetricSetupBtn.textContent = creer ? "Créer mon duel" : "Lancer ce setup";
+        }
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -722,12 +741,15 @@
 
         if (name) name.textContent = setup.name;
         if (description) description.textContent = setup.description;
-        if (islandCount) islandCount.textContent = `${setup.islands.length} îles`;
+        if (islandCount) islandCount.textContent = creer ? "Vos îles" : `${setup.islands.length} îles`;
         if (characterCount) {
-          characterCount.textContent = `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
+          characterCount.textContent = creer
+            ? "Vos gardiens"
+            : `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
         }
         if (style) style.textContent = setup.style;
         if (!preview) return;
+        preview.classList.toggle("preview-miroir", creer);
 
         const islandMap = new Map();
         setup.islands.forEach(island => {
@@ -928,7 +950,7 @@
             </select>
           </label>
           <label class="mode-option-row" for="teamVillagesSelect">
-            <span><b>Villages</b><small>En équipe, J1 et J3 partagent les deux villages d’une diagonale, J2 et J4 ceux de l’autre.</small></span>
+            <span><b>Villages</b><small>En diagonale d’équipe, J1 et J3 partagent les deux villages d’une diagonale, leurs gardiens et leurs couronnes ; J2 et J4 de même.</small></span>
             <select id="teamVillagesSelect">
               <option value="solo" selected>Un village par joueur</option>
               <option value="team">Diagonale partagée par l’équipe</option>
@@ -1440,7 +1462,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => char.player === playerId).length;
+        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
@@ -2814,6 +2836,7 @@
             allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
             islandLimitPerPlayer: 0,
             shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0,
+            gardiensPartages: !!state.rules?.gardiensPartages,
             ...lireReglesPersonnalisees()
           };
           appliquerPaquetDesRegles();
@@ -2823,6 +2846,26 @@
           startCustomDraft(
             Number(els.customIslandCountSelect?.value),
             Number(els.customGuardianCountSelect?.value)
+          );
+          startAmbient();
+          if (state.onlineMode) forceOnlineSync();
+          return;
+        }
+
+        if (els.symmetricSetupSelect?.value === CREER_SON_DUEL) {
+          state.startingBoardPreset = CREER_SON_DUEL;
+          state.rules = {
+            allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
+            islandLimitPerPlayer: 0,
+            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
+          };
+          state.setupSelectionPending = false;
+          state.inputLocked = false;
+          closeSymmetricSetupOverlay();
+          startCustomDraft(
+            Number(els.customIslandCountSelect?.value),
+            Number(els.customGuardianCountSelect?.value),
+            { miroir: true }
           );
           startAmbient();
           if (state.onlineMode) forceOnlineSync();
@@ -2897,7 +2940,9 @@
           order,
           index,
           placedIslands: compteur(draft.placedIslands),
-          placedGuardians: compteur(draft.placedGuardians)
+          placedGuardians: compteur(draft.placedGuardians),
+          miroir: !!draft.miroir && playerCount === 2,
+          premier: Number.isInteger(draft.premier) && draft.premier < playerCount ? draft.premier : 0
         };
       }
 
@@ -2911,9 +2956,14 @@
         return order;
       }
 
-      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer) {
+      /* Créer son duel (options.miroir) : seul le joueur 1 pose, et chaque île
+         ou gardien posé est aussitôt reflété pour le joueur 2 par rapport à
+         l'axe vertical du plateau — le même miroir que les préréglages du
+         duel symétrique (mirrorPresetCells). */
+      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer, options = {}) {
         if (!state) return;
         const playerCount = state.players.length;
+        const miroir = !!options.miroir && playerCount === 2;
         const iles = Math.max(1, Math.min(6, Math.round(Number(islandsPerPlayer)) || 4));
         const gardiens = Math.max(
           1,
@@ -2923,10 +2973,14 @@
         state.draft = {
           islandsPerPlayer: iles,
           guardiansPerPlayer: gardiens,
-          order: buildDraftOrder(playerCount, iles + gardiens),
+          order: miroir ? new Array(iles + gardiens).fill(0) : buildDraftOrder(playerCount, iles + gardiens),
           index: 0,
           placedIslands: new Array(playerCount).fill(0),
-          placedGuardians: new Array(playerCount).fill(0)
+          placedGuardians: new Array(playerCount).fill(0),
+          miroir,
+          // Qui ouvre la partie une fois le plateau composé : le tirage au
+          // sort fait à la création, comme pour les préréglages.
+          premier: state.currentPlayer || 0
         };
 
         /* Le plateau personnalisé démarre nu. startLocalGame place d'office un
@@ -2994,11 +3048,13 @@
 
       function finishCustomDraft() {
         if (!state) return;
+        const miroir = state.draft?.miroir ? state.draft : null;
         state.draft = null;
         state.phase = "ACTION_SELECT";
         // Celui qui a posé en premier ouvre la partie : le serpentin lui a
-        // déjà fait payer le fait de poser à l'aveugle.
-        state.currentPlayer = 0;
+        // déjà fait payer le fait de poser à l'aveugle. En miroir, aucun
+        // désavantage à compenser : on garde le tirage au sort.
+        state.currentPlayer = miroir ? miroir.premier : 0;
         state.turn = 1;
         state.round = 1;
         beginTurn();
@@ -3009,6 +3065,15 @@
       /* Placement d'un gardien pendant le draft : n'importe quelle case libre
          d'une île appartenant au joueur, ou sa case de village. */
       function draftGuardianCellAllowed(playerId, r, c) {
+        if (!draftCaseGardienLibre(playerId, r, c)) return false;
+        if (!state.draft?.miroir) return true;
+        // En miroir, le reflet doit lui aussi être libre, et distinct : une
+        // case de la colonne centrale serait son propre reflet.
+        const reflet = GRID - 1 - c;
+        return reflet !== c && draftCaseGardienLibre(1 - playerId, r, reflet);
+      }
+
+      function draftCaseGardienLibre(playerId, r, c) {
         if (!inside(r, c) || characterAt(r, c)) return false;
         // villageAt renvoie le JOUEUR propriétaire (objet), pas son id : la
         // comparaison à playerId échouait toujours, et le village restait
@@ -3030,10 +3095,44 @@
         const char = { id: `char-${state.nextCharId++}`, player: pick.player, r, c };
         state.characters.push(char);
         state.draft.placedGuardians[pick.player]++;
+        refleterPoseDraft("guardian", char);
         playSfx("spawn");
         animateCellPulse(r, c, "spawn-arrival");
         advanceDraft();
         return true;
+      }
+
+      /* Créer son duel : reflète pour l'adversaire l'île ou le gardien que le
+         joueur 1 vient de poser. Rend la pièce créée, ou null hors miroir. */
+      function refleterPoseDraft(kind, piece) {
+        if (!state?.draft?.miroir || !piece) return null;
+        const adverse = 1 - (kind === "island" ? piece.owner : piece.player);
+        let reflet;
+        if (kind === "island") {
+          reflet = {
+            ...makeSymmetricPresetIsland(state.nextIslandId++, adverse, mirrorPresetCells(piece.cells)),
+            fromSetup: true
+          };
+          reflet.visualVariant = chooseIslandVisualVariant(reflet.cells, reflet.id, state.islands);
+          state.islands.push(reflet);
+          state.draft.placedIslands[adverse]++;
+          animateIslandArrival(reflet);
+        } else {
+          reflet = { id: `char-${state.nextCharId++}`, player: adverse, r: piece.r, c: GRID - 1 - piece.c };
+          state.characters.push(reflet);
+          state.draft.placedGuardians[adverse]++;
+          animateCellPulse(reflet.r, reflet.c, "spawn-arrival");
+        }
+        return reflet;
+      }
+
+      /* Créer son duel : le reflet d'une île doit tenir sur le plateau, sur
+         des cases libres, sans recouvrir l'île elle-même. */
+      function refletIleValide(cells) {
+        if (!state?.draft?.miroir) return true;
+        const propres = new Set(cells.map(([r, c]) => key(r, c)));
+        return mirrorPresetCells(cells).every(([r, c]) =>
+          inside(r, c) && !isLand(r, c) && !propres.has(key(r, c)));
       }
 
       /* IA DE MISE EN PLACE — décision et application séparées.
@@ -3101,11 +3200,13 @@
           };
           state.islands.push(cree);
           state.draft.placedIslands[decision.player]++;
+          if (refletIleValide(cree.cells)) refleterPoseDraft("island", cree);
         } else if (decision.kind === "guardian" && decision.cell
           && draftGuardianCellAllowed(decision.player, decision.cell[0], decision.cell[1])) {
           cree = { id: `char-${state.nextCharId++}`, player: decision.player, r: decision.cell[0], c: decision.cell[1] };
           state.characters.push(cree);
           state.draft.placedGuardians[decision.player]++;
+          refleterPoseDraft("guardian", cree);
         }
         return cree;
       }
@@ -3389,9 +3490,10 @@
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
-        /* 2 contre 2 : chacun pour soi (score individuel), mais des places
-           peuvent être tenues par l'IA, et les deux villages d'une diagonale
-           peuvent être partagés par l'équipe (J1+J3, J2+J4) comme en duel. */
+        /* 2 contre 2 : des places peuvent être tenues par l'IA. Par défaut
+           chacun marque pour soi ; avec la diagonale d'équipe (J1+J3, J2+J4),
+           l'équipe partage villages, gardiens et couronnes (rules-core.js,
+           confierGardiensEquipe). */
         const teamMode = count === 4;
         const siegesIA = !teamMode ? []
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
@@ -3464,7 +3566,7 @@
           phase: "ACTION_SELECT",
           // Règles optionnelles : jamais activées en classique. Le duel
           // symétrique peut les personnaliser via confirmSymmetricSetup().
-          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0, gardiensPartages: villagesEquipe },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           couronnesEnAttente: [],

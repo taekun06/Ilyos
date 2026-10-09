@@ -25,7 +25,7 @@ window.ILYOS_MENU_CONFIG = {
     },
     team: {
       label: '2 CONTRE 2', subtitle: 'Équipes', playerCount: '4', playLabel: 'LANCER LE 2 CONTRE 2',
-      description: "Quatre joueurs, chacun ses couronnes. Des places peuvent être tenues par l’IA, et chaque équipe peut partager sa diagonale de villages.", dot: 2,
+      description: "Quatre joueurs en deux équipes. Des places peuvent être tenues par l’IA. En diagonale d’équipe, les coéquipiers partagent villages, gardiens et couronnes.", dot: 2,
       controls: [
         { key:'size', label:'TAILLE', default:'11', options:[['11','11×11'],['13','13×13']] },
         { key:'seats', label:'ORDINATEURS', default:'none', options:[['none','AUCUN'],['ai24','J2 + J4 (2 CONTRE IA)'],['ai234','J2 + J3 + J4']] },

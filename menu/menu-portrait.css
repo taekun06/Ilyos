@@ -95,11 +95,26 @@
     justify-content: center !important;
     gap: 8px !important;
   }
-  .home-nav .pill,
-  .resume-pill {
+  .home-nav .pill {
     min-width: 0 !important;
     padding: 9px 12px !important;
     font-size: 12px !important;
+  }
+  /* Reprendre : en bas à droite, la navigation remonte d'une rangée. */
+  .home-layout .resume-pill {
+    right: 12px !important;
+    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+    gap: 8px !important;
+    padding: 8px 14px 8px 8px !important;
+    font-size: 13px !important;
+  }
+  .home-layout .resume-pill .resume-icone {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 14px !important;
+  }
+  .home-layout:has(.resume-pill:not([hidden])) .home-nav {
+    bottom: calc(4% + 30px + env(safe-area-inset-bottom)) !important;
   }
 
   /* ---------- Réglages de partie (Solo, Duel, 2 contre 2) ---------- */

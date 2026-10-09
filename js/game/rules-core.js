@@ -569,6 +569,40 @@
       }
 
       /* ==================================================================
+         2 CONTRE 2, DIAGONALE D'ÉQUIPE — gardiens et couronnes en commun
+
+         Avec les villages d'équipe (J1+J3, J2+J4), l'équipe joue comme un
+         seul camp : chaque joueur commande aussi les gardiens de son
+         coéquipier, et une couronne validée compte pour les deux.
+
+         Plutôt que de réécrire chaque contrôle « ce gardien est-il à moi ? »
+         (interface, IA, planner), on confie au début de chaque tour tous les
+         gardiens de l'équipe au joueur qui prend la main (char.player). Le
+         camp d'origine reste dans char.proprietaire, qui ne sert qu'à
+         l'apparence et au plafond de gardiens par joueur.
+      ================================================================== */
+      function gardiensPartages() {
+        return !!state?.rules?.gardiensPartages && state.players?.length === 4;
+      }
+
+      function memeEquipe(a, b) {
+        return a === b || (gardiensPartages() && a % 2 === b % 2);
+      }
+
+      function proprietaireGardien(char) {
+        return char?.proprietaire ?? char?.player;
+      }
+
+      function confierGardiensEquipe(playerId) {
+        if (!gardiensPartages()) return;
+        (state.characters || []).forEach(char => {
+          if (char.player === playerId || !memeEquipe(char.player, playerId)) return;
+          char.proprietaire ??= char.player;
+          char.player = playerId;
+        });
+      }
+
+      /* ==================================================================
          BLOCAGE DE ZONE (règle V67)
 
          Un gardien adverse posté sur l'une des trois cases d'un village y
@@ -759,7 +793,10 @@
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
       function vainqueurAuxCouronnes() {
-        const scores = (state.players || []).map(p => p.score || 0);
+        /* Équipe à couronnes communes : les deux coéquipiers ont toujours le
+           même score, ce n'est pas une égalité. On compare J1 à J2. */
+        const scores = (gardiensPartages() ? state.players.slice(0, 2) : state.players || [])
+          .map(p => p.score || 0);
         const meilleur = Math.max(...scores);
         const exaequo = scores.filter(s => s === meilleur).length;
         return exaequo > 1 ? null : scores.indexOf(meilleur);

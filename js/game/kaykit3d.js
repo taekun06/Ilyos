@@ -10201,6 +10201,11 @@
         const previewIsland = { id: "placement-preview", owner: null, cells: previewCells };
         const block = makeKayKitIslandBlock(previewIsland, { preview: true, valid, previewMode: "placement" });
         kaykit3D.dynamicGroup.add(block);
+        // Créer son duel : le reflet que recevra l'adversaire, même verdict.
+        if (state.draft?.miroir) {
+          const reflet = { id: "placement-preview-miroir", owner: null, cells: mirrorPresetCells(previewCells) };
+          kaykit3D.dynamicGroup.add(makeKayKitIslandBlock(reflet, { preview: true, valid, previewMode: "placement" }));
+        }
         // Pas de fondu ici : ce ghost est reconstruit à chaque déplacement de
         // souris via un resync complet de la scène (déjà coûteux en soi), et
         // traverser+enregistrer chaque mesh du bloc dans animatedObjects à
@@ -10470,7 +10475,9 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
-        const playerId = character.player ?? 0;
+        // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
+        // char.player suit le joueur qui commande (voir confierGardiensEquipe).
+        const playerId = proprietaireGardien(character) ?? 0;
         // Gardien choisi dans la collection (progression.js) : tous les
         // gardiens de ce joueur prennent ce modèle.
         const choisi = state.players[playerId]?.heros;
@@ -10484,7 +10491,7 @@
             3: ["hero3", "hero1"]
           };
         const teamPool = teamHeroPools[playerId] || teamHeroPools[0];
-        const teamIndex = state.characters.filter((item, itemIndex) => itemIndex < index && (item.player ?? 0) === playerId).length;
+        const teamIndex = state.characters.filter((item, itemIndex) => itemIndex < index && (proprietaireGardien(item) ?? 0) === playerId).length;
         return teamPool[teamIndex % teamPool.length];
       }
 
@@ -10504,7 +10511,7 @@
       }
 
       function createCharacterVisual(character, index) {
-        const playerId = character.player ?? 0;
+        const playerId = proprietaireGardien(character) ?? 0;
         const assetKey = resolveHeroAssetKey(character, index);
         // Modèle encore en cours de chargement (pas encore dans assets, pas
         // encore marqué en échec) : on attend plutôt que de poser un modèle

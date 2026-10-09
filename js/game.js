@@ -10581,6 +10581,11 @@
         const previewIsland = { id: "placement-preview", owner: null, cells: previewCells };
         const block = makeKayKitIslandBlock(previewIsland, { preview: true, valid, previewMode: "placement" });
         kaykit3D.dynamicGroup.add(block);
+        // Créer son duel : le reflet que recevra l'adversaire, même verdict.
+        if (state.draft?.miroir) {
+          const reflet = { id: "placement-preview-miroir", owner: null, cells: mirrorPresetCells(previewCells) };
+          kaykit3D.dynamicGroup.add(makeKayKitIslandBlock(reflet, { preview: true, valid, previewMode: "placement" }));
+        }
         // Pas de fondu ici : ce ghost est reconstruit à chaque déplacement de
         // souris via un resync complet de la scène (déjà coûteux en soi), et
         // traverser+enregistrer chaque mesh du bloc dans animatedObjects à
@@ -10850,7 +10855,9 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
-        const playerId = character.player ?? 0;
+        // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
+        // char.player suit le joueur qui commande (voir confierGardiensEquipe).
+        const playerId = proprietaireGardien(character) ?? 0;
         // Gardien choisi dans la collection (progression.js) : tous les
         // gardiens de ce joueur prennent ce modèle.
         const choisi = state.players[playerId]?.heros;
@@ -10864,7 +10871,7 @@
             3: ["hero3", "hero1"]
           };
         const teamPool = teamHeroPools[playerId] || teamHeroPools[0];
-        const teamIndex = state.characters.filter((item, itemIndex) => itemIndex < index && (item.player ?? 0) === playerId).length;
+        const teamIndex = state.characters.filter((item, itemIndex) => itemIndex < index && (proprietaireGardien(item) ?? 0) === playerId).length;
         return teamPool[teamIndex % teamPool.length];
       }
 
@@ -10884,7 +10891,7 @@
       }
 
       function createCharacterVisual(character, index) {
-        const playerId = character.player ?? 0;
+        const playerId = proprietaireGardien(character) ?? 0;
         const assetKey = resolveHeroAssetKey(character, index);
         // Modèle encore en cours de chargement (pas encore dans assets, pas
         // encore marqué en échec) : on attend plutôt que de poser un modèle
@@ -13724,6 +13731,8 @@
       }
 
 
+      const CREER_SON_DUEL = "creer";
+
       function symmetricSetupOptionsHTML() {
         return Object.keys(SYMMETRIC_DUEL_SETUPS)
           .map(id => {
@@ -13733,7 +13742,10 @@
             ).length;
             return `<option value="${id}">${setup.name} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
           })
-          .join("");
+          .join("")
+          // Créer son duel : pas de préréglage, le joueur 1 pose sa moitié et
+          // la pose se reflète chez l'adversaire (startCustomDraft, miroir).
+          + `<option value="${CREER_SON_DUEL}">Créer son duel — À vous de poser, en miroir</option>`;
       }
 
       function boardSizeControlHTML() {
@@ -13796,7 +13808,21 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const setup = symmetricSetup(setupId);
+        const creer = setupId === CREER_SON_DUEL;
+        const setup = creer
+          ? {
+            name: "Créer son duel",
+            description: "Composez le plateau de départ : posez vos îles puis vos gardiens sur votre moitié, chaque pose se reflète aussitôt dans le camp adverse. Les deux camps restent parfaitement symétriques.",
+            style: "Miroir",
+            islands: [],
+            characters: []
+          }
+          : symmetricSetup(setupId);
+        /* Les quantités du Personnalisé servent aussi à Créer son duel. */
+        els.customSetupControls?.classList.toggle("hidden", !creer && !setupOverlayIsCustom());
+        if (els.confirmSymmetricSetupBtn && !els.confirmSymmetricSetupBtn.disabled && !setupOverlayIsCustom()) {
+          els.confirmSymmetricSetupBtn.textContent = creer ? "Créer mon duel" : "Lancer ce setup";
+        }
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -13809,12 +13835,15 @@
 
         if (name) name.textContent = setup.name;
         if (description) description.textContent = setup.description;
-        if (islandCount) islandCount.textContent = `${setup.islands.length} îles`;
+        if (islandCount) islandCount.textContent = creer ? "Vos îles" : `${setup.islands.length} îles`;
         if (characterCount) {
-          characterCount.textContent = `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
+          characterCount.textContent = creer
+            ? "Vos gardiens"
+            : `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
         }
         if (style) style.textContent = setup.style;
         if (!preview) return;
+        preview.classList.toggle("preview-miroir", creer);
 
         const islandMap = new Map();
         setup.islands.forEach(island => {
@@ -14015,7 +14044,7 @@
             </select>
           </label>
           <label class="mode-option-row" for="teamVillagesSelect">
-            <span><b>Villages</b><small>En équipe, J1 et J3 partagent les deux villages d’une diagonale, J2 et J4 ceux de l’autre.</small></span>
+            <span><b>Villages</b><small>En diagonale d’équipe, J1 et J3 partagent les deux villages d’une diagonale, leurs gardiens et leurs couronnes ; J2 et J4 de même.</small></span>
             <select id="teamVillagesSelect">
               <option value="solo" selected>Un village par joueur</option>
               <option value="team">Diagonale partagée par l’équipe</option>
@@ -14527,7 +14556,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => char.player === playerId).length;
+        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
@@ -15901,6 +15930,7 @@
             allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
             islandLimitPerPlayer: 0,
             shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0,
+            gardiensPartages: !!state.rules?.gardiensPartages,
             ...lireReglesPersonnalisees()
           };
           appliquerPaquetDesRegles();
@@ -15910,6 +15940,26 @@
           startCustomDraft(
             Number(els.customIslandCountSelect?.value),
             Number(els.customGuardianCountSelect?.value)
+          );
+          startAmbient();
+          if (state.onlineMode) forceOnlineSync();
+          return;
+        }
+
+        if (els.symmetricSetupSelect?.value === CREER_SON_DUEL) {
+          state.startingBoardPreset = CREER_SON_DUEL;
+          state.rules = {
+            allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
+            islandLimitPerPlayer: 0,
+            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
+          };
+          state.setupSelectionPending = false;
+          state.inputLocked = false;
+          closeSymmetricSetupOverlay();
+          startCustomDraft(
+            Number(els.customIslandCountSelect?.value),
+            Number(els.customGuardianCountSelect?.value),
+            { miroir: true }
           );
           startAmbient();
           if (state.onlineMode) forceOnlineSync();
@@ -15984,7 +16034,9 @@
           order,
           index,
           placedIslands: compteur(draft.placedIslands),
-          placedGuardians: compteur(draft.placedGuardians)
+          placedGuardians: compteur(draft.placedGuardians),
+          miroir: !!draft.miroir && playerCount === 2,
+          premier: Number.isInteger(draft.premier) && draft.premier < playerCount ? draft.premier : 0
         };
       }
 
@@ -15998,9 +16050,14 @@
         return order;
       }
 
-      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer) {
+      /* Créer son duel (options.miroir) : seul le joueur 1 pose, et chaque île
+         ou gardien posé est aussitôt reflété pour le joueur 2 par rapport à
+         l'axe vertical du plateau — le même miroir que les préréglages du
+         duel symétrique (mirrorPresetCells). */
+      function startCustomDraft(islandsPerPlayer, guardiansPerPlayer, options = {}) {
         if (!state) return;
         const playerCount = state.players.length;
+        const miroir = !!options.miroir && playerCount === 2;
         const iles = Math.max(1, Math.min(6, Math.round(Number(islandsPerPlayer)) || 4));
         const gardiens = Math.max(
           1,
@@ -16010,10 +16067,14 @@
         state.draft = {
           islandsPerPlayer: iles,
           guardiansPerPlayer: gardiens,
-          order: buildDraftOrder(playerCount, iles + gardiens),
+          order: miroir ? new Array(iles + gardiens).fill(0) : buildDraftOrder(playerCount, iles + gardiens),
           index: 0,
           placedIslands: new Array(playerCount).fill(0),
-          placedGuardians: new Array(playerCount).fill(0)
+          placedGuardians: new Array(playerCount).fill(0),
+          miroir,
+          // Qui ouvre la partie une fois le plateau composé : le tirage au
+          // sort fait à la création, comme pour les préréglages.
+          premier: state.currentPlayer || 0
         };
 
         /* Le plateau personnalisé démarre nu. startLocalGame place d'office un
@@ -16081,11 +16142,13 @@
 
       function finishCustomDraft() {
         if (!state) return;
+        const miroir = state.draft?.miroir ? state.draft : null;
         state.draft = null;
         state.phase = "ACTION_SELECT";
         // Celui qui a posé en premier ouvre la partie : le serpentin lui a
-        // déjà fait payer le fait de poser à l'aveugle.
-        state.currentPlayer = 0;
+        // déjà fait payer le fait de poser à l'aveugle. En miroir, aucun
+        // désavantage à compenser : on garde le tirage au sort.
+        state.currentPlayer = miroir ? miroir.premier : 0;
         state.turn = 1;
         state.round = 1;
         beginTurn();
@@ -16096,6 +16159,15 @@
       /* Placement d'un gardien pendant le draft : n'importe quelle case libre
          d'une île appartenant au joueur, ou sa case de village. */
       function draftGuardianCellAllowed(playerId, r, c) {
+        if (!draftCaseGardienLibre(playerId, r, c)) return false;
+        if (!state.draft?.miroir) return true;
+        // En miroir, le reflet doit lui aussi être libre, et distinct : une
+        // case de la colonne centrale serait son propre reflet.
+        const reflet = GRID - 1 - c;
+        return reflet !== c && draftCaseGardienLibre(1 - playerId, r, reflet);
+      }
+
+      function draftCaseGardienLibre(playerId, r, c) {
         if (!inside(r, c) || characterAt(r, c)) return false;
         // villageAt renvoie le JOUEUR propriétaire (objet), pas son id : la
         // comparaison à playerId échouait toujours, et le village restait
@@ -16117,10 +16189,44 @@
         const char = { id: `char-${state.nextCharId++}`, player: pick.player, r, c };
         state.characters.push(char);
         state.draft.placedGuardians[pick.player]++;
+        refleterPoseDraft("guardian", char);
         playSfx("spawn");
         animateCellPulse(r, c, "spawn-arrival");
         advanceDraft();
         return true;
+      }
+
+      /* Créer son duel : reflète pour l'adversaire l'île ou le gardien que le
+         joueur 1 vient de poser. Rend la pièce créée, ou null hors miroir. */
+      function refleterPoseDraft(kind, piece) {
+        if (!state?.draft?.miroir || !piece) return null;
+        const adverse = 1 - (kind === "island" ? piece.owner : piece.player);
+        let reflet;
+        if (kind === "island") {
+          reflet = {
+            ...makeSymmetricPresetIsland(state.nextIslandId++, adverse, mirrorPresetCells(piece.cells)),
+            fromSetup: true
+          };
+          reflet.visualVariant = chooseIslandVisualVariant(reflet.cells, reflet.id, state.islands);
+          state.islands.push(reflet);
+          state.draft.placedIslands[adverse]++;
+          animateIslandArrival(reflet);
+        } else {
+          reflet = { id: `char-${state.nextCharId++}`, player: adverse, r: piece.r, c: GRID - 1 - piece.c };
+          state.characters.push(reflet);
+          state.draft.placedGuardians[adverse]++;
+          animateCellPulse(reflet.r, reflet.c, "spawn-arrival");
+        }
+        return reflet;
+      }
+
+      /* Créer son duel : le reflet d'une île doit tenir sur le plateau, sur
+         des cases libres, sans recouvrir l'île elle-même. */
+      function refletIleValide(cells) {
+        if (!state?.draft?.miroir) return true;
+        const propres = new Set(cells.map(([r, c]) => key(r, c)));
+        return mirrorPresetCells(cells).every(([r, c]) =>
+          inside(r, c) && !isLand(r, c) && !propres.has(key(r, c)));
       }
 
       /* IA DE MISE EN PLACE — décision et application séparées.
@@ -16188,11 +16294,13 @@
           };
           state.islands.push(cree);
           state.draft.placedIslands[decision.player]++;
+          if (refletIleValide(cree.cells)) refleterPoseDraft("island", cree);
         } else if (decision.kind === "guardian" && decision.cell
           && draftGuardianCellAllowed(decision.player, decision.cell[0], decision.cell[1])) {
           cree = { id: `char-${state.nextCharId++}`, player: decision.player, r: decision.cell[0], c: decision.cell[1] };
           state.characters.push(cree);
           state.draft.placedGuardians[decision.player]++;
+          refleterPoseDraft("guardian", cree);
         }
         return cree;
       }
@@ -16476,9 +16584,10 @@
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
         const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
         const count = names.length;
-        /* 2 contre 2 : chacun pour soi (score individuel), mais des places
-           peuvent être tenues par l'IA, et les deux villages d'une diagonale
-           peuvent être partagés par l'équipe (J1+J3, J2+J4) comme en duel. */
+        /* 2 contre 2 : des places peuvent être tenues par l'IA. Par défaut
+           chacun marque pour soi ; avec la diagonale d'équipe (J1+J3, J2+J4),
+           l'équipe partage villages, gardiens et couronnes (rules-core.js,
+           confierGardiensEquipe). */
         const teamMode = count === 4;
         const siegesIA = !teamMode ? []
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
@@ -16551,7 +16660,7 @@
           phase: "ACTION_SELECT",
           // Règles optionnelles : jamais activées en classique. Le duel
           // symétrique peut les personnaliser via confirmSymmetricSetup().
-          rules: { allowDissolve: false, islandLimitPerPlayer: 0 },
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0, gardiensPartages: villagesEquipe },
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           couronnesEnAttente: [],
@@ -18443,6 +18552,9 @@
 
       function beginTurn() {
         const p = currentPlayer();
+        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
+        // qui prend la main, avant même la validation des couronnes.
+        confierGardiensEquipe(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();
@@ -20063,15 +20175,17 @@
           const reste = pick ? draftPicksRemainingFor(pick.player) : null;
           if (pick?.kind === "island") {
             return {
-              label: `Formation · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
               instruction: state.phase === "PLACE_ISLAND"
-                ? "Prochain clic : une zone verte du plateau."
+                ? (state.draft.miroir
+                  ? "Prochain clic : une zone verte, son reflet ira chez l’adversaire."
+                  : "Prochain clic : une zone verte du plateau.")
                 : "Choisissez une forme d’île dans le panneau de gauche."
             };
           }
           if (pick?.kind === "guardian") {
             return {
-              label: `Formation · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
               instruction: "Prochain clic : une case libre de vos îles ou de votre village."
             };
           }
@@ -20152,7 +20266,7 @@
             const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
               next: state.phase === "PLACE_ISLAND"
                 ? `Rotation ${degrees}° — ${consignePoseIle()}`
@@ -20162,7 +20276,7 @@
           if (pick?.kind === "guardian") {
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""} à placer`,
               next: "Cliquez une case libre de vos îles ou votre village."
             };
@@ -20768,7 +20882,8 @@
 
         // Une île peut être posée n'importe où :
         // elle doit seulement rester dans la grille et ne rien chevaucher.
-        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c));
+        // En Créer son duel, son reflet aussi (refletIleValide, core.js).
+        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c)) && refletIleValide(cells);
       }
 
       function recomputeValidAnchors() {
@@ -22086,6 +22201,7 @@
 
         if (state.draft) {
           state.draft.placedIslands[island.owner]++;
+          refleterPoseDraft("island", island);
           state.selectedIslandShape = null;
           state.placementCells = null;
           state.placementOriginIndex = 0;
@@ -23778,7 +23894,7 @@
             <span title="Poussées disponibles"><em>P</em><b>${availableActionCount("PUSH", p)}</b></span>
             <span title="Magies disponibles"><em>M</em><b>${availableActionCount("MAGIC", p)}</b></span>
           </div>
-          <small>${state.characters.filter(ch => ch.player === p.id).length} gardien(s)</small>
+          <small>${state.characters.filter(ch => proprietaireGardien(ch) === p.id).length} gardien(s)</small>
         `;
           els.scoreList.appendChild(card);
         });
@@ -23897,7 +24013,7 @@
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
         if (ch) {
-          const p = state.players[ch.player];
+          const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
           els.unitCard.innerHTML = `
           <div class="big-icon">${p.icon}</div>
@@ -24040,6 +24156,16 @@
       function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
         player.score++;
         triggerScoreAnimation(player.id);
+        /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
+           marque avec lui, la victoire est celle de l'équipe. */
+        const coequipier = gardiensPartages()
+          ? state.players.find(j => j.id !== player.id && memeEquipe(j.id, player.id))
+          : null;
+        if (coequipier) {
+          coequipier.score = player.score;
+          triggerScoreAnimation(coequipier.id);
+        }
+        const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
         if (artifact) artifact.carrierId = null;
 
@@ -24047,7 +24173,9 @@
           respawnCharacter(char);
           showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
         } else {
-          showToast(`${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+          showToast(coequipier
+            ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
+            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
@@ -24059,7 +24187,9 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
-            setTimeout(() => showVictory(player), 450);
+            setTimeout(() => showVictory(player, coequipier
+              ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
+              : null), 450);
           }
         } else {
           // Un gardien qui valide une couronne (dépôt au village, hors sortie
@@ -24300,7 +24430,9 @@
 
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
-        els.victoryTitle.textContent = player.name;
+        els.victoryTitle.textContent = gardiensPartages()
+          ? (player.id % 2 === 0 ? "Équipe or" : "Équipe violette")
+          : player.name;
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
@@ -25263,6 +25395,40 @@
       }
 
       /* ==================================================================
+         2 CONTRE 2, DIAGONALE D'ÉQUIPE — gardiens et couronnes en commun
+
+         Avec les villages d'équipe (J1+J3, J2+J4), l'équipe joue comme un
+         seul camp : chaque joueur commande aussi les gardiens de son
+         coéquipier, et une couronne validée compte pour les deux.
+
+         Plutôt que de réécrire chaque contrôle « ce gardien est-il à moi ? »
+         (interface, IA, planner), on confie au début de chaque tour tous les
+         gardiens de l'équipe au joueur qui prend la main (char.player). Le
+         camp d'origine reste dans char.proprietaire, qui ne sert qu'à
+         l'apparence et au plafond de gardiens par joueur.
+      ================================================================== */
+      function gardiensPartages() {
+        return !!state?.rules?.gardiensPartages && state.players?.length === 4;
+      }
+
+      function memeEquipe(a, b) {
+        return a === b || (gardiensPartages() && a % 2 === b % 2);
+      }
+
+      function proprietaireGardien(char) {
+        return char?.proprietaire ?? char?.player;
+      }
+
+      function confierGardiensEquipe(playerId) {
+        if (!gardiensPartages()) return;
+        (state.characters || []).forEach(char => {
+          if (char.player === playerId || !memeEquipe(char.player, playerId)) return;
+          char.proprietaire ??= char.player;
+          char.player = playerId;
+        });
+      }
+
+      /* ==================================================================
          BLOCAGE DE ZONE (règle V67)
 
          Un gardien adverse posté sur l'une des trois cases d'un village y
@@ -25453,7 +25619,10 @@
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine. */
       function vainqueurAuxCouronnes() {
-        const scores = (state.players || []).map(p => p.score || 0);
+        /* Équipe à couronnes communes : les deux coéquipiers ont toujours le
+           même score, ce n'est pas une égalité. On compare J1 à J2. */
+        const scores = (gardiensPartages() ? state.players.slice(0, 2) : state.players || [])
+          .map(p => p.score || 0);
         const meilleur = Math.max(...scores);
         const exaequo = scores.filter(s => s === meilleur).length;
         return exaequo > 1 ? null : scores.indexOf(meilleur);
@@ -26686,7 +26855,7 @@
             if (trace) trace.push({ terme: "matchNul", montant: 0, note: null });
             return 0;
           }
-          const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
+          const terminal = memeEquipe(state.winner, playerId) ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
           if (trace) trace.push({ terme: "victoire", montant: terminal, note: null });
           return terminal;
         }
@@ -44884,7 +45053,7 @@
           if (!moi) { progressionRendreVictoire(null); return; }
           progressionDernierePartie = state;
 
-          const resultat = !vainqueur ? "nul" : (vainqueur === moi || vainqueur.id === moi.id ? "victoire" : "defaite");
+          const resultat = !vainqueur ? "nul" : (vainqueur === moi || memeEquipe(vainqueur.id, moi.id) ? "victoire" : "defaite");
           const difficultes = state.players.filter(j => j.isAI && j.aiDifficulty).map(j => j.aiDifficulty);
           const difficulte = difficultes.sort((a, b) => (PROGRESSION_DIFFICULTE[b] || 0) - (PROGRESSION_DIFFICULTE[a] || 0))[0] || null;
 
@@ -48781,6 +48950,18 @@
           return joueur.score;
         },
         joueurCourant: () => state ? { id: state.currentPlayer, ia: !!currentPlayer().isAI, tour: state.turn } : null,
+        /* Gardiens : joueur qui les commande (char.player) et camp d'origine,
+           distincts en 2 contre 2 à gardiens communs (rules-core.js). */
+        gardiens: () => state ? state.characters.map(ch => ({ id: ch.id, joueur: ch.player, camp: proprietaireGardien(ch) })) : null,
+        gardiensPartages: () => gardiensPartages(),
+        /* Plateau et mise en place (tests/creer-son-duel.spec.js). */
+        plateau: () => state ? {
+          taille: GRID, phase: state.phase, trait: state.currentPlayer,
+          miseEnPlace: state.draft ? { miroir: !!state.draft.miroir, index: state.draft.index, total: state.draft.order.length } : null,
+          iles: state.islands.map(i => ({ id: i.id, proprietaire: i.owner, cases: i.cells.map(([r, c]) => [r, c]) })),
+          gardiens: state.characters.map(ch => ({ joueur: ch.player, r: ch.r, c: ch.c })),
+          villages: state.players.map(j => villagesForPlayer(j).map(v => [v.r, v.c]))
+        } : null,
         joueurs: () => state ? state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI,
           difficulte: j.aiDifficulty, villages: villagesForPlayer(j).map(v => [v.r, v.c]), score: j.score,
           couleur: j.color, heros: j.heros || null })) : null,
