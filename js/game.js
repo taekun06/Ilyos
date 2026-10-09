@@ -10710,9 +10710,9 @@
          calculateIslandRotationAroundPivot, la règle même qu'applique
          confirmMagicRotation. */
       const KAYKIT_MAGIC_OPTION_STYLE = {
-        1: { couleur: 0x1fb4ff, texte: "↻ 90°", retrait: .07 },
-        2: { couleur: 0xffaa12, texte: "180°", retrait: .15 },
-        3: { couleur: 0xb04dff, texte: "↺ 90°", retrait: .23 }
+        1: { couleur: 0x1fb4ff, texte: "↻ 90°", retrait: .08 },
+        2: { couleur: 0xffaa12, texte: "180°", retrait: .2 },
+        3: { couleur: 0xb04dff, texte: "↺ 90°", retrait: .32 }
       };
 
       /* Teinte franche d'un fantôme. toneMapped:false : sans lui, le rendu
@@ -10747,29 +10747,36 @@
          de scène, `linewidth` étant ignoré par les pilotes) décalé de
          `retrait` vers l'intérieur. kaykitIslandBoundary parcourt toujours le
          bord dans le même sens : l'intérieur est à gauche de chaque arête. */
+      /* Coins d'un bord d'île, et ce bord décalé de `d` vers l'intérieur. */
+      function kaykitBordDecale(component) {
+        const bord = kaykitIslandBoundary(component);
+        const n = bord.length;
+        if (n < 3) return null;
+        const memeX = (a, b) => Math.abs(a[0] - b[0]) < 1e-6;
+        const memeZ = (a, b) => Math.abs(a[1] - b[1]) < 1e-6;
+        const coins = bord.filter((p, i) => {
+          const a = bord[(i - 1 + n) % n], b = bord[(i + 1) % n];
+          return !((memeX(a, p) && memeX(p, b)) || (memeZ(a, p) && memeZ(p, b)));
+        });
+        const m = coins.length;
+        if (m < 3) return null;
+        const normale = (a, b) => {
+          const dx = Math.sign(Math.round((b[0] - a[0]) * 1e4)), dz = Math.sign(Math.round((b[1] - a[1]) * 1e4));
+          return [-dz, dx];
+        };
+        return d => coins.map((p, i) => {
+          const n1 = normale(coins[(i - 1 + m) % m], p), n2 = normale(p, coins[(i + 1) % m]);
+          return [p[0] + (n1[0] + n2[0]) * d, p[1] + (n1[1] + n2[1]) * d];
+        });
+      }
+
       function kaykitRubanContour(cells, y, retrait, largeur, couleur, opacite) {
         const groupe = new THREE.Group();
         kaykitIslandComponents(cells).forEach(component => {
-          const bord = kaykitIslandBoundary(component);
-          const n = bord.length;
-          if (n < 3) return;
-          const memeX = (a, b) => Math.abs(a[0] - b[0]) < 1e-6;
-          const memeZ = (a, b) => Math.abs(a[1] - b[1]) < 1e-6;
-          const coins = bord.filter((p, i) => {
-            const a = bord[(i - 1 + n) % n], b = bord[(i + 1) % n];
-            return !((memeX(a, p) && memeX(p, b)) || (memeZ(a, p) && memeZ(p, b)));
-          });
-          const m = coins.length;
-          if (m < 3) return;
-          const normale = (a, b) => {
-            const dx = Math.sign(Math.round((b[0] - a[0]) * 1e4)), dz = Math.sign(Math.round((b[1] - a[1]) * 1e4));
-            return [-dz, dx];
-          };
-          const decaler = d => coins.map((p, i) => {
-            const n1 = normale(coins[(i - 1 + m) % m], p), n2 = normale(p, coins[(i + 1) % m]);
-            return [p[0] + (n1[0] + n2[0]) * d, p[1] + (n1[1] + n2[1]) * d];
-          });
+          const decaler = kaykitBordDecale(component);
+          if (!decaler) return;
           const dehors = decaler(retrait), dedans = decaler(retrait + largeur);
+          const m = dehors.length;
           const positions = [];
           for (let i = 0; i < m; i++) {
             const k = (i + 1) % m;
@@ -10787,6 +10794,59 @@
           groupe.add(ruban);
         });
         return groupe;
+      }
+
+      /* Dégradé vertical partagé (opaque en haut, transparent en bas) : la
+         lumière qui descend des bords d'une île-fantôme. Jamais libérée. */
+      function kaykitTextureRideau() {
+        if (kaykit3D.textureRideauMagie) return kaykit3D.textureRideauMagie;
+        const canvas = document.createElement("canvas");
+        canvas.width = 4;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        const degrade = ctx.createLinearGradient(0, 0, 0, 64);
+        degrade.addColorStop(0, "rgba(255,255,255,1)");
+        degrade.addColorStop(.18, "rgba(255,255,255,.55)");
+        degrade.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = degrade;
+        ctx.fillRect(0, 0, 4, 64);
+        kaykit3D.textureRideauMagie = new THREE.CanvasTexture(canvas);
+        return kaykit3D.textureRideauMagie;
+      }
+
+      /* Flancs lumineux d'une forme : un voile vertical qui part du bord
+         supérieur et s'éteint vers le bas, à la hauteur d'une vraie île.
+         C'est ce qui fait lire la position comme un bloc d'île en lumière
+         plutôt qu'un tracé au sol (signalé). */
+      function kaykitRideauContour(cells, ySommet, hauteur, retrait, couleur, opacite) {
+        const positions = [];
+        const uvs = [];
+        kaykitIslandComponents(cells).forEach(component => {
+          const decaler = kaykitBordDecale(component);
+          if (!decaler) return;
+          const bord = decaler(retrait);
+          const m = bord.length;
+          for (let i = 0; i < m; i++) {
+            const a = bord[i], b = bord[(i + 1) % m];
+            const haut = ySommet, bas = ySommet - hauteur;
+            positions.push(a[0], haut, a[1], b[0], haut, b[1], b[0], bas, b[1]);
+            positions.push(a[0], haut, a[1], b[0], bas, b[1], a[0], bas, a[1]);
+            uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+          }
+        });
+        if (!positions.length) return new THREE.Group();
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.userData = { ...(geometry.userData || {}), ilyosTransient: true };
+        const material = new THREE.MeshBasicMaterial({
+          color: couleur, map: kaykitTextureRideau(), transparent: true, opacity: opacite,
+          depthWrite: false, side: THREE.DoubleSide, toneMapped: false
+        });
+        material.userData = { ...(material.userData || {}), ilyosTransient: true };
+        const rideau = new THREE.Mesh(geometry, material);
+        rideau.renderOrder = 43;
+        return rideau;
       }
 
       function renderKayKitMagicRotationGhosts(island) {
@@ -10807,16 +10867,18 @@
           const actif = steps === courant;
           const estompe = !!courant && !actif;
 
-          // Lueur large et pâle, puis trait net : un liseré qui se lit sur
-          // le ciel doré comme sur une île verte.
-          group.add(kaykitRubanContour(rotation.absCells, sol + .02, Math.max(0, style.retrait - .03), .13, style.couleur, estompe ? .1 : .3));
-          group.add(kaykitRubanContour(rotation.absCells, sol + .022, style.retrait, .065, style.couleur, estompe ? .32 : 1));
-
-          // Voile très léger sur la position : elle se lit comme une zone.
+          /* Au niveau des îles, case par case : flancs lumineux qui
+             descendent comme ceux d'une île, dalle teintée sur chaque case,
+             et un cadre net autour de CHAQUE case. Les cadres de chaque
+             rotation sont emboîtés (retrait propre) : une case partagée par
+             deux positions montre deux cadres, l'un dans l'autre. */
+          const cases = rotation.absCells;
+          if (!actif) group.add(kaykitRideauContour(cases, sol + .012, .42, style.retrait * .5, style.couleur, estompe ? .14 : .55));
+          group.add(kaykitRubanContour(cases, sol + .02, Math.max(0, style.retrait * .5 - .03), .12, style.couleur, estompe ? .08 : .3));
           if (!actif) {
-            const voile = new THREE.MeshBasicMaterial({ color: style.couleur, transparent: true, opacity: estompe ? .05 : .16, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+            const voile = new THREE.MeshBasicMaterial({ color: style.couleur, transparent: true, opacity: estompe ? .05 : .2, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
             voile.userData = { ...(voile.userData || {}), ilyosTransient: true };
-            rotation.absCells.forEach(([r, c]) => {
+            cases.forEach(([r, c]) => {
               const p = kaykitCellPosition(r, c, sol + .01);
               const tuile = new THREE.Mesh(dalle, voile);
               tuile.position.set(p.x, p.y, p.z);
@@ -10824,6 +10886,9 @@
               group.add(tuile);
             });
           }
+          cases.forEach(cell => {
+            group.add(kaykitRubanContour([cell], sol + .022, style.retrait * .5, actif ? .06 : .045, style.couleur, estompe ? .3 : 1));
+          });
 
           // Gardiens et couronnes à l'arrivée, en verre de la couleur de la
           // rotation : en grand pour celle montrée, plus petits sinon.
