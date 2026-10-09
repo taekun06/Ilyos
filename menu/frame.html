@@ -7,8 +7,13 @@
   <style>
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#040a11;--gold:#d8aa4c;--gold2:#f4d28e;--gold3:#8f5a17;color:#fff}
     body{position:fixed;inset:0}
-    .resume-pill{margin:0 auto 14px;background:linear-gradient(180deg,rgba(216,170,76,.22),rgba(216,170,76,.08));border-color:rgba(216,170,76,.55)}
-    .resume-pill[hidden]{display:none}
+    /* Reprendre la partie : en bas à droite de la scène, en face des
+       icônes du haut, plus lumineux que les pilules de navigation. */
+    .home-layout .resume-pill{position:absolute;right:1.55%;bottom:3.4%;display:flex;align-items:center;gap:.55cqw;min-width:0;padding:.9cqh 1.25cqw .9cqh 1cqw;font-size:.92cqw;font-weight:700;letter-spacing:.06em;color:#2a1a07;border:2px solid #ffe3a0;background:linear-gradient(180deg,#f7d98e,#d8aa4c 55%,#b27f2a);box-shadow:0 10px 24px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,250,225,.75),0 0 22px rgba(244,210,142,.28);text-shadow:0 1px 0 rgba(255,240,200,.45)}
+    .home-layout .resume-pill .resume-icone{display:grid;place-items:center;width:1.6cqw;height:1.6cqw;border-radius:50%;background:rgba(42,26,7,.85);color:#f4d28e;font-size:.95cqw;text-shadow:none}
+    .home-layout .resume-pill:hover{filter:brightness(1.08);transform:translateY(-2px);box-shadow:0 12px 26px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,250,225,.75),0 0 28px rgba(244,210,142,.42)}
+    .home-layout .resume-pill:focus-visible{outline:3px solid #fff2c8;outline-offset:3px}
+    .resume-pill[hidden]{display:none!important}
     /* Niveau du joueur (js/game/progression.js), en miroir des icônes de droite :
        un anneau doré qui se remplit autour du numéro, puis le libellé. */
     .profil-zone{position:absolute;left:1.55%;top:2.1%;display:flex;flex-direction:column;align-items:flex-start;gap:.8cqh}
@@ -24,7 +29,7 @@
   <link rel="stylesheet" href="./menu.css?v=menu-duel-16">
   <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-16">
   <link rel="stylesheet" href="./menu-typography-g2c.css?v=g2c-1">
-  <link rel="stylesheet" href="./menu-portrait.css?v=3">
+  <link rel="stylesheet" href="./menu-portrait.css?v=4">
   <link rel="stylesheet" href="./progression-menu.css?v=4">
 </head>
 <body>
@@ -41,7 +46,7 @@
         <button class="card violet" data-mode="team"><div class="card-icon">♜ ♜</div><div class="card-title">2 CONTRE 2</div><div class="card-sub">Équipes</div></button>
         <button class="card amber" data-mode="online"><div class="card-icon">◎</div><div class="card-title">EN LIGNE</div><div class="card-sub">Joueurs du monde</div></button>
       </div>
-      <button class="pill resume-pill" id="resumeHomeBtn" data-action="resume" hidden>↺ REPRENDRE LA PARTIE</button>
+      <button class="pill resume-pill" id="resumeHomeBtn" data-action="resume" hidden><span class="resume-icone" aria-hidden="true">↺</span>REPRENDRE LA PARTIE</button>
       <div class="home-nav"><button class="pill" data-action="rules">♛ RÈGLES</button><button class="pill" data-action="tutorial">▣ TUTORIEL</button><button class="pill" data-action="puzzle" title="Onze énigmes à budget fermé, un seul tour chacune">◈ PUZZLES</button><button class="pill" data-action="credits">★ CRÉDITS</button><button class="pill" data-action="aivsai" title="Lance une partie où l’IA Expert joue contre elle-même">⚔ IA CONTRE IA</button></div>
     </div>
   </section>
@@ -65,8 +70,8 @@
   </section>
   <div class="veil" id="veil"></div>
 </div>
-<script src="./menu-config.js?v=menu-duel-17"></script>
-<script src="./frame.js?v=menu-duel-23"></script>
+<script src="./menu-config.js?v=menu-duel-18"></script>
+<script src="./frame.js?v=menu-duel-24"></script>
 <script src="../js/gamepad-navigation.js?v=20260911-manette-feel"></script>
 <script src="./gamepad.js?v=menu-duel-16"></script>
 </body>

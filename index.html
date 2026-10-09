@@ -1407,7 +1407,9 @@
           validé le plus de couronnes l’emporte, et une égalité donne un match nul.</li>
         <li>2 contre 2 : chaque joueur marque ses propres couronnes (premier à 3). Des places peuvent être tenues par
           l’ordinateur (J2 et J4 pour jouer à deux contre l’IA) et, avec l’option « Diagonale d’équipe », J1 et J3
-          valident dans les deux villages d’une diagonale, J2 et J4 dans ceux de l’autre.</li>
+          valident dans les deux villages d’une diagonale, J2 et J4 dans ceux de l’autre. Avec cette option, l’équipe
+          joue aussi les mêmes gardiens (chacun commande ceux de son coéquipier) et partage ses couronnes : la
+          première équipe à 3 gagne.</li>
         <li>Recliquez sur la case de départ sélectionnée pour quitter l’action. Cliquez sur la couronne d’un adversaire
           pour la récupérer lorsqu’un de vos gardiens est adjacent.</li>
         <li>Par défaut, les tours ne sont pas chronométrés. L’option « Temps par tour » du menu de configuration permet
@@ -3310,9 +3312,14 @@
     /* Fenêtres et menus unifiés */
     .modal,
     .symmetric-board-overlay {
-      z-index: var(--ilyos-z-modal) !important;
       background: rgba(33, 72, 86, .44) !important;
       backdrop-filter: blur(8px) !important
+    }
+
+    /* Le choix du plateau garde le z-index de css/base.css (au-dessus de la
+       barre HUD fixe) : à 1200, le HUD recouvrait le titre et les boutons. */
+    .modal {
+      z-index: var(--ilyos-z-modal) !important
     }
 
     .modal-card,
@@ -3492,6 +3499,58 @@
       color: #6c8690;
       font-size: 9px;
       line-height: 1.25
+    }
+
+    /* Créer son duel : la carte qui ouvre l'atelier, dorée pour se
+       distinguer des préréglages. */
+    .v64-setup-card[data-value="creer"] {
+      position: relative;
+      padding-left: 40px !important;
+      border-color: #d8aa4c !important;
+      background: linear-gradient(135deg, #fff8e6, #f6e3b4) !important
+    }
+
+    .v64-setup-card[data-value="creer"]::before {
+      content: "✦";
+      position: absolute;
+      left: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #f7d98e, #b27f2a);
+      color: #2a1a07;
+      font-size: 12px;
+      box-shadow: 0 2px 6px rgba(120, 80, 20, .3)
+    }
+
+    .v64-setup-card[data-value="creer"] small {
+      color: #8a6420
+    }
+
+    .v64-setup-card[data-value="creer"][aria-pressed="true"] {
+      border-color: #b27f2a !important;
+      background: linear-gradient(135deg, #fff3d1, #f1d48f) !important;
+      box-shadow: 0 0 0 3px rgba(216, 170, 76, .25), var(--ilyos-shadow-1) !important
+    }
+
+    /* Aperçu de Créer son duel : plateau vide, axe du miroir en pointillés. */
+    .symmetric-setup-preview.preview-miroir {
+      position: relative
+    }
+
+    .symmetric-setup-preview.preview-miroir::after {
+      content: "";
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      left: 50%;
+      border-left: 2px dashed rgba(178, 127, 42, .85);
+      transform: translateX(-1px);
+      pointer-events: none
     }
 
     /* Panneaux de diagnostic : jamais au-dessus des commandes de jeu. */

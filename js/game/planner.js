@@ -1223,7 +1223,7 @@
             if (trace) trace.push({ terme: "matchNul", montant: 0, note: null });
             return 0;
           }
-          const terminal = state.winner === playerId ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
+          const terminal = memeEquipe(state.winner, playerId) ? PLAN_POIDS.victoire : -PLAN_POIDS.victoire;
           if (trace) trace.push({ terme: "victoire", montant: terminal, note: null });
           return terminal;
         }

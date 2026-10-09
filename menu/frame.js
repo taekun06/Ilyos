@@ -348,6 +348,7 @@
     if(values.timer!=null) items.push(['TOUR',labelFor(mode,'timer',values.timer)]);
     if(mode==='solo') items.push(['CPU',labelFor(mode,'difficulty',values.difficulty)]);
     if(mode==='team'&&values.seats&&values.seats!=='none') items.push(['CPU',labelFor(mode,'difficulty',values.difficulty)]);
+    if(mode==='team'&&values.villages==='team') items.push(['GARDIENS','EN COMMUN']);
     if(mode==='team') items.push(['OBJECTIF','3 COURONNES']);
     if(mode==='online') items.push(['SESSION',values.role==='guest'?'REJOINDRE':'CRÉER']);
     return `<div class="match-recap">${items.map(([k,v])=>`<span><small>${safeText(k)}</small><b>${safeText(v)}</b></span>`).join('')}</div>`;

@@ -46,6 +46,9 @@
 
       function beginTurn() {
         const p = currentPlayer();
+        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
+        // qui prend la main, avant même la validation des couronnes.
+        confierGardiensEquipe(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();

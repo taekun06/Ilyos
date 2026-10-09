@@ -40,15 +40,17 @@
           const reste = pick ? draftPicksRemainingFor(pick.player) : null;
           if (pick?.kind === "island") {
             return {
-              label: `Formation · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.islands} île${reste.islands > 1 ? "s" : ""}`,
               instruction: state.phase === "PLACE_ISLAND"
-                ? "Prochain clic : une zone verte du plateau."
+                ? (state.draft.miroir
+                  ? "Prochain clic : une zone verte, son reflet ira chez l’adversaire."
+                  : "Prochain clic : une zone verte du plateau.")
                 : "Choisissez une forme d’île dans le panneau de gauche."
             };
           }
           if (pick?.kind === "guardian") {
             return {
-              label: `Formation · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
+              label: `${state.draft.miroir ? "Votre duel" : "Formation"} · ${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""}`,
               instruction: "Prochain clic : une case libre de vos îles ou de votre village."
             };
           }
@@ -126,7 +128,7 @@
             const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.islands} île${reste.islands > 1 ? "s" : ""} à poser`,
               next: state.phase === "PLACE_ISLAND"
                 ? `Rotation ${degrees}° — ${consignePoseIle()}`
@@ -136,7 +138,7 @@
           if (pick?.kind === "guardian") {
             return {
               kind: "build",
-              kicker: "MISE EN PLACE",
+              kicker: state.draft.miroir ? "CRÉER SON DUEL · EN MIROIR" : "MISE EN PLACE",
               title: `${reste.guardians} gardien${reste.guardians > 1 ? "s" : ""} à placer`,
               next: "Cliquez une case libre de vos îles ou votre village."
             };
@@ -724,7 +726,8 @@
 
         // Une île peut être posée n'importe où :
         // elle doit seulement rester dans la grille et ne rien chevaucher.
-        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c));
+        // En Créer son duel, son reflet aussi (refletIleValide, core.js).
+        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c)) && refletIleValide(cells);
       }
 
       function recomputeValidAnchors() {
@@ -2034,6 +2037,7 @@
 
         if (state.draft) {
           state.draft.placedIslands[island.owner]++;
+          refleterPoseDraft("island", island);
           state.selectedIslandShape = null;
           state.placementCells = null;
           state.placementOriginIndex = 0;
@@ -3723,7 +3727,7 @@
             <span title="Poussées disponibles"><em>P</em><b>${availableActionCount("PUSH", p)}</b></span>
             <span title="Magies disponibles"><em>M</em><b>${availableActionCount("MAGIC", p)}</b></span>
           </div>
-          <small>${state.characters.filter(ch => ch.player === p.id).length} gardien(s)</small>
+          <small>${state.characters.filter(ch => proprietaireGardien(ch) === p.id).length} gardien(s)</small>
         `;
           els.scoreList.appendChild(card);
         });
@@ -3842,7 +3846,7 @@
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
         if (ch) {
-          const p = state.players[ch.player];
+          const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
           els.unitCard.innerHTML = `
           <div class="big-icon">${p.icon}</div>
@@ -3985,6 +3989,16 @@
       function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
         player.score++;
         triggerScoreAnimation(player.id);
+        /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
+           marque avec lui, la victoire est celle de l'équipe. */
+        const coequipier = gardiensPartages()
+          ? state.players.find(j => j.id !== player.id && memeEquipe(j.id, player.id))
+          : null;
+        if (coequipier) {
+          coequipier.score = player.score;
+          triggerScoreAnimation(coequipier.id);
+        }
+        const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
         if (artifact) artifact.carrierId = null;
 
@@ -3992,7 +4006,9 @@
           respawnCharacter(char);
           showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
         } else {
-          showToast(`${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+          showToast(coequipier
+            ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
+            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
@@ -4004,7 +4020,9 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
-            setTimeout(() => showVictory(player), 450);
+            setTimeout(() => showVictory(player, coequipier
+              ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
+              : null), 450);
           }
         } else {
           // Un gardien qui valide une couronne (dépôt au village, hors sortie
@@ -4245,7 +4263,9 @@
 
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
-        els.victoryTitle.textContent = player.name;
+        els.victoryTitle.textContent = gardiensPartages()
+          ? (player.id % 2 === 0 ? "Équipe or" : "Équipe violette")
+          : player.name;
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
