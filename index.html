@@ -1158,6 +1158,15 @@
               <option value="4">4 gardiens</option>
             </select>
           </label>
+          <!-- Personnalisé à 2 joueurs : la formation peut se poser en miroir,
+               comme « Créer son duel » (startCustomDraft, option miroir). -->
+          <label for="customMirrorSelect" id="customMirrorRow">
+            <span>Mise en place</span>
+            <select id="customMirrorSelect">
+              <option value="tour" selected>Chacun son tour</option>
+              <option value="miroir">Duel symétrique (en miroir)</option>
+            </select>
+          </label>
         </div>
 
         <!-- Mode Personnalisé : règles de la partie. Les valeurs par défaut sont

@@ -68,3 +68,24 @@ test('Créer son duel : la pose du joueur 1 se reflète chez le joueur 2', async
   expect(`${gardiensDe(1)[0].r},${gardiensDe(1)[0].c}`).toBe(miroir([gardiensDe(0)[0].r, gardiensDe(0)[0].c]));
   expect(incidents).toEqual([]);
 });
+
+test('Personnalisé : la mise en place peut se faire en duel symétrique', async ({ page }) => {
+  const incidents = [];
+  page.on('pageerror', erreur => incidents.push(erreur.message));
+  await page.goto('/');
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="duel"]').first().click();
+  await regler(menu, 'board', 'PERSONNALISÉ');
+  await menu.locator('text=LANCER LE DUEL').first().click();
+  await page.waitForSelector('#symmetricSetupOverlay.visible', { timeout: 40000 });
+
+  await expect(page.locator('#customMirrorRow')).toBeVisible();
+  await page.selectOption('#customMirrorSelect', 'miroir');
+  await page.selectOption('#customIslandCountSelect', '2');
+  await page.selectOption('#customGuardianCountSelect', '1');
+  await page.locator('#confirmSymmetricSetupBtn').click();
+
+  const etat = await plateau(page);
+  expect(etat.miseEnPlace).toMatchObject({ miroir: true, total: 3 });
+  expect(incidents).toEqual([]);
+});
