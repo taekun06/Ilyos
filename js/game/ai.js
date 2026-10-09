@@ -924,7 +924,7 @@
           return false;
         }
         if (!rapport || !rapport.plan.length) {
-          const repli = state.islandPlacedThisTurn
+          const repli = obligationIleRemplie()
             ? "aucune action jugée meilleure que l'arrêt"
             : "plan vide et île non posée : main rendue à la logique historique";
           autopsieConsigner(joueur, instantaneAutopsie, rapport, repli);
@@ -932,7 +932,7 @@
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
           // soit faite. Sinon on laisse la voie historique s'en charger.
-          return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
+          return obligationIleRemplie() ? await terminerTourExpert(token) : false;
         }
 
         autopsieConsigner(joueur, instantaneAutopsie, rapport, null);
@@ -1117,7 +1117,12 @@
           // retombe sur la logique historique plutôt que de passer le tour.
         }
 
-        if (!state.islandPlacedThisTurn) {
+        /* Îles payantes (mode personnalisé) : la pose est facultative. Les
+           niveaux sans planner ne paient 2 cartes que pour ce qui le vaut
+           sûrement, un gardien de plus. */
+        const poserIle = !ilesPayantes()
+          || (canCreateGuardian(state.currentPlayer) && peutPayerIle(currentPlayer()));
+        if (!state.islandPlacedThisTurn && poserIle) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);
           benchJournaliser({ type: "POSE", automatique: true, avantActions: true });
           await sleep(760);

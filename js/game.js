@@ -235,6 +235,13 @@
         customSetupControls: document.getElementById("customSetupControls"),
         customIslandCountSelect: document.getElementById("customIslandCountSelect"),
         customGuardianCountSelect: document.getElementById("customGuardianCountSelect"),
+        customRulesControls: document.getElementById("customRulesControls"),
+        customDeckMoveSelect: document.getElementById("customDeckMoveSelect"),
+        customDeckPushSelect: document.getElementById("customDeckPushSelect"),
+        customDeckMagicSelect: document.getElementById("customDeckMagicSelect"),
+        customDrawCountSelect: document.getElementById("customDrawCountSelect"),
+        customDeckSummary: document.getElementById("customDeckSummary"),
+        customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),
@@ -13599,7 +13606,7 @@
             ? player.villages
             : [player.village || CORNERS[index] || CORNERS[0]],
           score: Number(player.score || 0),
-          deck: (Array.isArray(player.deck) ? player.deck : createDeck(index))
+          deck: (Array.isArray(player.deck) ? player.deck : createDeck(index, compositionPaquet(raw.rules)))
             .filter(card => !card.fromStash)
             .map(card => ({ ...card, used: false, fromStash: false })),
           discard: (Array.isArray(player.discard) ? player.discard : [])
@@ -13607,7 +13614,7 @@
             .map(card => ({ ...card, used: false, fromStash: false })),
           hand: (Array.isArray(player.hand) ? player.hand : [])
             .filter(card => !card.fromStash)
-            .slice(0, 5)
+            .slice(0, cartesPiocheesParTour(raw))
             .map(card => ({ ...card, fromStash: false })),
           stash: {
             MOVE: Math.max(0, Math.min(5, Number(player.stash?.MOVE || 0))),
@@ -13617,19 +13624,24 @@
         }));
 
         /*
-         * Migration V64 : chaque joueur doit posséder exactement 13 cartes
-         * (8 déplacements, 4 poussées et 1 magie), toutes zones confondues.
-         * Une ancienne composition est reconstruite proprement au prochain tour.
+         * Migration V64 : chaque joueur doit posséder exactement son paquet —
+         * 13 cartes (8 déplacements, 4 poussées et 1 magie) en partie
+         * classique, ou la composition choisie en mode personnalisé
+         * (compositionPaquet), toutes zones confondues. Une ancienne
+         * composition est reconstruite proprement au prochain tour.
          */
+        const paquetAttendu = compositionPaquet(raw.rules);
+        const attendu = paquetAttendu.reduce((acc, type) => { acc[type]++; return acc; }, { MOVE: 0, PUSH: 0, MAGIC: 0 });
         restored.players.forEach((player, index) => {
           const allCards = [...(player.deck || []), ...(player.hand || []), ...(player.discard || [])];
           const counts = allCards.reduce((acc, card) => {
             if (card?.action in acc) acc[card.action]++;
             return acc;
           }, { MOVE: 0, PUSH: 0, MAGIC: 0 });
-          const valid = allCards.length === 13 && counts.MOVE === 8 && counts.PUSH === 4 && counts.MAGIC === 1;
+          const valid = allCards.length === paquetAttendu.length
+            && counts.MOVE === attendu.MOVE && counts.PUSH === attendu.PUSH && counts.MAGIC === attendu.MAGIC;
           if (!valid) {
-            player.deck = createDeck(index);
+            player.deck = createDeck(index, paquetAttendu);
             player.hand = [];
             player.discard = [];
           }
@@ -13880,8 +13892,8 @@
         }
       }
 
-      function createDeck(playerIndex) {
-        return shuffle(CARD_BLUEPRINTS.map((action, i) => ({
+      function createDeck(playerIndex, composition = CARD_BLUEPRINTS) {
+        return shuffle(composition.map((action, i) => ({
           id: `P${playerIndex}-C${i}-${gameRandom().toString(36).slice(2, 7)}`,
           action,
           used: false
@@ -15277,6 +15289,7 @@
         els.symmetricPresetControls?.classList.toggle("hidden", custom);
         els.symmetricPresetContent?.classList.toggle("hidden", custom);
         els.customSetupControls?.classList.toggle("hidden", !custom);
+        els.customRulesControls?.classList.toggle("hidden", !custom);
 
         if (els.setupOverlayKicker) {
           els.setupOverlayKicker.textContent = custom ? "PERSONNALISÉ" : "DUEL SYMÉTRIQUE";
@@ -15295,6 +15308,10 @@
         if (custom) {
           if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
           if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
+          [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox]
+            .forEach(champ => { if (champ) champ.disabled = waiting; });
+          majResumePaquetPersonnalise();
         } else {
           populateSymmetricSetupOverlay(selectedId);
           if (els.symmetricSetupSelect) els.symmetricSetupSelect.disabled = waiting;
@@ -15339,6 +15356,46 @@
         els.randomSymmetricSetupBtn.classList.add("random-picked");
       }
 
+      /* Règles de la partie du mode personnalisé (index.html,
+         #customRulesControls). Une clé n'est écrite que si elle s'écarte du
+         classique : une partie réglée comme d'habitude reste indiscernable
+         d'une partie classique, sauvegardes et parties en ligne comprises. */
+      function lireReglesPersonnalisees() {
+        const regles = {};
+        const paquet = {
+          MOVE: Number(els.customDeckMoveSelect?.value ?? 8),
+          PUSH: Number(els.customDeckPushSelect?.value ?? 4),
+          MAGIC: Number(els.customDeckMagicSelect?.value ?? 1)
+        };
+        if (paquet.MOVE !== 8 || paquet.PUSH !== 4 || paquet.MAGIC !== 1) regles.paquet = paquet;
+        const pioche = Number(els.customDrawCountSelect?.value ?? PIOCHE_CLASSIQUE);
+        if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
+        if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
+        return regles;
+      }
+
+      function majResumePaquetPersonnalise() {
+        if (!els.customDeckSummary) return;
+        const paquet = compositionPaquet(lireReglesPersonnalisees());
+        const pioche = cartesPiocheesParTour({ rules: lireReglesPersonnalisees() });
+        els.customDeckSummary.textContent = paquet.length < pioche
+          ? `Paquet de ${paquet.length} cartes : moins qu’une main de ${pioche}, la défausse sera remélangée à chaque tour.`
+          : `Paquet de ${paquet.length} cartes · main de ${pioche}`;
+      }
+
+      /** Paquets refaits selon les règles de la partie, avant la première pioche. */
+      function appliquerPaquetDesRegles() {
+        if (!state?.players) return;
+        const paquet = compositionPaquet(state.rules);
+        state.players.forEach((joueur, index) => {
+          joueur.deck = createDeck(index, paquet);
+          joueur.hand = [];
+          joueur.discard = [];
+          joueur.reserveCards = [];
+          joueur.stash = { MOVE: 0, PUSH: 0, MAGIC: 0 };
+        });
+      }
+
       function confirmSymmetricSetup() {
         if (!state || !state.setupSelectionPending) return;
         if (state.onlineMode && onlineRole === "guest") return;
@@ -15347,8 +15404,10 @@
           state.rules = {
             allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
             islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
+            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0,
+            ...lireReglesPersonnalisees()
           };
+          appliquerPaquetDesRegles();
           state.setupSelectionPending = false;
           state.inputLocked = false;
           closeSymmetricSetupOverlay();
@@ -16313,7 +16372,8 @@
         els.gameScreen.classList.remove("ai-turn");
         showToast("Temps écoulé : le tour va se terminer automatiquement.");
 
-        if (!state.islandPlacedThisTurn) {
+        // Îles payantes : la pose est facultative, le temps écoulé n'en impose aucune.
+        if (!obligationIleRemplie()) {
           createAutomaticIslandAndSpawn(state.currentPlayer, true);
           await sleep(520);
         }
@@ -17514,7 +17574,7 @@
           return false;
         }
         if (!rapport || !rapport.plan.length) {
-          const repli = state.islandPlacedThisTurn
+          const repli = obligationIleRemplie()
             ? "aucune action jugée meilleure que l'arrêt"
             : "plan vide et île non posée : main rendue à la logique historique";
           autopsieConsigner(joueur, instantaneAutopsie, rapport, repli);
@@ -17522,7 +17582,7 @@
           // Aucune action ne vaut mieux que la position actuelle : s'arrêter
           // est une décision légitime, à condition que la pose obligatoire
           // soit faite. Sinon on laisse la voie historique s'en charger.
-          return state.islandPlacedThisTurn ? await terminerTourExpert(token) : false;
+          return obligationIleRemplie() ? await terminerTourExpert(token) : false;
         }
 
         autopsieConsigner(joueur, instantaneAutopsie, rapport, null);
@@ -17707,7 +17767,12 @@
           // retombe sur la logique historique plutôt que de passer le tour.
         }
 
-        if (!state.islandPlacedThisTurn) {
+        /* Îles payantes (mode personnalisé) : la pose est facultative. Les
+           niveaux sans planner ne paient 2 cartes que pour ce qui le vaut
+           sûrement, un gardien de plus. */
+        const poserIle = !ilesPayantes()
+          || (canCreateGuardian(state.currentPlayer) && peutPayerIle(currentPlayer()));
+        if (!state.islandPlacedThisTurn && poserIle) {
           createAutomaticIslandAndSpawn(state.currentPlayer, false);
           benchJournaliser({ type: "POSE", automatique: true, avantActions: true });
           await sleep(760);
@@ -17902,7 +17967,7 @@
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, 5);
+        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
         state.phase = "ACTION_SELECT";
         // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
@@ -19532,6 +19597,9 @@
           case "SMART_CHAR":
             return { label: "Gardien sélectionné", instruction: "Prochain clic : une destination éclairée ou une cible adjacente." };
           case "ACTION_SELECT":
+            if (!state.islandPlacedThisTurn && ilesPayantes()) {
+              return { label: "Choisir une action", instruction: `Choisissez une action, ou posez une île pour ${COUT_ILE_PAYANTE} cartes.` };
+            }
             return state.islandPlacedThisTurn
               ? { label: "Choisir une action", instruction: "Choisissez une action ou cliquez directement une cible valide." }
               : { label: "Île obligatoire", instruction: "Commencez par choisir une forme d’île. Vous pourrez agir avant ou après sa pose." };
@@ -19605,11 +19673,12 @@
           }
         }
 
-        if (!state.islandPlacedThisTurn && state.phase === "ACTION_SELECT") {
+        if (!obligationIleRemplie() && state.phase === "ACTION_SELECT") {
           return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "CHOOSE_ISLAND_SHAPE") {
-          return { kind: "build", kicker: "ÉTAPE OBLIGATOIRE", title: "Choisir une île", next: "Choisissez une forme d’île." };
+          return { kind: "build", kicker: ilesPayantes() ? `ÎLE · ${COUT_ILE_PAYANTE} CARTES` : "ÉTAPE OBLIGATOIRE",
+            title: "Choisir une île", next: "Choisissez une forme d’île." };
         }
         if (state.phase === "PLACE_ISLAND") {
           const degrees = ((state.placementRotationSteps || 0) % 4) * 90;
@@ -19645,6 +19714,10 @@
         }
         if (state.islandPlacedThisTurn) {
           return { kind: "end", kicker: "À VOUS DE JOUER", title: "Choisir une action ou terminer", next: "Choisissez une action ou terminez votre tour." };
+        }
+        if (ilesPayantes()) {
+          return { kind: "end", kicker: "À VOUS DE JOUER", title: "Agir, bâtir ou terminer",
+            next: `Jouez une action, posez une île (${COUT_ILE_PAYANTE} cartes) ou terminez votre tour.` };
         }
         return { kind: "build", kicker: "À FAIRE", title: "Poser une île", next: "Choisissez une forme d’île." };
       }
@@ -19857,6 +19930,14 @@
         if (islandStatusEl) {
           islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
+          /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
+             organique lit ce sous-titre (js/hud-organique-v2.js). */
+          const payante = ilesPayantes() && !state.draft;
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.disabled = payante && !peutPayerIle(active);
+          islandStatusEl.title = islandStatusEl.disabled
+            ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`
+            : (payante ? `Poser une île (facultatif) : ${COUT_ILE_PAYANTE} cartes.` : "Poser une île");
         }
         if (state.islandPlacedThisTurn && islandDrawer && !islandDrawer.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -20052,7 +20133,7 @@
 
         const islandPickPhase = !state.islandPlacedThisTurn;
         if (els.leftPanel) els.leftPanel.classList.toggle("choice-focus", islandPickPhase);
-        els.gameScreen.classList.toggle("island-required", !state.islandPlacedThisTurn);
+        els.gameScreen.classList.toggle("island-required", !obligationIleRemplie());
 
         if (previousPlayer !== String(p.id)) {
           els.gameScreen.dataset.player = String(p.id);
@@ -20117,7 +20198,8 @@
 
       function renderIslandSelector() {
         els.islandSelector.innerHTML = "";
-        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase);
+        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)
+          && (!!state.draft || peutPayerIle(currentPlayer()));
         const emphasize = !state.islandPlacedThisTurn;
 
         Object.entries(SHAPES).forEach(([shapeKey, shape]) => {
@@ -20151,6 +20233,10 @@
         if (!canLocalPlayerAct()) return;
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
+        if (!state.draft && !peutPayerIle(currentPlayer())) {
+          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          return;
+        }
         if (shapeLimitReached(shapeKey)) {
           showToast(`Limite atteinte : ${shapeLimitPerOwner()} île${shapeLimitPerOwner() > 1 ? "s" : ""} « ${SHAPES[shapeKey].name} » maximum.`);
           return;
@@ -21055,6 +21141,10 @@
 
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
+          if (!state.draft && !peutPayerIle(currentPlayer())) {
+            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            return;
+          }
           if (isValidPlacement(r, c)) {
             /* La pose d'île n'entrait pas dans l'historique : on pouvait annuler
                un déplacement ou une poussée, mais pas le geste qui ouvre le tour.
@@ -21457,6 +21547,10 @@
       }
 
       function placeIsland(anchorR, anchorC) {
+        /* Îles payantes (mode personnalisé) : 2 cartes, prélevées avant la
+           pose. La mise en place, elle, ne coûte rien. */
+        const paiement = state.draft ? [] : payerIle(currentPlayer());
+        if (!paiement) return;
         const absCells = previewAbsoluteCells(anchorR, anchorC);
         const islandId = state.nextIslandId++;
         const island = {
@@ -21508,6 +21602,9 @@
         }
 
         state.islandPlacedThisTurn = true;
+        if (paiement.length) {
+          showToast(`Île posée : ${paiement.map(type => ACTIONS[type].name).join(" et ")} payés.`);
+        }
 
         if (canCreateGuardian(state.currentPlayer)) {
           state.phase = "PLACE_SPAWN";
@@ -23240,7 +23337,7 @@
         const canRotateMagic = !aiLocked && state.phase === "ACTION" && state.selectedActionType === "MAGIC" && !!state.selectedIslandId && !!state.selectedMagicPivot;
         const canCancel = !aiLocked && (state.phase === "PLACE_ISLAND" || state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType) || state.phase === "DROP_TREASURE" || state.phase === "PICKUP_CROWN" || !!state.undoHistory?.length);
         const canEndFromSelection = state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType);
-        const canEnd = state.islandPlacedThisTurn && (state.phase === "ACTION_SELECT" || canEndFromSelection);
+        const canEnd = obligationIleRemplie() && (state.phase === "ACTION_SELECT" || canEndFromSelection);
         els.rotateLeftBtn.disabled = !(canRotatePlacement || canRotateMagic);
         els.rotateRightBtn.disabled = !(canRotatePlacement || canRotateMagic);
         // Le miroir n'a de sens que pour une forme chirale (ex. Serpent) : les
@@ -23290,7 +23387,7 @@
         els.endTurnBtn.textContent = "Fin du tour";
         if (state.draft) {
           els.endTurnBtn.title = "La partie commence une fois la mise en place terminée.";
-        } else if (!state.islandPlacedThisTurn) {
+        } else if (!obligationIleRemplie()) {
           els.endTurnBtn.title = "Posez d’abord une île.";
         } else if (state.phase === "PLACE_SPAWN") {
           els.endTurnBtn.title = "Terminez d’abord l’invocation obligatoire.";
@@ -23497,12 +23594,12 @@
       async function endTurn(force = false) {
         if (!state || state.winner !== null || state.turnTransitioning) return;
         if (!force && state.phase !== "ACTION_SELECT") {
-          const cancellableSelection = state.islandPlacedThisTurn
+          const cancellableSelection = obligationIleRemplie()
             && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
           if (!cancellableSelection || !prepareActionSwitch()) return;
         }
 
-        if (!state.islandPlacedThisTurn) {
+        if (!obligationIleRemplie()) {
           if (force) {
             createAutomaticIslandAndSpawn(state.currentPlayer, true);
           } else {
@@ -24010,11 +24107,11 @@
           /* Même garde que la fonction historique, exécutée AVANT de déplacer
              une carte pour qu'un clic invalide ne modifie jamais la réserve. */
           if (!force && state.phase !== "ACTION_SELECT") {
-            const cancellableSelection = state.islandPlacedThisTurn
+            const cancellableSelection = obligationIleRemplie()
               && (state.phase === "SMART_CHAR" || (state.phase === "ACTION" && !!state.selectedActionType));
             if (!cancellableSelection || !prepareActionSwitch()) return;
           }
-          if (!state.islandPlacedThisTurn && !force) {
+          if (!obligationIleRemplie() && !force) {
             showToast("Vous devez poser une île avant de terminer le tour.");
             return;
           }
@@ -24046,7 +24143,7 @@
             Array.isArray(player.reserveCards) ? JSON.parse(JSON.stringify(player.reserveCards)) : null
           );
 
-          /* La normalisation V64 compte 13 cartes seulement dans deck/main/
+          /* La normalisation V64 compte le paquet seulement dans deck/main/
              discard. On y remet temporairement les cartes de réserve pour que
              cette vérification voie bien l'intégralité du paquet physique. */
           prepared.players.forEach((player, index) => {
@@ -24274,6 +24371,9 @@
          libre la plus proche de la cible automatique. */
       function applyIslandPlacementCore(shapeKey, cells, ownerId, relCells = null, anchor = null, spawnCell = null) {
         if (!state || !Array.isArray(cells) || !cells.length) return null;
+        // Îles payantes : sans les 2 cartes, la pose n'a pas lieu.
+        const paiement = payerIle(state.players[ownerId]);
+        if (!paiement) return null;
 
         const cellules = cloneCells(cells);
         const identifiant = state.nextIslandId++;
@@ -24323,7 +24423,8 @@
           cellules: ile.cells.map(([r, c]) => [r, c]),
           gardienId: gardien ? gardien.id : null,
           gardienCase: gardien ? [gardien.r, gardien.c] : null,
-          couronneRamassee: couronneRamassee ? couronneRamassee.id : null
+          couronneRamassee: couronneRamassee ? couronneRamassee.id : null,
+          cartesPayees: paiement
         };
       }
 
@@ -24758,6 +24859,82 @@
           (!limite || shapeUsageCountForOwner(playerId, shapeKey) < limite)
           && formeTientSurPlateau(shapeKey)
         ));
+      }
+
+      /* ---------------------------------------------------------------------
+         RÈGLES DE PARTIE RÉGLABLES (mode personnalisé)
+
+         Trois réglages, tous lus dans `state.rules`, dont les valeurs par
+         défaut redonnent exactement la partie classique :
+         — `paquet` : nombre de cartes Déplacer / Pousser / Magie du paquet
+           (classique : 8 / 4 / 1, voir CARD_BLUEPRINTS) ;
+         — `cartesPiochees` : main tirée au début du tour, de 5 à 8 ;
+         — `ilesPayantes` : poser une île coûte 2 cartes ; en échange, la pose
+           n'est plus obligatoire. Une seule île par tour, comme avant, et le
+           gardien apparaît toujours sur l'île posée.
+         La partie classique, les tutoriels et les énigmes n'ont aucune de ces
+         clés : chaque lecteur retombe sur la valeur classique.
+         ------------------------------------------------------------------- */
+      const PIOCHE_CLASSIQUE = 5;
+      const PIOCHE_MIN = 5;
+      const PIOCHE_MAX = 8;
+      const COUT_ILE_PAYANTE = 2;
+      const PAQUET_LIMITES = { MOVE: [2, 12], PUSH: [0, 8], MAGIC: [0, 5] };
+
+      function cartesPiocheesParTour(source = state) {
+        const n = Math.round(Number(source?.rules?.cartesPiochees));
+        return Number.isFinite(n) && n > 0 ? Math.max(PIOCHE_MIN, Math.min(PIOCHE_MAX, n)) : PIOCHE_CLASSIQUE;
+      }
+
+      /** Paquet classique, ou celui que les règles de la partie fixent. */
+      function compositionPaquet(rules = state?.rules) {
+        const choisi = rules?.paquet;
+        if (!choisi) return CARD_BLUEPRINTS.slice();
+        return ["MOVE", "PUSH", "MAGIC"].flatMap(type => {
+          const [min, max] = PAQUET_LIMITES[type];
+          const n = Math.max(min, Math.min(max, Math.round(Number(choisi[type])) || 0));
+          return Array(n).fill(type);
+        });
+      }
+
+      function ilesPayantes(source = state) {
+        return !!source?.rules?.ilesPayantes;
+      }
+
+      /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
+       *  qui autorise à finir le tour, et au planner à s'arrêter. */
+      function obligationIleRemplie(source = state) {
+        return !!source?.islandPlacedThisTurn || ilesPayantes(source);
+      }
+
+      /** Cartes jouables (main et réserve) que le joueur peut engager. */
+      function cartesDisponibles(player) {
+        return ["MOVE", "PUSH", "MAGIC"].reduce((total, type) => total + availableActionCount(type, player), 0);
+      }
+
+      /** Le joueur peut-il payer une île ? Toujours vrai hors îles payantes. */
+      function peutPayerIle(player) {
+        return !ilesPayantes() || cartesDisponibles(player) >= COUT_ILE_PAYANTE;
+      }
+
+      /* Ordre de paiement : Déplacer d'abord (le paquet en compte le plus),
+         puis Pousser, puis Magie — la carte la plus rare part en dernier. Une
+         règle fixe et annoncée vaut mieux qu'un choix à chaque pose : en jeu de
+         plateau, on défausserait simplement deux cartes au choix. */
+      const ORDRE_PAIEMENT_ILE = ["MOVE", "PUSH", "MAGIC"];
+
+      /** Prélève le coût d'une île ; rend les types payés, ou null. */
+      function payerIle(player) {
+        if (!ilesPayantes()) return [];
+        if (!player || cartesDisponibles(player) < COUT_ILE_PAYANTE) return null;
+        const payes = [];
+        for (const type of ORDRE_PAIEMENT_ILE) {
+          while (payes.length < COUT_ILE_PAYANTE && availableActionCount(type, player) > 0) {
+            if (consumeAvailableActions(type, 1, player) < 1) break;
+            payes.push(type);
+          }
+        }
+        return payes;
       }
 
       /** FIN PAR POSE IMPOSSIBLE — règle unique, lue au début de chaque tour
@@ -25437,11 +25614,12 @@
         };
         const pioche = compter(joueur.deck), defausse = compter(joueur.discard);
         const taille = PLAN_TYPES_CARTES.reduce((s, t) => s + pioche[t], 0);
-        const cle = PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
+        // Taille de la main : 5 en classique, de 5 à 8 en mode personnalisé.
+        const MAIN = cartesPiocheesParTour();
+        const cle = MAIN + ":" + PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
         const connu = plannerPiocheCache.get(cle);
         if (connu) return connu;
 
-        const MAIN = 5;
         const sures = taille >= MAIN ? { MOVE: 0, PUSH: 0, MAGIC: 0 } : pioche;
         const tas = taille >= MAIN ? pioche : defausse;
         const tasTotal = PLAN_TYPES_CARTES.reduce((s, t) => s + tas[t], 0);
@@ -25490,7 +25668,8 @@
         if (n <= 0) return 1;
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
-        return plannerPiocheProchaine(adverse.id).auMoinsPush[Math.min(n, 5)] ?? 0;
+        const auMoins = plannerPiocheProchaine(adverse.id).auMoinsPush;
+        return auMoins[Math.min(n, auMoins.length - 1)] ?? 0;
       }
 
       /* Déplacements qu'il faut à un gardien APPARU pour atteindre chaque case
@@ -27346,7 +27525,8 @@
       }
 
       function plannerCandidatsPose(playerId) {
-        if (state.islandPlacedThisTurn) return [];
+        // Îles payantes : sans 2 cartes jouables, aucune pose n'est possible.
+        if (state.islandPlacedThisTurn || !peutPayerIle(state.players[playerId])) return [];
         /* Le biais vers la zone adverse ne s'active que sous menace réelle.
            Permanent, il détournait la pose de l'action : l'IA allait camper au
            village adverse pendant qu'une couronne libre attendait ailleurs. */
@@ -27503,7 +27683,8 @@
          combinaison est jugée sur ce qu'elle donne. */
       const PLAN_LANCER_MAX = 8;
       function plannerCandidatsLancer(playerId) {
-        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)) return [];
+        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)
+          || !peutPayerIle(state.players[playerId])) return [];
         const moi = state.players[playerId];
         const forceMax = Math.min(availableActionCount("PUSH", moi), Math.max(1, PLAN_POIDS.pousseeLongue || 1));
         if (forceMax < 1) return [];
@@ -28086,7 +28267,8 @@
           racine.etat.islandPlacedThisTurn = true;
         }
         racine.note = withSimulatedState(racine.etat, () => evaluateStrategicState(playerId));
-        racine.terminal = racine.etat.islandPlacedThisTurn;
+        // Îles payantes : la pose est facultative, s'arrêter est permis d'emblée.
+        racine.terminal = obligationIleRemplie(racine.etat);
         racine.prioriteDefense = plannerPrioriteDefense(playerId, menacesDefense);
 
         /* Sous autopsie, on relève AVANT la recherche : la position de départ
@@ -28185,7 +28367,7 @@
                 }
                 return {
                   note, noteTri,
-                  prioriteDefense: clone.islandPlacedThisTurn
+                  prioriteDefense: obligationIleRemplie(clone)
                     ? plannerPrioriteDefense(playerId, menacesDefense) : 0,
                   empreinte: strategicStateFingerprint(clone)
                 };
@@ -28207,7 +28389,7 @@
                 note: resultat.note,
                 noteTri: resultat.noteTri,
                 prioriteDefense: resultat.prioriteDefense,
-                terminal: clone.islandPlacedThisTurn
+                terminal: obligationIleRemplie(clone)
               };
               suivants.push(enfant);
 
@@ -45958,6 +46140,8 @@
       });
       els.randomSymmetricSetupBtn?.addEventListener("click", chooseRandomSymmetricSetup);
       els.confirmSymmetricSetupBtn?.addEventListener("click", confirmSymmetricSetup);
+      [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect, els.customDrawCountSelect]
+        .forEach(champ => champ?.addEventListener("change", majResumePaquetPersonnalise));
 
 
       function collectIlyosDiagnosticReport() {
@@ -47259,7 +47443,7 @@
         }
 
         entrant.hand = [];
-        drawCards(entrant, 5);
+        drawCards(entrant, cartesPiocheesParTour());
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
@@ -47288,8 +47472,9 @@
           appliquees++;
         }
         /* La pose est obligatoire : si le plan ne l'a pas faite, on retombe sur
-           la pose automatique, exactement comme le jeu réel le fait. */
-        if (!state.islandPlacedThisTurn) {
+           la pose automatique, exactement comme le jeu réel le fait. (Îles
+           payantes : la pose est facultative, rien à rattraper.) */
+        if (!obligationIleRemplie()) {
           const pose = findAutomaticIslandPlacement(playerId);
           if (pose) {
             applyIslandPlacementCore(pose.shapeKey, pose.cells, playerId, pose.relCells, pose.anchor);
@@ -47484,7 +47669,7 @@
                fait. Cette pose-là est choisie par une heuristique et n'est pas
                dans le journal : on ne peut donc pas la reproduire, et on le dit
                au lieu de compter une fausse divergence. */
-            if (!state.islandPlacedThisTurn) return "POSE AUTOMATIQUE";
+            if (!obligationIleRemplie()) return "POSE AUTOMATIQUE";
             selfplayTransitionTour();
             return empreintePlateau(snapshotState());
           });
@@ -47725,7 +47910,7 @@
             state.turn = 1;
             state.round = 1;
             const entrant = state.players[0];
-            drawCards(entrant, 5);
+            drawCards(entrant, cartesPiocheesParTour());
             state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
             state.centerCrownTakenThisTurn = false;
             faireEntrerCouronnesEnAttente();
@@ -47876,7 +48061,7 @@
           }
           // Aperçu : la position après ces actions, sans finir le tour.
           if (apercu) return { etat: snapshotState(), journal };
-          if (!state.islandPlacedThisTurn && !poseImpossiblePour(moi)) {
+          if (!obligationIleRemplie() && !poseImpossiblePour(moi)) {
             return { erreur: "la pose d'île est obligatoire ce tour", journal };
           }
           const continuer = selfplayTransitionTour();
