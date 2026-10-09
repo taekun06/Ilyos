@@ -132,6 +132,11 @@
           { id: "heraut", nom: "Héraut de l'aube", saison: { id: "s1", palier: 18 } },
           { id: "phenix", nom: "Phénix d'Ilyos", saison: { id: "s1", palier: 27 } }
         ] },
+        /* Îles du plateau, lues par la scène 3D (kaykit3d.js). */
+        { cle: "plateau", nom: "Îles", objets: [
+          { id: "herbe", nom: "Îles d'herbe", valeur: "kaykit", image: "assets/collection/iles-herbe.webp", niveau: 1 },
+          { id: "archipel", nom: "Archipel de pierre", valeur: "archipel", image: "assets/collection/iles-archipel.webp", saison: { id: "s1", palier: 29 } }
+        ] },
         /* Effet de la fenêtre de victoire, quand le joueur de l'appareil gagne. */
         { cle: "effet", nom: "Effet de victoire", objets: [
           { id: "sobre", nom: "Sobre", niveau: 1 },
@@ -159,7 +164,7 @@
             { xp: 200 }, { cosmetique: "titre:heraut" }, { vent: 1 }, { cosmetique: "heros:squelette-rodeur" },
             { xp: 250 }, { vent: 2 }, { cosmetique: "couleur:rubis" }, { xp: 250 },
             { cosmetique: "ciel:or-ancien" }, { vent: 2 }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
-            { xp: 300 }, { cosmetique: "effet:plumes" }
+            { cosmetique: "plateau:archipel" }, { cosmetique: "effet:plumes" }
           ],
           apres: { vent: 1 }
         }
@@ -468,8 +473,8 @@
         if (profil.vus.length !== avant) progressionEnregistrer(profil);
       }
 
-      /* Équiper un objet débloqué. Le ciel change aussitôt si la scène 3D
-         existe ; couleur et gardiens s'appliquent à la prochaine partie. */
+      /* Équiper un objet débloqué. Le ciel et les îles changent aussitôt si la
+         scène 3D existe ; couleur et gardiens s'appliquent à la prochaine partie. */
       function progressionEquiper(cleCategorie, id) {
         const profil = progressionCharger();
         const vue = progressionVueCollection(profil).find(c => c.cle === cleCategorie);
@@ -481,6 +486,7 @@
         if (cleCategorie === "ciel") {
           try { if (kaykit3D) window.ILYOS_SKY?.variante?.(objet.valeur); } catch (_) { }
         }
+        if (cleCategorie === "plateau") kaykitChoisirIles(objet.valeur);
         return true;
       }
 
@@ -492,6 +498,11 @@
       /* Ciel du profil, lu par la scène 3D à son ouverture (kaykit3d.js). */
       function progressionCielEquipe() {
         try { return progressionValeurEquipee(progressionCharger(), "ciel"); } catch (_) { return null; }
+      }
+
+      /* Îles du profil, lues par la scène 3D à son ouverture (kaykit3d.js). */
+      function progressionPlateauEquipe() {
+        try { return progressionValeurEquipee(progressionCharger(), "plateau"); } catch (_) { return null; }
       }
 
       /* Apparence équipée sur cet appareil, en identifiants du catalogue :
@@ -1035,7 +1046,7 @@
 
       function progressionHtmlDebloques(objets) {
         if (!objets || !objets.length) return "";
-        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
+        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", plateau: "Îles", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
         return `<div class="progression-debloques">
           <div class="progression-debloques-tete"><b>Débloqué</b><small>À équiper dans le menu, Progression › Collection</small></div>
           <ul>${objets.map(objet => `<li>${progressionVignette(objet)}<span><small>${categories[objet.categorie] || ""}</small>${objet.nom}</span></li>`).join("")}</ul>

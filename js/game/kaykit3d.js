@@ -318,11 +318,25 @@
       // Seul l'espacement visuel 3D est réduit pour correspondre à la taille
       // réelle des Block Bits, sans modifier les règles ni les coordonnées.
       const KAYKIT_CELL_SPACING = .925;
-      // Refonte « Archipel de pierre » : `?rendu=ancien` rend l'ancien plateau
-      // (cubes d'herbe, coque brune) pour comparer sur une même préversion.
-      const ILYOS_RENDU_ANCIEN = (() => {
-        try { return /[?&]rendu=ancien(&|$)/.test(location.search); } catch (_) { return false; }
+      // Îles « Archipel de pierre » : cosmétique de saison (catégorie « plateau »
+      // de progression.js). Les îles d'herbe KayKit restent le rendu par défaut.
+      // `?rendu=archipel` ou `?rendu=ancien` forcent l'un ou l'autre pour comparer
+      // sur une même préversion. Relu à chaque sync de scène : équiper l'archipel
+      // dans la collection change le plateau sans recharger la page.
+      let ILYOS_RENDU_ANCIEN = true;
+      let kaykitIlesDuProfil = null;
+      const KAYKIT_RENDU_FORCE = (() => {
+        try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
+      function kaykitArchipelDemande() {
+        if (KAYKIT_RENDU_FORCE) return KAYKIT_RENDU_FORCE === "archipel";
+        return kaykitIlesDuProfil === "archipel";
+      }
+      /* Appelé par progressionEquiper : la prochaine sync reconstruit le plateau. */
+      function kaykitChoisirIles(valeur) {
+        kaykitIlesDuProfil = valeur || null;
+        try { if (kaykit3D) scheduleKayKitSync(); } catch (_) { }
+      }
       const KAYKIT_BLOCK_SIZE = .932;
       /* Fonction et non constante : figée au chargement, elle gardait la
          valeur du 11×11 après un passage en 13×13, et tout ce qui en dépend —
@@ -909,6 +923,8 @@
         // Ciel choisi dans la collection du joueur (progression.js).
         const cielDuProfil = progressionCielEquipe();
         if (cielDuProfil && KAYKIT_SKY_BAND_VARIANTS[cielDuProfil]) kaykitSkyBandActiveVariant = cielDuProfil;
+        // Îles choisies dans la collection (herbe KayKit ou Archipel de pierre).
+        kaykitIlesDuProfil = progressionPlateauEquipe();
 
         const canvas = document.createElement("canvas");
         canvas.id = "kaykitCanvas";
@@ -7115,7 +7131,7 @@
             // qu'au premier changement de couche d'île, ce qui serait trop tard.
             const underRock = new THREE.Mesh(
               kaykitGeometry("pedestal-underside-rock-v1", () => new THREE.ConeGeometry(.56, .62, 6)),
-              new THREE.MeshStandardMaterial({ color: KAYKIT_HULL_COLOR_MID.getHex(), roughness: .92 })
+              new THREE.MeshStandardMaterial({ color: kaykitHullTeinte(KAYKIT_HULL_COLORS_MID).getHex(), roughness: .92 })
             );
             underRock.rotation.x = Math.PI;
             underRock.position.y = -.36;
@@ -8868,9 +8884,11 @@
       // Archipel de pierre : la coque prolonge la maçonnerie grise des dalles et
       // descend vers une roche brune profonde (texture falaise, voir
       // kaykitIslandHullMaterial).
-      const KAYKIT_HULL_COLOR_TOP = new THREE.Color(ILYOS_RENDU_ANCIEN ? 0xaf5f37 : 0x7a7166);    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
-      const KAYKIT_HULL_COLOR_MID = new THREE.Color(ILYOS_RENDU_ANCIEN ? 0x8f5228 : 0x5c544c);    // moins orangé, plus minéral — même famille
-      const KAYKIT_HULL_COLOR_BOTTOM = new THREE.Color(ILYOS_RENDU_ANCIEN ? 0x4a3223 : 0x34302c); // roche profonde, jamais noire
+      // [îles d'herbe KayKit, Archipel de pierre] : la roche de l'archipel est grise.
+      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c)];    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c)]; // roche profonde, jamais noire
+      const kaykitHullTeinte = couleurs => couleurs[ILYOS_RENDU_ANCIEN ? 0 : 1];
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -8882,8 +8900,9 @@
         const span = yTop - yBottom || 1;
         const t = Math.min(1, Math.max(0, (yTop - y) / span));
         const color = new THREE.Color();
-        if (t <= KAYKIT_HULL_COLOR_MID_T) color.lerpColors(KAYKIT_HULL_COLOR_TOP, KAYKIT_HULL_COLOR_MID, t / KAYKIT_HULL_COLOR_MID_T);
-        else color.lerpColors(KAYKIT_HULL_COLOR_MID, KAYKIT_HULL_COLOR_BOTTOM, (t - KAYKIT_HULL_COLOR_MID_T) / (1 - KAYKIT_HULL_COLOR_MID_T));
+        const top = kaykitHullTeinte(KAYKIT_HULL_COLORS_TOP), mid = kaykitHullTeinte(KAYKIT_HULL_COLORS_MID);
+        if (t <= KAYKIT_HULL_COLOR_MID_T) color.lerpColors(top, mid, t / KAYKIT_HULL_COLOR_MID_T);
+        else color.lerpColors(mid, kaykitHullTeinte(KAYKIT_HULL_COLORS_BOTTOM), (t - KAYKIT_HULL_COLOR_MID_T) / (1 - KAYKIT_HULL_COLOR_MID_T));
         // Variation de luminosité très subtile et déterministe (±4%) pour
         // casser l'uniformité plate sans bruit visible ni texture — un
         // multiplicateur par sommet, pas un motif.
@@ -9085,8 +9104,9 @@
         return geometry;
       }
 
-      let kaykitHullMaterialCache = null;
+      const kaykitHullMaterialCache = { herbe: null, archipel: null };
       function kaykitIslandHullMaterial() {
+        const rendu = ILYOS_RENDU_ANCIEN ? "herbe" : "archipel";
         // Matériau construit directement (pas via kaykitMaterial, qui ne
         // propage pas vertexColors et n'en tient pas compte dans sa clé de
         // cache) : un seul matériau pour toute la coque, dégradé terre KayKit
@@ -9096,20 +9116,20 @@
         // géométrie main-codée n'a pas un winding garanti cohérent sur
         // chaque face (parois + fond triangulé indépendamment) ; DoubleSide
         // élimine tout risque de face culled selon l'angle de vue.
-        if (kaykitHullMaterialCache) return kaykitHullMaterialCache;
+        if (kaykitHullMaterialCache[rendu]) return kaykitHullMaterialCache[rendu];
         // roughness légèrement relevée (.85 → .90) : matière mate, réduit le
         // léger lobe spéculaire résiduel sur les faces quasi verticales
         // (ringA) directement face au soleil de la scène B, sans toucher à
         // l'éclairage global — la réponse du matériau, pas la lumière.
-        kaykitHullMaterialCache = new THREE.MeshStandardMaterial({
+        const materiau = new THREE.MeshStandardMaterial({
           color: 0xffffff, roughness: .90, metalness: 0, side: THREE.DoubleSide, vertexColors: true
         });
         if (!ILYOS_RENDU_ANCIEN) {
-          kaykitHullMaterialCache.map = kaykitPierreTexture("falaise-couleur", true, 1);
-          kaykitHullMaterialCache.normalMap = kaykitPierreTexture("falaise-normale", false, 1);
-          kaykitHullMaterialCache.normalScale = new THREE.Vector2(1.4, 1.4);
+          materiau.map = kaykitPierreTexture("falaise-couleur", true, 1);
+          materiau.normalMap = kaykitPierreTexture("falaise-normale", false, 1);
+          materiau.normalScale = new THREE.Vector2(1.4, 1.4);
         }
-        return kaykitHullMaterialCache;
+        return (kaykitHullMaterialCache[rendu] = materiau);
       }
 
       // Une coque par composante connexe (jamais un polygone reliant deux
@@ -9127,7 +9147,7 @@
           const anchor = kaykitCellPosition(anchorR, anchorC, 0);
           const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
           const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
-          const geometry = kaykitGeometry(`island-hull-v3:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          const geometry = kaykitGeometry(`island-hull-v3:${ILYOS_RENDU_ANCIEN ? "herbe" : "archipel"}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
           hull.castShadow = false;
@@ -10772,6 +10792,14 @@
         return texture;
       }
 
+      /* Ce qui ne se rebâtit pas avec le calque d'îles : les nuages KayKit en
+         boule au ras du plateau, retirés de l'archipel (le ciel peint porte
+         déjà ses nuages). */
+      function kaykitAppliquerRenduIles() {
+        const nuages = kaykit3D?.dynamicGroup?.getObjectByName("ilyos-board-clouds");
+        if (nuages) nuages.visible = ILYOS_RENDU_ANCIEN;
+      }
+
       function attacherPlaqueEquipe(visual, character) {
         const couleur = state?.players?.[character.player]?.color;
         if (couleur === undefined || couleur === null) return;
@@ -10815,6 +10843,11 @@
           // synchronisation (assets locaux, attente très brève).
           if (!visual) return;
           if (!ILYOS_RENDU_ANCIEN && !visual.plaque) attacherPlaqueEquipe(visual, character);
+          else if (ILYOS_RENDU_ANCIEN && visual.plaque) {
+            visual.plaque.traverse(o => { if (o.isMesh) o.material.dispose(); });
+            visual.plaque.parent?.remove(visual.plaque);
+            visual.plaque = null;
+          }
 
           // Un gardien réellement nouveau (pose d'île) joue son apparition ;
           // ceux reconstruits au chargement d'une sauvegarde ou à la reprise
@@ -12024,6 +12057,15 @@
         const __perfStart = window.ILYOS_PERF ? performance.now() : 0;
         try {
           resizeKayKit3D();
+          // Îles d'herbe ↔ Archipel de pierre (collection) : tout le calque
+          // d'îles est rebâti, avec piédestaux et décor.
+          if (ILYOS_RENDU_ANCIEN === kaykitArchipelDemande()) {
+            ILYOS_RENDU_ANCIEN = !ILYOS_RENDU_ANCIEN;
+            kaykit3D.islandObjectRegistry.forEach(entry => disposeKayKitObjects(entry.objects));
+            kaykit3D.islandObjectRegistry.clear();
+            kaykit3D.islandsSignature = null;
+            kaykitAppliquerRenduIles();
+          }
           // Rebâtit grille + cases-cibles si la taille du plateau a changé.
           syncKayKitBoardGrid();
           // SYNCHRONISATION INCRÉMENTALE (V77) : dynamicGroup n'est plus vidé en
@@ -12074,10 +12116,9 @@
           // (même principe que châteaux/gardiens : jamais de secours à remplacer
           // à chaud, on attend juste que l'asset soit prêt).
           if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
-            // Archipel de pierre : les nuages KayKit en boule (style jouet) au
-            // ras du plateau sont retirés ; le ciel peint porte déjà les nuages.
-            if (ILYOS_RENDU_ANCIEN) buildKayKitBoardClouds(dynamic);
+            buildKayKitBoardClouds(dynamic);
             kaykit3D.boardCloudsBuilt = true;
+            kaykitAppliquerRenduIles();
           }
 
           // Ciel : bascule vers l'image équirectangulaire dès qu'elle a fini de charger
