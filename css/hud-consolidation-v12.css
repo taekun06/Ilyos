@@ -7,11 +7,34 @@ body[data-visual-mode="alternative"] #gameScreen{--ov2-context-bottom:188px}
 body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{gap:clamp(14px,1.5vw,24px)!important;padding:6px 8px!important}
 
 body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
-body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
-body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow,
-body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
   position:fixed!important;left:50%!important;right:auto!important;top:auto!important;bottom:var(--ov2-context-bottom)!important;
   margin:0!important;transform:translateX(-50%)!important;transform-origin:bottom center!important;z-index:100050!important;pointer-events:auto!important
+}
+/* LES BARRES DE ROTATION (magie, pose d'île) : en bas à droite, au-dessus de
+   « Fin du tour ». Au centre bas, elles tombaient au milieu du plateau, juste
+   là où passe l'aperçu de l'île qu'on est en train de tourner (signalé « super
+   mal placée »). Dans l'angle, elles restent sous la main, près des actions,
+   et ne cachent plus rien — d'où la fin du fondu à 38 % qui servait à voir
+   l'aperçu au travers. Les énigmes, qui n'ont pas de « Fin du tour »,
+   abaissent l'ancrage par --ov2-rotation-bottom (voir js/game/puzzle.js). */
+body[data-visual-mode="alternative"] #gameScreen{--ov2-rotation-bottom:96px}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
+  /* right: 20px du bord de l'ÉCRAN. #hudV2MagicRow vit dans #hudV2Dock, centré
+     par translateX(-50%) : ce transform en fait le bloc conteneur, même en
+     position fixe, et un simple right:20px collait la barre au bord du dock.
+     Les pourcentages se rapportent alors à sa largeur : 50% - 50vw rattrape
+     l'écart (et vaut zéro quand le bloc conteneur est l'écran). */
+  position:fixed!important;left:auto!important;right:calc(20px - 50vw + 50%)!important;top:auto!important;bottom:var(--ov2-rotation-bottom)!important;
+  margin:0!important;transform:none!important;transform-origin:bottom right!important;z-index:100050!important;pointer-events:auto!important;
+  max-width:calc(100vw - 40px)!important;flex-wrap:wrap!important;justify-content:flex-end!important
+}
+/* Le message d'information du HUD occupe le même angle : il monte d'un rang
+   tant qu'une barre de rotation est ouverte. */
+body[data-visual-mode="alternative"] #gameScreen:has(#hudV2MagicRow:not(.hidden)) #ilyosHudOrganicV2 .ov2-toast,
+body[data-visual-mode="alternative"] #gameScreen:has(#ov2IslandRotationV12:not(.hidden)) #ilyosHudOrganicV2 .ov2-toast{
+  bottom:calc(var(--ov2-rotation-bottom) + 72px)!important
 }
 body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #hudV2IslandDrawer,
 body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #ov2IslandRotationV12{display:none!important}
@@ -20,18 +43,8 @@ body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v12-rota
 
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
   display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 10px;border-radius:16px;background:rgba(18,22,30,.72);
-  border:1px solid rgba(226,200,138,.34);-webkit-backdrop-filter:blur(14px) saturate(.95);backdrop-filter:blur(14px) saturate(.95);box-shadow:0 12px 30px rgba(0,0,0,.32);
-  /* Ce panneau est fixe, au centre bas de l'écran — exactement où passe l'aperçu
-     3D de l'île quand on vise une case proche de la caméra (les rangées basses
-     du plateau, ou après avoir tourné la vue au clavier). Signalé : la pose
-     devient invisible tant que le panneau est dessus. Il s'estompe donc au
-     repos et ne redevient net qu'au survol — ce qui est justement le moment où
-     on n'a plus besoin de voir l'aperçu à travers, puisqu'on est en train de
-     cliquer un bouton de rotation. */
-  opacity:.38;transition:opacity 140ms ease
+  border:1px solid rgba(226,200,138,.34);-webkit-backdrop-filter:blur(14px) saturate(.95);backdrop-filter:blur(14px) saturate(.95);box-shadow:0 12px 30px rgba(0,0,0,.32)
 }
-body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12:hover,
-body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12:focus-within{opacity:1}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12.hidden{display:none!important}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label{margin-right:3px;color:#f5dfaa;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.12em;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-magic-btn{min-height:32px}

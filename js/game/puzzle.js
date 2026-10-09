@@ -533,29 +533,46 @@
              rond fait 38px comme celui-ci). */
           #puzzleLayer .pz-side{position:absolute;top:66px;right:20px;z-index:8;
             display:flex;flex-direction:column;align-items:center;gap:5px;}
-          #puzzleLayer .pz-key{font-size:10px;font-weight:700;
-            letter-spacing:.14em;color:rgba(246,226,174,.6);
-            text-shadow:0 1px 6px rgba(0,0,0,.9);}
+          #puzzleLayer .pz-key{min-width:18px;height:18px;padding:0 5px;
+            box-sizing:border-box;display:inline-flex;align-items:center;
+            justify-content:center;border-radius:5px;
+            background:rgba(6,10,22,.78);border:1px solid rgba(255,232,170,.4);
+            font-size:10.5px;font-weight:800;color:#fff1cf;}
 
-          /* L'OBJECTIF. Une ligne posée sur le ciel, jamais un panneau : elle
-             paraît, se laisse lire, puis rend le ciel. O la rappelle. */
-          #puzzleLayer .pz-brief{position:absolute;top:18px;left:50%;
+          /* L'OBJECTIF ET LE COMPTE. Une plaque sombre en haut, au centre :
+             l'objectif, puis les cartes et l'optimal — ce qu'affichait
+             l'ancien cadre « Cartes 5 / 7 · optimal : 3 », disparu avec lui
+             et regretté. Elle reste plusieurs secondes au départ, le temps de
+             lire les deux lignes, puis rend le ciel ; O (ou le rond à
+             couronne) la rappelle. Le voile sombre n'est pas un luxe : posé nu
+             sur le ciel doré, le texte ne se lisait pas. */
+          #puzzleLayer .pz-brief{position:absolute;top:16px;left:50%;
             transform:translateX(-50%) translateY(-8px);z-index:7;
-            display:flex;align-items:center;gap:12px;
-            max-width:min(640px,78vw);padding:0 6px;text-align:center;
+            display:flex;flex-direction:column;align-items:center;gap:7px;
+            max-width:min(620px,calc(100vw - 300px));padding:11px 24px 12px;
+            text-align:center;border-radius:16px;
+            background:linear-gradient(180deg,rgba(14,22,42,.86),rgba(6,10,22,.84));
+            border:1px solid rgba(255,232,170,.42);
+            box-shadow:0 10px 28px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,240,200,.10);
+            backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
             opacity:0;pointer-events:none;
             transition:opacity .7s ease,transform .7s ease;}
           #puzzleLayer .pz-brief.show{opacity:1;
             transform:translateX(-50%) translateY(0);}
-          #puzzleLayer .pz-brief::before,#puzzleLayer .pz-brief::after{
-            content:"";flex:1 1 46px;min-width:22px;height:1px;
-            background:linear-gradient(90deg,rgba(246,226,174,0),rgba(246,226,174,.55));}
-          #puzzleLayer .pz-brief::after{transform:scaleX(-1);}
+          #puzzleLayer .pz-brief-ligne{display:flex;align-items:center;gap:10px;}
           #puzzleLayer .pz-brief-icone{flex:0 0 auto;line-height:0;}
           #puzzleLayer .pz-brief-icone svg{width:16px;height:16px;
             fill:var(--pz-or);filter:drop-shadow(0 0 9px rgba(246,226,174,.55));}
-          #puzzleLayer .pz-goal{font-size:13px;letter-spacing:.02em;color:#fff4dc;
-            text-shadow:0 1px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.55);}
+          #puzzleLayer .pz-goal{font-size:14px;font-weight:600;letter-spacing:.01em;
+            color:#fff4dc;line-height:1.4;text-shadow:0 1px 3px rgba(0,0,0,.8);}
+          #puzzleLayer .pz-score{display:flex;align-items:center;justify-content:center;
+            flex-wrap:wrap;gap:6px 14px;font-size:12px;letter-spacing:.03em;
+            color:rgba(246,226,174,.82);}
+          #puzzleLayer .pz-score[hidden]{display:none;}
+          #puzzleLayer .pz-score b{color:#fff3d4;font-size:13px;font-weight:800;}
+          #puzzleLayer .pz-score .pz-sep{width:4px;height:4px;border-radius:50%;
+            background:rgba(246,226,174,.5);}
+          #puzzleLayer .pz-score .pz-trop b{color:#ffb38a;}
 
           /* Le plan du rival reste PUBLIC — c'est une donnée de l'énigme, pas
              du décor de duel — mais il se tient désormais en marge, sans
@@ -571,24 +588,26 @@
           #puzzleLayer .pz-plan-line.next b{color:var(--pz-or-vif);}
           #puzzleLayer .pz-plan-line.done{opacity:.22;text-decoration:line-through;}
 
-          /* Bas gauche : annuler, recommencer. Le plus petit chrome possible —
-             un rond et un mot, jamais un bouton plein. */
+          /* Bas gauche : annuler, recommencer. Discrets, mais LISIBLES : un
+             rond et un mot posés sur une plaquette sombre, comme les actions —
+             le mot doré nu disparaissait sur le ciel clair. */
           #puzzleLayer .pz-tools{position:absolute;left:20px;bottom:22px;z-index:7;
-            display:flex;align-items:center;gap:18px;}
-          #puzzleLayer .pz-tool{display:flex;align-items:center;gap:9px;
-            padding:0;background:none;border:none;box-shadow:none;
-            backdrop-filter:none;-webkit-backdrop-filter:none;
-            color:rgba(246,226,174,.62);font-size:11.5px;letter-spacing:.04em;}
-          #puzzleLayer .pz-tool .pz-rond{width:30px;height:30px;}
+            display:flex;align-items:center;gap:10px;}
+          #puzzleLayer .pz-tool{display:flex;align-items:center;gap:8px;
+            padding:4px 14px 4px 4px;border-radius:999px;
+            background:rgba(6,10,22,.72);border:1px solid rgba(255,232,170,.30);
+            box-shadow:0 4px 14px rgba(0,0,0,.32);
+            backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+            color:#fff1cf;font-size:12px;font-weight:700;letter-spacing:.03em;}
+          #puzzleLayer .pz-tool .pz-rond{width:30px;height:30px;
+            background:rgba(255,232,170,.10);border-color:rgba(255,232,170,.6);box-shadow:none;}
           #puzzleLayer .pz-tool .pz-rond svg{width:15px;height:15px;}
-          #puzzleLayer .pz-tool:hover{background:none;box-shadow:none;
-            border-color:transparent;color:var(--pz-or-vif);}
-          #puzzleLayer .pz-tool:hover .pz-rond{border-color:rgba(246,226,174,.62);
-            box-shadow:0 0 16px rgba(246,226,174,.24);}
-          #puzzleLayer .pz-tool[disabled]{opacity:.3;cursor:default;}
-          #puzzleLayer .pz-tool[disabled]:hover{color:rgba(246,226,174,.62);}
-          #puzzleLayer .pz-tool[disabled]:hover .pz-rond{
-            border-color:var(--pz-cercle);box-shadow:none;}
+          #puzzleLayer .pz-tool:hover{background:rgba(20,30,58,.86);
+            border-color:rgba(255,232,170,.62);color:#fff3d4;
+            box-shadow:0 4px 14px rgba(0,0,0,.32),0 0 16px rgba(246,226,174,.24);}
+          #puzzleLayer .pz-tool[disabled]{opacity:.5;cursor:default;}
+          #puzzleLayer .pz-tool[disabled]:hover{background:rgba(6,10,22,.72);
+            border-color:rgba(255,232,170,.30);box-shadow:0 4px 14px rgba(0,0,0,.32);}
 
           /* ================= LES SIGNES =================
              Ce que l'image de référence appelle de la magie : des ORBES d'or
@@ -740,10 +759,14 @@
 
           /* Petits écrans : la phrase d'objectif se resserre, le plan du rival
              passe sous elle, les outils se réduisent à leurs ronds. */
+          /* Fenêtre étroite : la plaque ne tient plus entre le retour et le
+             Menu ; elle descend d'un rang, entre les deux colonnes. */
+          @media (max-width:900px){
+            #puzzleLayer .pz-brief{top:62px;max-width:calc(100vw - 150px);}}
           @media (max-width:680px){
-            #puzzleLayer .pz-brief{max-width:88vw;gap:8px;}
-            #puzzleLayer .pz-brief::before,#puzzleLayer .pz-brief::after{display:none;}
-            #puzzleLayer .pz-goal{font-size:12px;}
+            #puzzleLayer .pz-brief{padding:9px 14px 10px;gap:5px;}
+            #puzzleLayer .pz-goal{font-size:12.5px;}
+            #puzzleLayer .pz-score{font-size:11px;gap:4px 10px;}
             #puzzleLayer .pz-plan{top:auto;bottom:96px;right:14px;max-width:46vw;}
             #puzzleLayer .pz-tools{left:14px;bottom:16px;gap:12px;}
             #puzzleLayer .pz-tool span:not(.pz-rond){display:none;}}
@@ -1024,55 +1047,76 @@
             box-shadow:none !important;backdrop-filter:none !important;
             -webkit-backdrop-filter:none !important;
             pointer-events:auto !important;}
-          /* Le losange du duel est déjà un rond bordé d'or (voir
-             css/hud-organique-v2-readability-v7.css) : il suffit de le porter
-             à la taille des autres ronds du HUD des Voies. */
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear{
-            width:38px !important;height:38px !important;min-width:38px !important;
-            background:rgba(6,10,22,.58) !important;
+          /* LE MENU, en haut à droite. Le bouton du duel est une pilule
+             « ☰ MENU » centrée sous la plaque du tour (css/menu-jeu.css) ;
+             l'ancienne passe la rognait en rond de 38 px au milieu du ciel, et
+             ses trois traits dessinés s'ajoutaient à ceux de l'icône. On garde
+             la pilule — icône et mot, plus lisible qu'un rond muet — mais on la
+             range dans l'angle, au vocabulaire or et nuit du HUD des Voies. Le
+             survol ne doit pas réintroduire le translateX(-50%) du duel. */
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear:hover,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear[aria-expanded="true"]{
+            position:fixed !important;top:16px !important;right:20px !important;
+            left:auto !important;transform:none !important;
+            height:38px !important;min-width:0 !important;width:auto !important;
+            padding:0 16px 0 13px !important;gap:9px !important;
+            display:inline-flex !important;align-items:center !important;
+            border-radius:999px !important;
+            background:linear-gradient(180deg,rgba(14,22,42,.86),rgba(6,10,22,.82)) !important;
             border:1.5px solid rgba(255,232,170,.72) !important;
-            box-shadow:0 4px 14px rgba(0,0,0,.28) !important;
-            display:grid !important;place-items:center !important;
-            color:#f6e2ae !important;line-height:1 !important;}
-          /* Le ⚙ cède la place : le bouton dit « menu », pas « réglages ». */
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear::before{
-            content:"" !important;}
-          /* Trois traits DESSINÉS : le caractère ☰ dépend d'une police que le
-             poste n'a pas forcément, et le HUD tourne en Georgia. */
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear::after{content:"";
-            width:15px;height:1.6px;border-radius:2px;background:currentColor;
-            box-shadow:0 -5px 0 currentColor,0 5px 0 currentColor;}
+            box-shadow:0 6px 18px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,240,200,.12) !important;
+            backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+            color:#f6e2ae !important;line-height:1 !important;
+            font:700 11.5px/1 'Nunito Sans','Inter',system-ui,sans-serif !important;
+            letter-spacing:.18em !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear:hover,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear[aria-expanded="true"]{
+            color:#fff3d4 !important;border-color:rgba(255,240,200,.95) !important;
+            box-shadow:0 6px 18px rgba(0,0,0,.34),0 0 18px rgba(246,226,174,.34) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear svg{
+            width:16px !important;height:16px !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear::before,
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 #ov2Gear::after{
+            content:none !important;display:none !important;}
 
           /* ---- Les trois actions ----
-             Un rond de verre par verbe, faible au repos, qui monte et s'allume
-             au survol comme à la sélection. Le mot passe en bas de casse — la
-             source écrit « DÉPLACER » en capitales pour le HUD de duel — et
-             ::first-letter lui rend sa majuscule. */
+             Un rond par verbe, au-dessus d'une étiquette. Première version :
+             verre très clair, mot doré à 62 % et compteur de 11 px — élégant
+             sur la maquette, illisible en jeu : le ciel d'ILYOS est doré et
+             lumineux, et tout ce qui était translucide s'y fondait (signalé).
+             Le rond est donc désormais un verre FONCÉ et franc, l'icône garde
+             sa couleur de verbe, et le mot comme le compteur sont posés sur
+             une plaquette sombre — c'est elle qui garantit le contraste, quel
+             que soit le ciel derrière. Le compteur devient une pastille sur le
+             rond : on lit « combien » sans chercher sous le mot. */
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-dock{
-            bottom:24px !important;gap:clamp(14px,2.2vw,26px) !important;
+            bottom:20px !important;gap:clamp(16px,2.4vw,30px) !important;
             transform:translateX(-50%) !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action{
-            width:86px !important;height:auto !important;padding:0 !important;
-            color:rgba(246,226,174,.72) !important;}
+            position:relative !important;
+            width:92px !important;height:auto !important;padding:0 !important;
+            color:#f6e2ae !important;}
           /* La plaque hexagonale d'origine s'efface : c'est l'icône elle-même
              qui porte désormais le rond. */
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:before{
             display:none !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action .ov2-ico{
             box-sizing:border-box !important;
-            width:clamp(46px,4.4vw,54px) !important;
-            height:clamp(46px,4.4vw,54px) !important;
+            width:clamp(52px,4.8vw,60px) !important;
+            height:clamp(52px,4.8vw,60px) !important;
             flex:0 0 auto !important;
-            padding:11px !important;margin-bottom:9px !important;
+            padding:12px !important;margin-bottom:7px !important;
             border-radius:999px !important;
-            background:rgba(6,10,22,.58) !important;
-            border:1.5px solid rgba(255,232,170,.72) !important;
+            background:radial-gradient(circle at 50% 35%,rgba(30,40,70,.94),rgba(6,10,22,.92) 72%) !important;
+            border:2px solid rgba(255,232,170,.86) !important;
             backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
-            box-shadow:0 4px 16px rgba(0,0,0,.38),
-              inset 0 0 14px rgba(246,226,174,.08) !important;
+            box-shadow:0 6px 18px rgba(0,0,0,.45),
+              0 0 0 3px rgba(6,10,22,.28),
+              inset 0 0 14px rgba(246,226,174,.10) !important;
             filter:none !important;
             transition:border-color .22s ease,box-shadow .22s ease,
-              background .22s ease !important;}
+              background .22s ease,transform .18s ease !important;}
           /* L'icône de DÉPLACER porte un rétrécissement de 8 % qui lui est
              propre (voir css/hud-consolidation-v12.css) : dans un rond, il se
              lisait comme un bouton plus petit que ses deux voisins. */
@@ -1080,39 +1124,52 @@
             transform:none !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action strong{
             display:inline-block !important;text-transform:lowercase !important;
-            font-family:inherit !important;font-size:11px !important;
-            font-weight:600 !important;letter-spacing:.04em !important;
-            color:rgba(246,226,174,.62) !important;
-            text-shadow:0 1px 8px rgba(0,0,0,.8) !important;}
+            font-family:'Nunito Sans','Inter',system-ui,sans-serif !important;
+            font-size:12.5px !important;font-weight:800 !important;
+            letter-spacing:.04em !important;line-height:1 !important;
+            min-height:0 !important;padding:5px 11px 6px !important;
+            border-radius:999px !important;
+            background:rgba(6,10,22,.78) !important;
+            border:1px solid rgba(255,232,170,.30) !important;
+            color:#fff1cf !important;
+            text-shadow:0 1px 2px rgba(0,0,0,.9) !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action strong::first-letter{
             text-transform:uppercase !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action small{
-            font-size:11px !important;font-weight:700 !important;
-            color:rgba(246,226,174,.72) !important;margin-top:1px !important;
-            text-shadow:0 1px 8px rgba(0,0,0,.8) !important;}
-          /* La Magie garde sa teinte violette dans un duel ; ici tout est or et
-             nuit, et une seule tache de couleur romprait l'ensemble. */
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-magic{
-            color:rgba(246,226,174,.72) !important;}
+            position:absolute !important;top:-3px !important;
+            left:calc(50% + 14px) !important;margin:0 !important;
+            min-width:30px !important;height:22px !important;min-height:0 !important;
+            padding:0 7px !important;box-sizing:border-box !important;
+            display:flex !important;align-items:center !important;justify-content:center !important;
+            border-radius:999px !important;
+            background:linear-gradient(180deg,#ffe7a6,#e2b552) !important;
+            border:1.5px solid rgba(6,10,22,.85) !important;
+            box-shadow:0 3px 8px rgba(0,0,0,.4) !important;
+            font:900 12.5px/1 'Nunito Sans','Inter',system-ui,sans-serif !important;
+            color:#1b1405 !important;text-shadow:none !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:hover:not(:disabled) .ov2-ico,
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected .ov2-ico{
-            border-color:rgba(255,236,190,.75) !important;
-            background:rgba(28,40,74,.44) !important;
-            box-shadow:0 6px 22px rgba(0,0,0,.34),
-              0 0 22px rgba(246,226,174,.30),
-              inset 0 0 18px rgba(246,226,174,.12) !important;}
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected,
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected strong,
-          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected small{
-            color:#fff3d4 !important;}
-          /* Faible au repos, jamais éteint : une action impossible doit rester
-             lisible, sinon on la cherche au lieu de la voir. */
+            border-color:#fff3d4 !important;
+            background:radial-gradient(circle at 50% 35%,rgba(58,70,112,.96),rgba(14,20,40,.94) 72%) !important;
+            transform:translateY(-2px) !important;
+            box-shadow:0 8px 24px rgba(0,0,0,.45),
+              0 0 0 3px rgba(255,232,170,.20),
+              0 0 26px rgba(246,226,174,.55),
+              inset 0 0 18px rgba(246,226,174,.16) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action.ov2-selected strong{
+            background:linear-gradient(180deg,#ffe7a6,#e2b552) !important;
+            border-color:rgba(6,10,22,.85) !important;
+            color:#1b1405 !important;text-shadow:none !important;}
+          /* Épuisée : plus sombre, mais jamais effacée — une action impossible
+             doit rester lisible, sinon on la cherche au lieu de la voir. */
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:disabled{
-            opacity:.55 !important;filter:none !important;}
+            opacity:.62 !important;filter:saturate(.35) !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
-            background:rgba(7,12,26,.20) !important;
-            border-color:rgba(246,226,174,.14) !important;
-            box-shadow:none !important;}
+            border-color:rgba(246,226,174,.34) !important;
+            box-shadow:0 4px 12px rgba(0,0,0,.35) !important;}
+          body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action:disabled small{
+            background:rgba(40,44,58,.95) !important;color:#c9c2b0 !important;
+            border-color:rgba(255,232,170,.25) !important;}
 
           /* Fin du tour : gardée pour les énigmes à plusieurs tours (les autres
              la masquent déjà), mais ramenée au même vocabulaire d'or et de
@@ -1144,12 +1201,20 @@
              sobriété que le reste. */
           body.puzzle-mode #plateauTactiqueBtn{
             top:auto !important;bottom:24px !important;right:20px !important;
-            padding:7px 13px !important;font-size:10.5px !important;
-            background:rgba(7,12,26,.30) !important;
-            border-color:rgba(246,226,174,.28) !important;
-            color:rgba(246,226,174,.66) !important;}
+            padding:8px 14px !important;font-size:11px !important;
+            background:rgba(6,10,22,.72) !important;
+            border-color:rgba(255,232,170,.36) !important;
+            color:#fff1cf !important;}
           /* Sauf quand « Fin du tour » occupe déjà ce coin. */
           body.puzzle-mode.puzzle-multi #plateauTactiqueBtn{bottom:74px !important;}
+          /* Les barres de rotation se rangent en bas à droite (voir
+             css/hud-consolidation-v12.css), juste au-dessus de la bascule 2D —
+             et de « Fin du tour » quand l'énigme dure plusieurs tours. */
+          body.puzzle-mode #gameScreen.puzzle-on{--ov2-rotation-bottom:72px !important;}
+          /* Le message bref du jeu (#toast, sur <body>) s'ouvrait à 57 px du
+             haut : sous la plaque de l'objectif, qui le masquait à moitié. */
+          body.puzzle-mode #toast{top:98px !important;}
+          body.puzzle-mode.puzzle-multi #gameScreen.puzzle-on{--ov2-rotation-bottom:122px !important;}
         `;
         document.head.appendChild(style);
       }
@@ -1983,14 +2048,19 @@
       /* L'objectif ne s'installe pas : il passe. Le temps de le lire, puis il
          rend le ciel. La touche O et le rond à couronne le rappellent à tout
          moment — c'est cela qui autorise à ne PAS l'afficher en permanence. */
-      function puzzleShowObjectif() {
+      /* Deux durées : à l'arrivée, il y a deux lignes à lire et l'on découvre
+         le plateau en même temps — 4,6 s ne suffisaient pas (signalé). Un
+         rappel par O, lui, est une vérification : plus bref. */
+      const PUZZLE_OBJECTIF_DUREE = { arrivee: 11000, rappel: 6500 };
+      function puzzleShowObjectif(duree = PUZZLE_OBJECTIF_DUREE.rappel) {
         const dom = PUZZLE.dom;
         if (!dom || !dom.brief) return;
+        try { puzzleSyncOverlay(); } catch (_) { }
         dom.brief.classList.add("show");
         clearTimeout(PUZZLE.objectifTimer);
         PUZZLE.objectifTimer = setTimeout(() => {
           dom.brief && dom.brief.classList.remove("show");
-        }, 4600);
+        }, duree);
       }
 
       /* Les signes : anneaux, glyphes, poussière de lumière. Les positions
@@ -2085,8 +2155,11 @@
             <span class="pz-key" aria-hidden="true">O</span>
           </div>
           <div class="pz-brief" role="status" aria-live="polite">
-            <span class="pz-brief-icone" aria-hidden="true">${puzzleCouronneSVG()}</span>
-            <span class="pz-goal"></span>
+            <div class="pz-brief-ligne">
+              <span class="pz-brief-icone" aria-hidden="true">${puzzleCouronneSVG()}</span>
+              <span class="pz-goal"></span>
+            </div>
+            <div class="pz-score" hidden></div>
           </div>
           <div class="pz-plan" hidden></div>
           <div class="pz-bloom"></div>
@@ -2119,6 +2192,7 @@
         PUZZLE.dom = {
           layer,
           goal: layer.querySelector(".pz-goal"),
+          score: layer.querySelector(".pz-score"),
           brief: layer.querySelector(".pz-brief"),
           undo: layer.querySelector('[data-pz="undo"]'),
           plan: layer.querySelector(".pz-plan"),
@@ -2142,6 +2216,21 @@
            répéter dans un cadre ne dirait rien de plus. */
         const phrase = def.brief || "";
         if (dom.goal.textContent !== phrase) dom.goal.textContent = phrase;
+        /* Le compte, sous l'objectif : cartes restantes sur le budget, puis
+           l'optimal (`par`, établi par le chercheur). Les compteurs du bas
+           disent ce qu'on PEUT jouer ; cette ligne dit où l'on en est. */
+        if (dom.score) {
+          const depense = puzzleCardsSpent();
+          const restant = puzzleCardsLeft();
+          const html = PUZZLE.budget
+            ? `<span>Cartes <b>${restant}</b> / ${PUZZLE.budget}</span>`
+              + (def.par ? `<i class="pz-sep"></i><span${depense > def.par ? ' class="pz-trop"' : ""}>`
+                + `Dépensées <b>${depense}</b></span>`
+                + `<i class="pz-sep"></i><span>Optimal <b>${def.par}</b></span>` : "")
+            : "";
+          if (dom.score.innerHTML !== html) dom.score.innerHTML = html;
+          dom.score.hidden = !html;
+        }
         /* Annuler suit exactement le bouton du jeu : même handler, même
            disponibilité — rien n'est décidé ici. */
         if (dom.undo && els.cancelCardBtn) dom.undo.disabled = !!els.cancelCardBtn.disabled;
@@ -2531,6 +2620,17 @@
           await attendre(2600);
           dom.caption.classList.remove("show");
           await attendre(600);
+        });
+      }
+
+      /* L'objectif paraît APRÈS les phrases d'arrivée, pas sous elles : la
+         séquence masque le chrome, et la plaque se serait éteinte avant même
+         d'avoir été vue. */
+      function puzzleApprocheEtObjectif(def) {
+        return Promise.resolve(puzzleApproche(def)).then(() => {
+          if (PUZZLE.active && PUZZLE.def === def && !PUZZLE.ended) {
+            puzzleShowObjectif(PUZZLE_OBJECTIF_DUREE.arrivee);
+          }
         });
       }
 
@@ -3041,7 +3141,7 @@
         // La phrase d'entrée, si ce Sanctuaire en porte une, vient seulement
         // après le nom du lieu : deux textes à la fois n'en font lire aucun.
         // Hors de la séquence précédente, qui n'en autorise qu'une à la fois.
-        puzzleApproche(def);
+        puzzleApprocheEtObjectif(def);
       }
 
       /* UNE seule ligne au réveil, jamais deux (charte narrative). Quand le
@@ -3291,7 +3391,7 @@
 
         tutoRender();
         puzzleSyncOverlay();
-        puzzleShowObjectif();
+        puzzleShowObjectif(PUZZLE_OBJECTIF_DUREE.arrivee);
         const [fr, fc] = puzzleFocusCell(def);
         puzzleFrame(fr, fc, def.zoom || 0);
 
@@ -3306,9 +3406,9 @@
              monde parle. Les deux ne se chevauchent pas — puzzleSequence n'en
              autorise qu'une à la fois. */
           if (puzzleOuvertureDue(def)) {
-            puzzleOuvertureVoies().then(() => puzzleApproche(def));
+            puzzleOuvertureVoies().then(() => puzzleApprocheEtObjectif(def));
           } else {
-            puzzleApproche(def);
+            puzzleApprocheEtObjectif(def);
           }
         }
       }

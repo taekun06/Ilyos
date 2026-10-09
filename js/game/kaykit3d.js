@@ -6857,6 +6857,18 @@
           const p = visual.wrapper.position.clone();
           souvenir.add(visual.wrapper);
           visual.wrapper.position.set(p.x - (offset.x || 0), p.y - (offset.y || 0), p.z - (offset.z || 0));
+          /* La couronne portée n'est PAS une enfant du gardien mais de
+             characterGroup (voir attachVisualCrown). Restée là, elle flottait
+             dans le ciel à l'ancienne hauteur de tête après chaque voyage, et
+             il s'en accumulait une par Sanctuaire quitté. Elle part donc avec
+             son porteur, et disparaît avec le souvenir. */
+          if (visual.crown) {
+            const q = visual.crown.position.clone();
+            souvenir.add(visual.crown);
+            visual.crown.position.set(q.x - (offset.x || 0), q.y - (offset.y || 0), q.z - (offset.z || 0));
+            visual.crown = null;
+            visual.carrying = false;
+          }
         } catch (_) { }
       }
 
@@ -7886,13 +7898,24 @@
       function addKayKitPushGhost(r, c, { playerId = null, crown = false } = {}) {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
+        const piece = makeKayKitPieceGhost(r, c, { playerId, crown });
+        if (piece) group.add(piece);
+      }
 
+      /* Le fantôme lui-même, sans groupe : la poussée le pose dans
+         actionPreviewGroup, la rotation magique dans les enfants transitoires
+         de dynamicGroup. `surfaceY` force la hauteur du sol — une île qui
+         tourne arrive sur des cases encore VIDES, dont kaykitCellSurfaceY
+         donnerait le niveau du plateau et non celui de l'île. Les matériaux
+         clonés sont marqués ilyosTransient : ils sont propres à ce fantôme et
+         doivent être libérés avec lui. */
+      function makeKayKitPieceGhost(r, c, { playerId = null, crown = false, opacity = .6, surfaceY = null } = {}) {
         let piece = null;
         if (crown) {
           // La couronne n'est pas un asset KayKit mais une géométrie construite
           // par makeCrown() — même modèle que celui posé sur le plateau.
           piece = makeCrown();
-          if (!piece) return;
+          if (!piece) return null;
         } else {
           const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
           ensureKayKitAsset(assetKey);
@@ -7900,7 +7923,7 @@
           if (!piece) piece = makeFallbackHero(playerId ?? 0);
         }
 
-        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+        const p = kaykitCellPosition(r, c, surfaceY ?? kaykitCellSurfaceY(r, c));
         piece.position.set(p.x, p.y, p.z);
         if (!crown) piece.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
 
@@ -7920,15 +7943,16 @@
               mat.emissiveIntensity = .26;
             }
             mat.transparent = true;
-            mat.opacity = .6;
+            mat.opacity = opacity;
             mat.depthWrite = false;
             mat.needsUpdate = true;
+            mat.userData = { ...(mat.userData || {}), ilyosTransient: true };
             return mat;
           });
           child.material = Array.isArray(child.material) ? cloned : cloned[0];
           child.renderOrder = 21;
         });
-        group.add(piece);
+        return piece;
       }
 
       function addKayKitActionPreviewCell(r, c, {
@@ -9833,6 +9857,8 @@
         block.userData.magicRotationPreview = true;
         kaykit3D.dynamicGroup.add(block);
 
+        renderKayKitMagicRotationGhosts(originalIsland);
+
         // Pivot doré clairement visible pendant la rotation.
         if (Array.isArray(state.selectedMagicPivot)) {
           const [r, c] = state.selectedMagicPivot;
@@ -9845,6 +9871,81 @@
           pivot.renderOrder = 45;
           kaykit3D.dynamicGroup.add(pivot);
         }
+      }
+
+      /* CE QUE LA ROTATION EMPORTE, ET CE QU'ELLE PERMET.
+
+         1. Les gardiens et couronnes posés sur l'île tournent avec elle. L'aperçu
+            ne montrait que la forme d'arrivée : il fallait deviner où chacun
+            atterrirait. Un fantôme par pièce le dit, comme pour la poussée.
+         2. Les AUTRES rotations légales autour du même pivot sont dessinées
+            d'emblée, en contour doré et voile léger : on voit tout de suite ce
+            que la magie permet depuis ce pivot, au lieu de le découvrir cran par
+            cran à la molette. Celle qu'on vise reste l'île pleine.
+
+         Rien n'est recalculé ici : calculateIslandRotationAroundPivot (ui.js)
+         est la règle même qu'applique confirmMagicRotation. */
+      function renderKayKitMagicRotationGhosts(island) {
+        if (!island || !Array.isArray(state.selectedMagicPivot)) return;
+        if (typeof calculateIslandRotationAroundPivot !== "function") return;
+        const [pr, pc] = state.selectedMagicPivot;
+        const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
+        const sol = KAYKIT_LEVELS.islandTop + .014 + .055;
+        const group = kaykit3D.dynamicGroup;
+
+        [1, 2, 3].forEach(steps => {
+          const direction = steps === 3 ? -1 : 1;
+          const turns = steps === 3 ? 1 : steps;
+          let rotation = null;
+          try { rotation = calculateIslandRotationAroundPivot(island, pr, pc, direction, turns); } catch (_) { return; }
+          if (!rotation?.valid) return;
+
+          if (steps === courant) {
+            (rotation.characterMoves || []).forEach(move => {
+              if (move.r === move.char.r && move.c === move.char.c) return;
+              const ghost = makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, opacity: .62, surfaceY: sol });
+              if (ghost) group.add(ghost);
+              // Sa couronne voyage avec lui : on la montre au-dessus du fantôme.
+              let portee = null;
+              try { portee = artifactCarriedBy(move.char.id); } catch (_) { }
+              if (!portee) return;
+              const couronne = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .8, surfaceY: sol + .74 });
+              if (!couronne) return;
+              couronne.scale.multiplyScalar(.62);
+              group.add(couronne);
+            });
+            (rotation.artifactMoves || []).forEach(move => {
+              if (move.r === move.artifact.r && move.c === move.artifact.c) return;
+              const ghost = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .7, surfaceY: sol });
+              if (ghost) group.add(ghost);
+            });
+            return;
+          }
+
+          /* Même bloc fantôme que l'aperçu principal, nettement plus effacé :
+             un voile plat se perdait sur le ciel doré. */
+          const option = makeKayKitIslandBlock({
+            id: `magic-option-${island.id}-${steps}`,
+            owner: null,
+            cells: rotation.absCells.map(([r, c]) => [r, c])
+          }, { preview: true, valid: true, previewMode: "magic" });
+          option.position.y = .045;
+          option.userData.magicRotationPreview = true;
+          option.traverse(obj => {
+            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+            const attenues = materials.filter(Boolean).map(mat => {
+              const copie = mat.clone();
+              copie.transparent = true;
+              copie.opacity = (Number.isFinite(mat.opacity) ? mat.opacity : 1) * .5;
+              copie.depthWrite = false;
+              copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
+              return copie;
+            });
+            if (!attenues.length) return;
+            obj.material = Array.isArray(obj.material) ? attenues : attenues[0];
+          });
+          group.add(option);
+        });
       }
 
       // Avant même de cliquer un pivot : simple survol d'une case d'île pendant
