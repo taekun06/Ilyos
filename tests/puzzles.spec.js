@@ -173,10 +173,9 @@ test('la neuvième énigme se résout entièrement à la souris', async ({ page 
   /* Les boutons de rotation réellement affichés sont ceux du HUD consolidé V12
      (#hudV2MagicRotate*) ; #rotateRightBtn n'est plus qu'un relais de taille
      nulle. Cliquer les vrais boutons est la seule façon de prouver que le
-     masquage du panneau d'îles propre aux énigmes ne coupe pas la Magie. */
-  await page.locator('#hudV2MagicRotateRight').click();
-  await page.locator('#hudV2MagicRotateRight').click();
-  await clic(3, 5);
+     masquage du panneau d'îles propre aux énigmes ne coupe pas la Magie.
+     Chaque bouton nomme une rotation et la joue d'un clic. */
+  await page.locator('#hudV2MagicRotate180').click();
 
   await page.waitForFunction(() => window.ILYOS_PUZZLE._debug().goal === true, null, { timeout: 10000 });
   const fin = await page.evaluate(() => window.ILYOS_PUZZLE._debug());

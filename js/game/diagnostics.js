@@ -2326,8 +2326,18 @@
         });
       });
 
-      document.getElementById("hudV2MagicRotateLeft")?.addEventListener("click", () => rotateSelectedIsland(-1));
-      document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
+      /* Survoler un bouton de rotation montre sa position ; le quitter rend
+         celle qui était montrée avant ; le cliquer joue la rotation. */
+      document.querySelectorAll("#hudV2MagicRow [data-magie-crans]").forEach(btn => {
+        const crans = Number(btn.dataset.magieCrans);
+        let avant = 0;
+        btn.addEventListener("mouseenter", () => {
+          avant = state?.magicPreviewSteps || 0;
+          if (!btn.disabled) previsualiserRotationMagie(crans);
+        });
+        btn.addEventListener("mouseleave", () => previsualiserRotationMagie(avant));
+        btn.addEventListener("click", () => { avant = crans; jouerRotationMagie(crans); });
+      });
       document.getElementById("hudV2MagicDissolve")?.addEventListener("click", () => dissolveSelectedIsland());
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());

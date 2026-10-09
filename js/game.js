@@ -5322,6 +5322,14 @@
           return { kind: "crown", actionable: true, color: 0xffc928, label: "COURONNE" };
         }
         if (state?.phase === "ACTION" && state.selectedActionType === "MAGIC") {
+          // Une position de rotation dessinée au sol : le curseur prend sa
+          // couleur et devient cliquable. Pas de libellé : le fantôme plein
+          // qui apparaît au survol suffit (Taekun : « pas de texte »).
+          if (state.selectedIslandId && state.selectedMagicPivot && typeof magicRotationStepsAtCell === "function") {
+            const crans = magicRotationStepsAtCell(r, c);
+            const style = KAYKIT_MAGIC_OPTION_STYLE[crans];
+            if (style) return { kind: "magic", actionable: true, color: style.couleur, label: "" };
+          }
           if (classes?.contains("magic-invalid")) return { kind: "invalid", actionable: false, color: 0xff4058, label: "ROTATION IMPOSSIBLE" };
           if (classes?.contains("magic-valid") || classes?.contains("magic-selected-island") || classes?.contains("magic-hover-pivot")) {
             return { kind: "magic", actionable: true, color: 0xc36cff, label: "ÎLE CIBLÉE PAR LA MAGIE" };
@@ -10663,7 +10671,7 @@
         // La rotation visée prend la couleur de son étiquette (↻ 90°, 180°, ↺ 90°).
         const crans = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
         if (state.magicPreviewValid && KAYKIT_MAGIC_OPTION_STYLE[crans]) {
-          kaykitTeinterFantome(block, KAYKIT_MAGIC_OPTION_STYLE[crans].couleur, .86);
+          kaykitTeinterFantome(block, KAYKIT_MAGIC_OPTION_STYLE[crans].couleur, .72);
         }
         kaykit3D.dynamicGroup.add(block);
 
@@ -10683,61 +10691,33 @@
         }
       }
 
-      /* CE QUE LA ROTATION EMPORTE, ET CE QU'ELLE PERMET.
+      /* CE QUE LA ROTATION PERMET, AVANT MÊME DE TOURNER (maquette validée).
 
-         1. Les gardiens et couronnes posés sur l'île tournent avec elle. Un
-            fantôme par pièce montre où chacun atterrit, comme pour la poussée.
-         2. Les AUTRES rotations légales autour du même pivot sont dessinées
-            d'emblée. Chacune a SA couleur et SON étiquette (↻ 90°, 180°,
-            ↺ 90°) : trois fantômes de la même teinte se confondaient dès
-            qu'ils se chevauchaient (signalé). Cliquer un fantôme joue cette
-            rotation (voir magicRotationStepsAtCell, ui.js).
+         Au repos, chaque rotation LÉGALE autour du pivot est un liseré
+         lumineux de sa couleur, posé à hauteur d'île, avec en verre teinté
+         les gardiens et couronnes à leur arrivée. Les liserés sont décalés
+         vers l'intérieur d'une valeur propre à chaque rotation : deux
+         positions qui se touchent restent deux traits distincts.
+
+         Aucune étiquette sur le plateau : elles finissaient toujours par
+         cacher une pièce (signalé). Les noms vivent dans la barre de
+         rotation (#hudV2MagicRow), boutons de la même couleur.
+
+         La rotation montrée (survol d'un liseré ou d'un bouton) prend son
+         volume d'île teinté et ses pièces en grand ; les autres s'estompent.
 
          Rien n'est recalculé ici : magicRotationOptions (ui.js) appelle
          calculateIslandRotationAroundPivot, la règle même qu'applique
          confirmMagicRotation. */
       const KAYKIT_MAGIC_OPTION_STYLE = {
-        1: { couleur: 0x1fb4ff, css: "#1fb4ff", texte: "↻ 90°" },
-        2: { couleur: 0xffaa12, css: "#ffaa12", texte: "180°" },
-        3: { couleur: 0xb04dff, css: "#b04dff", texte: "↺ 90°" }
+        1: { couleur: 0x1fb4ff, texte: "↻ 90°", retrait: .07 },
+        2: { couleur: 0xffaa12, texte: "180°", retrait: .15 },
+        3: { couleur: 0xb04dff, texte: "↺ 90°", retrait: .23 }
       };
 
-      function kaykitMagicOptionLabel(style, actif) {
-        const canvas = document.createElement("canvas");
-        canvas.width = 256;
-        canvas.height = 104;
-        const ctx = canvas.getContext("2d");
-        const x = 10, y = 10, w = 236, h = 84, rayon = 42;
-        ctx.beginPath();
-        ctx.moveTo(x + rayon, y);
-        ctx.arcTo(x + w, y, x + w, y + h, rayon);
-        ctx.arcTo(x + w, y + h, x, y + h, rayon);
-        ctx.arcTo(x, y + h, x, y, rayon);
-        ctx.arcTo(x, y, x + w, y, rayon);
-        ctx.closePath();
-        ctx.fillStyle = style.css;
-        ctx.fill();
-        ctx.lineWidth = actif ? 9 : 6;
-        ctx.strokeStyle = actif ? "#ffffff" : "rgba(8,12,26,.9)";
-        ctx.stroke();
-        ctx.fillStyle = "#0b0f1d";
-        ctx.font = "900 46px 'Nunito Sans', Inter, system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(style.texte, 128, 54);
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.userData = { ...(texture.userData || {}), ilyosTransient: true };
-        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, toneMapped: false });
-        material.userData = { ...(material.userData || {}), ilyosTransient: true };
-        const sprite = new THREE.Sprite(material);
-        sprite.scale.set(actif ? 1.05 : .9, actif ? .43 : .37, 1);
-        sprite.renderOrder = 62;
-        return sprite;
-      }
-
-      /* Teinte franche d'un fantôme d'île. toneMapped:false : sans lui, le
-         rendu tonal du ciel lavait les couleurs et les trois fantômes
-         redevenaient trois voiles pâles indiscernables. */
+      /* Teinte franche d'un fantôme. toneMapped:false : sans lui, le rendu
+         tonal du ciel lavait les couleurs et les trois rotations redevenaient
+         trois voiles pâles indiscernables. */
       function kaykitTeinterFantome(objet, couleur, opacite) {
         const teinte = new THREE.Color(couleur);
         objet.traverse(obj => {
@@ -10763,6 +10743,52 @@
         });
       }
 
+      /* Liseré d'une forme d'île : un ruban plat (vraie épaisseur en unités
+         de scène, `linewidth` étant ignoré par les pilotes) décalé de
+         `retrait` vers l'intérieur. kaykitIslandBoundary parcourt toujours le
+         bord dans le même sens : l'intérieur est à gauche de chaque arête. */
+      function kaykitRubanContour(cells, y, retrait, largeur, couleur, opacite) {
+        const groupe = new THREE.Group();
+        kaykitIslandComponents(cells).forEach(component => {
+          const bord = kaykitIslandBoundary(component);
+          const n = bord.length;
+          if (n < 3) return;
+          const memeX = (a, b) => Math.abs(a[0] - b[0]) < 1e-6;
+          const memeZ = (a, b) => Math.abs(a[1] - b[1]) < 1e-6;
+          const coins = bord.filter((p, i) => {
+            const a = bord[(i - 1 + n) % n], b = bord[(i + 1) % n];
+            return !((memeX(a, p) && memeX(p, b)) || (memeZ(a, p) && memeZ(p, b)));
+          });
+          const m = coins.length;
+          if (m < 3) return;
+          const normale = (a, b) => {
+            const dx = Math.sign(Math.round((b[0] - a[0]) * 1e4)), dz = Math.sign(Math.round((b[1] - a[1]) * 1e4));
+            return [-dz, dx];
+          };
+          const decaler = d => coins.map((p, i) => {
+            const n1 = normale(coins[(i - 1 + m) % m], p), n2 = normale(p, coins[(i + 1) % m]);
+            return [p[0] + (n1[0] + n2[0]) * d, p[1] + (n1[1] + n2[1]) * d];
+          });
+          const dehors = decaler(retrait), dedans = decaler(retrait + largeur);
+          const positions = [];
+          for (let i = 0; i < m; i++) {
+            const k = (i + 1) % m;
+            const a = dehors[i], b = dehors[k], c = dedans[k], d = dedans[i];
+            positions.push(a[0], y, a[1], b[0], y, b[1], c[0], y, c[1]);
+            positions.push(a[0], y, a[1], c[0], y, c[1], d[0], y, d[1]);
+          }
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+          geometry.userData = { ...(geometry.userData || {}), ilyosTransient: true };
+          const material = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false });
+          material.userData = { ...(material.userData || {}), ilyosTransient: true };
+          const ruban = new THREE.Mesh(geometry, material);
+          ruban.renderOrder = 46;
+          groupe.add(ruban);
+        });
+        return groupe;
+      }
+
       function renderKayKitMagicRotationGhosts(island) {
         if (!island || typeof magicRotationOptions !== "function") return;
         const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
@@ -10770,67 +10796,106 @@
         const group = kaykit3D.dynamicGroup;
         let options = [];
         try { options = magicRotationOptions(); } catch (_) { return; }
+        const dalle = kaykitGeometry("magic-option-dalle-v1", () => {
+          const g = new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .96, KAYKIT_CELL_SPACING * .96);
+          g.rotateX(-Math.PI / 2);
+          return g;
+        });
 
         options.forEach(({ steps, rotation }) => {
           const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
           const actif = steps === courant;
+          const estompe = !!courant && !actif;
 
-          // Étiquette au-dessus du centre de la forme d'arrivée.
-          const centre = rotation.absCells.reduce((acc, [r, c]) => {
+          // Lueur large et pâle, puis trait net : un liseré qui se lit sur
+          // le ciel doré comme sur une île verte.
+          group.add(kaykitRubanContour(rotation.absCells, sol + .02, Math.max(0, style.retrait - .03), .13, style.couleur, estompe ? .1 : .3));
+          group.add(kaykitRubanContour(rotation.absCells, sol + .022, style.retrait, .065, style.couleur, estompe ? .32 : 1));
+
+          // Voile très léger sur la position : elle se lit comme une zone.
+          if (!actif) {
+            const voile = new THREE.MeshBasicMaterial({ color: style.couleur, transparent: true, opacity: estompe ? .05 : .16, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+            voile.userData = { ...(voile.userData || {}), ilyosTransient: true };
+            rotation.absCells.forEach(([r, c]) => {
+              const p = kaykitCellPosition(r, c, sol + .01);
+              const tuile = new THREE.Mesh(dalle, voile);
+              tuile.position.set(p.x, p.y, p.z);
+              tuile.renderOrder = 44;
+              group.add(tuile);
+            });
+          }
+
+          // Gardiens et couronnes à l'arrivée, en verre de la couleur de la
+          // rotation : en grand pour celle montrée, plus petits sinon.
+          const echelle = actif ? 1 : .8;
+          const opacite = actif ? .82 : (estompe ? .22 : .58);
+          const poser = objet => {
+            if (!objet) return;
+            objet.scale.multiplyScalar(echelle);
+            kaykitTeinterFantome(objet, style.couleur, opacite);
+            group.add(objet);
+          };
+          (rotation.characterMoves || []).forEach(move => {
+            if (move.r === move.char.r && move.c === move.char.c) return;
+            poser(makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, surfaceY: sol }));
+            let portee = null;
+            try { portee = artifactCarriedBy(move.char.id); } catch (_) { }
+            if (!portee) return;
+            const couronne = makeKayKitPieceGhost(move.r, move.c, { crown: true, surfaceY: sol + .74 * echelle });
+            if (couronne) couronne.scale.multiplyScalar(.62);
+            poser(couronne);
+          });
+          (rotation.artifactMoves || []).forEach(move => {
+            if (move.r === move.artifact.r && move.c === move.artifact.c) return;
+            poser(makeKayKitPieceGhost(move.r, move.c, { crown: true, surfaceY: sol }));
+          });
+        });
+        renderKayKitMagicPivotDial(options, sol);
+      }
+
+      /* Anneau doré du pivot, avec un repère de couleur dans la direction de
+         chaque position possible. */
+      function renderKayKitMagicPivotDial(options, sol) {
+        if (!Array.isArray(state.selectedMagicPivot)) return;
+        const [pr, pc] = state.selectedMagicPivot;
+        const centre = kaykitCellPosition(pr, pc, sol + .03);
+        const group = kaykit3D.dynamicGroup;
+        const anneauMat = new THREE.MeshBasicMaterial({ color: 0xffd34f, transparent: true, opacity: .95, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false });
+        anneauMat.userData = { ...(anneauMat.userData || {}), ilyosTransient: true };
+        const anneau = new THREE.Mesh(
+          kaykitGeometry("magic-pivot-dial-v1", () => {
+            const g = new THREE.RingGeometry(.3, .37, 48);
+            g.rotateX(-Math.PI / 2);
+            return g;
+          }),
+          anneauMat
+        );
+        anneau.position.set(centre.x, centre.y, centre.z);
+        anneau.renderOrder = 47;
+        group.add(anneau);
+        const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
+        options.forEach(({ steps, rotation }) => {
+          const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
+          const somme = rotation.absCells.reduce((acc, [r, c]) => {
             const p = kaykitCellPosition(r, c, 0);
             acc.x += p.x; acc.z += p.z;
             return acc;
           }, { x: 0, z: 0 });
-          const etiquette = kaykitMagicOptionLabel(style, actif);
-          etiquette.position.set(centre.x / rotation.absCells.length, sol + 1.15, centre.z / rotation.absCells.length);
-          group.add(etiquette);
-
-          if (actif) {
-            (rotation.characterMoves || []).forEach(move => {
-              if (move.r === move.char.r && move.c === move.char.c) return;
-              const ghost = makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, opacity: .72, surfaceY: sol });
-              if (ghost) group.add(ghost);
-              // Sa couronne voyage avec lui : on la montre au-dessus du fantôme.
-              let portee = null;
-              try { portee = artifactCarriedBy(move.char.id); } catch (_) { }
-              if (!portee) return;
-              const couronne = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .85, surfaceY: sol + .74 });
-              if (!couronne) return;
-              couronne.scale.multiplyScalar(.62);
-              group.add(couronne);
-            });
-            (rotation.artifactMoves || []).forEach(move => {
-              if (move.r === move.artifact.r && move.c === move.artifact.c) return;
-              const ghost = makeKayKitPieceGhost(move.r, move.c, { crown: true, opacity: .75, surfaceY: sol });
-              if (ghost) group.add(ghost);
-            });
-            return;
-          }
-
-          /* Même bloc fantôme que l'aperçu principal, teinté de la couleur
-             de son étiquette, et assez opaque pour se lire sur le ciel doré. */
-          const option = makeKayKitIslandBlock({
-            id: `magic-option-${island.id}-${steps}`,
-            owner: null,
-            cells: rotation.absCells.map(([r, c]) => [r, c])
-          }, { preview: true, valid: true, previewMode: "magic" });
-          option.position.y = .045;
-          option.userData.magicRotationPreview = true;
-          kaykitTeinterFantome(option, style.couleur, .62);
-          group.add(option);
-
-          // Contour franc de sa couleur, pour séparer deux fantômes qui se touchent.
-          kaykitIslandComponents(rotation.absCells).forEach(component => {
-            const boundary = kaykitIslandBoundary(component);
-            if (boundary.length < 2) return;
-            const geometry = new THREE.BufferGeometry().setFromPoints(boundary.map(([x, z]) => new THREE.Vector3(x, sol + .02, z)));
-            geometry.userData = { ...(geometry.userData || {}), ilyosTransient: true };
-            const material = new THREE.LineBasicMaterial({ color: style.couleur, transparent: true, opacity: .95, depthWrite: false, depthTest: false });
-            material.userData = { ...(material.userData || {}), ilyosTransient: true };
-            const contour = new THREE.LineLoop(geometry, material);
-            contour.renderOrder = 46;
-            group.add(contour);
-          });
+          let dx = somme.x / rotation.absCells.length - centre.x;
+          let dz = somme.z / rotation.absCells.length - centre.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 1e-3) return;
+          dx /= d; dz /= d;
+          const repereMat = new THREE.MeshBasicMaterial({ color: style.couleur, transparent: true, opacity: 1, depthWrite: false, depthTest: false, toneMapped: false });
+          repereMat.userData = { ...(repereMat.userData || {}), ilyosTransient: true };
+          const repere = new THREE.Mesh(
+            kaykitGeometry("magic-pivot-dot-v1", () => new THREE.CylinderGeometry(.075, .075, .03, 20)),
+            repereMat
+          );
+          repere.position.set(centre.x + dx * .335, centre.y + .01, centre.z + dz * .335);
+          repere.scale.setScalar(steps === courant ? 1.35 : 1);
+          repere.renderOrder = 48;
+          group.add(repere);
         });
       }
 
@@ -20787,6 +20852,18 @@
         if (magicRow) {
           const rotating = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
           magicRow.classList.toggle("hidden", !rotating);
+          /* Les trois boutons nomment les positions dessinées au sol, dans leur
+             couleur : une rotation impossible depuis ce pivot est grisée, celle
+             qui est montrée est allumée. */
+          const legales = rotating ? magicRotationOptions().map(option => option.steps) : [];
+          const montree = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
+          const pivotChoisi = rotating && !!state.selectedMagicPivot;
+          magicRow.classList.toggle("ov2-magie-choix", pivotChoisi && !!montree);
+          magicRow.querySelectorAll("[data-magie-crans]").forEach(btn => {
+            const crans = Number(btn.dataset.magieCrans);
+            btn.disabled = pivotChoisi && !legales.includes(crans);
+            btn.classList.toggle("ov2-magie-actif", pivotChoisi && crans === montree);
+          });
         }
         const magicDissolveBtn = document.getElementById("hudV2MagicDissolve");
         if (magicDissolveBtn) {
@@ -21704,6 +21781,15 @@
         // magie (voir plus bas). Survoler une case libre d'île en dehors de
         // ce contexte ne doit plus rien annoncer côté magie.
         if (state.phase === "ACTION" && state.selectedActionType === "MAGIC") {
+          /* Île et pivot choisis : survoler une position dessinée au sol la
+             montre en entier (volume, gardiens, couronnes). Ailleurs, la
+             dernière position montrée reste affichée, pour qu'on puisse aller
+             cliquer le pivot sans la perdre en chemin. */
+          if (state.selectedIslandId && state.selectedMagicPivot) {
+            const crans = magicRotationStepsAtCell(r, c);
+            if (crans) previsualiserRotationMagie(crans);
+            return;
+          }
           const island = islandAt(r, c);
           const nextIslandId = island?.id || null;
           const nextPivot = island ? [r, c] : null;
@@ -23888,6 +23974,34 @@
         return option ? option.steps : 0;
       }
 
+      /* Montrer une rotation précise (1 = ↻ 90°, 2 = 180°, 3 = ↺ 90°, 0 = l'île
+         en place) : survol d'une position au sol ou d'un bouton de la barre.
+         Ne joue rien ; seul le dessin 3D change. */
+      function previsualiserRotationMagie(steps) {
+        if (!(state?.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        if (!state.selectedIslandId || !state.selectedMagicPivot) return;
+        const voulu = ((steps || 0) % 4 + 4) % 4;
+        if ((((state.magicPreviewSteps || 0) % 4 + 4) % 4) === voulu) return;
+        state.magicPreviewSteps = voulu;
+        updateMagicPreview();
+        renderHudV2();
+        if (kaykit3D) {
+          kaykit3D.lastStateSignature = "";
+          scheduleKayKitSync();
+        }
+      }
+
+      // Bouton de la barre : la rotation nommée est jouée d'un clic.
+      function jouerRotationMagie(steps) {
+        if (!magicRotationOptions().some(option => option.steps === steps)) {
+          showToast("Cette rotation est impossible depuis cette case pivot.");
+          return;
+        }
+        state.magicPreviewSteps = steps;
+        updateMagicPreview();
+        confirmMagicRotation();
+      }
+
       function handleMagicClick(r, c) {
         if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
           confirmMagicRotation();
@@ -23929,7 +24043,7 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot sélectionné : utilisez la roulette ou les boutons ↺ ↻. La forme 3D affichée sera la position finale.");
+          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
           return;
         }
 
@@ -38119,7 +38233,7 @@
              recours fait respirer les boutons de rotation, l'etape vraiment
              obscure — mais la VALIDATION reste au joueur. */
           dernierRecours() {
-            ["#hudV2MagicRotateLeft", "#hudV2MagicRotateRight"].forEach(sel => {
+            ["#hudV2MagicRotateLeft", "#hudV2MagicRotate180", "#hudV2MagicRotateRight"].forEach(sel => {
               document.querySelectorAll(sel).forEach(el => {
                 el.classList.add("tuto-pulse");
                 (TUTO.pulsed = TUTO.pulsed || []).push(el);
@@ -49425,8 +49539,18 @@
         });
       });
 
-      document.getElementById("hudV2MagicRotateLeft")?.addEventListener("click", () => rotateSelectedIsland(-1));
-      document.getElementById("hudV2MagicRotateRight")?.addEventListener("click", () => rotateSelectedIsland(1));
+      /* Survoler un bouton de rotation montre sa position ; le quitter rend
+         celle qui était montrée avant ; le cliquer joue la rotation. */
+      document.querySelectorAll("#hudV2MagicRow [data-magie-crans]").forEach(btn => {
+        const crans = Number(btn.dataset.magieCrans);
+        let avant = 0;
+        btn.addEventListener("mouseenter", () => {
+          avant = state?.magicPreviewSteps || 0;
+          if (!btn.disabled) previsualiserRotationMagie(crans);
+        });
+        btn.addEventListener("mouseleave", () => previsualiserRotationMagie(avant));
+        btn.addEventListener("click", () => { avant = crans; jouerRotationMagie(crans); });
+      });
       document.getElementById("hudV2MagicDissolve")?.addEventListener("click", () => dissolveSelectedIsland());
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
