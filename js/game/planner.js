@@ -1271,6 +1271,7 @@
 
         const dMoiParCouronne = [];
         const dLuiParCouronne = [];
+        const lieuxCouronnes = [];
         let exploitablesMoi = 0, exploitablesLui = 0;
 
         for (const couronne of activeArtifacts()) {
@@ -1283,6 +1284,7 @@
           const dl = distLui(r, c);
           dMoiParCouronne.push(dm);
           dLuiParCouronne.push(dl);
+          lieuxCouronnes.push({ r, c, dm, dl });
 
           /* POSITION : ce qui compte d'abord. Qui la porte n'entre pas ici —
              une couronne est un objet commun. */
@@ -1510,8 +1512,33 @@
 
         const couronnesLibres = activeArtifacts().filter(a => !a.carrierId && Number.isFinite(a.r));
         const porteursAmis = miens.filter(g => characterCarriesCrown(g.id));
-        const menaceReelle = !marqueLui ? 0
-          : minLui <= 2 ? (minLui === 0 ? 1.5 : 1) : (minLui <= 4 ? 0.6 : 0.3);
+        const niveauMenace = d => d <= 2 ? (d === 0 ? 1.5 : 1) : (d <= 4 ? 0.6 : 0.3);
+        /* MENACE PAR VILLAGE. Chaque camp a deux villages, aux coins opposés.
+           Mesurée sur la couronne la plus proche de N'IMPORTE QUEL village, la
+           menace payait le blocage du village tranquille au prix de celui
+           qu'un porteur allait valider. Défaite du 09/10 : deux gardiens
+           garés en (0,1) et (1,0) du tour 16 à la fin (+1 688), pendant que
+           l'humain marquait deux fois à (10,10). Chaque couronne menace le
+           village dont elle est le plus près ; un village sans couronne de
+           son côté garde la menace de fond. */
+        const menacesParVillage = (joueur, peutMarquer, distance) => {
+          const villages = villagesForPlayer(joueur);
+          const cases = villages.map(v => cornerCrownCellsForVillage(v));
+          const plusProche = villages.map(() => 99);
+          for (const lieu of lieuxCouronnes) {
+            let iMin = 0, dMin = Infinity;
+            cases.forEach((liste, i) => {
+              const d = Math.min(...liste.map(([vr, vc]) => Math.abs(lieu.r - vr) + Math.abs(lieu.c - vc)));
+              if (d < dMin) { dMin = d; iMin = i; }
+            });
+            plusProche[iMin] = Math.min(plusProche[iMin], distance(lieu));
+          }
+          return villages.map((village, i) => ({
+            village, cases: cases[i], distance: plusProche[i],
+            menace: peutMarquer ? niveauMenace(plusProche[i]) : 0
+          }));
+        };
+        const villagesAdverses = adverse ? menacesParVillage(adverse, marqueLui, lieu => lieu.dl) : [];
 
         let utiliteTotale = 0;
         let blocageTotal = 0;
@@ -1570,17 +1597,16 @@
            tarif — observé en self-play : cinq gardiens sur six campaient dans
            les villages adverses, les deux camps se neutralisaient et la partie
            s'arrêtait sur 0-0. */
-        if (adverse) {
-          for (const village of villagesForPlayer(adverse)) {
-            const cases = cornerCrownCellsForVillage(village);
-            const occupants = miens.filter(g => cases.some(([r, c]) => r === g.r && c === g.c)).length;
-            if (!occupants) continue;
-            blocageTotal += PLAN_POIDS.blocageValidation * menaceReelle
-              * (occupants > 1 ? 1 + PLAN_POIDS.blocageRedondance : 1);
-          }
+        const menacesBloquees = [];
+        for (const { cases, menace } of villagesAdverses) {
+          const occupants = miens.filter(g => cases.some(([r, c]) => r === g.r && c === g.c)).length;
+          if (!occupants) continue;
+          menacesBloquees.push(menace);
+          blocageTotal += PLAN_POIDS.blocageValidation * menace
+            * (occupants > 1 ? 1 + PLAN_POIDS.blocageRedondance : 1);
         }
         ajouter("utiliteGardiens", utiliteTotale, `${miens.length} gardien(s)`);
-        ajouter("blocageValidation", blocageTotal, `menace ${menaceReelle}`);
+        ajouter("blocageValidation", blocageTotal, `menace ${menacesBloquees.join(" / ") || 0}`);
 
         /* BLOCAGE SUBI : le miroir exact du terme précédent. Il manquait : un
            gardien adverse posté sur une case de MON village ne me coûtait
@@ -1592,27 +1618,31 @@
            et il n'a jamais validé. Même pondération par la proximité de
            MES couronnes que la sienne par celle des siennes. */
         if (adverse && PLAN_POIDS.blocageSubi) {
-          const menaceMienne = !marqueMoi ? 0
-            : minMoi <= 2 ? (minMoi === 0 ? 1.5 : 1) : (minMoi <= 4 ? 0.6 : 0.3);
           let subi = 0;
-          for (const village of villagesForPlayer(moi)) {
-            const cases = cornerCrownCellsForVillage(village);
+          const menacesSubies = [];
+          for (const { cases, menace } of menacesParVillage(moi, marqueMoi, lieu => lieu.dm)) {
             const occupants = siens.filter(g => cases.some(([r, c]) => r === g.r && c === g.c)).length;
             if (!occupants) continue;
-            subi += PLAN_POIDS.blocageValidation * menaceMienne
+            menacesSubies.push(menace);
+            subi += PLAN_POIDS.blocageValidation * menace
               * (occupants > 1 ? 1 + PLAN_POIDS.blocageRedondance : 1);
           }
-          ajouter("blocageSubi", -subi * PLAN_POIDS.blocageSubi, `menace ${menaceMienne}`);
+          ajouter("blocageSubi", -subi * PLAN_POIDS.blocageSubi, `menace ${menacesSubies.join(" / ") || 0}`);
         }
 
         /* Défense de repli : être à portée du village menacé quand on ne le
            tient pas encore. */
-        if (adverse && minLui <= 4 && !miens.some(g => isCrownValidationCell(adverse, g.r, g.c))) {
-          const aTenir = crownValidationCellsForPlayer(adverse).filter(([r, c]) => isLand(r, c));
+        /* Village par village : tenir le village tranquille ne dispensait pas
+           de défendre celui qu'un porteur approche (même défaite du 09/10). */
+        if (adverse && minLui <= 4) {
+          const menaces = villagesAdverses.filter(({ cases, distance }) => distance <= 4
+            && !miens.some(g => cases.some(([r, c]) => r === g.r && c === g.c)));
+          const aTenir = menaces.flatMap(({ cases }) => cases).filter(([r, c]) => isLand(r, c));
           if (aTenir.length) {
             const d = plannerDistanceEquipe(playerId, aTenir);
+            const menace = Math.max(...menaces.map(v => v.menace));
             ajouter("presenceDefensive",
-              menaceReelle * PLAN_POIDS.utiliteDefense * plannerProximite(d), `distance ${d}`);
+              menace * PLAN_POIDS.utiliteDefense * plannerProximite(d), `distance ${d}`);
           }
         }
 
