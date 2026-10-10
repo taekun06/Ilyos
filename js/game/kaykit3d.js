@@ -13139,6 +13139,7 @@
         updateKayKitCharacters(delta, elapsed, frameNow);
         updateKayKitSequences(frameNow);
         animerSurvolsKayKit(frameNow, elapsed);
+        animerTourAdverseKayKit(frameNow);
         kaykit3D.animatedObjects.forEach(object => {
           if (!object?.parent) return;
           if (object.userData.animer) object.userData.animer(elapsed);
