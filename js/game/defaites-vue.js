@@ -108,6 +108,57 @@
         };
       })();
 
+      /* Le bouton « Annuler » rend l'état d'avant l'action, mais le journal
+         gardait l'action défaite : la visionneuse rejouait des coups qui
+         n'avaient jamais eu lieu (défaite du 09/10, tour 11 : vingt actions
+         consignées pour une dizaine jouées). Chaque instantané d'annulation
+         retient donc la longueur du journal du tour, et l'annulation la
+         rétablit. La pile suit undoHistory, plafond et remises à zéro compris. */
+      (function defaitesSuivreAnnulations() {
+        const origine = { save: saveUndoSnapshot, discard: discardLastUndoSnapshot, restore: restoreUndoSnapshot };
+        let pile = [];
+        const aligner = () => {
+          const n = (state && state.undoHistory || []).length;
+          if (pile.length > n) pile = pile.slice(pile.length - n);
+        };
+        const entreeCourante = () => {
+          const journal = defaitesJournalCourant();
+          const derniere = journal && journal.tours[journal.tours.length - 1];
+          return derniere && derniere.tour === state.turn && derniere.joueur === state.currentPlayer ? derniere : null;
+        };
+        saveUndoSnapshot = function () {
+          const resultat = origine.save.apply(this, arguments);
+          try {
+            if (!ilyosSimulationActive) {
+              const entree = entreeCourante();
+              pile.push(entree ? { tour: entree.tour, joueur: entree.joueur, n: (entree.actions || []).length } : null);
+            }
+            aligner();
+          } catch (erreur) { /* le journal ne doit jamais gêner la partie */ }
+          return resultat;
+        };
+        discardLastUndoSnapshot = function () {
+          const resultat = origine.discard.apply(this, arguments);
+          pile.pop();
+          return resultat;
+        };
+        restoreUndoSnapshot = function () {
+          const repere = pile[pile.length - 1];
+          const resultat = origine.restore.apply(this, arguments);
+          if (resultat) {
+            pile.pop();
+            try {
+              const entree = repere && entreeCourante();
+              if (entree && entree.tour === repere.tour && entree.joueur === repere.joueur && entree.actions) {
+                entree.actions.length = Math.min(entree.actions.length, repere.n);
+              }
+            } catch (erreur) { /* idem */ }
+          }
+          aligner();
+          return resultat;
+        };
+      })();
+
 
       /* ---------------------------------------------------------------------
          2. La visionneuse — un seul outil pour deux sources :
