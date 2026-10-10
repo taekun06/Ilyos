@@ -133,3 +133,22 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-fo
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{width:15px;height:15px}
   body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{font-size:12px}
 }
+
+/* Boutons de rotation Magie : un par position possible, de la couleur de son
+   liseré au sol (KAYKIT_MAGIC_OPTION_STYLE, kaykit3d.js). La barre sert de
+   légende : aucun nom n'est écrit sur le plateau. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot{
+  --rot:#1fb4ff;color:#0f1426!important;background:var(--rot)!important;border:2px solid rgba(255,255,255,.88)!important;
+  font:800 12.5px/1 Inter,system-ui,sans-serif!important;letter-spacing:.02em!important;padding:8px 13px!important;min-height:34px;
+  box-shadow:0 2px 8px rgba(0,0,0,.28);transition:transform 140ms ease,box-shadow 140ms ease,opacity 140ms ease!important
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="2"]{--rot:#ffaa12}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="3"]{--rot:#b04dff;color:#fff!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot:hover:not(:disabled),
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot.ov2-magie-actif{
+  transform:translateY(-2px) scale(1.06);box-shadow:0 0 0 3px #fff,0 0 18px var(--rot)
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow.ov2-magie-choix .hud-v2-magic-rot:not(.ov2-magie-actif):not(:hover){opacity:.6}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot:disabled{
+  opacity:.32!important;filter:grayscale(.85);cursor:not-allowed;transform:none;box-shadow:none
+}

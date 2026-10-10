@@ -452,6 +452,18 @@
         if (magicRow) {
           const rotating = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
           magicRow.classList.toggle("hidden", !rotating);
+          /* Les trois boutons nomment les positions dessinées au sol, dans leur
+             couleur : une rotation impossible depuis ce pivot est grisée, celle
+             qui est montrée est allumée. */
+          const legales = rotating ? magicRotationOptions().map(option => option.steps) : [];
+          const montree = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
+          const pivotChoisi = rotating && !!state.selectedMagicPivot;
+          magicRow.classList.toggle("ov2-magie-choix", pivotChoisi && !!montree);
+          magicRow.querySelectorAll("[data-magie-crans]").forEach(btn => {
+            const crans = Number(btn.dataset.magieCrans);
+            btn.disabled = pivotChoisi && !legales.includes(crans);
+            btn.classList.toggle("ov2-magie-actif", pivotChoisi && crans === montree);
+          });
         }
         const magicDissolveBtn = document.getElementById("hudV2MagicDissolve");
         if (magicDissolveBtn) {
@@ -1369,6 +1381,15 @@
         // magie (voir plus bas). Survoler une case libre d'île en dehors de
         // ce contexte ne doit plus rien annoncer côté magie.
         if (state.phase === "ACTION" && state.selectedActionType === "MAGIC") {
+          /* Île et pivot choisis : survoler une position dessinée au sol la
+             montre en entier (volume, gardiens, couronnes). Ailleurs, la
+             dernière position montrée reste affichée, pour qu'on puisse aller
+             cliquer le pivot sans la perdre en chemin. */
+          if (state.selectedIslandId && state.selectedMagicPivot) {
+            const crans = magicRotationStepsAtCell(r, c);
+            if (crans) previsualiserRotationMagie(crans);
+            return;
+          }
           const island = islandAt(r, c);
           const nextIslandId = island?.id || null;
           const nextPivot = island ? [r, c] : null;
@@ -2966,6 +2987,8 @@
             to: mv.chute ? null : mv.to,
             fell: mv.chute,
             lastLand: mv.to,
+            // Case de vide où il bascule : l'aperçu y dessine sa chute.
+            vide: mv.chute ? (mv.vide || null) : null,
             icon: owner ? owner.icon : "👑",
             color: owner ? owner.color : "#ffd76a",
             carrying: characterCarriesCrown(mv.id)
@@ -3553,6 +3576,34 @@
         return option ? option.steps : 0;
       }
 
+      /* Montrer une rotation précise (1 = ↻ 90°, 2 = 180°, 3 = ↺ 90°, 0 = l'île
+         en place) : survol d'une position au sol ou d'un bouton de la barre.
+         Ne joue rien ; seul le dessin 3D change. */
+      function previsualiserRotationMagie(steps) {
+        if (!(state?.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        if (!state.selectedIslandId || !state.selectedMagicPivot) return;
+        const voulu = ((steps || 0) % 4 + 4) % 4;
+        if ((((state.magicPreviewSteps || 0) % 4 + 4) % 4) === voulu) return;
+        state.magicPreviewSteps = voulu;
+        updateMagicPreview();
+        renderHudV2();
+        if (kaykit3D) {
+          kaykit3D.lastStateSignature = "";
+          scheduleKayKitSync();
+        }
+      }
+
+      // Bouton de la barre : la rotation nommée est jouée d'un clic.
+      function jouerRotationMagie(steps) {
+        if (!magicRotationOptions().some(option => option.steps === steps)) {
+          showToast("Cette rotation est impossible depuis cette case pivot.");
+          return;
+        }
+        state.magicPreviewSteps = steps;
+        updateMagicPreview();
+        confirmMagicRotation();
+      }
+
       function handleMagicClick(r, c) {
         if (state.magicPreviewCells && state.magicPreviewSteps && cellInPreviewSet(state.magicPreviewCells, r, c)) {
           confirmMagicRotation();
@@ -3594,7 +3645,7 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot sélectionné : utilisez la roulette ou les boutons ↺ ↻. La forme 3D affichée sera la position finale.");
+          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
           return;
         }
 

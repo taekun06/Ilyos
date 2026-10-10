@@ -227,6 +227,8 @@
               return kind === "push-destination" || kind === "push-death-destination";
             })
             .map(mesh => ({ mesh, id: mesh.userData.pushOptionId }))
+            // Un résultat a plusieurs prises (anneau, jeton) : une seule étape.
+            .filter((cible, i, liste) => liste.findIndex(autre => autre.id === cible.id) === i)
             .filter(cible => rang(cible.id) >= 0)
             .sort((a, b) => rang(a.id) - rang(b.id));
         }
