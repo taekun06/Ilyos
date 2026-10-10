@@ -312,12 +312,8 @@ test("L'Eveil se joue en entier du bouton Tutoriel", async ({ page }) => {
   await page.locator('#ov2Magic').click({ force: true });
   await clickCell(page, haut[0], haut[1]);
   await page.waitForTimeout(400);
-  for (let i = 0; i < 2; i++) {
-    await page.locator('#hudV2MagicRotateRight').click({ force: true });
-    await page.waitForTimeout(300);
-  }
-  // La validation est au joueur : on reclique la case pivot.
-  await clickCell(page, haut[0], haut[1]);
+  // Le bouton 180° nomme le demi-tour et le joue d'un clic.
+  await page.locator('#hudV2MagicRotate180').click({ force: true });
   await page.waitForTimeout(1200);
 
 

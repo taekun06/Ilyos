@@ -1032,13 +1032,15 @@
       <!--
         Rangée contextuelle Magie (Prompt 2/3) : visible uniquement pendant
         une rotation magique en cours (state.phase === "ACTION" &&
-        selectedActionType === "MAGIC"). Appelle exactement les handlers
-        existants — rotateSelectedIsland()/confirmMagicRotation()/
-        handleCancelButton() — aucune logique de rotation dupliquée ici.
+        selectedActionType === "MAGIC"). Un bouton par rotation (↻ 90°, 180°,
+        ↺ 90°), de la couleur de sa position au sol : le survoler la montre,
+        le cliquer la joue (previsualiserRotationMagie/jouerRotationMagie,
+        ui.js). Aucune logique de rotation dupliquée ici.
       -->
       <div id="hudV2MagicRow" class="hud-v2-magic-row hidden">
-        <button id="hudV2MagicRotateLeft" type="button" class="hud-v2-magic-btn">↺ 90°</button>
-        <button id="hudV2MagicRotateRight" type="button" class="hud-v2-magic-btn">↻ 90°</button>
+        <button id="hudV2MagicRotateRight" type="button" class="hud-v2-magic-btn hud-v2-magic-rot" data-magie-crans="1">↻ 90°</button>
+        <button id="hudV2MagicRotate180" type="button" class="hud-v2-magic-btn hud-v2-magic-rot" data-magie-crans="2">180°</button>
+        <button id="hudV2MagicRotateLeft" type="button" class="hud-v2-magic-btn hud-v2-magic-rot" data-magie-crans="3">↺ 90°</button>
         <button id="hudV2MagicDissolve" type="button" class="hud-v2-magic-btn hud-v2-magic-dissolve hidden" title="Retire une île vide pour 1 magie">✦ Dissoudre</button>
         <button id="hudV2MagicConfirm" type="button" class="hud-v2-magic-btn hud-v2-magic-confirm">Confirmer</button>
         <button id="hudV2MagicCancel" type="button" class="hud-v2-magic-btn hud-v2-magic-cancel">Annuler</button>

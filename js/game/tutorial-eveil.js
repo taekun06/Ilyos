@@ -2448,7 +2448,7 @@
              recours fait respirer les boutons de rotation, l'etape vraiment
              obscure — mais la VALIDATION reste au joueur. */
           dernierRecours() {
-            ["#hudV2MagicRotateLeft", "#hudV2MagicRotateRight"].forEach(sel => {
+            ["#hudV2MagicRotateLeft", "#hudV2MagicRotate180", "#hudV2MagicRotateRight"].forEach(sel => {
               document.querySelectorAll(sel).forEach(el => {
                 el.classList.add("tuto-pulse");
                 (TUTO.pulsed = TUTO.pulsed || []).push(el);
