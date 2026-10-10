@@ -5158,6 +5158,132 @@
         });
         kaykit3D.hoveredVisuals = [];
         kaykit3D.hoveredVisualKey = null;
+        kaykit3D.liseres = [];
+        (kaykit3D.contoursSurvol || []).forEach(contour => {
+          contour.parent?.remove(contour);
+          contour.material?.dispose?.();
+        });
+        kaykit3D.contoursSurvol = [];
+        kaykitReposerCases();
+      }
+
+      /* Contour net autour du modèle : une copie de la maille, rendue par sa
+         face arrière et gonflée en espace écran (épaisseur constante quel que
+         soit le zoom). Pour un gardien animé, la copie partage le squelette de
+         l'original et suit donc chaque pose. */
+      function kaykitAjouterContour(mesh, couleur) {
+        if (!mesh?.geometry || !mesh.parent) return;
+        const skinne = !!mesh.isSkinnedMesh;
+        const u = { epaisseur: { value: .0055 } };
+        const materiau = new THREE.MeshBasicMaterial({ color: couleur, side: THREE.BackSide, skinning: skinne, transparent: true, opacity: .95, depthWrite: false });
+        materiau.onBeforeCompile = shader => {
+          shader.uniforms.ilyosEpaisseur = u.epaisseur;
+          shader.vertexShader = "uniform float ilyosEpaisseur;\n" + shader.vertexShader.replace("#include <project_vertex>", `#include <project_vertex>
+            {
+              vec3 ilyosNormale = normal;
+              #ifdef USE_SKINNING
+                ilyosNormale = objectNormal;
+              #endif
+              vec2 ilyosDir = (projectionMatrix * modelViewMatrix * vec4(ilyosNormale, 0.0)).xy;
+              gl_Position.xy += normalize(ilyosDir + vec2(1e-6)) * ilyosEpaisseur * gl_Position.w;
+            }`);
+        };
+        materiau.customProgramCacheKey = () => "ilyos-contour" + (skinne ? "-s" : "");
+        let contour;
+        if (skinne) {
+          contour = new THREE.SkinnedMesh(mesh.geometry, materiau);
+          contour.position.copy(mesh.position);
+          contour.quaternion.copy(mesh.quaternion);
+          contour.scale.copy(mesh.scale);
+          mesh.parent.add(contour);
+          contour.bind(mesh.skeleton, mesh.bindMatrix);
+        } else {
+          contour = new THREE.Mesh(mesh.geometry, materiau);
+          mesh.add(contour);
+        }
+        contour.renderOrder = (mesh.renderOrder || 0) - 1;
+        contour.frustumCulled = false;
+        contour.raycast = () => {};
+        kaykit3D.contoursSurvol = kaykit3D.contoursSurvol || [];
+        kaykit3D.contoursSurvol.push(contour);
+      }
+
+      /* SURVOL : la case se soulève (comme Into the Breach) et le gardien ou
+         la couronne survolés reçoivent un liseré lumineux (comme Hades).
+
+         Soulèvement : on déplace les objets DÉJÀ enregistrés pour la case
+         (dalle, gardien, couronne) — rien n'est recréé, et leur hauteur de
+         départ est rendue telle quelle à la fin. L'animation vit dans
+         animerSurvolsKayKit(), appelée par la boucle de rendu. */
+      const KAYKIT_SOULEVEMENT = .12;
+      function kaykitSouleverCase(objets) {
+        if (!kaykit3D) return;
+        const maintenant = performance.now();
+        kaykit3D.soulevees = kaykit3D.soulevees || [];
+        objets.forEach(objet => {
+          if (!objet) return;
+          let suivi = kaykit3D.soulevees.find(item => item.objet === objet);
+          if (!suivi) {
+            suivi = { objet, baseY: objet.position.y, valeur: 0 };
+            kaykit3D.soulevees.push(suivi);
+          }
+          Object.assign(suivi, { cible: KAYKIT_SOULEVEMENT, depart: suivi.valeur, debut: maintenant });
+        });
+      }
+      function kaykitReposerCases() {
+        const maintenant = performance.now();
+        (kaykit3D?.soulevees || []).forEach(suivi => {
+          if (suivi.cible === 0) return;
+          Object.assign(suivi, { cible: 0, depart: suivi.valeur, debut: maintenant });
+        });
+      }
+      function animerSurvolsKayKit(maintenant, elapsed) {
+        if (!kaykit3D) return;
+        let leveeMarqueur = 0;
+        kaykit3D.soulevees = (kaykit3D.soulevees || []).filter(suivi => {
+          const monte = suivi.cible > 0;
+          const t = Math.min(1, (maintenant - suivi.debut) / (monte ? 280 : 170));
+          // Montée avec un léger dépassement (easeOutBack), descente amortie.
+          const e = monte ? 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2) : t * (2 - t);
+          suivi.valeur = suivi.depart + (suivi.cible - suivi.depart) * e;
+          if (!suivi.objet.parent) return false;
+          suivi.objet.position.y = suivi.baseY + suivi.valeur;
+          if (monte) leveeMarqueur = Math.max(leveeMarqueur, suivi.valeur);
+          if (!monte && t >= 1) { suivi.objet.position.y = suivi.baseY; return false; }
+          return true;
+        });
+        if (kaykit3D.hoverMarker?.visible && Number.isFinite(kaykit3D.hoverMarkerBaseY)) {
+          kaykit3D.hoverMarker.position.y = kaykit3D.hoverMarkerBaseY + leveeMarqueur;
+        }
+        const souffle = .72 + .28 * Math.sin(elapsed * 3.4);
+        (kaykit3D.liseres || []).forEach(u => { u.force.value = souffle; });
+      }
+
+      /* Liseré : un reflet de contour (fresnel) ajouté à l'émission d'une
+         COPIE du matériau — le matériau partagé n'est jamais touché. Il épouse
+         la silhouette du modèle animé, ce qu'un contour par coque agrandie ne
+         sait pas faire sur un modèle à squelette. */
+      function kaykitMateriauLisere(materiau, couleur) {
+        const copie = materiau.clone();
+        if (!copie.isMeshStandardMaterial && !copie.isMeshPhongMaterial) return copie;
+        const u = { couleur: { value: new THREE.Color(couleur) }, force: { value: 1 } };
+        const precedent = materiau.onBeforeCompile;
+        copie.onBeforeCompile = (shader, renderer) => {
+          if (typeof precedent === "function") precedent.call(copie, shader, renderer);
+          shader.uniforms.ilyosLisereCouleur = u.couleur;
+          shader.uniforms.ilyosLisereForce = u.force;
+          shader.fragmentShader = "uniform vec3 ilyosLisereCouleur;\nuniform float ilyosLisereForce;\n" +
+            shader.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+            {
+              float ilyosBord = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+              totalEmissiveRadiance += ilyosLisereCouleur * smoothstep(0.45, 0.9, ilyosBord) * 2.6 * ilyosLisereForce;
+            }`);
+        };
+        const cle = materiau.customProgramCacheKey ? materiau.customProgramCacheKey() : "";
+        copie.customProgramCacheKey = () => cle + "|ilyos-lisere";
+        kaykit3D.liseres = kaykit3D.liseres || [];
+        kaykit3D.liseres.push(u);
+        return copie;
       }
 
       function setKayKitVisualHover(cell, intent) {
@@ -5178,11 +5304,23 @@
         const emissiveFloor = isCharacterModel ? .12 : (intent.actionable ? .50 : .22);
         const visuals = kaykit3D.cellVisuals.get(`${cell.r},${cell.c}`) || [];
 
+        const occupant = characterAt(cell.r, cell.c);
+        const couleurLisere = role => role === "couronne"
+          ? 0xffa514
+          : new THREE.Color(state?.players?.[proprietaireGardien(occupant) ?? occupant?.player]?.color || "#7fd8ff").getHex();
+        const soulever = intent.actionable
+          && state?.phase !== "PLACE_ISLAND"
+          && !["place", "invalid", "magic", "invocation"].includes(intent.kind);
+        if (soulever) kaykitSouleverCase(visuals);
+        const aContourer = [];
+
         visuals.forEach(object => object?.traverse?.(mesh => {
           if (!mesh.isMesh || !mesh.material) return;
           const originalMaterial = mesh.material;
           const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
+          const role = object.userData?.ilyosContour;
           const clonedMaterials = originals.map(material => {
+            if (role) return kaykitMateriauLisere(material, couleurLisere(role));
             const clone = material.clone();
             if (clone.color) clone.color.lerp(accent, strength);
             if (clone.emissive) {
@@ -5194,7 +5332,9 @@
           });
           mesh.material = Array.isArray(originalMaterial) ? clonedMaterials : clonedMaterials[0];
           kaykit3D.hoveredVisuals.push({ mesh, originalMaterial, clonedMaterials });
+          if (role) aContourer.push({ mesh, couleur: couleurLisere(role) });
         }));
+        aContourer.forEach(({ mesh, couleur }) => kaykitAjouterContour(mesh, couleur));
         kaykit3D.hoveredVisualKey = visualKey;
       }
 
@@ -5369,7 +5509,7 @@
         const unifiedPushActive = !!state?.pushOptions?.length;
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        const glyphSuppressed = intent.kind === "crown" || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
@@ -5388,7 +5528,10 @@
         // pourtant le curseur en permanence, ce qui bruite le plateau sans rien
         // apprendre au joueur. On ne montre plus rien tant qu'une case ne propose
         // pas réellement quelque chose.
-        const hoverRingsSuppressed = glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        // Gardien ou couronne : leur liseré lumineux (setKayKitVisualHover)
+        // suffit, l'anneau peint par-dessus les délavait. Même chose pour la
+        // destination d'un trajet : case soulevée, pointe et chiffre suffisent.
+        const hoverRingsSuppressed = ["ally", "enemy", "crown"].includes(intent.kind) || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -5580,6 +5723,7 @@
             renderHand();
           }
           kaykit3D.hoverCell = null;
+          majPorteeAdverseKayKit(null);
           // Pendant la pose, conserver le dernier ancrage : les boutons de rotation
           // doivent transformer exactement la même prévisualisation.
           if (state?.phase !== "PLACE_ISLAND") clearPlacementPreview(true);
@@ -5654,6 +5798,7 @@
           }
 
           kaykit3D.hoverCell = next;
+          majPorteeAdverseKayKit(next);
           const intent = next ? kaykitHoverIntent(next.r, next.c, next.hitAction) : null;
           setKayKitVisualHover(next, intent);
           if (kaykit3D.hoverMarker) {
@@ -5661,6 +5806,7 @@
             if (next) {
               const p = kaykitCellPosition(next.r, next.c, kaykitCellSurfaceY(next.r, next.c) + .085);
               kaykit3D.hoverMarker.position.set(p.x, p.y, p.z);
+              kaykit3D.hoverMarkerBaseY = p.y;
               applyKayKitHoverIntent(intent);
             }
           }
@@ -7877,8 +8023,8 @@
          jeu. Choix confirmé : PONTER ces coins pour ne former qu'une seule
          forme continue, plutôt que de laisser chaque case isolée avec son
          propre contour. */
-      function addKayKitMoveZone(cellulesAtteignables) {
-        const group = kaykit3D?.moveZoneGroup;
+      function addKayKitMoveZone(cellulesAtteignables, options = {}) {
+        const group = options.groupe || kaykit3D?.moveZoneGroup;
         if (!group || !cellulesAtteignables || !cellulesAtteignables.length) return;
 
         const demi = KAYKIT_CELL_SPACING / 2;
@@ -7909,6 +8055,15 @@
           if (!entoure) continue;
           dansContour.add(k);
           cellules.push([r, c]);
+        }
+        /* La case du gardien fait partie de la zone : la forme reste d'un
+           seul tenant et part bien de lui. */
+        if (options.origine) {
+          const [ro, co] = options.origine;
+          if (!dansContour.has(cle(ro, co))) {
+            dansContour.add(cle(ro, co));
+            cellules.push([ro, co]);
+          }
         }
         const dedans = (r, c) => dansContour.has(cle(r, c));
 
@@ -8042,8 +8197,50 @@
         const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
         const epaisseurClaire = .12 * echelleZoom;
         const epaisseurSombre = epaisseurClaire + .045 * echelleZoom;
-        for (const segment of segments) ajouterRuban(segment, -.002, 0x0d3a56, .85, epaisseurSombre);
-        for (const segment of segments) ajouterRuban(segment, .002, 0x7fd8ff, 1, epaisseurClaire);
+        for (const segment of segments) ajouterRuban(segment, -.002, options.sombre ?? 0x0d3a56, .85, epaisseurSombre);
+        for (const segment of segments) ajouterRuban(segment, .002, options.claire ?? 0x7fd8ff, 1, epaisseurClaire);
+
+        /* Voile léger à l'intérieur (comme la portée de Fire Emblem) : la zone
+           se lit comme UNE surface, pas seulement comme un contour. */
+        const voile = kaykitGeometry("move-zone-voile-v1", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING, KAYKIT_CELL_SPACING));
+        const matVoile = new THREE.MeshBasicMaterial({ color: options.claire ?? 0x7fd8ff, transparent: true, opacity: options.voile ?? .16, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+        matVoile.userData = { ilyosTransient: true };
+        for (const [r, c] of cellules) {
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .025);
+          const plaque = new THREE.Mesh(voile, matVoile);
+          plaque.rotation.x = -Math.PI / 2;
+          plaque.position.set(p.x, p.y, p.z);
+          plaque.renderOrder = 18;
+          group.add(plaque);
+        }
+      }
+
+      /* Portée d'un adversaire au survol : où son gardien peut aller au
+         prochain tour avec les cartes DÉPLACER qu'il a en vue (main et
+         réserve, déjà affichées dans son bandeau). Même tracé que la zone de
+         déplacement, en rouge. */
+      function majPorteeAdverseKayKit(survol) {
+        if (!kaykit3D?.fxGroup) return;
+        let groupe = kaykit3D.porteeAdverseGroup;
+        if (!groupe) {
+          groupe = new THREE.Group();
+          groupe.name = "ilyos-portee-adverse";
+          kaykit3D.fxGroup.add(groupe);
+          kaykit3D.porteeAdverseGroup = groupe;
+        }
+        const occupant = survol && !survol.special ? characterAt(survol.r, survol.c) : null;
+        const actif = state?.currentPlayer;
+        const adversaire = occupant && !memeEquipe(occupant.player, actif) && !state.selectedCharId ? occupant : null;
+        const cle = adversaire ? `${adversaire.id}@${adversaire.r},${adversaire.c}` : null;
+        if (cle === kaykit3D.porteeAdverseCle) return;
+        kaykit3D.porteeAdverseCle = cle;
+        clearKayKitGroup(groupe);
+        if (!adversaire) return;
+        const joueur = state.players[adversaire.player];
+        const cartes = (joueur?.hand || []).filter(carte => carte.action === "MOVE" && !carte.used).length + (joueur?.stash?.MOVE || 0);
+        const portee = movementRange(adversaire, Math.max(1, cartes));
+        const cellules = [...portee].map(cle => cle.split(",").map(Number));
+        if (cellules.length) addKayKitMoveZone(cellules, { groupe, sombre: 0x4a0f1c, claire: 0xff6f8a, voile: .18, origine: [adversaire.r, adversaire.c] });
       }
 
       // Anneau orange compact directement sous le personnage/couronne poussable
@@ -8552,75 +8749,71 @@
         return kaykitMovePathMateriaux;
       }
 
+      /* Texture des pointillés du trajet : un tiret blanc, puis un vide. Une
+         seule texture pour toute la session ; chaque tronçon en garde une
+         copie légère (clone) pour régler sa propre répétition. */
+      let kaykitTexturePointilles = null;
+      function kaykitPastilleTrajet(n, derniere) {
+        const toile = document.createElement("canvas");
+        toile.width = toile.height = 64;
+        const g = toile.getContext("2d");
+        g.fillStyle = derniere ? "#f2c46d" : "#17223a";
+        g.beginPath(); g.arc(32, 32, 27, 0, Math.PI * 2); g.fill();
+        g.lineWidth = 5; g.strokeStyle = derniere ? "#fff3d1" : "#7fd8ff"; g.stroke();
+        g.fillStyle = derniere ? "#2a1d05" : "#ffffff";
+        g.font = "800 34px 'Nunito Sans', system-ui, sans-serif";
+        g.textAlign = "center"; g.textBaseline = "middle";
+        g.fillText(String(n), 32, 34);
+        const texture = new THREE.CanvasTexture(toile);
+        texture.userData = { ilyosTransient: true };
+        const materiau = new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
+        materiau.userData = { ilyosTransient: true };
+        const sprite = new THREE.Sprite(materiau);
+        sprite.renderOrder = 99;
+        return sprite;
+      }
+
+      /* Trajet de déplacement (comme Advance Wars) : un ruban sombre au sol,
+         des pointillés clairs qui défilent vers la destination, une pointe, et
+         sur chaque case le nombre de cartes dépensées. */
       function addKayKitMovePathArrow(actor, path) {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group || !actor || !path || !path.length) return;
-        const yOf = (r, c) => kaykitCellSurfaceY(r, c) + .09;
-        const points = [kaykitCellPosition(actor.r, actor.c, yOf(actor.r, actor.c))];
-        for (const [r, c] of path) points.push(kaykitCellPosition(r, c, yOf(r, c)));
-
+        const yOf = (r, c) => kaykitCellSurfaceY(r, c) + .05;
+        const cases = [[actor.r, actor.c], ...path.map(([r, c]) => [r, c])];
+        const points = cases.map(([r, c]) => kaykitCellPosition(r, c, yOf(r, c)));
         const res = kaykitMovePathRessources();
-        const segmentsTracés = [];
-        for (let i = 0; i < points.length - 1; i++) {
-          const from = points[i], to = points[i + 1];
-          const direction = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
-          const length = direction.length();
-          if (length < 1e-4) continue;
-          direction.normalize();
-          // Diagonale si la longueur dépasse nettement un pas droit — la
-          // légère différence de hauteur entre deux cases de reliefs
-          // différents peut allonger un peu un pas droit sans le
-          // transformer en diagonale ; le seuil est à mi-chemin des deux.
-          const diagonale = length > KAYKIT_CELL_SPACING * 1.2;
-          segmentsTracés.push({ from, direction, diagonale, coude: i > 0 });
+        const transitoire = objet => { objet.userData = { ...(objet.userData || {}), ilyosTransient: true }; return objet; };
+        const zoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || 12.4) / 12.4, .6, 1.5);
+        // Pas de tracé au sol : seuls la flèche d'arrivée et les chiffres
+        // des étapes montrent le chemin, la zone bleue suffit pour le reste.
+        const depart = points[0], suivant = points[1];
+        const d0 = Math.hypot(suivant.x - depart.x, suivant.z - depart.z) || 1;
+        const traces = [{ x: depart.x + (suivant.x - depart.x) / d0 * .2, y: depart.y, z: depart.z + (suivant.z - depart.z) / d0 * .2 }, ...points.slice(1)];
+        const fin = points[points.length - 1], avant = traces[traces.length - 2];
+        const direction = new THREE.Vector3(fin.x - avant.x, 0, fin.z - avant.z).normalize();
+        const tete = (geometrie, materiau, ordre) => {
+          const maille = new THREE.Mesh(geometrie, materiau);
+          maille.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+          maille.position.set(fin.x, fin.y + .02, fin.z).addScaledVector(direction, -.04);
+          maille.renderOrder = ordre;
+          group.add(maille);
+        };
+        tete(res.teteClaire, transitoire(new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false, depthTest: false })), 98);
+
+        // Chiffres : cartes DÉPENSÉES cumulées (une diagonale en coûte deux).
+        let cout = 0;
+        for (let i = 1; i < cases.length; i++) {
+          const [r0, c0] = cases[i - 1], [r, c] = cases[i];
+          cout += (r0 !== r && c0 !== c) ? 2 : 1;
+          const pastille = kaykitPastilleTrajet(cout, i === cases.length - 1);
+          const p = points[i];
+          pastille.position.set(p.x, p.y + .5, p.z);
+          const taille = (i === cases.length - 1 ? .34 : .26) * zoom;
+          pastille.scale.set(taille, taille, taille);
+          group.add(pastille);
+          registerKayKitFadeIn(pastille, 160);
         }
-
-        /* Deux tons superposés (foncé dessous et plus large, clair dessus et
-           plus fin) plutôt qu'une seule teinte or : signalé invisible sur le
-           sable doré du sanctuaire — un ton unique, quel qu'il soit, finit
-           toujours par se fondre dans UNE case du plateau ; la paire
-           foncé/clair, elle, contraste avec à peu près n'importe quel fond. */
-        const ajouterCouche = (tigeDroite, tigeDiagonale, joint, materiau, decalageY, ordre) => {
-          for (const seg of segmentsTracés) {
-            const shaft = new THREE.Mesh(seg.diagonale ? tigeDiagonale : tigeDroite, materiau);
-            shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), seg.direction);
-            shaft.position.copy(seg.from).addScaledVector(seg.direction, (seg.diagonale ? KAYKIT_CELL_SPACING * Math.SQRT2 : KAYKIT_CELL_SPACING) / 2);
-            shaft.position.y += decalageY;
-            shaft.renderOrder = ordre;
-            group.add(shaft);
-
-            // Petite bille à chaque coude : masque la brèche que deux
-            // tronçons à angle laisseraient sinon entre eux.
-            if (seg.coude) {
-              const joint2 = new THREE.Mesh(joint, materiau);
-              joint2.position.copy(seg.from);
-              joint2.position.y += decalageY;
-              joint2.renderOrder = ordre;
-              group.add(joint2);
-            }
-          }
-        };
-        // renderOrder 96/97 : au-dessus du réticule de survol natif (jusqu'à
-        // 92, voir hoverOutline) — sinon, sur un trajet d'une seule case, le
-        // réticule couvre exactement la même case et peint PAR-DESSUS la
-        // flèche, qui devient alors invisible malgré des meshes bel et bien
-        // créés au bon endroit (signalé en jeu).
-        ajouterCouche(res.tigeSombreDroite, res.tigeSombreDiagonale, res.jointSombre, res.matSombre, -.006, 96);
-        ajouterCouche(res.tigeClaireDroite, res.tigeClaireDiagonale, res.jointClair, res.matClair, .006, 97);
-
-        const last = points[points.length - 1];
-        const prev = points[points.length - 2];
-        const directionFinale = new THREE.Vector3(last.x - prev.x, last.y - prev.y, last.z - prev.z).normalize();
-        const ajouterTete = (geometry, materiau, decalageY, ordre) => {
-          const head = new THREE.Mesh(geometry, materiau);
-          head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), directionFinale);
-          head.position.copy(last).addScaledVector(directionFinale, -.02);
-          head.position.y += decalageY;
-          head.renderOrder = ordre;
-          group.add(head);
-        };
-        ajouterTete(res.teteSombre, res.matSombre, -.006, 96);
-        ajouterTete(res.teteClaire, res.matClair, .006, 97);
       }
 
       function addKayKitPushDirection(pusher, target, destination) {
@@ -8898,7 +9091,8 @@
           clearKayKitGroup(kaykit3D.moveZoneGroup);
           if (zoneVisible) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
-            addKayKitMoveZone(cellules);
+            const gardienZone = state.selectedCharId ? characterById(state.selectedCharId) : null;
+            addKayKitMoveZone(cellules, gardienZone ? { origine: [gardienZone.r, gardienZone.c] } : {});
           }
         }
 
@@ -8972,7 +9166,8 @@
         if (moveActive && state.selectedCharId) {
           const path = state.smartHoverPath || [];
           if (path.length) addKayKitMovePathArrow(characterById(state.selectedCharId), path);
-          if (state.actionHoverCell) {
+          // Avec un trajet, sa pointe et son chiffre marquent déjà l'arrivée.
+          if (state.actionHoverCell && !path.length) {
             addKayKitActionPreviewCell(state.actionHoverCell[0], state.actionHoverCell[1], {
               color: 0xd9922f,
               opacity: .58,
@@ -9029,10 +9224,12 @@
           kaykit3D.actionPreviewKey = null;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
           kaykit3D.moveZoneRef = null;
+          majPorteeAdverseKayKit(null);
           return;
         }
 
         const hovered = kaykit3D.hoverCell;
+        if (!hovered || hovered.special) majPorteeAdverseKayKit(null);
         if (!hovered) {
           if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
           kaykit3D.cursorLabel?.classList.remove("visible");
@@ -9046,10 +9243,12 @@
           refreshKayKitHoverPreviews();
           return;
         }
+        majPorteeAdverseKayKit(hovered);
         const intent = kaykitHoverIntent(hovered.r, hovered.c, hovered.hitAction);
         const p = kaykitCellPosition(hovered.r, hovered.c, kaykitCellSurfaceY(hovered.r, hovered.c) + .085);
         kaykit3D.hoverMarker.visible = true;
         kaykit3D.hoverMarker.position.set(p.x, p.y, p.z);
+        kaykit3D.hoverMarkerBaseY = p.y;
         applyKayKitHoverIntent(intent);
         setKayKitVisualHover(hovered, intent);
         kaykit3D.canvas.style.cursor = intent.actionable
@@ -10164,7 +10363,10 @@
             dalle.position.set(p.x, KAYKIT_LEVELS.board, p.z);
             dalle.renderOrder = preview ? 20 : 4;
             group.add(dalle);
-            if (!preview && !fantome) registerKayKitCellVisual(r, c, dalle);
+            if (!preview && !fantome) {
+              dalle.userData.ilyosCase = [r, c];
+              registerKayKitCellVisual(r, c, dalle);
+            }
             return;
           }
           let block = cloneKayKitAsset('blockBitsGrassDirt', {
@@ -10200,7 +10402,10 @@
           block.position.set(p.x, KAYKIT_LEVELS.board, p.z);
           block.renderOrder = preview ? 20 : 4;
           group.add(block);
-          if (!preview && !fantome) registerKayKitCellVisual(r, c, block);
+          if (!preview && !fantome) {
+            block.userData.ilyosCase = [r, c];
+            registerKayKitCellVisual(r, c, block);
+          }
         });
 
         if (!preview) addKayKitIslandHull(group, island, cells);
@@ -11534,6 +11739,7 @@
             visual.animator.toIdle({ selected: visual.selected, carrying: visual.carrying });
           }
 
+          visual.wrapper.userData.ilyosContour = "gardien";
           registerKayKitCellVisual(character.r, character.c, visual.wrapper);
           registerKayKitInteractive(visual.wrapper, "character", character.r, character.c);
           if (visual.crown) registerKayKitInteractive(visual.crown, "crown-carried", character.r, character.c);
@@ -12805,7 +13011,15 @@
               const id = String(island.id);
               const signature = kaykitIslandSignature(island);
               const entry = kaykit3D.islandObjectRegistry.get(id);
-              if (entry && entry.signature === signature) return;
+              if (entry && entry.signature === signature) {
+                /* L'île est gardée telle quelle, mais l'index des cases vient
+                   d'être vidé : on y remet ses blocs, sans quoi le survol
+                   (teinte, soulèvement) ne trouve plus rien sous le curseur. */
+                entry.objects.forEach(objet => objet.children?.forEach(enfant => {
+                  if (enfant.userData?.ilyosCase) registerKayKitCellVisual(enfant.userData.ilyosCase[0], enfant.userData.ilyosCase[1], enfant);
+                }));
+                return;
+              }
               if (entry) disposeKayKitObjects(entry.objects);
               const objects = buildKayKitIslandVisual(island, occupied);
               objects.forEach(object => dynamic.add(object));
@@ -12949,6 +13163,7 @@
             const existing = kaykit3D.looseCrownRegistry.get(slot);
             if (existing && existing.signature === signature) {
               if (active && existing.crown) {
+                existing.crown.userData.ilyosContour = "couronne";
                 registerKayKitCellVisual(artifact.r, artifact.c, existing.crown);
                 registerKayKitInteractive(existing.crown, "crown-loose", artifact.r, artifact.c);
               }
@@ -12965,6 +13180,7 @@
             crown.scale.setScalar(.96);
             crown.position.set(p.x, surfaceY + .012, p.z);
             dynamic.add(crown);
+            crown.userData.ilyosContour = "couronne";
             registerKayKitCellVisual(artifact.r, artifact.c, crown);
             registerKayKitInteractive(crown, "crown-loose", artifact.r, artifact.c);
             const light = new THREE.PointLight(0xffcf52, .44, 1.8);
@@ -13249,8 +13465,10 @@
         const frameNow = performance.now();
         updateKayKitCharacters(delta, elapsed, frameNow);
         updateKayKitSequences(frameNow);
+        animerSurvolsKayKit(frameNow, elapsed);
         kaykit3D.animatedObjects.forEach(object => {
           if (!object?.parent) return;
+          if (object.userData.animer) object.userData.animer(elapsed);
           if (object.userData.pulse) {
             const s = 1 + Math.sin(elapsed * 3 + object.userData.pulsePhase) * .055;
             object.scale.set(s, s, s);
