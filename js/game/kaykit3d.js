@@ -7691,51 +7691,60 @@
         kaykit3D.interactiveMeshes.push(object);
       }
 
-      function addKayKitPushDestination(option, emphasized = false) {
+      // `doublon` : même résultat qu'une force plus faible déjà dessinée — la
+      // zone cliquable reste (la manette parcourt chaque force), sans anneau,
+      // un cheveu sous l'autre pour que la souris prenne la force la moins chère.
+      function addKayKitPushDestination(option, emphasized = false, doublon = false) {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group || option.fell || !Number.isFinite(option.r) || !Number.isFinite(option.c)) return;
         const p = kaykitCellPosition(option.r, option.c, kaykitCellSurfaceY(option.r, option.c) + .04);
-        const ring = new THREE.Mesh(
-          kaykitGeometry("unified-push-destination-ring-v1", () => new THREE.TorusGeometry(.22, .035, 10, 32)),
-          new THREE.MeshBasicMaterial({
-            color: emphasized ? 0xffd08a : 0xff8a32,
-            transparent: true,
-            opacity: emphasized ? 1 : .78,
-            depthWrite: false,
-            depthTest: false,
-            side: THREE.DoubleSide
-          })
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(p.x, p.y, p.z);
-        ring.scale.setScalar(emphasized ? 1.12 : 1);
-        ring.renderOrder = 58;
-        ring.userData.visualRole = emphasized ? 'push.hover' : 'push.destination';
-        group.add(ring);
+        if (!doublon) {
+          const ring = new THREE.Mesh(
+            kaykitGeometry("unified-push-destination-ring-v1", () => new THREE.TorusGeometry(.22, .035, 10, 32)),
+            new THREE.MeshBasicMaterial({
+              color: emphasized ? 0xffd08a : 0xff8a32,
+              transparent: true,
+              opacity: emphasized ? 1 : .78,
+              depthWrite: false,
+              depthTest: false,
+              side: THREE.DoubleSide
+            })
+          );
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(p.x, p.y, p.z);
+          ring.scale.setScalar(emphasized ? 1.12 : 1);
+          ring.renderOrder = 58;
+          ring.userData.visualRole = emphasized ? 'push.hover' : 'push.destination';
+          group.add(ring);
+        }
 
         const hit = new THREE.Mesh(
-          kaykitGeometry("unified-push-destination-hit-v1", () => new THREE.CircleGeometry(.34, 24)),
+          // Toute la case, et non un disque central : c'est la case qu'on survole.
+          kaykitGeometry("unified-push-destination-hit-v2", () => new THREE.PlaneGeometry(.92, .92)),
           new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
         );
         hit.rotation.x = -Math.PI / 2;
-        hit.position.set(p.x, p.y + .012, p.z);
+        hit.position.set(p.x, p.y + (doublon ? .006 : .012), p.z);
         hit.renderOrder = 60;
         group.add(hit);
         registerUnifiedPushInteraction(hit, "push-destination", option);
       }
 
-      function addKayKitDeathPushDestination(option, position, emphasized = false) {
+      function addKayKitDeathPushDestination(option, position, emphasized = false, doublon = false) {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group || !position) return;
 
-        const halo = new THREE.Mesh(
-          kaykitGeometry("unified-push-death-halo-v1", () => new THREE.TorusGeometry(.27, .045, 10, 32)),
-          new THREE.MeshBasicMaterial({ color: 0xffa13d, transparent: true, opacity: emphasized ? .86 : .48, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
-        );
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.copy(position).add(new THREE.Vector3(0, -.24, 0));
-        halo.renderOrder = 57;
-        group.add(halo);
+        if (!doublon) {
+          const halo = new THREE.Mesh(
+            kaykitGeometry("unified-push-death-halo-v1", () => new THREE.TorusGeometry(.27, .045, 10, 32)),
+            new THREE.MeshBasicMaterial({ color: emphasized ? 0xff6b74 : 0xff3b4a, transparent: true, opacity: emphasized ? .95 : .7, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          );
+          halo.rotation.x = -Math.PI / 2;
+          halo.position.copy(position).add(new THREE.Vector3(0, -.24, 0));
+          halo.scale.setScalar(emphasized ? 1.12 : 1);
+          halo.renderOrder = 57;
+          group.add(halo);
+        }
 
         /* Rayon élargi (.36 → .56) : c'est la seule cible de toute l'action
            poussée qui se trouve DANS LE VIDE, hors de la trame du plateau — sans
@@ -7749,6 +7758,7 @@
           new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false })
         );
         hit.position.copy(position);
+        if (doublon) hit.scale.setScalar(.97);
         hit.renderOrder = 60;
         group.add(hit);
         registerUnifiedPushInteraction(hit, "push-death-destination", option);
@@ -7770,20 +7780,12 @@
       function renderPushBlockPreview(impacts) {
         const group = kaykit3D?.actionPreviewGroup;
         const vides = new Map();
+        // Le résultat final, pas un calque par-dessus : les vraies pièces qui
+        // bougent quittent leur case le temps de l'aperçu.
+        masquerPiecesPoussees(impacts);
+        // Pas de dalle colorée sous les cases : les traînées disent d'où l'on
+        // part, les pièces posées disent où l'on arrive.
         (impacts || []).forEach(impact => {
-          addKayKitActionPreviewCell(impact.from[0], impact.from[1], {
-            color: impact.fell ? 0xff3f45 : 0xffa044,
-            opacity: impact.fell ? .58 : .42,
-            size: .84
-          });
-          if (impact.to) {
-            addKayKitActionPreviewCell(impact.to[0], impact.to[1], {
-              color: 0xff7442,
-              opacity: .48,
-              size: .86,
-              pulse: true
-            });
-          }
           if (!group) return;
           const personnage = impact.type === "character" ? characterById(impact.id) : null;
           const playerId = personnage ? personnage.player : null;
@@ -7819,18 +7821,52 @@
           // en vrai, sous les yeux du joueur.
           if (impact.to[0] === impact.from[0] && impact.to[1] === impact.from[1]) return;
           addKayKitPushTrainee(impact.from, impact.to, 0xffa044);
-          addKayKitPushGhost(impact.to[0], impact.to[1], {
-            playerId,
-            crown: impact.type === "crown"
-          });
+          // La vraie pièce est masquée : son double, presque plein, se lit
+          // comme la position finale et non comme un calque.
+          const arrivee = makeKayKitPieceGhost(impact.to[0], impact.to[1], { playerId, crown: impact.type === "crown", opacity: .9 });
+          if (arrivee) group.add(arrivee);
           if (impact.carrying) {
-            const couronne = makeKayKitPieceGhost(impact.to[0], impact.to[1], { crown: true, surfaceY: kaykitCellSurfaceY(impact.to[0], impact.to[1]) + .74 });
+            const couronne = makeKayKitPieceGhost(impact.to[0], impact.to[1], { crown: true, opacity: .9, surfaceY: kaykitCellSurfaceY(impact.to[0], impact.to[1]) + .74 });
             if (couronne) {
               couronne.scale.multiplyScalar(.62);
               group.add(couronne);
             }
           }
         });
+      }
+
+      /* Pièces réelles masquées pendant l'aperçu d'une poussée : celles qui
+         changent de case ou tombent. On retient les impacts, pas les objets,
+         pour pouvoir remasquer après une synchronisation de scène. */
+      function rafraichirPiecesPoussees() {
+        if (!kaykit3D) return;
+        (kaykit3D.poussePiecesMasquees || []).forEach(objet => { objet.visible = true; });
+        kaykit3D.poussePiecesMasquees = [];
+        const impacts = kaykit3D.pousseImpactsMasques;
+        if (!impacts?.length) return;
+        const masquer = objet => {
+          if (!objet || !objet.visible) return;
+          objet.visible = false;
+          kaykit3D.poussePiecesMasquees.push(objet);
+        };
+        impacts.forEach(impact => {
+          const bouge = impact.fell || (impact.to && (impact.to[0] !== impact.from[0] || impact.to[1] !== impact.from[1]));
+          if (!bouge) return;
+          if (impact.type === "crown") {
+            (kaykit3D.looseCrownRegistry.get(String(impact.id))?.objects || []).forEach(masquer);
+            return;
+          }
+          const visual = kaykit3D.characterVisuals.get(String(impact.id));
+          if (!visual) return;
+          masquer(visual.wrapper);
+          masquer(visual.crown);
+        });
+      }
+
+      function masquerPiecesPoussees(impacts) {
+        if (!kaykit3D) return;
+        kaykit3D.pousseImpactsMasques = Array.isArray(impacts) ? impacts : null;
+        rafraichirPiecesPoussees();
       }
 
       /* Traînée de points au sol, d'une case de départ à une arrivée (cases
@@ -7862,138 +7898,6 @@
         }
       }
 
-      /* JETON DE FORCE (maquette poussée v4) : un disque chiffré par force
-         utile, orange si la cible atterrit, rouge si quelqu'un tombe, avec un
-         crâne collé à côté par pièce perdue. Pas de texte, seulement le
-         chiffre — c'est aussi le nombre de cartes dépensées. Textures mises
-         en cache (une par force × nombre de crânes), jamais libérées. */
-      function kaykitJetonPousseeTexture(force, cranes, avecCranes = true) {
-        if (!kaykit3D.jetonsPoussee) kaykit3D.jetonsPoussee = new Map();
-        const cle = `${force}:${cranes}:${avecCranes ? 1 : 0}`;
-        if (kaykit3D.jetonsPoussee.has(cle)) return kaykit3D.jetonsPoussee.get(cle);
-        // 256 × 256 : le disque chiffré en haut, les crânes en rang dessous,
-        // vers la case — jamais sur le côté, où ils mordaient sur le jeton
-        // voisin d'une même ligne de poussée.
-        const canvas = document.createElement("canvas");
-        canvas.width = 256;
-        canvas.height = 256;
-        const g = canvas.getContext("2d");
-        const rouge = cranes > 0;
-        const disque = (x, y, rayon, interieur, exterieur, bord, epaisseur) => {
-          g.save();
-          g.shadowColor = "rgba(40, 10, 0, .38)";
-          g.shadowBlur = 10;
-          g.shadowOffsetY = 3;
-          g.beginPath();
-          g.arc(x, y, rayon, 0, Math.PI * 2);
-          const degrade = g.createRadialGradient(x - rayon * .35, y - rayon * .45, rayon * .1, x, y, rayon);
-          degrade.addColorStop(0, interieur);
-          degrade.addColorStop(1, exterieur);
-          g.fillStyle = degrade;
-          g.fill();
-          g.restore();
-          g.beginPath();
-          g.arc(x, y, rayon - epaisseur / 2, 0, Math.PI * 2);
-          g.lineWidth = epaisseur;
-          g.strokeStyle = bord;
-          g.stroke();
-        };
-        disque(128, 84, 64, rouge ? "#ff8a8a" : "#ffc274", rouge ? "#d81d3a" : "#ff7a1c", "#ffffff", 8);
-        g.font = "900 82px Nunito, 'Trebuchet MS', system-ui, sans-serif";
-        g.textAlign = "center";
-        g.textBaseline = "middle";
-        g.lineWidth = 7;
-        g.strokeStyle = rouge ? "rgba(110, 0, 20, .55)" : "rgba(120, 50, 0, .5)";
-        g.strokeText(String(force), 128, 89);
-        g.fillStyle = "#ffffff";
-        g.fillText(String(force), 128, 89);
-        // Crâne dessiné (la glyphe ☠ des polices ressortait en tache rouge
-        // illisible à cette taille) : boîte crânienne, mâchoire, orbites.
-        const crane = (x, y, t) => {
-          g.fillStyle = "#ffffff";
-          g.beginPath();
-          g.arc(x, y - t * .1, t * .5, Math.PI * .85, Math.PI * .15);
-          g.lineTo(x + t * .3, y + t * .42);
-          g.lineTo(x - t * .3, y + t * .42);
-          g.closePath();
-          g.fill();
-          g.fillStyle = "#c4142f";
-          g.beginPath();
-          g.ellipse(x - t * .19, y - t * .06, t * .13, t * .15, 0, 0, Math.PI * 2);
-          g.ellipse(x + t * .19, y - t * .06, t * .13, t * .15, 0, 0, Math.PI * 2);
-          g.fill();
-          g.beginPath();
-          g.moveTo(x, y + t * .1);
-          g.lineTo(x - t * .06, y + t * .2);
-          g.lineTo(x + t * .06, y + t * .2);
-          g.closePath();
-          g.fill();
-          g.fillRect(x - t * .14, y + t * .3, t * .05, t * .12);
-          g.fillRect(x + t * .09, y + t * .3, t * .05, t * .12);
-        };
-        for (let i = 0; avecCranes && i < cranes; i++) {
-          const x = 128 + (i - (cranes - 1) / 2) * 68;
-          disque(x, 196, 32, "#ff6b6b", "#c8102e", "#ffffff", 5);
-          crane(x, 196, 40);
-        }
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.encoding = THREE.sRGBEncoding;
-        texture.needsUpdate = true;
-        kaykit3D.jetonsPoussee.set(cle, texture);
-        return texture;
-      }
-
-      function addKayKitPushJeton(option, base, rang, { survole = false, attenue = false, empile = 0 } = {}) {
-        const group = kaykit3D?.actionPreviewGroup;
-        if (!group || !base) return;
-        const cranes = Math.min(3, (option.preview?.impacts || []).filter(impact => impact.fell).length);
-        const hauteur = base.y + 1.15 + rang * .9 + empile * .12;
-        const materiau = new THREE.SpriteMaterial({
-          // Une pièce glissée derrière ne répète pas les crânes du jeton de
-          // devant, sauf survolée.
-          map: kaykitJetonPousseeTexture(option.force, cranes, !empile || survole),
-          transparent: true,
-          opacity: attenue ? .5 : 1,
-          depthWrite: false,
-          depthTest: false,
-          toneMapped: false
-        });
-        materiau.userData = { ...(materiau.userData || {}), ilyosTransient: true };
-        const jeton = new THREE.Sprite(materiau);
-        // Le centre du sprite est celui du disque chiffré : les crânes pendent
-        // dessous sans décaler le jeton.
-        jeton.center.set(.5, 1 - 84 / 256);
-        const taille = survole ? 1.15 : (empile ? .94 : 1);
-        jeton.scale.set(.96 * taille, .96 * taille, 1);
-        jeton.position.set(base.x, hauteur, base.z);
-        // Une pièce glissée derrière reste derrière, sauf survolée.
-        jeton.renderOrder = survole ? 66 : 62 - Math.min(empile, 6);
-        group.add(jeton);
-        registerUnifiedPushInteraction(jeton, option.fell ? "push-death-destination" : "push-destination", option);
-        if (empile) return;
-
-        // Fil pointillé du jeton jusqu'à sa case (ou au-dessus du vide).
-        const geometrie = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(base.x, hauteur - (cranes ? .8 : .26) * taille, base.z),
-          new THREE.Vector3(base.x, base.y + .04, base.z)
-        ]);
-        geometrie.userData = { ...(geometrie.userData || {}), ilyosTransient: true };
-        const fil = new THREE.LineDashedMaterial({
-          color: option.fell ? 0xff5a66 : 0xffb066,
-          dashSize: .06,
-          gapSize: .05,
-          transparent: true,
-          opacity: attenue ? .35 : .85,
-          depthWrite: false,
-          depthTest: false
-        });
-        fil.userData = { ...(fil.userData || {}), ilyosTransient: true };
-        const ligne = new THREE.Line(geometrie, fil);
-        ligne.computeLineDistances();
-        ligne.renderOrder = 57;
-        group.add(ligne);
-      }
-
       function renderUnifiedPushAffordances() {
         if (!kaykit3D || !state?.pushOptions?.length) return;
         const hoveredId = state.pushHoverOptionId;
@@ -8011,22 +7915,21 @@
           lines.get(lineKey).push(option);
         });
 
-        // Jetons empilés seulement quand ils visent le même point — y compris
-        // depuis deux lignes de poussée différentes : une pile qui monte
-        // au-dessus d'autres cases se lisait comme les leurs.
-        const piles = new Map();
         lines.forEach(allOptions => {
           const target = allOptions[0].targetType === "crown"
             ? artifactById(allOptions[0].targetId)
             : characterById(allOptions[0].targetId);
           if (!target) return;
-          /* Toutes les forces gardent leur jeton — ce sont des coups jouables,
-             atteignables à la souris comme à la manette. Mais une force qui
-             donne exactement le même résultat qu'une plus faible n'a pas sa
-             place dans la pile : elle se glisse derrière ce jeton, en pièce
-             de monnaie, sans répéter une tour de chiffres identiques. */
+          /* Au repos : seulement les cases d'arrivée (anneau orange) et les
+             chutes (halo rouge au-dessus du vide). Le résultat complet — tout
+             le bloc en fantômes, ses traînées, qui tombe — ne s'affiche qu'au
+             survol de la case. Pas de jeton chiffré : jugé trop grossier.
+
+             Une force qui donne exactement le même résultat qu'une plus faible
+             garde sa zone cliquable (la manette doit pouvoir l'atteindre),
+             mais pas d'anneau en double. */
           const options = [...allOptions].sort((a, b) => a.force - b.force);
-          const representants = new Map();
+          const issues = new Set();
           const issueDe = option => (option.preview?.impacts || [])
             .map(impact => impact.fell ? `x${impact.id}` : `${impact.id}@${(impact.to || impact.from).join(",")}`)
             .join("|");
@@ -8035,31 +7938,18 @@
 
           options.forEach(option => {
             const survole = option.id === hoveredId;
-            const attenue = !!hoveredId && !survole;
-            let base;
+            const issue = issueDe(option);
+            const doublon = issues.has(issue);
+            issues.add(issue);
             if (!option.fell) {
-              addKayKitPushDestination(option, survole);
-              base = kaykitCellPosition(option.r, option.c, kaykitCellSurfaceY(option.r, option.c));
+              addKayKitPushDestination(option, survole, doublon && !survole);
             } else {
               const edge = kaykitCellPosition(option.lastLandR, option.lastLandC, kaykitCellSurfaceY(option.lastLandR, option.lastLandC));
               const direction = new THREE.Vector3(option.dc, 0, option.dr).normalize();
-              base = new THREE.Vector3(edge.x, edge.y, edge.z).add(direction.multiplyScalar(.85));
-              const deathPosition = base.clone();
+              const deathPosition = new THREE.Vector3(edge.x, edge.y, edge.z).add(direction.multiplyScalar(.85));
               deathPosition.y += .35;
-              addKayKitDeathPushDestination(option, deathPosition, survole);
+              addKayKitDeathPushDestination(option, deathPosition, survole, doublon && !survole);
             }
-            const issue = issueDe(option);
-            const representant = representants.get(issue);
-            if (representant) {
-              representant.doublons += 1;
-              addKayKitPushJeton(option, base, representant.rang, { survole, attenue, empile: representant.doublons });
-              return;
-            }
-            const pile = `${base.x.toFixed(2)},${base.z.toFixed(2)}`;
-            const rang = piles.get(pile) || 0;
-            piles.set(pile, rang + 1);
-            representants.set(issue, { rang, doublons: 0 });
-            addKayKitPushJeton(option, base, rang, { survole, attenue });
           });
 
           const furthest = hovered || options[options.length - 1];
@@ -8687,6 +8577,7 @@
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
         clearKayKitGroup(kaykit3D.actionPreviewGroup);
+        masquerPiecesPoussees(null);
         kaykit3D.interactiveMeshes = (kaykit3D.interactiveMeshes || []).filter(object => !!object?.parent);
         kaykit3D.animatedObjects = kaykit3D.animatedObjects.filter(object => object?.parent);
 
@@ -12743,6 +12634,7 @@
           });
 
           refreshKayKitMagicPiecesParties();
+          rafraichirPiecesPoussees();
 
           kaykit3D.lastStateSignature = `${state.turn}|${state.phase}|${state.islands.length}|${state.characters.length}|${state.currentPlayer}`;
           refreshKayKitHoverAfterSceneSync();
