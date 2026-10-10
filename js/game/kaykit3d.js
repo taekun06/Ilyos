@@ -7772,10 +7772,9 @@
          montrait donc pas la même chose selon le chemin emprunté. Les deux
          passent maintenant par ici.
 
-         Chaque pièce qui bouge laisse une traînée de points de sa case à son
-         arrivée, et son fantôme s'y pose. Une pièce qui bascule a sa traînée
-         rouge jusqu'au vide, et son fantôme rouge, enfoncé, au-dessus du vide
-         où elle tombe (maquette poussée v4) : on voit qui tombe et où, sans un
+         Chaque pièce qui bouge quitte sa case et son double se pose à
+         l'arrivée. Une pièce qui bascule apparaît en rouge, enfoncée,
+         au-dessus du vide où elle tombe : on voit qui tombe et où, sans un
          mot. */
       function renderPushBlockPreview(impacts) {
         const group = kaykit3D?.actionPreviewGroup;
@@ -7783,8 +7782,9 @@
         // Le résultat final, pas un calque par-dessus : les vraies pièces qui
         // bougent quittent leur case le temps de l'aperçu.
         masquerPiecesPoussees(impacts);
-        // Pas de dalle colorée sous les cases : les traînées disent d'où l'on
-        // part, les pièces posées disent où l'on arrive.
+        // Seulement le résultat final : ni dalle colorée, ni tracé en
+        // pointillés (refusé aussi pour le déplacement), les pièces posées
+        // à l'arrivée suffisent.
         (impacts || []).forEach(impact => {
           if (!group) return;
           const personnage = impact.type === "character" ? characterById(impact.id) : null;
@@ -7799,7 +7799,6 @@
             const [vr, vc] = impact.vide;
             const sens = [Math.sign(vr - impact.from[0]), Math.sign(vc - impact.from[1])];
             const chute = [vr + sens[0] * rang * .5, vc + sens[1] * rang * .5];
-            addKayKitPushTrainee(impact.from, chute, 0xff3b4a);
             const sol = KAYKIT_LEVELS.islandTop - .32 - rang * .22;
             const fantome = makeKayKitPieceGhost(chute[0], chute[1], { playerId, surfaceY: sol });
             if (fantome) {
@@ -7820,7 +7819,6 @@
           // Inutile de fantômer une pièce qui ne bouge pas : elle est déjà là,
           // en vrai, sous les yeux du joueur.
           if (impact.to[0] === impact.from[0] && impact.to[1] === impact.from[1]) return;
-          addKayKitPushTrainee(impact.from, impact.to, 0xffa044);
           // La vraie pièce est masquée : son double, presque plein, se lit
           // comme la position finale et non comme un calque.
           const arrivee = makeKayKitPieceGhost(impact.to[0], impact.to[1], { playerId, crown: impact.type === "crown", opacity: .9 });
@@ -7869,34 +7867,6 @@
         rafraichirPiecesPoussees();
       }
 
-      /* Traînée de points au sol, d'une case de départ à une arrivée (cases
-         éventuellement fractionnaires : une chute peut être décalée). */
-      function addKayKitPushTrainee(de, vers, couleur) {
-        const group = kaykit3D?.actionPreviewGroup;
-        if (!group) return;
-        const y = kaykitCellSurfaceY(de[0], de[1]) + .03;
-        const a = kaykitCellPosition(de[0], de[1], y);
-        const b = kaykitCellPosition(vers[0], vers[1], y);
-        const longueur = Math.hypot(b.x - a.x, b.z - a.z);
-        if (longueur < .3) return;
-        const point = kaykitGeometry("push-trainee-point-v1", () => {
-          const g = new THREE.CircleGeometry(.055, 14);
-          g.rotateX(-Math.PI / 2);
-          return g;
-        });
-        const materiau = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: .95, depthWrite: false, depthTest: false, toneMapped: false });
-        materiau.userData = { ...(materiau.userData || {}), ilyosTransient: true };
-        const pas = .2;
-        for (let d = .26; d <= longueur - .2; d += pas) {
-          const t = d / longueur;
-          const m = new THREE.Mesh(point, materiau);
-          m.position.set(a.x + (b.x - a.x) * t, y, a.z + (b.z - a.z) * t);
-          // Les points grossissent vers l'arrivée : le sens se lit sans flèche.
-          m.scale.setScalar(.7 + .6 * t);
-          m.renderOrder = 56;
-          group.add(m);
-        }
-      }
 
       function renderUnifiedPushAffordances() {
         if (!kaykit3D || !state?.pushOptions?.length) return;
@@ -7922,7 +7892,7 @@
           if (!target) return;
           /* Au repos : seulement les cases d'arrivée (anneau orange) et les
              chutes (halo rouge au-dessus du vide). Le résultat complet — tout
-             le bloc en fantômes, ses traînées, qui tombe — ne s'affiche qu'au
+             le bloc à sa place finale, qui tombe — ne s'affiche qu'au
              survol de la case. Pas de jeton chiffré : jugé trop grossier.
 
              Une force qui donne exactement le même résultat qu'une plus faible
