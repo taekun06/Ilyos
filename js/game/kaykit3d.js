@@ -4365,6 +4365,7 @@
           new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false })
         );
         hitProxy.position.y = .22;
+        hitProxy.name = "ilyos-couronne-cible";
         group.add(hitProxy);
         group.userData.isCrown = true;
         return group;
@@ -4774,14 +4775,13 @@
         (kaykit3D.hoveredVisuals || []).forEach(record => {
           if (!record?.mesh) return;
           record.mesh.material = record.originalMaterial;
-          (record.clonedMaterials || []).forEach(material => material?.dispose?.());
+          (record.clonedMaterials || []).forEach(material => { if (!material?.userData?.ilyosPartage) material?.dispose?.(); });
         });
         kaykit3D.hoveredVisuals = [];
         kaykit3D.hoveredVisualKey = null;
         kaykit3D.liseres = [];
         (kaykit3D.contoursSurvol || []).forEach(contour => {
           contour.parent?.remove(contour);
-          contour.material?.dispose?.();
         });
         kaykit3D.contoursSurvol = [];
         kaykitReposerCases();
@@ -4791,11 +4791,13 @@
          face arrière et gonflée en espace écran (épaisseur constante quel que
          soit le zoom). Pour un gardien animé, la copie partage le squelette de
          l'original et suit donc chaque pose. */
-      function kaykitAjouterContour(mesh, couleur) {
-        if (!mesh?.geometry || !mesh.parent) return;
-        const skinne = !!mesh.isSkinnedMesh;
+      function kaykitMateriauContour(couleur, skinne) {
+        kaykit3D.contoursCache = kaykit3D.contoursCache || new Map();
+        const cleCache = couleur + (skinne ? "|s" : "");
+        let materiau = kaykit3D.contoursCache.get(cleCache);
+        if (materiau) return materiau;
         const u = { epaisseur: { value: .0055 } };
-        const materiau = new THREE.MeshBasicMaterial({ color: couleur, side: THREE.BackSide, skinning: skinne, transparent: true, opacity: .95, depthWrite: false });
+        materiau = new THREE.MeshBasicMaterial({ color: couleur, side: THREE.BackSide, skinning: skinne, transparent: true, opacity: .95, depthWrite: false });
         materiau.onBeforeCompile = shader => {
           shader.uniforms.ilyosEpaisseur = u.epaisseur;
           shader.vertexShader = "uniform float ilyosEpaisseur;\n" + shader.vertexShader.replace("#include <project_vertex>", `#include <project_vertex>
@@ -4809,6 +4811,14 @@
             }`);
         };
         materiau.customProgramCacheKey = () => "ilyos-contour" + (skinne ? "-s" : "");
+        materiau.userData.ilyosPartage = true;
+        kaykit3D.contoursCache.set(cleCache, materiau);
+        return materiau;
+      }
+      function kaykitAjouterContour(mesh, couleur) {
+        if (!mesh?.geometry || !mesh.parent) return;
+        const skinne = !!mesh.isSkinnedMesh;
+        const materiau = kaykitMateriauContour(couleur, skinne);
         let contour;
         if (skinne) {
           contour = new THREE.SkinnedMesh(mesh.geometry, materiau);
@@ -4828,14 +4838,15 @@
         kaykit3D.contoursSurvol.push(contour);
       }
 
-      /* SURVOL : la case se soulève (comme Into the Breach) et le gardien ou
-         la couronne survolés reçoivent un liseré lumineux (comme Hades).
+      /* SURVOL : la couronne survolée se soulève, et le gardien ou la
+         couronne survolés reçoivent un liseré lumineux (comme Hades). Le
+         soulèvement des cases a été retiré : il ne se voyait pas.
 
          Soulèvement : on déplace les objets DÉJÀ enregistrés pour la case
          (dalle, gardien, couronne) — rien n'est recréé, et leur hauteur de
          départ est rendue telle quelle à la fin. L'animation vit dans
          animerSurvolsKayKit(), appelée par la boucle de rendu. */
-      const KAYKIT_SOULEVEMENT = .12;
+      const KAYKIT_SOULEVEMENT = .16;
       function kaykitSouleverCase(objets) {
         if (!kaykit3D) return;
         const maintenant = performance.now();
@@ -4844,7 +4855,7 @@
           if (!objet) return;
           let suivi = kaykit3D.soulevees.find(item => item.objet === objet);
           if (!suivi) {
-            suivi = { objet, baseY: objet.position.y, valeur: 0 };
+            suivi = { objet, baseY: objet.position.y, valeur: 0, portee: !!objet.userData?.ilyosPortee };
             kaykit3D.soulevees.push(suivi);
           }
           Object.assign(suivi, { cible: KAYKIT_SOULEVEMENT, depart: suivi.valeur, debut: maintenant });
@@ -4867,9 +4878,16 @@
           const e = monte ? 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2) : t * (2 - t);
           suivi.valeur = suivi.depart + (suivi.cible - suivi.depart) * e;
           if (!suivi.objet.parent) return false;
-          suivi.objet.position.y = suivi.baseY + suivi.valeur;
+          // Une couronne portée est replacée sur la tête à chaque image : on
+          // lui donne un décalage que updateKayKitCharacters ajoute.
+          if (suivi.portee) suivi.objet.userData.ilyosLevee = suivi.valeur;
+          else suivi.objet.position.y = suivi.baseY + suivi.valeur;
           if (monte) leveeMarqueur = Math.max(leveeMarqueur, suivi.valeur);
-          if (!monte && t >= 1) { suivi.objet.position.y = suivi.baseY; return false; }
+          if (!monte && t >= 1) {
+            if (suivi.portee) suivi.objet.userData.ilyosLevee = 0;
+            else suivi.objet.position.y = suivi.baseY;
+            return false;
+          }
           return true;
         });
         if (kaykit3D.hoverMarker?.visible && Number.isFinite(kaykit3D.hoverMarkerBaseY)) {
@@ -4882,10 +4900,28 @@
       /* Liseré : un reflet de contour (fresnel) ajouté à l'émission d'une
          COPIE du matériau — le matériau partagé n'est jamais touché. Il épouse
          la silhouette du modèle animé, ce qu'un contour par coque agrandie ne
-         sait pas faire sur un modèle à squelette. */
+         sait pas faire sur un modèle à squelette.
+
+         Les copies sont GARDÉES d'un survol à l'autre (une par matériau et par
+         couleur) et jamais libérées : libérer la dernière copie libérait aussi
+         son programme shader, recompilé au survol suivant — 8 compilations à
+         chaque gardien survolé, de quoi faire chauffer une machine modeste. */
       function kaykitMateriauLisere(materiau, couleur) {
+        kaykit3D.liseresCache = kaykit3D.liseresCache || new Map();
+        kaykit3D.liseres = kaykit3D.liseres || [];
+        const cleCache = materiau.uuid + "|" + couleur;
+        let entree = kaykit3D.liseresCache.get(cleCache);
+        if (!entree) {
+          entree = kaykitCreerMateriauLisere(materiau, couleur);
+          entree.copie.userData.ilyosPartage = true;
+          kaykit3D.liseresCache.set(cleCache, entree);
+        }
+        if (entree.u && !kaykit3D.liseres.includes(entree.u)) kaykit3D.liseres.push(entree.u);
+        return entree.copie;
+      }
+      function kaykitCreerMateriauLisere(materiau, couleur) {
         const copie = materiau.clone();
-        if (!copie.isMeshStandardMaterial && !copie.isMeshPhongMaterial) return copie;
+        if (!copie.isMeshStandardMaterial && !copie.isMeshPhongMaterial) return { copie, u: null };
         const u = { couleur: { value: new THREE.Color(couleur) }, force: { value: 1 } };
         const precedent = materiau.onBeforeCompile;
         copie.onBeforeCompile = (shader, renderer) => {
@@ -4901,9 +4937,7 @@
         };
         const cle = materiau.customProgramCacheKey ? materiau.customProgramCacheKey() : "";
         copie.customProgramCacheKey = () => cle + "|ilyos-lisere";
-        kaykit3D.liseres = kaykit3D.liseres || [];
-        kaykit3D.liseres.push(u);
-        return copie;
+        return { copie, u };
       }
 
       function setKayKitVisualHover(cell, intent) {
@@ -4922,16 +4956,23 @@
         const strength = isCharacterModel ? .08 : (intent.actionable ? .24 : .11);
         const emissiveStrength = isCharacterModel ? .16 : (intent.actionable ? .72 : .38);
         const emissiveFloor = isCharacterModel ? .12 : (intent.actionable ? .50 : .22);
-        const visuals = kaykit3D.cellVisuals.get(`${cell.r},${cell.c}`) || [];
-
         const occupant = characterAt(cell.r, cell.c);
+        const surCase = kaykit3D.cellVisuals.get(`${cell.r},${cell.c}`) || [];
+        // Couronne visée : elle seule s'éclaire, même portée par un gardien.
+        const couronnePortee = occupant ? kaykit3D.characterVisuals.get(String(occupant.id))?.crown : null;
+        if (couronnePortee) {
+          couronnePortee.userData.ilyosContour = "couronne";
+          couronnePortee.userData.ilyosPortee = true;
+        }
+        const visuals = intent.kind === "crown"
+          ? [...surCase.filter(objet => objet.userData?.ilyosContour === "couronne"), couronnePortee].filter(Boolean)
+          : surCase;
         const couleurLisere = role => role === "couronne"
           ? 0xffa514
           : new THREE.Color(state?.players?.[proprietaireGardien(occupant) ?? occupant?.player]?.color || "#7fd8ff").getHex();
-        const soulever = intent.actionable
-          && state?.phase !== "PLACE_ISLAND"
-          && !["place", "invalid", "magic", "invocation"].includes(intent.kind);
-        if (soulever) kaykitSouleverCase(visuals);
+        // Seule la couronne se soulève (Taekun : le soulèvement de case ne se
+        // voyait pas).
+        if (intent.kind === "crown") kaykitSouleverCase(visuals);
         const aContourer = [];
 
         visuals.forEach(object => object?.traverse?.(mesh => {
@@ -5316,7 +5357,16 @@
             if (destination) return destination.object;
           }
 
-          const interactive = interactifs[0]?.object;
+          let interactive = interactifs[0]?.object;
+          /* Une couronne portée est en partie cachée par la tête de son
+             porteur : si le rayon touche d'abord le gardien puis SA couronne,
+             c'est la couronne qu'on vise. */
+          if (interactive?.userData?.kaykitAction === "character") {
+            const { r, c } = interactive.userData;
+            const couronne = interactifs.find(item => item.object?.userData?.kaykitAction === "crown-carried"
+              && item.object.userData.r === r && item.object.userData.c === c);
+            if (couronne) interactive = couronne.object;
+          }
 
           if (interactive) return interactive;
 
@@ -11186,6 +11236,9 @@
         if (!visual || visual.crown) return;
         const crown = makeCrown();
         crown.scale.setScalar(.62);
+        // Portée, la couronne est petite et posée sur la tête : sa zone de
+        // visée est élargie pour qu'on puisse la désigner sans viser au pixel.
+        crown.getObjectByName("ilyos-couronne-cible")?.scale.setScalar(1.6);
         // Enfant du groupe persistant (et non du gardien) : la couronne garde
         // ainsi une orientation verticale stable quelle que soit l'animation
         // en cours, tout en suivant exactement l'os de la tête (voir
@@ -12359,7 +12412,7 @@
             crownAnchorPosition(visual, KAYKIT_TMP_CROWN);
             visual.crown.position.copy(KAYKIT_TMP_CROWN);
             visual.crown.rotation.y = elapsed * .9;
-            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015;
+            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0);
           }
 
           /* --- 10. Halo de sélection -------------------------------- */
