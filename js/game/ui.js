@@ -2987,6 +2987,8 @@
             to: mv.chute ? null : mv.to,
             fell: mv.chute,
             lastLand: mv.to,
+            // Case de vide où il bascule : l'aperçu y dessine sa chute.
+            vide: mv.chute ? (mv.vide || null) : null,
             icon: owner ? owner.icon : "👑",
             color: owner ? owner.color : "#ffd76a",
             carrying: characterCarriesCrown(mv.id)
