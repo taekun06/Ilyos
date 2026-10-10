@@ -32,6 +32,9 @@ const fragmentNames = [
   // Visionneuse des défaites et relevé des actions une par une : s'appuie sur
   // defaites.js, autopsie.js et planner.js, donc placée après eux.
   'defaites-vue.js',
+  // Traces et frise du tour adverse : enveloppe les noyaux de règle et
+  // beginTurn, comme defaites-vue.js, donc placée après lui.
+  'tour-adverse.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
