@@ -8048,6 +8048,15 @@
           dansContour.add(k);
           cellules.push([r, c]);
         }
+        /* La case du gardien fait partie de la zone : la forme reste d'un
+           seul tenant et part bien de lui. */
+        if (options.origine) {
+          const [ro, co] = options.origine;
+          if (!dansContour.has(cle(ro, co))) {
+            dansContour.add(cle(ro, co));
+            cellules.push([ro, co]);
+          }
+        }
         const dedans = (r, c) => dansContour.has(cle(r, c));
 
         /* Chaque bord est identifié par les DEUX SOMMETS qu'il relie, en
@@ -8223,7 +8232,7 @@
         const cartes = (joueur?.hand || []).filter(carte => carte.action === "MOVE" && !carte.used).length + (joueur?.stash?.MOVE || 0);
         const portee = movementRange(adversaire, Math.max(1, cartes));
         const cellules = [...portee].map(cle => cle.split(",").map(Number));
-        if (cellules.length) addKayKitMoveZone(cellules, { groupe, sombre: 0x4a0f1c, claire: 0xff6f8a, voile: .18 });
+        if (cellules.length) addKayKitMoveZone(cellules, { groupe, sombre: 0x4a0f1c, claire: 0xff6f8a, voile: .18, origine: [adversaire.r, adversaire.c] });
       }
 
       // Anneau orange compact directement sous le personnage/couronne poussable
@@ -8684,23 +8693,6 @@
          seule texture pour toute la session ; chaque tronçon en garde une
          copie légère (clone) pour régler sa propre répétition. */
       let kaykitTexturePointilles = null;
-      function kaykitTextureTrajet() {
-        if (kaykitTexturePointilles) return kaykitTexturePointilles;
-        const toile = document.createElement("canvas");
-        toile.width = 64; toile.height = 16;
-        const g = toile.getContext("2d");
-        g.fillStyle = "#ffffff";
-        g.beginPath();
-        if (g.roundRect) g.roundRect(2, 2, 34, 12, 6); else g.rect(2, 2, 34, 12);
-        g.fill();
-        kaykitTexturePointilles = new THREE.CanvasTexture(toile);
-        kaykitTexturePointilles.wrapS = THREE.RepeatWrapping;
-        kaykitTexturePointilles.anisotropy = 4;
-        return kaykitTexturePointilles;
-      }
-
-      /* Pastille chiffrée posée au-dessus d'une case : le nombre de cartes
-         dépensées pour l'atteindre. La dernière est dorée. */
       function kaykitPastilleTrajet(n, derniere) {
         const toile = document.createElement("canvas");
         toile.width = toile.height = 64;
@@ -8733,47 +8725,11 @@
         const res = kaykitMovePathRessources();
         const transitoire = objet => { objet.userData = { ...(objet.userData || {}), ilyosTransient: true }; return objet; };
         const zoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || 12.4) / 12.4, .6, 1.5);
-        const largeurClaire = .085 * zoom, largeurSombre = .15 * zoom, periode = .26;
-        const ruban = (de, vers, largeur, materiau, y, ordre) => {
-          const dx = vers.x - de.x, dz = vers.z - de.z;
-          const longueur = Math.hypot(dx, dz);
-          if (longueur < 1e-4) return null;
-          const maille = new THREE.Mesh(transitoire(new THREE.PlaneGeometry(longueur, largeur)), materiau);
-          maille.rotation.x = -Math.PI / 2;
-          maille.rotation.z = -Math.atan2(dz, dx);
-          maille.position.set((de.x + vers.x) / 2, Math.max(de.y, vers.y) + y, (de.z + vers.z) / 2);
-          maille.renderOrder = ordre;
-          group.add(maille);
-          return { maille, longueur };
-        };
-        // Le trajet part du BORD du gardien, pas de son centre (caché dessous).
+        // Pas de tracé au sol : seuls la flèche d'arrivée et les chiffres
+        // des étapes montrent le chemin, la zone bleue suffit pour le reste.
         const depart = points[0], suivant = points[1];
         const d0 = Math.hypot(suivant.x - depart.x, suivant.z - depart.z) || 1;
-        const recul = .2;
-        const debut = { x: depart.x + (suivant.x - depart.x) / d0 * recul, y: depart.y, z: depart.z + (suivant.z - depart.z) / d0 * recul };
-        const traces = [debut, ...points.slice(1)];
-        const matSombre = transitoire(new THREE.MeshBasicMaterial({ color: 0x0d2a40, transparent: true, opacity: .62, depthWrite: false, depthTest: false }));
-        let parcouru = 0;
-        for (let i = 0; i < traces.length - 1; i++) {
-          ruban(traces[i], traces[i + 1], largeurSombre, matSombre, -.004, 95);
-          const texture = transitoire(kaykitTextureTrajet().clone());
-          texture.needsUpdate = true;
-          const matClair = transitoire(new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff, transparent: true, opacity: .96, depthWrite: false, depthTest: false }));
-          const trace = ruban(traces[i], traces[i + 1], largeurClaire, matClair, .004, 97);
-          if (!trace) continue;
-          texture.repeat.set(trace.longueur / periode, 1);
-          const decalage = parcouru / periode;
-          trace.maille.userData.animer = elapsed => { texture.offset.x = -decalage - elapsed * 1.6; };
-          kaykit3D.animatedObjects.push(trace.maille);
-          parcouru += trace.longueur;
-          if (i > 0) {
-            const joint = new THREE.Mesh(transitoire(new THREE.CircleGeometry(largeurSombre / 2, 16)), matSombre);
-            joint.rotation.x = -Math.PI / 2;
-            joint.position.set(traces[i].x, traces[i].y - .004, traces[i].z);
-            joint.renderOrder = 95;
-            group.add(joint);
-          }
-        }
+        const traces = [{ x: depart.x + (suivant.x - depart.x) / d0 * .2, y: depart.y, z: depart.z + (suivant.z - depart.z) / d0 * .2 }, ...points.slice(1)];
         const fin = points[points.length - 1], avant = traces[traces.length - 2];
         const direction = new THREE.Vector3(fin.x - avant.x, 0, fin.z - avant.z).normalize();
         const tete = (geometrie, materiau, ordre) => {
@@ -9075,7 +9031,8 @@
           clearKayKitGroup(kaykit3D.moveZoneGroup);
           if (zoneVisible) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
-            addKayKitMoveZone(cellules);
+            const gardienZone = state.selectedCharId ? characterById(state.selectedCharId) : null;
+            addKayKitMoveZone(cellules, gardienZone ? { origine: [gardienZone.r, gardienZone.c] } : {});
           }
         }
 
