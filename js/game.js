@@ -5185,7 +5185,10 @@
             {
               vec3 ilyosNormale = normal;
               #ifdef USE_SKINNING
-                ilyosNormale = objectNormal;
+                /* MeshBasicMaterial (r128) ne déclare objectNormal qu'avec une
+                   envMap : la normale est donc déformée ici, comme skinnormal_vertex. */
+                mat4 ilyosPeau = skinWeight.x * boneMatX + skinWeight.y * boneMatY + skinWeight.z * boneMatZ + skinWeight.w * boneMatW;
+                ilyosNormale = (bindMatrixInverse * ilyosPeau * bindMatrix * vec4(normal, 0.0)).xyz;
               #endif
               vec2 ilyosDir = (projectionMatrix * modelViewMatrix * vec4(ilyosNormale, 0.0)).xy;
               gl_Position.xy += normalize(ilyosDir + vec2(1e-6)) * ilyosEpaisseur * gl_Position.w;
