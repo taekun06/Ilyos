@@ -242,6 +242,7 @@
         customDrawCountSelect: document.getElementById("customDrawCountSelect"),
         customDeckSummary: document.getElementById("customDeckSummary"),
         customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
+        customScorerLeavesCheckbox: document.getElementById("customScorerLeavesCheckbox"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),
@@ -16369,7 +16370,7 @@
             majIntro();
           }
           [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -16431,6 +16432,7 @@
         const pioche = Number(els.customDrawCountSelect?.value ?? PIOCHE_CLASSIQUE);
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
+        if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
         return regles;
       }
 
@@ -24820,12 +24822,12 @@
               : null), 450);
           }
         } else {
-          // Un gardien qui valide une couronne (dépôt au village, hors sortie
-          // par une porte — mécanique historique déjà désactivée) est retiré
-          // du jeu : la couronne se paie du gardien qui l'a portée jusqu'ici.
-          // Exclu de la couronne gagnante ci-dessus pour ne pas faire
-          // disparaître le gardien pendant sa propre célébration de victoire.
-          if (char && !throughExit) removeCharacterFromGame(char);
+          // Le gardien qui valide une couronne reste sur son village. Seul le
+          // mode personnalisé peut rétablir l'ancienne règle, où il quittait
+          // le jeu (gardienRetireAuPoint, rules-core.js) ; jamais sur la
+          // couronne gagnante, pour ne pas le faire disparaître pendant sa
+          // propre célébration de victoire.
+          if (char && !throughExit && gardienRetireAuPoint()) removeCharacterFromGame(char);
           resetArtifactObject(artifact);
         }
       }
@@ -26161,7 +26163,9 @@
          — `cartesPiochees` : main tirée au début du tour, de 5 à 8 ;
          — `ilesPayantes` : poser une île coûte 2 cartes ; en échange, la pose
            n'est plus obligatoire. Une seule île par tour, comme avant, et le
-           gardien apparaît toujours sur l'île posée.
+           gardien apparaît toujours sur l'île posée ;
+         — `gardienRetireAuPoint` : l'ancienne règle, où le gardien qui valide
+           une couronne quitte le jeu. Par défaut il reste sur son village.
          La partie classique, les tutoriels et les énigmes n'ont aucune de ces
          clés : chaque lecteur retombe sur la valeur classique.
          ------------------------------------------------------------------- */
@@ -26189,6 +26193,10 @@
 
       function ilesPayantes(source = state) {
         return !!source?.rules?.ilesPayantes;
+      }
+
+      function gardienRetireAuPoint(source = state) {
+        return !!source?.rules?.gardienRetireAuPoint;
       }
 
       /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
@@ -49110,7 +49118,10 @@
         const joueur = state.players[cas.joueur ?? 0];
         const avant = joueur.score;
         const marques = scoreCrownsAtTurnStart(joueur);
-        return { marques, gain: joueur.score - avant };
+        // Gardiens du joueur encore en jeu : le porteur qui valide reste, sauf
+        // avec l'option « gardien sacrifié » du mode personnalisé.
+        const gardiens = state.characters.filter(g => g.player === joueur.id).length;
+        return { marques, gain: joueur.score - avant, gardiens };
       }
 
       /* =====================================================================

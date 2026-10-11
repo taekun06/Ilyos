@@ -4149,12 +4149,12 @@
               : null), 450);
           }
         } else {
-          // Un gardien qui valide une couronne (dépôt au village, hors sortie
-          // par une porte — mécanique historique déjà désactivée) est retiré
-          // du jeu : la couronne se paie du gardien qui l'a portée jusqu'ici.
-          // Exclu de la couronne gagnante ci-dessus pour ne pas faire
-          // disparaître le gardien pendant sa propre célébration de victoire.
-          if (char && !throughExit) removeCharacterFromGame(char);
+          // Le gardien qui valide une couronne reste sur son village. Seul le
+          // mode personnalisé peut rétablir l'ancienne règle, où il quittait
+          // le jeu (gardienRetireAuPoint, rules-core.js) ; jamais sur la
+          // couronne gagnante, pour ne pas le faire disparaître pendant sa
+          // propre célébration de victoire.
+          if (char && !throughExit && gardienRetireAuPoint()) removeCharacterFromGame(char);
           resetArtifactObject(artifact);
         }
       }

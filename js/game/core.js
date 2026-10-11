@@ -2757,7 +2757,7 @@
             majIntro();
           }
           [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -2819,6 +2819,7 @@
         const pioche = Number(els.customDrawCountSelect?.value ?? PIOCHE_CLASSIQUE);
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
+        if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
         return regles;
       }
 

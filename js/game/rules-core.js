@@ -707,7 +707,9 @@
          — `cartesPiochees` : main tirée au début du tour, de 5 à 8 ;
          — `ilesPayantes` : poser une île coûte 2 cartes ; en échange, la pose
            n'est plus obligatoire. Une seule île par tour, comme avant, et le
-           gardien apparaît toujours sur l'île posée.
+           gardien apparaît toujours sur l'île posée ;
+         — `gardienRetireAuPoint` : l'ancienne règle, où le gardien qui valide
+           une couronne quitte le jeu. Par défaut il reste sur son village.
          La partie classique, les tutoriels et les énigmes n'ont aucune de ces
          clés : chaque lecteur retombe sur la valeur classique.
          ------------------------------------------------------------------- */
@@ -735,6 +737,10 @@
 
       function ilesPayantes(source = state) {
         return !!source?.rules?.ilesPayantes;
+      }
+
+      function gardienRetireAuPoint(source = state) {
+        return !!source?.rules?.gardienRetireAuPoint;
       }
 
       /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
