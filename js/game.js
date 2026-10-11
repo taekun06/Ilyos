@@ -6892,13 +6892,6 @@
               .kaykit-cinema .kaykit-bande{transition:none;}
               .kaykit-cinema.bandes .kaykit-bande{height:7vh;}
             }
-            #gameScreen.kaykit-secousse .board-wrap{animation:kaykit-secousse-k .45s ease-in-out;}
-            @keyframes kaykit-secousse-k{0%,100%{transform:translate(0,0)}
-              20%{transform:translate(-7px,4px)}40%{transform:translate(6px,-5px)}
-              60%{transform:translate(-4px,-3px)}80%{transform:translate(4px,3px)}}
-            @media (prefers-reduced-motion: reduce){
-              #gameScreen.kaykit-secousse .board-wrap{animation:none;}
-            }
           `;
           document.head.appendChild(style);
         }
@@ -6933,13 +6926,78 @@
         }
       }
 
-      function kaykitSecousse() {
-        if (!els?.gameScreen) return;
-        els.gameScreen.classList.remove("kaykit-secousse");
-        void els.gameScreen.offsetWidth;   // force le redémarrage de l'animation
-        els.gameScreen.classList.add("kaykit-secousse");
-        setTimeout(() => els.gameScreen?.classList.remove("kaykit-secousse"), 500);
+      /* ===================== CHOCS =====================
+
+         Le poids d'un coup, dosé selon sa force : 1 = poussée ou île qui se
+         repose, 2 = poussée forte ou couronne volée, 3 = gardien jeté dans le
+         vide. Deux effets seulement, choisis parce qu'ils ne coûtent rien au
+         rendu : la caméra tremble (un décalage de sa position, appliqué le
+         temps d'une image puis retiré) et le téléphone vibre. Aucun objet,
+         aucune particule, aucun rendu supplémentaire.
+
+         Remplace l'ancienne secousse CSS de tout le plateau, qui emportait le
+         HUD avec la scène et ne connaissait qu'une seule force.
+
+         Réglages (menu > Graphismes) : `ilyosChocs` dans le stockage local.
+         Les secousses suivent aussi « réduire les animations » du système. */
+      const KAYKIT_CHOCS = {
+        // amplitude : fraction de la distance caméra-cible ; vibration : ms.
+        1: { amplitude: .0035, duree: 200, vibration: [14] },
+        2: { amplitude: .0065, duree: 280, vibration: [24] },
+        3: { amplitude: .011, duree: 430, vibration: [36, 50, 26] }
+      };
+      const KAYKIT_CHOCS_CLE = "ilyosChocs";
+
+      function kaykitChocsReglages() {
+        let lu = null;
+        try { lu = JSON.parse(localStorage.getItem(KAYKIT_CHOCS_CLE) || "null"); } catch (_) { }
+        return { secousses: lu?.secousses !== false, vibrations: lu?.vibrations !== false };
       }
+
+      function kaykitChocsRegler(cle, valeur) {
+        const reglages = { ...kaykitChocsReglages(), [cle]: !!valeur };
+        try { localStorage.setItem(KAYKIT_CHOCS_CLE, JSON.stringify(reglages)); } catch (_) { }
+        return reglages;
+      }
+
+      function kaykitChoc(force = 1) {
+        if (ilyosSimulationActive) return;
+        const choc = KAYKIT_CHOCS[force] || KAYKIT_CHOCS[1];
+        const reglages = kaykitChocsReglages();
+        if (reglages.vibrations && typeof navigator.vibrate === "function") {
+          try { navigator.vibrate(choc.vibration); } catch (_) { }
+        }
+        if (!kaykit3D || !reglages.secousses || kaykitReducedMotion()) return;
+        // Un choc plus faible n'écrase pas la fin d'un choc plus fort.
+        const maintenant = performance.now();
+        const enCours = kaykit3D.choc;
+        if (enCours && enCours.fin > maintenant && enCours.amplitude > choc.amplitude) return;
+        kaykit3D.choc = { debut: maintenant, fin: maintenant + choc.duree, amplitude: choc.amplitude };
+      }
+
+      /* Décale la caméra pour l'image en cours ; renvoie de quoi la remettre
+         en place juste après le rendu, pour que ni l'orbite ni les recadrages
+         ne voient jamais le tremblement. */
+      function kaykitAppliquerChoc(maintenant) {
+        const choc = kaykit3D?.choc;
+        const camera = kaykit3D?.camera;
+        if (!choc || !camera) return null;
+        if (maintenant >= choc.fin) { kaykit3D.choc = null; return null; }
+        const t = (maintenant - choc.debut) / (choc.fin - choc.debut);
+        const cible = kaykit3D.orbit?.target || kaykit3D.viewTarget;
+        const distance = cible ? camera.position.distanceTo(cible) : 12;
+        const ampleur = distance * choc.amplitude * (1 - t) * (1 - t);
+        const s = maintenant / 1000;
+        const droite = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const haut = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        const decalage = droite.multiplyScalar(Math.sin(s * 57) * ampleur)
+          .add(haut.multiplyScalar(Math.sin(s * 43 + 1.7) * ampleur * .8));
+        camera.position.add(decalage);
+        camera.updateMatrixWorld();
+        return () => { camera.position.sub(decalage); camera.updateMatrixWorld(); };
+      }
+
+      window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
 
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
          chute, qui déclenche une seconde chute, produit trois demandes en
@@ -12128,6 +12186,7 @@
             if (t > .88) obj.position.y = -Math.sin((t - .88) / .12 * Math.PI) * .022;
           },
           dispose: obj => {
+            kaykitChoc(1);   // l'île se repose
             // Les blocs sont RENDUS au groupe dynamique avec leur position
             // d'origine avant que le conteneur ne soit retiré. Les supprimer
             // avec lui ferait disparaître l'île pendant la ou les images qui
@@ -13632,6 +13691,7 @@
         // Surcharges visuelles limitées au dessin : les animations et les
         // interactions retrouvent leurs valeurs d'origine après chaque rendu.
         const restoreVisuals = window.ILYOS_VISUAL_EDITOR?.apply(kaykit3D);
+        const retirerChoc = kaykitAppliquerChoc(frameNow);
         try {
           kaykitStabiliserLumieresPonctuelles();
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
@@ -13639,6 +13699,7 @@
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
           }
         } finally {
+          retirerChoc?.();
           restoreVisuals?.();
         }
       }
@@ -15371,6 +15432,8 @@
         if (previousCarrierId != null && previousCarrierId !== char.id) {
           const previous = characterById(previousCarrierId);
           if (previous) playCrownFlight(previous.r, previous.c, char.r, char.c, { arc: .55, duration: 340 });
+          // Une passe entre alliés reste douce ; une couronne arrachée à l'adversaire frappe.
+          if (previous && previous.player !== char.player && typeof kaykitChoc === "function") kaykitChoc(2);
         }
         playCrownPickup(char.id, Number.isFinite(fromR) ? fromR : char.r, Number.isFinite(fromC) ? fromC : char.c);
         return true;
@@ -23857,7 +23920,9 @@
            jamais laisser le joueur derrière un cache. */
         if (result.fell) {
           kaykitBandesCinema(true, 1400);
-          kaykitSecousse();
+          kaykitChoc(3);
+        } else {
+          kaykitChoc(force >= 2 ? 2 : 1);
         }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la

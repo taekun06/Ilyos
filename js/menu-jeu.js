@@ -182,6 +182,33 @@
       label.appendChild(champ);
     });
     page('graphismes').appendChild(ciel);
+
+    // CHOCS : secousse de caméra et vibration au moment des coups forts
+    // (js/game/kaykit3d.js, KAYKIT_CHOCS). Sans coût de rendu.
+    const chocs = section('Chocs', 'Le poids des coups : poussées, chutes, couronnes volées.');
+    const chocsGrille = document.createElement('div');
+    chocsGrille.className = 'mj-grille-chocs';
+    chocsGrille.innerHTML = `
+      <button type="button" class="mj-choix" data-mj-choc="secousses"><b>Secousses</b><small>La caméra tremble à l’impact</small></button>
+      <button type="button" class="mj-choix" data-mj-choc="vibrations"><b>Vibrations</b><small>Sur téléphone compatible</small></button>`;
+    const majChocs = () => {
+      const reglages = window.ILYOS_CHOCS?.reglages?.() || {};
+      chocsGrille.querySelectorAll('[data-mj-choc]').forEach(bouton => {
+        bouton.setAttribute('aria-pressed', String(reglages[bouton.dataset.mjChoc] !== false));
+      });
+    };
+    chocsGrille.addEventListener('click', event => {
+      const bouton = event.target.closest('[data-mj-choc]');
+      if (!bouton || !window.ILYOS_CHOCS) return;
+      const cle = bouton.dataset.mjChoc;
+      const actif = bouton.getAttribute('aria-pressed') !== 'true';
+      window.ILYOS_CHOCS.regler(cle, actif);
+      majChocs();
+      if (actif) window.ILYOS_CHOCS.jouer(2);   // aperçu immédiat
+    });
+    majChocs();
+    chocs.appendChild(chocsGrille);
+    page('graphismes').appendChild(chocs);
     const tech = section('Infos techniques', 'État du moteur 3D et qualité de rendu.');
     deplacer(techToggle, tech);
     deplacer(techInfo, tech);
@@ -302,7 +329,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=1';
+    lien.href = './css/menu-jeu.css?v=2';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }

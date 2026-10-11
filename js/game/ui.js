@@ -3153,7 +3153,9 @@
            jamais laisser le joueur derrière un cache. */
         if (result.fell) {
           kaykitBandesCinema(true, 1400);
-          kaykitSecousse();
+          kaykitChoc(3);
+        } else {
+          kaykitChoc(force >= 2 ? 2 : 1);
         }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
