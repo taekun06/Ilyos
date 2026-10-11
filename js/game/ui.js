@@ -1388,6 +1388,13 @@
           if (state.selectedIslandId && state.selectedMagicPivot) {
             const crans = magicRotationStepsAtCell(r, c);
             if (crans) previsualiserRotationMagie(crans);
+            // L'île de départ se survole aussi : on compare avant de choisir.
+            // Pas le pivot (le geste « quitter »), sur lequel le pointeur se
+            // trouve juste après l'avoir choisi : les positions doivent alors
+            // rester toutes visibles. Hors de l'île, la comparaison s'arrête.
+            else if (islandAt(r, c)?.id === state.selectedIslandId && !isSameCell(state.selectedMagicPivot, [r, c])) {
+              previsualiserRotationMagie(0, { base: true });
+            } else if (state.magicSurvolBase) previsualiserRotationMagie(0);
             return;
           }
           const island = islandAt(r, c);
@@ -3579,11 +3586,13 @@
       /* Montrer une rotation précise (1 = ↻ 90°, 2 = 180°, 3 = ↺ 90°, 0 = l'île
          en place) : survol d'une position au sol ou d'un bouton de la barre.
          Ne joue rien ; seul le dessin 3D change. */
-      function previsualiserRotationMagie(steps) {
+      function previsualiserRotationMagie(steps, { base = false } = {}) {
         if (!(state?.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
         if (!state.selectedIslandId || !state.selectedMagicPivot) return;
         const voulu = ((steps || 0) % 4 + 4) % 4;
-        if ((((state.magicPreviewSteps || 0) % 4 + 4) % 4) === voulu) return;
+        const surBase = !voulu && base;
+        if ((((state.magicPreviewSteps || 0) % 4 + 4) % 4) === voulu && !!state.magicSurvolBase === surBase) return;
+        state.magicSurvolBase = surBase;
         state.magicPreviewSteps = voulu;
         updateMagicPreview();
         renderHudV2();
@@ -3642,6 +3651,7 @@
           state.reachable = new Set();
           state.magicPreviewDirection = 0;
           state.magicPreviewSteps = 0;
+          state.magicSurvolBase = false;
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
