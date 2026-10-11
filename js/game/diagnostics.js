@@ -1108,7 +1108,10 @@
         const joueur = state.players[cas.joueur ?? 0];
         const avant = joueur.score;
         const marques = scoreCrownsAtTurnStart(joueur);
-        return { marques, gain: joueur.score - avant };
+        // Gardiens du joueur encore en jeu : le porteur qui valide reste, sauf
+        // avec l'option « gardien sacrifié » du mode personnalisé.
+        const gardiens = state.characters.filter(g => g.player === joueur.id).length;
+        return { marques, gain: joueur.score - avant, gardiens };
       }
 
       /* =====================================================================

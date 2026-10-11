@@ -242,6 +242,7 @@
         customDrawCountSelect: document.getElementById("customDrawCountSelect"),
         customDeckSummary: document.getElementById("customDeckSummary"),
         customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
+        customScorerLeavesCheckbox: document.getElementById("customScorerLeavesCheckbox"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),

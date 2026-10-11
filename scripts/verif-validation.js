@@ -2,7 +2,7 @@
 
      node scripts/verif-validation.js
 
-   Deux règles y sont vérifiées, indépendamment de toute décision d'IA.
+   Trois règles y sont vérifiées, indépendamment de toute décision d'IA.
 
    1. Un gardien est OBLIGATOIRE pour marquer. Une couronne posée seule sur une
       case de village ne vaut plus rien — la règle V66, qui la validait sans
@@ -12,6 +12,10 @@
       village y interdit toute validation, même si le porteur se tient sur une
       autre case de ce village. Le blocage est propre à chaque village : tenir
       l'un ne neutralise pas l'autre, à l'opposé du plateau.
+
+   3. Le gardien qui valide RESTE en jeu, sur son village. L'option « gardien
+      sacrifié » du mode personnalisé (rules.gardienRetireAuPoint) rétablit
+      l'ancienne règle : il quitte alors le jeu.
 
    Le premier cas est un TÉMOIN POSITIF : sans lui, un test qui ne marque jamais
    passerait pour un test réussi.
@@ -39,7 +43,19 @@ const CAS = [
       islands: TERRAIN,
       characters: [{ id: "porteur", player: 0, r: 0, c: 0 }],
       crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
-    }
+    },
+    gardiens: 1
+  },
+  {
+    nom: "Gardien sacrifié (option) : le porteur quitte le jeu",
+    attendu: 1,
+    rules: { gardienRetireAuPoint: true },
+    spec: {
+      islands: TERRAIN,
+      characters: [{ id: "porteur", player: 0, r: 0, c: 0 }],
+      crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
+    },
+    gardiens: 0
   },
   {
     nom: "Couronne posée seule sur une case de validation",
@@ -115,11 +131,13 @@ async function main() {
   for (const cas of CAS) {
     const r = await page.evaluate(c => window.ILYOS_BENCH.validation(c), {
       spec: Object.assign({ seed: 1, islandPlacedThisTurn: true, hands: { 0: [], 1: [] } }, cas.spec),
+      rules: cas.rules,
       joueur: 0
     });
-    const ok = r.marques === cas.attendu;
+    const ok = r.marques === cas.attendu && (cas.gardiens === undefined || r.gardiens === cas.gardiens);
     console.log(`${cas.nom.padEnd(62, '.')} ${ok ? 'OK' : 'ÉCHEC'}`);
-    console.log(`      points marqués : ${r.marques} (attendu ${cas.attendu})`);
+    console.log(`      points marqués : ${r.marques} (attendu ${cas.attendu})`
+      + (cas.gardiens === undefined ? '' : ` · gardiens restants : ${r.gardiens} (attendu ${cas.gardiens})`));
     if (ok) reussis++;
     // La position suivante repart d'un instantané neuf : rien à nettoyer ici.
   }

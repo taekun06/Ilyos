@@ -242,6 +242,7 @@
         customDrawCountSelect: document.getElementById("customDrawCountSelect"),
         customDeckSummary: document.getElementById("customDeckSummary"),
         customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
+        customScorerLeavesCheckbox: document.getElementById("customScorerLeavesCheckbox"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),
@@ -5184,7 +5185,10 @@
             {
               vec3 ilyosNormale = normal;
               #ifdef USE_SKINNING
-                ilyosNormale = objectNormal;
+                /* MeshBasicMaterial (r128) ne déclare objectNormal qu'avec une
+                   envMap : la normale est donc déformée ici, comme skinnormal_vertex. */
+                mat4 ilyosPeau = skinWeight.x * boneMatX + skinWeight.y * boneMatY + skinWeight.z * boneMatZ + skinWeight.w * boneMatW;
+                ilyosNormale = (bindMatrixInverse * ilyosPeau * bindMatrix * vec4(normal, 0.0)).xyz;
               #endif
               vec2 ilyosDir = (projectionMatrix * modelViewMatrix * vec4(ilyosNormale, 0.0)).xy;
               gl_Position.xy += normalize(ilyosDir + vec2(1e-6)) * ilyosEpaisseur * gl_Position.w;
@@ -5712,6 +5716,9 @@
             kaykit3D.pointer,
             kaykit3D.camera
           );
+
+          const caseMagie = kaykitCaseSousFantomeMagie();
+          if (caseMagie) return caseMagie;
 
           const interactifs =
             kaykit3D.raycaster.intersectObjects(
@@ -10458,7 +10465,9 @@
           }
         });
 
-        if (!preview) addKayKitIslandHull(group, island, cells);
+        // Fantôme de rotation : le bloc KayKit suffit. La coque en dessous
+        // doublait la hauteur du verre et brouillait la lecture (Taekun).
+        if (!preview && !fantome) addKayKitIslandHull(group, island, cells);
         if (!preview && !ILYOS_RENDU_ANCIEN) addKayKitIslandLierre(group, island, cells);
 
         if (preview) {
@@ -11076,14 +11085,15 @@
           const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
           if (!style) return;
           const actif = steps === courant;
-          const estompe = !!courant && !actif;
+          // Survoler l'île de départ la montre seule, pour comparer.
+          const estompe = (!!courant && !actif) || (!courant && !!state.magicSurvolBase);
           // La rotation montrée est déjà le bloc principal
           // (renderKayKitMagicRotationPreview) : seulement ses pièces ici.
           if (!actif) {
             const cases = horsPivot(rotation.absCells);
             if (cases.length) {
               const bloc = makeKayKitIslandBlock({ id: `magic-option-${steps}`, owner: null, cells: cases }, { fantome: true });
-              kaykitFantomeTexture(bloc, style.teinte, estompe ? .12 : .45, .5);
+              kaykitFantomeTexture(bloc, style.teinte, estompe ? .14 : .72, .72);
               bloc.position.y = .055;
               group.add(bloc);
             }
@@ -11113,6 +11123,28 @@
             poser(makeKayKitPieceGhost(move.r, move.c, { crown: true, surfaceY: sol }));
           });
         });
+      }
+
+      /* Magie, pivot choisi : la case visée se lit sur le DESSUS des fantômes
+         et de l'île de départ, pas sur les plans de clic du plateau (dressés
+         plus haut, à .82). Vue en biais, l'écart faisait tomber un clic posé
+         sur un fantôme dans la case voisine, ou dans le vide : la rotation ne
+         se validait pas du premier coup (signalé). Une position de rotation
+         passe aussi devant un gardien, même masqué pendant l'aperçu, que le
+         lancer de rayon touche encore. */
+      function kaykitCaseSousFantomeMagie() {
+        if (!(state?.phase === "ACTION" && state.selectedActionType === "MAGIC"
+          && state.selectedIslandId && state.selectedMagicPivot)) return null;
+        if (typeof magicRotationStepsAtCell !== "function") return null;
+        const dessus = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(KAYKIT_LEVELS.islandTop + .1));
+        const point = kaykit3D.raycaster.ray.intersectPlane(dessus, new THREE.Vector3());
+        if (!point) return null;
+        const c = Math.round(point.x / KAYKIT_CELL_SPACING + (GRID - 1) / 2);
+        const r = Math.round(point.z / KAYKIT_CELL_SPACING + (GRID - 1) / 2);
+        if (!inside(r, c)) return null;
+        const depart = islandAt(r, c)?.id === state.selectedIslandId;
+        if (!depart && !magicRotationStepsAtCell(r, c)) return null;
+        return kaykit3D.hitMeshes.find(hit => hit.userData.r === r && hit.userData.c === c) || null;
       }
 
       /* Pendant qu'une rotation est montrée, ses gardiens et couronnes sont
@@ -16369,7 +16401,7 @@
             majIntro();
           }
           [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -16431,6 +16463,7 @@
         const pioche = Number(els.customDrawCountSelect?.value ?? PIOCHE_CLASSIQUE);
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
+        if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
         return regles;
       }
 
@@ -22059,6 +22092,13 @@
           if (state.selectedIslandId && state.selectedMagicPivot) {
             const crans = magicRotationStepsAtCell(r, c);
             if (crans) previsualiserRotationMagie(crans);
+            // L'île de départ se survole aussi : on compare avant de choisir.
+            // Pas le pivot (le geste « quitter »), sur lequel le pointeur se
+            // trouve juste après l'avoir choisi : les positions doivent alors
+            // rester toutes visibles. Hors de l'île, la comparaison s'arrête.
+            else if (islandAt(r, c)?.id === state.selectedIslandId && !isSameCell(state.selectedMagicPivot, [r, c])) {
+              previsualiserRotationMagie(0, { base: true });
+            } else if (state.magicSurvolBase) previsualiserRotationMagie(0);
             return;
           }
           const island = islandAt(r, c);
@@ -24250,11 +24290,13 @@
       /* Montrer une rotation précise (1 = ↻ 90°, 2 = 180°, 3 = ↺ 90°, 0 = l'île
          en place) : survol d'une position au sol ou d'un bouton de la barre.
          Ne joue rien ; seul le dessin 3D change. */
-      function previsualiserRotationMagie(steps) {
+      function previsualiserRotationMagie(steps, { base = false } = {}) {
         if (!(state?.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
         if (!state.selectedIslandId || !state.selectedMagicPivot) return;
         const voulu = ((steps || 0) % 4 + 4) % 4;
-        if ((((state.magicPreviewSteps || 0) % 4 + 4) % 4) === voulu) return;
+        const surBase = !voulu && base;
+        if ((((state.magicPreviewSteps || 0) % 4 + 4) % 4) === voulu && !!state.magicSurvolBase === surBase) return;
+        state.magicSurvolBase = surBase;
         state.magicPreviewSteps = voulu;
         updateMagicPreview();
         renderHudV2();
@@ -24313,6 +24355,7 @@
           state.reachable = new Set();
           state.magicPreviewDirection = 0;
           state.magicPreviewSteps = 0;
+          state.magicSurvolBase = false;
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
@@ -24820,12 +24863,12 @@
               : null), 450);
           }
         } else {
-          // Un gardien qui valide une couronne (dépôt au village, hors sortie
-          // par une porte — mécanique historique déjà désactivée) est retiré
-          // du jeu : la couronne se paie du gardien qui l'a portée jusqu'ici.
-          // Exclu de la couronne gagnante ci-dessus pour ne pas faire
-          // disparaître le gardien pendant sa propre célébration de victoire.
-          if (char && !throughExit) removeCharacterFromGame(char);
+          // Le gardien qui valide une couronne reste sur son village. Seul le
+          // mode personnalisé peut rétablir l'ancienne règle, où il quittait
+          // le jeu (gardienRetireAuPoint, rules-core.js) ; jamais sur la
+          // couronne gagnante, pour ne pas le faire disparaître pendant sa
+          // propre célébration de victoire.
+          if (char && !throughExit && gardienRetireAuPoint()) removeCharacterFromGame(char);
           resetArtifactObject(artifact);
         }
       }
@@ -26161,7 +26204,9 @@
          — `cartesPiochees` : main tirée au début du tour, de 5 à 8 ;
          — `ilesPayantes` : poser une île coûte 2 cartes ; en échange, la pose
            n'est plus obligatoire. Une seule île par tour, comme avant, et le
-           gardien apparaît toujours sur l'île posée.
+           gardien apparaît toujours sur l'île posée ;
+         — `gardienRetireAuPoint` : l'ancienne règle, où le gardien qui valide
+           une couronne quitte le jeu. Par défaut il reste sur son village.
          La partie classique, les tutoriels et les énigmes n'ont aucune de ces
          clés : chaque lecteur retombe sur la valeur classique.
          ------------------------------------------------------------------- */
@@ -26189,6 +26234,10 @@
 
       function ilesPayantes(source = state) {
         return !!source?.rules?.ilesPayantes;
+      }
+
+      function gardienRetireAuPoint(source = state) {
+        return !!source?.rules?.gardienRetireAuPoint;
       }
 
       /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
@@ -49110,7 +49159,10 @@
         const joueur = state.players[cas.joueur ?? 0];
         const avant = joueur.score;
         const marques = scoreCrownsAtTurnStart(joueur);
-        return { marques, gain: joueur.score - avant };
+        // Gardiens du joueur encore en jeu : le porteur qui valide reste, sauf
+        // avec l'option « gardien sacrifié » du mode personnalisé.
+        const gardiens = state.characters.filter(g => g.player === joueur.id).length;
+        return { marques, gain: joueur.score - avant, gardiens };
       }
 
       /* =====================================================================

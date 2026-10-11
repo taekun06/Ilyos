@@ -94,8 +94,10 @@ async function jouerPartie(pages, depart, campA, graine) {
       const restants = new Set(apres.characters.map(g => g.id));
       const disparus = [0, 1].map(j => avant.characters
         .filter(g => g.player === j && !restants.has(g.id)).length);
-      // Un gardien qui valide quitte aussi le jeu : on le retire du décompte.
-      const valides = [0, 1].map(j => (apres.players[j].score || 0) - (avant.players[j].score || 0));
+      // Avec l'ancienne règle (option « gardien sacrifié »), un gardien qui
+      // valide quitte aussi le jeu : on le retire du décompte.
+      const sacrifie = !!(apres.rules && apres.rules.gardienRetireAuPoint);
+      const valides = [0, 1].map(j => sacrifie ? (apres.players[j].score || 0) - (avant.players[j].score || 0) : 0);
       const perdus = [0, 1].map(j => Math.max(0, disparus[j] - valides[j]));
       pertes[campA === 0 ? 'A' : 'B'] += perdus[0];
       pertes[campA === 1 ? 'A' : 'B'] += perdus[1];

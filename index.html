@@ -1232,6 +1232,10 @@
             <input type="checkbox" id="customPaidIslandsCheckbox">
             <span>Îles payantes : poser une île coûte 2 cartes, mais n’est plus obligatoire</span>
           </label>
+          <label class="symmetric-setup-toggle" for="customScorerLeavesCheckbox">
+            <input type="checkbox" id="customScorerLeavesCheckbox">
+            <span>Gardien sacrifié : le gardien qui valide une couronne quitte le jeu</span>
+          </label>
         </div>
 
         <div id="symmetricPresetControls" class="symmetric-board-controls">
@@ -1501,6 +1505,8 @@
           circuler en même temps.</li>
         <li>Une couronne rapporte un point uniquement si elle se trouve encore dans l’une des 3 cases de votre village
           au début de votre tour. L’amener au village pendant votre tour ne marque donc pas immédiatement.</li>
+        <li>Le gardien qui valide une couronne reste en jeu, sur son village. En mode personnalisé, l’option
+          « Gardien sacrifié » le retire du jeu à la place.</li>
         <li>Le premier joueur à valider trois couronnes gagne.</li>
       </ol>
       <div class="modal-actions"><button id="closeRulesBtn" class="primary-btn">Compris</button></div>
