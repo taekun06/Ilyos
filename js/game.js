@@ -21326,6 +21326,51 @@
       /* Carte jouée : une petite carte part du bouton d'action (ou du portrait
          de l'adversaire) vers le plateau et s'efface. Un seul élément DOM animé
          par le compositeur (Web Animations), retiré à la fin. */
+      /* Liseré du joueur actif : à l'ouverture du tour, un cadre net et
+         intense à sa couleur ; dès sa première action, il se fond en une lueur diffuse venue du haut et du
+         bas. Deux calques CSS fixes, seule leur opacité change. */
+      function lisereCouleur(hex, alpha) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+        if (!m) return `rgba(255,255,255,${alpha})`;
+        const n = parseInt(m[1], 16);
+        return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+      }
+      function renderLisereTour() {
+        if (typeof document === "undefined") return;
+        let el = renderLisereTour.el;
+        if (!el) {
+          el = renderLisereTour.el = document.createElement("div");
+          el.className = "lisere-tour";
+          el.innerHTML = '<i class="fort"></i><i class="doux"></i>';
+          document.body.appendChild(el);
+        }
+        const p = currentPlayer?.();
+        const enJeu = !!p && state?.winner === null && !document.getElementById("gameScreen")?.classList.contains("hidden");
+        el.hidden = !enJeu;
+        document.body.dataset.tourActif = enJeu && state.players.length === 2 ? String(state.currentPlayer) : "";
+        if (!enJeu) return;
+        const couleur = p.color || "#ffffff";
+        if (renderLisereTour.couleur !== couleur) {
+          renderLisereTour.couleur = couleur;
+          el.style.setProperty("--lt-plein", lisereCouleur(couleur, 1));
+          el.style.setProperty("--lt-halo", lisereCouleur(couleur, .53));
+          el.style.setProperty("--lt-haut", lisereCouleur(couleur, .31));
+          el.style.setProperty("--lt-bas", lisereCouleur(couleur, .27));
+          el.style.setProperty("--lt-nul", lisereCouleur(couleur, 0));
+        }
+        const cle = `${state.turn}/${state.currentPlayer}`;
+        if (renderLisereTour.cle !== cle) { renderLisereTour.cle = cle; renderLisereTour.acte = false; }
+        // L'humain qui annule tout son tour retrouve le liseré net.
+        const agi = renderLisereTour.acte && (p.isAI || state.undoHistory?.length > 0);
+        el.dataset.mode = agi ? "doux" : "fort";
+      }
+      // Première action du tour (carte jouée, île posée) : le liseré s'adoucit.
+      function lisereMarquerAction() {
+        if (ilyosSimulationActive || !state) return;
+        renderLisereTour.cle = `${state.turn}/${state.currentPlayer}`;
+        renderLisereTour.acte = true;
+      }
+
       const CARTE_ENVOL_BOUTONS = { MOVE: "ov2Move", PUSH: "ov2Push", MAGIC: "ov2Magic" };
       function carteJoueeEnvol(type, player) {
         if (ilyosSimulationActive || !player || typeof document === "undefined") return;
@@ -21383,6 +21428,7 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
+        renderLisereTour();
         // V78 (passe fluidité) : remplace les MutationObserver globaux sur
         // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
         // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
@@ -25769,7 +25815,7 @@
             }));
           }
 
-          if (requested - remaining > 0) carteJoueeEnvol(type, player);
+          if (requested - remaining > 0) { carteJoueeEnvol(type, player); lisereMarquerAction(); }
           return requested - remaining;
         };
 
@@ -26125,6 +26171,7 @@
         };
         state.islands.push(ile);
         state.islandPlacedThisTurn = true;
+        lisereMarquerAction();
 
         let gardien = null;
         let couronneRamassee = null;
