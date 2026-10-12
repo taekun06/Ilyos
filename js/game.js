@@ -10886,6 +10886,11 @@
         const seamMaterial = new THREE.MeshBasicMaterial({
           color: 0x183027, transparent: true, opacity: .72, depthWrite: false, depthTest: false
         });
+        /* Toutes les coutures sont fusionnées en un seul maillage : même
+           matériau, sans test de profondeur, donc même image qu'un maillage
+           par segment — mais un seul appel de rendu au lieu de plusieurs
+           dizaines en fin de partie. */
+        const morceaux = new THREE.Group();
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
             const current = islandIdAt(r, c);
@@ -10906,11 +10911,17 @@
                 seamMaterial
               );
               seam.position.set(x, KAYKIT_LEVELS.islandTop + .080, z);
-              seam.renderOrder = 86;
-              group.add(seam);
+              morceaux.add(seam);
             });
           }
         }
+        if (!morceaux.children.length) return;
+        kaykitFusionnerParTexture(morceaux).fusionnes.forEach(couture => {
+          couture.renderOrder = 86;
+          couture.matrixAutoUpdate = false;
+          group.add(couture);
+        });
+        seamMaterial.dispose();
       }
 
       // Halo doré du sanctuaire : un unique disque radial partagé (comme
@@ -30027,7 +30038,13 @@
          plannerChercherPlan / plannerChercherPlanRobuste / plannerEvaluerRobustesse
          restent synchrones pour les bancs et les outils (plannerExecuter) ;
          seule l'IA en partie passe par plannerExecuterDecoupe. */
+      /* La tranche s'allonge avec le coût d'une image : sur une machine où
+         dessiner prend 60 ms, des tranches de 12 ms laisseraient l'IA
+         réfléchir cinq fois plus longtemps. Au double de la dernière pause,
+         la réflexion garde au moins les deux tiers du temps. */
       const PLANNER_TRANCHE_MS = 12;
+      const PLANNER_TRANCHE_MAX_MS = 100;
+      let plannerTranche = PLANNER_TRANCHE_MS;
       let plannerTempsCede = 0;
       let plannerDecoupe = false;
       let plannerDebutTranche = 0;
@@ -30037,7 +30054,7 @@
       }
 
       function plannerDoitCeder() {
-        return plannerDecoupe && performance.now() - plannerDebutTranche > PLANNER_TRANCHE_MS;
+        return plannerDecoupe && performance.now() - plannerDebutTranche > plannerTranche;
       }
 
       /* Un pas dans l'état simulé, la pause dans l'état réel. */
@@ -30074,13 +30091,16 @@
 
       async function plannerExecuterDecoupe(etapes) {
         plannerDecoupe = true;
+        plannerTranche = PLANNER_TRANCHE_MS;
         plannerDebutTranche = performance.now();
         try {
           let pas = etapes.next();
           while (!pas.done) {
             const pause = performance.now();
             if (!document.hidden) await plannerRendreLaMain();
-            plannerTempsCede += performance.now() - pause;
+            const cede = performance.now() - pause;
+            plannerTempsCede += cede;
+            plannerTranche = Math.min(PLANNER_TRANCHE_MAX_MS, Math.max(PLANNER_TRANCHE_MS, 2 * cede));
             plannerDebutTranche = performance.now();
             pas = etapes.next();
           }
