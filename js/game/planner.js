@@ -3101,11 +3101,13 @@
          seule l'IA en partie passe par plannerExecuterDecoupe. */
       /* La tranche s'allonge avec le coût d'une image : sur une machine où
          dessiner prend 60 ms, des tranches de 12 ms laisseraient l'IA
-         réfléchir cinq fois plus longtemps. Au double de la dernière pause,
-         la réflexion garde au moins les deux tiers du temps. */
+         réfléchir cinq fois plus longtemps. Au triple de la dernière pause,
+         la réflexion garde au moins les trois quarts du temps ; le plafond
+         assure encore une image par seconde sur les machines les plus lentes. */
       const PLANNER_TRANCHE_MS = 12;
-      const PLANNER_TRANCHE_MAX_MS = 100;
+      const PLANNER_TRANCHE_MAX_MS = 1000;
       let plannerTranche = PLANNER_TRANCHE_MS;
+      let plannerGeneration = 0;
       let plannerTempsCede = 0;
       let plannerDecoupe = false;
       let plannerDebutTranche = 0;
@@ -3150,7 +3152,13 @@
         return new Promise(r => { plannerReveils.push(r); plannerCanalPause.port2.postMessage(0); });
       }
 
-      async function plannerExecuterDecoupe(etapes) {
+      /* Une seule réflexion découpée à la fois : en lancer une nouvelle (tour
+         forcé, partie relancée) abandonne la précédente à sa prochaine pause,
+         qui rend alors null. Deux réflexions entrelacées compteraient deux
+         fois leurs pauses et fausseraient l'horloge des budgets. `continuer`
+         permet aussi à l'appelant d'abandonner (partie quittée). */
+      async function plannerExecuterDecoupe(etapes, continuer = null) {
+        const generation = ++plannerGeneration;
         plannerDecoupe = true;
         plannerTranche = PLANNER_TRANCHE_MS;
         plannerDebutTranche = performance.now();
@@ -3159,15 +3167,20 @@
           while (!pas.done) {
             const pause = performance.now();
             if (!document.hidden) await plannerRendreLaMain();
+            if (generation !== plannerGeneration || (continuer && !continuer())) {
+              etapes.return?.();
+              return null;
+            }
             const cede = performance.now() - pause;
             plannerTempsCede += cede;
-            plannerTranche = Math.min(PLANNER_TRANCHE_MAX_MS, Math.max(PLANNER_TRANCHE_MS, 2 * cede));
+            plannerTranche = Math.min(PLANNER_TRANCHE_MAX_MS, Math.max(PLANNER_TRANCHE_MS, 3 * cede));
+            plannerDecoupe = true;
             plannerDebutTranche = performance.now();
             pas = etapes.next();
           }
           return pas.value;
         } finally {
-          plannerDecoupe = false;
+          if (generation === plannerGeneration) plannerDecoupe = false;
         }
       }
 
