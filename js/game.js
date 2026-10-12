@@ -1291,6 +1291,26 @@
         if (gardiens.get(cle) !== material) material.dispose();
       }
 
+      /* ANTICRÉNELAGE PAYÉ UNE SEULE FOIS. Le bloom rend la scène dans une cible
+         multi-échantillonnée (kaykitBloomEnsure) ; un canvas créé avec
+         antialias:true multi-échantillonnait EN PLUS l'écran, où l'on ne dessine
+         pourtant qu'un quad plein écran déjà lissé. Second tampon 4× de la taille
+         de l'image, écrit puis résolu à chaque image, pour rien : sur une puce
+         graphique intégrée, c'est de la bande passante et des dizaines de Mo de
+         mémoire partagée. Quand WebGL2 sait multi-échantillonner une cible, le
+         canvas est donc créé sans anticrénelage et TOUTE image passe par la
+         cible, bloom ou non (voir kaykitRenderAvecBloom). Sans WebGL2, rien ne
+         change : le canvas garde son anticrénelage et le rendu reste direct. */
+      function kaykitCibleMultiDisponible() {
+        if (!THREE.WebGLMultisampleRenderTarget) return false;
+        try {
+          const essai = document.createElement("canvas").getContext("webgl2");
+          if (!essai) return false;
+          essai.getExtension("WEBGL_lose_context")?.loseContext();
+          return true;
+        } catch (_) { return false; }
+      }
+
       function initKayKit3D() {
         if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
@@ -1355,13 +1375,16 @@
         els.boardWrap.appendChild(cameraHint);
 
         let renderer;
+        // Anticrénelage UNE fois par image : voir kaykitCibleMultiDisponible().
+        const aaParCible = kaykitCibleMultiDisponible();
         try {
-          renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+          renderer = new THREE.WebGLRenderer({ canvas, antialias: !aaParCible, alpha: true, powerPreference: "high-performance" });
         } catch (error) {
           console.warn("WebGL indisponible : plateau HTML conservé.", error);
           canvas.remove(); badge.remove(); controls.remove(); status.remove(); cameraHint.remove();
           return;
         }
+        kaykitBloom.aaParCible = aaParCible && renderer.capabilities.isWebGL2;
         renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -4222,7 +4245,11 @@
         gridFill.renderOrder = 1;
         staticGroup.add(gridFill);
 
-        const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+        /* Cases-cibles du lancer de rayon : jamais dessinées. Raycaster ne regarde
+           pas material.visible, alors que le moteur de rendu les ignore : 121
+           appels de dessin et une couche transparente sur tout le plateau en
+           moins à chaque image, pour une image identique (opacité nulle). */
+        const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, visible: false });
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
             const p = kaykitCellPosition(r, c, .82);
@@ -4749,7 +4776,7 @@
         halo.rotation.x = Math.PI / 2; halo.position.y = .07; halo.renderOrder = 28; group.add(halo);
         const hitProxy = new THREE.Mesh(
           kaykitGeometry("crown-hit-proxy-v21", () => new THREE.SphereGeometry(.22, 12, 8)),
-          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false })
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, visible: false })
         );
         hitProxy.position.y = .22;
         hitProxy.name = "ilyos-couronne-cible";
@@ -8664,7 +8691,7 @@
         const hit = new THREE.Mesh(
           // Toute la case, et non un disque central : c'est la case qu'on survole.
           kaykitGeometry("unified-push-destination-hit-v2", () => new THREE.PlaneGeometry(.92, .92)),
-          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, side: THREE.DoubleSide, visible: false })
         );
         hit.rotation.x = -Math.PI / 2;
         hit.position.set(p.x, p.y + (doublon ? .006 : .012), p.z);
@@ -8698,7 +8725,7 @@
            sphère reste invisible (opacity .001) — seul son rayon change. */
         const hit = new THREE.Mesh(
           kaykitGeometry("unified-push-death-hit-v1", () => new THREE.SphereGeometry(.56, 12, 8)),
-          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false })
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, visible: false })
         );
         hit.position.copy(position);
         if (doublon) hit.scale.setScalar(.97);
@@ -13651,7 +13678,8 @@
       const kaykitBloom = {
         pret: false, multiEchantillon: false, cibleScene: null, cibleA: null, cibleB: null,
         camera: null, quad: null, matSeuil: null, matFlou: null, matCompo: null,
-        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false, derniereImage: 0
+        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false, derniereImage: 0,
+        aaParCible: false
       };
 
       function kaykitBloomShader(uniforms, fragment) {
@@ -13783,7 +13811,10 @@
       /** Rend la scène avec bloom. Retourne false si le bloom n'a pas pu s'appliquer,
        *  auquel cas l'appelant fait un rendu direct. */
       function kaykitRenderAvecBloom(renderer, scene, camera) {
-        if (!KAYKIT_BLOOM.actif || kaykitBloom.coupeAuto) return false;
+        const bloomVoulu = KAYKIT_BLOOM.actif && !kaykitBloom.coupeAuto;
+        // Canvas sans anticrénelage (kaykitCibleMultiDisponible) : même sans bloom,
+        // l'image passe par la cible multi-échantillonnée, seule à la lisser.
+        if (!bloomVoulu && !kaykitBloom.aaParCible) return false;
         if (!kaykitBloomEnsure(renderer)) return false;
         // Sans multi-échantillonnage disponible, le bloom coûterait l'anticrénelage de
         // toute la scène pour un halo : le marché n'en vaut pas la peine.
@@ -13793,6 +13824,16 @@
         renderer.setRenderTarget(B.cibleScene);
         renderer.clear();
         renderer.render(scene, camera);
+
+        if (!bloomVoulu) {
+          // Simple recopie : la composition avec une force nulle rend la scène
+          // telle quelle, sans programme de shader supplémentaire à compiler.
+          B.matCompo.uniforms.tScene.value = B.cibleScene.texture;
+          B.matCompo.uniforms.tBloom.value = B.cibleA.texture;
+          B.matCompo.uniforms.uForce.value = 0;
+          kaykitBloomPasse(renderer, B.matCompo, null);
+          return true;
+        }
 
         B.matSeuil.uniforms.tSource.value = B.cibleScene.texture;
         B.matSeuil.uniforms.uSeuil.value = KAYKIT_BLOOM.seuil;
@@ -13835,6 +13876,41 @@
         return true;
       }
 
+      /* CADENCE SUR LES ÉCRANS RAPIDES. requestAnimationFrame suit la fréquence de
+         l'écran : 120 Hz sur beaucoup de téléphones récents et de portables,
+         144 Hz et plus sur les écrans de jeu. Le moteur y dessinait deux fois plus
+         d'images qu'à 60 Hz pour un plateau qui ne le montre pas — et un téléphone
+         dont la puce graphique est modeste chauffait d'autant. Au-delà de ~80 Hz,
+         on ne dessine qu'une image sur N, N choisi pour rester au plus près de
+         60 i/s avec un rythme RÉGULIER (une image sur deux à 120 Hz) : jamais de
+         seuil de temps comparé à un horodatage qui tremble, la cause du
+         miroitement de l'ancien plafond à 30 i/s. La fréquence de l'écran se
+         déduit des écarts les plus courts entre deux appels, que les images
+         sautées mesurent fidèlement même quand le dessin est lent. Sous 80 Hz
+         (60, 75 Hz, ou une machine qui n'atteint pas la fréquence de son écran),
+         chaque appel dessine, exactement comme avant.
+         window.ILYOS_CADENCE_LIBRE = true rend la pleine fréquence. */
+      const kaykitCadence = { dernier: 0, ecarts: [], depuisMesure: 0, diviseur: 1, compteur: 0 };
+
+      function kaykitImageSautee(maintenant) {
+        const c = kaykitCadence;
+        const ecart = maintenant - c.dernier;
+        c.dernier = maintenant;
+        if (ecart > 2 && ecart < 100) {
+          c.ecarts.push(ecart);
+          if (c.ecarts.length > 60) c.ecarts.shift();
+        }
+        if (c.ecarts.length >= 30 && ++c.depuisMesure >= 30) {
+          c.depuisMesure = 0;
+          const tries = c.ecarts.slice().sort((a, b) => a - b);
+          const vsync = tries[Math.floor(tries.length * .25)];
+          c.diviseur = vsync < 12.5 ? Math.max(1, Math.floor(16.7 / vsync + .25)) : 1;
+        }
+        if (window.ILYOS_CADENCE_LIBRE || c.diviseur <= 1) { c.compteur = 0; return false; }
+        c.compteur = (c.compteur + 1) % c.diviseur;
+        return c.compteur !== 0;
+      }
+
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
@@ -13852,6 +13928,12 @@
           kaykit3D.clock.getDelta();
           return;
         }
+        if (kaykitImageSautee(frameTime)) return;
+        // Retouches de couleurs de js/ether-game-theme.js : appliquées ici, au
+        // même moment qu'avant (avant toute mise à jour de l'image), mais
+        // seulement pour les images réellement dessinées — sa propre boucle
+        // tournait à chaque rafraîchissement, menu compris.
+        window.ILYOS_ETHER_THEME?.apply?.();
         // L'ancien throttle "performance" (~30 i/s dès qu'aucune animation
         // n'était en cours) a été retiré : il plafonnait le rendu même sans
         // aucune contrainte matérielle réelle, provoquant lui-même du
