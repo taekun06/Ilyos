@@ -1220,7 +1220,7 @@
       function kaykitDensiteRendu(plafond = 1.5) {
         const budget = Number(window.ILYOS_PIXEL_BUDGET) > 0
           ? Number(window.ILYOS_PIXEL_BUDGET)
-          : KAYKIT_BUDGET_PIXELS_DEFAUT;
+          : kaykitEconomieActive ? KAYKIT_ECONOMIE_BUDGET_PIXELS : KAYKIT_BUDGET_PIXELS_DEFAUT;
         const ecran = window.devicePixelRatio || 1;
         const tenue = Math.sqrt(budget / kaykitSurfaceCss());
         // Le plancher passe AVANT les plafonds : il ne doit jamais faire monter
@@ -1440,7 +1440,7 @@
         const sun = new THREE.DirectionalLight(0xffeed2, 2.05);
         sun.position.set(-6, 14, 8);
         sun.castShadow = true;
-        sun.shadow.mapSize.set(1024, 1024);
+        sun.shadow.mapSize.setScalar(kaykitEconomieActive ? KAYKIT_ECONOMIE_OMBRE : KAYKIT_OMBRE_NORMALE);
         sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
         sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
         sun.shadow.camera.near = .5; sun.shadow.camera.far = 35;
@@ -3433,6 +3433,8 @@
           // de nuages à l'horizon" plutôt que "boules" une fois éloignés.
           puff.scale.set(scale, scale * THREE.MathUtils.lerp(.50, .30, spread), 1);
           puff.renderOrder = -880;
+          // Grands calques transparents : retirés en mode Économie.
+          puff.userData.economie = true;
           sky.add(puff);
           kaykit3D.skyLayers.push({
             object: puff, base: puff.position.clone(),
@@ -3451,6 +3453,7 @@
 
         parent.add(sky);
         kaykit3D.skyGroup = sky;
+        kaykitEconomieAppliquerCiel();
       }
 
       /**
@@ -7029,6 +7032,53 @@
         camera.updateMatrixWorld();
         return () => { camera.position.sub(decalage); camera.updateMatrixWorld(); };
       }
+
+      /* MODE ÉCONOMIE (menu > Graphismes, désactivé par défaut). Pour les
+         machines modestes : coupe le halo lumineux (bloom), les poussières et
+         les grands amas de nuages transparents du ciel, ramène la résolution à
+         un million de pixels au plus et l'ombre du soleil à 512 px. Tout se
+         règle à chaud, sans recharger la page. Réglage `ilyosEconomie` dans le
+         stockage local. */
+      const KAYKIT_ECONOMIE_CLE = "ilyosEconomie";
+      const KAYKIT_ECONOMIE_BUDGET_PIXELS = 1000000;
+      const KAYKIT_ECONOMIE_OMBRE = 512;
+      const KAYKIT_OMBRE_NORMALE = 1024;
+      let kaykitEconomieActive = (() => {
+        try { return localStorage.getItem(KAYKIT_ECONOMIE_CLE) === "1"; } catch (_) { return false; }
+      })();
+
+      function kaykitEconomieAppliquerCiel() {
+        if (!kaykit3D) return;
+        const visible = !kaykitEconomieActive;
+        (kaykit3D.skyDustFields || []).forEach(champ => { if (champ.object) champ.object.visible = visible; });
+        kaykit3D.skyGroup?.traverse(objet => { if (objet.userData.economie) objet.visible = visible; });
+      }
+
+      function kaykitEconomieAppliquer() {
+        if (!kaykit3D) return;
+        kaykitEconomieAppliquerCiel();
+        kaykitAppliquerDensite();
+        // r128 ne relit mapSize qu'à la création de la carte d'ombre : il faut
+        // la libérer pour que la nouvelle taille serve.
+        const taille = kaykitEconomieActive ? KAYKIT_ECONOMIE_OMBRE : KAYKIT_OMBRE_NORMALE;
+        kaykit3D.scene.traverse(objet => {
+          // Taille de la carte RÉELLE : js/complete-polish.js réécrit mapSize
+          // sans recréer la carte, mapSize ne dit donc pas ce qui est en place.
+          if (!objet.isDirectionalLight || !objet.castShadow) return;
+          if ((objet.shadow.map ? objet.shadow.map.width : objet.shadow.mapSize.x) === taille) return;
+          objet.shadow.mapSize.set(taille, taille);
+          if (objet.shadow.map) { objet.shadow.map.dispose(); objet.shadow.map = null; }
+        });
+      }
+
+      function kaykitEconomieRegler(actif) {
+        kaykitEconomieActive = !!actif;
+        try { localStorage.setItem(KAYKIT_ECONOMIE_CLE, kaykitEconomieActive ? "1" : "0"); } catch (_) { }
+        kaykitEconomieAppliquer();
+        return kaykitEconomieActive;
+      }
+
+      window.ILYOS_ECONOMIE = { actif: () => kaykitEconomieActive, regler: kaykitEconomieRegler };
 
       window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
 
@@ -13811,7 +13861,7 @@
       /** Rend la scène avec bloom. Retourne false si le bloom n'a pas pu s'appliquer,
        *  auquel cas l'appelant fait un rendu direct. */
       function kaykitRenderAvecBloom(renderer, scene, camera) {
-        const bloomVoulu = KAYKIT_BLOOM.actif && !kaykitBloom.coupeAuto;
+        const bloomVoulu = KAYKIT_BLOOM.actif && !kaykitBloom.coupeAuto && !kaykitEconomieActive;
         // Canvas sans anticrénelage (kaykitCibleMultiDisponible) : même sans bloom,
         // l'image passe par la cible multi-échantillonnée, seule à la lisser.
         if (!bloomVoulu && !kaykitBloom.aaParCible) return false;

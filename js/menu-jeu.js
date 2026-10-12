@@ -209,6 +209,24 @@
     majChocs();
     chocs.appendChild(chocsGrille);
     page('graphismes').appendChild(chocs);
+
+    // PERFORMANCE : mode Économie pour les machines modestes
+    // (js/game/kaykit3d.js, ILYOS_ECONOMIE). Désactivé par défaut.
+    const perf = section('Performance', 'Pour un ordinateur ou un téléphone qui peine à suivre.');
+    const perfGrille = document.createElement('div');
+    perfGrille.className = 'mj-grille-chocs';
+    perfGrille.innerHTML = `
+      <button type="button" class="mj-choix" data-mj-economie><b>Économie</b><small>Moins d’effets de lumière, plus fluide</small></button>`;
+    const boutonEconomie = perfGrille.querySelector('[data-mj-economie]');
+    const majEconomie = () => boutonEconomie.setAttribute('aria-pressed', String(!!window.ILYOS_ECONOMIE?.actif?.()));
+    boutonEconomie.addEventListener('click', () => {
+      if (!window.ILYOS_ECONOMIE) return;
+      window.ILYOS_ECONOMIE.regler(!window.ILYOS_ECONOMIE.actif());
+      majEconomie();
+    });
+    majEconomie();
+    perf.appendChild(perfGrille);
+    page('graphismes').appendChild(perf);
     const tech = section('Infos techniques', 'État du moteur 3D et qualité de rendu.');
     deplacer(techToggle, tech);
     deplacer(techInfo, tech);
