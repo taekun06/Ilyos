@@ -4362,6 +4362,7 @@
         });
         kaykitBandesCinema(true, 4000);
 
+        tonFinDePartie("egalite");
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -4374,7 +4375,7 @@
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx("draw");
       }
 
       function showVictory(player, texte = null) {
@@ -4397,6 +4398,16 @@
         kaykitBandesCinema(true, 4000);
 
 
+        /* Le joueur de cet appareil a-t-il perdu ? Contre l'IA ou en ligne
+           seulement : en duel local sur un même écran, la fenêtre salue le
+           vainqueur, qui est assis là. Une défaite n'a pas la fanfare ni la
+           lumière dorée de la victoire : même fenêtre, ton éteint. */
+        const joueurAppareil = progressionJoueurDeLAppareil();
+        const defaite = !!joueurAppareil
+          && (state.onlineMode || player.isAI)
+          && !memeEquipe(player.id, joueurAppareil.id);
+        tonFinDePartie(defaite ? "defaite" : "victoire");
+
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = gardiensPartages()
@@ -4417,7 +4428,19 @@
         els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx(defaite ? "defeat" : "victory");
+      }
+
+      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
+         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
+         fenêtre, ses boutons et le bilan restent les mêmes. */
+      function tonFinDePartie(ton) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.classList.toggle("fin-defaite", ton === "defaite");
+        modal.classList.toggle("fin-egalite", ton === "egalite");
+        const kicker = modal.querySelector(".victory-kicker");
+        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {

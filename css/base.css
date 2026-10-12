@@ -5502,6 +5502,26 @@
            0 0 18px currentColor;
    }
 
+   /* Défaite et égalité : même fenêtre, lumière éteinte (pas de rayons
+      dorés qui tournent) et couronnes ternies. Voir tonFinDePartie (ui.js). */
+   #victoryModal.fin-defaite .victory-light,
+   #victoryModal.fin-egalite .victory-light {
+       display: none;
+   }
+
+   #victoryModal.fin-defaite .victory-crowns span {
+       filter: grayscale(1) brightness(.62);
+       animation: none;
+   }
+
+   #victoryModal.fin-defaite .victory-kicker {
+       color: #9aa6bf;
+   }
+
+   #victoryModal.fin-egalite .victory-kicker {
+       color: #cfd6ea;
+   }
+
    .victory-text {
        position: relative;
        max-width: 440px;

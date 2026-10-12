@@ -2218,7 +2218,7 @@
         // ILYOS_TEST.sfx("spawn", "lumiere") pour auditionner une variante.
         sfx: (type, variant) => {
           const types = ["card", "island", "spawn", "move", "push", "rotate", "magic",
-            "crownTake", "crownDrop", "crown", "turn", "victory", "fall", "error", "undo"];
+            "crownTake", "crownDrop", "crown", "turn", "victory", "defeat", "draw", "fall", "error", "undo"];
           if (!type) return types;
           playSfx(type, variant ? { variant } : undefined);
           return variant ? `${type} · ${variant}` : type;

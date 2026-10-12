@@ -20687,6 +20687,23 @@
             sfxNoise({ duration: 1.2, gain: .1, from: 500, to: 4500, q: 1, attack: .5, reverb: .85 });
             break;
 
+          case "defeat":
+            /* Défaite : le miroir sobre de la fanfare. Trois notes qui
+               descendent, plus courtes et plus douces, sans le souffle qui
+               montait. Rien de punitif : la partie est finie, on le dit. */
+            duckMusic(.45, 2.2);
+            [392.0, 311.13, 261.63].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.9 - index * .2, gain: .16 - index * .02, delay: index * .26, reverb: .7, ratios: BELL_PROFILES.ceremonie }));
+            sfxSweep({ fromHz: 110, toHz: 70, duration: 1.4, gain: .08, type: "triangle", delay: .5, reverb: .5 });
+            break;
+
+          case "draw":
+            /* Égalité : deux notes suspendues, ni montée ni chute. */
+            duckMusic(.4, 2);
+            [392.0, 587.33].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.8, gain: .15, delay: index * .2, reverb: .75, ratios: BELL_PROFILES.ceremonie }));
+            break;
+
           case "crownTake":
             /* Ramasser la couronne. Volontairement LÉGER : le son "crown" est
                désormais réservé au point marqué, et l'entendre à chaque
@@ -25129,6 +25146,7 @@
         });
         kaykitBandesCinema(true, 4000);
 
+        tonFinDePartie("egalite");
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -25141,7 +25159,7 @@
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx("draw");
       }
 
       function showVictory(player, texte = null) {
@@ -25164,6 +25182,16 @@
         kaykitBandesCinema(true, 4000);
 
 
+        /* Le joueur de cet appareil a-t-il perdu ? Contre l'IA ou en ligne
+           seulement : en duel local sur un même écran, la fenêtre salue le
+           vainqueur, qui est assis là. Une défaite n'a pas la fanfare ni la
+           lumière dorée de la victoire : même fenêtre, ton éteint. */
+        const joueurAppareil = progressionJoueurDeLAppareil();
+        const defaite = !!joueurAppareil
+          && (state.onlineMode || player.isAI)
+          && !memeEquipe(player.id, joueurAppareil.id);
+        tonFinDePartie(defaite ? "defaite" : "victoire");
+
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = gardiensPartages()
@@ -25184,7 +25212,19 @@
         els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx(defaite ? "defeat" : "victory");
+      }
+
+      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
+         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
+         fenêtre, ses boutons et le bilan restent les mêmes. */
+      function tonFinDePartie(ton) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.classList.toggle("fin-defaite", ton === "defaite");
+        modal.classList.toggle("fin-egalite", ton === "egalite");
+        const kicker = modal.querySelector(".victory-kicker");
+        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {
@@ -50334,7 +50374,7 @@
         // ILYOS_TEST.sfx("spawn", "lumiere") pour auditionner une variante.
         sfx: (type, variant) => {
           const types = ["card", "island", "spawn", "move", "push", "rotate", "magic",
-            "crownTake", "crownDrop", "crown", "turn", "victory", "fall", "error", "undo"];
+            "crownTake", "crownDrop", "crown", "turn", "victory", "defeat", "draw", "fall", "error", "undo"];
           if (!type) return types;
           playSfx(type, variant ? { variant } : undefined);
           return variant ? `${type} · ${variant}` : type;
