@@ -333,6 +333,13 @@
         if (typeof characterCarriesCrown === "function") {
           const carried = (state.characters || []).some(character => characterCarriesCrown(character.id));
           if (carried) value += .28;
+          // Le porteur à deux pas de son propre village : on resserre encore.
+          const procheDuBut = carried && (state.characters || []).some(character => {
+            if (!characterCarriesCrown(character.id)) return false;
+            return (state.players || []).some(joueur => memeEquipe(joueur.id, character.player)
+              && villagesForPlayer(joueur).some(v => Math.abs(v.r - character.r) + Math.abs(v.c - character.c) <= 3));
+          });
+          if (procheDuBut) value += .12;
         }
 
         if ((state.turn || 0) > 24) value += .1;

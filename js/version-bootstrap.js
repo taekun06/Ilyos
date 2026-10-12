@@ -234,7 +234,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './css/hud-organique-v2.css?v=12.7',
     './css/hud-organique-v2-polish-v6.css?v=12.7',
     './css/hud-organique-v2-readability-v7.css?v=12.7',
-    './css/hud-organique-v2-final-v8.css?v=12.7',
+    './css/hud-organique-v2-final-v8.css?v=12.8',
     './css/hud-organique-v2-depth-v9.css?v=12.7',
     './css/hud-organique-v2-depth-v10.css?v=12.7',
     './css/hud-consolidation-v12.css?v=12.9',
@@ -252,7 +252,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=13.0-ile-payante',
+    './js/hud-organique-v2.js?v=13.1-balle-de-match',
     './js/hud-organique-v2-final-v8.js?v=12.7',
     /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
        les lumières de scène, jamais le HUD malgré leur nom, et ces réglages

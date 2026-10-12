@@ -221,7 +221,10 @@
     if (!target) return;
     let filled = source ? source.querySelectorAll('.hud-v2-crown-icon.is-filled').length : 0;
     if (!Number.isFinite(filled)) filled = 0;
+    /* Balle de match : à deux couronnes, la troisième, encore vide, garde une
+       lueur fixe (CSS, sans animation) pour que chacun voie le danger. */
     target.innerHTML = [0,1,2].map(i=>crownSvg(i >= filled)).join('');
+    if (filled === 2) target.lastElementChild?.classList.add('ov2-balle');
   }
 
   function syncTop(){

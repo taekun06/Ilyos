@@ -4136,6 +4136,9 @@
         }
         const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
+        // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
+        kaykitChoc(2);
+        kaykitHameauEclat(player.id);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {

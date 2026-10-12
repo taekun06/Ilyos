@@ -7155,11 +7155,32 @@
               return zone.some(([zr, zc]) => Math.abs(zr - ch.r) + Math.abs(zc - ch.c) <= 2);
             });
           }
+          if (lueur.eclatJusqua && performance.now() < lueur.eclatJusqua) return;
           if (allumer === lueur.allumee) return;
           lueur.allumee = allumer;
           lueur.materiau.color.copy(lueur.couleur).multiplyScalar(allumer ? 1.5 : 1);
           lueur.materiau.emissive.copy(allumer ? lueur.emission : new THREE.Color(0x000000));
         });
+      }
+
+      /* Point marqué : les hameaux de l'équipe s'illuminent fort une seconde,
+         puis reviennent à leur état normal (lueur d'approche ou rien). Mêmes
+         uniformes que la lueur : aucun objet, aucun shader nouveau. */
+      function kaykitHameauEclat(playerId) {
+        const registre = kaykit3D?.hameauRegistry;
+        if (ilyosSimulationActive || !registre?.size) return;
+        const fin = performance.now() + 1000;
+        registre.forEach(hameau => {
+          const lueur = hameau?.userData?.lueur;
+          const village = hameau?.userData?.village;
+          if (!lueur || !village || !memeEquipe(village.playerId, playerId)) return;
+          lueur.materiau.color.copy(lueur.couleur).multiplyScalar(2.4);
+          lueur.materiau.emissive.copy(lueur.emission).multiplyScalar(2.2);
+          lueur.allumee = null;
+          lueur.eclatJusqua = fin;
+        });
+        clearTimeout(kaykitHameauEclat.minuteur);
+        kaykitHameauEclat.minuteur = setTimeout(() => kaykitHameauxLueur(), 1050);
       }
 
       /* Les châteaux de village sont ajoutés UNE seule fois à dynamicGroup et
