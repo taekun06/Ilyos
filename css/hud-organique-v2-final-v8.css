@@ -36,6 +36,11 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
   opacity:.56!important;
   filter:drop-shadow(0 1px 2px rgba(0,0,0,.62))!important;
 }
+/* Balle de match : la couronne qui manque luit, sans animation. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty.ov2-balle{
+  opacity:1!important;
+  filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 9px currentColor) drop-shadow(0 1px 2px rgba(0,0,0,.6))!important;
+}
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty path{
   fill:transparent;
   stroke:currentColor;

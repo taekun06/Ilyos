@@ -352,7 +352,8 @@ body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu.hidden {
 
 /* Cartes de choix : rendu du plateau, caméra */
 #hudV2GearPopover.mj-menu .hud-v2-popover-render-grid,
-#hudV2GearPopover.mj-menu .hud-v2-popover-camera-grid {
+#hudV2GearPopover.mj-menu .hud-v2-popover-camera-grid,
+#hudV2GearPopover.mj-menu .mj-grille-chocs {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 10px !important;

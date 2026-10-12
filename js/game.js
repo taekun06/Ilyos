@@ -668,11 +668,16 @@
         castle2: kaykitAssetSpec("medieval", "buildings/green/building_castle_green.gltf", MEDIEVAL_ATLAS),
         castle3: kaykitAssetSpec("medieval", "buildings/yellow/building_castle_yellow.gltf", MEDIEVAL_ATLAS),
 
-        // Fanions de village, un par couleur de joueur (jusqu'à 4).
-        flag0: kaykitAssetSpec("medieval", "decoration/props/flag_blue.gltf", MEDIEVAL_ATLAS),
-        flag1: kaykitAssetSpec("medieval", "decoration/props/flag_red.gltf", MEDIEVAL_ATLAS),
-        flag2: kaykitAssetSpec("medieval", "decoration/props/flag_green.gltf", MEDIEVAL_ATLAS),
-        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS),
+        // Hameau autour des villages de coin (voir buildKayKitHameau) : il
+        // remplace les fanions. Les bâtiments bleus sont reteints à la couleur
+        // du joueur comme le château ; arbre et accessoires restent neutres.
+        hamletHomeA: kaykitAssetSpec("medieval", "buildings/blue/building_home_A_blue.gltf", MEDIEVAL_ATLAS),
+        hamletHomeB: kaykitAssetSpec("medieval", "buildings/blue/building_home_B_blue.gltf", MEDIEVAL_ATLAS),
+        hamletChurch: kaykitAssetSpec("medieval", "buildings/blue/building_church_blue.gltf", MEDIEVAL_ATLAS),
+        hamletWell: kaykitAssetSpec("medieval", "buildings/blue/building_well_blue.gltf", MEDIEVAL_ATLAS),
+        hamletTree: kaykitAssetSpec("medieval", "decoration/nature/tree_single_B.gltf", MEDIEVAL_ATLAS),
+        hamletBarrel: kaykitAssetSpec("medieval", "decoration/props/barrel.gltf", MEDIEVAL_ATLAS),
+        hamletCrate: kaykitAssetSpec("medieval", "decoration/props/crate_A_small.gltf", MEDIEVAL_ATLAS),
 
         // Nuages KayKit réels (voir buildKayKitBoardClouds) : dérivent juste hors
         // du rayon de sécurité de l'archipel, à hauteur du plateau — lecture
@@ -1519,6 +1524,7 @@
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
+          hameauRegistry: new Map(),    // case du village -> hameau (null hors coin)
           villageRegistry: new Map(),   // playerId -> chateau (reconstruit si posé en secours puis modèle réel disponible)
           highlightRegistry: new Map(), // "r,c" -> { signature, objects[] } pour les surbrillances de case
           looseCrownRegistry: new Map(),// "primary"/"secondary" -> { signature, objects[] }
@@ -6892,13 +6898,6 @@
               .kaykit-cinema .kaykit-bande{transition:none;}
               .kaykit-cinema.bandes .kaykit-bande{height:7vh;}
             }
-            #gameScreen.kaykit-secousse .board-wrap{animation:kaykit-secousse-k .45s ease-in-out;}
-            @keyframes kaykit-secousse-k{0%,100%{transform:translate(0,0)}
-              20%{transform:translate(-7px,4px)}40%{transform:translate(6px,-5px)}
-              60%{transform:translate(-4px,-3px)}80%{transform:translate(4px,3px)}}
-            @media (prefers-reduced-motion: reduce){
-              #gameScreen.kaykit-secousse .board-wrap{animation:none;}
-            }
           `;
           document.head.appendChild(style);
         }
@@ -6933,13 +6932,78 @@
         }
       }
 
-      function kaykitSecousse() {
-        if (!els?.gameScreen) return;
-        els.gameScreen.classList.remove("kaykit-secousse");
-        void els.gameScreen.offsetWidth;   // force le redémarrage de l'animation
-        els.gameScreen.classList.add("kaykit-secousse");
-        setTimeout(() => els.gameScreen?.classList.remove("kaykit-secousse"), 500);
+      /* ===================== CHOCS =====================
+
+         Le poids d'un coup, dosé selon sa force : 1 = poussée ou île qui se
+         repose, 2 = poussée forte ou couronne volée, 3 = gardien jeté dans le
+         vide. Deux effets seulement, choisis parce qu'ils ne coûtent rien au
+         rendu : la caméra tremble (un décalage de sa position, appliqué le
+         temps d'une image puis retiré) et le téléphone vibre. Aucun objet,
+         aucune particule, aucun rendu supplémentaire.
+
+         Remplace l'ancienne secousse CSS de tout le plateau, qui emportait le
+         HUD avec la scène et ne connaissait qu'une seule force.
+
+         Réglages (menu > Graphismes) : `ilyosChocs` dans le stockage local.
+         Les secousses suivent aussi « réduire les animations » du système. */
+      const KAYKIT_CHOCS = {
+        // amplitude : fraction de la distance caméra-cible ; vibration : ms.
+        1: { amplitude: .0035, duree: 200, vibration: [14] },
+        2: { amplitude: .0065, duree: 280, vibration: [24] },
+        3: { amplitude: .011, duree: 430, vibration: [36, 50, 26] }
+      };
+      const KAYKIT_CHOCS_CLE = "ilyosChocs";
+
+      function kaykitChocsReglages() {
+        let lu = null;
+        try { lu = JSON.parse(localStorage.getItem(KAYKIT_CHOCS_CLE) || "null"); } catch (_) { }
+        return { secousses: lu?.secousses !== false, vibrations: lu?.vibrations !== false };
       }
+
+      function kaykitChocsRegler(cle, valeur) {
+        const reglages = { ...kaykitChocsReglages(), [cle]: !!valeur };
+        try { localStorage.setItem(KAYKIT_CHOCS_CLE, JSON.stringify(reglages)); } catch (_) { }
+        return reglages;
+      }
+
+      function kaykitChoc(force = 1) {
+        if (ilyosSimulationActive) return;
+        const choc = KAYKIT_CHOCS[force] || KAYKIT_CHOCS[1];
+        const reglages = kaykitChocsReglages();
+        if (reglages.vibrations && typeof navigator.vibrate === "function") {
+          try { navigator.vibrate(choc.vibration); } catch (_) { }
+        }
+        if (!kaykit3D || !reglages.secousses || kaykitReducedMotion()) return;
+        // Un choc plus faible n'écrase pas la fin d'un choc plus fort.
+        const maintenant = performance.now();
+        const enCours = kaykit3D.choc;
+        if (enCours && enCours.fin > maintenant && enCours.amplitude > choc.amplitude) return;
+        kaykit3D.choc = { debut: maintenant, fin: maintenant + choc.duree, amplitude: choc.amplitude };
+      }
+
+      /* Décale la caméra pour l'image en cours ; renvoie de quoi la remettre
+         en place juste après le rendu, pour que ni l'orbite ni les recadrages
+         ne voient jamais le tremblement. */
+      function kaykitAppliquerChoc(maintenant) {
+        const choc = kaykit3D?.choc;
+        const camera = kaykit3D?.camera;
+        if (!choc || !camera) return null;
+        if (maintenant >= choc.fin) { kaykit3D.choc = null; return null; }
+        const t = (maintenant - choc.debut) / (choc.fin - choc.debut);
+        const cible = kaykit3D.orbit?.target || kaykit3D.viewTarget;
+        const distance = cible ? camera.position.distanceTo(cible) : 12;
+        const ampleur = distance * choc.amplitude * (1 - t) * (1 - t);
+        const s = maintenant / 1000;
+        const droite = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const haut = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        const decalage = droite.multiplyScalar(Math.sin(s * 57) * ampleur)
+          .add(haut.multiplyScalar(Math.sin(s * 43 + 1.7) * ampleur * .8));
+        camera.position.add(decalage);
+        camera.updateMatrixWorld();
+        return () => { camera.position.sub(decalage); camera.updateMatrixWorld(); };
+      }
+
+      window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
 
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
          chute, qui déclenche une seconde chute, produit trois demandes en
@@ -7261,6 +7325,245 @@
         list.length = 0;
       }
 
+      /* ---------- Hameau des villages de coin ------------------------------
+         Remplace les fanions : trois îlots plus bas que le plateau, reliés par
+         des passerelles, longent le bord extérieur des trois cases du village
+         (la case du coin et ses deux voisines). Maisons, église et puits aux
+         couleurs du joueur, portes tournées vers le plateau.
+
+         Pensé pour les machines faibles : tout est statique (aucune animation,
+         matrixAutoUpdate coupé), rien ne projette d'ombre, et les bâtiments
+         d'un hameau sont FUSIONNÉS en deux maillages (teinte du joueur +
+         neutre) — deux appels de rendu par hameau au lieu d'une vingtaine.
+
+         Les coordonnées sont celles de la maquette validée, écrites pour le
+         coin bas-gauche (x vers l'extérieur = -x, z vers l'extérieur = +z) puis
+         mises en miroir pour chaque coin. */
+      const KAYKIT_HAMEAU_MODELES = ["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell", "hamletTree", "hamletBarrel", "hamletCrate"];
+      const KAYKIT_HAMEAU_EQUIPE = new Set(["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell"]);
+
+      function kaykitHameauPret() {
+        return KAYKIT_HAMEAU_MODELES.every(cle => kaykit3D.assets.has(cle) || kaykit3D.failedAssets.has(cle));
+      }
+
+      /* Fusion minimale des maillages d'un groupe, par texture : pas de
+         BufferGeometryUtils dans vendor/, et les modèles KayKit n'ont besoin
+         que de position/normal/uv. Un maillage sans ces attributs reste à part.
+         Chaque gltf charge SA copie de l'atlas : la clé est donc l'image source
+         (ou celle fournie par l'objet, voir buildKayKitHameau), pas l'uuid. */
+      function kaykitFusionnerParTexture(racine) {
+        racine.updateMatrixWorld(true);
+        const inverse = new THREE.Matrix4().copy(racine.matrixWorld).invert();
+        const paquets = new Map();
+        const aPart = [];
+        racine.traverse(objet => {
+          if (!objet.isMesh || Array.isArray(objet.material)) return;
+          const g = objet.geometry;
+          if (!g?.attributes?.position || !g.attributes.normal || !g.attributes.uv) { aPart.push(objet); return; }
+          let cle = null;
+          for (let o = objet; o && o !== racine && !cle; o = o.parent) cle = o.userData?.cleFusion || null;
+          const image = objet.material.map?.image;
+          cle = cle || image?.currentSrc || image?.src || objet.material.map?.uuid || `couleur-${objet.material.color?.getHex?.()}`;
+          if (!paquets.has(cle)) paquets.set(cle, { materiau: objet.material, morceaux: [] });
+          const morceau = g.index ? g.toNonIndexed() : g.clone();
+          morceau.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, objet.matrixWorld));
+          paquets.get(cle).morceaux.push(morceau);
+        });
+        const resultat = [];
+        paquets.forEach(({ materiau, morceaux }, cle) => {
+          const total = morceaux.reduce((n, m) => n + m.attributes.position.count, 0);
+          const tampons = { position: new Float32Array(total * 3), normal: new Float32Array(total * 3), uv: new Float32Array(total * 2) };
+          let decalage = 0;
+          morceaux.forEach(m => {
+            ["position", "normal", "uv"].forEach(nom => {
+              const attr = m.attributes[nom];
+              const taille = nom === "uv" ? 2 : 3;
+              for (let i = 0; i < attr.count; i++) {
+                tampons[nom][(decalage + i) * taille] = attr.getX(i);
+                tampons[nom][(decalage + i) * taille + 1] = attr.getY(i);
+                if (taille === 3) tampons[nom][(decalage + i) * 3 + 2] = attr.getZ(i);
+              }
+            });
+            decalage += m.attributes.position.count;
+            m.dispose();
+          });
+          const geometrie = new THREE.BufferGeometry();
+          geometrie.setAttribute("position", new THREE.BufferAttribute(tampons.position, 3));
+          geometrie.setAttribute("normal", new THREE.BufferAttribute(tampons.normal, 3));
+          geometrie.setAttribute("uv", new THREE.BufferAttribute(tampons.uv, 2));
+          geometrie.computeBoundingSphere();
+          geometrie.userData.ilyosTransient = true;
+          const mat = materiau.clone();
+          mat.userData = { ...(mat.userData || {}), ilyosTransient: true };
+          const maillage = new THREE.Mesh(geometrie, mat);
+          maillage.userData.cleFusion = cle;
+          resultat.push(maillage);
+        });
+        return { fusionnes: resultat, aPart };
+      }
+
+      function buildKayKitHameau(r, c, accent) {
+        if (!((r === 0 || r === GRID - 1) && (c === 0 || c === GRID - 1))) return null;
+        const S = KAYKIT_CELL_SPACING;
+        const P = kaykitCellPosition(r, c, 0);
+        const dirR = r <= CENTER.r ? -1 : 1;
+        const dirC = c <= CENTER.c ? -1 : 1;
+        // Maquette (coin bas-gauche) -> monde : miroir selon le coin.
+        const X = mx => P.x - dirC * mx;
+        const Z = mz => P.z + dirR * mz;
+        const groupe = new THREE.Group();
+        groupe.name = "ilyos-hameau";
+        const echelleY = .5;
+        const yTop = KAYKIT_LEVELS.pedestalTop * echelleY - .06;
+
+        // Îlots : socles du plateau réduits et abaissés, teintés terre pour ne
+        // jamais se lire comme des cases jouables.
+        const terre = new THREE.Color(0x9c7f63);
+        const ilot = (mx, mz, sx, sz) => {
+          const socle = makeKayKitPedestal(accent);
+          socle.scale.set(sx / S, echelleY, sz / S);
+          socle.position.set(X(mx), -.06, Z(mz));
+          socle.traverse(o => {
+            if (!o.isMesh) return;
+            o.castShadow = false;
+            if (!o.material || Array.isArray(o.material) || o.material.map || !o.material.clone) return;
+            o.material = o.material.clone();
+            o.material.color?.lerp(terre, .55);
+            o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true };
+          });
+          groupe.add(socle);
+        };
+        const g = .84;
+        const I1 = [-g, -S - .05], I2 = [-g + .05, g - .05], I3 = [S + .05, g];
+        ilot(I1[0], I1[1], .64, .84);
+        ilot(I2[0], I2[1], .7, .7);
+        ilot(I3[0], I3[1], .84, .64);
+
+        // Bâtiments, regroupés pour la fusion.
+        const bati = new THREE.Group();
+        const versPlateau = (x, z) => Math.atan2(X(1) - x, Z(-1) - z) + Math.PI;
+        const pose = (cle, largeur, mx, mz, rot = null) => {
+          const modele = cloneKayKitAsset(cle, { maxWidth: largeur, maxHeight: 10, targetFloor: 0 });
+          if (!modele) return;
+          // Même atlas pour tous les bâtiments : une seule texture reteinte
+          // suffit, et ils fusionnent alors en un seul maillage.
+          if (KAYKIT_HAMEAU_EQUIPE.has(cle)) {
+            accentVillageColors(modele, accent);
+            modele.userData.cleFusion = "equipe";
+          } else modele.userData.cleFusion = "neutre";   // même atlas KayKit d'origine
+          const x = X(mx), z = Z(mz);
+          modele.position.set(x, yTop, z);
+          modele.rotation.y = rot ?? versPlateau(x, z);
+          bati.add(modele);
+        };
+        pose("hamletHomeA", .4, I1[0] + .08, I1[1] - .17);
+        pose("hamletHomeB", .38, I1[0] - .08, I1[1] + .2);
+        pose("hamletTree", .2, I1[0] - .22, I1[1] - .3, 0);
+        pose("hamletBarrel", .06, I1[0] + .26, I1[1] + .14, 0);
+        pose("hamletChurch", .44, I2[0] - .06, I2[1] + .06);
+        pose("hamletWell", .16, I2[0] + .25, I2[1] - .22);
+        pose("hamletTree", .18, I2[0] + .26, I2[1] + .28, 1);
+        pose("hamletHomeB", .38, I3[0] - .18, I3[1] + .08);
+        pose("hamletHomeA", .4, I3[0] + .19, I3[1] - .08);
+        pose("hamletTree", .19, I3[0] + .32, I3[1] + .26, 2);
+        pose("hamletCrate", .07, I3[0] - .02, I3[1] - .28, .5);
+
+        const { fusionnes, aPart } = kaykitFusionnerParTexture(bati);
+        // Le maillage aux couleurs du joueur porte la lueur (voir
+        // kaykitHameauxLueur) : la carte d'émission est posée dès maintenant,
+        // éteinte, pour que l'allumer ne change que des uniformes et ne force
+        // jamais une recompilation de shader.
+        const teinteEquipe = new THREE.Color(accent);
+        let lueur = null;
+        fusionnes.forEach(maillage => {
+          maillage.receiveShadow = true;
+          const mat = maillage.material;
+          if (!lueur && maillage.userData.cleFusion === "equipe" && mat.emissive) {
+            mat.emissiveMap = mat.map;
+            mat.emissive.setHex(0x000000);
+            mat.needsUpdate = true;
+            lueur = { materiau: mat, couleur: mat.color.clone(), emission: teinteEquipe.clone().multiplyScalar(1.1), allumee: false };
+          }
+          groupe.add(maillage);
+        });
+        aPart.forEach(o => {
+          o.updateMatrixWorld(true);
+          const copie = o.clone();
+          copie.matrix.copy(o.matrixWorld);
+          copie.matrix.decompose(copie.position, copie.quaternion, copie.scale);
+          copie.castShadow = false;
+          groupe.add(copie);
+        });
+
+        // Passerelles de bois entre les îlots.
+        const bois = kaykitMaterial(0x5a3a22, { roughness: .9 });
+        const planche = kaykitGeometry("hameau-passerelle-v1", () => new THREE.BoxGeometry(.16, .03, 1));
+        const pont = (a, b) => {
+          const ax = X(a[0]), az = Z(a[1]), bx = X(b[0]), bz = Z(b[1]);
+          const m = new THREE.Mesh(planche, bois);
+          m.scale.z = Math.hypot(bx - ax, bz - az) - .6;
+          m.position.set((ax + bx) / 2, yTop - .02, (az + bz) / 2);
+          m.rotation.y = Math.atan2(bx - ax, bz - az);
+          m.receiveShadow = true;
+          groupe.add(m);
+        };
+        pont(I1, I2); pont(I2, I3);
+
+        groupe.userData.lueur = lueur;
+        groupe.updateMatrixWorld(true);
+        groupe.traverse(o => { o.matrixAutoUpdate = false; });
+        return groupe;
+      }
+
+      /* Lueur : le hameau s'éclaire quand un gardien de l'équipe portant une
+         couronne arrive à deux cases ou moins de la zone du village. Simple
+         bascule à chaque synchronisation, aucune animation par image. */
+      function kaykitHameauxLueur() {
+        const registre = kaykit3D?.hameauRegistry;
+        if (!registre?.size || !state) return;
+        const porteurs = (state.characters || []).filter(ch =>
+          Number.isFinite(ch?.r) && Number.isFinite(ch?.c) && characterCarriesCrown(ch.id));
+        registre.forEach(hameau => {
+          const lueur = hameau?.userData?.lueur;
+          const village = hameau?.userData?.village;
+          if (!lueur || !village) return;
+          let allumer = false;
+          if (porteurs.length) {
+            const zone = cornerCrownCellsForVillage({ r: village.r, c: village.c }) || [];
+            allumer = porteurs.some(ch => {
+              const equipe = typeof proprietaireGardien === "function" ? proprietaireGardien(ch) : ch.player;
+              if (!memeEquipe(ch.player, village.playerId) && !memeEquipe(equipe, village.playerId)) return false;
+              return zone.some(([zr, zc]) => Math.abs(zr - ch.r) + Math.abs(zc - ch.c) <= 2);
+            });
+          }
+          if (lueur.eclatJusqua && performance.now() < lueur.eclatJusqua) return;
+          if (allumer === lueur.allumee) return;
+          lueur.allumee = allumer;
+          lueur.materiau.color.copy(lueur.couleur).multiplyScalar(allumer ? 1.5 : 1);
+          lueur.materiau.emissive.copy(allumer ? lueur.emission : new THREE.Color(0x000000));
+        });
+      }
+
+      /* Point marqué : les hameaux de l'équipe s'illuminent fort une seconde,
+         puis reviennent à leur état normal (lueur d'approche ou rien). Mêmes
+         uniformes que la lueur : aucun objet, aucun shader nouveau. */
+      function kaykitHameauEclat(playerId) {
+        const registre = kaykit3D?.hameauRegistry;
+        if (ilyosSimulationActive || !registre?.size) return;
+        const fin = performance.now() + 1000;
+        registre.forEach(hameau => {
+          const lueur = hameau?.userData?.lueur;
+          const village = hameau?.userData?.village;
+          if (!lueur || !village || !memeEquipe(village.playerId, playerId)) return;
+          lueur.materiau.color.copy(lueur.couleur).multiplyScalar(2.4);
+          lueur.materiau.emissive.copy(lueur.emission).multiplyScalar(2.2);
+          lueur.allumee = null;
+          lueur.eclatJusqua = fin;
+        });
+        clearTimeout(kaykitHameauEclat.minuteur);
+        kaykitHameauEclat.minuteur = setTimeout(() => kaykitHameauxLueur(), 1050);
+      }
+
       /* Les châteaux de village sont ajoutés UNE seule fois à dynamicGroup et
          mis en cache avec leur position MONDE. Vider le registre seul ne
          suffit donc pas : l'ancien château reste accroché à la scène — il
@@ -7275,6 +7578,12 @@
           castle?.parent?.remove(castle);
         });
         registre.clear();
+        kaykit3D.hameauRegistry?.forEach(hameau => {
+          if (!hameau) return;
+          try { disposeKayKitTaggedResources(hameau); } catch (_) { }
+          hameau.parent?.remove(hameau);
+        });
+        kaykit3D.hameauRegistry?.clear();
       }
 
       /* Le sol du sanctuaire est bâti UNE fois par session et jamais retiré :
@@ -12128,6 +12437,7 @@
             if (t > .88) obj.position.y = -Math.sin((t - .88) / .12 * Math.PI) * .022;
           },
           dispose: obj => {
+            kaykitChoc(1);   // l'île se repose
             // Les blocs sont RENDUS au groupe dynamique avec leur position
             // d'origine avant que le conteneur ne soit retiré. Les supprimer
             // avec lui ferait disparaître l'île pendant la ou les images qui
@@ -12335,6 +12645,15 @@
           });
         });
         emitVisualEvent("victory", { playerId });
+      }
+
+      /* Coup gagnant : la caméra se rapproche du gardien qui valide la
+         dernière couronne et ses gestes ralentissent un instant, avant l'écran
+         de victoire. Un recadrage et un facteur de temps, rien de plus. */
+      function kaykitMomentVictoire(r, c) {
+        if (ilyosSimulationActive || !kaykit3D || !Number.isFinite(r) || !Number.isFinite(c)) return;
+        if (!kaykitReducedMotion()) kaykit3D.ralentiJusqua = performance.now() + 1200;
+        kaykitFollowCell(r, c, { duration: 900, force: true, cinematique: true, zoomBoost: 4, priorite: 9, maintien: 2600 });
       }
 
       function characterVisualById(characterId) {
@@ -13196,15 +13515,18 @@
                   castle.position.set(p.x + cornerDirC * cornerOffset, KAYKIT_LEVELS.pedestalTop, p.z + cornerDirR * cornerOffset);
                   castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
                   dynamic.add(castle);
-                  // Fanion planté à côté du château, dans le même repère local :
-                  // il suit automatiquement la position/rotation par coin du village.
-                  const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
-                  if (flag) {
-                    accentVillageColors(flag, villageAccent);
-                    flag.position.set(.48, 0, .34);
-                    castle.add(flag);
-                  }
                   kaykit3D.villageRegistry.set(villageKey, castle);
+                }
+                // Hameau : bâti une fois, comme le château, dès que ses modèles
+                // sont tous chargés (ou définitivement en échec).
+                if (!kaykit3D.hameauRegistry.has(villageKey) && kaykitHameauPret()) {
+                  const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
+                  const hameau = buildKayKitHameau(r, c, villageAccent);
+                  if (hameau) {
+                    hameau.userData.village = { r, c, playerId };
+                    dynamic.add(hameau);
+                  }
+                  kaykit3D.hameauRegistry.set(villageKey, hameau);
                 }
                 const castle = kaykit3D.villageRegistry.get(villageKey);
                 if (castle) registerKayKitCellVisual(r, c, castle);
@@ -13214,6 +13536,7 @@
             }
           }
           if (rebuildIslandLayer) kaykit3D.islandsSignature = islandsSig;
+          kaykitHameauxLueur();
 
           // Héros / gardiens — mise à jour INCRÉMENTALE d'un registre persistant.
           // Les modèles, squelettes et AnimationMixer ne sont plus reconstruits
@@ -13548,7 +13871,10 @@
         // halo. Remplace l'ancienne boucle `proceduralHeroes`, qui simulait le
         // mouvement en secouant le modèle faute d'animation réellement jouée.
         const frameNow = performance.now();
-        updateKayKitCharacters(delta, elapsed, frameNow);
+        // Ralenti du coup gagnant (kaykitMomentVictoire) : seuls les gardiens
+        // ralentissent, le temps d'un battement.
+        const ralenti = kaykit3D.ralentiJusqua && frameNow < kaykit3D.ralentiJusqua ? .4 : 1;
+        updateKayKitCharacters(delta * ralenti, elapsed, frameNow);
         updateKayKitSequences(frameNow);
         animerSurvolsKayKit(frameNow, elapsed);
         animerTourAdverseKayKit(frameNow);
@@ -13632,6 +13958,7 @@
         // Surcharges visuelles limitées au dessin : les animations et les
         // interactions retrouvent leurs valeurs d'origine après chaque rendu.
         const restoreVisuals = window.ILYOS_VISUAL_EDITOR?.apply(kaykit3D);
+        const retirerChoc = kaykitAppliquerChoc(frameNow);
         try {
           kaykitStabiliserLumieresPonctuelles();
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
@@ -13639,6 +13966,7 @@
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
           }
         } finally {
+          retirerChoc?.();
           restoreVisuals?.();
         }
       }
@@ -15371,6 +15699,8 @@
         if (previousCarrierId != null && previousCarrierId !== char.id) {
           const previous = characterById(previousCarrierId);
           if (previous) playCrownFlight(previous.r, previous.c, char.r, char.c, { arc: .55, duration: 340 });
+          // Une passe entre alliés reste douce ; une couronne arrachée à l'adversaire frappe.
+          if (previous && previous.player !== char.player && typeof kaykitChoc === "function") kaykitChoc(2);
         }
         playCrownPickup(char.id, Number.isFinite(fromR) ? fromR : char.r, Number.isFinite(fromC) ? fromC : char.c);
         return true;
@@ -19751,6 +20081,13 @@
         if (typeof characterCarriesCrown === "function") {
           const carried = (state.characters || []).some(character => characterCarriesCrown(character.id));
           if (carried) value += .28;
+          // Le porteur à deux pas de son propre village : on resserre encore.
+          const procheDuBut = carried && (state.characters || []).some(character => {
+            if (!characterCarriesCrown(character.id)) return false;
+            return (state.players || []).some(joueur => memeEquipe(joueur.id, character.player)
+              && villagesForPlayer(joueur).some(v => Math.abs(v.r - character.r) + Math.abs(v.c - character.c) <= 3));
+          });
+          if (procheDuBut) value += .12;
         }
 
         if ((state.turn || 0) > 24) value += .1;
@@ -20624,6 +20961,23 @@
             sfxNoise({ duration: 1.2, gain: .1, from: 500, to: 4500, q: 1, attack: .5, reverb: .85 });
             break;
 
+          case "defeat":
+            /* Défaite : le miroir sobre de la fanfare. Trois notes qui
+               descendent, plus courtes et plus douces, sans le souffle qui
+               montait. Rien de punitif : la partie est finie, on le dit. */
+            duckMusic(.45, 2.2);
+            [392.0, 311.13, 261.63].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.9 - index * .2, gain: .16 - index * .02, delay: index * .26, reverb: .7, ratios: BELL_PROFILES.ceremonie }));
+            sfxSweep({ fromHz: 110, toHz: 70, duration: 1.4, gain: .08, type: "triangle", delay: .5, reverb: .5 });
+            break;
+
+          case "draw":
+            /* Égalité : deux notes suspendues, ni montée ni chute. */
+            duckMusic(.4, 2);
+            [392.0, 587.33].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.8, gain: .15, delay: index * .2, reverb: .75, ratios: BELL_PROFILES.ceremonie }));
+            break;
+
           case "crownTake":
             /* Ramasser la couronne. Volontairement LÉGER : le son "crown" est
                désormais réservé au point marqué, et l'entendre à chaque
@@ -20656,6 +21010,15 @@
             sfxSweep({ ...at, fromHz: 240, toHz: 46, duration: 1.05, gain: .22, type: "triangle", reverb: .75 });
             sfxNoise({ ...at, duration: .5, gain: .12, from: 900, to: 180, q: 2.4, delay: .5, reverb: .85 });
             break;
+
+          case "select": {
+            // Prendre un gardien en main : un petit clic de bois, à hauteur
+            // légèrement variable pour ne jamais sonner mécanique.
+            const hz = randomBetween(620, 860);
+            sfxSweep({ fromHz: hz * 1.45, toHz: hz, duration: .06, gain: .075, type: "triangle", reverb: .08 });
+            sfxNoise({ duration: .035, gain: .05, from: 2600, to: 1300, q: 1, type: "highpass", reverb: .04 });
+            break;
+          }
 
           case "error":
             // Impossibilité : sourd, bref, sans réverbe. Ce n'est pas une
@@ -20960,9 +21323,98 @@
           .join("\n");
       }
 
+      /* Carte jouée : une petite carte part du bouton d'action (ou du portrait
+         de l'adversaire) vers le plateau et s'efface. Un seul élément DOM animé
+         par le compositeur (Web Animations), retiré à la fin. */
+      /* Liseré du joueur actif : à l'ouverture du tour, un cadre net et
+         intense à sa couleur ; dès sa première action, il se fond en une lueur diffuse venue du haut et du
+         bas. Deux calques CSS fixes, seule leur opacité change. */
+      function lisereCouleur(hex, alpha) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+        if (!m) return `rgba(255,255,255,${alpha})`;
+        const n = parseInt(m[1], 16);
+        return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+      }
+      function renderLisereTour() {
+        if (typeof document === "undefined") return;
+        let el = renderLisereTour.el;
+        if (!el) {
+          el = renderLisereTour.el = document.createElement("div");
+          el.className = "lisere-tour";
+          el.innerHTML = '<i class="fort"></i><i class="doux"></i>';
+          document.body.appendChild(el);
+        }
+        const p = currentPlayer?.();
+        const enJeu = !!p && state?.winner === null && !document.getElementById("gameScreen")?.classList.contains("hidden");
+        el.hidden = !enJeu;
+        document.body.dataset.tourActif = enJeu && state.players.length === 2 ? String(state.currentPlayer) : "";
+        if (!enJeu) return;
+        const couleur = p.color || "#ffffff";
+        if (renderLisereTour.couleur !== couleur) {
+          renderLisereTour.couleur = couleur;
+          el.style.setProperty("--lt-plein", lisereCouleur(couleur, 1));
+          el.style.setProperty("--lt-halo", lisereCouleur(couleur, .53));
+          el.style.setProperty("--lt-haut", lisereCouleur(couleur, .31));
+          el.style.setProperty("--lt-bas", lisereCouleur(couleur, .27));
+          el.style.setProperty("--lt-nul", lisereCouleur(couleur, 0));
+        }
+        const cle = `${state.turn}/${state.currentPlayer}`;
+        if (renderLisereTour.cle !== cle) { renderLisereTour.cle = cle; renderLisereTour.acte = false; }
+        // L'humain qui annule tout son tour retrouve le liseré net.
+        const agi = renderLisereTour.acte && (p.isAI || state.undoHistory?.length > 0);
+        el.dataset.mode = agi ? "doux" : "fort";
+      }
+      // Première action du tour (carte jouée, île posée) : le liseré s'adoucit.
+      function lisereMarquerAction() {
+        if (ilyosSimulationActive || !state) return;
+        renderLisereTour.cle = `${state.turn}/${state.currentPlayer}`;
+        renderLisereTour.acte = true;
+      }
+
+      const CARTE_ENVOL_BOUTONS = { MOVE: "ov2Move", PUSH: "ov2Push", MAGIC: "ov2Magic" };
+      function carteJoueeEnvol(type, player) {
+        if (ilyosSimulationActive || !player || typeof document === "undefined") return;
+        if (kaykitReducedMotion?.()) return;
+        const bouton = document.getElementById(CARTE_ENVOL_BOUTONS[type]);
+        const local = !player.isAI && (player.id === 0 || !state?.soloMode);
+        const origine = local && bouton?.offsetParent
+          ? bouton
+          : document.querySelector(player.id === 0 ? "#ilyosHudOrganicV2 .ov2-left .ov2-avatar" : "#ilyosHudOrganicV2 .ov2-right .ov2-avatar");
+        const plateau = document.getElementById("kaykitCanvas");
+        if (!origine || !plateau || !origine.animate) return;
+        const de = origine.getBoundingClientRect();
+        const vers = plateau.getBoundingClientRect();
+        const carte = document.createElement("div");
+        carte.className = `carte-envol carte-envol-${type.toLowerCase()}`;
+        const icone = bouton?.querySelector("svg");
+        if (icone) carte.appendChild(icone.cloneNode(true));
+        carte.style.left = `${de.left + de.width / 2 - 17}px`;
+        carte.style.top = `${de.top + de.height / 2 - 24}px`;
+        document.body.appendChild(carte);
+        const dx = vers.left + vers.width / 2 - (de.left + de.width / 2);
+        const dy = vers.top + vers.height * .45 - (de.top + de.height / 2);
+        carte.animate([
+          { transform: "translate(0, 0) scale(.9) rotate(0deg)", opacity: .95 },
+          { transform: `translate(${dx * .55}px, ${dy * .55}px) scale(1.05) rotate(-6deg)`, opacity: .9, offset: .55 },
+          { transform: `translate(${dx}px, ${dy}px) scale(.55) rotate(-10deg)`, opacity: 0 }
+        ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)" }).onfinish = () => carte.remove();
+      }
+
+      /* Refus d'une action : le message, plus le son « porte fermée » (sourd,
+         bref) qui existait dans audio.js sans jamais être joué. */
+      function refuserAction(message) {
+        showToast(message);
+        if (!ilyosSimulationActive && !currentPlayer()?.isAI) playSfx("error");
+      }
+
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        // Retour au clic : un petit son quand le joueur prend un gardien en main.
+        const gardienChoisi = state?.selectedCharId || null;
+        if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
+          && !currentPlayer()?.isAI && canLocalPlayerAct()) playSfx("select");
+        renderAll.dernierChoisi = gardienChoisi;
         renderHeader();
         renderTurnContext();
         renderBoard();
@@ -20976,6 +21428,7 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
+        renderLisereTour();
         // V78 (passe fluidité) : remplace les MutationObserver globaux sur
         // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
         // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
@@ -21425,7 +21878,7 @@
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
         if (!state.draft && !peutPayerIle(currentPlayer())) {
-          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
           return;
         }
         if (shapeLimitReached(shapeKey)) {
@@ -22226,7 +22679,7 @@
         } = options;
 
         if (isCenterCrownCell(crownCell) && state.centerCrownTakenThisTurn) {
-          showToast("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
+          refuserAction("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
           return false;
         }
 
@@ -22350,7 +22803,7 @@
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           if (!state.draft && !peutPayerIle(currentPlayer())) {
-            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
             return;
           }
           if (isValidPlacement(r, c)) {
@@ -22363,7 +22816,7 @@
             placeIsland(r, c);
           } else {
             updatePlacementPreview(r, c);
-            showToast("Cette forme ne tient pas ici.");
+            refuserAction("Cette forme ne tient pas ici.");
           }
           return;
         }
@@ -22381,7 +22834,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
+            refuserAction(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -22728,7 +23181,7 @@
         if (state.phase === "ACTION_SELECT" && island && !char) {
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.phase = "ACTION";
@@ -23339,7 +23792,7 @@
 
         const candidates = directMoveCandidatesToCell(r, c);
         if (!candidates.length) {
-          showToast("Aucun gardien ne peut atteindre cette case.");
+          refuserAction("Aucun gardien ne peut atteindre cette case.");
           return true;
         }
 
@@ -23420,7 +23873,7 @@
           }
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.selectedCharId = nearest.char.id;
@@ -23857,7 +24310,9 @@
            jamais laisser le joueur derrière un cache. */
         if (result.fell) {
           kaykitBandesCinema(true, 1400);
-          kaykitSecousse();
+          kaykitChoc(3);
+        } else {
+          kaykitChoc(force >= 2 ? 2 : 1);
         }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
@@ -24227,7 +24682,7 @@
           return;
         }
         if (!islandIsEmpty(island)) {
-          showToast("Cette île n’est pas vide : impossible de la dissoudre.");
+          refuserAction("Cette île n’est pas vide : impossible de la dissoudre.");
           return;
         }
         if (availableActionCount("MAGIC") < 1) {
@@ -24309,7 +24764,7 @@
       // Bouton de la barre : la rotation nommée est jouée d'un clic.
       function jouerRotationMagie(steps) {
         if (!magicRotationOptions().some(option => option.steps === steps)) {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
           return;
         }
         state.magicPreviewSteps = steps;
@@ -24441,7 +24896,7 @@
         } else if (state.magicPreviewValid) {
           showToast(`Aperçu : ${nextSteps * 90}°. Cliquez sur une case de l’aperçu pour valider.`);
         } else {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
         }
       }
 
@@ -24783,7 +25238,7 @@
         }
 
         if (!artifact) {
-          if (!fromAI) showToast("Ce gardien ne porte pas de couronne.");
+          if (!fromAI) refuserAction("Ce gardien ne porte pas de couronne.");
           return false;
         }
 
@@ -24838,6 +25293,9 @@
         }
         const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
+        // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
+        kaykitChoc(2);
+        kaykitHameauEclat(player.id);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
@@ -24858,9 +25316,11 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
+            // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
+            if (char) kaykitMomentVictoire(char.r, char.c);
             setTimeout(() => showVictory(player, coequipier
               ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
-              : null), 450);
+              : null), char ? 1700 : 450);
           }
         } else {
           // Le gardien qui valide une couronne reste sur son village. Seul le
@@ -25064,6 +25524,7 @@
         });
         kaykitBandesCinema(true, 4000);
 
+        tonFinDePartie("egalite");
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -25076,7 +25537,7 @@
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx("draw");
       }
 
       function showVictory(player, texte = null) {
@@ -25099,6 +25560,16 @@
         kaykitBandesCinema(true, 4000);
 
 
+        /* Le joueur de cet appareil a-t-il perdu ? Contre l'IA ou en ligne
+           seulement : en duel local sur un même écran, la fenêtre salue le
+           vainqueur, qui est assis là. Une défaite n'a pas la fanfare ni la
+           lumière dorée de la victoire : même fenêtre, ton éteint. */
+        const joueurAppareil = progressionJoueurDeLAppareil();
+        const defaite = !!joueurAppareil
+          && (state.onlineMode || player.isAI)
+          && !memeEquipe(player.id, joueurAppareil.id);
+        tonFinDePartie(defaite ? "defaite" : "victoire");
+
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = gardiensPartages()
@@ -25119,7 +25590,19 @@
         els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx(defaite ? "defeat" : "victory");
+      }
+
+      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
+         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
+         fenêtre, ses boutons et le bilan restent les mêmes. */
+      function tonFinDePartie(ton) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.classList.toggle("fin-defaite", ton === "defaite");
+        modal.classList.toggle("fin-egalite", ton === "egalite");
+        const kicker = modal.querySelector(".victory-kicker");
+        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {
@@ -25332,6 +25815,7 @@
             }));
           }
 
+          if (requested - remaining > 0) { carteJoueeEnvol(type, player); lisereMarquerAction(); }
           return requested - remaining;
         };
 
@@ -25687,6 +26171,7 @@
         };
         state.islands.push(ile);
         state.islandPlacedThisTurn = true;
+        lisereMarquerAction();
 
         let gardien = null;
         let couronneRamassee = null;
@@ -50269,7 +50754,7 @@
         // ILYOS_TEST.sfx("spawn", "lumiere") pour auditionner une variante.
         sfx: (type, variant) => {
           const types = ["card", "island", "spawn", "move", "push", "rotate", "magic",
-            "crownTake", "crownDrop", "crown", "turn", "victory", "fall", "error", "undo"];
+            "crownTake", "crownDrop", "crown", "turn", "victory", "defeat", "draw", "fall", "error", "undo", "select"];
           if (!type) return types;
           playSfx(type, variant ? { variant } : undefined);
           return variant ? `${type} · ${variant}` : type;

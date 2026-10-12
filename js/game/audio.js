@@ -333,6 +333,13 @@
         if (typeof characterCarriesCrown === "function") {
           const carried = (state.characters || []).some(character => characterCarriesCrown(character.id));
           if (carried) value += .28;
+          // Le porteur à deux pas de son propre village : on resserre encore.
+          const procheDuBut = carried && (state.characters || []).some(character => {
+            if (!characterCarriesCrown(character.id)) return false;
+            return (state.players || []).some(joueur => memeEquipe(joueur.id, character.player)
+              && villagesForPlayer(joueur).some(v => Math.abs(v.r - character.r) + Math.abs(v.c - character.c) <= 3));
+          });
+          if (procheDuBut) value += .12;
         }
 
         if ((state.turn || 0) > 24) value += .1;
@@ -1206,6 +1213,23 @@
             sfxNoise({ duration: 1.2, gain: .1, from: 500, to: 4500, q: 1, attack: .5, reverb: .85 });
             break;
 
+          case "defeat":
+            /* Défaite : le miroir sobre de la fanfare. Trois notes qui
+               descendent, plus courtes et plus douces, sans le souffle qui
+               montait. Rien de punitif : la partie est finie, on le dit. */
+            duckMusic(.45, 2.2);
+            [392.0, 311.13, 261.63].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.9 - index * .2, gain: .16 - index * .02, delay: index * .26, reverb: .7, ratios: BELL_PROFILES.ceremonie }));
+            sfxSweep({ fromHz: 110, toHz: 70, duration: 1.4, gain: .08, type: "triangle", delay: .5, reverb: .5 });
+            break;
+
+          case "draw":
+            /* Égalité : deux notes suspendues, ni montée ni chute. */
+            duckMusic(.4, 2);
+            [392.0, 587.33].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.8, gain: .15, delay: index * .2, reverb: .75, ratios: BELL_PROFILES.ceremonie }));
+            break;
+
           case "crownTake":
             /* Ramasser la couronne. Volontairement LÉGER : le son "crown" est
                désormais réservé au point marqué, et l'entendre à chaque
@@ -1238,6 +1262,15 @@
             sfxSweep({ ...at, fromHz: 240, toHz: 46, duration: 1.05, gain: .22, type: "triangle", reverb: .75 });
             sfxNoise({ ...at, duration: .5, gain: .12, from: 900, to: 180, q: 2.4, delay: .5, reverb: .85 });
             break;
+
+          case "select": {
+            // Prendre un gardien en main : un petit clic de bois, à hauteur
+            // légèrement variable pour ne jamais sonner mécanique.
+            const hz = randomBetween(620, 860);
+            sfxSweep({ fromHz: hz * 1.45, toHz: hz, duration: .06, gain: .075, type: "triangle", reverb: .08 });
+            sfxNoise({ duration: .035, gain: .05, from: 2600, to: 1300, q: 1, type: "highpass", reverb: .04 });
+            break;
+          }
 
           case "error":
             // Impossibilité : sourd, bref, sans réverbe. Ce n'est pas une
