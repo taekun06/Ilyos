@@ -4171,9 +4171,11 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
+            // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
+            if (char) kaykitMomentVictoire(char.r, char.c);
             setTimeout(() => showVictory(player, coequipier
               ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
-              : null), 450);
+              : null), char ? 1700 : 450);
           }
         } else {
           // Le gardien qui valide une couronne reste sur son village. Seul le

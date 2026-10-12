@@ -12647,6 +12647,15 @@
         emitVisualEvent("victory", { playerId });
       }
 
+      /* Coup gagnant : la caméra se rapproche du gardien qui valide la
+         dernière couronne et ses gestes ralentissent un instant, avant l'écran
+         de victoire. Un recadrage et un facteur de temps, rien de plus. */
+      function kaykitMomentVictoire(r, c) {
+        if (ilyosSimulationActive || !kaykit3D || !Number.isFinite(r) || !Number.isFinite(c)) return;
+        if (!kaykitReducedMotion()) kaykit3D.ralentiJusqua = performance.now() + 1200;
+        kaykitFollowCell(r, c, { duration: 900, force: true, cinematique: true, zoomBoost: 4, priorite: 9, maintien: 2600 });
+      }
+
       function characterVisualById(characterId) {
         return kaykit3D?.characterVisuals.get(String(characterId)) || null;
       }
@@ -13862,7 +13871,10 @@
         // halo. Remplace l'ancienne boucle `proceduralHeroes`, qui simulait le
         // mouvement en secouant le modèle faute d'animation réellement jouée.
         const frameNow = performance.now();
-        updateKayKitCharacters(delta, elapsed, frameNow);
+        // Ralenti du coup gagnant (kaykitMomentVictoire) : seuls les gardiens
+        // ralentissent, le temps d'un battement.
+        const ralenti = kaykit3D.ralentiJusqua && frameNow < kaykit3D.ralentiJusqua ? .4 : 1;
+        updateKayKitCharacters(delta * ralenti, elapsed, frameNow);
         updateKayKitSequences(frameNow);
         animerSurvolsKayKit(frameNow, elapsed);
         animerTourAdverseKayKit(frameNow);
@@ -25226,9 +25238,11 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
+            // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
+            if (char) kaykitMomentVictoire(char.r, char.c);
             setTimeout(() => showVictory(player, coequipier
               ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
-              : null), 450);
+              : null), char ? 1700 : 450);
           }
         } else {
           // Le gardien qui valide une couronne reste sur son village. Seul le
