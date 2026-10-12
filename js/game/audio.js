@@ -1263,6 +1263,15 @@
             sfxNoise({ ...at, duration: .5, gain: .12, from: 900, to: 180, q: 2.4, delay: .5, reverb: .85 });
             break;
 
+          case "select": {
+            // Prendre un gardien en main : un petit clic de bois, à hauteur
+            // légèrement variable pour ne jamais sonner mécanique.
+            const hz = randomBetween(620, 860);
+            sfxSweep({ fromHz: hz * 1.45, toHz: hz, duration: .06, gain: .075, type: "triangle", reverb: .08 });
+            sfxNoise({ duration: .035, gain: .05, from: 2600, to: 1300, q: 1, type: "highpass", reverb: .04 });
+            break;
+          }
+
           case "error":
             // Impossibilité : sourd, bref, sans réverbe. Ce n'est pas une
             // punition, juste une porte fermée.

@@ -256,9 +256,21 @@
           .join("\n");
       }
 
+      /* Refus d'une action : le message, plus le son « porte fermée » (sourd,
+         bref) qui existait dans audio.js sans jamais être joué. */
+      function refuserAction(message) {
+        showToast(message);
+        if (!ilyosSimulationActive && !currentPlayer()?.isAI) playSfx("error");
+      }
+
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        // Retour au clic : un petit son quand le joueur prend un gardien en main.
+        const gardienChoisi = state?.selectedCharId || null;
+        if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
+          && !currentPlayer()?.isAI && canLocalPlayerAct()) playSfx("select");
+        renderAll.dernierChoisi = gardienChoisi;
         renderHeader();
         renderTurnContext();
         renderBoard();
@@ -721,7 +733,7 @@
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
         if (!state.draft && !peutPayerIle(currentPlayer())) {
-          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
           return;
         }
         if (shapeLimitReached(shapeKey)) {
@@ -1522,7 +1534,7 @@
         } = options;
 
         if (isCenterCrownCell(crownCell) && state.centerCrownTakenThisTurn) {
-          showToast("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
+          refuserAction("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
           return false;
         }
 
@@ -1646,7 +1658,7 @@
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           if (!state.draft && !peutPayerIle(currentPlayer())) {
-            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
             return;
           }
           if (isValidPlacement(r, c)) {
@@ -1659,7 +1671,7 @@
             placeIsland(r, c);
           } else {
             updatePlacementPreview(r, c);
-            showToast("Cette forme ne tient pas ici.");
+            refuserAction("Cette forme ne tient pas ici.");
           }
           return;
         }
@@ -1677,7 +1689,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
+            refuserAction(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -2024,7 +2036,7 @@
         if (state.phase === "ACTION_SELECT" && island && !char) {
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.phase = "ACTION";
@@ -2635,7 +2647,7 @@
 
         const candidates = directMoveCandidatesToCell(r, c);
         if (!candidates.length) {
-          showToast("Aucun gardien ne peut atteindre cette case.");
+          refuserAction("Aucun gardien ne peut atteindre cette case.");
           return true;
         }
 
@@ -2716,7 +2728,7 @@
           }
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.selectedCharId = nearest.char.id;
@@ -3525,7 +3537,7 @@
           return;
         }
         if (!islandIsEmpty(island)) {
-          showToast("Cette île n’est pas vide : impossible de la dissoudre.");
+          refuserAction("Cette île n’est pas vide : impossible de la dissoudre.");
           return;
         }
         if (availableActionCount("MAGIC") < 1) {
@@ -3607,7 +3619,7 @@
       // Bouton de la barre : la rotation nommée est jouée d'un clic.
       function jouerRotationMagie(steps) {
         if (!magicRotationOptions().some(option => option.steps === steps)) {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
           return;
         }
         state.magicPreviewSteps = steps;
@@ -3739,7 +3751,7 @@
         } else if (state.magicPreviewValid) {
           showToast(`Aperçu : ${nextSteps * 90}°. Cliquez sur une case de l’aperçu pour valider.`);
         } else {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
         }
       }
 
@@ -4081,7 +4093,7 @@
         }
 
         if (!artifact) {
-          if (!fromAI) showToast("Ce gardien ne porte pas de couronne.");
+          if (!fromAI) refuserAction("Ce gardien ne porte pas de couronne.");
           return false;
         }
 
