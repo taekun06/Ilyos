@@ -256,6 +256,38 @@
           .join("\n");
       }
 
+      /* Carte jouée : une petite carte part du bouton d'action (ou du portrait
+         de l'adversaire) vers le plateau et s'efface. Un seul élément DOM animé
+         par le compositeur (Web Animations), retiré à la fin. */
+      const CARTE_ENVOL_BOUTONS = { MOVE: "ov2Move", PUSH: "ov2Push", MAGIC: "ov2Magic" };
+      function carteJoueeEnvol(type, player) {
+        if (ilyosSimulationActive || !player || typeof document === "undefined") return;
+        if (kaykitReducedMotion?.()) return;
+        const bouton = document.getElementById(CARTE_ENVOL_BOUTONS[type]);
+        const local = !player.isAI && (player.id === 0 || !state?.soloMode);
+        const origine = local && bouton?.offsetParent
+          ? bouton
+          : document.querySelector(player.id === 0 ? "#ilyosHudOrganicV2 .ov2-left .ov2-avatar" : "#ilyosHudOrganicV2 .ov2-right .ov2-avatar");
+        const plateau = document.getElementById("kaykitCanvas");
+        if (!origine || !plateau || !origine.animate) return;
+        const de = origine.getBoundingClientRect();
+        const vers = plateau.getBoundingClientRect();
+        const carte = document.createElement("div");
+        carte.className = `carte-envol carte-envol-${type.toLowerCase()}`;
+        const icone = bouton?.querySelector("svg");
+        if (icone) carte.appendChild(icone.cloneNode(true));
+        carte.style.left = `${de.left + de.width / 2 - 17}px`;
+        carte.style.top = `${de.top + de.height / 2 - 24}px`;
+        document.body.appendChild(carte);
+        const dx = vers.left + vers.width / 2 - (de.left + de.width / 2);
+        const dy = vers.top + vers.height * .45 - (de.top + de.height / 2);
+        carte.animate([
+          { transform: "translate(0, 0) scale(.9) rotate(0deg)", opacity: .95 },
+          { transform: `translate(${dx * .55}px, ${dy * .55}px) scale(1.05) rotate(-6deg)`, opacity: .9, offset: .55 },
+          { transform: `translate(${dx}px, ${dy}px) scale(.55) rotate(-10deg)`, opacity: 0 }
+        ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)" }).onfinish = () => carte.remove();
+      }
+
       /* Refus d'une action : le message, plus le son « porte fermée » (sourd,
          bref) qui existait dans audio.js sans jamais être joué. */
       function refuserAction(message) {

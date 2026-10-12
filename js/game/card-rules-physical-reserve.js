@@ -191,6 +191,7 @@
             }));
           }
 
+          if (requested - remaining > 0) carteJoueeEnvol(type, player);
           return requested - remaining;
         };
 
