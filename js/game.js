@@ -8997,7 +8997,8 @@
         // la phase de placement d'une partie à trois ou quatre.
         ensureKayKitAsset(assetKey);
         let hero = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
-        if (!hero) hero = makeFallbackHero(playerId);
+        if (hero) kaykitRetirerArmesEnTrop(hero);
+        else hero = makeFallbackHero(playerId);
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
         hero.position.set(p.x, p.y, p.z);
         hero.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
@@ -9054,7 +9055,8 @@
           const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
           ensureKayKitAsset(assetKey);
           piece = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
-          if (!piece) piece = makeFallbackHero(playerId ?? 0);
+          if (piece) kaykitRetirerArmesEnTrop(piece);
+          else piece = makeFallbackHero(playerId ?? 0);
         }
 
         const p = kaykitCellPosition(r, c, surfaceY ?? kaykitCellSurfaceY(r, c));
@@ -11817,6 +11819,23 @@
         return head;
       }
 
+      /* Les modèles KayKit portent TOUTES leurs armes à la fois : le chevalier
+         empilait deux épées dans une main, une épée et quatre boucliers dans
+         l'autre ; le mage, deux livres, une baguette et un bâton. Choix de
+         Taekun (2026-10-13) : grande épée et bouclier rond pour le
+         chevalier, livre ouvert et bâton pour le mage. Retirées après la mise
+         à l'échelle, qui les mesure encore : la taille ne change pas. Environ
+         70 dessins de moins par image en fin de partie, ombres comprises. */
+      const KAYKIT_ARMES_EN_TROP = new Set([
+        "1H_Sword_Offhand", "Badge_Shield", "Rectangle_Shield", "Spike_Shield", "1H_Sword",
+        "Spellbook", "1H_Wand"
+      ]);
+      function kaykitRetirerArmesEnTrop(modele) {
+        const aRetirer = [];
+        modele.traverse(o => { if (o.isMesh && !o.isSkinnedMesh && KAYKIT_ARMES_EN_TROP.has(o.name)) aRetirer.push(o); });
+        aRetirer.forEach(o => o.parent?.remove(o));
+      }
+
       function createCharacterVisual(character, index) {
         const playerId = proprietaireGardien(character) ?? 0;
         const assetKey = resolveHeroAssetKey(character, index);
@@ -11837,6 +11856,7 @@
         let wrapper = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
         const usesFallback = !wrapper;
         if (!wrapper) wrapper = makeFallbackHero(playerId);
+        if (!usesFallback) kaykitRetirerArmesEnTrop(wrapper);
         if (playerId === 0 && assetKey === "hero0") styleKnightMetalArmor(wrapper);
         if (playerId === 1 && assetKey === "hero1") styleMagePalette(wrapper);
 
