@@ -32,6 +32,7 @@
         inset:0!important;
         width:100vw!important;
         height:100vh!important;
+        height:100dvh!important;
         z-index:100000!important;
         visibility:visible!important;
         opacity:1!important;

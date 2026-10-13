@@ -69,7 +69,7 @@ function ilyosLoadScriptOnce(marker, src) {
 
     ilyosLoadScriptOnce('deck-discard-hud-v11', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v11', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
-    ilyosLoadScriptOnce('card-cycle-v10', `./js/card-cycle-animation-v10.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('card-cycle-v10', `./js/card-cycle-animation-v10.js?v=${VERSION}-etroit`);
     ilyosLoadScriptOnce('hud-polish-targeted-v1', `./js/hud-polish-targeted-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('hud-islands-reserve-discard-v13', `./js/hud-islands-reserve-discard-v13.js?v=${VERSION}-bulle`);
 
@@ -83,7 +83,7 @@ function ilyosLoadScriptOnce(marker, src) {
 
     /* Fiabilisation tactile : V2 neutralise le click natif du canvas après un
        touch et le rejoue une fois le drag OrbitControls stabilisé. */
-    ilyosLoadScriptOnce('mobile-input-v2', `./js/mobile-input-v1.js?v=${VERSION}-apercu`);
+    ilyosLoadScriptOnce('mobile-input-v2', `./js/mobile-input-v1.js?v=${VERSION}-consigne`);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });

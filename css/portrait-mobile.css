@@ -280,17 +280,13 @@
      centrées. Ancrées dans l'angle comme sur ordinateur, elles recouvraient
      la consigne et la rangée pioche / annuler / fin du tour. */
   html body[data-visual-mode] #gameScreen {
-    --ov2-rotation-bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 56px);
+    --ov2-rotation-bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 24px + var(--pm-instr-h, 32px));
   }
   html body[data-visual-mode] #gameScreen #hudV2MagicRow,
   html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
     right: calc(50% - 50vw + var(--pm-gutter)) !important;
     left: auto !important;
     justify-content: center !important;
-  }
-  html body[data-visual-mode] #gameScreen:has(#hudV2MagicRow:not(.hidden)) #ilyosHudOrganicV2 .ov2-toast,
-  html body[data-visual-mode] #gameScreen:has(#ov2IslandRotationV12:not(.hidden)) #ilyosHudOrganicV2 .ov2-toast {
-    bottom: calc(var(--ov2-rotation-bottom) + 60px) !important;
   }
   html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 button {
     min-width: 0 !important;
@@ -306,14 +302,21 @@
     justify-content: center !important;
   }
 
-  /* Toasts : pleine largeur, au-dessus de l'instruction. */
+  /* Bulle « Information » du HUD : elle répète le message du #toast, déjà
+     affiché en haut, et recouvrait la barre de rotation ou de magie. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-toast {
-    left: var(--pm-gutter) !important;
-    right: var(--pm-gutter) !important;
-    width: auto !important;
-    max-width: none !important;
-    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 56px) !important;
-    transform: none !important;
+    display: none !important;
+  }
+
+  /* Frise du tour adverse : posée sous le portrait du bot, elle prenait toute
+     la largeur à huit étapes et passait sous le bouton VUE 2D et le bouton du
+     plateau entier. Plus petite et centrée entre les deux. */
+  html body #gameScreen #tourAdverseFrise {
+    right: auto !important;
+    left: 50% !important;
+    transform: translateX(-50%) scale(.42) !important;
+    transform-origin: center top !important;
+    margin-top: 10px !important;
   }
 
   /* Messages courts du jeu (tirage au sort, « l'ordinateur analyse… ») :
@@ -564,24 +567,10 @@
     zoom: .78;
   }
 
-  /* Messages : plus petits, en haut, sans bloquer le doigt. */
-  /* Sélecteur renforcé : d'autres couches posent un « bottom » plus
-     spécifique, qui étirait la bulle sur toute la hauteur. */
+  /* Messages : en haut, sans bloquer le doigt. La bulle « Information »
+     du HUD répète le #toast (voir portrait). */
   html body[data-visual-mode] #gameScreen#gameScreen #ilyosHudOrganicV2 .ov2-toast.ov2-toast {
-    position: fixed !important;
-    top: 60px !important;
-    bottom: auto !important;
-    left: 110px !important;
-    right: calc(var(--pc-col) + 16px) !important;
-    width: min(380px, calc(100vw - 260px)) !important;
-    max-width: none !important;
-    min-height: 0 !important;
-    height: auto !important;
-    margin: 0 auto !important;
-    padding: 6px 10px !important;
-    transform: none !important;
-    zoom: .85;
-    pointer-events: none !important;
+    display: none !important;
   }
   html body #toast {
     top: 50px !important;

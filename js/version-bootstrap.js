@@ -251,7 +251,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=5'
+    './css/portrait-mobile.css?v=7'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -261,7 +261,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=13.1-balle-de-match',
+    './js/hud-organique-v2.js?v=13.2-dvh',
     './js/hud-organique-v2-final-v8.js?v=12.7',
     /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
        les lumières de scène, jamais le HUD malgré leur nom, et ces réglages
@@ -272,7 +272,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=4'
+    './js/menu-jeu.js?v=5'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
@@ -307,7 +307,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   guardStyle.textContent = `
     html.ilyos-menu-v11-boot > body > #setupScreen,
     body.ilyos-menu-v11-active > #setupScreen{visibility:hidden!important;pointer-events:none!important}
-    #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:2147483000;background:#040a11;display:block}
+    #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483000;background:#040a11;display:block}
     #ilyos-menu-v11-frame[hidden]{display:none!important}
     .online-menu-back{margin-top:14px;display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:10px;border:1px solid rgba(216,170,76,.45);background:rgba(216,170,76,.12);color:#f4d28e;font:inherit;font-weight:600;cursor:pointer}
     .online-menu-back:hover{background:rgba(216,170,76,.22)}

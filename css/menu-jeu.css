@@ -151,6 +151,7 @@ body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu.hidden {
   grid-template-columns: 250px minmax(0, 1fr);
   width: min(960px, calc(100vw - 48px));
   height: min(620px, calc(100vh - 48px));
+  height: min(620px, calc(100dvh - 48px));
   border: 1px solid var(--mj-trait);
   border-radius: 20px;
   background: var(--mj-fond-panneau);
@@ -533,6 +534,7 @@ body[data-visual-mode] #gameScreen.puzzle-on > #hudV2GearPopover.mj-menu { margi
     grid-template-rows: auto minmax(0, 1fr);
     width: 100vw;
     height: 100vh;
+    height: 100dvh;
     height: 100dvh;
     border: 0;
     border-radius: 0;

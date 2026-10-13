@@ -132,3 +132,13 @@
   .difficulty-zone{margin:6px auto 6px}
   .duel .play{margin-top:8px}
 }
+
+/* Téléphone en paysage (≈ 390 px de haut) : les textes gardent leur taille
+   minimale (clamp en px), le panneau dépassait alors la scène de 30 px en
+   haut et en bas (titre et bouton principal coupés). On le réduit en bloc. */
+@media (orientation:landscape) and (max-height:500px){
+  .duel .setup{zoom:.82}
+}
+@media (orientation:landscape) and (max-height:360px){
+  .duel .setup{zoom:.74}
+}

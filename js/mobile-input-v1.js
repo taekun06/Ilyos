@@ -337,5 +337,21 @@
   `;
   document.head.appendChild(style);
 
+  /* Hauteur réelle de la phrase d'instruction (une ou deux lignes) : le
+     portrait téléphone place les barres de rotation juste au-dessus
+     (--pm-instr-h dans css/portrait-mobile.css). */
+  (function suivreConsigne(){
+    const consigne = document.getElementById('ov2Instruction');
+    const ecran = document.getElementById('gameScreen');
+    if (!consigne || !ecran || typeof ResizeObserver !== 'function') {
+      if (typeof ResizeObserver === 'function') setTimeout(suivreConsigne, 1000);
+      return;
+    }
+    new ResizeObserver(() => {
+      const h = Math.round(consigne.getBoundingClientRect().height);
+      if (h > 0) ecran.style.setProperty('--pm-instr-h', h + 'px');
+    }).observe(consigne);
+  })();
+
   console.info('[ILYOS] Mobile Input V2 active');
 })();

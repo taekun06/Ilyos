@@ -2330,6 +2330,7 @@
    @media(max-width:700px) {
        .sound-menu {
            max-height: calc(100vh - 16px);
+           max-height: calc(100dvh - 16px);
            overflow: auto;
        }
    }
@@ -7862,6 +7863,7 @@
        inset: 0 !important;
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        display: grid !important;
        place-items: center !important;
        padding: 0 !important;
@@ -7875,6 +7877,7 @@
    body[data-visual-mode="alternative"] .board-wrap:-webkit-full-screen #board {
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        aspect-ratio: auto !important;
        max-width: none !important;
        max-height: none !important;
@@ -7975,6 +7978,7 @@
    .board-wrap:-webkit-full-screen .kaykit-canvas {
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        border-radius: 0 !important;
        border-width: 0 !important;
        outline: 0 !important;
@@ -8742,6 +8746,7 @@
    #gameScreen:-webkit-full-screen {
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        background: #87d2eb !important
    }
 
