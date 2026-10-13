@@ -65,13 +65,13 @@ function ilyosLoadScriptOnce(marker, src) {
     ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-card-piles-discard-v11', `./css/hud-card-piles-discard-v11.css?v=${VERSION}`);
     ilyosLoadStyleOnce('hud-card-piles-discard-v11-layer', `./css/hud-card-piles-discard-v11-layer.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('hud-islands-reserve-discard-v13', `./css/hud-islands-reserve-discard-v13.css?v=${VERSION}`);
+    ilyosLoadStyleOnce('hud-islands-reserve-discard-v13', `./css/hud-islands-reserve-discard-v13.css?v=${VERSION}-bulle`);
 
     ilyosLoadScriptOnce('deck-discard-hud-v11', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v11', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
     ilyosLoadScriptOnce('card-cycle-v10', `./js/card-cycle-animation-v10.js?v=${VERSION}`);
     ilyosLoadScriptOnce('hud-polish-targeted-v1', `./js/hud-polish-targeted-v1.js?v=${VERSION}`);
-    ilyosLoadScriptOnce('hud-islands-reserve-discard-v13', `./js/hud-islands-reserve-discard-v13.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('hud-islands-reserve-discard-v13', `./js/hud-islands-reserve-discard-v13.js?v=${VERSION}-bulle`);
 
     /* Plus de script de départ caméra ici. camera-start-face-auto-v1.js
        recliquait VUE FACE puis AUTO à +45 ms et +520 ms ; le clic AUTO déclenche

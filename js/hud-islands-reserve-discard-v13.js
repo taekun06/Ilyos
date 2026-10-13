@@ -25,7 +25,8 @@
   function applyIslandPolish() {
     const selector = byId('islandSelector');
     if (!selector || !selector.closest('#hudV2IslandDrawer')) return false;
-    selector.style.setProperty('column-gap', innerWidth < 980 || innerHeight < 720 ? '14px' : '20px', 'important');
+    // Écart demandé plus large (Taekun, 2026-10-13) : formes moins serrées.
+    selector.style.setProperty('column-gap', innerWidth < 980 || innerHeight < 720 ? '26px' : '28px', 'important');
     selector.style.setProperty('row-gap', innerWidth < 980 || innerHeight < 720 ? '10px' : '14px', 'important');
     selector.style.setProperty('padding', innerWidth < 980 || innerHeight < 720 ? '7px 9px' : '10px 12px', 'important');
     return true;

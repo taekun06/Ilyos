@@ -22079,7 +22079,7 @@
             : "";
           const limite = shapeLimitPerOwner();
           const limitBadge = limite
-            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${limite}</span>`
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""} aria-label="${Math.max(0, limite - used)} restante(s)">${Math.max(0, limite - used)}</span>`
             : "";
           button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
           const limitSuffix = limite ? ` (${used}/${limite} posées)` : "";
