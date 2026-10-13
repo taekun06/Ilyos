@@ -5772,6 +5772,40 @@
             false
           )[0]?.object || null;
         };
+        /* APERÇU AU DOIGT. Au doigt, il n'y a pas de survol : toucher une
+           destination de poussée ou une position de magie jouait le coup sans
+           jamais montrer son résultat. mobile-input-v1.js demande ici ce que
+           vise un toucher ; une clé non nulle veut dire « ce toucher a un
+           aperçu » : le premier le montre, le second sur la même clé joue. */
+        window.ILYOS_cibleApercuTactile = (x, y) => {
+          if (!kaykit3D || !state || state.phase !== "ACTION" || !canLocalPlayerAct()) return null;
+          const hit = pick({ clientX: x, clientY: y });
+          if (!hit) return null;
+          const interaction = hit.userData?.ilyosInteraction;
+          if (interaction === "push-destination" || interaction === "push-death-destination") {
+            return hit.userData.pushOptionId ? `poussee:${hit.userData.pushOptionId}` : null;
+          }
+          if (state.selectedActionType === "MAGIC" && state.selectedIslandId && state.selectedMagicPivot
+            && typeof magicRotationStepsAtCell === "function") {
+            const { r, c } = hit.userData || {};
+            if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
+            const crans = magicRotationStepsAtCell(r, c);
+            return crans ? `magie:${state.selectedIslandId}:${state.selectedMagicPivot.join(",")}:${crans}` : null;
+          }
+          return null;
+        };
+        /* Montrer l'aperçu d'une clé, sans relancer de rayon : le doigt qui se
+           lève déclenche « pointerleave », qui efface le survol et refait les
+           anneaux en fondu — un lancer de rayon juste après ne les trouve plus. */
+        window.ILYOS_montrerApercuTactile = cle => {
+          if (!kaykit3D || !state || typeof cle !== "string" || !canLocalPlayerAct()) return false;
+          if (cle.startsWith("poussee:")) return !!viserOptionPoussee(cle.slice(8));
+          if (cle.startsWith("magie:")) {
+            previsualiserRotationMagie(Number(cle.split(":").pop()));
+            return true;
+          }
+          return false;
+        };
         const dispatchToCell = (type, r, c, event, bubbles = false) => {
           const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
           if (!cell) return;
@@ -25003,7 +25037,12 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
+          const auDoigt = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+          showToast(!auDoigt
+            ? "Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner."
+            : window.ILYOS_APERCU_TACTILE?.actif?.() !== false
+              ? "Pivot choisi : touchez une position colorée pour la voir, puis encore pour tourner."
+              : "Pivot choisi : touchez une position colorée ou un bouton de rotation pour tourner.");
           return;
         }
 

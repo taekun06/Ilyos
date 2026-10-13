@@ -3763,7 +3763,12 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
+          const auDoigt = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+          showToast(!auDoigt
+            ? "Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner."
+            : window.ILYOS_APERCU_TACTILE?.actif?.() !== false
+              ? "Pivot choisi : touchez une position colorée pour la voir, puis encore pour tourner."
+              : "Pivot choisi : touchez une position colorée ou un bouton de rotation pour tourner.");
           return;
         }
 

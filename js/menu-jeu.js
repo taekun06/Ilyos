@@ -149,6 +149,27 @@
         <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, fermer ce menu</dd></div>
       </dl>`);
     page('partie').appendChild(commandes);
+    /* Au doigt : voir le résultat d'une poussée ou d'une magie avant de la
+       jouer (js/mobile-input-v1.js, ILYOS_APERCU_TACTILE). */
+    if (tactile) {
+      const toucher = section('Toucher', 'Poussée et magie : le 1er toucher montre le résultat, le 2e sur la même case le joue.');
+      toucher.insertAdjacentHTML('beforeend', `
+        <div class="mj-grille-chocs">
+          <button type="button" class="mj-choix" data-mj-apercu><b>Aperçu avant de jouer</b><small>Désactivé : un toucher joue tout de suite</small></button>
+        </div>`);
+      const bouton = toucher.querySelector('[data-mj-apercu]');
+      /* Même clé que mobile-input-v1.js, qui peut se charger après ce menu. */
+      const actif = () => { try { return localStorage.getItem('ilyosApercuTactile') !== 'off'; } catch (_) { return true; } };
+      const maj = () => bouton.setAttribute('aria-pressed', String(actif()));
+      bouton.addEventListener('click', () => {
+        const voulu = !actif();
+        if (window.ILYOS_APERCU_TACTILE) window.ILYOS_APERCU_TACTILE.regler(voulu);
+        else { try { localStorage.setItem('ilyosApercuTactile', voulu ? 'on' : 'off'); } catch (_) {} }
+        maj();
+      });
+      maj();
+      page('partie').appendChild(toucher);
+    }
 
     // CAMÉRA : AUTO/LIBRE sont des modes, FACE/ISO des recadrages ponctuels.
     const camera = section('Caméra', 'Le choix s’applique aussitôt et referme le menu.');

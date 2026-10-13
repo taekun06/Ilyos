@@ -83,7 +83,7 @@ function ilyosLoadScriptOnce(marker, src) {
 
     /* Fiabilisation tactile : V2 neutralise le click natif du canvas après un
        touch et le rejoue une fois le drag OrbitControls stabilisé. */
-    ilyosLoadScriptOnce('mobile-input-v2', `./js/mobile-input-v1.js?v=${VERSION}`);
+    ilyosLoadScriptOnce('mobile-input-v2', `./js/mobile-input-v1.js?v=${VERSION}-apercu`);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });

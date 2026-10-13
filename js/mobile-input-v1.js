@@ -39,6 +39,19 @@
   let lastTouchRelease = null;
   let lastCanvasPoint = null;
   let placementTouchGuard = null;
+  let apercuTactile = null;
+  /* Réglage « Aperçu avant de jouer » (menu de jeu › Partie, js/menu-jeu.js).
+     Activé par défaut ; désactivé, un toucher joue tout de suite. */
+  const APERCU_CLE = 'ilyosApercuTactile';
+  window.ILYOS_APERCU_TACTILE = {
+    actif(){
+      try { return localStorage.getItem(APERCU_CLE) !== 'off'; } catch (_) { return true; }
+    },
+    regler(actif){
+      try { localStorage.setItem(APERCU_CLE, actif ? 'on' : 'off'); } catch (_) {}
+      apercuTactile = null;
+    }
+  };
 
   function canvas(){ return document.getElementById('kaykitCanvas'); }
   function isTouchPointer(event){ return event.pointerType && event.pointerType !== 'mouse'; }
@@ -221,6 +234,22 @@
     }
 
     placementTouchGuard = null;
+
+    /* APERÇU AU DOIGT : une destination de poussée ou une position de magie
+       se montre au premier toucher (comme un survol souris) et se joue au
+       second toucher sur la même cible. Le moteur dit ce qui a un aperçu. */
+    const cible = window.ILYOS_APERCU_TACTILE.actif()
+      ? window.ILYOS_cibleApercuTactile?.(tap.x,tap.y) || null
+      : null;
+    if (cible && cible !== apercuTactile) {
+      cancelPending();
+      apercuTactile = cible;
+      afterInteractionSettled(()=>{
+        if (apercuTactile === cible) window.ILYOS_montrerApercuTactile?.(cible);
+      });
+      return;
+    }
+    apercuTactile = null;
     queueGameplayTap(node,tap);
   },true);
 
@@ -275,6 +304,7 @@
       lastCanvasPoint = null;
       lastTouchRelease = null;
       placementTouchGuard = null;
+      apercuTactile = null;
       cancelPending();
     }
   },true);
