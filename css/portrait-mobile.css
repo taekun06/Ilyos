@@ -399,3 +399,47 @@
     --ov2-rotation-bottom: 152px;
   }
 }
+
+/* ---------- BOUTON « PLATEAU ENTIER » (vue téléphone) ----------
+   Créé par js/game/kaykit3d.js (VUE TÉLÉPHONE), caché hors portrait par
+   l'attribut hidden. Sous le joueur, à gauche : à droite, la frise du tour
+   adverse occupe déjà la place à côté de VUE 2D. Même pastille que VUE 2D. */
+#kaykitEnsembleBtn {
+  position: fixed;
+  z-index: 60;
+  top: calc(max(6px, env(safe-area-inset-top)) + 100px);
+  left: max(8px, env(safe-area-inset-left));
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(160, 210, 240, .45);
+  background: rgba(12, 26, 36, .88);
+  color: #eaf4fb;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+#kaykitEnsembleBtn[hidden],
+body:has(#gameScreen.hidden) #kaykitEnsembleBtn,
+body[data-plateau-tactique="on"] #kaykitEnsembleBtn,
+body.mj-menu-ouvert #kaykitEnsembleBtn {
+  display: none;
+}
+#kaykitEnsembleBtn svg {
+  width: 20px;
+  height: 20px;
+}
+#kaykitEnsembleBtn .kaykit-ensemble-fermer,
+#kaykitEnsembleBtn[aria-pressed="true"] .kaykit-ensemble-ouvrir {
+  display: none;
+}
+#kaykitEnsembleBtn[aria-pressed="true"] .kaykit-ensemble-fermer {
+  display: inline;
+}
+#kaykitEnsembleBtn[aria-pressed="true"] {
+  border-color: rgba(55, 214, 168, .65);
+  color: #37d6a8;
+}
