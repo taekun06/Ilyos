@@ -11822,12 +11822,12 @@
       /* Les modèles KayKit portent TOUTES leurs armes à la fois : le chevalier
          empilait deux épées dans une main, une épée et quatre boucliers dans
          l'autre ; le mage, deux livres, une baguette et un bâton. Choix de
-         Taekun (2026-10-13) : grande épée et bouclier rond pour le
+         Taekun (2026-10-13) : grande épée et grand bouclier rectangulaire pour le
          chevalier, livre ouvert et bâton pour le mage. Retirées après la mise
          à l'échelle, qui les mesure encore : la taille ne change pas. Environ
          70 dessins de moins par image en fin de partie, ombres comprises. */
       const KAYKIT_ARMES_EN_TROP = new Set([
-        "1H_Sword_Offhand", "Badge_Shield", "Rectangle_Shield", "Spike_Shield", "1H_Sword",
+        "1H_Sword_Offhand", "Badge_Shield", "Round_Shield", "Spike_Shield", "1H_Sword",
         "Spellbook", "1H_Wand"
       ]);
       function kaykitRetirerArmesEnTrop(modele) {
