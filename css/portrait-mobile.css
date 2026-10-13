@@ -443,3 +443,47 @@ body.mj-menu-ouvert #kaykitEnsembleBtn {
   border-color: rgba(55, 214, 168, .65);
   color: #37d6a8;
 }
+
+/* ---------- BOUTON « PLEIN ÉCRAN » (écran tactile) ----------
+   Créé par js/game/kaykit3d.js seulement sur écran tactile, et caché (hidden)
+   dès que le plein écran est actif : il n'apparaît que quand il manque.
+   Même pastille que « plateau entier », juste en dessous. */
+#kaykitPleinEcranBtn {
+  position: fixed;
+  z-index: 60;
+  top: calc(max(6px, env(safe-area-inset-top)) + 148px);
+  left: max(8px, env(safe-area-inset-left));
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 200, 120, .55);
+  background: rgba(12, 26, 36, .88);
+  color: #f3d58c;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+#kaykitPleinEcranBtn svg {
+  width: 20px;
+  height: 20px;
+}
+#kaykitPleinEcranBtn[hidden],
+body:has(#gameScreen.hidden) #kaykitPleinEcranBtn,
+body.mj-menu-ouvert #kaykitPleinEcranBtn {
+  display: none;
+}
+/* Sans le bouton « plateau entier » (paysage, tablette), il prend sa place. */
+#kaykitEnsembleBtn[hidden] ~ #kaykitPleinEcranBtn,
+body[data-plateau-tactique="on"] #kaykitPleinEcranBtn {
+  top: calc(max(6px, env(safe-area-inset-top)) + 100px);
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  /* VUE 2D occupe déjà le haut gauche : juste en dessous. */
+  #kaykitPleinEcranBtn,
+  #kaykitEnsembleBtn[hidden] ~ #kaykitPleinEcranBtn {
+    top: calc(max(6px, env(safe-area-inset-top)) + 140px);
+  }
+}

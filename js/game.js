@@ -1356,6 +1356,7 @@
         cameraHint.textContent = "← → TOURNER · ESPACE : VUE DE FACE · MOLETTE : ZOOM · CLIC : JOUER";
         els.boardWrap.appendChild(cameraHint);
         kaykitCreerBoutonEnsemble();
+        kaykitCreerBoutonPleinEcran();
 
         let renderer;
         try {
@@ -5789,7 +5790,6 @@
             renderHand();
           }
           kaykit3D.hoverCell = null;
-          majPorteeAdverseKayKit(null);
           // Pendant la pose, conserver le dernier ancrage : les boutons de rotation
           // doivent transformer exactement la même prévisualisation.
           if (state?.phase !== "PLACE_ISLAND") clearPlacementPreview(true);
@@ -5864,7 +5864,6 @@
           }
 
           kaykit3D.hoverCell = next;
-          majPorteeAdverseKayKit(next);
           const intent = next ? kaykitHoverIntent(next.r, next.c, next.hitAction) : null;
           setKayKitVisualHover(next, intent);
           if (kaykit3D.hoverMarker) {
@@ -7300,6 +7299,23 @@
       /* Bouton « plateau entier » : bascule entre la vue rapprochée et la vue
          d'ensemble. Visible seulement en portrait (css/portrait-mobile.css). */
       let kaykitEnsembleBouton = null;
+      let kaykitTelephoneAvantEnsemble = null;
+      // Vue rapprochée centrée sur un point du plateau (cadrage quitté).
+      function kaykitTelephoneRevenir(cible) {
+        if (!kaykit3D?.camera) return;
+        const vise = cible ? cible.clone() : new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
+        const distance = kaykitTelephoneRecul(false);
+        kaykit3D.viewTarget = vise.clone();
+        kaykit3D.zoomDistance = distance;
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 200 : 520,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: kaykitPositionAutour(distance, vise),
+          startTarget: (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone(),
+          endTarget: vise.clone()
+        };
+      }
       function kaykitCreerBoutonEnsemble() {
         if (kaykitEnsembleBouton) return;
         const bouton = document.createElement("button");
@@ -7307,20 +7323,76 @@
         bouton.id = "kaykitEnsembleBtn";
         bouton.setAttribute("aria-label", "Voir tout le plateau");
         bouton.setAttribute("aria-pressed", "false");
-        bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="kaykit-ensemble-ouvrir" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path class="kaykit-ensemble-fermer" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><g class="kaykit-ensemble-ouvrir" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></g><g class="kaykit-ensemble-fermer" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></g></svg>`;
         bouton.addEventListener("click", () => {
           if (!kaykit3D) return;
           kaykit3D.vueEnsemble = !kaykit3D.vueEnsemble;
           bouton.setAttribute("aria-pressed", String(kaykit3D.vueEnsemble));
           bouton.setAttribute("aria-label", kaykit3D.vueEnsemble ? "Revenir à la vue rapprochée" : "Voir tout le plateau");
-          if (kaykit3D.vueEnsemble) { kaykitTelephoneCadrer(null, { duree: 520 }); return; }
+          if (kaykit3D.vueEnsemble) {
+            /* Le cadrage quitté, pour y revenir au second appui : avant la
+               pose des gardiens, il n'y a encore rien d'autre à suivre. */
+            kaykitTelephoneAvantEnsemble = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget)?.clone() || null;
+            kaykitTelephoneCadrer(null, { duree: 520 });
+            return;
+          }
           const gardien = state?.selectedCharId ? characterById(state.selectedCharId) : null;
+          const mesGardiens = (state?.characters || []).filter(ch => ch.player === state.currentPlayer);
           if (gardien) kaykitTelephoneCadrer([[gardien.r, gardien.c], ...[...(state.reachable || [])].map(k => k.split(",").map(Number))], { duree: 520 });
-          else kaykitFollowCurrentPlayer(true);
+          else if (mesGardiens.length) kaykitFollowCurrentPlayer(true);
+          else kaykitTelephoneRevenir(kaykitTelephoneAvantEnsemble);
         });
         document.body.appendChild(bouton);
         kaykitEnsembleBouton = bouton;
         bouton.hidden = !kaykitVueTelephone();
+      }
+
+      /* PLEIN ÉCRAN AU DOIGT. Le menu le demande à son premier toucher, mais
+         un geste système (retour, notification, changement d'appli) le fait
+         perdre en cours de partie : barres du navigateur revenues, hauteur qui
+         change, HUD décalé. Sur écran tactile, il est donc redemandé au
+         toucher suivant dans le jeu, et un bouton le remet à tout moment —
+         sauf si le joueur l'a quitté lui-même (ILYOS_pleinEcranQuitte, posé
+         par le menu et par ce bouton). Toujours le document entier, comme le
+         menu : jamais #gameScreen seul, qui a sa propre mise en page. */
+      function kaykitPleinEcranPossible() {
+        const racine = document.documentElement;
+        return !!(racine.requestFullscreen || racine.webkitRequestFullscreen);
+      }
+      function kaykitPleinEcranActif() {
+        return !!(document.fullscreenElement || document.webkitFullscreenElement);
+      }
+      function kaykitDemanderPleinEcran() {
+        if (kaykitPleinEcranActif() || !kaykitPleinEcranPossible()) return;
+        const racine = document.documentElement;
+        try {
+          const promesse = (racine.requestFullscreen || racine.webkitRequestFullscreen).call(racine);
+          promesse?.catch?.(() => {});
+        } catch (_) {}
+      }
+      function kaykitCreerBoutonPleinEcran() {
+        if (document.getElementById("kaykitPleinEcranBtn")) return;
+        const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+        if (!tactile || !kaykitPleinEcranPossible()) return;
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.id = "kaykitPleinEcranBtn";
+        bouton.setAttribute("aria-label", "Plein écran");
+        bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        bouton.addEventListener("click", () => {
+          window.ILYOS_pleinEcranQuitte = false;
+          kaykitDemanderPleinEcran();
+        });
+        document.body.appendChild(bouton);
+        const majBouton = () => { bouton.hidden = kaykitPleinEcranActif(); };
+        document.addEventListener("fullscreenchange", majBouton);
+        document.addEventListener("webkitfullscreenchange", majBouton);
+        majBouton();
+        document.addEventListener("pointerup", event => {
+          if (event.pointerType === "mouse" || window.ILYOS_pleinEcranQuitte) return;
+          if (els.gameScreen?.classList.contains("hidden")) return;
+          kaykitDemanderPleinEcran();
+        }, true);
       }
 
       /* CHAMP DE VISION SELON LE FORMAT.
@@ -8712,34 +8784,6 @@
         }
       }
 
-      /* Portée d'un adversaire au survol : où son gardien peut aller au
-         prochain tour avec les cartes DÉPLACER qu'il a en vue (main et
-         réserve, déjà affichées dans son bandeau). Même tracé que la zone de
-         déplacement, en rouge. */
-      function majPorteeAdverseKayKit(survol) {
-        if (!kaykit3D?.fxGroup) return;
-        let groupe = kaykit3D.porteeAdverseGroup;
-        if (!groupe) {
-          groupe = new THREE.Group();
-          groupe.name = "ilyos-portee-adverse";
-          kaykit3D.fxGroup.add(groupe);
-          kaykit3D.porteeAdverseGroup = groupe;
-        }
-        const occupant = survol && !survol.special ? characterAt(survol.r, survol.c) : null;
-        const actif = state?.currentPlayer;
-        const adversaire = occupant && !memeEquipe(occupant.player, actif) && !state.selectedCharId ? occupant : null;
-        const cle = adversaire ? `${adversaire.id}@${adversaire.r},${adversaire.c}` : null;
-        if (cle === kaykit3D.porteeAdverseCle) return;
-        kaykit3D.porteeAdverseCle = cle;
-        clearKayKitGroup(groupe);
-        if (!adversaire) return;
-        const joueur = state.players[adversaire.player];
-        const cartes = (joueur?.hand || []).filter(carte => carte.action === "MOVE" && !carte.used).length + (joueur?.stash?.MOVE || 0);
-        const portee = movementRange(adversaire, Math.max(1, cartes));
-        const cellules = [...portee].map(cle => cle.split(",").map(Number));
-        if (cellules.length) addKayKitMoveZone(cellules, { groupe, sombre: 0x4a0f1c, claire: 0xff6f8a, voile: .18, origine: [adversaire.r, adversaire.c] });
-      }
-
       // Anneau orange compact directement sous le personnage/couronne poussable
       // — jamais une zone colorée sur toute la case, le modèle reste intact.
       function addKayKitPushAffordance(r, c) {
@@ -9722,12 +9766,10 @@
           kaykit3D.actionPreviewKey = null;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
           kaykit3D.moveZoneRef = null;
-          majPorteeAdverseKayKit(null);
           return;
         }
 
         const hovered = kaykit3D.hoverCell;
-        if (!hovered || hovered.special) majPorteeAdverseKayKit(null);
         if (!hovered) {
           if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
           kaykit3D.cursorLabel?.classList.remove("visible");
@@ -9741,7 +9783,6 @@
           refreshKayKitHoverPreviews();
           return;
         }
-        majPorteeAdverseKayKit(hovered);
         const intent = kaykitHoverIntent(hovered.r, hovered.c, hovered.hitAction);
         const p = kaykitCellPosition(hovered.r, hovered.c, kaykitCellSurfaceY(hovered.r, hovered.c) + .085);
         kaykit3D.hoverMarker.visible = true;
