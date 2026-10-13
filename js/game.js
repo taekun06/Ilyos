@@ -2431,6 +2431,38 @@
       // fait que les résoudre. Nappe haute (lisible, opacité .62) → 2048 = 4,4× au lieu
       // de 17,5×. Nappe basse (parallaxe atténuée, opacité .40) → 1024, pour tenir le
       // budget VRAM à 20 Mo au lieu de 32.
+      /* Texture BLANCHE dont seule la transparence vient de la toile.
+       *
+       * Points colorés sur iPhone (2026-10-13) : une toile 2D garde ses pixels
+       * prémultipliés ; à l'envoi vers WebGL, Safari les « déprémultiplie » et le
+       * moindre écart de couleur d'un pixel presque transparent (dégradés tramés)
+       * devient une couleur franche au hasard. Sur la mer de nuages, filtrée et
+       * étirée jusqu'à l'horizon, cela semait des confettis violets et verts.
+       * Les nuages sont blancs par construction : on n'envoie donc que l'alpha,
+       * avec un blanc exact partout, et plus rien ne peut dériver. */
+      function kaykitTextureBlanche(canvas) {
+        const w = canvas.width, h = canvas.height;
+        let source;
+        try {
+          source = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+        } catch (_) {
+          return new THREE.CanvasTexture(canvas);
+        }
+        const pixels = new Uint8Array(w * h * 4).fill(255);
+        // Lignes inversées : même sens que CanvasTexture (flipY), que DataTexture
+        // n'applique pas.
+        for (let y = 0; y < h; y++) {
+          const de = (h - 1 - y) * w * 4, vers = y * w * 4;
+          for (let i = 3; i < w * 4; i += 4) pixels[vers + i] = source[de + i];
+        }
+        const texture = new THREE.DataTexture(pixels, w, h, THREE.RGBAFormat);
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+        return texture;
+      }
+
       function kaykitCloudSheetTexture(variant = 0, size2D = 150, holeStart = 11, holeEnd = 20, resolution = 512, edgeFade = .80) {
         const key = `cloud-sheet-v4-${variant}-${size2D}-${holeStart}-${holeEnd}-${resolution}-${edgeFade}`;
         if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
@@ -2522,7 +2554,7 @@
         ctx.fillStyle = mask;
         ctx.fillRect(0, 0, size, size);
         ctx.globalCompositeOperation = "source-over";
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
         texture.encoding = THREE.sRGBEncoding;
         // Indispensable : vue rasante, une nappe horizontale est vue sous un angle
@@ -3541,7 +3573,7 @@
             // Injecté ici, le lisere est une VRAIE lumière : il traverse ACES, se
             // comporte comme le reste de l'éclairage, et le Bloom pourra le cueillir.
             .replace("#include <tonemapping_fragment>",
-              "  vec3 bN = normalize(vBacklitN);\n" +
+              "  vec3 bN = vBacklitN * inversesqrt(max(dot(vBacklitN, vBacklitN), 1e-8));\n" +
               "  vec3 bV = normalize(cameraPosition - vBacklitW);\n" +
               // 1 - |N·V| : maximal sur la silhouette, nul de face. abs() pour que les
               // faces arrière (nuages non fermés du pack) s'allument aussi.
@@ -3551,17 +3583,26 @@
               // s'embrase à contre-jour, c'est la SILHOUETTE du côté du soleil : on
               // projette donc normale et direction du soleil sur le plan perpendi-
               // culaire à la vue, et on compare ces deux directions-là.
-              "  vec3 nPerp = normalize(bN - bV * dot(bN, bV));\n" +
-              "  vec3 sPerp = normalize(uSunDir - bV * dot(uSunDir, bV));\n" +
-              "  float bRim = pow(1.0 - abs(dot(bN, bV)), uRimPower);\n" +
+              //
+              // GARDE-FOUS iPhone (2026-10-13) : sur les puces Apple, pow() d'un
+              // nombre négatif et normalize() d'un vecteur nul donnent NaN, là où
+              // les PC rendent 0. Or 1 − |N·V| passe un rien sous zéro dès que les
+              // vecteurs, arrondis, dépassent la longueur 1 : chaque pixel touché
+              // devenait un point de couleur au hasard (élargi ensuite par le
+              // Bloom), semé sur toutes les faces de nuage tournées vers la caméra.
+              "  vec3 nPerp = bN - bV * dot(bN, bV);\n" +
+              "  nPerp *= inversesqrt(max(dot(nPerp, nPerp), 1e-8));\n" +
+              "  vec3 sPerp = uSunDir - bV * dot(uSunDir, bV);\n" +
+              "  sPerp *= inversesqrt(max(dot(sPerp, sPerp), 1e-8));\n" +
+              "  float bRim = pow(clamp(1.0 - abs(dot(bN, bV)), 0.0, 1.0), uRimPower);\n" +
               // Ne s'allume que du côté qui regarde le soleil : sans ce facteur on
               // obtient un contour uniforme (effet néon) au lieu d'un contre-jour.
               "  float bBack = smoothstep(-0.10, 0.90, dot(nPerp, sPerp));\n" +
-              "  gl_FragColor.rgb += uRimColor * (bRim * bBack * uRimStrength);\n" +
+              "  gl_FragColor.rgb += uRimColor * clamp(bRim * bBack * uRimStrength, 0.0, 8.0);\n" +
               "#include <tonemapping_fragment>");
         };
         // Trois matériaux identiques compileraient trois programmes sans cette clé.
-        mat.customProgramCacheKey = () => "ilyos-backlit-cloud-v1";
+        mat.customProgramCacheKey = () => "ilyos-backlit-cloud-v2";
         mat.needsUpdate = true;
 
         kaykitBacklitCloudCache.set(source.uuid, mat);
@@ -8066,7 +8107,7 @@
           ctx.fillStyle = blob;
           ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
         }
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.encoding = THREE.sRGBEncoding;
         if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
         return texture;
@@ -8095,7 +8136,7 @@
         glow.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = glow;
         ctx.fillRect(0, 0, size, size);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.encoding = THREE.sRGBEncoding;
         if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
         return texture;
@@ -8119,7 +8160,7 @@
         grad.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.encoding = THREE.sRGBEncoding;
         if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
         return texture;

@@ -495,15 +495,24 @@
     }
 
     const compact = innerWidth < 980 || innerHeight < 720;
-    const cardW = compact ? 70 : 86;
-    const cardH = compact ? 108 : 136;
+    /* Sur un téléphone en portrait, cinq cartes de 70 px au pas de 90 font
+       430 px : l'éventail sortait des deux côtés. Les cartes rapetissent
+       alors pour tenir dans la largeur, avec 16 px de marge et 10 px entre
+       elles. */
+    const ecartEtroit = 10;
+    const largeurDispo = types.length > 1
+      ? Math.floor((innerWidth - 32 - (types.length - 1) * ecartEtroit) / types.length)
+      : Infinity;
+    const etroit = largeurDispo < (compact ? 70 : 86);
+    const cardW = etroit ? Math.max(44, largeurDispo) : (compact ? 70 : 86);
+    const cardH = etroit ? Math.round(cardW * 108 / 70) : (compact ? 108 : 136);
     /* Écartement de l'éventail. L'ancien pas (98 pour 86 px de carte) ne laissait
        que 12 px entre deux cartes : additionné à la rotation et aux échelles
        inégales du vol, l'éventail se refermait sur lui-même et les cinq cartes
        se recouvraient. Un pas au moins égal à la largeur + 26 garantit qu'on
        voit cinq cartes distinctes, ce qui est la seule chose que cette
        animation a à dire. */
-    const spacing = cardW + (compact ? 20 : 26);
+    const spacing = cardW + (etroit ? ecartEtroit : compact ? 20 : 26);
     const tilt = compact ? 3.5 : 4.5;
     const mid = (types.length - 1) / 2;
     const anchor = fanAnchor(cardH);
