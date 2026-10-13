@@ -24,6 +24,7 @@
   }
   function requestSiteFullscreen(){
     const doc=fullscreenDocument();
+    try{ parent.ILYOS_pleinEcranQuitte=false; }catch(_){}
     if(doc.fullscreenElement) return;
     const el=doc.documentElement;
     const req=el.requestFullscreen||el.webkitRequestFullscreen;
@@ -34,6 +35,8 @@
 
   function exitSiteFullscreen(){
     const doc=fullscreenDocument();
+    /* Quitté volontairement : le jeu ne le redemandera pas au toucher suivant. */
+    try{ parent.ILYOS_pleinEcranQuitte=true; }catch(_){}
     const exit=doc.exitFullscreen||doc.webkitExitFullscreen;
     if(!exit) return;
     try{ const p=exit.call(doc); if(p&&p.catch) p.catch(()=>{}); }catch(e){}

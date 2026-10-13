@@ -50,6 +50,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
      la taille réelle, exposée par le moteur via kaykit3D.gridSize. */
   const FRONT_DISTANCE = 17;
   function reculPourPlateau(k) {
+    // Téléphone en portrait : le moteur décide (vue rapprochée ou d'ensemble).
+    if (enTelephone() && window.ILYOS_reculTelephone) return window.ILYOS_reculTelephone();
     const taille = Number(k?.gridSize) || 11;
     return FRONT_DISTANCE * (taille / 11) * (enPortrait(k) ? PORTRAIT_RECUL : 1);
   }
@@ -70,6 +72,12 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
      plongeante et un peu plus de recul remplissent cette hauteur avec le
      plateau plutôt qu'avec du ciel, et la visée revient au plateau lui-même. */
   const PORTRAIT_PITCH_DEG = 55;
+  /* TÉLÉPHONE (portrait, écran étroit) : vue rapprochée presque de dessus,
+     66° sous l'horizontale, le plancher d'inclinaison du moteur (24° depuis le
+     zénith). Les cases se lisent comme sur un plateau de société posé devant
+     soi. Voir VUE TÉLÉPHONE dans js/game/kaykit3d.js. */
+  const TELEPHONE_PITCH_DEG = 66;
+  const enTelephone = () => !!window.ILYOS_vueTelephone?.();
   const PORTRAIT_RECUL = 1.12;
   const PORTRAIT_HAUTEUR_VISEE = 0;
   const enPortrait = k => (Number(k?.camera?.aspect) || 1) < .9;
@@ -126,7 +134,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, hauteurVisee, .18);
     const target = k.viewTarget;
     const pitch = (Number.isFinite(window.ILYOS_FRONT_PITCH_DEG)
-      ? window.ILYOS_FRONT_PITCH_DEG : (portrait ? PORTRAIT_PITCH_DEG : FRONT_PITCH_DEG)) * Math.PI / 180;
+      ? window.ILYOS_FRONT_PITCH_DEG
+      : (enTelephone() ? TELEPHONE_PITCH_DEG : (portrait ? PORTRAIT_PITCH_DEG : FRONT_PITCH_DEG))) * Math.PI / 180;
     k.camera.position.set(
       target.x,
       target.y + distance * Math.sin(pitch),
@@ -242,7 +251,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=1'
+    './css/portrait-mobile.css?v=5'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -263,7 +272,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=2'
+    './js/menu-jeu.js?v=4'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');

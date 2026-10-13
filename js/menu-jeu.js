@@ -128,7 +128,18 @@
     pioche.hidden = true;
     page('partie').appendChild(pioche);
     const commandes = section('Commandes');
-    commandes.insertAdjacentHTML('beforeend', `
+    /* Sur un écran tactile, ni clavier ni molette : on décrit les gestes. */
+    const tactile = window.matchMedia?.('(hover: none) and (pointer: coarse)')?.matches;
+    if (tactile) commandes.insertAdjacentHTML('beforeend', `
+      <dl class="mj-commandes">
+        <div><dt><kbd>Toucher</kbd></dt><dd>Jouer une case, une action</dd></div>
+        <div><dt><kbd>Glisser</kbd></dt><dd>Tourner autour du plateau</dd></div>
+        <div><dt><kbd>Pincer</kbd></dt><dd>Zoomer</dd></div>
+        <div><dt><kbd>Deux doigts</kbd></dt><dd>Déplacer la vue</dd></div>
+        <div><dt><kbd>↺</kbd> <kbd>↻</kbd></dt><dd>Tourner l’île à poser</dd></div>
+        <div><dt><kbd>Caméra</kbd></dt><dd>Onglet ci-dessus : revenir à la vue de face</dd></div>
+      </dl>`);
+    else commandes.insertAdjacentHTML('beforeend', `
       <dl class="mj-commandes">
         <div><dt><kbd>Clic</kbd></dt><dd>Jouer une case, une action</dd></div>
         <div><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Tourner l’île à poser</dd></div>
@@ -138,6 +149,27 @@
         <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, fermer ce menu</dd></div>
       </dl>`);
     page('partie').appendChild(commandes);
+    /* Au doigt : voir le résultat d'une poussée ou d'une magie avant de la
+       jouer (js/mobile-input-v1.js, ILYOS_APERCU_TACTILE). */
+    if (tactile) {
+      const toucher = section('Toucher', 'Poussée et magie : le 1er toucher montre le résultat, le 2e sur la même case le joue.');
+      toucher.insertAdjacentHTML('beforeend', `
+        <div class="mj-grille-chocs">
+          <button type="button" class="mj-choix" data-mj-apercu><b>Aperçu avant de jouer</b><small>Désactivé : un toucher joue tout de suite</small></button>
+        </div>`);
+      const bouton = toucher.querySelector('[data-mj-apercu]');
+      /* Même clé que mobile-input-v1.js, qui peut se charger après ce menu. */
+      const actif = () => { try { return localStorage.getItem('ilyosApercuTactile') !== 'off'; } catch (_) { return true; } };
+      const maj = () => bouton.setAttribute('aria-pressed', String(actif()));
+      bouton.addEventListener('click', () => {
+        const voulu = !actif();
+        if (window.ILYOS_APERCU_TACTILE) window.ILYOS_APERCU_TACTILE.regler(voulu);
+        else { try { localStorage.setItem('ilyosApercuTactile', voulu ? 'on' : 'off'); } catch (_) {} }
+        maj();
+      });
+      maj();
+      page('partie').appendChild(toucher);
+    }
 
     // CAMÉRA : AUTO/LIBRE sont des modes, FACE/ISO des recadrages ponctuels.
     const camera = section('Caméra', 'Le choix s’applique aussitôt et referme le menu.');
