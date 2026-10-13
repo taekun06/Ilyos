@@ -128,7 +128,18 @@
     pioche.hidden = true;
     page('partie').appendChild(pioche);
     const commandes = section('Commandes');
-    commandes.insertAdjacentHTML('beforeend', `
+    /* Sur un écran tactile, ni clavier ni molette : on décrit les gestes. */
+    const tactile = window.matchMedia?.('(hover: none) and (pointer: coarse)')?.matches;
+    if (tactile) commandes.insertAdjacentHTML('beforeend', `
+      <dl class="mj-commandes">
+        <div><dt><kbd>Toucher</kbd></dt><dd>Jouer une case, une action</dd></div>
+        <div><dt><kbd>Glisser</kbd></dt><dd>Tourner autour du plateau</dd></div>
+        <div><dt><kbd>Pincer</kbd></dt><dd>Zoomer</dd></div>
+        <div><dt><kbd>Deux doigts</kbd></dt><dd>Déplacer la vue</dd></div>
+        <div><dt><kbd>↺</kbd> <kbd>↻</kbd></dt><dd>Tourner l’île à poser</dd></div>
+        <div><dt><kbd>Caméra</kbd></dt><dd>Onglet ci-dessus : revenir à la vue de face</dd></div>
+      </dl>`);
+    else commandes.insertAdjacentHTML('beforeend', `
       <dl class="mj-commandes">
         <div><dt><kbd>Clic</kbd></dt><dd>Jouer une case, une action</dd></div>
         <div><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Tourner l’île à poser</dd></div>

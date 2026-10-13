@@ -242,7 +242,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=1'
+    './css/portrait-mobile.css?v=2'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -263,7 +263,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=2'
+    './js/menu-jeu.js?v=3'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');

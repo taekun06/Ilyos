@@ -111,6 +111,17 @@
         return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
       }
 
+      /* Les consignes sont écrites pour la souris (« Cliquez… », « la
+         molette »). Sur un écran tactile, la phrase affichée dit « Touchez » :
+         une seule traduction, au moment où la consigne est posée dans le HUD. */
+      function consigneSelonPointeur(texte) {
+        if (!texte || !window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches) return texte;
+        return texte
+          .replace(/\bCliquez\b/g, "Touchez")
+          .replace(/\bcliquez\b/g, "touchez")
+          .replace(/, ↻ ou la molette/g, " ou ↻");
+      }
+
       function turnContextInfo() {
         const amount = state.selectedActionType ? selectedBatchSize() : 1;
         const action = state.selectedActionType ? ACTIONS[state.selectedActionType] : null;
@@ -624,10 +635,10 @@
           if (currentPushOption) {
             instructionEl.textContent = currentPushOption.fell
               ? `☠ Force ${state.selectedActionCount} — pousse hors du plateau.`
-              : `Cliquez une destination éclairée · Force ${state.selectedActionCount}.`;
+              : consigneSelonPointeur(`Cliquez une destination éclairée · Force ${state.selectedActionCount}.`);
           } else {
             const info = turnContextInfo();
-            instructionEl.textContent = info?.next || info?.title || "";
+            instructionEl.textContent = consigneSelonPointeur(info?.next || info?.title || "");
           }
         }
 
@@ -1029,7 +1040,12 @@
               (state.phase === "ACTION" && state.selectedCharId && ["MOVE", "PUSH"].includes(state.selectedActionType || ""))
               || state.phase === "SMART_CHAR"
             );
-            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
+            if (state.reachable.has(key(r, c))) {
+              /* Une fois le gardien choisi, la 3D dessine la zone d'un seul
+                 contour au lieu de cases éclairées ; le plateau tactique 2D,
+                 qui ne lit que ces classes, garde la zone par cette marque. */
+              classes.push(hideReachableAfterCharacterChoice ? "reachable-zone" : "reachable");
+            }
             if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
             if (
               char

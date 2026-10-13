@@ -1,7 +1,8 @@
-/* ILYOS — TÉLÉPHONE EN PORTRAIT (prototype)
+/* ILYOS — TÉLÉPHONE : PORTRAIT, ÉCRAN TACTILE, PAYSAGE
 
-   Tout ce fichier est borné à un écran étroit tenu verticalement : il ne
-   change rien en paysage ni sur ordinateur. Il est chargé en dernier par le
+   La première partie est bornée à un écran étroit tenu verticalement ; les
+   deux dernières à un écran tactile et à un téléphone en paysage. Rien ne
+   change sur ordinateur. Il est chargé en dernier par le
    chargeur du HUD (js/version-bootstrap.js), d'où la spécificité « html body »
    qui passe devant les couches V6 à V12 sans en ajouter une nouvelle.
 
@@ -179,6 +180,12 @@
     height: 24px !important;
     margin: 0 !important;
   }
+  /* La consolidation V12 donne à l'icône une base flex de 38 px : en colonne,
+     elle l'emportait sur la hauteur ci-dessus et poussait le « ×4 » hors de
+     l'écran, sous le bouton. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico {
+    flex: 0 0 24px !important;
+  }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong {
     font-size: 11px !important;
     letter-spacing: .02em !important;
@@ -269,12 +276,33 @@
     gap: 4px !important;
     padding: 6px !important;
   }
+  /* Barres de rotation (île, magie) : au-dessus de la phrase d'instruction,
+     centrées. Ancrées dans l'angle comme sur ordinateur, elles recouvraient
+     la consigne et la rangée pioche / annuler / fin du tour. */
+  html body[data-visual-mode] #gameScreen {
+    --ov2-rotation-bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 56px);
+  }
+  html body[data-visual-mode] #gameScreen #hudV2MagicRow,
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
+    right: calc(50% - 50vw + var(--pm-gutter)) !important;
+    left: auto !important;
+    justify-content: center !important;
+  }
+  html body[data-visual-mode] #gameScreen:has(#hudV2MagicRow:not(.hidden)) #ilyosHudOrganicV2 .ov2-toast,
+  html body[data-visual-mode] #gameScreen:has(#ov2IslandRotationV12:not(.hidden)) #ilyosHudOrganicV2 .ov2-toast {
+    bottom: calc(var(--ov2-rotation-bottom) + 60px) !important;
+  }
   html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 button {
     min-width: 0 !important;
     padding-inline: 8px !important;
   }
+  /* Cinq formes par rangée : deux rangées au lieu de trois (ou cinq sur un
+     écran de 360 px, où le tiroir remontait jusque sous le bandeau des
+     joueurs). Le plateau reste visible au-dessus. */
   html body[data-visual-mode] #gameScreen #hudV2IslandDrawer #islandSelector {
-    flex-wrap: wrap !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, auto) !important;
+    gap: 8px !important;
     justify-content: center !important;
   }
 
@@ -286,6 +314,19 @@
     max-width: none !important;
     bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 56px) !important;
     transform: none !important;
+  }
+
+  /* Messages courts du jeu (tirage au sort, « l'ordinateur analyse… ») :
+     sous le bandeau des joueurs et le bouton VUE 2D, qu'ils recouvraient. */
+  html body #toast {
+    top: calc(max(6px, env(safe-area-inset-top)) + 132px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  /* Plateau tactique 2D : sous le bandeau des joueurs et le bouton VUE 3D.
+     Sa taille vient de js/plateau-tactique.js (toute la largeur). */
+  html body[data-plateau-tactique="on"] #plateauTactique {
+    margin-top: calc(max(6px, env(safe-area-inset-top)) + 132px) !important;
   }
 
   /* Le fond de vignette du bas suit la hauteur réelle du HUD. */
@@ -300,5 +341,61 @@
     html body #gameScreen .kaykit-cursor-label {
       display: none !important;
     }
+  }
+}
+
+/* ---------- ÉCRAN TACTILE, toutes orientations ----------
+   Un téléphone ou une tablette n'a ni survol ni clavier. */
+@media (hover: none) and (pointer: coarse) {
+  /* Pas de rectangle bleu ou gris au toucher d'un bouton, pas de menu « Enregistrer
+     l'image » sur un appui long (cartes, avatars), pas de sélection de texte
+     en glissant le doigt. Safari ne lit que la forme préfixée. */
+  html,
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+  }
+  html body input,
+  html body textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* « ← → TOURNER · ESPACE · MOLETTE · CLIC » : des commandes qui n'existent
+     pas au doigt. Le bandeau passait en plus derrière les actions en paysage. */
+  html body #gameScreen .kaykit-camera-hint {
+    display: none !important;
+  }
+}
+
+/* ---------- TÉLÉPHONE EN PAYSAGE ----------
+   Le HUD d'ordinateur, simplement réduit : on écarte seulement ce qui se
+   chevauche sur une hauteur de téléphone. */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* VUE 2D se posait sur l'avatar de l'adversaire : à gauche, sous le joueur. */
+  html body #plateauTactiqueBtn {
+    top: calc(max(8px, env(safe-area-inset-top)) + 88px) !important;
+    left: max(10px, env(safe-area-inset-left)) !important;
+    right: auto !important;
+    transform: scale(.8) !important;
+    transform-origin: top left !important;
+  }
+
+  /* FIN DU TOUR recouvrait la défausse : il monte juste au-dessus d'elle,
+     toujours sous le pouce droit. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end {
+    left: auto !important;
+    right: max(10px, env(safe-area-inset-right)) !important;
+    bottom: 88px !important;
+    width: 172px !important;
+    white-space: nowrap !important;
+    transform-origin: bottom right !important;
+  }
+
+  /* Les barres de rotation (île, magie) montent au-dessus de FIN DU TOUR,
+     qu'elles auraient sinon recouvert, et laissent la consigne visible. */
+  html body[data-visual-mode] #gameScreen {
+    --ov2-rotation-bottom: 152px;
   }
 }
