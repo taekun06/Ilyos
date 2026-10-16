@@ -53,17 +53,25 @@
     window.dispatchEvent(new CustomEvent('ilyos:toggle-discard-viewer'));
   }
 
-  function makeDiscardInteractive(discard){
+  /* La pioche s'ouvre comme la défausse (js/deck-discard-viewer-v2.js) :
+     le compte des cartes qui restent dans le paquet, par type. */
+  function openDeck(){
+    if (window.ILYOS_DECK_VIEWER?.toggle) { window.ILYOS_DECK_VIEWER.toggle(); return; }
+    window.dispatchEvent(new CustomEvent('ilyos:toggle-deck-viewer'));
+  }
+
+  function makeDiscardInteractive(discard, options = {}){
     if (!discard) return;
+    const ouvrir = options.ouvrir || openDiscard;
     discard.classList.add('ov2-interactive');
     discard.setAttribute('role','button');
     discard.setAttribute('tabindex','0');
     discard.setAttribute('aria-expanded', discard.getAttribute('aria-expanded') || 'false');
-    discard.setAttribute('aria-controls','ov2DiscardViewer');
-    discard.title = 'Afficher ou masquer la défausse';
+    discard.setAttribute('aria-controls', options.viewer || 'ov2DiscardViewer');
+    discard.title = options.titre || 'Afficher ou masquer la défausse';
     discard.style.setProperty('pointer-events','auto','important');
     discard.style.setProperty('cursor','pointer','important');
-    discard.style.setProperty('z-index','100160','important');
+    discard.style.setProperty('z-index', options.zIndex || '100160','important');
 
     if (discard.dataset.v11Interactive === '1') return;
     discard.dataset.v11Interactive = '1';
@@ -75,12 +83,12 @@
     discard.addEventListener('click',event=>{
       event.preventDefault();
       event.stopPropagation();
-      openDiscard();
+      ouvrir();
     });
     discard.addEventListener('keydown',event=>{
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      openDiscard();
+      ouvrir();
     });
   }
 
@@ -112,6 +120,7 @@
     setOpacity(discardHud, BASE_OPACITY);
     deckHud?.style?.setProperty('z-index','100150','important');
     makeDiscardInteractive(discardHud);
+    makeDiscardInteractive(deckHud, { ouvrir: openDeck, viewer: 'ov2DeckViewer', titre: 'Voir les cartes qui restent dans la pioche', zIndex: '100150' });
     return true;
   }
 

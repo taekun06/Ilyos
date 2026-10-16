@@ -16,12 +16,16 @@
   --mj-info: 'Nunito Sans', Inter, system-ui, sans-serif;
 }
 
-/* ---------- Bouton MENU (HUD organique) ---------- */
+/* ---------- Bouton MENU (HUD organique) ----------
+   En haut, sur la ligne de la plaque du tour, juste à sa gauche (demande de
+   Taekun, 2026-10-16) : la plaque est centrée et fait ~238 px, d'où le
+   décalage depuis le milieu, et le bouton est centré sur sa hauteur. */
 body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn {
   position: fixed;
-  top: 76px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 28px;
+  left: auto;
+  right: calc(50% + 132px);
+  transform: none;
   z-index: 5;
   display: inline-flex;
   align-items: center;
@@ -60,14 +64,20 @@ body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn[aria
   border-color: var(--mj-or);
   background: linear-gradient(180deg, rgba(58, 45, 20, .95), rgba(22, 17, 8, .92));
   box-shadow: 0 10px 22px rgba(0, 0, 0, .4), 0 0 16px rgba(233, 189, 91, .35);
-  transform: translateX(-50%) translateY(-1px);
+  transform: translateY(-1px);
 }
 body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:focus-visible {
   outline: 2px solid var(--mj-or-clair);
   outline-offset: 3px;
 }
 @media (max-height: 800px) {
-  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn { top: 64px; height: 32px; }
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn { top: 18px; height: 32px; right: calc(50% + 120px); }
+}
+/* Écran moins large : le ruban du joueur arrive presque à la plaque du tour,
+   le bouton garde seulement son icône pour ne pas couvrir les couronnes. */
+@media (max-width: 1500px) and (orientation: landscape) {
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn > span:not(.ilyos-touche) { display: none; }
+  body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn { padding: 0 9px; right: calc(50% + 122px); }
 }
 /* Téléphone en portrait (css/portrait-mobile.css) : la plaque du tour, réduite
    à 28 px, est suivie directement par la rangée des joueurs. Le bouton se range
@@ -76,6 +86,7 @@ body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:focu
   body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn {
     top: max(6px, env(safe-area-inset-top));
     left: max(8px, env(safe-area-inset-left));
+    right: auto;
     transform: none;
     height: 28px;
     gap: 6px;
