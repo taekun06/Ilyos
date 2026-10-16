@@ -7824,6 +7824,18 @@
        opacity: .001 !important;
        pointer-events: none !important;
        z-index: 1 !important;
+       /* Plateau HTML conservé sous le canvas 3D (événements, tests) mais
+          invisible : son ombre portée floue et ses animations en boucle étaient
+          recalculées à chaque image, sans rien montrer. */
+       filter: none !important;
+       transition: none !important;
+   }
+
+   body.kaykit-ready[data-visual-mode="alternative"] #board *,
+   body.kaykit-ready[data-visual-mode="alternative"] #board *::before,
+   body.kaykit-ready[data-visual-mode="alternative"] #board *::after {
+       animation: none !important;
+       transition: none !important;
    }
 
    body.kaykit-ready[data-visual-mode="alternative"] #board::before,

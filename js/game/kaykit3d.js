@@ -839,7 +839,7 @@
       function kaykitDensiteRendu(plafond = 1.5) {
         const budget = Number(window.ILYOS_PIXEL_BUDGET) > 0
           ? Number(window.ILYOS_PIXEL_BUDGET)
-          : KAYKIT_BUDGET_PIXELS_DEFAUT;
+          : kaykitEconomieActive ? KAYKIT_ECONOMIE_BUDGET_PIXELS : KAYKIT_BUDGET_PIXELS_DEFAUT;
         const ecran = window.devicePixelRatio || 1;
         const tenue = Math.sqrt(budget / kaykitSurfaceCss());
         // Le plancher passe AVANT les plafonds : il ne doit jamais faire monter
@@ -910,6 +910,26 @@
         if (gardiens.get(cle) !== material) material.dispose();
       }
 
+      /* ANTICRÉNELAGE PAYÉ UNE SEULE FOIS. Le bloom rend la scène dans une cible
+         multi-échantillonnée (kaykitBloomEnsure) ; un canvas créé avec
+         antialias:true multi-échantillonnait EN PLUS l'écran, où l'on ne dessine
+         pourtant qu'un quad plein écran déjà lissé. Second tampon 4× de la taille
+         de l'image, écrit puis résolu à chaque image, pour rien : sur une puce
+         graphique intégrée, c'est de la bande passante et des dizaines de Mo de
+         mémoire partagée. Quand WebGL2 sait multi-échantillonner une cible, le
+         canvas est donc créé sans anticrénelage et TOUTE image passe par la
+         cible, bloom ou non (voir kaykitRenderAvecBloom). Sans WebGL2, rien ne
+         change : le canvas garde son anticrénelage et le rendu reste direct. */
+      function kaykitCibleMultiDisponible() {
+        if (!THREE.WebGLMultisampleRenderTarget) return false;
+        try {
+          const essai = document.createElement("canvas").getContext("webgl2");
+          if (!essai) return false;
+          essai.getExtension("WEBGL_lose_context")?.loseContext();
+          return true;
+        } catch (_) { return false; }
+      }
+
       function initKayKit3D() {
         if (document.body.dataset.visualMode !== "alternative" || !isKayKitBoardActive()) return;
         if (kaykit3D) {
@@ -976,13 +996,16 @@
         kaykitCreerBoutonPleinEcran();
 
         let renderer;
+        // Anticrénelage UNE fois par image : voir kaykitCibleMultiDisponible().
+        const aaParCible = kaykitCibleMultiDisponible();
         try {
-          renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+          renderer = new THREE.WebGLRenderer({ canvas, antialias: !aaParCible, alpha: true, powerPreference: "high-performance" });
         } catch (error) {
           console.warn("WebGL indisponible : plateau HTML conservé.", error);
           canvas.remove(); badge.remove(); controls.remove(); status.remove(); cameraHint.remove();
           return;
         }
+        kaykitBloom.aaParCible = aaParCible && renderer.capabilities.isWebGL2;
         renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1038,7 +1061,7 @@
         const sun = new THREE.DirectionalLight(0xffeed2, 2.05);
         sun.position.set(-6, 14, 8);
         sun.castShadow = true;
-        sun.shadow.mapSize.set(1024, 1024);
+        sun.shadow.mapSize.setScalar(kaykitEconomieActive ? KAYKIT_ECONOMIE_OMBRE : KAYKIT_OMBRE_NORMALE);
         sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
         sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
         sun.shadow.camera.near = .5; sun.shadow.camera.far = 35;
@@ -3063,6 +3086,8 @@
           // de nuages à l'horizon" plutôt que "boules" une fois éloignés.
           puff.scale.set(scale, scale * THREE.MathUtils.lerp(.50, .30, spread), 1);
           puff.renderOrder = -880;
+          // Grands calques transparents : retirés en mode Économie.
+          puff.userData.economie = true;
           sky.add(puff);
           kaykit3D.skyLayers.push({
             object: puff, base: puff.position.clone(),
@@ -3081,6 +3106,7 @@
 
         parent.add(sky);
         kaykit3D.skyGroup = sky;
+        kaykitEconomieAppliquerCiel();
       }
 
       /**
@@ -3884,7 +3910,11 @@
         gridFill.renderOrder = 1;
         staticGroup.add(gridFill);
 
-        const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+        /* Cases-cibles du lancer de rayon : jamais dessinées. Raycaster ne regarde
+           pas material.visible, alors que le moteur de rendu les ignore : 121
+           appels de dessin et une couche transparente sur tout le plateau en
+           moins à chaque image, pour une image identique (opacité nulle). */
+        const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, visible: false });
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
             const p = kaykitCellPosition(r, c, .82);
@@ -4411,7 +4441,7 @@
         halo.rotation.x = Math.PI / 2; halo.position.y = .07; halo.renderOrder = 28; group.add(halo);
         const hitProxy = new THREE.Mesh(
           kaykitGeometry("crown-hit-proxy-v21", () => new THREE.SphereGeometry(.22, 12, 8)),
-          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false })
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, visible: false })
         );
         hitProxy.position.y = .22;
         hitProxy.name = "ilyos-couronne-cible";
@@ -6698,6 +6728,53 @@
         return () => { camera.position.sub(decalage); camera.updateMatrixWorld(); };
       }
 
+      /* MODE ÉCONOMIE (menu > Graphismes, désactivé par défaut). Pour les
+         machines modestes : coupe le halo lumineux (bloom), les poussières et
+         les grands amas de nuages transparents du ciel, ramène la résolution à
+         un million de pixels au plus et l'ombre du soleil à 512 px. Tout se
+         règle à chaud, sans recharger la page. Réglage `ilyosEconomie` dans le
+         stockage local. */
+      const KAYKIT_ECONOMIE_CLE = "ilyosEconomie";
+      const KAYKIT_ECONOMIE_BUDGET_PIXELS = 1000000;
+      const KAYKIT_ECONOMIE_OMBRE = 512;
+      const KAYKIT_OMBRE_NORMALE = 1024;
+      let kaykitEconomieActive = (() => {
+        try { return localStorage.getItem(KAYKIT_ECONOMIE_CLE) === "1"; } catch (_) { return false; }
+      })();
+
+      function kaykitEconomieAppliquerCiel() {
+        if (!kaykit3D) return;
+        const visible = !kaykitEconomieActive;
+        (kaykit3D.skyDustFields || []).forEach(champ => { if (champ.object) champ.object.visible = visible; });
+        kaykit3D.skyGroup?.traverse(objet => { if (objet.userData.economie) objet.visible = visible; });
+      }
+
+      function kaykitEconomieAppliquer() {
+        if (!kaykit3D) return;
+        kaykitEconomieAppliquerCiel();
+        kaykitAppliquerDensite();
+        // r128 ne relit mapSize qu'à la création de la carte d'ombre : il faut
+        // la libérer pour que la nouvelle taille serve.
+        const taille = kaykitEconomieActive ? KAYKIT_ECONOMIE_OMBRE : KAYKIT_OMBRE_NORMALE;
+        kaykit3D.scene.traverse(objet => {
+          // Taille de la carte RÉELLE : js/complete-polish.js réécrit mapSize
+          // sans recréer la carte, mapSize ne dit donc pas ce qui est en place.
+          if (!objet.isDirectionalLight || !objet.castShadow) return;
+          if ((objet.shadow.map ? objet.shadow.map.width : objet.shadow.mapSize.x) === taille) return;
+          objet.shadow.mapSize.set(taille, taille);
+          if (objet.shadow.map) { objet.shadow.map.dispose(); objet.shadow.map = null; }
+        });
+      }
+
+      function kaykitEconomieRegler(actif) {
+        kaykitEconomieActive = !!actif;
+        try { localStorage.setItem(KAYKIT_ECONOMIE_CLE, kaykitEconomieActive ? "1" : "0"); } catch (_) { }
+        kaykitEconomieAppliquer();
+        return kaykitEconomieActive;
+      }
+
+      window.ILYOS_ECONOMIE = { actif: () => kaykitEconomieActive, regler: kaykitEconomieRegler };
+
       window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
 
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
@@ -8531,7 +8608,7 @@
         const hit = new THREE.Mesh(
           // Toute la case, et non un disque central : c'est la case qu'on survole.
           kaykitGeometry("unified-push-destination-hit-v2", () => new THREE.PlaneGeometry(.92, .92)),
-          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, side: THREE.DoubleSide, visible: false })
         );
         hit.rotation.x = -Math.PI / 2;
         hit.position.set(p.x, p.y + (doublon ? .006 : .012), p.z);
@@ -8565,7 +8642,7 @@
            sphère reste invisible (opacity .001) — seul son rayon change. */
         const hit = new THREE.Mesh(
           kaykitGeometry("unified-push-death-hit-v1", () => new THREE.SphereGeometry(.56, 12, 8)),
-          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false })
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: .001, depthWrite: false, depthTest: false, visible: false })
         );
         hit.position.copy(position);
         if (doublon) hit.scale.setScalar(.97);
@@ -8787,7 +8864,8 @@
         // la phase de placement d'une partie à trois ou quatre.
         ensureKayKitAsset(assetKey);
         let hero = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
-        if (!hero) hero = makeFallbackHero(playerId);
+        if (hero) kaykitRetirerArmesEnTrop(hero);
+        else hero = makeFallbackHero(playerId);
         const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
         hero.position.set(p.x, p.y, p.z);
         hero.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
@@ -8844,7 +8922,8 @@
           const assetKey = KAYKIT_SPAWN_GHOST_HERO[playerId] || "hero0";
           ensureKayKitAsset(assetKey);
           piece = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
-          if (!piece) piece = makeFallbackHero(playerId ?? 0);
+          if (piece) kaykitRetirerArmesEnTrop(piece);
+          else piece = makeFallbackHero(playerId ?? 0);
         }
 
         const p = kaykitCellPosition(r, c, surfaceY ?? kaykitCellSurfaceY(r, c));
@@ -10674,6 +10753,11 @@
         const seamMaterial = new THREE.MeshBasicMaterial({
           color: 0x183027, transparent: true, opacity: .72, depthWrite: false, depthTest: false
         });
+        /* Toutes les coutures sont fusionnées en un seul maillage : même
+           matériau, sans test de profondeur, donc même image qu'un maillage
+           par segment — mais un seul appel de rendu au lieu de plusieurs
+           dizaines en fin de partie. */
+        const morceaux = new THREE.Group();
         for (let r = 0; r < GRID; r++) {
           for (let c = 0; c < GRID; c++) {
             const current = islandIdAt(r, c);
@@ -10694,11 +10778,17 @@
                 seamMaterial
               );
               seam.position.set(x, KAYKIT_LEVELS.islandTop + .080, z);
-              seam.renderOrder = 86;
-              group.add(seam);
+              morceaux.add(seam);
             });
           }
         }
+        if (!morceaux.children.length) return;
+        kaykitFusionnerParTexture(morceaux).fusionnes.forEach(couture => {
+          couture.renderOrder = 86;
+          couture.matrixAutoUpdate = false;
+          group.add(couture);
+        });
+        seamMaterial.dispose();
       }
 
       // Halo doré du sanctuaire : un unique disque radial partagé (comme
@@ -11594,6 +11684,23 @@
         return head;
       }
 
+      /* Les modèles KayKit portent TOUTES leurs armes à la fois : le chevalier
+         empilait deux épées dans une main, une épée et quatre boucliers dans
+         l'autre ; le mage, deux livres, une baguette et un bâton. Choix de
+         Taekun (2026-10-13) : grande épée et grand bouclier rectangulaire pour le
+         chevalier, livre ouvert et bâton pour le mage. Retirées après la mise
+         à l'échelle, qui les mesure encore : la taille ne change pas. Environ
+         70 dessins de moins par image en fin de partie, ombres comprises. */
+      const KAYKIT_ARMES_EN_TROP = new Set([
+        "1H_Sword_Offhand", "Badge_Shield", "Round_Shield", "Spike_Shield", "1H_Sword",
+        "Spellbook", "1H_Wand"
+      ]);
+      function kaykitRetirerArmesEnTrop(modele) {
+        const aRetirer = [];
+        modele.traverse(o => { if (o.isMesh && !o.isSkinnedMesh && KAYKIT_ARMES_EN_TROP.has(o.name)) aRetirer.push(o); });
+        aRetirer.forEach(o => o.parent?.remove(o));
+      }
+
       function createCharacterVisual(character, index) {
         const playerId = proprietaireGardien(character) ?? 0;
         const assetKey = resolveHeroAssetKey(character, index);
@@ -11614,6 +11721,7 @@
         let wrapper = cloneKayKitAsset(assetKey, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
         const usesFallback = !wrapper;
         if (!wrapper) wrapper = makeFallbackHero(playerId);
+        if (!usesFallback) kaykitRetirerArmesEnTrop(wrapper);
         if (playerId === 0 && assetKey === "hero0") styleKnightMetalArmor(wrapper);
         if (playerId === 1 && assetKey === "hero1") styleMagePalette(wrapper);
 
@@ -13517,7 +13625,8 @@
       const kaykitBloom = {
         pret: false, multiEchantillon: false, cibleScene: null, cibleA: null, cibleB: null,
         camera: null, quad: null, matSeuil: null, matFlou: null, matCompo: null,
-        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false, derniereImage: 0
+        largeur: 0, hauteur: 0, imagesBasses: 0, coupeAuto: false, derniereImage: 0,
+        aaParCible: false
       };
 
       function kaykitBloomShader(uniforms, fragment) {
@@ -13649,7 +13758,10 @@
       /** Rend la scène avec bloom. Retourne false si le bloom n'a pas pu s'appliquer,
        *  auquel cas l'appelant fait un rendu direct. */
       function kaykitRenderAvecBloom(renderer, scene, camera) {
-        if (!KAYKIT_BLOOM.actif || kaykitBloom.coupeAuto) return false;
+        const bloomVoulu = KAYKIT_BLOOM.actif && !kaykitBloom.coupeAuto && !kaykitEconomieActive;
+        // Canvas sans anticrénelage (kaykitCibleMultiDisponible) : même sans bloom,
+        // l'image passe par la cible multi-échantillonnée, seule à la lisser.
+        if (!bloomVoulu && !kaykitBloom.aaParCible) return false;
         if (!kaykitBloomEnsure(renderer)) return false;
         // Sans multi-échantillonnage disponible, le bloom coûterait l'anticrénelage de
         // toute la scène pour un halo : le marché n'en vaut pas la peine.
@@ -13659,6 +13771,16 @@
         renderer.setRenderTarget(B.cibleScene);
         renderer.clear();
         renderer.render(scene, camera);
+
+        if (!bloomVoulu) {
+          // Simple recopie : la composition avec une force nulle rend la scène
+          // telle quelle, sans programme de shader supplémentaire à compiler.
+          B.matCompo.uniforms.tScene.value = B.cibleScene.texture;
+          B.matCompo.uniforms.tBloom.value = B.cibleA.texture;
+          B.matCompo.uniforms.uForce.value = 0;
+          kaykitBloomPasse(renderer, B.matCompo, null);
+          return true;
+        }
 
         B.matSeuil.uniforms.tSource.value = B.cibleScene.texture;
         B.matSeuil.uniforms.uSeuil.value = KAYKIT_BLOOM.seuil;
@@ -13701,6 +13823,41 @@
         return true;
       }
 
+      /* CADENCE SUR LES ÉCRANS RAPIDES. requestAnimationFrame suit la fréquence de
+         l'écran : 120 Hz sur beaucoup de téléphones récents et de portables,
+         144 Hz et plus sur les écrans de jeu. Le moteur y dessinait deux fois plus
+         d'images qu'à 60 Hz pour un plateau qui ne le montre pas — et un téléphone
+         dont la puce graphique est modeste chauffait d'autant. Au-delà de ~80 Hz,
+         on ne dessine qu'une image sur N, N choisi pour rester au plus près de
+         60 i/s avec un rythme RÉGULIER (une image sur deux à 120 Hz) : jamais de
+         seuil de temps comparé à un horodatage qui tremble, la cause du
+         miroitement de l'ancien plafond à 30 i/s. La fréquence de l'écran se
+         déduit des écarts les plus courts entre deux appels, que les images
+         sautées mesurent fidèlement même quand le dessin est lent. Sous 80 Hz
+         (60, 75 Hz, ou une machine qui n'atteint pas la fréquence de son écran),
+         chaque appel dessine, exactement comme avant.
+         window.ILYOS_CADENCE_LIBRE = true rend la pleine fréquence. */
+      const kaykitCadence = { dernier: 0, ecarts: [], depuisMesure: 0, diviseur: 1, compteur: 0 };
+
+      function kaykitImageSautee(maintenant) {
+        const c = kaykitCadence;
+        const ecart = maintenant - c.dernier;
+        c.dernier = maintenant;
+        if (ecart > 2 && ecart < 100) {
+          c.ecarts.push(ecart);
+          if (c.ecarts.length > 60) c.ecarts.shift();
+        }
+        if (c.ecarts.length >= 30 && ++c.depuisMesure >= 30) {
+          c.depuisMesure = 0;
+          const tries = c.ecarts.slice().sort((a, b) => a - b);
+          const vsync = tries[Math.floor(tries.length * .25)];
+          c.diviseur = vsync < 12.5 ? Math.max(1, Math.floor(16.7 / vsync + .25)) : 1;
+        }
+        if (window.ILYOS_CADENCE_LIBRE || c.diviseur <= 1) { c.compteur = 0; return false; }
+        c.compteur = (c.compteur + 1) % c.diviseur;
+        return c.compteur !== 0;
+      }
+
       function animateKayKit3D(frameTime = performance.now()) {
         if (!kaykit3D || kaykit3D.disposed) return;
         requestAnimationFrame(animateKayKit3D);
@@ -13718,6 +13875,12 @@
           kaykit3D.clock.getDelta();
           return;
         }
+        if (kaykitImageSautee(frameTime)) return;
+        // Retouches de couleurs de js/ether-game-theme.js : appliquées ici, au
+        // même moment qu'avant (avant toute mise à jour de l'image), mais
+        // seulement pour les images réellement dessinées — sa propre boucle
+        // tournait à chaque rafraîchissement, menu compris.
+        window.ILYOS_ETHER_THEME?.apply?.();
         // L'ancien throttle "performance" (~30 i/s dès qu'aucune animation
         // n'était en cours) a été retiré : il plafonnait le rendu même sans
         // aucune contrainte matérielle réelle, provoquant lui-même du

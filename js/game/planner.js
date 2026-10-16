@@ -2205,7 +2205,7 @@
            en cours de route. Les îles proches de l'action sont examinées
            d'abord : une rotation lointaine ne change presque jamais une
            distance utile. */
-        const echeance = performance.now()
+        const echeance = plannerHorloge()
           + (plannerDeterministe() ? PLAN_SECURITE.magieMs * plannerSecurite() : PLAN_CANDIDATS.magicMsMax);
         let examinees = 0;
         const ilesTriees = plannerIlesParInteret(playerId);
@@ -2214,13 +2214,13 @@
 
         for (const ile of ilesTriees) {
           if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax)) break;
-          if (performance.now() > echeance) { plannerCoupuresMagie++; break; }
+          if (plannerHorloge() > echeance) { plannerCoupuresMagie++; break; }
           for (const [pr, pc] of ile.cells) {
             if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax)) break;
-            if (performance.now() > echeance) { plannerCoupuresMagie++; break; }
+            if (plannerHorloge() > echeance) { plannerCoupuresMagie++; break; }
             for (const pas of [1, 2, 3]) {
               if (examinees >= (PLAN_POIDS.magieRotationsMax || PLAN_CANDIDATS.magicRotationsMax)) break;
-              if (performance.now() > echeance) { plannerCoupuresMagie++; break; }
+              if (plannerHorloge() > echeance) { plannerCoupuresMagie++; break; }
               examinees++;
               const direction = pas === 3 ? -1 : 1;
               const tours = pas === 3 ? 1 : pas;
@@ -3083,6 +3083,107 @@
         return !!PLAN_POIDS.rechercheDeterministe;
       }
 
+      /* RÉFLEXION DÉCOUPÉE. La recherche de l'Expert prend plusieurs secondes
+         de calcul sur une machine modeste. D'un seul bloc, elle figeait tout
+         l'écran pendant ce temps : plus d'image, plus de survol. Les
+         recherches sont donc des générateurs qui rendent la main au
+         navigateur toutes les PLANNER_TRANCHE_MS, le temps d'une image.
+
+         Les DÉCISIONS NE CHANGENT PAS. Le temps rendu au navigateur est retiré
+         de plannerHorloge(), seule horloge des budgets de la recherche : elle
+         ne compte que le calcul, comme quand la recherche était d'un bloc.
+         Et la main n'est rendue qu'entre deux pas, quand l'état réel est en
+         place (plannerSimuler) : rien d'autre ne voit jamais une position
+         simulée.
+
+         plannerChercherPlan / plannerChercherPlanRobuste / plannerEvaluerRobustesse
+         restent synchrones pour les bancs et les outils (plannerExecuter) ;
+         seule l'IA en partie passe par plannerExecuterDecoupe. */
+      /* La tranche s'allonge avec le coût d'une image : sur une machine où
+         dessiner prend 60 ms, des tranches de 12 ms laisseraient l'IA
+         réfléchir cinq fois plus longtemps. Au triple de la dernière pause,
+         la réflexion garde au moins les trois quarts du temps ; le plafond
+         assure encore une image par seconde sur les machines les plus lentes. */
+      const PLANNER_TRANCHE_MS = 12;
+      const PLANNER_TRANCHE_MAX_MS = 1000;
+      let plannerTranche = PLANNER_TRANCHE_MS;
+      let plannerGeneration = 0;
+      let plannerTempsCede = 0;
+      let plannerDecoupe = false;
+      let plannerDebutTranche = 0;
+
+      function plannerHorloge() {
+        return performance.now() - plannerTempsCede;
+      }
+
+      function plannerDoitCeder() {
+        return plannerDecoupe && performance.now() - plannerDebutTranche > plannerTranche;
+      }
+
+      /* Un pas dans l'état simulé, la pause dans l'état réel. */
+      function* plannerSimuler(clone, etapes) {
+        for (;;) {
+          const pas = withSimulatedState(clone, () => etapes.next());
+          if (pas.done) return pas.value;
+          yield pas.value;
+        }
+      }
+
+      function plannerExecuter(etapes) {
+        const precedent = plannerDecoupe;
+        plannerDecoupe = false;
+        try {
+          let pas = etapes.next();
+          while (!pas.done) pas = etapes.next();
+          return pas.value;
+        } finally {
+          plannerDecoupe = precedent;
+        }
+      }
+
+      /* MessageChannel plutôt que setTimeout : pas de plancher de 4 ms entre
+         deux tranches, et le navigateur dessine bien ses images entre deux
+         messages. Onglet masqué : rien à afficher, la recherche file d'un bloc. */
+      const plannerCanalPause = typeof MessageChannel === "function" ? new MessageChannel() : null;
+      const plannerReveils = [];
+      if (plannerCanalPause) plannerCanalPause.port1.onmessage = () => { const r = plannerReveils.shift(); if (r) r(); };
+      function plannerRendreLaMain() {
+        if (!plannerCanalPause) return new Promise(r => setTimeout(r, 0));
+        return new Promise(r => { plannerReveils.push(r); plannerCanalPause.port2.postMessage(0); });
+      }
+
+      /* Une seule réflexion découpée à la fois : en lancer une nouvelle (tour
+         forcé, partie relancée) abandonne la précédente à sa prochaine pause,
+         qui rend alors null. Deux réflexions entrelacées compteraient deux
+         fois leurs pauses et fausseraient l'horloge des budgets. `continuer`
+         permet aussi à l'appelant d'abandonner (partie quittée). */
+      async function plannerExecuterDecoupe(etapes, continuer = null) {
+        const generation = ++plannerGeneration;
+        plannerDecoupe = true;
+        plannerTranche = PLANNER_TRANCHE_MS;
+        plannerDebutTranche = performance.now();
+        try {
+          let pas = etapes.next();
+          while (!pas.done) {
+            const pause = performance.now();
+            if (!document.hidden) await plannerRendreLaMain();
+            if (generation !== plannerGeneration || (continuer && !continuer())) {
+              etapes.return?.();
+              return null;
+            }
+            const cede = performance.now() - pause;
+            plannerTempsCede += cede;
+            plannerTranche = Math.min(PLANNER_TRANCHE_MAX_MS, Math.max(PLANNER_TRANCHE_MS, 3 * cede));
+            plannerDecoupe = true;
+            plannerDebutTranche = performance.now();
+            pas = etapes.next();
+          }
+          return pas.value;
+        } finally {
+          if (generation === plannerGeneration) plannerDecoupe = false;
+        }
+      }
+
       const PLAN_BUDGET = {
         /* Le faisceau suit l'ouverture de la racine. Élargir les candidats sans
            élargir le faisceau est contre-productif : les variantes d'une même
@@ -3126,9 +3227,9 @@
         plannerCandidatsEcartes = ecartes;
         const chronos = {};
         const chronometrer = (nom, fn) => {
-          const t0 = performance.now();
+          const t0 = plannerHorloge();
           const r = fn();
-          chronos[nom] = Math.round(performance.now() - t0);
+          chronos[nom] = Math.round(plannerHorloge() - t0);
           return r;
         };
         let retenus;
@@ -3311,11 +3412,15 @@
       }
 
       function plannerChercherPlan(playerId, options = {}) {
+        return plannerExecuter(plannerChercherPlanEtapes(playerId, options));
+      }
+
+      function* plannerChercherPlanEtapes(playerId, options = {}) {
         const budget = Object.assign({}, PLAN_BUDGET, options);
         if (plannerDeterministe()) budget.tempsMaxMs = options.tempsSecuriteMs ?? PLAN_SECURITE.principaleMs * plannerSecurite();
         const menacesDefense = options.prioriteDefense ? plannerMenacesDefense(playerId) : [];
         const comparerDefense = (a, b) => (b.prioriteDefense || 0) - (a.prioriteDefense || 0);
-        let debut = performance.now();
+        let debut = plannerHorloge();
         let etatsExplores = 0;
         // Vrai si le plafond de temps a arrêté la recherche avant son budget d'états.
         let coupeParTemps = false;
@@ -3353,9 +3458,9 @@
         let coutObservation = 0;
         if (plannerAutopsieActive()) {
           plannerNiveau = 0;
-          const debutReleve = performance.now();
+          const debutReleve = plannerHorloge();
           releveCandidats = withSimulatedState(racine.etat, () => plannerReleverCandidats(playerId));
-          coutObservation = performance.now() - debutReleve;
+          coutObservation = plannerHorloge() - debutReleve;
           debut += coutObservation;
         }
 
@@ -3378,7 +3483,7 @@
           const suivants = [];
 
           for (const noeud of faisceau) {
-            if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
+            if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
             if (etatsExplores > budget.etatsMax) break;
 
             // Les générateurs ne modifient pas l'état du nœud : ils simulent
@@ -3398,7 +3503,10 @@
             candidatsGeneres += actions.length;
 
             for (const action of actions) {
-              if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
+              // Entre deux actions, l'état réel est en place : rendre la main ici
+              // ne montre jamais une position simulée.
+              if (plannerDoitCeder()) yield;
+              if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
               const clone = structuredClone(noeud.etat);
@@ -3482,11 +3590,11 @@
           }
           faisceau = [...retenus];
           profondeurAtteinte = niveau + 1;
-          if (performance.now() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
+          if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
           if (etatsExplores > budget.etatsMax) break;
         }
 
-        const duree = performance.now() - debut;
+        const duree = plannerHorloge() - debut;
         const finalistes = menacesDefense.length
           ? terminaux.sort((a, b) => comparerDefense(a, b) || b.note - a.note).slice(0, 8)
           : !racine.terminal && !plannerMenaceValidationAdverse(playerId)
@@ -3649,7 +3757,11 @@
          Partie du 30/09, tour 6 : pivot jaune amenant deux couronnes à son
          village, non anticipé (+397 prévu, −7 647 réel). */
       function plannerEvaluerRobustesse(noeudFinal, playerId, budget = {}) {
-        const sans = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
+        return plannerExecuter(plannerEvaluerRobustesseEtapes(noeudFinal, playerId, budget));
+      }
+
+      function* plannerEvaluerRobustesseEtapes(noeudFinal, playerId, budget = {}) {
+        const sans = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
         if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
         const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
@@ -3680,7 +3792,7 @@
         let note = sans.note;
         const resultat = { ...sans };
         for (const v of variantes) {
-          const avec = plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, v.type);
+          const avec = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, v.type);
           if (avec.note >= sans.note) continue;
           note -= v.proba * echelle * (sans.note - avec.note);
           resultat[v.type === "MAGIC" ? "magie" : "poussee"] = {
@@ -3690,9 +3802,9 @@
         return { ...resultat, note, menace: Math.round(sans.menace + (sans.note - note)) };
       }
 
-      function plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
+      function* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
         const apres = structuredClone(noeudFinal.etat);
-        return withSimulatedState(apres, () => {
+        return yield* plannerSimuler(apres, (function* () {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
 
@@ -3740,7 +3852,7 @@
           const avantRiposte = evaluateStrategicState(playerId);
           const ressourcesAvant = plannerRessources(adverse.id);
 
-          const reponse = plannerChercherPlan(adverse.id, {
+          const reponse = yield* plannerChercherPlanEtapes(adverse.id, {
             largeurFaisceau: PLAN_RIPOSTE.largeurFaisceau,
             decisionsMax: PLAN_RIPOSTE.decisionsMax,
             etatsMax: PLAN_RIPOSTE.etatsMax,
@@ -3776,7 +3888,7 @@
             if (!pire || resultat.note < pire.note) pire = resultat;
           }
           return { ...pire, ripostesComparees: candidates.length, coupee, magieCertaine };
-        });
+        })());
       }
 
       /** Point d'entrée d'Expert V3 : plan de tour V2, puis reclassement des
@@ -3788,20 +3900,24 @@
       const plannerSansAnticipation = new Set();
 
       function plannerChercherPlanRobuste(playerId, options) {
-        if (plannerSansAnticipation.has(playerId)) return plannerChercherPlan(playerId, options || {});
-        const debutTotal = performance.now();
+        return plannerExecuter(plannerChercherPlanRobusteEtapes(playerId, options));
+      }
+
+      function* plannerChercherPlanRobusteEtapes(playerId, options) {
+        if (plannerSansAnticipation.has(playerId)) return yield* plannerChercherPlanEtapes(playerId, options || {});
+        const debutTotal = plannerHorloge();
         plannerCoupuresMagie = 0;
-        const principal = plannerChercherPlan(playerId, { ...options, prioriteDefense: true });
+        const principal = yield* plannerChercherPlanEtapes(playerId, { ...options, prioriteDefense: true });
         const finalistes = (principal.finalistes || [])
           .slice(0, principal.finalistesARiposter || PLAN_RIPOSTE.finalistes);
 
         if (finalistes.length < 2) {
           principal.anticipation = { examines: finalistes.length, dureeMs: 0, rejets: [] };
-          principal.dureeTotaleMs = Math.round(performance.now() - debutTotal);
+          principal.dureeTotaleMs = Math.round(plannerHorloge() - debutTotal);
           return principal;
         }
 
-        const debutRiposte = performance.now();
+        const debutRiposte = plannerHorloge();
         /* NE RIEN FAIRE COÛTE UN TOUR.
 
            Le classement par robustesse récompense ce qui ne risque rien — et
@@ -3815,16 +3931,19 @@
         const echeanceTour = debutTotal + PLAN_SECURITE.tourMs * plannerSecurite();
         const tempsRiposte = () => plannerDeterministe()
           ? { tempsSecuriteMs: Math.max(50, Math.min(PLAN_SECURITE.riposteMs * plannerSecurite(),
-            echeanceTour - performance.now())) }
+            echeanceTour - plannerHorloge())) }
           : {};
-        const examines = finalistes.map(noeud => ({
-          noeud: noeud,
-          robustesse: plannerEvaluerRobustesse(noeud, playerId, tempsRiposte())
-        }));
+        const examines = [];
+        for (const noeud of finalistes) {
+          examines.push({
+            noeud: noeud,
+            robustesse: yield* plannerEvaluerRobustesseEtapes(noeud, playerId, tempsRiposte())
+          });
+        }
         // Un supplément borné pour les seuls finalistes en situation critique.
         // Une réponse déjà trouvée reste une menace même si la seconde
         // recherche, bornée elle aussi, ne la retrouve pas.
-        const debutSupplement = performance.now();
+        const debutSupplement = plannerHorloge();
         const echeance = Math.min(echeanceTour, debutSupplement + (plannerDeterministe()
           ? PLAN_SECURITE.critiqueMs * plannerSecurite() : PLAN_RIPOSTE_CRITIQUE.tempsSupplementairesMaxMs));
         const aApprofondir = examines.filter(e =>
@@ -3833,9 +3952,9 @@
           .slice(0, PLAN_RIPOSTE_CRITIQUE.finalistes);
         let approfondis = 0;
         for (const e of aApprofondir) {
-          const restant = echeance - performance.now();
+          const restant = echeance - plannerHorloge();
           if (restant <= 0) break;
-          const approfondie = plannerEvaluerRobustesse(e.noeud, playerId, {
+          const approfondie = yield* plannerEvaluerRobustesseEtapes(e.noeud, playerId, {
             decisionsMax: PLAN_RIPOSTE_CRITIQUE.decisionsMax,
             etatsMax: PLAN_RIPOSTE_CRITIQUE.etatsMax,
             tempsMaxMs: Math.min(PLAN_RIPOSTE.tempsMaxMs, restant),
@@ -3849,7 +3968,7 @@
         });
         examines.sort((a, b) => (b.noeud.prioriteDefense || 0) - (a.noeud.prioriteDefense || 0)
           || b.robustesse.note - a.robustesse.note);
-        const dureeRiposte = performance.now() - debutRiposte;
+        const dureeRiposte = plannerHorloge() - debutRiposte;
         const retenu = examines[0];
 
         /* Sont consignés comme « rejetés » les plans qui notaient MIEUX que le
@@ -3901,11 +4020,11 @@
           magieCoupee: plannerCoupuresMagie,
           approfondissement: {
             finalistes: approfondis,
-            dureeMs: Math.round(performance.now() - debutSupplement)
+            dureeMs: Math.round(plannerHorloge() - debutSupplement)
           },
           rejets: rejets
         };
-        principal.dureeTotaleMs = Math.round(performance.now() - debutTotal);
+        principal.dureeTotaleMs = Math.round(plannerHorloge() - debutTotal);
         plannerDernierRapport = principal;
         return principal;
       }

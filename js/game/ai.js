@@ -916,13 +916,18 @@
         }
         let rapport = null;
         try {
-          rapport = plannerChercherPlanRobuste(joueur);
+          // Découpée : l'écran reste vivant pendant la réflexion (planner.js,
+          // « RÉFLEXION DÉCOUPÉE »), pour exactement la même décision.
+          rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur),
+            () => token === aiRunToken && !!state && state.winner === null);
         } catch (erreur) {
           console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
           autopsieConsigner(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);
           defaitesDecision(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);
           return false;
         }
+        // La partie a pu être quittée ou relancée pendant la réflexion.
+        if (token !== aiRunToken || !state || state.winner !== null) return true;
         if (!rapport || !rapport.plan.length) {
           const repli = obligationIleRemplie()
             ? "aucune action jugée meilleure que l'arrêt"

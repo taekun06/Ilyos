@@ -53,6 +53,17 @@
     selectionRune: 0x67c8ea
   });
 
+  /* Couleurs lues une fois : color.set('#…') relisait la chaîne à chaque image
+     et pour chaque objet. copy() d'une couleur déjà construite donne la même
+     valeur sans rien allouer. */
+  const COULEURS = new Map();
+  const couleur = css => {
+    let c = COULEURS.get(css);
+    if (!c && window.THREE?.Color) { c = new THREE.Color(css); COULEURS.set(css, c); }
+    return c;
+  };
+  const poser = (color, css) => { const c = couleur(css); if (c) color.copy(c); else color.set(css); };
+
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
   const materialsOf = object => {
     if (!object?.material) return [];
@@ -99,17 +110,17 @@
       if (!halo) return;
 
       if (halo.ring?.material?.color) {
-        halo.ring.material.color.set(THEME.selection.warm);
+        poser(halo.ring.material.color, THEME.selection.warm);
         halo.ring.material.opacity = clamp01(0.95 * THEME.selection.ringIntensity);
       }
       if (halo.beamMaterial?.color) {
-        halo.beamMaterial.color.set(THEME.selection.ether);
+        poser(halo.beamMaterial.color, THEME.selection.ether);
         multiplyAnimatedOpacity(halo.beamMaterial, THEME.selection.beamIntensity, '__etherBeamOpacity');
       }
       halo.particles?.forEach?.(particle => {
         const material = particle?.material;
         if (!material) return;
-        material.color?.set?.(THEME.selection.ether);
+        if (material.color) poser(material.color, THEME.selection.ether);
         multiplyAnimatedOpacity(material, THEME.selection.particleIntensity, '__etherParticleOpacity');
       });
     });
@@ -127,8 +138,8 @@
           else if (hex === LEGACY.selectionRune) role = 'ether';
           if (role) object.userData.__etherSelectionRole = role;
         }
-        if (role === 'warm') material.color.set(THEME.selection.warm);
-        else if (role === 'ether') material.color.set(THEME.selection.ether);
+        if (role === 'warm') poser(material.color, THEME.selection.warm);
+        else if (role === 'ether') poser(material.color, THEME.selection.ether);
       });
     });
   }
@@ -150,7 +161,7 @@
       }
       if (!role) return;
 
-      object.material.color.set(role === 'bright' ? THEME.zone.bright : THEME.zone.dark);
+      poser(object.material.color, role === 'bright' ? THEME.zone.bright : THEME.zone.dark);
       // addKayKitMoveZone utilise PlaneGeometry(longueur, epaisseur) : l'axe Y
       // local est donc exactement l'épaisseur du ruban, même après rotation.
       const base = rememberScale(object);
@@ -196,34 +207,34 @@
       if (!role) return;
 
       if (role === 'pushTarget') {
-        object.material.color.set(THEME.push.color);
+        poser(object.material.color, THEME.push.color);
         object.material.opacity = THEME.push.opacity;
         scaleFromBase(object, THEME.push.ringSize);
         return;
       }
 
       if (role === 'pushDestination') {
-        object.material.color.set(THEME.push.destination);
+        poser(object.material.color, THEME.push.destination);
         object.material.opacity = THEME.push.opacity;
         scaleFromBase(object, THEME.push.ringSize);
         return;
       }
 
       if (role === 'pushHighlight') {
-        object.material.color.set(THEME.push.highlight);
+        poser(object.material.color, THEME.push.highlight);
         object.material.opacity = Math.min(1, THEME.push.opacity * 1.62);
         scaleFromBase(object, THEME.push.ringSize);
         return;
       }
 
       if (role === 'pushLink') {
-        object.material.color.set(THEME.push.link);
+        poser(object.material.color, THEME.push.link);
         object.material.opacity = clamp01(0.98 * THEME.push.linkIntensity);
         return;
       }
 
       if (role === 'deathHalo') {
-        object.material.color.set(THEME.death.halo);
+        poser(object.material.color, THEME.death.halo);
         object.material.opacity = object.userData.__etherWasEmphasized
           ? Math.min(1, THEME.death.opacity * 1.18)
           : THEME.death.opacity;
@@ -246,16 +257,12 @@
     applyActionPreviews(kaykit);
   }
 
-  function frame() {
-    applyTheme();
-    requestAnimationFrame(frame);
-  }
-
+  /* Plus de boucle propre : la boucle de rendu de kaykit3d.js appelle apply()
+     au début de chaque image qu'elle dessine. L'ancienne boucle tournait à
+     chaque rafraîchissement de l'écran, menu et onglet masqué compris. */
   window.ILYOS_ETHER_THEME = {
     values: THEME,
     apply: applyTheme
   };
-
-  requestAnimationFrame(frame);
   console.info('[ILYOS] Éther gameplay theme active', THEME);
 })();
