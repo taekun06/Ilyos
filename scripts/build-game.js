@@ -50,6 +50,9 @@ const fragmentNames = [
   // suivre le moteur qui déclare le tableau PUZZLES.
   'puzzle.js',
   'puzzle-levels.js',
+  // Mode Boucles : sanctuaires solo où chaque boucle ajoute un écho qui
+  // rejoue tes ordres. Réutilise les mêmes fabriques que les puzzles.
+  'boucles.js',
   // Profil du joueur : XP et niveau. N'appelle que des fonctions déjà
   // déclarées ; l'écran de fin, les puzzles et les tutoriels l'appellent.
   'progression.js',

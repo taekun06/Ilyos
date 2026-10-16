@@ -471,6 +471,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
           setTimeout(() => syncFrame(frame), 120);
           setTimeout(() => syncFrame(frame), 800);
         }
+        if (action === 'boucles') {
+          window.dispatchEvent(new CustomEvent('ilyos-boucles-requested'));
+          setTimeout(() => syncFrame(frame), 120);
+          setTimeout(() => syncFrame(frame), 800);
+        }
         if (action === 'resume') {
           document.getElementById('resumeLocalBtn')?.click();
           setTimeout(() => syncFrame(frame), 100);

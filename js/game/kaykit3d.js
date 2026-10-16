@@ -13101,7 +13101,8 @@
           const [r, c] = cells[index];
           // Archipel de pierre : l'arbre KayKit (cube vert sur bâton) et le
           // rocher cubique jurent avec la pierre ; on ne garde que l'herbe.
-          const decors = ILYOS_RENDU_ANCIEN ? KAYKIT_FOREST_ASSETS : KAYKIT_FOREST_ASSETS.filter(decor => decor.key === "forestGrass");
+          // Mode Boucles : rochers et arbres passeraient pour des obstacles.
+          const decors = ILYOS_RENDU_ANCIEN && !state?.boucles ? KAYKIT_FOREST_ASSETS : KAYKIT_FOREST_ASSETS.filter(decor => decor.key === "forestGrass");
           const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * decors.length) % decors.length;
           const spec = decors[pick];
           const object = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
