@@ -855,7 +855,7 @@
     bouton.type = "button";
     bouton.id = "plateauTactiqueBtn";
     bouton.textContent = "VUE 2D";
-    bouton.title = "Basculer entre la vue 3D et le plateau tactique (touche T)";
+    bouton.title = "Basculer entre la vue 3D et le plateau tactique (touche V)";
     bouton.addEventListener("click", () => basculer());
     document.body.appendChild(bouton);
   }
@@ -863,7 +863,8 @@
   function demarrer() {
     ajouterBouton();
     document.addEventListener("keydown", e => {
-      if (e.key !== "t" && e.key !== "T") return;
+      if (e.key !== "v" && e.key !== "V") return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
       const c = e.target;
       if (c && /^(INPUT|TEXTAREA)$/.test(c.tagName)) return;
       basculer();

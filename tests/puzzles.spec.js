@@ -96,10 +96,10 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
      le coup gagnant de six énigmes. Elle sait maintenant les dessiner dans sa
      marge — voir le test dédié plus bas. */
   await expect(page.locator('#plateauTactiqueBtn')).toBeVisible();
-  await page.keyboard.press('t');
+  await page.keyboard.press('v');
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.ILYOS_PLATEAU_2D?.actif())).toBe(true);
-  await page.keyboard.press('t');
+  await page.keyboard.press('v');
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => window.ILYOS_PLATEAU_2D?.actif())).toBe(false);
 

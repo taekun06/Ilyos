@@ -5,7 +5,8 @@
          masque ou desactive (tutoriel, tour adverse, enigme d'un seul tour)
          ne repond donc pas non plus au clavier, sans condition a recopier ici.
 
-           1 2 3 4         Ile, Deplacer, Pousser, Magie (ordre du dock)
+           A Z E R         Ile, Deplacer, Pousser, Magie (ordre du dock,
+                           rangee du haut d'un clavier AZERTY)
            Entree          fin du tour
            Retour, Ctrl+Z  annuler le dernier coup (bouton ↶)
            Tab, Maj+Tab    gardien suivant / precedent pendant un deplacement
@@ -13,13 +14,113 @@
            M               menu
            D               defausse
 
-         Les raccourcis existants restent ou ils sont : Q/E/F (core.js,
-         handleRotateKey), fleches et Espace (handleCameraKey), Echap
-         (diagnostics.js), T (js/plateau-tactique.js), O (puzzle.js). */
+         Les autres restent ou ils sont : Q/S/F (core.js, handleRotateKey),
+         fleches et Espace (handleCameraKey), Echap (diagnostics.js),
+         V (js/plateau-tactique.js), O (puzzle.js).
+
+         INDICES. Chaque bouton porte dans son coin la touche qui l'actionne,
+         petite et discrete (choix de Taekun, 2026-10-16), et la touche de
+         MANETTE des que la manette sert (gamepad.js pose
+         body[data-entree="manette"]) ; une touche du clavier ou un clic
+         reviennent au clavier. Rien sur un ecran tactile. */
       (function setupIlyosClavier() {
         if (typeof document === "undefined") return;
 
-        const DOCK = { "1": "ov2Island", "2": "ov2Move", "3": "ov2Push", "4": "ov2Magic" };
+        const DOCK = { a: "ov2Island", z: "ov2Move", e: "ov2Push", r: "ov2Magic" };
+
+        /* Touche clavier, puis manette (disposition standard, gamepad.js).
+           Deplacer n'a pas de bouton direct a la manette : on y va par le dock. */
+        const INDICES = [
+          { id: "ov2Island", clavier: "A", manette: "LT", dock: true },
+          { id: "ov2Move", clavier: "Z", manette: "", dock: true },
+          { id: "ov2Push", clavier: "E", manette: "X", dock: true },
+          { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
+          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:7px;right:18px" },
+          { id: "ov2Undo", clavier: "⌫", manette: "B" },
+          { id: "ov2Gear", clavier: "M", manette: "≡" },
+          { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
+        ];
+
+        function installerStyle() {
+          if (document.getElementById("ilyosTouchesStyle")) return;
+          const style = document.createElement("style");
+          style.id = "ilyosTouchesStyle";
+          style.textContent = `
+            .ilyos-touche{position:absolute;top:-6px;right:-6px;z-index:5;min-width:17px;height:17px;
+              padding:0 3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+              font:800 11px/1 'Nunito Sans',Inter,system-ui,sans-serif!important;letter-spacing:0!important;text-transform:none!important;font-style:normal!important;
+              color:rgba(255,238,205,.78);background:rgba(18,14,28,.82);
+              border:1px solid rgba(255,238,205,.34);border-radius:5px;
+              box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none}
+            .ilyos-touche.ilyos-touche-dock{top:8px;right:auto;left:calc(50% + 22px)}
+            .ilyos-touche:empty{display:none}
+            @media (hover:none) and (pointer:coarse){.ilyos-touche{display:none!important}}`;
+          document.head.appendChild(style);
+        }
+
+        /* Idempotent : un bouton reconstruit (l'icone ↶ est posee apres coup
+           par hud-organique-v2-final-v8.js) recoit simplement un nouvel indice.
+           ↶ est decoupe par un clip-path qui rognerait un indice pose dedans :
+           le sien est pose a cote, dans le parent, au coin du bouton, et suit
+           sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
+           grand, le garde a l'interieur de sa decoupe (`coin`). */
+        function poserIndices() {
+          installerStyle();
+          const manette = document.body.dataset.entree === "manette";
+          INDICES.forEach(indice => {
+            const bouton = document.getElementById(indice.id);
+            if (!bouton) return;
+            const style = getComputedStyle(bouton);
+            const parent = bouton.parentElement;
+            const dehors = !indice.coin && style.clipPath !== "none" && !!parent && bouton.offsetParent === parent;
+            let marque = document.querySelector(`.ilyos-touche[data-pour="${indice.id}"]`);
+            if (marque && marque.parentElement !== (dehors ? parent : bouton)) { marque.remove(); marque = null; }
+            if (!marque) {
+              if (!dehors && style.position === "static") bouton.style.position = "relative";
+              marque = document.createElement("span");
+              marque.className = "ilyos-touche" + (indice.dock ? " ilyos-touche-dock" : "");
+              marque.dataset.pour = indice.id;
+              marque.setAttribute("aria-hidden", "true");
+              if (indice.coin) marque.style.cssText = indice.coin;
+              /* En ligne : la typographie du HUD (Almendra) l'emportait sur la
+                 feuille ci-dessus pour les boutons d'action. */
+              marque.style.setProperty("font-family", "'Nunito Sans', Inter, system-ui, sans-serif", "important");
+              if (dehors) bouton.after(marque); else bouton.appendChild(marque);
+            }
+            if (dehors) {
+              marque.style.left = `${bouton.offsetLeft + bouton.offsetWidth - 11}px`;
+              marque.style.top = `${bouton.offsetTop - 6}px`;
+              marque.style.right = "auto";
+              marque.hidden = style.display === "none" || style.visibility === "hidden";
+            }
+            const texte = manette ? indice.manette : indice.clavier;
+            if (marque.textContent !== texte) marque.textContent = texte;
+          });
+        }
+        window.addEventListener("resize", poserIndices, { passive: true });
+
+        /* Un geste peut masquer ou montrer ↶ (tutoriel, enigme, fin de
+           partie) : un seul rafraichissement, une fois l'interface a jour. */
+        let rafraichissement = 0;
+        function rafraichirIndices() {
+          if (rafraichissement) return;
+          rafraichissement = setTimeout(() => { rafraichissement = 0; poserIndices(); }, 400);
+        }
+
+        function modeEntree(manette) {
+          if ((document.body.dataset.entree === "manette") === manette) return;
+          if (manette) document.body.dataset.entree = "manette";
+          else delete document.body.dataset.entree;
+          poserIndices();
+        }
+        ilyosModeManette = () => modeEntree(true);
+        document.addEventListener("pointerdown", () => { modeEntree(false); rafraichirIndices(); }, { capture: true, passive: true });
+
+        (function attendreHud(essais) {
+          const undo = document.getElementById("ov2Undo");
+          if ((undo && undo.dataset.v8Undo === "1") || essais > 600) { poserIndices(); return; }
+          requestAnimationFrame(() => attendreHud(essais + 1));
+        })(0);
 
         function visible(element) {
           if (!element || !element.getClientRects().length) return false;
@@ -104,6 +205,8 @@
         }
 
         document.addEventListener("keydown", event => {
+          modeEntree(false);
+          rafraichirIndices();
           if (event.defaultPrevented || event.altKey || event.repeat) return;
           const cible = event.target;
           const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";

@@ -23,18 +23,18 @@ const gardienPris = page => page.evaluate(() => {
   return cell ? `${cell.dataset.r},${cell.dataset.c}` : null;
 });
 
-test('2, 3, Tab, Retour et M pilotent une énigme sans souris', async ({ page }) => {
+test('Z, E, Tab, Retour et M pilotent une énigme sans souris', async ({ page }) => {
   const erreurs = await ouvrirEnigme(page);
 
-  // 3 = Pousser : les destinations de poussée sont proposées.
-  await page.keyboard.press('3');
+  // E = Pousser : les destinations de poussée sont proposées.
+  await page.keyboard.press('e');
   await expect.poll(async () => (await page.evaluate(() => window.ILYOS_PUZZLE._debug())).pushOptions.length).toBeGreaterThan(0);
   // Retour annule la sélection.
   await page.keyboard.press('Backspace');
   await expect.poll(async () => (await page.evaluate(() => window.ILYOS_PUZZLE._debug())).pushOptions.length).toBe(0);
 
-  // 2 = Déplacer, puis Tab parcourt les gardiens proposés.
-  await page.keyboard.press('2');
+  // Z = Déplacer, puis Tab parcourt les gardiens proposés.
+  await page.keyboard.press('z');
   const offerts = await page.evaluate(() => document.querySelectorAll('.cell .character.selectable').length);
   expect(offerts).toBeGreaterThan(1);
   await page.keyboard.press('Tab');
@@ -55,5 +55,36 @@ test('2, 3, Tab, Retour et M pilotent une énigme sans souris', async ({ page })
   await page.keyboard.press('Escape');
   await expect(page.locator('#hudV2GearPopover')).toBeHidden();
 
+  expect(erreurs).toEqual([]);
+});
+
+/* Les indices de touches suivent l'entrée utilisée : clavier par défaut,
+   manette dès qu'un bouton est pressé, clavier de nouveau à la frappe. */
+test('les indices passent du clavier à la manette et reviennent', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__pad = {
+      id: 'fake', index: 0, connected: true, mapping: 'standard', timestamp: 0,
+      axes: [0, 0, 0, 0],
+      buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }))
+    };
+    navigator.getGamepads = () => [window.__pad];
+  });
+  const erreurs = await ouvrirEnigme(page);
+  const indice = id => page.locator(`#${id} > .ilyos-touche`);
+
+  await expect(indice('ov2Push')).toHaveText('E');
+  await expect(indice('ov2Island')).toHaveText('A');
+
+  // Un appui sur R3 suffit à basculer (il recadre seulement la vue).
+  await page.evaluate(() => { window.__pad.buttons[11].pressed = true; });
+  /* Maintenu jusqu'à ce que la boucle de la manette l'ait lu : sans GPU, les
+     images sont rares et un appui bref passait entre deux lectures. */
+  await page.waitForFunction(() => document.body.dataset.entree === 'manette', null, { timeout: 15000 });
+  await page.evaluate(() => { window.__pad.buttons[11].pressed = false; });
+  await expect(indice('ov2Push')).toHaveText('X');
+  await expect(indice('ov2Magic')).toHaveText('RT');
+
+  await page.keyboard.press('Shift');
+  await expect(indice('ov2Push')).toHaveText('E');
   expect(erreurs).toEqual([]);
 });

@@ -103,12 +103,12 @@
         }
       }
 
-      /* Consigne de pose : Q/E n'existe pas sur un écran tactile, où l'on
+      /* Consigne de pose : Q/S n'existe pas sur un écran tactile, où l'on
          tourne l'île avec les boutons ↺/↻ du panneau et où un toucher montre
          l'aperçu avant « Confirmer ». */
       function consignePoseIle() {
         const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
-        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
+        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/S pour tourner, clic pour poser.";
       }
 
       /* Les consignes sont écrites pour la souris (« Cliquez… », « la
@@ -4114,7 +4114,7 @@
           <p><b>Île</b></p>
           <p>Propriétaire : <span style="color:${owner.color}">${owner.name}</span></p>
           <p>Taille : ${island.cells.length} case(s)</p>
-          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / E, puis cliquez sur l’aperçu.</p>
+          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu.</p>
         `;
           return;
         }
