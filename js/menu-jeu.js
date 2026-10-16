@@ -142,10 +142,16 @@
     else commandes.insertAdjacentHTML('beforeend', `
       <dl class="mj-commandes">
         <div><dt><kbd>Clic</kbd></dt><dd>Jouer une case, une action</dd></div>
-        <div><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Tourner l’île à poser</dd></div>
+        <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></dt><dd>Île, Déplacer, Pousser, Magie</dd></div>
+        <div><dt><kbd>Tab</kbd></dt><dd>Gardien suivant</dd></div>
+        <div><dt><kbd>Entrée</kbd></dt><dd>Fin du tour</dd></div>
+        <div><dt><kbd>Retour</kbd></dt><dd>Annuler le dernier coup (aussi <kbd>Ctrl</kbd> <kbd>Z</kbd>)</dd></div>
+        <div><dt><kbd>Q</kbd> <kbd>E</kbd> <kbd>F</kbd></dt><dd>Tourner, retourner l’île à poser</dd></div>
+        <div><dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Tourner, incliner la caméra</dd></div>
         <div><dt><kbd>Espace</kbd></dt><dd>Revenir à la vue de face</dd></div>
         <div><dt><kbd>Molette</kbd></dt><dd>Zoomer</dd></div>
         <div><dt><kbd>T</kbd></dt><dd>Plateau tactique à plat</dd></div>
+        <div><dt><kbd>M</kbd> <kbd>D</kbd></dt><dd>Menu, défausse</dd></div>
         <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, fermer ce menu</dd></div>
       </dl>`);
     page('partie').appendChild(commandes);
