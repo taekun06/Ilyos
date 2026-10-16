@@ -103,12 +103,23 @@
         }
       }
 
-      /* Consigne de pose : Q/E n'existe pas sur un écran tactile, où l'on
+      /* Consigne de pose : Q/S n'existe pas sur un écran tactile, où l'on
          tourne l'île avec les boutons ↺/↻ du panneau et où un toucher montre
          l'aperçu avant « Confirmer ». */
       function consignePoseIle() {
         const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
-        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
+        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/S pour tourner, clic pour poser.";
+      }
+
+      /* Les consignes sont écrites pour la souris (« Cliquez… », « la
+         molette »). Sur un écran tactile, la phrase affichée dit « Touchez » :
+         une seule traduction, au moment où la consigne est posée dans le HUD. */
+      function consigneSelonPointeur(texte) {
+        if (!texte || !window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches) return texte;
+        return texte
+          .replace(/\bCliquez\b/g, "Touchez")
+          .replace(/\bcliquez\b/g, "touchez")
+          .replace(/, ↻ ou la molette/g, " ou ↻");
       }
 
       function turnContextInfo() {
@@ -256,9 +267,98 @@
           .join("\n");
       }
 
+      /* Carte jouée : une petite carte part du bouton d'action (ou du portrait
+         de l'adversaire) vers le plateau et s'efface. Un seul élément DOM animé
+         par le compositeur (Web Animations), retiré à la fin. */
+      /* Liseré du joueur actif : à l'ouverture du tour, un cadre net et
+         intense à sa couleur ; dès sa première action, il se fond en une lueur diffuse venue du haut et du
+         bas. Deux calques CSS fixes, seule leur opacité change. */
+      function lisereCouleur(hex, alpha) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+        if (!m) return `rgba(255,255,255,${alpha})`;
+        const n = parseInt(m[1], 16);
+        return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+      }
+      function renderLisereTour() {
+        if (typeof document === "undefined") return;
+        let el = renderLisereTour.el;
+        if (!el) {
+          el = renderLisereTour.el = document.createElement("div");
+          el.className = "lisere-tour";
+          el.innerHTML = '<i class="fort"></i><i class="doux"></i>';
+          document.body.appendChild(el);
+        }
+        const p = currentPlayer?.();
+        const enJeu = !!p && state?.winner === null && !document.getElementById("gameScreen")?.classList.contains("hidden");
+        el.hidden = !enJeu;
+        document.body.dataset.tourActif = enJeu && state.players.length === 2 ? String(state.currentPlayer) : "";
+        if (!enJeu) return;
+        const couleur = p.color || "#ffffff";
+        if (renderLisereTour.couleur !== couleur) {
+          renderLisereTour.couleur = couleur;
+          el.style.setProperty("--lt-plein", lisereCouleur(couleur, 1));
+          el.style.setProperty("--lt-halo", lisereCouleur(couleur, .53));
+          el.style.setProperty("--lt-haut", lisereCouleur(couleur, .31));
+          el.style.setProperty("--lt-bas", lisereCouleur(couleur, .27));
+          el.style.setProperty("--lt-nul", lisereCouleur(couleur, 0));
+        }
+        const cle = `${state.turn}/${state.currentPlayer}`;
+        if (renderLisereTour.cle !== cle) { renderLisereTour.cle = cle; renderLisereTour.acte = false; }
+        // L'humain qui annule tout son tour retrouve le liseré net.
+        const agi = renderLisereTour.acte && (p.isAI || state.undoHistory?.length > 0);
+        el.dataset.mode = agi ? "doux" : "fort";
+      }
+      // Première action du tour (carte jouée, île posée) : le liseré s'adoucit.
+      function lisereMarquerAction() {
+        if (ilyosSimulationActive || !state) return;
+        renderLisereTour.cle = `${state.turn}/${state.currentPlayer}`;
+        renderLisereTour.acte = true;
+      }
+
+      const CARTE_ENVOL_BOUTONS = { MOVE: "ov2Move", PUSH: "ov2Push", MAGIC: "ov2Magic" };
+      function carteJoueeEnvol(type, player) {
+        if (ilyosSimulationActive || !player || typeof document === "undefined") return;
+        if (kaykitReducedMotion?.()) return;
+        const bouton = document.getElementById(CARTE_ENVOL_BOUTONS[type]);
+        const local = !player.isAI && (player.id === 0 || !state?.soloMode);
+        const origine = local && bouton?.offsetParent
+          ? bouton
+          : document.querySelector(player.id === 0 ? "#ilyosHudOrganicV2 .ov2-left .ov2-avatar" : "#ilyosHudOrganicV2 .ov2-right .ov2-avatar");
+        const plateau = document.getElementById("kaykitCanvas");
+        if (!origine || !plateau || !origine.animate) return;
+        const de = origine.getBoundingClientRect();
+        const vers = plateau.getBoundingClientRect();
+        const carte = document.createElement("div");
+        carte.className = `carte-envol carte-envol-${type.toLowerCase()}`;
+        const icone = bouton?.querySelector("svg");
+        if (icone) carte.appendChild(icone.cloneNode(true));
+        carte.style.left = `${de.left + de.width / 2 - 17}px`;
+        carte.style.top = `${de.top + de.height / 2 - 24}px`;
+        document.body.appendChild(carte);
+        const dx = vers.left + vers.width / 2 - (de.left + de.width / 2);
+        const dy = vers.top + vers.height * .45 - (de.top + de.height / 2);
+        carte.animate([
+          { transform: "translate(0, 0) scale(.9) rotate(0deg)", opacity: .95 },
+          { transform: `translate(${dx * .55}px, ${dy * .55}px) scale(1.05) rotate(-6deg)`, opacity: .9, offset: .55 },
+          { transform: `translate(${dx}px, ${dy}px) scale(.55) rotate(-10deg)`, opacity: 0 }
+        ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)" }).onfinish = () => carte.remove();
+      }
+
+      /* Refus d'une action : le message, plus le son « porte fermée » (sourd,
+         bref) qui existait dans audio.js sans jamais être joué. */
+      function refuserAction(message) {
+        showToast(message);
+        if (!ilyosSimulationActive && !currentPlayer()?.isAI) playSfx("error");
+      }
+
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        // Retour au clic : un petit son quand le joueur prend un gardien en main.
+        const gardienChoisi = state?.selectedCharId || null;
+        if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
+          && !currentPlayer()?.isAI && canLocalPlayerAct()) playSfx("select");
+        renderAll.dernierChoisi = gardienChoisi;
         renderHeader();
         renderTurnContext();
         renderBoard();
@@ -272,6 +372,7 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
+        renderLisereTour();
         // V78 (passe fluidité) : remplace les MutationObserver globaux sur
         // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
         // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
@@ -534,10 +635,10 @@
           if (currentPushOption) {
             instructionEl.textContent = currentPushOption.fell
               ? `☠ Force ${state.selectedActionCount} — pousse hors du plateau.`
-              : `Cliquez une destination éclairée · Force ${state.selectedActionCount}.`;
+              : consigneSelonPointeur(`Cliquez une destination éclairée · Force ${state.selectedActionCount}.`);
           } else {
             const info = turnContextInfo();
-            instructionEl.textContent = info?.next || info?.title || "";
+            instructionEl.textContent = consigneSelonPointeur(info?.next || info?.title || "");
           }
         }
 
@@ -704,7 +805,7 @@
             : "";
           const limite = shapeLimitPerOwner();
           const limitBadge = limite
-            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${limite}</span>`
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""} aria-label="${Math.max(0, limite - used)} restante(s)">${Math.max(0, limite - used)}</span>`
             : "";
           button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
           const limitSuffix = limite ? ` (${used}/${limite} posées)` : "";
@@ -721,7 +822,7 @@
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
         if (!state.draft && !peutPayerIle(currentPlayer())) {
-          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
           return;
         }
         if (shapeLimitReached(shapeKey)) {
@@ -939,7 +1040,12 @@
               (state.phase === "ACTION" && state.selectedCharId && ["MOVE", "PUSH"].includes(state.selectedActionType || ""))
               || state.phase === "SMART_CHAR"
             );
-            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
+            if (state.reachable.has(key(r, c))) {
+              /* Une fois le gardien choisi, la 3D dessine la zone d'un seul
+                 contour au lieu de cases éclairées ; le plateau tactique 2D,
+                 qui ne lit que ces classes, garde la zone par cette marque. */
+              classes.push(hideReachableAfterCharacterChoice ? "reachable-zone" : "reachable");
+            }
             if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
             if (
               char
@@ -1522,7 +1628,7 @@
         } = options;
 
         if (isCenterCrownCell(crownCell) && state.centerCrownTakenThisTurn) {
-          showToast("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
+          refuserAction("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
           return false;
         }
 
@@ -1646,7 +1752,7 @@
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           if (!state.draft && !peutPayerIle(currentPlayer())) {
-            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
             return;
           }
           if (isValidPlacement(r, c)) {
@@ -1659,7 +1765,7 @@
             placeIsland(r, c);
           } else {
             updatePlacementPreview(r, c);
-            showToast("Cette forme ne tient pas ici.");
+            refuserAction("Cette forme ne tient pas ici.");
           }
           return;
         }
@@ -1677,7 +1783,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
+            refuserAction(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -2024,7 +2130,7 @@
         if (state.phase === "ACTION_SELECT" && island && !char) {
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.phase = "ACTION";
@@ -2635,7 +2741,7 @@
 
         const candidates = directMoveCandidatesToCell(r, c);
         if (!candidates.length) {
-          showToast("Aucun gardien ne peut atteindre cette case.");
+          refuserAction("Aucun gardien ne peut atteindre cette case.");
           return true;
         }
 
@@ -2716,7 +2822,7 @@
           }
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.selectedCharId = nearest.char.id;
@@ -3153,7 +3259,9 @@
            jamais laisser le joueur derrière un cache. */
         if (result.fell) {
           kaykitBandesCinema(true, 1400);
-          kaykitSecousse();
+          kaykitChoc(3);
+        } else {
+          kaykitChoc(force >= 2 ? 2 : 1);
         }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
@@ -3523,7 +3631,7 @@
           return;
         }
         if (!islandIsEmpty(island)) {
-          showToast("Cette île n’est pas vide : impossible de la dissoudre.");
+          refuserAction("Cette île n’est pas vide : impossible de la dissoudre.");
           return;
         }
         if (availableActionCount("MAGIC") < 1) {
@@ -3605,7 +3713,7 @@
       // Bouton de la barre : la rotation nommée est jouée d'un clic.
       function jouerRotationMagie(steps) {
         if (!magicRotationOptions().some(option => option.steps === steps)) {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
           return;
         }
         state.magicPreviewSteps = steps;
@@ -3655,7 +3763,12 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
+          const auDoigt = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+          showToast(!auDoigt
+            ? "Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner."
+            : window.ILYOS_APERCU_TACTILE?.actif?.() !== false
+              ? "Pivot choisi : touchez une position colorée pour la voir, puis encore pour tourner."
+              : "Pivot choisi : touchez une position colorée ou un bouton de rotation pour tourner.");
           return;
         }
 
@@ -3737,7 +3850,7 @@
         } else if (state.magicPreviewValid) {
           showToast(`Aperçu : ${nextSteps * 90}°. Cliquez sur une case de l’aperçu pour valider.`);
         } else {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
         }
       }
 
@@ -4001,7 +4114,7 @@
           <p><b>Île</b></p>
           <p>Propriétaire : <span style="color:${owner.color}">${owner.name}</span></p>
           <p>Taille : ${island.cells.length} case(s)</p>
-          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / E, puis cliquez sur l’aperçu.</p>
+          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu.</p>
         `;
           return;
         }
@@ -4079,7 +4192,7 @@
         }
 
         if (!artifact) {
-          if (!fromAI) showToast("Ce gardien ne porte pas de couronne.");
+          if (!fromAI) refuserAction("Ce gardien ne porte pas de couronne.");
           return false;
         }
 
@@ -4134,6 +4247,9 @@
         }
         const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
+        // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
+        kaykitChoc(2);
+        kaykitHameauEclat(player.id);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
@@ -4154,9 +4270,11 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
+            // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
+            if (char) kaykitMomentVictoire(char.r, char.c);
             setTimeout(() => showVictory(player, coequipier
               ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
-              : null), 450);
+              : null), char ? 1700 : 450);
           }
         } else {
           // Le gardien qui valide une couronne reste sur son village. Seul le
@@ -4360,6 +4478,7 @@
         });
         kaykitBandesCinema(true, 4000);
 
+        tonFinDePartie("egalite");
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -4372,7 +4491,7 @@
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx("draw");
       }
 
       function showVictory(player, texte = null) {
@@ -4395,6 +4514,16 @@
         kaykitBandesCinema(true, 4000);
 
 
+        /* Le joueur de cet appareil a-t-il perdu ? Contre l'IA ou en ligne
+           seulement : en duel local sur un même écran, la fenêtre salue le
+           vainqueur, qui est assis là. Une défaite n'a pas la fanfare ni la
+           lumière dorée de la victoire : même fenêtre, ton éteint. */
+        const joueurAppareil = progressionJoueurDeLAppareil();
+        const defaite = !!joueurAppareil
+          && (state.onlineMode || player.isAI)
+          && !memeEquipe(player.id, joueurAppareil.id);
+        tonFinDePartie(defaite ? "defaite" : "victoire");
+
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = gardiensPartages()
@@ -4415,7 +4544,19 @@
         els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx(defaite ? "defeat" : "victory");
+      }
+
+      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
+         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
+         fenêtre, ses boutons et le bilan restent les mêmes. */
+      function tonFinDePartie(ton) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.classList.toggle("fin-defaite", ton === "defaite");
+        modal.classList.toggle("fin-egalite", ton === "egalite");
+        const kicker = modal.querySelector(".victory-kicker");
+        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {

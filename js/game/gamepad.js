@@ -34,6 +34,9 @@
          vivent dans `pad`, que le moteur ne voit pas : sans ce relais, Échap
          ouvrait le menu par-dessus le choix et bloquait la suite. */
       let manetteQuitterGeste = () => false;
+      /* Remplace par clavier.js : bascule les indices de touches sur la
+         manette des qu'elle sert. */
+      let ilyosModeManette = () => {};
 
       (function setupIlyosGamepad() {
         if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return;
@@ -1159,6 +1162,7 @@
           for (const candidate of gamepads) if (candidate?.connected) { gamepad = candidate; break; }
           activePad = gamepad;
           if (!gamepad) { pad.previous = []; return; }
+          if (gamepad.buttons.some(button => button.pressed) || gamepad.axes.some(value => Math.abs(value) > DEADZONE)) ilyosModeManette();
           if (typeof kaykit3D === "undefined" || !kaykit3D?.camera) return;
 
           /* Tour de l'adversaire : plus aucune navigation de jeu. Sans cela le

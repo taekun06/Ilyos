@@ -2330,6 +2330,7 @@
    @media(max-width:700px) {
        .sound-menu {
            max-height: calc(100vh - 16px);
+           max-height: calc(100dvh - 16px);
            overflow: auto;
        }
    }
@@ -5502,6 +5503,26 @@
            0 0 18px currentColor;
    }
 
+   /* Défaite et égalité : même fenêtre, lumière éteinte (pas de rayons
+      dorés qui tournent) et couronnes ternies. Voir tonFinDePartie (ui.js). */
+   #victoryModal.fin-defaite .victory-light,
+   #victoryModal.fin-egalite .victory-light {
+       display: none;
+   }
+
+   #victoryModal.fin-defaite .victory-crowns span {
+       filter: grayscale(1) brightness(.62);
+       animation: none;
+   }
+
+   #victoryModal.fin-defaite .victory-kicker {
+       color: #9aa6bf;
+   }
+
+   #victoryModal.fin-egalite .victory-kicker {
+       color: #cfd6ea;
+   }
+
    .victory-text {
        position: relative;
        max-width: 440px;
@@ -7842,6 +7863,7 @@
        inset: 0 !important;
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        display: grid !important;
        place-items: center !important;
        padding: 0 !important;
@@ -7855,6 +7877,7 @@
    body[data-visual-mode="alternative"] .board-wrap:-webkit-full-screen #board {
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        aspect-ratio: auto !important;
        max-width: none !important;
        max-height: none !important;
@@ -7955,6 +7978,7 @@
    .board-wrap:-webkit-full-screen .kaykit-canvas {
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        border-radius: 0 !important;
        border-width: 0 !important;
        outline: 0 !important;
@@ -8722,6 +8746,7 @@
    #gameScreen:-webkit-full-screen {
        width: 100vw !important;
        height: 100vh !important;
+       height: 100dvh !important;
        background: #87d2eb !important
    }
 
@@ -8822,3 +8847,31 @@
    body[data-visual-mode="alternative"] .cell.selected-character {
        box-shadow: inset 0 0 0 9px #f2b91f, 0 0 22px rgba(255, 202, 55, .95) !important;
    }
+/* Carte jouée qui s'envole vers le plateau (carteJoueeEnvol, ui.js). */
+.carte-envol {
+  position: fixed;
+  width: 34px;
+  height: 48px;
+  border-radius: 5px;
+  background: linear-gradient(160deg, #222a3d, #12172a);
+  border: 1px solid rgba(221, 182, 83, .85);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .45), inset 0 0 6px rgba(221, 182, 83, .25);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 60;
+  will-change: transform, opacity;
+}
+.carte-envol svg { width: 22px; height: 22px; }
+
+/* Liseré du joueur actif (renderLisereTour, ui.js) : net en début de tour,
+   diffus haut et bas dès la première action. */
+.lisere-tour { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.lisere-tour[hidden] { display: none; }
+.lisere-tour > i { position: absolute; inset: 0; border-radius: 18px; opacity: 0; transition: opacity .7s ease; }
+.lisere-tour .fort { box-shadow: inset 0 0 0 3px var(--lt-plein), inset 0 0 70px var(--lt-halo); border-radius: 14px; }
+.lisere-tour .doux { background: linear-gradient(to bottom, var(--lt-haut) 0%, var(--lt-nul) 22%, var(--lt-nul) 76%, var(--lt-bas) 100%); }
+.lisere-tour[data-mode="fort"] .fort, .lisere-tour[data-mode="doux"] .doux { opacity: 1; }
+body[data-tour-actif="0"] #ilyosHudOrganicV2 .ov2-right,
+body[data-tour-actif="1"] #ilyosHudOrganicV2 .ov2-left { opacity: .55; filter: saturate(.5); transition: opacity .4s ease; }
+body:has(#gameScreen.hidden) .lisere-tour { display: none; }

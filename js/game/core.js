@@ -286,7 +286,7 @@
           return;
         }
 
-        if (!["q", "e", "arrowleft", "arrowright"].includes(key)) return;
+        if (!["q", "s", "arrowleft", "arrowright"].includes(key)) return;
 
         const canRotatePlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
         const canRotateMagic =
@@ -1727,6 +1727,8 @@
         if (previousCarrierId != null && previousCarrierId !== char.id) {
           const previous = characterById(previousCarrierId);
           if (previous) playCrownFlight(previous.r, previous.c, char.r, char.c, { arc: .55, duration: 340 });
+          // Une passe entre alliés reste douce ; une couronne arrachée à l'adversaire frappe.
+          if (previous && previous.player !== char.player && typeof kaykitChoc === "function") kaykitChoc(2);
         }
         playCrownPickup(char.id, Number.isFinite(fromR) ? fromR : char.r, Number.isFinite(fromC) ? fromC : char.c);
         return true;

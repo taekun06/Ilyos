@@ -60,6 +60,8 @@ const fragmentNames = [
   // deja definies (dispatchKayKitClick, handleCancelButton, zoomKayKitCamera).
   // Placee en dernier pour que son IIFE s'execute quand tout est declare.
   'gamepad.js',
+  // Raccourcis clavier : meme principe que la manette, clique le dock.
+  'clavier.js',
   'diagnostics.js',
 ];
 

@@ -166,6 +166,8 @@
             kaykit3D.orbit.minDistance = kaykit3D.minZoom;
             kaykit3D.orbit.maxDistance = kaykit3D.maxZoom;
           }
+          // Téléphone en portrait : recul plus grand (VUE TÉLÉPHONE).
+          kaykitTelephoneBornes();
         }
         return GRID;
       }
@@ -668,11 +670,16 @@
         castle2: kaykitAssetSpec("medieval", "buildings/green/building_castle_green.gltf", MEDIEVAL_ATLAS),
         castle3: kaykitAssetSpec("medieval", "buildings/yellow/building_castle_yellow.gltf", MEDIEVAL_ATLAS),
 
-        // Fanions de village, un par couleur de joueur (jusqu'à 4).
-        flag0: kaykitAssetSpec("medieval", "decoration/props/flag_blue.gltf", MEDIEVAL_ATLAS),
-        flag1: kaykitAssetSpec("medieval", "decoration/props/flag_red.gltf", MEDIEVAL_ATLAS),
-        flag2: kaykitAssetSpec("medieval", "decoration/props/flag_green.gltf", MEDIEVAL_ATLAS),
-        flag3: kaykitAssetSpec("medieval", "decoration/props/flag_yellow.gltf", MEDIEVAL_ATLAS),
+        // Hameau autour des villages de coin (voir buildKayKitHameau) : il
+        // remplace les fanions. Les bâtiments bleus sont reteints à la couleur
+        // du joueur comme le château ; arbre et accessoires restent neutres.
+        hamletHomeA: kaykitAssetSpec("medieval", "buildings/blue/building_home_A_blue.gltf", MEDIEVAL_ATLAS),
+        hamletHomeB: kaykitAssetSpec("medieval", "buildings/blue/building_home_B_blue.gltf", MEDIEVAL_ATLAS),
+        hamletChurch: kaykitAssetSpec("medieval", "buildings/blue/building_church_blue.gltf", MEDIEVAL_ATLAS),
+        hamletWell: kaykitAssetSpec("medieval", "buildings/blue/building_well_blue.gltf", MEDIEVAL_ATLAS),
+        hamletTree: kaykitAssetSpec("medieval", "decoration/nature/tree_single_B.gltf", MEDIEVAL_ATLAS),
+        hamletBarrel: kaykitAssetSpec("medieval", "decoration/props/barrel.gltf", MEDIEVAL_ATLAS),
+        hamletCrate: kaykitAssetSpec("medieval", "decoration/props/crate_A_small.gltf", MEDIEVAL_ATLAS),
 
         // Nuages KayKit réels (voir buildKayKitBoardClouds) : dérivent juste hors
         // du rayon de sécurité de l'archipel, à hauteur du plateau — lecture
@@ -1348,6 +1355,8 @@
         // d'actions, y ajouter « ↑ ↓ INCLINER » ne fait qu'aggraver la collision.
         cameraHint.textContent = "← → TOURNER · ESPACE : VUE DE FACE · MOLETTE : ZOOM · CLIC : JOUER";
         els.boardWrap.appendChild(cameraHint);
+        kaykitCreerBoutonEnsemble();
+        kaykitCreerBoutonPleinEcran();
 
         let renderer;
         try {
@@ -1519,6 +1528,7 @@
           islandLayerObjects: [],       // coutures + piédestaux : peu coûteux (géométries mises en cache), reconstruits en bloc à chaque changement d'île
           islandObjectRegistry: new Map(), // islandId -> { objects[], signature } — bloc+coque+décor NE sont reconstruits QUE pour l'île qui a réellement changé (pose/retrait/rotation), pas tout le plateau
           pedestalRegistry: new Map(),  // "r,c" -> pedestal (reconstruit avec la couche des îles)
+          hameauRegistry: new Map(),    // case du village -> hameau (null hors coin)
           villageRegistry: new Map(),   // playerId -> chateau (reconstruit si posé en secours puis modèle réel disponible)
           highlightRegistry: new Map(), // "r,c" -> { signature, objects[] } pour les surbrillances de case
           looseCrownRegistry: new Map(),// "primary"/"secondary" -> { signature, objects[] }
@@ -2421,6 +2431,38 @@
       // fait que les résoudre. Nappe haute (lisible, opacité .62) → 2048 = 4,4× au lieu
       // de 17,5×. Nappe basse (parallaxe atténuée, opacité .40) → 1024, pour tenir le
       // budget VRAM à 20 Mo au lieu de 32.
+      /* Texture BLANCHE dont seule la transparence vient de la toile.
+       *
+       * Points colorés sur iPhone (2026-10-13) : une toile 2D garde ses pixels
+       * prémultipliés ; à l'envoi vers WebGL, Safari les « déprémultiplie » et le
+       * moindre écart de couleur d'un pixel presque transparent (dégradés tramés)
+       * devient une couleur franche au hasard. Sur la mer de nuages, filtrée et
+       * étirée jusqu'à l'horizon, cela semait des confettis violets et verts.
+       * Les nuages sont blancs par construction : on n'envoie donc que l'alpha,
+       * avec un blanc exact partout, et plus rien ne peut dériver. */
+      function kaykitTextureBlanche(canvas) {
+        const w = canvas.width, h = canvas.height;
+        let source;
+        try {
+          source = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+        } catch (_) {
+          return new THREE.CanvasTexture(canvas);
+        }
+        const pixels = new Uint8Array(w * h * 4).fill(255);
+        // Lignes inversées : même sens que CanvasTexture (flipY), que DataTexture
+        // n'applique pas.
+        for (let y = 0; y < h; y++) {
+          const de = (h - 1 - y) * w * 4, vers = y * w * 4;
+          for (let i = 3; i < w * 4; i += 4) pixels[vers + i] = source[de + i];
+        }
+        const texture = new THREE.DataTexture(pixels, w, h, THREE.RGBAFormat);
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+        return texture;
+      }
+
       function kaykitCloudSheetTexture(variant = 0, size2D = 150, holeStart = 11, holeEnd = 20, resolution = 512, edgeFade = .80) {
         const key = `cloud-sheet-v4-${variant}-${size2D}-${holeStart}-${holeEnd}-${resolution}-${edgeFade}`;
         if (kaykit3D?.materials?.has(key)) return kaykit3D.materials.get(key);
@@ -2512,7 +2554,7 @@
         ctx.fillStyle = mask;
         ctx.fillRect(0, 0, size, size);
         ctx.globalCompositeOperation = "source-over";
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
         texture.encoding = THREE.sRGBEncoding;
         // Indispensable : vue rasante, une nappe horizontale est vue sous un angle
@@ -3531,7 +3573,7 @@
             // Injecté ici, le lisere est une VRAIE lumière : il traverse ACES, se
             // comporte comme le reste de l'éclairage, et le Bloom pourra le cueillir.
             .replace("#include <tonemapping_fragment>",
-              "  vec3 bN = normalize(vBacklitN);\n" +
+              "  vec3 bN = vBacklitN * inversesqrt(max(dot(vBacklitN, vBacklitN), 1e-8));\n" +
               "  vec3 bV = normalize(cameraPosition - vBacklitW);\n" +
               // 1 - |N·V| : maximal sur la silhouette, nul de face. abs() pour que les
               // faces arrière (nuages non fermés du pack) s'allument aussi.
@@ -3541,17 +3583,26 @@
               // s'embrase à contre-jour, c'est la SILHOUETTE du côté du soleil : on
               // projette donc normale et direction du soleil sur le plan perpendi-
               // culaire à la vue, et on compare ces deux directions-là.
-              "  vec3 nPerp = normalize(bN - bV * dot(bN, bV));\n" +
-              "  vec3 sPerp = normalize(uSunDir - bV * dot(uSunDir, bV));\n" +
-              "  float bRim = pow(1.0 - abs(dot(bN, bV)), uRimPower);\n" +
+              //
+              // GARDE-FOUS iPhone (2026-10-13) : sur les puces Apple, pow() d'un
+              // nombre négatif et normalize() d'un vecteur nul donnent NaN, là où
+              // les PC rendent 0. Or 1 − |N·V| passe un rien sous zéro dès que les
+              // vecteurs, arrondis, dépassent la longueur 1 : chaque pixel touché
+              // devenait un point de couleur au hasard (élargi ensuite par le
+              // Bloom), semé sur toutes les faces de nuage tournées vers la caméra.
+              "  vec3 nPerp = bN - bV * dot(bN, bV);\n" +
+              "  nPerp *= inversesqrt(max(dot(nPerp, nPerp), 1e-8));\n" +
+              "  vec3 sPerp = uSunDir - bV * dot(uSunDir, bV);\n" +
+              "  sPerp *= inversesqrt(max(dot(sPerp, sPerp), 1e-8));\n" +
+              "  float bRim = pow(clamp(1.0 - abs(dot(bN, bV)), 0.0, 1.0), uRimPower);\n" +
               // Ne s'allume que du côté qui regarde le soleil : sans ce facteur on
               // obtient un contour uniforme (effet néon) au lieu d'un contre-jour.
               "  float bBack = smoothstep(-0.10, 0.90, dot(nPerp, sPerp));\n" +
-              "  gl_FragColor.rgb += uRimColor * (bRim * bBack * uRimStrength);\n" +
+              "  gl_FragColor.rgb += uRimColor * clamp(bRim * bBack * uRimStrength, 0.0, 8.0);\n" +
               "#include <tonemapping_fragment>");
         };
         // Trois matériaux identiques compileraient trois programmes sans cette clé.
-        mat.customProgramCacheKey = () => "ilyos-backlit-cloud-v1";
+        mat.customProgramCacheKey = () => "ilyos-backlit-cloud-v2";
         mat.needsUpdate = true;
 
         kaykitBacklitCloudCache.set(source.uuid, mat);
@@ -5762,6 +5813,40 @@
             false
           )[0]?.object || null;
         };
+        /* APERÇU AU DOIGT. Au doigt, il n'y a pas de survol : toucher une
+           destination de poussée ou une position de magie jouait le coup sans
+           jamais montrer son résultat. mobile-input-v1.js demande ici ce que
+           vise un toucher ; une clé non nulle veut dire « ce toucher a un
+           aperçu » : le premier le montre, le second sur la même clé joue. */
+        window.ILYOS_cibleApercuTactile = (x, y) => {
+          if (!kaykit3D || !state || state.phase !== "ACTION" || !canLocalPlayerAct()) return null;
+          const hit = pick({ clientX: x, clientY: y });
+          if (!hit) return null;
+          const interaction = hit.userData?.ilyosInteraction;
+          if (interaction === "push-destination" || interaction === "push-death-destination") {
+            return hit.userData.pushOptionId ? `poussee:${hit.userData.pushOptionId}` : null;
+          }
+          if (state.selectedActionType === "MAGIC" && state.selectedIslandId && state.selectedMagicPivot
+            && typeof magicRotationStepsAtCell === "function") {
+            const { r, c } = hit.userData || {};
+            if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
+            const crans = magicRotationStepsAtCell(r, c);
+            return crans ? `magie:${state.selectedIslandId}:${state.selectedMagicPivot.join(",")}:${crans}` : null;
+          }
+          return null;
+        };
+        /* Montrer l'aperçu d'une clé, sans relancer de rayon : le doigt qui se
+           lève déclenche « pointerleave », qui efface le survol et refait les
+           anneaux en fondu — un lancer de rayon juste après ne les trouve plus. */
+        window.ILYOS_montrerApercuTactile = cle => {
+          if (!kaykit3D || !state || typeof cle !== "string" || !canLocalPlayerAct()) return false;
+          if (cle.startsWith("poussee:")) return !!viserOptionPoussee(cle.slice(8));
+          if (cle.startsWith("magie:")) {
+            previsualiserRotationMagie(Number(cle.split(":").pop()));
+            return true;
+          }
+          return false;
+        };
         const dispatchToCell = (type, r, c, event, bubbles = false) => {
           const cell = els.board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
           if (!cell) return;
@@ -5780,7 +5865,6 @@
             renderHand();
           }
           kaykit3D.hoverCell = null;
-          majPorteeAdverseKayKit(null);
           // Pendant la pose, conserver le dernier ancrage : les boutons de rotation
           // doivent transformer exactement la même prévisualisation.
           if (state?.phase !== "PLACE_ISLAND") clearPlacementPreview(true);
@@ -5855,7 +5939,6 @@
           }
 
           kaykit3D.hoverCell = next;
-          majPorteeAdverseKayKit(next);
           const intent = next ? kaykitHoverIntent(next.r, next.c, next.hitAction) : null;
           setKayKitVisualHover(next, intent);
           if (kaykit3D.hoverMarker) {
@@ -6496,7 +6579,8 @@
          en degrés SOUS l'horizontale, OrbitControls en angle depuis le zénith :
          les deux sont complémentaires. */
       function polaireVueDeFace() {
-        const plongee = Number.isFinite(window.ILYOS_FRONT_PITCH_DEG) ? window.ILYOS_FRONT_PITCH_DEG : 37.2;
+        const plongee = Number.isFinite(window.ILYOS_FRONT_PITCH_DEG) ? window.ILYOS_FRONT_PITCH_DEG
+          : (kaykitVueTelephone() ? 66 : 37.2);
         return THREE.MathUtils.clamp(Math.PI / 2 - plongee * Math.PI / 180, KAYKIT_POLAIRE_MIN, KAYKIT_POLAIRE_MAX);
       }
 
@@ -6892,13 +6976,6 @@
               .kaykit-cinema .kaykit-bande{transition:none;}
               .kaykit-cinema.bandes .kaykit-bande{height:7vh;}
             }
-            #gameScreen.kaykit-secousse .board-wrap{animation:kaykit-secousse-k .45s ease-in-out;}
-            @keyframes kaykit-secousse-k{0%,100%{transform:translate(0,0)}
-              20%{transform:translate(-7px,4px)}40%{transform:translate(6px,-5px)}
-              60%{transform:translate(-4px,-3px)}80%{transform:translate(4px,3px)}}
-            @media (prefers-reduced-motion: reduce){
-              #gameScreen.kaykit-secousse .board-wrap{animation:none;}
-            }
           `;
           document.head.appendChild(style);
         }
@@ -6933,13 +7010,78 @@
         }
       }
 
-      function kaykitSecousse() {
-        if (!els?.gameScreen) return;
-        els.gameScreen.classList.remove("kaykit-secousse");
-        void els.gameScreen.offsetWidth;   // force le redémarrage de l'animation
-        els.gameScreen.classList.add("kaykit-secousse");
-        setTimeout(() => els.gameScreen?.classList.remove("kaykit-secousse"), 500);
+      /* ===================== CHOCS =====================
+
+         Le poids d'un coup, dosé selon sa force : 1 = poussée ou île qui se
+         repose, 2 = poussée forte ou couronne volée, 3 = gardien jeté dans le
+         vide. Deux effets seulement, choisis parce qu'ils ne coûtent rien au
+         rendu : la caméra tremble (un décalage de sa position, appliqué le
+         temps d'une image puis retiré) et le téléphone vibre. Aucun objet,
+         aucune particule, aucun rendu supplémentaire.
+
+         Remplace l'ancienne secousse CSS de tout le plateau, qui emportait le
+         HUD avec la scène et ne connaissait qu'une seule force.
+
+         Réglages (menu > Graphismes) : `ilyosChocs` dans le stockage local.
+         Les secousses suivent aussi « réduire les animations » du système. */
+      const KAYKIT_CHOCS = {
+        // amplitude : fraction de la distance caméra-cible ; vibration : ms.
+        1: { amplitude: .0035, duree: 200, vibration: [14] },
+        2: { amplitude: .0065, duree: 280, vibration: [24] },
+        3: { amplitude: .011, duree: 430, vibration: [36, 50, 26] }
+      };
+      const KAYKIT_CHOCS_CLE = "ilyosChocs";
+
+      function kaykitChocsReglages() {
+        let lu = null;
+        try { lu = JSON.parse(localStorage.getItem(KAYKIT_CHOCS_CLE) || "null"); } catch (_) { }
+        return { secousses: lu?.secousses !== false, vibrations: lu?.vibrations !== false };
       }
+
+      function kaykitChocsRegler(cle, valeur) {
+        const reglages = { ...kaykitChocsReglages(), [cle]: !!valeur };
+        try { localStorage.setItem(KAYKIT_CHOCS_CLE, JSON.stringify(reglages)); } catch (_) { }
+        return reglages;
+      }
+
+      function kaykitChoc(force = 1) {
+        if (ilyosSimulationActive) return;
+        const choc = KAYKIT_CHOCS[force] || KAYKIT_CHOCS[1];
+        const reglages = kaykitChocsReglages();
+        if (reglages.vibrations && typeof navigator.vibrate === "function") {
+          try { navigator.vibrate(choc.vibration); } catch (_) { }
+        }
+        if (!kaykit3D || !reglages.secousses || kaykitReducedMotion()) return;
+        // Un choc plus faible n'écrase pas la fin d'un choc plus fort.
+        const maintenant = performance.now();
+        const enCours = kaykit3D.choc;
+        if (enCours && enCours.fin > maintenant && enCours.amplitude > choc.amplitude) return;
+        kaykit3D.choc = { debut: maintenant, fin: maintenant + choc.duree, amplitude: choc.amplitude };
+      }
+
+      /* Décale la caméra pour l'image en cours ; renvoie de quoi la remettre
+         en place juste après le rendu, pour que ni l'orbite ni les recadrages
+         ne voient jamais le tremblement. */
+      function kaykitAppliquerChoc(maintenant) {
+        const choc = kaykit3D?.choc;
+        const camera = kaykit3D?.camera;
+        if (!choc || !camera) return null;
+        if (maintenant >= choc.fin) { kaykit3D.choc = null; return null; }
+        const t = (maintenant - choc.debut) / (choc.fin - choc.debut);
+        const cible = kaykit3D.orbit?.target || kaykit3D.viewTarget;
+        const distance = cible ? camera.position.distanceTo(cible) : 12;
+        const ampleur = distance * choc.amplitude * (1 - t) * (1 - t);
+        const s = maintenant / 1000;
+        const droite = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const haut = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        const decalage = droite.multiplyScalar(Math.sin(s * 57) * ampleur)
+          .add(haut.multiplyScalar(Math.sin(s * 43 + 1.7) * ampleur * .8));
+        camera.position.add(decalage);
+        camera.updateMatrixWorld();
+        return () => { camera.position.sub(decalage); camera.updateMatrixWorld(); };
+      }
+
+      window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
 
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
          chute, qui déclenche une seconde chute, produit trois demandes en
@@ -6976,6 +7118,15 @@
         /* Le contenu du plateau ne se calcule qu'UNE fois par recadrage : la
            zone morte et le cadrage de sûreté s'en partagent le résultat. */
         const contenu = cinematique ? null : kaykitPointsDuContenu([r, c]);
+
+        /* Téléphone en portrait : on suit l'action de près au lieu de garder
+           tout le plateau à l'image (voir VUE TÉLÉPHONE). */
+        if (!cinematique && kaykitVueTelephone()) {
+          if (!force && kaykit3D.cameraMode !== "auto") return;
+          if (!force && maintenant < kaykit3D.cameraFocusUntil && priorite <= kaykit3D.cameraFocusPriorite) return;
+          kaykitTelephoneCadrer([[r, c]], { duree: duration });
+          return;
+        }
 
         if (!force) {
           // En mode LIBRE, aucune animation de jeu ne reprend la main sur la
@@ -7131,6 +7282,194 @@
         resizeKayKit3D(refitCamera);
       }
 
+      /* ===================== VUE TÉLÉPHONE =====================
+
+         Sur un téléphone tenu en portrait, le plateau entier ne laisse qu'une
+         trentaine de pixels par case : trop peu pour un doigt. Choix de
+         Taekun (13/10/2026, captures telephone/propositions/) : une vue
+         RAPPROCHÉE par défaut, cases d'environ 49 px, qui suit l'action — le
+         gardien choisi et la zone où il peut aller — et le plateau ENTIER sur
+         demande, par le bouton à côté de VUE 2D.
+
+         Champ serré (40°) plutôt que les ~70° qu'ouvrait le format portrait :
+         à grand angle, les rangées proches gonflaient et les coins sortaient
+         de l'écran. Le recul compense, d'où des bornes de zoom propres au
+         téléphone. L'inclinaison vient du preset portrait
+         (js/version-bootstrap.js). */
+      const KAYKIT_TELEPHONE = { fov: 40, rapproche: 22, ensemble: 37, zoomMax: 40 };
+
+      /* Lu sur la fenêtre et non sur la caméra : au premier cadrage, la
+         caméra n'a pas encore reçu le format de l'écran. `aspect` sert quand
+         il est connu (redimensionnement). */
+      function kaykitVueTelephone(aspect) {
+        const format = Number(aspect) || (window.innerWidth / Math.max(1, window.innerHeight));
+        return format < .9 && window.innerWidth <= 820;
+      }
+
+      // Recul du mode courant, à l'échelle du plateau (11 ou 13).
+      function kaykitTelephoneRecul(ensemble = !!kaykit3D?.vueEnsemble) {
+        return (ensemble ? KAYKIT_TELEPHONE.ensemble : KAYKIT_TELEPHONE.rapproche) * (GRID / 11);
+      }
+      window.ILYOS_reculTelephone = () => kaykitTelephoneRecul();
+      window.ILYOS_vueTelephone = () => kaykitVueTelephone();
+
+      function kaykitTelephoneBornes(aspect) {
+        if (!kaykit3D) return;
+        const max = (kaykitVueTelephone(aspect) ? KAYKIT_TELEPHONE.zoomMax : 25) * (GRID / 11);
+        kaykit3D.maxZoom = max;
+        if (kaykit3D.orbit) kaykit3D.orbit.maxDistance = max;
+        if (kaykitEnsembleBouton) kaykitEnsembleBouton.hidden = !kaykitVueTelephone(aspect);
+      }
+
+      /* Cadre des cases [r, c] : centré sur elles, au recul rapproché, élargi
+         juste assez pour qu'elles tiennent toutes en largeur. En vue
+         d'ensemble, toujours le plateau entier. */
+      function kaykitTelephoneCadrer(cases, { duree = 620 } = {}) {
+        if (!kaykit3D?.camera) return;
+        let cible, distance;
+        if (kaykit3D.vueEnsemble || !cases?.length) {
+          cible = new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
+          distance = kaykitTelephoneRecul(true);
+        } else {
+          const rs = cases.map(([r]) => r), cs = cases.map(([, c]) => c);
+          const centre = kaykitCellPosition((Math.min(...rs) + Math.max(...rs)) / 2, (Math.min(...cs) + Math.max(...cs)) / 2, 0);
+          cible = new THREE.Vector3(centre.x, kaykit3D.viewTarget?.y ?? 0, centre.z);
+          const demiChamp = Math.atan(Math.tan(THREE.MathUtils.degToRad(kaykit3D.camera.fov) / 2) * kaykit3D.camera.aspect);
+          const largeur = (Math.max(...cs) - Math.min(...cs) + 2) * KAYKIT_CELL_SPACING;
+          distance = THREE.MathUtils.clamp(
+            Math.max(kaykitTelephoneRecul(false), largeur / 2 / Math.tan(demiChamp)),
+            kaykit3D.minZoom, kaykitTelephoneRecul(true));
+        }
+        kaykit3D.viewTarget = cible.clone();
+        kaykit3D.zoomDistance = distance;
+        const duration = kaykitReducedMotion() ? Math.min(200, duree) : duree;
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: kaykitPositionAutour(distance, cible),
+          startTarget: (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone(),
+          endTarget: cible.clone()
+        };
+      }
+
+      /* Choisir un gardien est un geste explicite : la caméra le rejoint, avec
+         sa zone, même si le joueur a déplacé la vue avant. Clé : le gardien,
+         sa case et la RÉFÉRENCE de la zone (réaffectée à chaque changement,
+         voir la zone de déplacement plus bas). */
+      let kaykitTelephoneSuivi = null;
+      function kaykitTelephoneSuivreSelection(zone) {
+        const gardien = state?.selectedCharId ? characterById(state.selectedCharId) : null;
+        if (!gardien) { kaykitTelephoneSuivi = null; return; }
+        const suivi = kaykitTelephoneSuivi;
+        if (suivi && suivi.id === gardien.id && suivi.r === gardien.r && suivi.c === gardien.c && suivi.zone === zone) return;
+        kaykitTelephoneSuivi = { id: gardien.id, r: gardien.r, c: gardien.c, zone };
+        if (!kaykitVueTelephone() || kaykit3D?.vueEnsemble || ilyosSimulationActive) return;
+        if (state.players?.[state.currentPlayer]?.isAI) return;
+        const cases = [[gardien.r, gardien.c]];
+        (zone ? [...zone] : []).forEach(k => cases.push(k.split(",").map(Number)));
+        kaykitTelephoneCadrer(cases);
+      }
+
+      /* Bouton « plateau entier » : bascule entre la vue rapprochée et la vue
+         d'ensemble. Visible seulement en portrait (css/portrait-mobile.css). */
+      let kaykitEnsembleBouton = null;
+      let kaykitTelephoneAvantEnsemble = null;
+      // Vue rapprochée centrée sur un point du plateau (cadrage quitté).
+      function kaykitTelephoneRevenir(cible) {
+        if (!kaykit3D?.camera) return;
+        const vise = cible ? cible.clone() : new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
+        const distance = kaykitTelephoneRecul(false);
+        kaykit3D.viewTarget = vise.clone();
+        kaykit3D.zoomDistance = distance;
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 200 : 520,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: kaykitPositionAutour(distance, vise),
+          startTarget: (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone(),
+          endTarget: vise.clone()
+        };
+      }
+      function kaykitCreerBoutonEnsemble() {
+        if (kaykitEnsembleBouton) return;
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.id = "kaykitEnsembleBtn";
+        bouton.setAttribute("aria-label", "Voir tout le plateau");
+        bouton.setAttribute("aria-pressed", "false");
+        bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><g class="kaykit-ensemble-ouvrir" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></g><g class="kaykit-ensemble-fermer" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></g></svg>`;
+        bouton.addEventListener("click", () => {
+          if (!kaykit3D) return;
+          kaykit3D.vueEnsemble = !kaykit3D.vueEnsemble;
+          bouton.setAttribute("aria-pressed", String(kaykit3D.vueEnsemble));
+          bouton.setAttribute("aria-label", kaykit3D.vueEnsemble ? "Revenir à la vue rapprochée" : "Voir tout le plateau");
+          if (kaykit3D.vueEnsemble) {
+            /* Le cadrage quitté, pour y revenir au second appui : avant la
+               pose des gardiens, il n'y a encore rien d'autre à suivre. */
+            kaykitTelephoneAvantEnsemble = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget)?.clone() || null;
+            kaykitTelephoneCadrer(null, { duree: 520 });
+            return;
+          }
+          const gardien = state?.selectedCharId ? characterById(state.selectedCharId) : null;
+          const mesGardiens = (state?.characters || []).filter(ch => ch.player === state.currentPlayer);
+          if (gardien) kaykitTelephoneCadrer([[gardien.r, gardien.c], ...[...(state.reachable || [])].map(k => k.split(",").map(Number))], { duree: 520 });
+          else if (mesGardiens.length) kaykitFollowCurrentPlayer(true);
+          else kaykitTelephoneRevenir(kaykitTelephoneAvantEnsemble);
+        });
+        document.body.appendChild(bouton);
+        kaykitEnsembleBouton = bouton;
+        bouton.hidden = !kaykitVueTelephone();
+      }
+
+      /* PLEIN ÉCRAN AU DOIGT. Le menu le demande à son premier toucher, mais
+         un geste système (retour, notification, changement d'appli) le fait
+         perdre en cours de partie : barres du navigateur revenues, hauteur qui
+         change, HUD décalé. Sur écran tactile, il est donc redemandé au
+         toucher suivant dans le jeu, et un bouton le remet à tout moment —
+         sauf si le joueur l'a quitté lui-même (ILYOS_pleinEcranQuitte, posé
+         par le menu et par ce bouton). Toujours le document entier, comme le
+         menu : jamais #gameScreen seul, qui a sa propre mise en page. */
+      function kaykitPleinEcranPossible() {
+        const racine = document.documentElement;
+        return !!(racine.requestFullscreen || racine.webkitRequestFullscreen);
+      }
+      function kaykitPleinEcranActif() {
+        return !!(document.fullscreenElement || document.webkitFullscreenElement);
+      }
+      function kaykitDemanderPleinEcran() {
+        if (kaykitPleinEcranActif() || !kaykitPleinEcranPossible()) return;
+        const racine = document.documentElement;
+        try {
+          const promesse = (racine.requestFullscreen || racine.webkitRequestFullscreen).call(racine);
+          promesse?.catch?.(() => {});
+        } catch (_) {}
+      }
+      function kaykitCreerBoutonPleinEcran() {
+        if (document.getElementById("kaykitPleinEcranBtn")) return;
+        const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+        if (!tactile || !kaykitPleinEcranPossible()) return;
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.id = "kaykitPleinEcranBtn";
+        bouton.setAttribute("aria-label", "Plein écran");
+        bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        bouton.addEventListener("click", () => {
+          window.ILYOS_pleinEcranQuitte = false;
+          kaykitDemanderPleinEcran();
+        });
+        document.body.appendChild(bouton);
+        const majBouton = () => { bouton.hidden = kaykitPleinEcranActif(); };
+        document.addEventListener("fullscreenchange", majBouton);
+        document.addEventListener("webkitfullscreenchange", majBouton);
+        majBouton();
+        document.addEventListener("pointerup", event => {
+          if (event.pointerType === "mouse" || window.ILYOS_pleinEcranQuitte) return;
+          if (els.gameScreen?.classList.contains("hidden")) return;
+          kaykitDemanderPleinEcran();
+        }, true);
+      }
+
       /* CHAMP DE VISION SELON LE FORMAT.
          Les 33° verticaux sont calibrés pour un écran en largeur. Sur un
          téléphone tenu en portrait, le même champ vertical ne laisse que
@@ -7141,6 +7480,8 @@
       const KAYKIT_FOV_VERTICAL = 33;
       const KAYKIT_TAN_DEMI_CHAMP_HORIZONTAL_MIN = Math.tan(THREE.MathUtils.degToRad(18));
       function kaykitFovPourFormat(aspect) {
+        // Téléphone en portrait : champ serré, voir VUE TÉLÉPHONE plus bas.
+        if (kaykitVueTelephone(aspect)) return KAYKIT_TELEPHONE.fov;
         const format = Math.max(.25, aspect || 1);
         const pourLargeur = THREE.MathUtils.radToDeg(2 * Math.atan(KAYKIT_TAN_DEMI_CHAMP_HORIZONTAL_MIN / format));
         return Math.max(KAYKIT_FOV_VERTICAL, pourLargeur);
@@ -7167,6 +7508,7 @@
           kaykit3D.camera.aspect = nextAspect;
           kaykit3D.camera.fov = kaykitFovPourFormat(nextAspect);
           kaykit3D.camera.updateProjectionMatrix();
+          kaykitTelephoneBornes(nextAspect);
           if (forceFit || (kaykit3D.autoFit && aspectChanged)) {
             kaykit3D.zoomDistance = kaykitFitDistance(nextAspect, kaykit3D.viewMode);
             /* Un changement de format ajuste la distance, pas le point de vue :
@@ -7261,6 +7603,245 @@
         list.length = 0;
       }
 
+      /* ---------- Hameau des villages de coin ------------------------------
+         Remplace les fanions : trois îlots plus bas que le plateau, reliés par
+         des passerelles, longent le bord extérieur des trois cases du village
+         (la case du coin et ses deux voisines). Maisons, église et puits aux
+         couleurs du joueur, portes tournées vers le plateau.
+
+         Pensé pour les machines faibles : tout est statique (aucune animation,
+         matrixAutoUpdate coupé), rien ne projette d'ombre, et les bâtiments
+         d'un hameau sont FUSIONNÉS en deux maillages (teinte du joueur +
+         neutre) — deux appels de rendu par hameau au lieu d'une vingtaine.
+
+         Les coordonnées sont celles de la maquette validée, écrites pour le
+         coin bas-gauche (x vers l'extérieur = -x, z vers l'extérieur = +z) puis
+         mises en miroir pour chaque coin. */
+      const KAYKIT_HAMEAU_MODELES = ["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell", "hamletTree", "hamletBarrel", "hamletCrate"];
+      const KAYKIT_HAMEAU_EQUIPE = new Set(["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell"]);
+
+      function kaykitHameauPret() {
+        return KAYKIT_HAMEAU_MODELES.every(cle => kaykit3D.assets.has(cle) || kaykit3D.failedAssets.has(cle));
+      }
+
+      /* Fusion minimale des maillages d'un groupe, par texture : pas de
+         BufferGeometryUtils dans vendor/, et les modèles KayKit n'ont besoin
+         que de position/normal/uv. Un maillage sans ces attributs reste à part.
+         Chaque gltf charge SA copie de l'atlas : la clé est donc l'image source
+         (ou celle fournie par l'objet, voir buildKayKitHameau), pas l'uuid. */
+      function kaykitFusionnerParTexture(racine) {
+        racine.updateMatrixWorld(true);
+        const inverse = new THREE.Matrix4().copy(racine.matrixWorld).invert();
+        const paquets = new Map();
+        const aPart = [];
+        racine.traverse(objet => {
+          if (!objet.isMesh || Array.isArray(objet.material)) return;
+          const g = objet.geometry;
+          if (!g?.attributes?.position || !g.attributes.normal || !g.attributes.uv) { aPart.push(objet); return; }
+          let cle = null;
+          for (let o = objet; o && o !== racine && !cle; o = o.parent) cle = o.userData?.cleFusion || null;
+          const image = objet.material.map?.image;
+          cle = cle || image?.currentSrc || image?.src || objet.material.map?.uuid || `couleur-${objet.material.color?.getHex?.()}`;
+          if (!paquets.has(cle)) paquets.set(cle, { materiau: objet.material, morceaux: [] });
+          const morceau = g.index ? g.toNonIndexed() : g.clone();
+          morceau.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, objet.matrixWorld));
+          paquets.get(cle).morceaux.push(morceau);
+        });
+        const resultat = [];
+        paquets.forEach(({ materiau, morceaux }, cle) => {
+          const total = morceaux.reduce((n, m) => n + m.attributes.position.count, 0);
+          const tampons = { position: new Float32Array(total * 3), normal: new Float32Array(total * 3), uv: new Float32Array(total * 2) };
+          let decalage = 0;
+          morceaux.forEach(m => {
+            ["position", "normal", "uv"].forEach(nom => {
+              const attr = m.attributes[nom];
+              const taille = nom === "uv" ? 2 : 3;
+              for (let i = 0; i < attr.count; i++) {
+                tampons[nom][(decalage + i) * taille] = attr.getX(i);
+                tampons[nom][(decalage + i) * taille + 1] = attr.getY(i);
+                if (taille === 3) tampons[nom][(decalage + i) * 3 + 2] = attr.getZ(i);
+              }
+            });
+            decalage += m.attributes.position.count;
+            m.dispose();
+          });
+          const geometrie = new THREE.BufferGeometry();
+          geometrie.setAttribute("position", new THREE.BufferAttribute(tampons.position, 3));
+          geometrie.setAttribute("normal", new THREE.BufferAttribute(tampons.normal, 3));
+          geometrie.setAttribute("uv", new THREE.BufferAttribute(tampons.uv, 2));
+          geometrie.computeBoundingSphere();
+          geometrie.userData.ilyosTransient = true;
+          const mat = materiau.clone();
+          mat.userData = { ...(mat.userData || {}), ilyosTransient: true };
+          const maillage = new THREE.Mesh(geometrie, mat);
+          maillage.userData.cleFusion = cle;
+          resultat.push(maillage);
+        });
+        return { fusionnes: resultat, aPart };
+      }
+
+      function buildKayKitHameau(r, c, accent) {
+        if (!((r === 0 || r === GRID - 1) && (c === 0 || c === GRID - 1))) return null;
+        const S = KAYKIT_CELL_SPACING;
+        const P = kaykitCellPosition(r, c, 0);
+        const dirR = r <= CENTER.r ? -1 : 1;
+        const dirC = c <= CENTER.c ? -1 : 1;
+        // Maquette (coin bas-gauche) -> monde : miroir selon le coin.
+        const X = mx => P.x - dirC * mx;
+        const Z = mz => P.z + dirR * mz;
+        const groupe = new THREE.Group();
+        groupe.name = "ilyos-hameau";
+        const echelleY = .5;
+        const yTop = KAYKIT_LEVELS.pedestalTop * echelleY - .06;
+
+        // Îlots : socles du plateau réduits et abaissés, teintés terre pour ne
+        // jamais se lire comme des cases jouables.
+        const terre = new THREE.Color(0x9c7f63);
+        const ilot = (mx, mz, sx, sz) => {
+          const socle = makeKayKitPedestal(accent);
+          socle.scale.set(sx / S, echelleY, sz / S);
+          socle.position.set(X(mx), -.06, Z(mz));
+          socle.traverse(o => {
+            if (!o.isMesh) return;
+            o.castShadow = false;
+            if (!o.material || Array.isArray(o.material) || o.material.map || !o.material.clone) return;
+            o.material = o.material.clone();
+            o.material.color?.lerp(terre, .55);
+            o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true };
+          });
+          groupe.add(socle);
+        };
+        const g = .84;
+        const I1 = [-g, -S - .05], I2 = [-g + .05, g - .05], I3 = [S + .05, g];
+        ilot(I1[0], I1[1], .64, .84);
+        ilot(I2[0], I2[1], .7, .7);
+        ilot(I3[0], I3[1], .84, .64);
+
+        // Bâtiments, regroupés pour la fusion.
+        const bati = new THREE.Group();
+        const versPlateau = (x, z) => Math.atan2(X(1) - x, Z(-1) - z) + Math.PI;
+        const pose = (cle, largeur, mx, mz, rot = null) => {
+          const modele = cloneKayKitAsset(cle, { maxWidth: largeur, maxHeight: 10, targetFloor: 0 });
+          if (!modele) return;
+          // Même atlas pour tous les bâtiments : une seule texture reteinte
+          // suffit, et ils fusionnent alors en un seul maillage.
+          if (KAYKIT_HAMEAU_EQUIPE.has(cle)) {
+            accentVillageColors(modele, accent);
+            modele.userData.cleFusion = "equipe";
+          } else modele.userData.cleFusion = "neutre";   // même atlas KayKit d'origine
+          const x = X(mx), z = Z(mz);
+          modele.position.set(x, yTop, z);
+          modele.rotation.y = rot ?? versPlateau(x, z);
+          bati.add(modele);
+        };
+        pose("hamletHomeA", .4, I1[0] + .08, I1[1] - .17);
+        pose("hamletHomeB", .38, I1[0] - .08, I1[1] + .2);
+        pose("hamletTree", .2, I1[0] - .22, I1[1] - .3, 0);
+        pose("hamletBarrel", .06, I1[0] + .26, I1[1] + .14, 0);
+        pose("hamletChurch", .44, I2[0] - .06, I2[1] + .06);
+        pose("hamletWell", .16, I2[0] + .25, I2[1] - .22);
+        pose("hamletTree", .18, I2[0] + .26, I2[1] + .28, 1);
+        pose("hamletHomeB", .38, I3[0] - .18, I3[1] + .08);
+        pose("hamletHomeA", .4, I3[0] + .19, I3[1] - .08);
+        pose("hamletTree", .19, I3[0] + .32, I3[1] + .26, 2);
+        pose("hamletCrate", .07, I3[0] - .02, I3[1] - .28, .5);
+
+        const { fusionnes, aPart } = kaykitFusionnerParTexture(bati);
+        // Le maillage aux couleurs du joueur porte la lueur (voir
+        // kaykitHameauxLueur) : la carte d'émission est posée dès maintenant,
+        // éteinte, pour que l'allumer ne change que des uniformes et ne force
+        // jamais une recompilation de shader.
+        const teinteEquipe = new THREE.Color(accent);
+        let lueur = null;
+        fusionnes.forEach(maillage => {
+          maillage.receiveShadow = true;
+          const mat = maillage.material;
+          if (!lueur && maillage.userData.cleFusion === "equipe" && mat.emissive) {
+            mat.emissiveMap = mat.map;
+            mat.emissive.setHex(0x000000);
+            mat.needsUpdate = true;
+            lueur = { materiau: mat, couleur: mat.color.clone(), emission: teinteEquipe.clone().multiplyScalar(1.1), allumee: false };
+          }
+          groupe.add(maillage);
+        });
+        aPart.forEach(o => {
+          o.updateMatrixWorld(true);
+          const copie = o.clone();
+          copie.matrix.copy(o.matrixWorld);
+          copie.matrix.decompose(copie.position, copie.quaternion, copie.scale);
+          copie.castShadow = false;
+          groupe.add(copie);
+        });
+
+        // Passerelles de bois entre les îlots.
+        const bois = kaykitMaterial(0x5a3a22, { roughness: .9 });
+        const planche = kaykitGeometry("hameau-passerelle-v1", () => new THREE.BoxGeometry(.16, .03, 1));
+        const pont = (a, b) => {
+          const ax = X(a[0]), az = Z(a[1]), bx = X(b[0]), bz = Z(b[1]);
+          const m = new THREE.Mesh(planche, bois);
+          m.scale.z = Math.hypot(bx - ax, bz - az) - .6;
+          m.position.set((ax + bx) / 2, yTop - .02, (az + bz) / 2);
+          m.rotation.y = Math.atan2(bx - ax, bz - az);
+          m.receiveShadow = true;
+          groupe.add(m);
+        };
+        pont(I1, I2); pont(I2, I3);
+
+        groupe.userData.lueur = lueur;
+        groupe.updateMatrixWorld(true);
+        groupe.traverse(o => { o.matrixAutoUpdate = false; });
+        return groupe;
+      }
+
+      /* Lueur : le hameau s'éclaire quand un gardien de l'équipe portant une
+         couronne arrive à deux cases ou moins de la zone du village. Simple
+         bascule à chaque synchronisation, aucune animation par image. */
+      function kaykitHameauxLueur() {
+        const registre = kaykit3D?.hameauRegistry;
+        if (!registre?.size || !state) return;
+        const porteurs = (state.characters || []).filter(ch =>
+          Number.isFinite(ch?.r) && Number.isFinite(ch?.c) && characterCarriesCrown(ch.id));
+        registre.forEach(hameau => {
+          const lueur = hameau?.userData?.lueur;
+          const village = hameau?.userData?.village;
+          if (!lueur || !village) return;
+          let allumer = false;
+          if (porteurs.length) {
+            const zone = cornerCrownCellsForVillage({ r: village.r, c: village.c }) || [];
+            allumer = porteurs.some(ch => {
+              const equipe = typeof proprietaireGardien === "function" ? proprietaireGardien(ch) : ch.player;
+              if (!memeEquipe(ch.player, village.playerId) && !memeEquipe(equipe, village.playerId)) return false;
+              return zone.some(([zr, zc]) => Math.abs(zr - ch.r) + Math.abs(zc - ch.c) <= 2);
+            });
+          }
+          if (lueur.eclatJusqua && performance.now() < lueur.eclatJusqua) return;
+          if (allumer === lueur.allumee) return;
+          lueur.allumee = allumer;
+          lueur.materiau.color.copy(lueur.couleur).multiplyScalar(allumer ? 1.5 : 1);
+          lueur.materiau.emissive.copy(allumer ? lueur.emission : new THREE.Color(0x000000));
+        });
+      }
+
+      /* Point marqué : les hameaux de l'équipe s'illuminent fort une seconde,
+         puis reviennent à leur état normal (lueur d'approche ou rien). Mêmes
+         uniformes que la lueur : aucun objet, aucun shader nouveau. */
+      function kaykitHameauEclat(playerId) {
+        const registre = kaykit3D?.hameauRegistry;
+        if (ilyosSimulationActive || !registre?.size) return;
+        const fin = performance.now() + 1000;
+        registre.forEach(hameau => {
+          const lueur = hameau?.userData?.lueur;
+          const village = hameau?.userData?.village;
+          if (!lueur || !village || !memeEquipe(village.playerId, playerId)) return;
+          lueur.materiau.color.copy(lueur.couleur).multiplyScalar(2.4);
+          lueur.materiau.emissive.copy(lueur.emission).multiplyScalar(2.2);
+          lueur.allumee = null;
+          lueur.eclatJusqua = fin;
+        });
+        clearTimeout(kaykitHameauEclat.minuteur);
+        kaykitHameauEclat.minuteur = setTimeout(() => kaykitHameauxLueur(), 1050);
+      }
+
       /* Les châteaux de village sont ajoutés UNE seule fois à dynamicGroup et
          mis en cache avec leur position MONDE. Vider le registre seul ne
          suffit donc pas : l'ancien château reste accroché à la scène — il
@@ -7275,6 +7856,12 @@
           castle?.parent?.remove(castle);
         });
         registre.clear();
+        kaykit3D.hameauRegistry?.forEach(hameau => {
+          if (!hameau) return;
+          try { disposeKayKitTaggedResources(hameau); } catch (_) { }
+          hameau.parent?.remove(hameau);
+        });
+        kaykit3D.hameauRegistry?.clear();
       }
 
       /* Le sol du sanctuaire est bâti UNE fois par session et jamais retiré :
@@ -7520,7 +8107,7 @@
           ctx.fillStyle = blob;
           ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
         }
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.encoding = THREE.sRGBEncoding;
         if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
         return texture;
@@ -7549,7 +8136,7 @@
         glow.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = glow;
         ctx.fillRect(0, 0, size, size);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.encoding = THREE.sRGBEncoding;
         if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
         return texture;
@@ -7573,7 +8160,7 @@
         grad.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = kaykitTextureBlanche(canvas);
         texture.encoding = THREE.sRGBEncoding;
         if (kaykit3D?.materials) kaykit3D.materials.set(key, texture);
         return texture;
@@ -8270,34 +8857,6 @@
           plaque.renderOrder = 18;
           group.add(plaque);
         }
-      }
-
-      /* Portée d'un adversaire au survol : où son gardien peut aller au
-         prochain tour avec les cartes DÉPLACER qu'il a en vue (main et
-         réserve, déjà affichées dans son bandeau). Même tracé que la zone de
-         déplacement, en rouge. */
-      function majPorteeAdverseKayKit(survol) {
-        if (!kaykit3D?.fxGroup) return;
-        let groupe = kaykit3D.porteeAdverseGroup;
-        if (!groupe) {
-          groupe = new THREE.Group();
-          groupe.name = "ilyos-portee-adverse";
-          kaykit3D.fxGroup.add(groupe);
-          kaykit3D.porteeAdverseGroup = groupe;
-        }
-        const occupant = survol && !survol.special ? characterAt(survol.r, survol.c) : null;
-        const actif = state?.currentPlayer;
-        const adversaire = occupant && !memeEquipe(occupant.player, actif) && !state.selectedCharId ? occupant : null;
-        const cle = adversaire ? `${adversaire.id}@${adversaire.r},${adversaire.c}` : null;
-        if (cle === kaykit3D.porteeAdverseCle) return;
-        kaykit3D.porteeAdverseCle = cle;
-        clearKayKitGroup(groupe);
-        if (!adversaire) return;
-        const joueur = state.players[adversaire.player];
-        const cartes = (joueur?.hand || []).filter(carte => carte.action === "MOVE" && !carte.used).length + (joueur?.stash?.MOVE || 0);
-        const portee = movementRange(adversaire, Math.max(1, cartes));
-        const cellules = [...portee].map(cle => cle.split(",").map(Number));
-        if (cellules.length) addKayKitMoveZone(cellules, { groupe, sombre: 0x4a0f1c, claire: 0xff6f8a, voile: .18, origine: [adversaire.r, adversaire.c] });
       }
 
       // Anneau orange compact directement sous le personnage/couronne poussable
@@ -9152,6 +9711,7 @@
             addKayKitMoveZone(cellules, gardienZone ? { origine: [gardienZone.r, gardienZone.c] } : {});
           }
         }
+        kaykitTelephoneSuivreSelection(zoneRef);
 
         const previewKey = JSON.stringify({
           phase: state.phase,
@@ -9281,12 +9841,10 @@
           kaykit3D.actionPreviewKey = null;
           clearKayKitGroup(kaykit3D.moveZoneGroup);
           kaykit3D.moveZoneRef = null;
-          majPorteeAdverseKayKit(null);
           return;
         }
 
         const hovered = kaykit3D.hoverCell;
-        if (!hovered || hovered.special) majPorteeAdverseKayKit(null);
         if (!hovered) {
           if (kaykit3D.hoverMarker) kaykit3D.hoverMarker.visible = false;
           kaykit3D.cursorLabel?.classList.remove("visible");
@@ -9300,7 +9858,6 @@
           refreshKayKitHoverPreviews();
           return;
         }
-        majPorteeAdverseKayKit(hovered);
         const intent = kaykitHoverIntent(hovered.r, hovered.c, hovered.hitAction);
         const p = kaykitCellPosition(hovered.r, hovered.c, kaykitCellSurfaceY(hovered.r, hovered.c) + .085);
         kaykit3D.hoverMarker.visible = true;
@@ -12128,6 +12685,7 @@
             if (t > .88) obj.position.y = -Math.sin((t - .88) / .12 * Math.PI) * .022;
           },
           dispose: obj => {
+            kaykitChoc(1);   // l'île se repose
             // Les blocs sont RENDUS au groupe dynamique avec leur position
             // d'origine avant que le conteneur ne soit retiré. Les supprimer
             // avec lui ferait disparaître l'île pendant la ou les images qui
@@ -12335,6 +12893,15 @@
           });
         });
         emitVisualEvent("victory", { playerId });
+      }
+
+      /* Coup gagnant : la caméra se rapproche du gardien qui valide la
+         dernière couronne et ses gestes ralentissent un instant, avant l'écran
+         de victoire. Un recadrage et un facteur de temps, rien de plus. */
+      function kaykitMomentVictoire(r, c) {
+        if (ilyosSimulationActive || !kaykit3D || !Number.isFinite(r) || !Number.isFinite(c)) return;
+        if (!kaykitReducedMotion()) kaykit3D.ralentiJusqua = performance.now() + 1200;
+        kaykitFollowCell(r, c, { duration: 900, force: true, cinematique: true, zoomBoost: 4, priorite: 9, maintien: 2600 });
       }
 
       function characterVisualById(characterId) {
@@ -13197,15 +13764,18 @@
                   castle.position.set(p.x + cornerDirC * cornerOffset, KAYKIT_LEVELS.pedestalTop, p.z + cornerDirR * cornerOffset);
                   castle.rotation.y = [Math.PI * .75, -Math.PI * .75, -Math.PI * .25, Math.PI * .25][playerId] || 0;
                   dynamic.add(castle);
-                  // Fanion planté à côté du château, dans le même repère local :
-                  // il suit automatiquement la position/rotation par coin du village.
-                  const flag = cloneKayKitAsset(`flag${Math.max(0, Math.min(3, playerId))}`, { maxWidth: .30, maxHeight: .62, targetFloor: 0 });
-                  if (flag) {
-                    accentVillageColors(flag, villageAccent);
-                    flag.position.set(.48, 0, .34);
-                    castle.add(flag);
-                  }
                   kaykit3D.villageRegistry.set(villageKey, castle);
+                }
+                // Hameau : bâti une fois, comme le château, dès que ses modèles
+                // sont tous chargés (ou définitivement en échec).
+                if (!kaykit3D.hameauRegistry.has(villageKey) && kaykitHameauPret()) {
+                  const villageAccent = new THREE.Color(state.players[playerId]?.color || PLAYER_COLORS[playerId]).getHex();
+                  const hameau = buildKayKitHameau(r, c, villageAccent);
+                  if (hameau) {
+                    hameau.userData.village = { r, c, playerId };
+                    dynamic.add(hameau);
+                  }
+                  kaykit3D.hameauRegistry.set(villageKey, hameau);
                 }
                 const castle = kaykit3D.villageRegistry.get(villageKey);
                 if (castle) registerKayKitCellVisual(r, c, castle);
@@ -13215,6 +13785,7 @@
             }
           }
           if (rebuildIslandLayer) kaykit3D.islandsSignature = islandsSig;
+          kaykitHameauxLueur();
 
           // Héros / gardiens — mise à jour INCRÉMENTALE d'un registre persistant.
           // Les modèles, squelettes et AnimationMixer ne sont plus reconstruits
@@ -13549,7 +14120,10 @@
         // halo. Remplace l'ancienne boucle `proceduralHeroes`, qui simulait le
         // mouvement en secouant le modèle faute d'animation réellement jouée.
         const frameNow = performance.now();
-        updateKayKitCharacters(delta, elapsed, frameNow);
+        // Ralenti du coup gagnant (kaykitMomentVictoire) : seuls les gardiens
+        // ralentissent, le temps d'un battement.
+        const ralenti = kaykit3D.ralentiJusqua && frameNow < kaykit3D.ralentiJusqua ? .4 : 1;
+        updateKayKitCharacters(delta * ralenti, elapsed, frameNow);
         updateKayKitSequences(frameNow);
         animerSurvolsKayKit(frameNow, elapsed);
         animerTourAdverseKayKit(frameNow);
@@ -13633,6 +14207,7 @@
         // Surcharges visuelles limitées au dessin : les animations et les
         // interactions retrouvent leurs valeurs d'origine après chaque rendu.
         const restoreVisuals = window.ILYOS_VISUAL_EDITOR?.apply(kaykit3D);
+        const retirerChoc = kaykitAppliquerChoc(frameNow);
         try {
           kaykitStabiliserLumieresPonctuelles();
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
@@ -13640,6 +14215,7 @@
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
           }
         } finally {
+          retirerChoc?.();
           restoreVisuals?.();
         }
       }
@@ -13931,7 +14507,7 @@
           return;
         }
 
-        if (!["q", "e", "arrowleft", "arrowright"].includes(key)) return;
+        if (!["q", "s", "arrowleft", "arrowright"].includes(key)) return;
 
         const canRotatePlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
         const canRotateMagic =
@@ -15372,6 +15948,8 @@
         if (previousCarrierId != null && previousCarrierId !== char.id) {
           const previous = characterById(previousCarrierId);
           if (previous) playCrownFlight(previous.r, previous.c, char.r, char.c, { arc: .55, duration: 340 });
+          // Une passe entre alliés reste douce ; une couronne arrachée à l'adversaire frappe.
+          if (previous && previous.player !== char.player && typeof kaykitChoc === "function") kaykitChoc(2);
         }
         playCrownPickup(char.id, Number.isFinite(fromR) ? fromR : char.r, Number.isFinite(fromC) ? fromC : char.c);
         return true;
@@ -19752,6 +20330,13 @@
         if (typeof characterCarriesCrown === "function") {
           const carried = (state.characters || []).some(character => characterCarriesCrown(character.id));
           if (carried) value += .28;
+          // Le porteur à deux pas de son propre village : on resserre encore.
+          const procheDuBut = carried && (state.characters || []).some(character => {
+            if (!characterCarriesCrown(character.id)) return false;
+            return (state.players || []).some(joueur => memeEquipe(joueur.id, character.player)
+              && villagesForPlayer(joueur).some(v => Math.abs(v.r - character.r) + Math.abs(v.c - character.c) <= 3));
+          });
+          if (procheDuBut) value += .12;
         }
 
         if ((state.turn || 0) > 24) value += .1;
@@ -20625,6 +21210,23 @@
             sfxNoise({ duration: 1.2, gain: .1, from: 500, to: 4500, q: 1, attack: .5, reverb: .85 });
             break;
 
+          case "defeat":
+            /* Défaite : le miroir sobre de la fanfare. Trois notes qui
+               descendent, plus courtes et plus douces, sans le souffle qui
+               montait. Rien de punitif : la partie est finie, on le dit. */
+            duckMusic(.45, 2.2);
+            [392.0, 311.13, 261.63].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.9 - index * .2, gain: .16 - index * .02, delay: index * .26, reverb: .7, ratios: BELL_PROFILES.ceremonie }));
+            sfxSweep({ fromHz: 110, toHz: 70, duration: 1.4, gain: .08, type: "triangle", delay: .5, reverb: .5 });
+            break;
+
+          case "draw":
+            /* Égalité : deux notes suspendues, ni montée ni chute. */
+            duckMusic(.4, 2);
+            [392.0, 587.33].forEach((hz, index) =>
+              sfxBell({ hz, duration: 1.8, gain: .15, delay: index * .2, reverb: .75, ratios: BELL_PROFILES.ceremonie }));
+            break;
+
           case "crownTake":
             /* Ramasser la couronne. Volontairement LÉGER : le son "crown" est
                désormais réservé au point marqué, et l'entendre à chaque
@@ -20657,6 +21259,15 @@
             sfxSweep({ ...at, fromHz: 240, toHz: 46, duration: 1.05, gain: .22, type: "triangle", reverb: .75 });
             sfxNoise({ ...at, duration: .5, gain: .12, from: 900, to: 180, q: 2.4, delay: .5, reverb: .85 });
             break;
+
+          case "select": {
+            // Prendre un gardien en main : un petit clic de bois, à hauteur
+            // légèrement variable pour ne jamais sonner mécanique.
+            const hz = randomBetween(620, 860);
+            sfxSweep({ fromHz: hz * 1.45, toHz: hz, duration: .06, gain: .075, type: "triangle", reverb: .08 });
+            sfxNoise({ duration: .035, gain: .05, from: 2600, to: 1300, q: 1, type: "highpass", reverb: .04 });
+            break;
+          }
 
           case "error":
             // Impossibilité : sourd, bref, sans réverbe. Ce n'est pas une
@@ -20808,12 +21419,23 @@
         }
       }
 
-      /* Consigne de pose : Q/E n'existe pas sur un écran tactile, où l'on
+      /* Consigne de pose : Q/S n'existe pas sur un écran tactile, où l'on
          tourne l'île avec les boutons ↺/↻ du panneau et où un toucher montre
          l'aperçu avant « Confirmer ». */
       function consignePoseIle() {
         const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
-        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
+        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/S pour tourner, clic pour poser.";
+      }
+
+      /* Les consignes sont écrites pour la souris (« Cliquez… », « la
+         molette »). Sur un écran tactile, la phrase affichée dit « Touchez » :
+         une seule traduction, au moment où la consigne est posée dans le HUD. */
+      function consigneSelonPointeur(texte) {
+        if (!texte || !window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches) return texte;
+        return texte
+          .replace(/\bCliquez\b/g, "Touchez")
+          .replace(/\bcliquez\b/g, "touchez")
+          .replace(/, ↻ ou la molette/g, " ou ↻");
       }
 
       function turnContextInfo() {
@@ -20961,9 +21583,98 @@
           .join("\n");
       }
 
+      /* Carte jouée : une petite carte part du bouton d'action (ou du portrait
+         de l'adversaire) vers le plateau et s'efface. Un seul élément DOM animé
+         par le compositeur (Web Animations), retiré à la fin. */
+      /* Liseré du joueur actif : à l'ouverture du tour, un cadre net et
+         intense à sa couleur ; dès sa première action, il se fond en une lueur diffuse venue du haut et du
+         bas. Deux calques CSS fixes, seule leur opacité change. */
+      function lisereCouleur(hex, alpha) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+        if (!m) return `rgba(255,255,255,${alpha})`;
+        const n = parseInt(m[1], 16);
+        return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+      }
+      function renderLisereTour() {
+        if (typeof document === "undefined") return;
+        let el = renderLisereTour.el;
+        if (!el) {
+          el = renderLisereTour.el = document.createElement("div");
+          el.className = "lisere-tour";
+          el.innerHTML = '<i class="fort"></i><i class="doux"></i>';
+          document.body.appendChild(el);
+        }
+        const p = currentPlayer?.();
+        const enJeu = !!p && state?.winner === null && !document.getElementById("gameScreen")?.classList.contains("hidden");
+        el.hidden = !enJeu;
+        document.body.dataset.tourActif = enJeu && state.players.length === 2 ? String(state.currentPlayer) : "";
+        if (!enJeu) return;
+        const couleur = p.color || "#ffffff";
+        if (renderLisereTour.couleur !== couleur) {
+          renderLisereTour.couleur = couleur;
+          el.style.setProperty("--lt-plein", lisereCouleur(couleur, 1));
+          el.style.setProperty("--lt-halo", lisereCouleur(couleur, .53));
+          el.style.setProperty("--lt-haut", lisereCouleur(couleur, .31));
+          el.style.setProperty("--lt-bas", lisereCouleur(couleur, .27));
+          el.style.setProperty("--lt-nul", lisereCouleur(couleur, 0));
+        }
+        const cle = `${state.turn}/${state.currentPlayer}`;
+        if (renderLisereTour.cle !== cle) { renderLisereTour.cle = cle; renderLisereTour.acte = false; }
+        // L'humain qui annule tout son tour retrouve le liseré net.
+        const agi = renderLisereTour.acte && (p.isAI || state.undoHistory?.length > 0);
+        el.dataset.mode = agi ? "doux" : "fort";
+      }
+      // Première action du tour (carte jouée, île posée) : le liseré s'adoucit.
+      function lisereMarquerAction() {
+        if (ilyosSimulationActive || !state) return;
+        renderLisereTour.cle = `${state.turn}/${state.currentPlayer}`;
+        renderLisereTour.acte = true;
+      }
+
+      const CARTE_ENVOL_BOUTONS = { MOVE: "ov2Move", PUSH: "ov2Push", MAGIC: "ov2Magic" };
+      function carteJoueeEnvol(type, player) {
+        if (ilyosSimulationActive || !player || typeof document === "undefined") return;
+        if (kaykitReducedMotion?.()) return;
+        const bouton = document.getElementById(CARTE_ENVOL_BOUTONS[type]);
+        const local = !player.isAI && (player.id === 0 || !state?.soloMode);
+        const origine = local && bouton?.offsetParent
+          ? bouton
+          : document.querySelector(player.id === 0 ? "#ilyosHudOrganicV2 .ov2-left .ov2-avatar" : "#ilyosHudOrganicV2 .ov2-right .ov2-avatar");
+        const plateau = document.getElementById("kaykitCanvas");
+        if (!origine || !plateau || !origine.animate) return;
+        const de = origine.getBoundingClientRect();
+        const vers = plateau.getBoundingClientRect();
+        const carte = document.createElement("div");
+        carte.className = `carte-envol carte-envol-${type.toLowerCase()}`;
+        const icone = bouton?.querySelector("svg");
+        if (icone) carte.appendChild(icone.cloneNode(true));
+        carte.style.left = `${de.left + de.width / 2 - 17}px`;
+        carte.style.top = `${de.top + de.height / 2 - 24}px`;
+        document.body.appendChild(carte);
+        const dx = vers.left + vers.width / 2 - (de.left + de.width / 2);
+        const dy = vers.top + vers.height * .45 - (de.top + de.height / 2);
+        carte.animate([
+          { transform: "translate(0, 0) scale(.9) rotate(0deg)", opacity: .95 },
+          { transform: `translate(${dx * .55}px, ${dy * .55}px) scale(1.05) rotate(-6deg)`, opacity: .9, offset: .55 },
+          { transform: `translate(${dx}px, ${dy}px) scale(.55) rotate(-10deg)`, opacity: 0 }
+        ], { duration: 520, easing: "cubic-bezier(.3,.6,.4,1)" }).onfinish = () => carte.remove();
+      }
+
+      /* Refus d'une action : le message, plus le son « porte fermée » (sourd,
+         bref) qui existait dans audio.js sans jamais être joué. */
+      function refuserAction(message) {
+        showToast(message);
+        if (!ilyosSimulationActive && !currentPlayer()?.isAI) playSfx("error");
+      }
+
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        // Retour au clic : un petit son quand le joueur prend un gardien en main.
+        const gardienChoisi = state?.selectedCharId || null;
+        if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
+          && !currentPlayer()?.isAI && canLocalPlayerAct()) playSfx("select");
+        renderAll.dernierChoisi = gardienChoisi;
         renderHeader();
         renderTurnContext();
         renderBoard();
@@ -20977,6 +21688,7 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
+        renderLisereTour();
         // V78 (passe fluidité) : remplace les MutationObserver globaux sur
         // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
         // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
@@ -21239,10 +21951,10 @@
           if (currentPushOption) {
             instructionEl.textContent = currentPushOption.fell
               ? `☠ Force ${state.selectedActionCount} — pousse hors du plateau.`
-              : `Cliquez une destination éclairée · Force ${state.selectedActionCount}.`;
+              : consigneSelonPointeur(`Cliquez une destination éclairée · Force ${state.selectedActionCount}.`);
           } else {
             const info = turnContextInfo();
-            instructionEl.textContent = info?.next || info?.title || "";
+            instructionEl.textContent = consigneSelonPointeur(info?.next || info?.title || "");
           }
         }
 
@@ -21409,7 +22121,7 @@
             : "";
           const limite = shapeLimitPerOwner();
           const limitBadge = limite
-            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${limite}</span>`
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""} aria-label="${Math.max(0, limite - used)} restante(s)">${Math.max(0, limite - used)}</span>`
             : "";
           button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
           const limitSuffix = limite ? ` (${used}/${limite} posées)` : "";
@@ -21426,7 +22138,7 @@
         if (state.islandPlacedThisTurn) return;
         if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
         if (!state.draft && !peutPayerIle(currentPlayer())) {
-          showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+          refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
           return;
         }
         if (shapeLimitReached(shapeKey)) {
@@ -21644,7 +22356,12 @@
               (state.phase === "ACTION" && state.selectedCharId && ["MOVE", "PUSH"].includes(state.selectedActionType || ""))
               || state.phase === "SMART_CHAR"
             );
-            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
+            if (state.reachable.has(key(r, c))) {
+              /* Une fois le gardien choisi, la 3D dessine la zone d'un seul
+                 contour au lieu de cases éclairées ; le plateau tactique 2D,
+                 qui ne lit que ces classes, garde la zone par cette marque. */
+              classes.push(hideReachableAfterCharacterChoice ? "reachable-zone" : "reachable");
+            }
             if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
             if (
               char
@@ -22227,7 +22944,7 @@
         } = options;
 
         if (isCenterCrownCell(crownCell) && state.centerCrownTakenThisTurn) {
-          showToast("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
+          refuserAction("Une seule couronne peut être récupérée sur la case centrale pendant ce tour.");
           return false;
         }
 
@@ -22351,7 +23068,7 @@
         if (state.phase === "PLACE_ISLAND") {
           state.hoverAnchor = [r, c];
           if (!state.draft && !peutPayerIle(currentPlayer())) {
-            showToast(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
+            refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
             return;
           }
           if (isValidPlacement(r, c)) {
@@ -22364,7 +23081,7 @@
             placeIsland(r, c);
           } else {
             updatePlacementPreview(r, c);
-            showToast("Cette forme ne tient pas ici.");
+            refuserAction("Cette forme ne tient pas ici.");
           }
           return;
         }
@@ -22382,7 +23099,7 @@
             state.phase = "ACTION_SELECT";
             state.pendingSpawnIslandId = null;
             renderAll();
-            showToast(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
+            refuserAction(`Limite atteinte : ${MAX_GUARDIANS_PER_PLAYER} gardiens maximum.`);
             return;
           }
 
@@ -22729,7 +23446,7 @@
         if (state.phase === "ACTION_SELECT" && island && !char) {
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.phase = "ACTION";
@@ -23340,7 +24057,7 @@
 
         const candidates = directMoveCandidatesToCell(r, c);
         if (!candidates.length) {
-          showToast("Aucun gardien ne peut atteindre cette case.");
+          refuserAction("Aucun gardien ne peut atteindre cette case.");
           return true;
         }
 
@@ -23421,7 +24138,7 @@
           }
           const nearest = nearestMoverForCell(r, c);
           if (!nearest) {
-            showToast("Aucun de vos gardiens ne peut atteindre cette case.");
+            refuserAction("Aucun de vos gardiens ne peut atteindre cette case.");
             return;
           }
           state.selectedCharId = nearest.char.id;
@@ -23858,7 +24575,9 @@
            jamais laisser le joueur derrière un cache. */
         if (result.fell) {
           kaykitBandesCinema(true, 1400);
-          kaykitSecousse();
+          kaykitChoc(3);
+        } else {
+          kaykitChoc(force >= 2 ? 2 : 1);
         }
 
         // V78 (passe fluidité) : plus de animateToken() HTML en mode 3D — la
@@ -24228,7 +24947,7 @@
           return;
         }
         if (!islandIsEmpty(island)) {
-          showToast("Cette île n’est pas vide : impossible de la dissoudre.");
+          refuserAction("Cette île n’est pas vide : impossible de la dissoudre.");
           return;
         }
         if (availableActionCount("MAGIC") < 1) {
@@ -24310,7 +25029,7 @@
       // Bouton de la barre : la rotation nommée est jouée d'un clic.
       function jouerRotationMagie(steps) {
         if (!magicRotationOptions().some(option => option.steps === steps)) {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
           return;
         }
         state.magicPreviewSteps = steps;
@@ -24360,7 +25079,12 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
+          const auDoigt = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+          showToast(!auDoigt
+            ? "Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner."
+            : window.ILYOS_APERCU_TACTILE?.actif?.() !== false
+              ? "Pivot choisi : touchez une position colorée pour la voir, puis encore pour tourner."
+              : "Pivot choisi : touchez une position colorée ou un bouton de rotation pour tourner.");
           return;
         }
 
@@ -24442,7 +25166,7 @@
         } else if (state.magicPreviewValid) {
           showToast(`Aperçu : ${nextSteps * 90}°. Cliquez sur une case de l’aperçu pour valider.`);
         } else {
-          showToast("Cette rotation est impossible depuis cette case pivot.");
+          refuserAction("Cette rotation est impossible depuis cette case pivot.");
         }
       }
 
@@ -24706,7 +25430,7 @@
           <p><b>Île</b></p>
           <p>Propriétaire : <span style="color:${owner.color}">${owner.name}</span></p>
           <p>Taille : ${island.cells.length} case(s)</p>
-          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / E, puis cliquez sur l’aperçu.</p>
+          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu.</p>
         `;
           return;
         }
@@ -24784,7 +25508,7 @@
         }
 
         if (!artifact) {
-          if (!fromAI) showToast("Ce gardien ne porte pas de couronne.");
+          if (!fromAI) refuserAction("Ce gardien ne porte pas de couronne.");
           return false;
         }
 
@@ -24839,6 +25563,9 @@
         }
         const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
         if (char) playCrownScore(char.id);
+        // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
+        kaykitChoc(2);
+        kaykitHameauEclat(player.id);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
@@ -24859,9 +25586,11 @@
              l'écran de fin du jeu réel. */
           if (!ilyosSimulationActive) {
             playVictoryCelebration(player.id);
+            // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
+            if (char) kaykitMomentVictoire(char.r, char.c);
             setTimeout(() => showVictory(player, coequipier
               ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
-              : null), 450);
+              : null), char ? 1700 : 450);
           }
         } else {
           // Le gardien qui valide une couronne reste sur son village. Seul le
@@ -25065,6 +25794,7 @@
         });
         kaykitBandesCinema(true, 4000);
 
+        tonFinDePartie("egalite");
         els.victoryPortrait.textContent = "⚖️";
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
@@ -25077,7 +25807,7 @@
         void els.victoryModal.offsetWidth;
         els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx("draw");
       }
 
       function showVictory(player, texte = null) {
@@ -25100,6 +25830,16 @@
         kaykitBandesCinema(true, 4000);
 
 
+        /* Le joueur de cet appareil a-t-il perdu ? Contre l'IA ou en ligne
+           seulement : en duel local sur un même écran, la fenêtre salue le
+           vainqueur, qui est assis là. Une défaite n'a pas la fanfare ni la
+           lumière dorée de la victoire : même fenêtre, ton éteint. */
+        const joueurAppareil = progressionJoueurDeLAppareil();
+        const defaite = !!joueurAppareil
+          && (state.onlineMode || player.isAI)
+          && !memeEquipe(player.id, joueurAppareil.id);
+        tonFinDePartie(defaite ? "defaite" : "victoire");
+
         els.victoryPortrait.textContent = player.icon || "🧙";
         els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
         els.victoryTitle.textContent = gardiensPartages()
@@ -25120,7 +25860,19 @@
         els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
-        playSfx("victory");
+        playSfx(defaite ? "defeat" : "victory");
+      }
+
+      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
+         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
+         fenêtre, ses boutons et le bilan restent les mêmes. */
+      function tonFinDePartie(ton) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.classList.toggle("fin-defaite", ton === "defaite");
+        modal.classList.toggle("fin-egalite", ton === "egalite");
+        const kicker = modal.querySelector(".victory-kicker");
+        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {
@@ -25333,6 +26085,7 @@
             }));
           }
 
+          if (requested - remaining > 0) { carteJoueeEnvol(type, player); lisereMarquerAction(); }
           return requested - remaining;
         };
 
@@ -25688,6 +26441,7 @@
         };
         state.islands.push(ile);
         state.islandPlacedThisTurn = true;
+        lisereMarquerAction();
 
         let gardien = null;
         let couronneRamassee = null;
@@ -47680,6 +48434,9 @@
          vivent dans `pad`, que le moteur ne voit pas : sans ce relais, Échap
          ouvrait le menu par-dessus le choix et bloquait la suite. */
       let manetteQuitterGeste = () => false;
+      /* Remplace par clavier.js : bascule les indices de touches sur la
+         manette des qu'elle sert. */
+      let ilyosModeManette = () => {};
 
       (function setupIlyosGamepad() {
         if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return;
@@ -48805,6 +49562,7 @@
           for (const candidate of gamepads) if (candidate?.connected) { gamepad = candidate; break; }
           activePad = gamepad;
           if (!gamepad) { pad.previous = []; return; }
+          if (gamepad.buttons.some(button => button.pressed) || gamepad.axes.some(value => Math.abs(value) > DEADZONE)) ilyosModeManette();
           if (typeof kaykit3D === "undefined" || !kaykit3D?.camera) return;
 
           /* Tour de l'adversaire : plus aucune navigation de jeu. Sans cela le
@@ -49060,6 +49818,249 @@
           if (typeof showToast === "function") showToast("Manette connectee.");
         });
         requestAnimationFrame(poll);
+      })();
+      /* ILYOS — Raccourcis clavier d'une partie
+
+         Couche d'entree uniquement, comme la manette (gamepad.js) : chaque
+         touche clique le bouton du dock que la souris cliquerait. Un bouton
+         masque ou desactive (tutoriel, tour adverse, enigme d'un seul tour)
+         ne repond donc pas non plus au clavier, sans condition a recopier ici.
+
+           A Z E R         Ile, Deplacer, Pousser, Magie (ordre du dock,
+                           rangee du haut d'un clavier AZERTY)
+           Entree          fin du tour
+           Retour, Ctrl+Z  annuler le dernier coup (bouton ↶)
+           Tab, Maj+Tab    gardien suivant / precedent pendant un deplacement
+                           ou une poussee
+           M               menu
+           D               defausse
+
+         Les autres restent ou ils sont : Q/S/F (core.js, handleRotateKey),
+         fleches et Espace (handleCameraKey), Echap (diagnostics.js),
+         V (js/plateau-tactique.js), O (puzzle.js).
+
+         INDICES. Chaque bouton porte dans son coin la touche qui l'actionne,
+         petite et discrete (choix de Taekun, 2026-10-16), et la touche de
+         MANETTE des que la manette sert (gamepad.js pose
+         body[data-entree="manette"]) ; une touche du clavier ou un clic
+         reviennent au clavier. Rien sur un ecran tactile. */
+      (function setupIlyosClavier() {
+        if (typeof document === "undefined") return;
+
+        const DOCK = { a: "ov2Island", z: "ov2Move", e: "ov2Push", r: "ov2Magic" };
+
+        /* Touche clavier, puis manette (disposition standard, gamepad.js).
+           Deplacer n'a pas de bouton direct a la manette : on y va par le dock. */
+        const INDICES = [
+          { id: "ov2Island", clavier: "A", manette: "LT", dock: true },
+          { id: "ov2Move", clavier: "Z", manette: "", dock: true },
+          { id: "ov2Push", clavier: "E", manette: "X", dock: true },
+          { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
+          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:7px;right:18px" },
+          { id: "ov2Undo", clavier: "⌫", manette: "B" },
+          { id: "ov2Gear", clavier: "M", manette: "≡" },
+          { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
+        ];
+
+        function installerStyle() {
+          if (document.getElementById("ilyosTouchesStyle")) return;
+          const style = document.createElement("style");
+          style.id = "ilyosTouchesStyle";
+          style.textContent = `
+            .ilyos-touche{position:absolute;top:-6px;right:-6px;z-index:5;min-width:17px;height:17px;
+              padding:0 3px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
+              font:800 11px/1 'Nunito Sans',Inter,system-ui,sans-serif!important;letter-spacing:0!important;text-transform:none!important;font-style:normal!important;
+              color:rgba(255,238,205,.78);background:rgba(18,14,28,.82);
+              border:1px solid rgba(255,238,205,.34);border-radius:5px;
+              box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none}
+            .ilyos-touche.ilyos-touche-dock{top:8px;right:auto;left:calc(50% + 22px)}
+            .ilyos-touche:empty{display:none}
+            @media (hover:none) and (pointer:coarse){.ilyos-touche{display:none!important}}`;
+          document.head.appendChild(style);
+        }
+
+        /* Idempotent : un bouton reconstruit (l'icone ↶ est posee apres coup
+           par hud-organique-v2-final-v8.js) recoit simplement un nouvel indice.
+           ↶ est decoupe par un clip-path qui rognerait un indice pose dedans :
+           le sien est pose a cote, dans le parent, au coin du bouton, et suit
+           sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
+           grand, le garde a l'interieur de sa decoupe (`coin`). */
+        function poserIndices() {
+          installerStyle();
+          const manette = document.body.dataset.entree === "manette";
+          INDICES.forEach(indice => {
+            const bouton = document.getElementById(indice.id);
+            if (!bouton) return;
+            const style = getComputedStyle(bouton);
+            const parent = bouton.parentElement;
+            const dehors = !indice.coin && style.clipPath !== "none" && !!parent && bouton.offsetParent === parent;
+            let marque = document.querySelector(`.ilyos-touche[data-pour="${indice.id}"]`);
+            if (marque && marque.parentElement !== (dehors ? parent : bouton)) { marque.remove(); marque = null; }
+            if (!marque) {
+              if (!dehors && style.position === "static") bouton.style.position = "relative";
+              marque = document.createElement("span");
+              marque.className = "ilyos-touche" + (indice.dock ? " ilyos-touche-dock" : "");
+              marque.dataset.pour = indice.id;
+              marque.setAttribute("aria-hidden", "true");
+              if (indice.coin) marque.style.cssText = indice.coin;
+              /* En ligne : la typographie du HUD (Almendra) l'emportait sur la
+                 feuille ci-dessus pour les boutons d'action. */
+              marque.style.setProperty("font-family", "'Nunito Sans', Inter, system-ui, sans-serif", "important");
+              if (dehors) bouton.after(marque); else bouton.appendChild(marque);
+            }
+            if (dehors) {
+              marque.style.left = `${bouton.offsetLeft + bouton.offsetWidth - 11}px`;
+              marque.style.top = `${bouton.offsetTop - 6}px`;
+              marque.style.right = "auto";
+              marque.hidden = style.display === "none" || style.visibility === "hidden";
+            }
+            const texte = manette ? indice.manette : indice.clavier;
+            if (marque.textContent !== texte) marque.textContent = texte;
+          });
+        }
+        window.addEventListener("resize", poserIndices, { passive: true });
+
+        /* Un geste peut masquer ou montrer ↶ (tutoriel, enigme, fin de
+           partie) : un seul rafraichissement, une fois l'interface a jour. */
+        let rafraichissement = 0;
+        function rafraichirIndices() {
+          if (rafraichissement) return;
+          rafraichissement = setTimeout(() => { rafraichissement = 0; poserIndices(); }, 400);
+        }
+
+        function modeEntree(manette) {
+          if ((document.body.dataset.entree === "manette") === manette) return;
+          if (manette) document.body.dataset.entree = "manette";
+          else delete document.body.dataset.entree;
+          poserIndices();
+        }
+        ilyosModeManette = () => modeEntree(true);
+        document.addEventListener("pointerdown", () => { modeEntree(false); rafraichirIndices(); }, { capture: true, passive: true });
+
+        (function attendreHud(essais) {
+          const undo = document.getElementById("ov2Undo");
+          if ((undo && undo.dataset.v8Undo === "1") || essais > 600) { poserIndices(); return; }
+          requestAnimationFrame(() => attendreHud(essais + 1));
+        })(0);
+
+        function visible(element) {
+          if (!element || !element.getClientRects().length) return false;
+          const style = getComputedStyle(element);
+          return style.visibility !== "hidden" && style.display !== "none";
+        }
+
+        function usable(button) {
+          return visible(button) && !button.disabled
+            && button.getAttribute("aria-disabled") !== "true"
+            && !button.classList.contains("disabled");
+        }
+
+        function cliquer(id) {
+          const bouton = document.getElementById(id);
+          if (!usable(bouton)) return false;
+          bouton.click();
+          return true;
+        }
+
+        function enPartie() {
+          return !!state && visible(els.gameScreen) && !fenetreOuverte()
+            && !visible(document.getElementById("hudV2GearPopover"));
+        }
+
+        /* Gardiens que le moteur propose pour l'action engagee (meme lecture
+           que la manette : la marque .selectable posee par renderBoard). */
+        function gardiensOfferts() {
+          return [...document.querySelectorAll(".cell .character.selectable")]
+            .map(marque => marque.closest(".cell"))
+            .filter(Boolean)
+            .map(cell => ({ r: Number(cell.dataset.r), c: Number(cell.dataset.c) }))
+            .filter(cell => Number.isFinite(cell.r) && Number.isFinite(cell.c));
+        }
+
+        function choisirGardien(cell) {
+          dispatchKayKitClick({ userData: { r: cell.r, c: cell.c } }, { clientX: 0, clientY: 0, button: 0, buttons: 0 });
+        }
+
+        /* Les marques .selectable disparaissent des qu'un gardien est pris :
+           on garde donc la liste vue au choix du premier, pour l'action en
+           cours. Cliquer un autre gardien allie change directement de gardien,
+           comme a la souris. */
+        let liste = { action: null, cases: [] };
+
+        function gardienSuivant(sens) {
+          const action = state.selectedActionType || "";
+          if (state.phase !== "ACTION" || !["MOVE", "PUSH"].includes(action)) return false;
+          if (state.pushOptions && state.pushOptions.length && state.selectedCharId) return false;
+          const encours = state.characters.find(char => char.id === state.selectedCharId);
+          if (!encours || liste.action !== action) liste = { action, cases: gardiensOfferts() };
+          const offerts = liste.cases.filter(cell =>
+            state.characters.some(char => char.player === state.currentPlayer && char.r === cell.r && char.c === cell.c));
+          if (!offerts.length) return false;
+          const rang = encours ? offerts.findIndex(cell => cell.r === encours.r && cell.c === encours.c) : -1;
+          const suivant = rang < 0 && sens < 0 ? offerts[offerts.length - 1]
+            : offerts[(rang + sens + offerts.length) % offerts.length];
+          if (encours && suivant.r === encours.r && suivant.c === encours.c) return true;
+          choisirGardien(suivant);
+          return true;
+        }
+
+        /* Le bouton ↶ est masque pendant les enigmes, qui annulent au clic
+           droit : on suit donc le bouton d'origine (#cancelCardBtn), sauf dans
+           les tutoriels, qui bloquent toute annulation. */
+        function annuler() {
+          const tutoriel = els.gameScreen.classList.contains("tutorial-on")
+            || els.gameScreen.classList.contains("tutorial-eveil");
+          if (tutoriel || !els.cancelCardBtn || els.cancelCardBtn.disabled || state.inputLocked) return false;
+          handleCancelButton();
+          return true;
+        }
+
+        /* Une fin de tour accidentelle coute un tour entier : refusee tant
+           qu'une ile est en pose ou qu'une poussee attend sa direction. */
+        function finDuTour() {
+          if ((state.phase === "PLACE_ISLAND" && state.placementCells) || (state.pushOptions && state.pushOptions.length)) {
+            showToast("Terminez ou annulez le geste en cours avant de finir le tour.");
+            return true;
+          }
+          return cliquer("ov2End");
+        }
+
+        document.addEventListener("keydown", event => {
+          modeEntree(false);
+          rafraichirIndices();
+          if (event.defaultPrevented || event.altKey || event.repeat) return;
+          const cible = event.target;
+          const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
+          if (["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable)) return;
+          if (!enPartie()) return;
+
+          const ctrl = event.ctrlKey || event.metaKey;
+          const touche = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+          let fait = false;
+
+          if (ctrl) {
+            if (touche === "z" && !event.shiftKey) fait = annuler();
+            if (fait) event.preventDefault();
+            return;
+          }
+
+          if (DOCK[touche]) fait = cliquer(DOCK[touche]);
+          else if (touche === "Enter") {
+            /* Entree actionne le bouton qui a le focus : une case du plateau
+               jouee au clavier doit le rester. */
+            if (balise === "BUTTON" && cible.closest(".cell")) return;
+            fait = finDuTour();
+          }
+          else if (touche === "Backspace") fait = annuler();
+          else if (touche === "Tab") fait = gardienSuivant(event.shiftKey ? -1 : 1);
+          else if (touche === "m") fait = cliquer("ov2Gear");
+          else if (touche === "d") {
+            window.dispatchEvent(new CustomEvent("ilyos:toggle-discard-viewer"));
+            fait = true;
+          }
+
+          if (fait) event.preventDefault();
+        });
       })();
  function replay() {
         els.victoryModal.classList.add("hidden");
@@ -51281,7 +52282,7 @@
         // ILYOS_TEST.sfx("spawn", "lumiere") pour auditionner une variante.
         sfx: (type, variant) => {
           const types = ["card", "island", "spawn", "move", "push", "rotate", "magic",
-            "crownTake", "crownDrop", "crown", "turn", "victory", "fall", "error", "undo"];
+            "crownTake", "crownDrop", "crown", "turn", "victory", "defeat", "draw", "fall", "error", "undo", "select"];
           if (!type) return types;
           playSfx(type, variant ? { variant } : undefined);
           return variant ? `${type} · ${variant}` : type;

@@ -51,7 +51,7 @@ const survol = page => page.evaluate(() => {
 /* Le bandeau #ov2Instruction n'affiche que la ligne d'aide, sans l'angle.
    Celui-ci vit dans le contexte de tour rempli par renderTurnContext — tantot
    dans le titre (« Rotation : 90° »), tantot dans la ligne suivante pendant la
-   mise en place (« Rotation 90° — Q/E pour tourner »), ou le titre compte les
+   mise en place (« Rotation 90° — Q/S pour tourner »), ou le titre compte les
    iles restantes. On lit donc les deux. */
 const contexteDePhase = page => page.evaluate(() => {
   const titre = document.getElementById('turnContextTitle')?.textContent?.trim() || '';
@@ -239,7 +239,7 @@ test('le tiroir d’îles se parcourt et l’île se tourne aux gâchettes', asy
     return trouve;
   }, null, { timeout: 8000 });
 
-  // LT / RT : rotation d'un quart de tour, exactement comme Q/E au clavier.
+  // LT / RT : rotation d'un quart de tour, exactement comme Q/S au clavier.
   const avant = await empreinteDeLIle(page);
   expect(avant, 'l’aperçu de pose doit être visible').not.toBeNull();
 

@@ -166,6 +166,8 @@
             kaykit3D.orbit.minDistance = kaykit3D.minZoom;
             kaykit3D.orbit.maxDistance = kaykit3D.maxZoom;
           }
+          // Téléphone en portrait : recul plus grand (VUE TÉLÉPHONE).
+          kaykitTelephoneBornes();
         }
         return GRID;
       }

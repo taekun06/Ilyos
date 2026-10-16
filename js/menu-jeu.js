@@ -128,16 +128,54 @@
     pioche.hidden = true;
     page('partie').appendChild(pioche);
     const commandes = section('Commandes');
-    commandes.insertAdjacentHTML('beforeend', `
+    /* Sur un écran tactile, ni clavier ni molette : on décrit les gestes. */
+    const tactile = window.matchMedia?.('(hover: none) and (pointer: coarse)')?.matches;
+    if (tactile) commandes.insertAdjacentHTML('beforeend', `
+      <dl class="mj-commandes">
+        <div><dt><kbd>Toucher</kbd></dt><dd>Jouer une case, une action</dd></div>
+        <div><dt><kbd>Glisser</kbd></dt><dd>Tourner autour du plateau</dd></div>
+        <div><dt><kbd>Pincer</kbd></dt><dd>Zoomer</dd></div>
+        <div><dt><kbd>Deux doigts</kbd></dt><dd>Déplacer la vue</dd></div>
+        <div><dt><kbd>↺</kbd> <kbd>↻</kbd></dt><dd>Tourner l’île à poser</dd></div>
+        <div><dt><kbd>Caméra</kbd></dt><dd>Onglet ci-dessus : revenir à la vue de face</dd></div>
+      </dl>`);
+    else commandes.insertAdjacentHTML('beforeend', `
       <dl class="mj-commandes">
         <div><dt><kbd>Clic</kbd></dt><dd>Jouer une case, une action</dd></div>
-        <div><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Tourner l’île à poser</dd></div>
+        <div><dt><kbd>A</kbd> <kbd>Z</kbd> <kbd>E</kbd> <kbd>R</kbd></dt><dd>Île, Déplacer, Pousser, Magie</dd></div>
+        <div><dt><kbd>Tab</kbd></dt><dd>Gardien suivant</dd></div>
+        <div><dt><kbd>Entrée</kbd></dt><dd>Fin du tour</dd></div>
+        <div><dt><kbd>Retour</kbd></dt><dd>Annuler le dernier coup (aussi <kbd>Ctrl</kbd> <kbd>Z</kbd>)</dd></div>
+        <div><dt><kbd>Q</kbd> <kbd>S</kbd> <kbd>F</kbd></dt><dd>Tourner, retourner l’île à poser</dd></div>
+        <div><dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Tourner, incliner la caméra</dd></div>
         <div><dt><kbd>Espace</kbd></dt><dd>Revenir à la vue de face</dd></div>
         <div><dt><kbd>Molette</kbd></dt><dd>Zoomer</dd></div>
-        <div><dt><kbd>T</kbd></dt><dd>Plateau tactique à plat</dd></div>
+        <div><dt><kbd>V</kbd></dt><dd>Vue 2D, plateau à plat</dd></div>
+        <div><dt><kbd>M</kbd> <kbd>D</kbd></dt><dd>Menu, défausse</dd></div>
         <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, fermer ce menu</dd></div>
       </dl>`);
     page('partie').appendChild(commandes);
+    /* Au doigt : voir le résultat d'une poussée ou d'une magie avant de la
+       jouer (js/mobile-input-v1.js, ILYOS_APERCU_TACTILE). */
+    if (tactile) {
+      const toucher = section('Toucher', 'Poussée et magie : le 1er toucher montre le résultat, le 2e sur la même case le joue.');
+      toucher.insertAdjacentHTML('beforeend', `
+        <div class="mj-grille-chocs">
+          <button type="button" class="mj-choix" data-mj-apercu><b>Aperçu avant de jouer</b><small>Désactivé : un toucher joue tout de suite</small></button>
+        </div>`);
+      const bouton = toucher.querySelector('[data-mj-apercu]');
+      /* Même clé que mobile-input-v1.js, qui peut se charger après ce menu. */
+      const actif = () => { try { return localStorage.getItem('ilyosApercuTactile') !== 'off'; } catch (_) { return true; } };
+      const maj = () => bouton.setAttribute('aria-pressed', String(actif()));
+      bouton.addEventListener('click', () => {
+        const voulu = !actif();
+        if (window.ILYOS_APERCU_TACTILE) window.ILYOS_APERCU_TACTILE.regler(voulu);
+        else { try { localStorage.setItem('ilyosApercuTactile', voulu ? 'on' : 'off'); } catch (_) {} }
+        maj();
+      });
+      maj();
+      page('partie').appendChild(toucher);
+    }
 
     // CAMÉRA : AUTO/LIBRE sont des modes, FACE/ISO des recadrages ponctuels.
     const camera = section('Caméra', 'Le choix s’applique aussitôt et referme le menu.');
@@ -182,6 +220,33 @@
       label.appendChild(champ);
     });
     page('graphismes').appendChild(ciel);
+
+    // CHOCS : secousse de caméra et vibration au moment des coups forts
+    // (js/game/kaykit3d.js, KAYKIT_CHOCS). Sans coût de rendu.
+    const chocs = section('Chocs', 'Le poids des coups : poussées, chutes, couronnes volées.');
+    const chocsGrille = document.createElement('div');
+    chocsGrille.className = 'mj-grille-chocs';
+    chocsGrille.innerHTML = `
+      <button type="button" class="mj-choix" data-mj-choc="secousses"><b>Secousses</b><small>La caméra tremble à l’impact</small></button>
+      <button type="button" class="mj-choix" data-mj-choc="vibrations"><b>Vibrations</b><small>Sur téléphone compatible</small></button>`;
+    const majChocs = () => {
+      const reglages = window.ILYOS_CHOCS?.reglages?.() || {};
+      chocsGrille.querySelectorAll('[data-mj-choc]').forEach(bouton => {
+        bouton.setAttribute('aria-pressed', String(reglages[bouton.dataset.mjChoc] !== false));
+      });
+    };
+    chocsGrille.addEventListener('click', event => {
+      const bouton = event.target.closest('[data-mj-choc]');
+      if (!bouton || !window.ILYOS_CHOCS) return;
+      const cle = bouton.dataset.mjChoc;
+      const actif = bouton.getAttribute('aria-pressed') !== 'true';
+      window.ILYOS_CHOCS.regler(cle, actif);
+      majChocs();
+      if (actif) window.ILYOS_CHOCS.jouer(2);   // aperçu immédiat
+    });
+    majChocs();
+    chocs.appendChild(chocsGrille);
+    page('graphismes').appendChild(chocs);
     const tech = section('Infos techniques', 'État du moteur 3D et qualité de rendu.');
     deplacer(techToggle, tech);
     deplacer(techInfo, tech);
@@ -276,7 +341,7 @@
   }
 
   function gererClavier(event) {
-    /* Tant que le menu est ouvert, le clavier est à lui : sans ce filtre, T, Q/E
+    /* Tant que le menu est ouvert, le clavier est à lui : sans ce filtre, V, Q/S
        ou Espace agiraient sur la partie derrière. Échap continue jusqu'au jeu,
        qui referme le menu (js/game/diagnostics.js). */
     if (event.key !== 'Escape') event.stopPropagation();
@@ -302,7 +367,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=1';
+    lien.href = './css/menu-jeu.css?v=3';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }
