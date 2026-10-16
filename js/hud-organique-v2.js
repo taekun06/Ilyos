@@ -239,7 +239,10 @@
     const rawTurn = (legacy('turnLabel')?.textContent || 'Tour 1').trim();
     const turnMatch = rawTurn.match(/tour\s*(\d+)/i);
     legacy('ov2Turn').textContent = `TOUR ${turnMatch ? turnMatch[1] : '1'}`;
-    const timerText = (legacy('turnTimer')?.textContent || '').trim();
+    /* #turnTimer garde son dernier texte (« 03:00 ») quand le chrono est coupé
+       ou que c'est au tour de l'IA : seule sa classe `hidden` dit s'il compte. */
+    const sourceTimer = legacy('turnTimer');
+    const timerText = sourceTimer && !sourceTimer.classList.contains('hidden') ? (sourceTimer.textContent || '').trim() : '';
     const timer = legacy('ov2Timer');
     timer.textContent = timerText ? `◷ ${timerText.replace(/^◷\s*/,'')}` : '';
     timer.classList.toggle('ov2-off',!timerText);

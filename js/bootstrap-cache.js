@@ -52,7 +52,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20260930-pioche-detaillee';
+  const VERSION = '20261016-pioche-contenu';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);

@@ -54,6 +54,11 @@ test('Z, E, Tab, Retour et M pilotent une énigme sans souris', async ({ page })
   await expect(page.locator('#hudV2GearPopover')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('#hudV2GearPopover')).toBeHidden();
+  // Sans sélection en cours, Échap ouvre aussi le menu.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#hudV2GearPopover')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#hudV2GearPopover')).toBeHidden();
 
   expect(erreurs).toEqual([]);
 });

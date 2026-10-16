@@ -50119,7 +50119,7 @@
            Retour, Ctrl+Z  annuler le dernier coup (bouton ↶)
            Tab, Maj+Tab    gardien suivant / precedent pendant un deplacement
                            ou une poussee
-           M               menu
+           M               menu (Echap aussi, voir diagnostics.js)
            D               defausse
 
          Les autres restent ou ils sont : Q/S/F (core.js, handleRotateKey),
@@ -50143,9 +50143,8 @@
           { id: "ov2Move", clavier: "Z", manette: "", dock: true },
           { id: "ov2Push", clavier: "E", manette: "X", dock: true },
           { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
-          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:7px;right:18px" },
-          { id: "ov2Undo", clavier: "⌫", manette: "B" },
-          { id: "ov2Gear", clavier: "M", manette: "≡" },
+          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:auto;bottom:7px;right:18px" },
+          { id: "ov2Gear", clavier: "Échap", manette: "≡" },
           { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
         ];
 
@@ -50168,10 +50167,11 @@
 
         /* Idempotent : un bouton reconstruit (l'icone ↶ est posee apres coup
            par hud-organique-v2-final-v8.js) recoit simplement un nouvel indice.
-           ↶ est decoupe par un clip-path qui rognerait un indice pose dedans :
+           Un bouton decoupe par un clip-path rognerait un indice pose dedans :
            le sien est pose a cote, dans le parent, au coin du bouton, et suit
            sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
-           grand, le garde a l'interieur de sa decoupe (`coin`). */
+           grand, le garde a l'interieur de sa decoupe, en bas a droite (`coin`).
+           ↶ n'en porte plus (Taekun, 2026-10-16). */
         function poserIndices() {
           installerStyle();
           const manette = document.body.dataset.entree === "manette";
@@ -52625,10 +52625,11 @@
           return;
         }
         // Menu de jeu (js/menu-jeu.js, bâti sur #hudV2GearPopover) : Échap le
-        // referme, mais ne l'OUVRE plus — le bouton MENU suffit, et un Échap qui
-        // ouvrait le menu par-dessus un geste en cours (choix de couronne à la
-        // manette) bloquait la partie. Sans sélection à abandonner, Échap ne
-        // fait rien : l'annulation d'une action jouée reste sur le bouton ↶.
+        // referme. Il l'OUVRE aussi (demande de Taekun, 2026-10-16), mais en
+        // dernier recours : d'abord abandonner une sélection, puis un geste de
+        // manette en cours (choix de couronne) — un Échap qui ouvrait le menu
+        // par-dessus ce geste bloquait la partie. L'annulation d'une action
+        // jouée reste sur le bouton ↶.
         const menuJeu = document.getElementById("hudV2GearPopover");
         if (menuJeu && !menuJeu.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -52637,7 +52638,10 @@
         const selectionEnCours = (state?.phase === "ACTION" && state?.selectedActionType)
           || ["PLACE_ISLAND", "DROP_TREASURE", "PICKUP_CROWN", "SMART_CHAR"].includes(state?.phase);
         if (!selectionEnCours) {
-          manetteQuitterGeste();
+          if (manetteQuitterGeste()) return;
+          const boutonMenu = document.getElementById("ov2Gear");
+          if (state && boutonMenu && !boutonMenu.disabled && boutonMenu.getClientRects().length
+            && !els.gameScreen.classList.contains("hidden") && !fenetreOuverte()) boutonMenu.click();
           return;
         }
         if (state?.inputLocked) return;
