@@ -286,7 +286,7 @@
           return;
         }
 
-        if (!["q", "e", "arrowleft", "arrowright"].includes(key)) return;
+        if (!["q", "s", "arrowleft", "arrowright"].includes(key)) return;
 
         const canRotatePlacement = state.phase === "PLACE_ISLAND" && !!state.placementCells;
         const canRotateMagic =

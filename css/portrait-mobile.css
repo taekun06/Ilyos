@@ -1,7 +1,8 @@
-/* ILYOS — TÉLÉPHONE EN PORTRAIT (prototype)
+/* ILYOS — TÉLÉPHONE : PORTRAIT, ÉCRAN TACTILE, PAYSAGE
 
-   Tout ce fichier est borné à un écran étroit tenu verticalement : il ne
-   change rien en paysage ni sur ordinateur. Il est chargé en dernier par le
+   La première partie est bornée à un écran étroit tenu verticalement ; les
+   deux dernières à un écran tactile et à un téléphone en paysage. Rien ne
+   change sur ordinateur. Il est chargé en dernier par le
    chargeur du HUD (js/version-bootstrap.js), d'où la spécificité « html body »
    qui passe devant les couches V6 à V12 sans en ajouter une nouvelle.
 
@@ -179,6 +180,12 @@
     height: 24px !important;
     margin: 0 !important;
   }
+  /* La consolidation V12 donne à l'icône une base flex de 38 px : en colonne,
+     elle l'emportait sur la hauteur ci-dessus et poussait le « ×4 » hors de
+     l'écran, sous le bouton. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico {
+    flex: 0 0 24px !important;
+  }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong {
     font-size: 11px !important;
     letter-spacing: .02em !important;
@@ -269,23 +276,60 @@
     gap: 4px !important;
     padding: 6px !important;
   }
+  /* Barres de rotation (île, magie) : au-dessus de la phrase d'instruction,
+     centrées. Ancrées dans l'angle comme sur ordinateur, elles recouvraient
+     la consigne et la rangée pioche / annuler / fin du tour. */
+  html body[data-visual-mode] #gameScreen {
+    --ov2-rotation-bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 24px + var(--pm-instr-h, 32px));
+  }
+  html body[data-visual-mode] #gameScreen #hudV2MagicRow,
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
+    right: calc(50% - 50vw + var(--pm-gutter)) !important;
+    left: auto !important;
+    justify-content: center !important;
+  }
   html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 button {
     min-width: 0 !important;
     padding-inline: 8px !important;
   }
+  /* Cinq formes par rangée : deux rangées au lieu de trois (ou cinq sur un
+     écran de 360 px, où le tiroir remontait jusque sous le bandeau des
+     joueurs). Le plateau reste visible au-dessus. */
   html body[data-visual-mode] #gameScreen #hudV2IslandDrawer #islandSelector {
-    flex-wrap: wrap !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, auto) !important;
+    gap: 8px !important;
     justify-content: center !important;
   }
 
-  /* Toasts : pleine largeur, au-dessus de l'instruction. */
+  /* Bulle « Information » du HUD : elle répète le message du #toast, déjà
+     affiché en haut, et recouvrait la barre de rotation ou de magie. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-toast {
-    left: var(--pm-gutter) !important;
-    right: var(--pm-gutter) !important;
-    width: auto !important;
-    max-width: none !important;
-    bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + var(--pm-row-h) + 56px) !important;
-    transform: none !important;
+    display: none !important;
+  }
+
+  /* Frise du tour adverse : posée sous le portrait du bot, elle prenait toute
+     la largeur à huit étapes et passait sous le bouton VUE 2D et le bouton du
+     plateau entier. Plus petite et centrée entre les deux. */
+  html body #gameScreen #tourAdverseFrise {
+    right: auto !important;
+    left: 50% !important;
+    transform: translateX(-50%) scale(.42) !important;
+    transform-origin: center top !important;
+    margin-top: 10px !important;
+  }
+
+  /* Messages courts du jeu (tirage au sort, « l'ordinateur analyse… ») :
+     sous le bandeau des joueurs et le bouton VUE 2D, qu'ils recouvraient. */
+  html body #toast {
+    top: calc(max(6px, env(safe-area-inset-top)) + 132px) !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  /* Plateau tactique 2D : sous le bandeau des joueurs et le bouton VUE 3D.
+     Sa taille vient de js/plateau-tactique.js (toute la largeur). */
+  html body[data-plateau-tactique="on"] #plateauTactique {
+    margin-top: calc(max(6px, env(safe-area-inset-top)) + 132px) !important;
   }
 
   /* Le fond de vignette du bas suit la hauteur réelle du HUD. */
@@ -301,4 +345,324 @@
       display: none !important;
     }
   }
+}
+
+/* ---------- ÉCRAN TACTILE, toutes orientations ----------
+   Un téléphone ou une tablette n'a ni survol ni clavier. */
+@media (hover: none) and (pointer: coarse) {
+  /* Pas de rectangle bleu ou gris au toucher d'un bouton, pas de menu « Enregistrer
+     l'image » sur un appui long (cartes, avatars), pas de sélection de texte
+     en glissant le doigt. Safari ne lit que la forme préfixée. */
+  html,
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+  }
+  html body input,
+  html body textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* « ← → TOURNER · ESPACE · MOLETTE · CLIC » : des commandes qui n'existent
+     pas au doigt. Le bandeau passait en plus derrière les actions en paysage. */
+  html body #gameScreen .kaykit-camera-hint {
+    display: none !important;
+  }
+}
+
+/* ---------- TÉLÉPHONE EN PAYSAGE : HUD COMPACT ----------
+   Validé par Taekun le 2026-10-13 (maquette en jeu). Sur une hauteur de
+   téléphone, le HUD d'ordinateur réduit couvrait la moitié du plateau. Ici :
+   MENU, VUE 2D et plein écran en haut à gauche ; bande des joueurs réduite ;
+   actions en colonne sur le bord droit avec FIN DU TOUR dessous ; pioche,
+   défausse et retour en bas à gauche ; consigne et panneaux contextuels
+   (formes d'île, rotation, magie, poussée) en bas, centrés sur le plateau. */
+@media (orientation: landscape) and (max-height: 500px) {
+  html body[data-visual-mode] #gameScreen {
+    --pc-safe-left: max(8px, env(safe-area-inset-left));
+    --pc-safe-right: max(8px, env(safe-area-inset-right));
+    --pc-col: 112px;
+  }
+
+  /* Haut gauche : MENU, puis VUE 2D réduite, puis le plein écran. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear {
+    top: max(8px, env(safe-area-inset-top)) !important;
+    left: var(--pc-safe-left) !important;
+    right: auto !important;
+    transform: scale(.85) !important;
+    transform-origin: top left !important;
+  }
+  html body #plateauTactiqueBtn {
+    top: calc(max(8px, env(safe-area-inset-top)) + 40px) !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    right: auto !important;
+    transform: scale(.62) !important;
+    transform-origin: top left !important;
+  }
+  html body #kaykitPleinEcranBtn,
+  html body #kaykitEnsembleBtn[hidden] ~ #kaykitPleinEcranBtn {
+    top: calc(max(8px, env(safe-area-inset-top)) + 68px) !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  /* Bande des joueurs réduite, frise du tour adverse sous le portrait. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top {
+    transform: scale(.72) !important;
+    transform-origin: top center !important;
+  }
+  html body #tourAdverseFrise {
+    top: 58px !important;
+    right: 128px !important;
+  }
+
+  /* Actions en colonne sur le bord droit : icône à gauche, nom et nombre à droite. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock {
+    position: fixed !important;
+    left: auto !important;
+    right: var(--pc-safe-right) !important;
+    top: 58px !important;
+    bottom: auto !important;
+    width: var(--pc-col) !important;
+    height: auto !important;
+    transform: none !important;
+    display: grid !important;
+    grid-auto-flow: row !important;
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: 46px !important;
+    gap: 5px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-island-required-halo {
+    display: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action {
+    width: auto !important;
+    min-width: 0 !important;
+    height: 46px !important;
+    margin: 0 !important;
+    padding: 4px 8px !important;
+    transform: none !important;
+    display: grid !important;
+    grid-template-columns: 24px 1fr !important;
+    grid-template-rows: auto auto !important;
+    align-content: center !important;
+    column-gap: 4px !important;
+    row-gap: 0 !important;
+    text-align: left !important;
+  }
+  /* Le fond octogonal (décalé, plus grand que le bouton) devient une pastille
+     à pans coupés de la taille du bouton. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action::before {
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    transform: none !important;
+    clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 12px 100%, 0 50%) !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action svg {
+    width: 20px !important;
+    height: 20px !important;
+    margin: 0 !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico {
+    flex: 0 0 20px !important;
+    grid-row: 1 / span 2 !important;
+    align-self: center !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small {
+    margin: 0 !important;
+    white-space: nowrap !important;
+    text-align: left !important;
+    justify-self: start !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong { font-size: 10px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small { font-size: 9px !important; }
+
+  /* FIN DU TOUR sous les actions, sous le pouce droit. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end {
+    position: fixed !important;
+    left: auto !important;
+    right: var(--pc-safe-right) !important;
+    top: auto !important;
+    bottom: 8px !important;
+    width: var(--pc-col) !important;
+    height: 44px !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 6px !important;
+    transform: none !important;
+    white-space: nowrap !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end * { font-size: 11px !important; }
+
+  /* Pioche, défausse et retour : petits, en bas à gauche. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud {
+    position: fixed !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: 8px !important;
+    transform: scale(.72) !important;
+    transform-origin: bottom left !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud { left: var(--pc-safe-left) !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud { left: calc(var(--pc-safe-left) + 48px) !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Undo {
+    position: fixed !important;
+    top: auto !important;
+    left: var(--pc-safe-left) !important;
+    bottom: 66px !important;
+    transform: scale(.85) !important;
+    transform-origin: bottom left !important;
+  }
+
+  /* Consigne en bas, au centre. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Instruction {
+    position: fixed !important;
+    top: auto !important;
+    bottom: 6px !important;
+    left: 50% !important;
+    transform: translateX(-50%) scale(.85) !important;
+  }
+
+  /* Panneaux contextuels : en bas, centrés entre la pioche et la colonne d'actions. */
+  html body[data-visual-mode] #gameScreen #hudV2IslandDrawer,
+  html body[data-visual-mode] #gameScreen #hudV2MagicRow,
+  html body[data-visual-mode] #gameScreen #hudV2PushForceRow,
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
+    position: fixed !important;
+    top: auto !important;
+    bottom: 34px !important;
+    left: 110px !important;
+    right: calc(var(--pc-col) + 16px) !important;
+    width: max-content !important;
+    max-width: calc(100vw - 238px) !important;
+    margin: 0 auto !important;
+    transform: none !important;
+    justify-content: center !important;
+  }
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
+    gap: 4px !important;
+    padding: 4px 6px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 button {
+    min-width: 0 !important;
+    min-height: 38px !important;
+    height: 38px !important;
+    padding-inline: 10px !important;
+    font-size: 12px !important;
+  }
+  /* Formes d'île : une seule rangée, un peu réduite (espacement : voir
+     js/hud-islands-reserve-discard-v13.js). */
+  html body[data-visual-mode] #gameScreen #hudV2IslandDrawer #islandSelector {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    padding: 0 !important;
+    zoom: .78;
+  }
+
+  /* Messages : en haut, sans bloquer le doigt. La bulle « Information »
+     du HUD répète le #toast (voir portrait). */
+  html body[data-visual-mode] #gameScreen#gameScreen #ilyosHudOrganicV2 .ov2-toast.ov2-toast {
+    display: none !important;
+  }
+  html body #toast {
+    top: 50px !important;
+    max-width: 420px !important;
+    font-size: 12px !important;
+    padding: 6px 12px !important;
+    pointer-events: none !important;
+  }
+
+  /* L'étiquette qui suit le pointeur reste figée au doigt (voir portrait). */
+  @media (hover: none) {
+    html body #gameScreen .kaykit-cursor-label { display: none !important; }
+  }
+}
+
+/* ---------- BOUTON « PLATEAU ENTIER » (vue téléphone) ----------
+   Créé par js/game/kaykit3d.js (VUE TÉLÉPHONE), caché hors portrait par
+   l'attribut hidden. Sous le joueur, à gauche : à droite, la frise du tour
+   adverse occupe déjà la place à côté de VUE 2D. Même pastille que VUE 2D. */
+#kaykitEnsembleBtn {
+  position: fixed;
+  z-index: 60;
+  top: calc(max(6px, env(safe-area-inset-top)) + 100px);
+  left: max(8px, env(safe-area-inset-left));
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(160, 210, 240, .45);
+  background: rgba(12, 26, 36, .88);
+  color: #eaf4fb;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+#kaykitEnsembleBtn[hidden],
+body:has(#gameScreen.hidden) #kaykitEnsembleBtn,
+body[data-plateau-tactique="on"] #kaykitEnsembleBtn,
+body.mj-menu-ouvert #kaykitEnsembleBtn {
+  display: none;
+}
+#kaykitEnsembleBtn svg {
+  width: 20px;
+  height: 20px;
+}
+#kaykitEnsembleBtn .kaykit-ensemble-fermer,
+#kaykitEnsembleBtn[aria-pressed="true"] .kaykit-ensemble-ouvrir {
+  display: none;
+}
+#kaykitEnsembleBtn[aria-pressed="true"] .kaykit-ensemble-fermer {
+  display: inline;
+}
+#kaykitEnsembleBtn[aria-pressed="true"] {
+  border-color: rgba(55, 214, 168, .65);
+  color: #37d6a8;
+}
+
+/* ---------- BOUTON « PLEIN ÉCRAN » (écran tactile) ----------
+   Créé par js/game/kaykit3d.js seulement sur écran tactile, et caché (hidden)
+   dès que le plein écran est actif : il n'apparaît que quand il manque.
+   Même pastille que « plateau entier », juste en dessous. */
+#kaykitPleinEcranBtn {
+  position: fixed;
+  z-index: 60;
+  top: calc(max(6px, env(safe-area-inset-top)) + 148px);
+  left: max(8px, env(safe-area-inset-left));
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 200, 120, .55);
+  background: rgba(12, 26, 36, .88);
+  color: #f3d58c;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+#kaykitPleinEcranBtn svg {
+  width: 20px;
+  height: 20px;
+}
+#kaykitPleinEcranBtn[hidden],
+body:has(#gameScreen.hidden) #kaykitPleinEcranBtn,
+body.mj-menu-ouvert #kaykitPleinEcranBtn {
+  display: none;
+}
+/* Sans le bouton « plateau entier » (paysage, tablette), il prend sa place. */
+#kaykitEnsembleBtn[hidden] ~ #kaykitPleinEcranBtn,
+body[data-plateau-tactique="on"] #kaykitPleinEcranBtn {
+  top: calc(max(6px, env(safe-area-inset-top)) + 100px);
 }

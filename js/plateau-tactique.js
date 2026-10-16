@@ -55,7 +55,7 @@
 
   /* Marques posées par le moteur, groupées par ce qu'elles veulent dire. */
   const SELECTIONNABLE = [
-    "reachable", "spawn-choice", "crown-claimable", "ally-ready",
+    "reachable", "reachable-zone", "spawn-choice", "crown-claimable", "ally-ready",
     "direct-move-candidate", "crown-validation-ready"
   ];
   const CHEMIN = ["move-path-preview", "diagonal-step-preview", "push-line-preview"];
@@ -793,8 +793,15 @@
        visibles, mais impossibles à cliquer. */
     const RESERVE_HAUTE = 96;
     const RESERVE_BASSE = 172;
-    const bornes = [rect.width, window.innerWidth * 0.70,
-      window.innerHeight - RESERVE_HAUTE - RESERVE_BASSE]
+    /* Téléphone en portrait : les commandes sont toutes en bas
+       (css/portrait-mobile.css), la largeur entière est libre. Le plateau la
+       prend, sous le bandeau des joueurs et le bouton VUE 3D, et ses cases
+       passent d'environ 22 à 32 px — la taille d'un doigt. */
+    const portrait = window.innerHeight > window.innerWidth && window.innerWidth <= 820;
+    const bornes = portrait
+      ? [rect.width - 12, window.innerHeight - 138 - 186]
+      : [rect.width, window.innerWidth * 0.70,
+        window.innerHeight - RESERVE_HAUTE - RESERVE_BASSE]
       .filter(v => Number.isFinite(v) && v > 0);
     if (!bornes.length) return;
     const cote = Math.max(240, Math.floor(Math.min(...bornes)));
@@ -848,7 +855,7 @@
     bouton.type = "button";
     bouton.id = "plateauTactiqueBtn";
     bouton.textContent = "VUE 2D";
-    bouton.title = "Basculer entre la vue 3D et le plateau tactique (touche T)";
+    bouton.title = "Basculer entre la vue 3D et le plateau tactique (touche V)";
     bouton.addEventListener("click", () => basculer());
     document.body.appendChild(bouton);
   }
@@ -856,7 +863,8 @@
   function demarrer() {
     ajouterBouton();
     document.addEventListener("keydown", e => {
-      if (e.key !== "t" && e.key !== "T") return;
+      if (e.key !== "v" && e.key !== "V") return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
       const c = e.target;
       if (c && /^(INPUT|TEXTAREA)$/.test(c.tagName)) return;
       basculer();

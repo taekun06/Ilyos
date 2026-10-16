@@ -50,6 +50,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
      la taille réelle, exposée par le moteur via kaykit3D.gridSize. */
   const FRONT_DISTANCE = 17;
   function reculPourPlateau(k) {
+    // Téléphone en portrait : le moteur décide (vue rapprochée ou d'ensemble).
+    if (enTelephone() && window.ILYOS_reculTelephone) return window.ILYOS_reculTelephone();
     const taille = Number(k?.gridSize) || 11;
     return FRONT_DISTANCE * (taille / 11) * (enPortrait(k) ? PORTRAIT_RECUL : 1);
   }
@@ -70,6 +72,12 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
      plongeante et un peu plus de recul remplissent cette hauteur avec le
      plateau plutôt qu'avec du ciel, et la visée revient au plateau lui-même. */
   const PORTRAIT_PITCH_DEG = 55;
+  /* TÉLÉPHONE (portrait, écran étroit) : vue rapprochée presque de dessus,
+     66° sous l'horizontale, le plancher d'inclinaison du moteur (24° depuis le
+     zénith). Les cases se lisent comme sur un plateau de société posé devant
+     soi. Voir VUE TÉLÉPHONE dans js/game/kaykit3d.js. */
+  const TELEPHONE_PITCH_DEG = 66;
+  const enTelephone = () => !!window.ILYOS_vueTelephone?.();
   const PORTRAIT_RECUL = 1.12;
   const PORTRAIT_HAUTEUR_VISEE = 0;
   const enPortrait = k => (Number(k?.camera?.aspect) || 1) < .9;
@@ -126,7 +134,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     if (typeof k.viewTarget.set === 'function') k.viewTarget.set(0, hauteurVisee, .18);
     const target = k.viewTarget;
     const pitch = (Number.isFinite(window.ILYOS_FRONT_PITCH_DEG)
-      ? window.ILYOS_FRONT_PITCH_DEG : (portrait ? PORTRAIT_PITCH_DEG : FRONT_PITCH_DEG)) * Math.PI / 180;
+      ? window.ILYOS_FRONT_PITCH_DEG
+      : (enTelephone() ? TELEPHONE_PITCH_DEG : (portrait ? PORTRAIT_PITCH_DEG : FRONT_PITCH_DEG))) * Math.PI / 180;
     k.camera.position.set(
       target.x,
       target.y + distance * Math.sin(pitch),
@@ -242,7 +251,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=1'
+    './css/portrait-mobile.css?v=7'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -252,7 +261,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=13.1-balle-de-match',
+    './js/hud-organique-v2.js?v=13.2-dvh',
     './js/hud-organique-v2-final-v8.js?v=12.7',
     /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
        les lumières de scène, jamais le HUD malgré leur nom, et ces réglages
@@ -263,7 +272,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=3'
+    './js/menu-jeu.js?v=8'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
@@ -298,7 +307,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   guardStyle.textContent = `
     html.ilyos-menu-v11-boot > body > #setupScreen,
     body.ilyos-menu-v11-active > #setupScreen{visibility:hidden!important;pointer-events:none!important}
-    #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;border:0;z-index:2147483000;background:#040a11;display:block}
+    #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483000;background:#040a11;display:block}
     #ilyos-menu-v11-frame[hidden]{display:none!important}
     .online-menu-back{margin-top:14px;display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:10px;border:1px solid rgba(216,170,76,.45);background:rgba(216,170,76,.12);color:#f4d28e;font:inherit;font-weight:600;cursor:pointer}
     .online-menu-back:hover{background:rgba(216,170,76,.22)}

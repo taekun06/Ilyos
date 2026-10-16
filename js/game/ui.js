@@ -103,12 +103,23 @@
         }
       }
 
-      /* Consigne de pose : Q/E n'existe pas sur un écran tactile, où l'on
+      /* Consigne de pose : Q/S n'existe pas sur un écran tactile, où l'on
          tourne l'île avec les boutons ↺/↻ du panneau et où un toucher montre
          l'aperçu avant « Confirmer ». */
       function consignePoseIle() {
         const tactile = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
-        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/E pour tourner, clic pour poser.";
+        return tactile ? "Touchez une case, tournez avec ↺ ↻, puis Confirmer." : "Q/S pour tourner, clic pour poser.";
+      }
+
+      /* Les consignes sont écrites pour la souris (« Cliquez… », « la
+         molette »). Sur un écran tactile, la phrase affichée dit « Touchez » :
+         une seule traduction, au moment où la consigne est posée dans le HUD. */
+      function consigneSelonPointeur(texte) {
+        if (!texte || !window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches) return texte;
+        return texte
+          .replace(/\bCliquez\b/g, "Touchez")
+          .replace(/\bcliquez\b/g, "touchez")
+          .replace(/, ↻ ou la molette/g, " ou ↻");
       }
 
       function turnContextInfo() {
@@ -624,10 +635,10 @@
           if (currentPushOption) {
             instructionEl.textContent = currentPushOption.fell
               ? `☠ Force ${state.selectedActionCount} — pousse hors du plateau.`
-              : `Cliquez une destination éclairée · Force ${state.selectedActionCount}.`;
+              : consigneSelonPointeur(`Cliquez une destination éclairée · Force ${state.selectedActionCount}.`);
           } else {
             const info = turnContextInfo();
-            instructionEl.textContent = info?.next || info?.title || "";
+            instructionEl.textContent = consigneSelonPointeur(info?.next || info?.title || "");
           }
         }
 
@@ -794,7 +805,7 @@
             : "";
           const limite = shapeLimitPerOwner();
           const limitBadge = limite
-            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""}>${used}/${limite}</span>`
+            ? `<span class="island-choice-limit"${maxedOut ? ' data-maxed="true"' : ""} aria-label="${Math.max(0, limite - used)} restante(s)">${Math.max(0, limite - used)}</span>`
             : "";
           button.innerHTML = `<span class="island-choice-preview">${shapeMiniHTML(shape.cells)}${flipBadge}</span><span class="island-choice-name">${shape.name}</span>${limitBadge}`;
           const limitSuffix = limite ? ` (${used}/${limite} posées)` : "";
@@ -1029,7 +1040,12 @@
               (state.phase === "ACTION" && state.selectedCharId && ["MOVE", "PUSH"].includes(state.selectedActionType || ""))
               || state.phase === "SMART_CHAR"
             );
-            if (state.reachable.has(key(r, c)) && !hideReachableAfterCharacterChoice) classes.push("reachable");
+            if (state.reachable.has(key(r, c))) {
+              /* Une fois le gardien choisi, la 3D dessine la zone d'un seul
+                 contour au lieu de cases éclairées ; le plateau tactique 2D,
+                 qui ne lit que ces classes, garde la zone par cette marque. */
+              classes.push(hideReachableAfterCharacterChoice ? "reachable-zone" : "reachable");
+            }
             if (state.selectedCharId && char?.id === state.selectedCharId) classes.push("selected-character");
             if (
               char
@@ -3747,7 +3763,12 @@
           state.magicPreviewCells = island.cells.map(([ir, ic]) => [ir, ic]);
           state.magicPreviewValid = true;
           renderAll();
-          showToast("Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner.");
+          const auDoigt = window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches;
+          showToast(!auDoigt
+            ? "Pivot choisi : survolez une position colorée ou un bouton de rotation, puis cliquez pour tourner."
+            : window.ILYOS_APERCU_TACTILE?.actif?.() !== false
+              ? "Pivot choisi : touchez une position colorée pour la voir, puis encore pour tourner."
+              : "Pivot choisi : touchez une position colorée ou un bouton de rotation pour tourner.");
           return;
         }
 
@@ -4093,7 +4114,7 @@
           <p><b>Île</b></p>
           <p>Propriétaire : <span style="color:${owner.color}">${owner.name}</span></p>
           <p>Taille : ${island.cells.length} case(s)</p>
-          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / E, puis cliquez sur l’aperçu.</p>
+          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu.</p>
         `;
           return;
         }

@@ -157,24 +157,42 @@ body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit[dat
 
 
 /* ============================================================
-   QUOTA DU TIROIR D'ÎLES — SORTI DE L'APERÇU
-   La pastille était posée en absolu par-dessus la forme (mesuré : badge à 620,600 pour
-   un aperçu à 628,606), et elle en masquait les cases. Comme les formes se distinguent
-   uniquement par leur silhouette, la rendre illisible revient à rendre le choix impossible.
-   On réserve donc une bande en haut du bouton et on y centre le quota : plus aucun
-   recouvrement, et le chiffre reste au même endroit d'une tuile à l'autre, donc comparable.
+   POSES RESTANTES DU TIROIR D'ÎLES — PETITE BULLE EN BAS À DROITE
+   Choix de Taekun (2026-10-13) : au lieu du quota « 0/2 » centré dans une
+   bande en haut de la tuile, une petite bulle ronde dans l'angle bas droit
+   donne le nombre de poses RESTANTES (js/game/ui.js). Elle déborde de
+   l'angle, hors de la forme : la silhouette reste entièrement lisible.
    ============================================================ */
 body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice {
-  padding-top: 26px !important;
+  position: relative !important;
+  overflow: visible !important;
 }
 
 body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit {
-  top: 4px !important;
-  right: auto !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  min-width: 30px !important;
-  padding: 2px 7px !important;
-  font-size: 12px !important;
-  line-height: 1.15 !important;
+  position: absolute !important;
+  top: auto !important;
+  left: auto !important;
+  right: -8px !important;
+  bottom: -8px !important;
+  transform: none !important;
+  min-width: 22px !important;
+  height: 22px !important;
+  margin: 0 !important;
+  padding: 0 5px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1.5px solid #e9c46a !important;
+  border-radius: 999px !important;
+  background: #2a2016 !important;
+  color: #fff6dc !important;
+  font: 800 13px/1 system-ui, sans-serif !important;
+  letter-spacing: 0 !important;
+  text-shadow: none !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,.45) !important;
+}
+
+body[data-visual-mode="alternative"] #hudV2IslandDrawer .island-choice-limit[data-maxed="true"] {
+  border-color: #6d5f48 !important;
+  background: #2a2016 !important;
+  color: #b9a98a !important;
 }
