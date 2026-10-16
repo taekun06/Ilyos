@@ -11130,50 +11130,6 @@
         return group;
       }
 
-      function renderKayKitIslandSeams(group) {
-        if (!state?.islands?.length) return;
-        const islandIdAt = (r, c) => islandAt(r, c)?.id ?? null;
-        const seamMaterial = new THREE.MeshBasicMaterial({
-          color: 0x183027, transparent: true, opacity: .72, depthWrite: false, depthTest: false
-        });
-        /* Toutes les coutures sont fusionnées en un seul maillage : même
-           matériau, sans test de profondeur, donc même image qu'un maillage
-           par segment — mais un seul appel de rendu au lieu de plusieurs
-           dizaines en fin de partie. */
-        const morceaux = new THREE.Group();
-        for (let r = 0; r < GRID; r++) {
-          for (let c = 0; c < GRID; c++) {
-            const current = islandIdAt(r, c);
-            if (current === null) continue;
-            [[0, 1], [1, 0]].forEach(([dr, dc]) => {
-              const next = islandIdAt(r + dr, c + dc);
-              if (next === null || String(next) === String(current)) return;
-              const x = (c - (GRID - 1) / 2 + dc * .5) * KAYKIT_CELL_SPACING;
-              const z = (r - (GRID - 1) / 2 + dr * .5) * KAYKIT_CELL_SPACING;
-              // FUITE (corrigee) : appelee pour CHAQUE frontiere entre deux
-              // cases d'îles differentes, sur TOUTE la grille, a chaque sync —
-              // mais seules deux formes constantes existent (barre horizontale
-              // ou verticale, KAYKIT_CELL_SPACING ne varie jamais). Cache
-              // trivial au lieu d'une BoxGeometry neuve par seam par sync.
-              const vertical = dc === 1;
-              const seam = new THREE.Mesh(
-                kaykitGeometry(vertical ? "island-seam-vertical-v1" : "island-seam-horizontal-v1", () => new THREE.BoxGeometry(vertical ? .018 : KAYKIT_CELL_SPACING * .68, .010, vertical ? KAYKIT_CELL_SPACING * .68 : .018)),
-                seamMaterial
-              );
-              seam.position.set(x, KAYKIT_LEVELS.islandTop + .080, z);
-              morceaux.add(seam);
-            });
-          }
-        }
-        if (!morceaux.children.length) return;
-        kaykitFusionnerParTexture(morceaux).fusionnes.forEach(couture => {
-          couture.renderOrder = 86;
-          couture.matrixAutoUpdate = false;
-          group.add(couture);
-        });
-        seamMaterial.dispose();
-      }
-
       // Halo doré du sanctuaire : un unique disque radial partagé (comme
       // kaykitCloudTexture), posé à plat au sol en blending additif pour
       // lire comme une lumière plutôt qu'une décalcomanie plaquée.
@@ -13787,15 +13743,11 @@
               kaykit3D.islandObjectRegistry.set(id, { objects, signature });
             });
 
-            // Coutures + piédestaux : dépendent de l'adjacence entre îles
-            // (donc de TOUT le plateau) mais restent bon marché — géométries
-            // mises en cache, pas de clonage GLTF — rebâtir l'ensemble à
-            // chaque changement reste largement moins coûteux que le pic
-            // ci-dessus, inutile de les rendre incrémentaux aussi.
+            // Piédestaux : rebâtis plus bas, case par case. Plus de coutures
+            // entre îles : elles étaient toujours masquées après coup (voir
+            // l'historique de hud-consolidation-v12.js), on ne les construit plus.
             disposeKayKitObjects(kaykit3D.islandLayerObjects);
-            const before = dynamic.children.length;
-            renderKayKitIslandSeams(dynamic);
-            kaykit3D.islandLayerObjects.push(...dynamic.children.slice(before));
+            kaykit3D.islandLayerObjects = [];
             kaykit3D.pedestalRegistry = new Map();
           }
           // Masquage du bloc réel pendant une rotation MAGIE en cours : pas une
