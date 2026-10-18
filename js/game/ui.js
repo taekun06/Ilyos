@@ -4450,12 +4450,19 @@
         const bloque = currentPlayer();
         const cause = plateauSansPlace() ? "Plus aucune île ne peut être posée"
           : `${bloque ? bloque.name : "Un joueur"} ne peut plus poser d'île`;
+        // Départage (vainqueurAuxCouronnes) : couronnes à égalité, mais le
+        // vainqueur portait une couronne plus près de son village.
+        const departage = !nul && state.players.some(p =>
+          !memeEquipe(p.id, gagnant.id) && (p.score || 0) === (gagnant.score || 0));
+        const raison = departage
+          ? `couronnes à égalité, mais sa couronne était la plus proche de son village`
+          : `au décompte des couronnes`;
         showToast(nul
           ? `${cause} : match nul (${scores}).`
-          : `${cause} : ${gagnant.name} l'emporte au décompte (${scores}).`);
+          : `${cause} : ${gagnant.name} l'emporte ${departage ? "au départage" : "au décompte"} (${scores}).`);
         setTimeout(() => {
           if (nul) showEgalite(scores);
-          else showVictory(gagnant, `${cause}. ${gagnant.name} l'emporte au décompte des couronnes.`);
+          else showVictory(gagnant, `${cause}. ${gagnant.name} l'emporte : ${raison}.`);
         }, 450);
       }
 
@@ -4483,7 +4490,7 @@
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
         els.victoryTitle.style.color = "#cfd6ea";
-        els.victoryText.textContent = "Plus aucune île ne peut être posée, et les couronnes sont à égalité.";
+        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne portée ne départage.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
         defaitesFinPartie(null);
         progressionFinPartie(null);
