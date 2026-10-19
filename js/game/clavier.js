@@ -11,7 +11,7 @@
            Retour, Ctrl+Z  annuler le dernier coup (bouton ↶)
            Tab, Maj+Tab    gardien suivant / precedent pendant un deplacement
                            ou une poussee
-           M               menu
+           M               menu (Echap aussi, voir diagnostics.js)
            D               defausse
 
          Les autres restent ou ils sont : Q/S/F (core.js, handleRotateKey),
@@ -35,9 +35,8 @@
           { id: "ov2Move", clavier: "Z", manette: "", dock: true },
           { id: "ov2Push", clavier: "E", manette: "X", dock: true },
           { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
-          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:7px;right:18px" },
-          { id: "ov2Undo", clavier: "⌫", manette: "B" },
-          { id: "ov2Gear", clavier: "M", manette: "≡" },
+          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:auto;bottom:7px;right:18px" },
+          { id: "ov2Gear", clavier: "Échap", manette: "≡" },
           { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
         ];
 
@@ -60,10 +59,11 @@
 
         /* Idempotent : un bouton reconstruit (l'icone ↶ est posee apres coup
            par hud-organique-v2-final-v8.js) recoit simplement un nouvel indice.
-           ↶ est decoupe par un clip-path qui rognerait un indice pose dedans :
+           Un bouton decoupe par un clip-path rognerait un indice pose dedans :
            le sien est pose a cote, dans le parent, au coin du bouton, et suit
            sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
-           grand, le garde a l'interieur de sa decoupe (`coin`). */
+           grand, le garde a l'interieur de sa decoupe, en bas a droite (`coin`).
+           ↶ n'en porte plus (Taekun, 2026-10-16). */
         function poserIndices() {
           installerStyle();
           const manette = document.body.dataset.entree === "manette";

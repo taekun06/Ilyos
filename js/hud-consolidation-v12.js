@@ -222,20 +222,6 @@
   }
 
   /* ---------- NETTOYAGE 3D SANS TOUCHER AUX RÈGLES ---------- */
-  function hideLegacyIslandSeams(){
-    const dynamic = window.kaykit3D?.dynamicGroup;
-    if (!dynamic?.traverse) return;
-    dynamic.traverse(object=>{
-      if (!object?.isMesh || !object.geometry || !object.material?.color?.getHex) return;
-      if (object.material.color.getHex() !== 0x183027) return;
-      const p = object.geometry.parameters || {};
-      const thinWidth = Math.abs(Number(p.width) - .018) < .008;
-      const thinDepth = Math.abs(Number(p.depth) - .018) < .008;
-      const seamHeight = Math.abs(Number(p.height) - .010) < .008;
-      if (seamHeight && (thinWidth || thinDepth)) object.visible = false;
-    });
-  }
-
   function syncVillageFlags(){
     const dynamic = window.kaykit3D?.dynamicGroup;
     if (!dynamic?.children?.length || !window.THREE) return;
@@ -313,7 +299,6 @@
     const now = performance.now();
     if (!force && now - last3DPolishAt < 100) return;
     last3DPolishAt = now;
-    hideLegacyIslandSeams();
     syncVillageFlags();
   }
 

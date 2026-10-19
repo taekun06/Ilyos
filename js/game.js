@@ -11130,50 +11130,6 @@
         return group;
       }
 
-      function renderKayKitIslandSeams(group) {
-        if (!state?.islands?.length) return;
-        const islandIdAt = (r, c) => islandAt(r, c)?.id ?? null;
-        const seamMaterial = new THREE.MeshBasicMaterial({
-          color: 0x183027, transparent: true, opacity: .72, depthWrite: false, depthTest: false
-        });
-        /* Toutes les coutures sont fusionnées en un seul maillage : même
-           matériau, sans test de profondeur, donc même image qu'un maillage
-           par segment — mais un seul appel de rendu au lieu de plusieurs
-           dizaines en fin de partie. */
-        const morceaux = new THREE.Group();
-        for (let r = 0; r < GRID; r++) {
-          for (let c = 0; c < GRID; c++) {
-            const current = islandIdAt(r, c);
-            if (current === null) continue;
-            [[0, 1], [1, 0]].forEach(([dr, dc]) => {
-              const next = islandIdAt(r + dr, c + dc);
-              if (next === null || String(next) === String(current)) return;
-              const x = (c - (GRID - 1) / 2 + dc * .5) * KAYKIT_CELL_SPACING;
-              const z = (r - (GRID - 1) / 2 + dr * .5) * KAYKIT_CELL_SPACING;
-              // FUITE (corrigee) : appelee pour CHAQUE frontiere entre deux
-              // cases d'îles differentes, sur TOUTE la grille, a chaque sync —
-              // mais seules deux formes constantes existent (barre horizontale
-              // ou verticale, KAYKIT_CELL_SPACING ne varie jamais). Cache
-              // trivial au lieu d'une BoxGeometry neuve par seam par sync.
-              const vertical = dc === 1;
-              const seam = new THREE.Mesh(
-                kaykitGeometry(vertical ? "island-seam-vertical-v1" : "island-seam-horizontal-v1", () => new THREE.BoxGeometry(vertical ? .018 : KAYKIT_CELL_SPACING * .68, .010, vertical ? KAYKIT_CELL_SPACING * .68 : .018)),
-                seamMaterial
-              );
-              seam.position.set(x, KAYKIT_LEVELS.islandTop + .080, z);
-              morceaux.add(seam);
-            });
-          }
-        }
-        if (!morceaux.children.length) return;
-        kaykitFusionnerParTexture(morceaux).fusionnes.forEach(couture => {
-          couture.renderOrder = 86;
-          couture.matrixAutoUpdate = false;
-          group.add(couture);
-        });
-        seamMaterial.dispose();
-      }
-
       // Halo doré du sanctuaire : un unique disque radial partagé (comme
       // kaykitCloudTexture), posé à plat au sol en blending additif pour
       // lire comme une lumière plutôt qu'une décalcomanie plaquée.
@@ -13787,15 +13743,11 @@
               kaykit3D.islandObjectRegistry.set(id, { objects, signature });
             });
 
-            // Coutures + piédestaux : dépendent de l'adjacence entre îles
-            // (donc de TOUT le plateau) mais restent bon marché — géométries
-            // mises en cache, pas de clonage GLTF — rebâtir l'ensemble à
-            // chaque changement reste largement moins coûteux que le pic
-            // ci-dessus, inutile de les rendre incrémentaux aussi.
+            // Piédestaux : rebâtis plus bas, case par case. Plus de coutures
+            // entre îles : elles étaient toujours masquées après coup (voir
+            // l'historique de hud-consolidation-v12.js), on ne les construit plus.
             disposeKayKitObjects(kaykit3D.islandLayerObjects);
-            const before = dynamic.children.length;
-            renderKayKitIslandSeams(dynamic);
-            kaykit3D.islandLayerObjects.push(...dynamic.children.slice(before));
+            kaykit3D.islandLayerObjects = [];
             kaykit3D.pedestalRegistry = new Map();
           }
           // Masquage du bloc réel pendant une rotation MAGIE en cours : pas une
@@ -50154,7 +50106,7 @@
            Retour, Ctrl+Z  annuler le dernier coup (bouton ↶)
            Tab, Maj+Tab    gardien suivant / precedent pendant un deplacement
                            ou une poussee
-           M               menu
+           M               menu (Echap aussi, voir diagnostics.js)
            D               defausse
 
          Les autres restent ou ils sont : Q/S/F (core.js, handleRotateKey),
@@ -50178,9 +50130,8 @@
           { id: "ov2Move", clavier: "Z", manette: "", dock: true },
           { id: "ov2Push", clavier: "E", manette: "X", dock: true },
           { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
-          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:7px;right:18px" },
-          { id: "ov2Undo", clavier: "⌫", manette: "B" },
-          { id: "ov2Gear", clavier: "M", manette: "≡" },
+          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:auto;bottom:7px;right:18px" },
+          { id: "ov2Gear", clavier: "Échap", manette: "≡" },
           { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
         ];
 
@@ -50203,10 +50154,11 @@
 
         /* Idempotent : un bouton reconstruit (l'icone ↶ est posee apres coup
            par hud-organique-v2-final-v8.js) recoit simplement un nouvel indice.
-           ↶ est decoupe par un clip-path qui rognerait un indice pose dedans :
+           Un bouton decoupe par un clip-path rognerait un indice pose dedans :
            le sien est pose a cote, dans le parent, au coin du bouton, et suit
            sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
-           grand, le garde a l'interieur de sa decoupe (`coin`). */
+           grand, le garde a l'interieur de sa decoupe, en bas a droite (`coin`).
+           ↶ n'en porte plus (Taekun, 2026-10-16). */
         function poserIndices() {
           installerStyle();
           const manette = document.body.dataset.entree === "manette";
@@ -52660,10 +52612,11 @@
           return;
         }
         // Menu de jeu (js/menu-jeu.js, bâti sur #hudV2GearPopover) : Échap le
-        // referme, mais ne l'OUVRE plus — le bouton MENU suffit, et un Échap qui
-        // ouvrait le menu par-dessus un geste en cours (choix de couronne à la
-        // manette) bloquait la partie. Sans sélection à abandonner, Échap ne
-        // fait rien : l'annulation d'une action jouée reste sur le bouton ↶.
+        // referme. Il l'OUVRE aussi (demande de Taekun, 2026-10-16), mais en
+        // dernier recours : d'abord abandonner une sélection, puis un geste de
+        // manette en cours (choix de couronne) — un Échap qui ouvrait le menu
+        // par-dessus ce geste bloquait la partie. L'annulation d'une action
+        // jouée reste sur le bouton ↶.
         const menuJeu = document.getElementById("hudV2GearPopover");
         if (menuJeu && !menuJeu.classList.contains("hidden")) {
           closeHudV2Drawer();
@@ -52672,7 +52625,10 @@
         const selectionEnCours = (state?.phase === "ACTION" && state?.selectedActionType)
           || ["PLACE_ISLAND", "DROP_TREASURE", "PICKUP_CROWN", "SMART_CHAR"].includes(state?.phase);
         if (!selectionEnCours) {
-          manetteQuitterGeste();
+          if (manetteQuitterGeste()) return;
+          const boutonMenu = document.getElementById("ov2Gear");
+          if (state && boutonMenu && !boutonMenu.disabled && boutonMenu.getClientRects().length
+            && !els.gameScreen.classList.contains("hidden") && !fenetreOuverte()) boutonMenu.click();
           return;
         }
         if (state?.inputLocked) return;

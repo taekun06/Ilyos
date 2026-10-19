@@ -152,7 +152,7 @@
         <div><dt><kbd>Molette</kbd></dt><dd>Zoomer</dd></div>
         <div><dt><kbd>V</kbd></dt><dd>Vue 2D, plateau à plat</dd></div>
         <div><dt><kbd>M</kbd> <kbd>D</kbd></dt><dd>Menu, défausse</dd></div>
-        <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, fermer ce menu</dd></div>
+        <div><dt><kbd>Échap</kbd></dt><dd>Annuler la sélection en cours, ouvrir ou fermer ce menu</dd></div>
       </dl>`);
     page('partie').appendChild(commandes);
     /* Au doigt : voir le résultat d'une poussée ou d'une magie avant de la
@@ -385,7 +385,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=3';
+    lien.href = './css/menu-jeu.css?v=4';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }
