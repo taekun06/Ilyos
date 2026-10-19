@@ -1,5 +1,6 @@
 /* Fin de partie quand le joueur qui prend la main ne peut plus poser d'île :
-   le plus de couronnes l'emporte, égalité = match nul (finParPoseImpossible).
+   le plus de couronnes l'emporte ; à égalité, la couronne portée la plus proche de
+   son village départage, sinon match nul (finParPoseImpossible, vainqueurAuxCouronnes).
 
      npm start   puis   node scripts/verif-fin-pose.js   (port 8123)
 
@@ -19,14 +20,14 @@ const assert = require('node:assert/strict');
     const page = await browser.newPage();
     await page.route('**/js/game.js*', async route => {
       const source = fs.readFileSync(path.join(__dirname, '../js/game.js'), 'utf8');
-      const hook = `window.TEST_FIN_POSE = (limite, scores) => {
+      const hook = `window.TEST_FIN_POSE = (limite, scores, crowns = [null, null]) => {
         state = state || {};
         benchPoserPosition({ seed: 11, islandPlacedThisTurn: true, aiPlayer: 0, scores,
           rules: { islandLimitPerPlayer: limite },
           islands: [{ owner: 0, cells: [[2,2],[2,3]], fromSetup: false },
                     { owner: 1, cells: [[8,8],[8,7]], fromSetup: false }],
           characters: [{ id: 'a', player: 0, r: 2, c: 2 }, { id: 'b', player: 1, r: 8, c: 8 }],
-          crowns: [null, null] });
+          crowns });
         state.currentPlayer = 0;
         const bloque = finParPoseImpossible(1);
         const transition = applyTurnTransitionCore();
@@ -36,7 +37,7 @@ const assert = require('node:assert/strict');
     });
     await page.goto(process.env.ILYOS_BENCH_URL || 'http://localhost:8123/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof window.TEST_FIN_POSE === 'function', null, { timeout: 60000 });
-    const t = (limite, scores) => page.evaluate(a => window.TEST_FIN_POSE(...a), [limite, scores]);
+    const t = (limite, scores, crowns) => page.evaluate(a => window.TEST_FIN_POSE(...a), [limite, scores, crowns]);
 
     const libre = await t(0, [1, 2]);
     assert.equal(libre.bloque, false, 'de la place et du stock : la partie continue');
@@ -49,9 +50,28 @@ const assert = require('node:assert/strict');
     console.log('ok  limite atteinte : fin au décompte, 2-1 → joueur 0');
 
     const egal = await t(1, [1, 1]);
-    assert.equal(egal.vainqueur, egal.nul, 'égalité : match nul');
-    console.log('ok  limite atteinte à égalité : match nul');
-    console.log('verif-fin-pose : 3/3');
+    assert.equal(egal.vainqueur, egal.nul, 'égalité sans porteur : match nul');
+    console.log('ok  limite atteinte à égalité, sans couronne portée : match nul');
+
+    /* Départage (18/10) : à égalité, la couronne PORTÉE la plus proche de son
+       propre village l'emporte. 'a' (J1) est à 3 cases de son village, 'b'
+       (J2) bien plus loin des siens. */
+    const procheA = await t(1, [1, 1], [{ carrierId: 'a', r: 2, c: 2 }, { carrierId: 'b', r: 8, c: 8 }]);
+    assert.equal(procheA.vainqueur, 0, 'égalité : le porteur le plus proche de son village gagne');
+    console.log('ok  égalité, deux porteurs : le plus proche de son village (J1) gagne');
+
+    const seulB = await t(1, [1, 1], [{ carrierId: 'b', r: 8, c: 8 }, null]);
+    assert.equal(seulB.vainqueur, 1, 'égalité : seul porteur, il gagne même loin');
+    console.log('ok  égalité, seul J2 porte une couronne : J2 gagne');
+
+    const sol = await t(1, [1, 1], [{ r: 1, c: 1 }, null]);
+    assert.equal(sol.vainqueur, sol.nul, 'une couronne au sol ne départage pas');
+    console.log('ok  égalité, couronne au sol : match nul');
+
+    const devant = await t(1, [2, 1], [null, { carrierId: 'b', r: 8, c: 8 }]);
+    assert.equal(devant.vainqueur, 0, 'le départage ne sert qu’à égalité');
+    console.log('ok  2-1 : le départage ne joue pas');
+    console.log('verif-fin-pose : 7/7');
   } finally {
     await browser.close();
   }
