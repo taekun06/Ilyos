@@ -4455,7 +4455,7 @@
         const departage = !nul && state.players.some(p =>
           !memeEquipe(p.id, gagnant.id) && (p.score || 0) === (gagnant.score || 0));
         const raison = departage
-          ? `couronnes à égalité, mais sa couronne était la plus proche de son village`
+          ? `couronnes à égalité, mais une couronne était plus proche de son village`
           : `au décompte des couronnes`;
         showToast(nul
           ? `${cause} : match nul (${scores}).`
@@ -4490,7 +4490,7 @@
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
         els.victoryTitle.style.color = "#cfd6ea";
-        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne portée ne départage.";
+        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne ne départage.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
         defaitesFinPartie(null);
         progressionFinPartie(null);
