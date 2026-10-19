@@ -53,6 +53,9 @@ const fragmentNames = [
   // Mode Boucles : sanctuaires solo où chaque boucle ajoute un écho qui
   // rejoue tes ordres. Réutilise les mêmes fabriques que les puzzles.
   'boucles.js',
+  // Quick : apprendre toutes les règles en quelques scènes, à la souris.
+  // Mêmes fabriques que les énigmes (tutoAddIsland, tutoRender).
+  'quick.js',
   // Profil du joueur : XP et niveau. N'appelle que des fonctions déjà
   // déclarées ; l'écran de fin, les puzzles et les tutoriels l'appellent.
   'progression.js',

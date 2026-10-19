@@ -792,7 +792,7 @@
       function finParPoseImpossible(playerId) {
         if (!state) return false;
         if (plateauSansPlace()) return true;
-        if (state.tutorial || state.puzzle) return false;
+        if (state.tutorial || state.puzzle || state.quick) return false;
         const ecran = typeof els === "object" && els && els.gameScreen && els.gameScreen.classList;
         if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
           .some(mode => ecran.contains(mode))) return false;
