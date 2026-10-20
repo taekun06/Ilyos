@@ -13638,7 +13638,13 @@
           // exacts, mais en ne faisant que ré-enregistrer les références déjà
           // existantes — beaucoup plus léger que recréer les objets eux-mêmes.
           kaykit3D.cellVisuals = new Map();
-          kaykit3D.interactiveMeshes = [];
+          /* Les zones cliquables des destinations de poussée vivent dans
+             actionPreviewGroup, que cette sync ne reconstruit pas quand
+             l'aperçu n'a pas changé. Les oublier ici laissait les anneaux
+             visibles mais muets : le clic retombait sur la case, souvent
+             masquée par un gardien, et la poussée ratait au premier essai. */
+          kaykit3D.interactiveMeshes = (kaykit3D.actionPreviewGroup?.children || [])
+            .filter(object => object.userData?.ilyosInteraction);
           // Filtre défensif générique (déjà utilisé ailleurs, voir
           // refreshKayKitHoverPreviews) : ne retire que les références mortes
           // (objet réellement retiré de la scène), jamais les objets persistants
