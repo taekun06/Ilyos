@@ -1,5 +1,5 @@
 /* Fin de partie quand le joueur qui prend la main ne peut plus poser d'île :
-   le plus de couronnes l'emporte ; à égalité, la couronne portée la plus proche de
+   le plus de couronnes l'emporte ; à égalité, la couronne la plus proche de
    son village départage, sinon match nul (finParPoseImpossible, vainqueurAuxCouronnes).
 
      npm start   puis   node scripts/verif-fin-pose.js   (port 8123)
@@ -50,28 +50,31 @@ const assert = require('node:assert/strict');
     console.log('ok  limite atteinte : fin au décompte, 2-1 → joueur 0');
 
     const egal = await t(1, [1, 1]);
-    assert.equal(egal.vainqueur, egal.nul, 'égalité sans porteur : match nul');
-    console.log('ok  limite atteinte à égalité, sans couronne portée : match nul');
+    assert.equal(egal.vainqueur, egal.nul, 'égalité sans couronne en jeu : match nul');
+    console.log('ok  limite atteinte à égalité, sans couronne en jeu : match nul');
 
-    /* Départage (18/10) : à égalité, la couronne PORTÉE la plus proche de son
-       propre village l'emporte. 'a' (J1) est à 3 cases de son village, 'b'
+    /* Départage (18-19/10) : à égalité, la couronne en jeu (portée ou au sol) la
+       plus proche du village d'un joueur le fait gagner. 'a' (J1) est à 3 cases de son village, 'b'
        (J2) bien plus loin des siens. */
     const procheA = await t(1, [1, 1], [{ carrierId: 'a', r: 2, c: 2 }, { carrierId: 'b', r: 8, c: 8 }]);
     assert.equal(procheA.vainqueur, 0, 'égalité : le porteur le plus proche de son village gagne');
     console.log('ok  égalité, deux porteurs : le plus proche de son village (J1) gagne');
 
-    const seulB = await t(1, [1, 1], [{ carrierId: 'b', r: 8, c: 8 }, null]);
-    assert.equal(seulB.vainqueur, 1, 'égalité : seul porteur, il gagne même loin');
-    console.log('ok  égalité, seul J2 porte une couronne : J2 gagne');
+    const porteeParB = await t(1, [1, 1], [{ carrierId: 'b', r: 8, c: 8 }, null]);
+    assert.equal(porteeParB.vainqueur, 0, 'peu importe qui porte : la distance au village décide');
+    console.log('ok  égalité, couronne portée par J2 mais plus proche du village de J1 : J1 gagne');
+
+    const sans = await t(1, [1, 1], [null, null]);
+    assert.equal(sans.vainqueur, sans.nul, 'sans couronne en jeu : nul');
 
     const sol = await t(1, [1, 1], [{ r: 1, c: 1 }, null]);
-    assert.equal(sol.vainqueur, sol.nul, 'une couronne au sol ne départage pas');
-    console.log('ok  égalité, couronne au sol : match nul');
+    assert.equal(sol.vainqueur, 0, 'une couronne au sol compte aussi (19/10)');
+    console.log('ok  égalité, couronne au sol près du village de J1 : J1 gagne');
 
     const devant = await t(1, [2, 1], [null, { carrierId: 'b', r: 8, c: 8 }]);
     assert.equal(devant.vainqueur, 0, 'le départage ne sert qu’à égalité');
     console.log('ok  2-1 : le départage ne joue pas');
-    console.log('verif-fin-pose : 7/7');
+    console.log('verif-fin-pose : 8/8');
   } finally {
     await browser.close();
   }
