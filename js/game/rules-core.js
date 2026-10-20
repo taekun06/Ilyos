@@ -634,7 +634,7 @@
          Poser une île est obligatoire à chaque tour. Quand plus aucune forme
          ne trouve où se poser, la partie ne peut plus avancer : elle s'arrête
          et le joueur qui a validé le plus de couronnes l'emporte ; à égalité,
-         celui qui porte une couronne au plus près de son village (sinon nul).
+         celui qui a une couronne au plus près de son village (sinon nul).
 
          On raisonne sur le PLATEAU, pas sur les stocks : « il n'y a plus de
          place » veut dire qu'aucune forme du jeu ne tient nulle part, quel que
@@ -785,14 +785,14 @@
        *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
        *  stock qui tienne, stock épuisé, ou limite d'îles de la partie atteinte —
        *  la partie s'arrête et le plus de couronnes l'emporte (égalité : départage
-       *  par la couronne portée la plus proche de son village, sinon nul).
+       *  par la couronne la plus proche de son village, sinon nul).
        *  Jusqu'au 30/09, seule la saturation du plateau entier arrêtait la
        *  partie ; pour un seul joueur, la pose devenait facultative et la
        *  partie continuait. Tutoriels et énigmes suivent leurs propres règles. */
       function finParPoseImpossible(playerId) {
         if (!state) return false;
         if (plateauSansPlace()) return true;
-        if (state.tutorial || state.puzzle) return false;
+        if (state.tutorial || state.puzzle || state.quick) return false;
         const ecran = typeof els === "object" && els && els.gameScreen && els.gameScreen.classList;
         if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
           .some(mode => ecran.contains(mode))) return false;
@@ -800,11 +800,11 @@
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine.
-       *  À égalité de couronnes validées, départage (décision du 18/10) : gagne
-       *  le joueur dont un gardien PORTE une couronne au plus près de son propre
-       *  village — en cases orthogonales, jusqu'à la case de validation la plus
-       *  proche. Une couronne posée au sol ne compte pas. Sans porteur, ou à
-       *  distance égale, le match reste nul. */
+       *  À égalité de couronnes validées, départage (décisions des 18 et 19/10) :
+       *  gagne le joueur qui a une couronne au plus près de son propre village —
+       *  en cases orthogonales, jusqu'à la case de validation la plus proche.
+       *  Toute couronne en jeu compte, portée ou posée au sol, quel que soit son
+       *  porteur. À distance égale, le match reste nul. */
       function vainqueurAuxCouronnes() {
         /* Équipe à couronnes communes : les deux coéquipiers ont toujours le
            même score, ce n'est pas une égalité. On compare J1 à J2. */
@@ -820,18 +820,22 @@
         return premiers.length === 1 ? premiers[0] : null;
       }
 
-      /** Distance (cases orthogonales) entre la couronne portée par le camp de
-       *  `joueurId` et la case de validation la plus proche de ce camp ;
-       *  Infinity si aucun de ses gardiens ne porte de couronne. Camp = le
-       *  joueur seul, ou toute l'équipe quand les gardiens sont partagés. */
+      /** Distance (cases orthogonales) entre la couronne en jeu la plus proche
+       *  — portée ou au sol — et une case de validation du camp de `joueurId` ;
+       *  Infinity s'il n'y a aucune couronne en jeu. Camp = le joueur seul, ou
+       *  toute l'équipe quand les gardiens sont partagés. */
       function distanceCouronneAuVillage(joueurId) {
         const camp = (state.players || []).filter(p => memeEquipe(p.id, joueurId));
         const cases = camp.flatMap(p => crownValidationCellsForPlayer(p));
         let meilleure = Infinity;
-        (state.characters || []).forEach(char => {
-          if (!memeEquipe(char.player, joueurId) || !artifactCarriedBy(char.id)) return;
-          cases.forEach(([r, c]) => {
-            meilleure = Math.min(meilleure, Math.abs(char.r - r) + Math.abs(char.c - c));
+        activeArtifacts().forEach(couronne => {
+          // Une couronne portée ne met pas à jour ses r/c : c'est son porteur.
+          const porteur = couronne.carrierId
+            ? (state.characters || []).find(ch => ch.id === couronne.carrierId) : null;
+          const r = porteur ? porteur.r : couronne.r;
+          const c = porteur ? porteur.c : couronne.c;
+          cases.forEach(([vr, vc]) => {
+            meilleure = Math.min(meilleure, Math.abs(r - vr) + Math.abs(c - vc));
           });
         });
         return meilleure;

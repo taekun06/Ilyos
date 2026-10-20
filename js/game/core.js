@@ -1195,7 +1195,8 @@
       }
 
       function saveLocalSessionNow() {
-        if (!state || state.onlineMode || networkApplyingState) return;
+        // Une scène de Quick n'est pas une partie : elle écraserait la vraie.
+        if (!state || state.onlineMode || state.quick || networkApplyingState) return;
         try {
           state.turnTimeLeft = state.turnDeadline
             ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
