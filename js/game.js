@@ -7196,9 +7196,10 @@
            zone morte et le cadrage de sûreté s'en partagent le résultat. */
         const contenu = cinematique ? null : kaykitPointsDuContenu([r, c]);
 
-        /* Téléphone en portrait : on suit l'action de près au lieu de garder
-           tout le plateau à l'image (voir VUE TÉLÉPHONE). */
-        if (!cinematique && kaykitVueTelephone()) {
+        /* Vue rapprochée (par défaut au téléphone en portrait, au bouton
+           ailleurs) : on suit l'action de près au lieu de garder tout le
+           plateau à l'image (voir VUE TÉLÉPHONE). */
+        if (!cinematique && kaykitRapprocheActif()) {
           if (!force && kaykit3D.cameraMode !== "auto") return;
           if (!force && maintenant < kaykit3D.cameraFocusUntil && priorite <= kaykit3D.cameraFocusPriorite) return;
           kaykitTelephoneCadrer([[r, c]], { duree: duration });
@@ -7388,6 +7389,26 @@
         return (ensemble ? KAYKIT_TELEPHONE.ensemble : KAYKIT_TELEPHONE.rapproche) * (GRID / 11);
       }
       window.ILYOS_reculTelephone = () => kaykitTelephoneRecul();
+
+      /* VUE RAPPROCHÉE HORS PORTRAIT (retour de Taekun, 20/10/2026 : utile
+         aussi sur PC et téléphone à l'horizontale). Là, la vue par défaut
+         reste le plateau entier ; le même bouton passe en vue rapprochée, qui
+         suit l'action exactement comme au téléphone, et le second appui
+         rend le cadrage habituel. */
+      function kaykitRapprocheActif() {
+        if (!kaykit3D) return false;
+        return kaykitVueTelephone() ? !kaykit3D.vueEnsemble : !!kaykit3D.vueRapprochee;
+      }
+      // Recul du plateau entier hors portrait : celui de la vue habituelle.
+      function kaykitReculEnsemble() {
+        if (kaykitVueTelephone()) return kaykitTelephoneRecul(true);
+        return kaykitFitDistance(kaykit3D.camera.aspect, kaykit3D.viewMode);
+      }
+      // Recul de la vue rapprochée : ~60 % du plateau entier hors portrait.
+      function kaykitReculRapproche() {
+        if (kaykitVueTelephone()) return kaykitTelephoneRecul(false);
+        return Math.max(kaykit3D.minZoom || 0, kaykitReculEnsemble() * .6);
+      }
       window.ILYOS_vueTelephone = () => kaykitVueTelephone();
 
       function kaykitTelephoneBornes(aspect) {
@@ -7395,7 +7416,7 @@
         const max = (kaykitVueTelephone(aspect) ? KAYKIT_TELEPHONE.zoomMax : 25) * (GRID / 11);
         kaykit3D.maxZoom = max;
         if (kaykit3D.orbit) kaykit3D.orbit.maxDistance = max;
-        if (kaykitEnsembleBouton) kaykitEnsembleBouton.hidden = !kaykitVueTelephone(aspect);
+        kaykitMajBoutonEnsemble();
       }
 
       /* Cadre des cases [r, c] : centré sur elles, au recul rapproché, élargi
@@ -7404,18 +7425,23 @@
       function kaykitTelephoneCadrer(cases, { duree = 620 } = {}) {
         if (!kaykit3D?.camera) return;
         let cible, distance;
-        if (kaykit3D.vueEnsemble || !cases?.length) {
+        if (!kaykitRapprocheActif() || !cases?.length) {
           cible = new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
-          distance = kaykitTelephoneRecul(true);
+          distance = kaykitReculEnsemble();
         } else {
           const rs = cases.map(([r]) => r), cs = cases.map(([, c]) => c);
           const centre = kaykitCellPosition((Math.min(...rs) + Math.max(...rs)) / 2, (Math.min(...cs) + Math.max(...cs)) / 2, 0);
           cible = new THREE.Vector3(centre.x, kaykit3D.viewTarget?.y ?? 0, centre.z);
           const demiChamp = Math.atan(Math.tan(THREE.MathUtils.degToRad(kaykit3D.camera.fov) / 2) * kaykit3D.camera.aspect);
           const largeur = (Math.max(...cs) - Math.min(...cs) + 2) * KAYKIT_CELL_SPACING;
+          // Hors portrait, c'est la HAUTEUR de l'écran qui manque : la zone
+          // doit aussi y tenir (×.75, le plateau est vu incliné).
+          const profondeur = (Math.max(...rs) - Math.min(...rs) + 2) * KAYKIT_CELL_SPACING;
+          const pourProfondeur = kaykitVueTelephone() ? 0
+            : profondeur * .75 / 2 / Math.tan(THREE.MathUtils.degToRad(kaykit3D.camera.fov) / 2);
           distance = THREE.MathUtils.clamp(
-            Math.max(kaykitTelephoneRecul(false), largeur / 2 / Math.tan(demiChamp)),
-            kaykit3D.minZoom, kaykitTelephoneRecul(true));
+            Math.max(kaykitReculRapproche(), largeur / 2 / Math.tan(demiChamp), pourProfondeur),
+            kaykit3D.minZoom, kaykitReculEnsemble());
         }
         kaykit3D.viewTarget = cible.clone();
         kaykit3D.zoomDistance = distance;
@@ -7441,7 +7467,7 @@
         const suivi = kaykitTelephoneSuivi;
         if (suivi && suivi.id === gardien.id && suivi.r === gardien.r && suivi.c === gardien.c && suivi.zone === zone) return;
         kaykitTelephoneSuivi = { id: gardien.id, r: gardien.r, c: gardien.c, zone };
-        if (!kaykitVueTelephone() || kaykit3D?.vueEnsemble || ilyosSimulationActive) return;
+        if (!kaykitRapprocheActif() || ilyosSimulationActive) return;
         if (state.players?.[state.currentPlayer]?.isAI) return;
         const cases = [[gardien.r, gardien.c]];
         (zone ? [...zone] : []).forEach(k => cases.push(k.split(",").map(Number)));
@@ -7449,14 +7475,15 @@
       }
 
       /* Bouton « plateau entier » : bascule entre la vue rapprochée et la vue
-         d'ensemble. Visible seulement en portrait (css/portrait-mobile.css). */
+         d'ensemble. Partout (portrait, paysage, PC) ; position dans
+         css/portrait-mobile.css. */
       let kaykitEnsembleBouton = null;
       let kaykitTelephoneAvantEnsemble = null;
       // Vue rapprochée centrée sur un point du plateau (cadrage quitté).
       function kaykitTelephoneRevenir(cible) {
         if (!kaykit3D?.camera) return;
         const vise = cible ? cible.clone() : new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
-        const distance = kaykitTelephoneRecul(false);
+        const distance = kaykitReculRapproche();
         kaykit3D.viewTarget = vise.clone();
         kaykit3D.zoomDistance = distance;
         kaykit3D.cameraTween = {
@@ -7478,16 +7505,20 @@
         bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><g class="kaykit-ensemble-ouvrir" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></g><g class="kaykit-ensemble-fermer" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></g></svg>`;
         bouton.addEventListener("click", () => {
           if (!kaykit3D) return;
-          kaykit3D.vueEnsemble = !kaykit3D.vueEnsemble;
-          bouton.setAttribute("aria-pressed", String(kaykit3D.vueEnsemble));
-          bouton.setAttribute("aria-label", kaykit3D.vueEnsemble ? "Revenir à la vue rapprochée" : "Voir tout le plateau");
-          if (kaykit3D.vueEnsemble) {
+          const versEnsemble = kaykitRapprocheActif();
+          if (kaykitVueTelephone()) kaykit3D.vueEnsemble = versEnsemble;
+          else kaykit3D.vueRapprochee = !versEnsemble;
+          kaykitMajBoutonEnsemble();
+          if (versEnsemble) {
             /* Le cadrage quitté, pour y revenir au second appui : avant la
                pose des gardiens, il n'y a encore rien d'autre à suivre. */
             kaykitTelephoneAvantEnsemble = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget)?.clone() || null;
             kaykitTelephoneCadrer(null, { duree: 520 });
+            // Hors portrait, le plateau entier redevient le cadrage automatique.
+            if (!kaykitVueTelephone()) kaykit3D.autoFit = true;
             return;
           }
+          kaykit3D.autoFit = false;
           const gardien = state?.selectedCharId ? characterById(state.selectedCharId) : null;
           const mesGardiens = (state?.characters || []).filter(ch => ch.player === state.currentPlayer);
           if (gardien) kaykitTelephoneCadrer([[gardien.r, gardien.c], ...[...(state.reachable || [])].map(k => k.split(",").map(Number))], { duree: 520 });
@@ -7496,7 +7527,18 @@
         });
         document.body.appendChild(bouton);
         kaykitEnsembleBouton = bouton;
-        bouton.hidden = !kaykitVueTelephone();
+        kaykitMajBoutonEnsemble();
+      }
+      /* aria-pressed = plateau entier à l'écran : l'icône montre ce que
+         donnera l'appui (loupe → vue rapprochée, grille → plateau entier). */
+      function kaykitMajBoutonEnsemble() {
+        const bouton = kaykitEnsembleBouton;
+        if (!bouton || !kaykit3D) return;
+        const ensemble = !kaykitRapprocheActif();
+        bouton.hidden = false;
+        bouton.setAttribute("aria-pressed", String(ensemble));
+        bouton.setAttribute("aria-label", ensemble ? "Vue rapprochée" : "Voir tout le plateau");
+        bouton.title = ensemble ? "Vue rapprochée" : "Voir tout le plateau";
       }
 
       /* PLEIN ÉCRAN AU DOIGT. Le menu le demande à son premier toucher, mais
