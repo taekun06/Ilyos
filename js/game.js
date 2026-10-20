@@ -21714,12 +21714,32 @@
         const n = parseInt(m[1], 16);
         return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
       }
+      /* MENU et 2D vivent dans la plaque du tour, un de chaque côté (Taekun,
+         2026-10-20). Les deux boutons restent en position fixe (le téléphone
+         et les énigmes les rangent ailleurs) : on publie seulement le cadre
+         de la plaque, que css/menu-jeu.css lit sur écran large. */
+      function placerBoutonsPlaque() {
+        const plaque = document.querySelector("#ilyosHudOrganicV2 .ov2-turn");
+        const zone = plaque?.getBoundingClientRect();
+        if (!zone || !zone.width) return;
+        const cadre = [Math.round(zone.left), Math.round(window.innerWidth - zone.right), Math.round(zone.top + zone.height / 2)];
+        const cle = cadre.join(",");
+        if (placerBoutonsPlaque.cle === cle) return;
+        placerBoutonsPlaque.cle = cle;
+        const racine = document.body.style;
+        racine.setProperty("--plaque-g", `${cadre[0]}px`);
+        racine.setProperty("--plaque-d", `${cadre[1]}px`);
+        racine.setProperty("--plaque-cy", `${cadre[2]}px`);
+      }
+      if (typeof window !== "undefined") window.addEventListener("resize", () => requestAnimationFrame(placerBoutonsPlaque), { passive: true });
+
       function renderTourActif() {
         if (typeof document === "undefined") return;
         const p = currentPlayer?.();
         const enJeu = !!p && state?.winner === null && !document.getElementById("gameScreen")?.classList.contains("hidden");
         document.body.dataset.tourActif = enJeu && state.players.length === 2 ? String(state.currentPlayer) : "";
         if (!enJeu) return;
+        placerBoutonsPlaque();
         const couleur = p.color || "#ffffff";
         if (renderTourActif.couleur === couleur) return;
         renderTourActif.couleur = couleur;

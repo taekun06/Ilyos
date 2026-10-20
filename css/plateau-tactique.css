@@ -93,42 +93,6 @@ body[data-plateau-tactique="on"] #plateauTactiqueBtn {
   }
 }
 
-/* Écran large (PC, tablette) : petite pastille « 2D » à droite de la plaque
-   du tour, en miroir du bouton MENU (css/menu-jeu.css), même gabarit et même
-   habillage — le coin haut droit reste au portrait de l'adversaire et à sa
-   pastille de rejeu (demande de Taekun, 2026-10-20). Énigmes et téléphone
-   gardent leurs propres places. */
-@media (orientation: landscape) and (min-height: 501px) {
-  body:not(.puzzle-mode) #plateauTactiqueBtn {
-    top: 28px;
-    right: auto;
-    left: calc(50% + 132px);
-    height: 36px;
-    min-height: 0;
-    min-width: 0;
-    padding: 0 13px;
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid rgba(233, 189, 91, .55);
-    background: linear-gradient(180deg, rgba(20, 34, 52, .92), rgba(7, 15, 26, .9));
-    box-shadow: 0 8px 18px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 236, 190, .14);
-    color: #f3dfae;
-    font: 800 13px/1 'Nunito Sans', Inter, system-ui, sans-serif;
-    letter-spacing: .12em;
-    backdrop-filter: none;
-  }
-  body:not(.puzzle-mode) #plateauTactiqueBtn:hover {
-    border-color: #e9bd5b;
-    background: linear-gradient(180deg, rgba(58, 45, 20, .95), rgba(22, 17, 8, .92));
-  }
-}
-@media (orientation: landscape) and (min-height: 501px) and (max-height: 800px) {
-  body:not(.puzzle-mode) #plateauTactiqueBtn { top: 18px; height: 32px; left: calc(50% + 120px); }
-}
-@media (orientation: landscape) and (min-height: 501px) and (max-width: 1500px) {
-  body:not(.puzzle-mode) #plateauTactiqueBtn { padding: 0 10px; left: calc(50% + 122px); }
-}
-
 /* ANIMATIONS DE CARTES — décoratives, donc transparentes au clic
    -------------------------------------------------------------
    Les cartes qui volent de la pioche vers la main traversent le centre du
