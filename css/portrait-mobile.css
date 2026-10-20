@@ -401,9 +401,15 @@
     transform: scale(.62) !important;
     transform-origin: top left !important;
   }
+  html body #kaykitEnsembleBtn {
+    top: calc(max(8px, env(safe-area-inset-top)) + 68px) !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    width: 32px !important;
+    height: 32px !important;
+  }
   html body #kaykitPleinEcranBtn,
   html body #kaykitEnsembleBtn[hidden] ~ #kaykitPleinEcranBtn {
-    top: calc(max(8px, env(safe-area-inset-top)) + 68px) !important;
+    top: calc(max(8px, env(safe-area-inset-top)) + 106px) !important;
     left: max(8px, env(safe-area-inset-left)) !important;
     width: 32px !important;
     height: 32px !important;
@@ -586,10 +592,10 @@
   }
 }
 
-/* ---------- BOUTON « PLATEAU ENTIER » (vue téléphone) ----------
-   Créé par js/game/kaykit3d.js (VUE TÉLÉPHONE), caché hors portrait par
-   l'attribut hidden. Sous le joueur, à gauche : à droite, la frise du tour
-   adverse occupe déjà la place à côté de VUE 2D. Même pastille que VUE 2D. */
+/* ---------- BOUTON « PLATEAU ENTIER / VUE RAPPROCHÉE » ----------
+   Créé par js/game/kaykit3d.js (VUE TÉLÉPHONE), présent partout. Sous le
+   joueur, à gauche : à droite, la frise du tour adverse occupe déjà la place
+   à côté de VUE 2D. Même pastille que VUE 2D. */
 #kaykitEnsembleBtn {
   position: fixed;
   z-index: 60;
@@ -665,4 +671,12 @@ body.mj-menu-ouvert #kaykitPleinEcranBtn {
 #kaykitEnsembleBtn[hidden] ~ #kaykitPleinEcranBtn,
 body[data-plateau-tactique="on"] #kaykitPleinEcranBtn {
   top: calc(max(6px, env(safe-area-inset-top)) + 100px);
+}
+
+/* PC et tablette : sous le portrait du joueur, centré sur lui. */
+@media (orientation: landscape) and (min-height: 501px) {
+  #kaykitEnsembleBtn {
+    top: calc(max(6px, env(safe-area-inset-top)) + 104px);
+    left: max(41px, env(safe-area-inset-left));
+  }
 }
