@@ -47649,7 +47649,9 @@
             {
               scene: {
                 iles: [[[5, 2], [5, 3], [6, 2], [6, 3]]],
-                g: [{ p: 0, r: 5, c: 3 }, { key: "allie", p: 0, r: 6, c: 5 }],
+                // L'allié attend à l'écart : collé à la couronne, il ouvrait
+                // un choix « quel gardien la ramasse ? » que Quick n'explique pas.
+                g: [{ p: 0, r: 5, c: 3 }, { p: 0, r: 6, c: 2 }],
                 couronne: [5, 5], main: ["MOVE", "MOVE"], focus: [5, 4]
               },
               consigne: "Marche jusqu’à la couronne pour la ramasser",
@@ -47657,6 +47659,11 @@
               but: () => quickGardiens(0).some(ch => !!artifactCarriedBy(ch.id))
             },
             {
+              scene: {
+                iles: [[[5, 2], [5, 3], [6, 2], [6, 3]]],
+                g: [{ p: 0, r: 5, c: 4, crown: true }, { key: "allie", p: 0, r: 5, c: 3 }],
+                main: [], focus: [5, 4]
+              },
               consigne: "Clique la couronne, puis ton allié pour la lui passer",
               regle: "Ramasser, passer ou poser la couronne ne coûte aucune carte",
               libre: true,
@@ -47725,16 +47732,25 @@
         },
         {
           titre: "Magie",
-          scenes: [{
-            scene: {
-              iles: [[[5, 0], [6, 0], [7, 0]], [[2, 0], [2, 1], [3, 1]]],
-              g: [{ p: 0, r: 7, c: 0 }],
-              main: ["MAGIC"], cible: [3, 0], focus: [5, 1]
+          scenes: [
+            {
+              scene: {
+                iles: [[[5, 0], [6, 0], [7, 0]], [[2, 0], [2, 1], [3, 1]]],
+                g: [{ p: 0, r: 7, c: 0 }],
+                main: ["MAGIC"], cible: [5, 0], focus: [5, 1]
+              },
+              consigne: "Clique MAGIE, puis la case dorée : ce sera le pivot",
+              regle: "Le pivot ne bouge pas : l’île tourne autour de lui, comme une aiguille autour de son axe",
+              but: () => Array.isArray(state.selectedMagicPivot)
+                && state.selectedMagicPivot[0] === 5 && state.selectedMagicPivot[1] === 0
             },
-            consigne: "Clique le bout de ton île, puis fais-la pivoter jusqu’à la case lumineuse",
-            regle: "La magie fait tourner une île autour de la case cliquée, avec ses gardiens",
-            but: () => quickGardienSur(0, 3, 0)
-          }]
+            {
+              cible: [3, 0],
+              consigne: "Clique la position qui amène ton gardien sur la case lumineuse",
+              regle: "Quart de tour ou demi-tour · gardiens et couronnes tournent avec l’île",
+              but: () => quickGardienSur(0, 3, 0)
+            }
+          ]
         },
         {
           titre: "Annuler",
@@ -47766,7 +47782,7 @@
             },
             {
               consigne: "Clique Fin du tour",
-              regle: "Le point compte au début de ton prochain tour · une carte non jouée va en réserve",
+              regle: "Le point compte au début de ton prochain tour · tu repioches alors 5 cartes",
               libre: true,
               finDeTour: true,
               but: () => (state.players[0].score || 0) >= 1
@@ -47886,9 +47902,9 @@
         if (!cible) return;
         const p = kaykitCellPosition(cible[0], cible[1], KAYKIT_LEVELS.islandTop + .02);
         const transitoire = objet => { objet.userData = { ...(objet.userData || {}), ilyosTransient: true }; return objet; };
-        const couche = (geo, opacite, ordre) => {
+        const couche = (geo, opacite, ordre, couleur = 0xffd36a) => {
           const mat = transitoire(new THREE.MeshBasicMaterial({
-            color: 0xffd36a, transparent: true, opacity: opacite, depthTest: false, depthWrite: false
+            color: couleur, transparent: true, opacity: opacite, depthTest: false, depthWrite: false
           }));
           const maille = new THREE.Mesh(transitoire(geo), mat);
           maille.rotation.x = -Math.PI / 2;
@@ -47896,8 +47912,10 @@
           maille.renderOrder = ordre;
           groupe.add(maille);
         };
-        couche(new THREE.RingGeometry(.25, .33, 48), .9, 62);
-        couche(new THREE.CircleGeometry(.25, 48), .16, 61);
+        // Liseré sombre : l'anneau reste lisible sur un aperçu clair (magie).
+        couche(new THREE.RingGeometry(.235, .355, 48), .45, 92, 0x2a1d04);
+        couche(new THREE.RingGeometry(.25, .33, 48), .95, 93);
+        couche(new THREE.CircleGeometry(.25, 48), .16, 91);
       }
 
       /* ---------- Surcouche -------------------------------------------- */
@@ -47948,6 +47966,10 @@
           #qk-layer .qk-couronnes { font-size: 22px; letter-spacing: 6px; color: #ffd36a; text-shadow: 0 0 12px rgba(255,200,90,.55); }
           #qk-layer .qk-grand { margin: 4px 0 8px; font: 700 28px/1.1 var(--font-ilyos-display); color: #ffe39a; letter-spacing: .04em; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
           #qk-layer .qk-carte p { margin: 6px 0; font-size: 14px; line-height: 1.45; color: rgba(255,244,220,.9); }
+          #qk-layer .qk-tour { display: grid; gap: 8px; margin: 14px 0 2px; text-align: left; }
+          #qk-layer .qk-tour div { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.4; color: rgba(255,244,220,.9); }
+          #qk-layer .qk-tour div > b { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+            font: 700 11px/1 Inter, sans-serif; color: #1d1405; background: linear-gradient(#ffe7a6, #e2b24c); }
           #qk-layer .qk-touches { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; margin: 14px 0 4px; font-size: 12.5px; color: rgba(255,244,220,.8); }
           #qk-layer .qk-touches kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
             margin-right: 4px; border-radius: 5px; font: 700 11px/1 Inter, sans-serif; color: #1d1405;
@@ -48043,7 +48065,7 @@
           if (etape.scenes[QUICK.sous].scene) quickMonterScene();
           else {
             QUICK.ctx = quickContexte();
-            quickPoserRepere(null);
+            quickPoserRepere(etape.scenes[QUICK.sous].cible || null);
             quickAfficher();
           }
           return;
@@ -48101,6 +48123,34 @@
         }
       }
 
+      /* Avant la première scène : le but de la partie et le rythme d'un tour,
+         sans quoi les gestes appris n'ont pas de sens. */
+      function quickIntro() {
+        const calque = quickCalque();
+        calque.querySelector(".qk-top").style.display = "none";
+        calque.querySelector(".qk-bot").style.display = "none";
+        const intro = document.createElement("div");
+        intro.className = "qk-fin";
+        intro.innerHTML = `<div class="qk-carte">
+          <div class="qk-couronnes" aria-hidden="true">♛♛♛</div>
+          <div class="qk-grand">Le but</div>
+          <p>Rapporte <b>3 couronnes</b> dans ton village avant le rival.</p>
+          <div class="qk-tour">
+            <div><b>1</b><span>Au début de ton tour, tu pioches <b>5 cartes</b> : Déplacer, Pousser ou Magie.</span></div>
+            <div><b>2</b><span>Tu poses <b>une île</b>, puis tu joues tes cartes dans l’ordre que tu veux.</span></div>
+            <div><b>3</b><span>Fin du tour : les cartes non jouées restent en réserve pour plus tard.</span></div>
+          </div>
+          <div class="qk-actions"><button class="qk-jouer" type="button">COMMENCER</button></div></div>`;
+        intro.querySelector(".qk-jouer").addEventListener("click", () => {
+          intro.remove();
+          calque.classList.remove("qk-fin-active");
+          calque.querySelector(".qk-top").style.display = "";
+          calque.querySelector(".qk-bot").style.display = "";
+        });
+        calque.appendChild(intro);
+        calque.classList.add("qk-fin-active");
+      }
+
       function quickFin() {
         clearInterval(QUICK.pollTimer);
         QUICK.pollTimer = null;
@@ -48134,7 +48184,7 @@
       }
 
       /* ---------- Entrée / sortie ---------------------------------------- */
-      function quickStart() {
+      function quickStart({ intro = true } = {}) {
         quickStyle();
         if (QUICK.dom) { QUICK.dom.remove(); QUICK.dom = null; }
         QUICK.active = true;
@@ -48155,6 +48205,7 @@
         document.body.classList.add("quick-mode");
 
         quickMonterScene();
+        if (intro) quickIntro();
         clearInterval(QUICK.pollTimer);
         QUICK.pollTimer = setInterval(quickTick, 300);
       }
@@ -48204,11 +48255,12 @@
       window.addEventListener("load", quickLancerPartieDemandee);
 
       window.ILYOS_QUICK = {
-        start: quickStart,
+        start: () => quickStart(),
         quitter: quickQuitter,
         passer: quickSuivant,
         aller: (etape, sous = 0) => {
-          if (!QUICK.active) quickStart();
+          // Accès direct à une étape (tests, captures) : sans l'écran du but.
+          if (!QUICK.active) quickStart({ intro: false });
           QUICK.etape = Math.max(0, Math.min(QUICK_ETAPES.length - 1, etape));
           QUICK.sous = sous;
           quickMonterScene();
