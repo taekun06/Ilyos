@@ -1,0 +1,57 @@
+/* Une poussée jouée À LA SOURIS dans la scène 3D : clic sur son gardien, clic
+   sur le rival, clic sur la case d'arrivée.
+
+   Signalé le 20/10 : « quelquefois les poussées ne fonctionnent pas du premier
+   coup ». Les zones cliquables des destinations disparaissaient de l'index de
+   la scène dès qu'une synchronisation passait sans redessiner l'aperçu : les
+   anneaux restaient visibles mais muets, et le clic retombait sur la case,
+   souvent masquée par un gardien. Joué sur la scène « Pousser » de Quick. */
+
+const { test, expect } = require('@playwright/test');
+
+async function pointEcran(page, r, c) {
+  return page.evaluate(([r, c]) => {
+    const k = window.kaykit3D, rect = k.canvas.getBoundingClientRect();
+    const hit = k.hitMeshes.find(m => m.userData.r === r && m.userData.c === c);
+    const v = hit.getWorldPosition(new window.THREE.Vector3()).project(k.camera);
+    return { x: rect.left + (v.x * .5 + .5) * rect.width, y: rect.top + (-v.y * .5 + .5) * rect.height };
+  }, [r, c]);
+}
+
+async function cliquer(page, { x, y }) {
+  await page.mouse.move(x, y);
+  await page.mouse.click(x, y);
+}
+
+test('les destinations de poussée restent cliquables après le choix du rival', async ({ page }) => {
+  const erreurs = [];
+  page.on('pageerror', error => erreurs.push(error.message));
+  await page.goto('/');
+  await page.waitForFunction(() => typeof window.ILYOS_QUICK?.aller === 'function' && !!window.kaykit3D?.hitMeshes?.length);
+  await page.evaluate(() => window.ILYOS_QUICK.aller(3, 0));
+  await page.waitForFunction(() => window.ILYOS_QUICK.etat().etape === 3);
+  await page.waitForTimeout(1500);
+
+  await cliquer(page, await pointEcran(page, 8, 1));
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.ILYOS_BENCH.etatComplet()).phase)).toBe('SMART_CHAR');
+  await cliquer(page, await pointEcran(page, 8, 2));
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.ILYOS_BENCH.etatComplet()).phase)).toBe('ACTION');
+  await page.waitForTimeout(1500);
+
+  // Chaque zone dessinée est aussi indexée pour le lancer de rayon.
+  const zones = await page.evaluate(() => {
+    const k = window.kaykit3D;
+    return {
+      dessinees: k.actionPreviewGroup.children.filter(m => m.userData.ilyosInteraction).length,
+      indexees: k.interactiveMeshes.filter(m => m.userData.ilyosInteraction).length
+    };
+  });
+  expect(zones.dessinees).toBe(3);
+  expect(zones.indexees).toBe(zones.dessinees);
+
+  // Un seul clic sur la case la plus lointaine pousse le rival de trois cases.
+  await cliquer(page, await pointEcran(page, 8, 5));
+  await expect.poll(() => page.evaluate(() =>
+    JSON.parse(window.ILYOS_BENCH.etatComplet()).characters.some(c => c.player === 1 && c.r === 8 && c.c === 5))).toBe(true);
+  expect(erreurs).toEqual([]);
+});

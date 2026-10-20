@@ -7196,9 +7196,10 @@
            zone morte et le cadrage de sûreté s'en partagent le résultat. */
         const contenu = cinematique ? null : kaykitPointsDuContenu([r, c]);
 
-        /* Téléphone en portrait : on suit l'action de près au lieu de garder
-           tout le plateau à l'image (voir VUE TÉLÉPHONE). */
-        if (!cinematique && kaykitVueTelephone()) {
+        /* Vue rapprochée (par défaut au téléphone en portrait, au bouton
+           ailleurs) : on suit l'action de près au lieu de garder tout le
+           plateau à l'image (voir VUE TÉLÉPHONE). */
+        if (!cinematique && kaykitRapprocheActif()) {
           if (!force && kaykit3D.cameraMode !== "auto") return;
           if (!force && maintenant < kaykit3D.cameraFocusUntil && priorite <= kaykit3D.cameraFocusPriorite) return;
           kaykitTelephoneCadrer([[r, c]], { duree: duration });
@@ -7388,6 +7389,26 @@
         return (ensemble ? KAYKIT_TELEPHONE.ensemble : KAYKIT_TELEPHONE.rapproche) * (GRID / 11);
       }
       window.ILYOS_reculTelephone = () => kaykitTelephoneRecul();
+
+      /* VUE RAPPROCHÉE HORS PORTRAIT (retour de Taekun, 20/10/2026 : utile
+         aussi sur PC et téléphone à l'horizontale). Là, la vue par défaut
+         reste le plateau entier ; le même bouton passe en vue rapprochée, qui
+         suit l'action exactement comme au téléphone, et le second appui
+         rend le cadrage habituel. */
+      function kaykitRapprocheActif() {
+        if (!kaykit3D) return false;
+        return kaykitVueTelephone() ? !kaykit3D.vueEnsemble : !!kaykit3D.vueRapprochee;
+      }
+      // Recul du plateau entier hors portrait : celui de la vue habituelle.
+      function kaykitReculEnsemble() {
+        if (kaykitVueTelephone()) return kaykitTelephoneRecul(true);
+        return kaykitFitDistance(kaykit3D.camera.aspect, kaykit3D.viewMode);
+      }
+      // Recul de la vue rapprochée : ~60 % du plateau entier hors portrait.
+      function kaykitReculRapproche() {
+        if (kaykitVueTelephone()) return kaykitTelephoneRecul(false);
+        return Math.max(kaykit3D.minZoom || 0, kaykitReculEnsemble() * .6);
+      }
       window.ILYOS_vueTelephone = () => kaykitVueTelephone();
 
       function kaykitTelephoneBornes(aspect) {
@@ -7395,7 +7416,7 @@
         const max = (kaykitVueTelephone(aspect) ? KAYKIT_TELEPHONE.zoomMax : 25) * (GRID / 11);
         kaykit3D.maxZoom = max;
         if (kaykit3D.orbit) kaykit3D.orbit.maxDistance = max;
-        if (kaykitEnsembleBouton) kaykitEnsembleBouton.hidden = !kaykitVueTelephone(aspect);
+        kaykitMajBoutonEnsemble();
       }
 
       /* Cadre des cases [r, c] : centré sur elles, au recul rapproché, élargi
@@ -7404,18 +7425,23 @@
       function kaykitTelephoneCadrer(cases, { duree = 620 } = {}) {
         if (!kaykit3D?.camera) return;
         let cible, distance;
-        if (kaykit3D.vueEnsemble || !cases?.length) {
+        if (!kaykitRapprocheActif() || !cases?.length) {
           cible = new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
-          distance = kaykitTelephoneRecul(true);
+          distance = kaykitReculEnsemble();
         } else {
           const rs = cases.map(([r]) => r), cs = cases.map(([, c]) => c);
           const centre = kaykitCellPosition((Math.min(...rs) + Math.max(...rs)) / 2, (Math.min(...cs) + Math.max(...cs)) / 2, 0);
           cible = new THREE.Vector3(centre.x, kaykit3D.viewTarget?.y ?? 0, centre.z);
           const demiChamp = Math.atan(Math.tan(THREE.MathUtils.degToRad(kaykit3D.camera.fov) / 2) * kaykit3D.camera.aspect);
           const largeur = (Math.max(...cs) - Math.min(...cs) + 2) * KAYKIT_CELL_SPACING;
+          // Hors portrait, c'est la HAUTEUR de l'écran qui manque : la zone
+          // doit aussi y tenir (×.75, le plateau est vu incliné).
+          const profondeur = (Math.max(...rs) - Math.min(...rs) + 2) * KAYKIT_CELL_SPACING;
+          const pourProfondeur = kaykitVueTelephone() ? 0
+            : profondeur * .75 / 2 / Math.tan(THREE.MathUtils.degToRad(kaykit3D.camera.fov) / 2);
           distance = THREE.MathUtils.clamp(
-            Math.max(kaykitTelephoneRecul(false), largeur / 2 / Math.tan(demiChamp)),
-            kaykit3D.minZoom, kaykitTelephoneRecul(true));
+            Math.max(kaykitReculRapproche(), largeur / 2 / Math.tan(demiChamp), pourProfondeur),
+            kaykit3D.minZoom, kaykitReculEnsemble());
         }
         kaykit3D.viewTarget = cible.clone();
         kaykit3D.zoomDistance = distance;
@@ -7441,7 +7467,7 @@
         const suivi = kaykitTelephoneSuivi;
         if (suivi && suivi.id === gardien.id && suivi.r === gardien.r && suivi.c === gardien.c && suivi.zone === zone) return;
         kaykitTelephoneSuivi = { id: gardien.id, r: gardien.r, c: gardien.c, zone };
-        if (!kaykitVueTelephone() || kaykit3D?.vueEnsemble || ilyosSimulationActive) return;
+        if (!kaykitRapprocheActif() || ilyosSimulationActive) return;
         if (state.players?.[state.currentPlayer]?.isAI) return;
         const cases = [[gardien.r, gardien.c]];
         (zone ? [...zone] : []).forEach(k => cases.push(k.split(",").map(Number)));
@@ -7449,14 +7475,15 @@
       }
 
       /* Bouton « plateau entier » : bascule entre la vue rapprochée et la vue
-         d'ensemble. Visible seulement en portrait (css/portrait-mobile.css). */
+         d'ensemble. Partout (portrait, paysage, PC) ; position dans
+         css/portrait-mobile.css. */
       let kaykitEnsembleBouton = null;
       let kaykitTelephoneAvantEnsemble = null;
       // Vue rapprochée centrée sur un point du plateau (cadrage quitté).
       function kaykitTelephoneRevenir(cible) {
         if (!kaykit3D?.camera) return;
         const vise = cible ? cible.clone() : new THREE.Vector3(0, kaykit3D.viewTarget?.y ?? 0, .18);
-        const distance = kaykitTelephoneRecul(false);
+        const distance = kaykitReculRapproche();
         kaykit3D.viewTarget = vise.clone();
         kaykit3D.zoomDistance = distance;
         kaykit3D.cameraTween = {
@@ -7478,16 +7505,20 @@
         bouton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><g class="kaykit-ensemble-ouvrir" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></g><g class="kaykit-ensemble-fermer" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></g></svg>`;
         bouton.addEventListener("click", () => {
           if (!kaykit3D) return;
-          kaykit3D.vueEnsemble = !kaykit3D.vueEnsemble;
-          bouton.setAttribute("aria-pressed", String(kaykit3D.vueEnsemble));
-          bouton.setAttribute("aria-label", kaykit3D.vueEnsemble ? "Revenir à la vue rapprochée" : "Voir tout le plateau");
-          if (kaykit3D.vueEnsemble) {
+          const versEnsemble = kaykitRapprocheActif();
+          if (kaykitVueTelephone()) kaykit3D.vueEnsemble = versEnsemble;
+          else kaykit3D.vueRapprochee = !versEnsemble;
+          kaykitMajBoutonEnsemble();
+          if (versEnsemble) {
             /* Le cadrage quitté, pour y revenir au second appui : avant la
                pose des gardiens, il n'y a encore rien d'autre à suivre. */
             kaykitTelephoneAvantEnsemble = (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget)?.clone() || null;
             kaykitTelephoneCadrer(null, { duree: 520 });
+            // Hors portrait, le plateau entier redevient le cadrage automatique.
+            if (!kaykitVueTelephone()) kaykit3D.autoFit = true;
             return;
           }
+          kaykit3D.autoFit = false;
           const gardien = state?.selectedCharId ? characterById(state.selectedCharId) : null;
           const mesGardiens = (state?.characters || []).filter(ch => ch.player === state.currentPlayer);
           if (gardien) kaykitTelephoneCadrer([[gardien.r, gardien.c], ...[...(state.reachable || [])].map(k => k.split(",").map(Number))], { duree: 520 });
@@ -7496,7 +7527,18 @@
         });
         document.body.appendChild(bouton);
         kaykitEnsembleBouton = bouton;
-        bouton.hidden = !kaykitVueTelephone();
+        kaykitMajBoutonEnsemble();
+      }
+      /* aria-pressed = plateau entier à l'écran : l'icône montre ce que
+         donnera l'appui (loupe → vue rapprochée, grille → plateau entier). */
+      function kaykitMajBoutonEnsemble() {
+        const bouton = kaykitEnsembleBouton;
+        if (!bouton || !kaykit3D) return;
+        const ensemble = !kaykitRapprocheActif();
+        bouton.hidden = false;
+        bouton.setAttribute("aria-pressed", String(ensemble));
+        bouton.setAttribute("aria-label", ensemble ? "Vue rapprochée" : "Voir tout le plateau");
+        bouton.title = ensemble ? "Vue rapprochée" : "Voir tout le plateau";
       }
 
       /* PLEIN ÉCRAN AU DOIGT. Le menu le demande à son premier toucher, mais
@@ -13638,7 +13680,13 @@
           // exacts, mais en ne faisant que ré-enregistrer les références déjà
           // existantes — beaucoup plus léger que recréer les objets eux-mêmes.
           kaykit3D.cellVisuals = new Map();
-          kaykit3D.interactiveMeshes = [];
+          /* Les zones cliquables des destinations de poussée vivent dans
+             actionPreviewGroup, que cette sync ne reconstruit pas quand
+             l'aperçu n'a pas changé. Les oublier ici laissait les anneaux
+             visibles mais muets : le clic retombait sur la case, souvent
+             masquée par un gardien, et la poussée ratait au premier essai. */
+          kaykit3D.interactiveMeshes = (kaykit3D.actionPreviewGroup?.children || [])
+            .filter(object => object.userData?.ilyosInteraction);
           // Filtre défensif générique (déjà utilisé ailleurs, voir
           // refreshKayKitHoverPreviews) : ne retire que les références mortes
           // (objet réellement retiré de la scène), jamais les objets persistants
@@ -15530,7 +15578,8 @@
       }
 
       function saveLocalSessionNow() {
-        if (!state || state.onlineMode || networkApplyingState) return;
+        // Une scène de Quick n'est pas une partie : elle écraserait la vraie.
+        if (!state || state.onlineMode || state.quick || networkApplyingState) return;
         try {
           state.turnTimeLeft = state.turnDeadline
             ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
@@ -25889,7 +25938,7 @@
         const departage = !nul && state.players.some(p =>
           !memeEquipe(p.id, gagnant.id) && (p.score || 0) === (gagnant.score || 0));
         const raison = departage
-          ? `couronnes à égalité, mais sa couronne était la plus proche de son village`
+          ? `couronnes à égalité, mais une couronne était plus proche de son village`
           : `au décompte des couronnes`;
         showToast(nul
           ? `${cause} : match nul (${scores}).`
@@ -25924,7 +25973,7 @@
         els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
         els.victoryTitle.textContent = "Match nul";
         els.victoryTitle.style.color = "#cfd6ea";
-        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne portée ne départage.";
+        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne ne départage.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
         defaitesFinPartie(null);
         progressionFinPartie(null);
@@ -27009,7 +27058,7 @@
          Poser une île est obligatoire à chaque tour. Quand plus aucune forme
          ne trouve où se poser, la partie ne peut plus avancer : elle s'arrête
          et le joueur qui a validé le plus de couronnes l'emporte ; à égalité,
-         celui qui porte une couronne au plus près de son village (sinon nul).
+         celui qui a une couronne au plus près de son village (sinon nul).
 
          On raisonne sur le PLATEAU, pas sur les stocks : « il n'y a plus de
          place » veut dire qu'aucune forme du jeu ne tient nulle part, quel que
@@ -27160,14 +27209,14 @@
        *  la main ne peut plus poser d'île — plateau saturé, aucune forme de son
        *  stock qui tienne, stock épuisé, ou limite d'îles de la partie atteinte —
        *  la partie s'arrête et le plus de couronnes l'emporte (égalité : départage
-       *  par la couronne portée la plus proche de son village, sinon nul).
+       *  par la couronne la plus proche de son village, sinon nul).
        *  Jusqu'au 30/09, seule la saturation du plateau entier arrêtait la
        *  partie ; pour un seul joueur, la pose devenait facultative et la
        *  partie continuait. Tutoriels et énigmes suivent leurs propres règles. */
       function finParPoseImpossible(playerId) {
         if (!state) return false;
         if (plateauSansPlace()) return true;
-        if (state.tutorial || state.puzzle) return false;
+        if (state.tutorial || state.puzzle || state.quick) return false;
         const ecran = typeof els === "object" && els && els.gameScreen && els.gameScreen.classList;
         if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
           .some(mode => ecran.contains(mode))) return false;
@@ -27175,11 +27224,11 @@
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine.
-       *  À égalité de couronnes validées, départage (décision du 18/10) : gagne
-       *  le joueur dont un gardien PORTE une couronne au plus près de son propre
-       *  village — en cases orthogonales, jusqu'à la case de validation la plus
-       *  proche. Une couronne posée au sol ne compte pas. Sans porteur, ou à
-       *  distance égale, le match reste nul. */
+       *  À égalité de couronnes validées, départage (décisions des 18 et 19/10) :
+       *  gagne le joueur qui a une couronne au plus près de son propre village —
+       *  en cases orthogonales, jusqu'à la case de validation la plus proche.
+       *  Toute couronne en jeu compte, portée ou posée au sol, quel que soit son
+       *  porteur. À distance égale, le match reste nul. */
       function vainqueurAuxCouronnes() {
         /* Équipe à couronnes communes : les deux coéquipiers ont toujours le
            même score, ce n'est pas une égalité. On compare J1 à J2. */
@@ -27195,18 +27244,22 @@
         return premiers.length === 1 ? premiers[0] : null;
       }
 
-      /** Distance (cases orthogonales) entre la couronne portée par le camp de
-       *  `joueurId` et la case de validation la plus proche de ce camp ;
-       *  Infinity si aucun de ses gardiens ne porte de couronne. Camp = le
-       *  joueur seul, ou toute l'équipe quand les gardiens sont partagés. */
+      /** Distance (cases orthogonales) entre la couronne en jeu la plus proche
+       *  — portée ou au sol — et une case de validation du camp de `joueurId` ;
+       *  Infinity s'il n'y a aucune couronne en jeu. Camp = le joueur seul, ou
+       *  toute l'équipe quand les gardiens sont partagés. */
       function distanceCouronneAuVillage(joueurId) {
         const camp = (state.players || []).filter(p => memeEquipe(p.id, joueurId));
         const cases = camp.flatMap(p => crownValidationCellsForPlayer(p));
         let meilleure = Infinity;
-        (state.characters || []).forEach(char => {
-          if (!memeEquipe(char.player, joueurId) || !artifactCarriedBy(char.id)) return;
-          cases.forEach(([r, c]) => {
-            meilleure = Math.min(meilleure, Math.abs(char.r - r) + Math.abs(char.c - c));
+        activeArtifacts().forEach(couronne => {
+          // Une couronne portée ne met pas à jour ses r/c : c'est son porteur.
+          const porteur = couronne.carrierId
+            ? (state.characters || []).find(ch => ch.id === couronne.carrierId) : null;
+          const r = porteur ? porteur.r : couronne.r;
+          const c = porteur ? porteur.c : couronne.c;
+          cases.forEach(([vr, vc]) => {
+            meilleure = Math.min(meilleure, Math.abs(r - vr) + Math.abs(c - vc));
           });
         });
         return meilleure;
@@ -41960,8 +42013,11 @@
              une plaquette sombre — c'est elle qui garantit le contraste, quel
              que soit le ciel derrière. Le compteur devient une pastille sur le
              rond : on lit « combien » sans chercher sous le mot. */
+          /* left:50% va avec le translateX : le portrait du duel ancre le dock
+             a gauche (left:8px) et la rangee sortait de l'ecran au telephone. */
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-dock{
             bottom:20px !important;gap:clamp(16px,2.4vw,30px) !important;
+            left:50% !important;right:auto !important;
             transform:translateX(-50%) !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action{
             position:relative !important;
@@ -42077,6 +42133,11 @@
             color:#fff1cf !important;}
           /* Sauf quand « Fin du tour » occupe déjà ce coin. */
           body.puzzle-mode.puzzle-multi #plateauTactiqueBtn{bottom:74px !important;}
+          /* Telephone en portrait : la rangee d'actions occupe toute la
+             largeur du bas, la bascule passe juste au-dessus, a droite. */
+          @media (orientation:portrait) and (max-width:820px){
+            body.puzzle-mode #plateauTactiqueBtn,
+            body.puzzle-mode.puzzle-multi #plateauTactiqueBtn{bottom:112px !important;right:12px !important;}}
           /* Les barres de rotation se rangent en bas à droite (voir
              css/hud-consolidation-v12.css), juste au-dessus de la bascule 2D —
              et de « Fin du tour » quand l'énigme dure plusieurs tours. */
@@ -42096,6 +42157,16 @@
          l'affichage. */
       function puzzleFrame(r, c, zoomBoost) {
         PUZZLE.lastFrame = { r, c };
+        /* Dès que le joueur tourne ou zoome lui-même, les recadrages de
+           rattrapage ci-dessous ne lui reprennent plus la caméra. */
+        PUZZLE.cameraTouchee = false;
+        try {
+          const orbite = typeof kaykit3D !== "undefined" && kaykit3D?.orbit;
+          if (orbite && !orbite.__puzzleEcoute) {
+            orbite.__puzzleEcoute = true;
+            orbite.addEventListener("start", () => { if (PUZZLE.active) PUZZLE.cameraTouchee = true; });
+          }
+        } catch (_) { }
         const go = tries => {
           let ok = false;
           try {
@@ -42105,12 +42176,26 @@
               ok = true;
             }
           } catch (_) { }
-          try { tutoLockCamera(); } catch (_) { }
+          /* Caméra LIBRE (retour de Taekun, 20/10/2026) : rotation, zoom et
+             déplacement restent au joueur. On garde seulement ce qui empêche
+             le recentrage automatique d'écraser le cadrage de l'énigme. */
+          try {
+            if (typeof kaykit3D !== "undefined" && kaykit3D) {
+              kaykit3D.autoFit = false;
+              kaykit3D.userRotated = true;
+              if (kaykit3D.orbit) {
+                kaykit3D.orbit.enabled = true;
+                kaykit3D.orbit.enableRotate = true;
+                kaykit3D.orbit.enablePan = true;
+                kaykit3D.orbit.enableZoom = true;
+              }
+            }
+          } catch (_) { }
           if (!ok && tries > 0) setTimeout(() => go(tries - 1), 350);
         };
         go(8);
         [350, 700, 1100, 1600, 2400].forEach(delay => setTimeout(() => {
-          if (PUZZLE.active && PUZZLE.lastFrame
+          if (PUZZLE.active && !PUZZLE.cameraTouchee && PUZZLE.lastFrame
             && PUZZLE.lastFrame.r === r && PUZZLE.lastFrame.c === c) go(0);
         }, delay));
       }
@@ -47513,6 +47598,711 @@
         }
       };
       /* =====================================================================
+         QUICK — tout apprendre, vite, avant une partie solo
+
+         L'Éveil (tutorial-eveil.js) est un parcours muet et long. Quick est son
+         contraire assumé : une suite de petites scènes préparées, UN geste
+         chacune, une consigne d'une ligne et la règle qui va avec, en petit.
+         On apprend à la SOURIS : les raccourcis ne sont donnés qu'à la fin,
+         comme une façon d'aller plus vite.
+
+         Ce fragment ne modifie aucune règle. Comme les énigmes (puzzle.js), il
+         construit un `state` normal, laisse le joueur agir avec les vrais
+         handlers d'ui.js et le vrai HUD, et observe l'état pour savoir si le
+         geste a abouti. Une scène ratée (plus de cartes, but non atteint) est
+         simplement reposée.
+
+         Point d'entrée : l'événement `ilyos-quick-requested` (bouton QUICK du
+         menu, js/version-bootstrap.js) ou `window.ILYOS_QUICK.start()`.
+         ===================================================================== */
+
+      const QUICK = {
+        active: false,
+        etape: 0,
+        sous: 0,
+        ctx: null,
+        serie: 0,
+        pollTimer: null,
+        enchainement: null,
+        relais: false,
+        dom: null,
+        cles: {}
+      };
+
+      /* ---------- Scènes ----------------------------------------------------
+         Plateau 11×11, villages réels aux coins (J1 : (0,0) et (10,10)) et
+         sanctuaire au centre : c'est le plateau d'une vraie partie, vidé.
+         `g` : gardiens { key, p, r, c, crown }. `main` : cartes en main. */
+      const QUICK_ETAPES = [
+        {
+          titre: "Île",
+          scenes: [
+            {
+              scene: {
+                iles: [[[8, 2], [8, 3], [9, 2], [9, 3]]],
+                g: [{ p: 0, r: 8, c: 2 }],
+                main: [], pose: true, focus: [8, 4]
+              },
+              consigne: "Clique ÎLE, choisis une forme, puis pose-la sur le vide",
+              regle: "Une île par tour, obligatoire · la molette la fait tourner",
+              but: ctx => state.islands.length > ctx.iles
+            },
+            {
+              consigne: "Clique une case de la nouvelle île pour y faire naître un gardien",
+              regle: "Un gardien naît à chaque île posée, jusqu’à 6",
+              libre: true,
+              // Lu sur la nouvelle île plutôt qu'au compte : un double clic
+              // pose l'île et fait naître le gardien avant ce sous-but.
+              but: () => {
+                const ile = state.islands[state.islands.length - 1];
+                return state.phase !== "PLACE_SPAWN" && !!ile
+                  && ile.cells.some(([r, c]) => quickGardienSur(0, r, c));
+              }
+            }
+          ]
+        },
+        {
+          titre: "Déplacer",
+          scenes: [{
+            scene: {
+              iles: [[[8, 2], [8, 3], [8, 4], [7, 4], [9, 2], [9, 3]]],
+              g: [{ p: 0, r: 8, c: 2 }],
+              main: ["MOVE", "MOVE", "MOVE"], cible: [7, 4], focus: [8, 3]
+            },
+            consigne: "Clique ton gardien, puis la case lumineuse",
+            regle: "Une carte Déplacer = une case · une diagonale en coûte deux",
+            but: () => quickGardienSur(0, 7, 4)
+          }]
+        },
+        {
+          titre: "Couronne",
+          scenes: [
+            {
+              scene: {
+                iles: [[[5, 2], [5, 3], [6, 2], [6, 3]]],
+                // L'allié attend à l'écart : collé à la couronne, il ouvrait
+                // un choix « quel gardien la ramasse ? » que Quick n'explique pas.
+                g: [{ p: 0, r: 5, c: 3 }, { p: 0, r: 6, c: 2 }],
+                couronne: [5, 5], main: ["MOVE", "MOVE"], focus: [5, 4]
+              },
+              consigne: "Marche jusqu’à la couronne pour la ramasser",
+              regle: "La couronne apparaît au sanctuaire, au centre du plateau",
+              but: () => quickGardiens(0).some(ch => !!artifactCarriedBy(ch.id))
+            },
+            {
+              scene: {
+                iles: [[[5, 2], [5, 3], [6, 2], [6, 3]]],
+                g: [{ p: 0, r: 5, c: 4, crown: true }, { key: "allie", p: 0, r: 5, c: 3 }],
+                main: [], focus: [5, 4]
+              },
+              consigne: "Clique la couronne, puis ton allié pour la lui passer",
+              regle: "Ramasser, passer ou poser la couronne ne coûte aucune carte",
+              libre: true,
+              but: () => !!artifactCarriedBy(QUICK.cles.allie)
+            }
+          ]
+        },
+        {
+          titre: "Pousser",
+          scenes: [
+            {
+              scene: {
+                iles: [[[8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [9, 1], [9, 2], [9, 3], [9, 4], [9, 5]]],
+                g: [{ p: 0, r: 8, c: 1 }, { p: 1, r: 8, c: 2 }],
+                main: ["PUSH", "PUSH", "PUSH"], cible: [8, 5], focus: [8, 3]
+              },
+              consigne: "Clique ton gardien, puis la case où le rival doit atterrir",
+              regle: "Une carte Pousser = une case · trois cartes = trois cases",
+              but: () => quickGardienSur(1, 8, 5)
+            },
+            {
+              scene: {
+                iles: [[[8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [9, 1], [9, 2], [9, 3], [9, 4], [9, 5]]],
+                g: [{ p: 0, r: 8, c: 1 }, { p: 1, r: 8, c: 2 }, { p: 1, r: 8, c: 3 }],
+                main: ["PUSH", "PUSH"], cible: [8, 5], focus: [8, 3]
+              },
+              consigne: "Pousse les deux rivaux d’un seul coup jusqu’au bord",
+              regle: "Toute la file avance ensemble · chaque carte ajoute une case",
+              but: () => quickGardienSur(1, 8, 4) && quickGardienSur(1, 8, 5)
+            },
+            {
+              scene: {
+                iles: [[[8, 1], [8, 2], [8, 3], [9, 1], [9, 2], [9, 3]]],
+                g: [{ p: 0, r: 8, c: 2 }, { p: 1, r: 8, c: 3 }],
+                main: ["PUSH"], focus: [8, 3]
+              },
+              consigne: "Fais tomber le rival dans le vide",
+              regle: "Un gardien poussé hors des îles tombe et quitte la partie",
+              but: ctx => quickGardiens(1).length < ctx.rivaux
+            },
+            {
+              scene: {
+                iles: [[[8, 1], [8, 2], [9, 1], [9, 2]], [[8, 5], [8, 6], [9, 5], [9, 6]]],
+                g: [{ p: 0, r: 8, c: 1 }],
+                couronne: [8, 2], main: ["PUSH", "PUSH", "PUSH"], cible: [8, 5], focus: [8, 4]
+              },
+              consigne: "Lance la couronne par-dessus le vide",
+              regle: "Elle peut survoler le vide, mais doit atterrir sur une case d’île libre",
+              but: () => quickCouronneSur(8, 5)
+            }
+          ]
+        },
+        {
+          titre: "Voler",
+          scenes: [{
+            scene: {
+              iles: [[[8, 2], [8, 3], [8, 4], [9, 2], [9, 3], [9, 4]]],
+              g: [{ p: 0, r: 8, c: 2 }, { p: 1, r: 8, c: 3, crown: true }],
+              main: ["MOVE"], focus: [8, 3]
+            },
+            consigne: "Clique la couronne du rival pour la lui prendre",
+            regle: "Gratuit, dès qu’un de tes gardiens touche le porteur",
+            libre: true,
+            but: () => quickGardiens(0).some(ch => !!artifactCarriedBy(ch.id))
+          }]
+        },
+        {
+          titre: "Magie",
+          scenes: [
+            {
+              scene: {
+                iles: [[[5, 0], [6, 0], [7, 0]], [[2, 0], [2, 1], [3, 1]]],
+                g: [{ p: 0, r: 7, c: 0 }],
+                main: ["MAGIC"], cible: [5, 0], focus: [5, 1]
+              },
+              consigne: "Clique MAGIE, puis la case dorée : ce sera le pivot",
+              regle: "Le pivot ne bouge pas : l’île tourne autour de lui, comme une aiguille autour de son axe",
+              but: () => Array.isArray(state.selectedMagicPivot)
+                && state.selectedMagicPivot[0] === 5 && state.selectedMagicPivot[1] === 0
+            },
+            {
+              cible: [3, 0],
+              consigne: "Clique la position qui amène ton gardien sur la case lumineuse",
+              regle: "Quart de tour ou demi-tour · gardiens et couronnes tournent avec l’île",
+              but: () => quickGardienSur(0, 3, 0)
+            }
+          ]
+        },
+        {
+          titre: "Annuler",
+          scenes: [{
+            scene: {
+              iles: [[[8, 2], [8, 3], [8, 4], [9, 2], [9, 3]]],
+              g: [{ p: 0, r: 8, c: 2 }],
+              main: ["MOVE", "MOVE"], focus: [8, 3]
+            },
+            consigne: "Fais un pas, puis clique la flèche ↶ en bas à gauche",
+            regle: "Annuler revient en arrière dans ton tour, autant de fois que tu veux",
+            libre: true,
+            but: ctx => ctx.annulMax > 0 && (state.undoHistory || []).length < ctx.annulMax
+          }]
+        },
+        {
+          titre: "Marquer",
+          scenes: [
+            {
+              scene: {
+                iles: [[[8, 9], [8, 10], [9, 9], [9, 10]]],
+                g: [{ key: "porteur", p: 0, r: 8, c: 9, crown: true }],
+                main: ["MOVE", "MOVE", "PUSH"], cible: [9, 10], focus: [9, 9]
+              },
+              consigne: "Ramène la couronne dans ton village",
+              regle: "Ton village : les maisons à tes couleurs, dans deux coins · ses trois cases du coin comptent",
+              but: () => quickGardiens(0).some(ch => !!artifactCarriedBy(ch.id)
+                && isCrownValidationCell(state.players[0], ch.r, ch.c))
+            },
+            {
+              consigne: "Clique Fin du tour",
+              regle: "Le point compte au début de ton prochain tour · tu repioches alors 5 cartes",
+              libre: true,
+              finDeTour: true,
+              but: () => (state.players[0].score || 0) >= 1
+            }
+          ]
+        }
+      ];
+
+      /* ---------- Lecture de l'état ------------------------------------ */
+      function quickGardiens(joueur) {
+        return (state?.characters || []).filter(ch => ch.player === joueur);
+      }
+
+      function quickGardienSur(joueur, r, c) {
+        const ch = characterAt(r, c);
+        return !!ch && ch.player === joueur;
+      }
+
+      function quickCouronneSur(r, c) {
+        return activeArtifacts().some(cr => !cr.carrierId && cr.r === r && cr.c === c);
+      }
+
+      function quickCartesRestantes() {
+        return (state?.players?.[0]?.hand || []).filter(carte => !carte.used).length;
+      }
+
+      function quickSousEtape() {
+        return QUICK_ETAPES[QUICK.etape]?.scenes[QUICK.sous] || null;
+      }
+
+      /* ---------- Construction d'une scène -------------------------------
+         Calquée sur puzzleBuildState : un `state` complet de début de tour,
+         sans IA, sans seconde couronne. */
+      function quickConstruire(scene) {
+        setBoardSize(11);
+        const villages = getVillageAssignments(2);
+        const players = ["VOUS", "RIVAL"].map((name, i) => ({
+          id: i, name, color: PLAYER_COLORS[i], icon: PLAYER_ICONS[i],
+          isAI: false, aiDifficulty: null,
+          village: { ...villages[i][0] }, villages: villages[i].map(v => ({ ...v })),
+          score: 0, deck: [], discard: [], hand: [], reserveCards: [],
+          stash: { MOVE: 0, PUSH: 0, MAGIC: 0 }
+        }));
+
+        state = {
+          players, soloMode: false, onlineMode: false, visualMode: "alternative",
+          startingBoardMode: "classic", startingBoardPreset: null,
+          turnDurationSeconds: 0, setupSelectionPending: false, draft: null,
+          aiDifficulty: null, currentPlayer: 0, round: 1, turn: 1,
+          islands: [], characters: [],
+          artifact: { id: "crown-1", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
+          secondArtifact: { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false },
+          phase: "ACTION_SELECT",
+          rules: { allowDissolve: false, islandLimitPerPlayer: 0, shapeLimitPerOwner: 0, disableSecondCrown: true },
+          islandPlacedThisTurn: !scene.pose,
+          centerCrownTakenThisTurn: false,
+          couronnesEnAttente: [], treasureDropFromId: null, crownPickupCell: null,
+          selectedIslandShape: null, placementCells: null, placementOriginIndex: 0,
+          placementRotationSteps: 0, hoverAnchor: null, pendingSpawnIslandId: null,
+          fxCells: [], inputLocked: false, aiThinking: false, timerExpiring: false,
+          turnTimeLeft: null, turnDeadline: null,
+          selectedActionCardId: null, selectedActionType: null, selectedActionCount: 1,
+          pushForceChoice: 1, crownStealTargetId: null, aiCrownMemory: {},
+          crownPickupArtifactId: null, treasureDropArtifactId: null, crownTransferTargetIds: [],
+          selectedCharId: null, selectedIslandId: null, selectedMagicPivot: null,
+          magicPreviewDirection: 0, magicPreviewSteps: 0, magicPreviewCells: null,
+          magicPreviewValid: false, magicHoverIslandId: null, magicHoverPivot: null,
+          actionHoverCell: null, smartHoverType: null, smartHoverPath: [],
+          smartPushForce: null, smartPushTargets: new Set(), pushOptions: [],
+          pushHoverOptionId: null, pushTargetId: null, pendingDirectMoveTarget: null,
+          reachable: new Set(), nextIslandId: 1, nextCharId: 100,
+          undoHistory: [], winner: null,
+          quick: true
+        };
+
+        (scene.iles || []).forEach(cells => tutoAddIsland(cells.map(([r, c]) => [r, c]), 0));
+
+        /* Identifiants propres à chaque montage : sans eux, la scène suivante
+           réutiliserait les visuels de la précédente et téléporterait ses
+           gardiens au lieu de les faire apparaître (voir puzzleBuildState). */
+        QUICK.serie++;
+        QUICK.cles = {};
+        (scene.g || []).forEach(g => {
+          const char = { id: `qk${QUICK.serie}-${state.nextCharId++}`, player: g.p, r: g.r, c: g.c };
+          state.characters.push(char);
+          if (g.key) QUICK.cles[g.key] = char.id;
+          if (g.crown) Object.assign(state.artifact, { active: true, carrierId: char.id, r: g.r, c: g.c });
+        });
+        if (scene.couronne) {
+          Object.assign(state.artifact, { active: true, carrierId: null, r: scene.couronne[0], c: scene.couronne[1] });
+        }
+
+        state.players[0].hand = (scene.main || []).map((action, i) => ({ id: `QK${QUICK.serie}-H${i}`, action, used: false }));
+        // De quoi piocher au tour suivant (étape « Marquer ») sans remélanger.
+        state.players[0].deck = ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"]
+          .map((action, i) => ({ id: `QK${QUICK.serie}-D${i}`, action, used: false }));
+      }
+
+      /* ---------- Repère de destination ---------------------------------
+         Un anneau doré posé au sol de la case visée, rien de plus. */
+      function quickGroupeRepere() {
+        if (typeof kaykit3D === "undefined" || !kaykit3D || !kaykit3D.fxGroup || typeof THREE === "undefined") return null;
+        let groupe = kaykit3D.quickRepere;
+        if (!groupe) {
+          groupe = new THREE.Group();
+          groupe.name = "ilyos-quick-repere";
+          kaykit3D.quickRepere = groupe;
+        }
+        if (!groupe.parent) kaykit3D.fxGroup.add(groupe);
+        return groupe;
+      }
+
+      function quickPoserRepere(cible) {
+        const groupe = quickGroupeRepere();
+        if (!groupe) return;
+        if (typeof clearKayKitGroup === "function") clearKayKitGroup(groupe);
+        if (!cible) return;
+        const p = kaykitCellPosition(cible[0], cible[1], KAYKIT_LEVELS.islandTop + .02);
+        const transitoire = objet => { objet.userData = { ...(objet.userData || {}), ilyosTransient: true }; return objet; };
+        const couche = (geo, opacite, ordre, couleur = 0xffd36a) => {
+          const mat = transitoire(new THREE.MeshBasicMaterial({
+            color: couleur, transparent: true, opacity: opacite, depthTest: false, depthWrite: false
+          }));
+          const maille = new THREE.Mesh(transitoire(geo), mat);
+          maille.rotation.x = -Math.PI / 2;
+          maille.position.set(p.x, p.y, p.z);
+          maille.renderOrder = ordre;
+          groupe.add(maille);
+        };
+        // Liseré sombre : l'anneau reste lisible sur un aperçu clair (magie).
+        couche(new THREE.RingGeometry(.235, .355, 48), .45, 92, 0x2a1d04);
+        couche(new THREE.RingGeometry(.25, .33, 48), .95, 93);
+        couche(new THREE.CircleGeometry(.25, 48), .16, 91);
+      }
+
+      /* ---------- Surcouche -------------------------------------------- */
+      function quickStyle() {
+        if (document.getElementById("ilyos-quick-style")) return;
+        const st = document.createElement("style");
+        st.id = "ilyos-quick-style";
+        st.textContent = `
+          body.quick-mode #hudV2Instruction, body.quick-mode .ov2-v12-instruction,
+          body.quick-mode .ov2-v12-instruction-text { display: none !important; }
+          body.quick-mode.quick-sans-fin #endTurnBtn, body.quick-mode.quick-sans-fin #ov2End { visibility: hidden !important; }
+          #qk-layer { position: fixed; inset: 0; pointer-events: none; z-index: 9000;
+            --font-ilyos-display: 'Cinzel Decorative', Georgia, serif;
+            --font-ilyos-info: 'Nunito Sans', Inter, system-ui, sans-serif;
+            font-family: var(--font-ilyos-info); }
+          #qk-layer.qk-fin-active { z-index: 2147483000; }
+          #qk-layer .qk-top { position: absolute; top: 84px; left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 7px 16px 8px;
+            border-radius: 14px; background: radial-gradient(ellipse at center, rgba(14,18,34,.55), rgba(14,18,34,0) 75%); }
+          #qk-layer .qk-lbl { display: flex; align-items: center; gap: 10px;
+            font: 700 11px/1 var(--font-ilyos-info); letter-spacing: .3em;
+            color: #f6dc92; text-shadow: 0 1px 6px rgba(0,0,0,.6); white-space: nowrap; }
+          #qk-layer .qk-lbl b { color: #fff6d8; font-weight: 700; }
+          #qk-layer .qk-btn { pointer-events: auto; cursor: pointer; border: 1px solid rgba(255,214,120,.35);
+            background: rgba(14,18,34,.55); color: #f6dc92; border-radius: 999px; padding: 4px 10px;
+            font: 700 10px/1 var(--font-ilyos-info); letter-spacing: .18em; }
+          #qk-layer .qk-btn:hover { background: rgba(40,32,12,.75); color: #fff3c4; }
+          #qk-layer .qk-bar { display: flex; gap: 4px; }
+          #qk-layer .qk-bar i { width: 22px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.22); transition: background .3s; }
+          #qk-layer .qk-bar i.ok { background: linear-gradient(90deg, #e8b84a, #ffe39a); }
+          #qk-layer .qk-bar i.cur { background: #fff3c4; box-shadow: 0 0 8px rgba(255,214,110,.9); }
+          #qk-layer .qk-bot { position: absolute; bottom: 146px; left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 5px; width: max-content; max-width: calc(100vw - 32px); }
+          #qk-layer .qk-line { display: flex; align-items: center; gap: 10px; padding: 8px 18px;
+            border-radius: 999px; background: rgba(14,18,34,.62); border: 1px solid rgba(255,214,120,.35);
+            backdrop-filter: blur(6px); color: #fff7e2; font-size: 16px; font-weight: 600;
+            box-shadow: 0 6px 22px rgba(0,0,0,.28); transition: border-color .25s, background .25s; text-align: center; }
+          #qk-layer .qk-line.reussi { border-color: #ffd36a; background: rgba(60,44,10,.72); }
+          #qk-layer .qk-souris { width: 14px; height: 20px; flex: none; }
+          #qk-layer .qk-ok { color: #ffd36a; font-size: 18px; line-height: 1; }
+          #qk-layer .qk-rule { font-size: 12.5px; color: rgba(255,244,214,.85); text-shadow: 0 1px 4px rgba(0,0,0,.8); text-align: center; }
+          #qk-layer .qk-rule::before { content: "◆ "; color: #f2c766; font-size: 9px; }
+          #qk-layer .qk-fin { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto;
+            background: radial-gradient(ellipse at center, rgba(8,10,20,.55), rgba(8,10,20,.78)); }
+          #qk-layer .qk-carte { width: min(460px, calc(100vw - 32px)); padding: 26px 28px 22px; border-radius: 18px;
+            background: linear-gradient(180deg, rgba(24,28,48,.96), rgba(12,14,26,.96));
+            border: 1px solid rgba(255,214,120,.45); box-shadow: 0 20px 60px rgba(0,0,0,.5); color: #fff4dc; text-align: center; }
+          #qk-layer .qk-couronnes { font-size: 22px; letter-spacing: 6px; color: #ffd36a; text-shadow: 0 0 12px rgba(255,200,90,.55); }
+          #qk-layer .qk-grand { margin: 4px 0 8px; font: 700 28px/1.1 var(--font-ilyos-display); color: #ffe39a; letter-spacing: .04em; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
+          #qk-layer .qk-carte p { margin: 6px 0; font-size: 14px; line-height: 1.45; color: rgba(255,244,220,.9); }
+          #qk-layer .qk-tour { display: grid; gap: 8px; margin: 14px 0 2px; text-align: left; }
+          #qk-layer .qk-tour div { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.4; color: rgba(255,244,220,.9); }
+          #qk-layer .qk-tour div > b { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+            font: 700 11px/1 Inter, sans-serif; color: #1d1405; background: linear-gradient(#ffe7a6, #e2b24c); }
+          #qk-layer .qk-touches { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; margin: 14px 0 4px; font-size: 12.5px; color: rgba(255,244,220,.8); }
+          #qk-layer .qk-touches kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+            margin-right: 4px; border-radius: 5px; font: 700 11px/1 Inter, sans-serif; color: #1d1405;
+            background: linear-gradient(#ffe7a6, #e2b24c); box-shadow: 0 1px 0 #8a6516; }
+          #qk-layer .qk-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+          #qk-layer .qk-actions button { pointer-events: auto; cursor: pointer; border-radius: 999px; padding: 10px 18px;
+            font: 700 13px/1 var(--font-ilyos-display), Georgia, serif; letter-spacing: .08em; }
+          #qk-layer .qk-jouer { border: 0; color: #2a1a04; background: linear-gradient(#ffe7a6, #e2b24c); }
+          #qk-layer .qk-menu { border: 1px solid rgba(255,214,120,.45); color: #f6dc92; background: transparent; }
+          @media (max-width: 720px) {
+            #qk-layer .qk-top { top: 64px; }
+            #qk-layer .qk-bot { bottom: 128px; }
+            #qk-layer .qk-line { font-size: 14px; padding: 7px 14px; }
+            #qk-layer .qk-rule { font-size: 11.5px; }
+          }
+        `;
+        document.head.appendChild(st);
+      }
+
+      const QUICK_SOURIS = '<svg class="qk-souris" viewBox="0 0 14 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="6" fill="none" stroke="#f2c766" stroke-width="1.4"/><path d="M7 1v7M1 8h12" stroke="#f2c766" stroke-width="1.2"/><rect x="1.7" y="1.7" width="5.3" height="6.3" rx="3" fill="#f2c766" opacity=".85"/></svg>';
+
+      function quickCalque() {
+        if (QUICK.dom && QUICK.dom.isConnected) return QUICK.dom;
+        const calque = document.createElement("div");
+        calque.id = "qk-layer";
+        calque.innerHTML = `<div class="qk-top"><div class="qk-lbl"><span class="qk-titre"></span>
+            <button class="qk-btn qk-passer" type="button">PASSER ›</button>
+            <button class="qk-btn qk-quitter" type="button" aria-label="Quitter Quick">✕</button></div>
+          <div class="qk-bar"></div></div>
+          <div class="qk-bot"><div class="qk-line"></div><div class="qk-rule"></div></div>`;
+        calque.querySelector(".qk-passer").addEventListener("click", () => quickSuivant());
+        calque.querySelector(".qk-quitter").addEventListener("click", () => quickQuitter());
+        document.body.appendChild(calque);
+        QUICK.dom = calque;
+        return calque;
+      }
+
+      function quickAfficher(reussi = false) {
+        const calque = quickCalque();
+        const etape = QUICK_ETAPES[QUICK.etape];
+        const sous = quickSousEtape();
+        if (!etape || !sous) return;
+        const n = etape.scenes.length;
+        calque.querySelector(".qk-titre").innerHTML =
+          `QUICK · <b>${etape.titre.toUpperCase()}</b>${n > 1 ? ` ${QUICK.sous + 1}/${n}` : ""} · ${QUICK.etape + 1}/${QUICK_ETAPES.length}`;
+        calque.querySelector(".qk-bar").innerHTML = QUICK_ETAPES.map((_, i) =>
+          `<i class="${i < QUICK.etape ? "ok" : i === QUICK.etape ? "cur" : ""}"></i>`).join("");
+        const ligne = calque.querySelector(".qk-line");
+        ligne.classList.toggle("reussi", reussi);
+        ligne.innerHTML = (reussi ? '<span class="qk-ok">✓</span>' : QUICK_SOURIS) + `<span>${sous.consigne}</span>`;
+        calque.querySelector(".qk-rule").textContent = sous.regle || "";
+        document.body.classList.toggle("quick-sans-fin", !sous.finDeTour);
+      }
+
+      /* ---------- Déroulé ----------------------------------------------- */
+      function quickContexte() {
+        return {
+          iles: state.islands.length,
+          gardiens: quickGardiens(0).length,
+          rivaux: quickGardiens(1).length,
+          annulMax: 0,
+          echecDepuis: 0
+        };
+      }
+
+      /* Pose la scène de la sous-étape courante, ou de la dernière sous-étape
+         qui en déclare une quand on rejoue un geste raté. */
+      function quickMonterScene() {
+        const etape = QUICK_ETAPES[QUICK.etape];
+        let i = QUICK.sous;
+        while (i > 0 && !etape.scenes[i].scene) i--;
+        QUICK.sous = i;
+        const scene = etape.scenes[i].scene;
+        try { if (typeof aiRunToken !== "undefined") aiRunToken++; } catch (_) { }
+        quickConstruire(scene);
+        tutoRender();
+        quickPoserRepere(scene.cible || null);
+        const [fr, fc] = scene.focus || [5, 5];
+        try {
+          kaykit3D.autoFit = false;
+          kaykitFollowCell(fr, fc, { duration: 720, force: true, zoomBoost: .35 });
+        } catch (_) { }
+        QUICK.ctx = quickContexte();
+        quickAfficher();
+      }
+
+      function quickSuivant() {
+        clearTimeout(QUICK.enchainement);
+        QUICK.enchainement = null;
+        const etape = QUICK_ETAPES[QUICK.etape];
+        if (etape && QUICK.sous + 1 < etape.scenes.length) {
+          QUICK.sous++;
+          if (etape.scenes[QUICK.sous].scene) quickMonterScene();
+          else {
+            QUICK.ctx = quickContexte();
+            quickPoserRepere(etape.scenes[QUICK.sous].cible || null);
+            quickAfficher();
+          }
+          return;
+        }
+        QUICK.etape++;
+        QUICK.sous = 0;
+        if (QUICK.etape >= QUICK_ETAPES.length) { quickFin(); return; }
+        quickMonterScene();
+      }
+
+      async function quickTourRival() {
+        if (QUICK.relais) return;
+        QUICK.relais = true;
+        try {
+          state.islandPlacedThisTurn = true;
+          await tutoWait(500);
+          if (QUICK.active && state.currentPlayer === 1) await endTurn(true);
+        } catch (_) { }
+        QUICK.relais = false;
+      }
+
+      function quickTick() {
+        if (!QUICK.active || !state || QUICK.enchainement) return;
+        const sous = quickSousEtape();
+        if (!sous) return;
+        const scene = QUICK_ETAPES[QUICK.etape].scenes.find(s => s.scene)?.scene || {};
+        if (!scene.pose || QUICK.sous > 0) state.islandPlacedThisTurn = true;
+        quickGroupeRepere();
+
+        if (state.currentPlayer === 1) {
+          if (!state.turnTransitioning) quickTourRival();
+          return;
+        }
+        if (state.turnTransitioning) return;
+
+        const ctx = QUICK.ctx;
+        ctx.annulMax = Math.max(ctx.annulMax, (state.undoHistory || []).length);
+
+        let atteint = false;
+        try { atteint = !!sous.but(ctx); } catch (_) { atteint = false; }
+        if (atteint) {
+          quickAfficher(true);
+          try { playSfx("crownDrop"); } catch (_) { }
+          QUICK.enchainement = setTimeout(() => { QUICK.enchainement = null; quickSuivant(); }, 1100);
+          return;
+        }
+
+        /* Plus aucune carte et le but n'est pas là : on repose la scène, sans
+           sanction. Laisse au joueur le temps de voir ce qui s'est passé. */
+        if (!sous.libre && quickCartesRestantes() === 0 && state.phase === "ACTION_SELECT") {
+          ctx.echecDepuis = ctx.echecDepuis || Date.now();
+          if (Date.now() - ctx.echecDepuis > 1600) quickMonterScene();
+        } else {
+          ctx.echecDepuis = 0;
+        }
+      }
+
+      /* Avant la première scène : le but de la partie et le rythme d'un tour,
+         sans quoi les gestes appris n'ont pas de sens. */
+      function quickIntro() {
+        const calque = quickCalque();
+        calque.querySelector(".qk-top").style.display = "none";
+        calque.querySelector(".qk-bot").style.display = "none";
+        const intro = document.createElement("div");
+        intro.className = "qk-fin";
+        intro.innerHTML = `<div class="qk-carte">
+          <div class="qk-couronnes" aria-hidden="true">♛♛♛</div>
+          <div class="qk-grand">Le but</div>
+          <p>Rapporte <b>3 couronnes</b> dans ton village avant le rival.</p>
+          <div class="qk-tour">
+            <div><b>1</b><span>Au début de ton tour, tu pioches <b>5 cartes</b> : Déplacer, Pousser ou Magie.</span></div>
+            <div><b>2</b><span>Tu poses <b>une île</b>, puis tu joues tes cartes dans l’ordre que tu veux.</span></div>
+            <div><b>3</b><span>Fin du tour : les cartes non jouées restent en réserve pour plus tard.</span></div>
+          </div>
+          <div class="qk-actions"><button class="qk-jouer" type="button">COMMENCER</button></div></div>`;
+        intro.querySelector(".qk-jouer").addEventListener("click", () => {
+          intro.remove();
+          calque.classList.remove("qk-fin-active");
+          calque.querySelector(".qk-top").style.display = "";
+          calque.querySelector(".qk-bot").style.display = "";
+        });
+        calque.appendChild(intro);
+        calque.classList.add("qk-fin-active");
+      }
+
+      function quickFin() {
+        clearInterval(QUICK.pollTimer);
+        QUICK.pollTimer = null;
+        quickPoserRepere(null);
+        const calque = quickCalque();
+        calque.querySelector(".qk-top").style.display = "none";
+        calque.querySelector(".qk-bot").style.display = "none";
+        const fin = document.createElement("div");
+        fin.className = "qk-fin";
+        fin.innerHTML = `<div class="qk-carte">
+          <div class="qk-couronnes" aria-hidden="true">♛♛♛</div>
+          <div class="qk-grand">Tu sais jouer</div>
+          <p>Le premier à valider <b>3 couronnes</b> gagne.</p>
+          <p>Si plus personne ne peut poser d’île, le plus de couronnes l’emporte ; à égalité, celui qui a une couronne au plus près de son village.</p>
+          <div class="qk-touches">
+            <span><kbd>A</kbd>Île</span><span><kbd>Z</kbd>Déplacer</span><span><kbd>E</kbd>Pousser</span>
+            <span><kbd>R</kbd>Magie</span><span><kbd>Q</kbd><kbd>S</kbd>Tourner l’île</span>
+            <span><kbd>↵</kbd>Fin du tour</span><span><kbd>⌫</kbd>Annuler</span>
+          </div>
+          <p style="font-size:12px;opacity:.7">Les touches servent à aller plus vite. Tout se fait aussi à la souris.</p>
+          <div class="qk-actions">
+            <button class="qk-jouer" type="button">JOUER CONTRE LE CPU</button>
+            <button class="qk-menu" type="button">MENU</button>
+          </div></div>`;
+        fin.querySelector(".qk-jouer").addEventListener("click", () => quickJouer());
+        fin.querySelector(".qk-menu").addEventListener("click", () => quickQuitter());
+        calque.appendChild(fin);
+        calque.classList.add("qk-fin-active");
+        try { localStorage.setItem("ilyos.quick.fait", "1"); } catch (_) { }
+        try { playSfx("victory"); } catch (_) { }
+      }
+
+      /* ---------- Entrée / sortie ---------------------------------------- */
+      function quickStart({ intro = true } = {}) {
+        quickStyle();
+        if (QUICK.dom) { QUICK.dom.remove(); QUICK.dom = null; }
+        QUICK.active = true;
+        QUICK.etape = 0;
+        QUICK.sous = 0;
+
+        try { if (typeof stopTurnTimer === "function") stopTurnTimer(); } catch (_) { }
+        try { boardRenderMode = "3d"; } catch (_) { }
+        try { clearKayKitVillages(); } catch (_) { }
+        try { window.ILYOS_PLATEAU_2D?.activer(false); } catch (_) { }
+
+        quickConstruire(QUICK_ETAPES[0].scenes[0].scene);
+        try { applyVisualMode("alternative"); } catch (_) { }
+        try { if (typeof applyBoardRenderMode === "function") applyBoardRenderMode("3d", { persist: false }); } catch (_) { }
+        try { els.setupScreen.classList.add("hidden"); } catch (_) { }
+        try { els.gameScreen.classList.remove("hidden"); } catch (_) { }
+        try { if (typeof startAmbient === "function") startAmbient(); } catch (_) { }
+        document.body.classList.add("quick-mode");
+
+        quickMonterScene();
+        if (intro) quickIntro();
+        clearInterval(QUICK.pollTimer);
+        QUICK.pollTimer = setInterval(quickTick, 300);
+      }
+
+      function quickDemonter() {
+        QUICK.active = false;
+        clearInterval(QUICK.pollTimer);
+        QUICK.pollTimer = null;
+        clearTimeout(QUICK.enchainement);
+        QUICK.enchainement = null;
+        quickPoserRepere(null);
+        document.body.classList.remove("quick-mode", "quick-sans-fin");
+        if (QUICK.dom) { QUICK.dom.remove(); QUICK.dom = null; }
+      }
+
+      /* Comme à la sortie des énigmes, un rechargement garantit une partie
+         normale ensuite. `state` est vidé d'abord : la scène n'est ni une
+         partie à reprendre ni une partie à sauvegarder. */
+      function quickQuitter() {
+        quickDemonter();
+        state = null;
+        try { location.reload(); } catch (_) { }
+      }
+
+      function quickJouer() {
+        quickDemonter();
+        state = null;
+        try { sessionStorage.setItem("ilyos.quick.jouer", "1"); } catch (_) { }
+        try { location.reload(); } catch (_) { }
+      }
+
+      /* Au retour du rechargement demandé par « Jouer contre le CPU » : une
+         partie solo classique, ordinateur en Facile. */
+      function quickLancerPartieDemandee() {
+        let demande = false;
+        try {
+          demande = sessionStorage.getItem("ilyos.quick.jouer") === "1";
+          sessionStorage.removeItem("ilyos.quick.jouer");
+        } catch (_) { }
+        if (!demande) return;
+        setTimeout(() => {
+          try { window.ILYOS_API?.launchConfiguredGame({ opponent: "1", board: "classic", difficulty: "easy" }); } catch (_) { }
+        }, 400);
+      }
+
+      window.addEventListener("ilyos-quick-requested", () => quickStart());
+      window.addEventListener("load", quickLancerPartieDemandee);
+
+      window.ILYOS_QUICK = {
+        start: () => quickStart(),
+        quitter: quickQuitter,
+        passer: quickSuivant,
+        aller: (etape, sous = 0) => {
+          // Accès direct à une étape (tests, captures) : sans l'écran du but.
+          if (!QUICK.active) quickStart({ intro: false });
+          QUICK.etape = Math.max(0, Math.min(QUICK_ETAPES.length - 1, etape));
+          QUICK.sous = sous;
+          quickMonterScene();
+        },
+        etat: () => ({
+          actif: QUICK.active, etape: QUICK.etape, sous: QUICK.sous,
+          titre: QUICK_ETAPES[QUICK.etape]?.titre || null,
+          total: QUICK_ETAPES.length, cles: { ...QUICK.cles }
+        })
+      };
+      /* =====================================================================
          PROGRESSION DU JOUEUR — niveau, XP, quêtes et offrande du jour
 
          Chaque partie terminée rapporte de l'XP, perdue, nulle ou gagnée ; la
@@ -49769,6 +50559,47 @@
            choisissables — lui seul sait lesquels ont encore quelque chose a
            faire. A defaut, tous les allies. Le parcours reprend au dernier
            gardien utilise, pas au premier de la liste. */
+        /* AU STICK, LE GARDIEN LE PLUS PROCHE DANS LA DIRECTION POUSSEE A
+           L'ECRAN — comme on montrerait du doigt. Le parcours par rang
+           (haut = precedent, bas = suivant) ne correspondait a rien de
+           visible : le gardien choisi pouvait etre a l'oppose du geste
+           (retour de Taekun, 2026-10-20). */
+        function guardianInDirection(dx, dy) {
+          const marques = guardiansMarques();
+          const guardians = marques.length
+            ? marques.map(cell => (state?.characters || []).find(char => char.r === cell.r && char.c === cell.c)).filter(Boolean)
+            : alliedGuardians();
+          if (!guardians.length) return;
+          const depart = pad.cursor || (() => {
+            const vu = guardians.find(char => char.id === pad.lastGuardianId) || guardians[0];
+            return { r: vu.r, c: vu.c };
+          })();
+          const surUnGardien = guardians.some(char => char.r === depart.r && char.c === depart.c);
+          // Premier geste : le curseur n'existait pas encore, il apparait sur ce gardien.
+          if (!pad.cursor && surUnGardien) {
+            const premier = guardians.find(char => char.r === depart.r && char.c === depart.c);
+            pad.lastGuardianId = premier.id;
+            moveCursorTo(premier.r, premier.c);
+            return;
+          }
+          const origin = cellToScreen(depart.r, depart.c);
+          let next = origin
+            ? bestInDirection(guardians.filter(char => char.r !== depart.r || char.c !== depart.c), dx, dy, origin)
+            : null;
+          // Curseur loin de tout gardien : on rejoint d'abord le dernier joue.
+          if (!next && !surUnGardien) next = guardians.find(char => char.id === pad.lastGuardianId) || guardians[0];
+          if (!next) {
+            /* Rien dans cette direction (vue de face, gardiens alignes) : on
+               avance dans la liste plutot que de rester muet. */
+            if (guardians.length < 2 && surUnGardien) return;
+            navigateGuardians(dx + dy >= 0 ? 1 : -1);
+            return;
+          }
+          if (Number.isFinite(next.r) && next.id) pad.lastGuardianId = next.id;
+          if (pad.cursor && pad.cursor.r === next.r && pad.cursor.c === next.c) return;
+          moveCursorTo(next.r, next.c);
+        }
+
         function navigateGuardians(direction) {
           const marques = guardiansMarques();
           const guardians = marques.length
@@ -49892,32 +50723,70 @@
           }
           designerPanneau(null);
 
-          // Stick gauche et croix directionnelle : strictement equivalents.
-          let dx = axis(gamepad, 0), dy = axis(gamepad, 1);
-          if (pressed(gamepad, BUTTON.LEFT)) dx = -1;
-          if (pressed(gamepad, BUTTON.RIGHT)) dx = 1;
-          if (pressed(gamepad, BUTTON.UP)) dy = -1;
-          if (pressed(gamepad, BUTTON.DOWN)) dy = 1;
+          /* LB/RB REPONDENT TOUJOURS A LA MEME QUESTION : avec QUI, ou avec QUOI,
+             suis-je en train de jouer ? Le stick gauche repond a l'autre : OU.
+             Cette separation vaut mieux qu'une fonction qui changeait d'ecran en
+             ecran — c'est elle qui rend les touches apprenables. */
+          const changerQui = direction => {
+            if (contextChoices().length) { moveChoice(direction); return; }
+            if (pad.crownMode) { cycleCrowns(direction); return; }
+            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
+              if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
+               revenait a appeler handleCancelButton(), donc a quitter l'action
+               que le joueur venait de lancer. On parcourt ce que le moteur
+               propose, et s'il ne propose rien, on ne fait rien. */
+            if (state?.selectedActionType) {
+              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            navigateGuardians(direction);
+          };
+          /* STICK GAUCHE = OU, SUR LE PLATEAU. CROIX = QUOI, DANS LE DOCK.
 
-          if ((dx || dy) && aLaMain) {
+             Le stick servait a la fois au dock (gauche/droite) et aux gardiens
+             (haut/bas) : deux surlignages a l'ecran, un geste en biais qui
+             sautait de l'un a l'autre, et A qui validait tantot l'un tantot
+             l'autre. Juge « pas intuitif » par Taekun (2026-10-20). Desormais
+             le stick ne vise que le plateau, dans la direction REELLE poussee
+             (diagonales comprises : vu en perspective, une rangee du plateau
+             est en biais a l'ecran) ; la croix choisit l'action du dock
+             (gauche/droite) ou change de gardien (haut/bas, comme LB/RB). */
+          const sx = axis(gamepad, 0), sy = axis(gamepad, 1);
+          let cx = 0, cy = 0;
+          if (pressed(gamepad, BUTTON.LEFT)) cx = -1;
+          if (pressed(gamepad, BUTTON.RIGHT)) cx = 1;
+          if (pressed(gamepad, BUTTON.UP)) cy = -1;
+          if (pressed(gamepad, BUTTON.DOWN)) cy = 1;
+
+          if ((sx || sy || cx || cy) && aLaMain) {
             const fresh = !pad.stepAt;
             if (fresh || now >= pad.stepAt) {
-              // Un seul axe a la fois : les diagonales n'existent pas ici.
+              const parStick = !!(sx || sy);
+              const dx = parStick ? sx : cx, dy = parStick ? sy : cy;
               const horizontal = Math.abs(dx) >= Math.abs(dy);
               const direction = horizontal ? Math.sign(dx) : Math.sign(dy);
+              const longueur = Math.hypot(dx, dy) || 1;
               if (drawer) {
-                /* Le tiroir ouvert accapare le stick : LB/RB font la meme chose,
-                   mais rien ne doit exiger de les connaitre. Les deux axes
+                /* Le tiroir ouvert accapare stick et croix : LB/RB font la meme
+                   chose, mais rien ne doit exiger de les connaitre. Les deux axes
                    avancent dans la meme liste — le tiroir est une grille, et
                    n'obeir qu'a la horizontale y paraissait casse. */
                 moveChoice(direction);
+              } else if (!parStick && horizontal) {
+                clearChoice();
+                setHud(cycle(hudActions(), pad.hudEl, direction));
+              } else if (!parStick) {
+                changerQui(direction);
               } else if (isNeutral) {
-                if (horizontal) { clearChoice(); setHud(cycle(hudActions(), pad.hudEl, direction)); }
-                else navigateGuardians(direction);
+                setHud(null);
+                guardianInDirection(dx / longueur, dy / longueur);
               } else {
                 setHud(null);
                 clearChoice();
-                if (stepCursor(horizontal ? direction : 0, horizontal ? 0 : direction)) hoverDirty = true;
+                if (stepCursor(dx / longueur, dy / longueur)) hoverDirty = true;
               }
               pad.stepAt = now + (fresh ? STEP_FIRST_MS : STEP_REPEAT_MS);
             }
@@ -49956,27 +50825,6 @@
              qu'on venait souvent de jouer avec lui. */
           if (attendUnGardien() && reprendreGardien()) hoverDirty = true;
 
-          /* LB/RB REPONDENT TOUJOURS A LA MEME QUESTION : avec QUI, ou avec QUOI,
-             suis-je en train de jouer ? Le stick gauche repond a l'autre : OU.
-             Cette separation vaut mieux qu'une fonction qui changeait d'ecran en
-             ecran — c'est elle qui rend les touches apprenables. */
-          const changerQui = direction => {
-            if (contextChoices().length) { moveChoice(direction); return; }
-            if (pad.crownMode) { cycleCrowns(direction); return; }
-            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
-              if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
-              return;
-            }
-            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
-               revenait a appeler handleCancelButton(), donc a quitter l'action
-               que le joueur venait de lancer. On parcourt ce que le moteur
-               propose, et s'il ne propose rien, on ne fait rien. */
-            if (state?.selectedActionType) {
-              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
-              return;
-            }
-            navigateGuardians(direction);
-          };
           if (justPressed(gamepad, BUTTON.LB)) changerQui(-1);
           if (justPressed(gamepad, BUTTON.RB)) changerQui(1);
 
@@ -50074,7 +50922,9 @@
          petite et discrete (choix de Taekun, 2026-10-16), et la touche de
          MANETTE des que la manette sert (gamepad.js pose
          body[data-entree="manette"]) ; une touche du clavier ou un clic
-         reviennent au clavier. Rien sur un ecran tactile. */
+         reviennent au clavier. Rien sur un ecran tactile : les indices ne
+         s'affichent que sur un appareil a souris, ou des qu'une touche ou une
+         manette sert ; un toucher du doigt les retire (Taekun, 2026-10-20). */
       (function setupIlyosClavier() {
         if (typeof document === "undefined") return;
 
@@ -50106,7 +50956,8 @@
               box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none}
             .ilyos-touche.ilyos-touche-dock{top:8px;right:auto;left:calc(50% + 22px)}
             .ilyos-touche:empty{display:none}
-            @media (hover:none) and (pointer:coarse){.ilyos-touche{display:none!important}}`;
+            body:not([data-indices]) .ilyos-touche{display:none!important}
+            body.puzzle-mode #gameScreen.puzzle-on .ilyos-touche.ilyos-touche-dock{top:-1px;left:auto;right:calc(50% + 16px)}`;
           document.head.appendChild(style);
         }
 
@@ -50167,14 +51018,27 @@
           rafraichissement = setTimeout(() => { rafraichissement = 0; poserIndices(); }, 400);
         }
 
+        /* Indices visibles : souris de bureau au depart, puis le dernier
+           moyen utilise decide (doigt = rien, clavier/souris/manette = oui). */
+        function indices(visibles) {
+          if (visibles) document.body.dataset.indices = "1";
+          else delete document.body.dataset.indices;
+        }
+        try { indices(matchMedia("(pointer:fine) and (hover:hover)").matches); } catch (e) { indices(false); }
+
         function modeEntree(manette) {
+          indices(true);
           if ((document.body.dataset.entree === "manette") === manette) return;
           if (manette) document.body.dataset.entree = "manette";
           else delete document.body.dataset.entree;
           poserIndices();
         }
         ilyosModeManette = () => modeEntree(true);
-        document.addEventListener("pointerdown", () => { modeEntree(false); rafraichirIndices(); }, { capture: true, passive: true });
+        document.addEventListener("pointerdown", event => {
+          if (event.pointerType === "touch" || event.pointerType === "pen") indices(false);
+          else modeEntree(false);
+          rafraichirIndices();
+        }, { capture: true, passive: true });
 
         (function attendreHud(essais) {
           const undo = document.getElementById("ov2Undo");
@@ -50265,12 +51129,13 @@
         }
 
         document.addEventListener("keydown", event => {
+          const cible = event.target;
+          const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
+          /* Le clavier virtuel d'un telephone ne tape que dans un champ. */
+          if (["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable)) return;
           modeEntree(false);
           rafraichirIndices();
           if (event.defaultPrevented || event.altKey || event.repeat) return;
-          const cible = event.target;
-          const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
-          if (["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable)) return;
           if (!enPartie()) return;
 
           const ctrl = event.ctrlKey || event.metaKey;

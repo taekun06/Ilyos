@@ -1090,8 +1090,11 @@
              une plaquette sombre — c'est elle qui garantit le contraste, quel
              que soit le ciel derrière. Le compteur devient une pastille sur le
              rond : on lit « combien » sans chercher sous le mot. */
+          /* left:50% va avec le translateX : le portrait du duel ancre le dock
+             a gauche (left:8px) et la rangee sortait de l'ecran au telephone. */
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-dock{
             bottom:20px !important;gap:clamp(16px,2.4vw,30px) !important;
+            left:50% !important;right:auto !important;
             transform:translateX(-50%) !important;}
           body.puzzle-mode #gameScreen.puzzle-on #ilyosHudOrganicV2 .ov2-action{
             position:relative !important;
@@ -1207,6 +1210,11 @@
             color:#fff1cf !important;}
           /* Sauf quand « Fin du tour » occupe déjà ce coin. */
           body.puzzle-mode.puzzle-multi #plateauTactiqueBtn{bottom:74px !important;}
+          /* Telephone en portrait : la rangee d'actions occupe toute la
+             largeur du bas, la bascule passe juste au-dessus, a droite. */
+          @media (orientation:portrait) and (max-width:820px){
+            body.puzzle-mode #plateauTactiqueBtn,
+            body.puzzle-mode.puzzle-multi #plateauTactiqueBtn{bottom:112px !important;right:12px !important;}}
           /* Les barres de rotation se rangent en bas à droite (voir
              css/hud-consolidation-v12.css), juste au-dessus de la bascule 2D —
              et de « Fin du tour » quand l'énigme dure plusieurs tours. */
@@ -1226,6 +1234,16 @@
          l'affichage. */
       function puzzleFrame(r, c, zoomBoost) {
         PUZZLE.lastFrame = { r, c };
+        /* Dès que le joueur tourne ou zoome lui-même, les recadrages de
+           rattrapage ci-dessous ne lui reprennent plus la caméra. */
+        PUZZLE.cameraTouchee = false;
+        try {
+          const orbite = typeof kaykit3D !== "undefined" && kaykit3D?.orbit;
+          if (orbite && !orbite.__puzzleEcoute) {
+            orbite.__puzzleEcoute = true;
+            orbite.addEventListener("start", () => { if (PUZZLE.active) PUZZLE.cameraTouchee = true; });
+          }
+        } catch (_) { }
         const go = tries => {
           let ok = false;
           try {
@@ -1235,12 +1253,26 @@
               ok = true;
             }
           } catch (_) { }
-          try { tutoLockCamera(); } catch (_) { }
+          /* Caméra LIBRE (retour de Taekun, 20/10/2026) : rotation, zoom et
+             déplacement restent au joueur. On garde seulement ce qui empêche
+             le recentrage automatique d'écraser le cadrage de l'énigme. */
+          try {
+            if (typeof kaykit3D !== "undefined" && kaykit3D) {
+              kaykit3D.autoFit = false;
+              kaykit3D.userRotated = true;
+              if (kaykit3D.orbit) {
+                kaykit3D.orbit.enabled = true;
+                kaykit3D.orbit.enableRotate = true;
+                kaykit3D.orbit.enablePan = true;
+                kaykit3D.orbit.enableZoom = true;
+              }
+            }
+          } catch (_) { }
           if (!ok && tries > 0) setTimeout(() => go(tries - 1), 350);
         };
         go(8);
         [350, 700, 1100, 1600, 2400].forEach(delay => setTimeout(() => {
-          if (PUZZLE.active && PUZZLE.lastFrame
+          if (PUZZLE.active && !PUZZLE.cameraTouchee && PUZZLE.lastFrame
             && PUZZLE.lastFrame.r === r && PUZZLE.lastFrame.c === c) go(0);
         }, delay));
       }

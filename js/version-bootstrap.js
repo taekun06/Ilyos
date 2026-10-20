@@ -251,7 +251,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=7'
+    './css/portrait-mobile.css?v=8'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -468,6 +468,11 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
         }
         if (action === 'puzzle') {
           window.dispatchEvent(new CustomEvent('ilyos-puzzle-requested'));
+          setTimeout(() => syncFrame(frame), 120);
+          setTimeout(() => syncFrame(frame), 800);
+        }
+        if (action === 'quick') {
+          window.dispatchEvent(new CustomEvent('ilyos-quick-requested'));
           setTimeout(() => syncFrame(frame), 120);
           setTimeout(() => syncFrame(frame), 800);
         }

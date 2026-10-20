@@ -133,7 +133,7 @@ function collecterIncidents(page) {
   return incidents;
 }
 
-test('au repos, le stick parcourt le HUD et rejoint les gardiens', async ({ page }) => {
+test('au repos, la croix parcourt le dock, le stick reste sur le plateau', async ({ page }) => {
   const incidents = collecterIncidents(page);
   await page.addInitScript(FAUSSE_MANETTE);
   await page.goto('/');
@@ -143,7 +143,7 @@ test('au repos, le stick parcourt le HUD et rejoint les gardiens', async ({ page
 
   await demarrerPartieSolo(page);
 
-  /* Droite : une action du dock se surligne, sans rien viser sur le plateau.
+  /* Croix droite : une action du dock se surligne, sans rien viser sur le plateau.
 
      On ne compare PAS à une liste lue ici : le dock change d'un instant à
      l'autre — le bouton ÎLE passe en « ov2-off » quand son tiroir s'ouvre — et
@@ -158,13 +158,18 @@ test('au repos, le stick parcourt le HUD et rejoint les gardiens', async ({ page
      instant où rien ne pouvait répondre. */
   let premiere = null;
   for (let essai = 0; essai < 6 && !premiere; essai++) {
-    await incliner(page, 0, 1);
+    await appuyer(page, B.RIGHT);
     premiere = await surligne(page);
   }
-  expect(DOCK, 'le stick vers la droite doit surligner une action du dock').toContain(premiere);
+  expect(DOCK, 'la croix vers la droite doit surligner une action du dock').toContain(premiere);
 
+  await appuyer(page, B.RIGHT);
+  expect(DOCK, 'une seconde pression doit rester dans le dock').toContain(await surligne(page));
+
+  /* Le stick, lui, ne touche jamais le dock : il vise un gardien et rend
+     la main au plateau (retour de Taekun, 2026-10-20). */
   await incliner(page, 0, 1);
-  expect(DOCK, 'une seconde poussée doit rester dans le dock').toContain(await surligne(page));
+  expect(await surligne(page), 'le stick doit relâcher le dock').toBeNull();
 
   expect(incidents, `erreurs relevées : ${incidents.join(' | ')}`).toEqual([]);
 });
@@ -200,7 +205,7 @@ test('le tiroir d’îles se parcourt et l’île se tourne aux gâchettes', asy
 
   /* Le tiroir s'ouvre par l'action ÎLE du dock — Y porte desormais la couronne.
      Au premier tour, poser une ile est obligatoire : ÎLE est la seule action
-     offerte, donc une poussee du stick suffit a la designer. Le tiroir peut
+     offerte, donc une pression de la croix suffit a la designer. Le tiroir peut
      deja etre ouvert ; valider alors le refermerait. */
   const tiroirOuvert = () => page.evaluate(
     () => !document.getElementById('hudV2IslandDrawer')?.classList.contains('hidden')
@@ -210,7 +215,7 @@ test('le tiroir d’îles se parcourt et l’île se tourne aux gâchettes', asy
      que le tiroir soit ouvert, sans rien relacher sur l'exigence — il doit
      s'ouvrir A LA MANETTE. */
   for (let essai = 0; essai < 4 && !(await tiroirOuvert()); essai++) {
-    await incliner(page, 0, 1);
+    await appuyer(page, B.RIGHT);
     if ((await surligne(page)) === 'ov2Island') await appuyer(page, B.A);
   }
   expect(await tiroirOuvert(), 'le tiroir doit s’ouvrir à la manette').toBe(true);
