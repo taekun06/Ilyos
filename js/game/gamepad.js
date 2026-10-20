@@ -1138,6 +1138,47 @@
            choisissables — lui seul sait lesquels ont encore quelque chose a
            faire. A defaut, tous les allies. Le parcours reprend au dernier
            gardien utilise, pas au premier de la liste. */
+        /* AU STICK, LE GARDIEN LE PLUS PROCHE DANS LA DIRECTION POUSSEE A
+           L'ECRAN — comme on montrerait du doigt. Le parcours par rang
+           (haut = precedent, bas = suivant) ne correspondait a rien de
+           visible : le gardien choisi pouvait etre a l'oppose du geste
+           (retour de Taekun, 2026-10-20). */
+        function guardianInDirection(dx, dy) {
+          const marques = guardiansMarques();
+          const guardians = marques.length
+            ? marques.map(cell => (state?.characters || []).find(char => char.r === cell.r && char.c === cell.c)).filter(Boolean)
+            : alliedGuardians();
+          if (!guardians.length) return;
+          const depart = pad.cursor || (() => {
+            const vu = guardians.find(char => char.id === pad.lastGuardianId) || guardians[0];
+            return { r: vu.r, c: vu.c };
+          })();
+          const surUnGardien = guardians.some(char => char.r === depart.r && char.c === depart.c);
+          // Premier geste : le curseur n'existait pas encore, il apparait sur ce gardien.
+          if (!pad.cursor && surUnGardien) {
+            const premier = guardians.find(char => char.r === depart.r && char.c === depart.c);
+            pad.lastGuardianId = premier.id;
+            moveCursorTo(premier.r, premier.c);
+            return;
+          }
+          const origin = cellToScreen(depart.r, depart.c);
+          let next = origin
+            ? bestInDirection(guardians.filter(char => char.r !== depart.r || char.c !== depart.c), dx, dy, origin)
+            : null;
+          // Curseur loin de tout gardien : on rejoint d'abord le dernier joue.
+          if (!next && !surUnGardien) next = guardians.find(char => char.id === pad.lastGuardianId) || guardians[0];
+          if (!next) {
+            /* Rien dans cette direction (vue de face, gardiens alignes) : on
+               avance dans la liste plutot que de rester muet. */
+            if (guardians.length < 2 && surUnGardien) return;
+            navigateGuardians(dx + dy >= 0 ? 1 : -1);
+            return;
+          }
+          if (Number.isFinite(next.r) && next.id) pad.lastGuardianId = next.id;
+          if (pad.cursor && pad.cursor.r === next.r && pad.cursor.c === next.c) return;
+          moveCursorTo(next.r, next.c);
+        }
+
         function navigateGuardians(direction) {
           const marques = guardiansMarques();
           const guardians = marques.length
@@ -1261,32 +1302,70 @@
           }
           designerPanneau(null);
 
-          // Stick gauche et croix directionnelle : strictement equivalents.
-          let dx = axis(gamepad, 0), dy = axis(gamepad, 1);
-          if (pressed(gamepad, BUTTON.LEFT)) dx = -1;
-          if (pressed(gamepad, BUTTON.RIGHT)) dx = 1;
-          if (pressed(gamepad, BUTTON.UP)) dy = -1;
-          if (pressed(gamepad, BUTTON.DOWN)) dy = 1;
+          /* LB/RB REPONDENT TOUJOURS A LA MEME QUESTION : avec QUI, ou avec QUOI,
+             suis-je en train de jouer ? Le stick gauche repond a l'autre : OU.
+             Cette separation vaut mieux qu'une fonction qui changeait d'ecran en
+             ecran — c'est elle qui rend les touches apprenables. */
+          const changerQui = direction => {
+            if (contextChoices().length) { moveChoice(direction); return; }
+            if (pad.crownMode) { cycleCrowns(direction); return; }
+            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
+              if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
+               revenait a appeler handleCancelButton(), donc a quitter l'action
+               que le joueur venait de lancer. On parcourt ce que le moteur
+               propose, et s'il ne propose rien, on ne fait rien. */
+            if (state?.selectedActionType) {
+              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
+              return;
+            }
+            navigateGuardians(direction);
+          };
+          /* STICK GAUCHE = OU, SUR LE PLATEAU. CROIX = QUOI, DANS LE DOCK.
 
-          if ((dx || dy) && aLaMain) {
+             Le stick servait a la fois au dock (gauche/droite) et aux gardiens
+             (haut/bas) : deux surlignages a l'ecran, un geste en biais qui
+             sautait de l'un a l'autre, et A qui validait tantot l'un tantot
+             l'autre. Juge « pas intuitif » par Taekun (2026-10-20). Desormais
+             le stick ne vise que le plateau, dans la direction REELLE poussee
+             (diagonales comprises : vu en perspective, une rangee du plateau
+             est en biais a l'ecran) ; la croix choisit l'action du dock
+             (gauche/droite) ou change de gardien (haut/bas, comme LB/RB). */
+          const sx = axis(gamepad, 0), sy = axis(gamepad, 1);
+          let cx = 0, cy = 0;
+          if (pressed(gamepad, BUTTON.LEFT)) cx = -1;
+          if (pressed(gamepad, BUTTON.RIGHT)) cx = 1;
+          if (pressed(gamepad, BUTTON.UP)) cy = -1;
+          if (pressed(gamepad, BUTTON.DOWN)) cy = 1;
+
+          if ((sx || sy || cx || cy) && aLaMain) {
             const fresh = !pad.stepAt;
             if (fresh || now >= pad.stepAt) {
-              // Un seul axe a la fois : les diagonales n'existent pas ici.
+              const parStick = !!(sx || sy);
+              const dx = parStick ? sx : cx, dy = parStick ? sy : cy;
               const horizontal = Math.abs(dx) >= Math.abs(dy);
               const direction = horizontal ? Math.sign(dx) : Math.sign(dy);
+              const longueur = Math.hypot(dx, dy) || 1;
               if (drawer) {
-                /* Le tiroir ouvert accapare le stick : LB/RB font la meme chose,
-                   mais rien ne doit exiger de les connaitre. Les deux axes
+                /* Le tiroir ouvert accapare stick et croix : LB/RB font la meme
+                   chose, mais rien ne doit exiger de les connaitre. Les deux axes
                    avancent dans la meme liste — le tiroir est une grille, et
                    n'obeir qu'a la horizontale y paraissait casse. */
                 moveChoice(direction);
+              } else if (!parStick && horizontal) {
+                clearChoice();
+                setHud(cycle(hudActions(), pad.hudEl, direction));
+              } else if (!parStick) {
+                changerQui(direction);
               } else if (isNeutral) {
-                if (horizontal) { clearChoice(); setHud(cycle(hudActions(), pad.hudEl, direction)); }
-                else navigateGuardians(direction);
+                setHud(null);
+                guardianInDirection(dx / longueur, dy / longueur);
               } else {
                 setHud(null);
                 clearChoice();
-                if (stepCursor(horizontal ? direction : 0, horizontal ? 0 : direction)) hoverDirty = true;
+                if (stepCursor(dx / longueur, dy / longueur)) hoverDirty = true;
               }
               pad.stepAt = now + (fresh ? STEP_FIRST_MS : STEP_REPEAT_MS);
             }
@@ -1325,27 +1404,6 @@
              qu'on venait souvent de jouer avec lui. */
           if (attendUnGardien() && reprendreGardien()) hoverDirty = true;
 
-          /* LB/RB REPONDENT TOUJOURS A LA MEME QUESTION : avec QUI, ou avec QUOI,
-             suis-je en train de jouer ? Le stick gauche repond a l'autre : OU.
-             Cette separation vaut mieux qu'une fonction qui changeait d'ecran en
-             ecran — c'est elle qui rend les touches apprenables. */
-          const changerQui = direction => {
-            if (contextChoices().length) { moveChoice(direction); return; }
-            if (pad.crownMode) { cycleCrowns(direction); return; }
-            if (ACTIONS_A_GARDIEN.includes(state?.selectedActionType || "") || attendUnGardien()) {
-              if (cycleGuardians(direction)) { setHud(null); refreshHover(); }
-              return;
-            }
-            /* MAGIE : aucun gardien a changer — passer par cycleGuardians
-               revenait a appeler handleCancelButton(), donc a quitter l'action
-               que le joueur venait de lancer. On parcourt ce que le moteur
-               propose, et s'il ne propose rien, on ne fait rien. */
-            if (state?.selectedActionType) {
-              if (cycleTargets(direction)) { setHud(null); refreshHover(); }
-              return;
-            }
-            navigateGuardians(direction);
-          };
           if (justPressed(gamepad, BUTTON.LB)) changerQui(-1);
           if (justPressed(gamepad, BUTTON.RB)) changerQui(1);
 
