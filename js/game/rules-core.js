@@ -190,7 +190,6 @@
         };
         state.islands.push(ile);
         state.islandPlacedThisTurn = true;
-        lisereMarquerAction();
 
         let gardien = null;
         let couronneRamassee = null;

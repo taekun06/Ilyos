@@ -845,7 +845,7 @@
     actif = vers === undefined ? !actif : !!vers;
     if (actif) construire();
     document.body.dataset.plateauTactique = actif ? "on" : "off";
-    if (bouton) bouton.textContent = actif ? "VUE 3D" : "VUE 2D";
+    if (bouton) bouton.textContent = actif ? "3D" : "2D";
     if (actif) { dimensionner(); demanderPeinture(); }
   }
 
@@ -854,7 +854,7 @@
     bouton = document.createElement("button");
     bouton.type = "button";
     bouton.id = "plateauTactiqueBtn";
-    bouton.textContent = "VUE 2D";
+    bouton.textContent = "2D";
     bouton.title = "Basculer entre la vue 3D et le plateau tactique (touche V)";
     bouton.addEventListener("click", () => basculer());
     document.body.appendChild(bouton);

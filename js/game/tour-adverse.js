@@ -4,8 +4,8 @@
          Quand l'adversaire a joué pendant qu'on regardait ailleurs, toucher
          son portrait rejoue son tour sur le vrai plateau, avec les vraies
          animations des gardiens (marche, poussée, chute, magie), puis ramène
-         le plateau au présent. Sans texte : le liseré du tour prend sa
-         couleur, un voile discret borde l'écran et un petit chiffre « 1/3 »
+         le plateau au présent. Sans texte : son portrait brille comme à
+         son tour, un voile discret borde l'écran et un petit chiffre « 1/3 »
          sous le portrait dit où l'on en est. Toucher n'importe où arrête.
 
          Remplace les traces au repos et la frise (PR #141), jugées peu
@@ -200,7 +200,7 @@
           body.tour-adverse-rejeu #tourAdversePastille{opacity:0}
           #tourAdverseVoile{position:fixed;inset:0;z-index:58;cursor:pointer;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 58%,rgba(16,10,34,.42) 100%)}
           #tourAdverseCompteur{position:fixed;z-index:61;padding:2px 9px;border-radius:999px;background:rgba(24,16,44,.82);border:1px solid var(--ta-c,#ffc94a);color:#fff;font:600 13px/18px Georgia,serif;letter-spacing:.04em;pointer-events:none;transform:translateX(-50%)}
-          body.tour-adverse-rejeu :is(#hudV2Dock,#ov2Instruction,#ov2Toast,.ov2-dock,#ov2End,#ov2Undo,#ov2Guardian,#ov2DeckHud,#ov2DiscardHud){visibility:hidden!important}
+          body.tour-adverse-rejeu :is(#hudV2Dock,#ov2Instruction,#ov2Toast,.ov2-dock,#ov2End,#ov2Undo,#ov2Guardian,#ov2DeckHud,#ov2DiscardHud,.ilyos-touche[data-pour="ov2End"]){visibility:hidden!important}
           #tourAdverseCompteur b{color:var(--ta-c,#ffc94a);font-weight:700}
         `;
         document.head.appendChild(style);
@@ -222,7 +222,7 @@
           && state.winner === null && !currentPlayer()?.isAI && !state.inputLocked;
       }
 
-      /* Pastille « revoir » posée au coin du portrait, côté plateau. Elle vit
+      /* Pastille « revoir » posée à l'angle bas droit du portrait. Elle vit
          hors du portrait, qui rogne tout ce qui dépasse de son contour. */
       function tourAdverseBadge() {
         if (typeof document === "undefined") return;
@@ -241,8 +241,7 @@
         }
         const joueur = tourAdverse.aRevoir[tourAdverse.aRevoir.length - 1].joueur;
         pastille.style.setProperty("--ta-c", state.players?.[joueur]?.color || "#ffc94a");
-        const droite = portrait.closest(".ov2-right");
-        pastille.style.left = `${Math.round(droite ? zone.left - 6 : zone.right - 18)}px`;
+        pastille.style.left = `${Math.round(zone.right - 18)}px`;
         pastille.style.top = `${Math.round(zone.bottom - 18)}px`;
         portrait.classList.add("ta-revoir");
       }
@@ -329,7 +328,6 @@
         const partie = state;
         // Pendant le rejeu le trait est à l'adversaire : on garde le portrait touché.
         const portrait = tourAdversePortrait();
-        const lisere = { cle: renderLisereTour.cle, acte: renderLisereTour.acte };
         tourAdverse.rejeu = jeton;
         tourAdverseStyle();
         const voile = document.createElement("div");
@@ -356,7 +354,6 @@
           if (state === partie) {
             applyStateSnapshot(JSON.parse(present));
             state.inputLocked = false;
-            Object.assign(renderLisereTour, lisere);
           }
           tourAdverse.rejeu = null;
           voile.remove();

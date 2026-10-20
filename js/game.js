@@ -21705,49 +21705,28 @@
       /* Carte jouée : une petite carte part du bouton d'action (ou du portrait
          de l'adversaire) vers le plateau et s'efface. Un seul élément DOM animé
          par le compositeur (Web Animations), retiré à la fin. */
-      /* Liseré du joueur actif : à l'ouverture du tour, un cadre net et
-         intense à sa couleur ; dès sa première action, il se fond en une lueur diffuse venue du haut et du
-         bas. Deux calques CSS fixes, seule leur opacité change. */
+      /* Joueur au trait : son portrait brille à sa couleur (css/base.css),
+         celui de l'autre camp s'efface. Remplace le liseré autour de l'écran
+         (retiré à la demande de Taekun, 2026-10-20). */
       function lisereCouleur(hex, alpha) {
         const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
         if (!m) return `rgba(255,255,255,${alpha})`;
         const n = parseInt(m[1], 16);
         return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
       }
-      function renderLisereTour() {
+      function renderTourActif() {
         if (typeof document === "undefined") return;
-        let el = renderLisereTour.el;
-        if (!el) {
-          el = renderLisereTour.el = document.createElement("div");
-          el.className = "lisere-tour";
-          el.innerHTML = '<i class="fort"></i><i class="doux"></i>';
-          document.body.appendChild(el);
-        }
         const p = currentPlayer?.();
         const enJeu = !!p && state?.winner === null && !document.getElementById("gameScreen")?.classList.contains("hidden");
-        el.hidden = !enJeu;
         document.body.dataset.tourActif = enJeu && state.players.length === 2 ? String(state.currentPlayer) : "";
         if (!enJeu) return;
         const couleur = p.color || "#ffffff";
-        if (renderLisereTour.couleur !== couleur) {
-          renderLisereTour.couleur = couleur;
-          el.style.setProperty("--lt-plein", lisereCouleur(couleur, 1));
-          el.style.setProperty("--lt-halo", lisereCouleur(couleur, .53));
-          el.style.setProperty("--lt-haut", lisereCouleur(couleur, .31));
-          el.style.setProperty("--lt-bas", lisereCouleur(couleur, .27));
-          el.style.setProperty("--lt-nul", lisereCouleur(couleur, 0));
-        }
-        const cle = `${state.turn}/${state.currentPlayer}`;
-        if (renderLisereTour.cle !== cle) { renderLisereTour.cle = cle; renderLisereTour.acte = false; }
-        // L'humain qui annule tout son tour retrouve le liseré net.
-        const agi = renderLisereTour.acte && (p.isAI || state.undoHistory?.length > 0);
-        el.dataset.mode = agi ? "doux" : "fort";
-      }
-      // Première action du tour (carte jouée, île posée) : le liseré s'adoucit.
-      function lisereMarquerAction() {
-        if (ilyosSimulationActive || !state) return;
-        renderLisereTour.cle = `${state.turn}/${state.currentPlayer}`;
-        renderLisereTour.acte = true;
+        if (renderTourActif.couleur === couleur) return;
+        renderTourActif.couleur = couleur;
+        const racine = document.body.style;
+        racine.setProperty("--tour-plein", lisereCouleur(couleur, 1));
+        racine.setProperty("--tour-halo", lisereCouleur(couleur, .85));
+        racine.setProperty("--tour-lueur", lisereCouleur(couleur, .45));
       }
 
       const CARTE_ENVOL_BOUTONS = { MOVE: "ov2Move", PUSH: "ov2Push", MAGIC: "ov2Magic" };
@@ -21807,7 +21786,7 @@
         updateCrownStatus();
         updateOnlineBadge();
         renderHudV2();
-        renderLisereTour();
+        renderTourActif();
         // V78 (passe fluidité) : remplace les MutationObserver globaux sur
         // #gameScreen de js/archipelago-behaviour.js et js/immersion-fluidity.js
         // (scripts séparés, hors de cette IIFE) — chacun garde sa propre garde
@@ -26211,7 +26190,7 @@
             }));
           }
 
-          if (requested - remaining > 0) { carteJoueeEnvol(type, player); lisereMarquerAction(); }
+          if (requested - remaining > 0) carteJoueeEnvol(type, player);
           return requested - remaining;
         };
 
@@ -26567,7 +26546,6 @@
         };
         state.islands.push(ile);
         state.islandPlacedThisTurn = true;
-        lisereMarquerAction();
 
         let gardien = null;
         let couronneRamassee = null;
@@ -34481,8 +34459,8 @@
          Quand l'adversaire a joué pendant qu'on regardait ailleurs, toucher
          son portrait rejoue son tour sur le vrai plateau, avec les vraies
          animations des gardiens (marche, poussée, chute, magie), puis ramène
-         le plateau au présent. Sans texte : le liseré du tour prend sa
-         couleur, un voile discret borde l'écran et un petit chiffre « 1/3 »
+         le plateau au présent. Sans texte : son portrait brille comme à
+         son tour, un voile discret borde l'écran et un petit chiffre « 1/3 »
          sous le portrait dit où l'on en est. Toucher n'importe où arrête.
 
          Remplace les traces au repos et la frise (PR #141), jugées peu
@@ -34677,7 +34655,7 @@
           body.tour-adverse-rejeu #tourAdversePastille{opacity:0}
           #tourAdverseVoile{position:fixed;inset:0;z-index:58;cursor:pointer;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 58%,rgba(16,10,34,.42) 100%)}
           #tourAdverseCompteur{position:fixed;z-index:61;padding:2px 9px;border-radius:999px;background:rgba(24,16,44,.82);border:1px solid var(--ta-c,#ffc94a);color:#fff;font:600 13px/18px Georgia,serif;letter-spacing:.04em;pointer-events:none;transform:translateX(-50%)}
-          body.tour-adverse-rejeu :is(#hudV2Dock,#ov2Instruction,#ov2Toast,.ov2-dock,#ov2End,#ov2Undo,#ov2Guardian,#ov2DeckHud,#ov2DiscardHud){visibility:hidden!important}
+          body.tour-adverse-rejeu :is(#hudV2Dock,#ov2Instruction,#ov2Toast,.ov2-dock,#ov2End,#ov2Undo,#ov2Guardian,#ov2DeckHud,#ov2DiscardHud,.ilyos-touche[data-pour="ov2End"]){visibility:hidden!important}
           #tourAdverseCompteur b{color:var(--ta-c,#ffc94a);font-weight:700}
         `;
         document.head.appendChild(style);
@@ -34699,7 +34677,7 @@
           && state.winner === null && !currentPlayer()?.isAI && !state.inputLocked;
       }
 
-      /* Pastille « revoir » posée au coin du portrait, côté plateau. Elle vit
+      /* Pastille « revoir » posée à l'angle bas droit du portrait. Elle vit
          hors du portrait, qui rogne tout ce qui dépasse de son contour. */
       function tourAdverseBadge() {
         if (typeof document === "undefined") return;
@@ -34718,8 +34696,7 @@
         }
         const joueur = tourAdverse.aRevoir[tourAdverse.aRevoir.length - 1].joueur;
         pastille.style.setProperty("--ta-c", state.players?.[joueur]?.color || "#ffc94a");
-        const droite = portrait.closest(".ov2-right");
-        pastille.style.left = `${Math.round(droite ? zone.left - 6 : zone.right - 18)}px`;
+        pastille.style.left = `${Math.round(zone.right - 18)}px`;
         pastille.style.top = `${Math.round(zone.bottom - 18)}px`;
         portrait.classList.add("ta-revoir");
       }
@@ -34806,7 +34783,6 @@
         const partie = state;
         // Pendant le rejeu le trait est à l'adversaire : on garde le portrait touché.
         const portrait = tourAdversePortrait();
-        const lisere = { cle: renderLisereTour.cle, acte: renderLisereTour.acte };
         tourAdverse.rejeu = jeton;
         tourAdverseStyle();
         const voile = document.createElement("div");
@@ -34833,7 +34809,6 @@
           if (state === partie) {
             applyStateSnapshot(JSON.parse(present));
             state.inputLocked = false;
-            Object.assign(renderLisereTour, lisere);
           }
           tourAdverse.rejeu = null;
           voile.remove();
@@ -50092,8 +50067,9 @@
           { id: "ov2Move", clavier: "Z", manette: "", dock: true },
           { id: "ov2Push", clavier: "E", manette: "X", dock: true },
           { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
-          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:auto;bottom:7px;right:18px" },
-          { id: "ov2Gear", clavier: "Échap", manette: "≡" },
+          { id: "ov2End", clavier: "↵", manette: "⧉", angle: true },
+          // Échap n'est plus affiché sur MENU (Taekun, 2026-10-20).
+          { id: "ov2Gear", clavier: "", manette: "≡" },
           { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
         ];
 
@@ -50119,7 +50095,8 @@
            Un bouton decoupe par un clip-path rognerait un indice pose dedans :
            le sien est pose a cote, dans le parent, au coin du bouton, et suit
            sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
-           grand, le garde a l'interieur de sa decoupe, en bas a droite (`coin`).
+           grand, porte le sien a l'angle bas droit (`angle`), dehors lui aussi :
+           sa decoupe en rognait le coin (Taekun, 2026-10-20).
            ↶ n'en porte plus (Taekun, 2026-10-16). */
         function poserIndices() {
           installerStyle();
@@ -50129,7 +50106,9 @@
             if (!bouton) return;
             const style = getComputedStyle(bouton);
             const parent = bouton.parentElement;
-            const dehors = !indice.coin && style.clipPath !== "none" && !!parent && bouton.offsetParent === parent;
+            // L'angle de Fin du tour est toujours dehors : posé avant que le bouton
+            // ne s'affiche, il serait sinon resté dedans, rogné par la découpe.
+            const dehors = !!parent && (indice.angle || (style.clipPath !== "none" && bouton.offsetParent === parent));
             let marque = document.querySelector(`.ilyos-touche[data-pour="${indice.id}"]`);
             if (marque && marque.parentElement !== (dehors ? parent : bouton)) { marque.remove(); marque = null; }
             if (!marque) {
@@ -50138,7 +50117,6 @@
               marque.className = "ilyos-touche" + (indice.dock ? " ilyos-touche-dock" : "");
               marque.dataset.pour = indice.id;
               marque.setAttribute("aria-hidden", "true");
-              if (indice.coin) marque.style.cssText = indice.coin;
               /* En ligne : la typographie du HUD (Almendra) l'emportait sur la
                  feuille ci-dessus pour les boutons d'action. */
               marque.style.setProperty("font-family", "'Nunito Sans', Inter, system-ui, sans-serif", "important");
@@ -50146,9 +50124,14 @@
             }
             if (dehors) {
               marque.style.left = `${bouton.offsetLeft + bouton.offsetWidth - 11}px`;
-              marque.style.top = `${bouton.offsetTop - 6}px`;
+              marque.style.top = `${bouton.offsetTop + (indice.angle ? bouton.offsetHeight - 11 : -6)}px`;
               marque.style.right = "auto";
-              marque.hidden = style.display === "none" || style.visibility === "hidden";
+              marque.hidden = style.display === "none" || style.visibility === "hidden" || !bouton.offsetParent;
+              // Fin du tour apparait et change de taille avec le tour : l'angle suit.
+              if (indice.angle && !bouton.dataset.angleSuivi && typeof ResizeObserver === "function") {
+                bouton.dataset.angleSuivi = "1";
+                new ResizeObserver(() => rafraichirIndices()).observe(bouton);
+              }
             }
             const texte = manette ? indice.manette : indice.clavier;
             if (marque.textContent !== texte) marque.textContent = texte;
