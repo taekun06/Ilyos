@@ -22,7 +22,9 @@
          petite et discrete (choix de Taekun, 2026-10-16), et la touche de
          MANETTE des que la manette sert (gamepad.js pose
          body[data-entree="manette"]) ; une touche du clavier ou un clic
-         reviennent au clavier. Rien sur un ecran tactile. */
+         reviennent au clavier. Rien sur un ecran tactile : les indices ne
+         s'affichent que sur un appareil a souris, ou des qu'une touche ou une
+         manette sert ; un toucher du doigt les retire (Taekun, 2026-10-20). */
       (function setupIlyosClavier() {
         if (typeof document === "undefined") return;
 
@@ -53,7 +55,8 @@
               box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none}
             .ilyos-touche.ilyos-touche-dock{top:8px;right:auto;left:calc(50% + 22px)}
             .ilyos-touche:empty{display:none}
-            @media (hover:none) and (pointer:coarse){.ilyos-touche{display:none!important}}`;
+            body:not([data-indices]) .ilyos-touche{display:none!important}
+            body.puzzle-mode #gameScreen.puzzle-on .ilyos-touche.ilyos-touche-dock{top:-1px;left:auto;right:calc(50% + 16px)}`;
           document.head.appendChild(style);
         }
 
@@ -107,14 +110,27 @@
           rafraichissement = setTimeout(() => { rafraichissement = 0; poserIndices(); }, 400);
         }
 
+        /* Indices visibles : souris de bureau au depart, puis le dernier
+           moyen utilise decide (doigt = rien, clavier/souris/manette = oui). */
+        function indices(visibles) {
+          if (visibles) document.body.dataset.indices = "1";
+          else delete document.body.dataset.indices;
+        }
+        try { indices(matchMedia("(pointer:fine) and (hover:hover)").matches); } catch (e) { indices(false); }
+
         function modeEntree(manette) {
+          indices(true);
           if ((document.body.dataset.entree === "manette") === manette) return;
           if (manette) document.body.dataset.entree = "manette";
           else delete document.body.dataset.entree;
           poserIndices();
         }
         ilyosModeManette = () => modeEntree(true);
-        document.addEventListener("pointerdown", () => { modeEntree(false); rafraichirIndices(); }, { capture: true, passive: true });
+        document.addEventListener("pointerdown", event => {
+          if (event.pointerType === "touch" || event.pointerType === "pen") indices(false);
+          else modeEntree(false);
+          rafraichirIndices();
+        }, { capture: true, passive: true });
 
         (function attendreHud(essais) {
           const undo = document.getElementById("ov2Undo");
@@ -205,12 +221,13 @@
         }
 
         document.addEventListener("keydown", event => {
+          const cible = event.target;
+          const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
+          /* Le clavier virtuel d'un telephone ne tape que dans un champ. */
+          if (["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable)) return;
           modeEntree(false);
           rafraichirIndices();
           if (event.defaultPrevented || event.altKey || event.repeat) return;
-          const cible = event.target;
-          const balise = cible && cible.tagName ? cible.tagName.toUpperCase() : "";
-          if (["INPUT", "TEXTAREA", "SELECT"].includes(balise) || (cible && cible.isContentEditable)) return;
           if (!enPartie()) return;
 
           const ctrl = event.ctrlKey || event.metaKey;
