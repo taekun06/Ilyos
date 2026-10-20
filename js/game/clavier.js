@@ -37,8 +37,9 @@
           { id: "ov2Move", clavier: "Z", manette: "", dock: true },
           { id: "ov2Push", clavier: "E", manette: "X", dock: true },
           { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
-          { id: "ov2End", clavier: "↵", manette: "⧉", coin: "top:auto;bottom:7px;right:18px" },
-          { id: "ov2Gear", clavier: "Échap", manette: "≡" },
+          { id: "ov2End", clavier: "↵", manette: "⧉", angle: true },
+          // Échap n'est plus affiché sur MENU (Taekun, 2026-10-20).
+          { id: "ov2Gear", clavier: "", manette: "≡" },
           { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
         ];
 
@@ -65,7 +66,8 @@
            Un bouton decoupe par un clip-path rognerait un indice pose dedans :
            le sien est pose a cote, dans le parent, au coin du bouton, et suit
            sa visibilite a chaque geste (rafraichirIndices). Fin du tour, assez
-           grand, le garde a l'interieur de sa decoupe, en bas a droite (`coin`).
+           grand, porte le sien a l'angle bas droit (`angle`), dehors lui aussi :
+           sa decoupe en rognait le coin (Taekun, 2026-10-20).
            ↶ n'en porte plus (Taekun, 2026-10-16). */
         function poserIndices() {
           installerStyle();
@@ -75,7 +77,9 @@
             if (!bouton) return;
             const style = getComputedStyle(bouton);
             const parent = bouton.parentElement;
-            const dehors = !indice.coin && style.clipPath !== "none" && !!parent && bouton.offsetParent === parent;
+            // L'angle de Fin du tour est toujours dehors : posé avant que le bouton
+            // ne s'affiche, il serait sinon resté dedans, rogné par la découpe.
+            const dehors = !!parent && (indice.angle || (style.clipPath !== "none" && bouton.offsetParent === parent));
             let marque = document.querySelector(`.ilyos-touche[data-pour="${indice.id}"]`);
             if (marque && marque.parentElement !== (dehors ? parent : bouton)) { marque.remove(); marque = null; }
             if (!marque) {
@@ -84,7 +88,6 @@
               marque.className = "ilyos-touche" + (indice.dock ? " ilyos-touche-dock" : "");
               marque.dataset.pour = indice.id;
               marque.setAttribute("aria-hidden", "true");
-              if (indice.coin) marque.style.cssText = indice.coin;
               /* En ligne : la typographie du HUD (Almendra) l'emportait sur la
                  feuille ci-dessus pour les boutons d'action. */
               marque.style.setProperty("font-family", "'Nunito Sans', Inter, system-ui, sans-serif", "important");
@@ -92,9 +95,14 @@
             }
             if (dehors) {
               marque.style.left = `${bouton.offsetLeft + bouton.offsetWidth - 11}px`;
-              marque.style.top = `${bouton.offsetTop - 6}px`;
+              marque.style.top = `${bouton.offsetTop + (indice.angle ? bouton.offsetHeight - 11 : -6)}px`;
               marque.style.right = "auto";
-              marque.hidden = style.display === "none" || style.visibility === "hidden";
+              marque.hidden = style.display === "none" || style.visibility === "hidden" || !bouton.offsetParent;
+              // Fin du tour apparait et change de taille avec le tour : l'angle suit.
+              if (indice.angle && !bouton.dataset.angleSuivi && typeof ResizeObserver === "function") {
+                bouton.dataset.angleSuivi = "1";
+                new ResizeObserver(() => rafraichirIndices()).observe(bouton);
+              }
             }
             const texte = manette ? indice.manette : indice.clavier;
             if (marque.textContent !== texte) marque.textContent = texte;

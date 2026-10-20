@@ -103,6 +103,55 @@ body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:focu
   body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn kbd { display: none; }
 }
 
+/* ---------- MENU et 2D DANS LA PLAQUE DU TOUR (écran large) ----------
+   Un de chaque côté de « TOUR 7 », à l'intérieur du cadre (Taekun,
+   2026-10-20). Les deux boutons restent fixes ; ui.js (placerBoutonsPlaque)
+   publie le cadre de la plaque : --plaque-g / --plaque-d (écart aux bords de
+   l'écran) et --plaque-cy (milieu en hauteur). La plaque s'élargit de quoi
+   les loger. Énigmes et téléphone gardent leurs propres places. */
+@media (orientation: landscape) and (min-height: 501px) {
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-turn {
+    padding: 0 64px !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn,
+  html body:not(.puzzle-mode) #plateauTactiqueBtn {
+    position: fixed;
+    top: calc(var(--plaque-cy, 34px) - 15px);
+    height: 30px;
+    min-width: 30px;
+    min-height: 0;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(233, 189, 91, .45);
+    border-radius: 999px;
+    background: rgba(4, 10, 18, .45);
+    box-shadow: none;
+    backdrop-filter: none;
+    transform: none;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn {
+    left: calc(var(--plaque-g, 530px) + 24px);
+    right: auto;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn > span:not(.ilyos-touche) { display: none; }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn svg { width: 15px; height: 15px; }
+  html body:not(.puzzle-mode) #plateauTactiqueBtn {
+    left: auto;
+    right: calc(var(--plaque-d, 530px) + 24px);
+    color: #f3dfae;
+    font: 800 11px/1 'Nunito Sans', Inter, system-ui, sans-serif;
+    letter-spacing: .08em;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:hover,
+  html body:not(.puzzle-mode) #plateauTactiqueBtn:hover {
+    border-color: #e9bd5b;
+    background: rgba(58, 45, 20, .7);
+    transform: none;
+  }
+}
+
 /* La bascule « VUE 2D » (js/plateau-tactique.js) vit sur <body>, hors du jeu :
    elle passerait au-dessus du menu ouvert. */
 body.mj-menu-ouvert #plateauTactiqueBtn { visibility: hidden !important; }

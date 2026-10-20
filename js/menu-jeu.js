@@ -385,7 +385,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=4';
+    lien.href = './css/menu-jeu.css?v=5';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }

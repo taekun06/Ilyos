@@ -191,7 +191,7 @@
             }));
           }
 
-          if (requested - remaining > 0) { carteJoueeEnvol(type, player); lisereMarquerAction(); }
+          if (requested - remaining > 0) carteJoueeEnvol(type, player);
           return requested - remaining;
         };
 
