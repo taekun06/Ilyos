@@ -10327,7 +10327,7 @@
       // ESSAI Halloween : la dalle garde sa texture KayKit ; chaque île reçoit
       // une nuance de pierre (multiplication de couleur) pour que deux îles
       // voisines restent distinctes, comme ILYOS_ISLAND_TINTS pour l'herbe.
-      const KAYKIT_HALLOWEEN_TEINTES = [0xf4f0ea, 0xc9d3e6, 0xffdcb4, 0xcfe0c2, 0xe6d2ef, 0xd9c6ad];
+      const KAYKIT_HALLOWEEN_TEINTES = [0xc2c0bc, 0xb1b6c0, 0xc8bdaf, 0xb3bcae, 0xbfb4c2, 0xbcb0a2];
       function kaykitHalloweenTintMaterial(baseMaterial, variant) {
         const index = Math.max(0, Number(variant) || 0) % KAYKIT_HALLOWEEN_TEINTES.length;
         const cacheKey = `halloween|${baseMaterial.uuid}|${index}`;
@@ -10367,6 +10367,16 @@
       // Pavés posés sur environ une case sur trois, orientation tirée du hash :
       // stable d'un rendu à l'autre.
       const KAYKIT_PAVES_HALLOWEEN = ["halloweenPathA", "halloweenPathB", "halloweenPathC", "halloweenPathD"];
+      function kaykitHalloweenPavesMaterial(baseMaterial) {
+        const cacheKey = `halloween-paves|${baseMaterial.uuid}`;
+        const cached = kaykit3D?.islandTintMaterials?.get(cacheKey);
+        if (cached) return cached;
+        const material = baseMaterial.clone();
+        material.color?.setHex(0x9ea6b2).convertSRGBToLinear();
+        material.userData.ilyosSharedIslandTint = true;
+        kaykit3D?.islandTintMaterials?.set(cacheKey, material);
+        return material;
+      }
       function addKayKitPavesHalloween(group, island, r, c) {
         if (kaykitHash("halloween-paves", island.id, r, c) > .38) return;
         const pick = Math.floor(kaykitHash("halloween-paves-type", island.id, r, c) * 4) % 4;
@@ -10381,7 +10391,13 @@
         const pivot = new THREE.Group();
         pivot.position.set(p.x, KAYKIT_LEVELS.board + .45, p.z);
         pivot.rotation.y = Math.floor(kaykitHash("halloween-paves-rot", island.id, r, c) * 4) * Math.PI / 2;
-        paves.traverse?.(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = true; } });
+        // Pavés gris bleuté, plus sombres que la dalle, comme sur l'image du kit.
+        paves.traverse?.(child => {
+          if (!child.isMesh) return;
+          child.castShadow = false;
+          child.receiveShadow = true;
+          child.material = kaykitHalloweenPavesMaterial(child.material);
+        });
         pivot.add(paves);
         pivot.renderOrder = 5;
         group.add(pivot);
