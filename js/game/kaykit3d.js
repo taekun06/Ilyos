@@ -233,6 +233,20 @@
         blockBitsGrass: kaykitAssetSpec("blockBits", "grass.gltf", "./assets/kaykit/blockBits/block_bits_texture.png"),
         blockBitsStone: kaykitAssetSpec("blockBits", "stone.gltf", "./assets/kaykit/blockBits/block_bits_texture.png"),
 
+        // ESSAI (2026-10-21) : sols KayKit Halloween Bits (CC0), seulement avec
+        // `?rendu=halloween` ou `?rendu=halloween-paves`. Voir kaykitSolHalloween().
+        halloweenFloor: kaykitAssetSpec("halloweenBits", "floor_dirt_small.gltf"),
+        halloweenPathA: kaykitAssetSpec("halloweenBits", "path_A.gltf"),
+        halloweenPathB: kaykitAssetSpec("halloweenBits", "path_B.gltf"),
+        halloweenPathC: kaykitAssetSpec("halloweenBits", "path_C.gltf"),
+        halloweenPathD: kaykitAssetSpec("halloweenBits", "path_D.gltf"),
+        halloweenPumpkin: kaykitAssetSpec("halloweenBits", "pumpkin_orange_small.gltf"),
+        halloweenPumpkinYellow: kaykitAssetSpec("halloweenBits", "pumpkin_yellow_small.gltf"),
+        halloweenTree: kaykitAssetSpec("halloweenBits", "tree_dead_small.gltf"),
+        halloweenGraveA: kaykitAssetSpec("halloweenBits", "gravemarker_A.gltf"),
+        halloweenGraveB: kaykitAssetSpec("halloweenBits", "gravemarker_B.gltf"),
+        halloweenLantern: kaykitAssetSpec("halloweenBits", "lantern_standing.gltf"),
+
         // KayKit Forest Nature Pack local : variation légère et non bloquante des grandes îles.
         forestTree: kaykitAssetSpec("forestNature", "Tree_2_A_Color1.gltf", "./assets/kaykit/forestNature/forest_texture.png"),
         forestBush: kaykitAssetSpec("forestNature", "Bush_2_A_Color1.gltf", "./assets/kaykit/forestNature/forest_texture.png"),
@@ -331,8 +345,13 @@
       let ILYOS_RENDU_ANCIEN = true;
       let kaykitIlesDuProfil = null;
       const KAYKIT_RENDU_FORCE = (() => {
-        try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+        try { return (/[?&]rendu=(ancien|archipel|halloween|halloween-paves)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
+      // ESSAI : dalles Halloween Bits à la place des cubes d'herbe (rendu KayKit).
+      // "halloween-paves" ajoute des pavés sur une partie des cases et remplace
+      // le décor forestier par de petits décors Halloween.
+      const kaykitSolHalloween = () => KAYKIT_RENDU_FORCE === "halloween" || KAYKIT_RENDU_FORCE === "halloween-paves";
+      const kaykitSolHalloweenPaves = () => KAYKIT_RENDU_FORCE === "halloween-paves";
       function kaykitArchipelDemande() {
         if (KAYKIT_RENDU_FORCE) return KAYKIT_RENDU_FORCE === "archipel";
         return kaykitIlesDuProfil === "archipel";
@@ -10305,6 +10324,69 @@
         return texture;
       }
 
+      // ESSAI Halloween : la dalle garde sa texture KayKit ; chaque île reçoit
+      // une nuance de pierre (multiplication de couleur) pour que deux îles
+      // voisines restent distinctes, comme ILYOS_ISLAND_TINTS pour l'herbe.
+      const KAYKIT_HALLOWEEN_TEINTES = [0xf4f0ea, 0xc9d3e6, 0xffdcb4, 0xcfe0c2, 0xe6d2ef, 0xd9c6ad];
+      function kaykitHalloweenTintMaterial(baseMaterial, variant) {
+        const index = Math.max(0, Number(variant) || 0) % KAYKIT_HALLOWEEN_TEINTES.length;
+        const cacheKey = `halloween|${baseMaterial.uuid}|${index}`;
+        const cached = kaykit3D?.islandTintMaterials?.get(cacheKey);
+        if (cached) return cached;
+        const material = baseMaterial.clone();
+        material.color?.setHex(KAYKIT_HALLOWEEN_TEINTES[index]).convertSRGBToLinear();
+        material.userData.ilyosSharedIslandTint = true;
+        material.needsUpdate = true;
+        kaykit3D?.islandTintMaterials?.set(cacheKey, material);
+        return material;
+      }
+
+      // La dalle Halloween garde ses proportions (fine, bords biseautés) et
+      // repose sur le bloc de terre Block Bits : même hauteur totale (.46) que
+      // le cube d'herbe, donc gardiens, survols et coque inchangés.
+      const KAYKIT_DALLE_HALLOWEEN_HAUTEUR = .2;
+      function makeKayKitDalleHalloween() {
+        const dalle = cloneKayKitAsset('halloweenFloor', {
+          exactWidth: KAYKIT_BLOCK_SIZE,
+          exactDepth: KAYKIT_BLOCK_SIZE,
+          exactHeight: KAYKIT_DALLE_HALLOWEEN_HAUTEUR,
+          targetFloor: .46 - KAYKIT_DALLE_HALLOWEEN_HAUTEUR
+        });
+        const terre = cloneKayKitAsset('blockBitsDirt', {
+          exactWidth: KAYKIT_BLOCK_SIZE * .96,
+          exactDepth: KAYKIT_BLOCK_SIZE * .96,
+          exactHeight: .46 - KAYKIT_DALLE_HALLOWEEN_HAUTEUR + .02,
+          targetFloor: 0
+        });
+        if (!dalle || !terre) return null;
+        const groupe = new THREE.Group();
+        groupe.add(terre, dalle);
+        return groupe;
+      }
+
+      // Pavés posés sur environ une case sur trois, orientation tirée du hash :
+      // stable d'un rendu à l'autre.
+      const KAYKIT_PAVES_HALLOWEEN = ["halloweenPathA", "halloweenPathB", "halloweenPathC", "halloweenPathD"];
+      function addKayKitPavesHalloween(group, island, r, c) {
+        if (kaykitHash("halloween-paves", island.id, r, c) > .38) return;
+        const pick = Math.floor(kaykitHash("halloween-paves-type", island.id, r, c) * 4) % 4;
+        const paves = cloneKayKitAsset(KAYKIT_PAVES_HALLOWEEN[pick], {
+          exactWidth: KAYKIT_BLOCK_SIZE * .86,
+          exactDepth: KAYKIT_BLOCK_SIZE * .86,
+          exactHeight: .035,
+          targetFloor: 0
+        });
+        if (!paves) return;
+        const p = kaykitCellPosition(r, c, 0);
+        const pivot = new THREE.Group();
+        pivot.position.set(p.x, KAYKIT_LEVELS.board + .45, p.z);
+        pivot.rotation.y = Math.floor(kaykitHash("halloween-paves-rot", island.id, r, c) * 4) * Math.PI / 2;
+        paves.traverse?.(child => { if (child.isMesh) { child.castShadow = false; child.receiveShadow = true; } });
+        pivot.add(paves);
+        pivot.renderOrder = 5;
+        group.add(pivot);
+      }
+
       function kaykitIslandTintMaterial(baseMaterial, variant) {
         const variantIndex = Math.max(0, Number(variant) || 0) % ILYOS_ISLAND_TINTS.length;
         const map = baseMaterial.map || getBlockBitsTexture();
@@ -10721,12 +10803,14 @@
             }
             return;
           }
-          let block = cloneKayKitAsset('blockBitsGrassDirt', {
+          const solHalloween = kaykitSolHalloween();
+          let block = solHalloween ? makeKayKitDalleHalloween() : cloneKayKitAsset('blockBitsGrassDirt', {
             exactWidth: KAYKIT_BLOCK_SIZE,
             exactDepth: KAYKIT_BLOCK_SIZE,
             exactHeight: .46,
             targetFloor: 0
           });
+          if (block && solHalloween && !preview && !fantome && kaykitSolHalloweenPaves()) addKayKitPavesHalloween(group, island, r, c);
 
           if (!block) {
             const fallbackMat = new THREE.MeshStandardMaterial({
@@ -10745,6 +10829,7 @@
               const source = Array.isArray(child.material) ? child.material : [child.material];
               const styled = source.map(material => {
                 if (preview) return material;
+                if (solHalloween) return kaykitHalloweenTintMaterial(material, island.visualVariant);
                 return kaykitIslandTintMaterial(material, island.visualVariant);
               });
               child.material = Array.isArray(child.material) ? styled : styled[0];
@@ -13182,6 +13267,15 @@
       // hexagonale ne se lisait pas comme un élément naturel posé sur une île, mais
       // comme une tuile étrangère collée sur la case. Restent trois décors végétaux et
       // minéraux, tous cohérents avec l'univers de l'archipel.
+      // ESSAI Halloween : petits décors de coin, même gabarit que la forêt.
+      const KAYKIT_HALLOWEEN_DECORS = [
+        { key: "halloweenPumpkin", width: .24, height: .22, scale: .9 },
+        { key: "halloweenPumpkinYellow", width: .22, height: .2, scale: .9 },
+        { key: "halloweenTree", width: .34, height: .72, scale: .9 },
+        { key: "halloweenGraveA", width: .26, height: .36, scale: .9 },
+        { key: "halloweenGraveB", width: .26, height: .36, scale: .9 },
+        { key: "halloweenLantern", width: .2, height: .3, scale: .9 }
+      ];
       const KAYKIT_FOREST_ASSETS = [
         { key: "forestTree", width: .34, height: .70, scale: .90 },
         { key: "forestRock", width: .30, height: .24, scale: .92 },
@@ -13208,7 +13302,8 @@
           // Archipel de pierre : l'arbre KayKit (cube vert sur bâton) et le
           // rocher cubique jurent avec la pierre ; on ne garde que l'herbe.
           // Mode Boucles : rochers et arbres passeraient pour des obstacles.
-          const decors = ILYOS_RENDU_ANCIEN && !state?.boucles ? KAYKIT_FOREST_ASSETS : KAYKIT_FOREST_ASSETS.filter(decor => decor.key === "forestGrass");
+          const decors = kaykitSolHalloweenPaves() && !state?.boucles ? KAYKIT_HALLOWEEN_DECORS
+            : ILYOS_RENDU_ANCIEN && !state?.boucles ? KAYKIT_FOREST_ASSETS : KAYKIT_FOREST_ASSETS.filter(decor => decor.key === "forestGrass");
           const pick = Math.floor(kaykitHash("forest-type", island.id, r, c) * decors.length) % decors.length;
           const spec = decors[pick];
           const object = cloneKayKitAsset(spec.key, { maxWidth: spec.width, maxHeight: spec.height, targetFloor: 0 });
