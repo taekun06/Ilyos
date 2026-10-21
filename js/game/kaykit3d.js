@@ -333,6 +333,13 @@
       const KAYKIT_RENDU_FORCE = (() => {
         try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
+      // ESSAI « Falaises » (2026-10-21, image de référence de Taekun) : mêmes cubes
+      // d'herbe KayKit, mais flancs et coque en roche gris-bleu, coque plus
+      // profonde et rideaux de mousse. Uniquement par `?rendu=falaises`, pour
+      // comparer en jeu : le rendu par défaut ne change pas.
+      const ILYOS_FALAISES = (() => {
+        try { return /[?&]rendu=falaises(&|$)/.test(location.search); } catch (_) { return false; }
+      })();
       function kaykitArchipelDemande() {
         if (KAYKIT_RENDU_FORCE) return KAYKIT_RENDU_FORCE === "archipel";
         return kaykitIlesDuProfil === "archipel";
@@ -9859,10 +9866,14 @@
       // descend vers une roche brune profonde (texture falaise, voir
       // kaykitIslandHullMaterial).
       // [îles d'herbe KayKit, Archipel de pierre] : la roche de l'archipel est grise.
-      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
-      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c)];    // moins orangé, plus minéral — même famille
-      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c)]; // roche profonde, jamais noire
-      const kaykitHullTeinte = couleurs => couleurs[ILYOS_RENDU_ANCIEN ? 0 : 1];
+      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166), new THREE.Color(0x5a6478)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c), new THREE.Color(0x4a5468)];    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c), new THREE.Color(0x283246)]; // roche profonde, jamais noire
+      const kaykitHullTeinte = couleurs => couleurs[!ILYOS_RENDU_ANCIEN ? 1 : ILYOS_FALAISES ? 2 : 0];
+      // Nom du rendu des coques : clé des caches de matériau et de géométrie.
+      const kaykitHullRendu = () => !ILYOS_RENDU_ANCIEN ? "archipel" : ILYOS_FALAISES ? "falaises" : "herbe";
+      // Falaises : la coque descend plus bas, étirée depuis son raccord sous la tuile.
+      const KAYKIT_FALAISES_PROFONDEUR = 1.6;
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -10078,9 +10089,9 @@
         return geometry;
       }
 
-      const kaykitHullMaterialCache = { herbe: null, archipel: null };
+      const kaykitHullMaterialCache = { herbe: null, archipel: null, falaises: null };
       function kaykitIslandHullMaterial() {
-        const rendu = ILYOS_RENDU_ANCIEN ? "herbe" : "archipel";
+        const rendu = kaykitHullRendu();
         // Matériau construit directement (pas via kaykitMaterial, qui ne
         // propage pas vertexColors et n'en tient pas compte dans sa clé de
         // cache) : un seul matériau pour toute la coque, dégradé terre KayKit
@@ -10098,7 +10109,7 @@
         const materiau = new THREE.MeshStandardMaterial({
           color: 0xffffff, roughness: .90, metalness: 0, side: THREE.DoubleSide, vertexColors: true
         });
-        if (!ILYOS_RENDU_ANCIEN) {
+        if (rendu !== "herbe") {
           materiau.map = kaykitPierreTexture("falaise-couleur", true, 1);
           materiau.normalMap = kaykitPierreTexture("falaise-normale", false, 1);
           materiau.normalScale = new THREE.Vector2(1.4, 1.4);
@@ -10121,9 +10132,14 @@
           const anchor = kaykitCellPosition(anchorR, anchorC, 0);
           const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
           const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
-          const geometry = kaykitGeometry(`island-hull-v3:${ILYOS_RENDU_ANCIEN ? "herbe" : "archipel"}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
+          if (ILYOS_FALAISES && ILYOS_RENDU_ANCIEN) {
+            const haut = KAYKIT_LEVELS.board + KAYKIT_HULL_OVERLAP;
+            hull.scale.y = KAYKIT_FALAISES_PROFONDEUR;
+            hull.position.y = haut * (1 - KAYKIT_FALAISES_PROFONDEUR);
+          }
           hull.castShadow = false;
           hull.receiveShadow = true;
           hull.raycast = () => {};
@@ -10163,6 +10179,10 @@
         0x88bf95, // vert clair froid
         0x54a744  // vert moyen, transition
       ];
+
+      // Falaises : herbe plus dense et plus saturée, mêmes six familles pour que
+      // deux îles voisines restent distinctes.
+      const ILYOS_FALAISES_TINTS = [0x5a9636, 0x276d2b, 0x3d8a52, 0x4f6f1a, 0x5c9c5b, 0x37842d];
 
       function buildIlyosIslandColorMap(islands) {
         const list = Array.isArray(islands) ? islands : [];
@@ -10233,14 +10253,20 @@
         // Teinte terre commune à toutes les factions/variants (la pierre des
         // châteaux suit la même logique : un monde cohérent, seul l'accent
         // change selon le sujet — ici l'herbe, pas la terre).
-        context.fillStyle = "#92694a";
+        if (ILYOS_FALAISES) {
+          // Roche gris-bleu, plus claire en haut, raccord à la coque en bas.
+          const degrade = context.createLinearGradient(0, y, 0, y + h);
+          degrade.addColorStop(0, "#66708a");
+          degrade.addColorStop(1, "#4c566c");
+          context.fillStyle = degrade;
+        } else context.fillStyle = "#92694a";
         context.fillRect(x, y, w, h);
       }
 
       function kaykitIslandTintTexture(sourceTexture, variantIndex) {
         const sourceImage = sourceTexture?.image;
         if (!sourceImage?.width || !sourceImage?.height) return sourceTexture;
-        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2`;
+        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2${ILYOS_FALAISES ? "|falaises" : ""}`;
         const cached = kaykit3D?.islandTintTextures?.get(cacheKey);
         if (cached) return cached;
 
@@ -10251,7 +10277,7 @@
         if (!context) return sourceTexture;
         context.drawImage(sourceImage, 0, 0);
 
-        const tint = ILYOS_ISLAND_TINTS[variantIndex];
+        const tint = (ILYOS_FALAISES ? ILYOS_FALAISES_TINTS : ILYOS_ISLAND_TINTS)[variantIndex];
         kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint);
         kaykitPaintIslandDirt(context, KAYKIT_ISLAND_DIRT_RECT);
 
@@ -10721,7 +10747,7 @@
         // Fantôme de rotation : le bloc KayKit suffit. La coque en dessous
         // doublait la hauteur du verre et brouillait la lecture (Taekun).
         if (!preview && !fantome) addKayKitIslandHull(group, island, cells);
-        if (!preview && !ILYOS_RENDU_ANCIEN) addKayKitIslandLierre(group, island, cells);
+        if (!preview && (!ILYOS_RENDU_ANCIEN || ILYOS_FALAISES)) addKayKitIslandLierre(group, island, cells);
 
         if (preview) {
           // FUITE (corrigee) : contour d'île, sa forme varie a chaque case
