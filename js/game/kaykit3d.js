@@ -333,6 +333,56 @@
       const KAYKIT_RENDU_FORCE = (() => {
         try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
+      /* MAQUETTES D'ÎLES (2026-10-21, image de référence de Taekun) : deux habillages
+         comparés sur le même plateau, uniquement par l'URL — le rendu par défaut ne
+         change pas.
+           ?rendu=kaykit      packs KayKit gratuits seuls (Forest Nature, Dungeon)
+           ?rendu=quaternius  même base + végétation fleurie et roches texturées du
+                              Stylized Nature MegaKit de Quaternius (CC0)
+         Base commune : flancs et coque en roche, rochers suspendus sous les îles,
+         végétation débordant des bords, quelques dalles de pierre envahies d'herbe. */
+      const ILYOS_MAQUETTE_ILES = (() => {
+        try { return (/[?&]rendu=(kaykit|quaternius)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+      })();
+      const KAYKIT_DUNGEON_TEXTURE = "./assets/kaykit/dungeon/dungeon_texture.png";
+      const KAYKIT_FOREST_TEXTURE = "./assets/kaykit/forestNature/forest_texture.png";
+      const quaterniusSpec = nom => ({ group: "quaternius", relativePath: nom, urls: ["./assets/maquette-iles/quaternius/" + nom + ".gltf"], textures: [], expectedTexture: null });
+      const KAYKIT_MAQUETTE_ASSETS = {
+        mqDalleHerbeA: kaykitAssetSpec("dungeon", "floor_tile_small_weeds_A.gltf", KAYKIT_DUNGEON_TEXTURE),
+        mqDalleHerbeB: kaykitAssetSpec("dungeon", "floor_tile_small_weeds_B.gltf", KAYKIT_DUNGEON_TEXTURE),
+        mqDalleGravee: kaykitAssetSpec("dungeon", "floor_tile_small_decorated.gltf", KAYKIT_DUNGEON_TEXTURE),
+        mqRocheHaute: kaykitAssetSpec("forestNature", "Rock_1_K_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqRocheBloc: kaykitAssetSpec("forestNature", "Rock_1_A_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqRocheRonde: kaykitAssetSpec("forestNature", "Rock_3_J_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqBuissonA: kaykitAssetSpec("forestNature", "Bush_1_A_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqBuissonB: kaykitAssetSpec("forestNature", "Bush_4_A_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqHerbeA: kaykitAssetSpec("forestNature", "Grass_2_A_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqHerbeB: kaykitAssetSpec("forestNature", "Grass_1_B_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        mqArbre: kaykitAssetSpec("forestNature", "Tree_3_A_Color1.gltf", KAYKIT_FOREST_TEXTURE),
+        ...(ILYOS_MAQUETTE_ILES === "quaternius" ? {
+          mqqBuissonFleuri: quaterniusSpec("Bush_Common_Flowers"),
+          mqqFleursA: quaterniusSpec("Flower_3_Group"),
+          mqqFleursB: quaterniusSpec("Flower_4_Group"),
+          mqqHerbeFine: quaterniusSpec("Grass_Wispy_Short"),
+          mqqHerbe: quaterniusSpec("Grass_Common_Short"),
+          mqqTrefle: quaterniusSpec("Clover_1"),
+          mqqFougere: quaterniusSpec("Fern_1"),
+          mqqPlante: quaterniusSpec("Plant_1"),
+          mqqChampignon: quaterniusSpec("Mushroom_Common"),
+          mqqRocheA: quaterniusSpec("Rock_Medium_1"),
+          mqqRocheB: quaterniusSpec("Rock_Medium_2"),
+          mqqRocheC: quaterniusSpec("Rock_Medium_3")
+        } : {})
+      };
+      if (ILYOS_MAQUETTE_ILES) Object.assign(KAYKIT_ASSETS, KAYKIT_MAQUETTE_ASSETS);
+      // Les îles ne se rebâtissent que si leur signature change : celle-ci compte
+      // les pièces de maquette arrivées, pour habiller les îles dès leur chargement.
+      function kaykitMaquettePiecesPretes() {
+        if (!ILYOS_MAQUETTE_ILES || !kaykit3D) return 0;
+        let n = 0;
+        for (const cle in KAYKIT_MAQUETTE_ASSETS) if (kaykit3D.assets.has(cle)) n++;
+        return n;
+      }
       function kaykitArchipelDemande() {
         if (KAYKIT_RENDU_FORCE) return KAYKIT_RENDU_FORCE === "archipel";
         return kaykitIlesDuProfil === "archipel";
@@ -7645,7 +7695,7 @@
        */
       function kaykitIslandsSignature(islands) {
         if (!islands?.length) return "";
-        let sig = "";
+        let sig = ILYOS_MAQUETTE_ILES ? kaykitMaquettePiecesPretes() + "#" : "";
         for (let i = 0; i < islands.length; i++) {
           const island = islands[i];
           sig += island.id + ":" + (island.visualVariant ?? 0) + ":";
@@ -9901,10 +9951,14 @@
       // descend vers une roche brune profonde (texture falaise, voir
       // kaykitIslandHullMaterial).
       // [îles d'herbe KayKit, Archipel de pierre] : la roche de l'archipel est grise.
-      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
-      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c)];    // moins orangé, plus minéral — même famille
-      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c)]; // roche profonde, jamais noire
-      const kaykitHullTeinte = couleurs => couleurs[ILYOS_RENDU_ANCIEN ? 0 : 1];
+      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166), new THREE.Color(0x66728a)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c), new THREE.Color(0x4a5468)];    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c), new THREE.Color(0x2c3446)]; // roche profonde, jamais noire
+      const kaykitHullTeinte = couleurs => couleurs[!ILYOS_RENDU_ANCIEN ? 1 : ILYOS_MAQUETTE_ILES ? 2 : 0];
+      // Nom du rendu des coques : clé des caches de matériau et de géométrie.
+      const kaykitHullRendu = () => !ILYOS_RENDU_ANCIEN ? "archipel" : ILYOS_MAQUETTE_ILES || "herbe";
+      // Maquettes : la coque descend plus bas, étirée depuis son raccord sous la tuile.
+      const KAYKIT_MAQUETTE_PROFONDEUR = 1.5;
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -10120,9 +10174,9 @@
         return geometry;
       }
 
-      const kaykitHullMaterialCache = { herbe: null, archipel: null };
+      const kaykitHullMaterialCache = { herbe: null, archipel: null, kaykit: null, quaternius: null };
       function kaykitIslandHullMaterial() {
-        const rendu = ILYOS_RENDU_ANCIEN ? "herbe" : "archipel";
+        const rendu = kaykitHullRendu();
         // Matériau construit directement (pas via kaykitMaterial, qui ne
         // propage pas vertexColors et n'en tient pas compte dans sa clé de
         // cache) : un seul matériau pour toute la coque, dégradé terre KayKit
@@ -10140,7 +10194,7 @@
         const materiau = new THREE.MeshStandardMaterial({
           color: 0xffffff, roughness: .90, metalness: 0, side: THREE.DoubleSide, vertexColors: true
         });
-        if (!ILYOS_RENDU_ANCIEN) {
+        if (rendu === "archipel" || rendu === "quaternius") {
           materiau.map = kaykitPierreTexture("falaise-couleur", true, 1);
           materiau.normalMap = kaykitPierreTexture("falaise-normale", false, 1);
           materiau.normalScale = new THREE.Vector2(1.4, 1.4);
@@ -10163,9 +10217,14 @@
           const anchor = kaykitCellPosition(anchorR, anchorC, 0);
           const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
           const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
-          const geometry = kaykitGeometry(`island-hull-v3:${ILYOS_RENDU_ANCIEN ? "herbe" : "archipel"}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
+          if (ILYOS_MAQUETTE_ILES && ILYOS_RENDU_ANCIEN) {
+            const haut = KAYKIT_LEVELS.board + KAYKIT_HULL_OVERLAP;
+            hull.scale.y = KAYKIT_MAQUETTE_PROFONDEUR;
+            hull.position.y = haut * (1 - KAYKIT_MAQUETTE_PROFONDEUR);
+          }
           hull.castShadow = false;
           hull.receiveShadow = true;
           hull.raycast = () => {};
@@ -10205,6 +10264,10 @@
         0x88bf95, // vert clair froid
         0x54a744  // vert moyen, transition
       ];
+
+      // Maquettes : herbe plus dense et plus saturée, mêmes six familles pour que
+      // deux îles voisines restent distinctes.
+      const ILYOS_MAQUETTE_TINTS = [0x5a9636, 0x276d2b, 0x3d8a52, 0x4f6f1a, 0x5c9c5b, 0x37842d];
 
       function buildIlyosIslandColorMap(islands) {
         const list = Array.isArray(islands) ? islands : [];
@@ -10275,14 +10338,20 @@
         // Teinte terre commune à toutes les factions/variants (la pierre des
         // châteaux suit la même logique : un monde cohérent, seul l'accent
         // change selon le sujet — ici l'herbe, pas la terre).
-        context.fillStyle = "#92694a";
+        if (ILYOS_MAQUETTE_ILES) {
+          // Roche KayKit gris-bleu, raccord à la coque en bas.
+          const degrade = context.createLinearGradient(0, y, 0, y + h);
+          degrade.addColorStop(0, "#7a869a");
+          degrade.addColorStop(1, "#66728a");
+          context.fillStyle = degrade;
+        } else context.fillStyle = "#92694a";
         context.fillRect(x, y, w, h);
       }
 
       function kaykitIslandTintTexture(sourceTexture, variantIndex) {
         const sourceImage = sourceTexture?.image;
         if (!sourceImage?.width || !sourceImage?.height) return sourceTexture;
-        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2`;
+        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2${ILYOS_MAQUETTE_ILES ? "|maquette" : ""}`;
         const cached = kaykit3D?.islandTintTextures?.get(cacheKey);
         if (cached) return cached;
 
@@ -10293,7 +10362,7 @@
         if (!context) return sourceTexture;
         context.drawImage(sourceImage, 0, 0);
 
-        const tint = ILYOS_ISLAND_TINTS[variantIndex];
+        const tint = (ILYOS_MAQUETTE_ILES ? ILYOS_MAQUETTE_TINTS : ILYOS_ISLAND_TINTS)[variantIndex];
         kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint);
         kaykitPaintIslandDirt(context, KAYKIT_ISLAND_DIRT_RECT);
 
@@ -10668,6 +10737,100 @@
         });
       }
 
+      // Maquettes d'îles : végétation qui déborde des bords, dalles de pierre envahies
+      // d'herbe sur quelques cases, rochers suspendus sous l'île. Tout est déterministe
+      // (kaykitHash) : la même île garde le même habillage d'un rendu à l'autre.
+      // Rien au centre des cases : le centre reste au gardien.
+      const KAYKIT_MAQUETTE_BORDS = {
+        kaykit: [["mqBuissonA", .22, .18], ["mqBuissonB", .20, .16], ["mqHerbeA", .24, .20], ["mqHerbeB", .22, .18], ["mqHerbeA", .18, .16]],
+        quaternius: [["mqqBuissonFleuri", .44, .34], ["mqqFleursA", .36, .24], ["mqqFleursB", .36, .24], ["mqqHerbeFine", .40, .26], ["mqqFougere", .42, .30], ["mqqTrefle", .30, .12], ["mqqPlante", .36, .26]]
+      };
+      const KAYKIT_MAQUETTE_COINS = {
+        kaykit: [["mqHerbeA", .18, .14], ["mqHerbeB", .16, .12]],
+        quaternius: [["mqqFleursA", .26, .16], ["mqqFleursB", .26, .16], ["mqqTrefle", .24, .08], ["mqqHerbe", .26, .14], ["mqqChampignon", .16, .14]]
+      };
+      const KAYKIT_MAQUETTE_ROCHES = {
+        kaykit: ["mqRocheHaute", "mqRocheBloc", "mqRocheRonde"],
+        quaternius: ["mqqRocheA", "mqqRocheB", "mqqRocheC"]
+      };
+      function addKayKitIslandHabillage(group, island, cells) {
+        const mode = ILYOS_MAQUETTE_ILES;
+        const dans = new Set(cells.map(([r, c]) => `${r},${c}`));
+        const surface = KAYKIT_LEVELS.islandTop;
+        const poser = (cle, largeur, hauteur, x, y, z, rot, opts = {}) => {
+          const objet = cloneKayKitAsset(cle, { maxWidth: largeur, maxHeight: hauteur, targetFloor: 0 });
+          if (!objet) return null;
+          objet.position.set(x, y, z);
+          objet.rotation.y = rot;
+          if (opts.renverse) objet.rotation.x = Math.PI;
+          objet.traverse(enfant => {
+            if (!enfant.isMesh) return;
+            enfant.raycast = () => {};
+            // Quaternius : l'herbe est livrée blanche pour être teintée ; les
+            // feuillages sont un peu assombris pour rejoindre le vert des îles.
+            (Array.isArray(enfant.material) ? enfant.material : [enfant.material]).forEach(m => {
+              if (/Grass/.test(m?.name)) m.color?.setHex(0x6aa040);
+              else if (/Leaves/.test(m?.name)) m.color?.setHex(0xb4d890);
+            });
+          });
+          group.add(objet);
+          return objet;
+        };
+        const tirer = (liste, ...graine) => liste[Math.floor(kaykitHash(...graine) * liste.length) % liste.length];
+        cells.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          const libre = !villageAt(r, c) && !isSanctuary(r, c);
+          // Bords : une à deux touffes par côté exposé, qui débordent dans le vide.
+          [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dr, dc]) => {
+            if (dans.has(`${r + dr},${c + dc}`)) return;
+            const n = kaykitHash("mq-bord-n", island?.id, r, c, dr, dc) < .45 ? 2 : 1;
+            for (let k = 0; k < n; k++) {
+              if (kaykitHash("mq-bord", island?.id, r, c, dr, dc, k) < .18) continue;
+              const [cle, l, h] = tirer(KAYKIT_MAQUETTE_BORDS[mode], "mq-bord-type", island?.id, r, c, dr, dc, k);
+              const long = (kaykitHash("mq-bord-pos", island?.id, r, c, dr, dc, k) - .5) * KAYKIT_CELL_SPACING * .8;
+              const ecart = KAYKIT_CELL_SPACING * .46;
+              const x = p.x + dc * ecart + (dr !== 0 ? long : 0);
+              const z = p.z + dr * ecart + (dc !== 0 ? long : 0);
+              poser(cle, l, h, x, surface - .03, z, kaykitHash("mq-bord-rot", island?.id, r, c, dr, dc, k) * Math.PI * 2);
+            }
+          });
+          if (!libre) return;
+          // Une case sur quatre devient une dalle de pierre envahie d'herbe.
+          if (kaykitHash("mq-dalle", island?.id, r, c) < .25) {
+            const cle = tirer(["mqDalleHerbeA", "mqDalleHerbeB", "mqDalleGravee"], "mq-dalle-type", island?.id, r, c);
+            const dalle = cloneKayKitAsset(cle, { exactWidth: KAYKIT_BLOCK_SIZE * .96, exactDepth: KAYKIT_BLOCK_SIZE * .96, exactHeight: .05, targetFloor: 0 });
+            if (dalle) {
+              dalle.position.set(p.x, KAYKIT_LEVELS.board + .455, p.z);
+              dalle.rotation.y = Math.floor(kaykitHash("mq-dalle-rot", island?.id, r, c) * 4) * Math.PI / 2;
+              dalle.traverse(enfant => { if (enfant.isMesh) enfant.raycast = () => {}; });
+              group.add(dalle);
+            }
+          } else if (kaykitHash("mq-coin", island?.id, r, c) < .6) {
+            // Petites fleurs ou herbes dans un angle de la case.
+            const [cle, l, h] = tirer(KAYKIT_MAQUETTE_COINS[mode], "mq-coin-type", island?.id, r, c);
+            const coin = Math.floor(kaykitHash("mq-coin-pos", island?.id, r, c) * 4) % 4;
+            const e = KAYKIT_BLOCK_SIZE * .33;
+            poser(cle, l, h, p.x + ((coin === 0 || coin === 3) ? -e : e), surface - .005, p.z + (coin < 2 ? -e : e), kaykitHash("mq-coin-rot", island?.id, r, c) * Math.PI * 2);
+          }
+        });
+        // Rochers accrochés aux flancs : sur les côtés exposés, à mi-hauteur de la
+        // falaise, pointe renversée vers le vide. Un pour ~2 côtés exposés.
+        const cotes = [];
+        cells.forEach(([r, c]) => [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dr, dc]) => {
+          if (!dans.has(`${r + dr},${c + dc}`)) cotes.push([r, c, dr, dc]);
+        }));
+        cotes.forEach(([r, c, dr, dc], k) => {
+          if (kaykitHash("mq-roche", island?.id, r, c, dr, dc) < .55) return;
+          const p = kaykitCellPosition(r, c, 0);
+          const cle = tirer(KAYKIT_MAQUETTE_ROCHES[mode], "mq-roche-type", island?.id, r, c, dr, dc);
+          const h = .55 + kaykitHash("mq-roche-h", island?.id, r, c, dr, dc) * .55;
+          const ecart = KAYKIT_CELL_SPACING * .30;
+          const y = -.15 - kaykitHash("mq-roche-y", island?.id, r, c, dr, dc) * .45;
+          // Renversé : la base du rocher s'appuie contre la falaise, la pointe descend.
+          poser(cle, .48, h, p.x + dc * ecart, y, p.z + dr * ecart, kaykitHash("mq-roche-rot", island?.id, r, c, dr, dc) * Math.PI * 2, { renverse: true });
+        });
+      }
+
       /* fantome : une vraie île (coque, lierre, matériaux) qui n'est pas
          inscrite comme visuel de case — l'aperçu de la magie la teinte ensuite
          en verre (kaykitFantomeTexture). */
@@ -10763,7 +10926,8 @@
         // Fantôme de rotation : le bloc KayKit suffit. La coque en dessous
         // doublait la hauteur du verre et brouillait la lecture (Taekun).
         if (!preview && !fantome) addKayKitIslandHull(group, island, cells);
-        if (!preview && !ILYOS_RENDU_ANCIEN) addKayKitIslandLierre(group, island, cells);
+        if (!preview && (!ILYOS_RENDU_ANCIEN || ILYOS_MAQUETTE_ILES)) addKayKitIslandLierre(group, island, cells);
+        if (!preview && !fantome && ILYOS_MAQUETTE_ILES && ILYOS_RENDU_ANCIEN) addKayKitIslandHabillage(group, island, cells);
 
         if (preview) {
           // FUITE (corrigee) : contour d'île, sa forme varie a chaque case
@@ -13236,7 +13400,7 @@
       /** Signature d'UNE île : tout ce qui influence son bloc+coque+décor. */
       function kaykitIslandSignature(island) {
         const cells = island.cells || [];
-        let sig = (island.visualVariant ?? 0) + ":" + (Number.isInteger(island.owner) ? island.owner : "-") + ":";
+        let sig = (island.visualVariant ?? 0) + ":" + (Number.isInteger(island.owner) ? island.owner : "-") + ":" + kaykitMaquettePiecesPretes() + ":";
         for (let j = 0; j < cells.length; j++) sig += cells[j][0] + "." + cells[j][1] + ",";
         return sig;
       }
