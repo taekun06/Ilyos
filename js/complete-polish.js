@@ -78,7 +78,10 @@
           lastQualityChange = now;
           lowSamples = 0;
         }
-        if (qualityPill) qualityPill.textContent = `Qualité ${quality === 'high' ? 'élevée' : quality === 'balanced' ? 'équilibrée' : 'performance'} · ${Math.round(ema)} i/s`;
+        // Texte réécrit seulement s'il change : chaque écriture est une
+        // mutation que les observateurs du HUD traitent.
+        const texte = `Qualité ${quality === 'high' ? 'élevée' : quality === 'balanced' ? 'équilibrée' : 'performance'} · ${Math.round(ema)} i/s`;
+        if (qualityPill && qualityPill.textContent !== texte) qualityPill.textContent = texte;
       }
       function actionFlash(type) {
         if (reduced()) return; ensureUI(); flash.style.background = type === 'push' ? 'radial-gradient(circle at 50% 55%,rgba(255,154,85,.28),transparent 40%)' : type === 'magic' ? 'radial-gradient(circle at 50% 55%,rgba(169,126,255,.28),transparent 40%)' : 'radial-gradient(circle at 50% 55%,rgba(255,255,255,.3),transparent 38%)';

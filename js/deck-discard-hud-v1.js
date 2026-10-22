@@ -8,6 +8,16 @@
   window.__ILYOS_DECK_DISCARD_HUD_V11__ = true;
 
   const byId = id => document.getElementById(id);
+  /* Écritures sans effet si la valeur est déjà en place. Une écriture identique
+     produit quand même une mutation : les observateurs du HUD (celui-ci et
+     ceux des autres couches) se relançaient alors les uns les autres à chaque
+     image, en boucle à la fréquence de l'écran (144 fois par seconde mesuré
+     sur un portable 144 Hz, plateau immobile). */
+  const poserTexte = (el, valeur) => { if (el && el.textContent !== valeur) el.textContent = valeur; };
+  const poserAttr = (el, nom, valeur) => { if (el && el.getAttribute(nom) !== valeur) el.setAttribute(nom, valeur); };
+  const poserStyle = (el, prop, valeur, priorite = '') => {
+    if (el && (el.style.getPropertyValue(prop) !== valeur || el.style.getPropertyPriority(prop) !== priorite)) el.style.setProperty(prop, valeur, priorite);
+  };
   const BASE_OPACITY = '.78';
   const ACTIVE_OPACITY = '.98';
   const PULSE_OPACITY = '1';
@@ -63,15 +73,15 @@
   function makeDiscardInteractive(discard, options = {}){
     if (!discard) return;
     const ouvrir = options.ouvrir || openDiscard;
-    discard.classList.add('ov2-interactive');
-    discard.setAttribute('role','button');
-    discard.setAttribute('tabindex','0');
-    discard.setAttribute('aria-expanded', discard.getAttribute('aria-expanded') || 'false');
-    discard.setAttribute('aria-controls', options.viewer || 'ov2DiscardViewer');
-    discard.title = options.titre || 'Afficher ou masquer la défausse';
-    discard.style.setProperty('pointer-events','auto','important');
-    discard.style.setProperty('cursor','pointer','important');
-    discard.style.setProperty('z-index', options.zIndex || '100160','important');
+    if (!discard.classList.contains('ov2-interactive')) discard.classList.add('ov2-interactive');
+    poserAttr(discard, 'role', 'button');
+    poserAttr(discard, 'tabindex', '0');
+    poserAttr(discard, 'aria-expanded', discard.getAttribute('aria-expanded') || 'false');
+    poserAttr(discard, 'aria-controls', options.viewer || 'ov2DiscardViewer');
+    poserAttr(discard, 'title', options.titre || 'Afficher ou masquer la défausse');
+    poserStyle(discard, 'pointer-events', 'auto', 'important');
+    poserStyle(discard, 'cursor', 'pointer', 'important');
+    poserStyle(discard, 'z-index', options.zIndex || '100160', 'important');
 
     if (discard.dataset.v11Interactive === '1') return;
     discard.dataset.v11Interactive = '1';
@@ -220,28 +230,28 @@
 
       // `transform: translateY(-100%)` (couche V11) fait de `top` le bord BAS
       // de la pile : l'aligner sur le bas du dock les met sur la même étagère.
-      deckHud.style.right = 'auto';
-      deckHud.style.top = `${base}px`;
-      deckHud.style.left = `${Math.round(deckLeft >= leftLimit ? deckLeft : edge)}px`;
+      poserStyle(deckHud, 'right', 'auto');
+      poserStyle(deckHud, 'top', `${base}px`);
+      poserStyle(deckHud, 'left', `${Math.round(deckLeft >= leftLimit ? deckLeft : edge)}px`);
 
-      discardHud.style.right = 'auto';
-      discardHud.style.top = `${base}px`;
-      discardHud.style.left = `${Math.round(
+      poserStyle(discardHud, 'right', 'auto');
+      poserStyle(discardHud, 'top', `${base}px`);
+      poserStyle(discardHud, 'left', `${Math.round(
         discardLeft + pileWidth <= rightLimit
           ? discardLeft
           : window.innerWidth - edge - pileWidth
-      )}px`;
+      )}px`);
       return;
     }
 
     const top = Math.max(86, anchorTop - gap);
-    deckHud.style.left = `${edge}px`;
-    deckHud.style.right = 'auto';
-    deckHud.style.top = `${top}px`;
+    poserStyle(deckHud, 'left', `${edge}px`);
+    poserStyle(deckHud, 'right', 'auto');
+    poserStyle(deckHud, 'top', `${top}px`);
 
-    discardHud.style.left = 'auto';
-    discardHud.style.right = `${edge}px`;
-    discardHud.style.top = `${top}px`;
+    poserStyle(discardHud, 'left', 'auto');
+    poserStyle(discardHud, 'right', `${edge}px`);
+    poserStyle(discardHud, 'top', `${top}px`);
   }
 
   function sync(){
@@ -255,10 +265,10 @@
 
     const deckCount = deckHud?.querySelector('.ov2-pile-count');
     const discardCount = discardHud?.querySelector('.ov2-pile-count');
-    if (deckCount) deckCount.textContent = String(deck);
-    if (discardCount) discardCount.textContent = String(discard);
-    deckHud?.setAttribute('aria-label', `Pioche : ${deck} carte${deck === 1 ? '' : 's'}`);
-    discardHud?.setAttribute('aria-label', `Défausse : ${discard} carte${discard === 1 ? '' : 's'} — cliquer pour consulter`);
+    poserTexte(deckCount, String(deck));
+    poserTexte(discardCount, String(discard));
+    poserAttr(deckHud, 'aria-label', `Pioche : ${deck} carte${deck === 1 ? '' : 's'}`);
+    poserAttr(discardHud, 'aria-label', `Défausse : ${discard} carte${discard === 1 ? '' : 's'} — cliquer pour consulter`);
 
     if (previousDeck !== null && deck !== previousDeck) pulse(deckHud);
     if (previousDiscard !== null && discard !== previousDiscard) pulse(discardHud);

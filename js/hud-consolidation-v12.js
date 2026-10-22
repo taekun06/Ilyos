@@ -6,6 +6,14 @@
   window.__ILYOS_HUD_CONSOLIDATION_V12__ = true;
 
   const byId = id => document.getElementById(id);
+  /* Écritures sans effet si la valeur est déjà en place : une écriture
+     identique produit quand même une mutation, et l'observateur ci-dessous
+     (comme ceux des autres couches du HUD) relançait alors sync à chaque
+     image, en boucle à la fréquence de l'écran — avec une relecture de la
+     sauvegarde à chaque passage (readSavedGameState). */
+  const poserTexte = (el, valeur) => { if (el && el.textContent !== String(valeur)) el.textContent = valeur; };
+  const poserAttr = (el, nom, valeur) => { if (el && el.getAttribute(nom) !== valeur) el.setAttribute(nom, valeur); };
+  const poserDisabled = (el, valeur) => { if (el && el.disabled !== valeur) el.disabled = valeur; };
   const LOCAL_SAVE_KEY = 'ilyos-local-session-v22';
   const CELL_SPACING = .925;
   const BOARD_CENTER = 5;
@@ -190,10 +198,10 @@
     const move = badge.querySelector('[data-reserve-move]');
     const push = badge.querySelector('[data-reserve-push]');
     const magic = badge.querySelector('[data-reserve-magic]');
-    if (move) move.textContent = values.MOVE;
-    if (push) push.textContent = values.PUSH;
-    if (magic) magic.textContent = values.MAGIC;
-    badge.setAttribute('aria-label',`Réserve : ${values.MOVE} déplacements, ${values.PUSH} poussées, ${values.MAGIC} magies`);
+    poserTexte(move, values.MOVE);
+    poserTexte(push, values.PUSH);
+    poserTexte(magic, values.MAGIC);
+    poserAttr(badge,'aria-label',`Réserve : ${values.MOVE} déplacements, ${values.PUSH} poussées, ${values.MAGIC} magies`);
   }
 
   function syncReserveBadges(){
@@ -201,8 +209,8 @@
     const snapshot = readSavedGameState();
     const players = snapshot?.players;
     if (!Array.isArray(players) || !players.length) {
-      byId('ov2LeftReserve')?.classList.add('ov2-off');
-      byId('ov2RightReserve')?.classList.add('ov2-off');
+      byId('ov2LeftReserve')?.classList.toggle('ov2-off', true);
+      byId('ov2RightReserve')?.classList.toggle('ov2-off', true);
       return;
     }
 
@@ -401,7 +409,7 @@
 
     const active = !nativePlacementRotate.classList.contains('hidden');
     row.classList.toggle('hidden',!active);
-    row.setAttribute('aria-hidden',active ? 'false' : 'true');
+    poserAttr(row,'aria-hidden',active ? 'false' : 'true');
     drawer.classList.toggle('ov2-v12-rotation-mode',active);
 
     const left = byId('rotateLeftBtn');
@@ -410,12 +418,12 @@
     const leftProxy = byId('ov2PlacementRotateLeftV12');
     const rightProxy = byId('ov2PlacementRotateRightV12');
     const flipProxy = byId('ov2PlacementFlipV12');
-    if (leftProxy) leftProxy.disabled = !active || !!left?.disabled;
-    if (rightProxy) rightProxy.disabled = !active || !!right?.disabled;
+    poserDisabled(leftProxy, !active || !!left?.disabled);
+    poserDisabled(rightProxy, !active || !!right?.disabled);
     if (flipProxy) {
       const flipApplicable = !flip?.classList.contains('hidden');
       flipProxy.classList.toggle('hidden', !flipApplicable);
-      flipProxy.disabled = !active || !!flip?.disabled;
+      poserDisabled(flipProxy, !active || !!flip?.disabled);
     }
   }
 
