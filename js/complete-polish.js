@@ -1,7 +1,7 @@
     (() => {
       'use strict';
       const VERSION = 'V76';
-      let quality = 'high', ema = 60, qualityPill, flash, lastQualityChange = 0, lowSamples = 0, midSamples = 0, highSamples = 0;
+      let quality = 'high', ema = 60, qualityPill, flash, lastQualityChange = 0, lowSamples = 0;
       const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
       function ensureUI() {
         if (!qualityPill) { qualityPill = document.createElement('div'); qualityPill.className = 'v69-quality-pill'; qualityPill.setAttribute('aria-hidden', 'true'); document.body.appendChild(qualityPill) }
@@ -47,24 +47,36 @@
           || (Array.isArray(k.islandDrops) && k.islandDrops.length > 0);
       }
 
+      /* La qualité ne fait plus que DESCENDRE, et seulement en partie.
+         Mesuré le 22/10 sur un portable RTX 4050 (écran 144 Hz) : le palier
+         remontait en « high » en pleine partie dès que l'image était fluide,
+         puis redescendait. Chaque remontée doublait les pixels (1,1 → 1,9 M),
+         les dessins par image (134 → 294, le décor s'enrichit) et la
+         puissance de la carte (13 → 36 W) : un à-coup visible et de la
+         chauffe, pour un gain que personne ne demandait au milieu d'un coup.
+         Le palier de départ vient du matériel (boot) ; il ne baisse que si
+         l'image reste vraiment lente. Le chargement du plateau (gel de
+         plusieurs secondes le temps de préparer les shaders) n'est pas
+         compté : sans ce délai de grâce, il faisait tomber un PC puissant en
+         « performance » dès la première image. */
+      const GRACE_PARTIE_MS = 8000;
+      let partieVisibleDepuis = 0;
+      function partieVisible() {
+        const ecran = document.getElementById('gameScreen');
+        return !!ecran && !ecran.classList.contains('hidden');
+      }
       function measureQuality() {
-        if (document.hidden) return;
+        if (document.hidden || !partieVisible()) { partieVisibleDepuis = 0; lowSamples = 0; return; }
         const now = performance.now();
+        if (!partieVisibleDepuis) partieVisibleDepuis = now;
         const measured = window.ILYOS_PERF?.enabled ? window.ILYOS_PERF.report().fps : 0;
+        if (now - partieVisibleDepuis < GRACE_PARTIE_MS) { if (measured > 0) ema = measured; lowSamples = 0; return; }
         if (measured > 0) ema = ema * .5 + measured * .5;
         lowSamples = ema < 38 ? lowSamples + 1 : 0;
-        midSamples = ema >= 38 && ema < 51 ? midSamples + 1 : 0;
-        highSamples = ema > 57 ? highSamples + 1 : 0;
-        if (now - lastQualityChange > 6000) {
-          let next = null;
-          if (lowSamples >= 2) next = 'performance';
-          else if (midSamples >= 3 && quality === 'high') next = 'balanced';
-          else if (highSamples >= 5 && quality !== 'high') next = 'high';
-          if (next && next !== quality && !sceneBusyForQualitySwitch()) {
-            applyQuality(next);
-            lastQualityChange = now;
-            lowSamples = midSamples = highSamples = 0;
-          }
+        if (now - lastQualityChange > 6000 && lowSamples >= 3 && quality !== 'performance' && !sceneBusyForQualitySwitch()) {
+          applyQuality(quality === 'high' ? 'balanced' : 'performance');
+          lastQualityChange = now;
+          lowSamples = 0;
         }
         if (qualityPill) qualityPill.textContent = `Qualité ${quality === 'high' ? 'élevée' : quality === 'balanced' ? 'équilibrée' : 'performance'} · ${Math.round(ema)} i/s`;
       }
