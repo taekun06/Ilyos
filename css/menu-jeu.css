@@ -105,47 +105,48 @@ body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:focu
 
 /* ---------- BARRE DU HAUT (écran large) ----------
    D'après les images de référence de Taekun (2026-10-22) : cartouches et
-   plaque du tour bleu nuit pleins, cernés d'un filet or qui suit aussi les
-   pointes ; MENU (et sa touche Échap, voir clavier.js) dans une pastille sous
-   la plaque, la bascule 2D à sa droite. ui.js (placerBoutonsPlaque) publie le
-   milieu de la plaque en hauteur : --plaque-cy. Le filet or est le fond de
-   l'élément, ::before le recouvre en bleu nuit à 1,5 px du bord : une bordure
-   ordinaire disparaîtrait dans les pointes découpées par clip-path.
-   Énigmes et téléphone gardent leurs propres places. */
-@media (orientation: landscape) and (min-height: 501px) {
+   plaque du tour bleu nuit un peu translucides, cernés d'un filet or qui suit
+   aussi les pointes ; le cartouche part de sous le portrait. MENU (et sa
+   touche Échap, voir clavier.js) dans une pastille sous la plaque, la bascule
+   2D à sa droite. ui.js (placerBoutonsPlaque) publie le milieu de la plaque en
+   hauteur : --plaque-cy. Le filet est un SVG en premier fond : une bordure
+   disparaîtrait dans les pointes découpées par clip-path, et les deux suivent
+   le même tracé en pourcentages. Énigmes et téléphone gardent leurs places. */
+@media (orientation: landscape) {
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 :is(.ov2-ribbon, .ov2-turn) {
-    background: linear-gradient(90deg, rgba(196, 150, 62, .9), rgba(246, 220, 151, .95) 50%, rgba(196, 150, 62, .9)) !important;
     border: 0 !important;
     backdrop-filter: none !important;
   }
-  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 :is(.ov2-ribbon, .ov2-turn)::before {
-    content: "";
-    position: absolute;
-    inset: 1.5px;
-    z-index: -1;
-    clip-path: inherit;
-    background: linear-gradient(180deg, rgba(17, 33, 56, .97), rgba(7, 16, 31, .97));
-    box-shadow: inset 0 4px 0 -2.5px rgba(233, 189, 91, .28), inset 0 -4px 0 -2.5px rgba(233, 189, 91, .28);
-    pointer-events: none;
-  }
-  /* Le cartouche s'arrête à sa pointe, juste après les couronnes. */
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-avatar { z-index: 2; }
+  /* Le cartouche part de sous le portrait et s'arrête à sa pointe, juste
+     après les couronnes. */
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-ribbon {
+    left: 38px !important;
     right: auto !important;
+    padding-left: 66px !important;
     padding-right: 46px !important;
-    clip-path: polygon(0 0, calc(100% - 28px) 0, 100% 50%, calc(100% - 28px) 100%, 0 100%, 12px 50%) !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='0,0 95,0 100,50 95,100 0,100' fill='none' stroke='rgba(233,197,112,.92)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
+    clip-path: polygon(0 0, 95% 0, 100% 50%, 95% 100%, 0 100%) !important;
   }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-ribbon {
+    right: 38px !important;
     left: auto !important;
+    padding-right: 66px !important;
     padding-left: 46px !important;
-    clip-path: polygon(28px 0, 100% 0, calc(100% - 12px) 50%, 100% 100%, 28px 100%, 0 50%) !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='0,50 5,0 100,0 100,100 5,100' fill='none' stroke='rgba(233,197,112,.92)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
+    clip-path: polygon(0 50%, 5% 0, 100% 0, 100% 100%, 5% 100%) !important;
   }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-ribbon::after { display: none !important; }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-turn {
-    position: relative;
     min-width: 200px !important;
     padding: 0 34px !important;
-    clip-path: polygon(22px 0, calc(100% - 22px) 0, 100% 50%, calc(100% - 22px) 100%, 22px 100%, 0 50%) !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='9,0 91,0 100,50 91,100 9,100 0,50' fill='none' stroke='rgba(233,197,112,.92)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
+    clip-path: polygon(9% 0, 91% 0, 100% 50%, 91% 100%, 9% 100%, 0 50%) !important;
   }
+}
+/* MENU et 2D sous la plaque (pas sur un téléphone à l'horizontale, qui les
+   range en haut à gauche : css/portrait-mobile.css). */
+@media (orientation: landscape) and (min-height: 501px) {
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn,
   html body:not(.puzzle-mode) #plateauTactiqueBtn {
     position: fixed;

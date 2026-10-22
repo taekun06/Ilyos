@@ -17,7 +17,7 @@
   html body #gameScreen {
     --pm-gutter: max(8px, env(safe-area-inset-left));
     --pm-bottom: max(8px, env(safe-area-inset-bottom));
-    --pm-dock-h: 66px;
+    --pm-dock-h: 84px;
     --pm-row-h: 46px;
   }
 
@@ -76,12 +76,24 @@
     height: 100% !important;
     inset: 0 !important;
   }
+  /* Cartouches bleu nuit un peu translucides cernés d'or, comme sur ordinateur
+     (images de référence de Taekun, 2026-10-22). */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon {
     top: 4px !important;
     height: 40px !important;
     padding: 0 !important;
     clip-path: none !important;
     border-radius: 10px !important;
+    border: 1px solid rgba(233, 197, 112, .75) !important;
+    background: linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
+    backdrop-filter: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon::after { display: none !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-avatar { z-index: 3 !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-turn {
+    border: 0 !important;
+    backdrop-filter: none !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='8,0 92,0 100,50 92,100 8,100 0,50' fill='none' stroke='rgba(233,197,112,.9)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .85), rgba(7, 16, 34, .85)) !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-ribbon {
     left: 26px !important;
@@ -165,26 +177,34 @@
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after {
     display: none !important;
   }
+  /* Chaque action : un petit socle hexagonal (icône dedans), puis le nom et
+     le compte dessous. Le socle de 76 px de l'ordinateur débordait sous le
+     bord de l'écran et passait sous le texte. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action {
     width: auto !important;
     min-width: 0 !important;
     height: var(--pm-dock-h) !important;
-    padding: 6px 2px 4px !important;
+    padding: 15px 2px 0 !important;
     margin: 0 !important;
-    justify-content: center !important;
+    justify-content: flex-start !important;
     gap: 1px !important;
     transform: none !important;
   }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action::before {
+    top: 2px !important;
+    width: 50px !important;
+    height: 50px !important;
+  }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action svg {
-    width: 24px !important;
-    height: 24px !important;
-    margin: 0 !important;
+    width: 22px !important;
+    height: 22px !important;
+    margin: 0 0 15px !important;
   }
   /* La consolidation V12 donne à l'icône une base flex de 38 px : en colonne,
      elle l'emportait sur la hauteur ci-dessus et poussait le « ×4 » hors de
      l'écran, sous le bouton. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico {
-    flex: 0 0 24px !important;
+    flex: 0 0 22px !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong {
     font-size: 11px !important;
@@ -411,10 +431,39 @@
     height: 32px !important;
   }
 
-  /* Bande des joueurs réduite, frise du tour adverse sous le portrait. */
+  /* Bande des joueurs réduite, frise du tour adverse sous le portrait. Les
+     cartouches restent dans leur colonne, sans passer sous la plaque du tour. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top {
     transform: scale(.72) !important;
     transform-origin: top center !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-side .ov2-ribbon {
+    max-width: calc(100% - 38px) !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-ribbon {
+    padding-left: 44px !important;
+    padding-right: 22px !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-ribbon {
+    padding-right: 44px !important;
+    padding-left: 22px !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-top .ov2-turn {
+    min-width: 150px !important;
+    padding: 0 22px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-score {
+    gap: 4px !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-score .ov2-crown {
+    width: 20px !important;
+    height: 15px !important;
+  }
+  /* Trop peu de place pour le nom, la réserve et les trois couronnes : le nom
+     était coupé (« JO… ») et les couronnes rognées. Le portrait suffit à
+     dire qui est qui. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-pname {
+    display: none !important;
   }
   html body #tourAdverseFrise {
     top: 58px !important;
@@ -449,21 +498,21 @@
     padding: 4px 8px !important;
     transform: none !important;
     display: grid !important;
-    grid-template-columns: 24px 1fr !important;
+    grid-template-columns: 30px 1fr !important;
     grid-template-rows: auto auto !important;
     align-content: center !important;
-    column-gap: 4px !important;
+    column-gap: 12px !important;
     row-gap: 0 !important;
     text-align: left !important;
   }
-  /* Le fond octogonal (décalé, plus grand que le bouton) devient une pastille
-     à pans coupés de la taille du bouton. */
+  /* Le socle hexagonal de l'ordinateur, réduit, porte l'icône à gauche ; le
+     nom et le nombre se lisent à côté, sans fond (comme en portrait). */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action::before {
-    inset: 0 !important;
-    width: auto !important;
-    height: auto !important;
+    left: 4px !important;
+    top: 3px !important;
+    width: 40px !important;
+    height: 40px !important;
     transform: none !important;
-    clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 12px 100%, 0 50%) !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action svg {
     width: 20px !important;
