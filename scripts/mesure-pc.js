@@ -66,9 +66,17 @@ function lireEtLeverPage() {
   const M = window.__MESURE;
   const k = window.kaykit3D;
   const r = k && k.renderer;
+  // Images réellement dessinées (la boucle rAF peut en sauter, voir
+  // kaykitImageSautee) : comptées au point de recordFrame.
+  const perf = window.ILYOS_PERF;
+  if (perf && !perf.__mesure) {
+    const original = perf.recordFrame.bind(perf);
+    perf.recordFrame = (...a) => { M.rendus = (M.rendus || 0) + 1; return original(...a); };
+    perf.__mesure = true;
+  }
   const info = r ? r.info : null;
   const sortie = {
-    images: M.images, pire: Math.round(M.pire), liens: M.liens, longues: M.longues, longuesMs: Math.round(M.longuesMs),
+    images: M.images, rendus: M.rendus || 0, pire: Math.round(M.pire), liens: M.liens, longues: M.longues, longuesMs: Math.round(M.longuesMs),
     programmes: info ? info.programs.length : null,
     dessins: M.images ? Math.round(M.dessinsTotal / M.images) : 0,
     triangles: info ? info.render.triangles : null,
@@ -81,7 +89,7 @@ function lireEtLeverPage() {
     qualite: k ? k.qualityMode || null : null,
     masque: document.hidden
   };
-  M.images = 0; M.dessinsTotal = 0; M.pire = 0; M.liens = 0; M.longues = 0; M.longuesMs = 0;
+  M.images = 0; M.rendus = 0; M.dessinsTotal = 0; M.pire = 0; M.liens = 0; M.longues = 0; M.longuesMs = 0;
   return sortie;
 }
 
@@ -123,8 +131,9 @@ async function phase(nom, page, cdpNavigateur, action) {
     }
     avant = apres;
     e.ips = Math.round(e.images / (PAS_MS / 1000));
+    e.rendusParS = Math.round(e.rendus / (PAS_MS / 1000));
     echantillons.push(e);
-    console.log(`  ${String(e.ips).padStart(3)} i/s · pire image ${e.pire} ms · dessins ${e.dessins} · programmes ${e.programmes} (+${e.liens})`
+    console.log(`  ${String(e.ips).padStart(3)} i/s (dessinées ${e.rendusParS}) · pire image ${e.pire} ms · dessins ${e.dessins} · programmes ${e.programmes} (+${e.liens})`
       + ` · tâches longues ${e.longues} (${e.longuesMs} ms) · anim. CSS ${e.animationsCss}`
       + (e.cpu ? ` · CPU % ${Object.entries(e.cpu).map(([t, v]) => `${t} ${v}`).join(', ')}` : ''));
   }
@@ -183,7 +192,7 @@ async function phase(nom, page, cdpNavigateur, action) {
     const s = p.echantillons;
     const moy = cle => Math.round(s.reduce((a, e) => a + (e[cle] || 0), 0) / Math.max(1, s.length));
     const cpu = type => Math.round(s.reduce((a, e) => a + ((e.cpu && e.cpu[type]) || 0), 0) / Math.max(1, s.length));
-    console.log(`${p.nom} : ${moy('ips')} i/s, pire image ${Math.max(...s.map(e => e.pire))} ms, `
+    console.log(`${p.nom} : ${moy('ips')} i/s, dessinées ${moy('rendusParS')} i/s, pire image ${Math.max(...s.map(e => e.pire))} ms, `
       + `nouveaux programmes ${s.reduce((a, e) => a + e.liens, 0)}, tâches longues ${s.reduce((a, e) => a + e.longuesMs, 0)} ms, `
       + `CPU page ${cpu('renderer')} %, CPU graphique ${cpu('GPU')} %, dessins ${moy('dessins')}`);
   }
