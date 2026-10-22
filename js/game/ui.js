@@ -4089,18 +4089,41 @@
         }
       }
 
+      /* Fiche de l'unité : noms et couleurs viennent de l'état, qui peut
+         arriver du réseau. Tout passe par textContent et style, jamais par
+         innerHTML : un nom reste un nom, quoi qu'il contienne. */
+      function ficheUnite(icone, lignes) {
+        const icon = document.createElement("div");
+        icon.className = "big-icon";
+        icon.textContent = icone;
+        const paragraphes = lignes.map(morceaux => {
+          const ligne = document.createElement("p");
+          morceaux.forEach(morceau => {
+            if (typeof morceau === "string") {
+              ligne.append(morceau);
+              return;
+            }
+            const el = document.createElement(morceau.balise);
+            el.textContent = morceau.texte;
+            if (morceau.couleur) el.style.color = morceau.couleur;
+            ligne.append(el);
+          });
+          return ligne;
+        });
+        els.unitCard.replaceChildren(icon, ...paragraphes);
+      }
+
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
         if (ch) {
           const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
-          els.unitCard.innerHTML = `
-          <div class="big-icon">${p.icon}</div>
-          <p><b style="color:${p.color}">Gardien de ${p.name}</b></p>
-          <p>Déplacement : 1 case orthogonale par action</p>
-          <p>Poussée : toutes les cibles alignées glissent du nombre de poussées jouées</p>
-          <p>${characterCarriesCrown(ch.id) ? "Porte une couronne" : "Gardien standard"}</p>
-        `;
+          ficheUnite(p.icon, [
+            [{ balise: "b", texte: `Gardien de ${p.name}`, couleur: p.color }],
+            ["Déplacement : 1 case orthogonale par action"],
+            ["Poussée : toutes les cibles alignées glissent du nombre de poussées jouées"],
+            [characterCarriesCrown(ch.id) ? "Porte une couronne" : "Gardien standard"]
+          ]);
           return;
         }
 
@@ -4108,21 +4131,17 @@
         if (island) {
           const owner = state.players[island.owner];
           els.unitCard.classList.remove("empty");
-          els.unitCard.innerHTML = `
-          <div class="big-icon">🏝️</div>
-          <p><b>Île</b></p>
-          <p>Propriétaire : <span style="color:${owner.color}">${owner.name}</span></p>
-          <p>Taille : ${island.cells.length} case(s)</p>
-          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu.</p>
-        `;
+          ficheUnite("🏝️", [
+            [{ balise: "b", texte: "Île" }],
+            ["Propriétaire : ", { balise: "span", texte: owner.name, couleur: owner.color }],
+            [`Taille : ${island.cells.length} case(s)`],
+            ["Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu."]
+          ]);
           return;
         }
 
         els.unitCard.classList.add("empty");
-        els.unitCard.innerHTML = `
-        <div class="big-icon">☁️</div>
-        <p>Sélectionnez un gardien ou une île pour afficher ses informations.</p>
-      `;
+        ficheUnite("☁️", [["Sélectionnez un gardien ou une île pour afficher ses informations."]]);
       }
 
 

@@ -2243,63 +2243,151 @@
         saveOnlineSession();
       }
 
+      /* Un état reçu du pair n'est jamais adopté tel quel. Plusieurs écrans
+         l'affichent par innerHTML (fiche, HUD, cases) : un nom, une couleur
+         ou une icône forgés deviendraient du HTML exécuté chez l'adversaire.
+         On refuse donc ce qui n'a pas la forme d'une partie, on ramène les
+         textes affichés à du texte simple et on écarte toute chaîne qui
+         contient du balisage. Ce n'est pas un arbitre des règles : un pair
+         malhonnête peut encore jouer un coup illégal, mais plus exécuter de
+         code ni casser l'écran de l'autre. */
+      const ONLINE_COULEUR_VALIDE = /^#[0-9a-f]{3,8}$/i;
+
+      function nettoyerNomEnLigne(valeur, defaut) {
+        const nom = String(valeur ?? "")
+          .replace(/[\u0000-\u001f\u007f<>&"'`]/g, "")
+          .trim()
+          .slice(0, 24);
+        return nom || defaut;
+      }
+
+      function valeursCollection(cle, champ) {
+        try {
+          const categorie = PROGRESSION_COLLECTION.find(c => c.cle === cle);
+          return categorie ? categorie.objets.map(objet => objet[champ]) : [];
+        } catch (_) {
+          return [];
+        }
+      }
+
+      function contientBalisage(valeur, profondeur = 0) {
+        if (typeof valeur === "string") return /[<>]/.test(valeur);
+        if (!valeur || typeof valeur !== "object" || profondeur > 12) return false;
+        return Object.values(valeur).some(v => contientBalisage(v, profondeur + 1));
+      }
+
+      function validerEtatEnLigne(incoming) {
+        if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) return false;
+        if (!Array.isArray(incoming.players) || incoming.players.length !== 2) return false;
+        if (!Array.isArray(incoming.islands) || !Array.isArray(incoming.characters)) return false;
+        if (incoming.currentPlayer !== 0 && incoming.currentPlayer !== 1) return false;
+        if (!BOARD_SIZES.includes(Number(incoming.boardSize))) return false;
+
+        const heros = valeursCollection("heros", "valeur");
+        const titres = valeursCollection("titre", "nom");
+        for (let i = 0; i < incoming.players.length; i++) {
+          const joueur = incoming.players[i];
+          if (!joueur || typeof joueur !== "object" || joueur.id !== i) return false;
+          if (typeof joueur.color !== "string" || !ONLINE_COULEUR_VALIDE.test(joueur.color)) return false;
+          if (!Number.isInteger(joueur.score) || joueur.score < 0 || joueur.score > 3) return false;
+          joueur.name = nettoyerNomEnLigne(joueur.name, `JOUEUR ${i + 1}`);
+          if (!PLAYER_ICONS.includes(joueur.icon)) joueur.icon = PLAYER_ICONS[i];
+          if (joueur.heros != null && !heros.includes(joueur.heros)) delete joueur.heros;
+          if (joueur.titre != null && !titres.includes(joueur.titre)) delete joueur.titre;
+        }
+        return !contientBalisage(incoming);
+      }
+
+      /* Réception d'un état par le réseau : en plus de la forme, l'ordre.
+         L'invité suit l'hôte (révision égale admise : c'est le renvoi de
+         l'hôte à la reconnexion ou l'accusé de réception). L'hôte n'accepte
+         de l'invité qu'un état strictement plus récent, et seulement pendant
+         le tour de l'invité. */
+      function recevoirEtatEnLigne(message) {
+        const revision = message.revision;
+        if (!Number.isInteger(revision) || revision < 0) return false;
+        if (onlineRole === "host") {
+          if (revision <= (networkRevision || 0)) return false;
+          if (!state?.onlineMode || state.currentPlayer === localPlayerIndex) return false;
+        } else if (revision < (networkRevision || 0)) {
+          return false;
+        }
+        return applyOnlineState(message.state, revision);
+      }
+
       function applyOnlineState(incoming, revision = 0) {
-        if (!incoming) return;
-        if (revision && revision < (networkRevision || 0)) return;
-
-        networkApplyingState = true;
-        stopTurnTimer();
-        aiRunToken++;
-
-        // L'invité ne choisit pas la taille du plateau : sans ce recalage,
-        // son GRID/CENTER/CORNERS locaux restent sur le défaut (ou une
-        // partie précédente) alors que les positions reçues sont celles de
-        // l'hôte — décalage silencieux du rendu et des cases cliquables.
-        setBoardSize(incoming.boardSize);
-
-        state = incoming;
-        state.onlineMode = true;
-        state.soloMode = false;
-        state.visualMode = "alternative";
-        applyVisualMode(state.visualMode);
-        state.players.forEach(player => {
-          player.isAI = false;
-          player.aiDifficulty = null;
-        });
-        state.reachable = new Set(incoming.reachable || []);
-        state.inputLocked = false;
-        state.aiThinking = false;
-        state.timerExpiring = false;
-        state.fxCells = [];
-        state.undoHistory = [];
-        state.networkRevision = revision || incoming.networkRevision || 0;
-        networkRevision = state.networkRevision;
-        // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
-        // a ni deadline ni temps restant à recalculer.
-        state.turnTimeLeft = state.turnDeadline
-          ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
-          : (turnDurationSeconds() || null);
-
-        els.setupScreen.classList.add("hidden");
-        els.gameScreen.classList.remove("hidden");
-        els.gameScreen.classList.remove("ai-turn");
-        renderAll();
-
-        if (state.setupSelectionPending) {
-          state.inputLocked = true;
-          stopTurnTimer();
-          openSymmetricSetupOverlay({
-            waiting: onlineRole === "guest",
-            selectedId: state.startingBoardPreset || "open"
-          });
-        } else {
-          closeSymmetricSetupOverlay();
-          startTurnTimer(false);
+        if (!validerEtatEnLigne(incoming)) {
+          console.warn("État en ligne refusé : forme invalide.");
+          return false;
         }
 
-        networkApplyingState = false;
+        const etatPrecedent = state;
+        const taillePrecedente = GRID;
+        networkApplyingState = true;
+        try {
+          stopTurnTimer();
+          aiRunToken++;
+
+          // L'invité ne choisit pas la taille du plateau : sans ce recalage,
+          // son GRID/CENTER/CORNERS locaux restent sur le défaut (ou une
+          // partie précédente) alors que les positions reçues sont celles de
+          // l'hôte — décalage silencieux du rendu et des cases cliquables.
+          setBoardSize(incoming.boardSize);
+
+          state = incoming;
+          state.onlineMode = true;
+          state.soloMode = false;
+          state.visualMode = "alternative";
+          applyVisualMode(state.visualMode);
+          state.players.forEach(player => {
+            player.isAI = false;
+            player.aiDifficulty = null;
+          });
+          state.reachable = new Set(incoming.reachable || []);
+          state.inputLocked = false;
+          state.aiThinking = false;
+          state.timerExpiring = false;
+          state.fxCells = [];
+          state.undoHistory = [];
+          state.networkRevision = revision || incoming.networkRevision || 0;
+          networkRevision = state.networkRevision;
+          // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
+          // a ni deadline ni temps restant à recalculer.
+          state.turnTimeLeft = state.turnDeadline
+            ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
+            : (turnDurationSeconds() || null);
+
+          els.setupScreen.classList.add("hidden");
+          els.gameScreen.classList.remove("hidden");
+          els.gameScreen.classList.remove("ai-turn");
+          renderAll();
+
+          if (state.setupSelectionPending) {
+            state.inputLocked = true;
+            stopTurnTimer();
+            openSymmetricSetupOverlay({
+              waiting: onlineRole === "guest",
+              selectedId: state.startingBoardPreset || "open"
+            });
+          } else {
+            closeSymmetricSetupOverlay();
+            startTurnTimer(false);
+          }
+        } catch (error) {
+          // Un état passé la validation mais illisible plus loin : on garde
+          // la partie d'avant plutôt qu'un écran à moitié reconstruit.
+          console.warn("État en ligne refusé : application impossible.", error);
+          state = etatPrecedent;
+          setBoardSize(taillePrecedente);
+          try { if (state) renderAll(); } catch (_) { }
+          return false;
+        } finally {
+          networkApplyingState = false;
+        }
+
         updateOnlineBadge();
         saveOnlineSession();
+        return true;
       }
 
       function attachOnlineConnection(connection) {
@@ -2336,13 +2424,15 @@
         });
 
         connection.on("data", message => {
+          // Une connexion remplacée ne parle plus au nom du pair.
+          if (connection !== onlineConnection) return;
           if (!message || typeof message !== "object") return;
 
           if (message.type === "hello" && onlineRole === "host") {
             if (!state?.onlineMode) {
               createOnlineGame(
                 onlineLocalName || "JOUEUR 1",
-                String(message.name || "JOUEUR 2").toLocaleUpperCase("fr-FR"),
+                nettoyerNomEnLigne(message.name, "JOUEUR 2").toLocaleUpperCase("fr-FR"),
                 message.apparence
               );
             } else {
@@ -2365,9 +2455,20 @@
           }
 
           if (message.type === "state") {
-            applyOnlineState(message.state, message.revision || 0);
-            if (onlineRole === "host") {
-              setTimeout(() => forceOnlineSync(), 40);
+            const adopte = recevoirEtatEnLigne(message);
+            // Accusé de réception de l'hôte : l'état adopté, à la même
+            // révision. La relever ici ferait refuser à l'hôte l'envoi
+            // suivant de l'invité, parti avant d'avoir reçu cet accusé.
+            if (adopte && onlineRole === "host") {
+              setTimeout(() => {
+                if (!state?.onlineMode || !onlineConnected) return;
+                sendOnlineMessage({
+                  type: "state",
+                  revision: state.networkRevision || networkRevision,
+                  state: serializeOnlineState()
+                });
+                saveOnlineSession();
+              }, 40);
             }
           }
         });
@@ -2466,7 +2567,16 @@
         });
 
         onlinePeer.on("connection", connection => {
-          if (role === "host") attachOnlineConnection(connection);
+          if (role !== "host") return;
+          // Un salon, deux joueurs : tant que l'invité est connecté, une
+          // autre connexion (code de salon deviné ou partagé) est refusée au
+          // lieu de lui prendre sa place. L'invité qui revient après une
+          // coupure retrouve la sienne dès que l'ancienne est fermée.
+          if (onlineConnection?.open && onlineConnection !== connection) {
+            try { connection.close(); } catch (error) { }
+            return;
+          }
+          attachOnlineConnection(connection);
         });
 
         onlinePeer.on("disconnected", () => {
@@ -3452,7 +3562,7 @@
           return;
         }
 
-        onlineLocalName = name;
+        onlineLocalName = nettoyerNomEnLigne(name, role === "host" ? "JOUEUR 1" : "JOUEUR 2");
         pendingOnlineStartingBoard = role === "host"
           ? (document.getElementById("startingBoardSelect")?.value || "classic")
           : "classic";
