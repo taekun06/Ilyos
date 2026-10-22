@@ -140,8 +140,8 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-interactive:
    On garde ce mécanisme — inutile d'en ajouter un second — et on lui donne la présence
    attendue : débord porté à 13 px, donc un anneau nettement PLUS GRAND que le portrait
    (77 px d'avatar, 103 px d'anneau), bordure épaisse et halo chaud.
-   Le battement est lent (2,8 s) et de faible amplitude : un clignotement rapide
-   deviendrait une gêne pendant la réflexion.
+   Anneau fixe, sans battement : une pulsation sans fin obligeait le navigateur à
+   recomposer l'écran à chaque rafraîchissement, même plateau immobile.
    ============================================================ */
 #ilyosHudOrganicV2 .ov2-left.is-active .ov2-avatar::after,
 #ilyosHudOrganicV2 .ov2-right.is-active .ov2-avatar::after,
@@ -154,23 +154,9 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-interactive:
     0 0 22px 8px rgba(255, 199, 88, .45),
     inset 0 0 16px rgba(255, 226, 152, .28) !important;
   opacity: 1 !important;
-  animation: ilyos-anneau-actif 2.8s ease-in-out infinite !important;
+  animation: none !important;
 }
 
-@keyframes ilyos-anneau-actif {
-  50% {
-    border-color: rgba(255, 244, 205, 1);
-    box-shadow:
-      0 0 34px 14px rgba(255, 208, 104, .62),
-      inset 0 0 20px rgba(255, 236, 182, .38);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #ilyosHudOrganicV2 .ov2-left.is-active .ov2-avatar::after,
-  #ilyosHudOrganicV2 .ov2-right.is-active .ov2-avatar::after,
-  #ilyosHudOrganicV2 .ov2-side-active .ov2-avatar::after { animation: none !important; }
-}
 
 
 /* L'anneau de base n'est déclaré que sur `.is-active` par les feuilles précédentes.

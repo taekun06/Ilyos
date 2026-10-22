@@ -240,13 +240,13 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
 
   const styles = [
-    './css/hud-organique-v2.css?v=12.7',
+    './css/hud-organique-v2.css?v=12.7-lueurs-fixes',
     './css/hud-organique-v2-polish-v6.css?v=12.7',
     './css/hud-organique-v2-readability-v7.css?v=12.7',
     './css/hud-organique-v2-final-v8.css?v=12.8',
     './css/hud-organique-v2-depth-v9.css?v=12.7',
     './css/hud-organique-v2-depth-v10.css?v=12.7',
-    './css/hud-consolidation-v12.css?v=12.9',
+    './css/hud-consolidation-v12.css?v=12.9-lueurs-fixes',
     './css/hud-organique-v2-layout-v10.css?v=2',
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
