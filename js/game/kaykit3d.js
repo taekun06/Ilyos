@@ -990,9 +990,9 @@
         els.boardWrap.appendChild(cursorLabel);
 
         const cameraHint = document.createElement("div");
-        cameraHint.className = "kaykit-camera-hint";
-        // Volontairement inchangé : ce bandeau passe déjà derrière la barre
-        // d'actions, y ajouter « ↑ ↓ INCLINER » ne fait qu'aggraver la collision.
+        // Caché dès le départ (Taekun, 2026-10-22) : il chevauchait les
+        // compteurs des actions. Les commandes restent dans le menu Commandes.
+        cameraHint.className = "kaykit-camera-hint hidden";
         cameraHint.textContent = "← → TOURNER · ESPACE : VUE DE FACE · MOLETTE : ZOOM · CLIC : JOUER";
         els.boardWrap.appendChild(cameraHint);
         kaykitCreerBoutonEnsemble();

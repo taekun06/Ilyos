@@ -81,10 +81,9 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov
   color:#f3dca3!important;
 }
 
-/* Sélection : pulsation de matière + petite étincelle. */
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
-  animation:ov2SelectedPulse 2.25s ease-in-out infinite!important;
-}
+/* Sélection : petite étincelle fixe. Plus de pulsation ni d'étincelle animée :
+   une animation sans fin faisait recomposer l'écran à chaque image (Taekun a
+   choisi des lueurs fixes, 2026-10-22). */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{
   content:"✦";
   position:absolute;
@@ -95,26 +94,11 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected
   font:700 12px/1 Georgia,serif;
   text-shadow:0 0 5px #ffd879,0 0 11px rgba(255,216,121,.72);
   pointer-events:none;
-  animation:ov2SelectedSpark 2.6s ease-in-out infinite;
+  opacity:.8;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::after{
   color:#ddb9ff;
   text-shadow:0 0 5px #c99cff,0 0 11px rgba(168,109,242,.74);
-}
-@keyframes ov2SelectedPulse{
-  0%,100%{filter:brightness(1);transform:translateX(-50%) rotate(1deg) scale(1)}
-  50%{filter:brightness(1.10);transform:translateX(-50%) rotate(1deg) scale(1.025)}
-}
-@keyframes ov2SelectedSpark{
-  0%,30%,100%{opacity:0;transform:translate(2px,4px) scale(.65) rotate(0deg)}
-  42%{opacity:1;transform:translate(0,0) scale(1.05) rotate(16deg)}
-  58%{opacity:.42;transform:translate(-3px,-5px) scale(.82) rotate(34deg)}
-  70%{opacity:0;transform:translate(-5px,-8px) scale(.6) rotate(48deg)}
-}
-@media(prefers-reduced-motion:reduce){
-  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::before,
-  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{animation:none!important}
-  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{opacity:.8!important}
 }
 
 /* ===== Undo : vrai pictogramme SVG, aucun compteur ===== */

@@ -24,7 +24,9 @@
          body[data-entree="manette"]) ; une touche du clavier ou un clic
          reviennent au clavier. Rien sur un ecran tactile : les indices ne
          s'affichent que sur un appareil a souris, ou des qu'une touche ou une
-         manette sert ; un toucher du doigt les retire (Taekun, 2026-10-20). */
+         manette sert ; un toucher du doigt les retire (Taekun, 2026-10-20).
+         Depuis le 2026-10-22, plus rien au depart, meme a la souris : les
+         lettres n'apparaissent qu'apres une touche du clavier ou la manette. */
       (function setupIlyosClavier() {
         if (typeof document === "undefined") return;
 
@@ -38,8 +40,8 @@
           { id: "ov2Push", clavier: "E", manette: "X", dock: true },
           { id: "ov2Magic", clavier: "R", manette: "RT", dock: true },
           { id: "ov2End", clavier: "↵", manette: "⧉", angle: true },
-          // Échap n'est plus affiché sur MENU (Taekun, 2026-10-20).
-          { id: "ov2Gear", clavier: "", manette: "≡" },
+          // Échap de retour sur MENU (images de référence, 2026-10-22).
+          { id: "ov2Gear", clavier: "Échap", manette: "≡" },
           { id: "plateauTactiqueBtn", clavier: "V", manette: "" }
         ];
 
@@ -118,13 +120,13 @@
           rafraichissement = setTimeout(() => { rafraichissement = 0; poserIndices(); }, 400);
         }
 
-        /* Indices visibles : souris de bureau au depart, puis le dernier
-           moyen utilise decide (doigt = rien, clavier/souris/manette = oui). */
+        /* Indices caches au depart ; une touche ou la manette les montre, un
+           doigt les retire, un clic de souris les laisse tels quels. */
         function indices(visibles) {
           if (visibles) document.body.dataset.indices = "1";
           else delete document.body.dataset.indices;
         }
-        try { indices(matchMedia("(pointer:fine) and (hover:hover)").matches); } catch (e) { indices(false); }
+        indices(false);
 
         function modeEntree(manette) {
           indices(true);
@@ -136,7 +138,7 @@
         ilyosModeManette = () => modeEntree(true);
         document.addEventListener("pointerdown", event => {
           if (event.pointerType === "touch" || event.pointerType === "pen") indices(false);
-          else modeEntree(false);
+          else if (document.body.dataset.indices) modeEntree(false);
           rafraichirIndices();
         }, { capture: true, passive: true });
 

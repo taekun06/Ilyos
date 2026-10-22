@@ -136,19 +136,9 @@
     move.dataset.v12MoveIcon = 'footprints-classic';
   }
 
-  function ensureIslandHalo(){
-    const island = byId('ov2Island');
-    if (!island || island.querySelector('.ov2-island-required-halo')) return;
-    const halo = document.createElement('span');
-    halo.className = 'ov2-island-required-halo';
-    halo.setAttribute('aria-hidden','true');
-    island.prepend(halo);
-  }
-
   function syncIslandRequiredState(){
     const island = byId('ov2Island');
     if (!island) return;
-    ensureIslandHalo();
     const required = !island.classList.contains('ov2-off') && !island.disabled;
     island.classList.toggle('ov2-island-required',required);
   }
@@ -433,7 +423,6 @@
     syncInstructionText();
     installUndoFix();
     installMoveIcon();
-    ensureIslandHalo();
     ensureReserveBadges();
     syncReserveBadges();
     syncIslandRequiredState();

@@ -197,10 +197,6 @@
     margin: 0 !important;
     white-space: nowrap !important;
   }
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-island-required-halo {
-    width: 54px !important;
-    height: 54px !important;
-  }
 
   /* Rangée du tour, juste au-dessus des actions. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end {
@@ -442,8 +438,7 @@
     gap: 5px !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before,
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after,
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-island-required-halo {
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after {
     display: none !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action {
