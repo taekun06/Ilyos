@@ -117,24 +117,39 @@ body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Gear.ov2-menu-btn:focu
     border: 0 !important;
     backdrop-filter: none !important;
   }
-  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-avatar { z-index: 2; }
-  /* Le cartouche part de sous le portrait et s'arrête à sa pointe, juste
-     après les couronnes. */
+  /* overflow visible : le médaillon déborde du portrait ; l'image garde ses
+     coins arrondis (border-radius: inherit). */
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-avatar { z-index: 2; overflow: visible !important; }
+  /* Médaillon : anneau or fin, arc extérieur à pointe et petits losanges
+     (image de référence). ::before ne servait qu'à un anneau intérieur. */
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-avatar::before {
+    inset: -10px !important;
+    z-index: 4 !important;
+    opacity: 1 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg%3E%3Cg fill='none' stroke='%23e9c570'%3E%3Ccircle cx='50' cy='50' r='40.6' stroke-width='1.4'/%3E%3Cpath d='M23.6,12.3 A46,46 0 0 0 23.6,87.7' stroke-width='1.2'/%3E%3C/g%3E%3Cg fill='%23e9c570'%3E%3Cpath d='M0,50 L5,47 L8.5,50 L5,53 Z'/%3E%3Ccircle cx='10.2' cy='27' r='1.5'/%3E%3Ccircle cx='10.2' cy='73' r='1.5'/%3E%3Cpath d='M50,6.5 L52.3,9.5 L50,12.5 L47.7,9.5 Z'/%3E%3Cpath d='M50,87.5 L52.3,90.5 L50,93.5 L47.7,90.5 Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") center/100% 100% no-repeat !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-avatar::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg transform='translate(100 0) scale(-1 1)'%3E%3Cg fill='none' stroke='%23e9c570'%3E%3Ccircle cx='50' cy='50' r='40.6' stroke-width='1.4'/%3E%3Cpath d='M23.6,12.3 A46,46 0 0 0 23.6,87.7' stroke-width='1.2'/%3E%3C/g%3E%3Cg fill='%23e9c570'%3E%3Cpath d='M0,50 L5,47 L8.5,50 L5,53 Z'/%3E%3Ccircle cx='10.2' cy='27' r='1.5'/%3E%3Ccircle cx='10.2' cy='73' r='1.5'/%3E%3Cpath d='M50,6.5 L52.3,9.5 L50,12.5 L47.7,9.5 Z'/%3E%3Cpath d='M50,87.5 L52.3,90.5 L50,93.5 L47.7,90.5 Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") !important;
+  }
+  /* Le cartouche part de sous le portrait et file jusqu'à la plaque du tour,
+     en s'effaçant vers sa pointe ; son bord bas se courbe contre le
+     médaillon. Fond et filets sont un seul SVG : plus besoin de clip-path. */
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-ribbon {
     left: 38px !important;
-    right: auto !important;
     padding-left: 66px !important;
-    padding-right: 46px !important;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='0,0 95,0 100,50 95,100 0,100' fill='none' stroke='rgba(233,197,112,.92)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
-    clip-path: polygon(0 0, 95% 0, 100% 50%, 95% 100%, 0 100%) !important;
+    padding-bottom: 6px !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='0' x2='100' y1='0' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%2310203a' stop-opacity='.88'/%3E%3Cstop offset='.55' stop-color='%230c1a30' stop-opacity='.72'/%3E%3Cstop offset='1' stop-color='%230a1628' stop-opacity='.18'/%3E%3C/linearGradient%3E%3ClinearGradient id='o' x1='0' x2='100' y1='0' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23e9c570' stop-opacity='.95'/%3E%3Cstop offset='.6' stop-color='%23e9c570' stop-opacity='.75'/%3E%3Cstop offset='1' stop-color='%23e9c570' stop-opacity='.2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg%3E%3Cpath d='M0,1 H95 L100,43 L95,85 H14 C10,85 9,92 8.5,99 H0 Z' fill='url(%23f)'/%3E%3Cpath d='M0,1 H95 L100,43' fill='none' stroke='url(%23o)' stroke-width='1.6' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M100,43 L95,85 H14 C10,85 9,92 8.5,99' fill='none' stroke='url(%23o)' stroke-width='1.6' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M0,8 H93' fill='none' stroke='url(%23o)' stroke-opacity='.35' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M14,78 H93' fill='none' stroke='url(%23o)' stroke-opacity='.35' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/g%3E%3C/svg%3E") center/100% 100% no-repeat !important;
+    clip-path: none !important;
   }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-ribbon {
     right: 38px !important;
-    left: auto !important;
     padding-right: 66px !important;
-    padding-left: 46px !important;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='0,50 5,0 100,0 100,100 5,100' fill='none' stroke='rgba(233,197,112,.92)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
-    clip-path: polygon(0 50%, 5% 0, 100% 0, 100% 100%, 5% 100%) !important;
+    padding-bottom: 6px !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='f' x1='100' x2='0' y1='0' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%2310203a' stop-opacity='.88'/%3E%3Cstop offset='.55' stop-color='%230c1a30' stop-opacity='.72'/%3E%3Cstop offset='1' stop-color='%230a1628' stop-opacity='.18'/%3E%3C/linearGradient%3E%3ClinearGradient id='o' x1='100' x2='0' y1='0' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23e9c570' stop-opacity='.95'/%3E%3Cstop offset='.6' stop-color='%23e9c570' stop-opacity='.75'/%3E%3Cstop offset='1' stop-color='%23e9c570' stop-opacity='.2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(100 0) scale(-1 1)'%3E%3Cpath d='M0,1 H95 L100,43 L95,85 H14 C10,85 9,92 8.5,99 H0 Z' fill='url(%23f)'/%3E%3Cpath d='M0,1 H95 L100,43' fill='none' stroke='url(%23o)' stroke-width='1.6' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M100,43 L95,85 H14 C10,85 9,92 8.5,99' fill='none' stroke='url(%23o)' stroke-width='1.6' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M0,8 H93' fill='none' stroke='url(%23o)' stroke-opacity='.35' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M14,78 H93' fill='none' stroke='url(%23o)' stroke-opacity='.35' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/g%3E%3C/svg%3E") center/100% 100% no-repeat !important;
+    clip-path: none !important;
   }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-ribbon::after { display: none !important; }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-turn {

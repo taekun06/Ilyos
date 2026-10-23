@@ -251,7 +251,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=8-hud-ref-6'
+    './css/portrait-mobile.css?v=8-hud-ref-9'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
