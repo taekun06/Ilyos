@@ -13718,9 +13718,17 @@
           // renonce au bloom plutôt que de dégrader l'image (voir kaykitRenderAvecBloom).
           const multiDispo = !!(renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget);
           kaykitBloom.multiEchantillon = multiDispo;
+          // PROFONDEUR 24 BITS. Sans tampon de stencil, Three r128 réserve à la
+          // cible une profondeur de 16 bits (DEPTH_COMPONENT16). Windows la
+          // promeut souvent en 24 bits sans le dire ; Mac (Metal) la prend au
+          // mot : le casque et la tête du chevalier, le chapeau du mage, les
+          // pointes du bouclier se mêlaient en rayures (Taekun, 2026-10-23).
+          // Avec le stencil, r128 alloue DEPTH24_STENCIL8 : même place mémoire
+          // qu'un 24 bits seul, aucun calcul de plus par image.
+          const cibleOptions = Object.assign({}, options, { depthBuffer: true, stencilBuffer: true });
           kaykitBloom.cibleScene = multiDispo
-            ? new THREE.WebGLMultisampleRenderTarget(l, h, Object.assign({ depthBuffer: true }, options))
-            : new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+            ? new THREE.WebGLMultisampleRenderTarget(l, h, cibleOptions)
+            : new THREE.WebGLRenderTarget(l, h, cibleOptions);
           // 4 échantillons. Mesuré : à 4, le taux d'arêtes dures est RIGOUREUSEMENT
           // identique avec et sans bloom (écart 0,000) ; à 2 il remonte de 0,279 % à
           // 0,342 %. Le crénelage étant précisément le défaut signalé, la qualité prime
