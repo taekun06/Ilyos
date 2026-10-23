@@ -76,12 +76,24 @@
     height: 100% !important;
     inset: 0 !important;
   }
+  /* Cartouches bleu nuit un peu translucides cernés d'or, comme sur ordinateur
+     (images de référence de Taekun, 2026-10-22). */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon {
     top: 4px !important;
     height: 40px !important;
     padding: 0 !important;
     clip-path: none !important;
     border-radius: 10px !important;
+    border: 1px solid rgba(233, 197, 112, .75) !important;
+    background: linear-gradient(180deg, rgba(16, 32, 58, .8), rgba(7, 16, 34, .8)) !important;
+    backdrop-filter: none !important;
+  }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon::after { display: none !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-avatar { z-index: 3 !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-turn {
+    border: 0 !important;
+    backdrop-filter: none !important;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='8,0 92,0 100,50 92,100 8,100 0,50' fill='none' stroke='rgba(233,197,112,.9)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat, linear-gradient(180deg, rgba(16, 32, 58, .85), rgba(7, 16, 34, .85)) !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-ribbon {
     left: 26px !important;
@@ -197,21 +209,18 @@
     margin: 0 !important;
     white-space: nowrap !important;
   }
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-island-required-halo {
-    width: 54px !important;
-    height: 54px !important;
-  }
 
-  /* Rangée du tour, juste au-dessus des actions. */
+  /* Rangée du tour, juste au-dessus des actions : Annuler à gauche, FIN DU
+     TOUR, puis pioche et défausse ensemble à droite (Taekun, 2026-10-23). */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end {
-    left: 50% !important;
-    right: auto !important;
+    left: calc(var(--pm-gutter) + var(--pm-row-h) + 10px) !important;
+    right: calc(var(--pm-gutter) + 120px) !important;
     bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + 8px) !important;
-    width: min(180px, 46vw) !important;
+    width: auto !important;
     height: var(--pm-row-h) !important;
     min-width: 0 !important;
     padding: 0 12px !important;
-    transform: translateX(-50%) !important;
+    transform: none !important;
     gap: 8px !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end svg {
@@ -223,8 +232,8 @@
     white-space: nowrap !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-undo {
-    left: auto !important;
-    right: calc(50% + min(90px, 23vw) + 8px) !important;
+    left: var(--pm-gutter) !important;
+    right: auto !important;
     bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + 8px) !important;
     width: var(--pm-row-h) !important;
     height: var(--pm-row-h) !important;
@@ -236,9 +245,9 @@
     transform: scale(.78) !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-deck-hud {
-    left: var(--pm-gutter) !important;
-    right: auto !important;
-    transform-origin: bottom left !important;
+    left: auto !important;
+    right: calc(var(--pm-gutter) + 58px) !important;
+    transform-origin: bottom right !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-discard-hud {
     right: var(--pm-gutter) !important;
@@ -415,10 +424,22 @@
     height: 32px !important;
   }
 
-  /* Bande des joueurs réduite, frise du tour adverse sous le portrait. */
+  /* Bande des joueurs réduite, frise du tour adverse sous le portrait. Elle
+     prend toute la largeur entre la colonne MENU / 2D et le bord droit (les
+     actions commencent plus bas) : les cartouches gardent nom, réserve et
+     couronnes comme sur ordinateur (Taekun, 2026-10-23) ; réduite à .6 pour
+     qu'ils y tiennent sans couper le nom. Largeur avant réduction = largeur
+     visible / .6. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top {
-    transform: scale(.72) !important;
+    transform: scale(.6) !important;
     transform-origin: top center !important;
+    left: calc(50vw + 22px - (100vw - 84px) / 1.2) !important;
+    right: auto !important;
+    width: calc((100vw - 84px) / .6) !important;
+  }
+  html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-top .ov2-turn {
+    min-width: 170px !important;
+    padding: 0 24px !important;
   }
   html body #tourAdverseFrise {
     top: 58px !important;
@@ -442,8 +463,7 @@
     gap: 5px !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before,
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after,
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-island-required-halo {
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after {
     display: none !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action {
@@ -454,21 +474,21 @@
     padding: 4px 8px !important;
     transform: none !important;
     display: grid !important;
-    grid-template-columns: 24px 1fr !important;
+    grid-template-columns: 32px 1fr !important;
     grid-template-rows: auto auto !important;
     align-content: center !important;
-    column-gap: 4px !important;
+    column-gap: 12px !important;
     row-gap: 0 !important;
     text-align: left !important;
   }
-  /* Le fond octogonal (décalé, plus grand que le bouton) devient une pastille
-     à pans coupés de la taille du bouton. */
+  /* Le socle hexagonal de l'ordinateur, réduit, porte l'icône à gauche ; le
+     nom et le nombre se lisent à côté, sans fond (comme en portrait). */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action::before {
-    inset: 0 !important;
-    width: auto !important;
-    height: auto !important;
+    left: 4px !important;
+    top: 3px !important;
+    width: 40px !important;
+    height: 40px !important;
     transform: none !important;
-    clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 12px 100%, 0 50%) !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action svg {
     width: 20px !important;
@@ -479,6 +499,7 @@
     flex: 0 0 20px !important;
     grid-row: 1 / span 2 !important;
     align-self: center !important;
+    justify-self: center !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong,
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small {
@@ -506,8 +527,10 @@
     white-space: nowrap !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end * { font-size: 11px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end svg { width: 16px !important; height: 16px !important; flex: 0 0 16px !important; }
 
-  /* Pioche, défausse et retour : petits, en bas à gauche. */
+  /* Retour dans le coin bas gauche, pioche et défausse juste à sa droite
+     (Taekun, 2026-10-23). */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud,
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud {
     position: fixed !important;
@@ -517,13 +540,13 @@
     transform: scale(.72) !important;
     transform-origin: bottom left !important;
   }
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud { left: var(--pc-safe-left) !important; }
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud { left: calc(var(--pc-safe-left) + 48px) !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud { left: calc(var(--pc-safe-left) + 50px) !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud { left: calc(var(--pc-safe-left) + 98px) !important; }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Undo {
     position: fixed !important;
     top: auto !important;
     left: var(--pc-safe-left) !important;
-    bottom: 66px !important;
+    bottom: 10px !important;
     transform: scale(.85) !important;
     transform-origin: bottom left !important;
   }
@@ -545,10 +568,10 @@
     position: fixed !important;
     top: auto !important;
     bottom: 34px !important;
-    left: 110px !important;
+    left: 160px !important;
     right: calc(var(--pc-col) + 16px) !important;
     width: max-content !important;
-    max-width: calc(100vw - 238px) !important;
+    max-width: calc(100vw - 288px) !important;
     margin: 0 auto !important;
     transform: none !important;
     justify-content: center !important;

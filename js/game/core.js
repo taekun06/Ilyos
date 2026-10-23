@@ -1220,6 +1220,9 @@
             mode: snapshot.soloMode ? "solo" : "local",
             state: snapshot
           }));
+          // La réserve du HUD (js/hud-consolidation-v12.js) se lit dans cette
+          // sauvegarde : elle se met à jour dès qu'elle est écrite.
+          window.dispatchEvent(new Event("ilyos-sauvegarde"));
         } catch (error) {
           console.warn("Sauvegarde locale impossible.", error);
         }
@@ -1823,12 +1826,21 @@
         return edges;
       }
 
+      /** Règle du 23/10 : un gardien qui porte déjà une couronne ne peut pas
+       *  s'arrêter sur une case où une couronne est posée au sol (il ne
+       *  pourrait pas la ramasser). La traverser reste permis, comme pour
+       *  tout gardien : seule la case d'arrivée est interdite. */
+      function porteurBloqueParCouronne(char, r, c) {
+        return !!char && characterCarriesCrown(char.id) && !!looseArtifactAt(r, c);
+      }
+
       function shortestMovementPath(char, targetR, targetC, maxCost) {
         if (
           !char
           || !inside(targetR, targetC)
           || !isLand(targetR, targetC)
           || characterAt(targetR, targetC)
+          || porteurBloqueParCouronne(char, targetR, targetC)
         ) return null;
 
         const startKey = key(char.r, char.c);

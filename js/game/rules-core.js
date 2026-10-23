@@ -71,7 +71,7 @@
        *  ayant déjà changé, elle ne peut plus être relue depuis l'état. */
       function applyMoveCore(charId, r, c, cost) {
         const char = characterById(charId);
-        if (!char) return null;
+        if (!char || porteurBloqueParCouronne(char, r, c)) return null;
         const depuis = [char.r, char.c];
         char.r = r;
         char.c = c;
