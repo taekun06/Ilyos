@@ -124,3 +124,13 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::b
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after{
   bottom:-9px!important;
 }
+
+/* Le liseré (SVG du premier fond) se cale sur le bord extérieur. Le raccourci
+   `background` des états ci-dessus remet l'origine au bord intérieur : la
+   bordure transparente de 1 px laissait alors voir le fond bleu au-delà du
+   filet or, en traits sombres le long des bords et aux angles. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 :is(#ov2Island,#ov2Move,#ov2Push,#ov2Magic).ov2-action.ov2-action.ov2-action::before,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2End.ov2-end.ov2-end.ov2-end,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo.ov2-undo.ov2-undo.ov2-undo{
+  background-origin:border-box!important;
+}
