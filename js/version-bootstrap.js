@@ -268,7 +268,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
        vivent depuis dans js/game/kaykit3d.js. Ils ne contenaient plus qu'un
        commentaire mais partaient quand même sur le réseau. Leurs feuilles CSS
        homonymes, elles, sont bien vivantes et restent chargées plus haut. */
-    './js/hud-consolidation-v12.js?v=12.9-hud-ref',
+    './js/hud-consolidation-v12.js?v=12.9-reserve-sauvegarde',
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).

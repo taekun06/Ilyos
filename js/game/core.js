@@ -1220,6 +1220,9 @@
             mode: snapshot.soloMode ? "solo" : "local",
             state: snapshot
           }));
+          // La réserve du HUD (js/hud-consolidation-v12.js) se lit dans cette
+          // sauvegarde : elle se met à jour dès qu'elle est écrite.
+          window.dispatchEvent(new Event("ilyos-sauvegarde"));
         } catch (error) {
           console.warn("Sauvegarde locale impossible.", error);
         }

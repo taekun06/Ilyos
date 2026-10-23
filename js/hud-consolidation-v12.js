@@ -455,6 +455,10 @@
     window.addEventListener('resize',schedule,{passive:true});
     window.addEventListener('pageshow',schedule,{passive:true});
     window.addEventListener('pointerup',scheduleTailSync,{passive:true});
+    /* La sauvegarde (core.js) arrive ~280 ms après le geste, et le HUD peut ne
+       plus changer ensuite (pioche, tour du CPU) : la réserve affichée restait
+       sur l'ancienne valeur. */
+    window.addEventListener('ilyos-sauvegarde',syncReserveBadges);
     console.info('[ILYOS HUD] consolidation V12 active');
   }
 
