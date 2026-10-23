@@ -683,6 +683,14 @@
         hamletTree: kaykitAssetSpec("medieval", "decoration/nature/tree_single_B.gltf", MEDIEVAL_ATLAS),
         hamletBarrel: kaykitAssetSpec("medieval", "decoration/props/barrel.gltf", MEDIEVAL_ATLAS),
         hamletCrate: kaykitAssetSpec("medieval", "decoration/props/crate_A_small.gltf", MEDIEVAL_ATLAS),
+        hamletMarket: kaykitAssetSpec("medieval", "buildings/blue/building_market_blue.gltf", MEDIEVAL_ATLAS),
+        hamletSmithy: kaykitAssetSpec("medieval", "buildings/blue/building_blacksmith_blue.gltf", MEDIEVAL_ATLAS),
+        hamletMill: kaykitAssetSpec("medieval", "buildings/blue/building_windmill_blue.gltf", MEDIEVAL_ATLAS),
+        hamletTower: kaykitAssetSpec("medieval", "buildings/blue/building_tower_A_blue.gltf", MEDIEVAL_ATLAS),
+        hamletWall: kaykitAssetSpec("medieval", "buildings/neutral/wall_straight.gltf", MEDIEVAL_ATLAS),
+        hamletSack: kaykitAssetSpec("medieval", "decoration/props/sack.gltf", MEDIEVAL_ATLAS),
+        hamletBarrow: kaykitAssetSpec("medieval", "decoration/props/wheelbarrow.gltf", MEDIEVAL_ATLAS),
+        hamletLumber: kaykitAssetSpec("medieval", "decoration/props/resource_lumber.gltf", MEDIEVAL_ATLAS),
 
         // Nuages KayKit réels (voir buildKayKitBoardClouds) : dérivent juste hors
         // du rayon de sécurité de l'archipel, à hauteur du plateau — lecture
@@ -7726,21 +7734,42 @@
       }
 
       /* ---------- Hameau des villages de coin ------------------------------
-         Remplace les fanions : trois îlots plus bas que le plateau, reliés par
-         des passerelles, longent le bord extérieur des trois cases du village
-         (la case du coin et ses deux voisines). Maisons, église et puits aux
-         couleurs du joueur, portes tournées vers le plateau.
+         Le village MONTRE ses trois cases de validation (la case du coin et ses
+         deux voisines) : un quai de pierre longe leur bord extérieur, un muret
+         court tout du long, une tour marque chaque extrémité, et derrière le
+         muret se serre un bourg très habité (maisons de toutes tailles, marché,
+         forge, moulin, église, puits, accessoires). Tout s'arrête pile au bout
+         de la troisième case : la limite du village se lit au premier regard,
+         même quand les cases voisines sont encore du ciel vide.
 
          Pensé pour les machines faibles : tout est statique (aucune animation,
-         matrixAutoUpdate coupé), rien ne projette d'ombre, et les bâtiments
+         matrixAutoUpdate coupé), rien ne projette d'ombre, et les ~35 modèles
          d'un hameau sont FUSIONNÉS en deux maillages (teinte du joueur +
-         neutre) — deux appels de rendu par hameau au lieu d'une vingtaine.
+         neutre) — deux appels de rendu, plus les deux dalles du quai.
 
-         Les coordonnées sont celles de la maquette validée, écrites pour le
-         coin bas-gauche (x vers l'extérieur = -x, z vers l'extérieur = +z) puis
-         mises en miroir pour chaque coin. */
-      const KAYKIT_HAMEAU_MODELES = ["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell", "hamletTree", "hamletBarrel", "hamletCrate"];
-      const KAYKIT_HAMEAU_EQUIPE = new Set(["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell"]);
+         Repère local (px, py) en cases, origine au centre de la case du coin :
+         px suit la colonne, py la rangée, valeurs POSITIVES vers l'extérieur du
+         plateau. Les deux côtés du L utilisent le même plan, en miroir. Le
+         placement « au hasard » est un tirage fixe par coin : chaque village
+         garde la même allure d'une partie à l'autre. */
+      const KAYKIT_HAMEAU_MODELES = ["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell", "hamletTree", "hamletBarrel", "hamletCrate",
+        "hamletMarket", "hamletSmithy", "hamletMill", "hamletTower", "hamletWall", "hamletSack", "hamletBarrow", "hamletLumber"];
+      const KAYKIT_HAMEAU_EQUIPE = new Set(["hamletHomeA", "hamletHomeB", "hamletChurch", "hamletWell", "hamletMarket", "hamletSmithy", "hamletMill", "hamletTower"]);
+
+      // [modèle, largeur, position le long du muret, profondeur depuis le bord].
+      // Le premier plan longe la rangée du coin, le second sa colonne.
+      const KAYKIT_HAMEAU_PLAN = [
+        ["hamletHomeA", .3, -1.0, .4], ["hamletMarket", .3, -.12, .44], ["hamletHomeB", .2, -1.36, .28], ["hamletHomeA", .17, -1.38, .5],
+        ["hamletSmithy", .24, -.66, .32], ["hamletHomeB", .19, -.72, .53], ["hamletHomeA", .16, -.42, .3], ["hamletBarrel", .05, -.5, .5],
+        ["hamletHomeB", .21, .16, .3], ["hamletHomeA", .18, .2, .52], ["hamletCrate", .06, -.28, .52], ["hamletSack", .05, -.86, .56],
+        ["hamletHomeB", .15, -1.18, .56], ["hamletHomeA", .15, -.25, .3], ["hamletHomeB", .14, .02, .56]
+      ];
+      const KAYKIT_HAMEAU_PLAN_COLONNE = [
+        ["hamletHomeB", .28, -1.0, .42], ["hamletWell", .14, -.2, .36], ["hamletMill", .26, -1.36, .44], ["hamletHomeA", .2, -.62, .3],
+        ["hamletHomeB", .17, -.6, .52], ["hamletHomeA", .19, -.38, .5], ["hamletHomeB", .18, .14, .32], ["hamletHomeA", .2, .16, .54],
+        ["hamletBarrow", .09, -.2, .56], ["hamletLumber", .1, -.84, .3], ["hamletBarrel", .05, -1.18, .3], ["hamletHomeA", .15, -1.15, .56],
+        ["hamletHomeB", .14, -.02, .54], ["hamletHomeA", .15, -.82, .55]
+      ];
 
       function kaykitHameauPret() {
         return KAYKIT_HAMEAU_MODELES.every(cle => kaykit3D.assets.has(cle) || kaykit3D.failedAssets.has(cle));
@@ -7808,65 +7837,83 @@
         const P = kaykitCellPosition(r, c, 0);
         const dirR = r <= CENTER.r ? -1 : 1;
         const dirC = c <= CENTER.c ? -1 : 1;
-        // Maquette (coin bas-gauche) -> monde : miroir selon le coin.
-        const X = mx => P.x - dirC * mx;
-        const Z = mz => P.z + dirR * mz;
+        const W = (px, py) => [P.x + dirC * px * S, P.z + dirR * py * S];
         const groupe = new THREE.Group();
         groupe.name = "ilyos-hameau";
-        const echelleY = .5;
-        const yTop = KAYKIT_LEVELS.pedestalTop * echelleY - .06;
+        const bord = .52;    // bord extérieur des cases (le socle déborde un peu)
+        const prof = .62;    // profondeur du quai
+        const Y = .3;        // dessus du quai, sous le niveau des cases
 
-        // Îlots : socles du plateau réduits et abaissés, teintés terre pour ne
-        // jamais se lire comme des cases jouables.
-        const terre = new THREE.Color(0x9c7f63);
-        const ilot = (mx, mz, sx, sz) => {
-          const socle = makeKayKitPedestal(accent);
-          socle.scale.set(sx / S, echelleY, sz / S);
-          socle.position.set(X(mx), -.06, Z(mz));
-          socle.traverse(o => {
-            if (!o.isMesh) return;
-            o.castShadow = false;
-            if (!o.material || Array.isArray(o.material) || o.material.map || !o.material.clone) return;
-            o.material = o.material.clone();
-            o.material.color?.lerp(terre, .55);
-            o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true };
-          });
-          groupe.add(socle);
+        // Quai : deux dalles de pierre, un cran sous les cases pour ne jamais
+        // se lire comme une case jouable.
+        const pierre = kaykitMaterial(0x6f6355, { roughness: .92 });
+        const dessous = kaykitMaterial(0x4a3d31, { roughness: .95 });
+        const quai = (px0, px1, py0, py1, cle) => {
+          const [ax, az] = W(px0, py0), [bx, bz] = W(px1, py1);
+          const sx = Math.abs(bx - ax), sz = Math.abs(bz - az);
+          const dalle = new THREE.Mesh(kaykitGeometry(`hameau-quai-${cle}-v1`, () => new THREE.BoxGeometry(sx, .07, sz)), pierre);
+          dalle.position.set((ax + bx) / 2, Y - .035, (az + bz) / 2);
+          dalle.receiveShadow = true;
+          const socle = new THREE.Mesh(kaykitGeometry(`hameau-socle-${cle}-v1`, () => new THREE.BoxGeometry(sx * .94, .16, sz * .9)), dessous);
+          socle.position.set((ax + bx) / 2, Y - .15, (az + bz) / 2);
+          groupe.add(dalle, socle);
         };
-        const g = .84;
-        const I1 = [-g, -S - .05], I2 = [-g + .05, g - .05], I3 = [S + .05, g];
-        ilot(I1[0], I1[1], .64, .84);
-        ilot(I2[0], I2[1], .7, .7);
-        ilot(I3[0], I3[1], .84, .64);
+        quai(-1.5, bord + prof, bord, bord + prof, "rangee");
+        quai(bord, bord + prof, -1.5, bord, "colonne");
 
-        // Bâtiments, regroupés pour la fusion.
+        // Tirage fixe par coin (même suite que la maquette validée).
+        let graine = (r * 31 + c * 17 + 7) >>> 0;
+        const alea = () => { graine = (graine * 1103515245 + 12345) & 0x7fffffff; return graine / 0x7fffffff; };
+        const varie = (a, b) => a + (b - a) * alea();
+        const quart = () => [0, Math.PI / 2, Math.PI, -Math.PI / 2][Math.floor(alea() * 4)] + varie(-.25, .25);
+        const desordre = () => quart() * (alea() < .55 ? 0 : 1) + varie(-.3, .3);
+
         const bati = new THREE.Group();
-        const versPlateau = (x, z) => Math.atan2(X(1) - x, Z(-1) - z) + Math.PI;
-        const pose = (cle, largeur, mx, mz, rot = null) => {
+        const pose = (cle, largeur, px, py, { vers = null, rot = 0 } = {}) => {
           const modele = cloneKayKitAsset(cle, { maxWidth: largeur, maxHeight: 10, targetFloor: 0 });
           if (!modele) return;
-          // Même atlas pour tous les bâtiments : une seule texture reteinte
-          // suffit, et ils fusionnent alors en un seul maillage.
           if (KAYKIT_HAMEAU_EQUIPE.has(cle)) {
             accentVillageColors(modele, accent);
             modele.userData.cleFusion = "equipe";
           } else modele.userData.cleFusion = "neutre";   // même atlas KayKit d'origine
-          const x = X(mx), z = Z(mz);
-          modele.position.set(x, yTop, z);
-          modele.rotation.y = rot ?? versPlateau(x, z);
+          const [x, z] = W(px, py);
+          modele.position.set(x, Y, z);
+          if (vers) { const [tx, tz] = W(...vers); modele.rotation.y = Math.atan2(tx - x, tz - z) + rot; }
+          else modele.rotation.y = rot;
           bati.add(modele);
         };
-        pose("hamletHomeA", .4, I1[0] + .08, I1[1] - .17);
-        pose("hamletHomeB", .38, I1[0] - .08, I1[1] + .2);
-        pose("hamletTree", .2, I1[0] - .22, I1[1] - .3, 0);
-        pose("hamletBarrel", .06, I1[0] + .26, I1[1] + .14, 0);
-        pose("hamletChurch", .44, I2[0] - .06, I2[1] + .06);
-        pose("hamletWell", .16, I2[0] + .25, I2[1] - .22);
-        pose("hamletTree", .18, I2[0] + .26, I2[1] + .28, 1);
-        pose("hamletHomeB", .38, I3[0] - .18, I3[1] + .08);
-        pose("hamletHomeA", .4, I3[0] + .19, I3[1] - .08);
-        pose("hamletTree", .19, I3[0] + .32, I3[1] + .26, 2);
-        pose("hamletCrate", .07, I3[0] - .02, I3[1] - .28, .5);
+        // Muret collé au bord des trois cases, une tour à chaque extrémité.
+        const mur = (px0, py0, px1, py1) => {
+          const [ax, az] = W(px0, py0), [bx, bz] = W(px1, py1);
+          const longueur = Math.hypot(bx - ax, bz - az);
+          const modele = cloneKayKitAsset("hamletWall", { exactWidth: longueur, exactHeight: .264, exactDepth: .24, targetFloor: 0 });
+          if (!modele) return;
+          modele.userData.cleFusion = "neutre";
+          modele.position.set((ax + bx) / 2, Y, (az + bz) / 2);
+          modele.rotation.y = -Math.atan2(bz - az, bx - ax);
+          bati.add(modele);
+        };
+        const m = bord + .08;
+        mur(-1.5, m, -.5, m); mur(-.5, m, m, m);
+        mur(m, -1.5, m, -.5); mur(m, -.5, m, m);
+        pose("hamletTower", .24, -1.5, m); pose("hamletTower", .24, m, -1.5);
+
+        KAYKIT_HAMEAU_PLAN.forEach(([cle, largeur, le, pr]) => {
+          const px = le, py = bord + pr - .1;
+          const l = largeur * 1.2 * varie(.85, 1.15);
+          pose(cle, l, px, py, { vers: [px, 0], rot: desordre() });
+        });
+        // Église et sa voisine dans l'angle, derrière le château.
+        pose("hamletChurch", .3 * 1.2 * varie(.85, 1.15), bord + .38, bord + .38, { vers: [bord + .38, 0] });
+        const lAngle = .17 * 1.2 * varie(.85, 1.15);
+        pose("hamletHomeA", lAngle, bord + .2, bord + .2, { vers: [bord + .2, 0], rot: desordre() });
+        KAYKIT_HAMEAU_PLAN_COLONNE.forEach(([cle, largeur, le, pr]) => {
+          const px = bord + pr - .1, py = le;
+          const l = largeur * 1.2 * varie(.85, 1.15);
+          pose(cle, l, px, py, { vers: [0, py], rot: cle === "hamletMill" ? 0 : desordre() });
+        });
+        pose("hamletTree", .15, -1.52, bord + .56, { rot: 1 });
+        pose("hamletTree", .14, bord + .56, -1.52, { rot: 2 });
 
         const { fusionnes, aPart } = kaykitFusionnerParTexture(bati);
         // Le maillage aux couleurs du joueur porte la lueur (voir
@@ -7894,20 +7941,12 @@
           copie.castShadow = false;
           groupe.add(copie);
         });
-
-        // Passerelles de bois entre les îlots.
-        const bois = kaykitMaterial(0x5a3a22, { roughness: .9 });
-        const planche = kaykitGeometry("hameau-passerelle-v1", () => new THREE.BoxGeometry(.16, .03, 1));
-        const pont = (a, b) => {
-          const ax = X(a[0]), az = Z(a[1]), bx = X(b[0]), bz = Z(b[1]);
-          const m = new THREE.Mesh(planche, bois);
-          m.scale.z = Math.hypot(bx - ax, bz - az) - .6;
-          m.position.set((ax + bx) / 2, yTop - .02, (az + bz) / 2);
-          m.rotation.y = Math.atan2(bx - ax, bz - az);
-          m.receiveShadow = true;
-          groupe.add(m);
-        };
-        pont(I1, I2); pont(I2, I3);
+        // Les clones ont chacun leurs matériaux (cloneKayKitAsset +
+        // accentVillageColors) : seuls les matériaux fusionnés restent utiles.
+        bati.traverse(o => {
+          if (!o.isMesh) return;
+          [].concat(o.material).forEach(mat => { if (mat && !fusionnes.some(f => f.material === mat)) mat.dispose?.(); });
+        });
 
         groupe.userData.lueur = lueur;
         groupe.updateMatrixWorld(true);
