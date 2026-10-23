@@ -8812,7 +8812,7 @@
         }
         for (const k of candidatsTrou) {
           const [r, c] = k.split(",").map(Number);
-          if (!isLand(r, c)) continue;
+          if (!isLand(r, c) || options.exclus?.has(k)) continue;
           const entoure = [[-1, 0], [1, 0], [0, -1], [0, 1]]
             .every(([dr, dc]) => ensembleAtteignable.has(cle(r + dr, c + dc)));
           if (!entoure) continue;
@@ -9829,7 +9829,14 @@
           if (zoneVisible) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
             const gardienZone = state.selectedCharId ? characterById(state.selectedCharId) : null;
-            addKayKitMoveZone(cellules, gardienZone ? { origine: [gardienZone.r, gardienZone.c] } : {});
+            /* Un porteur ne peut pas s'arrêter sur une couronne au sol : sa
+               case reste un vrai trou dans la zone, même entourée. */
+            const exclus = gardienZone && characterCarriesCrown(gardienZone.id)
+              ? new Set(activeArtifacts().filter(a => a.carrierId === null).map(a => a.r + "," + a.c))
+              : null;
+            addKayKitMoveZone(cellules, gardienZone
+              ? { origine: [gardienZone.r, gardienZone.c], exclus }
+              : {});
           }
         }
         kaykitTelephoneSuivreSelection(zoneRef);
@@ -16206,12 +16213,21 @@
         return edges;
       }
 
+      /** Règle du 23/10 : un gardien qui porte déjà une couronne ne peut pas
+       *  s'arrêter sur une case où une couronne est posée au sol (il ne
+       *  pourrait pas la ramasser). La traverser reste permis, comme pour
+       *  tout gardien : seule la case d'arrivée est interdite. */
+      function porteurBloqueParCouronne(char, r, c) {
+        return !!char && characterCarriesCrown(char.id) && !!looseArtifactAt(r, c);
+      }
+
       function shortestMovementPath(char, targetR, targetC, maxCost) {
         if (
           !char
           || !inside(targetR, targetC)
           || !isLand(targetR, targetC)
           || characterAt(targetR, targetC)
+          || porteurBloqueParCouronne(char, targetR, targetC)
         ) return null;
 
         const startKey = key(char.r, char.c);
@@ -24328,6 +24344,10 @@
 
       function performMoveToCell(char, r, c, reachable = null) {
         if (!char || characterAt(r, c) || !isLand(r, c)) return false;
+        if (porteurBloqueParCouronne(char, r, c)) {
+          showToast("Ce gardien porte déjà une couronne.");
+          return false;
+        }
         const destinationKey = key(r, c);
         const activeRange = reachable || movementRange(char, availableActionCount("MOVE"));
         if (!activeRange.has(destinationKey)) {
@@ -24439,6 +24459,11 @@
            fonction des centaines de fois par décision. */
         const files = [[{ r: char.r, c: char.c, cost: 0 }]];
         const occupees = new Set((state.characters || []).map(ch => key(ch.r, ch.c)));
+        // Porteur : les couronnes au sol restent traversables mais ne sont
+        // jamais une case d'arrivée (voir porteurBloqueParCouronne).
+        const couronnesInterdites = characterCarriesCrown(char.id)
+          ? new Set(activeArtifacts().filter(a => a.carrierId === null).map(a => key(a.r, a.c)))
+          : null;
 
         for (let niveau = 0; niveau < files.length; niveau++) {
           const file = files[niveau];
@@ -24460,7 +24485,7 @@
               if (nextCost >= (distances.get(nextKey) ?? Infinity)) continue;
 
               distances.set(nextKey, nextCost);
-              result.add(nextKey);
+              if (!couronnesInterdites || !couronnesInterdites.has(nextKey)) result.add(nextKey);
               (files[nextCost] ||= []).push({ r: edge.r, c: edge.c, cost: nextCost });
             }
           }
@@ -26496,7 +26521,7 @@
        *  ayant déjà changé, elle ne peut plus être relue depuis l'état. */
       function applyMoveCore(charId, r, c, cost) {
         const char = characterById(charId);
-        if (!char) return null;
+        if (!char || porteurBloqueParCouronne(char, r, c)) return null;
         const depuis = [char.r, char.c];
         char.r = r;
         char.c = c;

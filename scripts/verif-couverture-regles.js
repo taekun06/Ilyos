@@ -11,7 +11,8 @@
 
    La dissolution d'une île vide (option de partie `allowDissolve`) est
    couverte depuis le 29/09 ; l'IA l'ignorait auparavant. Les îles payantes
-   du mode personnalisé (2 cartes, pose facultative) depuis le 09/10.      */
+   du mode personnalisé (2 cartes, pose facultative) depuis le 09/10. Le
+   porteur interdit d'arrêt sur une couronne au sol depuis le 23/10.       */
 
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -72,6 +73,21 @@ const assert = require('node:assert/strict');
           applyFreeDropCore('A', 5, 1);
           const r = applyMoveCore('D', 5, 1, 1);
           return { genere: true, applique: !!(r && artifactCarriedBy('D')) };
+        });
+        /* Règle du 23/10 : un porteur ne s'arrête jamais sur une couronne au
+           sol (il la traverse), un gardien libre si. La couronne de E est
+           posée en (5,1), A la porte toujours en (5,2). */
+        resultat['porteur et couronne au sol'] = withSimulatedState(cloneStateForSimulation(), () => {
+          const libre = artifactCarriedBy('E');
+          libre.carrierId = null; libre.r = 5; libre.c = 1;
+          const moves = avecGrilleTerre(() => plannerCandidatsMove(0));
+          const porteurRefuse = !moves.some(a => a.charId === 'A' && a.r === 5 && a.c === 1)
+            && !movementRange(characterById('A'), 2).has(key(5, 1))
+            && !shortestMovementPath(characterById('A'), 5, 1, 2);
+          const traverse = movementRange(characterById('A'), 2).has(key(5, 0));
+          const libreAccepte = movementRange(characterById('D'), 2).has(key(5, 1));
+          return { genere: porteurRefuse && traverse && libreAccepte,
+            applique: !applyMoveCore('A', 5, 1, 1) && !!applyMoveCore('D', 5, 1, 1) && artifactCarriedBy('D') === libre };
         });
         /* MAGIE : le porteur sur une île en ligne qu'un quart de tour rapproche
            de son village (0,0). L'IA ne propose que les rotations utiles. */

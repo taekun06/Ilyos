@@ -8429,7 +8429,7 @@
         }
         for (const k of candidatsTrou) {
           const [r, c] = k.split(",").map(Number);
-          if (!isLand(r, c)) continue;
+          if (!isLand(r, c) || options.exclus?.has(k)) continue;
           const entoure = [[-1, 0], [1, 0], [0, -1], [0, 1]]
             .every(([dr, dc]) => ensembleAtteignable.has(cle(r + dr, c + dc)));
           if (!entoure) continue;
@@ -9446,7 +9446,14 @@
           if (zoneVisible) {
             const cellules = [...(state.reachable || [])].map(cellKey => cellKey.split(",").map(Number));
             const gardienZone = state.selectedCharId ? characterById(state.selectedCharId) : null;
-            addKayKitMoveZone(cellules, gardienZone ? { origine: [gardienZone.r, gardienZone.c] } : {});
+            /* Un porteur ne peut pas s'arrêter sur une couronne au sol : sa
+               case reste un vrai trou dans la zone, même entourée. */
+            const exclus = gardienZone && characterCarriesCrown(gardienZone.id)
+              ? new Set(activeArtifacts().filter(a => a.carrierId === null).map(a => a.r + "," + a.c))
+              : null;
+            addKayKitMoveZone(cellules, gardienZone
+              ? { origine: [gardienZone.r, gardienZone.c], exclus }
+              : {});
           }
         }
         kaykitTelephoneSuivreSelection(zoneRef);

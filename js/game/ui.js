@@ -2844,6 +2844,10 @@
 
       function performMoveToCell(char, r, c, reachable = null) {
         if (!char || characterAt(r, c) || !isLand(r, c)) return false;
+        if (porteurBloqueParCouronne(char, r, c)) {
+          showToast("Ce gardien porte déjà une couronne.");
+          return false;
+        }
         const destinationKey = key(r, c);
         const activeRange = reachable || movementRange(char, availableActionCount("MOVE"));
         if (!activeRange.has(destinationKey)) {
@@ -2955,6 +2959,11 @@
            fonction des centaines de fois par décision. */
         const files = [[{ r: char.r, c: char.c, cost: 0 }]];
         const occupees = new Set((state.characters || []).map(ch => key(ch.r, ch.c)));
+        // Porteur : les couronnes au sol restent traversables mais ne sont
+        // jamais une case d'arrivée (voir porteurBloqueParCouronne).
+        const couronnesInterdites = characterCarriesCrown(char.id)
+          ? new Set(activeArtifacts().filter(a => a.carrierId === null).map(a => key(a.r, a.c)))
+          : null;
 
         for (let niveau = 0; niveau < files.length; niveau++) {
           const file = files[niveau];
@@ -2976,7 +2985,7 @@
               if (nextCost >= (distances.get(nextKey) ?? Infinity)) continue;
 
               distances.set(nextKey, nextCost);
-              result.add(nextKey);
+              if (!couronnesInterdites || !couronnesInterdites.has(nextKey)) result.add(nextKey);
               (files[nextCost] ||= []).push({ r: edge.r, c: edge.c, cost: nextCost });
             }
           }
