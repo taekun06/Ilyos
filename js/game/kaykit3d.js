@@ -61,10 +61,13 @@
             if (syncDurations.length > MAX_SAMPLES) syncDurations.shift();
             syncsSinceReset++;
           },
-          recordFrame(now) {
+          // `pas` : nombre d'images normales que couvre celle-ci (image calme,
+          // voir kaykitImageSautee) ; le delta enregistré reste celui d'une
+          // image normale.
+          recordFrame(now, pas = 1) {
             if (!this.enabled) return;
             if (lastFrameAt) {
-              frameDeltas.push(now - lastFrameAt);
+              frameDeltas.push((now - lastFrameAt) / Math.max(1, pas));
               if (frameDeltas.length > MAX_SAMPLES) frameDeltas.shift();
             }
             lastFrameAt = now;
@@ -987,9 +990,9 @@
         els.boardWrap.appendChild(cursorLabel);
 
         const cameraHint = document.createElement("div");
-        cameraHint.className = "kaykit-camera-hint";
-        // Volontairement inchangé : ce bandeau passe déjà derrière la barre
-        // d'actions, y ajouter « ↑ ↓ INCLINER » ne fait qu'aggraver la collision.
+        // Caché dès le départ (Taekun, 2026-10-22) : il chevauchait les
+        // compteurs des actions. Les commandes restent dans le menu Commandes.
+        cameraHint.className = "kaykit-camera-hint hidden";
         cameraHint.textContent = "← → TOURNER · ESPACE : VUE DE FACE · MOLETTE : ZOOM · CLIC : JOUER";
         els.boardWrap.appendChild(cameraHint);
         kaykitCreerBoutonEnsemble();
@@ -13267,6 +13270,7 @@
       }
 
       function syncKayKitScene() {
+        kaykitSignalerAgitation();
         if (!kaykit3D || !state || !isKayKitBoardActive()) return;
         if (kaykit3D.syncInProgress) {
           kaykit3D.syncPending = true;
@@ -13816,7 +13820,7 @@
         // Le compteur se remet à zéro dès qu'une image repasse au-dessus.
         const maintenant = performance.now();
         if (B.derniereImage) {
-          const fps = 1000 / Math.max(1, maintenant - B.derniereImage);
+          const fps = 1000 * kaykitCadence.facteur / Math.max(1, maintenant - B.derniereImage);
           if (fps < KAYKIT_BLOOM.fpsPlancher) {
             B.imagesBasses++;
             if (B.imagesBasses > 120) {
@@ -13844,7 +13848,37 @@
          (60, 75 Hz, ou une machine qui n'atteint pas la fréquence de son écran),
          chaque appel dessine, exactement comme avant.
          window.ILYOS_CADENCE_LIBRE = true rend la pleine fréquence. */
-      const kaykitCadence = { dernier: 0, ecarts: [], depuisMesure: 0, diviseur: 1, compteur: 0 };
+      const kaykitCadence = { dernier: 0, ecarts: [], depuisMesure: 0, diviseur: 1, diviseurCalme: 2, ticks: 0, facteur: 1 };
+
+      /* IMAGE CALME. Plateau immobile, aucune entrée, aucun gardien en
+         mouvement : seuls les gardiens au repos respirent et le ciel dérive.
+         Mesuré le 22/10 sur un portable RTX 4050 : à pleine cadence, ce plateau
+         immobile occupait ~2,3 cœurs en continu (page 85 %, processus
+         graphique 150 %), d'où la chauffe. Au calme, on dessine ~30 i/s ; dès
+         qu'il se passe quelque chose (souris, touche, synchronisation de la
+         partie, gardien qui bouge, effet, caméra), on repasse à pleine cadence
+         à l'image suivante, et on y reste 1,5 s après le dernier mouvement.
+         Toujours par diviseur entier du rafraîchissement (rythme RÉGULIER, voir
+         ci-dessous) : l'ancien plafond à 30 i/s comparait un seuil de temps à
+         un horodatage qui tremble, d'où son miroitement. */
+      const KAYKIT_CALME_APRES_MS = 1500;
+      let kaykitDerniereAgitation = 0;
+      function kaykitSignalerAgitation() { kaykitDerniereAgitation = performance.now(); }
+      ["pointermove", "pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
+        window.addEventListener(type, kaykitSignalerAgitation, { passive: true, capture: true }));
+
+      function kaykitSceneAgitee(maintenant) {
+        const k = kaykit3D;
+        if (kaykitCinematique || k.cameraTween || k.choc || k.userInteracting
+          || (k.ralentiJusqua && maintenant < k.ralentiJusqua)
+          || k.visualSequences?.length || k.fxTweens?.length || k.crownFlights?.length
+          || k.islandDrops?.length || k.soulevees?.length) return true;
+        for (const visual of k.characterVisuals.values()) {
+          if (visual.move || visual.fall || visual.shove || visual.spawn || visual.animator?.locked
+            || (visual.wrapper && visual.wrapper.rotation.y !== visual.facingTarget)) return true;
+        }
+        return false;
+      }
 
       function kaykitImageSautee(maintenant) {
         const c = kaykitCadence;
@@ -13859,10 +13893,18 @@
           const tries = c.ecarts.slice().sort((a, b) => a - b);
           const vsync = tries[Math.floor(tries.length * .25)];
           c.diviseur = vsync < 12.5 ? Math.max(1, Math.floor(16.7 / vsync + .25)) : 1;
+          c.diviseurCalme = Math.max(c.diviseur, Math.floor(33.4 / vsync + .25));
         }
-        if (window.ILYOS_CADENCE_LIBRE || c.diviseur <= 1) { c.compteur = 0; return false; }
-        c.compteur = (c.compteur + 1) % c.diviseur;
-        return c.compteur !== 0;
+        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; return false; }
+        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = maintenant;
+        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS;
+        const diviseur = calme ? c.diviseurCalme : c.diviseur;
+        if (++c.ticks < diviseur) return true;
+        // Les mesures d'images/s (qualité automatique, repli du bloom) voient
+        // la cadence NORMALE : une image calme lente n'est pas une machine lente.
+        c.facteur = Math.max(1, c.ticks / c.diviseur);
+        c.ticks = 0;
+        return false;
       }
 
       function animateKayKit3D(frameTime = performance.now()) {
@@ -13988,7 +14030,7 @@
         // pas via une boucle requestAnimationFrame indépendante qui tournerait
         // plus vite que le rendu réel (c'était la cause des ~140 FPS affichés
         // par js/complete-polish.js alors que le rendu est plafonné ~60).
-        if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now());
+        if (window.ILYOS_PERF) window.ILYOS_PERF.recordFrame(performance.now(), kaykitCadence.facteur);
         // Bloom si disponible, rendu direct sinon — jamais d'écran noir en cas d'échec.
         // Surcharges visuelles limitées au dessin : les animations et les
         // interactions retrouvent leurs valeurs d'origine après chaque rendu.

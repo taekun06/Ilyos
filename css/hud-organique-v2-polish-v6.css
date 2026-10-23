@@ -180,14 +180,16 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end{
   bottom:28px!important;
   width:190px!important;
   height:62px!important;
-  background:linear-gradient(90deg,rgba(46,32,16,.70),rgba(96,65,25,.78),rgba(46,32,16,.70))!important;
-  border-color:rgba(230,183,75,.40)!important;
+  /* Bleu nuit cerné d'or (images de référence, 2026-10-22) ; le liseré est le
+     SVG du premier fond, une bordure disparaîtrait dans les pans coupés. */
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='9,0 91,0 100,22 100,78 91,100 9,100 0,78 0,22' fill='none' stroke='rgba(230,183,75,.5)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(180deg,rgba(17,33,56,.95),rgba(7,16,31,.95))!important;
+  border-color:transparent!important;
   box-shadow:0 9px 20px rgba(0,0,0,.23),0 0 13px rgba(230,183,75,.06)!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:not(:disabled){
   color:#ffe19a!important;
-  border-color:rgba(255,217,121,.70)!important;
-  background:linear-gradient(90deg,rgba(69,44,16,.88),rgba(141,91,28,.90),rgba(69,44,16,.88))!important;
+  border-color:transparent!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='9,0 91,0 100,22 100,78 91,100 9,100 0,78 0,22' fill='none' stroke='%23f2cf7a' stroke-width='4' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(ellipse at 50% 35%,rgba(64,82,112,.55),transparent 70%),linear-gradient(180deg,rgba(17,33,56,.95),rgba(7,16,31,.95))!important;
   box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 22px rgba(0,0,0,.24)!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
@@ -203,8 +205,8 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
   bottom:29px!important;
   width:50px!important;
   height:50px!important;
-  border-color:rgba(230,183,75,.24)!important;
-  background:rgba(4,13,22,.58)!important;
+  border-color:transparent!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='25,3 75,3 97,25 97,75 75,97 25,97 3,75 3,25' fill='none' stroke='rgba(230,183,75,.62)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(180deg,rgba(17,33,56,.95),rgba(7,16,31,.95))!important;
   color:#f3cf79!important;
   box-shadow:0 8px 18px rgba(0,0,0,.19)!important;
 }
