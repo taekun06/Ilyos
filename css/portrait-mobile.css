@@ -527,6 +527,7 @@
     white-space: nowrap !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end * { font-size: 11px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end svg { width: 16px !important; height: 16px !important; flex: 0 0 16px !important; }
 
   /* Retour dans le coin bas gauche, pioche et défausse juste à sa droite
      (Taekun, 2026-10-23). */
