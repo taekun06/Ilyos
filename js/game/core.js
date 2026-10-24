@@ -640,7 +640,7 @@
       const CREER_SON_DUEL = "creer";
 
       function symmetricSetupOptionsHTML() {
-        return Object.keys(SYMMETRIC_DUEL_SETUPS)
+        return symmetricSetupIds()
           .map(id => {
             const setup = symmetricSetup(id);
             const guardiansPerTeam = setup.characters.filter(
@@ -2526,6 +2526,16 @@
       function scalePresetCell([r, c]) {
         return [scalePresetIndex(r), scalePresetIndex(c)];
       }
+      /* Une disposition dessinée pour une taille précise (champ `grille`)
+         garde ses coordonnées telles quelles : elle n'est proposée que sur un
+         plateau de cette taille (symmetricSetupDisponible). */
+      function symmetricSetupDisponible(definition) {
+        return !!definition && (!definition.grille || definition.grille === GRID);
+      }
+      function symmetricSetupIds() {
+        return Object.keys(SYMMETRIC_DUEL_SETUPS)
+          .filter(id => symmetricSetupDisponible(SYMMETRIC_DUEL_SETUPS[id]));
+      }
 
       function makeSymmetricPresetIsland(id, owner, cells) {
         const minR = Math.min(...cells.map(([r]) => r));
@@ -2543,13 +2553,14 @@
         return cells.map(([r, c]) => [r, GRID - 1 - c]);
       }
 
-      function buildSymmetricPreset(baseIslands, characters) {
+      function buildSymmetricPreset(baseIslands, characters, grille = null) {
         const islands = [];
         let id = 1;
 
         // Conversion à la taille réelle du plateau avant tout le reste : le
         // miroir doit opérer sur les coordonnées finales, pas sur celles du 11×11.
-        const ajustees = baseIslands.map(cells => cells.map(scalePresetCell));
+        const echelle = grille === GRID ? (cell => [cell[0], cell[1]]) : scalePresetCell;
+        const ajustees = baseIslands.map(cells => cells.map(echelle));
 
         ajustees.forEach(cells => {
           islands.push(makeSymmetricPresetIsland(id++, 0, cells));
@@ -2562,11 +2573,11 @@
           islands,
           characters: [
             ...characters.map((position, index) => {
-              const [r, c] = scalePresetCell(position);
+              const [r, c] = echelle(position);
               return { id: `char-0-symmetric-${index}`, player: 0, r, c };
             }),
             ...characters.map((position, index) => {
-              const [r, c] = scalePresetCell(position);
+              const [r, c] = echelle(position);
               return { id: `char-1-symmetric-${index}`, player: 1, r, c: GRID - 1 - c };
             })
           ]
@@ -2666,6 +2677,80 @@
               [[6, 2], [6, 3], [7, 3]]
             ],
             characters: [[0, 0], [9, 9], [5, 4], [2, 2]]
+          },
+
+          /* Postures défensives et équilibrées. Un gardien « sentinelle »
+             attend près d'un village ADVERSE, à deux ou trois pas de ses
+             cases de validation : il ne peut pas les fermer dès le départ,
+             mais il menace tout porteur qui rentre. */
+          sentinelles: {
+            name: "Sentinelles",
+            description: "Défensif. Chaque gardien attend près d’un village adverse, à quelques pas de ses cases de validation. La couronne est libre au centre : qui ose la chercher laisse un village sans garde.",
+            style: "8 îles • Défensif",
+            baseIslands: [
+              [[0, 1], [1, 1], [1, 2]],
+              [[10, 9], [9, 9], [9, 8]],
+              [[7, 0], [7, 1], [6, 1]],
+              [[3, 10], [3, 9], [4, 9]]
+            ],
+            characters: [[7, 1], [3, 9]]
+          },
+
+          avantPostes: {
+            name: "Avant-postes",
+            description: "Équilibré. Trois rôles par équipe : un gardien sur son village pour recevoir, un au contact du centre pour la couronne, une sentinelle près d’un village adverse.",
+            style: "8 îles • Équilibré",
+            baseIslands: [
+              [[0, 1], [1, 1], [1, 2]],
+              [[10, 9], [9, 9], [9, 8]],
+              [[3, 3], [3, 4], [4, 3]],
+              [[7, 0], [7, 1], [6, 1]]
+            ],
+            characters: [[0, 0], [3, 4], [7, 1]]
+          },
+
+          forteresse: {
+            name: "Forteresse",
+            description: "Défensif, grande bataille. Quatre gardiens par équipe : deux à la maison, deux en sentinelle chez l’adversaire. Personne n’est près de la couronne ; chaque porteur devra forcer un passage.",
+            style: "8 îles • Défensif",
+            baseIslands: [
+              [[0, 1], [1, 1], [1, 2]],
+              [[10, 9], [9, 9], [9, 8]],
+              [[7, 0], [7, 1], [6, 1]],
+              [[3, 10], [3, 9], [4, 9]]
+            ],
+            characters: [[1, 1], [9, 9], [7, 1], [3, 9]]
+          },
+
+          /* Dessinées pour le 13×13 (coordonnées natives). */
+          grandArchipel: {
+            name: "Grand archipel",
+            grille: 13,
+            description: "Équilibré, 13×13. Un receveur au village, un éclaireur au contact du centre, une sentinelle chez l’adversaire, et des relais qui raccourcissent les longues traversées.",
+            style: "10 îles • Équilibré • 13×13",
+            baseIslands: [
+              [[0, 1], [1, 1], [1, 2]],
+              [[12, 11], [11, 11], [11, 10]],
+              [[3, 4], [4, 4], [4, 3], [5, 4]],
+              [[9, 0], [9, 1], [8, 1]],
+              [[8, 8], [8, 9], [9, 8]]
+            ],
+            characters: [[0, 0], [4, 4], [9, 1]]
+          },
+
+          frontieres: {
+            name: "Frontières",
+            grille: 13,
+            description: "Défensif, 13×13. Deux gardiens à la maison, deux sentinelles chez l’adversaire. Le centre est loin de tout le monde : le premier à s’y risquer ouvre une brèche.",
+            style: "10 îles • Défensif • 13×13",
+            baseIslands: [
+              [[0, 1], [1, 1], [1, 2]],
+              [[12, 11], [11, 11], [11, 10]],
+              [[9, 0], [9, 1], [8, 1]],
+              [[3, 12], [3, 11], [4, 11]],
+              [[5, 2], [6, 2], [6, 3]]
+            ],
+            characters: [[9, 1], [3, 11], [1, 1], [11, 11]]
           }
         };
 
@@ -2682,6 +2767,7 @@
             name: definition.name,
             description: definition.description,
             style: definition.style,
+            grille: definition.grille || null,
             baseIslands: definition.baseIslands,
             characters: definition.characters
           };
@@ -2699,14 +2785,14 @@
         const cle = `${id}@${GRID}`;
         if (symmetricSetupCache.has(cle)) return symmetricSetupCache.get(cle);
         const definition = SYMMETRIC_DUEL_SETUPS[id];
-        const construit = buildSymmetricPreset(definition.baseIslands, definition.characters);
+        const construit = buildSymmetricPreset(definition.baseIslands, definition.characters, definition.grille);
         const setup = { ...definition, islands: construit.islands, characters: construit.characters };
         symmetricSetupCache.set(cle, setup);
         return setup;
       }
 
       function resolveSymmetricSetupId(setupId) {
-        return SYMMETRIC_DUEL_SETUPS[setupId] ? setupId : "open";
+        return symmetricSetupDisponible(SYMMETRIC_DUEL_SETUPS[setupId]) ? setupId : "open";
       }
 
       function populateSymmetricSetupOverlay(selectedId = "open") {
@@ -2803,7 +2889,7 @@
       }
 
       function chooseRandomSymmetricSetup() {
-        const ids = Object.keys(SYMMETRIC_DUEL_SETUPS);
+        const ids = symmetricSetupIds();
         if (!ids.length || !els.symmetricSetupSelect) return;
 
         const current = els.symmetricSetupSelect.value;
