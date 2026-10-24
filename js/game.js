@@ -17153,7 +17153,10 @@
           /* Postures défensives et équilibrées. Un gardien « sentinelle »
              attend près d'un village ADVERSE, à deux ou trois pas de ses
              cases de validation : il ne peut pas les fermer dès le départ,
-             mais il menace tout porteur qui rentre. */
+             mais il menace tout porteur qui rentre.
+             Ces dispositions sont aussi invariantes par rotation d'un demi-tour :
+             les deux villages d'un même joueur ont exactement le même
+             entourage, aucun coin n'est le « bon » côté. */
           sentinelles: {
             name: "Sentinelles",
             description: "Défensif. Chaque gardien attend près d’un village adverse, à quelques pas de ses cases de validation. La couronne est libre au centre : qui ose la chercher laisse un village sans garde.",
@@ -17169,15 +17172,17 @@
 
           avantPostes: {
             name: "Avant-postes",
-            description: "Équilibré. Trois rôles par équipe : un gardien sur son village pour recevoir, un au contact du centre pour la couronne, une sentinelle près d’un village adverse.",
-            style: "8 îles • Équilibré",
+            description: "Équilibré. Près de chacun de tes villages, un éclaireur au contact du centre ; près de chaque village adverse, une sentinelle. Les quatre coins se valent.",
+            style: "12 îles • Équilibré",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[10, 9], [9, 9], [9, 8]],
               [[3, 3], [3, 4], [4, 3]],
-              [[7, 0], [7, 1], [6, 1]]
+              [[7, 7], [7, 6], [6, 7]],
+              [[7, 0], [7, 1], [6, 1]],
+              [[3, 10], [3, 9], [4, 9]]
             ],
-            characters: [[0, 0], [3, 4], [7, 1]]
+            characters: [[3, 4], [7, 6], [7, 1], [3, 9]]
           },
 
           forteresse: {
@@ -17197,29 +17202,31 @@
           grandArchipel: {
             name: "Grand archipel",
             grille: 13,
-            description: "Équilibré, 13×13. Un receveur au village, un éclaireur au contact du centre, une sentinelle chez l’adversaire, et des relais qui raccourcissent les longues traversées.",
-            style: "10 îles • Équilibré • 13×13",
+            description: "Équilibré, 13×13. Près de chacun de tes villages, un éclaireur sur une île en T tournée vers le centre ; près de chaque village adverse, une sentinelle. Les quatre coins se valent.",
+            style: "12 îles • Équilibré • 13×13",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[12, 11], [11, 11], [11, 10]],
               [[3, 4], [4, 4], [4, 3], [5, 4]],
+              [[9, 8], [8, 8], [8, 9], [7, 8]],
               [[9, 0], [9, 1], [8, 1]],
-              [[8, 8], [8, 9], [9, 8]]
+              [[3, 12], [3, 11], [4, 11]]
             ],
-            characters: [[0, 0], [4, 4], [9, 1]]
+            characters: [[4, 4], [8, 8], [9, 1], [3, 11]]
           },
 
           frontieres: {
             name: "Frontières",
             grille: 13,
             description: "Défensif, 13×13. Deux gardiens à la maison, deux sentinelles chez l’adversaire. Le centre est loin de tout le monde : le premier à s’y risquer ouvre une brèche.",
-            style: "10 îles • Défensif • 13×13",
+            style: "12 îles • Défensif • 13×13",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[12, 11], [11, 11], [11, 10]],
               [[9, 0], [9, 1], [8, 1]],
               [[3, 12], [3, 11], [4, 11]],
-              [[5, 2], [6, 2], [6, 3]]
+              [[4, 2], [5, 2], [5, 3]],
+              [[8, 10], [7, 10], [7, 9]]
             ],
             characters: [[9, 1], [3, 11], [1, 1], [11, 11]]
           }
