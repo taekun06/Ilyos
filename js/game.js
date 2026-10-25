@@ -17059,25 +17059,26 @@
         const definitions = {
           scouts: {
             name: "Duel des éclaireurs",
-            description: "Seulement quatre îles et un gardien par équipe. Le plateau reste presque entièrement libre : chaque construction et chaque rotation modifient profondément la partie.",
+            description: "Seulement quatre îles et deux gardiens par équipe, un sur chaque village. Le plateau reste presque entièrement libre : chaque construction et chaque rotation modifient profondément la partie.",
             style: "4 îles • Construction",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[10, 9], [9, 9], [9, 8]]
             ],
-            characters: [[0, 0]]
+            characters: [[0, 0], [10, 10]]
           },
 
           open: {
             name: "Archipels ouverts",
-            description: "Six îles et deux gardiens par équipe. Les routes de départ sont courtes, le centre demeure ouvert et chaque île possède plusieurs rotations possibles.",
-            style: "6 îles • Très mobile",
+            description: "Huit îles et deux gardiens par équipe. Les routes de départ sont courtes, le centre demeure ouvert et chaque île possède plusieurs rotations possibles.",
+            style: "8 îles • Très mobile",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[10, 9], [9, 9], [9, 8]],
-              [[4, 2], [4, 3], [5, 3]]
+              [[3, 2], [3, 3], [4, 3]],
+              [[7, 8], [7, 7], [6, 7]]
             ],
-            characters: [[0, 0], [9, 9]]
+            characters: [[1, 1], [9, 9]]
           },
 
           lanes: {
@@ -17095,59 +17096,62 @@
 
           spiral: {
             name: "Spirale des vents",
-            description: "Dix petites îles tournent autour du centre tout en laissant la couronne isolée. Les détours, les sauts de couronne et la magie prennent une place importante.",
-            style: "10 îles • Magie",
+            description: "Douze petites îles tournent autour du centre tout en laissant la couronne isolée. Les détours, les sauts de couronne et la magie prennent une place importante.",
+            style: "12 îles • Magie",
             baseIslands: [
               [[1, 1], [1, 2], [1, 3]],
               [[9, 9], [9, 8], [9, 7]],
               [[2, 4], [3, 3], [3, 4]],
-              [[8, 6], [7, 6], [7, 7]],
-              [[5, 2], [5, 3]]
+              [[8, 6], [7, 7], [7, 6]],
+              [[4, 2], [4, 3]],
+              [[6, 8], [6, 7]]
             ],
             characters: [[1, 1], [9, 9]]
           },
 
           crossroads: {
             name: "Carrefours célestes",
-            description: "Dix îles et trois gardiens par équipe. Plusieurs routes alternatives se croisent, mais les intervalles restent assez larges pour faire pivoter les îles en T et les carrés.",
-            style: "10 îles • Tactique",
+            description: "Douze îles et quatre gardiens par équipe. Plusieurs routes se croisent, entre carrés, V et virages, avec des intervalles assez larges pour les faire pivoter.",
+            style: "12 îles • Tactique",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[10, 9], [9, 9], [9, 8]],
               [[2, 3], [2, 4], [3, 3], [3, 4]],
-              [[7, 6], [7, 7], [8, 6], [8, 7]],
-              [[4, 2], [5, 2], [5, 3], [6, 2]]
+              [[8, 7], [8, 6], [7, 7], [7, 6]],
+              [[4, 0], [3, 1], [4, 2]],
+              [[6, 10], [7, 9], [6, 8]]
             ],
-            characters: [[0, 0], [1, 1], [8, 7]]
+            characters: [[1, 1], [9, 9], [2, 3], [8, 7]]
           },
 
           orbit: {
             name: "Orbite royale",
-            description: "Trois gardiens par équipe, dont un proche du centre. La couronne est contestée rapidement, tandis que les cinq îles de chaque camp conservent des pivots tactiques.",
-            style: "10 îles • Offensif",
+            description: "Quatre gardiens par équipe, dont deux proches du centre. La couronne est contestée rapidement, tandis que les îles de chaque camp conservent des pivots tactiques.",
+            style: "12 îles • Offensif",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[10, 9], [9, 9], [9, 8]],
               [[3, 4], [4, 4], [4, 3]],
               [[7, 6], [6, 6], [6, 7]],
-              [[2, 1], [3, 1]]
+              [[2, 1], [3, 1]],
+              [[8, 9], [7, 9]]
             ],
-            characters: [[0, 0], [1, 1], [6, 6]]
+            characters: [[1, 1], [9, 9], [4, 4], [6, 6]]
           },
 
           citadels: {
             name: "Citadelles en mouvement",
-            description: "Douze îles et quatre gardiens par équipe créent une bataille immédiate. Malgré la densité, chaque archipel garde plusieurs rotations valides et le centre reste libre.",
+            description: "Douze îles serrées autour des villages et quatre gardiens par équipe créent une bataille immédiate. Malgré la densité, chaque citadelle garde des rotations valides et le centre reste libre.",
             style: "12 îles • Grande bataille",
             baseIslands: [
               [[0, 1], [1, 1], [1, 2]],
               [[10, 9], [9, 9], [9, 8]],
               [[2, 2], [2, 3], [3, 2]],
               [[8, 8], [8, 7], [7, 8]],
-              [[4, 2], [5, 2], [5, 3]],
-              [[6, 2], [6, 3], [7, 3]]
+              [[4, 1], [4, 2], [3, 1]],
+              [[6, 9], [6, 8], [7, 9]]
             ],
-            characters: [[0, 0], [9, 9], [5, 4], [2, 2]]
+            characters: [[0, 0], [10, 10], [4, 2], [6, 8]]
           },
 
           /* Postures défensives et équilibrées. Un gardien « sentinelle »
@@ -17229,6 +17233,78 @@
               [[8, 10], [7, 10], [7, 9]]
             ],
             characters: [[9, 1], [3, 11], [1, 1], [11, 11]]
+          },
+
+          ilots: {
+            name: "Semis d’îlots",
+            description: "Équilibré. Vingt-quatre îlots d’une ou deux cases, dont des diagonales. Peu de rotations utiles, mais chaque poussée peut jeter un gardien dans le vide : les ponts se construisent pendant la partie.",
+            style: "24 îles • Îlots",
+            baseIslands: [
+              [[0, 1], [1, 1]],
+              [[10, 9], [9, 9]],
+              [[2, 3]],
+              [[8, 7]],
+              [[3, 1]],
+              [[7, 9]],
+              [[4, 3], [3, 4]],
+              [[6, 7], [7, 6]],
+              [[1, 4]],
+              [[9, 6]],
+              [[7, 0], [8, 1]],
+              [[3, 10], [2, 9]]
+            ],
+            characters: [[1, 1], [9, 9], [3, 1], [7, 9]]
+          },
+
+          croix: {
+            name: "Croix des vents",
+            description: "Défensif. Une grande Croix devant chaque village et, près de chaque village adverse, une Croix creuse où guette une sentinelle. Faire pivoter sa Croix ouvre ou ferme la route du centre.",
+            style: "12 îles • Défensif",
+            baseIslands: [
+              [[1, 3], [2, 2], [2, 3], [2, 4], [3, 3]],
+              [[9, 7], [8, 8], [8, 7], [8, 6], [7, 7]],
+              [[6, 1], [7, 0], [7, 2], [8, 1]],
+              [[4, 9], [3, 10], [3, 8], [2, 9]],
+              [[0, 1]],
+              [[10, 9]]
+            ],
+            characters: [[2, 3], [8, 7], [7, 0], [3, 10]]
+          },
+
+          serpents: {
+            name: "Serpents",
+            grille: 13,
+            description: "Équilibré, 13×13. Deux Serpents par village glissent en diagonale vers le centre ; une Passerelle sert de poste à la sentinelle chez l’adversaire.",
+            style: "16 îles • Équilibré • 13×13",
+            baseIslands: [
+              [[1, 2], [1, 3], [2, 1], [2, 2]],
+              [[11, 10], [11, 9], [10, 11], [10, 10]],
+              [[3, 4], [3, 5], [4, 3], [4, 4]],
+              [[9, 8], [9, 7], [8, 9], [8, 8]],
+              [[9, 0], [9, 1], [9, 2]],
+              [[3, 12], [3, 11], [3, 10]],
+              [[0, 1]],
+              [[12, 11]]
+            ],
+            characters: [[2, 1], [10, 11], [9, 1], [3, 11]]
+          },
+
+          diagonales: {
+            name: "Pas de côté",
+            grille: 13,
+            description: "13×13. Des îles en diagonale (Domino, V) : chaque pas en biais coûte deux déplacements, et une rotation bien placée raccourcit tout. Un Carré de sentinelle garde chaque village adverse.",
+            style: "16 îles • Diagonales • 13×13",
+            baseIslands: [
+              [[0, 1], [1, 2]],
+              [[12, 11], [11, 10]],
+              [[3, 3], [4, 4], [3, 5]],
+              [[9, 9], [8, 8], [9, 7]],
+              [[8, 0], [8, 1], [9, 0], [9, 1]],
+              [[4, 12], [4, 11], [3, 12], [3, 11]],
+              [[5, 1], [4, 2]],
+              [[7, 11], [8, 10]]
+            ],
+            characters: [[1, 2], [11, 10], [8, 1], [4, 11]]
           }
         };
 
