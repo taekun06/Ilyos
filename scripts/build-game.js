@@ -65,6 +65,10 @@ const fragmentNames = [
   'gamepad.js',
   // Raccourcis clavier : meme principe que la manette, clique le dock.
   'clavier.js',
+  // Menus de départ du Duel symétrique et du Personnalisé : appelés par
+  // core.js (openSymmetricSetupOverlay) une fois la page chargée. Placé
+  // avant diagnostics.js, dont le code de démarrage peut rouvrir l'écran.
+  'menu-duels.js',
   'diagnostics.js',
 ];
 

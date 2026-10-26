@@ -138,14 +138,6 @@
         }
         syncModeVisibility(); setTimeout(applyNativeChoices, 0);
       }
-      function buildSetupCards() {
-        const overlay = nativeSelect('symmetricSetupOverlay'); const select = nativeSelect('symmetricSetupSelect'); const content = overlay?.querySelector('.symmetric-board-content');
-        if (!overlay || !select || !content || overlay.querySelector('.v64-setup-grid')) return;
-        const grid = document.createElement('div'); grid.className = 'v64-setup-grid'; grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', 'Configurations du duel symétrique'); content.before(grid);
-        const rebuild = () => { grid.innerHTML = '';[...select.options].forEach((option, index) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'v64-setup-card'; button.dataset.value = option.value; button.setAttribute('aria-pressed', String(select.value === option.value)); const parts = option.textContent.split('—'); button.innerHTML = '<strong>' + parts[0].trim() + '</strong><small>' + (parts[1]?.trim() || ['Rapide et accessible', 'Très mobile', 'Contrôle territorial'][index % 3]) + '</small>'; button.addEventListener('click', () => { select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true })); sync() }); grid.appendChild(button) }); };
-        const sync = () => grid.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.value === select.value)));
-        select.addEventListener('change', sync); new MutationObserver(rebuild).observe(select, { childList: true }); rebuild();
-      }
       function improveRules() {
         const modal = nativeSelect('rulesModal'); const card = modal?.querySelector('.modal-card'); const list = card?.querySelector('ol'); if (!card || !list || card.querySelector('.v64-rules-nav')) return;
         card.classList.add('v64-rules-card');
@@ -173,7 +165,7 @@
       function boot() {
         window.ILYOS_BUILD = BUILD; document.title = 'ILYOS V76 — Animations';
         const badge = nativeSelect('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
-        buildSetup(); buildSetupCards(); improveRules(); addGameBuildBadge(); updateVisualState();
+        buildSetup(); improveRules(); addGameBuildBadge(); updateVisualState();
         // V78 : plus de MutationObserver global sur #gameScreen — updateVisualState()
         // est appelée explicitement depuis renderAll() (js/game/ui.js) via ce hook,
         // avec sa propre garde interne (voir plus haut) pour ne rien faire si le

@@ -1128,160 +1128,227 @@
     </div>
 
     <div id="symmetricSetupOverlay" class="symmetric-board-overlay hidden" role="dialog" aria-modal="true"
-      aria-label="Choix du setup Duel symétrique">
-      <div class="symmetric-board-card">
+      aria-label="Choix du plateau de départ">
+      <!-- Un seul écran pour deux menus (js/game/menu-duels.js) :
+           data-menu="duel"    choix d'un setup du Duel symétrique ;
+           data-menu="perso"   réglages du Personnalisé ;
+           data-menu="terrain" choix du setup qui sert de terrain au Personnalisé.
+           data-vue="apercu" (grande photo + bande) ou "grille". -->
+      <div class="symmetric-board-card" data-menu="duel" data-vue="apercu">
         <div class="symmetric-board-heading">
           <div>
             <small id="setupOverlayKicker">DUEL SYMÉTRIQUE</small>
             <h2 id="setupOverlayTitle">Choisissez le plateau de départ</h2>
-            <p id="setupOverlayIntro">Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le
-              même nombre de gardiens.
-            </p>
+            <p id="setupOverlayIntro">Les deux camps partent des mêmes îles, et vos deux villages ont le même
+              entourage.</p>
           </div>
-          <span class="symmetric-board-emblem"><i class="v64-balance-icon" aria-hidden="true"></i></span>
-        </div>
-
-        <!-- Mode Personnalisé : au lieu d'un préréglage figé, chaque joueur pose
-             lui-même sa formation avant le premier tour. Ces deux sélecteurs ne
-             fixent que les quantités ; le placement se fait ensuite sur le
-             plateau, en serpentin (voir buildDraftOrder / startCustomDraft). -->
-        <div id="customSetupControls" class="symmetric-board-controls hidden">
-          <label for="customIslandCountSelect">
-            <span>Îles par joueur</span>
-            <select id="customIslandCountSelect">
-              <option value="2">2 îles</option>
-              <option value="3">3 îles</option>
-              <option value="4" selected>4 îles</option>
-              <option value="5">5 îles</option>
-              <option value="6">6 îles</option>
-            </select>
-          </label>
-          <label for="customGuardianCountSelect">
-            <span>Gardiens par joueur</span>
-            <select id="customGuardianCountSelect">
-              <option value="1">1 gardien</option>
-              <option value="2" selected>2 gardiens</option>
-              <option value="3">3 gardiens</option>
-              <option value="4">4 gardiens</option>
-            </select>
-          </label>
-          <!-- Personnalisé à 2 joueurs : la formation peut se poser en miroir,
-               comme « Créer son duel » (startCustomDraft, option miroir). -->
-          <label for="customMirrorSelect" id="customMirrorRow">
-            <span>Mise en place</span>
-            <select id="customMirrorSelect">
-              <option value="tour" selected>Chacun son tour</option>
-              <option value="miroir">Duel symétrique (en miroir)</option>
-            </select>
-          </label>
-        </div>
-
-        <!-- Mode Personnalisé : règles de la partie. Les valeurs par défaut sont
-             celles de la partie classique (paquet 8/4/1, pioche de 5, île
-             obligatoire et gratuite) ; voir compositionPaquet,
-             cartesPiocheesParTour et ilesPayantes (js/game/rules-core.js). -->
-        <div id="customRulesControls" class="symmetric-setup-custom custom-rules hidden">
-          <strong class="symmetric-setup-custom-title">Règles de la partie</strong>
-          <label for="customDeckMoveSelect">
-            <span>Déplacer</span>
-            <select id="customDeckMoveSelect">
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-              <option value="6">6</option>
-              <option value="7">7</option>
-              <option value="8" selected>8</option>
-              <option value="9">9</option>
-              <option value="10">10</option>
-              <option value="11">11</option>
-              <option value="12">12</option>
-            </select>
-          </label>
-          <label for="customDeckPushSelect">
-            <span>Pousser</span>
-            <select id="customDeckPushSelect">
-              <option value="0">0</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4" selected>4</option>
-              <option value="5">5</option>
-              <option value="6">6</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
-            </select>
-          </label>
-          <label for="customDeckMagicSelect">
-            <span>Magie</span>
-            <select id="customDeckMagicSelect">
-              <option value="0">0</option>
-              <option value="1" selected>1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-            </select>
-          </label>
-          <label for="customDrawCountSelect">
-            <span>Cartes piochées</span>
-            <select id="customDrawCountSelect">
-              <option value="5" selected>5 par tour</option>
-              <option value="6">6 par tour</option>
-              <option value="7">7 par tour</option>
-              <option value="8">8 par tour</option>
-            </select>
-          </label>
-          <p id="customDeckSummary" class="custom-rules-summary" aria-live="polite">Paquet de 13 cartes</p>
-          <label class="symmetric-setup-toggle" for="customPaidIslandsCheckbox">
-            <input type="checkbox" id="customPaidIslandsCheckbox">
-            <span>Îles payantes : poser une île coûte 2 cartes, mais n’est plus obligatoire</span>
-          </label>
-          <label class="symmetric-setup-toggle" for="customScorerLeavesCheckbox">
-            <input type="checkbox" id="customScorerLeavesCheckbox">
-            <span>Gardien sacrifié : le gardien qui valide une couronne quitte le jeu</span>
-          </label>
-        </div>
-
-        <div id="symmetricPresetControls" class="symmetric-board-controls">
-          <label for="symmetricSetupSelect">
-            <span>Configuration</span>
-            <select id="symmetricSetupSelect"></select>
-          </label>
-          <button id="randomSymmetricSetupBtn" type="button" class="random-setup-btn">Configuration aléatoire</button>
-        </div>
-
-        <div id="symmetricPresetContent" class="symmetric-board-content">
-          <div id="symmetricSetupPreview" class="symmetric-setup-preview board-setup-preview" aria-hidden="true"></div>
-          <div class="symmetric-setup-description board-setup-description">
-            <strong id="symmetricSetupName">Archipels ouverts</strong>
-            <p id="symmetricSetupText"></p>
-            <div class="symmetric-setup-tags">
-              <span id="symmetricSetupIslandCount">6 îles</span>
-              <span id="symmetricSetupCharacterCount">2 gardiens / équipe</span>
-              <span id="symmetricSetupStyle">Très mobile</span>
+          <div id="symmetricPresetControls" class="duel-filtres">
+            <div class="duel-puces" id="duelTailles" role="group" aria-label="Taille du plateau">
+              <button type="button" data-taille="11">11×11</button>
+              <button type="button" data-taille="13">13×13</button>
             </div>
+            <div class="duel-puces" id="duelPostures" role="group" aria-label="Familles de setups">
+              <button type="button" data-posture="Tous">Tous</button>
+              <button type="button" data-posture="Offensif">Offensif</button>
+              <button type="button" data-posture="Équilibré">Équilibré</button>
+              <button type="button" data-posture="Défensif">Défensif</button>
+              <button type="button" data-posture="Ouvert">Ouvert</button>
+            </div>
+            <div class="duel-vue" role="group" aria-label="Affichage">
+              <button type="button" data-afficher="apercu"><i aria-hidden="true">▭</i> Aperçu</button>
+              <button type="button" data-afficher="grille"><i aria-hidden="true">▦</i> Grille</button>
+              <button id="randomSymmetricSetupBtn" type="button" class="duel-hasard"
+                title="Setup au hasard" aria-label="Setup au hasard">🎲</button>
+            </div>
+            <!-- Source de vérité du setup choisi : les vignettes et la grille
+                 ne font que la piloter (diagnostics et tests la lisent). -->
+            <select id="symmetricSetupSelect" class="duel-select-cache" tabindex="-1" aria-hidden="true"></select>
+          </div>
+          <button id="duelMenuRetour" type="button" class="duel-retour">‹ Retour au Personnalisé</button>
+        </div>
+
+        <div id="symmetricPresetContent" class="duel-apercu">
+          <div class="duel-grande">
+            <img id="duelGrandePhoto" alt="" decoding="async">
+            <!-- Plan du setup, affiché si la photo manque. -->
+            <div id="symmetricSetupPreview" class="symmetric-setup-preview board-setup-preview" aria-hidden="true"></div>
+            <button type="button" class="duel-fleche" data-pas="-1" aria-label="Setup précédent">‹</button>
+            <button type="button" class="duel-fleche" data-pas="1" aria-label="Setup suivant">›</button>
+          </div>
+          <div class="duel-info">
+            <strong id="symmetricSetupName">Archipels ouverts</strong>
+            <div class="symmetric-setup-tags">
+              <span id="symmetricSetupStyle" class="duel-tag">Offensif</span>
+              <span id="symmetricSetupIslandCount">8 îles</span>
+              <span id="symmetricSetupCharacterCount">2 gardiens / équipe</span>
+            </div>
+            <p id="symmetricSetupText"></p>
+            <div id="duelOptionsDuel" class="duel-options-slot"></div>
+            <div id="duelBoutonApercu" class="duel-bouton-slot"></div>
+          </div>
+        </div>
+        <div id="duelMenuBande" class="duel-bande" role="listbox" aria-label="Setups du duel symétrique"></div>
+        <div id="duelMenuGrille" class="duel-grille" role="listbox" aria-label="Setups du duel symétrique"></div>
+
+        <!-- Personnalisé : terrain de départ (2 joueurs). Les îles et gardiens
+             réglés plus bas s'ajoutent à ceux du terrain. -->
+        <div id="customTerrainRow" class="perso-terrain">
+          <div class="perso-terrain-titre">
+            <strong>Terrain de départ</strong>
+            <small>Les îles et gardiens choisis s’ajoutent au terrain.</small>
+          </div>
+          <button type="button" class="perso-terrain-choix" data-terrain="vide">
+            <img id="customTerrainVidePhoto" alt="" decoding="async">
+            <span><b>Plateau vide</b><small>Seul le sanctuaire au centre. Chacun pose ses îles et ses gardiens.</small></span>
+          </button>
+          <button type="button" class="perso-terrain-choix" data-terrain="setup">
+            <img id="customTerrainSetupPhoto" alt="" decoding="async">
+            <span><b id="customTerrainSetupName">Setup de duel</b><small id="customTerrainSetupText">Partir d’un setup du duel symétrique.</small><em>Choisir un setup ›</em></span>
+          </button>
+        </div>
+
+        <div class="perso-corps">
+          <!-- Formation : quantités et manière de poser. Les listes cachées
+               restent la source des valeurs (lues par confirmSymmetricSetup) ;
+               les boutons sont construits à partir d'elles (menu-duels.js). -->
+          <section id="customSetupControls" class="perso-bloc">
+            <h3><i aria-hidden="true">⛰</i>Formation</h3>
+            <div class="perso-reglage">
+              <span class="perso-lib">Îles par joueur <small>à poser avant le 1er tour</small></span>
+              <select id="customIslandCountSelect" data-pas>
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4" selected>4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
+            <div class="perso-reglage">
+              <span class="perso-lib">Gardiens par joueur <small id="customGuardianHint">6 au maximum</small></span>
+              <select id="customGuardianCountSelect" data-pas>
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+              </select>
+            </div>
+            <div class="perso-reglage">
+              <span class="perso-lib">Placement des gardiens</span>
+              <select id="customGuardianPlacementSelect" data-seg>
+                <option value="iles" selected>Sur mes îles</option>
+                <option value="libre">Libre</option>
+              </select>
+              <small class="perso-aide">Sur mes îles : sur une de vos îles ou votre village, comme d’habitude.
+                Libre : n’importe quelle île libre, même adverse, ou votre village ; jamais le sanctuaire.</small>
+            </div>
+            <div class="perso-reglage" id="customMirrorRow">
+              <span class="perso-lib">Mise en place</span>
+              <select id="customMirrorSelect" data-seg>
+                <option value="tour" selected>Chacun son tour</option>
+                <option value="miroir">✦ Créer son duel</option>
+              </select>
+              <small class="perso-aide">Créer son duel : vous posez tout, chaque pose se reflète en miroir chez
+                l’adversaire, puis la partie démarre en duel symétrique.</small>
+            </div>
+          </section>
+
+          <!-- Paquet et règles : valeurs par défaut = partie classique (paquet
+               8/4/1, pioche de 5, île obligatoire et gratuite) ; voir
+               compositionPaquet, cartesPiocheesParTour et ilesPayantes
+               (js/game/rules-core.js). -->
+          <div id="customRulesControls" class="perso-regles">
+            <section class="perso-bloc">
+              <h3><i aria-hidden="true">🂠</i>Paquet</h3>
+              <div class="perso-compteur perso-move">
+                <span class="perso-carte"></span><span class="perso-nom">Déplacer</span>
+                <select id="customDeckMoveSelect" data-compteur>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8" selected>8</option>
+                  <option value="9">9</option>
+                  <option value="10">10</option>
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                </select>
+              </div>
+              <div class="perso-compteur perso-push">
+                <span class="perso-carte"></span><span class="perso-nom">Pousser</span>
+                <select id="customDeckPushSelect" data-compteur>
+                  <option value="0">0</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4" selected>4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                </select>
+              </div>
+              <div class="perso-compteur perso-magic">
+                <span class="perso-carte"></span><span class="perso-nom">Magie</span>
+                <select id="customDeckMagicSelect" data-compteur>
+                  <option value="0">0</option>
+                  <option value="1" selected>1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </div>
+              <p id="customDeckSummary" class="perso-total" aria-live="polite">Paquet de 13 cartes</p>
+              <div class="perso-reglage">
+                <span class="perso-lib">Cartes piochées par tour</span>
+                <select id="customDrawCountSelect" data-pas>
+                  <option value="5" selected>5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                </select>
+              </div>
+            </section>
+            <section class="perso-bloc" id="customReglesBloc">
+              <h3><i aria-hidden="true">⚖</i>Règles</h3>
+              <label class="perso-bascule" for="customPaidIslandsCheckbox">
+                <input type="checkbox" id="customPaidIslandsCheckbox">
+                <span><b>Îles payantes</b><small>Poser une île coûte 2 cartes, mais n’est plus obligatoire.</small></span>
+              </label>
+              <label class="perso-bascule" for="customScorerLeavesCheckbox">
+                <input type="checkbox" id="customScorerLeavesCheckbox">
+                <span><b>Gardien sacrifié</b><small>Le gardien qui valide une couronne quitte le jeu.</small></span>
+              </label>
+              <div id="duelOptionsPerso" class="duel-options-slot"></div>
+            </section>
           </div>
         </div>
 
-        <div class="symmetric-setup-custom">
-          <strong class="symmetric-setup-custom-title">Personnaliser</strong>
+        <!-- Règles communes au duel et au Personnalisé : déplacées dans le bon
+             emplacement selon le menu (menu-duels.js). -->
+        <div id="duelReglesCommunes" class="duel-regles-communes">
+          <label class="perso-bascule" for="symmetricAllowDissolveCheckbox">
+            <input type="checkbox" id="symmetricAllowDissolveCheckbox">
+            <span><b>Dissolution d’île</b><small>1 Magie sur une île vide la fait disparaître.</small></span>
+          </label>
           <!-- Stock de CHAQUE forme, pas un total d'îles : avec 3, une équipe
                peut poser trois Dominos, trois Passerelles, trois Carrés, etc.
                Le compteur du tiroir d'îles (posées/limite) suit ce réglage. -->
-          <label for="symmetricIslandLimitSelect">
-            <span>Exemplaires par forme</span>
-            <select id="symmetricIslandLimitSelect">
-              <option value="2" selected>2 de chaque</option>
-              <option value="3">3 de chaque</option>
-              <option value="4">4 de chaque</option>
-              <option value="0">Illimité</option>
+          <div class="perso-reglage">
+            <span class="perso-lib">Exemplaires par forme</span>
+            <select id="symmetricIslandLimitSelect" data-pas>
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="0" data-court="∞">Illimité</option>
             </select>
-          </label>
-          <label class="symmetric-setup-toggle" for="symmetricAllowDissolveCheckbox">
-            <input type="checkbox" id="symmetricAllowDissolveCheckbox">
-            <span>Autoriser la dissolution d’île (1 Magie sur une île vide)</span>
-          </label>
+          </div>
         </div>
 
         <div id="symmetricSetupWaiting" class="symmetric-setup-waiting hidden">
@@ -1289,7 +1356,9 @@
         </div>
 
         <div class="symmetric-board-actions">
-          <button id="confirmSymmetricSetupBtn" type="button" class="primary-btn">Lancer ce setup</button>
+          <p id="duelMenuResume" class="duel-resume"></p>
+          <button id="customDefaultsBtn" type="button" class="perso-defaut">Réglages classiques</button>
+          <button id="confirmSymmetricSetupBtn" type="button" class="primary-btn">Lancer ce duel</button>
         </div>
       </div>
     </div>
@@ -3411,7 +3480,6 @@
     }
 
     .modal-card,
-    .symmetric-board-card,
     .sound-menu {
       border: 1px solid rgba(255, 255, 255, .82) !important;
       outline: 1px solid var(--ilyos-line) !important;
@@ -3428,15 +3496,13 @@
       overflow: auto !important
     }
 
-    .modal-card h2,
-    .symmetric-board-card h2 {
+    .modal-card h2 {
       color: #285769 !important;
       font-family: var(--ilyos-font-display) !important
     }
 
     .modal-card p,
-    .modal-card li,
-    .symmetric-board-card p {
+    .modal-card li {
       color: #4f6f7d !important
     }
 
@@ -3496,149 +3562,6 @@
 
     .modal-card.v64-rules-card li[hidden] {
       display: none !important
-    }
-
-    .symmetric-board-card {
-      width: min(980px, calc(100vw - 28px)) !important;
-      max-height: calc(100dvh - 28px) !important;
-      overflow: auto !important
-    }
-
-    .symmetric-board-emblem {
-      display: grid !important;
-      place-items: center !important;
-      background: #fff2c4 !important;
-      color: #806324 !important;
-      border-color: #d4b258 !important
-    }
-
-    .v64-balance-icon {
-      position: relative;
-      width: 34px;
-      height: 34px
-    }
-
-    .v64-balance-icon::before {
-      content: "";
-      position: absolute;
-      left: 47%;
-      top: 3%;
-      width: 6%;
-      height: 90%;
-      border-radius: 4px;
-      background: currentColor
-    }
-
-    .v64-balance-icon::after {
-      content: "";
-      position: absolute;
-      left: 4%;
-      right: 4%;
-      top: 26%;
-      height: 52%;
-      border-top: 3px solid currentColor;
-      background: radial-gradient(ellipse at 20% 80%, transparent 0 28%, currentColor 30% 34%, transparent 36%), radial-gradient(ellipse at 80% 80%, transparent 0 28%, currentColor 30% 34%, transparent 36%)
-    }
-
-    .symmetric-board-controls,
-    .symmetric-board-content {
-      border-color: var(--ilyos-line) !important;
-      background: #f5faf9 !important
-    }
-
-    .symmetric-setup-tags span {
-      border-color: var(--ilyos-line) !important;
-      background: #eaf4f3 !important;
-      color: #476875 !important
-    }
-
-    .v64-setup-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin: 10px 0
-    }
-
-    .v64-setup-card {
-      min-height: 76px !important;
-      padding: 9px !important;
-      border: 1px solid var(--ilyos-line) !important;
-      border-radius: 12px !important;
-      background: #fff !important;
-      color: var(--ilyos-ink) !important;
-      text-align: left !important;
-      box-shadow: var(--ilyos-shadow-1) !important
-    }
-
-    .v64-setup-card[aria-pressed="true"] {
-      border-color: #4d8ea4 !important;
-      background: #eaf8fb !important;
-      box-shadow: 0 0 0 3px rgba(77, 142, 164, .14), var(--ilyos-shadow-1) !important
-    }
-
-    .v64-setup-card strong {
-      display: block;
-      font-size: 11px
-    }
-
-    .v64-setup-card small {
-      display: block;
-      margin-top: 4px;
-      color: #6c8690;
-      font-size: 9px;
-      line-height: 1.25
-    }
-
-    /* Créer son duel : la carte qui ouvre l'atelier, dorée pour se
-       distinguer des préréglages. */
-    .v64-setup-card[data-value="creer"] {
-      position: relative;
-      padding-left: 40px !important;
-      border-color: #d8aa4c !important;
-      background: linear-gradient(135deg, #fff8e6, #f6e3b4) !important
-    }
-
-    .v64-setup-card[data-value="creer"]::before {
-      content: "✦";
-      position: absolute;
-      left: 11px;
-      top: 50%;
-      transform: translateY(-50%);
-      display: grid;
-      place-items: center;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: linear-gradient(180deg, #f7d98e, #b27f2a);
-      color: #2a1a07;
-      font-size: 12px;
-      box-shadow: 0 2px 6px rgba(120, 80, 20, .3)
-    }
-
-    .v64-setup-card[data-value="creer"] small {
-      color: #8a6420
-    }
-
-    .v64-setup-card[data-value="creer"][aria-pressed="true"] {
-      border-color: #b27f2a !important;
-      background: linear-gradient(135deg, #fff3d1, #f1d48f) !important;
-      box-shadow: 0 0 0 3px rgba(216, 170, 76, .25), var(--ilyos-shadow-1) !important
-    }
-
-    /* Aperçu de Créer son duel : plateau vide, axe du miroir en pointillés. */
-    .symmetric-setup-preview.preview-miroir {
-      position: relative
-    }
-
-    .symmetric-setup-preview.preview-miroir::after {
-      content: "";
-      position: absolute;
-      top: 6px;
-      bottom: 6px;
-      left: 50%;
-      border-left: 2px dashed rgba(178, 127, 42, .85);
-      transform: translateX(-1px);
-      pointer-events: none
     }
 
     /* Panneaux de diagnostic : jamais au-dessus des commandes de jeu. */

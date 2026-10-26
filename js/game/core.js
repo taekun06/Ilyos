@@ -637,8 +637,6 @@
       }
 
 
-      const CREER_SON_DUEL = "creer";
-
       function symmetricSetupOptionsHTML() {
         return symmetricSetupIds()
           .map(id => {
@@ -648,10 +646,7 @@
             ).length;
             return `<option value="${id}">${setup.name} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
           })
-          .join("")
-          // Créer son duel : pas de préréglage, le joueur 1 pose sa moitié et
-          // la pose se reflète chez l'adversaire (startCustomDraft, miroir).
-          + `<option value="${CREER_SON_DUEL}">Créer son duel — À vous de poser, en miroir</option>`;
+          .join("");
       }
 
       function boardSizeControlHTML() {
@@ -714,21 +709,8 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const creer = setupId === CREER_SON_DUEL;
-        const setup = creer
-          ? {
-            name: "Créer son duel",
-            description: "Composez le plateau de départ : posez vos îles puis vos gardiens sur votre moitié, chaque pose se reflète aussitôt dans le camp adverse. Les deux camps restent parfaitement symétriques.",
-            style: "Miroir",
-            islands: [],
-            characters: []
-          }
-          : symmetricSetup(setupId);
-        /* Les quantités du Personnalisé servent aussi à Créer son duel. */
-        els.customSetupControls?.classList.toggle("hidden", !creer && !setupOverlayIsCustom());
-        if (els.confirmSymmetricSetupBtn && !els.confirmSymmetricSetupBtn.disabled && !setupOverlayIsCustom()) {
-          els.confirmSymmetricSetupBtn.textContent = creer ? "Créer mon duel" : "Lancer ce setup";
-        }
+        const setup = symmetricSetup(setupId);
+        majMenuDuel(setup);
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -741,15 +723,12 @@
 
         if (name) name.textContent = setup.name;
         if (description) description.textContent = setup.description;
-        if (islandCount) islandCount.textContent = creer ? "Vos îles" : `${setup.islands.length} îles`;
+        if (islandCount) islandCount.textContent = `${setup.islands.length} îles`;
         if (characterCount) {
-          characterCount.textContent = creer
-            ? "Vos gardiens"
-            : `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
+          characterCount.textContent = `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
         }
-        if (style) style.textContent = setup.style;
+        if (style) style.textContent = setup.posture;
         if (!preview) return;
-        preview.classList.toggle("preview-miroir", creer);
 
         const islandMap = new Map();
         setup.islands.forEach(island => {
@@ -2698,6 +2677,7 @@
         const definitions = {
           scouts: {
             name: "Duel des éclaireurs",
+            posture: "Ouvert",
             description: "Seulement quatre îles et deux gardiens par équipe, un sur chaque village. Le plateau reste presque entièrement libre : chaque construction et chaque rotation modifient profondément la partie.",
             style: "4 îles • Construction",
             baseIslands: [
@@ -2709,6 +2689,7 @@
 
           open: {
             name: "Archipels ouverts",
+            posture: "Offensif",
             description: "Huit îles et deux gardiens par équipe. Les routes de départ sont courtes, le centre demeure ouvert et chaque île possède plusieurs rotations possibles.",
             style: "8 îles • Très mobile",
             baseIslands: [
@@ -2722,6 +2703,7 @@
 
           lanes: {
             name: "Grandes passerelles",
+            posture: "Équilibré",
             description: "Huit îles forment des axes larges sans fermer les espaces de magie. Deux gardiens permettent de défendre un village tout en progressant vers la couronne.",
             style: "8 îles • Déplacements",
             baseIslands: [
@@ -2735,6 +2717,7 @@
 
           spiral: {
             name: "Spirale des vents",
+            posture: "Équilibré",
             description: "Douze petites îles tournent autour du centre tout en laissant la couronne isolée. Les détours, les sauts de couronne et la magie prennent une place importante.",
             style: "12 îles • Magie",
             baseIslands: [
@@ -2750,6 +2733,7 @@
 
           crossroads: {
             name: "Carrefours célestes",
+            posture: "Équilibré",
             description: "Douze îles et quatre gardiens par équipe. Plusieurs routes se croisent, entre carrés, V et virages, avec des intervalles assez larges pour les faire pivoter.",
             style: "12 îles • Tactique",
             baseIslands: [
@@ -2765,6 +2749,7 @@
 
           orbit: {
             name: "Orbite royale",
+            posture: "Offensif",
             description: "Quatre gardiens par équipe, dont deux proches du centre. La couronne est contestée rapidement, tandis que les îles de chaque camp conservent des pivots tactiques.",
             style: "12 îles • Offensif",
             baseIslands: [
@@ -2780,6 +2765,7 @@
 
           citadels: {
             name: "Citadelles en mouvement",
+            posture: "Offensif",
             description: "Douze îles serrées autour des villages et quatre gardiens par équipe créent une bataille immédiate. Malgré la densité, chaque citadelle garde des rotations valides et le centre reste libre.",
             style: "12 îles • Grande bataille",
             baseIslands: [
@@ -2802,6 +2788,7 @@
              entourage, aucun coin n'est le « bon » côté. */
           sentinelles: {
             name: "Sentinelles",
+            posture: "Défensif",
             description: "Défensif. Chaque gardien attend près d’un village adverse, à quelques pas de ses cases de validation. La couronne est libre au centre : qui ose la chercher laisse un village sans garde.",
             style: "8 îles • Défensif",
             baseIslands: [
@@ -2815,6 +2802,7 @@
 
           avantPostes: {
             name: "Avant-postes",
+            posture: "Équilibré",
             description: "Équilibré. Près de chacun de tes villages, un éclaireur au contact du centre ; près de chaque village adverse, une sentinelle. Les quatre coins se valent.",
             style: "12 îles • Équilibré",
             baseIslands: [
@@ -2830,6 +2818,7 @@
 
           forteresse: {
             name: "Forteresse",
+            posture: "Défensif",
             description: "Défensif, grande bataille. Quatre gardiens par équipe : deux à la maison, deux en sentinelle chez l’adversaire. Personne n’est près de la couronne ; chaque porteur devra forcer un passage.",
             style: "8 îles • Défensif",
             baseIslands: [
@@ -2844,6 +2833,7 @@
           /* Dessinées pour le 13×13 (coordonnées natives). */
           grandArchipel: {
             name: "Grand archipel",
+            posture: "Équilibré",
             grille: 13,
             description: "Équilibré, 13×13. Près de chacun de tes villages, un éclaireur sur une île en T tournée vers le centre ; près de chaque village adverse, une sentinelle. Les quatre coins se valent.",
             style: "12 îles • Équilibré • 13×13",
@@ -2860,6 +2850,7 @@
 
           frontieres: {
             name: "Frontières",
+            posture: "Défensif",
             grille: 13,
             description: "Défensif, 13×13. Deux gardiens à la maison, deux sentinelles chez l’adversaire. Le centre est loin de tout le monde : le premier à s’y risquer ouvre une brèche.",
             style: "12 îles • Défensif • 13×13",
@@ -2876,6 +2867,7 @@
 
           ilots: {
             name: "Semis d’îlots",
+            posture: "Équilibré",
             description: "Équilibré. Vingt-quatre îlots d’une ou deux cases, dont des diagonales. Peu de rotations utiles, mais chaque poussée peut jeter un gardien dans le vide : les ponts se construisent pendant la partie.",
             style: "24 îles • Îlots",
             baseIslands: [
@@ -2897,6 +2889,7 @@
 
           croix: {
             name: "Croix des vents",
+            posture: "Défensif",
             description: "Défensif. Une grande Croix devant chaque village et, près de chaque village adverse, une Croix creuse où guette une sentinelle. Faire pivoter sa Croix ouvre ou ferme la route du centre.",
             style: "12 îles • Défensif",
             baseIslands: [
@@ -2912,6 +2905,7 @@
 
           serpents: {
             name: "Serpents",
+            posture: "Équilibré",
             grille: 13,
             description: "Équilibré, 13×13. Deux Serpents par village glissent en diagonale vers le centre ; un V sert de poste à la sentinelle chez l’adversaire. Les gardiens adverses démarrent à quatre pas au moins les uns des autres.",
             style: "16 îles • Équilibré • 13×13",
@@ -2930,6 +2924,7 @@
 
           diagonales: {
             name: "Pas de côté",
+            posture: "Équilibré",
             grille: 13,
             description: "13×13. Des îles en diagonale (Domino, V) : chaque pas en biais coûte deux déplacements, et une rotation bien placée raccourcit tout. Un Carré de sentinelle garde chaque village adverse.",
             style: "16 îles • Diagonales • 13×13",
@@ -2948,6 +2943,7 @@
 
           grandLarge: {
             name: "Grand large",
+            posture: "Ouvert",
             grille: 13,
             description: "13×13, six gardiens par équipe : l’équipe est complète dès le départ, et aucun renfort n’arrive tant qu’on n’a pas perdu de gardien. Peu d’îles et beaucoup de vide pour bâtir et faire pivoter.",
             style: "12 îles • 6 gardiens • 13×13",
@@ -2976,6 +2972,8 @@
             name: definition.name,
             description: definition.description,
             style: definition.style,
+            // Famille affichée et filtrée dans le menu du duel (menu-duels.js).
+            posture: definition.posture || "Équilibré",
             grille: definition.grille || null,
             baseIslands: definition.baseIslands,
             characters: definition.characters
@@ -3026,60 +3024,24 @@
         if (!els.symmetricSetupOverlay) return;
 
         const custom = setupOverlayIsCustom();
-
-        els.symmetricPresetControls?.classList.toggle("hidden", custom);
-        els.symmetricPresetContent?.classList.toggle("hidden", custom);
-        els.customSetupControls?.classList.toggle("hidden", !custom);
-        els.customRulesControls?.classList.toggle("hidden", !custom);
-
-        if (els.setupOverlayKicker) {
-          els.setupOverlayKicker.textContent = custom ? "PERSONNALISÉ" : "DUEL SYMÉTRIQUE";
-        }
-        if (els.setupOverlayTitle) {
-          els.setupOverlayTitle.textContent = custom
-            ? "Composez votre formation"
-            : "Choisissez le plateau de départ";
-        }
-        if (els.setupOverlayIntro) {
-          els.setupOverlayIntro.textContent = custom
-            ? "Chaque joueur pose lui-même ses îles puis ses gardiens, à tour de rôle, avant le premier tour."
-            : "Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le même nombre de gardiens.";
-        }
-
-        // Le miroir n'a de sens qu'à deux, et seulement dans le Personnalisé :
-        // « Créer son duel » est déjà en miroir.
-        const miroirPossible = custom && state?.players?.length === 2;
-        document.getElementById("customMirrorRow")?.classList.toggle("hidden", !miroirPossible);
-
         if (custom) {
-          if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
-          if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
-          const miroirSelect = document.getElementById("customMirrorSelect");
-          if (miroirSelect) {
-            miroirSelect.disabled = waiting;
-            const majIntro = () => {
-              if (!els.setupOverlayIntro) return;
-              els.setupOverlayIntro.textContent = miroirPossible && miroirSelect.value === "miroir"
-                ? "Le joueur 1 pose ses îles puis ses gardiens ; chaque pose se reflète aussitôt dans le camp adverse."
-                : "Chaque joueur pose lui-même ses îles puis ses gardiens, à tour de rôle, avant le premier tour.";
-            };
-            miroirSelect.onchange = majIntro;
-            majIntro();
-          }
-          [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
+          [els.customIslandCountSelect, els.customGuardianCountSelect, els.customGuardianPlacementSelect,
+            document.getElementById("customMirrorSelect"),
+            els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
             els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
-          populateSymmetricSetupOverlay(selectedId);
+          populateSymmetricSetupOverlay(menuDuelReprise(selectedId));
           if (els.symmetricSetupSelect) els.symmetricSetupSelect.disabled = waiting;
           if (els.randomSymmetricSetupBtn) els.randomSymmetricSetupBtn.disabled = waiting;
         }
+        [els.symmetricIslandLimitSelect, els.symmetricAllowDissolveCheckbox]
+          .forEach(champ => { if (champ) champ.disabled = waiting; });
 
-        els.confirmSymmetricSetupBtn.disabled = waiting;
-        els.confirmSymmetricSetupBtn.textContent = waiting
-          ? "En attente du créateur"
-          : (custom ? "Commencer la mise en place" : "Lancer ce setup");
+        // Titres, sections visibles, vignettes et libellé du bouton :
+        // menu-duels.js, qui connaît les trois menus de cet écran.
+        afficherMenuDuel(custom ? "perso" : "duel", { waiting });
         els.symmetricSetupWaiting.classList.toggle("hidden", !waiting);
 
         els.symmetricSetupOverlay.classList.remove("hidden");
@@ -3130,6 +3092,7 @@
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
+        if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }
 
@@ -3158,6 +3121,8 @@
       function confirmSymmetricSetup() {
         if (!state || !state.setupSelectionPending) return;
         if (state.onlineMode && onlineRole === "guest") return;
+        // Choix du terrain du Personnalisé : on revient à ses réglages.
+        if (menuDuelChoixTerrain()) return;
 
         if (setupOverlayIsCustom()) {
           state.rules = {
@@ -3168,33 +3133,21 @@
             ...lireReglesPersonnalisees()
           };
           appliquerPaquetDesRegles();
+          /* Terrain de départ : un setup du duel symétrique déjà posé, que la
+             mise en place complète (voir customTerrainChoisi). */
+          const terrain = customTerrainChoisi();
+          if (terrain) {
+            applyStartingBoardMode("symmetric", terrain);
+            state.startingBoardMode = "custom";
+          }
           state.setupSelectionPending = false;
           state.inputLocked = false;
           closeSymmetricSetupOverlay();
+          // « Créer son duel » : la mise en place en miroir du Personnalisé.
           startCustomDraft(
             Number(els.customIslandCountSelect?.value),
             Number(els.customGuardianCountSelect?.value),
-            { miroir: document.getElementById("customMirrorSelect")?.value === "miroir" }
-          );
-          startAmbient();
-          if (state.onlineMode) forceOnlineSync();
-          return;
-        }
-
-        if (els.symmetricSetupSelect?.value === CREER_SON_DUEL) {
-          state.startingBoardPreset = CREER_SON_DUEL;
-          state.rules = {
-            allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
-            islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
-          };
-          state.setupSelectionPending = false;
-          state.inputLocked = false;
-          closeSymmetricSetupOverlay();
-          startCustomDraft(
-            Number(els.customIslandCountSelect?.value),
-            Number(els.customGuardianCountSelect?.value),
-            { miroir: true }
+            { miroir: document.getElementById("customMirrorSelect")?.value === "miroir", garderTerrain: !!terrain }
           );
           startAmbient();
           if (state.onlineMode) forceOnlineSync();
@@ -3250,11 +3203,9 @@
          --------------------------------------------------------------------- */
       function normalizeRestoredDraft(draft, playerCount) {
         if (!draft || !Array.isArray(draft.order) || !draft.order.length) return null;
-        const iles = Math.max(1, Math.min(6, Number(draft.islandsPerPlayer) || 4));
-        const gardiens = Math.max(
-          1,
-          Math.min(MAX_GUARDIANS_PER_PLAYER, Number(draft.guardiansPerPlayer) || 2)
-        );
+        // 6 : plafond des anciennes sauvegardes, avant le menu à 5 îles.
+        const iles = quantiteDraft(draft.islandsPerPlayer, 4, 6);
+        const gardiens = quantiteDraft(draft.guardiansPerPlayer, 2, MAX_GUARDIANS_PER_PLAYER);
         const order = draft.order.filter(id => Number.isInteger(id) && id >= 0 && id < playerCount);
         if (order.length !== draft.order.length) return null;
 
@@ -3275,6 +3226,15 @@
         };
       }
 
+      /* Îles et gardiens à poser par joueur : 0 est une vraie valeur (un
+         terrain de setup peut suffire), seule une valeur illisible reprend
+         la valeur par défaut. */
+      const CUSTOM_ISLANDS_MAX = 5;
+      function quantiteDraft(valeur, parDefaut, maximum) {
+        const n = Math.round(Number(valeur));
+        return Number.isFinite(n) ? Math.max(0, Math.min(maximum, n)) : parDefaut;
+      }
+
       function buildDraftOrder(playerCount, picksPerPlayer) {
         const order = [];
         for (let manche = 0; manche < picksPerPlayer; manche++) {
@@ -3293,10 +3253,15 @@
         if (!state) return;
         const playerCount = state.players.length;
         const miroir = !!options.miroir && playerCount === 2;
-        const iles = Math.max(1, Math.min(6, Math.round(Number(islandsPerPlayer)) || 4));
-        const gardiens = Math.max(
-          1,
-          Math.min(MAX_GUARDIANS_PER_PLAYER, Math.round(Number(guardiansPerPlayer)) || 2)
+        const iles = quantiteDraft(islandsPerPlayer, 4, CUSTOM_ISLANDS_MAX);
+        /* Sur un terrain de setup, les gardiens posés s'ajoutent à ceux du
+           terrain sans dépasser le plafond par joueur. */
+        const dejaPlaces = options.garderTerrain
+          ? Math.max(0, ...state.players.map(joueur => state.characters.filter(g => g.player === joueur.id).length))
+          : 0;
+        const gardiens = Math.min(
+          quantiteDraft(guardiansPerPlayer, 2, MAX_GUARDIANS_PER_PLAYER),
+          Math.max(0, MAX_GUARDIANS_PER_PLAYER - dejaPlaces)
         );
 
         state.draft = {
@@ -3314,11 +3279,15 @@
 
         /* Le plateau personnalisé démarre nu. startLocalGame place d'office un
            gardien par village pour tout mode non classique : ici ces gardiens
-           font justement partie de ce que le joueur va poser lui-même. */
-        state.characters = [];
-        state.islands = [];
-        state.nextIslandId = 1;
-        state.nextCharId = 100;
+           font justement partie de ce que le joueur va poser lui-même. Sur un
+           terrain de setup (options.garderTerrain), les îles et gardiens du
+           setup restent en place et la pose s'y ajoute. */
+        if (!options.garderTerrain) {
+          state.characters = [];
+          state.islands = [];
+          state.nextIslandId = 1;
+          state.nextCharId = 100;
+        }
         state.inputLocked = false;
         enterDraftPick();
       }
@@ -3377,13 +3346,14 @@
 
       function finishCustomDraft() {
         if (!state) return;
-        const miroir = state.draft?.miroir ? state.draft : null;
+        const draft = state.draft;
         state.draft = null;
         state.phase = "ACTION_SELECT";
         // Celui qui a posé en premier ouvre la partie : le serpentin lui a
-        // déjà fait payer le fait de poser à l'aveugle. En miroir, aucun
-        // désavantage à compenser : on garde le tirage au sort.
-        state.currentPlayer = miroir ? miroir.premier : 0;
+        // déjà fait payer le fait de poser à l'aveugle. En miroir, ou sans
+        // rien à poser, aucun désavantage à compenser : on garde le tirage
+        // au sort.
+        state.currentPlayer = draft && (draft.miroir || !draft.order.length) ? draft.premier : 0;
         state.turn = 1;
         state.round = 1;
         beginTurn();
@@ -3392,7 +3362,9 @@
       }
 
       /* Placement d'un gardien pendant le draft : n'importe quelle case libre
-         d'une île appartenant au joueur, ou sa case de village. */
+         d'une île appartenant au joueur, ou sa case de village. Avec la règle
+         « placement libre » du Personnalisé, toute île convient, même
+         adverse — jamais le sanctuaire ni le village adverse. */
       function draftGuardianCellAllowed(playerId, r, c) {
         if (!draftCaseGardienLibre(playerId, r, c)) return false;
         if (!state.draft?.miroir) return true;
@@ -3410,14 +3382,18 @@
         const village = villageAt(r, c);
         if (village && village.id === playerId) return true;
         const island = islandAt(r, c);
-        return !!island && island.owner === playerId;
+        if (!island) return false;
+        if (island.owner === playerId) return true;
+        return !!state.rules?.placementGardiensLibre && !village && !isSanctuary(r, c);
       }
 
       function draftPlaceGuardian(r, c) {
         const pick = draftCurrentPick();
         if (!pick || pick.kind !== "guardian") return false;
         if (!draftGuardianCellAllowed(pick.player, r, c)) {
-          showToast("Placez le gardien sur une de vos îles ou sur votre village.");
+          showToast(state.rules?.placementGardiensLibre
+            ? "Placez le gardien sur une île libre ou sur votre village, hors sanctuaire."
+            : "Placez le gardien sur une de vos îles ou sur votre village.");
           return false;
         }
 
@@ -3489,7 +3465,7 @@
 
         const candidates = [];
         state.islands
-          .filter(island => island.owner === pick.player)
+          .filter(island => island.owner === pick.player || state.rules?.placementGardiensLibre)
           .forEach(island => island.cells.forEach(([r, c]) => {
             if (draftGuardianCellAllowed(pick.player, r, c)) candidates.push([r, c]);
           }));

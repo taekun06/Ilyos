@@ -237,6 +237,7 @@
         customSetupControls: document.getElementById("customSetupControls"),
         customIslandCountSelect: document.getElementById("customIslandCountSelect"),
         customGuardianCountSelect: document.getElementById("customGuardianCountSelect"),
+        customGuardianPlacementSelect: document.getElementById("customGuardianPlacementSelect"),
         customRulesControls: document.getElementById("customRulesControls"),
         customDeckMoveSelect: document.getElementById("customDeckMoveSelect"),
         customDeckPushSelect: document.getElementById("customDeckPushSelect"),
@@ -15328,8 +15329,6 @@
       }
 
 
-      const CREER_SON_DUEL = "creer";
-
       function symmetricSetupOptionsHTML() {
         return symmetricSetupIds()
           .map(id => {
@@ -15339,10 +15338,7 @@
             ).length;
             return `<option value="${id}">${setup.name} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
           })
-          .join("")
-          // Créer son duel : pas de préréglage, le joueur 1 pose sa moitié et
-          // la pose se reflète chez l'adversaire (startCustomDraft, miroir).
-          + `<option value="${CREER_SON_DUEL}">Créer son duel — À vous de poser, en miroir</option>`;
+          .join("");
       }
 
       function boardSizeControlHTML() {
@@ -15405,21 +15401,8 @@
       }
 
       function renderSymmetricSetupPreview(setupId) {
-        const creer = setupId === CREER_SON_DUEL;
-        const setup = creer
-          ? {
-            name: "Créer son duel",
-            description: "Composez le plateau de départ : posez vos îles puis vos gardiens sur votre moitié, chaque pose se reflète aussitôt dans le camp adverse. Les deux camps restent parfaitement symétriques.",
-            style: "Miroir",
-            islands: [],
-            characters: []
-          }
-          : symmetricSetup(setupId);
-        /* Les quantités du Personnalisé servent aussi à Créer son duel. */
-        els.customSetupControls?.classList.toggle("hidden", !creer && !setupOverlayIsCustom());
-        if (els.confirmSymmetricSetupBtn && !els.confirmSymmetricSetupBtn.disabled && !setupOverlayIsCustom()) {
-          els.confirmSymmetricSetupBtn.textContent = creer ? "Créer mon duel" : "Lancer ce setup";
-        }
+        const setup = symmetricSetup(setupId);
+        majMenuDuel(setup);
         const preview = document.getElementById("symmetricSetupPreview");
         const name = document.getElementById("symmetricSetupName");
         const description = document.getElementById("symmetricSetupText");
@@ -15432,15 +15415,12 @@
 
         if (name) name.textContent = setup.name;
         if (description) description.textContent = setup.description;
-        if (islandCount) islandCount.textContent = creer ? "Vos îles" : `${setup.islands.length} îles`;
+        if (islandCount) islandCount.textContent = `${setup.islands.length} îles`;
         if (characterCount) {
-          characterCount.textContent = creer
-            ? "Vos gardiens"
-            : `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
+          characterCount.textContent = `${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""} / équipe`;
         }
-        if (style) style.textContent = setup.style;
+        if (style) style.textContent = setup.posture;
         if (!preview) return;
-        preview.classList.toggle("preview-miroir", creer);
 
         const islandMap = new Map();
         setup.islands.forEach(island => {
@@ -17389,6 +17369,7 @@
         const definitions = {
           scouts: {
             name: "Duel des éclaireurs",
+            posture: "Ouvert",
             description: "Seulement quatre îles et deux gardiens par équipe, un sur chaque village. Le plateau reste presque entièrement libre : chaque construction et chaque rotation modifient profondément la partie.",
             style: "4 îles • Construction",
             baseIslands: [
@@ -17400,6 +17381,7 @@
 
           open: {
             name: "Archipels ouverts",
+            posture: "Offensif",
             description: "Huit îles et deux gardiens par équipe. Les routes de départ sont courtes, le centre demeure ouvert et chaque île possède plusieurs rotations possibles.",
             style: "8 îles • Très mobile",
             baseIslands: [
@@ -17413,6 +17395,7 @@
 
           lanes: {
             name: "Grandes passerelles",
+            posture: "Équilibré",
             description: "Huit îles forment des axes larges sans fermer les espaces de magie. Deux gardiens permettent de défendre un village tout en progressant vers la couronne.",
             style: "8 îles • Déplacements",
             baseIslands: [
@@ -17426,6 +17409,7 @@
 
           spiral: {
             name: "Spirale des vents",
+            posture: "Équilibré",
             description: "Douze petites îles tournent autour du centre tout en laissant la couronne isolée. Les détours, les sauts de couronne et la magie prennent une place importante.",
             style: "12 îles • Magie",
             baseIslands: [
@@ -17441,6 +17425,7 @@
 
           crossroads: {
             name: "Carrefours célestes",
+            posture: "Équilibré",
             description: "Douze îles et quatre gardiens par équipe. Plusieurs routes se croisent, entre carrés, V et virages, avec des intervalles assez larges pour les faire pivoter.",
             style: "12 îles • Tactique",
             baseIslands: [
@@ -17456,6 +17441,7 @@
 
           orbit: {
             name: "Orbite royale",
+            posture: "Offensif",
             description: "Quatre gardiens par équipe, dont deux proches du centre. La couronne est contestée rapidement, tandis que les îles de chaque camp conservent des pivots tactiques.",
             style: "12 îles • Offensif",
             baseIslands: [
@@ -17471,6 +17457,7 @@
 
           citadels: {
             name: "Citadelles en mouvement",
+            posture: "Offensif",
             description: "Douze îles serrées autour des villages et quatre gardiens par équipe créent une bataille immédiate. Malgré la densité, chaque citadelle garde des rotations valides et le centre reste libre.",
             style: "12 îles • Grande bataille",
             baseIslands: [
@@ -17493,6 +17480,7 @@
              entourage, aucun coin n'est le « bon » côté. */
           sentinelles: {
             name: "Sentinelles",
+            posture: "Défensif",
             description: "Défensif. Chaque gardien attend près d’un village adverse, à quelques pas de ses cases de validation. La couronne est libre au centre : qui ose la chercher laisse un village sans garde.",
             style: "8 îles • Défensif",
             baseIslands: [
@@ -17506,6 +17494,7 @@
 
           avantPostes: {
             name: "Avant-postes",
+            posture: "Équilibré",
             description: "Équilibré. Près de chacun de tes villages, un éclaireur au contact du centre ; près de chaque village adverse, une sentinelle. Les quatre coins se valent.",
             style: "12 îles • Équilibré",
             baseIslands: [
@@ -17521,6 +17510,7 @@
 
           forteresse: {
             name: "Forteresse",
+            posture: "Défensif",
             description: "Défensif, grande bataille. Quatre gardiens par équipe : deux à la maison, deux en sentinelle chez l’adversaire. Personne n’est près de la couronne ; chaque porteur devra forcer un passage.",
             style: "8 îles • Défensif",
             baseIslands: [
@@ -17535,6 +17525,7 @@
           /* Dessinées pour le 13×13 (coordonnées natives). */
           grandArchipel: {
             name: "Grand archipel",
+            posture: "Équilibré",
             grille: 13,
             description: "Équilibré, 13×13. Près de chacun de tes villages, un éclaireur sur une île en T tournée vers le centre ; près de chaque village adverse, une sentinelle. Les quatre coins se valent.",
             style: "12 îles • Équilibré • 13×13",
@@ -17551,6 +17542,7 @@
 
           frontieres: {
             name: "Frontières",
+            posture: "Défensif",
             grille: 13,
             description: "Défensif, 13×13. Deux gardiens à la maison, deux sentinelles chez l’adversaire. Le centre est loin de tout le monde : le premier à s’y risquer ouvre une brèche.",
             style: "12 îles • Défensif • 13×13",
@@ -17567,6 +17559,7 @@
 
           ilots: {
             name: "Semis d’îlots",
+            posture: "Équilibré",
             description: "Équilibré. Vingt-quatre îlots d’une ou deux cases, dont des diagonales. Peu de rotations utiles, mais chaque poussée peut jeter un gardien dans le vide : les ponts se construisent pendant la partie.",
             style: "24 îles • Îlots",
             baseIslands: [
@@ -17588,6 +17581,7 @@
 
           croix: {
             name: "Croix des vents",
+            posture: "Défensif",
             description: "Défensif. Une grande Croix devant chaque village et, près de chaque village adverse, une Croix creuse où guette une sentinelle. Faire pivoter sa Croix ouvre ou ferme la route du centre.",
             style: "12 îles • Défensif",
             baseIslands: [
@@ -17603,6 +17597,7 @@
 
           serpents: {
             name: "Serpents",
+            posture: "Équilibré",
             grille: 13,
             description: "Équilibré, 13×13. Deux Serpents par village glissent en diagonale vers le centre ; un V sert de poste à la sentinelle chez l’adversaire. Les gardiens adverses démarrent à quatre pas au moins les uns des autres.",
             style: "16 îles • Équilibré • 13×13",
@@ -17621,6 +17616,7 @@
 
           diagonales: {
             name: "Pas de côté",
+            posture: "Équilibré",
             grille: 13,
             description: "13×13. Des îles en diagonale (Domino, V) : chaque pas en biais coûte deux déplacements, et une rotation bien placée raccourcit tout. Un Carré de sentinelle garde chaque village adverse.",
             style: "16 îles • Diagonales • 13×13",
@@ -17639,6 +17635,7 @@
 
           grandLarge: {
             name: "Grand large",
+            posture: "Ouvert",
             grille: 13,
             description: "13×13, six gardiens par équipe : l’équipe est complète dès le départ, et aucun renfort n’arrive tant qu’on n’a pas perdu de gardien. Peu d’îles et beaucoup de vide pour bâtir et faire pivoter.",
             style: "12 îles • 6 gardiens • 13×13",
@@ -17667,6 +17664,8 @@
             name: definition.name,
             description: definition.description,
             style: definition.style,
+            // Famille affichée et filtrée dans le menu du duel (menu-duels.js).
+            posture: definition.posture || "Équilibré",
             grille: definition.grille || null,
             baseIslands: definition.baseIslands,
             characters: definition.characters
@@ -17717,60 +17716,24 @@
         if (!els.symmetricSetupOverlay) return;
 
         const custom = setupOverlayIsCustom();
-
-        els.symmetricPresetControls?.classList.toggle("hidden", custom);
-        els.symmetricPresetContent?.classList.toggle("hidden", custom);
-        els.customSetupControls?.classList.toggle("hidden", !custom);
-        els.customRulesControls?.classList.toggle("hidden", !custom);
-
-        if (els.setupOverlayKicker) {
-          els.setupOverlayKicker.textContent = custom ? "PERSONNALISÉ" : "DUEL SYMÉTRIQUE";
-        }
-        if (els.setupOverlayTitle) {
-          els.setupOverlayTitle.textContent = custom
-            ? "Composez votre formation"
-            : "Choisissez le plateau de départ";
-        }
-        if (els.setupOverlayIntro) {
-          els.setupOverlayIntro.textContent = custom
-            ? "Chaque joueur pose lui-même ses îles puis ses gardiens, à tour de rôle, avant le premier tour."
-            : "Les deux équipes obtiennent exactement les mêmes distances, les mêmes îles et le même nombre de gardiens.";
-        }
-
-        // Le miroir n'a de sens qu'à deux, et seulement dans le Personnalisé :
-        // « Créer son duel » est déjà en miroir.
-        const miroirPossible = custom && state?.players?.length === 2;
-        document.getElementById("customMirrorRow")?.classList.toggle("hidden", !miroirPossible);
-
         if (custom) {
-          if (els.customIslandCountSelect) els.customIslandCountSelect.disabled = waiting;
-          if (els.customGuardianCountSelect) els.customGuardianCountSelect.disabled = waiting;
-          const miroirSelect = document.getElementById("customMirrorSelect");
-          if (miroirSelect) {
-            miroirSelect.disabled = waiting;
-            const majIntro = () => {
-              if (!els.setupOverlayIntro) return;
-              els.setupOverlayIntro.textContent = miroirPossible && miroirSelect.value === "miroir"
-                ? "Le joueur 1 pose ses îles puis ses gardiens ; chaque pose se reflète aussitôt dans le camp adverse."
-                : "Chaque joueur pose lui-même ses îles puis ses gardiens, à tour de rôle, avant le premier tour.";
-            };
-            miroirSelect.onchange = majIntro;
-            majIntro();
-          }
-          [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
+          [els.customIslandCountSelect, els.customGuardianCountSelect, els.customGuardianPlacementSelect,
+            document.getElementById("customMirrorSelect"),
+            els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
             els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
-          populateSymmetricSetupOverlay(selectedId);
+          populateSymmetricSetupOverlay(menuDuelReprise(selectedId));
           if (els.symmetricSetupSelect) els.symmetricSetupSelect.disabled = waiting;
           if (els.randomSymmetricSetupBtn) els.randomSymmetricSetupBtn.disabled = waiting;
         }
+        [els.symmetricIslandLimitSelect, els.symmetricAllowDissolveCheckbox]
+          .forEach(champ => { if (champ) champ.disabled = waiting; });
 
-        els.confirmSymmetricSetupBtn.disabled = waiting;
-        els.confirmSymmetricSetupBtn.textContent = waiting
-          ? "En attente du créateur"
-          : (custom ? "Commencer la mise en place" : "Lancer ce setup");
+        // Titres, sections visibles, vignettes et libellé du bouton :
+        // menu-duels.js, qui connaît les trois menus de cet écran.
+        afficherMenuDuel(custom ? "perso" : "duel", { waiting });
         els.symmetricSetupWaiting.classList.toggle("hidden", !waiting);
 
         els.symmetricSetupOverlay.classList.remove("hidden");
@@ -17821,6 +17784,7 @@
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
+        if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }
 
@@ -17849,6 +17813,8 @@
       function confirmSymmetricSetup() {
         if (!state || !state.setupSelectionPending) return;
         if (state.onlineMode && onlineRole === "guest") return;
+        // Choix du terrain du Personnalisé : on revient à ses réglages.
+        if (menuDuelChoixTerrain()) return;
 
         if (setupOverlayIsCustom()) {
           state.rules = {
@@ -17859,33 +17825,21 @@
             ...lireReglesPersonnalisees()
           };
           appliquerPaquetDesRegles();
+          /* Terrain de départ : un setup du duel symétrique déjà posé, que la
+             mise en place complète (voir customTerrainChoisi). */
+          const terrain = customTerrainChoisi();
+          if (terrain) {
+            applyStartingBoardMode("symmetric", terrain);
+            state.startingBoardMode = "custom";
+          }
           state.setupSelectionPending = false;
           state.inputLocked = false;
           closeSymmetricSetupOverlay();
+          // « Créer son duel » : la mise en place en miroir du Personnalisé.
           startCustomDraft(
             Number(els.customIslandCountSelect?.value),
             Number(els.customGuardianCountSelect?.value),
-            { miroir: document.getElementById("customMirrorSelect")?.value === "miroir" }
-          );
-          startAmbient();
-          if (state.onlineMode) forceOnlineSync();
-          return;
-        }
-
-        if (els.symmetricSetupSelect?.value === CREER_SON_DUEL) {
-          state.startingBoardPreset = CREER_SON_DUEL;
-          state.rules = {
-            allowDissolve: !!els.symmetricAllowDissolveCheckbox?.checked,
-            islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: Number(els.symmetricIslandLimitSelect?.value ?? SHAPE_LIMIT_PER_OWNER_DEFAULT) || 0
-          };
-          state.setupSelectionPending = false;
-          state.inputLocked = false;
-          closeSymmetricSetupOverlay();
-          startCustomDraft(
-            Number(els.customIslandCountSelect?.value),
-            Number(els.customGuardianCountSelect?.value),
-            { miroir: true }
+            { miroir: document.getElementById("customMirrorSelect")?.value === "miroir", garderTerrain: !!terrain }
           );
           startAmbient();
           if (state.onlineMode) forceOnlineSync();
@@ -17941,11 +17895,9 @@
          --------------------------------------------------------------------- */
       function normalizeRestoredDraft(draft, playerCount) {
         if (!draft || !Array.isArray(draft.order) || !draft.order.length) return null;
-        const iles = Math.max(1, Math.min(6, Number(draft.islandsPerPlayer) || 4));
-        const gardiens = Math.max(
-          1,
-          Math.min(MAX_GUARDIANS_PER_PLAYER, Number(draft.guardiansPerPlayer) || 2)
-        );
+        // 6 : plafond des anciennes sauvegardes, avant le menu à 5 îles.
+        const iles = quantiteDraft(draft.islandsPerPlayer, 4, 6);
+        const gardiens = quantiteDraft(draft.guardiansPerPlayer, 2, MAX_GUARDIANS_PER_PLAYER);
         const order = draft.order.filter(id => Number.isInteger(id) && id >= 0 && id < playerCount);
         if (order.length !== draft.order.length) return null;
 
@@ -17966,6 +17918,15 @@
         };
       }
 
+      /* Îles et gardiens à poser par joueur : 0 est une vraie valeur (un
+         terrain de setup peut suffire), seule une valeur illisible reprend
+         la valeur par défaut. */
+      const CUSTOM_ISLANDS_MAX = 5;
+      function quantiteDraft(valeur, parDefaut, maximum) {
+        const n = Math.round(Number(valeur));
+        return Number.isFinite(n) ? Math.max(0, Math.min(maximum, n)) : parDefaut;
+      }
+
       function buildDraftOrder(playerCount, picksPerPlayer) {
         const order = [];
         for (let manche = 0; manche < picksPerPlayer; manche++) {
@@ -17984,10 +17945,15 @@
         if (!state) return;
         const playerCount = state.players.length;
         const miroir = !!options.miroir && playerCount === 2;
-        const iles = Math.max(1, Math.min(6, Math.round(Number(islandsPerPlayer)) || 4));
-        const gardiens = Math.max(
-          1,
-          Math.min(MAX_GUARDIANS_PER_PLAYER, Math.round(Number(guardiansPerPlayer)) || 2)
+        const iles = quantiteDraft(islandsPerPlayer, 4, CUSTOM_ISLANDS_MAX);
+        /* Sur un terrain de setup, les gardiens posés s'ajoutent à ceux du
+           terrain sans dépasser le plafond par joueur. */
+        const dejaPlaces = options.garderTerrain
+          ? Math.max(0, ...state.players.map(joueur => state.characters.filter(g => g.player === joueur.id).length))
+          : 0;
+        const gardiens = Math.min(
+          quantiteDraft(guardiansPerPlayer, 2, MAX_GUARDIANS_PER_PLAYER),
+          Math.max(0, MAX_GUARDIANS_PER_PLAYER - dejaPlaces)
         );
 
         state.draft = {
@@ -18005,11 +17971,15 @@
 
         /* Le plateau personnalisé démarre nu. startLocalGame place d'office un
            gardien par village pour tout mode non classique : ici ces gardiens
-           font justement partie de ce que le joueur va poser lui-même. */
-        state.characters = [];
-        state.islands = [];
-        state.nextIslandId = 1;
-        state.nextCharId = 100;
+           font justement partie de ce que le joueur va poser lui-même. Sur un
+           terrain de setup (options.garderTerrain), les îles et gardiens du
+           setup restent en place et la pose s'y ajoute. */
+        if (!options.garderTerrain) {
+          state.characters = [];
+          state.islands = [];
+          state.nextIslandId = 1;
+          state.nextCharId = 100;
+        }
         state.inputLocked = false;
         enterDraftPick();
       }
@@ -18068,13 +18038,14 @@
 
       function finishCustomDraft() {
         if (!state) return;
-        const miroir = state.draft?.miroir ? state.draft : null;
+        const draft = state.draft;
         state.draft = null;
         state.phase = "ACTION_SELECT";
         // Celui qui a posé en premier ouvre la partie : le serpentin lui a
-        // déjà fait payer le fait de poser à l'aveugle. En miroir, aucun
-        // désavantage à compenser : on garde le tirage au sort.
-        state.currentPlayer = miroir ? miroir.premier : 0;
+        // déjà fait payer le fait de poser à l'aveugle. En miroir, ou sans
+        // rien à poser, aucun désavantage à compenser : on garde le tirage
+        // au sort.
+        state.currentPlayer = draft && (draft.miroir || !draft.order.length) ? draft.premier : 0;
         state.turn = 1;
         state.round = 1;
         beginTurn();
@@ -18083,7 +18054,9 @@
       }
 
       /* Placement d'un gardien pendant le draft : n'importe quelle case libre
-         d'une île appartenant au joueur, ou sa case de village. */
+         d'une île appartenant au joueur, ou sa case de village. Avec la règle
+         « placement libre » du Personnalisé, toute île convient, même
+         adverse — jamais le sanctuaire ni le village adverse. */
       function draftGuardianCellAllowed(playerId, r, c) {
         if (!draftCaseGardienLibre(playerId, r, c)) return false;
         if (!state.draft?.miroir) return true;
@@ -18101,14 +18074,18 @@
         const village = villageAt(r, c);
         if (village && village.id === playerId) return true;
         const island = islandAt(r, c);
-        return !!island && island.owner === playerId;
+        if (!island) return false;
+        if (island.owner === playerId) return true;
+        return !!state.rules?.placementGardiensLibre && !village && !isSanctuary(r, c);
       }
 
       function draftPlaceGuardian(r, c) {
         const pick = draftCurrentPick();
         if (!pick || pick.kind !== "guardian") return false;
         if (!draftGuardianCellAllowed(pick.player, r, c)) {
-          showToast("Placez le gardien sur une de vos îles ou sur votre village.");
+          showToast(state.rules?.placementGardiensLibre
+            ? "Placez le gardien sur une île libre ou sur votre village, hors sanctuaire."
+            : "Placez le gardien sur une de vos îles ou sur votre village.");
           return false;
         }
 
@@ -18180,7 +18157,7 @@
 
         const candidates = [];
         state.islands
-          .filter(island => island.owner === pick.player)
+          .filter(island => island.owner === pick.player || state.rules?.placementGardiensLibre)
           .forEach(island => island.cells.forEach(([r, c]) => {
             if (draftGuardianCellAllowed(pick.player, r, c)) candidates.push([r, c]);
           }));
@@ -51822,6 +51799,492 @@
           if (fait) event.preventDefault();
         });
       })();
+      /* =====================================================================
+         MENUS DE DÉPART — Duel symétrique et Personnalisé
+
+         Un seul écran (#symmetricSetupOverlay, index.html) porte trois menus,
+         nommés par data-menu sur la carte :
+           • "duel"    : choix d'un setup du Duel symétrique, en grande photo
+                         avec une bande de vignettes (vue « apercu ») ou en
+                         grille (vue « grille »), rangés par nombre de gardiens ;
+           • "perso"   : réglages du Personnalisé (formation, paquet, règles,
+                         terrain de départ) ;
+           • "terrain" : le menu du duel, ouvert depuis le Personnalisé pour
+                         choisir le setup qui sert de terrain de départ.
+
+         Les listes déroulantes cachées restent la source des valeurs : core.js
+         (confirmSymmetricSetup, lireReglesPersonnalisees) et les tests les
+         lisent. Ce fragment ne fait que construire les boutons qui les pilotent
+         et montrer les bonnes sections.
+
+         Photos des setups : assets/duels/<setup>-<taille>.webp, prises en jeu
+         HUD masqué (voir docs/ASSETS.md). Une photo absente laisse place au
+         plan du setup (renderSymmetricSetupPreview).
+         ===================================================================== */
+      const MENU_DUEL = {
+        menu: "duel",
+        vue: (() => {
+          try { return localStorage.getItem("ilyos.menuDuel.vue") === "grille" ? "grille" : "apercu"; }
+          catch (_) { return "apercu"; }
+        })(),
+        posture: "Tous",
+        // Setup servant de terrain au Personnalisé (retenu même quand le
+        // plateau vide est choisi, pour y revenir en un clic).
+        terrain: null,
+        terrainActif: false,
+        // Dernier setup choisi, et setup à reprendre après un changement de taille.
+        dernier: null,
+        reprise: null,
+        attente: false,
+        branche: false
+      };
+
+      const menuDuelCarte = () => els.symmetricSetupOverlay?.querySelector(".symmetric-board-card");
+      const photoDuel = id => `assets/duels/${id}-${GRID}.webp`;
+      const gardiensDuel = id => symmetricSetup(id).characters.filter(g => g.player === 0).length;
+      const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? "s" : ""}`;
+
+      function elementMenu(balise, classe, texte) {
+        const noeud = document.createElement(balise);
+        if (classe) noeud.className = classe;
+        if (texte !== undefined) noeud.textContent = texte;
+        return noeud;
+      }
+
+      /** Setups proposés, filtrés par famille, rangés par nombre de gardiens. */
+      function menuDuelIds() {
+        const ordre = symmetricSetupIds();
+        return ordre
+          .filter(id => MENU_DUEL.posture === "Tous" || SYMMETRIC_DUEL_SETUPS[id].posture === MENU_DUEL.posture)
+          .sort((a, b) => gardiensDuel(a) - gardiensDuel(b) || ordre.indexOf(a) - ordre.indexOf(b));
+      }
+
+      /** Setup à présélectionner à l'ouverture : celui d'avant un changement
+       *  de taille, sinon le dernier choisi, sinon celui demandé. */
+      function menuDuelReprise(selectedId) {
+        const disponible = id => !!id && symmetricSetupDisponible(SYMMETRIC_DUEL_SETUPS[id]);
+        const id = [MENU_DUEL.reprise, MENU_DUEL.dernier].find(disponible);
+        MENU_DUEL.reprise = null;
+        return id || selectedId;
+      }
+
+      function vignetteDuel(id, detaillee) {
+        const setup = symmetricSetup(id);
+        const bouton = elementMenu("button", "v64-setup-card duel-vignette");
+        bouton.type = "button";
+        bouton.dataset.value = id;
+        bouton.setAttribute("role", "option");
+        const photo = elementMenu("img");
+        photo.alt = "";
+        photo.loading = "lazy";
+        photo.decoding = "async";
+        photo.addEventListener("error", () => bouton.classList.add("sans-photo"), { once: true });
+        photo.src = photoDuel(id);
+        bouton.append(photo, elementMenu("span", "duel-vignette-nom", setup.name));
+        if (detaillee) {
+          const ligne = elementMenu("span", "duel-vignette-ligne");
+          const tag = elementMenu("span", "duel-tag", setup.posture);
+          tag.dataset.posture = setup.posture;
+          ligne.append(tag, elementMenu("small", null, pluriel(setup.islands.length, "île")));
+          bouton.append(ligne);
+        }
+        bouton.addEventListener("click", () => choisirSetupDuel(id));
+        bouton.addEventListener("dblclick", () => {
+          choisirSetupDuel(id);
+          if (!MENU_DUEL.attente) confirmSymmetricSetup();
+        });
+        return bouton;
+      }
+
+      function construireListesDuel() {
+        const bande = document.getElementById("duelMenuBande");
+        const grille = document.getElementById("duelMenuGrille");
+        if (!bande || !grille) return;
+        const groupes = new Map();
+        menuDuelIds().forEach(id => {
+          const n = gardiensDuel(id);
+          if (!groupes.has(n)) groupes.set(n, []);
+          groupes.get(n).push(id);
+        });
+        [[bande, false], [grille, true]].forEach(([conteneur, detaillee]) => {
+          conteneur.replaceChildren();
+          groupes.forEach((ids, n) => {
+            const groupe = elementMenu("div", "duel-groupe");
+            const liste = elementMenu("div", "duel-groupe-liste");
+            ids.forEach(id => liste.append(vignetteDuel(id, detaillee)));
+            groupe.append(elementMenu("div", "duel-groupe-titre", pluriel(n, "gardien")), liste);
+            conteneur.append(groupe);
+          });
+        });
+        majSelectionDuel();
+      }
+
+      function choisirSetupDuel(id) {
+        if (!els.symmetricSetupSelect || MENU_DUEL.attente) return;
+        els.symmetricSetupSelect.value = id;
+        renderSymmetricSetupPreview(id);
+      }
+
+      /** Appelée par renderSymmetricSetupPreview à chaque changement de setup. */
+      function majMenuDuel(setup) {
+        if (!setup) return;
+        if (MENU_DUEL.menu === "duel") MENU_DUEL.dernier = setup.id;
+        const tag = document.getElementById("symmetricSetupStyle");
+        if (tag) tag.dataset.posture = setup.posture;
+        const photo = document.getElementById("duelGrandePhoto");
+        const cadre = photo?.closest(".duel-grande");
+        if (photo && photo.dataset.setup !== `${setup.id}@${GRID}`) {
+          photo.dataset.setup = `${setup.id}@${GRID}`;
+          cadre?.classList.remove("sans-photo");
+          photo.onerror = () => cadre?.classList.add("sans-photo");
+          photo.src = photoDuel(setup.id);
+        }
+        // Un setup tiré au sort hors du filtre courant : on rouvre tout.
+        if (MENU_DUEL.posture !== "Tous" && setup.posture !== MENU_DUEL.posture
+          && document.getElementById("duelMenuBande")?.childElementCount) {
+          MENU_DUEL.posture = "Tous";
+          majFiltresDuel();
+          construireListesDuel();
+          return;
+        }
+        majSelectionDuel();
+      }
+
+      function majSelectionDuel() {
+        const id = els.symmetricSetupSelect?.value;
+        els.symmetricSetupOverlay?.querySelectorAll(".duel-vignette").forEach(vignette => {
+          const choisie = vignette.dataset.value === id;
+          vignette.setAttribute("aria-pressed", String(choisie));
+          vignette.setAttribute("aria-selected", String(choisie));
+        });
+        // La vignette choisie reste visible dans la bande, sans faire défiler
+        // l'écran entier (scrollIntoView déplacerait aussi la carte).
+        const bande = document.getElementById("duelMenuBande");
+        const choisie = bande?.querySelector('.duel-vignette[aria-pressed="true"]');
+        if (bande && choisie && MENU_DUEL.vue === "apercu") {
+          const gauche = choisie.offsetLeft - bande.offsetLeft;
+          if (gauche < bande.scrollLeft || gauche + choisie.offsetWidth > bande.scrollLeft + bande.clientWidth) {
+            bande.scrollLeft = Math.max(0, gauche - (bande.clientWidth - choisie.offsetWidth) / 2);
+          }
+        }
+        majResumeMenu();
+      }
+
+      function majFiltresDuel() {
+        document.querySelectorAll("#duelPostures [data-posture]").forEach(bouton =>
+          bouton.setAttribute("aria-pressed", String(bouton.dataset.posture === MENU_DUEL.posture)));
+        document.querySelectorAll("#duelTailles [data-taille]").forEach(bouton => {
+          bouton.setAttribute("aria-pressed", String(Number(bouton.dataset.taille) === GRID));
+        });
+        const carte = menuDuelCarte();
+        carte?.querySelectorAll(".duel-vue [data-afficher]").forEach(bouton =>
+          bouton.setAttribute("aria-pressed", String(bouton.dataset.afficher === MENU_DUEL.vue)));
+      }
+
+      /** Changer de taille relance la partie : la grille est fixée avant
+       *  toute la construction (voir startLocalGame). Hors ligne seulement. */
+      function changerTailleDuel(taille) {
+        const select = document.getElementById("boardSizeSelect");
+        if (!select || state?.onlineMode || MENU_DUEL.attente || normalizeBoardSize(taille) === GRID) return;
+        MENU_DUEL.reprise = els.symmetricSetupSelect?.value || null;
+        select.value = String(normalizeBoardSize(taille));
+        // Le menu d'accueil ne laisse pas toujours « symmetric » dans ce
+        // sélecteur : sans lui, la partie relancée partirait en classique.
+        const plateau = document.getElementById("startingBoardSelect");
+        if (plateau) plateau.value = "symmetric";
+        startLocalGame();
+      }
+
+      function pasDuel(sens) {
+        const ids = menuDuelIds();
+        if (!ids.length) return;
+        const i = ids.indexOf(els.symmetricSetupSelect?.value);
+        choisirSetupDuel(ids[(Math.max(0, i) + sens + ids.length) % ids.length]);
+      }
+
+      /* ---- Personnalisé : boutons construits depuis les listes cachées ---- */
+
+      function lierListeMenu(select) {
+        if (!select || select.dataset.lie) return;
+        select.dataset.lie = "1";
+        select.classList.add("duel-select-cache");
+        select.tabIndex = -1;
+        const type = "seg" in select.dataset ? "seg" : "compteur" in select.dataset ? "compteur" : "pas";
+        const boite = elementMenu("div", `perso-${type}`);
+        if (type === "compteur") {
+          const moins = elementMenu("button", null, "−");
+          moins.dataset.sens = "-1";
+          moins.setAttribute("aria-label", "Retirer une carte");
+          const plus = elementMenu("button", null, "+");
+          plus.dataset.sens = "1";
+          plus.setAttribute("aria-label", "Ajouter une carte");
+          boite.append(moins, elementMenu("b"), plus);
+        } else {
+          [...select.options].forEach(option => {
+            const bouton = elementMenu("button", null, option.dataset.court || option.textContent);
+            bouton.dataset.valeur = option.value;
+            boite.append(bouton);
+          });
+        }
+        boite.querySelectorAll("button").forEach(bouton => { bouton.type = "button"; });
+        boite.addEventListener("click", event => {
+          const bouton = event.target.closest("button");
+          if (!bouton || select.disabled) return;
+          if (bouton.dataset.sens) {
+            const index = select.selectedIndex + Number(bouton.dataset.sens);
+            if (index < 0 || index >= select.options.length || select.options[index].disabled) return;
+            select.selectedIndex = index;
+          } else {
+            const option = [...select.options].find(o => o.value === bouton.dataset.valeur);
+            if (!option || option.disabled) return;
+            select.value = option.value;
+          }
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        select.addEventListener("change", majMenuPerso);
+        select.after(boite);
+      }
+
+      function majListeMenu(select) {
+        const boite = select?.nextElementSibling;
+        if (!boite || !select.dataset.lie) return;
+        if (boite.classList.contains("perso-compteur")) {
+          const valeur = boite.querySelector("b");
+          if (valeur) valeur.textContent = select.value;
+          const [moins, plus] = boite.querySelectorAll("button");
+          moins.disabled = select.disabled || select.selectedIndex <= 0;
+          plus.disabled = select.disabled || select.selectedIndex >= select.options.length - 1;
+          return;
+        }
+        boite.querySelectorAll("button").forEach(bouton => {
+          const option = [...select.options].find(o => o.value === bouton.dataset.valeur);
+          bouton.setAttribute("aria-pressed", String(bouton.dataset.valeur === select.value));
+          bouton.disabled = select.disabled || !!option?.disabled;
+        });
+      }
+
+      function customTerrainChoisi() {
+        const id = MENU_DUEL.terrainActif ? MENU_DUEL.terrain : null;
+        return id && state?.players?.length === 2 && symmetricSetupDisponible(SYMMETRIC_DUEL_SETUPS[id]) ? id : null;
+      }
+
+      function majMenuPerso() {
+        const carte = menuDuelCarte();
+        if (!carte || MENU_DUEL.menu !== "perso") return;
+        const terrain = customTerrainChoisi();
+
+        // Gardiens : le terrain en apporte déjà, le plafond par joueur tient compte d'eux.
+        const dejaPlaces = terrain ? gardiensDuel(terrain) : 0;
+        const plafond = Math.max(0, MAX_GUARDIANS_PER_PLAYER - dejaPlaces);
+        const gardiens = els.customGuardianCountSelect;
+        if (gardiens) {
+          [...gardiens.options].forEach(option => { option.disabled = Number(option.value) > plafond; });
+          if (Number(gardiens.value) > plafond) gardiens.value = String(plafond);
+        }
+        const indice = document.getElementById("customGuardianHint");
+        if (indice) {
+          indice.textContent = terrain
+            ? `en plus des ${dejaPlaces} du terrain · ${MAX_GUARDIANS_PER_PLAYER} au total`
+            : `${MAX_GUARDIANS_PER_PLAYER} au maximum`;
+        }
+
+        carte.querySelectorAll(".perso-reglage select, .perso-compteur select, .duel-regles-communes select")
+          .forEach(majListeMenu);
+
+        // Terrain de départ.
+        const vide = document.getElementById("customTerrainVidePhoto");
+        if (vide && !vide.dataset.taille?.startsWith(String(GRID))) {
+          vide.dataset.taille = String(GRID);
+          vide.src = `assets/duels/vide-${GRID}.webp`;
+        }
+        carte.querySelectorAll(".perso-terrain-choix").forEach(bouton => {
+          bouton.setAttribute("aria-pressed", String((bouton.dataset.terrain === "setup") === !!terrain));
+          bouton.disabled = MENU_DUEL.attente;
+        });
+        const memo = MENU_DUEL.terrain && symmetricSetupDisponible(SYMMETRIC_DUEL_SETUPS[MENU_DUEL.terrain])
+          ? symmetricSetup(MENU_DUEL.terrain) : null;
+        const photo = document.getElementById("customTerrainSetupPhoto");
+        const bouton = photo?.closest(".perso-terrain-choix");
+        bouton?.classList.toggle("sans-photo", !memo);
+        if (photo && memo && photo.dataset.setup !== `${memo.id}@${GRID}`) {
+          photo.dataset.setup = `${memo.id}@${GRID}`;
+          photo.src = photoDuel(memo.id);
+        }
+        const nom = document.getElementById("customTerrainSetupName");
+        const texte = document.getElementById("customTerrainSetupText");
+        if (nom) nom.textContent = memo ? `Setup : ${memo.name}` : "Setup de duel";
+        if (texte) {
+          texte.textContent = memo
+            ? `${memo.posture} · ${pluriel(memo.islands.length, "île")} · ${pluriel(gardiensDuel(memo.id), "gardien")} par joueur, déjà en place.`
+            : "Partir d’un setup du duel symétrique, puis y ajouter vos îles et vos gardiens.";
+        }
+        const lien = bouton?.querySelector("em");
+        if (lien) lien.textContent = memo ? "Changer de setup ›" : "Choisir un setup ›";
+
+        const miroir = document.getElementById("customMirrorSelect")?.value === "miroir" && state?.players?.length === 2;
+        if (els.setupOverlayIntro) {
+          els.setupOverlayIntro.textContent = miroir
+            ? "Créer son duel : vous posez vos îles puis vos gardiens, chaque pose se reflète aussitôt dans le camp adverse."
+            : "Composez la formation de départ et les règles de la partie.";
+        }
+        majResumeMenu();
+      }
+
+      function majResumeMenu() {
+        const resume = document.getElementById("duelMenuResume");
+        const bouton = els.confirmSymmetricSetupBtn;
+        if (!resume || !bouton) return;
+        const menu = MENU_DUEL.menu;
+        resume.replaceChildren();
+        if (menu === "perso") {
+          const terrain = customTerrainChoisi();
+          const iles = Number(els.customIslandCountSelect?.value) || 0;
+          const gardiens = Number(els.customGuardianCountSelect?.value) || 0;
+          const libre = els.customGuardianPlacementSelect?.value === "libre";
+          const paquet = compositionPaquet(lireReglesPersonnalisees()).length;
+          if (terrain) resume.append(elementMenu("b", null, symmetricSetup(terrain).name), " + ");
+          resume.append(
+            elementMenu("b", null, `${pluriel(iles, "île")} · ${pluriel(gardiens, "gardien")}`),
+            ` à poser par joueur${gardiens ? (libre ? ", placement libre" : ", sur ses îles") : ""} · paquet de ${paquet}`
+          );
+          if (!MENU_DUEL.attente) bouton.textContent = iles + gardiens > 0 ? "Commencer la mise en place" : "Lancer la partie";
+        } else if (els.symmetricSetupSelect?.value && SYMMETRIC_DUEL_SETUPS[els.symmetricSetupSelect.value]) {
+          resume.append("Sélection : ", elementMenu("b", null, symmetricSetup(els.symmetricSetupSelect.value).name));
+          if (!MENU_DUEL.attente) bouton.textContent = menu === "terrain" ? "Choisir ce terrain" : "Lancer ce duel";
+        }
+        if (MENU_DUEL.attente) bouton.textContent = "En attente du créateur";
+      }
+
+      /** Le setup choisi devient le terrain du Personnalisé. Rend true si
+       *  l'écran était bien le choix du terrain (confirmSymmetricSetup). */
+      function menuDuelChoixTerrain() {
+        if (MENU_DUEL.menu !== "terrain") return false;
+        MENU_DUEL.terrain = els.symmetricSetupSelect?.value || MENU_DUEL.terrain;
+        MENU_DUEL.terrainActif = true;
+        afficherMenuDuel("perso");
+        return true;
+      }
+
+      function reglagesClassiquesPerso() {
+        if (MENU_DUEL.attente) return;
+        els.symmetricSetupOverlay?.querySelectorAll("select").forEach(select => {
+          if (select === els.symmetricSetupSelect) return;
+          const defaut = [...select.options].find(option => option.defaultSelected) || select.options[0];
+          if (defaut) select.value = defaut.value;
+        });
+        els.symmetricSetupOverlay?.querySelectorAll('input[type="checkbox"]').forEach(caseACocher => {
+          caseACocher.checked = caseACocher.defaultChecked;
+        });
+        MENU_DUEL.terrainActif = false;
+        majResumePaquetPersonnalise();
+        majMenuPerso();
+      }
+
+      function brancherMenuDuel() {
+        if (MENU_DUEL.branche || !els.symmetricSetupOverlay) return;
+        MENU_DUEL.branche = true;
+        const carte = menuDuelCarte();
+        carte?.querySelectorAll("select[data-pas], select[data-seg], select[data-compteur]").forEach(lierListeMenu);
+        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, els.symmetricAllowDissolveCheckbox]
+          .forEach(caseACocher => caseACocher?.addEventListener("change", majMenuPerso));
+
+        document.getElementById("duelPostures")?.addEventListener("click", event => {
+          const bouton = event.target.closest("[data-posture]");
+          if (!bouton) return;
+          MENU_DUEL.posture = bouton.dataset.posture;
+          majFiltresDuel();
+          construireListesDuel();
+          const ids = menuDuelIds();
+          if (ids.length && !ids.includes(els.symmetricSetupSelect?.value)) choisirSetupDuel(ids[0]);
+        });
+        document.getElementById("duelTailles")?.addEventListener("click", event => {
+          const bouton = event.target.closest("[data-taille]");
+          if (bouton) changerTailleDuel(bouton.dataset.taille);
+        });
+        carte?.querySelector(".duel-vue")?.addEventListener("click", event => {
+          const bouton = event.target.closest("[data-afficher]");
+          if (!bouton) return;
+          MENU_DUEL.vue = bouton.dataset.afficher === "grille" ? "grille" : "apercu";
+          try { localStorage.setItem("ilyos.menuDuel.vue", MENU_DUEL.vue); } catch (_) { }
+          afficherMenuDuel(MENU_DUEL.menu);
+        });
+        carte?.querySelectorAll(".duel-fleche").forEach(fleche =>
+          fleche.addEventListener("click", () => pasDuel(Number(fleche.dataset.pas))));
+        document.getElementById("duelMenuRetour")?.addEventListener("click", () => afficherMenuDuel("perso"));
+        document.getElementById("customDefaultsBtn")?.addEventListener("click", reglagesClassiquesPerso);
+        carte?.querySelectorAll(".perso-terrain-choix").forEach(bouton => bouton.addEventListener("click", () => {
+          if (MENU_DUEL.attente) return;
+          if (bouton.dataset.terrain === "vide") {
+            MENU_DUEL.terrainActif = false;
+            majMenuPerso();
+            return;
+          }
+          // Premier choix, ou setup déjà actif : ouvrir la liste des setups.
+          if (!MENU_DUEL.terrain || customTerrainChoisi()) {
+            populateSymmetricSetupOverlay(MENU_DUEL.terrain || MENU_DUEL.dernier || "open");
+            afficherMenuDuel("terrain");
+          } else {
+            MENU_DUEL.terrainActif = true;
+            majMenuPerso();
+          }
+        }));
+      }
+
+      /** Montre l'un des trois menus de l'écran de départ. */
+      function afficherMenuDuel(menu, { waiting } = {}) {
+        const carte = menuDuelCarte();
+        if (!carte) return;
+        brancherMenuDuel();
+        if (waiting !== undefined) MENU_DUEL.attente = !!waiting;
+        MENU_DUEL.menu = menu;
+        const deux = state?.players?.length === 2;
+        carte.dataset.menu = menu;
+        carte.dataset.vue = MENU_DUEL.vue;
+        carte.dataset.terrainPossible = String(deux);
+        carte.dataset.tailleFixe = String(!!state?.onlineMode);
+        els.symmetricSetupOverlay.setAttribute("aria-label", menu === "perso"
+          ? "Réglages du Personnalisé"
+          : "Choix du setup Duel symétrique");
+
+        const titres = {
+          duel: ["DUEL SYMÉTRIQUE", "Choisissez votre duel",
+            "Les deux camps partent des mêmes îles, et vos deux villages ont le même entourage."],
+          perso: ["PERSONNALISÉ", "Composez la partie",
+            "Composez la formation de départ et les règles de la partie."],
+          terrain: ["PERSONNALISÉ · TERRAIN", "Choisissez le terrain de départ",
+            "Le setup est posé tel quel ; vos îles et vos gardiens s’y ajoutent."]
+        }[menu];
+        if (els.setupOverlayKicker) els.setupOverlayKicker.textContent = titres[0];
+        if (els.setupOverlayTitle) els.setupOverlayTitle.textContent = titres[1];
+        if (els.setupOverlayIntro) els.setupOverlayIntro.textContent = titres[2];
+
+        // Règles communes (dissolution, exemplaires) : sous la description
+        // du duel, ou dans le bloc Règles du Personnalisé.
+        const communes = document.getElementById("duelReglesCommunes");
+        const place = document.getElementById(menu === "perso" ? "duelOptionsPerso" : "duelOptionsDuel");
+        if (communes && place && communes.parentElement !== place) place.append(communes);
+
+        // Un seul bouton de lancement : à côté de la grande photo en aperçu,
+        // en bas de l'écran sinon.
+        const bouton = els.confirmSymmetricSetupBtn;
+        const cible = menu !== "perso" && MENU_DUEL.vue === "apercu"
+          ? document.getElementById("duelBoutonApercu")
+          : carte.querySelector(".symmetric-board-actions");
+        if (bouton && cible && bouton.parentElement !== cible) cible.append(bouton);
+        if (bouton) bouton.disabled = MENU_DUEL.attente;
+        document.getElementById("duelTailles")?.querySelectorAll("button")
+          .forEach(taille => { taille.disabled = MENU_DUEL.attente; });
+
+        majFiltresDuel();
+        communes?.querySelectorAll("select").forEach(majListeMenu);
+        if (menu === "perso") {
+          majMenuPerso();
+        } else {
+          construireListesDuel();
+          if (els.symmetricSetupSelect?.value) majMenuDuel(symmetricSetup(els.symmetricSetupSelect.value));
+        }
+      }
+
  function replay() {
         els.victoryModal.classList.add("hidden");
         els.victoryModal.classList.remove("victory-visible");
@@ -53615,13 +54078,15 @@
          `expert` choisit la logique Expert ou historique, `poids` les réglages
          de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
       function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
-                                            expert = [true, true] } = {}) {
+                                            expert = [true, true], libre = false } = {}) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
           return withSimulatedState(depart, () => {
             state.rules = { allowDissolve: false, islandLimitPerPlayer: 0,
-              shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT };
+              shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT,
+              // Placement libre des gardiens (option du Personnalisé).
+              ...(libre ? { placementGardiensLibre: true } : {}) };
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));
