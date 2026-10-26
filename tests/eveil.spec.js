@@ -359,7 +359,12 @@ test("L'Eveil se joue en entier du bouton Tutoriel", async ({ page }) => {
     const g = st.chars.find(c => c.p === 0);
     await page.locator('#ov2Move').click({ force: true });
     await clickCell(page, g.r, g.c);
+    /* Seulement les voisins qui existent : un gardien sur un bord n'a pas de
+       case de l'autre cote, et attendre une case absente bloquait le test
+       jusqu'a son delai. L'etape suivante ('reserve') verifie que le
+       deplacement a bien eu lieu. */
     for (const [r, c] of [[g.r - 1, g.c], [g.r, g.c + 1], [g.r + 1, g.c], [g.r, g.c - 1]]) {
+      if (await page.locator(`.cell[data-r="${r}"][data-c="${c}"]`).count() === 0) continue;
       await clickCell(page, r, c);
       await page.waitForTimeout(400);
       if (await page.evaluate(() => window.ILYOS_TUTORIAL._debug()?.id !== 'main')) break;
