@@ -2650,7 +2650,7 @@
               [[4, 0], [3, 1], [4, 2]],
               [[6, 10], [7, 9], [6, 8]]
             ],
-            characters: [[1, 1], [9, 9], [2, 3], [8, 7]]
+            characters: [[1, 1], [9, 9], [3, 3], [7, 7]]
           },
 
           orbit: {
@@ -2715,7 +2715,7 @@
               [[7, 0], [7, 1], [6, 1]],
               [[3, 10], [3, 9], [4, 9]]
             ],
-            characters: [[3, 4], [7, 6], [7, 1], [3, 9]]
+            characters: [[3, 3], [7, 7], [7, 0], [3, 10]]
           },
 
           forteresse: {
@@ -2803,19 +2803,19 @@
           serpents: {
             name: "Serpents",
             grille: 13,
-            description: "Équilibré, 13×13. Deux Serpents par village glissent en diagonale vers le centre ; une Passerelle sert de poste à la sentinelle chez l’adversaire.",
+            description: "Équilibré, 13×13. Deux Serpents par village glissent en diagonale vers le centre ; un V sert de poste à la sentinelle chez l’adversaire. Les gardiens adverses démarrent à quatre pas au moins les uns des autres.",
             style: "16 îles • Équilibré • 13×13",
             baseIslands: [
               [[1, 2], [1, 3], [2, 1], [2, 2]],
               [[11, 10], [11, 9], [10, 11], [10, 10]],
               [[3, 4], [3, 5], [4, 3], [4, 4]],
               [[9, 8], [9, 7], [8, 9], [8, 8]],
-              [[9, 0], [9, 1], [9, 2]],
-              [[3, 12], [3, 11], [3, 10]],
+              [[8, 0], [9, 1], [8, 2]],
+              [[4, 12], [3, 11], [4, 10]],
               [[0, 1]],
               [[12, 11]]
             ],
-            characters: [[2, 1], [10, 11], [9, 1], [3, 11]]
+            characters: [[1, 3], [11, 9], [8, 2], [4, 10]]
           },
 
           diagonales: {
@@ -2834,6 +2834,22 @@
               [[7, 11], [8, 10]]
             ],
             characters: [[1, 2], [11, 10], [8, 1], [4, 11]]
+          },
+
+          grandLarge: {
+            name: "Grand large",
+            grille: 13,
+            description: "13×13, six gardiens par équipe : l’équipe est complète dès le départ, et aucun renfort n’arrive tant qu’on n’a pas perdu de gardien. Peu d’îles et beaucoup de vide pour bâtir et faire pivoter.",
+            style: "12 îles • 6 gardiens • 13×13",
+            baseIslands: [
+              [[0, 1], [1, 1]],
+              [[12, 11], [11, 11]],
+              [[2, 4], [3, 3], [3, 5], [4, 4]],
+              [[10, 8], [9, 9], [9, 7], [8, 8]],
+              [[8, 1]],
+              [[4, 11]]
+            ],
+            characters: [[1, 1], [11, 11], [3, 3], [9, 9], [8, 1], [4, 11]]
           }
         };
 
