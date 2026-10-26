@@ -19985,7 +19985,8 @@
         if (["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
           .some(mode => ecran.contains(mode))) return;
         if (document.body.classList.contains("boucles-mode")) return;
-        if (!canLocalPlayerAct()) return;
+        // Partie automatique (IA contre IA) : personne ne joue à la souris.
+        if (!canLocalPlayerAct() || currentPlayer()?.isAI || ILYOS_AUTOPLAY.active) return;
         const drawer = document.getElementById("hudV2IslandDrawer");
         const bouton = document.getElementById("hudV2IslandStatus");
         if (!drawer || !bouton || bouton.disabled || bouton.classList.contains("hidden")) return;
