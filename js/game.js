@@ -20237,6 +20237,19 @@
         return true;
       }
 
+      // Abandonne la forme en cours de placement, sans rien consommer.
+      // Pendant la mise en place personnalisée, cela ne rend pas la main au
+      // tour de jeu (il n'a pas commencé) : on revient au choix de forme.
+      function quitterPlacementIle() {
+        state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
+        state.selectedIslandShape = null;
+        state.placementCells = null;
+        state.placementOriginIndex = 0;
+        state.hoverAnchor = null;
+        state.reachable = new Set();
+        renderAll();
+      }
+
       function handleCancelButton() {
         if (state?.inputLocked) return;
         clearUnifiedPushOptions();
@@ -20244,16 +20257,7 @@
         if (state?.phase === "ACTION" && state?.selectedActionType) {
           cancelSelectedCard();
         } else if (state?.phase === "PLACE_ISLAND") {
-          // Pendant la mise en place personnalisée, abandonner la forme en
-          // cours ne rend pas la main au tour de jeu (il n'a pas commencé) :
-          // on revient au choix de forme du même placement.
-          state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
-          state.selectedIslandShape = null;
-          state.placementCells = null;
-          state.placementOriginIndex = 0;
-          state.hoverAnchor = null;
-          state.reachable = new Set();
-          renderAll();
+          quitterPlacementIle();
         } else if (state?.phase === "DROP_TREASURE") {
           state.treasureDropFromId = null;
           state.treasureDropArtifactId = null;
@@ -53588,6 +53592,18 @@
       // d'entree). Ecouteurs attaches une seule fois au boot, comme le reste
       // de ce fichier — pas de nouvelle boucle rAF/polling/MutationObserver.
       document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
+        // Pendant la pose, le bouton ÎLE rouvre le choix des formes : la forme
+        // en cours est lâchée (comme « Changer d'île ») et le tiroir s'ouvre.
+        if (state.phase === "PLACE_ISLAND" && !state.inputLocked && canLocalPlayerAct()) {
+          clearUnifiedPushOptions();
+          state.pendingDirectMoveTarget = null;
+          quitterPlacementIle();
+          const drawer = document.getElementById("hudV2IslandDrawer");
+          drawer?.classList.remove("hidden");
+          drawer?.setAttribute("aria-hidden", "false");
+          document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "true");
+          return;
+        }
         toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
       });
       // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector().
