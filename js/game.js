@@ -20178,35 +20178,6 @@
         return scored;
       }
 
-      /* Sur PC, l'île étant obligatoire, le choix des formes s'ouvre de
-         lui-même au début du tour d'un joueur local (demande de Taekun,
-         2026-10-26). Au toucher, le tiroir masquerait le plateau : on s'abstient.
-         Les modes guidés gardent leur propre déroulé. Ouverture différée :
-         lancé par un clic (menu, « Fin du tour »), le tour commence pendant ce
-         clic, que l'écouteur « clic extérieur » prendrait pour une fermeture. */
-      function ouvrirChoixIlesDebutTour() {
-        setTimeout(ouvrirChoixIlesMaintenant, 0);
-      }
-
-      function ouvrirChoixIlesMaintenant() {
-        if (!state || state.winner !== null || state.islandPlacedThisTurn || (!state.draft && ilesPayantes())) return;
-        if (state.phase !== "ACTION_SELECT" || state.turnTransitioning) return;
-        if (state.tutorial || state.puzzle || state.quick) return;
-        if (window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches) return;
-        const ecran = els.gameScreen.classList;
-        if (["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
-          .some(mode => ecran.contains(mode))) return;
-        if (document.body.classList.contains("boucles-mode")) return;
-        // Partie automatique (IA contre IA) : personne ne joue à la souris.
-        if (!canLocalPlayerAct() || currentPlayer()?.isAI || ILYOS_AUTOPLAY.active) return;
-        const drawer = document.getElementById("hudV2IslandDrawer");
-        const bouton = document.getElementById("hudV2IslandStatus");
-        if (!drawer || !bouton || bouton.disabled || bouton.classList.contains("hidden")) return;
-        drawer.classList.remove("hidden");
-        drawer.setAttribute("aria-hidden", "false");
-        bouton.setAttribute("aria-expanded", "true");
-      }
-
       function beginTurn() {
         const p = currentPlayer();
         // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
@@ -20310,7 +20281,6 @@
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
-          ouvrirChoixIlesDebutTour();
           if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
