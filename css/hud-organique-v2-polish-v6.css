@@ -126,9 +126,10 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction-line{
 }
 
 /* DOCK — lisible, rapproché du bord : Taekun le trouvait trop haut sur PC
-   (2026-10-26), tout le bas de l'écran est descendu de 14 px. */
+   (2026-10-26) : bas de l'écran descendu de 14 px, puis les actions de 10 px
+   de plus ; leur filet doré remonte d'autant (hud-organique-v2-depth-v10.css). */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{
-  bottom:12px!important;
+  bottom:2px!important;
   gap:22px!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action{

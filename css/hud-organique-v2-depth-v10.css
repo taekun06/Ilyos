@@ -116,13 +116,15 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MagicCou
   text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(0,0,0,.75)!important;
 }
 
-/* Ligne de base toujours sous les quantités. */
+/* Ligne de base toujours sous les quantités. Le dock touche presque le bord
+   (2026-10-26) : la ligne se loge dans la marge basse des socles, toujours
+   sous les quantités, au lieu de dépasser sous l'écran. */
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before{
-  bottom:-5px!important;
+  bottom:5px!important;
   opacity:.86!important;
 }
 body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after{
-  bottom:-9px!important;
+  bottom:1px!important;
 }
 
 /* Le liseré (SVG du premier fond) se cale sur le bord extérieur. Le raccourci

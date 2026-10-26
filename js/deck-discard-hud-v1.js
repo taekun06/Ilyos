@@ -224,7 +224,9 @@
          de l'animation de pioche, celui qu'on cherche à raccourcir.
          La ligne de base reste commune aux deux piles : même si l'une flanque le
          dock et l'autre reste au bord, elles ne se décalent jamais en hauteur. */
-      const base = Math.max(86, Math.round(dock.bottom));
+      // Le dock descend presque au ras de l'écran (2026-10-26) : la pile garde
+      // une petite marge, sinon le mot PIOCHE / DÉFAUSSE sortait par le bas.
+      const base = Math.max(86, Math.min(Math.round(dock.bottom), window.innerHeight - 8));
       const deckLeft = dock.left - flank - pileWidth;
       const discardLeft = dock.right + flank;
 
