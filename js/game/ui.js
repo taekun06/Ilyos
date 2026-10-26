@@ -4456,7 +4456,9 @@
         const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
         // Qui ne peut plus poser : le joueur qui prenait la main (finParPoseImpossible).
         const bloque = currentPlayer();
-        const cause = plateauSansPlace() ? "Plus aucune île ne peut être posée"
+        const cause = state.dernierTour !== null && state.dernierTour !== undefined
+          ? "Dernière réplique jouée"
+          : plateauSansPlace() ? "Plus aucune île ne peut être posée"
           : `${bloque ? bloque.name : "Un joueur"} ne peut plus poser d'île`;
         // Départage (vainqueurAuxCouronnes) : couronnes à égalité, mais le
         // vainqueur portait une couronne plus près de son village.

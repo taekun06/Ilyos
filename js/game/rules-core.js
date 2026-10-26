@@ -262,6 +262,7 @@
           ilePoseeCeTour: !!source.islandPlacedThisTurn,
           couronneCentreePriseCeTour: !!source.centerCrownTakenThisTurn,
           couronnesEnAttente: [...(source.couronnesEnAttente || [])].sort(),
+          dernierTour: source.dernierTour ?? null,
           regles: {
             allowDissolve: !!source.rules?.allowDissolve,
             islandLimitPerPlayer: source.rules?.islandLimitPerPlayer || 0,
@@ -345,6 +346,7 @@
           artifact: source.artifact,
           secondArtifact: source.secondArtifact,
           couronnesEnAttente: source.couronnesEnAttente || [],
+          dernierTour: source.dernierTour ?? null,
           phase: source.phase,
           islandPlacedThisTurn: !!source.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!source.centerCrownTakenThisTurn,
@@ -796,6 +798,33 @@
         if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
           .some(mode => ecran.contains(mode))) return false;
         return islandLimitReachedForPlayer(playerId) || poseImpossiblePour(playerId);
+      }
+
+      /* ------------------------------------------------------------------
+         DERNIÈRE RÉPLIQUE — option « Fin de partie » du mode personnalisé
+
+         Avec la règle classique, celui qui pose la dernière île joue ses
+         dernières cartes sans que l'adversaire puisse répondre : à scores
+         égaux, il gagne alors la plupart des départages (banc du 26/10 :
+         37 sur 52). Deux variantes, écrites dans state.rules.finDePartie :
+           « replique »   — le joueur qui ne peut plus poser joue encore un tour,
+                            sans île, puis on compte ;
+           « toursEgaux » — ce tour n'est accordé que s'il égalise le nombre de
+                            tours joués (le premier joueur a joué un tour de plus).
+         state.dernierTour retient qui joue ce tour : au tour suivant, la partie
+         s'arrête. Point d'entrée unique du jeu, du self-play et du planner.
+         ------------------------------------------------------------------ */
+      function finDePartieAuDebutDuTour(entrantId) {
+        if (!state) return false;
+        if (state.dernierTour !== null && state.dernierTour !== undefined) return true;
+        if (!finParPoseImpossible(entrantId)) return false;
+        const regle = state.rules?.finDePartie;
+        const toursJoues = Math.max(0, (Number(state.turn) || 1) - 1);
+        const repliqueDue = regle === "replique"
+          || (regle === "toursEgaux" && toursJoues % Math.max(1, state.players.length) !== 0);
+        if (!repliqueDue) return true;
+        state.dernierTour = entrantId;
+        return false;
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine.

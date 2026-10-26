@@ -245,6 +245,7 @@
         customDeckSummary: document.getElementById("customDeckSummary"),
         customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
         customScorerLeavesCheckbox: document.getElementById("customScorerLeavesCheckbox"),
+        customEndRuleSelect: document.getElementById("customEndRuleSelect"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),
@@ -17243,7 +17244,8 @@
             majIntro();
           }
           [els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox,
+            els.customEndRuleSelect]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -17306,6 +17308,8 @@
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
+        const fin = els.customEndRuleSelect?.value;
+        if (fin === "replique" || fin === "toursEgaux") regles.finDePartie = fin;
         return regles;
       }
 
@@ -19979,8 +19983,10 @@
         /* Le joueur qui prend la main ne peut plus poser d'île : la partie
            s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
            Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
-           tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (finParPoseImpossible(p.id)) {
+           tombe au même endroit qu'une victoire aux trois couronnes. Avec
+           l'option « Fin de partie », il joue d'abord une dernière réplique
+           (finDePartieAuDebutDuTour). */
+        if (finDePartieAuDebutDuTour(p.id)) {
           state.winner = vainqueurAuxCouronnes();
           if (state.winner === null) state.winner = MATCH_NUL;
           terminerPartiePlateauPlein();
@@ -19988,6 +19994,7 @@
           return;
         }
 
+        if (state.dernierTour === p.id) showToast(`Le ciel est fermé : dernière réplique de ${p.name}.`);
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
@@ -20090,6 +20097,7 @@
           artifact: state.artifact,
           secondArtifact: state.secondArtifact,
           couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          dernierTour: state.dernierTour ?? null,
           phase: state.phase,
           islandPlacedThisTurn: state.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!state.centerCrownTakenThisTurn,
@@ -20182,6 +20190,7 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        state.dernierTour = snap.dernierTour ?? null;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;
@@ -26040,7 +26049,9 @@
         const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
         // Qui ne peut plus poser : le joueur qui prenait la main (finParPoseImpossible).
         const bloque = currentPlayer();
-        const cause = plateauSansPlace() ? "Plus aucune île ne peut être posée"
+        const cause = state.dernierTour !== null && state.dernierTour !== undefined
+          ? "Dernière réplique jouée"
+          : plateauSansPlace() ? "Plus aucune île ne peut être posée"
           : `${bloque ? bloque.name : "Un joueur"} ne peut plus poser d'île`;
         // Départage (vainqueurAuxCouronnes) : couronnes à égalité, mais le
         // vainqueur portait une couronne plus près de son village.
@@ -26796,6 +26807,7 @@
           ilePoseeCeTour: !!source.islandPlacedThisTurn,
           couronneCentreePriseCeTour: !!source.centerCrownTakenThisTurn,
           couronnesEnAttente: [...(source.couronnesEnAttente || [])].sort(),
+          dernierTour: source.dernierTour ?? null,
           regles: {
             allowDissolve: !!source.rules?.allowDissolve,
             islandLimitPerPlayer: source.rules?.islandLimitPerPlayer || 0,
@@ -26879,6 +26891,7 @@
           artifact: source.artifact,
           secondArtifact: source.secondArtifact,
           couronnesEnAttente: source.couronnesEnAttente || [],
+          dernierTour: source.dernierTour ?? null,
           phase: source.phase,
           islandPlacedThisTurn: !!source.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!source.centerCrownTakenThisTurn,
@@ -27330,6 +27343,33 @@
         if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"]
           .some(mode => ecran.contains(mode))) return false;
         return islandLimitReachedForPlayer(playerId) || poseImpossiblePour(playerId);
+      }
+
+      /* ------------------------------------------------------------------
+         DERNIÈRE RÉPLIQUE — option « Fin de partie » du mode personnalisé
+
+         Avec la règle classique, celui qui pose la dernière île joue ses
+         dernières cartes sans que l'adversaire puisse répondre : à scores
+         égaux, il gagne alors la plupart des départages (banc du 26/10 :
+         37 sur 52). Deux variantes, écrites dans state.rules.finDePartie :
+           « replique »   — le joueur qui ne peut plus poser joue encore un tour,
+                            sans île, puis on compte ;
+           « toursEgaux » — ce tour n'est accordé que s'il égalise le nombre de
+                            tours joués (le premier joueur a joué un tour de plus).
+         state.dernierTour retient qui joue ce tour : au tour suivant, la partie
+         s'arrête. Point d'entrée unique du jeu, du self-play et du planner.
+         ------------------------------------------------------------------ */
+      function finDePartieAuDebutDuTour(entrantId) {
+        if (!state) return false;
+        if (state.dernierTour !== null && state.dernierTour !== undefined) return true;
+        if (!finParPoseImpossible(entrantId)) return false;
+        const regle = state.rules?.finDePartie;
+        const toursJoues = Math.max(0, (Number(state.turn) || 1) - 1);
+        const repliqueDue = regle === "replique"
+          || (regle === "toursEgaux" && toursJoues % Math.max(1, state.players.length) !== 0);
+        if (!repliqueDue) return true;
+        state.dernierTour = entrantId;
+        return false;
       }
 
       /** Vainqueur au décompte des couronnes, ou null si personne ne domine.
@@ -31092,7 +31132,7 @@
           return { vainqueur: state.winner };
         }
         // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
-        if (finParPoseImpossible(entrant.id)) {
+        if (finDePartieAuDebutDuTour(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return { vainqueur: state.winner };
@@ -52636,7 +52676,7 @@
         if (state.winner !== null && state.winner !== undefined) return false;
 
         // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
-        if (finParPoseImpossible(entrant.id)) {
+        if (finDePartieAuDebutDuTour(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return false;

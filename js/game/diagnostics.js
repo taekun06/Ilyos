@@ -1357,7 +1357,7 @@
         if (state.winner !== null && state.winner !== undefined) return false;
 
         // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
-        if (finParPoseImpossible(entrant.id)) {
+        if (finDePartieAuDebutDuTour(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
           return false;

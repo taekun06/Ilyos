@@ -245,6 +245,7 @@
         customDeckSummary: document.getElementById("customDeckSummary"),
         customPaidIslandsCheckbox: document.getElementById("customPaidIslandsCheckbox"),
         customScorerLeavesCheckbox: document.getElementById("customScorerLeavesCheckbox"),
+        customEndRuleSelect: document.getElementById("customEndRuleSelect"),
         setupOverlayKicker: document.getElementById("setupOverlayKicker"),
         setupOverlayTitle: document.getElementById("setupOverlayTitle"),
         setupOverlayIntro: document.getElementById("setupOverlayIntro"),

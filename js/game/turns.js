@@ -57,8 +57,10 @@
         /* Le joueur qui prend la main ne peut plus poser d'île : la partie
            s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
            Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
-           tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (finParPoseImpossible(p.id)) {
+           tombe au même endroit qu'une victoire aux trois couronnes. Avec
+           l'option « Fin de partie », il joue d'abord une dernière réplique
+           (finDePartieAuDebutDuTour). */
+        if (finDePartieAuDebutDuTour(p.id)) {
           state.winner = vainqueurAuxCouronnes();
           if (state.winner === null) state.winner = MATCH_NUL;
           terminerPartiePlateauPlein();
@@ -66,6 +68,7 @@
           return;
         }
 
+        if (state.dernierTour === p.id) showToast(`Le ciel est fermé : dernière réplique de ${p.name}.`);
         state.turnTransitioning = false;
         p.hand = [];
         p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
@@ -168,6 +171,7 @@
           artifact: state.artifact,
           secondArtifact: state.secondArtifact,
           couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          dernierTour: state.dernierTour ?? null,
           phase: state.phase,
           islandPlacedThisTurn: state.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!state.centerCrownTakenThisTurn,
@@ -260,6 +264,7 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        state.dernierTour = snap.dernierTour ?? null;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;
