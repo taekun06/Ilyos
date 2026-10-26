@@ -322,6 +322,19 @@
         return true;
       }
 
+      // Abandonne la forme en cours de placement, sans rien consommer.
+      // Pendant la mise en place personnalisée, cela ne rend pas la main au
+      // tour de jeu (il n'a pas commencé) : on revient au choix de forme.
+      function quitterPlacementIle() {
+        state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
+        state.selectedIslandShape = null;
+        state.placementCells = null;
+        state.placementOriginIndex = 0;
+        state.hoverAnchor = null;
+        state.reachable = new Set();
+        renderAll();
+      }
+
       function handleCancelButton() {
         if (state?.inputLocked) return;
         clearUnifiedPushOptions();
@@ -329,16 +342,7 @@
         if (state?.phase === "ACTION" && state?.selectedActionType) {
           cancelSelectedCard();
         } else if (state?.phase === "PLACE_ISLAND") {
-          // Pendant la mise en place personnalisée, abandonner la forme en
-          // cours ne rend pas la main au tour de jeu (il n'a pas commencé) :
-          // on revient au choix de forme du même placement.
-          state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
-          state.selectedIslandShape = null;
-          state.placementCells = null;
-          state.placementOriginIndex = 0;
-          state.hoverAnchor = null;
-          state.reachable = new Set();
-          renderAll();
+          quitterPlacementIle();
         } else if (state?.phase === "DROP_TREASURE") {
           state.treasureDropFromId = null;
           state.treasureDropArtifactId = null;

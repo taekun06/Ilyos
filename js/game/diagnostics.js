@@ -2309,6 +2309,18 @@
       // d'entree). Ecouteurs attaches une seule fois au boot, comme le reste
       // de ce fichier — pas de nouvelle boucle rAF/polling/MutationObserver.
       document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
+        // Pendant la pose, le bouton ÎLE rouvre le choix des formes : la forme
+        // en cours est lâchée (comme « Changer d'île ») et le tiroir s'ouvre.
+        if (state.phase === "PLACE_ISLAND" && !state.inputLocked && canLocalPlayerAct()) {
+          clearUnifiedPushOptions();
+          state.pendingDirectMoveTarget = null;
+          quitterPlacementIle();
+          const drawer = document.getElementById("hudV2IslandDrawer");
+          drawer?.classList.remove("hidden");
+          drawer?.setAttribute("aria-hidden", "false");
+          document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "true");
+          return;
+        }
         toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
       });
       // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector().
