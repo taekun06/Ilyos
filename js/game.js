@@ -14101,9 +14101,17 @@
           // renonce au bloom plutôt que de dégrader l'image (voir kaykitRenderAvecBloom).
           const multiDispo = !!(renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget);
           kaykitBloom.multiEchantillon = multiDispo;
+          // PROFONDEUR 24 BITS. Sans tampon de stencil, Three r128 réserve à la
+          // cible une profondeur de 16 bits (DEPTH_COMPONENT16). Windows la
+          // promeut souvent en 24 bits sans le dire ; Mac (Metal) la prend au
+          // mot : le casque et la tête du chevalier, le chapeau du mage, les
+          // pointes du bouclier se mêlaient en rayures (Taekun, 2026-10-23).
+          // Avec le stencil, r128 alloue DEPTH24_STENCIL8 : même place mémoire
+          // qu'un 24 bits seul, aucun calcul de plus par image.
+          const cibleOptions = Object.assign({}, options, { depthBuffer: true, stencilBuffer: true });
           kaykitBloom.cibleScene = multiDispo
-            ? new THREE.WebGLMultisampleRenderTarget(l, h, Object.assign({ depthBuffer: true }, options))
-            : new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+            ? new THREE.WebGLMultisampleRenderTarget(l, h, cibleOptions)
+            : new THREE.WebGLRenderTarget(l, h, cibleOptions);
           // 4 échantillons. Mesuré : à 4, le taux d'arêtes dures est RIGOUREUSEMENT
           // identique avec et sans bloom (écart 0,000) ; à 2 il remonte de 0,279 % à
           // 0,342 %. Le crénelage étant précisément le défaut signalé, la qualité prime
@@ -20167,19 +20175,26 @@
           renderDeckDisplay();
         }, 900);
 
-        if (state.turn === 1 && state.startingBoardMode === "symmetric") {
+        // Le bandeau du duel symétrique remplace l'annonce du premier tour,
+        // mais ne doit pas court-circuiter le lancement de l'IA : quand le
+        // tirage au sort la désignait, elle ne jouait jamais (Taekun, 2026-10-24).
+        const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
+        if (ouvertureSymetrique) {
           const setupName = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset]?.name
             || "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
-        } else if (p.isAI) {
-          showToast(state.turn === 1
-            ? `Tirage au sort : ${p.name} commence la partie.`
-            : `${p.name} prépare son tour.`);
+        }
+        if (p.isAI) {
+          if (!ouvertureSymetrique) {
+            showToast(state.turn === 1
+              ? `Tirage au sort : ${p.name} commence la partie.`
+              : `${p.name} prépare son tour.`);
+          }
           const token = ++aiRunToken;
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
-          if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
+          if (!ouvertureSymetrique) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
               : poseSansForme

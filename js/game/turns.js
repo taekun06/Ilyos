@@ -135,19 +135,26 @@
           renderDeckDisplay();
         }, 900);
 
-        if (state.turn === 1 && state.startingBoardMode === "symmetric") {
+        // Le bandeau du duel symétrique remplace l'annonce du premier tour,
+        // mais ne doit pas court-circuiter le lancement de l'IA : quand le
+        // tirage au sort la désignait, elle ne jouait jamais (Taekun, 2026-10-24).
+        const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
+        if (ouvertureSymetrique) {
           const setupName = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset]?.name
             || "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
-        } else if (p.isAI) {
-          showToast(state.turn === 1
-            ? `Tirage au sort : ${p.name} commence la partie.`
-            : `${p.name} prépare son tour.`);
+        }
+        if (p.isAI) {
+          if (!ouvertureSymetrique) {
+            showToast(state.turn === 1
+              ? `Tirage au sort : ${p.name} commence la partie.`
+              : `${p.name} prépare son tour.`);
+          }
           const token = ++aiRunToken;
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
-          if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
+          if (!ouvertureSymetrique) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
               : poseSansForme
