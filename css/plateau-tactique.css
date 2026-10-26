@@ -9,8 +9,10 @@
 #plateauTactique {
   display: none;
   border-radius: 18px;
-  background: #0e1a24;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 0 0 1px rgba(140, 190, 230, .18);
+  /* Ciel « Nuit étoilée » : le canevas le repeint, ce fond ne sert qu'avant
+     la première peinture. */
+  background: #070a1c;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 0 0 1px rgba(214, 180, 110, .22);
   cursor: pointer;
   touch-action: manipulation;
   /* Le canvas se dessine à la résolution de l'écran : aucun lissage ne doit
