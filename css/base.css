@@ -6254,223 +6254,1148 @@
        opacity: 1;
    }
 
-   .symmetric-board-card {
-       width: min(720px, 94vw);
-       max-height: min(620px, 88vh);
+   /* ===== Écran de départ : Duel symétrique et Personnalisé =====
+      Un seul écran, trois menus (data-menu sur la carte, voir
+      js/game/menu-duels.js) : "duel", "perso" et "terrain". Sélecteurs
+      préfixés par l'id de l'overlay : les règles génériques des boutons
+      (index.html, css/hover-feedback.css) ne doivent pas s'y appliquer. */
+   #symmetricSetupOverlay {
+       --duel-nuit: #141b33;
+       --duel-nuit-2: #1d2747;
+       --duel-or: #e8c46a;
+       --duel-or-2: #b8913c;
+       --duel-creme: #f6ecd2;
+       --duel-texte: #e9e3d0;
+       --duel-doux: #9aa3bd;
+       --duel-titre: 'Cinzel Decorative', Georgia, serif;
+       --duel-recit: 'Almendra', Georgia, serif;
+       --duel-info: 'Nunito Sans', Inter, system-ui, sans-serif;
+   }
+
+   /* Boutons de vue posés sur <body> (2D, vue rapprochée) : ils passaient
+      au-dessus de l'écran de départ, qui vit dans #gameScreen. */
+   body:has(#symmetricSetupOverlay.visible) #plateauTactiqueBtn,
+   body:has(#symmetricSetupOverlay.visible) #kaykitEnsembleBtn {
+       visibility: hidden;
+   }
+
+   #symmetricSetupOverlay .symmetric-board-card {
+       box-sizing: border-box;
+       width: min(1240px, calc(100vw - 32px));
+       max-height: calc(100dvh - 32px);
        overflow: auto;
-       padding: 20px;
-       border-radius: 23px;
-       background:
-           radial-gradient(circle at 12% 0, rgba(105, 211, 255, .12), transparent 36%),
-           linear-gradient(180deg, rgba(24, 43, 69, .98), rgba(8, 20, 38, .99));
-       border: 1px solid rgba(233, 205, 137, .56);
-       box-shadow:
-           0 30px 70px rgba(0, 0, 0, .48),
-           inset 0 1px 0 rgba(255, 255, 255, .10);
-   }
-
-   .symmetric-board-heading {
        display: flex;
-       justify-content: space-between;
-       align-items: flex-start;
-       gap: 18px;
-       margin-bottom: 14px;
-   }
-
-   .symmetric-board-heading small {
-       display: block;
-       margin-bottom: 4px;
-       color: #e8c77d;
-       font: 900 8px/1 Inter, Arial, sans-serif;
-       letter-spacing: .17em;
-   }
-
-   .symmetric-board-heading h2 {
-       margin: 0 0 6px;
-       color: #fff;
-       font-size: clamp(23px, 3.2vw, 35px);
-       line-height: 1.05;
-   }
-
-   .symmetric-board-heading p {
-       max-width: 520px;
-       margin: 0;
-       color: #cfe0ef;
-       font: 700 11px/1.4 Inter, Arial, sans-serif;
-   }
-
-   .symmetric-board-emblem {
-       flex: none;
-       display: grid;
-       place-items: center;
-       width: 54px;
-       height: 54px;
+       flex-direction: column;
+       gap: 14px;
+       padding: 20px 26px;
+       border: 1.5px solid var(--duel-or-2);
        border-radius: 18px;
-       font-size: 28px;
-       background: rgba(255, 229, 153, .09);
-       border: 1px solid rgba(255, 229, 153, .22);
-       box-shadow: 0 9px 20px rgba(0, 0, 0, .20);
+       background: linear-gradient(180deg, var(--duel-nuit-2), var(--duel-nuit));
+       box-shadow: 0 20px 60px rgba(0, 0, 0, .5), inset 0 0 0 4px rgba(232, 196, 106, .08);
+       color: var(--duel-texte);
+       font-family: var(--duel-info);
+       text-shadow: none;
+       transform: translateY(10px) scale(.985);
+       transition: transform .22s ease;
    }
 
-   .symmetric-board-controls {
-       display: grid;
-       grid-template-columns: minmax(0, 1fr) auto;
-       align-items: end;
-       gap: 9px;
-       margin-bottom: 14px;
+   #symmetricSetupOverlay.visible .symmetric-board-card {
+       transform: none;
    }
 
-   .symmetric-board-controls label {
-       display: flex;
-       flex-direction: column;
-       gap: 5px;
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="duel"][data-vue="apercu"],
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="terrain"][data-vue="apercu"] {
+       overflow: hidden;
    }
 
-   .symmetric-board-controls label>span {
-       color: #eaf6ff;
-       font: 900 8px/1 Inter, Arial, sans-serif;
-       letter-spacing: .10em;
-       text-transform: uppercase;
-   }
-
-   .symmetric-board-controls select {
-       width: 100%;
-   }
-
-   .symmetric-board-content {
-       display: grid;
-       grid-template-columns: 180px minmax(0, 1fr);
-       align-items: center;
-       gap: 17px;
-       padding: 14px;
-       border-radius: 17px;
-       background: rgba(3, 13, 26, .27);
-       border: 1px solid rgba(255, 255, 255, .06);
-   }
-
-   .board-setup-preview {
-       width: 180px !important;
-   }
-
-   .board-setup-description>strong {
-       font-size: 20px !important;
-   }
-
-   .board-setup-description p {
-       font-size: 11px !important;
-   }
-
-   .symmetric-setup-custom {
-       display: flex;
-       flex-wrap: wrap;
-       align-items: center;
-       gap: 16px;
-       margin-top: 14px;
-       padding: 12px 14px;
-       border-radius: 15px;
-       background: rgba(3, 13, 26, .27);
-       border: 1px solid rgba(255, 255, 255, .06);
-   }
-
-   .symmetric-setup-custom-title {
-       flex: 0 0 100%;
-       color: #e8c77d;
-       font: 900 9px/1 Inter, Arial, sans-serif;
-       letter-spacing: .14em;
-       text-transform: uppercase;
-   }
-
-   .symmetric-setup-custom label {
-       display: flex;
-       flex-direction: column;
-       gap: 5px;
-   }
-
-   .symmetric-setup-custom label>span:first-child {
-       color: #eaf6ff;
-       font: 900 8px/1 Inter, Arial, sans-serif;
-       letter-spacing: .10em;
-       text-transform: uppercase;
-   }
-
-   .symmetric-setup-custom select {
-       min-width: 110px;
-   }
-
-   .symmetric-setup-toggle {
-       flex-direction: row !important;
-       align-items: center;
-       gap: 8px !important;
+   #symmetricSetupOverlay button {
+       font-family: var(--duel-info);
        cursor: pointer;
    }
 
-   .symmetric-setup-toggle span {
-       color: #cfe0ef;
-       font: 700 11px/1.3 Inter, Arial, sans-serif;
+   #symmetricSetupOverlay button:disabled {
+       cursor: default;
    }
 
-   .symmetric-setup-toggle input {
+   #symmetricSetupOverlay .duel-select-cache {
+       position: absolute;
+       width: 1px;
+       height: 1px;
+       opacity: 0;
+       pointer-events: none;
+   }
+
+   /* En-tête : titre à gauche, filtres à droite. */
+   #symmetricSetupOverlay .symmetric-board-heading {
+       display: flex;
+       justify-content: space-between;
+       align-items: flex-start;
+       gap: 16px;
+   }
+
+   #symmetricSetupOverlay .symmetric-board-heading small {
+       display: block;
+       color: var(--duel-doux);
+       font: 800 11px/1 var(--duel-info);
+       letter-spacing: .16em;
+   }
+
+   #symmetricSetupOverlay .symmetric-board-heading h2 {
+       margin: 4px 0 2px;
+       color: var(--duel-or);
+       font: 700 25px/1.15 var(--duel-titre);
+       letter-spacing: .02em;
+   }
+
+   #symmetricSetupOverlay .symmetric-board-heading p {
+       max-width: 460px;
+       margin: 0;
+       color: var(--duel-doux);
+       font: 400 15px/1.3 var(--duel-recit);
+   }
+
+   #symmetricSetupOverlay .duel-filtres {
+       display: flex;
+       flex-wrap: wrap;
+       justify-content: flex-end;
+       align-items: center;
+       gap: 8px 14px;
+       max-width: 700px;
+   }
+
+   #symmetricSetupOverlay .duel-puces,
+   #symmetricSetupOverlay .duel-vue {
+       display: flex;
+       gap: 6px;
+   }
+
+   #symmetricSetupOverlay .duel-puces button {
+       padding: 6px 13px;
+       border: 1px solid rgba(232, 196, 106, .35);
+       border-radius: 999px;
+       background: rgba(255, 255, 255, .04);
+       color: var(--duel-texte);
+       font: 800 13px/1.2 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .duel-puces button[aria-pressed="true"] {
+       border-color: var(--duel-or);
+       background: var(--duel-or);
+       color: var(--duel-nuit);
+   }
+
+   #symmetricSetupOverlay .duel-vue {
+       gap: 0;
+       border: 1px solid rgba(232, 196, 106, .45);
+       border-radius: 999px;
+       overflow: hidden;
+   }
+
+   #symmetricSetupOverlay .duel-vue button {
+       padding: 6px 12px;
+       border: 0;
+       background: transparent;
+       color: var(--duel-doux);
+       font: 800 13px/1.2 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .duel-vue button i {
+       font-style: normal;
+   }
+
+   #symmetricSetupOverlay .duel-vue button[aria-pressed="true"] {
+       background: rgba(232, 196, 106, .2);
+       color: var(--duel-or);
+   }
+
+   #symmetricSetupOverlay .duel-vue .duel-hasard {
+       border-left: 1px solid rgba(232, 196, 106, .3);
+       font-size: 14px;
+   }
+
+   #symmetricSetupOverlay .duel-puces button:hover:not(:disabled),
+   #symmetricSetupOverlay .duel-vue button:hover:not(:disabled) {
+       border-color: var(--duel-or);
+       color: var(--duel-creme);
+   }
+
+   #symmetricSetupOverlay .duel-puces button[aria-pressed="true"]:hover {
+       color: var(--duel-nuit);
+   }
+
+   #symmetricSetupOverlay .duel-retour {
+       display: none;
+       padding: 7px 14px;
+       border: 1px solid rgba(232, 196, 106, .45);
+       border-radius: 999px;
+       background: transparent;
+       color: var(--duel-or);
+       font: 800 13px/1.2 var(--duel-info);
+       white-space: nowrap;
+   }
+
+   /* Aperçu : grande photo et description. */
+   #symmetricSetupOverlay .duel-apercu {
+       flex-shrink: 0;
+       display: grid;
+       grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr);
+       gap: 26px;
+       align-items: center;
+       min-height: 0;
+   }
+
+   #symmetricSetupOverlay .duel-grande {
+       position: relative;
+       aspect-ratio: 1410 / 720;
+       max-height: calc(100dvh - 380px);
+       min-height: 160px;
+       justify-self: center;
+       width: 100%;
+   }
+
+   #symmetricSetupOverlay .duel-grande img {
+       display: block;
+       width: 100%;
+       height: 100%;
+       object-fit: cover;
+       border-radius: 14px;
+       background: #20305a;
+       box-shadow: 0 0 0 2px var(--duel-or), 0 10px 30px rgba(0, 0, 0, .4);
+   }
+
+   #symmetricSetupOverlay .duel-grande .symmetric-setup-preview {
+       display: none;
+   }
+
+   #symmetricSetupOverlay .duel-grande.sans-photo img {
+       display: none;
+   }
+
+   #symmetricSetupOverlay .duel-grande.sans-photo .symmetric-setup-preview {
+       display: grid;
+       width: auto !important;
+       height: 100%;
+       aspect-ratio: 1;
+       margin: 0 auto;
+   }
+
+   #symmetricSetupOverlay .duel-fleche {
+       position: absolute;
+       top: 50%;
+       width: 44px;
+       height: 44px;
+       margin-top: -22px;
+       border: 1px solid var(--duel-or-2);
+       border-radius: 50%;
+       background: rgba(20, 27, 51, .75);
+       color: var(--duel-or);
+       font-size: 26px;
+       line-height: 1;
+   }
+
+   #symmetricSetupOverlay .duel-fleche[data-pas="-1"] {
+       left: 12px;
+   }
+
+   #symmetricSetupOverlay .duel-fleche[data-pas="1"] {
+       right: 12px;
+   }
+
+   #symmetricSetupOverlay .duel-fleche:hover {
+       background: rgba(20, 27, 51, .92);
+   }
+
+   #symmetricSetupOverlay .duel-info {
+       display: flex;
+       flex-direction: column;
+       gap: 10px;
+       min-width: 0;
+   }
+
+   #symmetricSetupOverlay .duel-info>strong {
+       color: var(--duel-creme);
+       font: 700 31px/1.05 var(--duel-recit);
+   }
+
+   #symmetricSetupOverlay .duel-info p {
+       margin: 0;
+       color: var(--duel-doux);
+       font: 600 14px/1.45 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .symmetric-setup-tags {
+       display: flex;
+       flex-wrap: wrap;
+       align-items: center;
+       gap: 4px 10px;
+   }
+
+   #symmetricSetupOverlay .symmetric-setup-tags span {
+       padding: 0;
+       border: 0;
+       background: none;
+       color: var(--duel-doux);
+       font: 700 12px/1.3 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .duel-tag,
+   #symmetricSetupOverlay .symmetric-setup-tags .duel-tag {
+       padding: 2px 8px;
+       border-radius: 6px;
+       background: #2d5b4a;
+       color: #c9f3dc;
+       font: 900 11px/1.4 var(--duel-info);
+       letter-spacing: .04em;
+       text-transform: uppercase;
+       white-space: nowrap;
+   }
+
+   #symmetricSetupOverlay .duel-tag[data-posture="Offensif"] {
+       background: #7a2e2e;
+       color: #ffd5c8;
+   }
+
+   #symmetricSetupOverlay .duel-tag[data-posture="Défensif"] {
+       background: #2c3f78;
+       color: #cfdcff;
+   }
+
+   #symmetricSetupOverlay .duel-tag[data-posture="Ouvert"] {
+       background: #5a4a24;
+       color: #f5e3b0;
+   }
+
+   #symmetricSetupOverlay .duel-options-slot:empty,
+   #symmetricSetupOverlay .duel-bouton-slot:empty {
+       display: none;
+   }
+
+   #symmetricSetupOverlay #duelOptionsDuel .duel-regles-communes {
+       display: flex;
+       flex-direction: column;
+       gap: 10px;
+       padding-top: 10px;
+       border-top: 1px solid rgba(232, 196, 106, .18);
+   }
+
+   #symmetricSetupOverlay #duelOptionsPerso .duel-regles-communes {
+       display: flex;
+       flex-direction: column;
+       gap: 14px;
+   }
+
+   /* Bande du bas (aperçu) et grille : vignettes rangées par nombre de gardiens. */
+   #symmetricSetupOverlay .duel-bande {
+       display: flex;
+       flex-shrink: 0;
+       gap: 18px;
+       overflow-x: auto;
+       overflow-y: hidden;
+       padding: 2px 2px 8px;
+       scrollbar-width: thin;
+       scrollbar-color: rgba(232, 196, 106, .4) transparent;
+       scroll-behavior: smooth;
+   }
+
+   #symmetricSetupOverlay .duel-grille {
+       display: flex;
+       flex-direction: column;
+       gap: 14px;
+       overflow: auto;
+       min-height: 0;
+       padding: 2px;
+   }
+
+   #symmetricSetupOverlay .duel-groupe {
+       display: flex;
+       flex-direction: column;
+       gap: 6px;
+       flex: none;
+   }
+
+   #symmetricSetupOverlay .duel-groupe-titre {
+       display: flex;
+       align-items: center;
+       gap: 8px;
+       color: var(--duel-or);
+       font: 700 12px/1 var(--duel-titre);
+       letter-spacing: .06em;
+       text-transform: uppercase;
+   }
+
+   #symmetricSetupOverlay .duel-groupe-titre::after {
+       content: "";
+       flex: 1;
+       height: 1px;
+       background: rgba(232, 196, 106, .3);
+   }
+
+   #symmetricSetupOverlay .duel-bande .duel-groupe-liste {
+       display: flex;
+       gap: 10px;
+   }
+
+   #symmetricSetupOverlay .duel-grille .duel-groupe-liste {
+       display: grid;
+       grid-template-columns: repeat(4, minmax(0, 1fr));
+       gap: 14px;
+   }
+
+   #symmetricSetupOverlay .duel-vignette {
+       display: flex;
+       flex-direction: column;
+       gap: 4px;
+       min-width: 0;
+       padding: 0;
+       border: 0;
+       background: none;
+       color: var(--duel-creme);
+       text-align: left;
+       opacity: .82;
+       transition: opacity .15s ease;
+   }
+
+   #symmetricSetupOverlay .duel-bande .duel-vignette {
+       width: 236px;
+   }
+
+   #symmetricSetupOverlay .duel-vignette img {
+       display: block;
+       width: 100%;
+       aspect-ratio: 1410 / 720;
+       object-fit: cover;
+       border: 1px solid rgba(255, 255, 255, .08);
+       border-radius: 9px;
+       background: #20305a;
+   }
+
+   #symmetricSetupOverlay .duel-vignette.sans-photo img {
+       visibility: hidden;
+   }
+
+   #symmetricSetupOverlay .duel-vignette:hover,
+   #symmetricSetupOverlay .duel-vignette[aria-pressed="true"] {
+       opacity: 1;
+   }
+
+   #symmetricSetupOverlay .duel-vignette[aria-pressed="true"] img {
+       border-color: var(--duel-or);
+       box-shadow: 0 0 0 2px var(--duel-or);
+   }
+
+   #symmetricSetupOverlay .duel-vignette-nom {
+       overflow: hidden;
+       font: 400 16px/1.2 var(--duel-recit);
+       white-space: nowrap;
+       text-overflow: ellipsis;
+   }
+
+   #symmetricSetupOverlay .duel-grille .duel-vignette {
+       padding: 7px;
+       border: 1px solid rgba(232, 196, 106, .18);
+       border-radius: 14px;
+       background: rgba(255, 255, 255, .04);
+   }
+
+   #symmetricSetupOverlay .duel-grille .duel-vignette[aria-pressed="true"] {
+       border-color: var(--duel-or);
+       background: rgba(232, 196, 106, .08);
+       box-shadow: 0 0 0 2px var(--duel-or), 0 0 22px rgba(232, 196, 106, .25);
+   }
+
+   #symmetricSetupOverlay .duel-grille .duel-vignette[aria-pressed="true"] img {
+       box-shadow: none;
+   }
+
+   #symmetricSetupOverlay .duel-grille .duel-vignette-nom {
+       font-weight: 700;
+       font-size: 17px;
+   }
+
+   #symmetricSetupOverlay .duel-vignette-ligne {
+       display: flex;
+       justify-content: space-between;
+       align-items: center;
+       gap: 6px;
+   }
+
+   #symmetricSetupOverlay .duel-vignette-ligne small {
+       color: var(--duel-doux);
+       font: 700 12px/1 var(--duel-info);
+   }
+
+   /* Personnalisé : terrain de départ, puis trois blocs. */
+   #symmetricSetupOverlay .perso-terrain {
+       display: grid;
+       grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+       gap: 14px;
+   }
+
+   #symmetricSetupOverlay .perso-terrain-titre {
+       display: flex;
+       flex-direction: column;
+       justify-content: center;
+       gap: 4px;
+       max-width: 170px;
+   }
+
+   #symmetricSetupOverlay .perso-terrain-titre strong {
+       color: var(--duel-or);
+       font: 700 15px/1.2 var(--duel-titre);
+   }
+
+   #symmetricSetupOverlay .perso-terrain-titre small,
+   #symmetricSetupOverlay .perso-aide {
+       color: var(--duel-doux);
+       font: 600 12px/1.35 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix {
+       display: flex;
+       align-items: center;
+       gap: 12px;
+       padding: 9px 12px;
+       border: 1px solid rgba(232, 196, 106, .18);
+       border-radius: 14px;
+       background: rgba(255, 255, 255, .035);
+       color: var(--duel-texte);
+       text-align: left;
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix[aria-pressed="true"] {
+       border-color: var(--duel-or);
+       background: rgba(232, 196, 106, .08);
+       box-shadow: 0 0 0 2px var(--duel-or);
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix img {
+       flex: none;
+       width: 150px;
+       aspect-ratio: 1410 / 720;
+       object-fit: cover;
+       border-radius: 8px;
+       background: #20305a;
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix.sans-photo img {
+       visibility: hidden;
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix b {
+       display: block;
+       color: var(--duel-creme);
+       font: 700 18px/1.15 var(--duel-recit);
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix small {
+       display: block;
+       margin-top: 2px;
+       color: var(--duel-doux);
+       font: 600 12px/1.3 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-terrain-choix em {
+       display: inline-block;
+       margin-top: 6px;
+       padding: 3px 10px;
+       border: 1px solid rgba(232, 196, 106, .45);
+       border-radius: 999px;
+       color: var(--duel-or);
+       font: normal 800 12px/1.2 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-corps {
+       display: grid;
+       grid-template-columns: repeat(3, minmax(0, 1fr));
+       gap: 16px;
+   }
+
+   #symmetricSetupOverlay .perso-regles {
+       display: contents;
+   }
+
+   #symmetricSetupOverlay .perso-bloc {
+       display: flex;
+       flex-direction: column;
+       gap: 14px;
+       padding: 14px 16px;
+       border: 1px solid rgba(232, 196, 106, .18);
+       border-radius: 14px;
+       background: rgba(255, 255, 255, .035);
+   }
+
+   #symmetricSetupOverlay .perso-bloc h3 {
+       display: flex;
+       align-items: center;
+       gap: 8px;
+       margin: 0;
+       color: var(--duel-or);
+       font: 700 15px/1.2 var(--duel-titre);
+   }
+
+   #symmetricSetupOverlay .perso-bloc h3 i {
+       font-style: normal;
+       font-size: 18px;
+   }
+
+   #symmetricSetupOverlay .perso-reglage {
+       display: flex;
+       flex-direction: column;
+       gap: 6px;
+   }
+
+   #symmetricSetupOverlay .perso-lib {
+       display: flex;
+       justify-content: space-between;
+       gap: 8px;
+       color: var(--duel-creme);
+       font: 800 14px/1.25 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-lib small {
+       color: var(--duel-doux);
+       font: 700 12px/1.25 var(--duel-info);
+       text-align: right;
+   }
+
+   #symmetricSetupOverlay .perso-pas {
+       display: flex;
+       gap: 5px;
+   }
+
+   #symmetricSetupOverlay .perso-pas button {
+       flex: 1;
+       min-width: 0;
+       padding: 7px 0;
+       border: 1px solid rgba(255, 255, 255, .08);
+       border-radius: 8px;
+       background: rgba(255, 255, 255, .05);
+       color: var(--duel-doux);
+       font: 900 14px/1.2 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-pas button[aria-pressed="true"] {
+       border-color: var(--duel-or);
+       background: var(--duel-or);
+       color: var(--duel-nuit);
+   }
+
+   #symmetricSetupOverlay .perso-pas button:disabled:not([aria-pressed="true"]) {
+       opacity: .35;
+   }
+
+   #symmetricSetupOverlay .perso-seg {
+       display: flex;
+       border: 1px solid rgba(232, 196, 106, .35);
+       border-radius: 10px;
+       overflow: hidden;
+   }
+
+   #symmetricSetupOverlay .perso-seg button {
+       flex: 1;
+       padding: 8px 6px;
+       border: 0;
+       background: transparent;
+       color: var(--duel-doux);
+       font: 800 13px/1.2 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-seg button[aria-pressed="true"] {
+       background: rgba(232, 196, 106, .18);
+       color: var(--duel-or);
+   }
+
+   #symmetricSetupOverlay .perso-pas button:hover:not(:disabled):not([aria-pressed="true"]),
+   #symmetricSetupOverlay .perso-seg button:hover:not(:disabled):not([aria-pressed="true"]) {
+       color: var(--duel-creme);
+   }
+
+   #symmetricSetupOverlay .perso-compteur {
+       display: flex;
+       align-items: center;
+       gap: 8px;
+       padding: 6px 8px;
+       border-radius: 10px;
+       background: rgba(255, 255, 255, .04);
+   }
+
+   #symmetricSetupOverlay .perso-carte {
+       flex: none;
+       width: 22px;
+       height: 30px;
+       border-radius: 4px;
+       background: #0d84c9;
+   }
+
+   #symmetricSetupOverlay .perso-push .perso-carte {
+       background: #b33d32;
+   }
+
+   #symmetricSetupOverlay .perso-magic .perso-carte {
+       background: #7d45cb;
+   }
+
+   #symmetricSetupOverlay .perso-nom {
+       flex: 1;
+       color: var(--duel-creme);
+       font: 400 15px/1.2 var(--duel-recit);
+   }
+
+   #symmetricSetupOverlay div.perso-compteur>.perso-compteur {
+       gap: 10px;
+       padding: 0;
+       background: none;
+   }
+
+   #symmetricSetupOverlay div.perso-compteur>.perso-compteur b {
+       min-width: 20px;
+       color: var(--duel-creme);
+       font: 900 17px/1 var(--duel-info);
+       text-align: center;
+   }
+
+   #symmetricSetupOverlay div.perso-compteur>.perso-compteur button {
+       display: grid;
+       place-items: center;
+       width: 26px;
+       height: 26px;
+       padding: 0;
+       border: 1px solid rgba(232, 196, 106, .5);
+       border-radius: 50%;
+       background: transparent;
+       color: var(--duel-or);
+       font: 900 16px/1 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay div.perso-compteur>.perso-compteur button:disabled {
+       opacity: .3;
+   }
+
+   #symmetricSetupOverlay .perso-total {
+       margin: 0;
+       color: var(--duel-or);
+       font: 800 13px/1.3 var(--duel-info);
+       text-align: right;
+   }
+
+   #symmetricSetupOverlay .perso-bascule {
+       display: flex;
+       align-items: flex-start;
+       gap: 10px;
+       cursor: pointer;
+   }
+
+   /* Interrupteur : la case à cocher elle-même, redessinée. */
+   #symmetricSetupOverlay .perso-bascule input {
+       position: relative;
+       flex: none;
+       width: 38px;
+       height: 22px;
+       margin: 1px 0 0;
+       border-radius: 999px;
+       background: rgba(255, 255, 255, .12);
+       appearance: none;
+       -webkit-appearance: none;
+       cursor: pointer;
+       transition: background .15s ease;
+   }
+
+   #symmetricSetupOverlay .perso-bascule input::after {
+       content: "";
+       position: absolute;
+       top: 3px;
+       left: 3px;
        width: 16px;
        height: 16px;
-       accent-color: #d8aa4c;
+       border-radius: 50%;
+       background: #cfd3e0;
+       transition: left .15s ease;
    }
 
-   .symmetric-board-actions {
+   #symmetricSetupOverlay .perso-bascule input:checked {
+       background: var(--duel-or);
+   }
+
+   #symmetricSetupOverlay .perso-bascule input:checked::after {
+       left: 19px;
+       background: var(--duel-nuit);
+   }
+
+   #symmetricSetupOverlay .perso-bascule input:focus-visible {
+       outline: 2px solid var(--duel-or);
+       outline-offset: 2px;
+   }
+
+   #symmetricSetupOverlay .perso-bascule b {
+       display: block;
+       color: var(--duel-creme);
+       font: 800 14px/1.25 var(--duel-info);
+   }
+
+   #symmetricSetupOverlay .perso-bascule small {
+       display: block;
+       color: var(--duel-doux);
+       font: 600 12px/1.3 var(--duel-info);
+   }
+
+   /* Pied : résumé, réglages classiques, bouton de lancement. */
+   #symmetricSetupOverlay .symmetric-board-actions {
        display: flex;
-       justify-content: flex-end;
-       margin-top: 15px;
+       align-items: center;
+       gap: 18px;
    }
 
-   .symmetric-board-actions .primary-btn {
-       min-width: 190px;
+   #symmetricSetupOverlay .duel-resume {
+       flex: 1;
+       margin: 0;
+       color: var(--duel-doux);
+       font: 400 16px/1.3 var(--duel-recit);
    }
 
-   .symmetric-setup-waiting {
-       margin-top: 13px;
+   #symmetricSetupOverlay .duel-resume b {
+       color: var(--duel-creme);
+       font-weight: 700;
+   }
+
+   #symmetricSetupOverlay .perso-defaut {
+       padding: 0;
+       border: 0;
+       background: none;
+       color: var(--duel-doux);
+       font: 600 13px/1.2 var(--duel-info);
+       text-decoration: underline;
+   }
+
+   #symmetricSetupOverlay #confirmSymmetricSetupBtn {
+       min-width: 210px;
+       min-height: 0 !important;
+       padding: 12px 26px !important;
+       border: 0 !important;
+       border-radius: 12px !important;
+       background: linear-gradient(180deg, #f1d27f, #c99a3e) !important;
+       box-shadow: 0 4px 0 #8a6a25 !important;
+       color: #2a1d05 !important;
+       font: 700 15px/1.2 var(--duel-titre) !important;
+       text-shadow: none !important;
+   }
+
+   #symmetricSetupOverlay #confirmSymmetricSetupBtn:hover:not(:disabled) {
+       background: linear-gradient(180deg, #f7dd93, #d4a748) !important;
+   }
+
+   #symmetricSetupOverlay #confirmSymmetricSetupBtn:disabled {
+       opacity: .6;
+   }
+
+   #symmetricSetupOverlay .duel-bouton-slot #confirmSymmetricSetupBtn {
+       width: 100%;
+       margin-top: 8px;
+   }
+
+   #symmetricSetupOverlay .symmetric-setup-waiting {
        padding: 10px 12px;
+       border: 1px solid rgba(232, 196, 106, .3);
        border-radius: 12px;
+       background: rgba(232, 196, 106, .08);
+       color: var(--duel-creme);
+       font: 800 12px/1.3 var(--duel-info);
        text-align: center;
-       color: #d9ebf8;
-       background: rgba(74, 164, 208, .10);
-       border: 1px solid rgba(105, 205, 250, .19);
-       font: 800 10px/1.3 Inter, Arial, sans-serif;
+   }
+
+   /* Ce que montre chaque menu. */
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="perso"] .duel-filtres,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="perso"] .duel-apercu,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="perso"] .duel-bande,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="perso"] .duel-grille,
+   #symmetricSetupOverlay .symmetric-board-card[data-vue="grille"] .duel-apercu,
+   #symmetricSetupOverlay .symmetric-board-card[data-vue="grille"] .duel-bande,
+   #symmetricSetupOverlay .symmetric-board-card[data-vue="apercu"] .duel-grille,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="terrain"] #duelTailles,
+   #symmetricSetupOverlay .symmetric-board-card[data-taille-fixe="true"] #duelTailles,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="terrain"] #duelOptionsDuel,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="terrain"] .perso-defaut,
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="duel"] .perso-defaut,
+   #symmetricSetupOverlay .symmetric-board-card:not([data-menu="perso"]) .perso-terrain,
+   #symmetricSetupOverlay .symmetric-board-card:not([data-menu="perso"]) .perso-corps,
+   #symmetricSetupOverlay .symmetric-board-card[data-terrain-possible="false"] .perso-terrain,
+   #symmetricSetupOverlay .symmetric-board-card[data-terrain-possible="false"] #customMirrorRow,
+   #symmetricSetupOverlay .symmetric-board-card[data-vue="apercu"]:not([data-menu="perso"]) .symmetric-board-actions {
+       display: none;
+   }
+
+   #symmetricSetupOverlay .symmetric-board-card[data-menu="terrain"] .duel-retour {
+       display: block;
+   }
+
+   /* Grille : elle prend la hauteur libre, le pied reste visible. */
+   #symmetricSetupOverlay .symmetric-board-card[data-vue="grille"]:not([data-menu="perso"]) {
+       height: calc(100dvh - 32px);
+   }
+
+   #symmetricSetupOverlay .symmetric-board-card[data-vue="grille"]:not([data-menu="perso"]) .duel-grille {
+       flex: 1;
+   }
+
+   @media (max-width: 1100px) {
+       #symmetricSetupOverlay .symmetric-board-heading {
+           flex-direction: column;
+       }
+
+       #symmetricSetupOverlay .duel-filtres {
+           justify-content: flex-start;
+           max-width: none;
+       }
+
+       #symmetricSetupOverlay .duel-apercu {
+           grid-template-columns: minmax(0, 1fr);
+           gap: 12px;
+       }
+
+       #symmetricSetupOverlay .duel-grande {
+           max-height: none;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-card[data-vue="apercu"] {
+           overflow: auto;
+       }
+
+       #symmetricSetupOverlay .duel-grille .duel-groupe-liste {
+           grid-template-columns: repeat(3, minmax(0, 1fr));
+       }
+
+       #symmetricSetupOverlay .perso-corps {
+           grid-template-columns: repeat(2, minmax(0, 1fr));
+       }
+   }
+
+   @media (max-width: 700px) {
+       #symmetricSetupOverlay {
+           padding: 8px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-card {
+           width: calc(100vw - 16px);
+           max-height: calc(100dvh - 16px);
+           padding: 14px 12px;
+           gap: 12px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-heading h2 {
+           font-size: 19px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-heading p {
+           font-size: 13px;
+       }
+
+       #symmetricSetupOverlay .duel-puces,
+       #symmetricSetupOverlay .duel-filtres {
+           flex-wrap: wrap;
+       }
+
+       #symmetricSetupOverlay .duel-puces button,
+       #symmetricSetupOverlay .duel-vue button {
+           padding: 5px 10px;
+           font-size: 12px;
+       }
+
+       #symmetricSetupOverlay .duel-info>strong {
+           font-size: 24px;
+       }
+
+       #symmetricSetupOverlay .duel-fleche {
+           width: 36px;
+           height: 36px;
+           margin-top: -18px;
+           font-size: 22px;
+       }
+
+       #symmetricSetupOverlay .duel-bande .duel-vignette {
+           width: 180px;
+       }
+
+       #symmetricSetupOverlay .duel-grille .duel-groupe-liste {
+           grid-template-columns: repeat(2, minmax(0, 1fr));
+           gap: 10px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-card[data-vue="grille"]:not([data-menu="perso"]) {
+           height: calc(100dvh - 16px);
+       }
+
+       #symmetricSetupOverlay .perso-terrain,
+       #symmetricSetupOverlay .perso-corps {
+           grid-template-columns: minmax(0, 1fr);
+       }
+
+       #symmetricSetupOverlay .perso-terrain-titre {
+           max-width: none;
+       }
+
+       #symmetricSetupOverlay .perso-terrain-choix img {
+           width: 120px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-actions {
+           flex-wrap: wrap;
+           gap: 10px;
+       }
+
+       #symmetricSetupOverlay .duel-resume {
+           flex-basis: 100%;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-actions #confirmSymmetricSetupBtn {
+           flex: 1;
+       }
+   }
+
+   /* Téléphone à l'horizontale : peu de hauteur, tout tient sur une ligne. */
+   @media (max-height: 520px) and (orientation: landscape) {
+       #symmetricSetupOverlay {
+           padding: 6px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-card {
+           width: calc(100vw - 12px);
+           max-height: calc(100dvh - 12px);
+           padding: 10px 14px;
+           gap: 8px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-card[data-vue="apercu"] {
+           overflow: auto;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-heading {
+           flex-direction: row;
+           align-items: center;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-heading p {
+           display: none;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-heading h2 {
+           font-size: 17px;
+       }
+
+       #symmetricSetupOverlay .duel-filtres {
+           justify-content: flex-end;
+           gap: 5px 8px;
+       }
+
+       #symmetricSetupOverlay .duel-puces {
+           gap: 4px;
+       }
+
+       #symmetricSetupOverlay .duel-puces button,
+       #symmetricSetupOverlay .duel-vue button {
+           padding: 4px 8px;
+           font-size: 11px;
+       }
+
+       #symmetricSetupOverlay .duel-apercu {
+           grid-template-columns: auto minmax(180px, 1fr);
+           gap: 14px;
+       }
+
+       #symmetricSetupOverlay .duel-grande {
+           width: auto;
+           height: calc(100dvh - 190px);
+           min-height: 120px;
+           max-width: 100%;
+       }
+
+       #symmetricSetupOverlay .duel-info {
+           gap: 6px;
+       }
+
+       #symmetricSetupOverlay .duel-info>strong {
+           font-size: 20px;
+       }
+
+       #symmetricSetupOverlay .duel-info p {
+           display: -webkit-box;
+           overflow: hidden;
+           font-size: 12px;
+           -webkit-line-clamp: 3;
+           -webkit-box-orient: vertical;
+       }
+
+       #symmetricSetupOverlay #duelOptionsDuel .duel-regles-communes {
+           display: none;
+       }
+
+       #symmetricSetupOverlay .duel-bouton-slot #confirmSymmetricSetupBtn {
+           margin-top: 2px;
+           padding: 9px 14px !important;
+       }
+
+       #symmetricSetupOverlay .duel-bande .duel-vignette {
+           width: 130px;
+       }
+
+       #symmetricSetupOverlay .duel-vignette-nom {
+           font-size: 13px;
+       }
+
+       #symmetricSetupOverlay .duel-grille .duel-groupe-liste {
+           grid-template-columns: repeat(4, minmax(0, 1fr));
+           gap: 8px;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-card[data-vue="grille"]:not([data-menu="perso"]) {
+           height: calc(100dvh - 12px);
+       }
+
+       #symmetricSetupOverlay .perso-terrain {
+           grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+       }
+
+       #symmetricSetupOverlay .perso-terrain-titre {
+           display: none;
+       }
+
+       #symmetricSetupOverlay .perso-terrain-choix img {
+           width: 96px;
+       }
+
+       #symmetricSetupOverlay .perso-terrain-choix small {
+           display: none;
+       }
+
+       #symmetricSetupOverlay .perso-corps {
+           grid-template-columns: repeat(3, minmax(0, 1fr));
+           gap: 10px;
+       }
+
+       #symmetricSetupOverlay .perso-bloc {
+           gap: 10px;
+           padding: 10px;
+       }
+
+       #symmetricSetupOverlay .perso-aide {
+           display: none;
+       }
+
+       #symmetricSetupOverlay .perso-lib small {
+           display: none;
+       }
+
+       #symmetricSetupOverlay .symmetric-board-actions {
+           flex-wrap: nowrap;
+       }
+
+       #symmetricSetupOverlay .duel-resume {
+           flex-basis: auto;
+           font-size: 13px;
+       }
    }
 
    /* L'ancien panneau de setup de l'accueil n'est plus utilisé. */
    #setupScreen .symmetric-setup-panel {
        display: none !important;
-   }
-
-   @media(max-width:650px) {
-       .symmetric-board-card {
-           padding: 15px;
-       }
-
-       .symmetric-board-heading p {
-           display: none;
-       }
-
-       .symmetric-board-content {
-           grid-template-columns: 115px minmax(0, 1fr);
-           gap: 10px;
-           padding: 10px;
-       }
-
-       .board-setup-preview {
-           width: 115px !important;
-       }
-
-       .symmetric-board-controls {
-           grid-template-columns: 1fr;
-       }
-
-       .random-setup-btn {
-           width: 100%;
-       }
-
-       .symmetric-board-actions .primary-btn {
-           width: 100%;
-       }
    }
 
 

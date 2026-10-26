@@ -1791,13 +1791,15 @@
          `expert` choisit la logique Expert ou historique, `poids` les réglages
          de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
       function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
-                                            expert = [true, true] } = {}) {
+                                            expert = [true, true], libre = false } = {}) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
           return withSimulatedState(depart, () => {
             state.rules = { allowDissolve: false, islandLimitPerPlayer: 0,
-              shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT };
+              shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT,
+              // Placement libre des gardiens (option du Personnalisé).
+              ...(libre ? { placementGardiensLibre: true } : {}) };
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));

@@ -237,6 +237,7 @@
         customSetupControls: document.getElementById("customSetupControls"),
         customIslandCountSelect: document.getElementById("customIslandCountSelect"),
         customGuardianCountSelect: document.getElementById("customGuardianCountSelect"),
+        customGuardianPlacementSelect: document.getElementById("customGuardianPlacementSelect"),
         customRulesControls: document.getElementById("customRulesControls"),
         customDeckMoveSelect: document.getElementById("customDeckMoveSelect"),
         customDeckPushSelect: document.getElementById("customDeckPushSelect"),
