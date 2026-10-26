@@ -6960,6 +6960,215 @@
         kaykitFollowCell(artifact.r, artifact.c, { duration: 720, force });
       }
 
+      /* ===================== CAMÉRA SELON L'ACTION =====================
+
+         Demande de Taekun (2026-10-26) : en AUTO, la caméra prend l'angle qui
+         sert l'action en cours, pour qu'on ait rarement à la toucher.
+
+         • Choix et pose d'une île : plongée à 30° sur tout le plateau — la
+           grille et l'aperçu de l'île se lisent, le relief reste. À la fin, la
+           caméra revient au cadrage et à l'angle d'avant.
+         • Magie : même plongée, d'abord sur le plateau, puis centrée sur l'île
+           choisie, pour lire la rotation.
+         • Gardien choisi, poussée proposée : si sa zone ou la file poussée
+           déborde de l'image, la caméra glisse juste ce qu'il faut.
+
+         Rien en mode LIBRE ni en vue rapprochée (qui suit déjà la sélection),
+         ni pendant le tour de l'IA, les tutoriels, énigmes ou Quick. Si le
+         joueur fait pivoter la vue pendant une plongée, son angle est gardé au
+         retour. Coût : quelques comparaisons par dixième de seconde. */
+      const KAYKIT_PLONGEE = THREE.MathUtils.degToRad(30);
+      const kaykitCameraAction = { contexte: "normal", ile: null, avant: null, verifieA: 0, poussees: null };
+
+      function kaykitContexteCamera() {
+        if (!state || state.winner !== null || state.inputLocked || state.turnTransitioning) return "normal";
+        if (state.tutorial || state.puzzle || state.quick || ILYOS_AUTOPLAY.active) return "normal";
+        const ecran = els.gameScreen?.classList;
+        if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"].some(m => ecran.contains(m))) return "normal";
+        if (document.body.classList.contains("boucles-mode")) return "normal";
+        if (currentPlayer()?.isAI || !canLocalPlayerAct()) return "normal";
+        if (["CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND", "PLACE_SPAWN"].includes(state.phase)) return "ile";
+        if (state.phase === "ACTION_SELECT" && !state.islandPlacedThisTurn) {
+          const tiroir = document.getElementById("hudV2IslandDrawer");
+          if (tiroir && !tiroir.classList.contains("hidden")) return "ile";
+        }
+        if (state.phase === "ACTION" && state.selectedActionType === "MAGIC") return "magie";
+        return "normal";
+      }
+
+      function kaykitPolaireCourant() {
+        const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, origine);
+        const rayon = ecart.length() || 1;
+        return Math.acos(THREE.MathUtils.clamp(ecart.y / rayon, -1, 1));
+      }
+
+      // Tween vers `cible`, à `distance`, sous l'inclinaison `polaire`, en
+      // gardant l'azimut du joueur (même convention que kaykitPositionAutour).
+      function kaykitAllerSousAngle(cible, distance, polaire, duree = 620) {
+        const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, origine);
+        const azimut = Math.atan2(ecart.x, ecart.z);
+        const horizontal = Math.sin(polaire) * distance;
+        kaykit3D.viewTarget = cible.clone();
+        kaykit3D.zoomDistance = distance;
+        // Protégé des recadrages de routine (priorité 0) le temps du trajet.
+        if (performance.now() >= (kaykit3D.cameraFocusUntil || 0)) kaykit3D.cameraFocusPriorite = 0;
+        kaykit3D.cameraFocusUntil = Math.max(kaykit3D.cameraFocusUntil || 0, performance.now() + duree);
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? Math.min(200, duree) : duree,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: new THREE.Vector3(
+            cible.x + Math.sin(azimut) * horizontal,
+            cible.y + Math.cos(polaire) * distance,
+            cible.z + Math.cos(azimut) * horizontal),
+          startTarget: origine.clone(),
+          endTarget: cible.clone()
+        };
+      }
+
+      /* Recul pour qu'un carré de `cases` de côté, centré, tienne à l'image en
+         plongée (la profondeur vue de biais est plus courte que la largeur :
+         la largeur et la hauteur de l'écran suffisent à borner). */
+      function kaykitReculPourCarre(cases) {
+        const camera = kaykit3D.camera;
+        const demi = cases * KAYKIT_CELL_SPACING / 2 * 1.08;
+        const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+        const distance = Math.max(demi / tanV, demi / (tanV * Math.max(.25, camera.aspect || 1)));
+        return THREE.MathUtils.clamp(distance, kaykit3D.minZoom, kaykit3D.maxZoom);
+      }
+
+      function kaykitPlongerSur(ileId) {
+        const hauteur = kaykit3D.viewTarget?.y ?? .22;
+        const ile = ileId ? state.islands?.find(item => item.id === ileId) : null;
+        if (!ile?.cells?.length) {
+          const centre = new THREE.Vector3(0, hauteur, 0);
+          kaykitAllerSousAngle(centre, kaykitReculPourCarre(GRID), KAYKIT_PLONGEE);
+          return centre;
+        }
+        const rs = ile.cells.map(([r]) => r), cs = ile.cells.map(([, c]) => c);
+        const centre = kaykitCellPosition((Math.min(...rs) + Math.max(...rs)) / 2, (Math.min(...cs) + Math.max(...cs)) / 2, 0);
+        // L'île et toutes ses positions tournées : un carré de son étendue + 4.
+        const cote = Math.max(Math.max(...rs) - Math.min(...rs), Math.max(...cs) - Math.min(...cs)) + 5;
+        const cible = new THREE.Vector3(centre.x, hauteur, centre.z);
+        kaykitAllerSousAngle(cible, kaykitReculPourCarre(cote), KAYKIT_PLONGEE);
+        return cible;
+      }
+
+      /* Glisse juste assez pour montrer toutes les `cases` (zone d'un gardien,
+         file poussée), sans jamais rapprocher la caméra. */
+      function kaykitMontrerCases(cases) {
+        if (!kaykit3D?.camera || !cases?.length || kaykit3D.cameraMode !== "auto" || kaykitRapprocheActif()) return;
+        if (kaykitContexteCamera() !== "normal" || kaykit3D.cameraTween) return;
+        const hauteur = kaykit3D.viewTarget?.y ?? .22;
+        const points = cases.map(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          return new THREE.Vector3(p.x, hauteur, p.z);
+        });
+        if (kaykitContenuDejaCadre(points, .9)) return;
+        const xs = points.map(p => p.x), zs = points.map(p => p.z);
+        const centre = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, hauteur, (Math.min(...zs) + Math.max(...zs)) / 2);
+        const actuelle = kaykit3D.camera.position.distanceTo(kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget);
+        const distance = THREE.MathUtils.clamp(Math.max(actuelle, kaykitDistancePourContenir(points, centre, 1.1)), kaykit3D.minZoom, kaykit3D.maxZoom);
+        kaykitDernierRecadrage = performance.now();
+        kaykit3D.viewTarget = centre.clone();
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 200 : 520,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: kaykitPositionAutour(distance, centre),
+          startTarget: (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone(),
+          endTarget: centre.clone()
+        };
+      }
+
+      /* Une plongée ou un retour peut être écrasé dès son départ par un
+         recadrage de routine (début de tour, pose), qui garde l'angle courant.
+         On vérifie donc l'arrivée, et on relance quelques fois au plus. */
+      function kaykitCameraAngleTenu(suivi) {
+        const attendu = suivi.attendu;
+        if (!attendu || kaykit3D.cameraTween) return;
+        if (kaykit3D.userRotated || kaykit3D.cameraMode !== "auto" || kaykitRapprocheActif()
+          || attendu.essais >= 4
+          || (Math.abs(kaykitPolaireCourant() - attendu.polaire) < THREE.MathUtils.degToRad(2)
+            && (!attendu.cible || attendu.cible.distanceTo(kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget) < .3))) {
+          suivi.attendu = null;
+          return;
+        }
+        attendu.essais += 1;
+        if (suivi.contexte === "normal") {
+          const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+          kaykitAllerSousAngle(origine.clone(), attendu.distance, attendu.polaire, 420);
+        } else {
+          kaykitPlongerSur(suivi.ile);
+        }
+      }
+
+      // Appelée par la boucle de rendu, au plus tous les 120 ms.
+      function kaykitCameraSelonAction(maintenant) {
+        const suivi = kaykitCameraAction;
+        if (maintenant - suivi.verifieA < 120) return;
+        suivi.verifieA = maintenant;
+        if (!kaykit3D?.camera || ilyosSimulationActive || kaykitCinematique) return;
+
+        const contexte = kaykit3D.cameraMode === "auto" && !kaykitRapprocheActif() ? kaykitContexteCamera() : "normal";
+        const ile = contexte === "magie" ? (state.selectedIslandId || null) : null;
+        kaykit3D.cameraContexte = contexte;
+
+        if (contexte !== suivi.contexte || (contexte === "magie" && ile !== suivi.ile)) {
+          if (suivi.contexte === "normal" && contexte !== "normal") {
+            // Ce qu'on retrouvera en sortant de la plongée.
+            const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+            suivi.avant = {
+              cible: origine.clone(),
+              distance: kaykit3D.camera.position.distanceTo(origine),
+              polaire: kaykitPolaireCourant(),
+              pivote: kaykit3D.userRotated
+            };
+            // Remis à zéro pour voir si le joueur pivote PENDANT la plongée.
+            kaykit3D.userRotated = false;
+          }
+          suivi.contexte = contexte;
+          suivi.ile = ile;
+          suivi.attendu = null;
+          if (contexte === "normal") {
+            const avant = suivi.avant;
+            suivi.avant = null;
+            /* Retour : la caméra reprend son cadrage, sauf si le joueur a
+               lui-même pivoté la vue pendant la plongée — elle garde alors son
+               angle et se contente de ne plus rien imposer. */
+            if (avant) {
+              const pivoteEntreTemps = kaykit3D.userRotated;
+              kaykit3D.userRotated = avant.pivote || pivoteEntreTemps;
+              if (kaykit3D.cameraMode === "auto" && !kaykitRapprocheActif() && !pivoteEntreTemps) {
+                kaykitAllerSousAngle(avant.cible, avant.distance, avant.polaire);
+                suivi.attendu = { polaire: avant.polaire, distance: avant.distance, essais: 0 };
+              }
+            }
+          } else {
+            suivi.attendu = { polaire: KAYKIT_PLONGEE, cible: kaykitPlongerSur(ile), essais: 0 };
+          }
+        } else {
+          kaykitCameraAngleTenu(suivi);
+        }
+
+        // Poussée proposée : la file entière doit être à l'image.
+        const options = state?.pushOptions?.length ? state.pushOptions : null;
+        if (options !== suivi.poussees) {
+          suivi.poussees = options;
+          if (options && contexte === "normal" && !currentPlayer()?.isAI) {
+            const cases = [];
+            options.forEach(option => {
+              const pousseur = characterById(option.pusherId);
+              if (pousseur) cases.push([pousseur.r, pousseur.c]);
+              if (Number.isFinite(option.r) && Number.isFinite(option.c)) cases.push([option.r, option.c]);
+            });
+            kaykitMontrerCases(cases);
+          }
+        }
+      }
+
       function zoomKayKitCamera(direction) {
         if (!kaykit3D) return;
         kaykit3D.autoFit = false;
@@ -7095,10 +7304,12 @@
         const suivi = kaykitTelephoneSuivi;
         if (suivi && suivi.id === gardien.id && suivi.r === gardien.r && suivi.c === gardien.c && suivi.zone === zone) return;
         kaykitTelephoneSuivi = { id: gardien.id, r: gardien.r, c: gardien.c, zone };
-        if (!kaykitRapprocheActif() || ilyosSimulationActive) return;
+        if (ilyosSimulationActive) return;
         if (state.players?.[state.currentPlayer]?.isAI) return;
         const cases = [[gardien.r, gardien.c]];
         (zone ? [...zone] : []).forEach(k => cases.push(k.split(",").map(Number)));
+        // Plateau entier : la caméra ne glisse que si la zone déborde.
+        if (!kaykitRapprocheActif()) { kaykitMontrerCases(cases); return; }
         kaykitTelephoneCadrer(cases);
       }
 
@@ -13963,6 +14174,7 @@
           kaykit3D.clock.getDelta();
           return;
         }
+        kaykitCameraSelonAction(frameTime);
         if (kaykitImageSautee(frameTime)) return;
         // Retouches de couleurs de js/ether-game-theme.js : appliquées ici, au
         // même moment qu'avant (avant toute mise à jour de l'image), mais
