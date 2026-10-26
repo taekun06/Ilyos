@@ -5,7 +5,8 @@
    coup ». Les zones cliquables des destinations disparaissaient de l'index de
    la scène dès qu'une synchronisation passait sans redessiner l'aperçu : les
    anneaux restaient visibles mais muets, et le clic retombait sur la case,
-   souvent masquée par un gardien. Joué sur la scène « Pousser » de Quick. */
+   souvent masquée par un gardien. Joué au tour 3 de la partie guidée Quick :
+   reprendre la couronne, puis pousser la file de deux rivaux de deux cases. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -28,13 +29,17 @@ test('les destinations de poussée restent cliquables après le choix du rival',
   page.on('pageerror', error => erreurs.push(error.message));
   await page.goto('/');
   await page.waitForFunction(() => typeof window.ILYOS_QUICK?.aller === 'function' && !!window.kaykit3D?.hitMeshes?.length);
-  await page.evaluate(() => window.ILYOS_QUICK.aller(3, 0));
-  await page.waitForFunction(() => window.ILYOS_QUICK.etat().etape === 3);
+  await page.evaluate(() => window.ILYOS_QUICK.aller(2));
   await page.waitForTimeout(1500);
 
-  await cliquer(page, await pointEcran(page, 8, 1));
+  // Un clic sur le porteur rival reprend la couronne (étape « voler »).
+  await cliquer(page, await pointEcran(page, 5, 4));
+  await expect.poll(() => page.evaluate(() => window.ILYOS_QUICK.etat().etape)).toBe(1);
+  await page.waitForTimeout(1500);
+
+  await cliquer(page, await pointEcran(page, 5, 5));
   await expect.poll(() => page.evaluate(() => JSON.parse(window.ILYOS_BENCH.etatComplet()).phase)).toBe('SMART_CHAR');
-  await cliquer(page, await pointEcran(page, 8, 2));
+  await cliquer(page, await pointEcran(page, 5, 4));
   await expect.poll(() => page.evaluate(() => JSON.parse(window.ILYOS_BENCH.etatComplet()).phase)).toBe('ACTION');
   await page.waitForTimeout(1500);
 
@@ -46,12 +51,14 @@ test('les destinations de poussée restent cliquables après le choix du rival',
       indexees: k.interactiveMeshes.filter(m => m.userData.ilyosInteraction).length
     };
   });
-  expect(zones.dessinees).toBe(3);
+  expect(zones.dessinees).toBe(2);
   expect(zones.indexees).toBe(zones.dessinees);
 
-  // Un seul clic sur la case la plus lointaine pousse le rival de trois cases.
-  await cliquer(page, await pointEcran(page, 8, 5));
+  // Un seul clic sur la case la plus lointaine pousse la file de deux cases :
+  // le premier rival atterrit au bord, le second tombe dans le vide.
+  await cliquer(page, await pointEcran(page, 5, 2));
   await expect.poll(() => page.evaluate(() =>
-    JSON.parse(window.ILYOS_BENCH.etatComplet()).characters.some(c => c.player === 1 && c.r === 8 && c.c === 5))).toBe(true);
+    JSON.parse(window.ILYOS_BENCH.etatComplet()).characters.filter(c => c.player === 1).map(c => `${c.r},${c.c}`).join(' '))).toBe('5,2');
+  await expect.poll(() => page.evaluate(() => window.ILYOS_QUICK.etat().etape)).toBe(2);
   expect(erreurs).toEqual([]);
 });
