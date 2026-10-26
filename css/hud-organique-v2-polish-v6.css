@@ -105,9 +105,9 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem{
   min-width:7px!important;
 }
 
-/* INSTRUCTION — remonter et alléger. */
+/* INSTRUCTION — alléger ; suit le dock, descendu de 14 px (Taekun, 2026-10-26). */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
-  bottom:147px!important;
+  bottom:133px!important;
   min-width:430px!important;
   max-width:600px!important;
   padding:7px 46px!important;
@@ -125,9 +125,11 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction-line{
   opacity:.68!important;
 }
 
-/* DOCK — plus haut, plus lisible, moins comprimé au bord. */
+/* DOCK — lisible, rapproché du bord : Taekun le trouvait trop haut sur PC
+   (2026-10-26) : bas de l'écran descendu de 14 px, puis les actions de 10 px
+   de plus ; leur filet doré remonte d'autant (hud-organique-v2-depth-v10.css). */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{
-  bottom:26px!important;
+  bottom:2px!important;
   gap:22px!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action{
@@ -177,7 +179,7 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock:after{
 /* FIN DU TOUR — moins gris, mieux hiérarchisé. */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end{
   right:32px!important;
-  bottom:28px!important;
+  bottom:14px!important;
   width:190px!important;
   height:62px!important;
   /* Bleu nuit cerné d'or (images de référence, 2026-10-22) ; le liseré est le
@@ -202,7 +204,7 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled{
 /* UNDO — même langage visuel que le reste du HUD. */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
   left:30px!important;
-  bottom:29px!important;
+  bottom:15px!important;
   width:50px!important;
   height:50px!important;
   border-color:transparent!important;

@@ -104,7 +104,11 @@
       return;
     }
 
-    const wasHidden = drawer.classList.contains('hidden');
+    /* Pendant la pose, le tiroir reste ouvert mais masqué (mode rotation) :
+       pour le joueur il est fermé, et le clic doit l'ouvrir sur les formes. */
+    const wasHidden = drawer.classList.contains('hidden')
+      || drawer.classList.contains('ov2-v12-rotation-mode')
+      || drawer.classList.contains('ov2-v10-rotation-mode');
     // On laisse d'abord le gestionnaire historique faire son travail.
     trigger.click();
 

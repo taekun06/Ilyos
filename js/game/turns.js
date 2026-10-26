@@ -135,19 +135,26 @@
           renderDeckDisplay();
         }, 900);
 
-        if (state.turn === 1 && state.startingBoardMode === "symmetric") {
+        // Le bandeau du duel symétrique remplace l'annonce du premier tour,
+        // mais ne doit pas court-circuiter le lancement de l'IA : quand le
+        // tirage au sort la désignait, elle ne jouait jamais (Taekun, 2026-10-24).
+        const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
+        if (ouvertureSymetrique) {
           const setupName = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset]?.name
             || "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
-        } else if (p.isAI) {
-          showToast(state.turn === 1
-            ? `Tirage au sort : ${p.name} commence la partie.`
-            : `${p.name} prépare son tour.`);
+        }
+        if (p.isAI) {
+          if (!ouvertureSymetrique) {
+            showToast(state.turn === 1
+              ? `Tirage au sort : ${p.name} commence la partie.`
+              : `${p.name} prépare son tour.`);
+          }
           const token = ++aiRunToken;
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
-          if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
+          if (!ouvertureSymetrique) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
               : poseSansForme
@@ -315,6 +322,19 @@
         return true;
       }
 
+      // Abandonne la forme en cours de placement, sans rien consommer.
+      // Pendant la mise en place personnalisée, cela ne rend pas la main au
+      // tour de jeu (il n'a pas commencé) : on revient au choix de forme.
+      function quitterPlacementIle() {
+        state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
+        state.selectedIslandShape = null;
+        state.placementCells = null;
+        state.placementOriginIndex = 0;
+        state.hoverAnchor = null;
+        state.reachable = new Set();
+        renderAll();
+      }
+
       function handleCancelButton() {
         if (state?.inputLocked) return;
         clearUnifiedPushOptions();
@@ -322,16 +342,7 @@
         if (state?.phase === "ACTION" && state?.selectedActionType) {
           cancelSelectedCard();
         } else if (state?.phase === "PLACE_ISLAND") {
-          // Pendant la mise en place personnalisée, abandonner la forme en
-          // cours ne rend pas la main au tour de jeu (il n'a pas commencé) :
-          // on revient au choix de forme du même placement.
-          state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
-          state.selectedIslandShape = null;
-          state.placementCells = null;
-          state.placementOriginIndex = 0;
-          state.hoverAnchor = null;
-          state.reachable = new Set();
-          renderAll();
+          quitterPlacementIle();
         } else if (state?.phase === "DROP_TREASURE") {
           state.treasureDropFromId = null;
           state.treasureDropArtifactId = null;

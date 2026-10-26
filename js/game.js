@@ -7343,6 +7343,215 @@
         kaykitFollowCell(artifact.r, artifact.c, { duration: 720, force });
       }
 
+      /* ===================== CAMÉRA SELON L'ACTION =====================
+
+         Demande de Taekun (2026-10-26) : en AUTO, la caméra prend l'angle qui
+         sert l'action en cours, pour qu'on ait rarement à la toucher.
+
+         • Choix et pose d'une île : plongée à 30° sur tout le plateau — la
+           grille et l'aperçu de l'île se lisent, le relief reste. À la fin, la
+           caméra revient au cadrage et à l'angle d'avant.
+         • Magie : même plongée, d'abord sur le plateau, puis centrée sur l'île
+           choisie, pour lire la rotation.
+         • Gardien choisi, poussée proposée : si sa zone ou la file poussée
+           déborde de l'image, la caméra glisse juste ce qu'il faut.
+
+         Rien en mode LIBRE ni en vue rapprochée (qui suit déjà la sélection),
+         ni pendant le tour de l'IA, les tutoriels, énigmes ou Quick. Si le
+         joueur fait pivoter la vue pendant une plongée, son angle est gardé au
+         retour. Coût : quelques comparaisons par dixième de seconde. */
+      const KAYKIT_PLONGEE = THREE.MathUtils.degToRad(30);
+      const kaykitCameraAction = { contexte: "normal", ile: null, avant: null, verifieA: 0, poussees: null };
+
+      function kaykitContexteCamera() {
+        if (!state || state.winner !== null || state.inputLocked || state.turnTransitioning) return "normal";
+        if (state.tutorial || state.puzzle || state.quick || ILYOS_AUTOPLAY.active) return "normal";
+        const ecran = els.gameScreen?.classList;
+        if (ecran && ["tutorial-on", "tutorial-discovery", "tutorial-eveil", "puzzle-on"].some(m => ecran.contains(m))) return "normal";
+        if (document.body.classList.contains("boucles-mode")) return "normal";
+        if (currentPlayer()?.isAI || !canLocalPlayerAct()) return "normal";
+        if (["CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND", "PLACE_SPAWN"].includes(state.phase)) return "ile";
+        if (state.phase === "ACTION_SELECT" && !state.islandPlacedThisTurn) {
+          const tiroir = document.getElementById("hudV2IslandDrawer");
+          if (tiroir && !tiroir.classList.contains("hidden")) return "ile";
+        }
+        if (state.phase === "ACTION" && state.selectedActionType === "MAGIC") return "magie";
+        return "normal";
+      }
+
+      function kaykitPolaireCourant() {
+        const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, origine);
+        const rayon = ecart.length() || 1;
+        return Math.acos(THREE.MathUtils.clamp(ecart.y / rayon, -1, 1));
+      }
+
+      // Tween vers `cible`, à `distance`, sous l'inclinaison `polaire`, en
+      // gardant l'azimut du joueur (même convention que kaykitPositionAutour).
+      function kaykitAllerSousAngle(cible, distance, polaire, duree = 620) {
+        const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+        const ecart = new THREE.Vector3().subVectors(kaykit3D.camera.position, origine);
+        const azimut = Math.atan2(ecart.x, ecart.z);
+        const horizontal = Math.sin(polaire) * distance;
+        kaykit3D.viewTarget = cible.clone();
+        kaykit3D.zoomDistance = distance;
+        // Protégé des recadrages de routine (priorité 0) le temps du trajet.
+        if (performance.now() >= (kaykit3D.cameraFocusUntil || 0)) kaykit3D.cameraFocusPriorite = 0;
+        kaykit3D.cameraFocusUntil = Math.max(kaykit3D.cameraFocusUntil || 0, performance.now() + duree);
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? Math.min(200, duree) : duree,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: new THREE.Vector3(
+            cible.x + Math.sin(azimut) * horizontal,
+            cible.y + Math.cos(polaire) * distance,
+            cible.z + Math.cos(azimut) * horizontal),
+          startTarget: origine.clone(),
+          endTarget: cible.clone()
+        };
+      }
+
+      /* Recul pour qu'un carré de `cases` de côté, centré, tienne à l'image en
+         plongée (la profondeur vue de biais est plus courte que la largeur :
+         la largeur et la hauteur de l'écran suffisent à borner). */
+      function kaykitReculPourCarre(cases) {
+        const camera = kaykit3D.camera;
+        const demi = cases * KAYKIT_CELL_SPACING / 2 * 1.08;
+        const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+        const distance = Math.max(demi / tanV, demi / (tanV * Math.max(.25, camera.aspect || 1)));
+        return THREE.MathUtils.clamp(distance, kaykit3D.minZoom, kaykit3D.maxZoom);
+      }
+
+      function kaykitPlongerSur(ileId) {
+        const hauteur = kaykit3D.viewTarget?.y ?? .22;
+        const ile = ileId ? state.islands?.find(item => item.id === ileId) : null;
+        if (!ile?.cells?.length) {
+          const centre = new THREE.Vector3(0, hauteur, 0);
+          kaykitAllerSousAngle(centre, kaykitReculPourCarre(GRID), KAYKIT_PLONGEE);
+          return centre;
+        }
+        const rs = ile.cells.map(([r]) => r), cs = ile.cells.map(([, c]) => c);
+        const centre = kaykitCellPosition((Math.min(...rs) + Math.max(...rs)) / 2, (Math.min(...cs) + Math.max(...cs)) / 2, 0);
+        // L'île et toutes ses positions tournées : un carré de son étendue + 4.
+        const cote = Math.max(Math.max(...rs) - Math.min(...rs), Math.max(...cs) - Math.min(...cs)) + 5;
+        const cible = new THREE.Vector3(centre.x, hauteur, centre.z);
+        kaykitAllerSousAngle(cible, kaykitReculPourCarre(cote), KAYKIT_PLONGEE);
+        return cible;
+      }
+
+      /* Glisse juste assez pour montrer toutes les `cases` (zone d'un gardien,
+         file poussée), sans jamais rapprocher la caméra. */
+      function kaykitMontrerCases(cases) {
+        if (!kaykit3D?.camera || !cases?.length || kaykit3D.cameraMode !== "auto" || kaykitRapprocheActif()) return;
+        if (kaykitContexteCamera() !== "normal" || kaykit3D.cameraTween) return;
+        const hauteur = kaykit3D.viewTarget?.y ?? .22;
+        const points = cases.map(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          return new THREE.Vector3(p.x, hauteur, p.z);
+        });
+        if (kaykitContenuDejaCadre(points, .9)) return;
+        const xs = points.map(p => p.x), zs = points.map(p => p.z);
+        const centre = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, hauteur, (Math.min(...zs) + Math.max(...zs)) / 2);
+        const actuelle = kaykit3D.camera.position.distanceTo(kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget);
+        const distance = THREE.MathUtils.clamp(Math.max(actuelle, kaykitDistancePourContenir(points, centre, 1.1)), kaykit3D.minZoom, kaykit3D.maxZoom);
+        kaykitDernierRecadrage = performance.now();
+        kaykit3D.viewTarget = centre.clone();
+        kaykit3D.cameraTween = {
+          started: performance.now(),
+          duration: kaykitReducedMotion() ? 200 : 520,
+          startPosition: kaykit3D.camera.position.clone(),
+          endPosition: kaykitPositionAutour(distance, centre),
+          startTarget: (kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget).clone(),
+          endTarget: centre.clone()
+        };
+      }
+
+      /* Une plongée ou un retour peut être écrasé dès son départ par un
+         recadrage de routine (début de tour, pose), qui garde l'angle courant.
+         On vérifie donc l'arrivée, et on relance quelques fois au plus. */
+      function kaykitCameraAngleTenu(suivi) {
+        const attendu = suivi.attendu;
+        if (!attendu || kaykit3D.cameraTween) return;
+        if (kaykit3D.userRotated || kaykit3D.cameraMode !== "auto" || kaykitRapprocheActif()
+          || attendu.essais >= 4
+          || (Math.abs(kaykitPolaireCourant() - attendu.polaire) < THREE.MathUtils.degToRad(2)
+            && (!attendu.cible || attendu.cible.distanceTo(kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget) < .3))) {
+          suivi.attendu = null;
+          return;
+        }
+        attendu.essais += 1;
+        if (suivi.contexte === "normal") {
+          const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+          kaykitAllerSousAngle(origine.clone(), attendu.distance, attendu.polaire, 420);
+        } else {
+          kaykitPlongerSur(suivi.ile);
+        }
+      }
+
+      // Appelée par la boucle de rendu, au plus tous les 120 ms.
+      function kaykitCameraSelonAction(maintenant) {
+        const suivi = kaykitCameraAction;
+        if (maintenant - suivi.verifieA < 120) return;
+        suivi.verifieA = maintenant;
+        if (!kaykit3D?.camera || ilyosSimulationActive || kaykitCinematique) return;
+
+        const contexte = kaykit3D.cameraMode === "auto" && !kaykitRapprocheActif() ? kaykitContexteCamera() : "normal";
+        const ile = contexte === "magie" ? (state.selectedIslandId || null) : null;
+        kaykit3D.cameraContexte = contexte;
+
+        if (contexte !== suivi.contexte || (contexte === "magie" && ile !== suivi.ile)) {
+          if (suivi.contexte === "normal" && contexte !== "normal") {
+            // Ce qu'on retrouvera en sortant de la plongée.
+            const origine = kaykit3D.orbit ? kaykit3D.orbit.target : kaykit3D.viewTarget;
+            suivi.avant = {
+              cible: origine.clone(),
+              distance: kaykit3D.camera.position.distanceTo(origine),
+              polaire: kaykitPolaireCourant(),
+              pivote: kaykit3D.userRotated
+            };
+            // Remis à zéro pour voir si le joueur pivote PENDANT la plongée.
+            kaykit3D.userRotated = false;
+          }
+          suivi.contexte = contexte;
+          suivi.ile = ile;
+          suivi.attendu = null;
+          if (contexte === "normal") {
+            const avant = suivi.avant;
+            suivi.avant = null;
+            /* Retour : la caméra reprend son cadrage, sauf si le joueur a
+               lui-même pivoté la vue pendant la plongée — elle garde alors son
+               angle et se contente de ne plus rien imposer. */
+            if (avant) {
+              const pivoteEntreTemps = kaykit3D.userRotated;
+              kaykit3D.userRotated = avant.pivote || pivoteEntreTemps;
+              if (kaykit3D.cameraMode === "auto" && !kaykitRapprocheActif() && !pivoteEntreTemps) {
+                kaykitAllerSousAngle(avant.cible, avant.distance, avant.polaire);
+                suivi.attendu = { polaire: avant.polaire, distance: avant.distance, essais: 0 };
+              }
+            }
+          } else {
+            suivi.attendu = { polaire: KAYKIT_PLONGEE, cible: kaykitPlongerSur(ile), essais: 0 };
+          }
+        } else {
+          kaykitCameraAngleTenu(suivi);
+        }
+
+        // Poussée proposée : la file entière doit être à l'image.
+        const options = state?.pushOptions?.length ? state.pushOptions : null;
+        if (options !== suivi.poussees) {
+          suivi.poussees = options;
+          if (options && contexte === "normal" && !currentPlayer()?.isAI) {
+            const cases = [];
+            options.forEach(option => {
+              const pousseur = characterById(option.pusherId);
+              if (pousseur) cases.push([pousseur.r, pousseur.c]);
+              if (Number.isFinite(option.r) && Number.isFinite(option.c)) cases.push([option.r, option.c]);
+            });
+            kaykitMontrerCases(cases);
+          }
+        }
+      }
+
       function zoomKayKitCamera(direction) {
         if (!kaykit3D) return;
         kaykit3D.autoFit = false;
@@ -7478,10 +7687,12 @@
         const suivi = kaykitTelephoneSuivi;
         if (suivi && suivi.id === gardien.id && suivi.r === gardien.r && suivi.c === gardien.c && suivi.zone === zone) return;
         kaykitTelephoneSuivi = { id: gardien.id, r: gardien.r, c: gardien.c, zone };
-        if (!kaykitRapprocheActif() || ilyosSimulationActive) return;
+        if (ilyosSimulationActive) return;
         if (state.players?.[state.currentPlayer]?.isAI) return;
         const cases = [[gardien.r, gardien.c]];
         (zone ? [...zone] : []).forEach(k => cases.push(k.split(",").map(Number)));
+        // Plateau entier : la caméra ne glisse que si la zone déborde.
+        if (!kaykitRapprocheActif()) { kaykitMontrerCases(cases); return; }
         kaykitTelephoneCadrer(cases);
       }
 
@@ -14101,9 +14312,17 @@
           // renonce au bloom plutôt que de dégrader l'image (voir kaykitRenderAvecBloom).
           const multiDispo = !!(renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget);
           kaykitBloom.multiEchantillon = multiDispo;
+          // PROFONDEUR 24 BITS. Sans tampon de stencil, Three r128 réserve à la
+          // cible une profondeur de 16 bits (DEPTH_COMPONENT16). Windows la
+          // promeut souvent en 24 bits sans le dire ; Mac (Metal) la prend au
+          // mot : le casque et la tête du chevalier, le chapeau du mage, les
+          // pointes du bouclier se mêlaient en rayures (Taekun, 2026-10-23).
+          // Avec le stencil, r128 alloue DEPTH24_STENCIL8 : même place mémoire
+          // qu'un 24 bits seul, aucun calcul de plus par image.
+          const cibleOptions = Object.assign({}, options, { depthBuffer: true, stencilBuffer: true });
           kaykitBloom.cibleScene = multiDispo
-            ? new THREE.WebGLMultisampleRenderTarget(l, h, Object.assign({ depthBuffer: true }, options))
-            : new THREE.WebGLRenderTarget(l, h, Object.assign({ depthBuffer: true }, options));
+            ? new THREE.WebGLMultisampleRenderTarget(l, h, cibleOptions)
+            : new THREE.WebGLRenderTarget(l, h, cibleOptions);
           // 4 échantillons. Mesuré : à 4, le taux d'arêtes dures est RIGOUREUSEMENT
           // identique avec et sans bloom (écart 0,000) ; à 2 il remonte de 0,279 % à
           // 0,342 %. Le crénelage étant précisément le défaut signalé, la qualité prime
@@ -14346,6 +14565,7 @@
           kaykit3D.clock.getDelta();
           return;
         }
+        kaykitCameraSelonAction(frameTime);
         if (kaykitImageSautee(frameTime)) return;
         // Retouches de couleurs de js/ether-game-theme.js : appliquées ici, au
         // même moment qu'avant (avant toute mise à jour de l'image), mais
@@ -16726,63 +16946,151 @@
         saveOnlineSession();
       }
 
+      /* Un état reçu du pair n'est jamais adopté tel quel. Plusieurs écrans
+         l'affichent par innerHTML (fiche, HUD, cases) : un nom, une couleur
+         ou une icône forgés deviendraient du HTML exécuté chez l'adversaire.
+         On refuse donc ce qui n'a pas la forme d'une partie, on ramène les
+         textes affichés à du texte simple et on écarte toute chaîne qui
+         contient du balisage. Ce n'est pas un arbitre des règles : un pair
+         malhonnête peut encore jouer un coup illégal, mais plus exécuter de
+         code ni casser l'écran de l'autre. */
+      const ONLINE_COULEUR_VALIDE = /^#[0-9a-f]{3,8}$/i;
+
+      function nettoyerNomEnLigne(valeur, defaut) {
+        const nom = String(valeur ?? "")
+          .replace(/[\u0000-\u001f\u007f<>&"'`]/g, "")
+          .trim()
+          .slice(0, 24);
+        return nom || defaut;
+      }
+
+      function valeursCollection(cle, champ) {
+        try {
+          const categorie = PROGRESSION_COLLECTION.find(c => c.cle === cle);
+          return categorie ? categorie.objets.map(objet => objet[champ]) : [];
+        } catch (_) {
+          return [];
+        }
+      }
+
+      function contientBalisage(valeur, profondeur = 0) {
+        if (typeof valeur === "string") return /[<>]/.test(valeur);
+        if (!valeur || typeof valeur !== "object" || profondeur > 12) return false;
+        return Object.values(valeur).some(v => contientBalisage(v, profondeur + 1));
+      }
+
+      function validerEtatEnLigne(incoming) {
+        if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) return false;
+        if (!Array.isArray(incoming.players) || incoming.players.length !== 2) return false;
+        if (!Array.isArray(incoming.islands) || !Array.isArray(incoming.characters)) return false;
+        if (incoming.currentPlayer !== 0 && incoming.currentPlayer !== 1) return false;
+        if (!BOARD_SIZES.includes(Number(incoming.boardSize))) return false;
+
+        const heros = valeursCollection("heros", "valeur");
+        const titres = valeursCollection("titre", "nom");
+        for (let i = 0; i < incoming.players.length; i++) {
+          const joueur = incoming.players[i];
+          if (!joueur || typeof joueur !== "object" || joueur.id !== i) return false;
+          if (typeof joueur.color !== "string" || !ONLINE_COULEUR_VALIDE.test(joueur.color)) return false;
+          if (!Number.isInteger(joueur.score) || joueur.score < 0 || joueur.score > 3) return false;
+          joueur.name = nettoyerNomEnLigne(joueur.name, `JOUEUR ${i + 1}`);
+          if (!PLAYER_ICONS.includes(joueur.icon)) joueur.icon = PLAYER_ICONS[i];
+          if (joueur.heros != null && !heros.includes(joueur.heros)) delete joueur.heros;
+          if (joueur.titre != null && !titres.includes(joueur.titre)) delete joueur.titre;
+        }
+        return !contientBalisage(incoming);
+      }
+
+      /* Réception d'un état par le réseau : en plus de la forme, l'ordre.
+         L'invité suit l'hôte (révision égale admise : c'est le renvoi de
+         l'hôte à la reconnexion ou l'accusé de réception). L'hôte n'accepte
+         de l'invité qu'un état strictement plus récent, et seulement pendant
+         le tour de l'invité. */
+      function recevoirEtatEnLigne(message) {
+        const revision = message.revision;
+        if (!Number.isInteger(revision) || revision < 0) return false;
+        if (onlineRole === "host") {
+          if (revision <= (networkRevision || 0)) return false;
+          if (!state?.onlineMode || state.currentPlayer === localPlayerIndex) return false;
+        } else if (revision < (networkRevision || 0)) {
+          return false;
+        }
+        return applyOnlineState(message.state, revision);
+      }
+
       function applyOnlineState(incoming, revision = 0) {
-        if (!incoming) return;
-        if (revision && revision < (networkRevision || 0)) return;
-
-        networkApplyingState = true;
-        stopTurnTimer();
-        aiRunToken++;
-
-        // L'invité ne choisit pas la taille du plateau : sans ce recalage,
-        // son GRID/CENTER/CORNERS locaux restent sur le défaut (ou une
-        // partie précédente) alors que les positions reçues sont celles de
-        // l'hôte — décalage silencieux du rendu et des cases cliquables.
-        setBoardSize(incoming.boardSize);
-
-        state = incoming;
-        state.onlineMode = true;
-        state.soloMode = false;
-        state.visualMode = "alternative";
-        applyVisualMode(state.visualMode);
-        state.players.forEach(player => {
-          player.isAI = false;
-          player.aiDifficulty = null;
-        });
-        state.reachable = new Set(incoming.reachable || []);
-        state.inputLocked = false;
-        state.aiThinking = false;
-        state.timerExpiring = false;
-        state.fxCells = [];
-        state.undoHistory = [];
-        state.networkRevision = revision || incoming.networkRevision || 0;
-        networkRevision = state.networkRevision;
-        // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
-        // a ni deadline ni temps restant à recalculer.
-        state.turnTimeLeft = state.turnDeadline
-          ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
-          : (turnDurationSeconds() || null);
-
-        els.setupScreen.classList.add("hidden");
-        els.gameScreen.classList.remove("hidden");
-        els.gameScreen.classList.remove("ai-turn");
-        renderAll();
-
-        if (state.setupSelectionPending) {
-          state.inputLocked = true;
-          stopTurnTimer();
-          openSymmetricSetupOverlay({
-            waiting: onlineRole === "guest",
-            selectedId: state.startingBoardPreset || "open"
-          });
-        } else {
-          closeSymmetricSetupOverlay();
-          startTurnTimer(false);
+        if (!validerEtatEnLigne(incoming)) {
+          console.warn("État en ligne refusé : forme invalide.");
+          return false;
         }
 
-        networkApplyingState = false;
+        const etatPrecedent = state;
+        const taillePrecedente = GRID;
+        networkApplyingState = true;
+        try {
+          stopTurnTimer();
+          aiRunToken++;
+
+          // L'invité ne choisit pas la taille du plateau : sans ce recalage,
+          // son GRID/CENTER/CORNERS locaux restent sur le défaut (ou une
+          // partie précédente) alors que les positions reçues sont celles de
+          // l'hôte — décalage silencieux du rendu et des cases cliquables.
+          setBoardSize(incoming.boardSize);
+
+          state = incoming;
+          state.onlineMode = true;
+          state.soloMode = false;
+          state.visualMode = "alternative";
+          applyVisualMode(state.visualMode);
+          state.players.forEach(player => {
+            player.isAI = false;
+            player.aiDifficulty = null;
+          });
+          state.reachable = new Set(incoming.reachable || []);
+          state.inputLocked = false;
+          state.aiThinking = false;
+          state.timerExpiring = false;
+          state.fxCells = [];
+          state.undoHistory = [];
+          state.networkRevision = revision || incoming.networkRevision || 0;
+          networkRevision = state.networkRevision;
+          // turnDurationSeconds() lit l'état reçu de l'hôte : sans limite, il n'y
+          // a ni deadline ni temps restant à recalculer.
+          state.turnTimeLeft = state.turnDeadline
+            ? Math.max(0, (state.turnDeadline - Date.now()) / 1000)
+            : (turnDurationSeconds() || null);
+
+          els.setupScreen.classList.add("hidden");
+          els.gameScreen.classList.remove("hidden");
+          els.gameScreen.classList.remove("ai-turn");
+          renderAll();
+
+          if (state.setupSelectionPending) {
+            state.inputLocked = true;
+            stopTurnTimer();
+            openSymmetricSetupOverlay({
+              waiting: onlineRole === "guest",
+              selectedId: state.startingBoardPreset || "open"
+            });
+          } else {
+            closeSymmetricSetupOverlay();
+            startTurnTimer(false);
+          }
+        } catch (error) {
+          // Un état passé la validation mais illisible plus loin : on garde
+          // la partie d'avant plutôt qu'un écran à moitié reconstruit.
+          console.warn("État en ligne refusé : application impossible.", error);
+          state = etatPrecedent;
+          setBoardSize(taillePrecedente);
+          try { if (state) renderAll(); } catch (_) { }
+          return false;
+        } finally {
+          networkApplyingState = false;
+        }
+
         updateOnlineBadge();
         saveOnlineSession();
+        return true;
       }
 
       function attachOnlineConnection(connection) {
@@ -16819,13 +17127,15 @@
         });
 
         connection.on("data", message => {
+          // Une connexion remplacée ne parle plus au nom du pair.
+          if (connection !== onlineConnection) return;
           if (!message || typeof message !== "object") return;
 
           if (message.type === "hello" && onlineRole === "host") {
             if (!state?.onlineMode) {
               createOnlineGame(
                 onlineLocalName || "JOUEUR 1",
-                String(message.name || "JOUEUR 2").toLocaleUpperCase("fr-FR"),
+                nettoyerNomEnLigne(message.name, "JOUEUR 2").toLocaleUpperCase("fr-FR"),
                 message.apparence
               );
             } else {
@@ -16848,9 +17158,20 @@
           }
 
           if (message.type === "state") {
-            applyOnlineState(message.state, message.revision || 0);
-            if (onlineRole === "host") {
-              setTimeout(() => forceOnlineSync(), 40);
+            const adopte = recevoirEtatEnLigne(message);
+            // Accusé de réception de l'hôte : l'état adopté, à la même
+            // révision. La relever ici ferait refuser à l'hôte l'envoi
+            // suivant de l'invité, parti avant d'avoir reçu cet accusé.
+            if (adopte && onlineRole === "host") {
+              setTimeout(() => {
+                if (!state?.onlineMode || !onlineConnected) return;
+                sendOnlineMessage({
+                  type: "state",
+                  revision: state.networkRevision || networkRevision,
+                  state: serializeOnlineState()
+                });
+                saveOnlineSession();
+              }, 40);
             }
           }
         });
@@ -16949,7 +17270,16 @@
         });
 
         onlinePeer.on("connection", connection => {
-          if (role === "host") attachOnlineConnection(connection);
+          if (role !== "host") return;
+          // Un salon, deux joueurs : tant que l'invité est connecté, une
+          // autre connexion (code de salon deviné ou partagé) est refusée au
+          // lieu de lui prendre sa place. L'invité qui revient après une
+          // coupure retrouve la sienne dès que l'ancienne est fermée.
+          if (onlineConnection?.open && onlineConnection !== connection) {
+            try { connection.close(); } catch (error) { }
+            return;
+          }
+          attachOnlineConnection(connection);
         });
 
         onlinePeer.on("disconnected", () => {
@@ -18120,7 +18450,7 @@
           return;
         }
 
-        onlineLocalName = name;
+        onlineLocalName = nettoyerNomEnLigne(name, role === "host" ? "JOUEUR 1" : "JOUEUR 2");
         pendingOnlineStartingBoard = role === "host"
           ? (document.getElementById("startingBoardSelect")?.value || "classic")
           : "classic";
@@ -20242,19 +20572,26 @@
           renderDeckDisplay();
         }, 900);
 
-        if (state.turn === 1 && state.startingBoardMode === "symmetric") {
+        // Le bandeau du duel symétrique remplace l'annonce du premier tour,
+        // mais ne doit pas court-circuiter le lancement de l'IA : quand le
+        // tirage au sort la désignait, elle ne jouait jamais (Taekun, 2026-10-24).
+        const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
+        if (ouvertureSymetrique) {
           const setupName = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset]?.name
             || "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
-        } else if (p.isAI) {
-          showToast(state.turn === 1
-            ? `Tirage au sort : ${p.name} commence la partie.`
-            : `${p.name} prépare son tour.`);
+        }
+        if (p.isAI) {
+          if (!ouvertureSymetrique) {
+            showToast(state.turn === 1
+              ? `Tirage au sort : ${p.name} commence la partie.`
+              : `${p.name} prépare son tour.`);
+          }
           const token = ++aiRunToken;
           setTimeout(() => runAITurn(token), 550);
         } else {
           state.inputLocked = false;
-          if (!(state.turn === 1 && state.startingBoardMode === "symmetric")) {
+          if (!ouvertureSymetrique) {
             showToast(state.turn === 1
               ? `Tirage au sort : ${p.name} commence la partie.`
               : poseSansForme
@@ -20422,6 +20759,19 @@
         return true;
       }
 
+      // Abandonne la forme en cours de placement, sans rien consommer.
+      // Pendant la mise en place personnalisée, cela ne rend pas la main au
+      // tour de jeu (il n'a pas commencé) : on revient au choix de forme.
+      function quitterPlacementIle() {
+        state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
+        state.selectedIslandShape = null;
+        state.placementCells = null;
+        state.placementOriginIndex = 0;
+        state.hoverAnchor = null;
+        state.reachable = new Set();
+        renderAll();
+      }
+
       function handleCancelButton() {
         if (state?.inputLocked) return;
         clearUnifiedPushOptions();
@@ -20429,16 +20779,7 @@
         if (state?.phase === "ACTION" && state?.selectedActionType) {
           cancelSelectedCard();
         } else if (state?.phase === "PLACE_ISLAND") {
-          // Pendant la mise en place personnalisée, abandonner la forme en
-          // cours ne rend pas la main au tour de jeu (il n'a pas commencé) :
-          // on revient au choix de forme du même placement.
-          state.phase = state.draft ? "CHOOSE_ISLAND_SHAPE" : "ACTION_SELECT";
-          state.selectedIslandShape = null;
-          state.placementCells = null;
-          state.placementOriginIndex = 0;
-          state.hoverAnchor = null;
-          state.reachable = new Set();
-          renderAll();
+          quitterPlacementIle();
         } else if (state?.phase === "DROP_TREASURE") {
           state.treasureDropFromId = null;
           state.treasureDropArtifactId = null;
@@ -25867,18 +26208,41 @@
         }
       }
 
+      /* Fiche de l'unité : noms et couleurs viennent de l'état, qui peut
+         arriver du réseau. Tout passe par textContent et style, jamais par
+         innerHTML : un nom reste un nom, quoi qu'il contienne. */
+      function ficheUnite(icone, lignes) {
+        const icon = document.createElement("div");
+        icon.className = "big-icon";
+        icon.textContent = icone;
+        const paragraphes = lignes.map(morceaux => {
+          const ligne = document.createElement("p");
+          morceaux.forEach(morceau => {
+            if (typeof morceau === "string") {
+              ligne.append(morceau);
+              return;
+            }
+            const el = document.createElement(morceau.balise);
+            el.textContent = morceau.texte;
+            if (morceau.couleur) el.style.color = morceau.couleur;
+            ligne.append(el);
+          });
+          return ligne;
+        });
+        els.unitCard.replaceChildren(icon, ...paragraphes);
+      }
+
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
         if (ch) {
           const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
-          els.unitCard.innerHTML = `
-          <div class="big-icon">${p.icon}</div>
-          <p><b style="color:${p.color}">Gardien de ${p.name}</b></p>
-          <p>Déplacement : 1 case orthogonale par action</p>
-          <p>Poussée : toutes les cibles alignées glissent du nombre de poussées jouées</p>
-          <p>${characterCarriesCrown(ch.id) ? "Porte une couronne" : "Gardien standard"}</p>
-        `;
+          ficheUnite(p.icon, [
+            [{ balise: "b", texte: `Gardien de ${p.name}`, couleur: p.color }],
+            ["Déplacement : 1 case orthogonale par action"],
+            ["Poussée : toutes les cibles alignées glissent du nombre de poussées jouées"],
+            [characterCarriesCrown(ch.id) ? "Porte une couronne" : "Gardien standard"]
+          ]);
           return;
         }
 
@@ -25886,21 +26250,17 @@
         if (island) {
           const owner = state.players[island.owner];
           els.unitCard.classList.remove("empty");
-          els.unitCard.innerHTML = `
-          <div class="big-icon">🏝️</div>
-          <p><b>Île</b></p>
-          <p>Propriétaire : <span style="color:${owner.color}">${owner.name}</span></p>
-          <p>Taille : ${island.cells.length} case(s)</p>
-          <p>Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu.</p>
-        `;
+          ficheUnite("🏝️", [
+            [{ balise: "b", texte: "Île" }],
+            ["Propriétaire : ", { balise: "span", texte: owner.name, couleur: owner.color }],
+            [`Taille : ${island.cells.length} case(s)`],
+            ["Magie : choisissez une case pivot, tournez avec la molette / Q / S, puis cliquez sur l’aperçu."]
+          ]);
           return;
         }
 
         els.unitCard.classList.add("empty");
-        els.unitCard.innerHTML = `
-        <div class="big-icon">☁️</div>
-        <p>Sélectionnez un gardien ou une île pour afficher ses informations.</p>
-      `;
+        ficheUnite("☁️", [["Sélectionnez un gardien ou une île pour afficher ses informations."]]);
       }
 
 
@@ -53773,6 +54133,18 @@
       // d'entree). Ecouteurs attaches une seule fois au boot, comme le reste
       // de ce fichier — pas de nouvelle boucle rAF/polling/MutationObserver.
       document.getElementById("hudV2IslandStatus")?.addEventListener("click", () => {
+        // Pendant la pose, le bouton ÎLE rouvre le choix des formes : la forme
+        // en cours est lâchée (comme « Changer d'île ») et le tiroir s'ouvre.
+        if (state.phase === "PLACE_ISLAND" && !state.inputLocked && canLocalPlayerAct()) {
+          clearUnifiedPushOptions();
+          state.pendingDirectMoveTarget = null;
+          quitterPlacementIle();
+          const drawer = document.getElementById("hudV2IslandDrawer");
+          drawer?.classList.remove("hidden");
+          drawer?.setAttribute("aria-hidden", "false");
+          document.getElementById("hudV2IslandStatus")?.setAttribute("aria-expanded", "true");
+          return;
+        }
         toggleHudV2Drawer("hudV2IslandDrawer", "hudV2IslandStatus");
       });
       // Délégation : #islandSelector est reconstruit à chaque renderIslandSelector().
