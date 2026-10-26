@@ -52211,6 +52211,17 @@
         carte?.querySelectorAll(".duel-fleche").forEach(fleche =>
           fleche.addEventListener("click", () => pasDuel(Number(fleche.dataset.pas))));
         document.getElementById("duelMenuRetour")?.addEventListener("click", () => afficherMenuDuel("perso"));
+        // Molette n'importe où sur l'écran du choix (vue Aperçu) : elle fait
+        // défiler la bande des setups du bas, et ne zoome pas le plateau.
+        els.symmetricSetupOverlay.addEventListener("wheel", event => {
+          const bande = document.getElementById("duelMenuBande");
+          if (MENU_DUEL.menu === "perso" || MENU_DUEL.vue !== "apercu" || !bande) return;
+          const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+          if (!delta) return;
+          event.preventDefault();
+          event.stopPropagation();
+          bande.scrollBy({ left: delta * (event.deltaMode === 1 ? 40 : 1.6) });
+        }, { passive: false });
         document.getElementById("customDefaultsBtn")?.addEventListener("click", reglagesClassiquesPerso);
         carte?.querySelectorAll(".perso-terrain-choix").forEach(bouton => bouton.addEventListener("click", () => {
           if (MENU_DUEL.attente) return;
