@@ -104,3 +104,12 @@
 @media(prefers-reduced-motion:reduce){.art,.art::before,.fog,.halo,.duel-left,.duel-right,.setup,.veil,.play,.play::after{animation:none!important;transition:none!important}}
 /* Quick : le parcours d'apprentissage rapide, mis en avant d'une lueur dorée. */
 .pill.pill-quick{border-color:#ffd77a;color:#fff1c2;box-shadow:0 8px 20px rgba(0,0,0,.24),0 0 14px rgba(255,205,90,.45),inset 0 0 0 1px rgba(255,230,165,.18)}
+/* Groupes de l'accueil : DÉCOUVERTE et DÉFIS ouvrent leur panneau AU-DESSUS
+   de la pastille, ⚙ ouvre le sien SOUS l'icône. Panneau bleu nuit cerné d'or,
+   comme les pastilles ; aucune animation. */
+.nav-groupe{position:relative}
+.home-nav .pill-groupe{min-width:13.5cqw;padding:.95cqh 1.2cqw;font-size:.98cqw;letter-spacing:.08em}
+.groupe-panneau{position:absolute;z-index:6;left:50%;bottom:calc(100% + 1.1cqh);transform:translateX(-50%);display:flex;flex-direction:column;gap:.55cqh;padding:.7cqw;border:2px solid rgba(224,176,72,.90);border-radius:1.1cqw;background:rgba(5,13,21,.92);box-shadow:0 14px 30px rgba(0,0,0,.42),inset 0 0 0 1px rgba(255,230,165,.11)}
+.groupe-panneau[hidden]{display:none}
+.groupe-panneau .pill{min-width:11.5cqw;text-align:left;white-space:nowrap}
+.groupe-reglages .groupe-panneau{left:auto;right:0;bottom:auto;top:calc(100% + 1.1cqh);transform:none}

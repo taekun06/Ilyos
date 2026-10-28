@@ -56,6 +56,7 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   const erreurs = await ouvrirJeu(page);
 
   const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-groupe="defis"]').click();
   await menu.locator('[data-action="puzzle"]').first().click();
   await page.waitForSelector('#puzzleMenu', { timeout: 10000 });
 

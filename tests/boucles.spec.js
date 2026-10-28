@@ -30,6 +30,7 @@ test('chaque sanctuaire se gagne par sa solution, avec le nombre de boucles anno
 test('le bouton BOUCLES ouvre le mode, et le Relais se gagne en jeu', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
   const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-groupe="defis"]').click();
   await menu.locator('[data-action="boucles"]').first().click();
   await page.waitForFunction(() => window.ILYOS_BOUCLES.etat().actif === true, null, { timeout: 10000 });
   await expect(page.locator('#bouclesCalque')).toBeVisible();
