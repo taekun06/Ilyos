@@ -530,8 +530,12 @@
   // jusqu'à 320 points 144 fois par seconde, menu immobile (mesuré le 22/10 :
   // plus d'un cœur occupé). Les pas sont comptés en images de 60 Hz, pour une
   // dérive à la même vitesse sur tous les écrans.
+  // Pendant la partie, le menu reste chargé dans son cadre masqué
+  // (display:none) : ses particules s'y redessinaient quand même 60 fois par
+  // seconde, pour rien (mesuré le 31/10). Rien n'est dessiné tant qu'il est caché.
+  function menuMasque(){const f=window.frameElement;return !!(f&&(f.hidden||!f.isConnected))}
   const PARTICULES_IMAGE_MS=1000/60;let derniere=0;
-  function draw(t){requestAnimationFrame(draw);if(derniere&&t-derniere<PARTICULES_IMAGE_MS-2)return;const pas=derniere?Math.min(4,(t-derniere)/PARTICULES_IMAGE_MS):1;derniere=t;const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);for(const p of pts){p.y-=p.v*pas;p.x+=Math.sin(t*.00035+p.p)*.07*pas;if(p.y<-8){p.y=h+8;p.x=Math.random()*w}const a=p.a*(.65+.35*Math.sin(t*.002+p.p));ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fillStyle=`rgba(255,225,150,${a})`;ctx.fill()}}
+  function draw(t){requestAnimationFrame(draw);if(menuMasque()){derniere=0;return}if(derniere&&t-derniere<PARTICULES_IMAGE_MS-2)return;const pas=derniere?Math.min(4,(t-derniere)/PARTICULES_IMAGE_MS):1;derniere=t;const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);for(const p of pts){p.y-=p.v*pas;p.x+=Math.sin(t*.00035+p.p)*.07*pas;if(p.y<-8){p.y=h+8;p.x=Math.random()*w}const a=p.a*(.65+.35*Math.sin(t*.002+p.p));ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fillStyle=`rgba(255,225,150,${a})`;ctx.fill()}}
   addEventListener('resize',resize);
   // Le passage plein écran ne déclenche pas toujours un 'resize' assez tôt
   // (ou avec les bonnes dimensions) selon le navigateur : on refait le calcul

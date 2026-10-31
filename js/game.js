@@ -14558,7 +14558,14 @@
         // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
         // delta géant n'arrive d'un coup au retour. La boucle rAF continue
         // d'être programmée, mais chaque tick ne coûte alors presque rien.
+        // La VUE 2D (js/plateau-tactique.js) masque le canevas 3D sans changer
+        // boardRenderMode : la scène continuait d'être dessinée, invisible, à
+        // pleine cadence (mesuré le 31/10 : autant de calcul qu'en 3D). Elle est
+        // gelée comme hors jeu ; la logique de partie n'en dépend pas (les fins
+        // d'action passent par des minuteurs, voir queueKayKitActionAnimation)
+        // et les déplacements, datés, se terminent au retour en 3D.
         const gameHidden = !isKayKitBoardActive()
+          || document.body.dataset.plateauTactique === "on"
           || !els.gameScreen
           || els.gameScreen.classList.contains("hidden");
         if (document.hidden || gameHidden) {
