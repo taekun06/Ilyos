@@ -722,6 +722,36 @@
       const KAYKIT_RENDU_FORCE = (() => {
         try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
+      /* OPTIONS D'ÎLES À COMPARER (2026-11-01), uniquement par l'URL : le rendu par
+         défaut ne change pas. Aucune n'ajoute de décor sur les cases ; chacune
+         remplace la matière de l'île par des pièces KayKit déjà dans le jeu ou
+         gratuites (Dungeon), dans une palette resserrée.
+           ?iles=prairie  mêmes cubes, herbe d'une seule famille de verts, terre brune
+           ?iles=roc      flancs et coque dans la roche des socles de villages,
+                          pointe rocheuse KayKit renversée sous chaque île
+           ?iles=pierre   cases en dalles de pierre KayKit Dungeon sur la même roche */
+      const ILYOS_ILES_ESSAI = (() => {
+        try { return (/[?&]iles=(prairie|roc|pierre)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+      })();
+      if (ILYOS_ILES_ESSAI === "pierre") {
+        const dungeon = nom => kaykitAssetSpec("dungeon", nom + ".gltf", "./assets/kaykit/dungeon/dungeon_texture.png");
+        Object.assign(KAYKIT_ASSETS, {
+          essaiSocle: dungeon("floor_foundation_allsides"),
+          essaiDalle: dungeon("floor_tile_small"),
+          essaiDalleHerbeA: dungeon("floor_tile_small_weeds_A"),
+          essaiDalleHerbeB: dungeon("floor_tile_small_weeds_B"),
+          essaiDalleGravee: dungeon("floor_tile_small_decorated")
+        });
+      }
+      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "pierre"
+        ? ["essaiSocle", "essaiDalle", "essaiDalleHerbeA", "essaiDalleHerbeB", "essaiDalleGravee", "bareMountainA", "bareMountainB", "bareMountainC"]
+        : ILYOS_ILES_ESSAI === "roc" ? ["bareMountainA", "bareMountainB", "bareMountainC"] : [];
+      // Les îles ne se rebâtissent que si leur signature change : on y compte les
+      // pièces arrivées pour habiller les îles dès leur chargement.
+      function kaykitEssaiPiecesPretes() {
+        if (!kaykit3D) return 0;
+        return ILYOS_ESSAI_PIECES.filter(cle => kaykit3D.assets.has(cle)).length;
+      }
       function kaykitArchipelDemande() {
         if (KAYKIT_RENDU_FORCE) return KAYKIT_RENDU_FORCE === "archipel";
         return kaykitIlesDuProfil === "archipel";
@@ -8216,7 +8246,7 @@
        */
       function kaykitIslandsSignature(islands) {
         if (!islands?.length) return "";
-        let sig = "";
+        let sig = ILYOS_ILES_ESSAI ? kaykitEssaiPiecesPretes() + "#" : "";
         for (let i = 0; i < islands.length; i++) {
           const island = islands[i];
           sig += island.id + ":" + (island.visualVariant ?? 0) + ":";
@@ -10479,10 +10509,11 @@
       // descend vers une roche brune profonde (texture falaise, voir
       // kaykitIslandHullMaterial).
       // [îles d'herbe KayKit, Archipel de pierre] : la roche de l'archipel est grise.
-      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
-      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c)];    // moins orangé, plus minéral — même famille
-      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c)]; // roche profonde, jamais noire
-      const kaykitHullTeinte = couleurs => couleurs[ILYOS_RENDU_ANCIEN ? 0 : 1];
+      const KAYKIT_HULL_COLORS_TOP = [new THREE.Color(0xaf5f37), new THREE.Color(0x7a7166), new THREE.Color(0x7e5a40), new THREE.Color(0x9a9a9e)];    // raccord terre KayKit, saturation encore relevée (faces sous la coque très diluées par la teinte "sol" de l'hémisphère)
+      const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c), new THREE.Color(0x63452f), new THREE.Color(0x7c7c82)];    // moins orangé, plus minéral — même famille
+      const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c), new THREE.Color(0x3c2a1e), new THREE.Color(0x55565e)]; // roche profonde, jamais noire
+      const kaykitHullRendu = () => !ILYOS_RENDU_ANCIEN ? "archipel" : ILYOS_ILES_ESSAI || "herbe";
+      const kaykitHullTeinte = couleurs => couleurs[{ herbe: 0, archipel: 1, prairie: 2, roc: 3, pierre: 3 }[kaykitHullRendu()]];
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -10698,9 +10729,9 @@
         return geometry;
       }
 
-      const kaykitHullMaterialCache = { herbe: null, archipel: null };
+      const kaykitHullMaterialCache = { herbe: null, archipel: null, prairie: null, roc: null, pierre: null };
       function kaykitIslandHullMaterial() {
-        const rendu = ILYOS_RENDU_ANCIEN ? "herbe" : "archipel";
+        const rendu = kaykitHullRendu();
         // Matériau construit directement (pas via kaykitMaterial, qui ne
         // propage pas vertexColors et n'en tient pas compte dans sa clé de
         // cache) : un seul matériau pour toute la coque, dégradé terre KayKit
@@ -10741,14 +10772,42 @@
           const anchor = kaykitCellPosition(anchorR, anchorC, 0);
           const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
           const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
-          const geometry = kaykitGeometry(`island-hull-v3:${ILYOS_RENDU_ANCIEN ? "herbe" : "archipel"}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
           hull.castShadow = false;
           hull.receiveShadow = true;
           hull.raycast = () => {};
           group.add(hull);
+          if (ILYOS_ILES_ESSAI === "roc" || ILYOS_ILES_ESSAI === "pierre") addKayKitEssaiPointe(group, component, anchor);
         });
+      }
+
+      // Options roc / pierre : la même pointe rocheuse renversée que les socles des
+      // villages et les îles lointaines, une seule par morceau d'île, pour que le
+      // plateau parle la même langue que le reste du monde.
+      function addKayKitEssaiPointe(group, component, anchor) {
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, sx = 0, sz = 0;
+        component.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c, 0);
+          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+          sx += p.x; sz += p.z;
+        });
+        const largeur = Math.min(maxX - minX, maxZ - minZ) + KAYKIT_CELL_SPACING;
+        const graine = Math.abs(Math.round(sx * 7 + sz * 13));
+        const roche = cloneKayKitAsset(["bareMountainA", "bareMountainB", "bareMountainC"][graine % 3], { maxWidth: largeur * .9, maxHeight: .9 + component.length * .12, targetFloor: 0 });
+        if (!roche) return;
+        roche.rotation.x = Math.PI;
+        roche.rotation.y = (graine % 7) * .9;
+        roche.position.set(sx / component.length, KAYKIT_LEVELS.board - KAYKIT_HULL_RING2_DEPTH + .12, sz / component.length);
+        roche.traverse(child => {
+          if (!child.isMesh) return;
+          child.castShadow = false;
+          child.receiveShadow = true;
+          child.raycast = () => {};
+          (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => m.color?.multiply(new THREE.Color(0x8a8278)));
+        });
+        group.add(roche);
       }
 
       function kaykitIslandAccentColor(island, { preview = false, previewColor = 0x20f39a } = {}) {
@@ -10783,6 +10842,10 @@
         0x88bf95, // vert clair froid
         0x54a744  // vert moyen, transition
       ];
+
+      // Options d'îles : une seule famille de verts francs, assez proches pour que
+      // le plateau se lise comme une prairie, assez distincts pour séparer deux îles.
+      const ILYOS_ESSAI_TINTS = [0x5fa83e, 0x4e9a3a, 0x68ad4a, 0x57a244, 0x63aa3f, 0x4f9f42];
 
       function buildIlyosIslandColorMap(islands) {
         const list = Array.isArray(islands) ? islands : [];
@@ -10853,14 +10916,15 @@
         // Teinte terre commune à toutes les factions/variants (la pierre des
         // châteaux suit la même logique : un monde cohérent, seul l'accent
         // change selon le sujet — ici l'herbe, pas la terre).
-        context.fillStyle = "#92694a";
+        // Options d'îles : flanc brun profond (prairie) ou roche des villages.
+        context.fillStyle = ILYOS_ILES_ESSAI === "prairie" ? "#7e5a40" : ILYOS_ILES_ESSAI ? "#9a9a9e" : "#92694a";
         context.fillRect(x, y, w, h);
       }
 
       function kaykitIslandTintTexture(sourceTexture, variantIndex) {
         const sourceImage = sourceTexture?.image;
         if (!sourceImage?.width || !sourceImage?.height) return sourceTexture;
-        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2`;
+        const cacheKey = `${sourceTexture.uuid}|${variantIndex}|v2|${ILYOS_ILES_ESSAI || ""}`;
         const cached = kaykit3D?.islandTintTextures?.get(cacheKey);
         if (cached) return cached;
 
@@ -10871,7 +10935,7 @@
         if (!context) return sourceTexture;
         context.drawImage(sourceImage, 0, 0);
 
-        const tint = ILYOS_ISLAND_TINTS[variantIndex];
+        const tint = (ILYOS_ILES_ESSAI ? ILYOS_ESSAI_TINTS : ILYOS_ISLAND_TINTS)[variantIndex];
         kaykitPaintIslandGrass(context, KAYKIT_ISLAND_GRASS_RECT, tint);
         kaykitPaintIslandDirt(context, KAYKIT_ISLAND_DIRT_RECT);
 
@@ -11246,6 +11310,31 @@
         });
       }
 
+      // Option pierre : socle de pierre KayKit Dungeon à la taille d'un bloc, coiffé
+      // d'une dalle (lisse, gravée ou gagnée par l'herbe). La teinte de la dalle
+      // varie un peu d'une île à l'autre pour garder deux îles voisines distinctes.
+      const KAYKIT_ESSAI_DALLE_TEINTES = [0xffffff, 0xf2ece0, 0xe6ecf2, 0xf6f0e8, 0xeae6de, 0xeef2ea];
+      function makeKayKitEssaiDalle(island, r, c) {
+        const groupe = new THREE.Group();
+        const socle = cloneKayKitAsset("essaiSocle", { exactWidth: KAYKIT_BLOCK_SIZE, exactDepth: KAYKIT_BLOCK_SIZE, exactHeight: .42, targetFloor: 0 });
+        const tirage = kaykitHash("essai-dalle", island?.id, r, c);
+        const cle = tirage < .55 ? "essaiDalle" : tirage < .75 ? "essaiDalleHerbeA" : tirage < .9 ? "essaiDalleHerbeB" : "essaiDalleGravee";
+        const dalle = cloneKayKitAsset(cle, { exactWidth: KAYKIT_BLOCK_SIZE * .98, exactDepth: KAYKIT_BLOCK_SIZE * .98, exactHeight: .05, targetFloor: .415 });
+        const teinte = new THREE.Color(KAYKIT_ESSAI_DALLE_TEINTES[Math.max(0, Number(island?.visualVariant) || 0) % KAYKIT_ESSAI_DALLE_TEINTES.length]);
+        [socle, dalle].forEach(objet => {
+          if (!objet) return;
+          objet.traverse(child => {
+            if (!child.isMesh) return;
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (objet === dalle) (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => m.color?.multiply(teinte));
+          });
+          groupe.add(objet);
+        });
+        if (dalle) dalle.rotation.y = Math.floor(kaykitHash("essai-dalle-rot", island?.id, r, c) * 4) * Math.PI / 2;
+        return groupe;
+      }
+
       /* fantome : une vraie île (coque, lierre, matériaux) qui n'est pas
          inscrite comme visuel de case — l'aperçu de la magie la teinte ensuite
          en verre (kaykitFantomeTexture). */
@@ -11294,6 +11383,17 @@
             dalle.renderOrder = preview ? 20 : 4;
             group.add(dalle);
             if (!preview && !fantome) {
+              dalle.userData.ilyosCase = [r, c];
+              registerKayKitCellVisual(r, c, dalle);
+            }
+            return;
+          }
+          if (ILYOS_ILES_ESSAI === "pierre" && !preview && kaykit3D.assets.has("essaiSocle")) {
+            const dalle = makeKayKitEssaiDalle(island, r, c);
+            dalle.position.set(p.x, KAYKIT_LEVELS.board, p.z);
+            dalle.renderOrder = 4;
+            group.add(dalle);
+            if (!fantome) {
               dalle.userData.ilyosCase = [r, c];
               registerKayKitCellVisual(r, c, dalle);
             }
