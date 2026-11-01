@@ -5,8 +5,6 @@
 /* ===== Profondeur locale : le HUD appartient clairement au premier plan ===== */
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon,
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn,
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end,
-body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo,
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast,
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-guardian{
   -webkit-backdrop-filter:blur(6px) saturate(.92)!important;

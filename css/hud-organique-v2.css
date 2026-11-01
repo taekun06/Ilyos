@@ -214,7 +214,7 @@ body:not([data-visual-mode="alternative"]) #ilyosHudOrganicV2,
 #ilyosHudOrganicV2 .ov2-end b{font-family:Georgia,serif;font-size:18px;letter-spacing:.05em}
 #ilyosHudOrganicV2 .ov2-undo{
   position:absolute;left:28px;bottom:26px;width:54px;height:54px;border-radius:50%;border:1px solid rgba(230,183,75,.30);
-  background:rgba(4,13,22,.69);color:#f0cd76;display:grid;place-items:center;font-size:26px;cursor:pointer;backdrop-filter:blur(10px)
+  background:rgba(4,13,22,.69);color:#f0cd76;display:grid;place-items:center;font-size:26px;cursor:pointer
 }
 #ilyosHudOrganicV2 .ov2-undo:disabled{opacity:.38;cursor:default}
 

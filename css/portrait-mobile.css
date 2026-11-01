@@ -633,8 +633,8 @@
   border: 1px solid rgba(160, 210, 240, .45);
   background: rgba(12, 26, 36, .88);
   color: #eaf4fb;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  /* Pas de flou d'arrière-plan : posé sur la 3D, il était recalculé à
+     chaque image pour un fond déjà presque opaque. */
   cursor: pointer;
 }
 #kaykitEnsembleBtn[hidden],
