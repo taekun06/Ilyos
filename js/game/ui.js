@@ -860,7 +860,9 @@
         // Une île peut être posée n'importe où :
         // elle doit seulement rester dans la grille et ne rien chevaucher.
         // En Créer son duel, son reflet aussi (refletIleValide, core.js).
-        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c)) && refletIleValide(cells);
+        // Quick (quick.js) ne permet que la pose de son étape.
+        return cells.every(([r, c]) => inside(r, c) && !isLand(r, c)) && refletIleValide(cells)
+          && (!state.quick || quickPoseAutorisee(cells));
       }
 
       function recomputeValidAnchors() {
@@ -2633,7 +2635,8 @@
         options.forEach(option => {
           if (!unique.has(option.id)) unique.set(option.id, option);
         });
-        return [...unique.values()];
+        // Quick (quick.js) ne propose que la poussée de son étape.
+        return [...unique.values()].filter(option => !state.quick || quickPousseeAutorisee(option));
       }
 
       function beginUnifiedPushFromHud() {

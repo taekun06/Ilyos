@@ -482,6 +482,13 @@ body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu.hidden {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 10px !important;
 }
+/* Niveaux du fond assombri : trois petites cartes sur une ligne */
+#hudV2GearPopover.mj-menu .mj-grille-voile {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+#hudV2GearPopover.mj-menu .mj-grille-voile .mj-choix { padding: 10px 12px !important; min-height: 60px !important; }
 #hudV2GearPopover.mj-menu .mj-choix {
   display: grid !important;
   gap: 4px;

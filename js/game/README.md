@@ -13,6 +13,7 @@ The fragment order is intentional:
 7. `ui.js` — board rendering and player interactions
 8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `autopsie.js`, `defaites.js` — rules cores, Expert planner, AI autopsy, automatic record of games lost by the Expert (library, one-click export; see `docs/DEFAITES-EXPERT.md`)
 9. `tutorial.js` — scripted tutorial « La Première Ascension » (self-contained: builds a normal state, gates input via a capture listener on `els.board`, watches `window.ILYOS_VISUAL_EVENTS`)
+9b. `menu-duels.js` — start menus of the symmetric duel (photo preview, strip and grid) and of Personnalisé (formation, deck, rules, starting terrain), driving the hidden selects read by `core.js`
 10. `diagnostics.js` — diagnostics, public API, event wiring and closure end
 
 Do not load fragments directly from `index.html`: none is a standalone script. After editing one or more fragments, rebuild and verify the browser entry point:

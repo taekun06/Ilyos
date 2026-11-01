@@ -308,12 +308,6 @@
         hamletSack: kaykitAssetSpec("medieval", "decoration/props/sack.gltf", MEDIEVAL_ATLAS),
         hamletBarrow: kaykitAssetSpec("medieval", "decoration/props/wheelbarrow.gltf", MEDIEVAL_ATLAS),
         hamletLumber: kaykitAssetSpec("medieval", "decoration/props/resource_lumber.gltf", MEDIEVAL_ATLAS),
-
-        // Nuages KayKit réels (voir buildKayKitBoardClouds) : dérivent juste hors
-        // du rayon de sécurité de l'archipel, à hauteur du plateau — lecture
-        // "on est dans le ciel, il y a du vent" depuis la vue "front".
-        cloudSmall: kaykitAssetSpec("medieval", "decoration/nature/cloud_small.gltf", MEDIEVAL_ATLAS),
-        cloudBig: kaykitAssetSpec("medieval", "decoration/nature/cloud_big.gltf", MEDIEVAL_ATLAS)
       };
 
 
@@ -1017,6 +1011,12 @@
           return;
         }
         kaykitBloom.aaParCible = aaParCible && renderer.capabilities.isWebGL2;
+        /* Pas de relecture du journal de compilation à chaque shader : Three.js
+           interroge sinon le pilote (getProgramInfoLog) à chaque programme créé,
+           ce qui attend la fin de la compilation. Mesuré le 01/11 sur un portable
+           RTX 4050 : 3,4 s cumulées en 12 minutes, dont les gels de 0,5 à 1,3 s
+           à l'arrivée d'un effet nouveau. Les shaders du jeu sont fixes. */
+        renderer.debug.checkShaderErrors = false;
         renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1172,7 +1172,6 @@
           islandsSignature: null,       // signature de state.islands — rebuild îles/pedestaux/forêt seulement si elle change
           crownCrossGroundBuilt: false, // sol central : rebâti quand le sanctuaire change
           crownCrossGroup: null,
-          boardCloudsBuilt: false,      // nuages KayKit réels autour du plateau : statique, construit une seule fois
           horizonArchipel: null,        // îles découpées posées autour du monde, un seul appel de rendu
           horizonPanorama: null,        // plaque directionnelle : images indexées sur l'azimut du monde
           skyGroup: null,               // parent commun des deux horizons, pour pouvoir les échanger
@@ -3109,12 +3108,6 @@
         // COUCHE 6 — poussière dorée (voir KAYKIT_SKY_DUST).
         buildKayKitSkyDust(sky);
 
-        // COUCHE 3 — ARCHIPEL LOINTAIN : construit PLUS TARD, pas ici.
-        // Les îles sont assemblées à partir de modèles KayKit, or buildKayKitSkyEnvironment
-        // s'exécute avant la fin du chargement des assets : cloneKayKitAsset y renvoyait
-        // null et il ne se créait aucune île — le ciel gardait ses 20 calques et rien d'autre.
-        // Même différé que les nuages du plateau, voir buildKayKitDistantArchipelago.
-
         parent.add(sky);
         kaykit3D.skyGroup = sky;
         kaykitEconomieAppliquerCiel();
@@ -3693,156 +3686,11 @@
         return reprises > 0;
       }
 
-      function makeKayKitHorizonRockFragment(seed, width, haze) {
-        const index = Math.abs(Math.floor(seed)) % 3;
-        const rock = cloneKayKitAsset(
-          ["bareMountainA", "bareMountainB", "bareMountainC"][index],
-          { maxWidth: width, maxHeight: width * (1.0 + (index * .12)), targetFloor: 0 }
-        );
-        if (!rock) return null;
-        rock.rotation.x = Math.PI;
-        rock.rotation.y = seed * .91;
-        rock.traverse(child => {
-          if (!child.isMesh) return;
-          child.castShadow = false;
-          child.receiveShadow = false;
-        });
-        kaykitHazeObject(rock, haze);
-        return rock;
-      }
-
-      function buildKayKitDistantArchipelago() {
-        const sky = kaykit3D?.scene?.getObjectByName("ilyos-sky");
-        if (!sky) return false;
-        const seeded = (i, salt = 0) => {
-          const x = Math.sin((i + 1) * 43.117 + salt * 91.345) * 43758.5453;
-          return x - Math.floor(x);
-        };
-
-        // COUCHE 3 — TRANSITION 3D. Le panorama porte désormais l'archipel et son
-        // architecture ; cette couche ne contient plus que 10 à 14 fragments rocheux
-        // simples, sans végétation ni bâtiment. Ils suffisent à relier le plateau au
-        // fond avec un peu de parallaxe, pour un coût et une densité visuelle faibles.
-        const cameraY = 8.7;
-        const fragmentCount = kaykit3D.qualityMode === "performance" ? 10 : 14;
-        for (let i = 0; i < fragmentCount; i++) {
-          const azimuth = (i / fragmentCount) * Math.PI * 2 + (seeded(i, 61) - .5) * .42;
-          const radius = 29 + seeded(i, 62) * 11;
-          const x = Math.cos(azimuth) * radius;
-          const z = Math.sin(azimuth) * radius;
-          const angle = THREE.MathUtils.degToRad(27 + seeded(i, 63) * 12);
-          const y = Math.max(-17.2, cameraY - radius * Math.tan(angle));
-          const width = .9 + seeded(i, 64) * 1.55;
-          if (!kaykitSkyPlacementAllowed(x, y, z, width * .8)) continue;
-          const fragment = makeKayKitHorizonRockFragment(
-            i,
-            width,
-            THREE.MathUtils.mapLinear(radius, 29, 40, .74, .91)
-          );
-          if (!fragment) continue;
-          fragment.name = `ilyos-horizon-fragment-${i}`;
-          fragment.position.set(x, y, z);
-          sky.add(fragment);
-        }
-        return true;
-      }
-
-      function buildKayKitBoardClouds(parent) {
-        if (!kaykit3D) return;
-        const seeded = (i, salt = 0) => {
-          const x = Math.sin((i + 1) * 71.31 + salt * 19.71) * 43758.5453;
-          return x - Math.floor(x);
-        };
-        const group = new THREE.Group();
-        group.name = "ilyos-board-clouds";
-        const economy = kaykit3D.qualityMode === "performance";
-
-        const addCloud = (spec, index) => {
-          const x = Math.cos(spec.azimuth) * spec.radius;
-          const z = Math.sin(spec.azimuth) * spec.radius;
-          const cloud = cloneKayKitAsset(spec.key, { maxWidth: spec.scale, maxHeight: spec.scale * .6, targetFloor: 0 });
-          if (!cloud) return;
-          cloud.position.set(x, spec.y, z);
-          cloud.rotation.y = seeded(index, 1) * Math.PI * 2;
-          cloud.traverse(child => {
-            if (!child.isMesh) return;
-            child.castShadow = false; child.receiveShadow = false;
-            child.material = kaykitBacklitCloudMaterial(child.material);
-          });
-          group.add(cloud);
-          kaykit3D.skyLayers.push({
-            object: cloud, base: cloud.position.clone(),
-            // Même mécanisme de dérive que buildKayKitSkyEnvironment (voir la
-            // boucle d'animation dans animateKayKit3D) : aucun code d'animation
-            // supplémentaire nécessaire.
-            drift: {
-              x: 1.1 + seeded(index, 2) * 1.0, z: .9 + seeded(index, 3) * .8,
-              sx: .006 + seeded(index, 4) * .004, sz: .005 + seeded(index, 5) * .003
-            }
-          });
-        };
-
-        // BAS — mer de nuages proche, sous le plateau (sécurité : voir
-        // docstring). Desktop 4, mobile 3 — grandes masses, pas une nuée.
-        const lowSpecs = [
-          // AZIMUTS RAMENÉS SUR LES CÔTÉS. La caméra FACE est en +Z et regarde vers -Z :
-          // +X est donc à droite de l'écran, -X à gauche. Les azimuts proches de 0 et de π
-          // encadrent le plateau, ceux proches de π/2 et 3π/2 se placent devant ou derrière
-          // lui. Les valeurs d'origine (.6, 2.4, 4.1, 5.3) tombaient dans la seconde
-          // catégorie et empilaient les nuages dans l'axe du regard.
-          // Rayon porte de ~3,5 a ~9 et altitude remontee a hauteur de plateau. Ne
-          // corriger que l azimut ne suffisait pas : a un rayon de 3 ces nuages restaient
-          // DANS l emprise du plateau (demi-portee 5,1), et seule leur altitude negative
-          // les empechait de le couvrir — ils se lisaient donc comme posés dessous.
-          // A un rayon de 9 ils sont franchement a l exterieur, donc libres de remonter
-          // au niveau du jeu et d encadrer le plateau par la gauche et par la droite.
-          { key: "cloudBig", azimuth: .20, radius: 8.8, y: -.3, scale: 2.6 },
-          { key: "cloudSmall", azimuth: 6.06, radius: 9.6, y: .6, scale: 2.1 },
-          { key: "cloudBig", azimuth: Math.PI - .22, radius: 9.0, y: -.1, scale: 2.5 },
-          { key: "cloudSmall", azimuth: Math.PI + .18, radius: 9.8, y: .8, scale: 2.2 }
-        ];
-        (economy ? lowSpecs.slice(0, 3) : lowSpecs).forEach((spec, index) => addCloud(spec, index));
-
-        // LOINTAIN — hors du rayon de sécurité, calé pour dépasser dans le
-        // cadrage "front" (azimuth 3.93/5.5 : même arc que les îlots proches
-        // ci-dessous, vérifié par projection caméra). Desktop 3, mobile 2.
-        const farSpecs = [
-          { key: "cloudSmall", azimuth: .42, radius: 12.5, y: 1.8, scale: 1.4 },
-          { key: "cloudBig", azimuth: Math.PI - .38, radius: 14, y: 2.4, scale: 2.0 },
-          { key: "cloudBig", azimuth: Math.PI + .44, radius: 9.6, y: .6, scale: 1.6 }
-        ];
-        (economy ? farSpecs.slice(0, 2) : farSpecs).forEach((spec, index) => addCloud(spec, index + 10));
-
-        // Ombres de nuages : décalques doux au ras du plateau (alpha faible,
-        // même texture que les amas du ciel), pas de vrais objets shadow-caster
-        // — assombrissent légèrement le terrain sous leur passage sans toucher
-        // au shadow-mapping (coût quasi nul, y compris sur mobile).
-        const shadowTexture = kaykitCloudTexture();
-        [
-          { x: -2.5, z: 1.5, scale: 9, opacity: .15 },
-          { x: 3, z: -2, scale: 7, opacity: .11 }
-        ].forEach((spec, index) => {
-          const decal = new THREE.Mesh(
-            kaykitGeometry("cloud-shadow-decal-v1", () => new THREE.PlaneGeometry(1, .625)),
-            new THREE.MeshBasicMaterial({
-              map: shadowTexture, color: 0x27384a, transparent: true, opacity: spec.opacity,
-              depthWrite: false, fog: false, toneMapped: false
-            })
-          );
-          decal.rotation.x = -Math.PI / 2;
-          decal.scale.set(spec.scale, spec.scale, 1);
-          decal.position.set(spec.x, KAYKIT_LEVELS.islandTop + .03, spec.z);
-          decal.renderOrder = 6;
-          group.add(decal);
-          kaykit3D.skyLayers.push({
-            object: decal, base: decal.position.clone(),
-            drift: { x: 3.2 + index, z: 2.4 + index * .6, sx: .004 + index * .001, sz: .003 + index * .001 }
-          });
-        });
-
-        parent.add(group);
-        kaykit3D.boardCloudsGroup = group;
-      }
+      /* Décor retiré le 28/10/2026 (fil « Pistes d'amélioration ») : les 14
+         fragments rocheux retournés autour du plateau (ilyos-horizon-fragment-*),
+         les 7 nuages KayKit et leurs 2 ombres au sol (ilyos-board-clouds).
+         Ils ne servaient pas le jeu, chargeaient le regard et coûtaient du
+         dessin sur les machines faibles. Ne pas les réintroduire sans accord. */
 
       // Grille filaire + aplat de fond + cases-cibles du raycast. Tout dépend de
       // GRID (11 ou 13) ; séparé de buildKayKitStaticScene() pour être rebâti au
@@ -5429,6 +5277,11 @@
           const caseMagie = kaykitCaseSousFantomeMagie();
           if (caseMagie) return caseMagie;
 
+          /* Les aperçus (destinations de poussée…) sont reconstruits au survol ;
+             tant qu'aucune image n'est dessinée, leur matrice monde est encore
+             l'identité et le rayon les manquait : un clic rapide après le survol
+             tombait sur la case en dessous. */
+          kaykit3D.actionPreviewGroup?.updateMatrixWorld?.(true);
           const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
@@ -6787,6 +6640,87 @@
       window.ILYOS_ECONOMIE = { actif: () => kaykitEconomieActive, regler: kaykitEconomieRegler };
 
       window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
+
+      /* VOILE SOUS LE PLATEAU (menu > Graphismes, activé par défaut). Assombrit
+         légèrement le ciel visible DERRIÈRE les cases, et lui seul, pour que le
+         plateau ressorte ; tout ce qui est hors du plateau reste inchangé.
+         Choix de Taekun du 01/11/2026 : niveau « léger », sans flou ni
+         changement de couleur du reste de la scène.
+
+         Le voile est un quadrilatère posé bien plus bas que les coques des îles,
+         sur la projection du plateau vue depuis la caméra : il couvre donc à
+         l'écran exactement la zone des cases. Il passe après les calques du ciel
+         (renderOrder) mais avant tout le reste : les îles, opaques et plus
+         proches, le masquent, et les surbrillances transparentes du plateau se
+         dessinent par-dessus. Quatre sommets recalculés par image : coût nul.
+         Réglage `ilyosVoilePlateau` dans le stockage local. */
+      const KAYKIT_VOILE_CLE = "ilyosVoilePlateau";
+      // Niveaux proposés dans Menu > Graphismes ; « léger » par défaut.
+      const KAYKIT_VOILE_NIVEAUX = { sans: 0, leger: .25, moyen: .42 };
+      const KAYKIT_VOILE = { couleur: 0x0b1020, profondeur: -10, marge: .3 };
+      let kaykitVoileNiveau = (() => {
+        try {
+          const lu = localStorage.getItem(KAYKIT_VOILE_CLE);
+          if (lu === "0") return "sans";            // ancien interrupteur coupé
+          return KAYKIT_VOILE_NIVEAUX[lu] !== undefined ? lu : "leger";
+        } catch (_) { return "leger"; }
+      })();
+      const kaykitVoileCoins = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+
+      function kaykitVoileCreer() {
+        // Bord adouci : rectangle blanc flouté dans une petite texture, l'alpha
+        // fait le fondu sur la marge.
+        const toile = document.createElement("canvas");
+        toile.width = toile.height = 128;
+        const ctx = toile.getContext("2d");
+        ctx.filter = "blur(4px)";
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(7, 7, 114, 114);
+        const geometrie = new THREE.BufferGeometry();
+        geometrie.setAttribute("position", new THREE.Float32BufferAttribute(new Array(12).fill(0), 3));
+        geometrie.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+        geometrie.setIndex([0, 1, 2, 0, 2, 3]);
+        const voile = new THREE.Mesh(geometrie, new THREE.MeshBasicMaterial({
+          map: new THREE.CanvasTexture(toile), color: KAYKIT_VOILE.couleur, transparent: true,
+          opacity: KAYKIT_VOILE_NIVEAUX.leger, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide
+        }));
+        voile.name = "ilyos-voile-plateau";
+        voile.renderOrder = -800;      // après le ciel (-1000 à -870), avant le reste
+        voile.frustumCulled = false;   // sommets réécrits à chaque image
+        return voile;
+      }
+
+      function kaykitVoilePlateauSuivre() {
+        if (!kaykit3D?.scene) return;
+        let voile = kaykit3D.voilePlateau;
+        const opacite = KAYKIT_VOILE_NIVEAUX[kaykitVoileNiveau];
+        if (!opacite) { if (voile) voile.visible = false; return; }
+        if (!voile) { voile = kaykit3D.voilePlateau = kaykitVoileCreer(); }
+        voile.material.opacity = opacite;
+        if (voile.parent !== kaykit3D.scene) kaykit3D.scene.add(voile);
+        voile.visible = true;
+        const camera = kaykit3D.camera.position;
+        const demi = kaykitBoardSpan() / 2 + KAYKIT_VOILE.marge;
+        const bas = KAYKIT_VOILE.profondeur;
+        // Rayon caméra → coin du plateau (au ras des cases), prolongé jusqu'au plan bas.
+        [[-demi, demi], [demi, demi], [demi, -demi], [-demi, -demi]].forEach(([x, z], i) => {
+          const t = (bas - camera.y) / (0 - camera.y);
+          kaykitVoileCoins[i].set(camera.x + (x - camera.x) * t, bas, camera.z + (z - camera.z) * t);
+        });
+        const positions = voile.geometry.attributes.position;
+        kaykitVoileCoins.forEach((coin, i) => positions.setXYZ(i, coin.x, coin.y, coin.z));
+        positions.needsUpdate = true;
+      }
+
+      function kaykitVoileRegler(niveau) {
+        if (KAYKIT_VOILE_NIVEAUX[niveau] === undefined) return kaykitVoileNiveau;
+        kaykitVoileNiveau = niveau;
+        try { localStorage.setItem(KAYKIT_VOILE_CLE, niveau); } catch (_) { }
+        kaykitVoilePlateauSuivre();
+        return kaykitVoileNiveau;
+      }
+
+      window.ILYOS_VOILE_PLATEAU = { niveau: () => kaykitVoileNiveau, regler: kaykitVoileRegler };
 
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
          chute, qui déclenche une seconde chute, produit trois demandes en
@@ -12255,11 +12189,6 @@
       /* Ce qui ne se rebâtit pas avec le calque d'îles : les nuages KayKit en
          boule au ras du plateau, retirés de l'archipel (le ciel peint porte
          déjà ses nuages). */
-      function kaykitAppliquerRenduIles() {
-        const nuages = kaykit3D?.dynamicGroup?.getObjectByName("ilyos-board-clouds");
-        if (nuages) nuages.visible = ILYOS_RENDU_ANCIEN;
-      }
-
       function attacherPlaqueEquipe(visual, character) {
         const couleur = state?.players?.[character.player]?.color;
         if (couleur === undefined || couleur === null) return;
@@ -13521,6 +13450,7 @@
 
       function syncKayKitScene() {
         kaykitSignalerAgitation();
+        kaykitOmbresARefaire = true;
         if (!kaykit3D || !state || !isKayKitBoardActive()) return;
         if (kaykit3D.syncInProgress) {
           kaykit3D.syncPending = true;
@@ -13537,7 +13467,6 @@
             kaykit3D.islandObjectRegistry.forEach(entry => disposeKayKitObjects(entry.objects));
             kaykit3D.islandObjectRegistry.clear();
             kaykit3D.islandsSignature = null;
-            kaykitAppliquerRenduIles();
           }
           // Rebâtit grille + cases-cibles si la taille du plateau a changé.
           syncKayKitBoardGrid();
@@ -13590,32 +13519,15 @@
             if (croix) { dynamic.add(croix); kaykit3D.crownCrossGroup = croix; }
             kaykit3D.crownCrossGroundBuilt = true;
           }
-          // Nuages du plateau : statiques (comme le sol en croix), construits une
-          // seule fois — mais seulement une fois les deux assets KayKit chargés
-          // (même principe que châteaux/gardiens : jamais de secours à remplacer
-          // à chaud, on attend juste que l'asset soit prêt).
-          if (!kaykit3D.boardCloudsBuilt && kaykit3D.assets.has("cloudSmall") && kaykit3D.assets.has("cloudBig")) {
-            buildKayKitBoardClouds(dynamic);
-            kaykit3D.boardCloudsBuilt = true;
-            kaykitAppliquerRenduIles();
-          }
-
           // Ciel : bascule vers l'image équirectangulaire dès qu'elle a fini de charger
           // (réseau, pas un asset KayKit — condition indépendante des autres reprises).
           if (!kaykit3D.cielImageRepris) {
             kaykit3D.cielImageRepris = kaykitReprendreCielImage();
           }
 
-          // Fragments de transition : ils n'attendent que les trois montagnes nues.
-          // Aucun bâtiment, arbre ou mesh d'île jouable n'est utilisé par cette couche.
-          // Socles de château : même famille d'asset rocheux.
+          // Socles de château : roche des montagnes nues KayKit.
           if (!kaykit3D.soclesRocheuxRepris && kaykit3D.assets.has("bareMountainA")) {
             kaykit3D.soclesRocheuxRepris = kaykitReprendreSoclesRocheux();
-          }
-
-          if (!kaykit3D.distantArchipelagoBuilt && kaykit3D.assets.has("bareMountainA")
-            && kaykit3D.assets.has("bareMountainB") && kaykit3D.assets.has("bareMountainC")) {
-            kaykit3D.distantArchipelagoBuilt = buildKayKitDistantArchipelago();
           }
 
           // Couche île (blocs fusionnés + coutures + décor forestier + les
@@ -14120,10 +14032,44 @@
          ci-dessous) : l'ancien plafond à 30 i/s comparait un seuil de temps à
          un horodatage qui tremble, d'où son miroitement. */
       const KAYKIT_CALME_APRES_MS = 1500;
+      /* La souris qui glisse sans rien changer au plateau ne retient la pleine
+         cadence qu'un court instant. Mesuré le 01/11 sur un portable RTX 4050 :
+         en jouant, la main bouge presque sans arrêt, et le plateau était dessiné
+         à pleine cadence pendant toute la partie (processus graphique ~110 %
+         d'un cœur, ~30 W). Ce qui change à l'écran au survol (case soulevée,
+         couronne, caméra tenue à la souris) compte déjà comme mouvement dans
+         kaykitSceneAgitee et garde la pleine cadence aussi longtemps qu'il dure. */
+      const KAYKIT_CALME_APRES_SOURIS_MS = 250;
       let kaykitDerniereAgitation = 0;
+      let kaykitDerniereSouris = 0;
       function kaykitSignalerAgitation() { kaykitDerniereAgitation = performance.now(); }
-      ["pointermove", "pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
+
+      /* OMBRES REDESSINÉES SEULEMENT QUAND QUELQUE CHOSE BOUGE. La carte
+         d'ombre du soleil (lumière fixe) était refaite à chaque image : ~210
+         dessins de plus par image, presque autant que la scène elle-même
+         (mesuré le 01/11 : 212 pour l'ombre, 293 pour l'image). Le décor est
+         immobile ; seuls les gardiens, les îles qui tombent et les effets
+         déplacent des ombres. On la refait donc : pendant tout mouvement réel
+         du plateau et 300 ms après, après chaque synchronisation de la scène
+         (île posée, gardien ajouté…), et sinon une image dessinée sur quatre,
+         ce qui suffit au souffle des gardiens au repos. Un clic ou un survol
+         qui ne bouge rien ne la refait plus. */
+      let kaykitDernierMouvement = 0;
+      let kaykitOmbresARefaire = true;
+      let kaykitImagesSansOmbre = 0;
+      function kaykitPreparerOmbres(maintenant) {
+        const R = kaykit3D.renderer;
+        if (!R.shadowMap.enabled) return;
+        R.shadowMap.autoUpdate = false;
+        if (kaykitOmbresARefaire || maintenant - kaykitDernierMouvement < 300 || ++kaykitImagesSansOmbre >= 4) {
+          R.shadowMap.needsUpdate = true;
+          kaykitOmbresARefaire = false;
+          kaykitImagesSansOmbre = 0;
+        }
+      }
+      ["pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
         window.addEventListener(type, kaykitSignalerAgitation, { passive: true, capture: true }));
+      window.addEventListener("pointermove", () => { kaykitDerniereSouris = performance.now(); }, { passive: true, capture: true });
 
       function kaykitSceneAgitee(maintenant) {
         const k = kaykit3D;
@@ -14153,9 +14099,10 @@
           c.diviseur = vsync < 12.5 ? Math.max(1, Math.floor(16.7 / vsync + .25)) : 1;
           c.diviseurCalme = Math.max(c.diviseur, Math.floor(33.4 / vsync + .25));
         }
-        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; return false; }
-        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = maintenant;
-        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS;
+        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; kaykitDernierMouvement = maintenant; return false; }
+        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = kaykitDernierMouvement = maintenant;
+        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS
+          && maintenant - kaykitDerniereSouris > KAYKIT_CALME_APRES_SOURIS_MS;
         const diviseur = calme ? c.diviseurCalme : c.diviseur;
         if (++c.ticks < diviseur) return true;
         // Les mesures d'images/s (qualité automatique, repli du bloom) voient
@@ -14175,7 +14122,14 @@
         // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
         // delta géant n'arrive d'un coup au retour. La boucle rAF continue
         // d'être programmée, mais chaque tick ne coûte alors presque rien.
+        // La VUE 2D (js/plateau-tactique.js) masque le canevas 3D sans changer
+        // boardRenderMode : la scène continuait d'être dessinée, invisible, à
+        // pleine cadence (mesuré le 31/10 : autant de calcul qu'en 3D). Elle est
+        // gelée comme hors jeu ; la logique de partie n'en dépend pas (les fins
+        // d'action passent par des minuteurs, voir queueKayKitActionAnimation)
+        // et les déplacements, datés, se terminent au retour en 3D.
         const gameHidden = !isKayKitBoardActive()
+          || document.body.dataset.plateauTactique === "on"
           || !els.gameScreen
           || els.gameScreen.classList.contains("hidden");
         if (document.hidden || gameHidden) {
@@ -14281,6 +14235,7 @@
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
         updateKayKitHorizon(elapsed);
+        kaykitVoilePlateauSuivre();
         // gameHidden garantit déjà ici visualMode==="alternative" et
         // #gameScreen visible (voir le retour anticipé en tête de fonction) :
         // plus besoin de revérifier avant de rendre.
@@ -14297,6 +14252,7 @@
         const retirerChoc = kaykitAppliquerChoc(frameNow);
         try {
           kaykitStabiliserLumieresPonctuelles();
+          kaykitPreparerOmbres(frameNow);
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
             kaykit3D.renderer.setRenderTarget(null);
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);

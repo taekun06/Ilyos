@@ -41,6 +41,7 @@
   let saisie = false;     // mode champ de texte : le stick est rendu au clavier
   let precedents = [];
   let prochainPas = 0;
+  let masque = false;
 
   function ecranConfig() {
     const duel = document.getElementById('duel');
@@ -173,6 +174,17 @@
 
   function lire() {
     requestAnimationFrame(lire);
+    /* Menu masqué pendant la partie : la manette appartient au jeu. Sans ce
+       garde-fou, A ou START pouvaient encore « cliquer » dans le menu caché. */
+    if (window.frameElement && window.frameElement.hidden) { masque = true; return; }
+    if (masque) {
+      // Au retour du menu, un bouton encore tenu (le A qui a quitté la partie)
+      // ne doit pas valider aussitôt : on repart de l'état présent.
+      masque = false; prochainPas = 0;
+      const m = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(c => c?.connected);
+      precedents = m ? m.buttons.map(b => !!b.pressed) : [];
+      return;
+    }
     const manettes = navigator.getGamepads ? navigator.getGamepads() : [];
     let manette = null;
     for (const candidate of manettes) if (candidate?.connected) { manette = candidate; break; }

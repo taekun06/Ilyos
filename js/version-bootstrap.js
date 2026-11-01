@@ -240,10 +240,10 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
 
   const styles = [
-    './css/hud-organique-v2.css?v=12.7-lueurs-fixes',
+    './css/hud-organique-v2.css?v=12.8-sans-flou',
     './css/hud-organique-v2-polish-v6.css?v=12.7-hud-bas-2',
     './css/hud-organique-v2-readability-v7.css?v=12.7-hud-ref',
-    './css/hud-organique-v2-final-v8.css?v=12.8-hud-ref',
+    './css/hud-organique-v2-final-v8.css?v=12.9-sans-flou',
     './css/hud-organique-v2-depth-v9.css?v=12.7',
     './css/hud-organique-v2-depth-v10.css?v=12.7-hud-bas-2',
     './css/hud-consolidation-v12.css?v=12.9-rotation-gauche',
@@ -251,7 +251,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=8-hud-ref-10'
+    './css/portrait-mobile.css?v=8-hud-ref-11'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
@@ -272,7 +272,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=8'
+    './js/menu-jeu.js?v=10'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
