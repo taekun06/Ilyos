@@ -221,6 +221,27 @@
     });
     page('graphismes').appendChild(ciel);
 
+    // PLATEAU : voile sur le ciel visible derrière les cases
+    // (js/game/kaykit3d.js, ILYOS_VOILE_PLATEAU). « Léger » par défaut.
+    const plateau = section('Plateau', 'Assombrir le ciel derrière les cases pour les faire ressortir.');
+    const plateauGrille = document.createElement('div');
+    plateauGrille.className = 'mj-grille-voile';
+    plateauGrille.innerHTML = [['sans', 'Sans', 'Ciel intact'], ['leger', 'Léger', 'Par défaut'], ['moyen', 'Moyen', 'Plus marqué']]
+      .map(([n, titre, sous]) => `<button type="button" class="mj-choix" data-mj-voile="${n}"><b>${titre}</b><small>${sous}</small></button>`).join('');
+    const majVoile = () => {
+      const niveau = window.ILYOS_VOILE_PLATEAU?.niveau?.();
+      plateauGrille.querySelectorAll('[data-mj-voile]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mjVoile === niveau)));
+    };
+    plateauGrille.addEventListener('click', e => {
+      const bouton = e.target.closest('[data-mj-voile]');
+      if (!bouton || !window.ILYOS_VOILE_PLATEAU) return;
+      window.ILYOS_VOILE_PLATEAU.regler(bouton.dataset.mjVoile);
+      majVoile();
+    });
+    majVoile();
+    plateau.appendChild(plateauGrille);
+    page('graphismes').appendChild(plateau);
+
     // CHOCS : secousse de caméra et vibration au moment des coups forts
     // (js/game/kaykit3d.js, KAYKIT_CHOCS). Sans coût de rendu.
     const chocs = section('Chocs', 'Le poids des coups : poussées, chutes, couronnes volées.');
@@ -385,7 +406,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=9';
+    lien.href = './css/menu-jeu.css?v=10';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }
