@@ -345,11 +345,21 @@
            ?iles=prairie  mêmes cubes, herbe d'une seule famille de verts, terre brune
            ?iles=roc      flancs et coque dans la roche des socles de villages,
                           pointe rocheuse KayKit renversée sous chaque île
-           ?iles=pierre   cases en dalles de pierre KayKit Dungeon sur la même roche */
+           ?iles=pierre   cases en dalles de pierre KayKit Dungeon sur la même roche
+           ?iles=dalle    dalle Dungeon fine posée directement sur les pointes
+           ?iles=gazon    plaque d'herbe fine (KayKit Mini-Game, legacy) sur les pointes */
       const ILYOS_ILES_ESSAI = (() => {
-        try { return (/[?&]iles=(prairie|roc|pierre)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+        try { return (/[?&]iles=(prairie|roc|pierre|dalle|gazon)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
-      if (ILYOS_ILES_ESSAI === "pierre") {
+      // Options où l'île n'a plus de coque : la roche pend directement sous les cases.
+      const ILYOS_ILES_POINTES = ["pierre", "dalle", "gazon"].includes(ILYOS_ILES_ESSAI);
+      // Bas de la case (socle ou plaque fine), là où s'accrochent les pointes ;
+      // le dessus reste à la hauteur des anciens blocs pour les gardiens.
+      const ILYOS_ESSAI_BAS_CASE = ILYOS_ILES_ESSAI === "dalle" ? .37 : ILYOS_ILES_ESSAI === "gazon" ? .33 : 0;
+      if (ILYOS_ILES_ESSAI === "gazon") {
+        KAYKIT_ASSETS.essaiGazon = kaykitAssetSpec("legacy", "tileLow_forest.glb");
+      }
+      if (ILYOS_ILES_ESSAI === "pierre" || ILYOS_ILES_ESSAI === "dalle") {
         const dungeon = nom => kaykitAssetSpec("dungeon", nom + ".gltf", "./assets/kaykit/dungeon/dungeon_texture.png");
         Object.assign(KAYKIT_ASSETS, {
           essaiSocle: dungeon("floor_foundation_allsides"),
@@ -359,7 +369,8 @@
           essaiDalleGravee: dungeon("floor_tile_small_decorated")
         });
       }
-      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "pierre"
+      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon", "bareMountainA", "bareMountainB", "bareMountainC"]
+        : ILYOS_ILES_POINTES
         ? ["essaiSocle", "essaiDalle", "essaiDalleHerbeA", "essaiDalleHerbeB", "essaiDalleGravee", "bareMountainA", "bareMountainB", "bareMountainC"]
         : ILYOS_ILES_ESSAI === "roc" ? ["bareMountainA", "bareMountainB", "bareMountainC"] : [];
       // Les îles ne se rebâtissent que si leur signature change : on y compte les
@@ -10129,7 +10140,7 @@
       const KAYKIT_HULL_COLORS_MID = [new THREE.Color(0x8f5228), new THREE.Color(0x5c544c), new THREE.Color(0x63452f), new THREE.Color(0x7c7c82)];    // moins orangé, plus minéral — même famille
       const KAYKIT_HULL_COLORS_BOTTOM = [new THREE.Color(0x4a3223), new THREE.Color(0x34302c), new THREE.Color(0x3c2a1e), new THREE.Color(0x55565e)]; // roche profonde, jamais noire
       const kaykitHullRendu = () => !ILYOS_RENDU_ANCIEN ? "archipel" : ILYOS_ILES_ESSAI || "herbe";
-      const kaykitHullTeinte = couleurs => couleurs[{ herbe: 0, archipel: 1, prairie: 2, roc: 3, pierre: 3 }[kaykitHullRendu()]];
+      const kaykitHullTeinte = couleurs => couleurs[{ herbe: 0, archipel: 1, prairie: 2, roc: 3, pierre: 3, dalle: 3, gazon: 3 }[kaykitHullRendu()]];
 
       // Point de contrôle intermédiaire légèrement avant la mi-hauteur : la
       // masse bascule vers le registre "minéral" assez tôt plutôt que de
@@ -10345,7 +10356,7 @@
         return geometry;
       }
 
-      const kaykitHullMaterialCache = { herbe: null, archipel: null, prairie: null, roc: null, pierre: null };
+      const kaykitHullMaterialCache = { herbe: null, archipel: null, prairie: null, roc: null, pierre: null, dalle: null, gazon: null };
       function kaykitIslandHullMaterial() {
         const rendu = kaykitHullRendu();
         // Matériau construit directement (pas via kaykitMaterial, qui ne
@@ -10391,7 +10402,7 @@
           const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           // Option pierre : pas de couche de roche sous les dalles, la pointe
           // s'accroche directement sous les socles.
-          if (ILYOS_ILES_ESSAI === "pierre") { addKayKitEssaiPointesSousCases(group, component); return; }
+          if (ILYOS_ILES_POINTES) { addKayKitEssaiPointesSousCases(group, component); return; }
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
           hull.castShadow = false;
@@ -10447,7 +10458,7 @@
           const p = kaykitCellPosition(r, c, 0);
           roche.rotation.x = Math.PI;
           roche.rotation.y = Math.floor(kaykitHash("essai-pointe-rot", r, c) * 4) * Math.PI / 2;
-          roche.position.set(p.x, KAYKIT_LEVELS.board + .03, p.z);
+          roche.position.set(p.x, KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE + .03, p.z);
           roche.traverse(child => {
             if (!child.isMesh) return;
             child.castShadow = false;
@@ -10470,7 +10481,7 @@
         if (!coeur) return;
         coeur.rotation.x = Math.PI;
         coeur.rotation.y = (graine % 4) * Math.PI / 2;
-        coeur.position.set(sx / component.length, KAYKIT_LEVELS.board + .01, sz / component.length);
+        coeur.position.set(sx / component.length, KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE + .01, sz / component.length);
         coeur.traverse(child => {
           if (!child.isMesh) return;
           child.castShadow = false;
@@ -10987,12 +10998,38 @@
       // Nuances nettes mais dans la même famille de pierres : deux îles collées
       // doivent se distinguer d'un coup d'œil (sable, bleu-gris, rosé, lichen, lavande).
       const KAYKIT_ESSAI_DALLE_TEINTES = [0xffffff, 0xe6c48e, 0xa9bfe0, 0xe4ad9c, 0xbcd296, 0xc8b2e4];
+      // Plaque d'herbe fine aux bords arrondis : herbe à la teinte de l'île,
+      // tranche dans la roche des pointes.
+      // Verts nettement différents d'une île à l'autre (clair, profond, tendre,
+      // sapin, olive, jade) pour distinguer deux îles collées.
+      const KAYKIT_ESSAI_GAZON_TEINTES = [0x6cb04a, 0x4a9640, 0x8cbc52, 0x3d8a4c, 0x7ea83a, 0x58aa72];
+      function makeKayKitEssaiGazon(island, r, c) {
+        const plaque = cloneKayKitAsset("essaiGazon", { exactWidth: KAYKIT_BLOCK_SIZE * .99, exactDepth: KAYKIT_BLOCK_SIZE * .99, exactHeight: .13, targetFloor: .33 });
+        const groupe = new THREE.Group();
+        if (!plaque) return groupe;
+        const herbe = new THREE.Color(KAYKIT_ESSAI_GAZON_TEINTES[Math.max(0, Number(island?.visualVariant) || 0) % KAYKIT_ESSAI_GAZON_TEINTES.length]);
+        herbe.offsetHSL(0, 0, (kaykitHash("essai-gazon", island?.id, r, c) - .5) * .03);
+        // Les couleurs des matériaux glTF sont linéaires : sans conversion, le vert sort délavé.
+        herbe.convertSRGBToLinear();
+        plaque.traverse(child => {
+          if (!child.isMesh) return;
+          child.castShadow = true;
+          child.receiveShadow = true;
+          (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => {
+            m.color?.set(/green/i.test(m.name || "") ? herbe : new THREE.Color(0x77736c).convertSRGBToLinear());
+            m.roughness = .9;
+          });
+        });
+        groupe.add(plaque);
+        return groupe;
+      }
       function makeKayKitEssaiDalle(island, r, c) {
         const groupe = new THREE.Group();
-        const socle = cloneKayKitAsset("essaiSocle", { exactWidth: KAYKIT_BLOCK_SIZE, exactDepth: KAYKIT_BLOCK_SIZE, exactHeight: .42, targetFloor: 0 });
+        if (ILYOS_ILES_ESSAI === "gazon") return makeKayKitEssaiGazon(island, r, c);
+        const socle = ILYOS_ILES_ESSAI === "dalle" ? null : cloneKayKitAsset("essaiSocle", { exactWidth: KAYKIT_BLOCK_SIZE, exactDepth: KAYKIT_BLOCK_SIZE, exactHeight: .42, targetFloor: 0 });
         const tirage = kaykitHash("essai-dalle", island?.id, r, c);
         const cle = tirage < .55 ? "essaiDalle" : tirage < .75 ? "essaiDalleHerbeA" : tirage < .9 ? "essaiDalleHerbeB" : "essaiDalleGravee";
-        const dalle = cloneKayKitAsset(cle, { exactWidth: KAYKIT_BLOCK_SIZE * .98, exactDepth: KAYKIT_BLOCK_SIZE * .98, exactHeight: .05, targetFloor: .415 });
+        const dalle = cloneKayKitAsset(cle, { exactWidth: KAYKIT_BLOCK_SIZE * .98, exactDepth: KAYKIT_BLOCK_SIZE * .98, exactHeight: ILYOS_ILES_ESSAI === "dalle" ? .095 : .05, targetFloor: ILYOS_ILES_ESSAI === "dalle" ? .37 : .415 });
         const teinte = new THREE.Color(KAYKIT_ESSAI_DALLE_TEINTES[Math.max(0, Number(island?.visualVariant) || 0) % KAYKIT_ESSAI_DALLE_TEINTES.length]);
         [socle, dalle].forEach(objet => {
           if (!objet) return;
@@ -11062,7 +11099,8 @@
             }
             return;
           }
-          if (ILYOS_ILES_ESSAI === "pierre" && !preview && kaykit3D.assets.has("essaiSocle")) {
+          if ((ILYOS_ILES_ESSAI === "pierre" || ILYOS_ILES_ESSAI === "dalle") && !preview && kaykit3D.assets.has("essaiDalle")
+            || ILYOS_ILES_ESSAI === "gazon" && !preview && kaykit3D.assets.has("essaiGazon")) {
             const dalle = makeKayKitEssaiDalle(island, r, c);
             dalle.position.set(p.x, KAYKIT_LEVELS.board, p.z);
             dalle.renderOrder = 4;
