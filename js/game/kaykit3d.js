@@ -1011,6 +1011,12 @@
           return;
         }
         kaykitBloom.aaParCible = aaParCible && renderer.capabilities.isWebGL2;
+        /* Pas de relecture du journal de compilation à chaque shader : Three.js
+           interroge sinon le pilote (getProgramInfoLog) à chaque programme créé,
+           ce qui attend la fin de la compilation. Mesuré le 01/11 sur un portable
+           RTX 4050 : 3,4 s cumulées en 12 minutes, dont les gels de 0,5 à 1,3 s
+           à l'arrivée d'un effet nouveau. Les shaders du jeu sont fixes. */
+        renderer.debug.checkShaderErrors = false;
         renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -13444,6 +13450,7 @@
 
       function syncKayKitScene() {
         kaykitSignalerAgitation();
+        kaykitOmbresARefaire = true;
         if (!kaykit3D || !state || !isKayKitBoardActive()) return;
         if (kaykit3D.syncInProgress) {
           kaykit3D.syncPending = true;
@@ -14025,10 +14032,44 @@
          ci-dessous) : l'ancien plafond à 30 i/s comparait un seuil de temps à
          un horodatage qui tremble, d'où son miroitement. */
       const KAYKIT_CALME_APRES_MS = 1500;
+      /* La souris qui glisse sans rien changer au plateau ne retient la pleine
+         cadence qu'un court instant. Mesuré le 01/11 sur un portable RTX 4050 :
+         en jouant, la main bouge presque sans arrêt, et le plateau était dessiné
+         à pleine cadence pendant toute la partie (processus graphique ~110 %
+         d'un cœur, ~30 W). Ce qui change à l'écran au survol (case soulevée,
+         couronne, caméra tenue à la souris) compte déjà comme mouvement dans
+         kaykitSceneAgitee et garde la pleine cadence aussi longtemps qu'il dure. */
+      const KAYKIT_CALME_APRES_SOURIS_MS = 250;
       let kaykitDerniereAgitation = 0;
+      let kaykitDerniereSouris = 0;
       function kaykitSignalerAgitation() { kaykitDerniereAgitation = performance.now(); }
-      ["pointermove", "pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
+
+      /* OMBRES REDESSINÉES SEULEMENT QUAND QUELQUE CHOSE BOUGE. La carte
+         d'ombre du soleil (lumière fixe) était refaite à chaque image : ~210
+         dessins de plus par image, presque autant que la scène elle-même
+         (mesuré le 01/11 : 212 pour l'ombre, 293 pour l'image). Le décor est
+         immobile ; seuls les gardiens, les îles qui tombent et les effets
+         déplacent des ombres. On la refait donc : pendant tout mouvement réel
+         du plateau et 300 ms après, après chaque synchronisation de la scène
+         (île posée, gardien ajouté…), et sinon une image dessinée sur quatre,
+         ce qui suffit au souffle des gardiens au repos. Un clic ou un survol
+         qui ne bouge rien ne la refait plus. */
+      let kaykitDernierMouvement = 0;
+      let kaykitOmbresARefaire = true;
+      let kaykitImagesSansOmbre = 0;
+      function kaykitPreparerOmbres(maintenant) {
+        const R = kaykit3D.renderer;
+        if (!R.shadowMap.enabled) return;
+        R.shadowMap.autoUpdate = false;
+        if (kaykitOmbresARefaire || maintenant - kaykitDernierMouvement < 300 || ++kaykitImagesSansOmbre >= 4) {
+          R.shadowMap.needsUpdate = true;
+          kaykitOmbresARefaire = false;
+          kaykitImagesSansOmbre = 0;
+        }
+      }
+      ["pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
         window.addEventListener(type, kaykitSignalerAgitation, { passive: true, capture: true }));
+      window.addEventListener("pointermove", () => { kaykitDerniereSouris = performance.now(); }, { passive: true, capture: true });
 
       function kaykitSceneAgitee(maintenant) {
         const k = kaykit3D;
@@ -14058,9 +14099,10 @@
           c.diviseur = vsync < 12.5 ? Math.max(1, Math.floor(16.7 / vsync + .25)) : 1;
           c.diviseurCalme = Math.max(c.diviseur, Math.floor(33.4 / vsync + .25));
         }
-        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; return false; }
-        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = maintenant;
-        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS;
+        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; kaykitDernierMouvement = maintenant; return false; }
+        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = kaykitDernierMouvement = maintenant;
+        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS
+          && maintenant - kaykitDerniereSouris > KAYKIT_CALME_APRES_SOURIS_MS;
         const diviseur = calme ? c.diviseurCalme : c.diviseur;
         if (++c.ticks < diviseur) return true;
         // Les mesures d'images/s (qualité automatique, repli du bloom) voient
@@ -14080,7 +14122,14 @@
         // gelés. Seul le clock est drainé (clock.getDelta()) pour qu'aucun
         // delta géant n'arrive d'un coup au retour. La boucle rAF continue
         // d'être programmée, mais chaque tick ne coûte alors presque rien.
+        // La VUE 2D (js/plateau-tactique.js) masque le canevas 3D sans changer
+        // boardRenderMode : la scène continuait d'être dessinée, invisible, à
+        // pleine cadence (mesuré le 31/10 : autant de calcul qu'en 3D). Elle est
+        // gelée comme hors jeu ; la logique de partie n'en dépend pas (les fins
+        // d'action passent par des minuteurs, voir queueKayKitActionAnimation)
+        // et les déplacements, datés, se terminent au retour en 3D.
         const gameHidden = !isKayKitBoardActive()
+          || document.body.dataset.plateauTactique === "on"
           || !els.gameScreen
           || els.gameScreen.classList.contains("hidden");
         if (document.hidden || gameHidden) {
@@ -14203,6 +14252,7 @@
         const retirerChoc = kaykitAppliquerChoc(frameNow);
         try {
           kaykitStabiliserLumieresPonctuelles();
+          kaykitPreparerOmbres(frameNow);
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
             kaykit3D.renderer.setRenderTarget(null);
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);

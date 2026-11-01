@@ -1196,8 +1196,14 @@
           moveCursorTo(next.r, next.c);
         }
 
+        /* Aucune manette branchée : rien à lire à chaque image. Le navigateur
+           annonce une manette (gamepadconnected) dès sa première touche. */
+        let manetteAnnoncee = false;
+        window.addEventListener("gamepadconnected", () => { manetteAnnoncee = true; });
+        try { manetteAnnoncee = [...(navigator.getGamepads ? navigator.getGamepads() : [])].some(p => p?.connected); } catch (_) { }
         function poll() {
           requestAnimationFrame(poll);
+          if (!manetteAnnoncee) return;
           const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
           let gamepad = null;
           for (const candidate of gamepads) if (candidate?.connected) { gamepad = candidate; break; }
