@@ -28,6 +28,9 @@
 .rt-bascule::after{content:'';position:absolute;left:2px;top:1px;width:10px;height:10px;border-radius:50%;background:#7c7262}
 .rt-marche-affiner.on{color:#f4d28e}
 .rt-marche-affiner.on .rt-bascule{background:linear-gradient(90deg,#b27f2a,#f4d28e)}.rt-marche-affiner.on .rt-bascule::after{left:13px;background:#fff6dc}
+.rt-marche-exil{display:block;width:100%;margin-top:8px;padding:6px 4px;border-radius:8px;border:1px solid #d8aa4c;background:rgba(4,10,17,.85);color:#f4d28e;cursor:pointer;font-size:11px;letter-spacing:.06em;font-family:'Nunito Sans',sans-serif}
+.rt-marche.butin{border-color:#ffe3a0;box-shadow:0 0 0 2px rgba(255,227,160,.35),0 0 22px rgba(244,210,142,.45),0 10px 26px rgba(0,0,0,.45)}
+.rt-marche.butin .rt-mcarte:not(:disabled){border-color:#ffe3a0}
 .rt-marche-pied{margin-top:4px;text-align:center;font-size:9.5px;letter-spacing:.06em;color:#d9ccb0;opacity:.7;font-family:'Nunito Sans',sans-serif}
 
 /* Carte forte en main : liseré d'or sur le bouton du dock. */
@@ -47,6 +50,7 @@
   .rt-marche{display:grid;grid-template-columns:1fr auto;align-items:center}
   .rt-marche-tete{grid-column:1;grid-row:1}.rt-marche-tete small{display:none}
   .rt-marche-cartes{grid-column:1/-1;grid-row:2}
+  .rt-marche-exil{grid-column:2;grid-row:1;margin:0 0 5px;width:auto;padding:2px 8px}
   .rt-marche-affiner{grid-column:2;grid-row:1;margin:0 0 5px;padding:0;width:auto;font-size:10px}
   .rt-marche-pied{display:none}
 }

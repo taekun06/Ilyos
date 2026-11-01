@@ -12225,6 +12225,8 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
+        // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
+        if (character?.creature) return creatureModele(character);
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;
@@ -16100,6 +16102,16 @@
         return guardianCount(playerId) < MAX_GUARDIANS_PER_PLAYER;
       }
       function characterById(id) { return state.characters.find(ch => ch.id === id); }
+      /* Le joueur qui commande ce gardien. Les créatures neutres de la
+         Rotation (char.creature, player -1) n'appartiennent à personne : elles
+         reçoivent un camp fictif, sans village ni main, pour que l'affichage
+         et les règles qui lisent « le propriétaire » restent valables. */
+      const CAMP_CREATURE = Object.freeze({ id: -1, name: "Créature", color: "#8fcf9a", icon: "🐾",
+        isAI: false, villages: [], village: null, hand: [], deck: [], discard: [], score: 0, creature: true });
+      function joueurDuGardien(char) {
+        if (!char) return undefined;
+        return char.creature ? CAMP_CREATURE : state.players[char.player];
+      }
       function selectedCard() { return state.selectedActionType ? { action: state.selectedActionType } : null; }
       function unusedCardsOfType(type, player = currentPlayer()) {
         return (player?.hand || []).filter(card => !card.used && card.action === type);
@@ -17981,7 +17993,7 @@
         state.reachable = new Set();
         renderAll();
 
-        if (state.players[pick.player]?.isAI) {
+        if (joueurDuGardien(pick)?.isAI) {
           setTimeout(() => runDraftAI(), 460);
         }
       }
@@ -18117,7 +18129,7 @@
           .forEach(island => island.cells.forEach(([r, c]) => {
             if (draftGuardianCellAllowed(pick.player, r, c)) candidates.push([r, c]);
           }));
-        state.players[pick.player].villages?.forEach(village => {
+        joueurDuGardien(pick).villages?.forEach(village => {
           if (draftGuardianCellAllowed(pick.player, village.r, village.c)) {
             candidates.push([village.r, village.c]);
           }
@@ -18885,7 +18897,7 @@
         if (aiConfig().crownTactics >= 2) {
           const urgentCarrier = state.characters.find(char => {
             if (char.player === playerId || !characterCarriesCrown(char.id)) return false;
-            const owner = state.players[char.player];
+            const owner = joueurDuGardien(char);
             return aiValidationDistanceForPlayer(owner, char.r, char.c) <= 2;
           });
           if (urgentCarrier) {
@@ -19789,7 +19801,7 @@
               for (const item of simulation) {
                 const isOwn = item.char.player === state.currentPlayer;
                 const carrying = characterCarriesCrown(item.char.id);
-                const owner = state.players[item.char.player];
+                const owner = joueurDuGardien(item.char);
                 if (!item.alive) {
                   // Éliminer un gardien adverse (sans couronne) en le poussant
                   // dans le vide était sous-valorisé face aux gains de
@@ -19843,7 +19855,7 @@
           if (!rotation.valid) continue;
           let utility = -12;
           for (const move of rotation.characterMoves) {
-            const owner = state.players[move.char.player];
+            const owner = joueurDuGardien(move.char);
             const carrying = characterCarriesCrown(move.char.id);
             const isOwn = move.char.player === state.currentPlayer;
             if (carrying) {
@@ -22282,7 +22294,7 @@
         const readyOwnerFor = artifact => {
           const carrier = characterById(artifact.carrierId);
           if (carrier) {
-            const owner = state.players[carrier.player];
+            const owner = joueurDuGardien(carrier);
             return owner && isCrownValidationCell(owner, carrier.r, carrier.c)
               ? owner
               : null;
@@ -22307,7 +22319,7 @@
               return `Couronne ${index + 1} : village de ${readyOwner.name} — validation au début de son prochain tour`;
             }
             return carrier
-              ? `Couronne ${index + 1} : ${state.players[carrier.player].name}`
+              ? `Couronne ${index + 1} : ${joueurDuGardien(carrier).name}`
               : `Couronne ${index + 1} : libre`;
           })
           .join("\n");
@@ -22659,7 +22671,7 @@
           const ch = characterById(state.selectedCharId);
           const carriesCrown = ch && characterCarriesCrown(ch.id);
           if (ch && carriesCrown) {
-            const p = state.players[ch.player];
+            const p = joueurDuGardien(ch);
             unitSlot.classList.remove("hidden");
             unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown hud-v2-crown-icon is-filled">${HUD_V2_ICONS.CROWN}</span>`;
           } else {
@@ -23176,7 +23188,7 @@
             });
 
             if (char) {
-              const owner = state.players[char.player];
+              const owner = joueurDuGardien(char);
               const carriedArtifact = artifactCarriedBy(char.id);
               const carrying = !!carriedArtifact;
               const crownPointReady = (
@@ -23250,7 +23262,7 @@
               && !char
             ) {
               const selected = characterById(state.selectedCharId);
-              const owner = selected ? state.players[selected.player] : currentPlayer();
+              const owner = selected ? joueurDuGardien(selected) : currentPlayer();
               html += `
               <span class="action-ghost move-ghost" style="--ghost-color:${owner.color}">
                 <span>${owner.icon}</span>
@@ -24917,7 +24929,7 @@
           return false;
         }
 
-        const owner = state.players[char.player];
+        const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
         // ~340 ms par case, plus la rotation d'anticipation absorbée en tête de
@@ -24958,7 +24970,7 @@
            la relire depuis un état déjà à jour. */
         const resultat = applyMoveCore(char.id, r, c, cost);
         if (resultat?.couronneRamassee) {
-          showToast(`${state.players[char.player].name} récupère une couronne !`);
+          showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
         }
 
         const presentation = () => {
@@ -25149,7 +25161,7 @@
             return;
           }
           const char = characterById(mv.id);
-          const owner = char ? state.players[char.player] : null;
+          const owner = char ? joueurDuGardien(char) : null;
           impacts.push({
             type: "character",
             id: mv.id,
@@ -25169,7 +25181,7 @@
         // la pièce visée sans l'inscrire au plan. On la montre alors immobile,
         // plutôt que de désigner une autre pièce comme tête de l'aperçu.
         if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
-          const owner = targetChar ? state.players[targetChar.player] : null;
+          const owner = targetChar ? joueurDuGardien(targetChar) : null;
           impacts.unshift({
             type: targetChar ? "character" : "crown",
             id: targetChar ? targetChar.id : targetCrown.id,
@@ -25382,7 +25394,7 @@
         // Tout est relevé AVANT l'application : les positions changent ensuite.
         const menee = plan.mouvements.find(mv => mv.from[0] === startR && mv.from[1] === startC);
         const meneeChar = menee && menee.kind === "char" ? characterById(menee.id) : null;
-        const proprietaire = meneeChar ? state.players[meneeChar.player] : null;
+        const proprietaire = meneeChar ? joueurDuGardien(meneeChar) : null;
         const couronneVolante = plan.mouvements.some(mv => {
           if (mv.kind !== "crown") return false;
           const pas = Math.abs(mv.to[0] - mv.from[0]) + Math.abs(mv.to[1] - mv.from[1]);
@@ -25419,7 +25431,7 @@
       }
 
       function respawnCharacter(char) {
-        const village = state.players[char.player].village;
+        const village = joueurDuGardien(char).village;
         const spot = findNearestFreeLand(village.r, village.c);
         char.r = spot.r;
         char.c = spot.c;
@@ -26261,7 +26273,7 @@
 
         /* Compatibilité conservée : ancien flux volontairement inaccessible. */
 
-        const player = state.players[char.player];
+        const player = joueurDuGardien(char);
         const artifact = artifactCarriedBy(char.id);
 
         if (char.player !== state.currentPlayer) {
@@ -26369,7 +26381,7 @@
         if (!characterCarriesCrown(char.id)) {
           const looseArtifact = looseArtifactAt(char.r, char.c);
           if (looseArtifact && giveArtifactToCharacter(looseArtifact, char)) {
-            showToast(`${state.players[char.player].name} récupère une couronne !`);
+            showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
           }
         }
 
@@ -29234,8 +29246,8 @@
              Pour moi, le point doit encore survivre au tour adverse : même
              escompte que l'utilité d'un gardien expulsable. Pour lui, il
              tombera au début de son tour, sauf ce que je fais maintenant. */
-          if (porteur && isCrownValidationCell(state.players[porteur.player], r, c)
-            && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
+          if (porteur && isCrownValidationCell(joueurDuGardien(porteur), r, c)
+            && !validationBloqueeParAdversaire(joueurDuGardien(porteur), r, c)) {
             if (porteur.player === playerId) {
               const risques = lAdversaireJoue && PLAN_POIDS.validationRisques
                 ? plannerRisquesValidation(playerId, r, c) : { blocage: 0, pivot: 0 };
@@ -31238,7 +31250,7 @@
         return activeArtifacts().flatMap(couronne => {
           const porteur = couronne.carrierId && characterById(couronne.carrierId);
           if (!porteur || porteur.player === playerId) return [];
-          const adverse = state.players[porteur.player];
+          const adverse = joueurDuGardien(porteur);
           if (aiValidationDistanceForPlayer(adverse, porteur.r, porteur.c) > 3) return [];
           const villages = villagesForPlayer(adverse).map(v => cornerCrownCellsForVillage(v));
           const distance = cells => Math.min(...cells.map(([r, c]) =>
@@ -31257,8 +31269,8 @@
         if (couronnes.some(a => {
           const g = a.carrierId && characterById(a.carrierId);
           return g && g.player !== playerId
-            && isCrownValidationCell(state.players[g.player], g.r, g.c)
-            && !validationBloqueeParAdversaire(state.players[g.player], g.r, g.c);
+            && isCrownValidationCell(joueurDuGardien(g), g.r, g.c)
+            && !validationBloqueeParAdversaire(joueurDuGardien(g), g.r, g.c);
         })) return 0;
         return Math.min(...menaces.map(menace => {
           if (!characterById(menace.porteurId)) return 3;
@@ -31270,7 +31282,7 @@
             return gardien && gardien.player === playerId;
           });
           const ecarte = menace.imminente && (!porteur
-            || !isCrownValidationCell(state.players[porteur.player], porteur.r, porteur.c));
+            || !isCrownValidationCell(joueurDuGardien(porteur), porteur.r, porteur.c));
           return bloque || ecarte ? 1 : 0;
         }));
       }
@@ -31538,7 +31550,7 @@
         return activeArtifacts().some(couronne => {
           const porteur = couronne.carrierId && characterById(couronne.carrierId);
           if (!porteur) return false;
-          const joueur = state.players[porteur.player];
+          const joueur = joueurDuGardien(porteur);
           const distance = aiValidationDistanceForPlayer(joueur, porteur.r, porteur.c);
           return distance <= 2
             || ((joueur.score || 0) >= 2 && distance <= 4)
@@ -35615,7 +35627,7 @@
         }
       };
 
-      const ROTATION_COUCHES = ["deckbuilding"];
+      const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes
          sans couche, c'est la partie classique : pas de Rotation. */
       function rotationNormaliser(demande) {
@@ -35900,6 +35912,7 @@
       Object.entries(PAQUET_CARTES).forEach(([cle, def]) => {
         if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
       });
+      ACTIONS.BOUE = { name: "Boue", icon: "🟫", desc: "Ne fait rien : affine ton paquet pour t’en débarrasser.", bg: "#5a4a32" };
       const PAQUET_PILE_MARCHE = [
         "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "ARCANE", "ARCANE",
         "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC"
@@ -36030,7 +36043,9 @@
         const veutExiler = exiler ?? (marche.affiner[player.id] !== false);
         let exile = false;
         if (veutExiler && paquetTaille(player) > PAQUET_MINIMUM) {
-          const i = player.discard.map(c => c.action).lastIndexOf("MOVE");
+          const actions = player.discard.map(c => c.action);
+          const boue = actions.lastIndexOf("BOUE");
+          const i = boue >= 0 ? boue : actions.lastIndexOf("MOVE");
           if (i >= 0) {
             player.discard.splice(i, 1);
             marche.exils[player.id] = (marche.exils[player.id] || 0) + 1;
@@ -36039,7 +36054,7 @@
         }
         if (!ilyosSimulationActive) {
           playSfx("crownTake");
-          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et exile un Déplacer" : ""}.`);
+          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et affine son paquet" : ""}.`);
           renderAll();
         }
         return true;
@@ -36053,7 +36068,7 @@
         const player = state?.players?.[playerId];
         if (paquetRefusAchat(player)) return null;
         const reste = (player.hand || []).reduce((total, c) =>
-          total + (c.used ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
+          total + (c.used || !(c.action in PAQUET_CARTES) ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
         if (reste < PAQUET_PRIX) return null;
         const visibles = state.rotation.marche.visibles;
         let meilleur = -1, note = -Infinity;
@@ -36115,7 +36130,14 @@
           paquetPanneau.setAttribute("aria-label", "Marché du sanctuaire");
           paquetPanneau.addEventListener("click", evenement => {
             const bouton = evenement.target.closest("[data-marche]");
-            if (bouton) { evenement.stopPropagation(); paquetAcheter(Number(bouton.dataset.marche)); return; }
+            const enButin = typeof creaturesButinEnAttente === "function" && creaturesButinEnAttente(currentPlayer()?.id) > 0;
+            if (bouton) {
+              evenement.stopPropagation();
+              if (enButin) creaturesPrendreButin(Number(bouton.dataset.marche));
+              else paquetAcheter(Number(bouton.dataset.marche));
+              return;
+            }
+            if (evenement.target.closest("[data-butin-exil]")) { evenement.stopPropagation(); creaturesPrendreButin("exil"); return; }
             const bascule = evenement.target.closest("[data-affiner]");
             if (bascule) {
               evenement.stopPropagation();
@@ -36129,9 +36151,10 @@
         }
         const joueur = currentPlayer();
         const marche = state.rotation.marche;
-        const refus = joueur?.isAI ? "Tour de l’adversaire." : paquetRefusAchat(joueur);
+        const butin = !joueur?.isAI && typeof creaturesButinEnAttente === "function" ? creaturesButinEnAttente(joueur?.id) : 0;
+        const refus = joueur?.isAI ? "Tour de l’adversaire." : butin ? null : paquetRefusAchat(joueur);
         const affiner = marche.affiner[joueur?.id] !== false;
-        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur)]);
+        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur), butin]);
         paquetPanneau.hidden = false;
         if (empreinte === paquetEmpreinte) return;
         paquetEmpreinte = empreinte;
@@ -36139,15 +36162,16 @@
           const def = PAQUET_CARTES[action];
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
-              ${refus ? "disabled" : ""} title="${refus || `Acheter ${def.nom} pour 2 cartes`}">
+              ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
             <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
-        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>MARCHÉ</span><small>2 cartes · 1 achat par tour</small></div>
+        paquetPanneau.classList.toggle("butin", !!butin);
+        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>${butin ? "BUTIN" : "MARCHÉ"}</span><small>${butin ? "Une carte gratuite, ou exile 2 cartes" : "2 cartes · 1 achat par tour"}</small></div>
           <div class="rt-marche-cartes">${cartes || "<p class=\"rt-marche-vide\">Marché vide</p>"}</div>
-          <button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
-            title="En achetant, retirer un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
-            <span class="rt-bascule" aria-hidden="true"></span>Exiler un Déplacer</button>
+          ${butin ? `<button type="button" class="rt-marche-exil" data-butin-exil>Exiler 2 cartes</button>` : `<button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
+            title="En achetant, retirer une Boue ou un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
+            <span class="rt-bascule" aria-hidden="true"></span>Affiner</button>`}
           <div class="rt-marche-pied">Paquet ${paquetTaille(joueur)} · Pile ${marche.pile.length}</div>`;
       }
 
@@ -36187,6 +36211,394 @@
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
           return joueur ? { taille: paquetTaille(joueur), cartes: ["deck", "hand", "discard", "reserveCards"].flatMap(z => (joueur[z] || []).map(c => c.action)) } : null;
         }
+      };
+      /* =====================================================================
+         MODE ROTATION — couche CRÉATURES ET ŒUFS.
+
+         Règles (une ligne chacune) :
+         — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
+           2 cases du sanctuaire, chacun avec le nombre de manches avant son
+           éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
+         — Une créature ne naît que sur une île : un œuf au-dessus du vide
+           attend qu'on construise dessous. Au plus 2 créatures à la fois.
+         — Un gardien qui finit son tour sur un œuf l'écrase (avec le
+           deckbuilding : il exile un Déplacer).
+         — Une seule espèce par partie :
+             Loup : à chaque fin de manche, il avance d'une case vers le
+             gardien le plus proche ; s'il le touche déjà, il le pousse.
+             Vase : immobile ; un gardien qui finit son tour à côté d'elle
+             met une carte Boue (qui ne fait rien) dans la défausse de son
+             joueur.
+         — Une créature se fait tomber comme un gardien (poussée, magie).
+           Avec le deckbuilding, celui qui l'a fait tomber prend un butin :
+           une carte du marché gratuite, ou exiler 2 cartes.
+
+         Une créature est un gardien sans camp (char.creature, player -1) :
+         poussées, files, blocages, rotations d'île et chutes s'appliquent
+         d'office. joueurDuGardien() (core.js) lui donne un camp fictif.
+         Modèle 3D provisoire (squelettes KayKit) en attendant le choix du
+         pack de créatures.
+         ===================================================================== */
+      const CREATURES = {
+        loup: { nom: "Loup", modele: "heroSkeletonRogue" },
+        vase: { nom: "Vase", modele: "heroSkeletonMage" }
+      };
+      const CREATURES_MAX = 2;
+      const CREATURES_DISTANCE_OEUFS = 2;
+      /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
+         personne n'ait toujours la première action sur les créatures. */
+      const CREATURES_ECLOSIONS = [5, 6, 11, 12];
+
+      function creaturesActives(source = state) {
+        return !!source?.rotation?.couches?.creatures;
+      }
+
+      function creaturesVivantes() {
+        return (state?.characters || []).filter(c => c.creature);
+      }
+
+      function creaturesInstaller() {
+        if (!creaturesActives() || state.rotation.creatures) return;
+        const d = CREATURES_DISTANCE_OEUFS;
+        const cases = [[CENTER.r - d, CENTER.c], [CENTER.r + d, CENTER.c], [CENTER.r, CENTER.c - d], [CENTER.r, CENTER.c + d]];
+        const ordre = shuffle([0, 1, 2, 3]);
+        const especes = Object.keys(CREATURES);
+        state.rotation.creatures = {
+          espece: especes[Math.floor(gameRandom() * especes.length)],
+          oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: CREATURES_ECLOSIONS[ordre[i]] })),
+          prochainId: 1,
+          butins: {}
+        };
+      }
+
+      /** Manches restantes avant l'éclosion (chiffre affiché sur l'œuf). */
+      function oeufManches(oeuf) {
+        return Math.max(0, Math.ceil((oeuf.eclosion - (state?.turn || 1)) / 2));
+      }
+
+      function creatureNom(char) {
+        return CREATURES[char?.creature]?.nom || "Créature";
+      }
+
+      /* ---------- Butin ------------------------------------------------- */
+      function creaturesDonnerButin(playerId, nombre = 1) {
+        const etat = state?.rotation?.creatures;
+        if (!etat || playerId === undefined || playerId === null || playerId < 0) return;
+        if (!paquetActif()) return;
+        etat.butins[playerId] = (etat.butins[playerId] || 0) + nombre;
+      }
+
+      function creaturesButinEnAttente(playerId) {
+        return state?.rotation?.creatures?.butins?.[playerId] || 0;
+      }
+
+      /* Exile la carte la plus faible : Boue d'abord, puis Déplacer. */
+      function creaturesExiler(player, nombre) {
+        let exiles = 0;
+        for (const action of ["BOUE", "MOVE"]) {
+          for (const zone of ["discard", "deck"]) {
+            while (exiles < nombre && paquetTaille(player) > PAQUET_MINIMUM) {
+              const i = (player[zone] || []).map(c => c.action).lastIndexOf(action);
+              if (i < 0) break;
+              player[zone].splice(i, 1);
+              exiles++;
+            }
+          }
+        }
+        return exiles;
+      }
+
+      /** Prend le butin : `choix` = index d'une carte du marché, ou "exil". */
+      function creaturesPrendreButin(choix) {
+        const player = currentPlayer();
+        const etat = state?.rotation?.creatures;
+        const marche = state?.rotation?.marche;
+        if (!player || !etat || !creaturesButinEnAttente(player.id)) return false;
+        if (choix === "exil") {
+          const n = creaturesExiler(player, 2);
+          if (!ilyosSimulationActive) showToast(n ? `Butin : ${n} carte${n > 1 ? "s" : ""} exilée${n > 1 ? "s" : ""}.` : "Butin : rien à exiler (paquet minimum).");
+        } else {
+          const action = marche?.visibles?.[choix];
+          if (!action) return false;
+          const carte = { id: `P${player.id}-B${state.turn}-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+          if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+          player.discard.push(carte);
+          marche.visibles.splice(choix, 1);
+          if (marche.pile.length) marche.visibles.splice(choix, 0, marche.pile.shift());
+          if (!ilyosSimulationActive) showToast(`Butin : ${PAQUET_CARTES[action].nom} rejoint ta défausse.`);
+        }
+        etat.butins[player.id] -= 1;
+        if (!ilyosSimulationActive) renderAll();
+        return true;
+      }
+
+      /* ---------- Chute d'une créature ---------------------------------- */
+      const creaturesRemoveBase = removeCharacterFromGame;
+      removeCharacterFromGame = function removeCharacterFromGameCreatures(char, dropR = null, dropC = null, fallDirection = null) {
+        if (!char?.creature) return creaturesRemoveBase(char, dropR, dropC, fallDirection);
+        queueKayKitCharacterFall(char.id, fallDirection);
+        if (fallDirection) playSfx("fall", { c: char.c, delay: .08 });
+        state.characters = state.characters.filter(ch => ch.id !== char.id);
+        if (state.selectedCharId === char.id) state.selectedCharId = null;
+        if (!ilyosSimulationActive) {
+          creaturesDonnerButin(state.currentPlayer);
+          showToast(`${currentPlayer()?.name || "Un joueur"} fait tomber ${creatureNom(char) === "Vase" ? "la Vase" : "le " + creatureNom(char)}${paquetActif() ? " : butin à prendre au marché" : ""} !`);
+        }
+      };
+
+      /* Une créature ne ramasse jamais de couronne. */
+      const creaturesResolveArtifactBase = resolveArtifactForCharacter;
+      resolveArtifactForCharacter = function resolveArtifactForCharacterCreatures(char, ...args) {
+        if (char?.creature) return null;
+        return creaturesResolveArtifactBase(char, ...args);
+      };
+
+      /* ---------- Tour -------------------------------------------------- */
+      function creaturesEcraserOeufs(precedentId) {
+        const etat = state.rotation.creatures;
+        etat.oeufs = etat.oeufs.filter(oeuf => {
+          const g = characterAt(oeuf.r, oeuf.c);
+          if (!g || g.creature || g.player !== precedentId) return true;
+          const joueur = state.players[precedentId];
+          const exile = paquetActif() && joueur ? creaturesExiler(joueur, 1) : 0;
+          showToast(`${joueur?.name || "Un gardien"} écrase un œuf${exile ? " et exile une carte" : ""}.`);
+          animateCellPulse(oeuf.r, oeuf.c, "crown-burst");
+          return false;
+        });
+      }
+
+      function creaturesVase(precedentId) {
+        const joueur = state.players[precedentId];
+        if (!joueur) return;
+        let boues = 0;
+        creaturesVivantes().filter(c => c.creature === "vase").forEach(vase => {
+          (state.characters || []).forEach(g => {
+            if (g.creature || g.player !== precedentId) return;
+            if (Math.abs(g.r - vase.r) + Math.abs(g.c - vase.c) !== 1) return;
+            joueur.discard = Array.isArray(joueur.discard) ? joueur.discard : [];
+            joueur.discard.push({ id: `P${precedentId}-V${state.turn}-${boues}`, action: "BOUE", used: false });
+            boues++;
+          });
+        });
+        if (boues) showToast(`La Vase colle : ${boues} carte${boues > 1 ? "s" : ""} Boue dans la défausse de ${joueur.name}.`);
+      }
+
+      /** Loup : un pas vers le gardien le plus proche, ou une poussée. */
+      function creaturesLoups() {
+        creaturesVivantes().filter(c => c.creature === "loup").forEach(loup => {
+          if (!characterById(loup.id)) return;
+          const proies = (state.characters || []).filter(g => !g.creature);
+          if (!proies.length) return;
+          const dist = (g, r = loup.r, c = loup.c) => Math.abs(g.r - r) + Math.abs(g.c - c);
+          const cible = proies.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+          if (dist(cible) === 1) {
+            const dr = cible.r - loup.r, dc = cible.c - loup.c;
+            const plan = resoudrePousseeBloc(cible.r, cible.c, dr, dc, 1);
+            if (plan) {
+              const victime = joueurDuGardien(cible);
+              appliquerPousseeBloc(plan, dr, dc);
+              playSfx("push", { c: loup.c });
+              showToast(`Le Loup bondit sur un gardien de ${victime?.name || "?"}${plan.chutes ? " et le fait tomber" : ""} !`);
+            }
+            return;
+          }
+          const pas = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+            .map(([dr, dc]) => [loup.r + dr, loup.c + dc])
+            .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
+            .sort((a, b) => dist(cible, a[0], a[1]) - dist(cible, b[0], b[1]));
+          if (pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible)) {
+            loup.r = pas[0][0];
+            loup.c = pas[0][1];
+          }
+        });
+      }
+
+      function creaturesEclore() {
+        const etat = state.rotation.creatures;
+        etat.oeufs = etat.oeufs.filter(oeuf => {
+          if (state.turn < oeuf.eclosion) return true;
+          if (creaturesVivantes().length >= CREATURES_MAX) return true;
+          if (!islandAt(oeuf.r, oeuf.c) || characterAt(oeuf.r, oeuf.c)) return true;
+          state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r: oeuf.r, c: oeuf.c });
+          animateCellPulse(oeuf.r, oeuf.c, "crown-burst");
+          showToast(`Un œuf éclot : ${etat.espece === "vase" ? "une Vase" : "un " + CREATURES[etat.espece].nom} apparaît !`);
+          return false;
+        });
+      }
+
+      const creaturesBeginTurnBase = beginTurn;
+      beginTurn = function beginTurnCreatures() {
+        if (state && creaturesActives() && !ilyosSimulationActive) {
+          creaturesInstaller();
+          if (state.turn > 1 && state.winner === null && state.rotation.creatures.dernierTour !== state.turn) {
+            state.rotation.creatures.dernierTour = state.turn;
+            const n = state.players.length;
+            const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
+            creaturesEcraserOeufs(precedentId);
+            creaturesVase(precedentId);
+            // Fin de manche : la créature agit quand le premier joueur reprend la main.
+            if (state.currentPlayer === 0) creaturesLoups();
+            creaturesEclore();
+          }
+        }
+        const resultat = creaturesBeginTurnBase();
+        // Premier tour : state.rotation vient d'être posé par l'enveloppe de base.
+        if (state && creaturesActives() && !state.rotation.creatures) {
+          creaturesInstaller();
+          if (!ilyosSimulationActive) {
+            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les manches avant l’éclosion."), 5200);
+            syncKayKitScene?.();
+          }
+        }
+        return resultat;
+      };
+
+      /* L'IA prend son butin avant de finir son tour : la meilleure carte
+         du marché si elle vaut la peine, sinon l'exil de 2 cartes. */
+      function plannerChoisirButin(playerId) {
+        if (!creaturesButinEnAttente(playerId)) return null;
+        const visibles = state.rotation.marche?.visibles || [];
+        let meilleur = -1, note = -Infinity;
+        visibles.forEach((action, i) => { const n = PAQUET_PRIORITE[action] ?? 0; if (n > note) { note = n; meilleur = i; } });
+        return meilleur >= 0 && note >= 3 ? meilleur : "exil";
+      }
+
+      const creaturesEndTurnBase = endTurn;
+      endTurn = async function endTurnCreatures(force = false) {
+        const player = state && currentPlayer();
+        if (player?.isAI && state.winner === null) {
+          let garde = 4;
+          while (garde-- > 0 && creaturesButinEnAttente(player.id) > 0) {
+            if (!creaturesPrendreButin(plannerChoisirButin(player.id))) break;
+          }
+        }
+        return creaturesEndTurnBase(force);
+      };
+
+      /* ---------- Rendu 3D des œufs -------------------------------------- */
+      const creaturesTexturesChiffres = new Map();
+      function creaturesTextureChiffre(n) {
+        if (creaturesTexturesChiffres.has(n)) return creaturesTexturesChiffres.get(n);
+        const toile = document.createElement("canvas");
+        toile.width = toile.height = 64;
+        const ctx = toile.getContext("2d");
+        ctx.fillStyle = "rgba(8,16,26,.82)";
+        ctx.beginPath(); ctx.arc(32, 32, 28, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#f4d28e"; ctx.lineWidth = 4; ctx.stroke();
+        ctx.fillStyle = "#fff3c9";
+        ctx.font = "bold 38px Georgia, serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(String(n), 32, 35);
+        const texture = new THREE.CanvasTexture(toile);
+        creaturesTexturesChiffres.set(n, texture);
+        return texture;
+      }
+
+      function creaturesConstruireOeuf() {
+        const groupe = new THREE.Group();
+        const coquille = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-v1", () => new THREE.SphereGeometry(.17, 18, 14)),
+          new THREE.MeshStandardMaterial({ color: 0xf3e3c0, roughness: .55, metalness: 0, emissive: 0x3a2a10, emissiveIntensity: .25 })
+        );
+        coquille.scale.set(1, 1.32, 1);
+        coquille.position.y = .22;
+        const taches = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-taches-v1", () => new THREE.SphereGeometry(.172, 9, 7)),
+          new THREE.MeshBasicMaterial({ color: 0x6a8f5a, wireframe: true, transparent: true, opacity: .35 })
+        );
+        taches.scale.copy(coquille.scale);
+        taches.position.copy(coquille.position);
+        const chiffre = new THREE.Sprite(new THREE.SpriteMaterial({ map: creaturesTextureChiffre(0), depthTest: false, transparent: true }));
+        chiffre.scale.set(.32, .32, 1);
+        chiffre.position.y = .66;
+        chiffre.renderOrder = 20;
+        groupe.add(coquille, taches, chiffre);
+        groupe.userData.chiffre = chiffre;
+        groupe.traverse(o => { o.raycast = () => {}; });
+        return groupe;
+      }
+
+      function creaturesSyncOeufs3D() {
+        if (!kaykit3D?.scene) return;
+        const oeufs = creaturesActives() ? (state?.rotation?.creatures?.oeufs || []) : [];
+        let groupe = kaykit3D.rotationOeufs;
+        if (!oeufs.length) {
+          if (groupe) groupe.visible = false;
+          return;
+        }
+        if (!groupe) {
+          groupe = new THREE.Group();
+          groupe.name = "rotation-oeufs";
+          kaykit3D.scene.add(groupe);
+          kaykit3D.rotationOeufs = groupe;
+        }
+        groupe.visible = true;
+        const vus = new Set();
+        oeufs.forEach(oeuf => {
+          vus.add(oeuf.id);
+          let visuel = groupe.children.find(o => o.userData.oeufId === oeuf.id);
+          if (!visuel) {
+            visuel = creaturesConstruireOeuf();
+            visuel.userData.oeufId = oeuf.id;
+            groupe.add(visuel);
+          }
+          const surIle = !!islandAt(oeuf.r, oeuf.c);
+          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : kaykitCellSurfaceY(oeuf.r, oeuf.c) + .45;
+          const p = kaykitCellPosition(oeuf.r, oeuf.c, y);
+          visuel.position.set(p.x, p.y, p.z);
+          const n = oeufManches(oeuf);
+          if (visuel.userData.n !== n) {
+            visuel.userData.n = n;
+            visuel.userData.chiffre.material.map = creaturesTextureChiffre(n);
+            visuel.userData.chiffre.material.needsUpdate = true;
+          }
+          visuel.children[0].material.opacity = surIle ? 1 : .7;
+          visuel.children[0].material.transparent = !surIle;
+        });
+        [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
+      }
+
+      const creaturesSyncSceneBase = syncKayKitScene;
+      syncKayKitScene = function syncKayKitSceneCreatures() {
+        creaturesSyncSceneBase();
+        try {
+          creaturesSyncOeufs3D();
+          creaturesTeinter();
+        } catch (erreur) {
+          console.warn("[ILYOS] œufs 3D", erreur);
+        }
+      };
+
+      /* Les créatures sont des squelettes KayKit (choix de Taekun, 01/11) :
+         une teinte vert de lichen, faite une fois par modèle, les distingue
+         des gardiens, même d'un gardien squelette de la Collection. */
+      function creaturesTeinter() {
+        creaturesVivantes().forEach(char => {
+          const visuel = kaykit3D?.characterVisuals?.get(String(char.id));
+          if (!visuel || visuel.teinteCreature) return;
+          visuel.teinteCreature = true;
+          visuel.wrapper.traverse(o => {
+            if (!o.isMesh || !o.material) return;
+            const teinter = m => {
+              const copie = m.clone();
+              if (copie.color) copie.color.multiply(new THREE.Color(0x9fe0a4));
+              if (copie.emissive) { copie.emissive.setHex(0x163a1c); copie.emissiveIntensity = .55; }
+              return copie;
+            };
+            o.material = Array.isArray(o.material) ? o.material.map(teinter) : teinter(o.material);
+          });
+        });
+      }
+
+      /* Modèle 3D d'une créature (kaykit3d.js, resolveHeroAssetKey). */
+      function creatureModele(char) {
+        return CREATURES[char?.creature]?.modele || "heroSkeletonWarrior";
+      }
+
+      window.ILYOS_ROTATION_CREATURES = {
+        etat: () => (state?.rotation?.creatures ? JSON.parse(JSON.stringify(state.rotation.creatures)) : null),
+        vivantes: () => creaturesVivantes().map(c => ({ id: c.id, espece: c.creature, r: c.r, c: c.c })),
+        butin: choix => creaturesPrendreButin(choix)
       };
       /* =====================================================================
          TUTORIEL — « La Première Ascension »
@@ -54313,7 +54725,7 @@
           r: char.r,
           c: char.c,
           porte: !!artifactCarriedBy(char.id),
-          surCaseValidation: isCrownValidationCell(state.players[char.player], char.r, char.c)
+          surCaseValidation: isCrownValidationCell(joueurDuGardien(char), char.r, char.c)
         }));
 
         return {

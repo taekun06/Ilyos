@@ -33,6 +33,7 @@
       Object.entries(PAQUET_CARTES).forEach(([cle, def]) => {
         if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
       });
+      ACTIONS.BOUE = { name: "Boue", icon: "🟫", desc: "Ne fait rien : affine ton paquet pour t’en débarrasser.", bg: "#5a4a32" };
       const PAQUET_PILE_MARCHE = [
         "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "ARCANE", "ARCANE",
         "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC"
@@ -163,7 +164,9 @@
         const veutExiler = exiler ?? (marche.affiner[player.id] !== false);
         let exile = false;
         if (veutExiler && paquetTaille(player) > PAQUET_MINIMUM) {
-          const i = player.discard.map(c => c.action).lastIndexOf("MOVE");
+          const actions = player.discard.map(c => c.action);
+          const boue = actions.lastIndexOf("BOUE");
+          const i = boue >= 0 ? boue : actions.lastIndexOf("MOVE");
           if (i >= 0) {
             player.discard.splice(i, 1);
             marche.exils[player.id] = (marche.exils[player.id] || 0) + 1;
@@ -172,7 +175,7 @@
         }
         if (!ilyosSimulationActive) {
           playSfx("crownTake");
-          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et exile un Déplacer" : ""}.`);
+          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et affine son paquet" : ""}.`);
           renderAll();
         }
         return true;
@@ -186,7 +189,7 @@
         const player = state?.players?.[playerId];
         if (paquetRefusAchat(player)) return null;
         const reste = (player.hand || []).reduce((total, c) =>
-          total + (c.used ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
+          total + (c.used || !(c.action in PAQUET_CARTES) ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
         if (reste < PAQUET_PRIX) return null;
         const visibles = state.rotation.marche.visibles;
         let meilleur = -1, note = -Infinity;
@@ -248,7 +251,14 @@
           paquetPanneau.setAttribute("aria-label", "Marché du sanctuaire");
           paquetPanneau.addEventListener("click", evenement => {
             const bouton = evenement.target.closest("[data-marche]");
-            if (bouton) { evenement.stopPropagation(); paquetAcheter(Number(bouton.dataset.marche)); return; }
+            const enButin = typeof creaturesButinEnAttente === "function" && creaturesButinEnAttente(currentPlayer()?.id) > 0;
+            if (bouton) {
+              evenement.stopPropagation();
+              if (enButin) creaturesPrendreButin(Number(bouton.dataset.marche));
+              else paquetAcheter(Number(bouton.dataset.marche));
+              return;
+            }
+            if (evenement.target.closest("[data-butin-exil]")) { evenement.stopPropagation(); creaturesPrendreButin("exil"); return; }
             const bascule = evenement.target.closest("[data-affiner]");
             if (bascule) {
               evenement.stopPropagation();
@@ -262,9 +272,10 @@
         }
         const joueur = currentPlayer();
         const marche = state.rotation.marche;
-        const refus = joueur?.isAI ? "Tour de l’adversaire." : paquetRefusAchat(joueur);
+        const butin = !joueur?.isAI && typeof creaturesButinEnAttente === "function" ? creaturesButinEnAttente(joueur?.id) : 0;
+        const refus = joueur?.isAI ? "Tour de l’adversaire." : butin ? null : paquetRefusAchat(joueur);
         const affiner = marche.affiner[joueur?.id] !== false;
-        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur)]);
+        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur), butin]);
         paquetPanneau.hidden = false;
         if (empreinte === paquetEmpreinte) return;
         paquetEmpreinte = empreinte;
@@ -272,15 +283,16 @@
           const def = PAQUET_CARTES[action];
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
-              ${refus ? "disabled" : ""} title="${refus || `Acheter ${def.nom} pour 2 cartes`}">
+              ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
             <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
-        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>MARCHÉ</span><small>2 cartes · 1 achat par tour</small></div>
+        paquetPanneau.classList.toggle("butin", !!butin);
+        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>${butin ? "BUTIN" : "MARCHÉ"}</span><small>${butin ? "Une carte gratuite, ou exile 2 cartes" : "2 cartes · 1 achat par tour"}</small></div>
           <div class="rt-marche-cartes">${cartes || "<p class=\"rt-marche-vide\">Marché vide</p>"}</div>
-          <button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
-            title="En achetant, retirer un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
-            <span class="rt-bascule" aria-hidden="true"></span>Exiler un Déplacer</button>
+          ${butin ? `<button type="button" class="rt-marche-exil" data-butin-exil>Exiler 2 cartes</button>` : `<button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
+            title="En achetant, retirer une Boue ou un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
+            <span class="rt-bascule" aria-hidden="true"></span>Affiner</button>`}
           <div class="rt-marche-pied">Paquet ${paquetTaille(joueur)} · Pile ${marche.pile.length}</div>`;
       }
 

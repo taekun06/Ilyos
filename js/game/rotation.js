@@ -97,7 +97,7 @@
         }
       };
 
-      const ROTATION_COUCHES = ["deckbuilding"];
+      const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes
          sans couche, c'est la partie classique : pas de Rotation. */
       function rotationNormaliser(demande) {

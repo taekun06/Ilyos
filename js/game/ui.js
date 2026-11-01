@@ -236,7 +236,7 @@
         const readyOwnerFor = artifact => {
           const carrier = characterById(artifact.carrierId);
           if (carrier) {
-            const owner = state.players[carrier.player];
+            const owner = joueurDuGardien(carrier);
             return owner && isCrownValidationCell(owner, carrier.r, carrier.c)
               ? owner
               : null;
@@ -261,7 +261,7 @@
               return `Couronne ${index + 1} : village de ${readyOwner.name} — validation au début de son prochain tour`;
             }
             return carrier
-              ? `Couronne ${index + 1} : ${state.players[carrier.player].name}`
+              ? `Couronne ${index + 1} : ${joueurDuGardien(carrier).name}`
               : `Couronne ${index + 1} : libre`;
           })
           .join("\n");
@@ -613,7 +613,7 @@
           const ch = characterById(state.selectedCharId);
           const carriesCrown = ch && characterCarriesCrown(ch.id);
           if (ch && carriesCrown) {
-            const p = state.players[ch.player];
+            const p = joueurDuGardien(ch);
             unitSlot.classList.remove("hidden");
             unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown hud-v2-crown-icon is-filled">${HUD_V2_ICONS.CROWN}</span>`;
           } else {
@@ -1130,7 +1130,7 @@
             });
 
             if (char) {
-              const owner = state.players[char.player];
+              const owner = joueurDuGardien(char);
               const carriedArtifact = artifactCarriedBy(char.id);
               const carrying = !!carriedArtifact;
               const crownPointReady = (
@@ -1204,7 +1204,7 @@
               && !char
             ) {
               const selected = characterById(state.selectedCharId);
-              const owner = selected ? state.players[selected.player] : currentPlayer();
+              const owner = selected ? joueurDuGardien(selected) : currentPlayer();
               html += `
               <span class="action-ghost move-ghost" style="--ghost-color:${owner.color}">
                 <span>${owner.icon}</span>
@@ -2871,7 +2871,7 @@
           return false;
         }
 
-        const owner = state.players[char.player];
+        const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
         // ~340 ms par case, plus la rotation d'anticipation absorbée en tête de
@@ -2912,7 +2912,7 @@
            la relire depuis un état déjà à jour. */
         const resultat = applyMoveCore(char.id, r, c, cost);
         if (resultat?.couronneRamassee) {
-          showToast(`${state.players[char.player].name} récupère une couronne !`);
+          showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
         }
 
         const presentation = () => {
@@ -3103,7 +3103,7 @@
             return;
           }
           const char = characterById(mv.id);
-          const owner = char ? state.players[char.player] : null;
+          const owner = char ? joueurDuGardien(char) : null;
           impacts.push({
             type: "character",
             id: mv.id,
@@ -3123,7 +3123,7 @@
         // la pièce visée sans l'inscrire au plan. On la montre alors immobile,
         // plutôt que de désigner une autre pièce comme tête de l'aperçu.
         if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
-          const owner = targetChar ? state.players[targetChar.player] : null;
+          const owner = targetChar ? joueurDuGardien(targetChar) : null;
           impacts.unshift({
             type: targetChar ? "character" : "crown",
             id: targetChar ? targetChar.id : targetCrown.id,
@@ -3336,7 +3336,7 @@
         // Tout est relevé AVANT l'application : les positions changent ensuite.
         const menee = plan.mouvements.find(mv => mv.from[0] === startR && mv.from[1] === startC);
         const meneeChar = menee && menee.kind === "char" ? characterById(menee.id) : null;
-        const proprietaire = meneeChar ? state.players[meneeChar.player] : null;
+        const proprietaire = meneeChar ? joueurDuGardien(meneeChar) : null;
         const couronneVolante = plan.mouvements.some(mv => {
           if (mv.kind !== "crown") return false;
           const pas = Math.abs(mv.to[0] - mv.from[0]) + Math.abs(mv.to[1] - mv.from[1]);
@@ -3373,7 +3373,7 @@
       }
 
       function respawnCharacter(char) {
-        const village = state.players[char.player].village;
+        const village = joueurDuGardien(char).village;
         const spot = findNearestFreeLand(village.r, village.c);
         char.r = spot.r;
         char.c = spot.c;
@@ -4215,7 +4215,7 @@
 
         /* Compatibilité conservée : ancien flux volontairement inaccessible. */
 
-        const player = state.players[char.player];
+        const player = joueurDuGardien(char);
         const artifact = artifactCarriedBy(char.id);
 
         if (char.player !== state.currentPlayer) {
@@ -4323,7 +4323,7 @@
         if (!characterCarriesCrown(char.id)) {
           const looseArtifact = looseArtifactAt(char.r, char.c);
           if (looseArtifact && giveArtifactToCharacter(looseArtifact, char)) {
-            showToast(`${state.players[char.player].name} récupère une couronne !`);
+            showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
           }
         }
 

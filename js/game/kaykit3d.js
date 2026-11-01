@@ -11841,6 +11841,8 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
+        // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
+        if (character?.creature) return creatureModele(character);
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;
