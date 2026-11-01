@@ -11,6 +11,7 @@ const contexte = {
   couronnes: [],
   activeArtifacts() { return contexte.couronnes; },
   characterById(id) { return contexte.state.characters.find(g => g.id === id); },
+  joueurDuGardien(g) { return g ? contexte.state.players[g.player] : undefined; },
   characterAt(r,c) { return contexte.state.characters.find(g => g.r === r && g.c === c); },
   isCrownValidationCell(joueur,r,c) { return joueur.id === 1 && r === 0 && c >= 9; },
   validationBloqueeParAdversaire() { return !!contexte.characterAt(0,9) && contexte.characterAt(0,9).player === 0; }
