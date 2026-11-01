@@ -5812,6 +5812,11 @@
           const caseMagie = kaykitCaseSousFantomeMagie();
           if (caseMagie) return caseMagie;
 
+          /* Les aperçus (destinations de poussée…) sont reconstruits au survol ;
+             tant qu'aucune image n'est dessinée, leur matrice monde est encore
+             l'identité et le rayon les manquait : un clic rapide après le survol
+             tombait sur la case en dessous. */
+          kaykit3D.actionPreviewGroup?.updateMatrixWorld?.(true);
           const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
@@ -24745,7 +24750,8 @@
         options.forEach(option => {
           if (!unique.has(option.id)) unique.set(option.id, option);
         });
-        return [...unique.values()];
+        // Quick (quick.js) ne propose que la poussée de son étape.
+        return [...unique.values()].filter(option => !state.quick || quickPousseeAutorisee(option));
       }
 
       function beginUnifiedPushFromHud() {
@@ -48291,6 +48297,7 @@
         fini: false,
         dom: null,
         cles: {},
+        vus: new Set(),
         debutTour: null,
         finBranchee: false,
         rappelA: 0
@@ -48298,20 +48305,28 @@
 
       /* ---------- La partie écrite d'avance -------------------------------
          Plateau 11×11. Tes villages : (0,0) et (10,10) ; ceux du rival : les
-         deux autres coins. Sanctuaire en croix autour de (5,5). */
+         deux autres coins. Sanctuaire en croix autour de (5,5).
+
+         Chaque geste de l'ancien Quick en huit étapes (Île, Déplacer,
+         Couronne, Pousser, Voler, Magie, Annuler, Marquer) y a sa place, dans
+         l'ordre où une partie l'amène : six tours, le dernier s'ouvrant sur
+         le point marqué. */
       const QK_I1 = [[6, 6], [6, 7], [7, 6], [7, 7]];
       const QK_I2 = [[7, 8], [8, 8], [9, 8]];
       const QK_I3 = [[2, 8], [2, 9], [3, 8], [3, 9]];
-      const QK_RA = [[5, 2], [5, 3], [6, 2], [6, 3]];
+      const QK_I4 = [[2, 4], [2, 5], [2, 6]];
+      const QK_RA = [[5, 1], [5, 2], [5, 3]];
       const QK_RB = [[4, 2], [4, 3], [4, 4]];
-      const QK_RC = [[1, 1], [1, 2], [2, 1]];
-      const QK_RD = [[6, 9], [6, 10], [7, 9], [7, 10]];
+      const QK_RC = [[7, 5], [8, 5], [9, 5]];
+      const QK_RD = [[1, 1], [1, 2], [2, 1]];
+      const QK_RE = [[6, 9], [6, 10], [7, 9], [7, 10]];
 
       // Les cinq cartes piochées au début de chacun de tes tours.
       const QK_MAINS = [
         ["MOVE", "MOVE", "MOVE", "PUSH", "MAGIC"],
         ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-        ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
+        ["PUSH", "PUSH", "MOVE", "MOVE", "MOVE"],
+        ["PUSH", "PUSH", "PUSH", "PUSH", "MOVE"],
         ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"],
         ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"]
       ];
@@ -48319,34 +48334,57 @@
       /* Position au début de chaque tour, telle que la partie guidée la
          produit. Ne sert qu'à l'accès direct (tests, captures) : la vraie
          partie, elle, continue simplement d'un tour à l'autre. */
+      const QK_ILES_T3 = [[QK_I1, 0, "square"], [QK_RA, 1, "line3"], [QK_I2, 0, "line3"], [QK_RB, 1, "line3"]];
+      const QK_ILES_T4 = [...QK_ILES_T3, [QK_I3, 0, "square"], [QK_RC, 1, "line3"]];
       const QK_DEBUTS = [
         { iles: [], g: [], couronnes: [[5, 5]], reserve: {} },
         {
-          iles: [[QK_I1, 0, "square"], [QK_RA, 1, "square"]],
-          g: [{ key: "g1", p: 0, r: 6, c: 6 }, { key: "r1", p: 1, r: 6, c: 3 }],
+          iles: [[QK_I1, 0, "square"], [QK_RA, 1, "line3"]],
+          g: [{ key: "g1", p: 0, r: 6, c: 6 }, { key: "r1", p: 1, r: 5, c: 3 }],
           couronnes: [[5, 5]], reserve: { MOVE: 1, PUSH: 1, MAGIC: 1 }
         },
         {
-          iles: [[QK_I1, 0, "square"], [QK_RA, 1, "square"], [QK_I2, 0, "line3"], [QK_RB, 1, "line3"]],
+          iles: QK_ILES_T3,
           g: [{ key: "g1", p: 0, r: 5, c: 5 }, { key: "g2", p: 0, r: 7, c: 8 },
-            { key: "r1", p: 1, r: 5, c: 4, crown: true }, { key: "r2", p: 1, r: 5, c: 3 }],
+            { key: "r1", p: 1, r: 5, c: 4, crown: true }, { key: "r2", p: 1, r: 4, c: 3 }],
           couronnes: [null, [4, 5]], reserve: { MOVE: 4, PUSH: 1, MAGIC: 1 }
         },
         {
-          iles: [[QK_I1, 0, "square"], [QK_RA, 1, "square"], [QK_I2, 0, "line3"], [QK_RB, 1, "line3"],
-            [QK_I3, 0, "square"], [QK_RC, 1, "l3"]],
+          iles: QK_ILES_T4,
           g: [{ key: "g1", p: 0, r: 7, c: 7 }, { key: "g2", p: 0, r: 7, c: 8, crown: true },
-            { p: 0, r: 2, c: 8 }, { key: "r1", p: 1, r: 5, c: 3 }, { p: 1, r: 1, c: 2 }],
-          couronnes: [null, [4, 5]], reserve: { MOVE: 4, MAGIC: 1 }
+            { p: 0, r: 2, c: 8 }, { key: "r1", p: 1, r: 5, c: 1 },
+            { key: "r2", p: 1, r: 7, c: 6 }, { key: "r3", p: 1, r: 7, c: 5 }],
+          couronnes: [null, [4, 5]], reserve: { MOVE: 3, MAGIC: 1 }
+        },
+        {
+          iles: [...QK_ILES_T4, [QK_I4, 0, "line3"], [QK_RD, 1, "l3"]],
+          g: [{ key: "g1", p: 0, r: 5, c: 5 }, { key: "g2", p: 0, r: 7, c: 8, crown: true },
+            { p: 0, r: 2, c: 8 }, { p: 0, r: 2, c: 4 }, { key: "r1", p: 1, r: 5, c: 1 }, { p: 1, r: 1, c: 2 }],
+          couronnes: [null, [2, 5]], reserve: { MAGIC: 1 }
         }
       ];
 
-      /* Étapes de tes tours. `pose` contraint la pose d'île (forme, cases
-         exactes ou zone), `naissance` la case du gardien, `gardien` le seul
-         gardien qu'on peut prendre, `bloque` ferme le plateau. `but` dit si le
-         geste a abouti ; `impossible` s'il ne peut plus aboutir. */
+      /* Étapes de tes tours. `theme` les range sous les huit étapes de
+         l'ancien Quick (barre du haut). `pose` contraint la pose d'île
+         (forme, cases exactes ou zone), `naissance` la case du gardien,
+         `gardien` le seul gardien qu'on peut prendre, `bloque` ferme le
+         plateau, `attendre` une case qu'on ne clique qu'après avoir choisi
+         son gardien. `but` dit si le geste a abouti ; `impossible` s'il ne
+         peut plus aboutir. */
+      const QUICK_THEMES = ["Île", "Déplacer", "Couronne", "Pousser", "Voler", "Magie", "Annuler", "Marquer"];
       const QK_ZONE_T3 = { r0: 0, r1: 3, c0: 7, c1: 9, contient: [2, 8] };
-      const QK_ZONE_T4 = { r0: 7, r1: 10, c0: 2, c1: 5, contient: [8, 4] };
+      const QK_ZONE_T5 = { r0: 7, r1: 10, c0: 2, c1: 4, contient: [8, 3] };
+
+      const QK_FIN = (regle, theme = null) => ({
+        theme, consigne: "Clique Fin du tour", regle, finDeTour: true, bloque: true
+      });
+      const QK_ZONE = (zone, regle) => ({
+        theme: "Île",
+        consigne: "Pose une île de ton choix près de la case dorée, puis fais-y naître un gardien",
+        regle, pose: { zone }, cible: [zone.contient], vue: zone.contient,
+        but: ctx => state.islands.length > ctx.iles && state.phase !== "PLACE_SPAWN"
+          && state.phase !== "PLACE_ISLAND"
+      });
 
       const QUICK_TOURS = [
         {
@@ -48357,84 +48395,80 @@
               suite: "COMPRIS", bloque: true, vue: [5, 5], zoom: -.25
             },
             {
+              theme: "Île",
               consigne: "Tu as pioché 5 cartes. Clique ÎLE, choisis le Carré et pose-le sur les cases dorées",
               regle: "Chaque tour, poser une île est obligatoire",
               pose: { forme: "square", cases: QK_I1 }, zone: QK_I1, vue: [7, 7],
               but: () => quickIlePosee(QK_I1)
             },
             {
+              theme: "Île",
               consigne: "Clique la case dorée pour y faire naître ton premier gardien",
               regle: "Un gardien naît sur chaque île que tu poses, jusqu’à 6",
               naissance: [7, 7], cible: [[7, 7]],
               but: () => quickNaissanceFaite(7, 7, "g1")
             },
             {
+              theme: "Déplacer",
               consigne: "Clique ton gardien, puis la case dorée en diagonale",
               regle: "Une case droite = 1 carte Déplacer · une diagonale = 2",
               cible: [[6, 6]], gardien: "g1",
               but: () => quickCleSur("g1", 6, 6),
               impossible: () => !quickAtteignable("g1", 6, 6)
             },
-            {
-              consigne: "Clique Fin du tour",
-              regle: "Tes 3 cartes non jouées vont en réserve : tu pourras les jouer plus tard",
-              finDeTour: true, bloque: true
-            }
+            QK_FIN("Tes 3 cartes non jouées vont en réserve : tu pourras les jouer plus tard")
           ],
           rival: quickRival1
         },
         {
           etapes: [
             {
+              theme: "Île",
               consigne: "Nouveau tour, 5 nouvelles cartes. Choisis la Passerelle, tourne-la, puis pose-la sur les cases dorées",
               regle: "ROTATION, en bas à gauche, tourne l’île avant de la poser",
               pose: { forme: "line3", cases: QK_I2 }, zone: QK_I2, vue: [8, 8],
               but: () => quickIlePosee(QK_I2)
             },
             {
+              theme: "Île",
               consigne: "Fais naître ton 2e gardien sur la case dorée",
               regle: "Un gardien naît sur chaque île que tu poses, jusqu’à 6",
               naissance: [7, 8], cible: [[7, 8]],
               but: () => quickNaissanceFaite(7, 8, "g2")
             },
             {
-              consigne: "Avec ton premier gardien, marche sur la couronne",
-              regle: "Ramasser une couronne est gratuit · une 2e couronne apparaîtra au sanctuaire",
+              theme: "Couronne",
+              consigne: "Avec ton premier gardien, marche sur la couronne pour la ramasser",
+              regle: "La couronne apparaît au sanctuaire · la ramasser ne coûte aucune carte",
               cible: [[5, 5]], gardien: "g1", vue: [6, 6],
               but: () => quickCleSur("g1", 5, 5) && !!artifactCarriedBy(QUICK.cles.g1),
               impossible: () => !quickCleSur("g1", 5, 5) && !quickAtteignable("g1", 5, 5)
             },
-            {
-              consigne: "Clique Fin du tour",
-              regle: "Le rival joue ensuite : surveille ta couronne",
-              finDeTour: true, bloque: true
-            }
+            QK_FIN("Une 2e couronne apparaîtra au sanctuaire · le rival joue ensuite")
           ],
           rival: quickRival2
         },
         {
           etapes: [
             {
+              theme: "Voler",
               consigne: "Le rival t’a volé la couronne. Clique-la pour la reprendre",
               regle: "Voler est gratuit dès qu’un de tes gardiens touche le porteur",
               cible: () => [quickPositionCle("r1")], vue: [5, 4], vol: "r1",
               but: () => !!artifactCarriedBy(QUICK.cles.g1)
             },
             {
-              consigne: "Clique ton gardien, le rival, puis la case dorée",
-              regle: "Chaque carte Pousser avance toute la file d’une case · la 2e vient de ta réserve",
-              cible: [[5, 2]], gardien: "g1", vue: [5, 3],
-              but: () => quickCleSur("r1", 5, 2) && !quickCle("r2"),
-              impossible: () => quickDisponible("PUSH") < 2
+              theme: "Pousser",
+              consigne: "Repousse-le : clique ton gardien, le rival, puis la case dorée",
+              regle: "Une carte Pousser = une case · trois cartes = trois cases (la 3e vient de ta réserve)",
+              cible: [[5, 1]], gardien: "g1", vue: [5, 3],
+              but: () => quickCleSur("r1", 5, 1),
+              impossible: () => !quickCleSur("r1", 5, 1)
+                && (quickDisponible("PUSH") < 3 || !quickVoisins("g1", "r1"))
             },
+            QK_ZONE(QK_ZONE_T3, "Une île par tour, même quand tu n’en as pas besoin"),
             {
-              consigne: "Pose une île de ton choix près de la case dorée, puis fais-y naître un gardien",
-              regle: "Une île par tour, même quand tu n’en as pas besoin",
-              pose: { zone: QK_ZONE_T3 }, cible: [[2, 8]], vue: [2, 8],
-              but: ctx => state.islands.length > ctx.iles && state.phase !== "PLACE_SPAWN"
-                && state.phase !== "PLACE_ISLAND"
-            },
-            {
+              theme: "Couronne",
               consigne: "Ramène la couronne : marche jusqu’à la case dorée",
               regle: "Un porteur ne peut pas s’arrêter sur une couronne posée au sol",
               cible: [[7, 7]], gardien: "g1", vue: [6, 6],
@@ -48442,29 +48476,66 @@
               impossible: () => !quickAtteignable("g1", 7, 7)
             },
             {
-              consigne: "Clique la couronne, puis ton gardien sur la Passerelle",
-              regle: "Passer la couronne à un gardien voisin est gratuit",
+              theme: "Couronne",
+              consigne: "Clique la couronne, puis ton gardien sur la Passerelle pour la lui passer",
+              regle: "Ramasser, passer ou poser la couronne ne coûte aucune carte",
               vue: [7, 8],
               but: () => !!artifactCarriedBy(QUICK.cles.g2)
             },
-            {
-              consigne: "Clique Fin du tour",
-              regle: "Les cartes Déplacer qui restent partent en réserve",
-              finDeTour: true, bloque: true
-            }
+            QK_FIN("Les cartes Déplacer qui restent partent en réserve")
           ],
           rival: quickRival3
         },
         {
           etapes: [
             {
-              consigne: "Pose une île près de la case dorée, puis fais-y naître un gardien",
-              regle: "Une île par tour, obligatoire",
-              pose: { zone: QK_ZONE_T4 }, cible: [[8, 4]], vue: [8, 4],
-              but: ctx => state.islands.length > ctx.iles && state.phase !== "PLACE_SPAWN"
-                && state.phase !== "PLACE_ISLAND"
+              theme: "Pousser",
+              consigne: "Deux rivaux en file contre ton gardien : pousse-les de 2 cases, dans le vide",
+              regle: "Toute la file avance d’une case par carte · hors des îles, on tombe et on quitte la partie",
+              cible: [[7, 4]], gardien: "g1", vue: [7, 6],
+              but: () => !quickCle("r2") && !quickCle("r3"),
+              impossible: () => !!quickCle("r2") && (quickDisponible("PUSH") < 2 || !quickVoisins("g1", "r2"))
             },
             {
+              theme: "Île",
+              consigne: "Pose la Passerelle sur les cases dorées, en haut du plateau",
+              regle: "Elle servira de point d’arrivée à la 2e couronne",
+              pose: { forme: "line3", cases: QK_I4 }, zone: QK_I4, vue: [3, 5],
+              but: () => quickIlePosee(QK_I4)
+            },
+            {
+              theme: "Île",
+              consigne: "Fais naître un gardien sur la case dorée",
+              regle: "Garde libre la case du milieu : la couronne va s’y poser",
+              naissance: [2, 4], cible: [[2, 4]], vue: [3, 5],
+              but: () => quickNaissanceFaite(2, 4, "g4")
+            },
+            {
+              theme: "Déplacer",
+              consigne: "Place ton premier gardien sur la case dorée, sous la 2e couronne",
+              regle: "Une case droite = 1 carte Déplacer · une diagonale = 2",
+              cible: [[5, 5]], gardien: "g1", vue: [5, 6], attendre: [4, 5],
+              but: () => quickCleSur("g1", 5, 5),
+              impossible: () => !quickAtteignable("g1", 5, 5)
+            },
+            {
+              theme: "Pousser",
+              consigne: "Lance la couronne : clique ton gardien, puis la case dorée",
+              regle: "Elle peut survoler le vide, mais doit atterrir sur une case d’île libre",
+              cible: [[2, 5]], gardien: "g1", vue: [4, 5], attendre: [4, 5],
+              but: () => quickCouronneSur(2, 5),
+              impossible: () => !quickCouronneSur(2, 5)
+                && (quickDisponible("PUSH") < 2 || !quickCouronneSur(4, 5) || !quickCleSur("g1", 5, 5))
+            },
+            QK_FIN("Ton porteur attend sur la Passerelle : au prochain tour, la magie le ramène")
+          ],
+          rival: quickRival4
+        },
+        {
+          etapes: [
+            QK_ZONE(QK_ZONE_T5, "Une île par tour, obligatoire"),
+            {
+              theme: "Magie",
               consigne: "Clique MAGIE, puis la case dorée : ce sera le pivot",
               regle: "Ta carte Magie attendait en réserve depuis le tour 1",
               cible: [[9, 8]], vue: [8, 9], bloqueGardiens: true,
@@ -48472,35 +48543,35 @@
                 && state.selectedMagicPivot[0] === 9 && state.selectedMagicPivot[1] === 8
             },
             {
+              theme: "Magie",
               consigne: "Clique la position qui pose ton porteur sur la case dorée",
               regle: "L’île tourne autour du pivot, avec ton gardien et sa couronne",
               cible: [[9, 10]], vue: [8, 9], bloqueGardiens: true,
               but: () => quickCleSur("g2", 9, 10)
             },
             {
+              theme: "Annuler",
               consigne: "Clique la flèche ↶ en bas à gauche pour annuler la magie",
               regle: "Annuler revient en arrière dans ton tour, autant de fois que tu veux",
               vue: [8, 9], bloque: true,
               but: () => quickCleSur("g2", 7, 8)
             },
             {
+              theme: "Magie",
               consigne: "Le pivot est gardé : clique de nouveau la position qui rentre au village",
               regle: "Le pivot ne bouge pas : l’île tourne autour, comme une aiguille",
               cible: [[9, 10]], vue: [8, 9], bloqueGardiens: true,
               but: () => quickCleSur("g2", 9, 10),
               impossible: () => quickDisponible("MAGIC") < 1 && !quickCleSur("g2", 9, 10)
             },
-            {
-              consigne: "Clique Fin du tour",
-              regle: "La couronne comptera au début de ton prochain tour, si elle est encore au village",
-              finDeTour: true, bloque: true
-            }
+            QK_FIN("Ton village : ses 3 cases du coin · la couronne y comptera au début de ton prochain tour", "Marquer")
           ],
-          rival: quickRival4
+          rival: quickRival5
         },
         {
           etapes: [
             {
+              theme: "Marquer",
               consigne: "La couronne a tenu jusqu’à ton tour : tu marques 1 point !",
               regle: "Ton gardien reste au village · la couronne repart au centre",
               bloque: true, vue: [9, 9], final: true
@@ -48523,6 +48594,15 @@
       function quickPositionCle(cle) {
         const ch = quickCle(cle);
         return ch ? [ch.r, ch.c] : null;
+      }
+
+      function quickCouronneSur(r, c) {
+        return activeArtifacts().some(cr => !cr.carrierId && cr.r === r && cr.c === c);
+      }
+
+      function quickVoisins(a, b) {
+        const x = quickCle(a), y = quickCle(b);
+        return !!x && !!y && Math.abs(x.r - y.r) + Math.abs(x.c - y.c) === 1;
       }
 
       function quickDisponible(type) {
@@ -48729,39 +48809,48 @@
 
       async function quickRival1() {
         quickAfficherRival("Le rival pose une île et fait naître son premier gardien.", "Pendant son tour, tu regardes");
-        quickSuivre(5, 4);
+        quickSuivre(5, 3);
         await quickPause(700);
-        await quickRivalIle(QK_RA, "square");
-        await quickRivalNaissance("r1", 6, 3);
+        await quickRivalIle(QK_RA, "line3");
+        await quickRivalNaissance("r1", 5, 3);
       }
 
       async function quickRival2() {
-        quickAfficherRival("Le rival s’approche, colle son gardien au tien… et te vole la couronne !",
+        quickAfficherRival("Le rival colle son gardien au tien… et te vole la couronne !",
           "Voler la couronne d’un gardien voisin est gratuit");
         quickSuivre(5, 4);
         await quickPause(700);
         await quickRivalIle(QK_RB, "line3");
         await quickRivalNaissance("r2", 4, 3);
-        await quickRivalPas("r1", [[5, 3], [5, 4]]);
+        await quickRivalPas("r1", [[5, 4]]);
         await quickRivalVol("r1", "g1");
-        await quickRivalPas("r2", [[5, 3]]);
       }
 
       async function quickRival3() {
-        quickAfficherRival("Le rival pose une île et se replace.", "Il lui faut du temps pour revenir");
-        quickSuivre(3, 2);
+        quickAfficherRival("Le rival aligne deux gardiens contre le tien : il prépare un vol.",
+          "Deux gardiens collés en ligne forment une file");
+        quickSuivre(6, 5);
         await quickPause(700);
-        await quickRivalIle(QK_RC, "l3");
-        await quickRivalNaissance(null, 1, 2);
-        if (quickCle("r1")) await quickRivalPas("r1", [[5, 3]]);
+        await quickRivalIle(QK_RC, "line3");
+        await quickRivalNaissance("r3", 7, 5);
+        if (quickCle("r2")) await quickRivalPas("r2", [[5, 3], [5, 4], [6, 5], [6, 6], [7, 6]]);
       }
 
       async function quickRival4() {
+        quickAfficherRival("Le rival a perdu deux gardiens : il en fait naître un autre.",
+          "Un gardien tombé ne revient pas");
+        quickSuivre(2, 3);
+        await quickPause(700);
+        await quickRivalIle(QK_RD, "l3");
+        await quickRivalNaissance(null, 1, 2);
+      }
+
+      async function quickRival5() {
         quickAfficherRival("Le rival accourt vers ton village… trop tard.",
           "Un rival posté sur une des 3 cases de ton village y bloquerait le point");
         quickSuivre(7, 9);
         await quickPause(700);
-        await quickRivalIle(QK_RD, "square");
+        await quickRivalIle(QK_RE, "square");
         await quickRivalNaissance(null, 7, 9);
       }
 
@@ -48893,7 +48982,7 @@
           #qk-layer .qk-btn:hover { background: rgba(40,32,12,.75); color: #fff3c4; }
           #qk-layer .qk-btn[hidden] { display: none; }
           #qk-layer .qk-bar { display: flex; gap: 4px; }
-          #qk-layer .qk-bar i { width: 30px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.22); transition: background .3s; }
+          #qk-layer .qk-bar i { width: 22px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.22); transition: background .3s; }
           #qk-layer .qk-bar i.ok { background: linear-gradient(90deg, #e8b84a, #ffe39a); }
           #qk-layer .qk-bar i.cur { background: #fff3c4; box-shadow: 0 0 8px rgba(255,214,110,.9); }
           #qk-layer .qk-bot { position: absolute; bottom: 146px; left: 50%; transform: translateX(-50%);
@@ -48963,11 +49052,13 @@
 
       function quickEntete(rival) {
         const calque = quickCalque();
-        calque.querySelector(".qk-titre").innerHTML =
-          `QUICK · <b>${rival ? "LE RIVAL JOUE" : "À TOI"}</b>`;
-        calque.querySelector(".qk-bar").innerHTML = QUICK_TOURS.map((_, i) =>
-          `<i class="${i < QUICK.tour ? "ok" : i === QUICK.tour ? "cur" : ""}"></i>`).join("");
         const etape = quickEtape();
+        const theme = rival ? null : etape?.theme || null;
+        const sujet = rival ? "LE RIVAL JOUE" : theme ? theme.toUpperCase() : etape?.finDeTour ? "FIN DU TOUR" : "LE PLATEAU";
+        calque.querySelector(".qk-titre").innerHTML = `QUICK · <b>${sujet}</b>`;
+        // Les huit étapes de l'ancien Quick, allumées à mesure que la partie les amène.
+        calque.querySelector(".qk-bar").innerHTML = QUICK_THEMES.map(t =>
+          `<i class="${t === theme ? "cur" : QUICK.vus.has(t) ? "ok" : ""}" title="${t}"></i>`).join("");
         calque.querySelector(".qk-reprendre").hidden = !!rival || !etape || !!etape.suite || !!etape.final
           || (QUICK.tour === 0 && QUICK.etape <= 1);
         return calque;
@@ -49007,6 +49098,15 @@
         QUICK.rappelA = setTimeout(() => ligne.classList.remove("rappel"), 700);
       }
 
+      /* Une poussée n'existe qu'aux étapes « Pousser », et jamais contre un
+         de ses propres gardiens. Sinon, viser une case voisine (au clic 3D, la
+         destination d'une poussée passe avant la case) faisait tomber un allié. */
+      function quickPousseeAutorisee(option) {
+        if (quickEtape()?.theme !== "Pousser") return false;
+        if (option.targetType === "crown") return true;
+        return characterById(option.targetId)?.player !== 0;
+      }
+
       /* ---------- Garde-fous sur le plateau et le tiroir d'îles ---------- */
       function quickClicRefuse(r, c) {
         if (!state?.quick) return false;
@@ -49017,6 +49117,10 @@
         if (state.phase === "PLACE_SPAWN" && etape.naissance) {
           return r !== etape.naissance[0] || c !== etape.naissance[1];
         }
+        // Une couronne voisine se lance (ou se contourne) une fois le gardien
+        // choisi : cliquée d'abord, elle serait ramassée.
+        if (etape.attendre && state.phase === "ACTION_SELECT"
+          && r === etape.attendre[0] && c === etape.attendre[1]) return true;
         const ch = characterAt(r, c);
         if (etape.bloqueGardiens && ch && state.phase === "ACTION_SELECT") return true;
         if (etape.gardien && ch && ch.player === 0 && ch.id !== QUICK.cles[etape.gardien]
@@ -49139,6 +49243,7 @@
         let atteint = false;
         try { atteint = !!etape.but(ctx); } catch (_) { atteint = false; }
         if (atteint) {
+          if (etape.theme) QUICK.vus.add(etape.theme);
           quickAfficher(true);
           try { playSfx("crownDrop"); } catch (_) { }
           QUICK.enchainement = setTimeout(() => { QUICK.enchainement = null; quickSuivant(); }, 1100);
@@ -49227,6 +49332,8 @@
         QUICK.fini = false;
         QUICK.tour = Math.max(0, Math.min(QK_DEBUTS.length - 1, tour));
         QUICK.etape = 0;
+        QUICK.vus = new Set(QUICK_TOURS.slice(0, QUICK.tour)
+          .flatMap(t => t.etapes.map(e => e.theme).filter(Boolean)));
 
         try { if (typeof aiRunToken !== "undefined") aiRunToken++; } catch (_) { }
         try { if (typeof stopTurnTimer === "function") stopTurnTimer(); } catch (_) { }

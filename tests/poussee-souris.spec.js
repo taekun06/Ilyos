@@ -6,7 +6,7 @@
    la scène dès qu'une synchronisation passait sans redessiner l'aperçu : les
    anneaux restaient visibles mais muets, et le clic retombait sur la case,
    souvent masquée par un gardien. Joué au tour 3 de la partie guidée Quick :
-   reprendre la couronne, puis pousser la file de deux rivaux de deux cases. */
+   reprendre la couronne, puis repousser le rival de trois cases. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -51,14 +51,13 @@ test('les destinations de poussée restent cliquables après le choix du rival',
       indexees: k.interactiveMeshes.filter(m => m.userData.ilyosInteraction).length
     };
   });
-  expect(zones.dessinees).toBe(2);
+  expect(zones.dessinees).toBe(3);
   expect(zones.indexees).toBe(zones.dessinees);
 
-  // Un seul clic sur la case la plus lointaine pousse la file de deux cases :
-  // le premier rival atterrit au bord, le second tombe dans le vide.
-  await cliquer(page, await pointEcran(page, 5, 2));
+  // Un seul clic sur la case la plus lointaine pousse le rival de trois cases.
+  await cliquer(page, await pointEcran(page, 5, 1));
   await expect.poll(() => page.evaluate(() =>
-    JSON.parse(window.ILYOS_BENCH.etatComplet()).characters.filter(c => c.player === 1).map(c => `${c.r},${c.c}`).join(' '))).toBe('5,2');
+    JSON.parse(window.ILYOS_BENCH.etatComplet()).characters.filter(c => c.player === 1).map(c => `${c.r},${c.c}`).join(' '))).toBe('5,1 4,3');
   await expect.poll(() => page.evaluate(() => window.ILYOS_QUICK.etat().etape)).toBe(2);
   expect(erreurs).toEqual([]);
 });

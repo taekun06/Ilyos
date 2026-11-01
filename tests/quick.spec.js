@@ -1,6 +1,6 @@
 /* Quick, la partie guidée : le tour en cours se reprend à son début sans
-   toucher aux tours précédents, et la poussée ratée (une seule carte) fait
-   reprendre le tour d'elle-même, faute de cartes pour aboutir. */
+   toucher aux tours précédents, et une poussée ratée (une case au lieu de
+   trois) fait reprendre le tour d'elle-même. */
 
 const { test, expect } = require('@playwright/test');
 
@@ -47,15 +47,15 @@ test('une poussée trop courte fait reprendre le tour', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.ILYOS_QUICK.etat().etape)).toBe(1);
   await page.waitForTimeout(1500);
 
-  // Une seule case de poussée au lieu de deux : il ne reste qu'une carte
-  // Pousser, la file ne peut plus tomber, le tour repart de son début.
+  // Une seule case de poussée au lieu de trois : le rival n'est plus au
+  // contact et les cartes manquent, le tour repart de son début.
   await cliquer(page, 5, 5);
   await expect.poll(async () => (await etat(page)).phase).toBe('SMART_CHAR');
   await cliquer(page, 5, 4);
   await expect.poll(async () => (await etat(page)).phase).toBe('ACTION');
   await page.waitForTimeout(1500);
   await cliquer(page, 5, 3);
-  await expect.poll(async () => (await etat(page)).characters.filter(c => c.player === 1).map(c => `${c.r},${c.c}`).join(' ')).toBe('5,3 5,2');
+  await expect.poll(async () => (await etat(page)).characters.filter(c => c.player === 1).map(c => `${c.r},${c.c}`).join(' ')).toBe('5,3 4,3');
   await expect.poll(() => page.evaluate(() => window.ILYOS_QUICK.etat().etape), { timeout: 8000 }).toBe(0);
   const apres = await etat(page);
   expect(apres.characters.map(c => `${c.player}@${c.r},${c.c}`)).toEqual(avant.characters.map(c => `${c.player}@${c.r},${c.c}`));

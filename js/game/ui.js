@@ -2635,7 +2635,8 @@
         options.forEach(option => {
           if (!unique.has(option.id)) unique.set(option.id, option);
         });
-        return [...unique.values()];
+        // Quick (quick.js) ne propose que la poussée de son étape.
+        return [...unique.values()].filter(option => !state.quick || quickPousseeAutorisee(option));
       }
 
       function beginUnifiedPushFromHud() {
