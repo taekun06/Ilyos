@@ -7013,6 +7013,78 @@
 
       window.ILYOS_CHOCS = { reglages: kaykitChocsReglages, regler: kaykitChocsRegler, jouer: force => kaykitChoc(force) };
 
+      /* VOILE SOUS LE PLATEAU (menu > Graphismes, activé par défaut). Assombrit
+         légèrement le ciel visible DERRIÈRE les cases, et lui seul, pour que le
+         plateau ressorte ; tout ce qui est hors du plateau reste inchangé.
+         Choix de Taekun du 01/11/2026 : niveau « léger », sans flou ni
+         changement de couleur du reste de la scène.
+
+         Le voile est un quadrilatère posé bien plus bas que les coques des îles,
+         sur la projection du plateau vue depuis la caméra : il couvre donc à
+         l'écran exactement la zone des cases. Il passe après les calques du ciel
+         (renderOrder) mais avant tout le reste : les îles, opaques et plus
+         proches, le masquent, et les surbrillances transparentes du plateau se
+         dessinent par-dessus. Quatre sommets recalculés par image : coût nul.
+         Réglage `ilyosVoilePlateau` dans le stockage local. */
+      const KAYKIT_VOILE_CLE = "ilyosVoilePlateau";
+      const KAYKIT_VOILE = { opacite: .25, couleur: 0x0b1020, profondeur: -10, marge: .3 };
+      let kaykitVoileActif = (() => {
+        try { return localStorage.getItem(KAYKIT_VOILE_CLE) !== "0"; } catch (_) { return true; }
+      })();
+      const kaykitVoileCoins = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+
+      function kaykitVoileCreer() {
+        // Bord adouci : rectangle blanc flouté dans une petite texture, l'alpha
+        // fait le fondu sur la marge.
+        const toile = document.createElement("canvas");
+        toile.width = toile.height = 128;
+        const ctx = toile.getContext("2d");
+        ctx.filter = "blur(4px)";
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(7, 7, 114, 114);
+        const geometrie = new THREE.BufferGeometry();
+        geometrie.setAttribute("position", new THREE.Float32BufferAttribute(new Array(12).fill(0), 3));
+        geometrie.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+        geometrie.setIndex([0, 1, 2, 0, 2, 3]);
+        const voile = new THREE.Mesh(geometrie, new THREE.MeshBasicMaterial({
+          map: new THREE.CanvasTexture(toile), color: KAYKIT_VOILE.couleur, transparent: true,
+          opacity: KAYKIT_VOILE.opacite, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide
+        }));
+        voile.name = "ilyos-voile-plateau";
+        voile.renderOrder = -800;      // après le ciel (-1000 à -870), avant le reste
+        voile.frustumCulled = false;   // sommets réécrits à chaque image
+        return voile;
+      }
+
+      function kaykitVoilePlateauSuivre() {
+        if (!kaykit3D?.scene) return;
+        let voile = kaykit3D.voilePlateau;
+        if (!kaykitVoileActif) { if (voile) voile.visible = false; return; }
+        if (!voile) { voile = kaykit3D.voilePlateau = kaykitVoileCreer(); }
+        if (voile.parent !== kaykit3D.scene) kaykit3D.scene.add(voile);
+        voile.visible = true;
+        const camera = kaykit3D.camera.position;
+        const demi = kaykitBoardSpan() / 2 + KAYKIT_VOILE.marge;
+        const bas = KAYKIT_VOILE.profondeur;
+        // Rayon caméra → coin du plateau (au ras des cases), prolongé jusqu'au plan bas.
+        [[-demi, demi], [demi, demi], [demi, -demi], [-demi, -demi]].forEach(([x, z], i) => {
+          const t = (bas - camera.y) / (0 - camera.y);
+          kaykitVoileCoins[i].set(camera.x + (x - camera.x) * t, bas, camera.z + (z - camera.z) * t);
+        });
+        const positions = voile.geometry.attributes.position;
+        kaykitVoileCoins.forEach((coin, i) => positions.setXYZ(i, coin.x, coin.y, coin.z));
+        positions.needsUpdate = true;
+      }
+
+      function kaykitVoileRegler(actif) {
+        kaykitVoileActif = !!actif;
+        try { localStorage.setItem(KAYKIT_VOILE_CLE, kaykitVoileActif ? "1" : "0"); } catch (_) { }
+        kaykitVoilePlateauSuivre();
+        return kaykitVoileActif;
+      }
+
+      window.ILYOS_VOILE_PLATEAU = { actif: () => kaykitVoileActif, regler: kaykitVoileRegler };
+
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
          chute, qui déclenche une seconde chute, produit trois demandes en
          quelques dizaines de millisecondes : sans ce plancher, le plateau
@@ -14483,6 +14555,7 @@
         // resynchronisations et reste synchronisé avec le clip de marche.
         if (kaykit3D.orbit) kaykit3D.orbit.update();
         updateKayKitHorizon(elapsed);
+        kaykitVoilePlateauSuivre();
         // gameHidden garantit déjà ici visualMode==="alternative" et
         // #gameScreen visible (voir le retour anticipé en tête de fonction) :
         // plus besoin de revérifier avant de rendre.

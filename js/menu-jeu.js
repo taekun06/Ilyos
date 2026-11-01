@@ -221,6 +221,24 @@
     });
     page('graphismes').appendChild(ciel);
 
+    // PLATEAU : voile léger sur le ciel visible derrière les cases
+    // (js/game/kaykit3d.js, ILYOS_VOILE_PLATEAU). Activé par défaut.
+    const plateau = section('Plateau', 'Faire ressortir les cases sur le ciel.');
+    const plateauGrille = document.createElement('div');
+    plateauGrille.className = 'mj-grille-chocs';
+    plateauGrille.innerHTML = `
+      <button type="button" class="mj-choix" data-mj-voile><b>Fond assombri</b><small>Ciel plus sombre derrière les cases</small></button>`;
+    const boutonVoile = plateauGrille.querySelector('[data-mj-voile]');
+    const majVoile = () => boutonVoile.setAttribute('aria-pressed', String(!!window.ILYOS_VOILE_PLATEAU?.actif?.()));
+    boutonVoile.addEventListener('click', () => {
+      if (!window.ILYOS_VOILE_PLATEAU) return;
+      window.ILYOS_VOILE_PLATEAU.regler(!window.ILYOS_VOILE_PLATEAU.actif());
+      majVoile();
+    });
+    majVoile();
+    plateau.appendChild(plateauGrille);
+    page('graphismes').appendChild(plateau);
+
     // CHOCS : secousse de caméra et vibration au moment des coups forts
     // (js/game/kaykit3d.js, KAYKIT_CHOCS). Sans coût de rendu.
     const chocs = section('Chocs', 'Le poids des coups : poussées, chutes, couronnes volées.');
