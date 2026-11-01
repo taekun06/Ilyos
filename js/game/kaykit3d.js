@@ -10446,10 +10446,10 @@
       // Option pierre : une pointe par case, collée sous son socle. Les cases du
       // cœur de l'île (plus de voisines) pendent plus bas, si bien que l'ensemble
       // épouse le contour de l'île et s'effile vers le centre.
-      // Option gazon : le haut de la roche prend la couleur de la terre sous
-      // l'herbe, puis redevient roche plus bas. Plaque et pointes se lisent
-      // alors comme une seule motte arrachée au sol.
-      const KAYKIT_ESSAI_TERRE = 0x6e4a30;
+      // Option gazon : roche dans l'ombre de l'herbe, déjà sombre sous la plaque
+      // puis de plus en plus sombre jusqu'à la pointe (légère teinte du ciel du
+      // soir), pour un dessous d'île flottante ombré.
+      const KAYKIT_ESSAI_TERRE = 0x4a4550;
       function kaykitEssaiTerreDegrade(material, hautY) {
         const terre = new THREE.Color(KAYKIT_ESSAI_TERRE).convertSRGBToLinear();
         material.onBeforeCompile = shader => {
@@ -10460,7 +10460,7 @@
             .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
           shader.fragmentShader = shader.fragmentShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform vec3 essaiTerre;")
-            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = smoothstep(essaiHautY - .75, essaiHautY - .12, vEssaiY);\ndiffuseColor.rgb = mix(diffuseColor.rgb, essaiTerre, essaiT * .92);");
+            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / 2.2, 0., 1.);\ndiffuseColor.rgb *= mix(.85, .07, pow(essaiT, .7)) * vec3(.93, .91, 1.04);");
         };
         material.customProgramCacheKey = () => "essai-terre";
       }
