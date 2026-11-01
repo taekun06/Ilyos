@@ -13527,6 +13527,7 @@
 
       function syncKayKitScene() {
         kaykitSignalerAgitation();
+        kaykitOmbresARefaire = true;
         if (!kaykit3D || !state || !isKayKitBoardActive()) return;
         if (kaykit3D.syncInProgress) {
           kaykit3D.syncPending = true;
@@ -14137,6 +14138,30 @@
       let kaykitDerniereAgitation = 0;
       let kaykitDerniereSouris = 0;
       function kaykitSignalerAgitation() { kaykitDerniereAgitation = performance.now(); }
+
+      /* OMBRES REDESSINÉES SEULEMENT QUAND QUELQUE CHOSE BOUGE. La carte
+         d'ombre du soleil (lumière fixe) était refaite à chaque image : ~210
+         dessins de plus par image, presque autant que la scène elle-même
+         (mesuré le 01/11 : 212 pour l'ombre, 293 pour l'image). Le décor est
+         immobile ; seuls les gardiens, les îles qui tombent et les effets
+         déplacent des ombres. On la refait donc : pendant tout mouvement réel
+         du plateau et 300 ms après, après chaque synchronisation de la scène
+         (île posée, gardien ajouté…), et sinon une image dessinée sur quatre,
+         ce qui suffit au souffle des gardiens au repos. Un clic ou un survol
+         qui ne bouge rien ne la refait plus. */
+      let kaykitDernierMouvement = 0;
+      let kaykitOmbresARefaire = true;
+      let kaykitImagesSansOmbre = 0;
+      function kaykitPreparerOmbres(maintenant) {
+        const R = kaykit3D.renderer;
+        if (!R.shadowMap.enabled) return;
+        R.shadowMap.autoUpdate = false;
+        if (kaykitOmbresARefaire || maintenant - kaykitDernierMouvement < 300 || ++kaykitImagesSansOmbre >= 4) {
+          R.shadowMap.needsUpdate = true;
+          kaykitOmbresARefaire = false;
+          kaykitImagesSansOmbre = 0;
+        }
+      }
       ["pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
         window.addEventListener(type, kaykitSignalerAgitation, { passive: true, capture: true }));
       window.addEventListener("pointermove", () => { kaykitDerniereSouris = performance.now(); }, { passive: true, capture: true });
@@ -14169,8 +14194,8 @@
           c.diviseur = vsync < 12.5 ? Math.max(1, Math.floor(16.7 / vsync + .25)) : 1;
           c.diviseurCalme = Math.max(c.diviseur, Math.floor(33.4 / vsync + .25));
         }
-        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; return false; }
-        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = maintenant;
+        if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; kaykitDernierMouvement = maintenant; return false; }
+        if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = kaykitDernierMouvement = maintenant;
         const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS
           && maintenant - kaykitDerniereSouris > KAYKIT_CALME_APRES_SOURIS_MS;
         const diviseur = calme ? c.diviseurCalme : c.diviseur;
@@ -14321,6 +14346,7 @@
         const retirerChoc = kaykitAppliquerChoc(frameNow);
         try {
           kaykitStabiliserLumieresPonctuelles();
+          kaykitPreparerOmbres(frameNow);
           if (!kaykitRenderAvecBloom(kaykit3D.renderer, kaykit3D.scene, kaykit3D.camera)) {
             kaykit3D.renderer.setRenderTarget(null);
             kaykit3D.renderer.render(kaykit3D.scene, kaykit3D.camera);
