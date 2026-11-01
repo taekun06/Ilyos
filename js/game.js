@@ -7027,9 +7027,15 @@
          dessinent par-dessus. Quatre sommets recalculés par image : coût nul.
          Réglage `ilyosVoilePlateau` dans le stockage local. */
       const KAYKIT_VOILE_CLE = "ilyosVoilePlateau";
-      const KAYKIT_VOILE = { opacite: .25, couleur: 0x0b1020, profondeur: -10, marge: .3 };
-      let kaykitVoileActif = (() => {
-        try { return localStorage.getItem(KAYKIT_VOILE_CLE) !== "0"; } catch (_) { return true; }
+      // Niveaux proposés dans Menu > Graphismes ; « léger » par défaut.
+      const KAYKIT_VOILE_NIVEAUX = { sans: 0, leger: .25, moyen: .42 };
+      const KAYKIT_VOILE = { couleur: 0x0b1020, profondeur: -10, marge: .3 };
+      let kaykitVoileNiveau = (() => {
+        try {
+          const lu = localStorage.getItem(KAYKIT_VOILE_CLE);
+          if (lu === "0") return "sans";            // ancien interrupteur coupé
+          return KAYKIT_VOILE_NIVEAUX[lu] !== undefined ? lu : "leger";
+        } catch (_) { return "leger"; }
       })();
       const kaykitVoileCoins = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
 
@@ -7048,7 +7054,7 @@
         geometrie.setIndex([0, 1, 2, 0, 2, 3]);
         const voile = new THREE.Mesh(geometrie, new THREE.MeshBasicMaterial({
           map: new THREE.CanvasTexture(toile), color: KAYKIT_VOILE.couleur, transparent: true,
-          opacity: KAYKIT_VOILE.opacite, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide
+          opacity: KAYKIT_VOILE_NIVEAUX.leger, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide
         }));
         voile.name = "ilyos-voile-plateau";
         voile.renderOrder = -800;      // après le ciel (-1000 à -870), avant le reste
@@ -7059,8 +7065,10 @@
       function kaykitVoilePlateauSuivre() {
         if (!kaykit3D?.scene) return;
         let voile = kaykit3D.voilePlateau;
-        if (!kaykitVoileActif) { if (voile) voile.visible = false; return; }
+        const opacite = KAYKIT_VOILE_NIVEAUX[kaykitVoileNiveau];
+        if (!opacite) { if (voile) voile.visible = false; return; }
         if (!voile) { voile = kaykit3D.voilePlateau = kaykitVoileCreer(); }
+        voile.material.opacity = opacite;
         if (voile.parent !== kaykit3D.scene) kaykit3D.scene.add(voile);
         voile.visible = true;
         const camera = kaykit3D.camera.position;
@@ -7076,14 +7084,15 @@
         positions.needsUpdate = true;
       }
 
-      function kaykitVoileRegler(actif) {
-        kaykitVoileActif = !!actif;
-        try { localStorage.setItem(KAYKIT_VOILE_CLE, kaykitVoileActif ? "1" : "0"); } catch (_) { }
+      function kaykitVoileRegler(niveau) {
+        if (KAYKIT_VOILE_NIVEAUX[niveau] === undefined) return kaykitVoileNiveau;
+        kaykitVoileNiveau = niveau;
+        try { localStorage.setItem(KAYKIT_VOILE_CLE, niveau); } catch (_) { }
         kaykitVoilePlateauSuivre();
-        return kaykitVoileActif;
+        return kaykitVoileNiveau;
       }
 
-      window.ILYOS_VOILE_PLATEAU = { actif: () => kaykitVoileActif, regler: kaykitVoileRegler };
+      window.ILYOS_VOILE_PLATEAU = { niveau: () => kaykitVoileNiveau, regler: kaykitVoileRegler };
 
       /* Cadence minimale entre deux recadrages. Une poussée qui déclenche une
          chute, qui déclenche une seconde chute, produit trois demandes en

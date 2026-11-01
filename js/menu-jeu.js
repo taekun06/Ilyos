@@ -221,18 +221,21 @@
     });
     page('graphismes').appendChild(ciel);
 
-    // PLATEAU : voile léger sur le ciel visible derrière les cases
-    // (js/game/kaykit3d.js, ILYOS_VOILE_PLATEAU). Activé par défaut.
-    const plateau = section('Plateau', 'Faire ressortir les cases sur le ciel.');
+    // PLATEAU : voile sur le ciel visible derrière les cases
+    // (js/game/kaykit3d.js, ILYOS_VOILE_PLATEAU). « Léger » par défaut.
+    const plateau = section('Plateau', 'Assombrir le ciel derrière les cases pour les faire ressortir.');
     const plateauGrille = document.createElement('div');
-    plateauGrille.className = 'mj-grille-chocs';
-    plateauGrille.innerHTML = `
-      <button type="button" class="mj-choix" data-mj-voile><b>Fond assombri</b><small>Ciel plus sombre derrière les cases</small></button>`;
-    const boutonVoile = plateauGrille.querySelector('[data-mj-voile]');
-    const majVoile = () => boutonVoile.setAttribute('aria-pressed', String(!!window.ILYOS_VOILE_PLATEAU?.actif?.()));
-    boutonVoile.addEventListener('click', () => {
-      if (!window.ILYOS_VOILE_PLATEAU) return;
-      window.ILYOS_VOILE_PLATEAU.regler(!window.ILYOS_VOILE_PLATEAU.actif());
+    plateauGrille.className = 'mj-grille-voile';
+    plateauGrille.innerHTML = [['sans', 'Sans', 'Ciel intact'], ['leger', 'Léger', 'Par défaut'], ['moyen', 'Moyen', 'Plus marqué']]
+      .map(([n, titre, sous]) => `<button type="button" class="mj-choix" data-mj-voile="${n}"><b>${titre}</b><small>${sous}</small></button>`).join('');
+    const majVoile = () => {
+      const niveau = window.ILYOS_VOILE_PLATEAU?.niveau?.();
+      plateauGrille.querySelectorAll('[data-mj-voile]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mjVoile === niveau)));
+    };
+    plateauGrille.addEventListener('click', e => {
+      const bouton = e.target.closest('[data-mj-voile]');
+      if (!bouton || !window.ILYOS_VOILE_PLATEAU) return;
+      window.ILYOS_VOILE_PLATEAU.regler(bouton.dataset.mjVoile);
       majVoile();
     });
     majVoile();
@@ -403,7 +406,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=9';
+    lien.href = './css/menu-jeu.css?v=10';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }
