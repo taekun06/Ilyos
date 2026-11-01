@@ -139,6 +139,24 @@
         return creaturesResolveArtifactBase(char, ...args);
       };
 
+      /* ---------- Œufs portés par une île qui tourne ------------------- */
+      /* Un œuf posé sur une île suit la magie comme une couronne au sol :
+         rotation.absCells garde l'ordre de ile.cells, la case d'indice i va
+         donc en absCells[i]. Hors simulation seulement : le clone du planner
+         partage state.rotation avec la vraie partie. */
+      const creaturesMagieBase = applyMagicRotationCore;
+      applyMagicRotationCore = function applyMagicRotationCoreCreatures(islandId, rotation) {
+        const oeufs = (!ilyosSimulationActive && creaturesActives() && rotation?.valid) ? (state.rotation.creatures?.oeufs || []) : [];
+        const ile = oeufs.length ? state.islands.find(is => is.id === islandId) : null;
+        const suivants = ile ? oeufs.map(oeuf => {
+          const i = ile.cells.findIndex(([r, c]) => r === oeuf.r && c === oeuf.c);
+          return i >= 0 && rotation.absCells[i] ? { oeuf, vers: rotation.absCells[i] } : null;
+        }).filter(Boolean) : [];
+        const resultat = creaturesMagieBase(islandId, rotation);
+        if (resultat) suivants.forEach(({ oeuf, vers }) => { oeuf.r = vers[0]; oeuf.c = vers[1]; });
+        return resultat;
+      };
+
       /* ---------- Tour -------------------------------------------------- */
       function creaturesEcraserOeufs(precedentId) {
         const etat = state.rotation.creatures;
