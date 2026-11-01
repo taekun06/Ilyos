@@ -266,6 +266,37 @@ body[data-visual-mode="alternative"] .hud-v2-crown-icon.is-filled svg {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)) drop-shadow(0 0 5px rgba(232, 201, 138, .35));
 }
 
+/* Mode Rotation · Balises : des points à la place des trois couronnes
+   (rotationScoreHud, js/game/rotation.js). Une petite balise, le score,
+   la cible en plus discret. */
+body[data-visual-mode="alternative"] .hud-v2-balises-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--hud-v2-champagne-bright);
+  font-weight: 800;
+  line-height: 1;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-balises-score b {
+  font-size: clamp(15px, 1.35vw, 19px);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 0 6px rgba(191, 244, 255, .35);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-balises-score small {
+  font-size: clamp(10px, .85vw, 12px);
+  opacity: .7;
+}
+
+body[data-visual-mode="alternative"] .hud-v2-balise-icone {
+  align-self: center;
+  width: 9px;
+  height: 14px;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, #e8fbff, #7fd8f0);
+  box-shadow: 0 0 6px rgba(191, 244, 255, .7);
+}
+
 /* ---------- Centre : Tour · ⚙ · Timer, ⚙ exactement sur l'axe central ---------- */
 
 body[data-visual-mode="alternative"] #hudV2Top .hud-v2-top-center {

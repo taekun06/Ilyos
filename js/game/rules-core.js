@@ -356,7 +356,9 @@
           selectedActionCount: source.selectedActionCount,
           selectedCharId: source.selectedCharId,
           selectedIslandId: source.selectedIslandId,
-          pushForceChoice: source.pushForceChoice || 1
+          pushForceChoice: source.pushForceChoice || 1,
+          // But de la Rotation (balises…) : l'évaluation de l'IA le lit.
+          rotation: source.rotation || null
         });
         // Champs attendus par les fonctions de règles, reconstruits vides : ils
         // ne portent aucune information de jeu.

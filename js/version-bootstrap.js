@@ -261,7 +261,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=13.4-tiroir-iles',
+    './js/hud-organique-v2.js?v=13.5-rotation',
     './js/hud-organique-v2-final-v8.js?v=12.7',
     /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
        les lumières de scène, jamais le HUD malgré leur nom, et ces réglages
@@ -380,6 +380,8 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
     applySettings(mode, values || {});
     requestAnimationFrame(() => {
       applySettings(mode, values || {});
+      // Mode Rotation : la demande vaut pour cette seule partie (null sinon).
+      window.ILYOS_ROTATION?.demander?.(values?.rotation || null);
       const launch = document.getElementById('altStartBtn') || document.getElementById('startBtn');
       launch?.click();
     });

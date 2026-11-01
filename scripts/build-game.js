@@ -35,6 +35,9 @@ const fragmentNames = [
   // Traces et frise du tour adverse : enveloppe les noyaux de règle et
   // beginTurn, comme defaites-vue.js, donc placée après lui.
   'tour-adverse.js',
+  // Mode Rotation (but Balises) : enveloppe beginTurn, startLocalGame,
+  // l'évaluation du planner et la sync 3D, donc placé après eux.
+  'rotation.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve

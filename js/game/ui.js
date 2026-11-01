@@ -494,7 +494,7 @@
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
             nameEl.dataset.titre = p && p.titre ? p.titre : "";
           }
-          if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
+          if (scoreEl) scoreEl.innerHTML = p ? (rotationScoreHud(p) ?? crownPips(p.score)) : "";
         };
         fillPortrait("Active", leftPlayer, leftPlayer && state.currentPlayer === leftPlayer.id);
         fillPortrait("Opponent", rightPlayer, rightPlayer && state.currentPlayer === rightPlayer.id);
@@ -4566,7 +4566,7 @@
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
-        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
+        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/${rotationCible()}`;
         renderVictoryRecap(player);
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);

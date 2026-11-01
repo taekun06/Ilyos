@@ -221,7 +221,9 @@
              retombait sur les réglages du niveau NORMAL (bruit sur le score
              des poses, tactiques de couronne) : ce n'était plus l'Expert. */
           aiDifficulty: state.aiDifficulty ?? null,
-          rules: state.rules ? { ...state.rules } : null
+          rules: state.rules ? { ...state.rules } : null,
+          // Mode Rotation (rotation.js) : but et balises de la partie.
+          rotation: state.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null
         });
       }
 
@@ -267,6 +269,7 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        if (snap.rotation !== undefined) state.rotation = snap.rotation;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;

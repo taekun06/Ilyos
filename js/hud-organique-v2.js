@@ -224,6 +224,10 @@
     const target = legacy(targetId);
     const source = legacy(sourceId);
     if (!target) return;
+    /* Mode Rotation · Balises : des points au lieu des couronnes, copiés
+       tels quels (rotationScoreHud, js/game/rotation.js). */
+    const balises = source?.querySelector('.hud-v2-balises-score');
+    if (balises){ target.innerHTML = balises.outerHTML; return; }
     let filled = source ? source.querySelectorAll('.hud-v2-crown-icon.is-filled').length : 0;
     if (!Number.isFinite(filled)) filled = 0;
     /* Balle de match : à deux couronnes, la troisième, encore vide, garde une
