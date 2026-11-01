@@ -5271,6 +5271,11 @@
           const caseMagie = kaykitCaseSousFantomeMagie();
           if (caseMagie) return caseMagie;
 
+          /* Les aperçus (destinations de poussée…) sont reconstruits au survol ;
+             tant qu'aucune image n'est dessinée, leur matrice monde est encore
+             l'identité et le rayon les manquait : un clic rapide après le survol
+             tombait sur la case en dessous. */
+          kaykit3D.actionPreviewGroup?.updateMatrixWorld?.(true);
           const interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
