@@ -55,7 +55,7 @@ function sondePage() {
         M.lentes.push({
           a: Math.round(performance.now() / 100) / 10, ms: Math.round(ecart), ecran: ecran(),
           dessins: M.dessinsImage, shaders: M.liensImage, textures: M.texImage,
-          ia: !!document.querySelector('#gameScreen.ai-turn, body.ai-turn'),
+          ia: !!document.querySelector('#gameScreen.ai-turn, body.ai-turn, .ai-thinking'),
           anim: k ? (k.pendingActionAnimations?.size || 0) + (k.visualSequences?.length || 0) + (k.fxTweens?.length || 0) : 0
         });
       }
@@ -80,7 +80,16 @@ function sondePage() {
 function lirePage() {
   const M = window.__PARTIE;
   const k = window.kaykit3D, r = k && k.renderer;
+  // Images réellement DESSINÉES (la boucle en saute, voir kaykitImageSautee) :
+  // comptées là où le jeu les rend.
+  const perf = window.ILYOS_PERF;
+  if (perf && !perf.__partie) {
+    const original = perf.recordFrame.bind(perf);
+    perf.recordFrame = (...a) => { M.rendus = (M.rendus || 0) + 1; return original(...a); };
+    perf.__partie = true;
+  }
   const s = {
+    rendus: M.rendus || 0,
     ecran: M.ecran(), images: M.images, pire: Math.round(M.pire), shaders: M.liens,
     dessins: M.images ? Math.round(M.dessins / M.images) : 0, longuesMs: Math.round(M.longuesMs),
     qualite: k ? k.qualityMode || null : null, densite: r ? Math.round(r.getPixelRatio() * 100) / 100 : null,
@@ -90,7 +99,7 @@ function lirePage() {
     animationsCss: document.getAnimations ? document.getAnimations().filter(a => a.playState === 'running').length : null,
     masque: document.hidden, lentes: M.lentes.splice(0)
   };
-  M.images = 0; M.pire = 0; M.liens = 0; M.dessins = 0; M.longuesMs = 0;
+  M.images = 0; M.rendus = 0; M.pire = 0; M.liens = 0; M.dessins = 0; M.longuesMs = 0;
   return s;
 }
 
@@ -184,8 +193,9 @@ function resumerProfil(profile, fenetres) {
     e.carte = await nvidia();
     e.t = Math.round((Date.now() - debutProfil) / 1000);
     e.ips = Math.round(e.images / (PAS_MS / 1000));
+    e.dessinees = Math.round(e.rendus / (PAS_MS / 1000));
     echantillons.push(e);
-    console.log(`${String(e.t).padStart(4)} s · ${e.ecran.padEnd(8)} · ${String(e.ips).padStart(3)} i/s · pire ${String(e.pire).padStart(4)} ms · dessins ${String(e.dessins).padStart(3)}`
+    console.log(`${String(e.t).padStart(4)} s · ${e.ecran.padEnd(8)} · ${String(e.ips).padStart(3)} i/s (dessinées ${String(e.dessinees).padStart(3)}) · pire ${String(e.pire).padStart(4)} ms · dessins ${String(e.dessins).padStart(3)}`
       + ` · CPU page ${e.cpuPage ?? '?'} % graphique ${e.cpuGraphique ?? '?'} %` + (e.shaders ? ` · +${e.shaders} shaders` : '')
       + (e.carte ? ` · carte ${e.carte.charge} % ${e.carte.watts} W ${e.carte.temp} °C` : '') + (e.lentes.length ? ` · ${e.lentes.length} images lentes` : ''));
   }
@@ -203,10 +213,10 @@ function resumerProfil(profile, fenetres) {
   const lentes = echantillons.flatMap(e => e.lentes);
   const parEcran = {};
   for (const e of echantillons) {
-    const p = parEcran[e.ecran] || (parEcran[e.ecran] = { n: 0, ips: 0, cpuPage: 0, cpuGraphique: 0, dessins: 0, watts: 0 });
-    p.n++; p.ips += e.ips; p.cpuPage += e.cpuPage || 0; p.cpuGraphique += e.cpuGraphique || 0; p.dessins += e.dessins; p.watts += e.carte?.watts || 0;
+    const p = parEcran[e.ecran] || (parEcran[e.ecran] = { n: 0, ips: 0, dessinees: 0, cpuPage: 0, cpuGraphique: 0, dessins: 0, watts: 0 });
+    p.n++; p.ips += e.ips; p.dessinees += e.dessinees; p.cpuPage += e.cpuPage || 0; p.cpuGraphique += e.cpuGraphique || 0; p.dessins += e.dessins; p.watts += e.carte?.watts || 0;
   }
-  for (const p of Object.values(parEcran)) for (const k of ['ips', 'cpuPage', 'cpuGraphique', 'dessins', 'watts']) p[k] = Math.round(p[k] / p.n);
+  for (const p of Object.values(parEcran)) for (const k of ['ips', 'dessinees', 'cpuPage', 'cpuGraphique', 'dessins', 'watts']) p[k] = Math.round(p[k] / p.n);
   const fichier = path.resolve(`mesure-partie-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
   fs.writeFileSync(fichier, JSON.stringify({ url: URL_JEU, machine, parEcran, lentes, profil, echantillons }, null, 1));
 

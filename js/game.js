@@ -1400,6 +1400,12 @@
           return;
         }
         kaykitBloom.aaParCible = aaParCible && renderer.capabilities.isWebGL2;
+        /* Pas de relecture du journal de compilation à chaque shader : Three.js
+           interroge sinon le pilote (getProgramInfoLog) à chaque programme créé,
+           ce qui attend la fin de la compilation. Mesuré le 01/11 sur un portable
+           RTX 4050 : 3,4 s cumulées en 12 minutes, dont les gels de 0,5 à 1,3 s
+           à l'arrivée d'un effet nouveau. Les shaders du jeu sont fixes. */
+        renderer.debug.checkShaderErrors = false;
         renderer.setPixelRatio(kaykitDensiteRendu(1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -14503,10 +14509,20 @@
          ci-dessous) : l'ancien plafond à 30 i/s comparait un seuil de temps à
          un horodatage qui tremble, d'où son miroitement. */
       const KAYKIT_CALME_APRES_MS = 1500;
+      /* La souris qui glisse sans rien changer au plateau ne retient la pleine
+         cadence qu'un court instant. Mesuré le 01/11 sur un portable RTX 4050 :
+         en jouant, la main bouge presque sans arrêt, et le plateau était dessiné
+         à pleine cadence pendant toute la partie (processus graphique ~110 %
+         d'un cœur, ~30 W). Ce qui change à l'écran au survol (case soulevée,
+         couronne, caméra tenue à la souris) compte déjà comme mouvement dans
+         kaykitSceneAgitee et garde la pleine cadence aussi longtemps qu'il dure. */
+      const KAYKIT_CALME_APRES_SOURIS_MS = 250;
       let kaykitDerniereAgitation = 0;
+      let kaykitDerniereSouris = 0;
       function kaykitSignalerAgitation() { kaykitDerniereAgitation = performance.now(); }
-      ["pointermove", "pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
+      ["pointerdown", "wheel", "keydown", "touchstart"].forEach(type =>
         window.addEventListener(type, kaykitSignalerAgitation, { passive: true, capture: true }));
+      window.addEventListener("pointermove", () => { kaykitDerniereSouris = performance.now(); }, { passive: true, capture: true });
 
       function kaykitSceneAgitee(maintenant) {
         const k = kaykit3D;
@@ -14538,7 +14554,8 @@
         }
         if (window.ILYOS_CADENCE_LIBRE) { c.ticks = 0; c.facteur = 1; return false; }
         if (kaykitSceneAgitee(maintenant)) kaykitDerniereAgitation = maintenant;
-        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS;
+        const calme = maintenant - kaykitDerniereAgitation > KAYKIT_CALME_APRES_MS
+          && maintenant - kaykitDerniereSouris > KAYKIT_CALME_APRES_SOURIS_MS;
         const diviseur = calme ? c.diviseurCalme : c.diviseur;
         if (++c.ticks < diviseur) return true;
         // Les mesures d'images/s (qualité automatique, repli du bloom) voient
@@ -51278,8 +51295,14 @@
           moveCursorTo(next.r, next.c);
         }
 
+        /* Aucune manette branchée : rien à lire à chaque image. Le navigateur
+           annonce une manette (gamepadconnected) dès sa première touche. */
+        let manetteAnnoncee = false;
+        window.addEventListener("gamepadconnected", () => { manetteAnnoncee = true; });
+        try { manetteAnnoncee = [...(navigator.getGamepads ? navigator.getGamepads() : [])].some(p => p?.connected); } catch (_) { }
         function poll() {
           requestAnimationFrame(poll);
+          if (!manetteAnnoncee) return;
           const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
           let gamepad = null;
           for (const candidate of gamepads) if (candidate?.connected) { gamepad = candidate; break; }
