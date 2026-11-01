@@ -75,7 +75,7 @@
     { id: 'maree', nom: 'Marée', ligne: 'Coopératif contre les créatures' }
   ];
   const COUCHES = [
-    { id: 'deckbuilding', nom: 'Deckbuilding', ligne: 'Paquet construit · marché · butin', ico: '<rect x="3" y="5" width="11" height="15" rx="2" transform="rotate(-10 8 12)"/><rect x="9" y="4" width="11" height="15" rx="2"/><path d="M14.5 9 l2 2.5 -2 2.5 -2 -2.5 Z"/>' },
+    { id: 'deckbuilding', dispo: true, nom: 'Deckbuilding', ligne: 'Marché · cartes fortes · affinage', ico: '<rect x="3" y="5" width="11" height="15" rx="2" transform="rotate(-10 8 12)"/><rect x="9" y="4" width="11" height="15" rx="2"/><path d="M14.5 9 l2 2.5 -2 2.5 -2 -2.5 Z"/>' },
     { id: 'creatures', nom: 'Créatures et œufs', ligne: 'Éclosion sur la croix', ico: '<path d="M12 3 C7 3 5 11 5 14 C5 18 8 21 12 21 C16 21 19 18 19 14 C19 11 17 3 12 3 Z"/><path d="M8 13 l2 -2 2 2 2 -2 2 2"/>' },
     { id: 'objectifs', nom: 'Objectifs communs', ligne: '3 courses secondaires', ico: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2"/><path d="M12 1 v4 M12 19 v4 M1 12 h4 M19 12 h4"/>' }
   ];
@@ -85,6 +85,7 @@
 
   const choix = { but: 'balises', taille: '11', adversaire: 'duel', niveau: 'normal' };
   const verrous = new Set();
+  const couches = new Set();
   let tirage = false;
 
   const filet = sens => `<svg class="rt-filet ${sens}" viewBox="0 0 160 20" aria-hidden="true"><path d="M0 10 H120"/><path class="fin" d="M120 10 c8 -9 18 -9 22 -2 c3 6 -4 10 -8 6 c-3 -3 0 -7 3 -5"/><path class="fin" d="M120 10 c8 9 18 9 22 2"/><path class="plein" d="M148 10 l6 -5 l6 5 l-6 5 Z"/></svg>`;
@@ -129,16 +130,18 @@
     $('.rt-buts').innerHTML = BUTS.map(b => `<button type="button" class="rt-but${b.dispo ? '' : ' bientot'}${b.id === choix.but ? ' choisi' : ''}" data-but="${b.id}"${b.dispo ? '' : ' disabled'} aria-pressed="${b.id === choix.but}">
       <span class="rt-img">${medaillon(b.id)}</span>
       <span class="rt-plaque"><b>${b.nom}</b>${b.dispo ? `<i>${b.ligne}</i>` : '<em>BIENTÔT</em>'}</span></button>`).join('');
-    $('.rt-couches').innerHTML = COUCHES.map(c => `<div class="rt-couche bientot"><span class="rt-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${c.ico}</svg></span><span class="rt-txt"><b>${c.nom}</b><i>${c.ligne}</i></span><em>BIENTÔT</em></div>`).join('');
+    $('.rt-couches').innerHTML = COUCHES.map(c => c.dispo
+      ? `<button type="button" class="rt-couche${couches.has(c.id) ? ' on' : ''}" data-couche="${c.id}" aria-pressed="${couches.has(c.id)}"><span class="rt-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${c.ico}</svg></span><span class="rt-txt"><b>${c.nom}</b><i>${c.ligne}</i></span><span class="rt-bascule" aria-hidden="true"></span></button>`
+      : `<div class="rt-couche bientot"><span class="rt-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${c.ico}</svg></span><span class="rt-txt"><b>${c.nom}</b><i>${c.ligne}</i></span><em>BIENTÔT</em></div>`).join('');
     $('.rt-selecteurs').innerHTML = `<div class="rt-ligne">${selecteur('taille', TAILLES, choix.taille)}${selecteur('adversaire', ADVERSAIRES, choix.adversaire)}</div>`
       + (choix.adversaire === 'solo' ? `<div class="rt-ligne un">${selecteur('niveau', NIVEAUX, choix.niveau)}</div>` : '');
     const t = $('.rt-tirage');
     t.hidden = !tirage;
     if (tirage) {
       const brique = (cle, texte) => `<button type="button" class="rt-brique${verrous.has(cle) ? ' verrou' : ''}" data-verrou="${cle}" aria-pressed="${verrous.has(cle)}" title="Garder au prochain tirage"><span class="rt-cadenas" aria-hidden="true">${verrous.has(cle) ? '🔒' : '🔓'}</span>${texte}</button>`;
-      t.innerHTML = `<span class="rt-tirage-titre">PARTIE TIRÉE</span>${brique('but', butCourant().nom)}${brique('taille', libelle(TAILLES, choix.taille))}<button type="button" class="rt-relancer" data-rt="alea">↻ RELANCER</button>`;
+      t.innerHTML = `<span class="rt-tirage-titre">PARTIE TIRÉE</span>${brique('but', butCourant().nom)}${brique('taille', libelle(TAILLES, choix.taille))}${brique('couches', couches.size ? COUCHES.filter(c => couches.has(c.id)).map(c => c.nom).join(' + ') : 'Sans couche')}<button type="button" class="rt-relancer" data-rt="alea">↻ RELANCER</button>`;
     }
-    $('.rt-lancer small').textContent = [butCourant().nom, libelle(TAILLES, choix.taille), choix.adversaire === 'solo' ? libelle(NIVEAUX, choix.niveau) : 'DUEL LOCAL'].join(' · ').toUpperCase();
+    $('.rt-lancer small').textContent = [butCourant().nom, ...COUCHES.filter(c => couches.has(c.id)).map(c => c.nom), libelle(TAILLES, choix.taille), choix.adversaire === 'solo' ? libelle(NIVEAUX, choix.niveau) : 'DUEL LOCAL'].join(' · ').toUpperCase();
     ajuster();
   }
 
@@ -153,6 +156,7 @@
     const dispo = BUTS.filter(b => b.dispo);
     if (!verrous.has('but')) choix.but = dispo[Math.floor(Math.random() * dispo.length)].id;
     if (!verrous.has('taille')) choix.taille = TAILLES[Math.floor(Math.random() * TAILLES.length)][0];
+    if (!verrous.has('couches')) COUCHES.filter(c => c.dispo).forEach(c => Math.random() < .6 ? couches.add(c.id) : couches.delete(c.id));
     tirage = true;
     rendre();
   }
@@ -160,7 +164,7 @@
   function lancer() {
     const mode = choix.adversaire === 'solo' ? 'solo' : 'duel';
     const values = { board: 'classic', size: choix.taille, timer: '0', difficulty: choix.niveau };
-    if (choix.but !== 'couronnes') values.rotation = { but: choix.but };
+    if (choix.but !== 'couronnes' || couches.size) values.rotation = { but: choix.but, couches: [...couches] };
     parent.postMessage({ source: 'ilyos-menu', type: 'play', detail: { mode, values } }, location.origin);
   }
 
@@ -183,6 +187,12 @@
     const cible = e.target.closest('button');
     if (!cible || !ecran.contains(cible)) return;
     if (cible.dataset.but) { choix.but = cible.dataset.but; rendre(); return; }
+    if (cible.dataset.couche) {
+      const id = cible.dataset.couche;
+      couches.has(id) ? couches.delete(id) : couches.add(id);
+      rendre();
+      return;
+    }
     if (cible.dataset.pas) { pas(cible.closest('.rt-sel').dataset.cle, Number(cible.dataset.pas)); return; }
     if (cible.dataset.verrou) {
       const cle = cible.dataset.verrou;
@@ -207,5 +217,5 @@
     document.getElementById('home')?.classList.add('active');
   }
 
-  window.ILYOS_ROTATION_MENU = { ouvrir, fermer, choix: () => ({ ...choix }) };
+  window.ILYOS_ROTATION_MENU = { ouvrir, fermer, choix: () => ({ ...choix, couches: [...couches] }) };
 })();

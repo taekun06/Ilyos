@@ -38,6 +38,9 @@ const fragmentNames = [
   // Mode Rotation (but Balises) : enveloppe beginTurn, startLocalGame,
   // l'évaluation du planner et la sync 3D, donc placé après eux.
   'rotation.js',
+  // Couche deckbuilding de la Rotation (marché) : enveloppe les comptes de
+  // cartes (après card-rules-physical-reserve.js) et beginTurn/endTurn.
+  'rotation-paquet.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve

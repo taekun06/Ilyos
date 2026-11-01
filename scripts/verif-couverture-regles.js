@@ -134,6 +134,37 @@ const assert = require('node:assert/strict');
           applique: cartesPiocheesParTour({ rules: { cartesPiochees: 7 } }) === 7
             && cartesPiocheesParTour({ rules: {} }) === 5 && compositionPaquet({}).length === CARD_BLUEPRINTS.length
         };
+        /* ROTATION · DECKBUILDING (01/11) : le marché et les cartes fortes.
+           Achat : choisi par l'IA (plannerChoisirAchat), payé 2 cartes,
+           carte achetée en défausse. Carte forte : Élan vaut 2 Déplacer,
+           et un déplacement de 2 cases généré par le planner la consomme. */
+        const marche = main => {
+          benchPoserPosition({ seed: 7, islandPlacedThisTurn: true, aiPlayer: 0,
+            islands: [{ owner: 0, cells: [[5,0],[5,1],[5,2],[5,3]] }, { owner: 1, cells: [[8,8]] }],
+            characters: [{ id: 'A', player: 0, r: 5, c: 0 }, { id: 'E', player: 1, r: 8, c: 8 }],
+            crowns: [null, null], hands: [main, []] });
+          state.currentPlayer = 0;
+          state.phase = 'ACTION_SELECT';
+          state.winner = null;
+          state.rotation = { but: 'couronnes', couches: { deckbuilding: true },
+            marche: { visibles: ['BELIER', 'ELAN', 'MAGIC'], pile: ['PUSH'], achatTour: 0, exils: {}, affiner: {} } };
+        };
+        marche(['MOVE', 'MOVE', 'PUSH', 'MAGIC', 'MOVE']);
+        const achat = plannerChoisirAchat(0);
+        resultat['ACHAT au marché'] = { genere: !!achat,
+          applique: !!achat && withSimulatedState(cloneStateForSimulation(), () => {
+            const avant = cartesDisponibles(state.players[0]);
+            const visee = state.rotation.marche.visibles[achat.index];
+            return paquetAcheter(achat.index, false) && cartesDisponibles(state.players[0]) === avant - 2
+              && state.players[0].discard.some(c => c.action === visee) && !!paquetRefusAchat(state.players[0]);
+          }) };
+        marche(['ELAN']);
+        const elan = avecGrilleTerre(() => plannerCandidatsMove(0)).find(a => a.cost === 2) || null;
+        resultat['carte forte (Élan = 2)'] = { genere: availableActionCount('MOVE') === 2 && !!elan,
+          applique: !!elan && withSimulatedState(cloneStateForSimulation(), () =>
+            !!plannerAppliquerAction(elan) && availableActionCount('MOVE') === 0
+            && state.players[0].discard.some(c => c.action === 'ELAN')) };
+        state.rotation = null;
         // Les gratuites selon le moteur.
         resultat.gratuites = ['RAMASSAGE', 'DEPOT', 'TRANSMISSION', 'VOL']
           .filter(t => !plannerActionGratuite({ type: t }));

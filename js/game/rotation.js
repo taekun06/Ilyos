@@ -97,14 +97,29 @@
         }
       };
 
+      const ROTATION_COUCHES = ["deckbuilding"];
+      /* Une demande valide : un but connu, des couches connues. Couronnes
+         sans couche, c'est la partie classique : pas de Rotation. */
+      function rotationNormaliser(demande) {
+        const but = demande?.but === "balises" ? "balises" : "couronnes";
+        const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
+        if (but === "couronnes" && !couches.length) return null;
+        return { but, couches };
+      }
+
       function rotationInstaller(demande) {
-        if (!state || state.rotation || demande?.but !== "balises") return;
+        const voulue = rotationNormaliser(demande);
+        if (!state || state.rotation || !voulue) return;
         state.rotation = {
-          but: "balises",
+          but: voulue.but,
+          couches: Object.fromEntries(voulue.couches.map(c => [c, true]))
+        };
+        if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
+        Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,
           balises: rotationCasesBalises(),
           dernierDecompte: 0
-        };
+        });
         state.rules = { ...(state.rules || {}), disableSecondCrown: true };
         rotationRangerCouronnes();
         rotationIntituleBilan();
@@ -157,6 +172,7 @@
       beginTurn = function beginTurnRotation() {
         if (rotationEnPreparation && state && !state.rotation) rotationInstaller(rotationEnPreparation);
         rotationEnPreparation = null;
+        if (state?.turn === 1) rotationIntituleBilan();
         if (butBalises() && rotationDecompterBalises()) {
           renderAll();
           return;
@@ -323,7 +339,7 @@
       window.ILYOS_ROTATION = {
         /* Demande du menu pour la prochaine partie locale ; null l'annule. */
         demander(demande) {
-          rotationDemande = demande && demande.but === "balises" ? { but: "balises" } : null;
+          rotationDemande = rotationNormaliser(demande);
           return rotationDemande;
         },
         etat: () => (state?.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null),
