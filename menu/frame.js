@@ -503,8 +503,31 @@
     play.classList.remove('pressed'); void play.offsetWidth; play.classList.add('pressed');
     send('play',{mode:selectedMode,config:cfg[selectedMode],values:{...ensureSelections(selectedMode)}});
   });
+  /* Groupes du menu d'accueil (DÉCOUVERTE, DÉFIS, ⚙) : un bouton ouvre son
+     panneau, un seul ouvert à la fois ; un clic ailleurs, Échap ou le choix
+     d'une entrée le referment. */
+  const boutonsGroupe=[...document.querySelectorAll('[data-groupe]')];
+  function fermerGroupes(sauf){
+    boutonsGroupe.forEach(b=>{
+      if(b===sauf) return;
+      b.setAttribute('aria-expanded','false');b.classList.remove('is-active');
+      const panneau=document.getElementById(b.getAttribute('aria-controls'));
+      if(panneau) panneau.hidden=true;
+    });
+  }
+  boutonsGroupe.forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const panneau=document.getElementById(b.getAttribute('aria-controls'));
+    const ouvrir=!!panneau?.hidden;
+    fermerGroupes(b);
+    if(!panneau) return;
+    panneau.hidden=!ouvrir;b.setAttribute('aria-expanded',String(ouvrir));b.classList.toggle('is-active',ouvrir);
+  }));
+  document.addEventListener('click',e=>{if(!e.target.closest?.('.nav-groupe')) fermerGroupes()});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape') fermerGroupes()});
   document.querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>{
     const action=btn.dataset.action;
+    if(btn.closest('.groupe-panneau')) fermerGroupes();
     if(action==='fullscreen') return toggleFullscreen();
     if(action==='rules'||action==='help') return openRules();
     if(action==='tutorial'){ send('action',{action}); return; }

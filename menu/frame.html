@@ -26,10 +26,10 @@
     .profil-mot{font-family:'Cinzel Decorative',Georgia,serif;font-size:1cqw;font-weight:700;letter-spacing:.12em;color:#f4d28e}
     .profil-xp{font-family:'Nunito Sans',Inter,sans-serif;font-size:.78cqw;font-weight:700;color:#e9dcc0;opacity:.85}
   </style>
-  <link rel="stylesheet" href="./menu.css?v=menu-leger-1">
+  <link rel="stylesheet" href="./menu.css?v=menu-groupes-1">
   <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-17">
   <link rel="stylesheet" href="./menu-typography-g2c.css?v=g2c-1">
-  <link rel="stylesheet" href="./menu-portrait.css?v=4">
+  <link rel="stylesheet" href="./menu-portrait.css?v=5">
   <link rel="stylesheet" href="./progression-menu.css?v=4">
 </head>
 <body>
@@ -39,7 +39,7 @@
     <div class="ui home-layout">
       <img class="logo-home" src="./assets/ilyos-logo.svg" alt="ILYOS">
       <div class="profil-zone"><button type="button" class="profil-badge" id="profilBadge" hidden aria-label="Progression : niveau, quêtes et offrande"><span class="profil-anneau"><b class="profil-num">1</b></span><span class="profil-texte"><span class="profil-mot">NIVEAU</span><span class="profil-xp">0 / 200 XP</span></span><i class="profil-alerte" hidden></i></button><button type="button" class="offrande-pill" id="offrandePill" hidden>🎁 OFFRANDE DU JOUR</button></div>
-      <div class="top-icons"><button class="round" data-action="settings" aria-label="Réglages">⚙</button><button class="round" data-action="help" aria-label="Aide">?</button><button class="round" id="fullscreenBtnHome" data-action="fullscreen" aria-label="Plein écran">⛶</button></div>
+      <div class="top-icons"><div class="nav-groupe groupe-reglages"><button class="round" data-groupe="reglages" aria-label="Réglages" aria-expanded="false" aria-controls="groupeReglages">⚙</button><div class="groupe-panneau" id="groupeReglages" hidden><button class="pill" data-action="settings">⚙ RÉGLAGES</button><button class="pill" data-action="credits">★ CRÉDITS</button><button class="pill" data-action="aivsai" title="Lance une partie où l’IA Expert joue contre elle-même">⚔ IA CONTRE IA</button></div></div><button class="round" data-action="help" aria-label="Aide">?</button><button class="round" id="fullscreenBtnHome" data-action="fullscreen" aria-label="Plein écran">⛶</button></div>
       <div class="mode-grid">
         <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez le CPU</div></button>
         <button class="card green" data-mode="duel"><div class="card-icon">♙ ♙</div><div class="card-title">DUEL LOCAL</div><div class="card-sub">2 joueurs</div></button>
@@ -47,7 +47,7 @@
         <button class="card amber" data-mode="online"><div class="card-icon">◎</div><div class="card-title">EN LIGNE</div><div class="card-sub">Joueurs du monde</div></button>
       </div>
       <button class="pill resume-pill" id="resumeHomeBtn" data-action="resume" hidden><span class="resume-icone" aria-hidden="true">↺</span>REPRENDRE LA PARTIE</button>
-      <div class="home-nav"><button class="pill" data-action="rules">♛ RÈGLES</button><button class="pill pill-quick" data-action="quick" title="Toutes les règles et manipulations en quelques minutes">⚡ QUICK</button><button class="pill" data-action="tutorial">▣ TUTORIEL</button><button class="pill" data-action="puzzle" title="Onze énigmes à budget fermé, un seul tour chacune">◈ PUZZLES</button><button class="pill" data-action="boucles" title="Sanctuaires solo : chaque boucle, ton Gardien précédent revient en écho">↻ BOUCLES</button><button class="pill" data-action="credits">★ CRÉDITS</button><button class="pill" data-action="aivsai" title="Lance une partie où l’IA Expert joue contre elle-même">⚔ IA CONTRE IA</button></div>
+      <div class="home-nav"><div class="nav-groupe"><button class="pill pill-groupe" data-groupe="decouverte" aria-expanded="false" aria-controls="groupeDecouverte">✦ DÉCOUVERTE</button><div class="groupe-panneau" id="groupeDecouverte" hidden><button class="pill pill-quick" data-action="quick" title="Toutes les règles et manipulations en quelques minutes">⚡ QUICK</button><button class="pill" data-action="tutorial">▣ TUTORIEL</button><button class="pill" data-action="rules">♛ RÈGLES</button></div></div><div class="nav-groupe"><button class="pill pill-groupe" data-groupe="defis" aria-expanded="false" aria-controls="groupeDefis">◈ DÉFIS</button><div class="groupe-panneau" id="groupeDefis" hidden><button class="pill" data-action="puzzle" title="Onze énigmes à budget fermé, un seul tour chacune">◈ PUZZLES</button><button class="pill" data-action="boucles" title="Sanctuaires solo : chaque boucle, ton Gardien précédent revient en écho">↻ BOUCLES</button></div></div></div>
     </div>
   </section>
 
@@ -71,7 +71,7 @@
   <div class="veil" id="veil"></div>
 </div>
 <script src="./menu-config.js?v=menu-duel-18"></script>
-<script src="./frame.js?v=menu-leger-1"></script>
+<script src="./frame.js?v=menu-groupes-1"></script>
 <script src="../js/gamepad-navigation.js?v=20260911-manette-feel"></script>
 <script src="./gamepad.js?v=menu-duel-16"></script>
 </body>
