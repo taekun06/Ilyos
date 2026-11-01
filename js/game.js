@@ -20591,7 +20591,9 @@
              retombait sur les réglages du niveau NORMAL (bruit sur le score
              des poses, tactiques de couronne) : ce n'était plus l'Expert. */
           aiDifficulty: state.aiDifficulty ?? null,
-          rules: state.rules ? { ...state.rules } : null
+          rules: state.rules ? { ...state.rules } : null,
+          // Mode Rotation (rotation.js) : but et balises de la partie.
+          rotation: state.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null
         });
       }
 
@@ -20637,6 +20639,7 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        if (snap.rotation !== undefined) state.rotation = snap.rotation;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;
@@ -22537,7 +22540,7 @@
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
             nameEl.dataset.titre = p && p.titre ? p.titre : "";
           }
-          if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
+          if (scoreEl) scoreEl.innerHTML = p ? (rotationScoreHud(p) ?? crownPips(p.score)) : "";
         };
         fillPortrait("Active", leftPlayer, leftPlayer && state.currentPlayer === leftPlayer.id);
         fillPortrait("Opponent", rightPlayer, rightPlayer && state.currentPlayer === rightPlayer.id);
@@ -26044,12 +26047,14 @@
         const mode = state.deckAnimationMode || "";
         const visibleCards = (p.hand || []).slice(0, 5);
 
+        /* Une carte forte de la Rotation (Élan…) s'affiche comme son type de
+           base : ACTIONS.ELAN.type === "MOVE" (rotation-paquet.js). */
         const cards = visibleCards.map((card, index) => `
         <span
-          class="v64-mini-card action-${card.action.toLowerCase()} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
+          class="v64-mini-card action-${(ACTIONS[card.action]?.type || card.action).toLowerCase()}${ACTIONS[card.action]?.type ? " carte-forte" : ""} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
           style="--card-index:${index}"
-          title="${ACTIONS[card.action].name}"
-          aria-label="${ACTIONS[card.action].name}"
+          title="${ACTIONS[card.action]?.name || card.action}"
+          aria-label="${ACTIONS[card.action]?.name || card.action}"
         ></span>
       `).join("");
 
@@ -26612,7 +26617,7 @@
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
-        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
+        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/${rotationCible()}`;
         renderVictoryRecap(player);
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);
@@ -27371,7 +27376,9 @@
           selectedActionCount: source.selectedActionCount,
           selectedCharId: source.selectedCharId,
           selectedIslandId: source.selectedIslandId,
-          pushForceChoice: source.pushForceChoice || 1
+          pushForceChoice: source.pushForceChoice || 1,
+          // But de la Rotation (balises…) : l'évaluation de l'IA le lit.
+          rotation: source.rotation || null
         });
         // Champs attendus par les fonctions de règles, reconstruits vides : ils
         // ne portent aucune information de jeu.
@@ -35509,6 +35516,678 @@
         evenement.stopImmediatePropagation();
         tourAdverseArreter();
       }, true);
+      /* =====================================================================
+         MODE ROTATION — le recueil des modes de jeu.
+
+         L'écran Rotation du menu (menu/rotation.js) compose une partie en
+         briques : un BUT, des COUCHES, un plateau. Il dépose sa demande par
+         window.ILYOS_ROTATION.demander() juste avant de lancer une partie
+         locale ; la demande est lue au premier tour et rangée dans
+         `state.rotation`, qui voyage avec l'état (sauvegarde, annulation).
+
+         Étape 1 : le but BALISES.
+         — Quatre balises sur la croix centrale, à 3 cases du sanctuaire
+           (4 en 13×13), donc à la même distance des deux camps.
+         — Une balise n'est allumée que sur une île : sur le vide, elle attend
+           qu'on construise dessous.
+         — À la fin de ton tour, chaque balise allumée où se tient un de tes
+           gardiens te rapporte 1 point. Premier à 10 points.
+         — Pas de couronnes : les deux restent hors du terrain.
+         Le décompte se fait à l'ouverture du tour suivant, sur la position
+         exacte où le joueur a fini — comme la validation des couronnes.
+         ===================================================================== */
+      const ROTATION_CIBLE_BALISES = 10;
+      let rotationDemande = null;
+      let rotationEnPreparation = null;
+
+      function butBalises(source = state) {
+        return source?.rotation?.but === "balises";
+      }
+
+      function rotationCible(source = state) {
+        return butBalises(source) ? (source.rotation.cible || ROTATION_CIBLE_BALISES) : 3;
+      }
+
+      /* Les balises sont des CASES du plateau, fixées à la mise en place. */
+      function rotationCasesBalises() {
+        const d = GRID >= 13 ? 4 : 3;
+        return [
+          [CENTER.r - d, CENTER.c], [CENTER.r, CENTER.c + d],
+          [CENTER.r + d, CENTER.c], [CENTER.r, CENTER.c - d]
+        ];
+      }
+
+      function baliseAllumee(r, c) {
+        return !!islandAt(r, c);
+      }
+
+      /** Gardien posé sur la balise, ou null. */
+      function gardienSurBalise(r, c) {
+        return (state.characters || []).find(g => g.r === r && g.c === c) || null;
+      }
+
+      /** Balises allumées que tient ce joueur (ou son équipe). */
+      function balisesTenuesPar(playerId) {
+        if (!butBalises()) return 0;
+        return (state.rotation.balises || []).filter(([r, c]) => {
+          if (!baliseAllumee(r, c)) return false;
+          const g = gardienSurBalise(r, c);
+          return !!g && memeEquipe(g.player, playerId);
+        }).length;
+      }
+
+      /* Les couronnes restent hors du terrain pendant toute la partie. */
+      function rotationRangerCouronnes() {
+        if (!butBalises() || !state) return;
+        [state.artifact, state.secondArtifact].forEach(artifact => {
+          if (!artifact) return;
+          artifact.active = false;
+          artifact.carrierId = null;
+        });
+        state.couronnesEnAttente = [];
+      }
+
+      const rotationEnsureArtifactStateBase = ensureArtifactState;
+      ensureArtifactState = function ensureArtifactStateRotation() {
+        rotationEnsureArtifactStateBase();
+        rotationRangerCouronnes();
+      };
+
+      const rotationResetArtifactObjectBase = resetArtifactObject;
+      resetArtifactObject = function resetArtifactObjectRotation(artifact) {
+        if (butBalises() && artifact) {
+          artifact.active = false;
+          artifact.carrierId = null;
+          return;
+        }
+        rotationResetArtifactObjectBase(artifact);
+      };
+
+      /* Lancement : la demande du menu vaut pour la seule partie qui suit. */
+      const rotationStartLocalGameBase = startLocalGame;
+      startLocalGame = function startLocalGameRotation() {
+        rotationEnPreparation = rotationDemande;
+        rotationDemande = null;
+        try {
+          rotationStartLocalGameBase();
+        } finally {
+          rotationEnPreparation = null;
+        }
+      };
+
+      const ROTATION_COUCHES = ["deckbuilding"];
+      /* Une demande valide : un but connu, des couches connues. Couronnes
+         sans couche, c'est la partie classique : pas de Rotation. */
+      function rotationNormaliser(demande) {
+        const but = demande?.but === "balises" ? "balises" : "couronnes";
+        const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
+        if (but === "couronnes" && !couches.length) return null;
+        return { but, couches };
+      }
+
+      function rotationInstaller(demande) {
+        const voulue = rotationNormaliser(demande);
+        if (!state || state.rotation || !voulue) return;
+        state.rotation = {
+          but: voulue.but,
+          couches: Object.fromEntries(voulue.couches.map(c => [c, true]))
+        };
+        if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
+        Object.assign(state.rotation, {
+          cible: ROTATION_CIBLE_BALISES,
+          balises: rotationCasesBalises(),
+          dernierDecompte: 0
+        });
+        state.rules = { ...(state.rules || {}), disableSecondCrown: true };
+        rotationRangerCouronnes();
+        rotationIntituleBilan();
+      }
+
+      /* Le bilan de fin compte des points, plus des couronnes. */
+      function rotationIntituleBilan() {
+        const colonne = BILAN_COLONNES.find(col => col.titre === "Couronnes" || col.titre === "Points");
+        if (colonne) colonne.titre = butBalises() ? "Points" : "Couronnes";
+      }
+
+      /* Décompte des balises du joueur qui vient de finir son tour. Rend
+         true si la partie est gagnée. */
+      function rotationDecompterBalises() {
+        if (!butBalises() || state.winner !== null || state.turn <= 1) return false;
+        if (state.rotation.dernierDecompte === state.turn) return false;
+        state.rotation.dernierDecompte = state.turn;
+        const n = state.players.length;
+        const precedent = state.players[(state.currentPlayer - 1 + n) % n];
+        if (!precedent) return false;
+        const gagnes = balisesTenuesPar(precedent.id);
+        if (!gagnes) return false;
+        state.players.forEach(p => {
+          if (memeEquipe(p.id, precedent.id)) p.score = (p.score || 0) + gagnes;
+        });
+        if (!ilyosSimulationActive) {
+          state.fxCells ||= [];
+          state.rotation.balises.forEach(([r, c]) => {
+            const g = gardienSurBalise(r, c);
+            if (g && memeEquipe(g.player, precedent.id) && baliseAllumee(r, c)) {
+              state.fxCells.push({ type: "score", r, c });
+              animateCellPulse(r, c, "crown-burst");
+            }
+          });
+          triggerScoreAnimation(precedent.id);
+          playSfx("crownTake");
+          showToast(`${precedent.name} tient ${gagnes > 1 ? `${gagnes} balises` : "une balise"} : +${gagnes} (${precedent.score}/${rotationCible()})`);
+        }
+        if (precedent.score < rotationCible()) return false;
+        state.winner = precedent.id;
+        if (!ilyosSimulationActive) {
+          playVictoryCelebration(precedent.id);
+          setTimeout(() => showVictory(precedent,
+            `${precedent.name} a tenu les balises jusqu’à ${precedent.score} points et prend le contrôle d’ILYOS.`), 900);
+        }
+        return true;
+      }
+
+      const rotationBeginTurnBase = beginTurn;
+      beginTurn = function beginTurnRotation() {
+        if (rotationEnPreparation && state && !state.rotation) rotationInstaller(rotationEnPreparation);
+        rotationEnPreparation = null;
+        if (state?.turn === 1) rotationIntituleBilan();
+        if (butBalises() && rotationDecompterBalises()) {
+          renderAll();
+          return;
+        }
+        const premierTour = butBalises() && state.turn === 1 && !state.rotation.annonce;
+        rotationBeginTurnBase();
+        if (premierTour && !ilyosSimulationActive) {
+          state.rotation.annonce = true;
+          setTimeout(() => showToast(`Rotation · Balises : tiens les balises allumées. ${rotationCible()} points pour gagner.`), 1400);
+        }
+      };
+
+      /* HUD : des points à la place des trois couronnes. */
+      function rotationScoreHud(joueur) {
+        if (!butBalises() || !joueur) return null;
+        return `<span class="hud-v2-balises-score" title="Points de balises">`
+          + `<span class="hud-v2-balise-icone" aria-hidden="true"></span>`
+          + `<b>${joueur.score || 0}</b><small>/${rotationCible()}</small></span>`;
+      }
+
+      /* L'IA. Le planner sait déjà jouer îles, déplacements, poussées et
+         magie ; seule son évaluation parle de couronnes. En mode Balises,
+         elle est remplacée par une évaluation qui compte ce qui rapporte :
+         le score, les balises tenues à la fin du tour, et la distance qui
+         sépare chaque camp des balises. Tous les niveaux de CPU passent par
+         le planner : les niveaux sans planner ne savent viser qu'une couronne. */
+      const ROTATION_POIDS = {
+        point: 1000,
+        baliseTenue: 620,
+        baliseAdverse: 520,
+        distanceBalise: 45,
+        distanceBaliseEteinte: 12,
+        gardien: 150
+      };
+
+      function rotationDistanceAuCamp(playerId, r, c) {
+        let meilleur = 99;
+        for (const g of state.characters || []) {
+          if (!memeEquipe(g.player, playerId)) continue;
+          const d = Math.abs(g.r - r) + Math.abs(g.c - c);
+          if (d < meilleur) meilleur = d;
+        }
+        return meilleur;
+      }
+
+      function rotationEvaluerBalises(playerId) {
+        const moi = state.players[playerId];
+        if (!moi) return 0;
+        if (state.winner !== null && state.winner !== undefined) {
+          if (state.winner === MATCH_NUL) return 0;
+          return memeEquipe(state.winner, playerId) ? 1e7 : -1e7;
+        }
+        const adverses = state.players.filter(p => !memeEquipe(p.id, playerId));
+        const scoreAdverse = Math.max(0, ...adverses.map(p => p.score || 0));
+        let valeur = ((moi.score || 0) - scoreAdverse) * ROTATION_POIDS.point;
+        for (const [r, c] of state.rotation.balises) {
+          const allumee = baliseAllumee(r, c);
+          const g = gardienSurBalise(r, c);
+          if (allumee && g) {
+            valeur += memeEquipe(g.player, playerId) ? ROTATION_POIDS.baliseTenue : -ROTATION_POIDS.baliseAdverse;
+          }
+          const poids = allumee ? ROTATION_POIDS.distanceBalise : ROTATION_POIDS.distanceBaliseEteinte;
+          const dMoi = Math.min(8, rotationDistanceAuCamp(playerId, r, c));
+          const dLui = Math.min(8, Math.min(...adverses.map(p => rotationDistanceAuCamp(p.id, r, c))));
+          valeur += (dLui - dMoi) * poids;
+        }
+        const mesGardiens = (state.characters || []).filter(g => memeEquipe(g.player, playerId)).length;
+        const sesGardiens = (state.characters || []).filter(g => !memeEquipe(g.player, playerId)).length;
+        valeur += (mesGardiens - sesGardiens) * ROTATION_POIDS.gardien;
+        if (plannerTraceEval) plannerTraceEval.push({ terme: "balises", montant: valeur, note: null });
+        return valeur;
+      }
+
+      const rotationEvaluerEtatBase = evaluerEtatStrategique;
+      evaluerEtatStrategique = function evaluerEtatStrategiqueRotation(playerId) {
+        return butBalises() ? rotationEvaluerBalises(playerId) : rotationEvaluerEtatBase(playerId);
+      };
+
+      const rotationAiConfigBase = aiConfig;
+      aiConfig = function aiConfigRotation() {
+        const cfg = rotationAiConfigBase();
+        return butBalises() && !cfg.globalPlanning ? { ...cfg, globalPlanning: true } : cfg;
+      };
+
+      /* RENDU 3D. Une balise est un cercle de runes au sol et une colonne de
+         lumière. Allumée : lumière claire, ou couleur du camp qui la tient.
+         Éteinte (au-dessus du vide) : un simple anneau pâle qui flotte, pour
+         qu'on voie où construire. Matériaux de base, sans lumière ajoutée ni
+         animation : rien ne tourne en continu. */
+      const ROTATION_BALISE_CLAIRE = 0xbff4ff;
+
+      function rotationMateriau(couleur, opacite) {
+        return new THREE.MeshBasicMaterial({
+          color: couleur, transparent: true, opacity: opacite,
+          depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+        });
+      }
+
+      function rotationConstruireBalise() {
+        const groupe = new THREE.Group();
+        const sol = new THREE.Mesh(new THREE.RingGeometry(.3, .4, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .9));
+        sol.rotation.x = -Math.PI / 2;
+        const runes = new THREE.Mesh(new THREE.RingGeometry(.43, .46, 40, 1, 0, Math.PI * 2), rotationMateriau(ROTATION_BALISE_CLAIRE, .55));
+        runes.rotation.x = -Math.PI / 2;
+        const halo = new THREE.Mesh(new THREE.CircleGeometry(.4, 32), rotationMateriau(ROTATION_BALISE_CLAIRE, .22));
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = .005;
+        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.22, .3, 2.2, 24, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .16));
+        colonne.position.y = 1.1;
+        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.05, .08, 2.6, 12, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .45));
+        coeur.position.y = 1.3;
+        groupe.add(sol, runes, halo, colonne, coeur);
+        groupe.userData.rotationParties = { sol, runes, halo, colonne, coeur };
+        groupe.renderOrder = 4;
+        return groupe;
+      }
+
+      function rotationSyncBalises3D() {
+        if (!kaykit3D?.dynamicGroup) return;
+        if (!butBalises()) {
+          if (kaykit3D.rotationBalises) {
+            disposeKayKitObjects([kaykit3D.rotationBalises]);
+            kaykit3D.rotationBalises = null;
+          }
+          return;
+        }
+        if (!kaykit3D.rotationBalises || !kaykit3D.rotationBalises.parent) {
+          const groupe = new THREE.Group();
+          groupe.name = "rotation-balises";
+          state.rotation.balises.forEach(() => groupe.add(rotationConstruireBalise()));
+          kaykit3D.dynamicGroup.add(groupe);
+          kaykit3D.rotationBalises = groupe;
+        }
+        state.rotation.balises.forEach(([r, c], i) => {
+          const balise = kaykit3D.rotationBalises.children[i];
+          if (!balise) return;
+          const allumee = baliseAllumee(r, c);
+          const g = allumee ? gardienSurBalise(r, c) : null;
+          const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+          balise.position.set(p.x, allumee ? p.y + .01 : p.y + .55, p.z);
+          const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
+          [sol, runes, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
+          sol.material.opacity = allumee ? .95 : .35;
+          runes.material.opacity = allumee ? .6 : .2;
+          halo.visible = allumee;
+          colonne.visible = allumee;
+          coeur.visible = allumee;
+          colonne.material.opacity = g ? .22 : .14;
+          coeur.material.opacity = g ? .6 : .4;
+        });
+      }
+
+      const rotationSyncKayKitSceneBase = syncKayKitScene;
+      syncKayKitScene = function syncKayKitSceneRotation() {
+        rotationSyncKayKitSceneBase();
+        try {
+          rotationSyncBalises3D();
+        } catch (erreur) {
+          console.warn("[ILYOS] balises 3D", erreur);
+        }
+      };
+
+      window.ILYOS_ROTATION = {
+        /* Demande du menu pour la prochaine partie locale ; null l'annule. */
+        demander(demande) {
+          rotationDemande = rotationNormaliser(demande);
+          return rotationDemande;
+        },
+        etat: () => (state?.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null),
+        /* Banc : la note que l'IA donne à la position courante pour ce camp. */
+        evaluer: playerId => (butBalises() ? Math.round(rotationEvaluerBalises(playerId)) : null),
+        balisesTenues: playerId => balisesTenuesPar(playerId)
+      };
+      /* =====================================================================
+         MODE ROTATION — couche DECKBUILDING : le marché du sanctuaire.
+
+         Règles (une ligne chacune, transposables telles quelles en jeu de
+         plateau) :
+         — À côté du plateau, 3 cartes du marché, face visible, communes.
+         — Une fois par tour, tu en achètes une pour 2 cartes (même prix et
+           même ordre de paiement qu'une île payante : Déplacer, puis
+           Pousser, puis Magie). Elle va dans ta défausse ; la place se
+           remplit aussitôt.
+         — Affiner : en achetant, tu peux exiler un Déplacer de ta défausse.
+           Le paquet ne descend jamais sous 8 cartes.
+         — Cartes fortes : Élan vaut 2 Déplacer, Bélier 2 Pousser, Arcane
+           2 Magie. Une carte forte se joue en premier, peut se jouer en deux
+           fois dans le tour, et ne va jamais en réserve : elle repart à la
+           défausse en fin de tour.
+
+         Les cartes fortes portent leur propre nom d'action (ELAN, BELIER,
+         ARCANE) : la réserve physique et l'ancien code les ignorent donc
+         d'office. Seuls availableActionCount et consumeAvailableActions les
+         comptent, enveloppés ici : l'IA, qui ne lit les cartes que par ces
+         deux fonctions, en profite sans rien savoir de plus.
+         ===================================================================== */
+      const PAQUET_CARTES = {
+        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer" },
+        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser" },
+        ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie" },
+        MOVE: { type: "MOVE", valeur: 1, nom: "Déplacer", effet: "1 case" },
+        PUSH: { type: "PUSH", valeur: 1, nom: "Pousser", effet: "Force 1" },
+        MAGIC: { type: "MAGIC", valeur: 1, nom: "Magie", effet: "Tourne une île" }
+      };
+      /* Nom et type affichés des cartes fortes (pioche, défausse, infobulles). */
+      Object.entries(PAQUET_CARTES).forEach(([cle, def]) => {
+        if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
+      });
+      const PAQUET_PILE_MARCHE = [
+        "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "ARCANE", "ARCANE",
+        "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC"
+      ];
+      const PAQUET_PRIX = 2;
+      const PAQUET_MINIMUM = 8;
+      const PAQUET_PAIEMENT = ["MOVE", "PUSH", "MAGIC"];
+
+      function paquetActif(source = state) {
+        return !!source?.rotation?.couches?.deckbuilding;
+      }
+
+      function carteForte(carte) {
+        return !!carte && carte.action in PAQUET_CARTES && PAQUET_CARTES[carte.action].valeur > 1;
+      }
+
+      /** Cartes fortes de ce type encore chargées dans la main. */
+      function paquetCartesFortes(type, player) {
+        return (player?.hand || []).filter(c => carteForte(c) && PAQUET_CARTES[c.action].type === type
+          && (c.restant ?? PAQUET_CARTES[c.action].valeur) > 0);
+      }
+
+      function paquetCharges(type, player) {
+        return paquetCartesFortes(type, player)
+          .reduce((total, c) => total + (c.restant ?? PAQUET_CARTES[c.action].valeur), 0);
+      }
+
+      /** Toutes les cartes du joueur : pioche, main, défausse et réserve. */
+      function paquetTaille(player) {
+        return ["deck", "hand", "discard", "reserveCards"]
+          .reduce((total, zone) => total + (Array.isArray(player?.[zone]) ? player[zone].length : 0), 0);
+      }
+
+      function paquetCompte(player, action) {
+        return ["deck", "hand", "discard", "reserveCards"].reduce((total, zone) =>
+          total + (player?.[zone] || []).filter(c => c?.action === action).length, 0);
+      }
+
+      /* ---------- Comptes et consommation ------------------------------- */
+      const paquetAvailableBase = availableActionCount;
+      availableActionCount = function availableActionCountPaquet(type, player = currentPlayer()) {
+        const base = paquetAvailableBase(type, player);
+        return paquetActif() && player ? base + paquetCharges(type, player) : base;
+      };
+
+      const paquetConsumeBase = consumeAvailableActions;
+      consumeAvailableActions = function consumeAvailableActionsPaquet(type, count = 1, player = currentPlayer()) {
+        if (!paquetActif() || !player || count < 1) return paquetConsumeBase(type, count, player);
+        let reste = Math.min(Math.floor(count), availableActionCount(type, player));
+        const demande = reste;
+        let forte = false;
+        /* Les cartes fortes d'abord : elles ne peuvent pas aller en réserve,
+           les cartes simples si. */
+        for (const carte of paquetCartesFortes(type, player)) {
+          if (reste <= 0) break;
+          const charge = carte.restant ?? PAQUET_CARTES[carte.action].valeur;
+          const pris = Math.min(reste, charge);
+          carte.restant = charge - pris;
+          reste -= pris;
+          forte = true;
+          if (carte.restant <= 0) {
+            player.hand = player.hand.filter(c => c !== carte);
+            player.discard = Array.isArray(player.discard) ? player.discard : [];
+            player.discard.push({ ...carte, restant: PAQUET_CARTES[carte.action].valeur, used: false });
+          }
+        }
+        if (reste > 0) reste -= paquetConsumeBase(type, reste, player);
+        if (forte) carteJoueeEnvol(type, player);
+        return demande - reste;
+      };
+
+      /* Une carte forte piochée repart pleine. */
+      const paquetDrawCardsBase = drawCards;
+      drawCards = function drawCardsPaquet(player, count) {
+        const avant = new Set((player?.hand || []).map(c => c));
+        paquetDrawCardsBase(player, count);
+        (player?.hand || []).forEach(c => {
+          if (!avant.has(c) && carteForte(c)) c.restant = PAQUET_CARTES[c.action].valeur;
+        });
+      };
+
+      /* ---------- Marché ------------------------------------------------- */
+      function paquetInstaller() {
+        if (!paquetActif() || state.rotation.marche) return;
+        const pile = shuffle(PAQUET_PILE_MARCHE.slice());
+        state.rotation.marche = { visibles: pile.splice(0, 3), pile, achatTour: 0, exils: {}, affiner: {} };
+      }
+
+      /** Pourquoi ce joueur ne peut pas acheter maintenant ; null s'il peut. */
+      function paquetRefusAchat(player = currentPlayer()) {
+        const marche = state?.rotation?.marche;
+        if (!paquetActif() || !marche || !player) return "Pas de marché dans cette partie.";
+        if (state.winner !== null && state.winner !== undefined) return "La partie est finie.";
+        if (marche.achatTour === state.turn) return "Un seul achat par tour.";
+        if (state.phase !== "ACTION_SELECT") return "Termine d’abord l’action en cours.";
+        if (cartesDisponibles(player) < PAQUET_PRIX) return "Il faut 2 cartes pour acheter.";
+        return null;
+      }
+
+      /** Achète la carte `index` du marché pour le joueur au trait. */
+      function paquetAcheter(index, exiler = null) {
+        const player = currentPlayer();
+        const marche = state?.rotation?.marche;
+        const refus = paquetRefusAchat(player);
+        const action = marche?.visibles?.[index];
+        if (refus || !action) {
+          if (refus && !ilyosSimulationActive) showToast(refus);
+          return false;
+        }
+        if (!ilyosSimulationActive) saveUndoSnapshot();
+        let paye = 0;
+        for (const type of PAQUET_PAIEMENT) {
+          while (paye < PAQUET_PRIX && availableActionCount(type, player) > 0) {
+            const pris = consumeAvailableActions(type, Math.min(PAQUET_PRIX - paye, availableActionCount(type, player)), player);
+            if (pris < 1) break;
+            paye += pris;
+          }
+        }
+        const carte = { id: `P${player.id}-M${state.turn}-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+        if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+        player.discard = Array.isArray(player.discard) ? player.discard : [];
+        player.discard.push(carte);
+        marche.visibles.splice(index, 1);
+        if (marche.pile.length) marche.visibles.splice(index, 0, marche.pile.shift());
+        marche.achatTour = state.turn;
+        player.achats = (player.achats || 0) + 1;
+
+        const veutExiler = exiler ?? (marche.affiner[player.id] !== false);
+        let exile = false;
+        if (veutExiler && paquetTaille(player) > PAQUET_MINIMUM) {
+          const i = player.discard.map(c => c.action).lastIndexOf("MOVE");
+          if (i >= 0) {
+            player.discard.splice(i, 1);
+            marche.exils[player.id] = (marche.exils[player.id] || 0) + 1;
+            exile = true;
+          }
+        }
+        if (!ilyosSimulationActive) {
+          playSfx("crownTake");
+          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et exile un Déplacer" : ""}.`);
+          renderAll();
+        }
+        return true;
+      }
+
+      /* L'IA achète en fin de tour, avec les cartes de sa main que son plan
+         n'a pas jouées. Choix simple et lisible : la carte la plus forte,
+         en préférant le type dont son paquet manque le plus. */
+      const PAQUET_PRIORITE = { BELIER: 6, ELAN: 5, ARCANE: 5, MAGIC: 3, PUSH: 2, MOVE: 0 };
+      function plannerChoisirAchat(playerId) {
+        const player = state?.players?.[playerId];
+        if (paquetRefusAchat(player)) return null;
+        const reste = (player.hand || []).reduce((total, c) =>
+          total + (c.used ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
+        if (reste < PAQUET_PRIX) return null;
+        const visibles = state.rotation.marche.visibles;
+        let meilleur = -1, note = -Infinity;
+        const valeurDuType = type => Object.keys(PAQUET_CARTES)
+          .filter(k => PAQUET_CARTES[k].type === type)
+          .reduce((total, k) => total + paquetCompte(player, k) * PAQUET_CARTES[k].valeur, 0);
+        visibles.forEach((action, i) => {
+          const manque = 6 - Math.min(6, valeurDuType(PAQUET_CARTES[action].type));
+          const n = PAQUET_PRIORITE[action] + manque * .4;
+          if (n > note) { note = n; meilleur = i; }
+        });
+        if (meilleur < 0) return null;
+        return { type: "ACHAT", index: meilleur, exiler: paquetCompte(player, "MOVE") > 4 };
+      }
+
+      /* ---------- Tours ------------------------------------------------- */
+      const paquetBeginTurnBase = beginTurn;
+      beginTurn = function beginTurnPaquet() {
+        paquetBeginTurnBase();
+        if (!paquetActif()) return;
+        paquetInstaller();
+        if (state.turn === 1 && !state.rotation.marche.annonce && !ilyosSimulationActive) {
+          state.rotation.marche.annonce = true;
+          setTimeout(() => showToast("Marché ouvert : une carte par tour pour 2 cartes de ta main."), 3400);
+        }
+        paquetRendreMarche();
+      };
+
+      const paquetEndTurnBase = endTurn;
+      endTurn = async function endTurnPaquet(force = false) {
+        const player = state && currentPlayer();
+        if (paquetActif() && player?.isAI && state.winner === null) {
+          const achat = plannerChoisirAchat(player.id);
+          if (achat) paquetAcheter(achat.index, achat.exiler);
+        }
+        return paquetEndTurnBase(force);
+      };
+
+      /* ---------- Interface ---------------------------------------------- */
+      let paquetPanneau = null;
+      let paquetEmpreinte = "";
+
+      function paquetIcone(action) {
+        const def = PAQUET_CARTES[action];
+        return HUD_V2_ICONS[def.type] || "";
+      }
+
+      function paquetRendreMarche() {
+        if (typeof document === "undefined" || ilyosSimulationActive) return;
+        const ecran = els?.gameScreen;
+        const actif = paquetActif() && !!state?.rotation?.marche && ecran;
+        if (!actif) {
+          if (paquetPanneau) paquetPanneau.hidden = true;
+          return;
+        }
+        if (!paquetPanneau) {
+          paquetPanneau = document.createElement("aside");
+          paquetPanneau.className = "rt-marche";
+          paquetPanneau.setAttribute("aria-label", "Marché du sanctuaire");
+          paquetPanneau.addEventListener("click", evenement => {
+            const bouton = evenement.target.closest("[data-marche]");
+            if (bouton) { evenement.stopPropagation(); paquetAcheter(Number(bouton.dataset.marche)); return; }
+            const bascule = evenement.target.closest("[data-affiner]");
+            if (bascule) {
+              evenement.stopPropagation();
+              const joueur = currentPlayer();
+              const marche = state.rotation.marche;
+              marche.affiner[joueur.id] = marche.affiner[joueur.id] === false;
+              paquetRendreMarche();
+            }
+          });
+          ecran.appendChild(paquetPanneau);
+        }
+        const joueur = currentPlayer();
+        const marche = state.rotation.marche;
+        const refus = joueur?.isAI ? "Tour de l’adversaire." : paquetRefusAchat(joueur);
+        const affiner = marche.affiner[joueur?.id] !== false;
+        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur)]);
+        paquetPanneau.hidden = false;
+        if (empreinte === paquetEmpreinte) return;
+        paquetEmpreinte = empreinte;
+        const cartes = marche.visibles.map((action, i) => {
+          const def = PAQUET_CARTES[action];
+          const forte = def.valeur > 1;
+          return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
+              ${refus ? "disabled" : ""} title="${refus || `Acheter ${def.nom} pour 2 cartes`}">
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <b>${def.nom}</b><i>${def.effet}</i></button>`;
+        }).join("");
+        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>MARCHÉ</span><small>2 cartes · 1 achat par tour</small></div>
+          <div class="rt-marche-cartes">${cartes || "<p class=\"rt-marche-vide\">Marché vide</p>"}</div>
+          <button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
+            title="En achetant, retirer un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
+            <span class="rt-bascule" aria-hidden="true"></span>Exiler un Déplacer</button>
+          <div class="rt-marche-pied">Paquet ${paquetTaille(joueur)} · Pile ${marche.pile.length}</div>`;
+      }
+
+      /* Marque les boutons du dock quand une carte forte est en main. */
+      function paquetMarquerDock() {
+        if (typeof document === "undefined") return;
+        const joueur = state && currentPlayer();
+        [["MOVE", "hudV2MoveCount"], ["PUSH", "hudV2PushCount"], ["MAGIC", "hudV2MagicCount"]].forEach(([type, id]) => {
+          const bouton = document.getElementById(id);
+          if (!bouton) return;
+          const fortes = paquetActif() && joueur ? paquetCartesFortes(type, joueur) : [];
+          bouton.classList.toggle("hud-v2-pill-forte", fortes.length > 0);
+          if (fortes.length) bouton.title = `${bouton.title} · ${fortes.map(c => PAQUET_CARTES[c.action].nom).join(", ")} en main`;
+        });
+      }
+
+      const paquetRenderAllBase = renderAll;
+      renderAll = function renderAllPaquet(...args) {
+        const resultat = paquetRenderAllBase.apply(this, args);
+        if (!ilyosSimulationActive) {
+          try {
+            paquetRendreMarche();
+            paquetMarquerDock();
+          } catch (erreur) {
+            console.warn("[ILYOS] marché", erreur);
+          }
+        }
+        return resultat;
+      };
+
+      window.ILYOS_ROTATION_PAQUET = {
+        etat: () => (state?.rotation?.marche ? JSON.parse(JSON.stringify(state.rotation.marche)) : null),
+        acheter: (index, exiler) => paquetAcheter(index, exiler),
+        refus: () => paquetRefusAchat(),
+        choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
+        paquet: playerId => {
+          const joueur = state?.players?.[playerId ?? state?.currentPlayer];
+          return joueur ? { taille: paquetTaille(joueur), cartes: ["deck", "hand", "discard", "reserveCards"].flatMap(z => (joueur[z] || []).map(c => c.action)) } : null;
+        }
+      };
       /* =====================================================================
          TUTORIEL — « La Première Ascension »
 

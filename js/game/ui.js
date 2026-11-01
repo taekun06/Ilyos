@@ -494,7 +494,7 @@
             nameEl.classList.toggle("hud-v2-player-name-active", !!isActiveTurn);
             nameEl.dataset.titre = p && p.titre ? p.titre : "";
           }
-          if (scoreEl) scoreEl.innerHTML = p ? crownPips(p.score) : "";
+          if (scoreEl) scoreEl.innerHTML = p ? (rotationScoreHud(p) ?? crownPips(p.score)) : "";
         };
         fillPortrait("Active", leftPlayer, leftPlayer && state.currentPlayer === leftPlayer.id);
         fillPortrait("Opponent", rightPlayer, rightPlayer && state.currentPlayer === rightPlayer.id);
@@ -4001,12 +4001,14 @@
         const mode = state.deckAnimationMode || "";
         const visibleCards = (p.hand || []).slice(0, 5);
 
+        /* Une carte forte de la Rotation (Élan…) s'affiche comme son type de
+           base : ACTIONS.ELAN.type === "MOVE" (rotation-paquet.js). */
         const cards = visibleCards.map((card, index) => `
         <span
-          class="v64-mini-card action-${card.action.toLowerCase()} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
+          class="v64-mini-card action-${(ACTIONS[card.action]?.type || card.action).toLowerCase()}${ACTIONS[card.action]?.type ? " carte-forte" : ""} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
           style="--card-index:${index}"
-          title="${ACTIONS[card.action].name}"
-          aria-label="${ACTIONS[card.action].name}"
+          title="${ACTIONS[card.action]?.name || card.action}"
+          aria-label="${ACTIONS[card.action]?.name || card.action}"
         ></span>
       `).join("");
 
@@ -4569,7 +4571,7 @@
         els.victoryTitle.style.color = player.color;
         els.victoryText.textContent = texte
           || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
-        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/3`;
+        els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/${rotationCible()}`;
         renderVictoryRecap(player);
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);

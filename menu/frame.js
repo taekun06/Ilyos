@@ -532,6 +532,7 @@
     if(action==='rules'||action==='help') return openRules();
     if(action==='tutorial'){ send('action',{action}); return; }
     if(action==='credits') return openCredits();
+    if(action==='rotation') return window.ILYOS_ROTATION_MENU?.ouvrir();
     send('action',{action});
   }));
   syncFullscreenButtons();

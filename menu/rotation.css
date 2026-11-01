@@ -1,0 +1,98 @@
+/* ILYOS — écran ROTATION (menu/rotation.js). Médaillons dessinés, cadre doré
+   orné. Une seule maquette 1180×860 (portrait 660×1060) mise à l'échelle :
+   les dimensions ci-dessous sont en pixels de maquette. */
+.rotation .art{background:url("./assets/home-bg.svg") center/104% auto no-repeat;filter:saturate(.8) brightness(.7)}
+.rotation .rt-voile{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 58%,rgba(4,10,17,.35),rgba(4,10,17,.86) 78%)}
+.rotation .rt-scene{position:absolute;inset:0;overflow:hidden}
+.rotation .rt-contenu{position:absolute;left:50%;top:50%;transform-origin:50% 50%;display:flex;flex-direction:column;align-items:center;font-family:var(--font-ilyos-action),Georgia,serif;color:#f3e6c6}
+.rotation svg path{vector-effect:non-scaling-stroke}
+.rotation button{cursor:pointer;font:inherit;color:inherit;background:none;border:0;padding:0}
+.rotation button:focus-visible{outline:2px solid #fff0c2;outline-offset:3px}
+
+.rt-haut{align-self:stretch;display:flex;padding:18px 20px 0}
+.rt-haut .pill{border:2px solid rgba(225,176,71,.9);border-radius:999px;background:linear-gradient(180deg,rgba(14,30,46,.9),rgba(5,13,21,.86));color:#f4d28e;padding:7px 22px;font-size:13px;letter-spacing:.08em}
+.rt-tete{display:flex;align-items:center;gap:14px;margin-top:4px}
+.rt-filet{width:170px;height:22px}.rt-filet path{fill:none;stroke:#d8aa4c;stroke-width:1.4}.rt-filet .fin{stroke-width:1}.rt-filet .plein{fill:#f4d28e;stroke:none}
+.rt-filet.g{transform:scaleX(-1)}
+.rt-titre{margin:0;font-family:var(--font-ilyos-display),serif;font-weight:400;font-size:46px;letter-spacing:.14em;background:linear-gradient(180deg,#fff2c4,#e9bb62 55%,#a8701f);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 2px 0 #3a240a)}
+.rt-sous{font-size:12.5px;letter-spacing:.3em;color:#e9dcc0;opacity:.8;margin:2px 0 16px}
+
+.rt-cadre{position:relative;padding:6px;border-radius:20px;background:linear-gradient(135deg,#8f5a17,#f4d28e 30%,#a8701f 55%,#f4d28e 80%,#8f5a17)}
+.rt-panneau{position:relative;display:grid;grid-template-columns:1fr 330px;gap:20px;width:1120px;padding:22px 26px;border-radius:15px;background:linear-gradient(180deg,rgba(10,22,35,.97),rgba(4,10,17,.98));box-shadow:inset 0 0 0 1px rgba(255,230,166,.25),inset 0 0 40px rgba(0,0,0,.6)}
+.rt-coin{position:absolute;width:62px;height:62px;z-index:2;pointer-events:none}.rt-coin path{fill:none;stroke:#f4d28e;stroke-width:1.6}.rt-coin .fin{stroke-width:1;opacity:.75}.rt-coin .perle{fill:#f4d28e}
+.rt-coin.hg{left:-4px;top:-4px}.rt-coin.hd{right:-4px;top:-4px;transform:scaleX(-1)}.rt-coin.bg{left:-4px;bottom:-4px;transform:scaleY(-1)}.rt-coin.bd{right:-4px;bottom:-4px;transform:scale(-1,-1)}
+.rt-lbl{display:flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.28em;color:#f4d28e;margin:0 0 10px}
+.rt-lbl::before{content:'◆';font-size:9px;color:#d8aa4c}.rt-lbl::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(216,170,76,.7),transparent)}
+.rt-col-reglages .rt-lbl:not(:first-child){margin-top:14px}
+
+/* Buts : un médaillon par mode. */
+.rt-buts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.rt-but{position:relative;display:block;text-align:center;border-radius:10px;padding:5px!important;background:linear-gradient(160deg,#6d4614,#d8aa4c 40%,#6d4614)!important;box-shadow:0 8px 18px rgba(0,0,0,.45);transition:transform .12s ease,box-shadow .12s ease}
+.rt-but:not(:disabled):hover{transform:translateY(-2px)}
+.rt-img{position:relative;display:block;height:104px;border-radius:6px 6px 2px 2px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,236,190,.35)}
+.rt-art{display:block;width:100%;height:100%}
+.rt-lauriers *{fill:#c99a45;stroke:#8f5a17;stroke-width:.6}.rt-lauriers .branche{fill:none;stroke-width:1.4}
+.rt-embleme *{fill:var(--or);stroke:#3a240a;stroke-width:.6}
+.rt-embleme .herbe{fill:#f6dfa6}
+.rt-embleme .trait{fill:none;stroke:var(--or);stroke-width:1.6}
+.rt-plaque{display:block;background:linear-gradient(180deg,#132638,#08131f);border-radius:2px 2px 6px 6px;padding:6px 6px 8px;margin-top:3px}
+.rt-plaque b{display:block;font-family:var(--font-ilyos-display),serif;font-weight:400;font-size:14.5px;letter-spacing:.07em;color:#f4d28e}
+.rt-plaque i{display:block;font-style:normal;font-size:11px;color:#d9ccb0;opacity:.85;margin-top:1px;font-family:'Nunito Sans',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt-plaque em,.rt-couche em{display:block;font-style:normal;font-size:8.5px;letter-spacing:.3em;color:#d8aa4c;margin-top:2px}
+.rt-but.choisi{background:linear-gradient(160deg,#fff0c2,#f4d28e 40%,#b27f2a)!important;box-shadow:0 0 0 2px rgba(255,240,194,.55),0 0 26px rgba(244,210,142,.55),0 8px 18px rgba(0,0,0,.45)}
+.rt-but.choisi::before{content:'';position:absolute;left:50%;top:-9px;width:12px;height:12px;transform:translateX(-50%) rotate(45deg);background:#fff0c2;box-shadow:0 0 10px #f4d28e;z-index:2}
+.rt-but.bientot{filter:grayscale(.75) brightness(.55);cursor:default}
+
+/* Couches (à venir). */
+.rt-couche{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(225,176,71,.35);background:linear-gradient(90deg,rgba(18,34,50,.9),rgba(8,17,27,.9));margin-bottom:9px}
+.rt-couche.bientot{opacity:.62}
+button.rt-couche{width:100%;text-align:left;cursor:pointer;padding:10px 12px!important;border:1px solid rgba(225,176,71,.35)!important;background:linear-gradient(90deg,rgba(18,34,50,.9),rgba(8,17,27,.9))!important}
+button.rt-couche:hover{border-color:rgba(255,227,160,.7)!important}
+button.rt-couche.on{border-color:rgba(255,227,160,.85)!important;background:linear-gradient(90deg,rgba(64,48,16,.75),rgba(14,26,40,.9))!important}
+.rt-couche .rt-bascule{position:relative;flex:none;width:42px;height:22px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(216,170,76,.5)}
+.rt-couche .rt-bascule::after{content:'';position:absolute;left:3px;top:2px;width:16px;height:16px;border-radius:50%;background:#7c7262}
+.rt-couche.on .rt-bascule{background:linear-gradient(90deg,#b27f2a,#f4d28e)}.rt-couche.on .rt-bascule::after{left:22px;background:#fff6dc}
+.rt-ico{width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 30%,#2a4d66,#0b1a28);border:1.5px solid #d8aa4c;box-shadow:0 0 0 3px rgba(216,170,76,.15)}
+.rt-ico svg{width:24px;height:24px}.rt-ico svg *{fill:none;stroke:#f4d28e;stroke-width:1.4}
+.rt-txt{flex:1;min-width:0}
+.rt-txt b{display:block;font-weight:400;font-size:14px;color:#f4d28e;letter-spacing:.05em}
+.rt-txt i{display:block;font-style:normal;font-size:11.5px;color:#d9ccb0;opacity:.8;font-family:'Nunito Sans',sans-serif}
+.rt-couche em{margin:0}
+
+/* Plateau et adversaire. */
+.rt-ligne{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.rt-ligne.un{grid-template-columns:1fr}
+.rt-sel{display:flex;justify-content:space-between;align-items:center;gap:4px;padding:6px 6px;border-radius:12px;border:1px solid rgba(225,176,71,.5);background:rgba(4,10,17,.85);font-size:13.5px;color:#f4d28e;letter-spacing:.06em}
+.rt-sel span{text-align:center;white-space:nowrap}
+.rt-sel button{width:28px;height:28px;border-radius:50%;color:#d8aa4c;font-size:20px;line-height:1}
+.rt-sel button:hover{background:rgba(216,170,76,.18);color:#fff0c2}
+
+/* Tirage aléatoire. */
+.rt-tirage{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,227,160,.85);background:linear-gradient(90deg,rgba(64,46,14,.8),rgba(14,26,40,.9))}
+.rt-tirage[hidden]{display:none}
+.rt-tirage-titre{font-family:var(--font-ilyos-display),serif;color:#f4d28e;font-size:15px;letter-spacing:.1em;margin-right:6px;white-space:nowrap}
+.rt-brique{display:flex;align-items:center;gap:7px;padding:6px 12px!important;border-radius:999px;background:rgba(4,10,17,.85)!important;border:1px solid rgba(225,176,71,.5)!important;font-size:12.5px;white-space:nowrap}
+.rt-brique.verrou{border-color:#ffe3a0!important;background:rgba(90,64,18,.75)!important}
+.rt-relancer{margin-left:auto;padding:6px 16px!important;border-radius:999px;border:1.5px solid #d8aa4c!important;color:#f4d28e;font-size:12.5px;letter-spacing:.08em;white-space:nowrap}
+
+/* Boutons du bas. */
+.rt-bas{display:flex;gap:18px;margin-top:18px;align-items:stretch}
+.rt-alea{display:flex;align-items:center;gap:12px;padding:0 26px!important;border-radius:14px;border:2px solid #d8aa4c!important;background:linear-gradient(180deg,rgba(28,48,70,.96),rgba(8,17,27,.96))!important;box-shadow:inset 0 0 0 1px rgba(255,230,166,.2),0 10px 24px rgba(0,0,0,.4);color:#f4d28e!important;font-family:var(--font-ilyos-display),serif!important;font-size:21px;letter-spacing:.08em}
+.rt-alea svg{width:34px;height:34px}
+.rt-lancer{position:relative;width:440px;padding:12px 0 10px!important;border-radius:14px;border:2px solid #ffe3a0!important;background:linear-gradient(180deg,#f7d98e,#d8aa4c 55%,#b27f2a)!important;color:#2a1a07!important;text-align:center;font-family:var(--font-ilyos-display),serif!important;font-size:26px;letter-spacing:.06em;box-shadow:0 12px 28px rgba(0,0,0,.4),0 0 26px rgba(244,210,142,.3),inset 0 1px 0 rgba(255,250,225,.8)}
+.rt-lancer small{display:block;font-family:var(--font-ilyos-action),Georgia,serif;font-size:10.5px;letter-spacing:.24em;opacity:.75}
+.rt-lancer::before,.rt-lancer::after{content:'❧';position:absolute;top:50%;font-size:24px;color:#6d4614;opacity:.7}
+.rt-lancer::before{left:18px;transform:translateY(-50%) scaleX(-1)}.rt-lancer::after{right:18px;transform:translateY(-50%)}
+.rt-alea:hover,.rt-lancer:hover{filter:brightness(1.08)}
+
+/* Portrait : buts sur deux colonnes, réglages dessous. */
+.rt-portrait .rt-filet{width:90px}
+.rt-portrait .rt-panneau{grid-template-columns:1fr;width:600px;padding:20px}
+.rt-portrait .rt-buts{gap:9px}
+.rt-portrait .rt-img{height:92px}
+.rt-portrait .rt-plaque{padding:5px 3px 6px}
+.rt-portrait .rt-plaque b{font-size:12.5px;letter-spacing:.02em}
+.rt-portrait .rt-plaque i{font-size:10px;white-space:normal;line-height:1.2}
+.rt-portrait .rt-bas{flex-direction:column;width:600px;gap:12px}
+.rt-portrait .rt-alea{justify-content:center;padding:10px 0!important}
+.rt-portrait .rt-lancer{width:auto}
+.rt-portrait .rt-tirage{flex-wrap:wrap}
