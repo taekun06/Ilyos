@@ -329,7 +329,7 @@
             groupe.add(visuel);
           }
           const surIle = !!islandAt(oeuf.r, oeuf.c);
-          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : kaykitCellSurfaceY(oeuf.r, oeuf.c) + .45;
+          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : KAYKIT_LEVELS.islandTop + .014; // case vide : posé sur la grille
           const p = kaykitCellPosition(oeuf.r, oeuf.c, y);
           visuel.position.set(p.x, p.y, p.z);
           const n = oeufManches(oeuf);

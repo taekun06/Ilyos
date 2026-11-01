@@ -4084,6 +4084,11 @@
         const { staticGroup, hitGroup, hitMeshes } = kaykit3D;
 
         const half = kaykitBoardSpan() / 2;
+        // La grille est posée À HAUTEUR DU DESSUS DES ÎLES (et non plus au fond,
+        // un bloc plus bas) : une pièce posée sur une case vide — œuf, balise du
+        // mode Rotation — se lit alors sur SA case au lieu de flotter au-dessus
+        // d'une trame lointaine, et les lignes prolongent le sol des îles.
+        const gridY = KAYKIT_LEVELS.islandTop + .018;
         // Vue de FACE, une grille plane qui garde de la matière jusqu'à son bord franc
         // se lit en perspective comme un SOL qui fuit vers un horizon — contraire au
         // ciel. Mais l'éteindre trop tôt rend les cases de bordure inutilisables pour
@@ -4108,9 +4113,9 @@
           for (let s = 0; s < GRID; s++) {
             const a = (s - GRID / 2) * KAYKIT_CELL_SPACING;
             const b = (s + 1 - GRID / 2) * KAYKIT_CELL_SPACING;
-            points.push(new THREE.Vector3(d, .061, a), new THREE.Vector3(d, .061, b));
+            points.push(new THREE.Vector3(d, gridY, a), new THREE.Vector3(d, gridY, b));
             alphas.push(1, 1, 1, gridFade(d, a), 1, 1, 1, gridFade(d, b));
-            points.push(new THREE.Vector3(a, .061, d), new THREE.Vector3(b, .061, d));
+            points.push(new THREE.Vector3(a, gridY, d), new THREE.Vector3(b, gridY, d));
             alphas.push(1, 1, 1, gridFade(a, d), 1, 1, 1, gridFade(b, d));
           }
         }
@@ -4149,7 +4154,7 @@
           })
         );
         gridFill.rotation.x = -Math.PI / 2;
-        gridFill.position.y = .04;
+        gridFill.position.y = gridY - .021;
         gridFill.renderOrder = 1;
         staticGroup.add(gridFill);
 
@@ -35843,7 +35848,8 @@
           const g = allumee ? gardienSurBalise(r, c) : null;
           const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
-          balise.position.set(p.x, allumee ? p.y + .01 : p.y + .55, p.z);
+          // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
+          balise.position.set(p.x, allumee ? p.y + .01 : KAYKIT_LEVELS.islandTop + .02, p.z);
           const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
           [sol, runes, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
           sol.material.opacity = allumee ? .95 : .35;
@@ -36543,7 +36549,7 @@
             groupe.add(visuel);
           }
           const surIle = !!islandAt(oeuf.r, oeuf.c);
-          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : kaykitCellSurfaceY(oeuf.r, oeuf.c) + .45;
+          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : KAYKIT_LEVELS.islandTop + .014; // case vide : posé sur la grille
           const p = kaykitCellPosition(oeuf.r, oeuf.c, y);
           visuel.position.set(p.x, p.y, p.z);
           const n = oeufManches(oeuf);
