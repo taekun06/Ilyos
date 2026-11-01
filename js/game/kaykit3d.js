@@ -10389,6 +10389,9 @@
           const localContour = contour.map(([x, z]) => [x - anchor.x, z - anchor.z]);
           const shapeKey = localContour.map(([x, z]) => `${Math.round(x * 1000)}:${Math.round(z * 1000)}`).join("|");
           const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
+          // Option pierre : pas de couche de roche sous les dalles, la pointe
+          // s'accroche directement sous les socles.
+          if (ILYOS_ILES_ESSAI === "pierre") { addKayKitEssaiPointe(group, component, anchor); return; }
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
           hull.castShadow = false;
@@ -10409,13 +10412,16 @@
           minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
           sx += p.x; sz += p.z;
         });
-        const largeur = Math.min(maxX - minX, maxZ - minZ) + KAYKIT_CELL_SPACING;
+        const sousDalles = ILYOS_ILES_ESSAI === "pierre";
+        const largeur = sousDalles
+          ? (Math.min(maxX - minX, maxZ - minZ) + Math.max(maxX - minX, maxZ - minZ)) / 2 + KAYKIT_BLOCK_SIZE
+          : Math.min(maxX - minX, maxZ - minZ) + KAYKIT_CELL_SPACING;
         const graine = Math.abs(Math.round(sx * 7 + sz * 13));
-        const roche = cloneKayKitAsset(["bareMountainA", "bareMountainB", "bareMountainC"][graine % 3], { maxWidth: largeur * .9, maxHeight: .9 + component.length * .12, targetFloor: 0 });
+        const roche = cloneKayKitAsset(["bareMountainA", "bareMountainB", "bareMountainC"][graine % 3], { maxWidth: largeur * (sousDalles ? .82 : .9), maxHeight: (sousDalles ? 1.3 : .9) + component.length * .12, targetFloor: 0 });
         if (!roche) return;
         roche.rotation.x = Math.PI;
         roche.rotation.y = (graine % 7) * .9;
-        roche.position.set(sx / component.length, KAYKIT_LEVELS.board - KAYKIT_HULL_RING2_DEPTH + .12, sz / component.length);
+        roche.position.set(sx / component.length, sousDalles ? KAYKIT_LEVELS.board + .04 : KAYKIT_LEVELS.board - KAYKIT_HULL_RING2_DEPTH + .12, sz / component.length);
         roche.traverse(child => {
           if (!child.isMesh) return;
           child.castShadow = false;
