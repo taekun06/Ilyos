@@ -10446,14 +10446,34 @@
       // Option pierre : une pointe par case, collée sous son socle. Les cases du
       // cœur de l'île (plus de voisines) pendent plus bas, si bien que l'ensemble
       // épouse le contour de l'île et s'effile vers le centre.
+      // Option gazon : le haut de la roche prend la couleur de la terre sous
+      // l'herbe, puis redevient roche plus bas. Plaque et pointes se lisent
+      // alors comme une seule motte arrachée au sol.
+      const KAYKIT_ESSAI_TERRE = 0x6e4a30;
+      function kaykitEssaiTerreDegrade(material, hautY) {
+        const terre = new THREE.Color(KAYKIT_ESSAI_TERRE).convertSRGBToLinear();
+        material.onBeforeCompile = shader => {
+          shader.uniforms.essaiHautY = { value: hautY };
+          shader.uniforms.essaiTerre = { value: terre };
+          shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;")
+            .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
+          shader.fragmentShader = shader.fragmentShader
+            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform vec3 essaiTerre;")
+            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = smoothstep(essaiHautY - .75, essaiHautY - .12, vEssaiY);\ndiffuseColor.rgb = mix(diffuseColor.rgb, essaiTerre, essaiT * .92);");
+        };
+        material.customProgramCacheKey = () => "essai-terre";
+      }
       function addKayKitEssaiPointesSousCases(group, component) {
+        const gazon = ILYOS_ILES_ESSAI === "gazon";
+        const hautY = KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE;
         const cles = new Set(component.map(([r, c]) => `${r},${c}`));
         const formes = ["bareMountainA", "bareMountainB", "bareMountainC"];
         component.forEach(([r, c]) => {
           const voisines = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dr, dc]) => cles.has(`${r + dr},${c + dc}`)).length;
           const tirage = kaykitHash("essai-pointe", r, c);
           const longueur = .55 + voisines * .18 + tirage * .3;
-          const roche = cloneKayKitAsset(formes[Math.floor(tirage * 3) % 3], { exactWidth: KAYKIT_BLOCK_SIZE * 1.18, exactDepth: KAYKIT_BLOCK_SIZE * 1.18, exactHeight: longueur, targetFloor: 0 });
+          const roche = cloneKayKitAsset(formes[Math.floor(tirage * 3) % 3], { exactWidth: KAYKIT_BLOCK_SIZE * (gazon ? .94 : 1.18), exactDepth: KAYKIT_BLOCK_SIZE * (gazon ? .94 : 1.18), exactHeight: longueur + (gazon ? .2 : 0), targetFloor: 0 });
           if (!roche) return;
           const p = kaykitCellPosition(r, c, 0);
           roche.rotation.x = Math.PI;
@@ -10464,7 +10484,10 @@
             child.castShadow = false;
             child.receiveShadow = true;
             child.raycast = () => {};
-            (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => m.color?.multiply(new THREE.Color(0x8a8278)));
+            (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => {
+              m.color?.multiply(new THREE.Color(0x8a8278));
+              if (gazon) kaykitEssaiTerreDegrade(m, hautY);
+            });
           });
           group.add(roche);
         });
@@ -10475,19 +10498,27 @@
           minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
           sx += p.x; sz += p.z;
         });
+        // Gazon : la pointe centrale ne doit jamais dépasser sous l'herbe (îles en L ou en ligne).
+        // Gazon : pointe centrale étirée selon l'emprise réelle (ligne, carré),
+        // un peu en retrait pour ne pas dépasser sous l'herbe aux coins d'un L.
         const largeur = (maxX - minX + maxZ - minZ) / 2 + KAYKIT_BLOCK_SIZE;
+        const emprise = component.length / (Math.round((maxX - minX) / KAYKIT_CELL_SPACING + 1) * Math.round((maxZ - minZ) / KAYKIT_CELL_SPACING + 1));
+        const retrait = emprise >= .99 ? .9 : .78;
         const graine = Math.abs(Math.round(sx * 7 + sz * 13));
-        const coeur = cloneKayKitAsset(formes[graine % 3], { exactWidth: largeur * .95, exactDepth: largeur * .95, exactHeight: 1.6 + Math.min(component.length, 6) * .28, targetFloor: 0 });
+        const coeur = cloneKayKitAsset(formes[graine % 3], { exactWidth: gazon ? (maxX - minX + KAYKIT_BLOCK_SIZE) * retrait : largeur * .95, exactDepth: gazon ? (maxZ - minZ + KAYKIT_BLOCK_SIZE) * retrait : largeur * .95, exactHeight: 1.6 + Math.min(component.length, 6) * .28, targetFloor: 0 });
         if (!coeur) return;
         coeur.rotation.x = Math.PI;
-        coeur.rotation.y = (graine % 4) * Math.PI / 2;
+        coeur.rotation.y = (gazon ? graine % 2 * 2 : graine % 4) * Math.PI / 2;
         coeur.position.set(sx / component.length, KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE + .01, sz / component.length);
         coeur.traverse(child => {
           if (!child.isMesh) return;
           child.castShadow = false;
           child.receiveShadow = true;
           child.raycast = () => {};
-          (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => m.color?.multiply(new THREE.Color(0x7e776e)));
+          (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => {
+            m.color?.multiply(new THREE.Color(0x7e776e));
+            if (gazon) kaykitEssaiTerreDegrade(m, hautY);
+          });
         });
         group.add(coeur);
       }
@@ -11016,7 +11047,7 @@
           child.castShadow = true;
           child.receiveShadow = true;
           (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => {
-            m.color?.set(/green/i.test(m.name || "") ? herbe : new THREE.Color(0x77736c).convertSRGBToLinear());
+            m.color?.set(/green/i.test(m.name || "") ? herbe : new THREE.Color(KAYKIT_ESSAI_TERRE).convertSRGBToLinear());
             m.roughness = .9;
           });
         });
