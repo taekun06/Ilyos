@@ -84,6 +84,7 @@
     if(!etat){ badge.hidden=true; if(pill) pill.hidden=true; return; }
     const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
     badge.querySelector('.profil-num').textContent=String(etat.niveau);
+    badge.querySelector('.profil-mot').textContent=etat.pseudo||'NIVEAU';
     badge.querySelector('.profil-anneau').style.setProperty('--p',`${part}%`);
     badge.querySelector('.profil-xp').textContent=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP`;
     badge.title=`${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}`;
@@ -91,12 +92,6 @@
     badge.hidden=false;
     if(pill) pill.hidden=!etat.offrande.dispo;
     if(modal.classList.contains('open')&&modal.dataset.vue==='progression'&&modal.dataset.onglet!=='collection') renderProgressionPanel(etat);
-  }
-  function cellLabel(texte){ return /^Vent/.test(texte)?'VENT PORTEUR':texte; }
-  function questHtml(q,index,semaine,changer){
-    const pct=Math.round(100*q.fait/Math.max(1,q.cible));
-    const bouton=changer&&!q.finie&&!semaine?`<button type="button" class="quete-changer" data-index="${index}" title="Changer cette quête (une fois par jour)" aria-label="Changer cette quête">↻</button>`:'';
-    return `<li class="quete${q.finie?' finie':''}${semaine?' semaine':''}"><div class="quete-haut"><span class="quete-texte">${safeText(q.texte)}</span><span class="quete-xp">${q.finie?'✓ ':''}+${q.xp} XP</span>${bouton}</div><div class="quete-barre"><i style="width:${pct}%"></i></div><small>${q.finie?'Accomplie':`${q.fait} / ${q.cible}`}</small></li>`;
   }
   /* Aperçu d'un objet de la collection : pastille de couleur, portrait du
      gardien, bande de ciel ou plaque de titre. */
@@ -127,16 +122,29 @@
     if(p.categorie==='vent') return `<span class="sp-apercu sp-vent"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#effcff" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg></span>`;
     return `<span class="sp-apercu sp-coffre"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v1H3v-1Z" fill="#7a4b12"/><rect x="3" y="11" width="18" height="8" rx="1.5" fill="#5a3509"/><rect x="10" y="9.5" width="4" height="5" rx="1" fill="#ffe9a8"/><path d="M3 11h18" stroke="#ffe9a8" stroke-width="1.2"/></svg></span>`;
   }
+  /* Piste de saison « Archipel » : un îlot KayKit par palier, relié au
+     suivant par un fil d'or ; la récompense flotte au-dessus. Les paliers
+     multiples de 5 portent le château. Tout est statique (aucune boucle). */
+  const ILOTS_PISTE=['foret','maison','puits','moulin','tour','marche','eglise','taverne','arbre'];
   function saisonHtml(v){
     if(!v) return '<p class="coll-note">Aucune saison en cours.</p>';
-    const pct=Math.round(100*v.xpDansPalier/Math.max(1,v.xpParPalier));
+    const fini=v.palier>=v.paliers.length;
+    const pct=fini?100:Math.round(100*v.xpDansPalier/Math.max(1,v.xpParPalier));
     const courant=Math.min(v.palier+1,v.paliers.length);
-    const cases=v.paliers.map(p=>`<li class="sp-case${p.obtenu?' obtenu':''}${p.palier===courant&&!p.obtenu?' courant':''}${p.palier%5===0?' grand':''}" data-palier="${p.palier}"><small>${p.palier}</small>${saisonApercu(p)}<b>${safeText(p.texte)}</b><span>${p.obtenu?'✓ OBTENU':(p.palier===courant?`${v.xpDansPalier} / ${v.xpParPalier}`:'')}</span></li>`).join('');
+    const pas=150, haut=[64,0,48,12];
+    const pts=v.paliers.map((p,i)=>[i*pas+pas/2,(p.palier%5===0?40:haut[i%4])+150]);
+    let d=`M${pts[0][0]} ${pts[0][1]}`;
+    for(let i=1;i<pts.length;i++){const [a,b]=pts[i-1],[c,e]=pts[i];d+=` C${a+60} ${b},${c-60} ${e},${c} ${e}`}
+    const avance=Math.max(0,Math.min(1,(v.palier-1+(fini?0:pct/100))/(pts.length-1)));
+    const cases=v.paliers.map((p,i)=>{
+      const etat=p.obtenu?'obtenu':(p.palier===courant?'courant':'futur');
+      const ilot=p.palier%5===0?'chateau':ILOTS_PISTE[i%ILOTS_PISTE.length];
+      return `<li class="ar-etape ${etat}${p.palier%5===0?' grand':''}" style="left:${i*pas}px;top:${pts[i][1]-150}px" data-palier="${p.palier}"><small>${p.palier}</small><span class="ar-prix">${saisonApercu(p)}</span><img class="ar-ilot" src="../assets/progression/ilot-${ilot}.webp" alt="" loading="lazy" draggable="false"><b>${safeText(p.categorie==='vent'?'Vent porteur':p.texte.replace(/^Coffre de /,'Coffre · '))}</b></li>`;
+    }).join('');
     const duree=v.active?(v.joursRestants>1?`Encore ${v.joursRestants} jours`:'Dernier jour'):'Saison terminée';
-    return `<section class="sp-tete"><div><small>SAISON ${v.numero} · PASSE GRATUIT</small><b>${safeText(v.nom)}</b><span>${duree}</span></div><div class="sp-palier"><small>PALIER</small><b>${v.palier}</b></div></section>
-      <div class="sp-progres"><div class="pp-barre"><i style="width:${v.palier>=v.paliers.length?100:pct}%"></i></div><small>${v.palier>=v.paliers.length?`Piste terminée · chaque palier donne encore un vent porteur · ${v.xpDansPalier} / ${v.xpParPalier} XP`:`${v.xpDansPalier} / ${v.xpParPalier} XP vers le palier ${v.palier+1}`}</small></div>
-      <ol class="sp-piste">${cases}</ol>
-      <p class="coll-note">Toute l’XP gagnée pendant la saison la fait avancer : un palier tous les ${v.xpParPalier} XP. Ce qui est gagné reste à vous.</p>`;
+    const largeur=pts.length*pas;
+    return `<section class="ar-saison-tete"><div class="ar-palier"><small>PALIER</small><b>${v.palier}</b></div><div class="ar-saison-nom"><small>SAISON ${v.numero} · PASSE GRATUIT</small><b>${safeText(v.nom)}</b><span>${duree}</span></div><div class="ar-saison-barre"><div class="pp-barre"><i style="width:${pct}%"></i></div><small>${fini?`Piste terminée · un vent porteur tous les ${v.xpParPalier} XP`:`${v.xpDansPalier} / ${v.xpParPalier} XP`}</small></div></section>
+      <div class="ar-piste"><ol style="width:${largeur}px"><svg class="ar-fil" viewBox="0 0 ${largeur} 330" width="${largeur}" height="330" aria-hidden="true"><path d="${d}" class="ar-fil-fond"/><path d="${d}" class="ar-fil-or" pathLength="1000" stroke-dasharray="${Math.round(avance*1000)} 2000"/></svg>${cases}</ol></div>`;
   }
   /* Journal : les parties notées sur cet appareil (js/game/progression.js). */
   const JOURNAL_MODES={solo:'Contre le CPU',duel:'Duel',team:'2 contre 2',online:'En ligne'};
@@ -193,29 +201,117 @@
       <section><h3>DERNIÈRES PARTIES${v.total>v.dernieres.length?` <small class="jn-total">${v.total} au total</small>`:''}</h3>${lignes?`<ul class="jn-parties">${lignes}</ul>`:'<p class="coll-note">Aucune partie notée pour l’instant. Vos parties terminées apparaîtront ici.</p>'}</section>
       <p class="coll-note">Le journal reste sur cet appareil.</p>`;
   }
+  const PP_ICONES={
+    progression:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h10l3 3v15H6z" fill="currentColor" opacity=".9"/><path d="M9 9h7M9 13h7M9 17h4" stroke="#140d04" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    saison:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-7-4-7 4z" fill="currentColor"/></svg>',
+    collection:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6 6 1-4.5 4.3 1 6.2L12 16.6 6.5 19.5l1-6.2L3 9l6-1z" fill="currentColor"/></svg>',
+    journal:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>',
+    vent:'<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg>',
+    ile:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5 12 6l9 3.5-9 3.5z" fill="currentColor"/><path d="M5 11.2l7 2.8 7-2.8-7 9z" fill="currentColor" opacity=".55"/></svg>',
+    epee:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 3H21v6.5L10 20.5 3.5 14z" fill="currentColor"/><path d="m3 21 4-4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+    check:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
+  /* Les sept îlots de l'offrande : le hameau de la semaine se construit. */
+  const ILOTS_OFFRANDE=['foret','maison','puits','moulin','marche','taverne','chateau'];
+  function anneauSvg(part,ep){
+    const r=18-ep/2, l=2*Math.PI*r;
+    return `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="${r}" class="pp-anneau-fond" stroke-width="${ep}"/><circle cx="20" cy="20" r="${r}" class="pp-anneau-plein" stroke-width="${ep}" stroke-dasharray="${l.toFixed(1)}" stroke-dashoffset="${((1-part)*l).toFixed(1)}" transform="rotate(-90 20 20)"/></svg>`;
+  }
+  function gainHtml(d){
+    return d.vent?`<span class="ar-gain ar-vent">${PP_ICONES.vent}×${d.vent}</span>`:`<span class="ar-gain">${d.xp}<small>XP</small></span>`;
+  }
+  function offrandeHtml(o){
+    const details=o.details||o.cases.map(()=>({xp:0,vent:0}));
+    return `<ol class="ar-semaine">${details.map((d,i)=>{
+      const recue=i<o.prochaine, aujourdhui=i===o.prochaine;
+      const etat=recue?'recue':(aujourdhui?(o.dispo?'prete':'demain'):'futur');
+      const bas=aujourdhui&&o.dispo?'<button type="button" class="offrande-prendre">RECEVOIR</button>':`<small class="ar-jour">${aujourdhui?'DEMAIN':`JOUR ${i+1}`}</small>`;
+      return `<li class="ar-ilot-jour ${etat}${i===6?' dernier':''}">${recue?`<i class="ar-sceau">${PP_ICONES.check}</i>`:''}<img src="../assets/progression/ilot-${ILOTS_OFFRANDE[i]}.webp" alt="" draggable="false">${gainHtml(d)}${bas}</li>`;
+    }).join('')}</ol>`;
+  }
+  function queteIcone(texte){
+    if(/île|ile/i.test(texte)) return PP_ICONES.ile;
+    if(/puzzle|énigme/i.test(texte)) return PP_ICONES.collection;
+    return PP_ICONES.epee;
+  }
+  function queteCarte(q,index,changer){
+    const part=q.fait/Math.max(1,q.cible);
+    const bouton=changer&&!q.finie?`<button type="button" class="quete-changer" data-index="${index}" title="Changer cette quête (une fois par jour)" aria-label="Changer cette quête">↻</button>`:'';
+    return `<li class="quete${q.finie?' finie':''}"><span class="ar-rond">${anneauSvg(Math.min(1,part),3.4)}${q.finie?PP_ICONES.check:queteIcone(q.texte)}</span><span class="ar-quete-texte"><b>${safeText(q.texte)}</b><small>${q.finie?'Accomplie':`${q.fait} / ${q.cible}`}</small></span><span class="quete-xp">+${q.xp} XP</span>${bouton}</li>`;
+  }
+  function semaineHtml(q){
+    if(!q) return '';
+    const pct=Math.round(100*q.fait/Math.max(1,q.cible));
+    return `<div class="ar-hebdo${q.finie?' finie':''}"><em>SEMAINE</em><b>${safeText(q.texte)}</b><div class="ar-hebdo-barre"><i style="width:${pct}%"></i></div><small>${q.finie?'Accomplie':`${q.fait} / ${q.cible}`}</small><span>+${q.xp} XP</span></div>`;
+  }
+  /* Le moment de l'offrande : l'îlot du jour monte dans la lumière, une
+     seule fois (pas de boucle), puis on revient au panneau. */
+  function momentOffrande(r,etat){
+    const card=modal.querySelector('.menu-modal-card');
+    card.querySelector('.ar-moment')?.remove();
+    const d=(etat.offrande.details||[])[r.indice]||{};
+    const titre=d.vent?'VENT PORTEUR':`+${d.xp} XP`;
+    const sous=d.vent?`+50 % d’XP sur tes ${d.vent} prochaines parties`:(r.niveauxGagnes>0?`Niveau ${r.apres.niveau} atteint !`:'Ajouté à ton niveau et à ta saison');
+    const mini=ILOTS_OFFRANDE.map((nom,i)=>`<i class="${i<r.indice?'recue':(i===r.indice?'neuve':'futur')}"><img src="../assets/progression/ilot-${nom}.webp" alt=""></i>`).join('');
+    const ouverts=r.debloques?.length?`<p class="ar-moment-debloque">Débloqué : ${r.debloques.map(x=>safeText(x.nom)).join(', ')}</p>`:'';
+    const el=document.createElement('div');
+    el.className='ar-moment';
+    el.innerHTML=`<div class="ar-rayons" aria-hidden="true"></div><small class="ar-moment-titre">OFFRANDE · JOUR ${r.indice+1}</small><img class="ar-moment-ilot" src="../assets/progression/ilot-${ILOTS_OFFRANDE[r.indice]}.webp" alt=""><div class="ar-recompense">${d.vent?PP_ICONES.vent:''}<div><b>${titre}</b><span>${sous}</span></div></div>${ouverts}<div class="ar-moment-semaine">${mini}</div><button type="button" class="ar-continuer">CONTINUER</button>`;
+    card.appendChild(el);
+    const fermer=()=>el.remove();
+    el.querySelector('.ar-continuer').addEventListener('click',fermer);
+    el.querySelector('.ar-continuer').focus({preventScroll:true});
+  }
+  function teteHtml(etat){
+    const part=etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant);
+    const nom=etat.pseudo?safeText(etat.pseudo):'Voyageur';
+    return `<div class="ar-tete">${etat.heros?`<div class="ar-heros"><img src="../${safeText(etat.heros)}" alt=""></div>`:''}<div class="ar-blason">${anneauSvg(part,3)}<b>${etat.niveau}</b></div><div class="ar-identite"><small>NIVEAU ${etat.niveau}${etat.titre?` · <i>${safeText(etat.titre)}</i>`:''}</small><h2>${nom}<button type="button" class="ar-pseudo-modifier" title="Changer de pseudo" aria-label="Changer de pseudo">✎</button></h2><div class="pp-barre"><i style="width:${Math.round(100*part)}%"></i></div><em>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP${etat.offrande.vent?` · <span class="ar-vent-actif">${PP_ICONES.vent} Vent porteur : ${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''}</span>`:''}</em></div></div>`;
+  }
+  /* Choix du pseudo : demandé à la première ouverture du panneau. */
+  function pseudoHtml(actuel){
+    return `<form class="ar-pseudo"><img src="../assets/progression/ilot-chateau.webp" alt="" class="ar-pseudo-ilot"><h2>Ton pseudo</h2><p>Il s’affiche avec ton niveau.</p><input name="pseudo" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Ton pseudo" value="${safeText(actuel||'')}" aria-label="Ton pseudo"><small class="ar-pseudo-erreur" hidden>2 à 16 lettres ou chiffres.</small><button type="submit" class="ar-continuer">VALIDER</button></form>`;
+  }
+  function renderPseudo(etat){
+    modalTitle.textContent='';
+    modalBody.innerHTML=`<div class="progression-panel">${pseudoHtml(etat.pseudo)}</div>`;
+    const form=modalBody.querySelector('.ar-pseudo');
+    const champ=form.querySelector('input');
+    champ.focus({preventScroll:true});
+    form.addEventListener('submit',e=>{
+      e.preventDefault();
+      const ok=progressionApi()?.definirPseudo?.(champ.value);
+      if(!ok){form.querySelector('.ar-pseudo-erreur').hidden=false;return;}
+      const nouvel=progressionApi()?.etat?.();
+      if(nouvel) renderProgressionPanel(nouvel);
+      renderProfileBadge();
+    });
+  }
   function renderProgressionPanel(etat,annonce){
+    if(!etat.pseudo) return renderPseudo(etat);
     const onglet=['collection','saison','journal'].includes(modal.dataset.onglet)?modal.dataset.onglet:'progression';
-    const part=Math.round(100*etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant));
-    modalTitle.textContent='PROGRESSION';
-    const tete=`<div class="pp-niveau"><span class="profil-anneau pp-anneau" style="--p:${part}%"><b>${etat.niveau}</b></span><div class="pp-niveau-texte"><b>NIVEAU ${etat.niveau}</b>${etat.titre?`<span class="pp-titre">${safeText(etat.titre)}</span>`:''}<div class="pp-barre"><i style="width:${part}%"></i></div><small>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP vers le niveau ${etat.niveau+1}${etat.offrande.vent?` · Vent porteur actif (${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''})`:''}</small></div></div>`;
-    const onglets=`<div class="pp-onglets" role="tablist"><button type="button" role="tab" data-onglet="progression" aria-selected="${onglet==='progression'}">QUÊTES<span class="pp-long"> ET OFFRANDE</span>${etat.offrande.dispo?'<i class="pp-pastille">!</i>':''}</button>${etat.saison?`<button type="button" role="tab" data-onglet="saison" aria-selected="${onglet==='saison'}">SAISON</button>`:''}<button type="button" role="tab" data-onglet="collection" aria-selected="${onglet==='collection'}">COLLECTION${etat.nouveautes?`<i class="pp-pastille">${etat.nouveautes}</i>`:''}</button><button type="button" role="tab" data-onglet="journal" aria-selected="${onglet==='journal'}">JOURNAL</button></div>`;
+    modalTitle.textContent='';
+    const tete=teteHtml(etat);
+    const ongletsListe=[['progression','QUÊTES',etat.offrande.dispo],etat.saison?['saison','SAISON',false]:null,['collection','COLLECTION',etat.nouveautes>0],['journal','JOURNAL',false]].filter(Boolean);
+    const onglets=`<div class="pp-onglets" role="tablist">${ongletsListe.map(([cle,lib,pastille])=>`<button type="button" role="tab" data-onglet="${cle}" aria-selected="${onglet===cle}">${PP_ICONES[cle]}<span>${lib}</span>${pastille?'<i class="pp-pastille"></i>':''}</button>`).join('')}</div>`;
+    const entete=`<div class="ar-entete">${tete}${onglets}</div>`;
+    const bindPseudo=()=>modalBody.querySelector('.ar-pseudo-modifier')?.addEventListener('click',()=>renderPseudo(progressionApi()?.etat?.()||etat));
     if(onglet==='journal'){
-      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${journalHtml(progressionApi()?.journal?.())}</div>`;
-      bindProgressionTabs();
+      modalBody.innerHTML=`<div class="progression-panel">${entete}${journalHtml(progressionApi()?.journal?.())}</div>`;
+      bindProgressionTabs(); bindPseudo();
       return;
     }
     if(onglet==='saison'){
-      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${saisonHtml(etat.saison)}</div>`;
-      bindProgressionTabs();
-      const piste=modalBody.querySelector('.sp-piste');
-      const cible=piste?.querySelector('.courant')||piste?.querySelector('.obtenu:last-of-type');
+      modalBody.innerHTML=`<div class="progression-panel">${entete}${saisonHtml(etat.saison)}</div>`;
+      bindProgressionTabs(); bindPseudo();
+      const piste=modalBody.querySelector('.ar-piste');
+      const cible=piste?.querySelector('.courant')||[...(piste?.querySelectorAll('.obtenu')||[])].pop();
       if(piste&&cible) piste.scrollLeft=Math.max(0,cible.offsetLeft-piste.clientWidth/2+cible.clientWidth/2);
       return;
     }
     if(onglet==='collection'){
       const categories=progressionApi()?.collection?.()||[];
-      modalBody.innerHTML=`<div class="progression-panel">${tete}${onglets}${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}${collectionHtml(categories)}</div>`;
-      bindProgressionTabs();
+      modalBody.innerHTML=`<div class="progression-panel">${entete}${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}${collectionHtml(categories)}</div>`;
+      bindProgressionTabs(); bindPseudo();
       modalBody.querySelectorAll('.coll-objet button:not([disabled])').forEach(btn=>btn.addEventListener('click',()=>{
         if(!progressionApi()?.equiper?.(btn.dataset.cat,btn.dataset.id)) return;
         const nom=btn.querySelector('b')?.textContent||'';
@@ -226,27 +322,18 @@
       try{ progressionApi()?.marquerVus?.(); }catch(_){}
       return;
     }
-    const o=etat.offrande;
-    const recue=i=>i<o.prochaine;
-    const cases=o.cases.map((texte,i)=>{
-      const courante=i===o.prochaine;
-      const classe=recue(i)?'recue':(courante?(o.dispo?'prete':'demain'):'');
-      const bas=recue(i)?'✓':(courante?(o.dispo?'<button type="button" class="offrande-prendre">RÉCUPÉRER</button>':'DEMAIN'):'');
-      return `<li class="offrande-case ${classe}${i===6?' grande':''}"><small>JOUR ${i+1}</small><b>${safeText(cellLabel(texte))}</b><span>${bas}</span></li>`;
-    }).join('');
     modalBody.innerHTML=`<div class="progression-panel">
-      ${tete}${onglets}
+      ${entete}
       ${annonce?`<div class="pp-annonce">${safeText(annonce)}</div>`:''}
-      <section><h3>OFFRANDE DU JOUR</h3><ol class="offrande-cases">${cases}</ol></section>
-      <section><h3>QUÊTES DU JOUR</h3><ul class="quetes">${etat.quetes.jour.map((q,i)=>questHtml(q,i,false,etat.quetes.changementDispo)).join('')||'<li class="quete vide">Nouvelles quêtes demain.</li>'}</ul></section>
-      ${etat.quetes.semaine?`<section><h3>QUÊTE DE LA SEMAINE</h3><ul class="quetes">${questHtml(etat.quetes.semaine,0,true,false)}</ul></section>`:''}
+      <section><h3>OFFRANDE DU JOUR <small>Un îlot par jour : le septième porte le château.</small></h3>${offrandeHtml(etat.offrande)}</section>
+      <section><h3>QUÊTES DU JOUR</h3><ul class="quetes">${etat.quetes.jour.map((q,i)=>queteCarte(q,i,etat.quetes.changementDispo)).join('')||'<li class="quete vide">Nouvelles quêtes demain.</li>'}</ul>${semaineHtml(etat.quetes.semaine)}</section>
     </div>`;
-    bindProgressionTabs();
+    bindProgressionTabs(); bindPseudo();
     modalBody.querySelector('.offrande-prendre')?.addEventListener('click',()=>{
       const r=progressionApi()?.reclamerOffrande?.();
       const nouvel=progressionApi()?.etat?.();
-      const ouverts=r?.debloques?.length?` · Débloqué : ${r.debloques.map(d=>d.nom).join(', ')}`:'';
-      if(nouvel) renderProgressionPanel(nouvel,r?`Offrande reçue : ${r.texte}${r.niveauxGagnes>0?` · Niveau ${r.apres.niveau} atteint !`:''}${ouverts}`:null);
+      if(nouvel) renderProgressionPanel(nouvel);
+      if(r&&nouvel) momentOffrande(r,nouvel);
       renderProfileBadge();
     });
     modalBody.querySelectorAll('.quete-changer').forEach(btn=>btn.addEventListener('click',()=>{
@@ -494,7 +581,7 @@
     modal.classList.add('open');
   }
 
-  function resetModalView(){delete modal.dataset.vue;delete modal.dataset.onglet;modal.querySelector('.menu-modal-card').classList.remove('progression-card')}
+  function resetModalView(){modal.querySelector('.ar-moment')?.remove();delete modal.dataset.vue;delete modal.dataset.onglet;modal.querySelector('.menu-modal-card').classList.remove('progression-card')}
   function openComingSoon(label){resetModalView();modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));

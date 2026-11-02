@@ -197,6 +197,8 @@
       function progressionProfilVide() {
         return {
           version: PROGRESSION_VERSION,
+          /* Nom choisi par le joueur, affiché dans le panneau Progression. */
+          pseudo: null,
           xp: 0,
           parties: 0,
           victoires: 0,
@@ -222,6 +224,7 @@
         if (!brut || typeof brut !== "object") return profil;
         /* Fusion champ par champ : un profil d'une version antérieure garde ce
            qu'il connaît et reçoit les valeurs par défaut du reste. */
+        profil.pseudo = progressionPseudoValide(brut.pseudo);
         if (Number.isFinite(brut.xp) && brut.xp >= 0) profil.xp = Math.floor(brut.xp);
         if (Number.isFinite(brut.parties)) profil.parties = brut.parties;
         if (Number.isFinite(brut.victoires)) profil.victoires = brut.victoires;
@@ -269,6 +272,23 @@
         }
         if (Array.isArray(brut.vus)) profil.vus = [...new Set([...profil.vus, ...brut.vus.filter(v => typeof v === "string")])];
         return profil;
+      }
+
+      /* Pseudo : 2 à 16 caractères, lettres (accents compris), chiffres,
+         espace, tiret, point ou souligné. Renvoie null s'il ne convient pas. */
+      function progressionPseudoValide(nom) {
+        if (typeof nom !== "string") return null;
+        const propre = nom.normalize("NFC").replace(/\s+/g, " ").trim();
+        return /^[\p{L}\p{N} ._-]{2,16}$/u.test(propre) ? propre : null;
+      }
+
+      function progressionDefinirPseudo(nom) {
+        const pseudo = progressionPseudoValide(nom);
+        if (!pseudo) return null;
+        const profil = progressionCharger();
+        profil.pseudo = pseudo;
+        progressionEnregistrer(profil);
+        return pseudo;
       }
 
       function progressionEnregistrer(profil) {
@@ -1087,6 +1107,8 @@
           return {
             ...progressionNiveauDepuisXp(profil.xp),
             titre: progressionObjet("titre", profil.equipement.titre)?.nom || null,
+            pseudo: profil.pseudo,
+            heros: progressionObjet("heros", profil.equipement.heros)?.image || null,
             nouveautes: progressionNouveautes(profil),
             saison: progressionVueSaison(profil),
             quetes: progressionVueQuetes(profil),
@@ -1094,7 +1116,8 @@
               dispo: progressionOffrandeDispo(profil),
               prochaine: profil.offrande.prochaine,
               vent: profil.offrande.vent,
-              cases: PROGRESSION_OFFRANDES.map(o => o.texte)
+              cases: PROGRESSION_OFFRANDES.map(o => o.texte),
+              details: PROGRESSION_OFFRANDES.map(o => ({ xp: o.xp || 0, vent: o.vent || 0 }))
             }
           };
         },
@@ -1102,6 +1125,8 @@
         equiper: progressionEquiper,
         saisons: PROGRESSION_SAISONS,
         marquerVus: progressionMarquerVus,
+        definirPseudo: progressionDefinirPseudo,
+        pseudoValide: progressionPseudoValide,
         reclamerOffrande: progressionReclamerOffrande,
         changerQuete: progressionChangerQuete,
         avancerQuetes: (profil, evenement) => progressionAvancerQuetes(profil, evenement),
