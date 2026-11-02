@@ -258,3 +258,40 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DiscardHud.ov2-pile-hit {
   .ov2-discard-viewer,
   .ov2-discard-type-card { transition: none !important; }
 }
+/* Cartes du marché (mode Rotation) : une carte de plus par sorte présente.
+   Au-delà de 4 cartes, le panneau passe sur deux rangées. */
+.ov2-discard-strip.has-speciales {
+  flex-wrap: wrap;
+  max-width: min(320px, calc(100vw - 16px));
+  row-gap: 8px;
+}
+.ov2-discard-speciale.is-forte {
+  border-width: 1.5px;
+  box-shadow: 0 9px 20px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,230,166,.25), 0 0 14px rgba(244,210,142,.35);
+}
+.ov2-discard-speciale.type-boue { color: #b08a5a; }
+.ov2-discard-speciale .ov2-discard-type-icon em {
+  position: absolute;
+  right: -14px;
+  bottom: -4px;
+  font: 800 10px/1 system-ui, sans-serif;
+  font-style: normal;
+  padding: 2px 3px;
+  border-radius: 5px;
+  background: #f4d28e;
+  color: #2a1a07;
+}
+.ov2-discard-viewer-open .ov2-discard-speciale { transition-delay: 90ms; }
+.ov2-discard-speciale .ov2-discard-badge {
+  position: absolute;
+  z-index: 3;
+  right: 6px;
+  top: 22px;
+  font: 800 10px/1 system-ui, sans-serif;
+  font-style: normal;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: #f4d28e;
+  color: #2a1a07;
+}
+.ov2-discard-speciale.discard-v12-card .ov2-discard-badge { left: 6px; right: auto; top: 6px; }

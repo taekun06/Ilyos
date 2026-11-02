@@ -494,6 +494,14 @@
         return resultat;
       };
 
+      /* Noms des cartes du marché pour les panneaux Pioche / Défausse
+         (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
+      window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
+        ...Object.entries(PAQUET_CARTES).filter(([, def]) => def.valeur > 1)
+          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet }]),
+        ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
+      ]);
+
       window.ILYOS_ROTATION_PAQUET = {
         etat: () => (state?.rotation?.marche ? JSON.parse(JSON.stringify(state.rotation.marche)) : null),
         acheter: (index, exiler) => paquetAcheter(index, exiler),
