@@ -369,7 +369,7 @@
           essaiDalleGravee: dungeon("floor_tile_small_decorated")
         });
       }
-      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon", "bareMountainA", "bareMountainB", "bareMountainC"]
+      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon"]
         : ILYOS_ILES_POINTES
         ? ["essaiSocle", "essaiDalle", "essaiDalleHerbeA", "essaiDalleHerbeB", "essaiDalleGravee", "bareMountainA", "bareMountainB", "bareMountainC"]
         : ILYOS_ILES_ESSAI === "roc" ? ["bareMountainA", "bareMountainB", "bareMountainC"] : [];
@@ -10402,6 +10402,7 @@
           const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           // Option pierre : pas de couche de roche sous les dalles, la pointe
           // s'accroche directement sous les socles.
+          if (ILYOS_ILES_ESSAI === "gazon") { addKayKitEssaiRocheUnique(group, component, contour); return; }
           if (ILYOS_ILES_POINTES) { addKayKitEssaiPointesSousCases(group, component); return; }
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
@@ -10463,6 +10464,82 @@
             .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / 2.2, 0., 1.);\ndiffuseColor.rgb *= mix(.85, .07, pow(essaiT, .7)) * vec3(.93, .91, 1.04);");
         };
         material.customProgramCacheKey = () => "essai-terre";
+      }
+      // Option gazon : UNE roche sculptée par île. Le premier anneau suit
+      // exactement le contour de l'herbe (en léger retrait pour que l'herbe
+      // déborde), puis les anneaux se resserrent vers un centre décalé, avec un
+      // relief irrégulier, jusqu'à une pointe unique. Facettes plates, comme
+      // les modèles KayKit ; aucune pièce par case, donc aucune couture.
+      let kaykitEssaiRocheMateriau = null;
+      function kaykitEssaiRocheGeometrie(contour, graine, profondeur) {
+        // Contour subdivisé : assez de sommets pour un relief irrégulier.
+        const points = [];
+        contour.forEach((a, i) => {
+          const b = contour[(i + 1) % contour.length];
+          const pas = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / .23));
+          for (let k = 0; k < pas; k++) points.push([a[0] + (b[0] - a[0]) * k / pas, a[1] + (b[1] - a[1]) * k / pas]);
+        });
+        const n = points.length;
+        let cx = 0, cz = 0;
+        points.forEach(([x, z]) => { cx += x; cz += z; });
+        cx /= n; cz /= n;
+        const h = (...k) => kaykitHash("essai-roche", graine, ...k);
+        const tipX = cx + (h("tx") - .5) * .3, tipZ = cz + (h("tz") - .5) * .3;
+        // [profondeur relative, échelle vers le centre, amplitude du relief]
+        const anneaux = [[0, .965, 0], [.08, .93, .07], [.2, .82, .16], [.37, .65, .24], [.56, .45, .28], [.76, .25, .26], [.91, .1, .2]];
+        // Bosses de grande taille (deux ondes de phase aléatoire autour de l'île)
+        // pour une silhouette de rocher, pas d'entonnoir régulier.
+        const phase1 = h("p1") * 6.283, phase2 = h("p2") * 6.283;
+        const bosse = (x, z, a) => {
+          const ang = Math.atan2(z - cz, x - cx);
+          return Math.sin(ang * 3 + phase1 + a * .7) * .5 + Math.sin(ang * 5 + phase2 - a * .4) * .35;
+        };
+        const positions = [];
+        anneaux.forEach(([t, echelle, relief], a) => {
+          // Le centre descend vers la pointe décalée.
+          const ox = cx + (tipX - cx) * t, oz = cz + (tipZ - cz) * t;
+          points.forEach(([x, z], i) => {
+            const e = echelle * (1 + ((h(a, i) - .5) * 1.2 + bosse(x, z, a)) * relief);
+            const y = -t * profondeur + (a ? (h("y", a, i) - .5) * .3 * profondeur * relief : 0);
+            positions.push(ox + (x - cx) * e, y, oz + (z - cz) * e);
+          });
+        });
+        positions.push(tipX, -profondeur, tipZ);
+        const pointe = anneaux.length * n;
+        const index = [];
+        for (let a = 0; a < anneaux.length - 1; a++) {
+          for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n, h0 = a * n, h1 = (a + 1) * n;
+            index.push(h0 + i, h1 + i, h0 + j, h0 + j, h1 + i, h1 + j);
+          }
+        }
+        const dernier = (anneaux.length - 1) * n;
+        for (let i = 0; i < n; i++) index.push(dernier + i, pointe, dernier + (i + 1) % n);
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        g.setIndex(index);
+        const plate = g.toNonIndexed();
+        plate.computeVertexNormals();
+        return plate;
+      }
+      function addKayKitEssaiRocheUnique(group, component, contour) {
+        if (contour.length < 3) return;
+        const hautY = KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE + .02;
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        contour.forEach(([x, z]) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); });
+        const graine = component.map(([r, c]) => `${r}.${c}`).sort().join("|");
+        const profondeur = 1.3 + Math.min(component.length, 8) * .2 + Math.max(maxX - minX, maxZ - minZ) * .3;
+        const geometrie = kaykitGeometry(`essai-roche-v2:${graine}`, () => kaykitEssaiRocheGeometrie(contour, graine, profondeur));
+        if (!kaykitEssaiRocheMateriau) {
+          kaykitEssaiRocheMateriau = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x7d7983).convertSRGBToLinear(), roughness: .95, metalness: 0, side: THREE.DoubleSide });
+          kaykitEssaiTerreDegrade(kaykitEssaiRocheMateriau, hautY);
+        }
+        const roche = new THREE.Mesh(geometrie, kaykitEssaiRocheMateriau);
+        roche.position.y = hautY;
+        roche.castShadow = false;
+        roche.receiveShadow = true;
+        roche.raycast = () => {};
+        group.add(roche);
       }
       function addKayKitEssaiPointesSousCases(group, component) {
         const gazon = ILYOS_ILES_ESSAI === "gazon";
