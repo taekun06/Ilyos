@@ -1,22 +1,3 @@
-/* ILYOS — ajustements finaux cartes V12 */
-.card-cycle-v10-card.showcase .card-cycle-v7-icon {
-  width: 100% !important;
-  flex: 0 0 auto !important;
-}
-/* 11 px, pas 12,5 : mesuré dans le navigateur, « DÉPLACER » occupait 69,7 px
-   alors qu'une carte de 86 px n'offre que 66 px entre ses marges — le mot
-   débordait du cadre gravé des deux côtés. `max-width` verrouille le cas des
-   futurs libellés plus longs, et `nowrap` (couche V7) reste souhaitable : un
-   verbe d'action coupé en deux lignes serait pire. */
-.card-cycle-v10-card.showcase > b {
-  font-size: 11px !important;
-  flex: 0 0 auto !important;
-  max-width: 100% !important;
-}
-.card-cycle-v10-card.showcase .card-cycle-v7-rune {
-  flex: 0 0 auto !important;
-}
-@media (max-width: 980px), (max-height: 720px) {
-  .card-cycle-v10-card.showcase .card-cycle-v7-icon { width: 100% !important; }
-  .card-cycle-v10-card.showcase > b { font-size: 11px !important; }
-}
+/* ILYOS — ajustements des cartes V12 : sans objet depuis les cartes
+   illustrées (css/card-art-v12.css), dont le texte est dans l'image. Fichier
+   gardé vide car js/bootstrap-cache.js le charge encore. */
