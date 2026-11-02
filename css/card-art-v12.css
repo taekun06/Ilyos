@@ -13,7 +13,7 @@
    (machines faibles). */
 
 body .card-cycle-v7-card.card-cycle-v10-card {
-  --carte-face: url("../assets/cartes/deplacer-2.webp");
+  --carte-face: url("../assets/cartes/kaykit/deplacer-face.webp");
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -21,16 +21,17 @@ body .card-cycle-v7-card.card-cycle-v10-card {
   background: var(--carte-face) center / contain no-repeat !important;
   box-shadow: none !important;
 }
-body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/pousser-2.webp"); }
-body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/magie.webp"); }
+body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/kaykit/pousser-gazon.webp"); }
+body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/kaykit/magie-gazon.webp"); }
 
-/* Essai `?cartes=kaykit` : mêmes cadres, illustrations KayKit de la maquette A. */
-html[data-cartes="kaykit"] body .card-cycle-v7-card.card-cycle-v10-card { --carte-face: url("../assets/cartes/kaykit/deplacer-face.webp"); }
-html[data-cartes="kaykit"] body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/kaykit/pousser-gazon.webp"); }
-html[data-cartes="kaykit"] body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/kaykit/magie-gazon.webp"); }
-html[data-cartes="kaykit"] .cc-pile i { background-image: url("../assets/cartes/kaykit/deplacer-face.webp"); }
-html[data-cartes="kaykit"] .cc-pile.type-push i { background-image: url("../assets/cartes/kaykit/pousser-gazon.webp"); }
-html[data-cartes="kaykit"] .cc-pile.type-magic i { background-image: url("../assets/cartes/kaykit/magie-gazon.webp"); }
+/* Illustrations KayKit par défaut (choix de Taekun, 2026-11-02). `?cartes=planche`
+   remet les illustrations de sa planche d'origine, dans les mêmes cadres. */
+html[data-cartes="planche"] body .card-cycle-v7-card.card-cycle-v10-card { --carte-face: url("../assets/cartes/deplacer-2.webp"); }
+html[data-cartes="planche"] body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/pousser-2.webp"); }
+html[data-cartes="planche"] body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/magie.webp"); }
+html[data-cartes="planche"] .cc-pile i { background-image: url("../assets/cartes/deplacer-2.webp"); }
+html[data-cartes="planche"] .cc-pile.type-push i { background-image: url("../assets/cartes/pousser-2.webp"); }
+html[data-cartes="planche"] .cc-pile.type-magic i { background-image: url("../assets/cartes/magie.webp"); }
 
 body .card-cycle-v7-card.card-cycle-v10-card::before,
 body .card-cycle-v7-card.card-cycle-v10-card::after {

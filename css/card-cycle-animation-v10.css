@@ -319,13 +319,13 @@ body.cc-piles-actives #ilyosHudOrganicV2 .ov2-action { isolation: isolate; }
   width: 36px;
   height: 58px;
   /* Même illustration que la carte en grand (css/card-art-v12.css). */
-  background: url("../assets/cartes/deplacer-2.webp") center / contain no-repeat;
+  background: url("../assets/cartes/kaykit/deplacer-face.webp") center / contain no-repeat;
   transform-origin: 50% 120%;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .5));
   animation: ccPileIn .32s ease-out both;
 }
-.cc-pile.type-push i { background-image: url("../assets/cartes/pousser-2.webp"); }
-.cc-pile.type-magic i { background-image: url("../assets/cartes/magie.webp"); }
+.cc-pile.type-push i { background-image: url("../assets/cartes/kaykit/pousser-gazon.webp"); }
+.cc-pile.type-magic i { background-image: url("../assets/cartes/kaykit/magie-gazon.webp"); }
 .cc-pile i:nth-child(-n+3) { display: block; }
 .cc-pile i:nth-child(1) { --cc-r: -16deg; }
 .cc-pile i:nth-child(2) { --cc-r: 16deg; }
