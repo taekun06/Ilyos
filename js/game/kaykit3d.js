@@ -10468,6 +10468,8 @@
         calcaire: { herbes: [0x84b85c, 0x6aa466, 0x9cbc6c, 0x5c9a6e, 0x8eac54, 0x74b080], haut: 0xb4b2ae, bas: 0x5e6478, rebond: 0x6a74a0, soleil: .6, contact: .3 }
       };
       const KAYKIT_ESSAI_PALETTE = KAYKIT_ESSAI_ROCHES[ILYOS_ESSAI_ROCHE] || null;
+      // Comparatif : &fondu=0 garde les pointes entières, sans fondu dans le ciel.
+      const ILYOS_ESSAI_FONDU = (() => { try { return !/[?&]fondu=0(&|$)/.test(location.search); } catch (_) { return true; } })();
       // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
       const KAYKIT_ESSAI_TERRE = KAYKIT_ESSAI_PALETTE
         ? new THREE.Color(KAYKIT_ESSAI_PALETTE.haut).multiplyScalar(KAYKIT_ESSAI_PALETTE.contact).getHex()
@@ -10504,14 +10506,14 @@
           } else {
             fond += "diffuseColor.rgb *= mix(.08, .8, pow(essaiT, 1.5)) * vec3(.93, .91, 1.04);\n";
           }
-          fond += "// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.2, 1., essaiT);";
+          if (ILYOS_ESSAI_FONDU) fond += "// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.2, 1., essaiT);";
           shader.fragmentShader = shader.fragmentShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nvarying vec3 vEssaiN;\nuniform float essaiHautY;\nuniform float essaiProfondeur;" + (pal ? "\nuniform vec3 essaiHaut;\nuniform vec3 essaiBas;\nuniform vec3 essaiRebond;\nuniform float essaiSoleil;\nuniform float essaiContact;" : ""))
             .replace("#include <color_fragment>", "#include <color_fragment>\n" + fond);
         };
-        material.transparent = true;
+        material.transparent = ILYOS_ESSAI_FONDU;
         material.depthWrite = true;
-        material.customProgramCacheKey = () => "essai-terre-" + (ILYOS_ESSAI_ROCHE || "base");
+        material.customProgramCacheKey = () => "essai-terre-" + (ILYOS_ESSAI_ROCHE || "base") + (ILYOS_ESSAI_FONDU ? "" : "-net");
       }
       // Option gazon : UNE roche sculptée par île. Le premier anneau suit
       // exactement le contour de l'herbe (en léger retrait pour que l'herbe
