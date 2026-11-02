@@ -54,3 +54,35 @@
   .rt-marche-affiner{grid-column:2;grid-row:1;margin:0 0 5px;padding:0;width:auto;font-size:10px}
   .rt-marche-pied{display:none}
 }
+
+/* Choix de départ : fenêtre posée sur le plateau, qui bloque les clics tant
+   que les cartes ne sont pas toutes prises. */
+#gameScreen>.rt-choix,.rt-choix{position:absolute!important;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:radial-gradient(ellipse at 50% 45%,rgba(4,10,18,.35),rgba(4,10,18,.72))}
+.rt-choix[hidden]{display:none}
+.rt-choix-boite{position:relative;width:min(560px,100%);padding:16px 16px 14px;border-radius:18px;color:#f3e6c6;font-family:var(--font-ilyos-action,Georgia),Georgia,serif;
+  background:linear-gradient(180deg,rgba(12,26,40,.97),rgba(5,12,20,.97));border:1.5px solid rgba(225,176,71,.8);
+  box-shadow:inset 0 0 0 1px rgba(255,230,166,.14),0 14px 40px rgba(0,0,0,.55)}
+.rt-choix-boite::before{content:'';position:absolute;left:50%;top:-7px;width:12px;height:12px;transform:translateX(-50%) rotate(45deg);background:#f4d28e;box-shadow:0 0 10px rgba(244,210,142,.6)}
+.rt-choix-boite .rt-marche-tete span{font-size:18px}
+.rt-choix-boite .rt-marche-tete small{font-size:11px}
+.rt-choix-trait{margin:2px 0 12px;text-align:center;font-size:14px;color:var(--pc,#f4d28e);letter-spacing:.04em}
+.rt-choix-cartes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rt-ccarte{grid-template-columns:1fr;grid-template-rows:auto auto auto;justify-items:center;text-align:center;row-gap:5px;padding:12px 6px 10px}
+.rt-ccarte .rt-mcarte-ico{grid-row:auto;width:44px;height:44px}
+.rt-ccarte .rt-mcarte-ico svg{width:26px;height:26px}
+.rt-ccarte b{font-size:15px}
+.rt-ccarte:disabled{opacity:.8}
+.rt-choix-pris{list-style:none;margin:14px 0 0;padding:10px 0 0;border-top:1px solid rgba(225,176,71,.25);display:flex;flex-direction:column;gap:6px;font-family:'Nunito Sans',sans-serif;font-size:12px}
+.rt-choix-pris li{display:flex;align-items:center;gap:6px}
+.rt-choix-pris li>span{min-width:84px;color:var(--pc);font-weight:700}
+.rt-choix-pris b{font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid rgba(225,176,71,.6);background:rgba(244,210,142,.12);color:#f4d28e}
+.rt-choix-pris i{width:46px;height:18px;border-radius:999px;border:1px dashed rgba(217,204,176,.35)}
+@media (max-width:760px) and (orientation:portrait){
+  .rt-choix-cartes{grid-template-columns:repeat(2,1fr)}
+  .rt-ccarte i{display:block}
+  .rt-choix-boite .rt-marche-tete{display:block;text-align:center}
+  .rt-choix-boite .rt-marche-tete small{display:block;white-space:normal}
+  .rt-choix-boite .rt-marche-tete span{font-size:16px}
+}
+/* Pendant le choix, la pioche de début de tour ne vient pas couvrir la fenêtre. */
+body.rt-choix-actif .card-cycle-v7-card.showcase{visibility:hidden}

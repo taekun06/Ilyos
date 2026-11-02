@@ -205,17 +205,118 @@
         return { type: "ACHAT", index: meilleur, exiler: paquetCompte(player, "MOVE") > 4 };
       }
 
+      /* ---------- Choix de départ (paquet construit) -------------------- */
+      /* Avant le premier coup, on révèle 2 cartes de la pile par joueur. Le
+         dernier joueur du tour choisit le premier, puis l'ordre remonte, et
+         ainsi de suite jusqu'à 2 cartes chacun : choisir en premier compense
+         le fait de jouer en dernier. Chaque carte prise remplace un Déplacer
+         du paquet. Personne ne joue tant que le choix n'est pas fini. */
+      const PAQUET_CHOIX_PAR_JOUEUR = 2;
+
+      function choixEnCours(source = state) {
+        const choix = source?.rotation?.choix;
+        return !!choix && !choix.fini;
+      }
+
+      function choixJoueurAuTrait() {
+        const choix = state?.rotation?.choix;
+        return choixEnCours() ? state.players[choix.ordre[choix.pris.length]] : null;
+      }
+
+      function choixInstaller() {
+        if (!paquetActif() || state.rotation.choix || state.turn !== 1) return;
+        const marche = state.rotation.marche;
+        const n = state.players.length;
+        const tour = Array.from({ length: n }, (_, i) => state.players[(state.currentPlayer + i) % n].id);
+        const remontee = tour.slice().reverse();
+        const ordre = [];
+        for (let k = 0; k < PAQUET_CHOIX_PAR_JOUEUR; k++) ordre.push(...remontee);
+        const cartes = marche.pile.splice(0, Math.min(ordre.length, marche.pile.length));
+        state.rotation.choix = { cartes, ordre: ordre.slice(0, cartes.length), pris: [], fini: !cartes.length };
+      }
+
+      /** Le joueur au trait du choix de départ prend la carte `index`. */
+      function choixPrendre(index) {
+        const choix = state?.rotation?.choix;
+        const player = choixJoueurAuTrait();
+        const action = choix?.cartes?.[index];
+        if (!player || !action) return false;
+        const carte = { id: `P${player.id}-C${choix.pris.length}-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+        if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+        // Remplace un Déplacer : d'abord dans la pioche, sinon dans la main.
+        for (const zone of ["deck", "discard", "hand"]) {
+          const i = (player[zone] || []).findIndex(c => c.action === "MOVE");
+          if (i >= 0) { player[zone].splice(i, 1); break; }
+        }
+        player.deck = Array.isArray(player.deck) ? player.deck : [];
+        player.deck.splice(Math.floor(gameRandom() * (player.deck.length + 1)), 0, carte);
+        choix.cartes.splice(index, 1);
+        choix.pris.push({ joueur: player.id, action });
+        if (choix.pris.length >= choix.ordre.length) choix.fini = true;
+        if (!ilyosSimulationActive) {
+          playSfx("crownTake");
+          showToast(`${player.name} prend ${PAQUET_CARTES[action].nom}.`);
+          renderAll();
+          choixProgrammerIA();
+        }
+        return true;
+      }
+
+      /* L'IA prend la carte la plus forte, en préférant le type qui manque à
+         son paquet : même lecture que pour l'achat au marché. */
+      function plannerChoisirDepart(playerId) {
+        const choix = state?.rotation?.choix;
+        const player = state?.players?.[playerId];
+        if (!choixEnCours() || !player || choixJoueurAuTrait()?.id !== playerId) return null;
+        const valeurDuType = type => Object.keys(PAQUET_CARTES)
+          .filter(k => PAQUET_CARTES[k].type === type)
+          .reduce((total, k) => total + paquetCompte(player, k) * PAQUET_CARTES[k].valeur, 0);
+        let meilleur = -1, note = -Infinity;
+        choix.cartes.forEach((action, i) => {
+          const n = PAQUET_PRIORITE[action] + (6 - Math.min(6, valeurDuType(PAQUET_CARTES[action].type))) * .4;
+          if (n > note) { note = n; meilleur = i; }
+        });
+        return meilleur < 0 ? null : { type: "CHOIX_DEPART", index: meilleur };
+      }
+
+      /* Rappelée à chaque rendu : un joueur qui devient ordinateur en cours
+         de route (partie automatique) choisit aussi. */
+      let choixMinuteur = null;
+      let choixMinuteurCle = null;
+      function choixProgrammerIA() {
+        const joueur = choixJoueurAuTrait();
+        const cle = joueur?.isAI ? `${joueur.id}:${state.rotation.choix.pris.length}` : null;
+        if (cle === choixMinuteurCle) return;
+        clearTimeout(choixMinuteur);
+        choixMinuteurCle = cle;
+        if (!cle) return;
+        choixMinuteur = setTimeout(() => {
+          choixMinuteurCle = null;
+          const decision = choixJoueurAuTrait()?.id === joueur.id ? plannerChoisirDepart(joueur.id) : null;
+          if (decision) choixPrendre(decision.index);
+        }, 900);
+      }
+
+      /* L'ordinateur ne commence son tour qu'une fois le choix terminé. */
+      const paquetRunAIBase = runAITurn;
+      runAITurn = async function runAITurnPaquet(token) {
+        while (state && choixEnCours()) await sleep(250);
+        return paquetRunAIBase(token);
+      };
+
       /* ---------- Tours ------------------------------------------------- */
       const paquetBeginTurnBase = beginTurn;
       beginTurn = function beginTurnPaquet() {
         paquetBeginTurnBase();
         if (!paquetActif()) return;
         paquetInstaller();
+        choixInstaller();
         if (state.turn === 1 && !state.rotation.marche.annonce && !ilyosSimulationActive) {
           state.rotation.marche.annonce = true;
           setTimeout(() => showToast("Marché ouvert : une carte par tour pour 2 cartes de ta main."), 3400);
         }
         paquetRendreMarche();
+        if (!ilyosSimulationActive) { paquetRendreChoix(); choixProgrammerIA(); }
       };
 
       const paquetEndTurnBase = endTurn;
@@ -296,6 +397,60 @@
           <div class="rt-marche-pied">Paquet ${paquetTaille(joueur)} · Pile ${marche.pile.length}</div>`;
       }
 
+      /* Fenêtre du choix de départ : posée sur le plateau, elle bloque les
+         clics tant que le choix n'est pas fini. */
+      let choixPanneau = null;
+      let choixEmpreinte = "";
+      function paquetRendreChoix() {
+        if (typeof document === "undefined" || ilyosSimulationActive) return;
+        const ecran = els?.gameScreen;
+        const ouvert = !!ecran && paquetActif() && choixEnCours();
+        document.body.classList.toggle("rt-choix-actif", ouvert);
+        if (!ouvert) {
+          if (choixPanneau) choixPanneau.hidden = true;
+          choixEmpreinte = "";
+          return;
+        }
+        if (!choixPanneau) {
+          choixPanneau = document.createElement("div");
+          choixPanneau.className = "rt-choix";
+          choixPanneau.setAttribute("role", "dialog");
+          choixPanneau.setAttribute("aria-label", "Choix de départ");
+          choixPanneau.addEventListener("click", evenement => {
+            evenement.stopPropagation();
+            const bouton = evenement.target.closest("[data-choix]");
+            if (bouton && !choixJoueurAuTrait()?.isAI) choixPrendre(Number(bouton.dataset.choix));
+          });
+          ["pointerdown", "mousedown", "touchstart", "wheel"].forEach(t => choixPanneau.addEventListener(t, e => e.stopPropagation(), { passive: true }));
+          ecran.appendChild(choixPanneau);
+        }
+        const choix = state.rotation.choix;
+        const joueur = choixJoueurAuTrait();
+        const empreinte = JSON.stringify([choix.cartes, choix.pris, joueur?.id]);
+        choixPanneau.hidden = false;
+        if (empreinte === choixEmpreinte) return;
+        choixEmpreinte = empreinte;
+        const ia = !!joueur?.isAI;
+        const cartes = choix.cartes.map((action, i) => {
+          const def = PAQUET_CARTES[action];
+          const forte = def.valeur > 1;
+          return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}" data-choix="${i}" ${ia ? "disabled" : ""}
+              title="Prendre ${def.nom} (remplace un Déplacer)">
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <b>${def.nom}</b><i>${def.effet}</i></button>`;
+        }).join("");
+        const pris = state.players.map(p => {
+          const siens = choix.pris.filter(x => x.joueur === p.id).map(x => PAQUET_CARTES[x.action].nom);
+          const vides = Math.max(0, choix.ordre.filter(id => id === p.id).length - siens.length);
+          return `<li style="--pc:${p.color}"><span>${defaitesEchapper(p.name)}</span>${siens.map(n => `<b>${n}</b>`).join("")}${"<i></i>".repeat(vides)}</li>`;
+        }).join("");
+        choixPanneau.innerHTML = `<div class="rt-choix-boite" style="--pc:${joueur?.color || "#f4d28e"}">
+          <div class="rt-marche-tete"><span>CHOIX DE DÉPART</span><small>Chaque carte prise remplace un Déplacer de ton paquet</small></div>
+          <p class="rt-choix-trait">${ia ? `${defaitesEchapper(joueur.name)} choisit…` : `À ${defaitesEchapper(joueur?.name || "toi")} de choisir`}</p>
+          <div class="rt-choix-cartes">${cartes}</div>
+          <ul class="rt-choix-pris">${pris}</ul></div>`;
+      }
+
       /* Marque les boutons du dock quand une carte forte est en main. */
       function paquetMarquerDock() {
         if (typeof document === "undefined") return;
@@ -315,6 +470,8 @@
         if (!ilyosSimulationActive) {
           try {
             paquetRendreMarche();
+            paquetRendreChoix();
+            if (choixEnCours()) choixProgrammerIA();
             paquetMarquerDock();
           } catch (erreur) {
             console.warn("[ILYOS] marché", erreur);
@@ -327,6 +484,8 @@
         etat: () => (state?.rotation?.marche ? JSON.parse(JSON.stringify(state.rotation.marche)) : null),
         acheter: (index, exiler) => paquetAcheter(index, exiler),
         refus: () => paquetRefusAchat(),
+        choix: () => (state?.rotation?.choix ? JSON.parse(JSON.stringify(state.rotation.choix)) : null),
+        prendre: index => choixPrendre(index),
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
