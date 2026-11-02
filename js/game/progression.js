@@ -133,9 +133,21 @@
           { id: "phenix", nom: "Phénix d'Ilyos", saison: { id: "s1", palier: 27 } }
         ] },
         /* Îles du plateau, lues par la scène 3D (kaykit3d.js). */
+        /* L'ancien id "herbe" (cubes) n'existe plus : un profil qui l'avait
+           équipé par défaut passe aux îles flottantes, le nouveau rendu de base. */
         { cle: "plateau", nom: "Îles", objets: [
-          { id: "herbe", nom: "Îles d'herbe", valeur: "kaykit", image: "assets/collection/iles-herbe.webp", niveau: 1 },
+          { id: "flottantes", nom: "Îles flottantes", valeur: "gazon", image: "assets/collection/iles-flottantes.webp", niveau: 1 },
+          { id: "kaykit", nom: "Îles KayKit", valeur: "kaykit", image: "assets/collection/iles-herbe.webp", niveau: 1 },
           { id: "archipel", nom: "Archipel de pierre", valeur: "archipel", image: "assets/collection/iles-archipel.webp", saison: { id: "s1", palier: 29 } }
+        ] },
+        /* Roche sous l'herbe des îles flottantes, avec sa gamme d'herbes (kaykit3d.js). */
+        { cle: "roche", nom: "Roche des îles", objets: [
+          { id: "ombre", nom: "Roche d'ombre", valeur: "ombre", image: "assets/collection/roche-ombre.webp", niveau: 1 },
+          { id: "ardoise", nom: "Ardoise", valeur: "ardoise", image: "assets/collection/roche-ardoise.webp", saison: { id: "s1", palier: 6 } },
+          { id: "mousse", nom: "Mousse", valeur: "mousse", image: "assets/collection/roche-mousse.webp", saison: { id: "s1", palier: 12 } },
+          { id: "gres", nom: "Grès", valeur: "gres", image: "assets/collection/roche-gres.webp", saison: { id: "s1", palier: 16 } },
+          { id: "calcaire", nom: "Calcaire", valeur: "calcaire", image: "assets/collection/roche-calcaire.webp", saison: { id: "s1", palier: 19 } },
+          { id: "basalte", nom: "Basalte nuit", valeur: "basalte", image: "assets/collection/roche-basalte.webp", saison: { id: "s1", palier: 26 } }
         ] },
         /* Effet de la fenêtre de victoire, quand le joueur de l'appareil gagne. */
         { cle: "effet", nom: "Effet de victoire", objets: [
@@ -158,12 +170,12 @@
           id: "s1", numero: 1, nom: "L'Éveil des îles", debut: "2026-10-01", fin: "2026-11-26", xpParPalier: 500,
           paliers: [
             { cosmetique: "titre:eveille" }, { vent: 1 }, { cosmetique: "couleur:rose" }, { xp: 150 },
-            { cosmetique: "ciel:crepuscule" }, { vent: 1 }, { xp: 150 }, { cosmetique: "titre:brise" },
-            { vent: 1 }, { cosmetique: "heros:squelette" }, { xp: 200 }, { vent: 1 },
-            { cosmetique: "couleur:saphir" }, { xp: 200 }, { cosmetique: "ciel:aurore" }, { vent: 1 },
-            { xp: 200 }, { cosmetique: "titre:heraut" }, { vent: 1 }, { cosmetique: "heros:squelette-rodeur" },
+            { cosmetique: "ciel:crepuscule" }, { cosmetique: "roche:ardoise" }, { xp: 150 }, { cosmetique: "titre:brise" },
+            { vent: 1 }, { cosmetique: "heros:squelette" }, { xp: 200 }, { cosmetique: "roche:mousse" },
+            { cosmetique: "couleur:saphir" }, { xp: 200 }, { cosmetique: "ciel:aurore" }, { cosmetique: "roche:gres" },
+            { xp: 200 }, { cosmetique: "titre:heraut" }, { cosmetique: "roche:calcaire" }, { cosmetique: "heros:squelette-rodeur" },
             { xp: 250 }, { vent: 2 }, { cosmetique: "couleur:rubis" }, { xp: 250 },
-            { cosmetique: "ciel:or-ancien" }, { vent: 2 }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
+            { cosmetique: "ciel:or-ancien" }, { cosmetique: "roche:basalte" }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
             { cosmetique: "plateau:archipel" }, { cosmetique: "effet:plumes" }
           ],
           apres: { vent: 1 }
@@ -632,6 +644,7 @@
           try { if (kaykit3D) window.ILYOS_SKY?.variante?.(objet.valeur); } catch (_) { }
         }
         if (cleCategorie === "plateau") kaykitChoisirIles(objet.valeur);
+        if (cleCategorie === "roche") kaykitChoisirRoche(objet.valeur);
         return true;
       }
 
@@ -648,6 +661,11 @@
       /* Îles du profil, lues par la scène 3D à son ouverture (kaykit3d.js). */
       function progressionPlateauEquipe() {
         try { return progressionValeurEquipee(progressionCharger(), "plateau"); } catch (_) { return null; }
+      }
+
+      /* Roche des îles du profil, lue par la scène 3D à son ouverture (kaykit3d.js). */
+      function progressionRocheEquipee() {
+        try { return progressionValeurEquipee(progressionCharger(), "roche"); } catch (_) { return null; }
       }
 
       /* Apparence équipée sur cet appareil, en identifiants du catalogue :
@@ -1191,7 +1209,7 @@
 
       function progressionHtmlDebloques(objets) {
         if (!objets || !objets.length) return "";
-        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", plateau: "Îles", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
+        const categories = { couleur: "Couleur", heros: "Gardien", ciel: "Ciel", plateau: "Îles", roche: "Roche des îles", titre: "Titre", effet: "Effet de victoire", saison: "Palier de saison" };
         return `<div class="progression-debloques">
           <div class="progression-debloques-tete"><b>Débloqué</b><small>À équiper dans le menu, Progression › Collection</small></div>
           <ul>${objets.map(objet => `<li>${progressionVignette(objet)}<span><small>${categories[objet.categorie] || ""}</small>${objet.nom}</span></li>`).join("")}</ul>
