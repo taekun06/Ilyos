@@ -246,8 +246,8 @@
   }
   /* Le moment de l'offrande : l'îlot du jour monte dans la lumière, une
      seule fois (pas de boucle), puis on revient au panneau. */
-  function momentOffrande(r,etat){
-    const card=modal.querySelector('.menu-modal-card');
+  function momentOffrande(r,etat,conteneur,apres){
+    const card=conteneur||modal.querySelector('.menu-modal-card');
     card.querySelector('.ar-moment')?.remove();
     const d=(etat.offrande.details||[])[r.indice]||{};
     const titre=d.vent?'VENT PORTEUR':`+${d.xp} XP`;
@@ -258,7 +258,7 @@
     el.className='ar-moment';
     el.innerHTML=`<div class="ar-rayons" aria-hidden="true"></div><small class="ar-moment-titre">OFFRANDE · JOUR ${r.indice+1}</small><img class="ar-moment-ilot" src="../assets/progression/ilot-${ILOTS_OFFRANDE[r.indice]}.webp" alt=""><div class="ar-recompense">${d.vent?PP_ICONES.vent:''}<div><b>${titre}</b><span>${sous}</span></div></div>${ouverts}<div class="ar-moment-semaine">${mini}</div><button type="button" class="ar-continuer">CONTINUER</button>`;
     card.appendChild(el);
-    const fermer=()=>el.remove();
+    const fermer=()=>{ el.remove(); apres?.(); };
     el.querySelector('.ar-continuer').addEventListener('click',fermer);
     el.querySelector('.ar-continuer').focus({preventScroll:true});
   }
@@ -415,14 +415,6 @@
     let corps='';
     if(premiere){
       corps=`<form class="ouv-pseudo"><label for="ouvPseudo">Choisis ton pseudo</label><input id="ouvPseudo" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Ton pseudo"><small class="ar-pseudo-erreur" hidden>2 à 16 lettres ou chiffres.</small><button type="submit" class="ar-continuer">COMMENCER</button></form>`;
-    }else{
-      const v=etat.saison;
-      const gagnes=v?v.paliers.filter(p=>p.obtenu&&p.palier>depuis).length:0;
-      const o=etat.offrande;
-      const offr=o.dispo?`<button type="button" class="ouv-offrande"><img src="../assets/progression/ilot-${ILOTS_OFFRANDE[o.prochaine]}.webp" alt=""><span><b>Ton offrande t’attend</b><small>Jour ${o.prochaine+1} sur 7</small></span></button>`:'';
-      corps=`<p class="ouv-salut">Bon retour, <b>${safeText(etat.pseudo)}</b></p>
-        ${v?`<div class="ouv-saison"><div class="ouv-saison-tete"><span class="ar-palier"><small>PALIER</small><b>${v.palier}</b></span><span><small>SAISON ${v.numero}</small><b>${safeText(v.nom)}</b><em>${gagnes?`${gagnes} palier${gagnes>1?'s':''} gagné${gagnes>1?'s':''} depuis ta dernière visite`:`${v.xpDansPalier} / ${v.xpParPalier} XP vers le palier ${v.palier+1}`}</em></span></div>${ouvertureChemin(v,depuis)}</div>`:''}
-        <div class="ouv-actions">${offr}<button type="button" class="ar-continuer ouv-jouer">JOUER</button></div>`;
     }
     el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
     document.body.appendChild(el);
@@ -435,8 +427,33 @@
         fermer();
       });
     }else{
-      el.querySelector('.ouv-jouer').addEventListener('click',fermer);
-      el.querySelector('.ouv-offrande')?.addEventListener('click',()=>{ fermer(); openProgression('progression'); });
+      const zone=el.querySelector('.ouv-corps');
+      const salut=`<p class="ouv-salut">Bon retour, <b>${safeText(etat.pseudo)}</b></p>`;
+      /* Étape 2 : quêtes du jour et chemin de saison, puis ENTRÉE. */
+      const etape2=()=>{
+        const e=progressionApi()?.etat?.()||etat, v=e.saison;
+        const gagnes=v?v.paliers.filter(p=>p.obtenu&&p.palier>depuis).length:0;
+        const quetes=e.quetes.jour.map((q,i)=>queteCarte(q,i,false)).join('');
+        zone.innerHTML=`${salut}
+          ${quetes?`<div class="ouv-bloc"><h3>QUÊTES DU JOUR</h3><ul class="quetes">${quetes}</ul></div>`:''}
+          ${v?`<div class="ouv-saison"><div class="ouv-saison-tete"><span class="ar-palier"><small>PALIER</small><b>${v.palier}</b></span><span><small>SAISON ${v.numero}</small><b>${safeText(v.nom)}</b><em>${gagnes?`${gagnes} palier${gagnes>1?'s':''} gagné${gagnes>1?'s':''} depuis ta dernière visite`:`${v.xpDansPalier} / ${v.xpParPalier} XP vers le palier ${v.palier+1}`}</em></span></div>${ouvertureChemin(v,depuis)}</div>`:''}
+          <button type="button" class="ar-continuer ouv-jouer">ENTRÉE</button>`;
+        zone.classList.remove('ouv-entre'); void zone.offsetWidth; zone.classList.add('ouv-entre');
+        zone.querySelector('.ouv-jouer').addEventListener('click',fermer);
+        zone.querySelector('.ouv-jouer').focus({preventScroll:true});
+      };
+      /* Étape 1 : l'offrande du jour, si elle attend. */
+      if(etat.offrande.dispo){
+        el.classList.add('ouv-avec-offrande');
+        zone.innerHTML=`${salut}<div class="ouv-bloc ouv-offrande-bloc"><h3>OFFRANDE DU JOUR</h3>${offrandeHtml(etat.offrande)}</div>`;
+        zone.querySelector('.offrande-prendre').addEventListener('click',()=>{
+          const r=progressionApi()?.reclamerOffrande?.();
+          const nouvel=progressionApi()?.etat?.();
+          renderProfileBadge();
+          if(r&&nouvel) momentOffrande(r,nouvel,el,()=>{ el.classList.remove('ouv-avec-offrande'); etape2(); });
+          else etape2();
+        });
+      }else etape2();
     }
   }
   (function waitProgression(tries){
