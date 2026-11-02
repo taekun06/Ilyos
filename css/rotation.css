@@ -66,8 +66,11 @@
 .rt-choix-boite .rt-marche-tete span{font-size:18px}
 .rt-choix-boite .rt-marche-tete small{font-size:11px}
 .rt-choix-trait{margin:2px 0 12px;text-align:center;font-size:14px;color:var(--pc,#f4d28e);letter-spacing:.04em}
-.rt-choix-cartes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.rt-ccarte{grid-template-columns:1fr;grid-template-rows:auto auto auto;justify-items:center;text-align:center;row-gap:5px;padding:12px 6px 10px}
+.rt-choix-cartes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rt-ccarte.prise{opacity:1;border-color:var(--pc);background:linear-gradient(160deg,rgba(14,22,32,.92),rgba(6,12,20,.95))}
+.rt-ccarte.prise .rt-mcarte-ico,.rt-ccarte.prise b,.rt-ccarte.prise i{opacity:.38}
+.rt-ccarte u{text-decoration:none;font-family:'Nunito Sans',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--pc);line-height:1}
+.rt-ccarte{grid-template-columns:1fr;grid-template-rows:auto auto auto;justify-items:center;text-align:center;row-gap:4px;padding:10px 6px 8px}
 .rt-ccarte .rt-mcarte-ico{grid-row:auto;width:44px;height:44px}
 .rt-ccarte .rt-mcarte-ico svg{width:26px;height:26px}
 .rt-ccarte b{font-size:15px}
@@ -78,8 +81,12 @@
 .rt-choix-pris b{font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid rgba(225,176,71,.6);background:rgba(244,210,142,.12);color:#f4d28e}
 .rt-choix-pris i{width:46px;height:18px;border-radius:999px;border:1px dashed rgba(217,204,176,.35)}
 @media (max-width:760px) and (orientation:portrait){
-  .rt-choix-cartes{grid-template-columns:repeat(2,1fr)}
-  .rt-ccarte i{display:block}
+  .rt-choix-cartes{grid-template-columns:repeat(3,1fr);gap:6px}
+  .rt-ccarte{padding:8px 3px 7px;grid-template-columns:1fr}
+  .rt-ccarte .rt-mcarte-ico{width:34px;height:34px}.rt-ccarte .rt-mcarte-ico svg{width:20px;height:20px}
+  .rt-ccarte b{font-size:13px}
+  .rt-ccarte i{display:block;font-size:9px}
+  .rt-choix-boite{padding:14px 10px 12px}
   .rt-choix-boite .rt-marche-tete{display:block;text-align:center}
   .rt-choix-boite .rt-marche-tete small{display:block;white-space:normal}
   .rt-choix-boite .rt-marche-tete span{font-size:16px}

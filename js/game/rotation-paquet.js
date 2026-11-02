@@ -34,9 +34,12 @@
         if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
       });
       ACTIONS.BOUE = { name: "Boue", icon: "🟫", desc: "Ne fait rien : affine ton paquet pour t’en débarrasser.", bg: "#5a4a32" };
+      /* 19 cartes : 3 au marché et 9 révélées au choix de départ, dont 3
+         reviennent sous la pile en duel. */
       const PAQUET_PILE_MARCHE = [
-        "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "ARCANE", "ARCANE",
-        "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC"
+        "ELAN", "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "BELIER",
+        "ARCANE", "ARCANE", "ARCANE",
+        "PUSH", "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC", "MAGIC"
       ];
       const PAQUET_PRIX = 2;
       const PAQUET_MINIMUM = 8;
@@ -206,12 +209,14 @@
       }
 
       /* ---------- Choix de départ (paquet construit) -------------------- */
-      /* Avant le premier coup, on révèle 2 cartes de la pile par joueur. Le
-         dernier joueur du tour choisit le premier, puis l'ordre remonte, et
-         ainsi de suite jusqu'à 2 cartes chacun : choisir en premier compense
-         le fait de jouer en dernier. Chaque carte prise remplace un Déplacer
-         du paquet. Personne ne joue tant que le choix n'est pas fini. */
-      const PAQUET_CHOIX_PAR_JOUEUR = 2;
+      /* Avant le premier coup, on révèle 9 cartes de la pile. Le dernier
+         joueur du tour choisit le premier, puis l'ordre remonte, et ainsi de
+         suite jusqu'à 3 cartes chacun : choisir en premier compense le fait
+         de jouer en dernier. Chaque carte prise remplace un Déplacer du
+         paquet ; celles qui restent repartent sous la pile du marché.
+         Personne ne joue tant que le choix n'est pas fini. */
+      const PAQUET_CHOIX_PAR_JOUEUR = 3;
+      const PAQUET_CHOIX_REVELEES = 9;
 
       function choixEnCours(source = state) {
         const choix = source?.rotation?.choix;
@@ -231,7 +236,8 @@
         const remontee = tour.slice().reverse();
         const ordre = [];
         for (let k = 0; k < PAQUET_CHOIX_PAR_JOUEUR; k++) ordre.push(...remontee);
-        const cartes = marche.pile.splice(0, Math.min(ordre.length, marche.pile.length));
+        const revelees = Math.max(PAQUET_CHOIX_REVELEES, ordre.length);
+        const cartes = marche.pile.splice(0, Math.min(revelees, marche.pile.length));
         state.rotation.choix = { cartes, ordre: ordre.slice(0, cartes.length), pris: [], fini: !cartes.length };
       }
 
@@ -240,7 +246,7 @@
         const choix = state?.rotation?.choix;
         const player = choixJoueurAuTrait();
         const action = choix?.cartes?.[index];
-        if (!player || !action) return false;
+        if (!player || !action || choix.pris.some(x => x.index === index)) return false;
         const carte = { id: `P${player.id}-C${choix.pris.length}-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
         if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
         // Remplace un Déplacer : d'abord dans la pioche, sinon dans la main.
@@ -250,9 +256,13 @@
         }
         player.deck = Array.isArray(player.deck) ? player.deck : [];
         player.deck.splice(Math.floor(gameRandom() * (player.deck.length + 1)), 0, carte);
-        choix.cartes.splice(index, 1);
-        choix.pris.push({ joueur: player.id, action });
-        if (choix.pris.length >= choix.ordre.length) choix.fini = true;
+        choix.pris.push({ joueur: player.id, action, index });
+        if (choix.pris.length >= choix.ordre.length) {
+          choix.fini = true;
+          // Les cartes non prises repartent sous la pile du marché.
+          const restes = choix.cartes.filter((_, i) => !choix.pris.some(x => x.index === i));
+          state.rotation.marche.pile.push(...restes);
+        }
         if (!ilyosSimulationActive) {
           playSfx("crownTake");
           showToast(`${player.name} prend ${PAQUET_CARTES[action].nom}.`);
@@ -273,6 +283,7 @@
           .reduce((total, k) => total + paquetCompte(player, k) * PAQUET_CARTES[k].valeur, 0);
         let meilleur = -1, note = -Infinity;
         choix.cartes.forEach((action, i) => {
+          if (choix.pris.some(x => x.index === i)) return;
           const n = PAQUET_PRIORITE[action] + (6 - Math.min(6, valeurDuType(PAQUET_CARTES[action].type))) * .4;
           if (n > note) { note = n; meilleur = i; }
         });
@@ -434,10 +445,13 @@
         const cartes = choix.cartes.map((action, i) => {
           const def = PAQUET_CARTES[action];
           const forte = def.valeur > 1;
-          return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}" data-choix="${i}" ${ia ? "disabled" : ""}
-              title="Prendre ${def.nom} (remplace un Déplacer)">
+          const prise = choix.pris.find(x => x.index === i);
+          const preneur = prise ? state.players[prise.joueur] : null;
+          return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}${prise ? " prise" : ""}" data-choix="${i}"
+              ${ia || prise ? "disabled" : ""} ${preneur ? `style="--pc:${preneur.color}"` : ""}
+              title="${preneur ? `Prise par ${defaitesEchapper(preneur.name)}` : `Prendre ${def.nom} (remplace un Déplacer)`}">
             <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
-            <b>${def.nom}</b><i>${def.effet}</i></button>`;
+            <b>${def.nom}</b><i>${def.effet}</i>${preneur ? `<u>${defaitesEchapper(preneur.name)}</u>` : ""}</button>`;
         }).join("");
         const pris = state.players.map(p => {
           const siens = choix.pris.filter(x => x.joueur === p.id).map(x => PAQUET_CARTES[x.action].nom);
