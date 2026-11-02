@@ -753,7 +753,7 @@
           essaiDalleGravee: dungeon("floor_tile_small_decorated")
         });
       }
-      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon"]
+      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon", "bareMountainA", "bareMountainB", "bareMountainC"]
         : ILYOS_ILES_POINTES
         ? ["essaiSocle", "essaiDalle", "essaiDalleHerbeA", "essaiDalleHerbeB", "essaiDalleGravee", "bareMountainA", "bareMountainB", "bareMountainC"]
         : ILYOS_ILES_ESSAI === "roc" ? ["bareMountainA", "bareMountainB", "bareMountainC"] : [];
@@ -10786,7 +10786,7 @@
           const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           // Option pierre : pas de couche de roche sous les dalles, la pointe
           // s'accroche directement sous les socles.
-          if (ILYOS_ILES_ESSAI === "gazon") { addKayKitEssaiRocheUnique(group, component, contour); return; }
+          if (ILYOS_ILES_ESSAI === "gazon") { addKayKitEssaiRocheUnique(group, component, contour); addKayKitEssaiPointesSousCases(group, component); return; }
           if (ILYOS_ILES_POINTES) { addKayKitEssaiPointesSousCases(group, component); return; }
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
@@ -10855,7 +10855,7 @@
       // relief irrégulier, jusqu'à une pointe unique. Facettes plates, comme
       // les modèles KayKit ; aucune pièce par case, donc aucune couture.
       let kaykitEssaiRocheMateriau = null;
-      function kaykitEssaiRocheGeometrie(contour, graine, profondeur) {
+      function kaykitEssaiRocheGeometrie(contour, graine, profondeur, anneaux) {
         // Contour subdivisé : assez de sommets pour un relief irrégulier.
         const points = [];
         contour.forEach((a, i) => {
@@ -10870,7 +10870,7 @@
         const h = (...k) => kaykitHash("essai-roche", graine, ...k);
         const tipX = cx + (h("tx") - .5) * .3, tipZ = cz + (h("tz") - .5) * .3;
         // [profondeur relative, échelle vers le centre, amplitude du relief]
-        const anneaux = [[0, .965, 0], [.08, .93, .07], [.2, .82, .16], [.37, .65, .24], [.56, .45, .28], [.76, .25, .26], [.91, .1, .2]];
+
         // Bosses de grande taille (deux ondes de phase aléatoire autour de l'île)
         // pour une silhouette de rocher, pas d'entonnoir régulier.
         const phase1 = h("p1") * 6.283, phase2 = h("p2") * 6.283;
@@ -10888,7 +10888,7 @@
             positions.push(ox + (x - cx) * e, y, oz + (z - cz) * e);
           });
         });
-        positions.push(tipX, -profondeur, tipZ);
+        positions.push(anneaux.length > 2 ? tipX : cx, -profondeur, anneaux.length > 2 ? tipZ : cz);
         const pointe = anneaux.length * n;
         const index = [];
         for (let a = 0; a < anneaux.length - 1; a++) {
@@ -10912,10 +10912,12 @@
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
         contour.forEach(([x, z]) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); });
         const graine = component.map(([r, c]) => `${r}.${c}`).sort().join("|");
-        const profondeur = 1.3 + Math.min(component.length, 8) * .2 + Math.max(maxX - minX, maxZ - minZ) * .3;
-        const geometrie = kaykitGeometry(`essai-roche-v2:${graine}`, () => kaykitEssaiRocheGeometrie(contour, graine, profondeur));
+        // Bandeau de roche qui part EXACTEMENT du contour de l'herbe, puis les
+        // pointes KayKit prennent le relais en dessous (addKayKitEssaiPointesSousCases).
+        const profondeur = .42;
+        const geometrie = kaykitGeometry(`essai-bandeau-v1:${graine}`, () => kaykitEssaiRocheGeometrie(contour, graine, profondeur, [[0, .975, 0], [.55, .955, .03], [1, .9, .05]]));
         if (!kaykitEssaiRocheMateriau) {
-          kaykitEssaiRocheMateriau = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x7d7983).convertSRGBToLinear(), roughness: .95, metalness: 0, side: THREE.DoubleSide });
+          kaykitEssaiRocheMateriau = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x4a4b4f).convertSRGBToLinear(), roughness: .95, metalness: 0, side: THREE.DoubleSide });
           kaykitEssaiTerreDegrade(kaykitEssaiRocheMateriau, hautY);
         }
         const roche = new THREE.Mesh(geometrie, kaykitEssaiRocheMateriau);
