@@ -43,7 +43,32 @@ const MIME = {
   ".bin": "application/octet-stream"
 };
 
+/* Comptes (fonction Netlify /api/compte) : même logique qu'en ligne, mais les
+   comptes vivent en mémoire et disparaissent à l'arrêt du serveur. */
+const comptesMemoire = new Map();
+const storeMemoire = {
+  get: async cle => (comptesMemoire.has(cle) ? JSON.parse(comptesMemoire.get(cle)) : null),
+  set: async (cle, valeur) => { comptesMemoire.set(cle, JSON.stringify(valeur)); }
+};
+
+function servirCompte(req, res) {
+  if (req.method !== "POST") { res.writeHead(405).end(); return; }
+  let texte = "";
+  req.setEncoding("utf8");
+  req.on("data", morceau => { texte += morceau; if (texte.length > 200000) req.destroy(); });
+  req.on("end", async () => {
+    try {
+      const { repondre } = await import("../netlify/functions/compte/logique.mjs");
+      const { statut, corps } = await repondre(texte, storeMemoire);
+      res.writeHead(statut, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }).end(JSON.stringify(corps));
+    } catch (error) {
+      res.writeHead(500).end(String(error && error.message));
+    }
+  });
+}
+
 const server = http.createServer((req, res) => {
+  if (req.url.split("?")[0] === "/api/compte") { servirCompte(req, res); return; }
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url, `http://localhost:${PORT}`).pathname);

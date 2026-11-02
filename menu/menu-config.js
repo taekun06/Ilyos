@@ -4,7 +4,7 @@ window.ILYOS_MENU_CONFIG = {
   modes: {
     solo: {
       label: 'SOLO', subtitle: 'Affrontez le CPU', playerCount: '1', playLabel: "AFFRONTER LE CPU",
-      description: "Affrontez le CPU dans un duel stratégique sur les îles du ciel.", dot: 1,
+      description: "Affrontez le CPU dans un duel stratégique sur les îles célestes.", dot: 1,
       controls: [
         { key:'board', label:'PLATEAU', default:'classic', options:[['classic','CLASSIQUE'],['symmetric','DUEL SYMÉTRIQUE'],['custom','PERSONNALISÉ']] },
         { key:'size', label:'TAILLE', default:'11', options:[['11','11×11'],['13','13×13']] },

@@ -27,19 +27,19 @@
     .profil-xp{font-family:'Nunito Sans',Inter,sans-serif;font-size:.78cqw;font-weight:700;color:#e9dcc0;opacity:.85}
   </style>
   <link rel="stylesheet" href="./menu.css?v=menu-groupes-1">
-  <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-17">
+  <link rel="stylesheet" href="./menu-duel-overrides.css?v=menu-duel-18">
   <link rel="stylesheet" href="./menu-typography-g2c.css?v=g2c-1">
   <link rel="stylesheet" href="./menu-portrait.css?v=5">
-  <link rel="stylesheet" href="./progression-menu.css?v=4">
-  <link rel="stylesheet" href="./rotation.css?v=3">
+  <link rel="stylesheet" href="./progression-menu.css?v=archipel-3">
+  <link rel="stylesheet" href="./rotation.css?v=4">
 </head>
 <body>
 <div class="app">
   <section class="screen home active" id="home">
     <div class="art"></div><div class="shade"></div><div class="fog"></div><div class="halo"></div><canvas id="particles"></canvas>
     <div class="ui home-layout">
-      <img class="logo-home" src="./assets/ilyos-logo.svg" alt="ILYOS">
-      <div class="profil-zone"><button type="button" class="profil-badge" id="profilBadge" hidden aria-label="Progression : niveau, quêtes et offrande"><span class="profil-anneau"><b class="profil-num">1</b></span><span class="profil-texte"><span class="profil-mot">NIVEAU</span><span class="profil-xp">0 / 200 XP</span></span><i class="profil-alerte" hidden></i></button><button type="button" class="offrande-pill" id="offrandePill" hidden>🎁 OFFRANDE DU JOUR</button></div>
+      <img class="logo-home" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS">
+      <div class="profil-zone"><button type="button" class="profil-badge" id="profilBadge" hidden aria-label="Progression : niveau, quêtes et offrande"><span class="profil-anneau"><b class="profil-num">1</b></span><span class="profil-texte"><span class="profil-mot">NIVEAU</span><span class="profil-xp">0 / 200 XP</span></span><i class="profil-alerte" hidden></i></button><button type="button" class="offrande-pill" id="offrandePill" hidden><img src="../assets/progression/ilot-moulin.webp" alt="">OFFRANDE DU JOUR</button></div>
       <div class="top-icons"><div class="nav-groupe groupe-reglages"><button class="round" data-groupe="reglages" aria-label="Réglages" aria-expanded="false" aria-controls="groupeReglages">⚙</button><div class="groupe-panneau" id="groupeReglages" hidden><button class="pill" data-action="settings">⚙ RÉGLAGES</button><button class="pill" data-action="credits">★ CRÉDITS</button><button class="pill" data-action="aivsai" title="Lance une partie où l’IA Expert joue contre elle-même">⚔ IA CONTRE IA</button></div></div><button class="round" data-action="help" aria-label="Aide">?</button><button class="round" id="fullscreenBtnHome" data-action="fullscreen" aria-label="Plein écran">⛶</button></div>
       <div class="mode-grid">
         <button class="card" data-mode="solo"><div class="card-icon">♙</div><div class="card-title">SOLO</div><div class="card-sub">Affrontez le CPU</div></button>
@@ -59,9 +59,9 @@
     <div class="fog"></div>
     <div class="duel-left"></div><div class="duel-right"></div>
     <div class="duel-ui">
-      <img class="logo-duel" src="./assets/ilyos-logo.svg" alt="ILYOS">
+      <img class="logo-duel" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS">
       <button class="pill back" id="back">← RETOUR</button>
-      <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" data-action="tutorial">TUTORIEL</button><button class="pill" data-action="puzzle">PUZZLES</button><button class="pill" data-action="boucles">BOUCLES</button><button class="pill" data-action="credits">CRÉDITS</button><button class="pill" id="fullscreenBtnDuel" data-action="fullscreen" aria-label="Plein écran">⛶ PLEIN ÉCRAN</button></div>
+      <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" id="fullscreenBtnDuel" data-action="fullscreen" aria-label="Plein écran">⛶ PLEIN ÉCRAN</button></div>
       <div class="setup">
         <div class="panel" id="panel"></div>
         <button class="play" id="play">JOUER</button>
@@ -73,7 +73,7 @@
 </div>
 <script src="./menu-config.js?v=menu-duel-18"></script>
 <script src="./frame.js?v=menu-rotation-1"></script>
-<script src="./rotation.js?v=3"></script>
+<script src="./rotation.js?v=4"></script>
 <script src="../js/gamepad-navigation.js?v=20260911-manette-feel"></script>
 <script src="./gamepad.js?v=menu-duel-17"></script>
 </body>
