@@ -36847,8 +36847,9 @@
          — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
            2 cases du sanctuaire, chacun avec le nombre de manches avant son
            éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
-         — L'œuf éclot toujours au tour annoncé : sur sa case si elle est
-           une île libre, sinon sur la case d'île libre la plus proche.
+         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'il
+           touche une île : île dessous, ou sur une case voisine.
+         — Une poussée de force 3 ou plus tue la créature, même sans chute.
          — Un gardien qui finit son tour sur un œuf l'écrase (avec le
            deckbuilding : il exile un Déplacer).
          — Une seule espèce par partie :
@@ -37098,35 +37099,86 @@
         });
       }
 
-      /* Case de naissance : l'œuf lui-même s'il est sur une île libre,
-         sinon la case d'île libre la plus proche (au plus près du centre à
-         égalité). L'éclosion a toujours lieu au tour annoncé. */
+      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès qu'il
+         touche une île : île sous lui, sinon île sur une case voisine. La
+         créature naît sur l'œuf, sinon sur la case d'île voisine libre la
+         plus proche du centre. Pas d'île au contact : il attend. */
+      function oeufMur(oeuf) {
+        return (state?.turn || 1) >= oeuf.eclosion;
+      }
+
       function creaturesCaseNaissance(oeuf) {
-        if (islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c)) return [oeuf.r, oeuf.c];
-        let meilleure = null, note = Infinity;
-        for (let r = 0; r < GRID; r++) {
-          for (let c = 0; c < GRID; c++) {
-            if (!islandAt(r, c) || characterAt(r, c)) continue;
-            const n = (Math.abs(r - oeuf.r) + Math.abs(c - oeuf.c)) * 100 + Math.abs(r - CENTER.r) + Math.abs(c - CENTER.c);
-            if (n < note) { note = n; meilleure = [r, c]; }
-          }
-        }
-        return meilleure;
+        if (islandAt(oeuf.r, oeuf.c)) return characterAt(oeuf.r, oeuf.c) ? null : [oeuf.r, oeuf.c];
+        const voisines = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+          .map(([dr, dc]) => [oeuf.r + dr, oeuf.c + dc])
+          .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
+          .sort((a, b) => (Math.abs(a[0] - CENTER.r) + Math.abs(a[1] - CENTER.c)) - (Math.abs(b[0] - CENTER.r) + Math.abs(b[1] - CENTER.c)));
+        return voisines[0] || null;
       }
 
       function creaturesEclore() {
-        const etat = state.rotation.creatures;
+        const etat = state?.rotation?.creatures;
+        if (!etat) return false;
+        let eclos = false;
         etat.oeufs = etat.oeufs.filter(oeuf => {
-          if (state.turn < oeuf.eclosion) return true;
+          if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
-          if (!naissance) return true; // aucune case d'île libre : il attend
+          if (!naissance) return true; // aucune île au contact : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
           animateCellPulse(r, c, "crown-burst");
           showToast(`Un œuf éclot : ${etat.espece === "vase" ? "une Vase" : "un " + CREATURES[etat.espece].nom} apparaît !`);
+          eclos = true;
           return false;
         });
+        return eclos;
       }
+
+      /* Éclosion immédiate : après chaque action (île posée, île tournée),
+         un œuf mûr qui touche désormais une île éclot sans attendre le tour
+         suivant. Vérifié au rendu, hors simulation de l'IA. */
+      const creaturesRenderBase = renderAll;
+      renderAll = function renderAllCreatures(...args) {
+        if (state && !ilyosSimulationActive && creaturesActives() && state.winner === null
+          && state.rotation.creatures?.oeufs?.some(oeufMur)) {
+          if (creaturesEclore()) syncKayKitScene?.();
+        }
+        return creaturesRenderBase.apply(this, args);
+      };
+
+      /* ---------- Attaque à 3 poussées ----------------------------------
+         Une poussée de force 3 ou plus tue toute créature de la file, même
+         si elle ne tombe pas. Inscrit dans le plan (comme une chute) pour
+         que l'IA et le planner la voient aussi. */
+      const CREATURES_FORCE_FATALE = 3;
+      const creaturesResoudrePousseeBase = resoudrePousseeBloc;
+      resoudrePousseeBloc = function resoudrePousseeBlocCreatures(startR, startC, dr, dc, force) {
+        const plan = creaturesResoudrePousseeBase(startR, startC, dr, dc, force);
+        if (!plan || Math.floor(force || 1) < CREATURES_FORCE_FATALE || !creaturesActives()) return plan;
+        let tues = 0;
+        plan.mouvements.forEach(mv => {
+          if (mv.kind !== "char" || mv.chute || !characterById(mv.id)?.creature) return;
+          mv.chute = true;
+          mv.tuee = true;
+          tues++;
+        });
+        if (tues) { plan.chutes += tues; plan.deplaces -= tues; }
+        return plan;
+      };
+
+      const creaturesAppliquerPousseeBase = appliquerPousseeBloc;
+      appliquerPousseeBloc = function appliquerPousseeBlocCreatures(plan, dr, dc) {
+        const tuees = (plan?.mouvements || []).filter(mv => mv.tuee);
+        if (!tuees.length) return creaturesAppliquerPousseeBase(plan, dr, dc);
+        // La base fait « tomber » les chutes : les créatures tuées avancent
+        // d'abord normalement, puis sont retirées sur leur case d'arrivée.
+        const resultat = creaturesAppliquerPousseeBase({ ...plan, mouvements: plan.mouvements.map(mv => mv.tuee ? { ...mv, chute: false } : mv) }, dr, dc);
+        tuees.forEach(mv => {
+          const creature = characterById(mv.id);
+          if (creature) removeCharacterFromGame(creature, mv.to[0], mv.to[1], null);
+        });
+        return resultat;
+      };
 
       const creaturesBeginTurnBase = beginTurn;
       beginTurn = function beginTurnCreatures() {
@@ -37255,8 +37307,20 @@
             visuel.userData.chiffre.material.map = creaturesTextureChiffre(n);
             visuel.userData.chiffre.material.needsUpdate = true;
           }
-          visuel.children[0].material.opacity = surIle ? 1 : .7;
-          visuel.children[0].material.transparent = !surIle;
+          /* Mûr : coquille rouge braise qui luit, plus de chiffre. */
+          const mur = oeufMur(oeuf);
+          if (visuel.userData.mur !== mur) {
+            visuel.userData.mur = mur;
+            const coquille = visuel.children[0].material;
+            coquille.color.setHex(mur ? 0xc8261a : 0xf3e3c0);
+            coquille.emissive.setHex(mur ? 0xff3a10 : 0x3a2a10);
+            coquille.emissiveIntensity = mur ? .85 : .25;
+            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0x6a8f5a);
+            visuel.userData.chiffre.visible = !mur;
+          }
+          visuel.children[0].material.opacity = surIle || mur ? 1 : .7;
+          visuel.children[0].material.transparent = !(surIle || mur);
+          visuel.children[1].material.opacity = mur ? .8 : .35;
         });
         [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
       }
