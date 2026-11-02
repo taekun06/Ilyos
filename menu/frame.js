@@ -362,8 +362,85 @@
     renderProgressionPanel(etat);
     modal.classList.add('open');
   }
+  /* ÉCRAN D'OUVERTURE : le logo sur le ciel du menu, puis
+     - la première fois : le choix du pseudo ;
+     - ensuite : le chemin de saison depuis la dernière visite (le fil d'or
+       avance une fois jusqu'au palier actuel) et l'offrande du jour si elle
+       attend. Une fois par session ; un clic sur JOUER ouvre le menu.
+     Les navigateurs pilotés par les tests (navigator.webdriver) passent
+     directement au menu, sauf avec ?ouverture=1. */
+  const OUVERTURE_VU='ilyos-ouverture-saison';
+  function ouvertureVoulue(){
+    try{
+      const force=/[?&]ouverture=1/.test(parent.location.search)||/[?&]ouverture=1/.test(location.search);
+      if(force) return true;
+      if(navigator.webdriver) return false;
+      return sessionStorage.getItem('ilyos-ouverture-faite')!=='1';
+    }catch(_){ return false; }
+  }
+  function ouvertureChemin(v,depuis){
+    const pas=132, voisins=[-2,-1,0,1,2,3];
+    const centre=Math.min(Math.max(v.palier,2),v.paliers.length-3);
+    const liste=voisins.map(d=>v.paliers[centre+d-1]).filter(Boolean);
+    const haut=[40,6,34,0,30,8];
+    const pts=liste.map((p,i)=>[i*pas+pas/2,(p.palier%5===0?14:haut[i%6])+120]);
+    let d=`M${pts[0][0]} ${pts[0][1]}`;
+    for(let i=1;i<pts.length;i++){const [a,b]=pts[i-1],[c,e]=pts[i];d+=` C${a+52} ${b},${c-52} ${e},${c} ${e}`}
+    const frac=pal=>{const i=liste.findIndex(p=>p.palier>=pal);return i<0?1:Math.max(0,i/(liste.length-1));};
+    const avant=Math.max(0,frac(Math.max(1,depuis))), apres=frac(Math.max(1,v.palier));
+    const cases=liste.map((p,i)=>{
+      const neuf=p.obtenu&&p.palier>depuis;
+      const etat=p.obtenu?'obtenu':(p.palier===v.palier+1?'courant':'futur');
+      const ilot=p.palier%5===0?'chateau':ILOTS_PISTE[(p.palier-1)%ILOTS_PISTE.length];
+      return `<li class="ar-etape ${etat}${neuf?' neuf':''}${p.palier%5===0?' grand':''}" style="left:${i*pas-9}px;top:${pts[i][1]-120}px"><small>${p.palier}</small><span class="ar-prix">${saisonApercu(p)}</span><img class="ar-ilot" src="../assets/progression/ilot-${ilot}.webp" alt=""><b>${safeText(p.categorie==='vent'?'Vent porteur':p.texte.replace(/^Coffre de /,'Coffre · '))}</b></li>`;
+    }).join('');
+    const w=liste.length*pas;
+    return `<div class="ouv-chemin"><ol style="width:${w}px"><svg class="ar-fil" viewBox="0 0 ${w} 300" width="${w}" height="300" aria-hidden="true"><path d="${d}" class="ar-fil-fond"/><path d="${d}" class="ar-fil-or ouv-fil" pathLength="1000" style="--avant:${Math.round(avant*1000)};--apres:${Math.round(apres*1000)}" stroke-dasharray="${Math.round(apres*1000)} 2000"/></svg>${cases}</ol></div>`;
+  }
+  function montrerOuverture(){
+    const etat=progressionApi()?.etat?.();
+    if(!etat) return;
+    try{ sessionStorage.setItem('ilyos-ouverture-faite','1'); }catch(_){}
+    let depuis=0;
+    try{ depuis=Number(localStorage.getItem(OUVERTURE_VU))||0; }catch(_){}
+    const el=document.createElement('div');
+    el.className='ouverture';
+    const fermer=()=>{
+      try{ if(etat.saison) localStorage.setItem(OUVERTURE_VU,String(etat.saison.palier)); }catch(_){}
+      el.classList.add('fin');
+      setTimeout(()=>el.remove(),450);
+      renderProfileBadge();
+    };
+    const premiere=!etat.pseudo;
+    let corps='';
+    if(premiere){
+      corps=`<form class="ouv-pseudo"><label for="ouvPseudo">Choisis ton pseudo</label><input id="ouvPseudo" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Ton pseudo"><small class="ar-pseudo-erreur" hidden>2 à 16 lettres ou chiffres.</small><button type="submit" class="ar-continuer">COMMENCER</button></form>`;
+    }else{
+      const v=etat.saison;
+      const gagnes=v?v.paliers.filter(p=>p.obtenu&&p.palier>depuis).length:0;
+      const o=etat.offrande;
+      const offr=o.dispo?`<button type="button" class="ouv-offrande"><img src="../assets/progression/ilot-${ILOTS_OFFRANDE[o.prochaine]}.webp" alt=""><span><b>Ton offrande t’attend</b><small>Jour ${o.prochaine+1} sur 7</small></span></button>`:'';
+      corps=`<p class="ouv-salut">Bon retour, <b>${safeText(etat.pseudo)}</b></p>
+        ${v?`<div class="ouv-saison"><div class="ouv-saison-tete"><span class="ar-palier"><small>PALIER</small><b>${v.palier}</b></span><span><small>SAISON ${v.numero}</small><b>${safeText(v.nom)}</b><em>${gagnes?`${gagnes} palier${gagnes>1?'s':''} gagné${gagnes>1?'s':''} depuis ta dernière visite`:`${v.xpDansPalier} / ${v.xpParPalier} XP vers le palier ${v.palier+1}`}</em></span></div>${ouvertureChemin(v,depuis)}</div>`:''}
+        <div class="ouv-actions">${offr}<button type="button" class="ar-continuer ouv-jouer">JOUER</button></div>`;
+    }
+    el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
+    document.body.appendChild(el);
+    if(premiere){
+      const form=el.querySelector('.ouv-pseudo'), champ=form.querySelector('input');
+      setTimeout(()=>champ.focus({preventScroll:true}),400);
+      form.addEventListener('submit',e=>{
+        e.preventDefault();
+        if(!progressionApi()?.definirPseudo?.(champ.value)){ form.querySelector('.ar-pseudo-erreur').hidden=false; return; }
+        fermer();
+      });
+    }else{
+      el.querySelector('.ouv-jouer').addEventListener('click',fermer);
+      el.querySelector('.ouv-offrande')?.addEventListener('click',()=>{ fermer(); openProgression('progression'); });
+    }
+  }
   (function waitProgression(tries){
-    if(progressionApi()) renderProfileBadge();
+    if(progressionApi()){ renderProfileBadge(); if(ouvertureVoulue()) montrerOuverture(); }
     else if(tries>0) setTimeout(()=>waitProgression(tries-1),250);
   })(40);
   window.addEventListener('storage',e=>{ if(!e.key||e.key==='ilyos-profil-v1') renderProfileBadge(); });
