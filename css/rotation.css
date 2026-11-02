@@ -92,7 +92,11 @@
   .rt-choix-boite .rt-marche-tete span{font-size:16px}
 }
 /* Pendant le choix, la pioche de début de tour ne vient pas couvrir la fenêtre. */
-body.rt-choix-actif .card-cycle-v7-card.showcase{visibility:hidden}
+/* Pendant le choix de départ, rien ne passe par-dessus le panneau : ni les
+   cartes piochées qui volent vers le dock, ni la consigne de pose d'île. */
+body.rt-choix-actif .card-cycle-v7-card,
+body.rt-choix-actif .card-cycle-v10-card,
+body.rt-choix-actif #ov2Instruction{visibility:hidden!important}
 
 /* Récompense d'une créature tombée : bandeau doré bref. Visible même si
    l'animation d'entrée ne joue pas ; la sortie est un simple fondu. */

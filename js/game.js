@@ -36659,6 +36659,13 @@
       const paquetEndTurnBase = endTurn;
       endTurn = async function endTurnPaquet(force = false) {
         const player = state && currentPlayer();
+        /* Le tour ne se termine pas pendant le choix de départ (bouton Fin du
+           tour, touche, minuteur) : sinon le choix restait ouvert au tour
+           suivant, par-dessus la pioche du nouveau tour. */
+        if (state && !ilyosSimulationActive && choixEnCours()) {
+          if (!player?.isAI) showToast("Termine d’abord le choix de départ.");
+          return false;
+        }
         if (paquetActif() && player?.isAI && state.winner === null) {
           const achat = plannerChoisirAchat(player.id);
           if (achat) paquetAcheter(achat.index, achat.exiler);
