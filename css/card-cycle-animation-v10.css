@@ -307,12 +307,12 @@ body .card-cycle-v10-card.showcase.cc-detail {
   width: 20px;
   height: 31px;
   /* Même illustration que la carte en grand (css/card-art-v12.css). */
-  background: url("../assets/cartes/deplacer.webp") center / contain no-repeat;
+  background: url("../assets/cartes/deplacer-2.webp") center / contain no-repeat;
   transform-origin: 50% 120%;
   transform: translateX(calc(var(--cc-d) * 9px)) rotate(calc(var(--cc-d) * 7deg));
   animation: ccPileIn .32s ease-out both;
 }
-.cc-pile.type-push i { background-image: url("../assets/cartes/pousser.webp"); }
+.cc-pile.type-push i { background-image: url("../assets/cartes/pousser-2.webp"); }
 .cc-pile.type-magic i { background-image: url("../assets/cartes/magie.webp"); }
 .cc-pile b {
   position: absolute;

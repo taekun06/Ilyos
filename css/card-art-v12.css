@@ -13,7 +13,7 @@
    (machines faibles). */
 
 body .card-cycle-v7-card.card-cycle-v10-card {
-  --carte-face: url("../assets/cartes/deplacer.webp");
+  --carte-face: url("../assets/cartes/deplacer-2.webp");
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -21,7 +21,7 @@ body .card-cycle-v7-card.card-cycle-v10-card {
   background: var(--carte-face) center / contain no-repeat !important;
   box-shadow: none !important;
 }
-body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/pousser.webp"); }
+body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/pousser-2.webp"); }
 body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/magie.webp"); }
 
 /* Essai `?cartes=kaykit` : mêmes cadres, illustrations KayKit de la maquette A. */
