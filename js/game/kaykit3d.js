@@ -1156,6 +1156,7 @@
         const textureLoader = new THREE.TextureLoader();
         textureLoader.setCrossOrigin("anonymous");
         if (loader) loader.setCrossOrigin("anonymous");
+        if (loader?.register) loader.register(kaykitPluginTexturesPartagees);
 
         kaykit3D = {
           canvas, badge, controls, status, cursorLabel, cameraHint, uiNodes: [badge, controls, status, cursorLabel, cameraHint], renderer, scene, camera, root,
@@ -1490,6 +1491,49 @@
         texture.flipY = false;
         if (change || texture.version === 0) texture.needsUpdate = true;
         return texture;
+      }
+
+      /* TEXTURES PARTAGÉES ENTRE MODÈLES — chaque fichier .gltf KayKit pointe
+         vers son propre exemplaire de l'atlas (hexagons_medieval.png est copié
+         dans 14 dossiers, identique octet pour octet), et GLTFLoader ne partage
+         ses textures qu'à l'intérieur d'UN fichier. Mesuré au lancement d'une
+         partie : la même image 1024² téléchargée et décodée ~55 fois, 73
+         textures distinctes pour une dizaine d'images réelles, chacune avec
+         ses mipmaps sur la carte graphique (~5 Mo pièce).
+         Ce greffon de GLTFLoader rend la MÊME THREE.Texture pour une même
+         image (même adresse, ou atlas connu identique) et un même
+         échantillonneur. Rendu inchangé : configureKayKitTexture() règle de
+         toute façon chaque texture à l'identique, et les recolorations
+         (villages, îles) partent d'une copie canvas mise en cache par uuid.
+         Les images intégrées au .glb (bufferView) ne passent pas par ici. */
+      const KAYKIT_TEXTURES_IDENTIQUES = new Set([
+        "hexagons_medieval.png", "knight_texture.png", "mage_texture.png", "rogue_texture.png", "barbarian_texture.png"
+      ]);
+      const kaykitTexturesPartagees = new Map();
+      function kaykitPluginTexturesPartagees(parser) {
+        return {
+          name: "ILYOS_textures_partagees",
+          loadTexture(textureIndex) {
+            const json = parser.json;
+            const def = json.textures?.[textureIndex];
+            if (!def || (def.extensions && Object.keys(def.extensions).length)) return null;
+            const source = json.images?.[def.source];
+            if (!source?.uri || source.bufferView !== undefined || /^(data|blob):/i.test(source.uri)) return null;
+            let adresse;
+            try { adresse = new URL(source.uri, new URL(parser.options.path || "./", document.baseURI)).href; }
+            catch (_) { return null; }
+            const nom = decodeURIComponent(adresse.split("?")[0].split("/").pop() || "");
+            const s = (json.samplers || [])[def.sampler] || {};
+            const cle = (KAYKIT_TEXTURES_IDENTIQUES.has(nom) ? `commun:${nom}` : adresse)
+              + `|${s.magFilter}|${s.minFilter}|${s.wrapS}|${s.wrapT}`;
+            if (!kaykitTexturesPartagees.has(cle)) {
+              const promesse = parser.loadTexture(textureIndex);
+              promesse.catch(() => kaykitTexturesPartagees.delete(cle));
+              kaykitTexturesPartagees.set(cle, promesse);
+            }
+            return kaykitTexturesPartagees.get(cle);
+          }
+        };
       }
 
       function loadKayKitTextureCandidates(urls) {
@@ -3741,6 +3785,11 @@
         const { staticGroup, hitGroup, hitMeshes } = kaykit3D;
 
         const half = kaykitBoardSpan() / 2;
+        // La grille est posée À HAUTEUR DU DESSUS DES ÎLES (et non plus au fond,
+        // un bloc plus bas) : une pièce posée sur une case vide — œuf, balise du
+        // mode Rotation — se lit alors sur SA case au lieu de flotter au-dessus
+        // d'une trame lointaine, et les lignes prolongent le sol des îles.
+        const gridY = KAYKIT_LEVELS.islandTop + .018;
         // Vue de FACE, une grille plane qui garde de la matière jusqu'à son bord franc
         // se lit en perspective comme un SOL qui fuit vers un horizon — contraire au
         // ciel. Mais l'éteindre trop tôt rend les cases de bordure inutilisables pour
@@ -3762,14 +3811,12 @@
           const major = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2));
           const points = major ? majorGridPoints : gridPoints;
           const alphas = major ? majorGridAlphas : gridAlphas;
-          // Grille au niveau du dessus des îles (comme dans PR #172), pas un bloc plus bas.
-          const yGrille = KAYKIT_LEVELS.islandTop + .018;
           for (let s = 0; s < GRID; s++) {
             const a = (s - GRID / 2) * KAYKIT_CELL_SPACING;
             const b = (s + 1 - GRID / 2) * KAYKIT_CELL_SPACING;
-            points.push(new THREE.Vector3(d, yGrille, a), new THREE.Vector3(d, yGrille, b));
+            points.push(new THREE.Vector3(d, gridY, a), new THREE.Vector3(d, gridY, b));
             alphas.push(1, 1, 1, gridFade(d, a), 1, 1, 1, gridFade(d, b));
-            points.push(new THREE.Vector3(a, yGrille, d), new THREE.Vector3(b, yGrille, d));
+            points.push(new THREE.Vector3(a, gridY, d), new THREE.Vector3(b, gridY, d));
             alphas.push(1, 1, 1, gridFade(a, d), 1, 1, 1, gridFade(b, d));
           }
         }
@@ -3808,7 +3855,7 @@
           })
         );
         gridFill.rotation.x = -Math.PI / 2;
-        gridFill.position.y = KAYKIT_LEVELS.islandTop + .005;
+        gridFill.position.y = gridY - .021;
         gridFill.renderOrder = 1;
         staticGroup.add(gridFill);
 
@@ -12205,6 +12252,8 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
+        // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
+        if (character?.creature) return creatureModele(character);
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;

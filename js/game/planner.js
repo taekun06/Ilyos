@@ -1370,8 +1370,8 @@
              Pour moi, le point doit encore survivre au tour adverse : même
              escompte que l'utilité d'un gardien expulsable. Pour lui, il
              tombera au début de son tour, sauf ce que je fais maintenant. */
-          if (porteur && isCrownValidationCell(state.players[porteur.player], r, c)
-            && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
+          if (porteur && isCrownValidationCell(joueurDuGardien(porteur), r, c)
+            && !validationBloqueeParAdversaire(joueurDuGardien(porteur), r, c)) {
             if (porteur.player === playerId) {
               const risques = lAdversaireJoue && PLAN_POIDS.validationRisques
                 ? plannerRisquesValidation(playerId, r, c) : { blocage: 0, pivot: 0 };
@@ -3374,7 +3374,7 @@
         return activeArtifacts().flatMap(couronne => {
           const porteur = couronne.carrierId && characterById(couronne.carrierId);
           if (!porteur || porteur.player === playerId) return [];
-          const adverse = state.players[porteur.player];
+          const adverse = joueurDuGardien(porteur);
           if (aiValidationDistanceForPlayer(adverse, porteur.r, porteur.c) > 3) return [];
           const villages = villagesForPlayer(adverse).map(v => cornerCrownCellsForVillage(v));
           const distance = cells => Math.min(...cells.map(([r, c]) =>
@@ -3393,8 +3393,8 @@
         if (couronnes.some(a => {
           const g = a.carrierId && characterById(a.carrierId);
           return g && g.player !== playerId
-            && isCrownValidationCell(state.players[g.player], g.r, g.c)
-            && !validationBloqueeParAdversaire(state.players[g.player], g.r, g.c);
+            && isCrownValidationCell(joueurDuGardien(g), g.r, g.c)
+            && !validationBloqueeParAdversaire(joueurDuGardien(g), g.r, g.c);
         })) return 0;
         return Math.min(...menaces.map(menace => {
           if (!characterById(menace.porteurId)) return 3;
@@ -3406,7 +3406,7 @@
             return gardien && gardien.player === playerId;
           });
           const ecarte = menace.imminente && (!porteur
-            || !isCrownValidationCell(state.players[porteur.player], porteur.r, porteur.c));
+            || !isCrownValidationCell(joueurDuGardien(porteur), porteur.r, porteur.c));
           return bloque || ecarte ? 1 : 0;
         }));
       }
@@ -3674,7 +3674,7 @@
         return activeArtifacts().some(couronne => {
           const porteur = couronne.carrierId && characterById(couronne.carrierId);
           if (!porteur) return false;
-          const joueur = state.players[porteur.player];
+          const joueur = joueurDuGardien(porteur);
           const distance = aiValidationDistanceForPlayer(joueur, porteur.r, porteur.c);
           return distance <= 2
             || ((joueur.score || 0) >= 2 && distance <= 4)

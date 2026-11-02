@@ -184,43 +184,12 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.card-cycle-v10-draw
 }
 
 /* ---------- PIOCHE DÉTAILLÉE (js/card-cycle-animation-v10.js) ----------
-   Premiers tours, ou réglage « toujours ». Les cartes sont grandes : leurs
-   textes suivent leur hauteur (unités de conteneur), qu'elles soient en
-   éventail (~190 px) ou zoomées au centre (~340 px). Chargé avant
-   card-art-v12.css, d'où le préfixe « body » pour garder la main. */
+   Premiers tours, ou réglage « toujours ». La face est une image
+   (css/card-art-v12.css) où texte et effet sont dessinés : il ne reste qu'à
+   passer devant le voile. Préfixe « body » : chargé avant card-art-v12.css. */
 body .card-cycle-v10-card.showcase.cc-detail {
-  container-type: size;
   z-index: 100600 !important;
-  /* Pas de padding ici : sur le conteneur lui-même, cqh et % se
-     rapporteraient à la fenêtre, pas à la carte. L'espace intérieur est porté
-     par les enfants, en unités de la carte. */
-  gap: 3cqh !important;
-  padding: 0 !important;
-  justify-content: flex-start !important;
-  border-radius: 14px !important;
 }
-body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-icon {
-  width: 58cqw !important;
-  margin: 13cqh 0 0 !important;
-}
-body .card-cycle-v10-card.showcase.cc-detail > b {
-  font-size: min(9cqh, 14cqw) !important;
-  letter-spacing: .02em !important;
-}
-body .card-cycle-v10-card.showcase.cc-detail .cc-effet {
-  position: relative;
-  z-index: 3;
-  display: block;
-  margin: auto 9cqw 10cqh;
-  color: #f3e7cc;
-  font: 600 6.2cqh/1.25 Georgia, "Times New Roman", serif;
-  text-align: center;
-  text-wrap: balance;
-  opacity: 0;
-  transition: opacity .25s ease .12s;
-}
-body .card-cycle-v10-card.showcase.cc-detail.is-revealed .cc-effet { opacity: .92; }
-body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-rune { display: none !important; }
 
 .cc-pioche-voile {
   position: fixed;
@@ -318,51 +287,58 @@ body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-rune { display: none
 .cc-reserve-legende.is-on { opacity: 1; transform: translate(-50%, 0); }
 .cc-reserve-legende b { display: block; color: #e6b74b; letter-spacing: .14em; font-size: 11px; text-transform: uppercase; margin-bottom: 3px; }
 .cc-reserve-legende em { font-style: normal; color: #ffd879; font-weight: 700; }
+.cc-reserve-legende span b { display: inline; color: #ffd879; letter-spacing: 0; font-size: inherit; text-transform: none; margin: 0; }
 
-/* ---------- CARTES EMPILÉES DANS LES BOUTONS D'ACTION ----------
-   Une carte par action disponible, dos visible, qui dépasse du haut du
-   bouton en petit éventail. */
+/* Réserve visée pendant le rangement de fin de tour : elle s'éclaire. */
+.ov2-reserve.cc-reserve-cible {
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 216, 121, .7), 0 0 18px rgba(255, 200, 90, .55);
+  transition: box-shadow .2s ease;
+}
+
+/* ---------- CARTES DERRIÈRE LES BOUTONS D'ACTION ----------
+   Choix de Taekun (2026-11-02, forme « C ») : jusqu'à trois cartes en
+   éventail glissées VRAIMENT derrière le socle du bouton ; seul leur haut
+   illustré dépasse. Le bouton isole sa pile (isolation) pour qu'elle passe
+   sous son socle (::before, z-index -1) sans passer sous le reste du HUD. */
+body.cc-piles-actives #ilyosHudOrganicV2 .ov2-action { isolation: isolate; }
 .cc-pile {
   position: absolute;
   left: 50%;
-  bottom: calc(100% - 10px);
+  top: -30px;
   width: 0;
-  height: 30px;
+  height: 58px;
   pointer-events: none;
-  z-index: 0;
+  z-index: -2;
 }
 .cc-pile i {
+  display: none;
   position: absolute;
-  left: -10px;
+  left: -18px;
   bottom: 0;
-  width: 20px;
-  height: 29px;
-  border-radius: 4px;
-  border: 1px solid var(--cc-pile, #e8d6a0);
-  background:
-    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--cc-pile, #e8d6a0) 55%, transparent) 0 3px, transparent 4px),
-    linear-gradient(180deg, #16303f, #08131c);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, .45);
+  width: 36px;
+  height: 58px;
+  /* Même illustration que la carte en grand (css/card-art-v12.css). */
+  background: url("../assets/cartes/deplacer-2.webp") center / contain no-repeat;
   transform-origin: 50% 120%;
-  transform: translateX(calc(var(--cc-d) * 9px)) rotate(calc(var(--cc-d) * 7deg));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .5));
   animation: ccPileIn .32s ease-out both;
 }
-.cc-pile.type-push { --cc-pile: #d98a48; }
-.cc-pile.type-magic { --cc-pile: #bca1f1; }
-.cc-pile b {
-  position: absolute;
-  left: calc(50% + 34px);
-  bottom: 4px;
-  color: #ffd879;
-  font: 700 11px/1 Georgia, serif;
-  text-shadow: 0 1px 3px #000;
-}
-@keyframes ccPileIn { from { opacity: 0; transform: translateX(calc(var(--cc-d) * 9px)) translateY(8px) rotate(calc(var(--cc-d) * 7deg)); } }
+.cc-pile.type-push i { background-image: url("../assets/cartes/pousser-2.webp"); }
+.cc-pile.type-magic i { background-image: url("../assets/cartes/magie.webp"); }
+.cc-pile i:nth-child(-n+3) { display: block; }
+.cc-pile i:nth-child(1) { --cc-r: -16deg; }
+.cc-pile i:nth-child(2) { --cc-r: 16deg; }
+.cc-pile i:nth-child(3) { --cc-r: 0deg; }
+.cc-pile[data-n="1"] i:nth-child(1) { --cc-r: 0deg; }
+.cc-pile[data-n="2"] i:nth-child(1) { --cc-r: -8deg; }
+.cc-pile[data-n="2"] i:nth-child(2) { --cc-r: 8deg; }
+.cc-pile i { transform: rotate(var(--cc-r, 0deg)); }
+.cc-pile b { display: none; }
+@keyframes ccPileIn { from { opacity: 0; transform: translateY(10px) rotate(var(--cc-r, 0deg)); } }
 
 /* Téléphone en portrait : la rangée « fin du tour » est juste au-dessus des
-   actions, les cartes se rangent donc DANS le bouton, en haut. */
+   actions, il n'y a pas la place de faire dépasser des cartes. */
 @media (orientation: portrait) and (max-width: 820px) {
-  .cc-pile { bottom: auto; top: 3px; height: 16px; }
-  .cc-pile i { width: 11px; height: 16px; left: -5.5px; border-radius: 2px; transform: translateX(calc(var(--cc-d) * 6px)) rotate(calc(var(--cc-d) * 6deg)); }
-  .cc-pile b { left: calc(50% + 22px); bottom: 2px; font-size: 9px; }
+  .cc-pile { display: none; }
 }

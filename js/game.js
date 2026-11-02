@@ -1540,6 +1540,7 @@
         const textureLoader = new THREE.TextureLoader();
         textureLoader.setCrossOrigin("anonymous");
         if (loader) loader.setCrossOrigin("anonymous");
+        if (loader?.register) loader.register(kaykitPluginTexturesPartagees);
 
         kaykit3D = {
           canvas, badge, controls, status, cursorLabel, cameraHint, uiNodes: [badge, controls, status, cursorLabel, cameraHint], renderer, scene, camera, root,
@@ -1874,6 +1875,49 @@
         texture.flipY = false;
         if (change || texture.version === 0) texture.needsUpdate = true;
         return texture;
+      }
+
+      /* TEXTURES PARTAGÉES ENTRE MODÈLES — chaque fichier .gltf KayKit pointe
+         vers son propre exemplaire de l'atlas (hexagons_medieval.png est copié
+         dans 14 dossiers, identique octet pour octet), et GLTFLoader ne partage
+         ses textures qu'à l'intérieur d'UN fichier. Mesuré au lancement d'une
+         partie : la même image 1024² téléchargée et décodée ~55 fois, 73
+         textures distinctes pour une dizaine d'images réelles, chacune avec
+         ses mipmaps sur la carte graphique (~5 Mo pièce).
+         Ce greffon de GLTFLoader rend la MÊME THREE.Texture pour une même
+         image (même adresse, ou atlas connu identique) et un même
+         échantillonneur. Rendu inchangé : configureKayKitTexture() règle de
+         toute façon chaque texture à l'identique, et les recolorations
+         (villages, îles) partent d'une copie canvas mise en cache par uuid.
+         Les images intégrées au .glb (bufferView) ne passent pas par ici. */
+      const KAYKIT_TEXTURES_IDENTIQUES = new Set([
+        "hexagons_medieval.png", "knight_texture.png", "mage_texture.png", "rogue_texture.png", "barbarian_texture.png"
+      ]);
+      const kaykitTexturesPartagees = new Map();
+      function kaykitPluginTexturesPartagees(parser) {
+        return {
+          name: "ILYOS_textures_partagees",
+          loadTexture(textureIndex) {
+            const json = parser.json;
+            const def = json.textures?.[textureIndex];
+            if (!def || (def.extensions && Object.keys(def.extensions).length)) return null;
+            const source = json.images?.[def.source];
+            if (!source?.uri || source.bufferView !== undefined || /^(data|blob):/i.test(source.uri)) return null;
+            let adresse;
+            try { adresse = new URL(source.uri, new URL(parser.options.path || "./", document.baseURI)).href; }
+            catch (_) { return null; }
+            const nom = decodeURIComponent(adresse.split("?")[0].split("/").pop() || "");
+            const s = (json.samplers || [])[def.sampler] || {};
+            const cle = (KAYKIT_TEXTURES_IDENTIQUES.has(nom) ? `commun:${nom}` : adresse)
+              + `|${s.magFilter}|${s.minFilter}|${s.wrapS}|${s.wrapT}`;
+            if (!kaykitTexturesPartagees.has(cle)) {
+              const promesse = parser.loadTexture(textureIndex);
+              promesse.catch(() => kaykitTexturesPartagees.delete(cle));
+              kaykitTexturesPartagees.set(cle, promesse);
+            }
+            return kaykitTexturesPartagees.get(cle);
+          }
+        };
       }
 
       function loadKayKitTextureCandidates(urls) {
@@ -4125,6 +4169,11 @@
         const { staticGroup, hitGroup, hitMeshes } = kaykit3D;
 
         const half = kaykitBoardSpan() / 2;
+        // La grille est posée À HAUTEUR DU DESSUS DES ÎLES (et non plus au fond,
+        // un bloc plus bas) : une pièce posée sur une case vide — œuf, balise du
+        // mode Rotation — se lit alors sur SA case au lieu de flotter au-dessus
+        // d'une trame lointaine, et les lignes prolongent le sol des îles.
+        const gridY = KAYKIT_LEVELS.islandTop + .018;
         // Vue de FACE, une grille plane qui garde de la matière jusqu'à son bord franc
         // se lit en perspective comme un SOL qui fuit vers un horizon — contraire au
         // ciel. Mais l'éteindre trop tôt rend les cases de bordure inutilisables pour
@@ -4146,14 +4195,12 @@
           const major = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2));
           const points = major ? majorGridPoints : gridPoints;
           const alphas = major ? majorGridAlphas : gridAlphas;
-          // Grille au niveau du dessus des îles (comme dans PR #172), pas un bloc plus bas.
-          const yGrille = KAYKIT_LEVELS.islandTop + .018;
           for (let s = 0; s < GRID; s++) {
             const a = (s - GRID / 2) * KAYKIT_CELL_SPACING;
             const b = (s + 1 - GRID / 2) * KAYKIT_CELL_SPACING;
-            points.push(new THREE.Vector3(d, yGrille, a), new THREE.Vector3(d, yGrille, b));
+            points.push(new THREE.Vector3(d, gridY, a), new THREE.Vector3(d, gridY, b));
             alphas.push(1, 1, 1, gridFade(d, a), 1, 1, 1, gridFade(d, b));
-            points.push(new THREE.Vector3(a, yGrille, d), new THREE.Vector3(b, yGrille, d));
+            points.push(new THREE.Vector3(a, gridY, d), new THREE.Vector3(b, gridY, d));
             alphas.push(1, 1, 1, gridFade(a, d), 1, 1, 1, gridFade(b, d));
           }
         }
@@ -4192,7 +4239,7 @@
           })
         );
         gridFill.rotation.x = -Math.PI / 2;
-        gridFill.position.y = KAYKIT_LEVELS.islandTop + .005;
+        gridFill.position.y = gridY - .021;
         gridFill.renderOrder = 1;
         staticGroup.add(gridFill);
 
@@ -12589,6 +12636,8 @@
 
       /** Modèle KayKit attribué à un gardien — logique inchangée depuis la V75. */
       function resolveHeroAssetKey(character, index) {
+        // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
+        if (character?.creature) return creatureModele(character);
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;
@@ -15831,7 +15880,7 @@
           cpu.className = "player-field ai-player-field";
           cpu.innerHTML = `
           <span class="player-dot ai-dot" style="background:${PLAYER_COLORS[1]};color:${PLAYER_COLORS[1]}"></span>
-          <span class="ai-player-name"><b>ORDINATEUR</b><small>Adversaire automatique</small></span>
+          <span class="ai-player-name"><b>CPU</b><small>Adversaire automatique</small></span>
           <span class="ai-chip">CPU</span>
         `;
           els.playersForm.appendChild(cpu);
@@ -16351,6 +16400,9 @@
       }
 
       function currentPlayer() { return state.players[state.currentPlayer]; }
+      /* Nom du camp de l'IA dans les messages : le même que dans le bandeau
+         (« CPU », ou son nom en 2 contre 2), au lieu d'« ORDINATEUR » écrit en dur. */
+      function nomJoueurIA() { return state?.players?.[state.currentPlayer]?.name || "CPU"; }
       function villageAt(r, c) {
         return state.players.find(player =>
           villagesForPlayer(player).some(village => village.r === r && village.c === c)
@@ -16464,6 +16516,16 @@
         return guardianCount(playerId) < MAX_GUARDIANS_PER_PLAYER;
       }
       function characterById(id) { return state.characters.find(ch => ch.id === id); }
+      /* Le joueur qui commande ce gardien. Les créatures neutres de la
+         Rotation (char.creature, player -1) n'appartiennent à personne : elles
+         reçoivent un camp fictif, sans village ni main, pour que l'affichage
+         et les règles qui lisent « le propriétaire » restent valables. */
+      const CAMP_CREATURE = Object.freeze({ id: -1, name: "Créature", color: "#8fcf9a", icon: "🐾",
+        isAI: false, villages: [], village: null, hand: [], deck: [], discard: [], score: 0, creature: true });
+      function joueurDuGardien(char) {
+        if (!char) return undefined;
+        return char.creature ? CAMP_CREATURE : state.players[char.player];
+      }
       function selectedCard() { return state.selectedActionType ? { action: state.selectedActionType } : null; }
       function unusedCardsOfType(type, player = currentPlayer()) {
         return (player?.hand || []).filter(card => !card.used && card.action === type);
@@ -18345,7 +18407,7 @@
         state.reachable = new Set();
         renderAll();
 
-        if (state.players[pick.player]?.isAI) {
+        if (joueurDuGardien(pick)?.isAI) {
           setTimeout(() => runDraftAI(), 460);
         }
       }
@@ -18481,7 +18543,7 @@
           .forEach(island => island.cells.forEach(([r, c]) => {
             if (draftGuardianCellAllowed(pick.player, r, c)) candidates.push([r, c]);
           }));
-        state.players[pick.player].villages?.forEach(village => {
+        joueurDuGardien(pick).villages?.forEach(village => {
           if (draftGuardianCellAllowed(pick.player, village.r, village.c)) {
             candidates.push([village.r, village.c]);
           }
@@ -18805,7 +18867,7 @@
         const turnDurationChoice = selectedTurnDurationSeconds();
         const humanNames = [...els.playersForm.querySelectorAll(".player-name")]
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
-        const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
+        const names = soloMode ? [...humanNames, "CPU"] : humanNames;
         const count = names.length;
         /* 2 contre 2 : des places peuvent être tenues par l'IA. Par défaut
            chacun marque pour soi ; avec la diagonale d'équipe (J1+J3, J2+J4),
@@ -18815,7 +18877,7 @@
         const siegesIA = !teamMode ? []
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
         const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
-        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `ORDINATEUR ${i + 1}`; });
+        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `CPU ${i + 1}`; });
         const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
         const villageAssignments = villagesEquipe
           ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())
@@ -19249,7 +19311,7 @@
         if (aiConfig().crownTactics >= 2) {
           const urgentCarrier = state.characters.find(char => {
             if (char.player === playerId || !characterCarriesCrown(char.id)) return false;
-            const owner = state.players[char.player];
+            const owner = joueurDuGardien(char);
             return aiValidationDistanceForPlayer(owner, char.r, char.c) <= 2;
           });
           if (urgentCarrier) {
@@ -19700,7 +19762,7 @@
         renderAll();
         animateCellPulse(option.char.r, option.char.c, "crown-burst");
         playSfx("crownTake");   // Ramassage libre par l'IA.
-        showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
+        showToast(`${nomJoueurIA()} récupère gratuitement une couronne adjacente.`);
         await sleep(520);
         resolveArtifactForCharacter(option.char);
         benchJournaliser({ type: "RAMASSAGE", gardien: option.char.id, case: [option.char.r, option.char.c] });
@@ -19783,7 +19845,7 @@
           renderAll();
           animateCellPulse(option.ally.r, option.ally.c, "crown-burst");
           playSfx("crownTake");   // Transmission : l'allié prend la couronne.
-          showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
+          showToast(`${nomJoueurIA()} transmet directement la couronne à un allié adjacent.`);
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
           benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: true });
@@ -19800,7 +19862,7 @@
         liveArtifact.c = option.dropC;
         renderAll();
         animateCellPulse(option.dropR, option.dropC, "crown-burst");
-        showToast("ORDINATEUR pose la couronne entre deux alliés.");
+        showToast(`${nomJoueurIA()} pose la couronne entre deux alliés.`);
         await sleep(280);
 
         if (token !== aiRunToken || !state) return false;
@@ -19962,7 +20024,7 @@
         state.phase = "ACTION_SELECT";
         renderAll();
         animateCellPulse(option.dropR, option.dropC, "crown-burst");
-        showToast("ORDINATEUR pose la couronne pour préparer une poussée.");
+        showToast(`${nomJoueurIA()} pose la couronne pour préparer une poussée.`);
         await sleep(360);
 
         if (token !== aiRunToken || !state) return false;
@@ -20153,7 +20215,7 @@
               for (const item of simulation) {
                 const isOwn = item.char.player === state.currentPlayer;
                 const carrying = characterCarriesCrown(item.char.id);
-                const owner = state.players[item.char.player];
+                const owner = joueurDuGardien(item.char);
                 if (!item.alive) {
                   // Éliminer un gardien adverse (sans couronne) en le poussant
                   // dans le vide était sous-valorisé face aux gains de
@@ -20207,7 +20269,7 @@
           if (!rotation.valid) continue;
           let utility = -12;
           for (const move of rotation.characterMoves) {
-            const owner = state.players[move.char.player];
+            const owner = joueurDuGardien(move.char);
             const carrying = characterCarriesCrown(move.char.id);
             const isOwn = move.char.player === state.currentPlayer;
             if (carrying) {
@@ -20323,7 +20385,7 @@
         state.selectedActionType = null;
         state.selectedCharId = option.char.id;
         renderAll();
-        showToast("ORDINATEUR valide une couronne pour 1 déplacement.");
+        showToast(`${nomJoueurIA()} valide une couronne pour 1 déplacement.`);
         await sleep(320);
 
         if (token !== aiRunToken || !state) return false;
@@ -20521,7 +20583,7 @@
             applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
             if (kaykit3D) kaykit3D.lastStateSignature = "";
             playSfx("magic");
-            showToast("ORDINATEUR dissout une île vide pour 1 magie.");
+            showToast(`${nomJoueurIA()} dissout une île vide pour 1 magie.`);
             renderAll();
             scheduleKayKitSync();
             await sleep(620);
@@ -20535,7 +20597,7 @@
             const voleur = characterById(action.charId);
             if (voleur) animateCellPulse(voleur.r, voleur.c, "crown-burst");
             playSfx("crownTake");
-            showToast("ORDINATEUR vole la couronne d’un porteur adjacent !");
+            showToast(`${nomJoueurIA()} vole la couronne d’un porteur adjacent !`);
             await sleep(520);
             return true;
           }
@@ -20566,7 +20628,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         renderAll();
-        showToast("ORDINATEUR termine son tour.");
+        showToast(`${nomJoueurIA()} termine son tour.`);
         await sleep(700);
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
         return true;
@@ -20580,7 +20642,7 @@
         state.inputLocked = true;
         els.gameScreen.classList.add("ai-turn");
         renderAll();
-        showToast(`ORDINATEUR · ${cfg.label.toUpperCase()} analyse le plateau…`);
+        showToast(`${nomJoueurIA()} · ${cfg.label.toUpperCase()} analyse le plateau…`);
         await sleep(cfg.thinkDelay);
 
         if (token !== aiRunToken || !state) return;
@@ -20739,7 +20801,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         renderAll();
-        showToast("ORDINATEUR termine son tour.");
+        showToast(`${nomJoueurIA()} termine son tour.`);
         await sleep(700);
 
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
@@ -22538,7 +22600,7 @@
         const player = currentPlayer();
 
         if (player?.isAI || state.aiThinking) {
-          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "Ordinateur"}`.trim(), next: "L’adversaire prépare son action." };
+          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "CPU"}`.trim(), next: "L’adversaire prépare son action." };
         }
 
         if (state.pendingDirectMoveTarget) {
@@ -22646,7 +22708,7 @@
         const readyOwnerFor = artifact => {
           const carrier = characterById(artifact.carrierId);
           if (carrier) {
-            const owner = state.players[carrier.player];
+            const owner = joueurDuGardien(carrier);
             return owner && isCrownValidationCell(owner, carrier.r, carrier.c)
               ? owner
               : null;
@@ -22671,7 +22733,7 @@
               return `Couronne ${index + 1} : village de ${readyOwner.name} — validation au début de son prochain tour`;
             }
             return carrier
-              ? `Couronne ${index + 1} : ${state.players[carrier.player].name}`
+              ? `Couronne ${index + 1} : ${joueurDuGardien(carrier).name}`
               : `Couronne ${index + 1} : libre`;
           })
           .join("\n");
@@ -23023,7 +23085,7 @@
           const ch = characterById(state.selectedCharId);
           const carriesCrown = ch && characterCarriesCrown(ch.id);
           if (ch && carriesCrown) {
-            const p = state.players[ch.player];
+            const p = joueurDuGardien(ch);
             unitSlot.classList.remove("hidden");
             unitSlot.innerHTML = `<span class="hud-v2-unit-icon">${p.icon}</span><span class="hud-v2-unit-crown hud-v2-crown-icon is-filled">${HUD_V2_ICONS.CROWN}</span>`;
           } else {
@@ -23540,7 +23602,7 @@
             });
 
             if (char) {
-              const owner = state.players[char.player];
+              const owner = joueurDuGardien(char);
               const carriedArtifact = artifactCarriedBy(char.id);
               const carrying = !!carriedArtifact;
               const crownPointReady = (
@@ -23614,7 +23676,7 @@
               && !char
             ) {
               const selected = characterById(state.selectedCharId);
-              const owner = selected ? state.players[selected.player] : currentPlayer();
+              const owner = selected ? joueurDuGardien(selected) : currentPlayer();
               html += `
               <span class="action-ghost move-ghost" style="--ghost-color:${owner.color}">
                 <span>${owner.icon}</span>
@@ -25281,7 +25343,7 @@
           return false;
         }
 
-        const owner = state.players[char.player];
+        const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
         // ~340 ms par case, plus la rotation d'anticipation absorbée en tête de
@@ -25322,7 +25384,7 @@
            la relire depuis un état déjà à jour. */
         const resultat = applyMoveCore(char.id, r, c, cost);
         if (resultat?.couronneRamassee) {
-          showToast(`${state.players[char.player].name} récupère une couronne !`);
+          showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
         }
 
         const presentation = () => {
@@ -25513,7 +25575,7 @@
             return;
           }
           const char = characterById(mv.id);
-          const owner = char ? state.players[char.player] : null;
+          const owner = char ? joueurDuGardien(char) : null;
           impacts.push({
             type: "character",
             id: mv.id,
@@ -25533,7 +25595,7 @@
         // la pièce visée sans l'inscrire au plan. On la montre alors immobile,
         // plutôt que de désigner une autre pièce comme tête de l'aperçu.
         if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
-          const owner = targetChar ? state.players[targetChar.player] : null;
+          const owner = targetChar ? joueurDuGardien(targetChar) : null;
           impacts.unshift({
             type: targetChar ? "character" : "crown",
             id: targetChar ? targetChar.id : targetCrown.id,
@@ -25746,7 +25808,7 @@
         // Tout est relevé AVANT l'application : les positions changent ensuite.
         const menee = plan.mouvements.find(mv => mv.from[0] === startR && mv.from[1] === startC);
         const meneeChar = menee && menee.kind === "char" ? characterById(menee.id) : null;
-        const proprietaire = meneeChar ? state.players[meneeChar.player] : null;
+        const proprietaire = meneeChar ? joueurDuGardien(meneeChar) : null;
         const couronneVolante = plan.mouvements.some(mv => {
           if (mv.kind !== "crown") return false;
           const pas = Math.abs(mv.to[0] - mv.from[0]) + Math.abs(mv.to[1] - mv.from[1]);
@@ -25783,7 +25845,7 @@
       }
 
       function respawnCharacter(char) {
-        const village = state.players[char.player].village;
+        const village = joueurDuGardien(char).village;
         const spot = findNearestFreeLand(village.r, village.c);
         char.r = spot.r;
         char.c = spot.c;
@@ -26625,7 +26687,7 @@
 
         /* Compatibilité conservée : ancien flux volontairement inaccessible. */
 
-        const player = state.players[char.player];
+        const player = joueurDuGardien(char);
         const artifact = artifactCarriedBy(char.id);
 
         if (char.player !== state.currentPlayer) {
@@ -26733,7 +26795,7 @@
         if (!characterCarriesCrown(char.id)) {
           const looseArtifact = looseArtifactAt(char.r, char.c);
           if (looseArtifact && giveArtifactToCharacter(looseArtifact, char)) {
-            showToast(`${state.players[char.player].name} récupère une couronne !`);
+            showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
           }
         }
 
@@ -29598,8 +29660,8 @@
              Pour moi, le point doit encore survivre au tour adverse : même
              escompte que l'utilité d'un gardien expulsable. Pour lui, il
              tombera au début de son tour, sauf ce que je fais maintenant. */
-          if (porteur && isCrownValidationCell(state.players[porteur.player], r, c)
-            && !validationBloqueeParAdversaire(state.players[porteur.player], r, c)) {
+          if (porteur && isCrownValidationCell(joueurDuGardien(porteur), r, c)
+            && !validationBloqueeParAdversaire(joueurDuGardien(porteur), r, c)) {
             if (porteur.player === playerId) {
               const risques = lAdversaireJoue && PLAN_POIDS.validationRisques
                 ? plannerRisquesValidation(playerId, r, c) : { blocage: 0, pivot: 0 };
@@ -31602,7 +31664,7 @@
         return activeArtifacts().flatMap(couronne => {
           const porteur = couronne.carrierId && characterById(couronne.carrierId);
           if (!porteur || porteur.player === playerId) return [];
-          const adverse = state.players[porteur.player];
+          const adverse = joueurDuGardien(porteur);
           if (aiValidationDistanceForPlayer(adverse, porteur.r, porteur.c) > 3) return [];
           const villages = villagesForPlayer(adverse).map(v => cornerCrownCellsForVillage(v));
           const distance = cells => Math.min(...cells.map(([r, c]) =>
@@ -31621,8 +31683,8 @@
         if (couronnes.some(a => {
           const g = a.carrierId && characterById(a.carrierId);
           return g && g.player !== playerId
-            && isCrownValidationCell(state.players[g.player], g.r, g.c)
-            && !validationBloqueeParAdversaire(state.players[g.player], g.r, g.c);
+            && isCrownValidationCell(joueurDuGardien(g), g.r, g.c)
+            && !validationBloqueeParAdversaire(joueurDuGardien(g), g.r, g.c);
         })) return 0;
         return Math.min(...menaces.map(menace => {
           if (!characterById(menace.porteurId)) return 3;
@@ -31634,7 +31696,7 @@
             return gardien && gardien.player === playerId;
           });
           const ecarte = menace.imminente && (!porteur
-            || !isCrownValidationCell(state.players[porteur.player], porteur.r, porteur.c));
+            || !isCrownValidationCell(joueurDuGardien(porteur), porteur.r, porteur.c));
           return bloque || ecarte ? 1 : 0;
         }));
       }
@@ -31902,7 +31964,7 @@
         return activeArtifacts().some(couronne => {
           const porteur = couronne.carrierId && characterById(couronne.carrierId);
           if (!porteur) return false;
-          const joueur = state.players[porteur.player];
+          const joueur = joueurDuGardien(porteur);
           const distance = aiValidationDistanceForPlayer(joueur, porteur.r, porteur.c);
           return distance <= 2
             || ((joueur.score || 0) >= 2 && distance <= 4)
@@ -35979,7 +36041,7 @@
         }
       };
 
-      const ROTATION_COUCHES = ["deckbuilding"];
+      const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes
          sans couche, c'est la partie classique : pas de Rotation. */
       function rotationNormaliser(demande) {
@@ -36195,7 +36257,8 @@
           const g = allumee ? gardienSurBalise(r, c) : null;
           const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
-          balise.position.set(p.x, allumee ? p.y + .01 : p.y + .55, p.z);
+          // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
+          balise.position.set(p.x, allumee ? p.y + .01 : KAYKIT_LEVELS.islandTop + .02, p.z);
           const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
           [sol, runes, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
           sol.material.opacity = allumee ? .95 : .35;
@@ -36264,9 +36327,13 @@
       Object.entries(PAQUET_CARTES).forEach(([cle, def]) => {
         if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
       });
+      ACTIONS.BOUE = { name: "Boue", icon: "🟫", desc: "Ne fait rien : affine ton paquet pour t’en débarrasser.", bg: "#5a4a32" };
+      /* 19 cartes : 3 au marché et 9 révélées au choix de départ, dont 3
+         reviennent sous la pile en duel. */
       const PAQUET_PILE_MARCHE = [
-        "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "ARCANE", "ARCANE",
-        "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC"
+        "ELAN", "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "BELIER",
+        "ARCANE", "ARCANE", "ARCANE",
+        "PUSH", "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC", "MAGIC"
       ];
       const PAQUET_PRIX = 2;
       const PAQUET_MINIMUM = 8;
@@ -36394,7 +36461,9 @@
         const veutExiler = exiler ?? (marche.affiner[player.id] !== false);
         let exile = false;
         if (veutExiler && paquetTaille(player) > PAQUET_MINIMUM) {
-          const i = player.discard.map(c => c.action).lastIndexOf("MOVE");
+          const actions = player.discard.map(c => c.action);
+          const boue = actions.lastIndexOf("BOUE");
+          const i = boue >= 0 ? boue : actions.lastIndexOf("MOVE");
           if (i >= 0) {
             player.discard.splice(i, 1);
             marche.exils[player.id] = (marche.exils[player.id] || 0) + 1;
@@ -36403,7 +36472,7 @@
         }
         if (!ilyosSimulationActive) {
           playSfx("crownTake");
-          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et exile un Déplacer" : ""}.`);
+          showToast(`${player.name} achète ${PAQUET_CARTES[action].nom}${exile ? " et affine son paquet" : ""}.`);
           renderAll();
         }
         return true;
@@ -36417,7 +36486,7 @@
         const player = state?.players?.[playerId];
         if (paquetRefusAchat(player)) return null;
         const reste = (player.hand || []).reduce((total, c) =>
-          total + (c.used ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
+          total + (c.used || !(c.action in PAQUET_CARTES) ? 0 : carteForte(c) ? (c.restant ?? 0) : 1), 0);
         if (reste < PAQUET_PRIX) return null;
         const visibles = state.rotation.marche.visibles;
         let meilleur = -1, note = -Infinity;
@@ -36433,17 +36502,126 @@
         return { type: "ACHAT", index: meilleur, exiler: paquetCompte(player, "MOVE") > 4 };
       }
 
+      /* ---------- Choix de départ (paquet construit) -------------------- */
+      /* Avant le premier coup, on révèle 9 cartes de la pile. Le dernier
+         joueur du tour choisit le premier, puis l'ordre remonte, et ainsi de
+         suite jusqu'à 3 cartes chacun : choisir en premier compense le fait
+         de jouer en dernier. Chaque carte prise remplace un Déplacer du
+         paquet ; celles qui restent repartent sous la pile du marché.
+         Personne ne joue tant que le choix n'est pas fini. */
+      const PAQUET_CHOIX_PAR_JOUEUR = 3;
+      const PAQUET_CHOIX_REVELEES = 9;
+
+      function choixEnCours(source = state) {
+        const choix = source?.rotation?.choix;
+        return !!choix && !choix.fini;
+      }
+
+      function choixJoueurAuTrait() {
+        const choix = state?.rotation?.choix;
+        return choixEnCours() ? state.players[choix.ordre[choix.pris.length]] : null;
+      }
+
+      function choixInstaller() {
+        if (!paquetActif() || state.rotation.choix || state.turn !== 1) return;
+        const marche = state.rotation.marche;
+        const n = state.players.length;
+        const tour = Array.from({ length: n }, (_, i) => state.players[(state.currentPlayer + i) % n].id);
+        const remontee = tour.slice().reverse();
+        const ordre = [];
+        for (let k = 0; k < PAQUET_CHOIX_PAR_JOUEUR; k++) ordre.push(...remontee);
+        const revelees = Math.max(PAQUET_CHOIX_REVELEES, ordre.length);
+        const cartes = marche.pile.splice(0, Math.min(revelees, marche.pile.length));
+        state.rotation.choix = { cartes, ordre: ordre.slice(0, cartes.length), pris: [], fini: !cartes.length };
+      }
+
+      /** Le joueur au trait du choix de départ prend la carte `index`. */
+      function choixPrendre(index) {
+        const choix = state?.rotation?.choix;
+        const player = choixJoueurAuTrait();
+        const action = choix?.cartes?.[index];
+        if (!player || !action || choix.pris.some(x => x.index === index)) return false;
+        const carte = { id: `P${player.id}-C${choix.pris.length}-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+        if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+        // Remplace un Déplacer : d'abord dans la pioche, sinon dans la main.
+        for (const zone of ["deck", "discard", "hand"]) {
+          const i = (player[zone] || []).findIndex(c => c.action === "MOVE");
+          if (i >= 0) { player[zone].splice(i, 1); break; }
+        }
+        player.deck = Array.isArray(player.deck) ? player.deck : [];
+        player.deck.splice(Math.floor(gameRandom() * (player.deck.length + 1)), 0, carte);
+        choix.pris.push({ joueur: player.id, action, index });
+        if (choix.pris.length >= choix.ordre.length) {
+          choix.fini = true;
+          // Les cartes non prises repartent sous la pile du marché.
+          const restes = choix.cartes.filter((_, i) => !choix.pris.some(x => x.index === i));
+          state.rotation.marche.pile.push(...restes);
+        }
+        if (!ilyosSimulationActive) {
+          playSfx("crownTake");
+          showToast(`${player.name} prend ${PAQUET_CARTES[action].nom}.`);
+          renderAll();
+          choixProgrammerIA();
+        }
+        return true;
+      }
+
+      /* L'IA prend la carte la plus forte, en préférant le type qui manque à
+         son paquet : même lecture que pour l'achat au marché. */
+      function plannerChoisirDepart(playerId) {
+        const choix = state?.rotation?.choix;
+        const player = state?.players?.[playerId];
+        if (!choixEnCours() || !player || choixJoueurAuTrait()?.id !== playerId) return null;
+        const valeurDuType = type => Object.keys(PAQUET_CARTES)
+          .filter(k => PAQUET_CARTES[k].type === type)
+          .reduce((total, k) => total + paquetCompte(player, k) * PAQUET_CARTES[k].valeur, 0);
+        let meilleur = -1, note = -Infinity;
+        choix.cartes.forEach((action, i) => {
+          if (choix.pris.some(x => x.index === i)) return;
+          const n = PAQUET_PRIORITE[action] + (6 - Math.min(6, valeurDuType(PAQUET_CARTES[action].type))) * .4;
+          if (n > note) { note = n; meilleur = i; }
+        });
+        return meilleur < 0 ? null : { type: "CHOIX_DEPART", index: meilleur };
+      }
+
+      /* Rappelée à chaque rendu : un joueur qui devient ordinateur en cours
+         de route (partie automatique) choisit aussi. */
+      let choixMinuteur = null;
+      let choixMinuteurCle = null;
+      function choixProgrammerIA() {
+        const joueur = choixJoueurAuTrait();
+        const cle = joueur?.isAI ? `${joueur.id}:${state.rotation.choix.pris.length}` : null;
+        if (cle === choixMinuteurCle) return;
+        clearTimeout(choixMinuteur);
+        choixMinuteurCle = cle;
+        if (!cle) return;
+        choixMinuteur = setTimeout(() => {
+          choixMinuteurCle = null;
+          const decision = choixJoueurAuTrait()?.id === joueur.id ? plannerChoisirDepart(joueur.id) : null;
+          if (decision) choixPrendre(decision.index);
+        }, 900);
+      }
+
+      /* L'ordinateur ne commence son tour qu'une fois le choix terminé. */
+      const paquetRunAIBase = runAITurn;
+      runAITurn = async function runAITurnPaquet(token) {
+        while (state && choixEnCours()) await sleep(250);
+        return paquetRunAIBase(token);
+      };
+
       /* ---------- Tours ------------------------------------------------- */
       const paquetBeginTurnBase = beginTurn;
       beginTurn = function beginTurnPaquet() {
         paquetBeginTurnBase();
         if (!paquetActif()) return;
         paquetInstaller();
+        choixInstaller();
         if (state.turn === 1 && !state.rotation.marche.annonce && !ilyosSimulationActive) {
           state.rotation.marche.annonce = true;
           setTimeout(() => showToast("Marché ouvert : une carte par tour pour 2 cartes de ta main."), 3400);
         }
         paquetRendreMarche();
+        if (!ilyosSimulationActive) { paquetRendreChoix(); choixProgrammerIA(); }
       };
 
       const paquetEndTurnBase = endTurn;
@@ -36479,7 +36657,14 @@
           paquetPanneau.setAttribute("aria-label", "Marché du sanctuaire");
           paquetPanneau.addEventListener("click", evenement => {
             const bouton = evenement.target.closest("[data-marche]");
-            if (bouton) { evenement.stopPropagation(); paquetAcheter(Number(bouton.dataset.marche)); return; }
+            const enButin = typeof creaturesButinEnAttente === "function" && creaturesButinEnAttente(currentPlayer()?.id) > 0;
+            if (bouton) {
+              evenement.stopPropagation();
+              if (enButin) creaturesPrendreButin(Number(bouton.dataset.marche));
+              else paquetAcheter(Number(bouton.dataset.marche));
+              return;
+            }
+            if (evenement.target.closest("[data-butin-exil]")) { evenement.stopPropagation(); creaturesPrendreButin("exil"); return; }
             const bascule = evenement.target.closest("[data-affiner]");
             if (bascule) {
               evenement.stopPropagation();
@@ -36493,9 +36678,10 @@
         }
         const joueur = currentPlayer();
         const marche = state.rotation.marche;
-        const refus = joueur?.isAI ? "Tour de l’adversaire." : paquetRefusAchat(joueur);
+        const butin = !joueur?.isAI && typeof creaturesButinEnAttente === "function" ? creaturesButinEnAttente(joueur?.id) : 0;
+        const refus = joueur?.isAI ? "Tour de l’adversaire." : butin ? null : paquetRefusAchat(joueur);
         const affiner = marche.affiner[joueur?.id] !== false;
-        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur)]);
+        const empreinte = JSON.stringify([marche.visibles, marche.pile.length, refus, affiner, joueur?.id, paquetTaille(joueur), butin]);
         paquetPanneau.hidden = false;
         if (empreinte === paquetEmpreinte) return;
         paquetEmpreinte = empreinte;
@@ -36503,16 +36689,74 @@
           const def = PAQUET_CARTES[action];
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
-              ${refus ? "disabled" : ""} title="${refus || `Acheter ${def.nom} pour 2 cartes`}">
+              ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
             <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
-        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>MARCHÉ</span><small>2 cartes · 1 achat par tour</small></div>
+        paquetPanneau.classList.toggle("butin", !!butin);
+        paquetPanneau.innerHTML = `<div class="rt-marche-tete"><span>${butin ? "BUTIN" : "MARCHÉ"}</span><small>${butin ? "Une carte gratuite, ou exile 2 cartes" : "2 cartes · 1 achat par tour"}</small></div>
           <div class="rt-marche-cartes">${cartes || "<p class=\"rt-marche-vide\">Marché vide</p>"}</div>
-          <button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
-            title="En achetant, retirer un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
-            <span class="rt-bascule" aria-hidden="true"></span>Exiler un Déplacer</button>
+          ${butin ? `<button type="button" class="rt-marche-exil" data-butin-exil>Exiler 2 cartes</button>` : `<button type="button" class="rt-marche-affiner${affiner ? " on" : ""}" data-affiner aria-pressed="${affiner}"
+            title="En achetant, retirer une Boue ou un Déplacer de ta défausse (paquet jamais sous ${PAQUET_MINIMUM} cartes)">
+            <span class="rt-bascule" aria-hidden="true"></span>Affiner</button>`}
           <div class="rt-marche-pied">Paquet ${paquetTaille(joueur)} · Pile ${marche.pile.length}</div>`;
+      }
+
+      /* Fenêtre du choix de départ : posée sur le plateau, elle bloque les
+         clics tant que le choix n'est pas fini. */
+      let choixPanneau = null;
+      let choixEmpreinte = "";
+      function paquetRendreChoix() {
+        if (typeof document === "undefined" || ilyosSimulationActive) return;
+        const ecran = els?.gameScreen;
+        const ouvert = !!ecran && paquetActif() && choixEnCours();
+        document.body.classList.toggle("rt-choix-actif", ouvert);
+        if (!ouvert) {
+          if (choixPanneau) choixPanneau.hidden = true;
+          choixEmpreinte = "";
+          return;
+        }
+        if (!choixPanneau) {
+          choixPanneau = document.createElement("div");
+          choixPanneau.className = "rt-choix";
+          choixPanneau.setAttribute("role", "dialog");
+          choixPanneau.setAttribute("aria-label", "Choix de départ");
+          choixPanneau.addEventListener("click", evenement => {
+            evenement.stopPropagation();
+            const bouton = evenement.target.closest("[data-choix]");
+            if (bouton && !choixJoueurAuTrait()?.isAI) choixPrendre(Number(bouton.dataset.choix));
+          });
+          ["pointerdown", "mousedown", "touchstart", "wheel"].forEach(t => choixPanneau.addEventListener(t, e => e.stopPropagation(), { passive: true }));
+          ecran.appendChild(choixPanneau);
+        }
+        const choix = state.rotation.choix;
+        const joueur = choixJoueurAuTrait();
+        const empreinte = JSON.stringify([choix.cartes, choix.pris, joueur?.id]);
+        choixPanneau.hidden = false;
+        if (empreinte === choixEmpreinte) return;
+        choixEmpreinte = empreinte;
+        const ia = !!joueur?.isAI;
+        const cartes = choix.cartes.map((action, i) => {
+          const def = PAQUET_CARTES[action];
+          const forte = def.valeur > 1;
+          const prise = choix.pris.find(x => x.index === i);
+          const preneur = prise ? state.players[prise.joueur] : null;
+          return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}${prise ? " prise" : ""}" data-choix="${i}"
+              ${ia || prise ? "disabled" : ""} ${preneur ? `style="--pc:${preneur.color}"` : ""}
+              title="${preneur ? `Prise par ${defaitesEchapper(preneur.name)}` : `Prendre ${def.nom} (remplace un Déplacer)`}">
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <b>${def.nom}</b><i>${def.effet}</i>${preneur ? `<u>${defaitesEchapper(preneur.name)}</u>` : ""}</button>`;
+        }).join("");
+        const pris = state.players.map(p => {
+          const siens = choix.pris.filter(x => x.joueur === p.id).map(x => PAQUET_CARTES[x.action].nom);
+          const vides = Math.max(0, choix.ordre.filter(id => id === p.id).length - siens.length);
+          return `<li style="--pc:${p.color}"><span>${defaitesEchapper(p.name)}</span>${siens.map(n => `<b>${n}</b>`).join("")}${"<i></i>".repeat(vides)}</li>`;
+        }).join("");
+        choixPanneau.innerHTML = `<div class="rt-choix-boite" style="--pc:${joueur?.color || "#f4d28e"}">
+          <div class="rt-marche-tete"><span>CHOIX DE DÉPART</span><small>Chaque carte prise remplace un Déplacer de ton paquet</small></div>
+          <p class="rt-choix-trait">${ia ? `${defaitesEchapper(joueur.name)} choisit…` : `À ${defaitesEchapper(joueur?.name || "toi")} de choisir`}</p>
+          <div class="rt-choix-cartes">${cartes}</div>
+          <ul class="rt-choix-pris">${pris}</ul></div>`;
       }
 
       /* Marque les boutons du dock quand une carte forte est en main. */
@@ -36534,6 +36778,8 @@
         if (!ilyosSimulationActive) {
           try {
             paquetRendreMarche();
+            paquetRendreChoix();
+            if (choixEnCours()) choixProgrammerIA();
             paquetMarquerDock();
           } catch (erreur) {
             console.warn("[ILYOS] marché", erreur);
@@ -36542,15 +36788,431 @@
         return resultat;
       };
 
+      /* Noms des cartes du marché pour les panneaux Pioche / Défausse
+         (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
+      window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
+        ...Object.entries(PAQUET_CARTES).filter(([, def]) => def.valeur > 1)
+          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet }]),
+        ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
+      ]);
+
       window.ILYOS_ROTATION_PAQUET = {
         etat: () => (state?.rotation?.marche ? JSON.parse(JSON.stringify(state.rotation.marche)) : null),
         acheter: (index, exiler) => paquetAcheter(index, exiler),
         refus: () => paquetRefusAchat(),
+        choix: () => (state?.rotation?.choix ? JSON.parse(JSON.stringify(state.rotation.choix)) : null),
+        prendre: index => choixPrendre(index),
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
           return joueur ? { taille: paquetTaille(joueur), cartes: ["deck", "hand", "discard", "reserveCards"].flatMap(z => (joueur[z] || []).map(c => c.action)) } : null;
         }
+      };
+      /* =====================================================================
+         MODE ROTATION — couche CRÉATURES ET ŒUFS.
+
+         Règles (une ligne chacune) :
+         — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
+           2 cases du sanctuaire, chacun avec le nombre de manches avant son
+           éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
+         — Une créature ne naît que sur une île : un œuf au-dessus du vide
+           attend qu'on construise dessous. Au plus 2 créatures à la fois.
+         — Un gardien qui finit son tour sur un œuf l'écrase (avec le
+           deckbuilding : il exile un Déplacer).
+         — Une seule espèce par partie :
+             Loup : à chaque fin de manche, il avance d'une case vers le
+             gardien le plus proche ; s'il le touche déjà, il le pousse.
+             Vase : immobile ; un gardien qui finit son tour à côté d'elle
+             met une carte Boue (qui ne fait rien) dans la défausse de son
+             joueur.
+         — Une créature se fait tomber comme un gardien (poussée, magie).
+           Avec le deckbuilding, celui qui l'a fait tomber prend un butin :
+           une carte du marché gratuite, ou exiler 2 cartes.
+
+         Une créature est un gardien sans camp (char.creature, player -1) :
+         poussées, files, blocages, rotations d'île et chutes s'appliquent
+         d'office. joueurDuGardien() (core.js) lui donne un camp fictif.
+         Modèle 3D provisoire (squelettes KayKit) en attendant le choix du
+         pack de créatures.
+         ===================================================================== */
+      const CREATURES = {
+        loup: { nom: "Loup", modele: "heroSkeletonRogue" },
+        vase: { nom: "Vase", modele: "heroSkeletonMage" }
+      };
+      const CREATURES_MAX = 2;
+      const CREATURES_DISTANCE_OEUFS = 2;
+      /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
+         personne n'ait toujours la première action sur les créatures. */
+      const CREATURES_ECLOSIONS = [5, 6, 11, 12];
+
+      function creaturesActives(source = state) {
+        return !!source?.rotation?.couches?.creatures;
+      }
+
+      function creaturesVivantes() {
+        return (state?.characters || []).filter(c => c.creature);
+      }
+
+      function creaturesInstaller() {
+        if (!creaturesActives() || state.rotation.creatures) return;
+        const d = CREATURES_DISTANCE_OEUFS;
+        const cases = [[CENTER.r - d, CENTER.c], [CENTER.r + d, CENTER.c], [CENTER.r, CENTER.c - d], [CENTER.r, CENTER.c + d]];
+        const ordre = shuffle([0, 1, 2, 3]);
+        const especes = Object.keys(CREATURES);
+        state.rotation.creatures = {
+          espece: especes[Math.floor(gameRandom() * especes.length)],
+          oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: CREATURES_ECLOSIONS[ordre[i]] })),
+          prochainId: 1,
+          butins: {}
+        };
+      }
+
+      /** Manches restantes avant l'éclosion (chiffre affiché sur l'œuf). */
+      function oeufManches(oeuf) {
+        return Math.max(0, Math.ceil((oeuf.eclosion - (state?.turn || 1)) / 2));
+      }
+
+      function creatureNom(char) {
+        return CREATURES[char?.creature]?.nom || "Créature";
+      }
+
+      /* ---------- Butin ------------------------------------------------- */
+      function creaturesDonnerButin(playerId, nombre = 1) {
+        const etat = state?.rotation?.creatures;
+        if (!etat || playerId === undefined || playerId === null || playerId < 0) return;
+        if (!paquetActif()) return;
+        etat.butins[playerId] = (etat.butins[playerId] || 0) + nombre;
+      }
+
+      function creaturesButinEnAttente(playerId) {
+        return state?.rotation?.creatures?.butins?.[playerId] || 0;
+      }
+
+      /* Exile la carte la plus faible : Boue d'abord, puis Déplacer. */
+      function creaturesExiler(player, nombre) {
+        let exiles = 0;
+        for (const action of ["BOUE", "MOVE"]) {
+          for (const zone of ["discard", "deck"]) {
+            while (exiles < nombre && paquetTaille(player) > PAQUET_MINIMUM) {
+              const i = (player[zone] || []).map(c => c.action).lastIndexOf(action);
+              if (i < 0) break;
+              player[zone].splice(i, 1);
+              exiles++;
+            }
+          }
+        }
+        return exiles;
+      }
+
+      /** Prend le butin : `choix` = index d'une carte du marché, ou "exil". */
+      function creaturesPrendreButin(choix) {
+        const player = currentPlayer();
+        const etat = state?.rotation?.creatures;
+        const marche = state?.rotation?.marche;
+        if (!player || !etat || !creaturesButinEnAttente(player.id)) return false;
+        if (choix === "exil") {
+          const n = creaturesExiler(player, 2);
+          if (!ilyosSimulationActive) showToast(n ? `Butin : ${n} carte${n > 1 ? "s" : ""} exilée${n > 1 ? "s" : ""}.` : "Butin : rien à exiler (paquet minimum).");
+        } else {
+          const action = marche?.visibles?.[choix];
+          if (!action) return false;
+          const carte = { id: `P${player.id}-B${state.turn}-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+          if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+          player.discard.push(carte);
+          marche.visibles.splice(choix, 1);
+          if (marche.pile.length) marche.visibles.splice(choix, 0, marche.pile.shift());
+          if (!ilyosSimulationActive) showToast(`Butin : ${PAQUET_CARTES[action].nom} rejoint ta défausse.`);
+        }
+        etat.butins[player.id] -= 1;
+        if (!ilyosSimulationActive) renderAll();
+        return true;
+      }
+
+      /* ---------- Chute d'une créature ---------------------------------- */
+      const creaturesRemoveBase = removeCharacterFromGame;
+      removeCharacterFromGame = function removeCharacterFromGameCreatures(char, dropR = null, dropC = null, fallDirection = null) {
+        if (!char?.creature) return creaturesRemoveBase(char, dropR, dropC, fallDirection);
+        queueKayKitCharacterFall(char.id, fallDirection);
+        if (fallDirection) playSfx("fall", { c: char.c, delay: .08 });
+        state.characters = state.characters.filter(ch => ch.id !== char.id);
+        if (state.selectedCharId === char.id) state.selectedCharId = null;
+        if (!ilyosSimulationActive) {
+          creaturesDonnerButin(state.currentPlayer);
+          showToast(`${currentPlayer()?.name || "Un joueur"} fait tomber ${creatureNom(char) === "Vase" ? "la Vase" : "le " + creatureNom(char)}${paquetActif() ? " : butin à prendre au marché" : ""} !`);
+        }
+      };
+
+      /* Une créature ne ramasse jamais de couronne. */
+      const creaturesResolveArtifactBase = resolveArtifactForCharacter;
+      resolveArtifactForCharacter = function resolveArtifactForCharacterCreatures(char, ...args) {
+        if (char?.creature) return null;
+        return creaturesResolveArtifactBase(char, ...args);
+      };
+
+      /* ---------- Œufs portés par une île qui tourne ------------------- */
+      /* Un œuf posé sur une île suit la magie comme une couronne au sol :
+         rotation.absCells garde l'ordre de ile.cells, la case d'indice i va
+         donc en absCells[i]. Hors simulation seulement : le clone du planner
+         partage state.rotation avec la vraie partie. */
+      const creaturesMagieBase = applyMagicRotationCore;
+      applyMagicRotationCore = function applyMagicRotationCoreCreatures(islandId, rotation) {
+        const oeufs = (!ilyosSimulationActive && creaturesActives() && rotation?.valid) ? (state.rotation.creatures?.oeufs || []) : [];
+        const ile = oeufs.length ? state.islands.find(is => is.id === islandId) : null;
+        const suivants = ile ? oeufs.map(oeuf => {
+          const i = ile.cells.findIndex(([r, c]) => r === oeuf.r && c === oeuf.c);
+          return i >= 0 && rotation.absCells[i] ? { oeuf, vers: rotation.absCells[i] } : null;
+        }).filter(Boolean) : [];
+        const resultat = creaturesMagieBase(islandId, rotation);
+        if (resultat) suivants.forEach(({ oeuf, vers }) => { oeuf.r = vers[0]; oeuf.c = vers[1]; });
+        return resultat;
+      };
+
+      /* ---------- Tour -------------------------------------------------- */
+      function creaturesEcraserOeufs(precedentId) {
+        const etat = state.rotation.creatures;
+        etat.oeufs = etat.oeufs.filter(oeuf => {
+          const g = characterAt(oeuf.r, oeuf.c);
+          if (!g || g.creature || g.player !== precedentId) return true;
+          const joueur = state.players[precedentId];
+          const exile = paquetActif() && joueur ? creaturesExiler(joueur, 1) : 0;
+          showToast(`${joueur?.name || "Un gardien"} écrase un œuf${exile ? " et exile une carte" : ""}.`);
+          animateCellPulse(oeuf.r, oeuf.c, "crown-burst");
+          return false;
+        });
+      }
+
+      function creaturesVase(precedentId) {
+        const joueur = state.players[precedentId];
+        if (!joueur) return;
+        let boues = 0;
+        creaturesVivantes().filter(c => c.creature === "vase").forEach(vase => {
+          (state.characters || []).forEach(g => {
+            if (g.creature || g.player !== precedentId) return;
+            if (Math.abs(g.r - vase.r) + Math.abs(g.c - vase.c) !== 1) return;
+            joueur.discard = Array.isArray(joueur.discard) ? joueur.discard : [];
+            joueur.discard.push({ id: `P${precedentId}-V${state.turn}-${boues}`, action: "BOUE", used: false });
+            boues++;
+          });
+        });
+        if (boues) showToast(`La Vase colle : ${boues} carte${boues > 1 ? "s" : ""} Boue dans la défausse de ${joueur.name}.`);
+      }
+
+      /** Loup : un pas vers le gardien le plus proche, ou une poussée. */
+      function creaturesLoups() {
+        creaturesVivantes().filter(c => c.creature === "loup").forEach(loup => {
+          if (!characterById(loup.id)) return;
+          const proies = (state.characters || []).filter(g => !g.creature);
+          if (!proies.length) return;
+          const dist = (g, r = loup.r, c = loup.c) => Math.abs(g.r - r) + Math.abs(g.c - c);
+          const cible = proies.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+          if (dist(cible) === 1) {
+            const dr = cible.r - loup.r, dc = cible.c - loup.c;
+            const plan = resoudrePousseeBloc(cible.r, cible.c, dr, dc, 1);
+            if (plan) {
+              const victime = joueurDuGardien(cible);
+              appliquerPousseeBloc(plan, dr, dc);
+              playSfx("push", { c: loup.c });
+              showToast(`Le Loup bondit sur un gardien de ${victime?.name || "?"}${plan.chutes ? " et le fait tomber" : ""} !`);
+            }
+            return;
+          }
+          const pas = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+            .map(([dr, dc]) => [loup.r + dr, loup.c + dc])
+            .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
+            .sort((a, b) => dist(cible, a[0], a[1]) - dist(cible, b[0], b[1]));
+          if (pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible)) {
+            loup.r = pas[0][0];
+            loup.c = pas[0][1];
+          }
+        });
+      }
+
+      function creaturesEclore() {
+        const etat = state.rotation.creatures;
+        etat.oeufs = etat.oeufs.filter(oeuf => {
+          if (state.turn < oeuf.eclosion) return true;
+          if (creaturesVivantes().length >= CREATURES_MAX) return true;
+          if (!islandAt(oeuf.r, oeuf.c) || characterAt(oeuf.r, oeuf.c)) return true;
+          state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r: oeuf.r, c: oeuf.c });
+          animateCellPulse(oeuf.r, oeuf.c, "crown-burst");
+          showToast(`Un œuf éclot : ${etat.espece === "vase" ? "une Vase" : "un " + CREATURES[etat.espece].nom} apparaît !`);
+          return false;
+        });
+      }
+
+      const creaturesBeginTurnBase = beginTurn;
+      beginTurn = function beginTurnCreatures() {
+        if (state && creaturesActives() && !ilyosSimulationActive) {
+          creaturesInstaller();
+          if (state.turn > 1 && state.winner === null && state.rotation.creatures.dernierTour !== state.turn) {
+            state.rotation.creatures.dernierTour = state.turn;
+            const n = state.players.length;
+            const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
+            creaturesEcraserOeufs(precedentId);
+            creaturesVase(precedentId);
+            // Fin de manche : la créature agit quand le premier joueur reprend la main.
+            if (state.currentPlayer === 0) creaturesLoups();
+            creaturesEclore();
+          }
+        }
+        const resultat = creaturesBeginTurnBase();
+        // Premier tour : state.rotation vient d'être posé par l'enveloppe de base.
+        if (state && creaturesActives() && !state.rotation.creatures) {
+          creaturesInstaller();
+          if (!ilyosSimulationActive) {
+            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les manches avant l’éclosion."), 5200);
+            syncKayKitScene?.();
+          }
+        }
+        return resultat;
+      };
+
+      /* L'IA prend son butin avant de finir son tour : la meilleure carte
+         du marché si elle vaut la peine, sinon l'exil de 2 cartes. */
+      function plannerChoisirButin(playerId) {
+        if (!creaturesButinEnAttente(playerId)) return null;
+        const visibles = state.rotation.marche?.visibles || [];
+        let meilleur = -1, note = -Infinity;
+        visibles.forEach((action, i) => { const n = PAQUET_PRIORITE[action] ?? 0; if (n > note) { note = n; meilleur = i; } });
+        return meilleur >= 0 && note >= 3 ? meilleur : "exil";
+      }
+
+      const creaturesEndTurnBase = endTurn;
+      endTurn = async function endTurnCreatures(force = false) {
+        const player = state && currentPlayer();
+        if (player?.isAI && state.winner === null) {
+          let garde = 4;
+          while (garde-- > 0 && creaturesButinEnAttente(player.id) > 0) {
+            if (!creaturesPrendreButin(plannerChoisirButin(player.id))) break;
+          }
+        }
+        return creaturesEndTurnBase(force);
+      };
+
+      /* ---------- Rendu 3D des œufs -------------------------------------- */
+      const creaturesTexturesChiffres = new Map();
+      function creaturesTextureChiffre(n) {
+        if (creaturesTexturesChiffres.has(n)) return creaturesTexturesChiffres.get(n);
+        const toile = document.createElement("canvas");
+        toile.width = toile.height = 64;
+        const ctx = toile.getContext("2d");
+        ctx.fillStyle = "rgba(8,16,26,.82)";
+        ctx.beginPath(); ctx.arc(32, 32, 28, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#f4d28e"; ctx.lineWidth = 4; ctx.stroke();
+        ctx.fillStyle = "#fff3c9";
+        ctx.font = "bold 38px Georgia, serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(String(n), 32, 35);
+        const texture = new THREE.CanvasTexture(toile);
+        creaturesTexturesChiffres.set(n, texture);
+        return texture;
+      }
+
+      function creaturesConstruireOeuf() {
+        const groupe = new THREE.Group();
+        const coquille = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-v1", () => new THREE.SphereGeometry(.17, 18, 14)),
+          new THREE.MeshStandardMaterial({ color: 0xf3e3c0, roughness: .55, metalness: 0, emissive: 0x3a2a10, emissiveIntensity: .25 })
+        );
+        coquille.scale.set(1, 1.32, 1);
+        coquille.position.y = .22;
+        const taches = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-taches-v1", () => new THREE.SphereGeometry(.172, 9, 7)),
+          new THREE.MeshBasicMaterial({ color: 0x6a8f5a, wireframe: true, transparent: true, opacity: .35 })
+        );
+        taches.scale.copy(coquille.scale);
+        taches.position.copy(coquille.position);
+        const chiffre = new THREE.Sprite(new THREE.SpriteMaterial({ map: creaturesTextureChiffre(0), depthTest: false, transparent: true }));
+        chiffre.scale.set(.32, .32, 1);
+        chiffre.position.y = .66;
+        chiffre.renderOrder = 20;
+        groupe.add(coquille, taches, chiffre);
+        groupe.userData.chiffre = chiffre;
+        groupe.traverse(o => { o.raycast = () => {}; });
+        return groupe;
+      }
+
+      function creaturesSyncOeufs3D() {
+        if (!kaykit3D?.scene) return;
+        const oeufs = creaturesActives() ? (state?.rotation?.creatures?.oeufs || []) : [];
+        let groupe = kaykit3D.rotationOeufs;
+        if (!oeufs.length) {
+          if (groupe) groupe.visible = false;
+          return;
+        }
+        if (!groupe) {
+          groupe = new THREE.Group();
+          groupe.name = "rotation-oeufs";
+          kaykit3D.scene.add(groupe);
+          kaykit3D.rotationOeufs = groupe;
+        }
+        groupe.visible = true;
+        const vus = new Set();
+        oeufs.forEach(oeuf => {
+          vus.add(oeuf.id);
+          let visuel = groupe.children.find(o => o.userData.oeufId === oeuf.id);
+          if (!visuel) {
+            visuel = creaturesConstruireOeuf();
+            visuel.userData.oeufId = oeuf.id;
+            groupe.add(visuel);
+          }
+          const surIle = !!islandAt(oeuf.r, oeuf.c);
+          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : KAYKIT_LEVELS.islandTop + .014; // case vide : posé sur la grille
+          const p = kaykitCellPosition(oeuf.r, oeuf.c, y);
+          visuel.position.set(p.x, p.y, p.z);
+          const n = oeufManches(oeuf);
+          if (visuel.userData.n !== n) {
+            visuel.userData.n = n;
+            visuel.userData.chiffre.material.map = creaturesTextureChiffre(n);
+            visuel.userData.chiffre.material.needsUpdate = true;
+          }
+          visuel.children[0].material.opacity = surIle ? 1 : .7;
+          visuel.children[0].material.transparent = !surIle;
+        });
+        [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
+      }
+
+      const creaturesSyncSceneBase = syncKayKitScene;
+      syncKayKitScene = function syncKayKitSceneCreatures() {
+        creaturesSyncSceneBase();
+        try {
+          creaturesSyncOeufs3D();
+          creaturesTeinter();
+        } catch (erreur) {
+          console.warn("[ILYOS] œufs 3D", erreur);
+        }
+      };
+
+      /* Les créatures sont des squelettes KayKit (choix de Taekun, 01/11) :
+         une teinte vert de lichen, faite une fois par modèle, les distingue
+         des gardiens, même d'un gardien squelette de la Collection. */
+      function creaturesTeinter() {
+        creaturesVivantes().forEach(char => {
+          const visuel = kaykit3D?.characterVisuals?.get(String(char.id));
+          if (!visuel || visuel.teinteCreature) return;
+          visuel.teinteCreature = true;
+          visuel.wrapper.traverse(o => {
+            if (!o.isMesh || !o.material) return;
+            const teinter = m => {
+              const copie = m.clone();
+              if (copie.color) copie.color.multiply(new THREE.Color(0x9fe0a4));
+              if (copie.emissive) { copie.emissive.setHex(0x163a1c); copie.emissiveIntensity = .55; }
+              return copie;
+            };
+            o.material = Array.isArray(o.material) ? o.material.map(teinter) : teinter(o.material);
+          });
+        });
+      }
+
+      /* Modèle 3D d'une créature (kaykit3d.js, resolveHeroAssetKey). */
+      function creatureModele(char) {
+        return CREATURES[char?.creature]?.modele || "heroSkeletonWarrior";
+      }
+
+      window.ILYOS_ROTATION_CREATURES = {
+        etat: () => (state?.rotation?.creatures ? JSON.parse(JSON.stringify(state.rotation.creatures)) : null),
+        vivantes: () => creaturesVivantes().map(c => ({ id: c.id, espece: c.creature, r: c.r, c: c.c })),
+        butin: choix => creaturesPrendreButin(choix)
       };
       /* =====================================================================
          TUTORIEL — « La Première Ascension »
@@ -50889,6 +51551,8 @@
       function progressionProfilVide() {
         return {
           version: PROGRESSION_VERSION,
+          /* Nom choisi par le joueur, affiché dans le panneau Progression. */
+          pseudo: null,
           xp: 0,
           parties: 0,
           victoires: 0,
@@ -50914,6 +51578,7 @@
         if (!brut || typeof brut !== "object") return profil;
         /* Fusion champ par champ : un profil d'une version antérieure garde ce
            qu'il connaît et reçoit les valeurs par défaut du reste. */
+        profil.pseudo = progressionPseudoValide(brut.pseudo);
         if (Number.isFinite(brut.xp) && brut.xp >= 0) profil.xp = Math.floor(brut.xp);
         if (Number.isFinite(brut.parties)) profil.parties = brut.parties;
         if (Number.isFinite(brut.victoires)) profil.victoires = brut.victoires;
@@ -50963,8 +51628,150 @@
         return profil;
       }
 
+      /* COMPTE EN LIGNE : pseudo + mot de passe (fonction Netlify /api/compte).
+         L'appareil garde seulement le pseudo et un jeton ; le mot de passe ne
+         sert qu'à créer le compte ou à s'y reconnecter sur un autre appareil.
+         Chaque enregistrement du profil part au serveur après quelques
+         secondes de calme. Au lancement, le profil le plus avancé (en XP)
+         l'emporte : une progression n'est jamais écrasée par une plus petite. */
+      const PROGRESSION_COMPTE_KEY = "ilyos-compte-v1";
+      const PROGRESSION_COMPTE_URL = "/api/compte";
+      let progressionEnvoiMinuteur = null;
+
+      function progressionCompteLire() {
+        try {
+          const c = JSON.parse(localStorage.getItem(PROGRESSION_COMPTE_KEY) || "null");
+          return c && typeof c.pseudo === "string" && typeof c.jeton === "string" ? c : null;
+        } catch (_) { return null; }
+      }
+
+      function progressionCompteEcrire(compte) {
+        try {
+          if (compte) localStorage.setItem(PROGRESSION_COMPTE_KEY, JSON.stringify(compte));
+          else localStorage.removeItem(PROGRESSION_COMPTE_KEY);
+        } catch (_) { }
+      }
+
+      async function progressionCompteAppel(corps, keepalive = false) {
+        try {
+          const reponse = await fetch(PROGRESSION_COMPTE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corps),
+            keepalive
+          });
+          if (reponse.status === 404 || reponse.status === 405) return { ok: false, erreur: "indisponible" };
+          const donnees = await reponse.json().catch(() => null);
+          return donnees && typeof donnees === "object" ? donnees : { ok: false, erreur: "serveur" };
+        } catch (_) {
+          return { ok: false, erreur: "reseau" };
+        }
+      }
+
+      function progressionCompteEnvoyer(keepalive = false) {
+        clearTimeout(progressionEnvoiMinuteur);
+        progressionEnvoiMinuteur = null;
+        const compte = progressionCompteLire();
+        if (!compte) return Promise.resolve(null);
+        const texte = localStorage.getItem(PROGRESSION_STORAGE_KEY);
+        if (!texte || texte === compte.envoye) return Promise.resolve(null);
+        let profil = null;
+        try { profil = JSON.parse(texte); } catch (_) { return Promise.resolve(null); }
+        return progressionCompteAppel({ action: "sauver", pseudo: compte.pseudo, jeton: compte.jeton, profil }, keepalive).then(r => {
+          const actuel = progressionCompteLire();
+          if (r.ok && actuel && actuel.jeton === compte.jeton) progressionCompteEcrire({ ...actuel, envoye: texte });
+          else if (r.erreur === "jeton") progressionCompteEcrire(null);
+          return r;
+        });
+      }
+
+      function progressionCompteProgrammerEnvoi() {
+        if (!progressionCompteLire()) return;
+        clearTimeout(progressionEnvoiMinuteur);
+        progressionEnvoiMinuteur = setTimeout(() => progressionCompteEnvoyer(), 3000);
+      }
+
+      try {
+        window.addEventListener("pagehide", () => { if (progressionEnvoiMinuteur) progressionCompteEnvoyer(true); });
+      } catch (_) { }
+
+      /* Garde le profil le plus avancé des deux, au nom du compte. */
+      function progressionCompteFusionner(pseudo, profilServeur) {
+        const local = progressionCharger();
+        let texte = null;
+        if (profilServeur && typeof profilServeur === "object" && (Number(profilServeur.xp) || 0) > local.xp) {
+          texte = JSON.stringify({ ...profilServeur, pseudo });
+          try { localStorage.setItem(PROGRESSION_STORAGE_KEY, texte); } catch (_) { }
+          const compte = progressionCompteLire();
+          if (compte) progressionCompteEcrire({ ...compte, envoye: texte });
+          return "serveur";
+        }
+        local.pseudo = pseudo;
+        progressionEnregistrer(local);
+        return "local";
+      }
+
+      async function progressionCreerCompte(pseudo, motDePasse) {
+        const nom = progressionPseudoValide(pseudo);
+        if (!nom) return { ok: false, erreur: "pseudo" };
+        const profil = progressionCharger();
+        profil.pseudo = nom;
+        const r = await progressionCompteAppel({ action: "creer", pseudo: nom, motDePasse, profil });
+        if (!r.ok) return r;
+        progressionCompteEcrire({ pseudo: r.pseudo, jeton: r.jeton, envoye: JSON.stringify(profil) });
+        progressionEnregistrer(profil);
+        return { ok: true, pseudo: r.pseudo };
+      }
+
+      async function progressionConnecter(pseudo, motDePasse) {
+        const nom = progressionPseudoValide(pseudo);
+        if (!nom) return { ok: false, erreur: "pseudo" };
+        const r = await progressionCompteAppel({ action: "connexion", pseudo: nom, motDePasse });
+        if (!r.ok) return r;
+        progressionCompteEcrire({ pseudo: r.pseudo, jeton: r.jeton, envoye: null });
+        const garde = progressionCompteFusionner(r.pseudo, r.profil);
+        return { ok: true, pseudo: r.pseudo, garde };
+      }
+
+      /* Au lancement : récupère le profil du compte s'il est plus avancé,
+         sinon envoie celui de l'appareil. */
+      async function progressionSynchroniser() {
+        const compte = progressionCompteLire();
+        if (!compte) return { ok: false, erreur: "sans-compte" };
+        const r = await progressionCompteAppel({ action: "lire", pseudo: compte.pseudo, jeton: compte.jeton });
+        if (!r.ok) {
+          if (r.erreur === "jeton") progressionCompteEcrire(null);
+          return r;
+        }
+        const garde = progressionCompteFusionner(r.pseudo, r.profil);
+        if (garde === "local") await progressionCompteEnvoyer();
+        return { ok: true, garde };
+      }
+
+      function progressionDeconnecter() {
+        progressionCompteEcrire(null);
+      }
+
+      /* Pseudo : 2 à 16 caractères, lettres (accents compris), chiffres,
+         espace, tiret, point ou souligné. Renvoie null s'il ne convient pas. */
+      function progressionPseudoValide(nom) {
+        if (typeof nom !== "string") return null;
+        const propre = nom.normalize("NFC").replace(/\s+/g, " ").trim();
+        return /^[\p{L}\p{N} ._-]{2,16}$/u.test(propre) ? propre : null;
+      }
+
+      function progressionDefinirPseudo(nom) {
+        const pseudo = progressionPseudoValide(nom);
+        if (!pseudo) return null;
+        const profil = progressionCharger();
+        profil.pseudo = pseudo;
+        progressionEnregistrer(profil);
+        return pseudo;
+      }
+
       function progressionEnregistrer(profil) {
         try { localStorage.setItem(PROGRESSION_STORAGE_KEY, JSON.stringify(profil)); } catch (_) { }
+        progressionCompteProgrammerEnvoi();
         if (!progressionPersistanceDemandee) {
           progressionPersistanceDemandee = true;
           try { navigator.storage?.persist?.().catch(() => { }); } catch (_) { }
@@ -51779,6 +52586,8 @@
           return {
             ...progressionNiveauDepuisXp(profil.xp),
             titre: progressionObjet("titre", profil.equipement.titre)?.nom || null,
+            pseudo: profil.pseudo,
+            heros: progressionObjet("heros", profil.equipement.heros)?.image || null,
             nouveautes: progressionNouveautes(profil),
             saison: progressionVueSaison(profil),
             quetes: progressionVueQuetes(profil),
@@ -51786,7 +52595,8 @@
               dispo: progressionOffrandeDispo(profil),
               prochaine: profil.offrande.prochaine,
               vent: profil.offrande.vent,
-              cases: PROGRESSION_OFFRANDES.map(o => o.texte)
+              cases: PROGRESSION_OFFRANDES.map(o => o.texte),
+              details: PROGRESSION_OFFRANDES.map(o => ({ xp: o.xp || 0, vent: o.vent || 0 }))
             }
           };
         },
@@ -51794,6 +52604,16 @@
         equiper: progressionEquiper,
         saisons: PROGRESSION_SAISONS,
         marquerVus: progressionMarquerVus,
+        definirPseudo: progressionDefinirPseudo,
+        pseudoValide: progressionPseudoValide,
+        compte: () => {
+          const c = progressionCompteLire();
+          return c ? { pseudo: c.pseudo, enLigne: true, aJour: c.envoye === localStorage.getItem(PROGRESSION_STORAGE_KEY) } : null;
+        },
+        creerCompte: progressionCreerCompte,
+        connecter: progressionConnecter,
+        synchroniser: progressionSynchroniser,
+        deconnecter: progressionDeconnecter,
         reclamerOffrande: progressionReclamerOffrande,
         changerQuete: progressionChangerQuete,
         avancerQuetes: (profil, evenement) => progressionAvancerQuetes(profil, evenement),
@@ -54677,7 +55497,7 @@
           r: char.r,
           c: char.c,
           porte: !!artifactCarriedBy(char.id),
-          surCaseValidation: isCrownValidationCell(state.players[char.player], char.r, char.c)
+          surCaseValidation: isCrownValidationCell(joueurDuGardien(char), char.r, char.c)
         }));
 
         return {

@@ -616,7 +616,7 @@
           r: char.r,
           c: char.c,
           porte: !!artifactCarriedBy(char.id),
-          surCaseValidation: isCrownValidationCell(state.players[char.player], char.r, char.c)
+          surCaseValidation: isCrownValidationCell(joueurDuGardien(char), char.r, char.c)
         }));
 
         return {
