@@ -192,12 +192,14 @@ test('Découverte se joue jusqu’à la validation', async ({ page }) => {
     ?.some(ch => ch.p === 1 && ch.r === 0 && ch.c === 2), null, { timeout: 5000 });
 
   await waitForDiscoveryStep(page, 'tenir');
-  await page.waitForFunction(() => {
+  /* Le score se lit dans le MÊME relevé que le tour adverse, et le relevé
+     ne dépend pas des images : sur un runner lent (rendu logiciel), une
+     lecture séparée tombait parfois une fois la Couronne déjà ancrée. */
+  const pendantTourAdverse = await page.waitForFunction(() => {
     const debug = window.ILYOS_TUTORIAL?._debug();
-    return debug?.validationRunning && debug.currentPlayer === 1;
-  }, null, { timeout: 25000 });
-  debug = await page.evaluate(() => window.ILYOS_TUTORIAL._debug());
-  expect(debug.score).toBe(0);
+    return debug?.validationRunning && debug.currentPlayer === 1 ? { score: debug.score } : null;
+  }, null, { timeout: 25000, polling: 100 });
+  expect((await pendantTourAdverse.jsonValue()).score).toBe(0);
   await page.waitForFunction(() => {
     const debug = window.ILYOS_TUTORIAL?._debug();
     return debug?.currentPlayer === 0 && debug.score >= 1;
