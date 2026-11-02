@@ -23,6 +23,9 @@
     if (new URLSearchParams(location.search).get('cartes') === 'kaykit') {
       document.documentElement.dataset.cartes = 'kaykit';
     }
+    /* Essai (2026-11-02) : formes des cartes au-dessus des actions. */
+    const piles = new URLSearchParams(location.search).get('piles');
+    if (['a', 'b', 'c'].includes(piles)) document.documentElement.dataset.piles = piles;
   } catch (_) {}
 
   const ICONS = {
@@ -804,13 +807,20 @@
     });
   }
 
+  /* Pendant le tour, le chiffre affiché est le total disponible (main +
+     réserve, js/hud-consolidation-v12.js) ; la réserve seule est dans
+     data-reserve-seule. */
   function reserveCurrent(type) {
-    return parseCount(reserveCountNode(type)?.textContent);
+    const node = reserveCountNode(type);
+    const seule = node?.getAttribute('data-reserve-seule');
+    return seule != null ? parseCount(seule) : parseCount(node?.textContent);
   }
 
-  function incrementReserveVisual(type, count) {
+  function setReserveVisual(type, valeur) {
     const node = reserveCountNode(type);
-    if (node) node.textContent = String(Math.min(5, parseCount(node.textContent) + count));
+    if (!node) return;
+    node.textContent = String(valeur);
+    node.setAttribute('data-reserve-seule', String(valeur));
   }
 
   async function animateActionUse(type, count) {
@@ -844,57 +854,62 @@
       const type = typeOf(card);
       if (type) counts[type]++;
     });
+    if (!Object.values(counts).some(Boolean)) { pulse(endTarget(), 'card-cycle-v7-end-hit'); return; }
 
-    /* Pioche détaillée : le rangement se lit aussi. Vols plus lents et une
-       phrase près de la réserve, qui dit où vont les cartes non jouées. */
-    const detail = piocheDetaillee() && Object.values(counts).some(Boolean);
-    const lent = detail ? 1.9 : 1;
+    /* Demande de Taekun (2026-11-02) : toutes les cartes partent EN MÊME
+       TEMPS vers la réserve (et le surplus vers la défausse), en un seul
+       vol court. La réserve s'éclaire pendant le vol pour qu'on voie où
+       vont les cartes. L'encadré d'explication n'apparaît qu'au premier
+       tour du joueur, en une phrase. */
+    const premierTour = (window.ILYOS_PIOCHE?.tourJoueur?.() || 0) <= 1;
+    const badge = activeReserveBadge();
+    badge?.classList.add('cc-reserve-cible');
     let legende = null;
-    if (detail) {
-      const cible = rectOf(activeReserveBadge()) || rectOf(discardTarget());
-      legende = creerCouche('<b>Fin du tour</b><span>Tes cartes non jouées vont dans ta <em>réserve</em> (5 par type au plus) : tu les retrouveras au prochain tour. Le surplus va à la défausse.</span>', 'cc-reserve-legende');
+    if (premierTour) {
+      const cible = rectOf(badge) || rectOf(discardTarget());
+      legende = creerCouche('<span>Cartes non jouées <b>→ réserve</b> : tu les gardes pour le prochain tour.</span>', 'cc-reserve-legende');
       if (cible) {
         legende.style.left = `${clamp(cible.left + cible.width / 2, 170, innerWidth - 170)}px`;
         legende.style.top = `${cible.top + cible.height + 12}px`;
       }
       requestAnimationFrame(() => legende.classList.add('is-on'));
-      await sleep(700);
     }
 
-    for (const type of ['MOVE', 'PUSH', 'MAGIC']) {
+    const vols = [];
+    ['MOVE', 'PUSH', 'MAGIC'].forEach((type, rang) => {
       const total = counts[type];
-      if (!total) continue;
-      const bank = Math.min(total, Math.max(0, 5 - reserveCurrent(type)));
+      if (!total) return;
+      const avant = reserveCurrent(type);
+      const bank = Math.min(total, Math.max(0, 5 - avant));
       const overflow = total - bank;
-
+      const from = rectOf(bottomTarget(type));
+      const depart = sleep(rang * 70);
       if (bank > 0) {
-        const from = rectOf(bottomTarget(type));
         const to = rectOf(reserveTarget(type));
-        if (from && to) {
+        if (from && to) vols.push(depart.then(async () => {
           const ghost = makeCard(type, 'transfer', bank);
-          await fly(ghost, from, to, { duration: 500 * lent, arc: 48, startScale: .54, endScale: .22 });
+          await fly(ghost, from, to, { duration: premierTour ? 760 : 520, arc: 48, startScale: .54, endScale: .22 });
           ghost.remove();
-          incrementReserveVisual(type, bank);
+          setReserveVisual(type, avant + bank);
           pulse(reserveTarget(type), 'card-cycle-v7-reserve-hit');
           floatCount(reserveTarget(type), `+${bank}`);
-        }
+        }));
       }
-
       if (overflow > 0) {
-        const from = rectOf(bottomTarget(type));
         const to = rectOf(discardTarget());
-        if (from && to) {
+        if (from && to) vols.push(depart.then(async () => {
           const ghost = makeCard(type, 'transfer', overflow);
-          await fly(ghost, from, to, { duration: 430 * lent, arc: 38, startScale: .54, endScale: .20 });
+          await fly(ghost, from, to, { duration: premierTour ? 700 : 480, arc: 38, startScale: .54, endScale: .20 });
           ghost.remove();
           pulse(discardTarget(), 'ov2-pile-hit');
           floatCount(discardTarget(), `+${overflow}`);
-        }
+        }));
       }
-      await sleep(detail ? 220 : 45);
-    }
+    });
+    await Promise.all(vols);
+    badge?.classList.remove('cc-reserve-cible');
     if (legende) {
-      await sleep(1400);
+      await sleep(900);
       legende.classList.remove('is-on');
       setTimeout(() => legende.remove(), 400);
     }

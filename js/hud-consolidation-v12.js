@@ -177,21 +177,29 @@
     return String(a || '').trim().toLocaleUpperCase('fr-FR') === String(b || '').trim().toLocaleUpperCase('fr-FR');
   }
 
-  function setReserveValues(badge,player){
+  /* Demande de Taekun (2026-11-02) : pendant le tour d'un joueur, sa réserve
+     affiche le TOTAL disponible par action (cartes de la main pas encore
+     jouées + cartes en réserve), qui baisse à chaque action jouée. Hors de
+     son tour, seulement les cartes mises de côté. La valeur de la réserve
+     seule reste lisible dans data-reserve-seule (animation de fin de tour). */
+  function setReserveValues(badge,player,enCours=false){
     if (!badge || !player) return;
     const stash = player.stash || {};
-    const values = {
-      MOVE: Math.max(0,Number(stash.MOVE) || 0),
-      PUSH: Math.max(0,Number(stash.PUSH) || 0),
-      MAGIC: Math.max(0,Number(stash.MAGIC) || 0)
-    };
-    const move = badge.querySelector('[data-reserve-move]');
-    const push = badge.querySelector('[data-reserve-push]');
-    const magic = badge.querySelector('[data-reserve-magic]');
-    poserTexte(move, values.MOVE);
-    poserTexte(push, values.PUSH);
-    poserTexte(magic, values.MAGIC);
-    poserAttr(badge,'aria-label',`Réserve : ${values.MOVE} déplacements, ${values.PUSH} poussées, ${values.MAGIC} magies`);
+    const main = Array.isArray(player.hand) ? player.hand : [];
+    const seule = {}, values = {};
+    ['MOVE','PUSH','MAGIC'].forEach(type=>{
+      seule[type] = Math.max(0,Number(stash[type]) || 0);
+      values[type] = seule[type] + (enCours ? main.filter(carte=>carte && !carte.used && carte.action===type).length : 0);
+    });
+    [['MOVE','move'],['PUSH','push'],['MAGIC','magic']].forEach(([type,cle])=>{
+      const noeud = badge.querySelector(`[data-reserve-${cle}]`);
+      poserTexte(noeud, values[type]);
+      poserAttr(noeud,'data-reserve-seule',String(seule[type]));
+    });
+    badge.classList.toggle('ov2-reserve-total',enCours);
+    poserAttr(badge,'aria-label',enCours
+      ? `Disponibles ce tour : ${values.MOVE} déplacements, ${values.PUSH} poussées, ${values.MAGIC} magies`
+      : `Réserve : ${values.MOVE} déplacements, ${values.PUSH} poussées, ${values.MAGIC} magies`);
   }
 
   function syncReserveBadges(){
@@ -215,7 +223,7 @@
     [[byId('ov2LeftReserve'),left],[byId('ov2RightReserve'),right]].forEach(([badge,player])=>{
       if (!badge) return;
       badge.classList.toggle('ov2-off',!player);
-      if (player) setReserveValues(badge,player);
+      if (player) setReserveValues(badge,player,player === players[currentIndex]);
     });
   }
 

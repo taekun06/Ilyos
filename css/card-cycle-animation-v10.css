@@ -287,6 +287,14 @@ body .card-cycle-v10-card.showcase.cc-detail {
 .cc-reserve-legende.is-on { opacity: 1; transform: translate(-50%, 0); }
 .cc-reserve-legende b { display: block; color: #e6b74b; letter-spacing: .14em; font-size: 11px; text-transform: uppercase; margin-bottom: 3px; }
 .cc-reserve-legende em { font-style: normal; color: #ffd879; font-weight: 700; }
+.cc-reserve-legende span b { display: inline; color: #ffd879; letter-spacing: 0; font-size: inherit; text-transform: none; margin: 0; }
+
+/* Réserve visée pendant le rangement de fin de tour : elle s'éclaire. */
+.ov2-reserve.cc-reserve-cible {
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 216, 121, .7), 0 0 18px rgba(255, 200, 90, .55);
+  transition: box-shadow .2s ease;
+}
 
 /* ---------- CARTES EMPILÉES DANS LES BOUTONS D'ACTION ----------
    Une carte par action disponible, dos visible, qui dépasse du haut du
@@ -330,4 +338,46 @@ body .card-cycle-v10-card.showcase.cc-detail {
   .cc-pile { bottom: auto; top: 3px; height: 16px; }
   .cc-pile i { width: 11px; height: 17px; left: -5.5px; transform: translateX(calc(var(--cc-d) * 6px)) rotate(calc(var(--cc-d) * 6deg)); }
   .cc-pile b { left: calc(50% + 22px); bottom: 2px; font-size: 9px; }
+}
+
+/* ---------- ESSAIS ?piles=a|b (2026-11-02) ----------
+   a « Carte dressée » : une seule carte lisible qui dépasse du bouton, deux
+     tranches derrière si plus d'une carte, et le nombre sur une pastille.
+   b « Tranches » : pas d'illustration, l'épaisseur d'un paquet vu de côté. */
+html[data-piles] .cc-pile b { display: none; }
+html[data-piles="a"] .cc-pile { bottom: calc(100% - 12px); height: 40px; left: calc(50% + 26px); }
+html[data-piles="a"] .cc-pile i { display: none; width: 26px; height: 40px; left: -13px; animation: none;
+  transform-origin: 50% 100%; filter: drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
+html[data-piles="a"] .cc-pile i:nth-child(1) { display: block; transform: translate(5px, -1px) rotate(7deg); filter: brightness(.55) drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
+html[data-piles="a"] .cc-pile i:nth-child(2) { display: block; transform: translate(2.5px, -.5px) rotate(3.5deg); filter: brightness(.75) drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
+html[data-piles="a"] .cc-pile i:last-of-type { display: block; transform: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); z-index: 2; }
+html[data-piles="a"] .cc-pile::after {
+  content: attr(data-n); position: absolute; z-index: 3; left: 6px; bottom: 26px;
+  min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px;
+  display: grid; place-items: center; background: #1a1308; border: 1.5px solid #e9c46a;
+  color: #fff3cf; font: 800 11px/1 system-ui, sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,.5);
+}
+html[data-piles="b"] .cc-pile { bottom: calc(100% - 6px); height: 26px; }
+html[data-piles="b"] .cc-pile i {
+  width: 52px; height: 7px; left: -26px; border-radius: 2px; animation: none;
+  background: linear-gradient(#f3d27f, #a8782c); box-shadow: 0 1px 0 rgba(0,0,0,.6), inset 0 -1px 0 rgba(0,0,0,.25);
+  transform: translateY(calc((var(--cc-d) + 3) * -5px)) !important; transform-origin: center;
+}
+html[data-piles="b"] .cc-pile.type-move i { background: linear-gradient(#bfe2ff 0 40%, #2f5fa8 41%); }
+html[data-piles="b"] .cc-pile.type-push i { background: linear-gradient(#ffd7a8 0 40%, #a8461c 41%); }
+html[data-piles="b"] .cc-pile.type-magic i { background: linear-gradient(#e2c8ff 0 40%, #5a2eb0 41%); }
+/* c « Main derrière le bouton » : jusqu'à 3 cartes en éventail glissées
+   derrière le socle, seul leur haut illustré dépasse. */
+html[data-piles="c"] .cc-pile { bottom: calc(100% - 34px); height: 50px; z-index: -1; }
+html[data-piles="c"] .cc-pile i { display: none; width: 32px; height: 50px; left: -16px; animation: none;
+  transform-origin: 50% 140%; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
+html[data-piles="c"] .cc-pile i:nth-child(-n+3) { display: block; }
+html[data-piles="c"] .cc-pile i:nth-child(1) { transform: rotate(-14deg); }
+html[data-piles="c"] .cc-pile i:nth-child(2) { transform: rotate(14deg); }
+html[data-piles="c"] .cc-pile i:nth-child(3) { transform: none; }
+html[data-piles="c"] .cc-pile[data-n="1"] i:nth-child(1) { transform: none; }
+html[data-piles="c"] .cc-pile[data-n="2"] i:nth-child(1) { transform: rotate(-8deg); }
+html[data-piles="c"] .cc-pile[data-n="2"] i:nth-child(2) { transform: rotate(8deg); }
+@media (orientation: portrait) and (max-width: 820px) {
+  html[data-piles] .cc-pile { display: none; }
 }
