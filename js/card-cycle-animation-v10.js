@@ -17,6 +17,14 @@
   if (window.__ILYOS_CARD_CYCLE_V10__) return;
   window.__ILYOS_CARD_CYCLE_V10__ = true;
 
+  /* Essai (2026-11-02) : `?cartes=kaykit` montre les cartes avec les
+     illustrations KayKit de la maquette A (css/card-art-v12.css). */
+  try {
+    if (new URLSearchParams(location.search).get('cartes') === 'kaykit') {
+      document.documentElement.dataset.cartes = 'kaykit';
+    }
+  } catch (_) {}
+
   const ICONS = {
     MOVE: `<svg viewBox="0 0 48 48" aria-hidden="true"><g fill="currentColor"><ellipse cx="17" cy="14" rx="5" ry="8"/><circle cx="13" cy="24" r="2"/><circle cx="17" cy="23" r="2"/><ellipse cx="31" cy="32" rx="5" ry="8"/><circle cx="27" cy="41" r="2"/><circle cx="31" cy="40" r="2"/></g></svg>`,
     PUSH: `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M7 24h24M23 14l10 10-10 10" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="m39 10 2.2 7L48 19l-6.8 2.2L39 28l-2.2-6.8L30 19l6.8-2.2L39 10Z" fill="currentColor"/></svg>`,

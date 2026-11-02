@@ -24,6 +24,14 @@ body .card-cycle-v7-card.card-cycle-v10-card {
 body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/pousser.webp"); }
 body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/magie.webp"); }
 
+/* Essai `?cartes=kaykit` : mêmes cadres, illustrations KayKit de la maquette A. */
+html[data-cartes="kaykit"] body .card-cycle-v7-card.card-cycle-v10-card { --carte-face: url("../assets/cartes/kaykit/deplacer.webp"); }
+html[data-cartes="kaykit"] body .card-cycle-v7-card.card-cycle-v10-card.type-push { --carte-face: url("../assets/cartes/kaykit/pousser.webp"); }
+html[data-cartes="kaykit"] body .card-cycle-v7-card.card-cycle-v10-card.type-magic { --carte-face: url("../assets/cartes/kaykit/magie.webp"); }
+html[data-cartes="kaykit"] .cc-pile i { background-image: url("../assets/cartes/kaykit/deplacer.webp"); }
+html[data-cartes="kaykit"] .cc-pile.type-push i { background-image: url("../assets/cartes/kaykit/pousser.webp"); }
+html[data-cartes="kaykit"] .cc-pile.type-magic i { background-image: url("../assets/cartes/kaykit/magie.webp"); }
+
 body .card-cycle-v7-card.card-cycle-v10-card::before,
 body .card-cycle-v7-card.card-cycle-v10-card::after {
   content: none !important;
