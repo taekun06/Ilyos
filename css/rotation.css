@@ -93,3 +93,16 @@
 }
 /* Pendant le choix, la pioche de début de tour ne vient pas couvrir la fenêtre. */
 body.rt-choix-actif .card-cycle-v7-card.showcase{visibility:hidden}
+
+/* Récompense d'une créature tombée : bandeau doré bref. Visible même si
+   l'animation d'entrée ne joue pas ; la sortie est un simple fondu. */
+.rt-recompense{position:fixed;left:50%;top:22%;z-index:100600;transform:translateX(-50%);pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 26px 11px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(28,22,10,.92),rgba(12,10,6,.92));border:2px solid #f4d28e;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--rt-camp) 55%,transparent),0 0 26px rgba(244,210,142,.55),0 12px 28px rgba(0,0,0,.45);
+  transition:opacity .4s ease;animation:rt-recompense .35s ease-out}
+.rt-recompense.sortie{opacity:0}
+.rt-recompense b{font:700 26px/1 Georgia,serif;letter-spacing:.14em;color:#ffe3a0;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+.rt-recompense span{font:600 14px/1.2 system-ui,sans-serif;color:#f4ead0}
+@keyframes rt-recompense{from{transform:translate(-50%,10px) scale(.9)}}
+@media (max-width:600px){.rt-recompense{top:18%;padding:8px 18px}.rt-recompense b{font-size:21px}.rt-recompense span{font-size:12.5px}}

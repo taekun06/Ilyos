@@ -36206,29 +36206,55 @@
          Éteinte (au-dessus du vide) : un simple anneau pâle qui flotte, pour
          qu'on voie où construire. Matériaux de base, sans lumière ajoutée ni
          animation : rien ne tourne en continu. */
-      const ROTATION_BALISE_CLAIRE = 0xbff4ff;
+      const ROTATION_BALISE_CLAIRE = 0x35c6f2;
+      const ROTATION_BALISE_CONTOUR = 0x0d1b26;
 
-      function rotationMateriau(couleur, opacite) {
+      /* Mélange normal partout : en additif, la lumière virait au blanc sur
+         l'herbe claire et le ciel, et cachait le gardien qui tient la balise. */
+      function rotationMateriau(couleur, opacite, { additif = false, alphaMap = null } = {}) {
         return new THREE.MeshBasicMaterial({
-          color: couleur, transparent: true, opacity: opacite,
-          depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+          color: couleur, transparent: true, opacity: opacite, alphaMap,
+          depthWrite: false, blending: additif ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide
         });
       }
 
+      /* Dégradés partagés : la colonne s'efface vers le haut, le halo vers
+         son bord. Deux petites toiles, créées une fois. */
+      let rotationDegrades = null;
+      function rotationTexturesDegrade() {
+        if (rotationDegrades) return rotationDegrades;
+        const vertical = document.createElement("canvas");
+        vertical.width = 4; vertical.height = 64;
+        let ctx = vertical.getContext("2d");
+        let g = ctx.createLinearGradient(0, 64, 0, 0);
+        g.addColorStop(0, "#fff"); g.addColorStop(.35, "#888"); g.addColorStop(.85, "#000");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 64);
+        const radial = document.createElement("canvas");
+        radial.width = radial.height = 64;
+        ctx = radial.getContext("2d");
+        g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+        g.addColorStop(0, "#fff"); g.addColorStop(.7, "#aaa"); g.addColorStop(1, "#000");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+        rotationDegrades = { vertical: new THREE.CanvasTexture(vertical), radial: new THREE.CanvasTexture(radial) };
+        return rotationDegrades;
+      }
+
       function rotationConstruireBalise() {
+        const { vertical, radial } = rotationTexturesDegrade();
         const groupe = new THREE.Group();
-        const sol = new THREE.Mesh(new THREE.RingGeometry(.3, .4, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .9));
-        sol.rotation.x = -Math.PI / 2;
-        const runes = new THREE.Mesh(new THREE.RingGeometry(.43, .46, 40, 1, 0, Math.PI * 2), rotationMateriau(ROTATION_BALISE_CLAIRE, .55));
-        runes.rotation.x = -Math.PI / 2;
-        const halo = new THREE.Mesh(new THREE.CircleGeometry(.4, 32), rotationMateriau(ROTATION_BALISE_CLAIRE, .22));
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.y = .005;
-        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.22, .3, 2.2, 24, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .16));
-        colonne.position.y = 1.1;
-        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.05, .08, 2.6, 12, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .45));
-        coeur.position.y = 1.3;
-        groupe.add(sol, runes, halo, colonne, coeur);
+        const aplat = mesh => { mesh.rotation.x = -Math.PI / 2; return mesh; };
+        // Contour sombre puis anneau franc : lisible sur tout fond.
+        const runes = aplat(new THREE.Mesh(new THREE.RingGeometry(.4, .47, 48), rotationMateriau(ROTATION_BALISE_CONTOUR, .55)));
+        const sol = aplat(new THREE.Mesh(new THREE.RingGeometry(.31, .42, 48), rotationMateriau(ROTATION_BALISE_CLAIRE, .95)));
+        sol.position.y = .003;
+        const halo = aplat(new THREE.Mesh(new THREE.CircleGeometry(.31, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .4, { alphaMap: radial })));
+        halo.position.y = .002;
+        // Lumière plus basse et plus fine : elle signale sans aveugler le gardien.
+        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, 1.5, 32, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .3, { alphaMap: vertical }));
+        colonne.position.y = .75;
+        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.035, .05, 2.2, 10, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .55, { alphaMap: vertical }));
+        coeur.position.y = 1.1;
+        groupe.add(runes, sol, halo, colonne, coeur);
         groupe.userData.rotationParties = { sol, runes, halo, colonne, coeur };
         groupe.renderOrder = 4;
         return groupe;
@@ -36258,16 +36284,22 @@
           const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
           // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
-          balise.position.set(p.x, allumee ? p.y + .01 : KAYKIT_LEVELS.islandTop + .02, p.z);
+          balise.position.set(p.x, allumee ? p.y + .05 : KAYKIT_LEVELS.islandTop + .02, p.z);
           const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
-          [sol, runes, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
-          sol.material.opacity = allumee ? .95 : .35;
-          runes.material.opacity = allumee ? .6 : .2;
+          [sol, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
+          /* Éteinte : anneau pâle, pour voir où construire. Allumée libre :
+             anneau cyan franc et lumière. Tenue : tout à la couleur du camp,
+             halo au sol plein, lumière plus haute. */
+          sol.material.opacity = allumee ? .95 : .45;
+          runes.material.opacity = allumee ? .55 : .25;
           halo.visible = allumee;
+          halo.material.opacity = g ? .45 : .25;
           colonne.visible = allumee;
           coeur.visible = allumee;
-          colonne.material.opacity = g ? .22 : .14;
-          coeur.material.opacity = g ? .6 : .4;
+          colonne.material.opacity = g ? .6 : .45;
+          colonne.scale.y = g ? 1.25 : 1;
+          colonne.position.y = .75 * colonne.scale.y;
+          coeur.material.opacity = g ? .85 : .65;
         });
       }
 
@@ -36815,8 +36847,8 @@
          — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
            2 cases du sanctuaire, chacun avec le nombre de manches avant son
            éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
-         — Une créature ne naît que sur une île : un œuf au-dessus du vide
-           attend qu'on construise dessous. Au plus 2 créatures à la fois.
+         — L'œuf éclot toujours au tour annoncé : sur sa case si elle est
+           une île libre, sinon sur la case d'île libre la plus proche.
          — Un gardien qui finit son tour sur un œuf l'écrase (avec le
            deckbuilding : il exile un Déplacer).
          — Une seule espèce par partie :
@@ -36826,8 +36858,9 @@
              met une carte Boue (qui ne fait rien) dans la défausse de son
              joueur.
          — Une créature se fait tomber comme un gardien (poussée, magie).
-           Avec le deckbuilding, celui qui l'a fait tomber prend un butin :
-           une carte du marché gratuite, ou exiler 2 cartes.
+           Celui qui l'a fait tomber est récompensé : avec le deckbuilding,
+           un butin (carte du marché gratuite, ou exiler 2 cartes) ; sans,
+           il pioche aussitôt une carte.
 
          Une créature est un gardien sans camp (char.creature, player -1) :
          poussées, files, blocages, rotations d'île et chutes s'appliquent
@@ -36839,7 +36872,6 @@
         loup: { nom: "Loup", modele: "heroSkeletonRogue" },
         vase: { nom: "Vase", modele: "heroSkeletonMage" }
       };
-      const CREATURES_MAX = 2;
       const CREATURES_DISTANCE_OEUFS = 2;
       /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
          personne n'ait toujours la première action sur les créatures. */
@@ -36928,6 +36960,48 @@
         return true;
       }
 
+      /* ---------- Récompense --------------------------------------------
+         Le joueur au trait qui fait tomber une créature est toujours récompensé.
+         Avec le deckbuilding : butin au marché (carte gratuite ou exil de 2).
+         Sans : il pioche aussitôt une carte, jouable dans ce tour. */
+      function creaturesRecompenser(char, dropR, dropC) {
+        const joueur = currentPlayer();
+        if (!joueur) return;
+        const nom = creatureNom(char) === "Vase" ? "la Vase" : "le " + creatureNom(char);
+        const r = Number.isInteger(dropR) ? dropR : char.r, c = Number.isInteger(dropC) ? dropC : char.c;
+        if (inside(r, c)) animateCellPulse(r, c, "crown-burst");
+        playSfx("crownTake", { c });
+        if (paquetActif()) {
+          creaturesDonnerButin(joueur.id);
+          showToast(`${joueur.name} fait tomber ${nom} : BUTIN ! Une carte gratuite au marché, ou exile 2 cartes.`);
+          creaturesBandeau("BUTIN", "Une carte gratuite au marché", joueur);
+          return;
+        }
+        const avant = (joueur.hand || []).length;
+        drawCards(joueur, avant + 1);
+        const gagnee = (joueur.hand || []).length > avant ? joueur.hand[joueur.hand.length - 1] : null;
+        const NOMS = { MOVE: "Déplacer", PUSH: "Pousser", MAGIC: "Magie" };
+        showToast(gagnee
+          ? `${joueur.name} fait tomber ${nom} : RÉCOMPENSE, +1 carte ${NOMS[gagnee.action] || ""} en main !`
+          : `${joueur.name} fait tomber ${nom} !`);
+        if (gagnee) creaturesBandeau("RÉCOMPENSE", `+1 carte ${NOMS[gagnee.action] || ""} en main`, joueur);
+      }
+
+      /* Bandeau doré bref au-dessus du plateau : une seule apparition en CSS,
+         retiré ensuite (rien ne reste à animer). */
+      function creaturesBandeau(titre, detail, joueur) {
+        if (ilyosSimulationActive || !document.body) return;
+        document.querySelectorAll(".rt-recompense").forEach(n => n.remove());
+        const bandeau = document.createElement("div");
+        bandeau.className = "rt-recompense";
+        bandeau.setAttribute("role", "status");
+        bandeau.style.setProperty("--rt-camp", joueur?.color || "#f4d28e");
+        bandeau.innerHTML = `<b>${defaitesEchapper(titre)}</b><span>${defaitesEchapper(detail)}</span>`;
+        document.body.appendChild(bandeau);
+        setTimeout(() => bandeau.classList.add("sortie"), 2400);
+        setTimeout(() => bandeau.remove(), 2900);
+      }
+
       /* ---------- Chute d'une créature ---------------------------------- */
       const creaturesRemoveBase = removeCharacterFromGame;
       removeCharacterFromGame = function removeCharacterFromGameCreatures(char, dropR = null, dropC = null, fallDirection = null) {
@@ -36936,10 +37010,7 @@
         if (fallDirection) playSfx("fall", { c: char.c, delay: .08 });
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
-        if (!ilyosSimulationActive) {
-          creaturesDonnerButin(state.currentPlayer);
-          showToast(`${currentPlayer()?.name || "Un joueur"} fait tomber ${creatureNom(char) === "Vase" ? "la Vase" : "le " + creatureNom(char)}${paquetActif() ? " : butin à prendre au marché" : ""} !`);
-        }
+        if (!ilyosSimulationActive) creaturesRecompenser(char, dropR, dropC);
       };
 
       /* Une créature ne ramasse jamais de couronne. */
@@ -37027,14 +37098,31 @@
         });
       }
 
+      /* Case de naissance : l'œuf lui-même s'il est sur une île libre,
+         sinon la case d'île libre la plus proche (au plus près du centre à
+         égalité). L'éclosion a toujours lieu au tour annoncé. */
+      function creaturesCaseNaissance(oeuf) {
+        if (islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c)) return [oeuf.r, oeuf.c];
+        let meilleure = null, note = Infinity;
+        for (let r = 0; r < GRID; r++) {
+          for (let c = 0; c < GRID; c++) {
+            if (!islandAt(r, c) || characterAt(r, c)) continue;
+            const n = (Math.abs(r - oeuf.r) + Math.abs(c - oeuf.c)) * 100 + Math.abs(r - CENTER.r) + Math.abs(c - CENTER.c);
+            if (n < note) { note = n; meilleure = [r, c]; }
+          }
+        }
+        return meilleure;
+      }
+
       function creaturesEclore() {
         const etat = state.rotation.creatures;
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (state.turn < oeuf.eclosion) return true;
-          if (creaturesVivantes().length >= CREATURES_MAX) return true;
-          if (!islandAt(oeuf.r, oeuf.c) || characterAt(oeuf.r, oeuf.c)) return true;
-          state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r: oeuf.r, c: oeuf.c });
-          animateCellPulse(oeuf.r, oeuf.c, "crown-burst");
+          const naissance = creaturesCaseNaissance(oeuf);
+          if (!naissance) return true; // aucune case d'île libre : il attend
+          const [r, c] = naissance;
+          state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
+          animateCellPulse(r, c, "crown-burst");
           showToast(`Un œuf éclot : ${etat.espece === "vase" ? "une Vase" : "un " + CREATURES[etat.espece].nom} apparaît !`);
           return false;
         });
@@ -37096,12 +37184,13 @@
         const toile = document.createElement("canvas");
         toile.width = toile.height = 64;
         const ctx = toile.getContext("2d");
-        ctx.fillStyle = "rgba(8,16,26,.82)";
-        ctx.beginPath(); ctx.arc(32, 32, 28, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "#f4d28e"; ctx.lineWidth = 4; ctx.stroke();
-        ctx.fillStyle = "#fff3c9";
-        ctx.font = "bold 38px Georgia, serif";
+        /* Peint sur la coquille : chiffre brun, liseré crème, sans pastille. */
+        ctx.font = "bold 46px Georgia, serif";
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(255,248,230,.9)"; ctx.lineWidth = 6;
+        ctx.strokeText(String(n), 32, 35);
+        ctx.fillStyle = "#3b1f08";
         ctx.fillText(String(n), 32, 35);
         const texture = new THREE.CanvasTexture(toile);
         creaturesTexturesChiffres.set(n, texture);
@@ -37123,8 +37212,8 @@
         taches.scale.copy(coquille.scale);
         taches.position.copy(coquille.position);
         const chiffre = new THREE.Sprite(new THREE.SpriteMaterial({ map: creaturesTextureChiffre(0), depthTest: false, transparent: true }));
-        chiffre.scale.set(.32, .32, 1);
-        chiffre.position.y = .66;
+        chiffre.scale.set(.3, .3, 1);
+        chiffre.position.y = .23; // au centre de la coquille
         chiffre.renderOrder = 20;
         groupe.add(coquille, taches, chiffre);
         groupe.userData.chiffre = chiffre;
