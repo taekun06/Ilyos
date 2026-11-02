@@ -819,7 +819,7 @@
           cpu.className = "player-field ai-player-field";
           cpu.innerHTML = `
           <span class="player-dot ai-dot" style="background:${PLAYER_COLORS[1]};color:${PLAYER_COLORS[1]}"></span>
-          <span class="ai-player-name"><b>ORDINATEUR</b><small>Adversaire automatique</small></span>
+          <span class="ai-player-name"><b>CPU</b><small>Adversaire automatique</small></span>
           <span class="ai-chip">CPU</span>
         `;
           els.playersForm.appendChild(cpu);
@@ -1339,6 +1339,9 @@
       }
 
       function currentPlayer() { return state.players[state.currentPlayer]; }
+      /* Nom du camp de l'IA dans les messages : le même que dans le bandeau
+         (« CPU », ou son nom en 2 contre 2), au lieu d'« ORDINATEUR » écrit en dur. */
+      function nomJoueurIA() { return state?.players?.[state.currentPlayer]?.name || "CPU"; }
       function villageAt(r, c) {
         return state.players.find(player =>
           villagesForPlayer(player).some(village => village.r === r && village.c === c)
@@ -3803,7 +3806,7 @@
         const turnDurationChoice = selectedTurnDurationSeconds();
         const humanNames = [...els.playersForm.querySelectorAll(".player-name")]
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
-        const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
+        const names = soloMode ? [...humanNames, "CPU"] : humanNames;
         const count = names.length;
         /* 2 contre 2 : des places peuvent être tenues par l'IA. Par défaut
            chacun marque pour soi ; avec la diagonale d'équipe (J1+J3, J2+J4),
@@ -3813,7 +3816,7 @@
         const siegesIA = !teamMode ? []
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
         const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
-        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `ORDINATEUR ${i + 1}`; });
+        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `CPU ${i + 1}`; });
         const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
         const villageAssignments = villagesEquipe
           ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())

@@ -21,7 +21,7 @@
 .duel .duelist small{font-size:.49cqw}.duel .duelist b{font-size:.69cqw}
 
 .duel .duel-panel-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7cqw}
-.duel .field{margin:0}.duel .label{margin:0 0 .28cqh .12cqw;font-size:clamp(11px,.62vw,14px);letter-spacing:.08em;color:#f4cf82;text-transform:uppercase}
+.duel .field{margin:0}.duel .label{margin:0 0 .28cqh .12cqw;font-size:clamp(11px,.62vw,14px);letter-spacing:.08em;color:#f4cf82;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 8px rgba(0,0,0,.7)}
 
 /* Un seul composant par réglage — plus de triple bordure (flèches + valeur
    fusionnées dans une seule pilule bordée). */

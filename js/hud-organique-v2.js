@@ -21,6 +21,7 @@
   let root = null;
   let scheduled = false;
   let toastDismissedText = '';
+  let toastShownText = '';
 
   function installRuntimeFixes(){
     if (legacy('ov2DirectRuntimeFixes')) return;
@@ -275,8 +276,8 @@
     }
     const leftTag = legacy('ov2LeftActive');
     const rightTag = legacy('ov2RightActive');
-    leftTag.textContent = /\bIA\b|ordinateur/i.test(leftName) ? 'À L’IA' : 'À VOUS';
-    rightTag.textContent = /\bIA\b|ordinateur/i.test(rightName) ? 'À L’IA' : 'À VOUS';
+    leftTag.textContent = /\bIA\b|\bCPU\b|ordinateur/i.test(leftName) ? 'AU CPU' : 'À VOUS';
+    rightTag.textContent = /\bIA\b|\bCPU\b|ordinateur/i.test(rightName) ? 'AU CPU' : 'À VOUS';
     leftTag.classList.toggle('ov2-off',!leftActive);
     rightTag.classList.toggle('ov2-off',!rightActive);
     /* Marqueur du joueur actif, posé ICI et non ailleurs. `hud-polish-targeted-v1.js`
@@ -370,18 +371,35 @@
     legacy('ov2GuardianPush').textContent = countFrom('hudV2PushCount');
   }
 
+  /* Une seule notification (audit du 2026-11-02, choix de Taekun) : chaque
+     message de showToast() s'affichait deux fois, dans la bulle #toast en haut
+     ET dans cette carte en bas à droite, qui cachait le village du coin. La
+     carte reste seule et se place SOUS LE BANDEAU DU JOUEUR DONT C'EST LE TOUR
+     (gauche ou droite). Sur téléphone, où la carte est masquée en CSS
+     (portrait-mobile.css), la bulle #toast reste le seul message. */
   function syncToast(){
     const src = legacy('hudV2Toast');
     const out = legacy('ov2Toast');
     if (!out) return;
+    /* Mêmes conditions que portrait-mobile.css, qui masque la carte au téléphone. */
+    const telephone = matchMedia('(orientation: portrait) and (max-width: 820px), (orientation: landscape) and (max-height: 500px)').matches;
+    document.body.classList.toggle('ov2-toast-carte', !telephone);
     const text = (src?.textContent || '').replace(/\s+/g,' ').trim();
     const sourceVisible = !!text && !src?.classList.contains('hidden');
     if (!sourceVisible || text === toastDismissedText) {
       out.classList.add('ov2-off');
-      if (!text) toastDismissedText = '';
+      if (!text) { toastDismissedText = ''; toastShownText = ''; }
       return;
     }
     toastDismissedText = '';
+    /* Le côté est choisi à l'ARRIVÉE du message et n'en bouge plus : un
+       message du CPU encore affiché au changement de tour reste sous le CPU. */
+    if (text !== toastShownText) {
+      toastShownText = text;
+      const droite = legacy('ov2RightActive')?.classList.contains('ov2-off') === false;
+      out.classList.toggle('ov2-toast-droite', droite);
+      out.classList.toggle('ov2-toast-gauche', !droite);
+    }
     legacy('ov2ToastTitle').textContent = /couronne/i.test(text) ? 'Couronne' : 'Information';
     legacy('ov2ToastText').textContent = text;
     out.classList.remove('ov2-off');
