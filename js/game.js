@@ -10912,8 +10912,8 @@
       // force du côté soleil et sa gamme d'herbes accordée. L'ombre reste
       // logique : contact très sombre juste sous l'herbe (l'herbe cache le ciel),
       // flanc tourné vers le soleil plus clair, flanc opposé plus sombre, puis la
-      // pointe se fond dans le ciel sur ses 40 % du bas. Sans palette (« roche
-      // d'ombre », par défaut), la roche s'assombrit de façon uniforme.
+      // pointe se fond dans le ciel sur ses 40 % du bas. Basalte nuit par défaut ;
+      // sans palette (« roche d'ombre »), la roche s'assombrit de façon uniforme.
       // ?roche=… force une roche pour comparer.
       const KAYKIT_ROCHE_URL = (() => {
         try { return (/[?&]roche=(ombre|ardoise|basalte|gres|mousse|calcaire)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
@@ -10930,7 +10930,8 @@
       // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
       let KAYKIT_ESSAI_TERRE = 0x17161b;
       function kaykitRocheDemande() {
-        const roche = KAYKIT_ROCHE_URL || kaykitRocheDuProfil;
+        // Basalte nuit par défaut ; « ombre » = roche assombrie unie, sans palette.
+        const roche = KAYKIT_ROCHE_URL || kaykitRocheDuProfil || "basalte";
         return KAYKIT_ESSAI_ROCHES[roche] ? roche : null;
       }
       function kaykitAppliquerRoche(roche) {
@@ -51537,12 +51538,12 @@
         ] },
         /* Roche sous l'herbe des îles flottantes, avec sa gamme d'herbes (kaykit3d.js). */
         { cle: "roche", nom: "Roche des îles", objets: [
-          { id: "ombre", nom: "Roche d'ombre", valeur: "ombre", image: "assets/collection/roche-ombre.webp", niveau: 1 },
+          { id: "basalte", nom: "Basalte nuit", valeur: "basalte", image: "assets/collection/roche-basalte.webp", niveau: 1 },
           { id: "ardoise", nom: "Ardoise", valeur: "ardoise", image: "assets/collection/roche-ardoise.webp", saison: { id: "s1", palier: 6 } },
           { id: "mousse", nom: "Mousse", valeur: "mousse", image: "assets/collection/roche-mousse.webp", saison: { id: "s1", palier: 12 } },
           { id: "gres", nom: "Grès", valeur: "gres", image: "assets/collection/roche-gres.webp", saison: { id: "s1", palier: 16 } },
           { id: "calcaire", nom: "Calcaire", valeur: "calcaire", image: "assets/collection/roche-calcaire.webp", saison: { id: "s1", palier: 19 } },
-          { id: "basalte", nom: "Basalte nuit", valeur: "basalte", image: "assets/collection/roche-basalte.webp", saison: { id: "s1", palier: 26 } }
+          { id: "ombre", nom: "Roche d'ombre", valeur: "ombre", image: "assets/collection/roche-ombre.webp", saison: { id: "s1", palier: 26 } }
         ] },
         /* Effet de la fenêtre de victoire, quand le joueur de l'appareil gagne. */
         { cle: "effet", nom: "Effet de victoire", objets: [
@@ -51570,7 +51571,7 @@
             { cosmetique: "couleur:saphir" }, { xp: 200 }, { cosmetique: "ciel:aurore" }, { cosmetique: "roche:gres" },
             { xp: 200 }, { cosmetique: "titre:heraut" }, { cosmetique: "roche:calcaire" }, { cosmetique: "heros:squelette-rodeur" },
             { xp: 250 }, { vent: 2 }, { cosmetique: "couleur:rubis" }, { xp: 250 },
-            { cosmetique: "ciel:or-ancien" }, { cosmetique: "roche:basalte" }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
+            { cosmetique: "ciel:or-ancien" }, { cosmetique: "roche:ombre" }, { cosmetique: "titre:phenix" }, { cosmetique: "heros:squelette-mage" },
             { cosmetique: "plateau:archipel" }, { cosmetique: "effet:plumes" }
           ],
           apres: { vent: 1 }

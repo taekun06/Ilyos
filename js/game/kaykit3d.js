@@ -10528,8 +10528,8 @@
       // force du côté soleil et sa gamme d'herbes accordée. L'ombre reste
       // logique : contact très sombre juste sous l'herbe (l'herbe cache le ciel),
       // flanc tourné vers le soleil plus clair, flanc opposé plus sombre, puis la
-      // pointe se fond dans le ciel sur ses 40 % du bas. Sans palette (« roche
-      // d'ombre », par défaut), la roche s'assombrit de façon uniforme.
+      // pointe se fond dans le ciel sur ses 40 % du bas. Basalte nuit par défaut ;
+      // sans palette (« roche d'ombre »), la roche s'assombrit de façon uniforme.
       // ?roche=… force une roche pour comparer.
       const KAYKIT_ROCHE_URL = (() => {
         try { return (/[?&]roche=(ombre|ardoise|basalte|gres|mousse|calcaire)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
@@ -10546,7 +10546,8 @@
       // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
       let KAYKIT_ESSAI_TERRE = 0x17161b;
       function kaykitRocheDemande() {
-        const roche = KAYKIT_ROCHE_URL || kaykitRocheDuProfil;
+        // Basalte nuit par défaut ; « ombre » = roche assombrie unie, sans palette.
+        const roche = KAYKIT_ROCHE_URL || kaykitRocheDuProfil || "basalte";
         return KAYKIT_ESSAI_ROCHES[roche] ? roche : null;
       }
       function kaykitAppliquerRoche(roche) {
