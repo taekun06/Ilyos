@@ -3762,12 +3762,14 @@
           const major = (i === 0 || i === GRID || i === Math.floor(GRID / 2) || i === Math.ceil(GRID / 2));
           const points = major ? majorGridPoints : gridPoints;
           const alphas = major ? majorGridAlphas : gridAlphas;
+          // Grille au niveau du dessus des îles (comme dans PR #172), pas un bloc plus bas.
+          const yGrille = KAYKIT_LEVELS.islandTop + .018;
           for (let s = 0; s < GRID; s++) {
             const a = (s - GRID / 2) * KAYKIT_CELL_SPACING;
             const b = (s + 1 - GRID / 2) * KAYKIT_CELL_SPACING;
-            points.push(new THREE.Vector3(d, .061, a), new THREE.Vector3(d, .061, b));
+            points.push(new THREE.Vector3(d, yGrille, a), new THREE.Vector3(d, yGrille, b));
             alphas.push(1, 1, 1, gridFade(d, a), 1, 1, 1, gridFade(d, b));
-            points.push(new THREE.Vector3(a, .061, d), new THREE.Vector3(b, .061, d));
+            points.push(new THREE.Vector3(a, yGrille, d), new THREE.Vector3(b, yGrille, d));
             alphas.push(1, 1, 1, gridFade(a, d), 1, 1, 1, gridFade(b, d));
           }
         }
@@ -3806,7 +3808,7 @@
           })
         );
         gridFill.rotation.x = -Math.PI / 2;
-        gridFill.position.y = .04;
+        gridFill.position.y = KAYKIT_LEVELS.islandTop + .005;
         gridFill.renderOrder = 1;
         staticGroup.add(gridFill);
 
@@ -10449,7 +10451,7 @@
       // Option gazon : roche dans l'ombre de l'herbe, déjà sombre sous la plaque
       // puis de plus en plus sombre jusqu'à la pointe (légère teinte du ciel du
       // soir), pour un dessous d'île flottante ombré.
-      const KAYKIT_ESSAI_TERRE = 0x4a4550;
+      const KAYKIT_ESSAI_TERRE = 0x17161b; // sous-couche de la plaque : même noir que le haut de la roche, aucun trait visible
       function kaykitEssaiTerreDegrade(material, hautY, profondeur = 2.8) {
         const terre = new THREE.Color(KAYKIT_ESSAI_TERRE).convertSRGBToLinear();
         material.onBeforeCompile = shader => {
