@@ -10786,8 +10786,7 @@
           const geometry = kaykitGeometry(`island-hull-v3:${kaykitHullRendu()}:${shapeKey}`, () => kaykitBuildIslandHullGeometry(localContour));
           // Option pierre : pas de couche de roche sous les dalles, la pointe
           // s'accroche directement sous les socles.
-          if (ILYOS_ILES_ESSAI === "gazon") { addKayKitEssaiRocheUnique(group, component, contour); addKayKitEssaiPointesSousCases(group, component); return; }
-          if (ILYOS_ILES_POINTES) { addKayKitEssaiPointesSousCases(group, component); return; }
+                    if (ILYOS_ILES_POINTES) { addKayKitEssaiPointesSousCases(group, component); return; }
           const hull = new THREE.Mesh(geometry, material);
           hull.position.set(anchor.x, 0, anchor.z);
           hull.castShadow = false;
@@ -10936,7 +10935,7 @@
           const voisines = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dr, dc]) => cles.has(`${r + dr},${c + dc}`)).length;
           const tirage = kaykitHash("essai-pointe", r, c);
           const longueur = .55 + voisines * .18 + tirage * .3;
-          const roche = cloneKayKitAsset(formes[Math.floor(tirage * 3) % 3], { exactWidth: KAYKIT_BLOCK_SIZE * (gazon ? .94 : 1.18), exactDepth: KAYKIT_BLOCK_SIZE * (gazon ? .94 : 1.18), exactHeight: longueur + (gazon ? .2 : 0), targetFloor: 0 });
+          const roche = cloneKayKitAsset(formes[Math.floor(tirage * 3) % 3], { exactWidth: KAYKIT_BLOCK_SIZE * (gazon ? 1 : 1.18), exactDepth: KAYKIT_BLOCK_SIZE * (gazon ? 1 : 1.18), exactHeight: longueur + (gazon ? .2 : 0), targetFloor: 0 });
           if (!roche) return;
           const p = kaykitCellPosition(r, c, 0);
           roche.rotation.x = Math.PI;
