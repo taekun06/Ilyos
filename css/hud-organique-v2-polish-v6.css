@@ -214,14 +214,24 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
 }
 
 /* TOAST — éloigner du bord et l'éclaircir légèrement. */
+/* Carte de notification sous le bandeau du joueur dont c'est le tour
+   (classes posées par syncToast, js/hud-organique-v2.js) ; la bulle #toast
+   du haut n'est plus montrée tant que cette carte est affichable. */
+body.ov2-toast-carte #toast{display:none!important}
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast{
-  right:34px!important;
-  bottom:116px!important;
+  top:164px!important;
+  bottom:auto!important;
+  right:auto!important;
+  left:34px!important;
   width:292px!important;
   min-height:66px!important;
   background:rgba(5,15,25,.83)!important;
   border-color:rgba(230,183,75,.25)!important;
   box-shadow:0 12px 28px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast.ov2-toast-droite{
+  left:auto!important;
+  right:34px!important;
 }
 body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast b{
   color:#f4ead0!important;
@@ -270,10 +280,15 @@ body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gportrait{
     transform-origin:bottom left!important;
   }
   body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast{
-    right:18px!important;
-    bottom:92px!important;
+    left:18px!important;
+    top:144px!important;
     transform:scale(.88)!important;
-    transform-origin:bottom right!important;
+    transform-origin:top left!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast.ov2-toast-droite{
+    left:auto!important;
+    right:18px!important;
+    transform-origin:top right!important;
   }
 }
 
