@@ -10461,7 +10461,7 @@
             .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
           shader.fragmentShader = shader.fragmentShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform float essaiProfondeur;\nuniform vec3 essaiTerre;")
-            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\ndiffuseColor.rgb *= mix(.1, .75, essaiT) * vec3(.93, .91, 1.04);\n// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.55, 1., essaiT);");
+            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\ndiffuseColor.rgb *= mix(.08, .8, pow(essaiT, 1.5)) * vec3(.93, .91, 1.04);\n// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.2, 1., essaiT);");
         };
         material.transparent = true;
         material.depthWrite = true;
@@ -10549,14 +10549,14 @@
         const gazon = ILYOS_ILES_ESSAI === "gazon";
         const hautY = KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE;
         // L'ombre s'étale sur toute la hauteur de l'île : de l'herbe à la pointe la plus basse.
-        const profondeurIle = 1.6 + Math.min(component.length, 6) * .28;
+        const profondeurIle = (1.6 + Math.min(component.length, 6) * .28) * 1.35;
         const cles = new Set(component.map(([r, c]) => `${r},${c}`));
         const formes = ["bareMountainA", "bareMountainB", "bareMountainC"];
         component.forEach(([r, c]) => {
           const voisines = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dr, dc]) => cles.has(`${r + dr},${c + dc}`)).length;
           const tirage = kaykitHash("essai-pointe", r, c);
           const longueur = .55 + voisines * .18 + tirage * .3;
-          const roche = cloneKayKitAsset(formes[Math.floor(tirage * 3) % 3], { exactWidth: KAYKIT_BLOCK_SIZE * (gazon ? 1 : 1.18), exactDepth: KAYKIT_BLOCK_SIZE * (gazon ? 1 : 1.18), exactHeight: longueur + (gazon ? .2 : 0), targetFloor: 0 });
+          const roche = cloneKayKitAsset(formes[Math.floor(tirage * 3) % 3], { exactWidth: KAYKIT_BLOCK_SIZE * (gazon ? 1 : 1.18), exactDepth: KAYKIT_BLOCK_SIZE * (gazon ? 1 : 1.18), exactHeight: gazon ? longueur * 1.4 + .3 : longueur, targetFloor: 0 });
           if (!roche) return;
           const p = kaykitCellPosition(r, c, 0);
           roche.rotation.x = Math.PI;
@@ -10588,7 +10588,7 @@
         const emprise = component.length / (Math.round((maxX - minX) / KAYKIT_CELL_SPACING + 1) * Math.round((maxZ - minZ) / KAYKIT_CELL_SPACING + 1));
         const retrait = emprise >= .99 ? .9 : .78;
         const graine = Math.abs(Math.round(sx * 7 + sz * 13));
-        const coeur = cloneKayKitAsset(formes[graine % 3], { exactWidth: gazon ? (maxX - minX + KAYKIT_BLOCK_SIZE) * retrait : largeur * .95, exactDepth: gazon ? (maxZ - minZ + KAYKIT_BLOCK_SIZE) * retrait : largeur * .95, exactHeight: 1.6 + Math.min(component.length, 6) * .28, targetFloor: 0 });
+        const coeur = cloneKayKitAsset(formes[graine % 3], { exactWidth: gazon ? (maxX - minX + KAYKIT_BLOCK_SIZE) * retrait : largeur * .95, exactDepth: gazon ? (maxZ - minZ + KAYKIT_BLOCK_SIZE) * retrait : largeur * .95, exactHeight: (1.6 + Math.min(component.length, 6) * .28) * (gazon ? 1.35 : 1), targetFloor: 0 });
         if (!coeur) return;
         coeur.rotation.x = Math.PI;
         coeur.rotation.y = (gazon ? graine % 2 * 2 : graine % 4) * Math.PI / 2;
