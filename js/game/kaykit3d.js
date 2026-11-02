@@ -10468,6 +10468,10 @@
         calcaire: { herbes: [0x84b85c, 0x6aa466, 0x9cbc6c, 0x5c9a6e, 0x8eac54, 0x74b080], haut: 0xb4b2ae, bas: 0x5e6478, rebond: 0x6a74a0, soleil: .6, contact: .3 }
       };
       const KAYKIT_ESSAI_PALETTE = KAYKIT_ESSAI_ROCHES[ILYOS_ESSAI_ROCHE] || null;
+      // Sol « carte blanche » : &sol=automne remplace l'herbe par des feuillages
+      // d'automne, une teinte par île (ocre, orange, rouille, pourpre, or, cuivre).
+      const ILYOS_ESSAI_SOL = (() => { try { return (/[?&]sol=(automne)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; } })();
+      const KAYKIT_ESSAI_SOLS = { automne: [0xb06a22, 0x983c1e, 0x74282a, 0xc08a26, 0xa0502a, 0x8e8030] };
       // Comparatif : &fondu=0 garde les pointes entières, sans fondu dans le ciel.
       const ILYOS_ESSAI_FONDU = (() => { try { return !/[?&]fondu=0(&|$)/.test(location.search); } catch (_) { return true; } })();
       // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
@@ -10506,7 +10510,7 @@
           } else {
             fond += "diffuseColor.rgb *= mix(.08, .8, pow(essaiT, 1.5)) * vec3(.93, .91, 1.04);\n";
           }
-          if (ILYOS_ESSAI_FONDU) fond += "// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.2, 1., essaiT);";
+          if (ILYOS_ESSAI_FONDU) fond += "// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.6, 1., essaiT);";
           shader.fragmentShader = shader.fragmentShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nvarying vec3 vEssaiN;\nuniform float essaiHautY;\nuniform float essaiProfondeur;" + (pal ? "\nuniform vec3 essaiHaut;\nuniform vec3 essaiBas;\nuniform vec3 essaiRebond;\nuniform float essaiSoleil;\nuniform float essaiContact;" : ""))
             .replace("#include <color_fragment>", "#include <color_fragment>\n" + fond);
@@ -11170,7 +11174,7 @@
         const groupe = new THREE.Group();
         if (!plaque) return groupe;
         // Chaque roche a sa gamme d'herbes accordée ; 6 verts distincts pour séparer les îles collées.
-        const teintes = KAYKIT_ESSAI_PALETTE?.herbes || KAYKIT_ESSAI_GAZON_TEINTES;
+        const teintes = KAYKIT_ESSAI_SOLS[ILYOS_ESSAI_SOL] || KAYKIT_ESSAI_PALETTE?.herbes || KAYKIT_ESSAI_GAZON_TEINTES;
         const herbe = new THREE.Color(teintes[Math.max(0, Number(island?.visualVariant) || 0) % teintes.length]);
         herbe.offsetHSL(0, 0, (kaykitHash("essai-gazon", island?.id, r, c) - .5) * .03);
         // Les couleurs des matériaux glTF sont linéaires : sans conversion, le vert sort délavé.
