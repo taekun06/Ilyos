@@ -286,12 +286,12 @@
   function compteFormHtml(classe,titre,valeur){
     return `<form class="${classe} compte-form" data-mode="creer" novalidate>
       <span class="cf-titre">${titre}</span>
-      <input name="pseudo" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Pseudo" aria-label="Pseudo" value="${safeText(valeur||'')}">
-      <input name="mdp" type="password" maxlength="128" autocomplete="new-password" placeholder="Mot de passe" aria-label="Mot de passe">
+      <input name="pseudo" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Ton pseudo" aria-label="Ton pseudo" value="${safeText(valeur||'')}">
+      <input name="mdp" type="password" maxlength="128" autocomplete="new-password" placeholder="Crée un mot de passe" aria-label="Crée un mot de passe">
       <small class="ar-pseudo-erreur" role="alert" hidden></small>
       <button type="submit" class="ar-continuer">COMMENCER</button>
       <button type="button" class="cf-lien cf-bascule">J’ai déjà un compte</button>
-      <button type="button" class="cf-lien cf-hors-ligne" hidden>Jouer sans sauvegarde</button>
+      <button type="button" class="cf-lien cf-hors-ligne" hidden>Jouer sans compte</button>
       <p class="cf-note">Note bien ton mot de passe : il te sert à retrouver ta progression sur un autre appareil.</p>
     </form>`;
   }
@@ -307,6 +307,8 @@
       envoyer.textContent=m==='creer'?titres.bouton:'SE CONNECTER';
       bascule.textContent=m==='creer'?'J’ai déjà un compte':'Créer un compte';
       mdp.autocomplete=m==='creer'?'new-password':'current-password';
+      mdp.placeholder=m==='creer'?'Crée un mot de passe':'Ton mot de passe';
+      mdp.setAttribute('aria-label',mdp.placeholder);
       form.querySelector('.cf-note').hidden=m!=='creer';
       erreur.hidden=true; horsLigne.hidden=true;
     };
@@ -324,7 +326,9 @@
       envoyer.disabled=false; envoyer.textContent=texte;
       if(r.ok){ apres(r); return; }
       montrer(r.erreur);
-      horsLigne.hidden=!(form.dataset.mode==='creer'&&['reseau','indisponible','serveur'].includes(r.erreur));
+      /* Quelle que soit l'erreur, on peut toujours jouer sans compte. */
+      horsLigne.hidden=false;
+      titres.ajuster?.();
     });
   }
   function renderCompte(etat){
@@ -460,20 +464,31 @@
     const fermer=()=>{
       try{ if(etat.saison) localStorage.setItem(OUVERTURE_VU,String(etat.saison.palier)); }catch(_){}
       el.classList.add('fin');
+      window.removeEventListener('resize',ajuster);
       setTimeout(()=>el.remove(),450);
       renderProfileBadge();
     };
     const premiere=!etat.pseudo;
     let corps='';
     if(premiere){
-      corps=compteFormHtml('ouv-pseudo','Choisis ton pseudo','');
+      corps=compteFormHtml('ouv-pseudo','Crée ton compte','');
     }
     el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
     document.body.appendChild(el);
+    /* Fenêtre basse : le contenu rétrécit pour tenir sans défilement. */
+    const ajuster=()=>{
+      const z=el.querySelector('.ouv-corps'); if(!z||!el.isConnected) return;
+      z.style.zoom='';
+      const trop=el.scrollHeight-el.clientHeight;
+      if(trop>0){ const h=z.offsetHeight; z.style.zoom=String(Math.max(.55,(h-trop-6)/h).toFixed(3)); }
+    };
+    el.querySelector('.ouv-logo').addEventListener('load',ajuster);
+    window.addEventListener('resize',ajuster);
     if(premiere){
       const form=el.querySelector('.ouv-pseudo');
       setTimeout(()=>form.elements.pseudo.focus({preventScroll:true}),400);
-      brancherCompteForm(form,{creer:'Choisis ton pseudo',connexion:'Retrouve ta progression',bouton:'COMMENCER'},fermer);
+      brancherCompteForm(form,{creer:'Crée ton compte',connexion:'Retrouve ta progression',bouton:'COMMENCER',ajuster},fermer);
+      ajuster();
     }else{
       const zone=el.querySelector('.ouv-corps');
       const salut=`<p class="ouv-salut">Bon retour, <b>${safeText(etat.pseudo)}</b></p>`;
@@ -489,11 +504,13 @@
         zone.classList.remove('ouv-entre'); void zone.offsetWidth; zone.classList.add('ouv-entre');
         zone.querySelector('.ouv-jouer').addEventListener('click',fermer);
         zone.querySelector('.ouv-jouer').focus({preventScroll:true});
+        ajuster();
       };
       /* Étape 1 : l'offrande du jour, si elle attend. */
       if(etat.offrande.dispo){
         el.classList.add('ouv-avec-offrande');
         zone.innerHTML=`${salut}<div class="ouv-bloc ouv-offrande-bloc"><h3>OFFRANDE DU JOUR</h3>${offrandeHtml(etat.offrande)}</div>`;
+        ajuster();
         zone.querySelector('.offrande-prendre').addEventListener('click',()=>{
           const r=progressionApi()?.reclamerOffrande?.();
           const nouvel=progressionApi()?.etat?.();
