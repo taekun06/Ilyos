@@ -13,7 +13,7 @@ function collect(directory) {
     else if (/\.(?:js|mjs|cjs)$/.test(file)) files.push(file);
   }
 }
-for (const directory of ['js', 'menu', 'scripts', 'tests']) collect(directory);
+for (const directory of ['js', 'menu', 'scripts', 'tests', 'netlify']) collect(directory);
 let failures = 0;
 for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', file], { cwd: root, encoding: 'utf8' });

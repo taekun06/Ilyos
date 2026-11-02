@@ -265,36 +265,88 @@
   function teteHtml(etat){
     const part=etat.xpDansNiveau/Math.max(1,etat.xpPourSuivant);
     const nom=etat.pseudo?safeText(etat.pseudo):'Voyageur';
-    return `<div class="ar-tete">${etat.heros?`<div class="ar-heros"><img src="../${safeText(etat.heros)}" alt=""></div>`:''}<div class="ar-blason">${anneauSvg(part,3)}<b>${etat.niveau}</b></div><div class="ar-identite"><small>NIVEAU ${etat.niveau}${etat.titre?` · <i>${safeText(etat.titre)}</i>`:''}</small><h2>${nom}<button type="button" class="ar-pseudo-modifier" title="Changer de pseudo" aria-label="Changer de pseudo">✎</button></h2><div class="pp-barre"><i style="width:${Math.round(100*part)}%"></i></div><em>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP${etat.offrande.vent?` · <span class="ar-vent-actif">${PP_ICONES.vent} Vent porteur : ${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''}</span>`:''}</em></div></div>`;
+    return `<div class="ar-tete">${etat.heros?`<div class="ar-heros"><img src="../${safeText(etat.heros)}" alt=""></div>`:''}<div class="ar-blason">${anneauSvg(part,3)}<b>${etat.niveau}</b></div><div class="ar-identite"><small>NIVEAU ${etat.niveau}${etat.titre?` · <i>${safeText(etat.titre)}</i>`:''}</small><h2>${nom}${compteBouton()}</h2><div class="pp-barre"><i style="width:${Math.round(100*part)}%"></i></div><em>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP${etat.offrande.vent?` · <span class="ar-vent-actif">${PP_ICONES.vent} Vent porteur : ${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''}</span>`:''}</em></div></div>`;
   }
-  /* Choix du pseudo : demandé à la première ouverture du panneau. */
-  function pseudoHtml(actuel){
-    return `<form class="ar-pseudo"><img src="../assets/progression/ilot-chateau.webp" alt="" class="ar-pseudo-ilot"><h2>Ton pseudo</h2><p>Il s’affiche avec ton niveau.</p><input name="pseudo" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Ton pseudo" value="${safeText(actuel||'')}" aria-label="Ton pseudo"><small class="ar-pseudo-erreur" hidden>2 à 16 lettres ou chiffres.</small><button type="submit" class="ar-continuer">VALIDER</button></form>`;
+  /* COMPTE : pseudo + mot de passe, la progression est gardée en ligne.
+     Le même formulaire sert à l'ouverture et dans le panneau. */
+  const NUAGE_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.5 4.5 0 0 0 7 18z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+  function compteBouton(){
+    const c=progressionApi()?.compte?.();
+    if(c) return `<span class="ar-nuage en-ligne" title="Progression sauvegardée en ligne" aria-label="Progression sauvegardée en ligne">${NUAGE_SVG}<i>✓</i></span>`;
+    return `<button type="button" class="ar-nuage ar-compte-ouvrir" title="Sauvegarder ma progression en ligne" aria-label="Sauvegarder ma progression en ligne">${NUAGE_SVG}<i>!</i></button>`;
   }
-  function renderPseudo(etat){
-    modalTitle.textContent='';
-    modalBody.innerHTML=`<div class="progression-panel">${pseudoHtml(etat.pseudo)}</div>`;
-    const form=modalBody.querySelector('.ar-pseudo');
-    const champ=form.querySelector('input');
-    champ.focus({preventScroll:true});
-    form.addEventListener('submit',e=>{
+  const COMPTE_ERREURS={
+    pseudo:'2 à 16 lettres ou chiffres.',
+    'mot-de-passe':'6 caractères au moins pour le mot de passe.',
+    'pseudo-pris':'Ce pseudo est déjà pris. Si c’est le tien, choisis « J’ai déjà un compte ».',
+    identifiants:'Pseudo ou mot de passe incorrect.',
+    pause:'Trop d’essais : réessaie dans 15 minutes.',
+    reseau:'Sauvegarde en ligne injoignable pour l’instant.'
+  };
+  function compteFormHtml(classe,titre,valeur){
+    return `<form class="${classe} compte-form" data-mode="creer" novalidate>
+      <span class="cf-titre">${titre}</span>
+      <input name="pseudo" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Pseudo" aria-label="Pseudo" value="${safeText(valeur||'')}">
+      <input name="mdp" type="password" maxlength="128" autocomplete="new-password" placeholder="Mot de passe" aria-label="Mot de passe">
+      <small class="ar-pseudo-erreur" role="alert" hidden></small>
+      <button type="submit" class="ar-continuer">COMMENCER</button>
+      <button type="button" class="cf-lien cf-bascule">J’ai déjà un compte</button>
+      <button type="button" class="cf-lien cf-hors-ligne" hidden>Jouer sans sauvegarde</button>
+      <p class="cf-note">Note bien ton mot de passe : il te sert à retrouver ta progression sur un autre appareil.</p>
+    </form>`;
+  }
+  function brancherCompteForm(form,titres,apres){
+    const api=()=>progressionApi();
+    const pseudo=form.elements.pseudo, mdp=form.elements.mdp;
+    const erreur=form.querySelector('.ar-pseudo-erreur'), envoyer=form.querySelector('[type=submit]');
+    const horsLigne=form.querySelector('.cf-hors-ligne'), bascule=form.querySelector('.cf-bascule');
+    const montrer=code=>{ erreur.textContent=COMPTE_ERREURS[code]||COMPTE_ERREURS.reseau; erreur.hidden=false; };
+    const mode=m=>{
+      form.dataset.mode=m;
+      form.querySelector('.cf-titre').textContent=m==='creer'?titres.creer:titres.connexion;
+      envoyer.textContent=m==='creer'?titres.bouton:'SE CONNECTER';
+      bascule.textContent=m==='creer'?'J’ai déjà un compte':'Créer un compte';
+      mdp.autocomplete=m==='creer'?'new-password':'current-password';
+      form.querySelector('.cf-note').hidden=m!=='creer';
+      erreur.hidden=true; horsLigne.hidden=true;
+    };
+    mode('creer');
+    bascule.addEventListener('click',()=>{ mode(form.dataset.mode==='creer'?'connexion':'creer'); pseudo.focus({preventScroll:true}); });
+    horsLigne.addEventListener('click',()=>{ if(api()?.definirPseudo?.(pseudo.value)) apres({ok:true,horsLigne:true}); else montrer('pseudo'); });
+    form.addEventListener('submit',async e=>{
       e.preventDefault();
-      const ok=progressionApi()?.definirPseudo?.(champ.value);
-      if(!ok){form.querySelector('.ar-pseudo-erreur').hidden=false;return;}
-      const nouvel=progressionApi()?.etat?.();
-      if(nouvel) renderProgressionPanel(nouvel);
-      renderProfileBadge();
+      if(envoyer.disabled) return;
+      erreur.hidden=true;
+      if(!api()?.pseudoValide?.(pseudo.value)){ montrer('pseudo'); pseudo.focus(); return; }
+      if(mdp.value.length<6){ montrer('mot-de-passe'); mdp.focus(); return; }
+      envoyer.disabled=true; const texte=envoyer.textContent; envoyer.textContent='…';
+      const r=await (form.dataset.mode==='creer'?api()?.creerCompte?.(pseudo.value,mdp.value):api()?.connecter?.(pseudo.value,mdp.value))||{ok:false,erreur:'reseau'};
+      envoyer.disabled=false; envoyer.textContent=texte;
+      if(r.ok){ apres(r); return; }
+      montrer(r.erreur);
+      horsLigne.hidden=!(form.dataset.mode==='creer'&&['reseau','indisponible','serveur'].includes(r.erreur));
     });
   }
+  function renderCompte(etat){
+    modalTitle.textContent='';
+    modalBody.innerHTML=`<div class="progression-panel"><div class="ar-pseudo"><img src="../assets/progression/ilot-chateau.webp" alt="" class="ar-pseudo-ilot">${compteFormHtml('ar-compte','Ton compte',etat.pseudo)}</div></div>`;
+    const form=modalBody.querySelector('.compte-form');
+    brancherCompteForm(form,{creer:'Sauvegarde ta progression',connexion:'Retrouve ta progression',bouton:'VALIDER'},()=>{
+      const nouvel=progressionApi()?.etat?.();
+      if(nouvel&&nouvel.pseudo) renderProgressionPanel(nouvel);
+      renderProfileBadge();
+    });
+    form.elements[etat.pseudo?'mdp':'pseudo'].focus({preventScroll:true});
+  }
   function renderProgressionPanel(etat,annonce){
-    if(!etat.pseudo) return renderPseudo(etat);
+    if(!etat.pseudo) return renderCompte(etat);
     const onglet=['collection','saison','journal'].includes(modal.dataset.onglet)?modal.dataset.onglet:'progression';
     modalTitle.textContent='';
     const tete=teteHtml(etat);
     const ongletsListe=[['progression','QUÊTES',etat.offrande.dispo],etat.saison?['saison','SAISON',false]:null,['collection','COLLECTION',etat.nouveautes>0],['journal','JOURNAL',false]].filter(Boolean);
     const onglets=`<div class="pp-onglets" role="tablist">${ongletsListe.map(([cle,lib,pastille])=>`<button type="button" role="tab" data-onglet="${cle}" aria-selected="${onglet===cle}">${PP_ICONES[cle]}<span>${lib}</span>${pastille?'<i class="pp-pastille"></i>':''}</button>`).join('')}</div>`;
     const entete=`<div class="ar-entete">${tete}${onglets}</div>`;
-    const bindPseudo=()=>modalBody.querySelector('.ar-pseudo-modifier')?.addEventListener('click',()=>renderPseudo(progressionApi()?.etat?.()||etat));
+    const bindPseudo=()=>modalBody.querySelector('.ar-compte-ouvrir')?.addEventListener('click',()=>renderCompte(progressionApi()?.etat?.()||etat));
     if(onglet==='journal'){
       modalBody.innerHTML=`<div class="progression-panel">${entete}${journalHtml(progressionApi()?.journal?.())}</div>`;
       bindProgressionTabs(); bindPseudo();
@@ -414,18 +466,14 @@
     const premiere=!etat.pseudo;
     let corps='';
     if(premiere){
-      corps=`<form class="ouv-pseudo"><label for="ouvPseudo">Choisis ton pseudo</label><input id="ouvPseudo" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Ton pseudo"><small class="ar-pseudo-erreur" hidden>2 à 16 lettres ou chiffres.</small><button type="submit" class="ar-continuer">COMMENCER</button></form>`;
+      corps=compteFormHtml('ouv-pseudo','Choisis ton pseudo','');
     }
     el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
     document.body.appendChild(el);
     if(premiere){
-      const form=el.querySelector('.ouv-pseudo'), champ=form.querySelector('input');
-      setTimeout(()=>champ.focus({preventScroll:true}),400);
-      form.addEventListener('submit',e=>{
-        e.preventDefault();
-        if(!progressionApi()?.definirPseudo?.(champ.value)){ form.querySelector('.ar-pseudo-erreur').hidden=false; return; }
-        fermer();
-      });
+      const form=el.querySelector('.ouv-pseudo');
+      setTimeout(()=>form.elements.pseudo.focus({preventScroll:true}),400);
+      brancherCompteForm(form,{creer:'Choisis ton pseudo',connexion:'Retrouve ta progression',bouton:'COMMENCER'},fermer);
     }else{
       const zone=el.querySelector('.ouv-corps');
       const salut=`<p class="ouv-salut">Bon retour, <b>${safeText(etat.pseudo)}</b></p>`;
@@ -457,7 +505,12 @@
     }
   }
   (function waitProgression(tries){
-    if(progressionApi()){ renderProfileBadge(); if(ouvertureVoulue()) montrerOuverture(); }
+    if(progressionApi()){
+      renderProfileBadge();
+      /* Récupère d'abord la progression du compte (2,5 s au plus). */
+      const sync=progressionApi().synchroniser?.()||Promise.resolve();
+      Promise.race([sync,new Promise(r=>setTimeout(r,2500))]).catch(()=>{}).then(()=>{ renderProfileBadge(); if(ouvertureVoulue()) montrerOuverture(); });
+    }
     else if(tries>0) setTimeout(()=>waitProgression(tries-1),250);
   })(40);
   window.addEventListener('storage',e=>{ if(!e.key||e.key==='ilyos-profil-v1') renderProfileBadge(); });

@@ -38,8 +38,14 @@
 .ar-identite small{display:block;font:700 12px/1.2 'Cinzel Decorative',Georgia,serif;letter-spacing:.18em;color:#cbb88f}
 .ar-identite small i{font-family:'Almendra',Georgia,serif;letter-spacing:.02em;font-size:14px;color:#e7cfa0}
 .ar-identite h2{display:flex;align-items:center;gap:8px;margin:3px 0 0;font:700 30px/1.1 'Almendra',Georgia,serif;color:#fff3d6;overflow-wrap:anywhere}
-.ar-pseudo-modifier{width:26px;height:26px;flex:none;border-radius:50%;border:1px solid rgba(244,210,142,.35);background:transparent;color:#cbb88f;font-size:13px;cursor:pointer}
-.ar-pseudo-modifier:hover{color:#f4d28e;border-color:#f4d28e}
+.ar-nuage{position:relative;display:inline-grid;place-items:center;width:28px;height:28px;flex:none;margin-left:10px;padding:0;border-radius:50%;border:1px solid rgba(244,210,142,.35);background:transparent;color:#cbb88f;vertical-align:middle}
+.ar-nuage svg{width:17px;height:17px}
+.ar-nuage i{position:absolute;right:-3px;bottom:-3px;display:grid;place-items:center;width:13px;height:13px;border-radius:50%;font:900 9px/1 system-ui,sans-serif;font-style:normal}
+.ar-nuage.en-ligne{color:#9fd8a8;border-color:rgba(159,216,168,.4)}
+.ar-nuage.en-ligne i{background:#3f8a52;color:#eaffef}
+button.ar-nuage{cursor:pointer}
+button.ar-nuage i{background:#d9822b;color:#fff6e6}
+button.ar-nuage:hover{color:#f4d28e;border-color:#f4d28e}
 .ar-identite .pp-barre{width:min(330px,40vw)}
 .ar-identite em{display:flex;flex-wrap:wrap;gap:4px 10px;font-style:normal;font-size:13px;font-weight:700;color:#b9ab8d}
 .ar-vent-actif{display:inline-flex;align-items:center;gap:4px;color:#9fd3ff}
@@ -127,13 +133,8 @@
 /* Choix du pseudo */
 .ar-pseudo{display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0 10px;text-align:center}
 .ar-pseudo-ilot{width:180px;margin:-10px 0 -18px;filter:drop-shadow(0 0 18px rgba(255,222,140,.35))}
-.ar-pseudo h2{margin:0;font:700 30px/1.1 'Almendra',Georgia,serif;color:#fff3d6}
-.ar-pseudo p{margin:0;color:#b9ab8d}
-.ar-pseudo input{width:min(340px,80vw);margin-top:10px;padding:13px 18px;border-radius:14px;border:1.5px solid rgba(244,210,142,.55);background:rgba(3,9,15,.7);color:#fff3d6;font:700 22px/1 'Almendra',Georgia,serif;text-align:center;outline:none}
-.ar-pseudo input:focus{border-color:#f7dc95;box-shadow:0 0 0 3px rgba(244,210,142,.2)}
 .ar-pseudo-erreur{color:#ff9f86;font-weight:800}
 .ar-pseudo-erreur[hidden]{display:none}
-.ar-pseudo .ar-continuer{margin-top:10px}
 .progression-card:has(.ar-pseudo){width:min(560px,90vw)}
 
 /* Saison : chemin d'îles */
@@ -322,7 +323,7 @@
 .ouv-logo{width:min(560px,78vw);max-height:38vh;object-fit:contain;filter:drop-shadow(0 10px 30px rgba(0,0,0,.55));animation:ouv-logo 1s ease-out both}
 .ouv-corps{display:flex;flex-direction:column;align-items:center;gap:14px;animation:ouv-corps .6s .6s ease-out both;max-width:100%}
 .ouv-pseudo{display:flex;flex-direction:column;align-items:center;gap:10px}
-.ouv-pseudo label{font:700 26px/1.1 'Almendra',Georgia,serif;color:#fff3d6}
+.ouv-pseudo .cf-titre{font:700 26px/1.1 'Almendra',Georgia,serif;color:#fff3d6}
 .ouv-pseudo input{width:min(340px,80vw);padding:13px 18px;border-radius:14px;border:1.5px solid rgba(244,210,142,.6);background:rgba(3,9,15,.75);color:#fff3d6;font:700 22px/1 'Almendra',Georgia,serif;text-align:center;outline:none}
 .ouv-pseudo input:focus{border-color:#f7dc95;box-shadow:0 0 0 3px rgba(244,210,142,.2)}
 .ouv-salut{margin:0;font:700 22px/1.1 'Almendra',Georgia,serif;color:#e7d6b0}
@@ -390,4 +391,26 @@
   .ouv-bloc .ar-quete-texte{display:flex;align-items:baseline;gap:10px}
   .ouv-bloc .ar-quete-texte small{margin:0}
   .ouv-bloc .quete-xp{align-self:center}
+}
+
+/* Formulaire de compte (ouverture et panneau). */
+.compte-form{display:flex;flex-direction:column;align-items:center;gap:10px}
+.compte-form .cf-titre{font:700 26px/1.1 'Almendra',Georgia,serif;color:#fff3d6}
+.ar-compte .cf-titre{font-size:30px}
+.compte-form input{width:min(340px,80vw);padding:13px 18px;border-radius:14px;border:1.5px solid rgba(244,210,142,.55);background:rgba(3,9,15,.75);color:#fff3d6;font:700 22px/1 'Almendra',Georgia,serif;text-align:center;outline:none}
+.compte-form input[type=password]{font:700 20px/1 system-ui,sans-serif;letter-spacing:.12em}
+.compte-form input[type=password]::placeholder{font:700 20px/1 'Almendra',Georgia,serif;letter-spacing:0}
+.compte-form input:focus{border-color:#f7dc95;box-shadow:0 0 0 3px rgba(244,210,142,.2)}
+.compte-form .ar-continuer{margin-top:4px;min-width:200px}
+.compte-form .ar-continuer:disabled{opacity:.6;cursor:wait}
+.cf-lien{padding:4px 8px;border:0;background:none;color:#e9c97f;font:700 15px/1.2 'Almendra',Georgia,serif;text-decoration:underline;text-decoration-color:rgba(233,201,127,.45);text-underline-offset:4px;cursor:pointer}
+.cf-lien:hover{color:#fff3d6}
+.cf-lien[hidden],.cf-note[hidden]{display:none}
+.cf-note{max-width:330px;margin:0;color:#b9ab8d;font-size:13px;line-height:1.4;text-align:center}
+.compte-form .ar-pseudo-erreur{max-width:340px;text-align:center}
+@media (max-height:520px) and (orientation:landscape){
+  .compte-form{gap:6px}
+  .compte-form input{padding:9px 14px;font-size:18px}
+  .compte-form .cf-titre{font-size:21px}
+  .cf-note{display:none}
 }

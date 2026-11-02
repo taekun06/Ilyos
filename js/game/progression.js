@@ -274,6 +274,130 @@
         return profil;
       }
 
+      /* COMPTE EN LIGNE : pseudo + mot de passe (fonction Netlify /api/compte).
+         L'appareil garde seulement le pseudo et un jeton ; le mot de passe ne
+         sert qu'à créer le compte ou à s'y reconnecter sur un autre appareil.
+         Chaque enregistrement du profil part au serveur après quelques
+         secondes de calme. Au lancement, le profil le plus avancé (en XP)
+         l'emporte : une progression n'est jamais écrasée par une plus petite. */
+      const PROGRESSION_COMPTE_KEY = "ilyos-compte-v1";
+      const PROGRESSION_COMPTE_URL = "/api/compte";
+      let progressionEnvoiMinuteur = null;
+
+      function progressionCompteLire() {
+        try {
+          const c = JSON.parse(localStorage.getItem(PROGRESSION_COMPTE_KEY) || "null");
+          return c && typeof c.pseudo === "string" && typeof c.jeton === "string" ? c : null;
+        } catch (_) { return null; }
+      }
+
+      function progressionCompteEcrire(compte) {
+        try {
+          if (compte) localStorage.setItem(PROGRESSION_COMPTE_KEY, JSON.stringify(compte));
+          else localStorage.removeItem(PROGRESSION_COMPTE_KEY);
+        } catch (_) { }
+      }
+
+      async function progressionCompteAppel(corps, keepalive = false) {
+        try {
+          const reponse = await fetch(PROGRESSION_COMPTE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corps),
+            keepalive
+          });
+          if (reponse.status === 404 || reponse.status === 405) return { ok: false, erreur: "indisponible" };
+          const donnees = await reponse.json().catch(() => null);
+          return donnees && typeof donnees === "object" ? donnees : { ok: false, erreur: "serveur" };
+        } catch (_) {
+          return { ok: false, erreur: "reseau" };
+        }
+      }
+
+      function progressionCompteEnvoyer(keepalive = false) {
+        clearTimeout(progressionEnvoiMinuteur);
+        progressionEnvoiMinuteur = null;
+        const compte = progressionCompteLire();
+        if (!compte) return Promise.resolve(null);
+        const texte = localStorage.getItem(PROGRESSION_STORAGE_KEY);
+        if (!texte || texte === compte.envoye) return Promise.resolve(null);
+        let profil = null;
+        try { profil = JSON.parse(texte); } catch (_) { return Promise.resolve(null); }
+        return progressionCompteAppel({ action: "sauver", pseudo: compte.pseudo, jeton: compte.jeton, profil }, keepalive).then(r => {
+          const actuel = progressionCompteLire();
+          if (r.ok && actuel && actuel.jeton === compte.jeton) progressionCompteEcrire({ ...actuel, envoye: texte });
+          else if (r.erreur === "jeton") progressionCompteEcrire(null);
+          return r;
+        });
+      }
+
+      function progressionCompteProgrammerEnvoi() {
+        if (!progressionCompteLire()) return;
+        clearTimeout(progressionEnvoiMinuteur);
+        progressionEnvoiMinuteur = setTimeout(() => progressionCompteEnvoyer(), 3000);
+      }
+
+      try {
+        window.addEventListener("pagehide", () => { if (progressionEnvoiMinuteur) progressionCompteEnvoyer(true); });
+      } catch (_) { }
+
+      /* Garde le profil le plus avancé des deux, au nom du compte. */
+      function progressionCompteFusionner(pseudo, profilServeur) {
+        const local = progressionCharger();
+        let texte = null;
+        if (profilServeur && typeof profilServeur === "object" && (Number(profilServeur.xp) || 0) > local.xp) {
+          texte = JSON.stringify({ ...profilServeur, pseudo });
+          try { localStorage.setItem(PROGRESSION_STORAGE_KEY, texte); } catch (_) { }
+          const compte = progressionCompteLire();
+          if (compte) progressionCompteEcrire({ ...compte, envoye: texte });
+          return "serveur";
+        }
+        local.pseudo = pseudo;
+        progressionEnregistrer(local);
+        return "local";
+      }
+
+      async function progressionCreerCompte(pseudo, motDePasse) {
+        const nom = progressionPseudoValide(pseudo);
+        if (!nom) return { ok: false, erreur: "pseudo" };
+        const profil = progressionCharger();
+        profil.pseudo = nom;
+        const r = await progressionCompteAppel({ action: "creer", pseudo: nom, motDePasse, profil });
+        if (!r.ok) return r;
+        progressionCompteEcrire({ pseudo: r.pseudo, jeton: r.jeton, envoye: JSON.stringify(profil) });
+        progressionEnregistrer(profil);
+        return { ok: true, pseudo: r.pseudo };
+      }
+
+      async function progressionConnecter(pseudo, motDePasse) {
+        const nom = progressionPseudoValide(pseudo);
+        if (!nom) return { ok: false, erreur: "pseudo" };
+        const r = await progressionCompteAppel({ action: "connexion", pseudo: nom, motDePasse });
+        if (!r.ok) return r;
+        progressionCompteEcrire({ pseudo: r.pseudo, jeton: r.jeton, envoye: null });
+        const garde = progressionCompteFusionner(r.pseudo, r.profil);
+        return { ok: true, pseudo: r.pseudo, garde };
+      }
+
+      /* Au lancement : récupère le profil du compte s'il est plus avancé,
+         sinon envoie celui de l'appareil. */
+      async function progressionSynchroniser() {
+        const compte = progressionCompteLire();
+        if (!compte) return { ok: false, erreur: "sans-compte" };
+        const r = await progressionCompteAppel({ action: "lire", pseudo: compte.pseudo, jeton: compte.jeton });
+        if (!r.ok) {
+          if (r.erreur === "jeton") progressionCompteEcrire(null);
+          return r;
+        }
+        const garde = progressionCompteFusionner(r.pseudo, r.profil);
+        if (garde === "local") await progressionCompteEnvoyer();
+        return { ok: true, garde };
+      }
+
+      function progressionDeconnecter() {
+        progressionCompteEcrire(null);
+      }
+
       /* Pseudo : 2 à 16 caractères, lettres (accents compris), chiffres,
          espace, tiret, point ou souligné. Renvoie null s'il ne convient pas. */
       function progressionPseudoValide(nom) {
@@ -293,6 +417,7 @@
 
       function progressionEnregistrer(profil) {
         try { localStorage.setItem(PROGRESSION_STORAGE_KEY, JSON.stringify(profil)); } catch (_) { }
+        progressionCompteProgrammerEnvoi();
         if (!progressionPersistanceDemandee) {
           progressionPersistanceDemandee = true;
           try { navigator.storage?.persist?.().catch(() => { }); } catch (_) { }
@@ -1127,6 +1252,14 @@
         marquerVus: progressionMarquerVus,
         definirPseudo: progressionDefinirPseudo,
         pseudoValide: progressionPseudoValide,
+        compte: () => {
+          const c = progressionCompteLire();
+          return c ? { pseudo: c.pseudo, enLigne: true, aJour: c.envoye === localStorage.getItem(PROGRESSION_STORAGE_KEY) } : null;
+        },
+        creerCompte: progressionCreerCompte,
+        connecter: progressionConnecter,
+        synchroniser: progressionSynchroniser,
+        deconnecter: progressionDeconnecter,
         reclamerOffrande: progressionReclamerOffrande,
         changerQuete: progressionChangerQuete,
         avancerQuetes: (profil, evenement) => progressionAvancerQuetes(profil, evenement),
