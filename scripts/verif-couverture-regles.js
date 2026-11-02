@@ -164,6 +164,41 @@ const assert = require('node:assert/strict');
           applique: !!elan && withSimulatedState(cloneStateForSimulation(), () =>
             !!plannerAppliquerAction(elan) && availableActionCount('MOVE') === 0
             && state.players[0].discard.some(c => c.action === 'ELAN')) };
+        /* ROTATION · CHOIX DE DÉPART : l'IA prend une carte révélée, qui
+           remplace un Déplacer de son paquet. */
+        marche(['MOVE', 'MOVE', 'PUSH', 'MAGIC', 'MOVE']);
+        state.players[0].deck = [{ id: 'd1', action: 'MOVE' }, { id: 'd2', action: 'MOVE' }];
+        state.rotation.choix = { cartes: ['BELIER', 'MOVE'], ordre: [0, 1], pris: [], fini: false };
+        const depart = plannerChoisirDepart(0);
+        resultat['CHOIX de départ'] = { genere: !!depart,
+          applique: !!depart && withSimulatedState(cloneStateForSimulation(), () => {
+            const p = state.players[0];
+            const moves = paquetCompte(p, 'MOVE');
+            const visee = state.rotation.choix.cartes[depart.index];
+            return choixPrendre(depart.index) && paquetCompte(p, 'MOVE') === moves - 1
+              && paquetCompte(p, visee) >= 1 && state.rotation.choix.pris.length === 1;
+          }) };
+        /* ROTATION · CRÉATURES : une créature se pousse comme un gardien, et
+           le butin (carte gratuite ou exil) est pris par l'IA. */
+        marche(['PUSH', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE', 'MOVE']);
+        state.rotation.couches.creatures = true;
+        state.rotation.creatures = { espece: 'loup', oeufs: [], prochainId: 2, butins: { 0: 1 } };
+        state.characters.push({ id: 'creature-1', player: -1, creature: 'loup', r: 5, c: 1 });
+        const pousseCreature = avecGrilleTerre(() => plannerCandidatsPush(0)).find(a => a.r === 5 && a.c === 1) || null;
+        resultat['PUSH créature'] = { genere: !!pousseCreature,
+          applique: !!pousseCreature && withSimulatedState(cloneStateForSimulation(), () => {
+            const avant = characterById('creature-1');
+            return !!plannerAppliquerAction(pousseCreature) && (!characterById('creature-1')
+              || characterById('creature-1').c !== 1 || characterById('creature-1').r !== 5) && !!avant;
+          }) };
+        const butin = plannerChoisirButin(0);
+        resultat['BUTIN de créature'] = { genere: butin !== null,
+          applique: butin !== null && withSimulatedState(cloneStateForSimulation(), () => {
+            const avant = paquetTaille(state.players[0]);
+            return creaturesPrendreButin(butin) && creaturesButinEnAttente(0) === 0
+              && paquetTaille(state.players[0]) !== avant;
+          }) };
+        state.characters = state.characters.filter(c => !c.creature);
         state.rotation = null;
         // Les gratuites selon le moteur.
         resultat.gratuites = ['RAMASSAGE', 'DEPOT', 'TRANSMISSION', 'VOL']

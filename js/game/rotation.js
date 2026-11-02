@@ -97,7 +97,7 @@
         }
       };
 
-      const ROTATION_COUCHES = ["deckbuilding"];
+      const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes
          sans couche, c'est la partie classique : pas de Rotation. */
       function rotationNormaliser(demande) {
@@ -313,7 +313,8 @@
           const g = allumee ? gardienSurBalise(r, c) : null;
           const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
-          balise.position.set(p.x, allumee ? p.y + .01 : p.y + .55, p.z);
+          // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
+          balise.position.set(p.x, allumee ? p.y + .01 : KAYKIT_LEVELS.islandTop + .02, p.z);
           const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
           [sol, runes, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
           sol.material.opacity = allumee ? .95 : .35;
