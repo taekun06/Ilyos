@@ -296,88 +296,49 @@ body .card-cycle-v10-card.showcase.cc-detail {
   transition: box-shadow .2s ease;
 }
 
-/* ---------- CARTES EMPILÉES DANS LES BOUTONS D'ACTION ----------
-   Une carte par action disponible, dos visible, qui dépasse du haut du
-   bouton en petit éventail. */
+/* ---------- CARTES DERRIÈRE LES BOUTONS D'ACTION ----------
+   Choix de Taekun (2026-11-02, forme « C ») : jusqu'à trois cartes en
+   éventail glissées VRAIMENT derrière le socle du bouton ; seul leur haut
+   illustré dépasse. Le bouton isole sa pile (isolation) pour qu'elle passe
+   sous son socle (::before, z-index -1) sans passer sous le reste du HUD. */
+body.cc-piles-actives #ilyosHudOrganicV2 .ov2-action { isolation: isolate; }
 .cc-pile {
   position: absolute;
   left: 50%;
-  bottom: calc(100% - 10px);
+  top: -30px;
   width: 0;
-  height: 30px;
+  height: 58px;
   pointer-events: none;
-  z-index: 0;
+  z-index: -2;
 }
 .cc-pile i {
+  display: none;
   position: absolute;
-  left: -10px;
+  left: -18px;
   bottom: 0;
-  width: 20px;
-  height: 31px;
+  width: 36px;
+  height: 58px;
   /* Même illustration que la carte en grand (css/card-art-v12.css). */
   background: url("../assets/cartes/deplacer-2.webp") center / contain no-repeat;
   transform-origin: 50% 120%;
-  transform: translateX(calc(var(--cc-d) * 9px)) rotate(calc(var(--cc-d) * 7deg));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .5));
   animation: ccPileIn .32s ease-out both;
 }
 .cc-pile.type-push i { background-image: url("../assets/cartes/pousser-2.webp"); }
 .cc-pile.type-magic i { background-image: url("../assets/cartes/magie.webp"); }
-.cc-pile b {
-  position: absolute;
-  left: calc(50% + 34px);
-  bottom: 4px;
-  color: #ffd879;
-  font: 700 11px/1 Georgia, serif;
-  text-shadow: 0 1px 3px #000;
-}
-@keyframes ccPileIn { from { opacity: 0; transform: translateX(calc(var(--cc-d) * 9px)) translateY(8px) rotate(calc(var(--cc-d) * 7deg)); } }
+.cc-pile i:nth-child(-n+3) { display: block; }
+.cc-pile i:nth-child(1) { --cc-r: -16deg; }
+.cc-pile i:nth-child(2) { --cc-r: 16deg; }
+.cc-pile i:nth-child(3) { --cc-r: 0deg; }
+.cc-pile[data-n="1"] i:nth-child(1) { --cc-r: 0deg; }
+.cc-pile[data-n="2"] i:nth-child(1) { --cc-r: -8deg; }
+.cc-pile[data-n="2"] i:nth-child(2) { --cc-r: 8deg; }
+.cc-pile i { transform: rotate(var(--cc-r, 0deg)); }
+.cc-pile b { display: none; }
+@keyframes ccPileIn { from { opacity: 0; transform: translateY(10px) rotate(var(--cc-r, 0deg)); } }
 
 /* Téléphone en portrait : la rangée « fin du tour » est juste au-dessus des
-   actions, les cartes se rangent donc DANS le bouton, en haut. */
+   actions, il n'y a pas la place de faire dépasser des cartes. */
 @media (orientation: portrait) and (max-width: 820px) {
-  .cc-pile { bottom: auto; top: 3px; height: 16px; }
-  .cc-pile i { width: 11px; height: 17px; left: -5.5px; transform: translateX(calc(var(--cc-d) * 6px)) rotate(calc(var(--cc-d) * 6deg)); }
-  .cc-pile b { left: calc(50% + 22px); bottom: 2px; font-size: 9px; }
-}
-
-/* ---------- ESSAIS ?piles=a|b (2026-11-02) ----------
-   a « Carte dressée » : une seule carte lisible qui dépasse du bouton, deux
-     tranches derrière si plus d'une carte, et le nombre sur une pastille.
-   b « Tranches » : pas d'illustration, l'épaisseur d'un paquet vu de côté. */
-html[data-piles] .cc-pile b { display: none; }
-html[data-piles="a"] .cc-pile { bottom: calc(100% - 12px); height: 40px; left: calc(50% + 26px); }
-html[data-piles="a"] .cc-pile i { display: none; width: 26px; height: 40px; left: -13px; animation: none;
-  transform-origin: 50% 100%; filter: drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
-html[data-piles="a"] .cc-pile i:nth-child(1) { display: block; transform: translate(5px, -1px) rotate(7deg); filter: brightness(.55) drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
-html[data-piles="a"] .cc-pile i:nth-child(2) { display: block; transform: translate(2.5px, -.5px) rotate(3.5deg); filter: brightness(.75) drop-shadow(0 3px 5px rgba(0,0,0,.55)); }
-html[data-piles="a"] .cc-pile i:last-of-type { display: block; transform: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); z-index: 2; }
-html[data-piles="a"] .cc-pile::after {
-  content: attr(data-n); position: absolute; z-index: 3; left: 6px; bottom: 26px;
-  min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px;
-  display: grid; place-items: center; background: #1a1308; border: 1.5px solid #e9c46a;
-  color: #fff3cf; font: 800 11px/1 system-ui, sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,.5);
-}
-html[data-piles="b"] .cc-pile { bottom: calc(100% - 6px); height: 26px; }
-html[data-piles="b"] .cc-pile i {
-  width: 52px; height: 7px; left: -26px; border-radius: 2px; animation: none;
-  background: linear-gradient(#f3d27f, #a8782c); box-shadow: 0 1px 0 rgba(0,0,0,.6), inset 0 -1px 0 rgba(0,0,0,.25);
-  transform: translateY(calc((var(--cc-d) + 3) * -5px)) !important; transform-origin: center;
-}
-html[data-piles="b"] .cc-pile.type-move i { background: linear-gradient(#bfe2ff 0 40%, #2f5fa8 41%); }
-html[data-piles="b"] .cc-pile.type-push i { background: linear-gradient(#ffd7a8 0 40%, #a8461c 41%); }
-html[data-piles="b"] .cc-pile.type-magic i { background: linear-gradient(#e2c8ff 0 40%, #5a2eb0 41%); }
-/* c « Main derrière le bouton » : jusqu'à 3 cartes en éventail glissées
-   derrière le socle, seul leur haut illustré dépasse. */
-html[data-piles="c"] .cc-pile { bottom: calc(100% - 34px); height: 50px; z-index: -1; }
-html[data-piles="c"] .cc-pile i { display: none; width: 32px; height: 50px; left: -16px; animation: none;
-  transform-origin: 50% 140%; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
-html[data-piles="c"] .cc-pile i:nth-child(-n+3) { display: block; }
-html[data-piles="c"] .cc-pile i:nth-child(1) { transform: rotate(-14deg); }
-html[data-piles="c"] .cc-pile i:nth-child(2) { transform: rotate(14deg); }
-html[data-piles="c"] .cc-pile i:nth-child(3) { transform: none; }
-html[data-piles="c"] .cc-pile[data-n="1"] i:nth-child(1) { transform: none; }
-html[data-piles="c"] .cc-pile[data-n="2"] i:nth-child(1) { transform: rotate(-8deg); }
-html[data-piles="c"] .cc-pile[data-n="2"] i:nth-child(2) { transform: rotate(8deg); }
-@media (orientation: portrait) and (max-width: 820px) {
-  html[data-piles] .cc-pile { display: none; }
+  .cc-pile { display: none; }
 }

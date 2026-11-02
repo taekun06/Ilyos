@@ -23,9 +23,6 @@
     if (new URLSearchParams(location.search).get('cartes') === 'kaykit') {
       document.documentElement.dataset.cartes = 'kaykit';
     }
-    /* Essai (2026-11-02) : formes des cartes au-dessus des actions. */
-    const piles = new URLSearchParams(location.search).get('piles');
-    if (['a', 'b', 'c'].includes(piles)) document.documentElement.dataset.piles = piles;
   } catch (_) {}
 
   const ICONS = {
@@ -231,7 +228,7 @@
      qui dépassent du bouton se comprennent sans lire. Actif avec la pioche
      détaillée (premiers tours, ou réglage « toujours »). */
   const PILE_BOUTONS = { MOVE: ['ov2Move', 'ov2MoveCount'], PUSH: ['ov2Push', 'ov2PushCount'], MAGIC: ['ov2Magic', 'ov2MagicCount'] };
-  const PILE_MAX = 6;
+  const PILE_MAX = 3;
   let pilesPlanifiees = false;
 
   function majPiles() {
@@ -251,19 +248,14 @@
         bouton.appendChild(pile);
       }
       const visibles = Math.min(n, PILE_MAX);
-      if (pile.childElementCount !== visibles || pile.dataset.n !== String(n)) {
-        pile.dataset.n = String(n);
+      if (pile.childElementCount !== visibles) {
+        pile.dataset.n = String(visibles);
         pile.innerHTML = '';
         const milieu = (visibles - 1) / 2;
         for (let i = 0; i < visibles; i++) {
           const carte = document.createElement('i');
           carte.style.setProperty('--cc-d', String(i - milieu));
           pile.appendChild(carte);
-        }
-        if (n > PILE_MAX) {
-          const plus = document.createElement('b');
-          plus.textContent = `+${n - PILE_MAX}`;
-          pile.appendChild(plus);
         }
       }
     });
