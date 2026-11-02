@@ -416,7 +416,7 @@
     if(premiere){
       corps=`<form class="ouv-pseudo"><label for="ouvPseudo">Choisis ton pseudo</label><input id="ouvPseudo" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Ton pseudo"><small class="ar-pseudo-erreur" hidden>2 à 16 lettres ou chiffres.</small><button type="submit" class="ar-continuer">COMMENCER</button></form>`;
     }
-    el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
+    el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
     document.body.appendChild(el);
     if(premiere){
       const form=el.querySelector('.ouv-pseudo'), champ=form.querySelector('input');
