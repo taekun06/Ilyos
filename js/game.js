@@ -10834,17 +10834,18 @@
       // puis de plus en plus sombre jusqu'à la pointe (légère teinte du ciel du
       // soir), pour un dessous d'île flottante ombré.
       const KAYKIT_ESSAI_TERRE = 0x4a4550;
-      function kaykitEssaiTerreDegrade(material, hautY) {
+      function kaykitEssaiTerreDegrade(material, hautY, profondeur = 2.8) {
         const terre = new THREE.Color(KAYKIT_ESSAI_TERRE).convertSRGBToLinear();
         material.onBeforeCompile = shader => {
           shader.uniforms.essaiHautY = { value: hautY };
+          shader.uniforms.essaiProfondeur = { value: profondeur };
           shader.uniforms.essaiTerre = { value: terre };
           shader.vertexShader = shader.vertexShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;")
             .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
           shader.fragmentShader = shader.fragmentShader
-            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform vec3 essaiTerre;")
-            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / 2.8, 0., 1.);\ndiffuseColor.rgb *= mix(.2, .95, essaiT * (2. - essaiT)) * vec3(.93, .91, 1.04);");
+            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform float essaiProfondeur;\nuniform vec3 essaiTerre;")
+            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\ndiffuseColor.rgb *= mix(.1, .75, essaiT) * vec3(.93, .91, 1.04);");
         };
         material.customProgramCacheKey = () => "essai-terre";
       }
@@ -10929,6 +10930,8 @@
       function addKayKitEssaiPointesSousCases(group, component) {
         const gazon = ILYOS_ILES_ESSAI === "gazon";
         const hautY = KAYKIT_LEVELS.board + ILYOS_ESSAI_BAS_CASE;
+        // L'ombre s'étale sur toute la hauteur de l'île : de l'herbe à la pointe la plus basse.
+        const profondeurIle = 1.6 + Math.min(component.length, 6) * .28;
         const cles = new Set(component.map(([r, c]) => `${r},${c}`));
         const formes = ["bareMountainA", "bareMountainB", "bareMountainC"];
         component.forEach(([r, c]) => {
@@ -10948,7 +10951,7 @@
             child.raycast = () => {};
             (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => {
               m.color?.multiply(new THREE.Color(0x8a8278));
-              if (gazon) kaykitEssaiTerreDegrade(m, hautY);
+              if (gazon) kaykitEssaiTerreDegrade(m, hautY, profondeurIle);
             });
           });
           group.add(roche);
@@ -10979,7 +10982,7 @@
           child.raycast = () => {};
           (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => {
             m.color?.multiply(new THREE.Color(0x7e776e));
-            if (gazon) kaykitEssaiTerreDegrade(m, hautY);
+            if (gazon) kaykitEssaiTerreDegrade(m, hautY, profondeurIle);
           });
         });
         group.add(coeur);
@@ -11514,8 +11517,40 @@
           });
         });
         groupe.add(plaque);
+        // Frange d'herbe : sur chaque bord extérieur de l'île, l'herbe retombe
+        // en petites mèches irrégulières sur la roche et cache la jonction.
+        const cases = new Set((island?.cells || []).map(([cr, cc]) => `${cr},${cc}`));
+        const demi = KAYKIT_BLOCK_SIZE * .99 / 2 + .006;
+        const haut = .425, sombre = herbe.clone().multiplyScalar(.62);
+        const positions = [], couleurs = [];
+        [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dr, dc]) => {
+          if (cases.has(`${r + dr},${c + dc}`)) return;
+          const n = 9;
+          for (let k = 0; k < n; k++) {
+            const a0 = -demi + 2 * demi * k / n, a1 = -demi + 2 * demi * (k + 1) / n, am = (a0 + a1) / 2;
+            const tirage = kaykitHash("essai-frange", island?.id, r, c, dr, dc, k);
+            const chute = .06 + tirage * .1;
+            // Mèche en triangle : large en haut, pointue en bas.
+            const pt = (u, y) => dr ? [u, y, dr * demi] : [dc * demi, y, u];
+            [pt(a0, haut), pt(a1, haut), pt(am, haut - chute)].forEach((v, i) => {
+              positions.push(...v);
+              const col = i < 2 ? herbe : sombre;
+              couleurs.push(col.r, col.g, col.b);
+            });
+          }
+        });
+        if (positions.length) {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+          g.setAttribute("color", new THREE.Float32BufferAttribute(couleurs, 3));
+          g.computeVertexNormals();
+          const frange = new THREE.Mesh(g, kaykitEssaiFrangeMateriau || (kaykitEssaiFrangeMateriau = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, side: THREE.DoubleSide })));
+          frange.raycast = () => {};
+          groupe.add(frange);
+        }
         return groupe;
       }
+      let kaykitEssaiFrangeMateriau = null;
       function makeKayKitEssaiDalle(island, r, c) {
         const groupe = new THREE.Group();
         if (ILYOS_ILES_ESSAI === "gazon") return makeKayKitEssaiGazon(island, r, c);
