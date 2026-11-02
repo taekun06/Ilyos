@@ -184,43 +184,12 @@ body[data-visual-mode="alternative"] #gameScreen #ov2DeckHud.card-cycle-v10-draw
 }
 
 /* ---------- PIOCHE DÉTAILLÉE (js/card-cycle-animation-v10.js) ----------
-   Premiers tours, ou réglage « toujours ». Les cartes sont grandes : leurs
-   textes suivent leur hauteur (unités de conteneur), qu'elles soient en
-   éventail (~190 px) ou zoomées au centre (~340 px). Chargé avant
-   card-art-v12.css, d'où le préfixe « body » pour garder la main. */
+   Premiers tours, ou réglage « toujours ». La face est une image
+   (css/card-art-v12.css) où texte et effet sont dessinés : il ne reste qu'à
+   passer devant le voile. Préfixe « body » : chargé avant card-art-v12.css. */
 body .card-cycle-v10-card.showcase.cc-detail {
-  container-type: size;
   z-index: 100600 !important;
-  /* Pas de padding ici : sur le conteneur lui-même, cqh et % se
-     rapporteraient à la fenêtre, pas à la carte. L'espace intérieur est porté
-     par les enfants, en unités de la carte. */
-  gap: 3cqh !important;
-  padding: 0 !important;
-  justify-content: flex-start !important;
-  border-radius: 14px !important;
 }
-body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-icon {
-  width: 58cqw !important;
-  margin: 13cqh 0 0 !important;
-}
-body .card-cycle-v10-card.showcase.cc-detail > b {
-  font-size: min(9cqh, 14cqw) !important;
-  letter-spacing: .02em !important;
-}
-body .card-cycle-v10-card.showcase.cc-detail .cc-effet {
-  position: relative;
-  z-index: 3;
-  display: block;
-  margin: auto 9cqw 10cqh;
-  color: #f3e7cc;
-  font: 600 6.2cqh/1.25 Georgia, "Times New Roman", serif;
-  text-align: center;
-  text-wrap: balance;
-  opacity: 0;
-  transition: opacity .25s ease .12s;
-}
-body .card-cycle-v10-card.showcase.cc-detail.is-revealed .cc-effet { opacity: .92; }
-body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-rune { display: none !important; }
 
 .cc-pioche-voile {
   position: fixed;
@@ -336,19 +305,15 @@ body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-rune { display: none
   left: -10px;
   bottom: 0;
   width: 20px;
-  height: 29px;
-  border-radius: 4px;
-  border: 1px solid var(--cc-pile, #e8d6a0);
-  background:
-    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--cc-pile, #e8d6a0) 55%, transparent) 0 3px, transparent 4px),
-    linear-gradient(180deg, #16303f, #08131c);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, .45);
+  height: 31px;
+  /* Même illustration que la carte en grand (css/card-art-v12.css). */
+  background: url("../assets/cartes/deplacer.webp") center / contain no-repeat;
   transform-origin: 50% 120%;
   transform: translateX(calc(var(--cc-d) * 9px)) rotate(calc(var(--cc-d) * 7deg));
   animation: ccPileIn .32s ease-out both;
 }
-.cc-pile.type-push { --cc-pile: #d98a48; }
-.cc-pile.type-magic { --cc-pile: #bca1f1; }
+.cc-pile.type-push i { background-image: url("../assets/cartes/pousser.webp"); }
+.cc-pile.type-magic i { background-image: url("../assets/cartes/magie.webp"); }
 .cc-pile b {
   position: absolute;
   left: calc(50% + 34px);
@@ -363,6 +328,6 @@ body .card-cycle-v10-card.showcase.cc-detail .card-cycle-v7-rune { display: none
    actions, les cartes se rangent donc DANS le bouton, en haut. */
 @media (orientation: portrait) and (max-width: 820px) {
   .cc-pile { bottom: auto; top: 3px; height: 16px; }
-  .cc-pile i { width: 11px; height: 16px; left: -5.5px; border-radius: 2px; transform: translateX(calc(var(--cc-d) * 6px)) rotate(calc(var(--cc-d) * 6deg)); }
+  .cc-pile i { width: 11px; height: 17px; left: -5.5px; transform: translateX(calc(var(--cc-d) * 6px)) rotate(calc(var(--cc-d) * 6deg)); }
   .cc-pile b { left: calc(50% + 22px); bottom: 2px; font-size: 9px; }
 }

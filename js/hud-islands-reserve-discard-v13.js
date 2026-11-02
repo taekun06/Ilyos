@@ -180,16 +180,18 @@
     if (!(node instanceof Element)) return;
     if (node.matches?.('.card-cycle-v10-card.transfer')) inspectTransfer(node);
     node.querySelectorAll?.('.card-cycle-v10-card.transfer').forEach(inspectTransfer);
-    if (node.id === 'ov2DiscardViewer' || node.querySelector?.('#ov2DiscardViewer')) requestAnimationFrame(upgradeDiscardViewer);
+    if (/^ov2(Discard|Deck)Viewer$/.test(node.id) || node.querySelector?.('#ov2DiscardViewer, #ov2DeckViewer')) requestAnimationFrame(upgradeDiscardViewer);
     if (node.id === 'hudV2IslandDrawer' || node.id === 'islandSelector' || node.querySelector?.('#hudV2IslandDrawer, #islandSelector')) requestAnimationFrame(applyIslandPolish);
   }
 
+  /* Défausse et pioche partagent le même panneau (deck-discard-viewer-v2.js) :
+     les deux reçoivent les cartes illustrées. */
   function upgradeDiscardViewer() {
-    const viewer = byId('ov2DiscardViewer');
-    if (!viewer) return false;
+    const viewers = ['ov2DiscardViewer', 'ov2DeckViewer'].map(byId).filter(Boolean);
+    if (!viewers.length) return false;
     let changed = false;
 
-    ['MOVE', 'PUSH', 'MAGIC'].forEach(type => {
+    viewers.forEach(viewer => ['MOVE', 'PUSH', 'MAGIC'].forEach(type => {
       const card = viewer.querySelector(`[data-discard-type="${type}"]`);
       if (!card || card.dataset.v13CardArt === '1') return;
       const oldCount = card.querySelector(`[data-discard-count="${type}"]`)?.textContent || '×0';
@@ -201,9 +203,12 @@
         <i class="card-cycle-v7-rune" aria-hidden="true"></i>
         <strong class="ov2-discard-type-count" data-discard-count="${type}">${oldCount}</strong>`;
       changed = true;
-    });
+    }));
 
-    if (changed) requestAnimationFrame(() => window.ILYOS_DISCARD_VIEWER?.render?.());
+    if (changed) requestAnimationFrame(() => {
+      window.ILYOS_DISCARD_VIEWER?.render?.();
+      window.ILYOS_DECK_VIEWER?.render?.();
+    });
     return true;
   }
 

@@ -633,8 +633,10 @@
     const premierTour = tourDuJoueur() === 1;
     const n = types.length;
     const compact = innerWidth < 980 || innerHeight < 720;
-    const cardH = Math.round(clamp(innerHeight * .26, 120, 210));
-    const cardW = Math.round(cardH * .63);
+    // Le texte de l'effet est dans l'illustration (css/card-art-v12.css) :
+    // la carte doit être assez grande pour qu'il se lise.
+    let cardH = Math.round(clamp(innerHeight * .31, 130, 260));
+    let cardW = Math.round(cardH * .612);
     // Écartement : la place disponible décide, et les cartes se chevauchent
     // plutôt que de sortir de l'écran sur un téléphone.
     const marge = 16;
@@ -644,13 +646,39 @@
     const tilt = 3;
     const mid = (n - 1) / 2;
     const centreY = Math.round(innerHeight * .46);
-    const fanRects = types.map((_, i) => {
-      const d = i - mid;
-      const lift = (mid - Math.abs(d)) * 8;
-      return syntheticRect(innerWidth / 2 + d * spacing, centreY - lift, cardW, cardH);
-    });
-    const zoomH = Math.round(Math.min(innerHeight * .46, 340));
-    const zoomRect = syntheticRect(innerWidth / 2, centreY - 10, Math.round(zoomH * .63), zoomH);
+    let fanRects;
+    let hautFan = centreY - cardH / 2;
+    let basFan = centreY + cardH / 2;
+    if (n > 3 && spacing < cardW * .8) {
+      // Téléphone tenu droit : en une rangée, les cartes se recouvraient au
+      // point de cacher leur texte. Deux rangées (3 puis le reste), chaque
+      // carte entière.
+      const ecart = 10;
+      const parRang = Math.ceil(n / 2);
+      cardW = Math.floor(Math.min(cardW, (innerWidth - 2 * marge - (parRang - 1) * ecart) / parRang));
+      cardH = Math.round(cardW / .612);
+      // Un peu plus haut que l'éventail : le résumé et « Compris » doivent
+      // tenir au-dessus de la rangée « fin du tour ».
+      const centre2 = Math.round(innerHeight * .40);
+      const y1 = centre2 - (cardH + ecart) / 2;
+      const y2 = centre2 + (cardH + ecart) / 2;
+      fanRects = types.map((_, i) => {
+        const rang = i < parRang ? 0 : 1;
+        const nb = rang ? n - parRang : parRang;
+        const j = rang ? i - parRang : i;
+        return syntheticRect(innerWidth / 2 + (j - (nb - 1) / 2) * (cardW + ecart), rang ? y2 : y1, cardW, cardH);
+      });
+      hautFan = y1 - cardH / 2;
+      basFan = y2 + cardH / 2;
+    } else {
+      fanRects = types.map((_, i) => {
+        const d = i - mid;
+        const lift = (mid - Math.abs(d)) * 8;
+        return syntheticRect(innerWidth / 2 + d * spacing, centreY - lift, cardW, cardH);
+      });
+    }
+    const zoomH = Math.round(Math.min(innerHeight * .5, 400));
+    const zoomRect = syntheticRect(innerWidth / 2, centreY - 10, Math.round(zoomH * .612), zoomH);
 
     const source = deckSourceRect(cardW, cardH);
     const sourceHud = deckTarget();
@@ -663,10 +691,10 @@
     const titre = creerCouche(`<b>PIOCHE</b><span>+<em>0</em> carte</span>`, 'cc-pioche-titre');
     // Au-dessus de la plus grande carte affichée : l'éventail, ou la carte
     // zoomée au centre dans le style « zoom ».
-    const hautCartes = zoom ? zoomRect.top : centreY - cardH / 2;
+    const hautCartes = zoom ? Math.min(zoomRect.top, hautFan) : hautFan;
     titre.style.top = `${Math.max(12, hautCartes - 78)}px`;
     const bas = creerCouche('', 'cc-pioche-bas');
-    bas.style.top = `${centreY + cardH / 2 + 22}px`;
+    bas.style.top = `${basFan + 22}px`;
     const compteTitre = titre.querySelector('em');
     const libelle = titre.querySelector('span');
     const ghosts = [];
