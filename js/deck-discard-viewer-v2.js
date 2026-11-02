@@ -87,6 +87,30 @@
       return counts;
     }
 
+    /* Cartes du marché (mode Rotation : Élan, Bélier, Boue…). Leur nom et
+       leur type viennent du jeu (window.ILYOS_CARTES_SPECIALES) ; chacune a
+       sa propre carte dans le panneau, après les trois types de base. */
+    function specialesPresentes(cards) {
+      const catalogue = window.ILYOS_CARTES_SPECIALES || {};
+      const n = new Map();
+      cards.forEach(card => {
+        const action = card?.action;
+        if (action && !META[action] && catalogue[action]) n.set(action, (n.get(action) || 0) + 1);
+      });
+      return [...n.entries()].map(([action, count]) => ({ action, count, def: catalogue[action] }));
+    }
+
+    function specialeCard({ action, count, def }) {
+      const base = META[def.type];
+      const classe = def.type ? `type-${def.type.toLowerCase()}` : 'type-boue';
+      const nom = String(def.nom || action).toUpperCase().replace(/[<>&"]/g, '');
+      return `<article class="ov2-discard-type-card ov2-discard-speciale ${classe}${def.valeur > 1 ? ' is-forte' : ''}" data-discard-speciale="${action}" aria-label="${nom}">
+        <small>${nom}</small>
+        <span class="ov2-discard-type-icon" aria-hidden="true">${base ? base.symbol : '◆'}${def.valeur > 1 ? `<em>×${def.valeur}</em>` : ''}</span>
+        <b class="ov2-discard-type-count">×${count}</b>
+      </article>`;
+    }
+
     function render() {
       const root = ensureViewer();
       const { cards, stale } = currentDiscard();
@@ -100,6 +124,38 @@
         if (countNode) countNode.textContent = stale && visibleTotal > 0 && !cards.length ? '×–' : `×${count}`;
         card?.classList.toggle('is-empty', count === 0);
       });
+
+      const strip = root.querySelector('.ov2-discard-strip');
+      strip?.querySelectorAll('[data-discard-speciale]').forEach(node => node.remove());
+      const speciales = specialesPresentes(cards);
+      speciales.forEach(speciale => {
+        if (!strip) return;
+        /* Même habillage que la carte de base de son type (la défausse est
+           illustrée par js/hud-islands-reserve-discard-v13.js) : on la copie,
+           puis on change le nom et le compte. */
+        const modele = speciale.def.type && strip.querySelector(`[data-discard-type="${speciale.def.type}"]`);
+        if (!modele) { strip.insertAdjacentHTML('beforeend', specialeCard(speciale)); return; }
+        const copie = modele.cloneNode(true);
+        const nom = String(speciale.def.nom || speciale.action).toUpperCase();
+        copie.removeAttribute('data-discard-type');
+        copie.dataset.discardSpeciale = speciale.action;
+        copie.classList.remove('is-empty');
+        copie.classList.add('ov2-discard-speciale');
+        if (speciale.def.valeur > 1) copie.classList.add('is-forte');
+        copie.setAttribute('aria-label', nom);
+        const titre = copie.querySelector('b:not(.ov2-discard-type-count), small');
+        if (titre) titre.textContent = nom;
+        const compte = copie.querySelector('.ov2-discard-type-count');
+        if (compte) { compte.removeAttribute('data-discard-count'); compte.textContent = `×${speciale.count}`; }
+        if (speciale.def.valeur > 1) {
+          const badge = document.createElement('em');
+          badge.className = 'ov2-discard-badge';
+          badge.textContent = `×${speciale.def.valeur}`;
+          copie.appendChild(badge);
+        }
+        strip.appendChild(copie);
+      });
+      strip?.classList.toggle('has-speciales', speciales.length > 0);
 
       root.setAttribute('aria-label', stale && visibleTotal > 0
         ? `${pile.nom} : ${visibleTotal} cartes, détail en synchronisation`

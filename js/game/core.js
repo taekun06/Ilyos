@@ -1455,6 +1455,16 @@
         return guardianCount(playerId) < MAX_GUARDIANS_PER_PLAYER;
       }
       function characterById(id) { return state.characters.find(ch => ch.id === id); }
+      /* Le joueur qui commande ce gardien. Les créatures neutres de la
+         Rotation (char.creature, player -1) n'appartiennent à personne : elles
+         reçoivent un camp fictif, sans village ni main, pour que l'affichage
+         et les règles qui lisent « le propriétaire » restent valables. */
+      const CAMP_CREATURE = Object.freeze({ id: -1, name: "Créature", color: "#8fcf9a", icon: "🐾",
+        isAI: false, villages: [], village: null, hand: [], deck: [], discard: [], score: 0, creature: true });
+      function joueurDuGardien(char) {
+        if (!char) return undefined;
+        return char.creature ? CAMP_CREATURE : state.players[char.player];
+      }
       function selectedCard() { return state.selectedActionType ? { action: state.selectedActionType } : null; }
       function unusedCardsOfType(type, player = currentPlayer()) {
         return (player?.hand || []).filter(card => !card.used && card.action === type);
@@ -3336,7 +3346,7 @@
         state.reachable = new Set();
         renderAll();
 
-        if (state.players[pick.player]?.isAI) {
+        if (joueurDuGardien(pick)?.isAI) {
           setTimeout(() => runDraftAI(), 460);
         }
       }
@@ -3472,7 +3482,7 @@
           .forEach(island => island.cells.forEach(([r, c]) => {
             if (draftGuardianCellAllowed(pick.player, r, c)) candidates.push([r, c]);
           }));
-        state.players[pick.player].villages?.forEach(village => {
+        joueurDuGardien(pick).villages?.forEach(village => {
           if (draftGuardianCellAllowed(pick.player, village.r, village.c)) {
             candidates.push([village.r, village.c]);
           }
@@ -4240,7 +4250,7 @@
         if (aiConfig().crownTactics >= 2) {
           const urgentCarrier = state.characters.find(char => {
             if (char.player === playerId || !characterCarriesCrown(char.id)) return false;
-            const owner = state.players[char.player];
+            const owner = joueurDuGardien(char);
             return aiValidationDistanceForPlayer(owner, char.r, char.c) <= 2;
           });
           if (urgentCarrier) {

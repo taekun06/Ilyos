@@ -41,6 +41,8 @@ const fragmentNames = [
   // Couche deckbuilding de la Rotation (marché) : enveloppe les comptes de
   // cartes (après card-rules-physical-reserve.js) et beginTurn/endTurn.
   'rotation-paquet.js',
+  // Couche créatures et œufs : s'appuie sur le marché (butin) ci-dessus.
+  'rotation-creatures.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve

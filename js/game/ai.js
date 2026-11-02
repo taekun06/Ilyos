@@ -675,7 +675,7 @@
               for (const item of simulation) {
                 const isOwn = item.char.player === state.currentPlayer;
                 const carrying = characterCarriesCrown(item.char.id);
-                const owner = state.players[item.char.player];
+                const owner = joueurDuGardien(item.char);
                 if (!item.alive) {
                   // Éliminer un gardien adverse (sans couronne) en le poussant
                   // dans le vide était sous-valorisé face aux gains de
@@ -729,7 +729,7 @@
           if (!rotation.valid) continue;
           let utility = -12;
           for (const move of rotation.characterMoves) {
-            const owner = state.players[move.char.player];
+            const owner = joueurDuGardien(move.char);
             const carrying = characterCarriesCrown(move.char.id);
             const isOwn = move.char.player === state.currentPlayer;
             if (carrying) {
