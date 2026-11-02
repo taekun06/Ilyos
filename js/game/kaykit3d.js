@@ -335,31 +335,38 @@
       // dans la collection change le plateau sans recharger la page.
       let ILYOS_RENDU_ANCIEN = true;
       let kaykitIlesDuProfil = null;
+      let kaykitRocheDuProfil = null;
+      let kaykitStyleIlesCle = null;
       const KAYKIT_RENDU_FORCE = (() => {
         try { return (/[?&]rendu=(ancien|archipel)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
-      /* OPTIONS D'ÎLES À COMPARER (2026-11-01), uniquement par l'URL : le rendu par
-         défaut ne change pas. Aucune n'ajoute de décor sur les cases ; chacune
-         remplace la matière de l'île par des pièces KayKit déjà dans le jeu ou
-         gratuites (Dungeon), dans une palette resserrée.
+      /* ÎLES FLOTTANTES (rendu par défaut depuis le 2026-11-02) : plaque d'herbe
+         fine (KayKit Mini-Game, legacy) posée sur des pointes rocheuses KayKit
+         renversées. Les anciens cubes d'herbe KayKit restent choisissables dans
+         la collection (catégorie « plateau », valeur "kaykit"), comme l'Archipel
+         de pierre. La roche sous l'herbe se choisit dans la catégorie « roche ».
+         L'URL force un style pour comparer sur une même préversion :
+           ?iles=gazon    îles flottantes (défaut)
+           ?iles=kaykit   anciens cubes d'herbe KayKit
            ?iles=prairie  mêmes cubes, herbe d'une seule famille de verts, terre brune
            ?iles=roc      flancs et coque dans la roche des socles de villages,
                           pointe rocheuse KayKit renversée sous chaque île
            ?iles=pierre   cases en dalles de pierre KayKit Dungeon sur la même roche
            ?iles=dalle    dalle Dungeon fine posée directement sur les pointes
-           ?iles=gazon    plaque d'herbe fine (KayKit Mini-Game, legacy) sur les pointes */
-      const ILYOS_ILES_ESSAI = (() => {
-        try { return (/[?&]iles=(prairie|roc|pierre|dalle|gazon)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+         Le style est relu à chaque sync de scène : équiper des îles ou une roche
+         dans la collection change le plateau sans recharger la page. */
+      const KAYKIT_ILES_URL = (() => {
+        try { return (/[?&]iles=(prairie|roc|pierre|dalle|gazon|kaykit)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
-      // Options où l'île n'a plus de coque : la roche pend directement sous les cases.
-      const ILYOS_ILES_POINTES = ["pierre", "dalle", "gazon"].includes(ILYOS_ILES_ESSAI);
+      let ILYOS_ILES_ESSAI = null;
+      // Styles où l'île n'a plus de coque : la roche pend directement sous les cases.
+      let ILYOS_ILES_POINTES = false;
       // Bas de la case (socle ou plaque fine), là où s'accrochent les pointes ;
       // le dessus reste à la hauteur des anciens blocs pour les gardiens.
-      const ILYOS_ESSAI_BAS_CASE = ILYOS_ILES_ESSAI === "dalle" ? .37 : ILYOS_ILES_ESSAI === "gazon" ? .33 : 0;
-      if (ILYOS_ILES_ESSAI === "gazon") {
-        KAYKIT_ASSETS.essaiGazon = kaykitAssetSpec("legacy", "tileLow_forest.glb");
-      }
-      if (ILYOS_ILES_ESSAI === "pierre" || ILYOS_ILES_ESSAI === "dalle") {
+      let ILYOS_ESSAI_BAS_CASE = 0;
+      let ILYOS_ESSAI_PIECES = [];
+      KAYKIT_ASSETS.essaiGazon = kaykitAssetSpec("legacy", "tileLow_forest.glb");
+      if (KAYKIT_ILES_URL === "pierre" || KAYKIT_ILES_URL === "dalle") {
         const dungeon = nom => kaykitAssetSpec("dungeon", nom + ".gltf", "./assets/kaykit/dungeon/dungeon_texture.png");
         Object.assign(KAYKIT_ASSETS, {
           essaiSocle: dungeon("floor_foundation_allsides"),
@@ -369,10 +376,21 @@
           essaiDalleGravee: dungeon("floor_tile_small_decorated")
         });
       }
-      const ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon", "bareMountainA", "bareMountainB", "bareMountainC"]
-        : ILYOS_ILES_POINTES
-        ? ["essaiSocle", "essaiDalle", "essaiDalleHerbeA", "essaiDalleHerbeB", "essaiDalleGravee", "bareMountainA", "bareMountainB", "bareMountainC"]
-        : ILYOS_ILES_ESSAI === "roc" ? ["bareMountainA", "bareMountainB", "bareMountainC"] : [];
+      function kaykitAppliquerStyleIles(style) {
+        ILYOS_ILES_ESSAI = style || null;
+        ILYOS_ILES_POINTES = ["pierre", "dalle", "gazon"].includes(ILYOS_ILES_ESSAI);
+        ILYOS_ESSAI_BAS_CASE = ILYOS_ILES_ESSAI === "dalle" ? .37 : ILYOS_ILES_ESSAI === "gazon" ? .33 : 0;
+        ILYOS_ESSAI_PIECES = ILYOS_ILES_ESSAI === "gazon" ? ["essaiGazon", "bareMountainA", "bareMountainB", "bareMountainC"]
+          : ILYOS_ILES_POINTES
+          ? ["essaiSocle", "essaiDalle", "essaiDalleHerbeA", "essaiDalleHerbeB", "essaiDalleGravee", "bareMountainA", "bareMountainB", "bareMountainC"]
+          : ILYOS_ILES_ESSAI === "roc" ? ["bareMountainA", "bareMountainB", "bareMountainC"] : [];
+      }
+      /* Style d'îles voulu hors Archipel : null = anciens cubes KayKit. */
+      function kaykitStyleIlesDemande() {
+        if (KAYKIT_ILES_URL) return KAYKIT_ILES_URL === "kaykit" ? null : KAYKIT_ILES_URL;
+        if (KAYKIT_RENDU_FORCE === "ancien") return null;
+        return kaykitIlesDuProfil === "kaykit" ? null : "gazon";
+      }
       // Les îles ne se rebâtissent que si leur signature change : on y compte les
       // pièces arrivées pour habiller les îles dès leur chargement.
       function kaykitEssaiPiecesPretes() {
@@ -386,6 +404,11 @@
       /* Appelé par progressionEquiper : la prochaine sync reconstruit le plateau. */
       function kaykitChoisirIles(valeur) {
         kaykitIlesDuProfil = valeur || null;
+        try { if (kaykit3D) scheduleKayKitSync(); } catch (_) { }
+      }
+      /* Roche sous l'herbe choisie dans la collection (catégorie « roche »). */
+      function kaykitChoisirRoche(valeur) {
+        kaykitRocheDuProfil = valeur || null;
         try { if (kaykit3D) scheduleKayKitSync(); } catch (_) { }
       }
       const KAYKIT_BLOCK_SIZE = .932;
@@ -996,6 +1019,7 @@
         if (cielDuProfil && KAYKIT_SKY_BAND_VARIANTS[cielDuProfil]) kaykitSkyBandActiveVariant = cielDuProfil;
         // Îles choisies dans la collection (herbe KayKit ou Archipel de pierre).
         kaykitIlesDuProfil = progressionPlateauEquipe();
+        kaykitRocheDuProfil = progressionRocheEquipee();
 
         const canvas = document.createElement("canvas");
         canvas.id = "kaykitCanvas";
@@ -10498,14 +10522,17 @@
       // Option gazon : roche dans l'ombre de l'herbe, déjà sombre sous la plaque
       // puis de plus en plus sombre jusqu'à la pointe (légère teinte du ciel du
       // soir), pour un dessous d'île flottante ombré.
-      // Essai de colorations (?iles=gazon&roche=…) : chaque palette donne la
-      // couleur de la roche sous l'herbe (haut) et vers la pointe (bas), le
-      // reflet du ciel sur les faces tournées vers le bas, et la force du côté
-      // soleil. L'ombre reste logique : contact très sombre juste sous l'herbe
-      // (l'herbe cache le ciel), flanc tourné vers le soleil plus clair, flanc
-      // opposé plus sombre, puis la pointe se fond dans le ciel.
-      const ILYOS_ESSAI_ROCHE = (() => {
-        try { return (/[?&]roche=(ardoise|basalte|gres|mousse|calcaire)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+      // Roches des îles flottantes (cosmétiques de la catégorie « roche ») :
+      // chaque palette donne la couleur de la roche sous l'herbe (haut) et vers
+      // la pointe (bas), le reflet du ciel sur les faces tournées vers le bas, la
+      // force du côté soleil et sa gamme d'herbes accordée. L'ombre reste
+      // logique : contact très sombre juste sous l'herbe (l'herbe cache le ciel),
+      // flanc tourné vers le soleil plus clair, flanc opposé plus sombre, puis la
+      // pointe se fond dans le ciel sur ses 40 % du bas. Basalte nuit par défaut ;
+      // sans palette (« roche d'ombre »), la roche s'assombrit de façon uniforme.
+      // ?roche=… force une roche pour comparer.
+      const KAYKIT_ROCHE_URL = (() => {
+        try { return (/[?&]roche=(ombre|ardoise|basalte|gres|mousse|calcaire)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
       const KAYKIT_ESSAI_ROCHES = {
         ardoise: { herbes: [0x5a9a4a, 0x3f8458, 0x78a85a, 0x2f7458, 0x6a9468, 0x4a8a70], haut: 0x5a5c66, bas: 0x2c2f3c, rebond: 0x3a4466, soleil: .55, contact: .22 },
@@ -10514,17 +10541,24 @@
         mousse: { herbes: [0x5cb050, 0x3f9a44, 0x7cc25a, 0x2e8a48, 0x6aa83c, 0x4cae6c], haut: 0x4f6a4a, bas: 0x2a2f38, rebond: 0x34465a, soleil: .55, contact: .22 },
         calcaire: { herbes: [0x84b85c, 0x6aa466, 0x9cbc6c, 0x5c9a6e, 0x8eac54, 0x74b080], haut: 0xb4b2ae, bas: 0x5e6478, rebond: 0x6a74a0, soleil: .6, contact: .3 }
       };
-      const KAYKIT_ESSAI_PALETTE = KAYKIT_ESSAI_ROCHES[ILYOS_ESSAI_ROCHE] || null;
-      // Sol « carte blanche » : &sol=automne remplace l'herbe par des feuillages
-      // d'automne, une teinte par île (ocre, orange, rouille, pourpre, or, cuivre).
-      const ILYOS_ESSAI_SOL = (() => { try { return (/[?&]sol=(automne)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; } })();
-      const KAYKIT_ESSAI_SOLS = { automne: [0xb06a22, 0x983c1e, 0x74282a, 0xc08a26, 0xa0502a, 0x8e8030] };
+      let ILYOS_ESSAI_ROCHE = null;
+      let KAYKIT_ESSAI_PALETTE = null;
+      // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
+      let KAYKIT_ESSAI_TERRE = 0x17161b;
+      function kaykitRocheDemande() {
+        // Basalte nuit par défaut ; « ombre » = roche assombrie unie, sans palette.
+        const roche = KAYKIT_ROCHE_URL || kaykitRocheDuProfil || "basalte";
+        return KAYKIT_ESSAI_ROCHES[roche] ? roche : null;
+      }
+      function kaykitAppliquerRoche(roche) {
+        ILYOS_ESSAI_ROCHE = KAYKIT_ESSAI_ROCHES[roche] ? roche : null;
+        KAYKIT_ESSAI_PALETTE = KAYKIT_ESSAI_ROCHES[ILYOS_ESSAI_ROCHE] || null;
+        KAYKIT_ESSAI_TERRE = KAYKIT_ESSAI_PALETTE
+          ? new THREE.Color(KAYKIT_ESSAI_PALETTE.haut).multiplyScalar(KAYKIT_ESSAI_PALETTE.contact).getHex()
+          : 0x17161b;
+      }
       // Comparatif : &fondu=0 garde les pointes entières, sans fondu dans le ciel.
       const ILYOS_ESSAI_FONDU = (() => { try { return !/[?&]fondu=0(&|$)/.test(location.search); } catch (_) { return true; } })();
-      // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
-      const KAYKIT_ESSAI_TERRE = KAYKIT_ESSAI_PALETTE
-        ? new THREE.Color(KAYKIT_ESSAI_PALETTE.haut).multiplyScalar(KAYKIT_ESSAI_PALETTE.contact).getHex()
-        : 0x17161b;
       function kaykitEssaiTerreDegrade(material, hautY, profondeur = 2.8) {
         const pal = KAYKIT_ESSAI_PALETTE;
         material.onBeforeCompile = shader => {
@@ -11221,7 +11255,7 @@
         const groupe = new THREE.Group();
         if (!plaque) return groupe;
         // Chaque roche a sa gamme d'herbes accordée ; 6 verts distincts pour séparer les îles collées.
-        const teintes = KAYKIT_ESSAI_SOLS[ILYOS_ESSAI_SOL] || KAYKIT_ESSAI_PALETTE?.herbes || KAYKIT_ESSAI_GAZON_TEINTES;
+        const teintes = KAYKIT_ESSAI_PALETTE?.herbes || KAYKIT_ESSAI_GAZON_TEINTES;
         const herbe = new THREE.Color(teintes[Math.max(0, Number(island?.visualVariant) || 0) % teintes.length]);
         herbe.offsetHSL(0, 0, (kaykitHash("essai-gazon", island?.id, r, c) - .5) * .03);
         // Les couleurs des matériaux glTF sont linéaires : sans conversion, le vert sort délavé.
@@ -13875,8 +13909,16 @@
           resizeKayKit3D();
           // Îles d'herbe ↔ Archipel de pierre (collection) : tout le calque
           // d'îles est rebâti, avec piédestaux et décor.
-          if (ILYOS_RENDU_ANCIEN === kaykitArchipelDemande()) {
-            ILYOS_RENDU_ANCIEN = !ILYOS_RENDU_ANCIEN;
+          // Îles flottantes ↔ cubes KayKit, et roche choisie : même reconstruction.
+          const archipel = kaykitArchipelDemande();
+          const styleIles = archipel ? null : kaykitStyleIlesDemande();
+          const rocheIles = kaykitRocheDemande();
+          const cleIles = `${archipel ? "archipel" : styleIles || "kaykit"}|${rocheIles || ""}`;
+          if (cleIles !== kaykitStyleIlesCle) {
+            kaykitStyleIlesCle = cleIles;
+            ILYOS_RENDU_ANCIEN = !archipel;
+            kaykitAppliquerStyleIles(styleIles);
+            kaykitAppliquerRoche(rocheIles);
             kaykit3D.islandObjectRegistry.forEach(entry => disposeKayKitObjects(entry.objects));
             kaykit3D.islandObjectRegistry.clear();
             kaykit3D.islandsSignature = null;
