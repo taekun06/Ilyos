@@ -262,29 +262,55 @@
          Éteinte (au-dessus du vide) : un simple anneau pâle qui flotte, pour
          qu'on voie où construire. Matériaux de base, sans lumière ajoutée ni
          animation : rien ne tourne en continu. */
-      const ROTATION_BALISE_CLAIRE = 0xbff4ff;
+      const ROTATION_BALISE_CLAIRE = 0x35c6f2;
+      const ROTATION_BALISE_CONTOUR = 0x0d1b26;
 
-      function rotationMateriau(couleur, opacite) {
+      /* Mélange normal partout : en additif, la lumière virait au blanc sur
+         l'herbe claire et le ciel, et cachait le gardien qui tient la balise. */
+      function rotationMateriau(couleur, opacite, { additif = false, alphaMap = null } = {}) {
         return new THREE.MeshBasicMaterial({
-          color: couleur, transparent: true, opacity: opacite,
-          depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+          color: couleur, transparent: true, opacity: opacite, alphaMap,
+          depthWrite: false, blending: additif ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide
         });
       }
 
+      /* Dégradés partagés : la colonne s'efface vers le haut, le halo vers
+         son bord. Deux petites toiles, créées une fois. */
+      let rotationDegrades = null;
+      function rotationTexturesDegrade() {
+        if (rotationDegrades) return rotationDegrades;
+        const vertical = document.createElement("canvas");
+        vertical.width = 4; vertical.height = 64;
+        let ctx = vertical.getContext("2d");
+        let g = ctx.createLinearGradient(0, 64, 0, 0);
+        g.addColorStop(0, "#fff"); g.addColorStop(.35, "#888"); g.addColorStop(.85, "#000");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 64);
+        const radial = document.createElement("canvas");
+        radial.width = radial.height = 64;
+        ctx = radial.getContext("2d");
+        g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+        g.addColorStop(0, "#fff"); g.addColorStop(.7, "#aaa"); g.addColorStop(1, "#000");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+        rotationDegrades = { vertical: new THREE.CanvasTexture(vertical), radial: new THREE.CanvasTexture(radial) };
+        return rotationDegrades;
+      }
+
       function rotationConstruireBalise() {
+        const { vertical, radial } = rotationTexturesDegrade();
         const groupe = new THREE.Group();
-        const sol = new THREE.Mesh(new THREE.RingGeometry(.3, .4, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .9));
-        sol.rotation.x = -Math.PI / 2;
-        const runes = new THREE.Mesh(new THREE.RingGeometry(.43, .46, 40, 1, 0, Math.PI * 2), rotationMateriau(ROTATION_BALISE_CLAIRE, .55));
-        runes.rotation.x = -Math.PI / 2;
-        const halo = new THREE.Mesh(new THREE.CircleGeometry(.4, 32), rotationMateriau(ROTATION_BALISE_CLAIRE, .22));
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.y = .005;
-        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.22, .3, 2.2, 24, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .16));
-        colonne.position.y = 1.1;
-        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.05, .08, 2.6, 12, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .45));
-        coeur.position.y = 1.3;
-        groupe.add(sol, runes, halo, colonne, coeur);
+        const aplat = mesh => { mesh.rotation.x = -Math.PI / 2; return mesh; };
+        // Contour sombre puis anneau franc : lisible sur tout fond.
+        const runes = aplat(new THREE.Mesh(new THREE.RingGeometry(.4, .47, 48), rotationMateriau(ROTATION_BALISE_CONTOUR, .55)));
+        const sol = aplat(new THREE.Mesh(new THREE.RingGeometry(.31, .42, 48), rotationMateriau(ROTATION_BALISE_CLAIRE, .95)));
+        sol.position.y = .003;
+        const halo = aplat(new THREE.Mesh(new THREE.CircleGeometry(.31, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .4, { alphaMap: radial })));
+        halo.position.y = .002;
+        // Lumière plus basse et plus fine : elle signale sans aveugler le gardien.
+        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, 1.5, 32, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .3, { alphaMap: vertical }));
+        colonne.position.y = .75;
+        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.035, .05, 2.2, 10, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .55, { alphaMap: vertical }));
+        coeur.position.y = 1.1;
+        groupe.add(runes, sol, halo, colonne, coeur);
         groupe.userData.rotationParties = { sol, runes, halo, colonne, coeur };
         groupe.renderOrder = 4;
         return groupe;
@@ -314,16 +340,22 @@
           const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
           // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
-          balise.position.set(p.x, allumee ? p.y + .01 : KAYKIT_LEVELS.islandTop + .02, p.z);
+          balise.position.set(p.x, allumee ? p.y + .05 : KAYKIT_LEVELS.islandTop + .02, p.z);
           const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
-          [sol, runes, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
-          sol.material.opacity = allumee ? .95 : .35;
-          runes.material.opacity = allumee ? .6 : .2;
+          [sol, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
+          /* Éteinte : anneau pâle, pour voir où construire. Allumée libre :
+             anneau cyan franc et lumière. Tenue : tout à la couleur du camp,
+             halo au sol plein, lumière plus haute. */
+          sol.material.opacity = allumee ? .95 : .45;
+          runes.material.opacity = allumee ? .55 : .25;
           halo.visible = allumee;
+          halo.material.opacity = g ? .45 : .25;
           colonne.visible = allumee;
           coeur.visible = allumee;
-          colonne.material.opacity = g ? .22 : .14;
-          coeur.material.opacity = g ? .6 : .4;
+          colonne.material.opacity = g ? .6 : .45;
+          colonne.scale.y = g ? 1.25 : 1;
+          colonne.position.y = .75 * colonne.scale.y;
+          coeur.material.opacity = g ? .85 : .65;
         });
       }
 
