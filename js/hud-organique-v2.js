@@ -370,21 +370,13 @@
     legacy('ov2GuardianPush').textContent = countFrom('hudV2PushCount');
   }
 
+  /* Une seule notification (audit du 2026-11-02) : chaque message de
+     showToast() s'affichait deux fois, dans la bulle #toast en haut ET dans
+     cette carte en bas à droite, qui cachait en plus le village du coin. La
+     bulle du haut reste seule ; la carte n'est plus montrée, ni sur PC ni sur
+     téléphone (où elle était déjà masquée en CSS). */
   function syncToast(){
-    const src = legacy('hudV2Toast');
-    const out = legacy('ov2Toast');
-    if (!out) return;
-    const text = (src?.textContent || '').replace(/\s+/g,' ').trim();
-    const sourceVisible = !!text && !src?.classList.contains('hidden');
-    if (!sourceVisible || text === toastDismissedText) {
-      out.classList.add('ov2-off');
-      if (!text) toastDismissedText = '';
-      return;
-    }
-    toastDismissedText = '';
-    legacy('ov2ToastTitle').textContent = /couronne/i.test(text) ? 'Couronne' : 'Information';
-    legacy('ov2ToastText').textContent = text;
-    out.classList.remove('ov2-off');
+    legacy('ov2Toast')?.classList.add('ov2-off');
   }
 
   function sync(){

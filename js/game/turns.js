@@ -5,7 +5,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         renderAll();
-        showToast("ORDINATEUR termine son tour.");
+        showToast(`${nomJoueurIA()} termine son tour.`);
         await sleep(700);
 
         if (token === aiRunToken && state && state.winner === null) endTurn(true);

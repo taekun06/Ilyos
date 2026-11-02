@@ -4142,7 +4142,7 @@
    }
 
    #gameScreen.ai-turn .board-wrap::before {
-       content: "L’ORDINATEUR JOUE";
+       content: "LE CPU JOUE";
        position: absolute;
        left: 50%;
        top: 2%;

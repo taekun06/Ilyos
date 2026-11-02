@@ -128,7 +128,7 @@
         const player = currentPlayer();
 
         if (player?.isAI || state.aiThinking) {
-          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "Ordinateur"}`.trim(), next: "L’adversaire prépare son action." };
+          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "CPU"}`.trim(), next: "L’adversaire prépare son action." };
         }
 
         if (state.pendingDirectMoveTarget) {

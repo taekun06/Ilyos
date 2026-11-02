@@ -15511,7 +15511,7 @@
           cpu.className = "player-field ai-player-field";
           cpu.innerHTML = `
           <span class="player-dot ai-dot" style="background:${PLAYER_COLORS[1]};color:${PLAYER_COLORS[1]}"></span>
-          <span class="ai-player-name"><b>ORDINATEUR</b><small>Adversaire automatique</small></span>
+          <span class="ai-player-name"><b>CPU</b><small>Adversaire automatique</small></span>
           <span class="ai-chip">CPU</span>
         `;
           els.playersForm.appendChild(cpu);
@@ -16031,6 +16031,9 @@
       }
 
       function currentPlayer() { return state.players[state.currentPlayer]; }
+      /* Nom du camp de l'IA dans les messages : le même que dans le bandeau
+         (« CPU », ou son nom en 2 contre 2), au lieu d'« ORDINATEUR » écrit en dur. */
+      function nomJoueurIA() { return state?.players?.[state.currentPlayer]?.name || "CPU"; }
       function villageAt(r, c) {
         return state.players.find(player =>
           villagesForPlayer(player).some(village => village.r === r && village.c === c)
@@ -18485,7 +18488,7 @@
         const turnDurationChoice = selectedTurnDurationSeconds();
         const humanNames = [...els.playersForm.querySelectorAll(".player-name")]
           .map((input, i) => (input.value.trim() || `Joueur ${i + 1}`).toLocaleUpperCase("fr-FR"));
-        const names = soloMode ? [...humanNames, "ORDINATEUR"] : humanNames;
+        const names = soloMode ? [...humanNames, "CPU"] : humanNames;
         const count = names.length;
         /* 2 contre 2 : des places peuvent être tenues par l'IA. Par défaut
            chacun marque pour soi ; avec la diagonale d'équipe (J1+J3, J2+J4),
@@ -18495,7 +18498,7 @@
         const siegesIA = !teamMode ? []
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
         const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
-        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `ORDINATEUR ${i + 1}`; });
+        siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `CPU ${i + 1}`; });
         const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
         const villageAssignments = villagesEquipe
           ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())
@@ -19380,7 +19383,7 @@
         renderAll();
         animateCellPulse(option.char.r, option.char.c, "crown-burst");
         playSfx("crownTake");   // Ramassage libre par l'IA.
-        showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
+        showToast(`${nomJoueurIA()} récupère gratuitement une couronne adjacente.`);
         await sleep(520);
         resolveArtifactForCharacter(option.char);
         benchJournaliser({ type: "RAMASSAGE", gardien: option.char.id, case: [option.char.r, option.char.c] });
@@ -19463,7 +19466,7 @@
           renderAll();
           animateCellPulse(option.ally.r, option.ally.c, "crown-burst");
           playSfx("crownTake");   // Transmission : l'allié prend la couronne.
-          showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
+          showToast(`${nomJoueurIA()} transmet directement la couronne à un allié adjacent.`);
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
           benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: true });
@@ -19480,7 +19483,7 @@
         liveArtifact.c = option.dropC;
         renderAll();
         animateCellPulse(option.dropR, option.dropC, "crown-burst");
-        showToast("ORDINATEUR pose la couronne entre deux alliés.");
+        showToast(`${nomJoueurIA()} pose la couronne entre deux alliés.`);
         await sleep(280);
 
         if (token !== aiRunToken || !state) return false;
@@ -19642,7 +19645,7 @@
         state.phase = "ACTION_SELECT";
         renderAll();
         animateCellPulse(option.dropR, option.dropC, "crown-burst");
-        showToast("ORDINATEUR pose la couronne pour préparer une poussée.");
+        showToast(`${nomJoueurIA()} pose la couronne pour préparer une poussée.`);
         await sleep(360);
 
         if (token !== aiRunToken || !state) return false;
@@ -20003,7 +20006,7 @@
         state.selectedActionType = null;
         state.selectedCharId = option.char.id;
         renderAll();
-        showToast("ORDINATEUR valide une couronne pour 1 déplacement.");
+        showToast(`${nomJoueurIA()} valide une couronne pour 1 déplacement.`);
         await sleep(320);
 
         if (token !== aiRunToken || !state) return false;
@@ -20201,7 +20204,7 @@
             applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
             if (kaykit3D) kaykit3D.lastStateSignature = "";
             playSfx("magic");
-            showToast("ORDINATEUR dissout une île vide pour 1 magie.");
+            showToast(`${nomJoueurIA()} dissout une île vide pour 1 magie.`);
             renderAll();
             scheduleKayKitSync();
             await sleep(620);
@@ -20215,7 +20218,7 @@
             const voleur = characterById(action.charId);
             if (voleur) animateCellPulse(voleur.r, voleur.c, "crown-burst");
             playSfx("crownTake");
-            showToast("ORDINATEUR vole la couronne d’un porteur adjacent !");
+            showToast(`${nomJoueurIA()} vole la couronne d’un porteur adjacent !`);
             await sleep(520);
             return true;
           }
@@ -20246,7 +20249,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         renderAll();
-        showToast("ORDINATEUR termine son tour.");
+        showToast(`${nomJoueurIA()} termine son tour.`);
         await sleep(700);
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
         return true;
@@ -20260,7 +20263,7 @@
         state.inputLocked = true;
         els.gameScreen.classList.add("ai-turn");
         renderAll();
-        showToast(`ORDINATEUR · ${cfg.label.toUpperCase()} analyse le plateau…`);
+        showToast(`${nomJoueurIA()} · ${cfg.label.toUpperCase()} analyse le plateau…`);
         await sleep(cfg.thinkDelay);
 
         if (token !== aiRunToken || !state) return;
@@ -20419,7 +20422,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         renderAll();
-        showToast("ORDINATEUR termine son tour.");
+        showToast(`${nomJoueurIA()} termine son tour.`);
         await sleep(700);
 
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
@@ -22218,7 +22221,7 @@
         const player = currentPlayer();
 
         if (player?.isAI || state.aiThinking) {
-          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "Ordinateur"}`.trim(), next: "L’adversaire prépare son action." };
+          return { kind: "wait", kicker: "TOUR DE L’ADVERSAIRE", title: `${player?.icon || ""} ${player?.name || "CPU"}`.trim(), next: "L’adversaire prépare son action." };
         }
 
         if (state.pendingDirectMoveTarget) {

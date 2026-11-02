@@ -222,7 +222,7 @@
         renderAll();
         animateCellPulse(option.char.r, option.char.c, "crown-burst");
         playSfx("crownTake");   // Ramassage libre par l'IA.
-        showToast("ORDINATEUR récupère gratuitement une couronne adjacente.");
+        showToast(`${nomJoueurIA()} récupère gratuitement une couronne adjacente.`);
         await sleep(520);
         resolveArtifactForCharacter(option.char);
         benchJournaliser({ type: "RAMASSAGE", gardien: option.char.id, case: [option.char.r, option.char.c] });
@@ -305,7 +305,7 @@
           renderAll();
           animateCellPulse(option.ally.r, option.ally.c, "crown-burst");
           playSfx("crownTake");   // Transmission : l'allié prend la couronne.
-          showToast("ORDINATEUR transmet directement la couronne à un allié adjacent.");
+          showToast(`${nomJoueurIA()} transmet directement la couronne à un allié adjacent.`);
           await sleep(360);
           resolveArtifactForCharacter(option.ally);
           benchJournaliser({ type: "TRANSMISSION", de: option.carrier.id, vers: option.ally.id, directe: true });
@@ -322,7 +322,7 @@
         liveArtifact.c = option.dropC;
         renderAll();
         animateCellPulse(option.dropR, option.dropC, "crown-burst");
-        showToast("ORDINATEUR pose la couronne entre deux alliés.");
+        showToast(`${nomJoueurIA()} pose la couronne entre deux alliés.`);
         await sleep(280);
 
         if (token !== aiRunToken || !state) return false;
@@ -484,7 +484,7 @@
         state.phase = "ACTION_SELECT";
         renderAll();
         animateCellPulse(option.dropR, option.dropC, "crown-burst");
-        showToast("ORDINATEUR pose la couronne pour préparer une poussée.");
+        showToast(`${nomJoueurIA()} pose la couronne pour préparer une poussée.`);
         await sleep(360);
 
         if (token !== aiRunToken || !state) return false;
@@ -845,7 +845,7 @@
         state.selectedActionType = null;
         state.selectedCharId = option.char.id;
         renderAll();
-        showToast("ORDINATEUR valide une couronne pour 1 déplacement.");
+        showToast(`${nomJoueurIA()} valide une couronne pour 1 déplacement.`);
         await sleep(320);
 
         if (token !== aiRunToken || !state) return false;
@@ -1043,7 +1043,7 @@
             applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
             if (kaykit3D) kaykit3D.lastStateSignature = "";
             playSfx("magic");
-            showToast("ORDINATEUR dissout une île vide pour 1 magie.");
+            showToast(`${nomJoueurIA()} dissout une île vide pour 1 magie.`);
             renderAll();
             scheduleKayKitSync();
             await sleep(620);
@@ -1057,7 +1057,7 @@
             const voleur = characterById(action.charId);
             if (voleur) animateCellPulse(voleur.r, voleur.c, "crown-burst");
             playSfx("crownTake");
-            showToast("ORDINATEUR vole la couronne d’un porteur adjacent !");
+            showToast(`${nomJoueurIA()} vole la couronne d’un porteur adjacent !`);
             await sleep(520);
             return true;
           }
@@ -1088,7 +1088,7 @@
         clearMagicPreview();
         state.reachable = new Set();
         renderAll();
-        showToast("ORDINATEUR termine son tour.");
+        showToast(`${nomJoueurIA()} termine son tour.`);
         await sleep(700);
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
         return true;
@@ -1102,7 +1102,7 @@
         state.inputLocked = true;
         els.gameScreen.classList.add("ai-turn");
         renderAll();
-        showToast(`ORDINATEUR · ${cfg.label.toUpperCase()} analyse le plateau…`);
+        showToast(`${nomJoueurIA()} · ${cfg.label.toUpperCase()} analyse le plateau…`);
         await sleep(cfg.thinkDelay);
 
         if (token !== aiRunToken || !state) return;
