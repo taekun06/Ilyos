@@ -76,7 +76,7 @@
   ];
   const COUCHES = [
     { id: 'deckbuilding', dispo: true, nom: 'Deckbuilding', ligne: 'Marché · cartes fortes · affinage', ico: '<rect x="3" y="5" width="11" height="15" rx="2" transform="rotate(-10 8 12)"/><rect x="9" y="4" width="11" height="15" rx="2"/><path d="M14.5 9 l2 2.5 -2 2.5 -2 -2.5 Z"/>' },
-    { id: 'creatures', nom: 'Créatures et œufs', ligne: 'Éclosion sur la croix', ico: '<path d="M12 3 C7 3 5 11 5 14 C5 18 8 21 12 21 C16 21 19 18 19 14 C19 11 17 3 12 3 Z"/><path d="M8 13 l2 -2 2 2 2 -2 2 2"/>' },
+    { id: 'creatures', dispo: true, nom: 'Créatures et œufs', ligne: 'Œufs sur la croix · Loup ou Vase', ico: '<path d="M12 3 C7 3 5 11 5 14 C5 18 8 21 12 21 C16 21 19 18 19 14 C19 11 17 3 12 3 Z"/><path d="M8 13 l2 -2 2 2 2 -2 2 2"/>' },
     { id: 'objectifs', nom: 'Objectifs communs', ligne: '3 courses secondaires', ico: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2"/><path d="M12 1 v4 M12 19 v4 M1 12 h4 M19 12 h4"/>' }
   ];
   const TAILLES = [['11', '11×11'], ['13', '13×13']];

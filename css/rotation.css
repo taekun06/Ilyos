@@ -28,6 +28,9 @@
 .rt-bascule::after{content:'';position:absolute;left:2px;top:1px;width:10px;height:10px;border-radius:50%;background:#7c7262}
 .rt-marche-affiner.on{color:#f4d28e}
 .rt-marche-affiner.on .rt-bascule{background:linear-gradient(90deg,#b27f2a,#f4d28e)}.rt-marche-affiner.on .rt-bascule::after{left:13px;background:#fff6dc}
+.rt-marche-exil{display:block;width:100%;margin-top:8px;padding:6px 4px;border-radius:8px;border:1px solid #d8aa4c;background:rgba(4,10,17,.85);color:#f4d28e;cursor:pointer;font-size:11px;letter-spacing:.06em;font-family:'Nunito Sans',sans-serif}
+.rt-marche.butin{border-color:#ffe3a0;box-shadow:0 0 0 2px rgba(255,227,160,.35),0 0 22px rgba(244,210,142,.45),0 10px 26px rgba(0,0,0,.45)}
+.rt-marche.butin .rt-mcarte:not(:disabled){border-color:#ffe3a0}
 .rt-marche-pied{margin-top:4px;text-align:center;font-size:9.5px;letter-spacing:.06em;color:#d9ccb0;opacity:.7;font-family:'Nunito Sans',sans-serif}
 
 /* Carte forte en main : liseré d'or sur le bouton du dock. */
@@ -47,6 +50,46 @@
   .rt-marche{display:grid;grid-template-columns:1fr auto;align-items:center}
   .rt-marche-tete{grid-column:1;grid-row:1}.rt-marche-tete small{display:none}
   .rt-marche-cartes{grid-column:1/-1;grid-row:2}
+  .rt-marche-exil{grid-column:2;grid-row:1;margin:0 0 5px;width:auto;padding:2px 8px}
   .rt-marche-affiner{grid-column:2;grid-row:1;margin:0 0 5px;padding:0;width:auto;font-size:10px}
   .rt-marche-pied{display:none}
 }
+
+/* Choix de départ : fenêtre posée sur le plateau, qui bloque les clics tant
+   que les cartes ne sont pas toutes prises. */
+#gameScreen>.rt-choix,.rt-choix{position:absolute!important;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:radial-gradient(ellipse at 50% 45%,rgba(4,10,18,.35),rgba(4,10,18,.72))}
+.rt-choix[hidden]{display:none}
+.rt-choix-boite{position:relative;width:min(560px,100%);padding:16px 16px 14px;border-radius:18px;color:#f3e6c6;font-family:var(--font-ilyos-action,Georgia),Georgia,serif;
+  background:linear-gradient(180deg,rgba(12,26,40,.97),rgba(5,12,20,.97));border:1.5px solid rgba(225,176,71,.8);
+  box-shadow:inset 0 0 0 1px rgba(255,230,166,.14),0 14px 40px rgba(0,0,0,.55)}
+.rt-choix-boite::before{content:'';position:absolute;left:50%;top:-7px;width:12px;height:12px;transform:translateX(-50%) rotate(45deg);background:#f4d28e;box-shadow:0 0 10px rgba(244,210,142,.6)}
+.rt-choix-boite .rt-marche-tete span{font-size:18px}
+.rt-choix-boite .rt-marche-tete small{font-size:11px}
+.rt-choix-trait{margin:2px 0 12px;text-align:center;font-size:14px;color:var(--pc,#f4d28e);letter-spacing:.04em}
+.rt-choix-cartes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rt-ccarte.prise{opacity:1;border-color:var(--pc);background:linear-gradient(160deg,rgba(14,22,32,.92),rgba(6,12,20,.95))}
+.rt-ccarte.prise .rt-mcarte-ico,.rt-ccarte.prise b,.rt-ccarte.prise i{opacity:.38}
+.rt-ccarte u{text-decoration:none;font-family:'Nunito Sans',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--pc);line-height:1}
+.rt-ccarte{grid-template-columns:1fr;grid-template-rows:auto auto auto;justify-items:center;text-align:center;row-gap:4px;padding:10px 6px 8px}
+.rt-ccarte .rt-mcarte-ico{grid-row:auto;width:44px;height:44px}
+.rt-ccarte .rt-mcarte-ico svg{width:26px;height:26px}
+.rt-ccarte b{font-size:15px}
+.rt-ccarte:disabled{opacity:.8}
+.rt-choix-pris{list-style:none;margin:14px 0 0;padding:10px 0 0;border-top:1px solid rgba(225,176,71,.25);display:flex;flex-direction:column;gap:6px;font-family:'Nunito Sans',sans-serif;font-size:12px}
+.rt-choix-pris li{display:flex;align-items:center;gap:6px}
+.rt-choix-pris li>span{min-width:84px;color:var(--pc);font-weight:700}
+.rt-choix-pris b{font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid rgba(225,176,71,.6);background:rgba(244,210,142,.12);color:#f4d28e}
+.rt-choix-pris i{width:46px;height:18px;border-radius:999px;border:1px dashed rgba(217,204,176,.35)}
+@media (max-width:760px) and (orientation:portrait){
+  .rt-choix-cartes{grid-template-columns:repeat(3,1fr);gap:6px}
+  .rt-ccarte{padding:8px 3px 7px;grid-template-columns:1fr}
+  .rt-ccarte .rt-mcarte-ico{width:34px;height:34px}.rt-ccarte .rt-mcarte-ico svg{width:20px;height:20px}
+  .rt-ccarte b{font-size:13px}
+  .rt-ccarte i{display:block;font-size:9px}
+  .rt-choix-boite{padding:14px 10px 12px}
+  .rt-choix-boite .rt-marche-tete{display:block;text-align:center}
+  .rt-choix-boite .rt-marche-tete small{display:block;white-space:normal}
+  .rt-choix-boite .rt-marche-tete span{font-size:16px}
+}
+/* Pendant le choix, la pioche de début de tour ne vient pas couvrir la fenêtre. */
+body.rt-choix-actif .card-cycle-v7-card.showcase{visibility:hidden}
