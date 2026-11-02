@@ -10835,23 +10835,67 @@
       // Option gazon : roche dans l'ombre de l'herbe, déjà sombre sous la plaque
       // puis de plus en plus sombre jusqu'à la pointe (légère teinte du ciel du
       // soir), pour un dessous d'île flottante ombré.
-      const KAYKIT_ESSAI_TERRE = 0x17161b; // sous-couche de la plaque : même noir que le haut de la roche, aucun trait visible
+      // Essai de colorations (?iles=gazon&roche=…) : chaque palette donne la
+      // couleur de la roche sous l'herbe (haut) et vers la pointe (bas), le
+      // reflet du ciel sur les faces tournées vers le bas, et la force du côté
+      // soleil. L'ombre reste logique : contact très sombre juste sous l'herbe
+      // (l'herbe cache le ciel), flanc tourné vers le soleil plus clair, flanc
+      // opposé plus sombre, puis la pointe se fond dans le ciel.
+      const ILYOS_ESSAI_ROCHE = (() => {
+        try { return (/[?&]roche=(ardoise|basalte|gres|mousse|calcaire)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
+      })();
+      const KAYKIT_ESSAI_ROCHES = {
+        ardoise: { haut: 0x5a5c66, bas: 0x2c2f3c, rebond: 0x3a4466, soleil: .55, contact: .22 },
+        basalte: { haut: 0x3e3b58, bas: 0x1c1a33, rebond: 0x5a4f8a, soleil: .5, contact: .2 },
+        gres: { haut: 0x9a8a72, bas: 0x4a4048, rebond: 0x55507a, soleil: .65, contact: .25 },
+        mousse: { haut: 0x4f6a4a, bas: 0x2a2f38, rebond: 0x34465a, soleil: .55, contact: .22 },
+        calcaire: { haut: 0xb4b2ae, bas: 0x5e6478, rebond: 0x6a74a0, soleil: .6, contact: .3 }
+      };
+      const KAYKIT_ESSAI_PALETTE = KAYKIT_ESSAI_ROCHES[ILYOS_ESSAI_ROCHE] || null;
+      // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
+      const KAYKIT_ESSAI_TERRE = KAYKIT_ESSAI_PALETTE
+        ? new THREE.Color(KAYKIT_ESSAI_PALETTE.haut).multiplyScalar(KAYKIT_ESSAI_PALETTE.contact).getHex()
+        : 0x17161b;
       function kaykitEssaiTerreDegrade(material, hautY, profondeur = 2.8) {
-        const terre = new THREE.Color(KAYKIT_ESSAI_TERRE).convertSRGBToLinear();
+        const pal = KAYKIT_ESSAI_PALETTE;
         material.onBeforeCompile = shader => {
           shader.uniforms.essaiHautY = { value: hautY };
           shader.uniforms.essaiProfondeur = { value: profondeur };
-          shader.uniforms.essaiTerre = { value: terre };
           shader.vertexShader = shader.vertexShader
-            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;")
-            .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
+            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nvarying vec3 vEssaiN;")
+            .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;\nvEssaiN = normalize(mat3(modelMatrix) * objectNormal);");
+          let fond = "float essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\n";
+          if (pal) {
+            const lin = hex => new THREE.Color(hex).convertSRGBToLinear();
+            shader.uniforms.essaiHaut = { value: lin(pal.haut) };
+            shader.uniforms.essaiBas = { value: lin(pal.bas) };
+            shader.uniforms.essaiRebond = { value: lin(pal.rebond) };
+            shader.uniforms.essaiSoleil = { value: pal.soleil };
+            shader.uniforms.essaiContact = { value: pal.contact };
+            fond += [
+              "vec3 essaiN = normalize(vEssaiN);",
+              "float essaiH = length(essaiN.xz);",
+              // Soleil de la scène en (-6, 14, 8) : flanc tourné vers lui éclairé, l'autre dans l'ombre.
+              "float essaiCote = essaiH > .01 ? dot(essaiN.xz / essaiH, normalize(vec2(-6., 8.))) * essaiH : 0.;",
+              "vec3 essaiCol = mix(essaiHaut, essaiBas, smoothstep(0., 1., essaiT)) * .42;",
+              "essaiCol *= 1. + essaiSoleil * essaiCote;",
+              // Reflet du ciel sur les faces tournées vers le bas.
+              "essaiCol += essaiRebond * max(-essaiN.y, 0.) * .18;",
+              // Ombre de contact : l'herbe cache le ciel juste dessous.
+              "essaiCol *= mix(essaiContact, 1., smoothstep(0., 1.1, essaiHautY - vEssaiY));",
+              "diffuseColor.rgb = essaiCol;"
+            ].join("\n") + "\n";
+          } else {
+            fond += "diffuseColor.rgb *= mix(.08, .8, pow(essaiT, 1.5)) * vec3(.93, .91, 1.04);\n";
+          }
+          fond += "// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.2, 1., essaiT);";
           shader.fragmentShader = shader.fragmentShader
-            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform float essaiProfondeur;\nuniform vec3 essaiTerre;")
-            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\ndiffuseColor.rgb *= mix(.08, .8, pow(essaiT, 1.5)) * vec3(.93, .91, 1.04);\n// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.2, 1., essaiT);");
+            .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nvarying vec3 vEssaiN;\nuniform float essaiHautY;\nuniform float essaiProfondeur;" + (pal ? "\nuniform vec3 essaiHaut;\nuniform vec3 essaiBas;\nuniform vec3 essaiRebond;\nuniform float essaiSoleil;\nuniform float essaiContact;" : ""))
+            .replace("#include <color_fragment>", "#include <color_fragment>\n" + fond);
         };
         material.transparent = true;
         material.depthWrite = true;
-        material.customProgramCacheKey = () => "essai-terre";
+        material.customProgramCacheKey = () => "essai-terre-" + (ILYOS_ESSAI_ROCHE || "base");
       }
       // Option gazon : UNE roche sculptée par île. Le premier anneau suit
       // exactement le contour de l'herbe (en léger retrait pour que l'herbe
