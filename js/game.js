@@ -10845,11 +10845,11 @@
         try { return (/[?&]roche=(ardoise|basalte|gres|mousse|calcaire)(&|$)/.exec(location.search) || [])[1] || null; } catch (_) { return null; }
       })();
       const KAYKIT_ESSAI_ROCHES = {
-        ardoise: { haut: 0x5a5c66, bas: 0x2c2f3c, rebond: 0x3a4466, soleil: .55, contact: .22 },
-        basalte: { haut: 0x3e3b58, bas: 0x1c1a33, rebond: 0x5a4f8a, soleil: .5, contact: .2 },
-        gres: { haut: 0x9a8a72, bas: 0x4a4048, rebond: 0x55507a, soleil: .65, contact: .25 },
-        mousse: { haut: 0x4f6a4a, bas: 0x2a2f38, rebond: 0x34465a, soleil: .55, contact: .22 },
-        calcaire: { haut: 0xb4b2ae, bas: 0x5e6478, rebond: 0x6a74a0, soleil: .6, contact: .3 }
+        ardoise: { herbes: [0x5a9a4a, 0x3f8458, 0x78a85a, 0x2f7458, 0x6a9468, 0x4a8a70], haut: 0x5a5c66, bas: 0x2c2f3c, rebond: 0x3a4466, soleil: .55, contact: .22 },
+        basalte: { herbes: [0x3f9466, 0x2c7a5e, 0x5a9c52, 0x22685a, 0x4c8c74, 0x3a7e48], haut: 0x3e3b58, bas: 0x1c1a33, rebond: 0x5a4f8a, soleil: .5, contact: .2 },
+        gres: { herbes: [0x8cac3a, 0x6e9430, 0xa4ae44, 0x648a38, 0x9a9638, 0x78a04c], haut: 0x9a8a72, bas: 0x4a4048, rebond: 0x55507a, soleil: .65, contact: .25 },
+        mousse: { herbes: [0x5cb050, 0x3f9a44, 0x7cc25a, 0x2e8a48, 0x6aa83c, 0x4cae6c], haut: 0x4f6a4a, bas: 0x2a2f38, rebond: 0x34465a, soleil: .55, contact: .22 },
+        calcaire: { herbes: [0x84b85c, 0x6aa466, 0x9cbc6c, 0x5c9a6e, 0x8eac54, 0x74b080], haut: 0xb4b2ae, bas: 0x5e6478, rebond: 0x6a74a0, soleil: .6, contact: .3 }
       };
       const KAYKIT_ESSAI_PALETTE = KAYKIT_ESSAI_ROCHES[ILYOS_ESSAI_ROCHE] || null;
       // Sous-couche de la plaque : même teinte que le haut de la roche, aucun trait visible.
@@ -11551,7 +11551,9 @@
         const plaque = cloneKayKitAsset("essaiGazon", { exactWidth: KAYKIT_BLOCK_SIZE * .99, exactDepth: KAYKIT_BLOCK_SIZE * .99, exactHeight: .13, targetFloor: .33 });
         const groupe = new THREE.Group();
         if (!plaque) return groupe;
-        const herbe = new THREE.Color(KAYKIT_ESSAI_GAZON_TEINTES[Math.max(0, Number(island?.visualVariant) || 0) % KAYKIT_ESSAI_GAZON_TEINTES.length]);
+        // Chaque roche a sa gamme d'herbes accordée ; 6 verts distincts pour séparer les îles collées.
+        const teintes = KAYKIT_ESSAI_PALETTE?.herbes || KAYKIT_ESSAI_GAZON_TEINTES;
+        const herbe = new THREE.Color(teintes[Math.max(0, Number(island?.visualVariant) || 0) % teintes.length]);
         herbe.offsetHSL(0, 0, (kaykitHash("essai-gazon", island?.id, r, c) - .5) * .03);
         // Les couleurs des matériaux glTF sont linéaires : sans conversion, le vert sort délavé.
         herbe.convertSRGBToLinear();
