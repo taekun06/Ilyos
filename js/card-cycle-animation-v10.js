@@ -17,11 +17,11 @@
   if (window.__ILYOS_CARD_CYCLE_V10__) return;
   window.__ILYOS_CARD_CYCLE_V10__ = true;
 
-  /* Essai (2026-11-02) : `?cartes=kaykit` montre les cartes avec les
-     illustrations KayKit de la maquette A (css/card-art-v12.css). */
+  /* Illustrations KayKit par défaut ; `?cartes=planche` remet celles de la
+     planche d'origine de Taekun (css/card-art-v12.css). */
   try {
-    if (new URLSearchParams(location.search).get('cartes') === 'kaykit') {
-      document.documentElement.dataset.cartes = 'kaykit';
+    if (new URLSearchParams(location.search).get('cartes') === 'planche') {
+      document.documentElement.dataset.cartes = 'planche';
     }
   } catch (_) {}
 
