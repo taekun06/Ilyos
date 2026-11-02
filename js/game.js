@@ -10845,8 +10845,10 @@
             .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
           shader.fragmentShader = shader.fragmentShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform float essaiProfondeur;\nuniform vec3 essaiTerre;")
-            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\ndiffuseColor.rgb *= mix(.1, .75, essaiT) * vec3(.93, .91, 1.04);");
+            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / essaiProfondeur, 0., 1.);\ndiffuseColor.rgb *= mix(.1, .75, essaiT) * vec3(.93, .91, 1.04);\n// Le bas des pointes se fond dans le ciel.\ndiffuseColor.a *= 1. - smoothstep(.55, 1., essaiT);");
         };
+        material.transparent = true;
+        material.depthWrite = true;
         material.customProgramCacheKey = () => "essai-terre";
       }
       // Option gazon : UNE roche sculptée par île. Le premier anneau suit
@@ -11517,40 +11519,8 @@
           });
         });
         groupe.add(plaque);
-        // Frange d'herbe : sur chaque bord extérieur de l'île, l'herbe retombe
-        // en petites mèches irrégulières sur la roche et cache la jonction.
-        const cases = new Set((island?.cells || []).map(([cr, cc]) => `${cr},${cc}`));
-        const demi = KAYKIT_BLOCK_SIZE * .99 / 2 + .006;
-        const haut = .425, sombre = herbe.clone().multiplyScalar(.62);
-        const positions = [], couleurs = [];
-        [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dr, dc]) => {
-          if (cases.has(`${r + dr},${c + dc}`)) return;
-          const n = 9;
-          for (let k = 0; k < n; k++) {
-            const a0 = -demi + 2 * demi * k / n, a1 = -demi + 2 * demi * (k + 1) / n, am = (a0 + a1) / 2;
-            const tirage = kaykitHash("essai-frange", island?.id, r, c, dr, dc, k);
-            const chute = .06 + tirage * .1;
-            // Mèche en triangle : large en haut, pointue en bas.
-            const pt = (u, y) => dr ? [u, y, dr * demi] : [dc * demi, y, u];
-            [pt(a0, haut), pt(a1, haut), pt(am, haut - chute)].forEach((v, i) => {
-              positions.push(...v);
-              const col = i < 2 ? herbe : sombre;
-              couleurs.push(col.r, col.g, col.b);
-            });
-          }
-        });
-        if (positions.length) {
-          const g = new THREE.BufferGeometry();
-          g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-          g.setAttribute("color", new THREE.Float32BufferAttribute(couleurs, 3));
-          g.computeVertexNormals();
-          const frange = new THREE.Mesh(g, kaykitEssaiFrangeMateriau || (kaykitEssaiFrangeMateriau = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, side: THREE.DoubleSide })));
-          frange.raycast = () => {};
-          groupe.add(frange);
-        }
         return groupe;
       }
-      let kaykitEssaiFrangeMateriau = null;
       function makeKayKitEssaiDalle(island, r, c) {
         const groupe = new THREE.Group();
         if (ILYOS_ILES_ESSAI === "gazon") return makeKayKitEssaiGazon(island, r, c);
