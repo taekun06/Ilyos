@@ -10460,7 +10460,7 @@
             .replace("#include <project_vertex>", "#include <project_vertex>\nvEssaiY = (modelMatrix * vec4(transformed, 1.0)).y;");
           shader.fragmentShader = shader.fragmentShader
             .replace("#include <common>", "#include <common>\nvarying float vEssaiY;\nuniform float essaiHautY;\nuniform vec3 essaiTerre;")
-            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / 2.2, 0., 1.);\ndiffuseColor.rgb *= mix(.85, .07, pow(essaiT, .7)) * vec3(.93, .91, 1.04);");
+            .replace("#include <color_fragment>", "#include <color_fragment>\nfloat essaiT = clamp((essaiHautY - vEssaiY) / 2.2, 0., 1.);\ndiffuseColor.rgb *= mix(.12, 1.05, pow(essaiT, .75)) * vec3(.93, .91, 1.04);");
         };
         material.customProgramCacheKey = () => "essai-terre";
       }
