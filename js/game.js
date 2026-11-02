@@ -36850,8 +36850,8 @@
          — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'il
            touche une île : île dessous, ou sur une case voisine.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
-         — Un gardien qui finit son tour sur un œuf l'écrase (avec le
-           deckbuilding : il exile un Déplacer).
+         — Un œuf bloque sa case : un gardien peut le traverser, jamais
+           s'y arrêter en se déplaçant.
          — Une seule espèce par partie :
              Loup : à chaque fin de manche, il avance d'une case vers le
              gardien le plus proche ; s'il le touche déjà, il le pousse.
@@ -37040,18 +37040,25 @@
       };
 
       /* ---------- Tour -------------------------------------------------- */
-      function creaturesEcraserOeufs(precedentId) {
-        const etat = state.rotation.creatures;
-        etat.oeufs = etat.oeufs.filter(oeuf => {
-          const g = characterAt(oeuf.r, oeuf.c);
-          if (!g || g.creature || g.player !== precedentId) return true;
-          const joueur = state.players[precedentId];
-          const exile = paquetActif() && joueur ? creaturesExiler(joueur, 1) : 0;
-          showToast(`${joueur?.name || "Un gardien"} écrase un œuf${exile ? " et exile une carte" : ""}.`);
-          animateCellPulse(oeuf.r, oeuf.c, "crown-burst");
-          return false;
-        });
+      /* Un œuf bloque sa case : on le traverse, on ne s'y arrête pas. Même
+         idiome que le porteur et la couronne au sol (core.js) : la règle
+         passe par porteurBloqueParCouronne (chemin, déplacement, clic) et
+         par movementRange (cases proposées, IA). */
+      function oeufSurCase(r, c) {
+        return creaturesActives() && !!state.rotation.creatures?.oeufs?.some(o => o.r === r && o.c === c);
       }
+      const creaturesBloqueBase = porteurBloqueParCouronne;
+      porteurBloqueParCouronne = function porteurBloqueParCouronneOeufs(char, r, c) {
+        return creaturesBloqueBase(char, r, c) || (!!char && !char.creature && oeufSurCase(r, c));
+      };
+      const creaturesPorteeBase = movementRange;
+      movementRange = function movementRangeOeufs(char, maxCost) {
+        const portee = creaturesPorteeBase(char, maxCost);
+        if (char && !char.creature && creaturesActives()) {
+          (state.rotation.creatures?.oeufs || []).forEach(o => portee.delete(key(o.r, o.c)));
+        }
+        return portee;
+      };
 
       function creaturesVase(precedentId) {
         const joueur = state.players[precedentId];
@@ -37188,7 +37195,6 @@
             state.rotation.creatures.dernierTour = state.turn;
             const n = state.players.length;
             const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
-            creaturesEcraserOeufs(precedentId);
             creaturesVase(precedentId);
             // Fin de manche : la créature agit quand le premier joueur reprend la main.
             if (state.currentPlayer === 0) creaturesLoups();
