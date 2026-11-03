@@ -36458,20 +36458,28 @@
         ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer" },
         BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser" },
         ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie" },
+        /* Bond (doc des nouvelles cartes, validé par Taekun) : vaut 1
+           Déplacer, ou un SAUT par-dessus une case (gardien, œuf ou vide)
+           vers la case juste derrière, sur une île libre. */
+        BOND: { type: "MOVE", valeur: 1, saut: true, nom: "Bond", effet: "Saute par-dessus une case" },
         MOVE: { type: "MOVE", valeur: 1, nom: "Déplacer", effet: "1 case" },
         PUSH: { type: "PUSH", valeur: 1, nom: "Pousser", effet: "Force 1" },
         MAGIC: { type: "MAGIC", valeur: 1, nom: "Magie", effet: "Tourne une île" }
       };
       /* Nom et type affichés des cartes fortes (pioche, défausse, infobulles). */
+      /* Carte du marché à part (forte ou à pouvoir) : nom d'action propre. */
+      function defSpeciale(def) {
+        return !!def && (def.valeur > 1 || !!def.saut);
+      }
       Object.entries(PAQUET_CARTES).forEach(([cle, def]) => {
-        if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
+        if (defSpeciale(def)) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
       });
       ACTIONS.BOUE = { name: "Boue", icon: "🟫", desc: "Ne fait rien : affine ton paquet pour t’en débarrasser.", bg: "#5a4a32" };
-      /* 19 cartes : 3 au marché et 9 révélées au choix de départ, dont 3
+      /* 22 cartes : 3 au marché et 9 révélées au choix de départ, dont 3
          reviennent sous la pile en duel. */
       const PAQUET_PILE_MARCHE = [
         "ELAN", "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "BELIER",
-        "ARCANE", "ARCANE", "ARCANE",
+        "ARCANE", "ARCANE", "ARCANE", "BOND", "BOND", "BOND",
         "PUSH", "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC", "MAGIC"
       ];
       const PAQUET_PRIX = 2;
@@ -36483,7 +36491,7 @@
       }
 
       function carteForte(carte) {
-        return !!carte && carte.action in PAQUET_CARTES && PAQUET_CARTES[carte.action].valeur > 1;
+        return !!carte && carte.action in PAQUET_CARTES && defSpeciale(PAQUET_CARTES[carte.action]);
       }
 
       /** Cartes fortes de ce type encore chargées dans la main. */
@@ -36522,8 +36530,12 @@
         const demande = reste;
         let forte = false;
         /* Les cartes fortes d'abord : elles ne peuvent pas aller en réserve,
-           les cartes simples si. */
-        for (const carte of paquetCartesFortes(type, player)) {
+           les cartes simples si. Un Bond passe en premier pour un saut, en
+           dernier sinon (on le garde pour sauter). */
+        const fortes = paquetCartesFortes(type, player)
+          .sort((a, b) => (PAQUET_CARTES[a.action].saut ? 1 : 0) - (PAQUET_CARTES[b.action].saut ? 1 : 0));
+        if (paquetSautEnCours) fortes.reverse();
+        for (const carte of fortes) {
           if (reste <= 0) break;
           const charge = carte.restant ?? PAQUET_CARTES[carte.action].valeur;
           const pris = Math.min(reste, charge);
@@ -36539,6 +36551,69 @@
         if (reste > 0) reste -= paquetConsumeBase(type, reste, player);
         if (forte) carteJoueeEnvol(type, player);
         return demande - reste;
+      };
+
+      /* ---------- Bond : le saut ---------------------------------------- */
+      let paquetSautEnCours = false;
+
+      /** Le joueur de ce gardien a-t-il un Bond chargé en main ? */
+      function paquetBondDispo(char) {
+        if (!paquetActif() || !char || char.creature) return false;
+        const joueur = state.players?.[char.player];
+        return (joueur?.hand || []).some(c => PAQUET_CARTES[c.action]?.saut && (c.restant ?? 1) > 0);
+      }
+
+      /** Cases d'arrivée d'un saut depuis la case du gardien : deux cases en
+       *  ligne droite, par-dessus n'importe quelle case, sur une île libre. */
+      function paquetCasesSaut(char) {
+        if (!paquetBondDispo(char)) return [];
+        return [[-1, 0], [1, 0], [0, -1], [0, 1]]
+          .map(([dr, dc]) => [char.r + 2 * dr, char.c + 2 * dc])
+          .filter(([r, c]) => inside(r, c) && isLand(r, c) && !characterAt(r, c) && !porteurBloqueParCouronne(char, r, c));
+      }
+
+      function paquetEstSaut(char, r, c, cout) {
+        if (cout !== 1 || !char) return false;
+        const dr = r - char.r, dc = c - char.c;
+        if (!((Math.abs(dr) === 2 && dc === 0) || (Math.abs(dc) === 2 && dr === 0))) return false;
+        return paquetCasesSaut(char).some(([sr, sc]) => sr === r && sc === c);
+      }
+
+      const paquetPorteeBase = movementRange;
+      movementRange = function movementRangeBond(char, maxCost) {
+        const portee = paquetPorteeBase(char, maxCost);
+        if (maxCost < 1) return portee;
+        paquetCasesSaut(char).forEach(([r, c]) => {
+          const k = key(r, c);
+          if (portee.has(k) && (portee.costs?.get(k) ?? Infinity) <= 1) return;
+          portee.add(k);
+          portee.costs?.set(k, 1);
+        });
+        return portee;
+      };
+
+      const paquetCheminBase = shortestMovementPath;
+      shortestMovementPath = function shortestMovementPathBond(char, r, c, maxCost) {
+        const chemin = paquetCheminBase(char, r, c, maxCost);
+        const coutChemin = chemin ? chemin.reduce((t, pas) => t + (pas.stepCost || 1), 0) : Infinity;
+        if (maxCost >= 1 && coutChemin > 1 && paquetCasesSaut(char).some(([sr, sc]) => sr === r && sc === c)) {
+          // Un seul pas, la case sautée n'est pas traversée.
+          return [{ r, c, diagonal: false, stepCost: 1, saut: true }];
+        }
+        return chemin;
+      };
+
+      const paquetMoveCoreBase = applyMoveCore;
+      applyMoveCore = function applyMoveCoreBond(charId, r, c, cost) {
+        const saut = paquetEstSaut(characterById(charId), r, c, cost);
+        paquetSautEnCours = saut;
+        try {
+          const resultat = paquetMoveCoreBase(charId, r, c, cost);
+          if (resultat && saut) resultat.saut = true;
+          return resultat;
+        } finally {
+          paquetSautEnCours = false;
+        }
       };
 
       /* Une carte forte piochée repart pleine. */
@@ -36620,7 +36695,7 @@
       /* L'IA achète en fin de tour, avec les cartes de sa main que son plan
          n'a pas jouées. Choix simple et lisible : la carte la plus forte,
          en préférant le type dont son paquet manque le plus. */
-      const PAQUET_PRIORITE = { BELIER: 6, ELAN: 5, ARCANE: 5, MAGIC: 3, PUSH: 2, MOVE: 0 };
+      const PAQUET_PRIORITE = { BELIER: 6, ELAN: 5, ARCANE: 5, BOND: 4, MAGIC: 3, PUSH: 2, MOVE: 0 };
       function plannerChoisirAchat(playerId) {
         const player = state?.players?.[playerId];
         if (paquetRefusAchat(player)) return null;
@@ -36910,7 +36985,7 @@
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
               ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
         paquetPanneau.classList.toggle("butin", !!butin);
@@ -36965,7 +37040,7 @@
           return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}${prise ? " prise" : ""}" data-choix="${i}"
               ${ia || prise ? "disabled" : ""} ${preneur ? `style="--pc:${preneur.color}"` : ""}
               title="${preneur ? `Prise par ${defaitesEchapper(preneur.name)}` : `Prendre ${def.nom} (remplace un Déplacer)`}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i>${preneur ? `<u>${defaitesEchapper(preneur.name)}</u>` : ""}</button>`;
         }).join("");
         const pris = state.players.map(p => {
@@ -37018,7 +37093,7 @@
       /* Noms des cartes du marché pour les panneaux Pioche / Défausse
          (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
       window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
-        ...Object.entries(PAQUET_CARTES).filter(([, def]) => def.valeur > 1)
+        ...Object.entries(PAQUET_CARTES).filter(([, def]) => defSpeciale(def))
           .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet }]),
         ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
       ]);
@@ -37029,6 +37104,9 @@
         refus: () => paquetRefusAchat(),
         choix: () => (state?.rotation?.choix ? JSON.parse(JSON.stringify(state.rotation.choix)) : null),
         prendre: index => choixPrendre(index),
+        /* Banc du Bond : cases de saut d'un gardien, puis le geste complet. */
+        sauts: charId => paquetCasesSaut(characterById(charId)),
+        deplacer: (charId, r, c) => performMoveToCell(characterById(charId), r, c),
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
