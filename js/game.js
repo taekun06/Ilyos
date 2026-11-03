@@ -37531,28 +37531,30 @@
         return texture;
       }
 
-      /* Œuf couché sur un nid carré qui remplit sa case : on lit d'un coup
-         d'œil sur QUELLE case il se trouve, même au-dessus du vide. Tout est
-         opaque (Taekun, 2026-11-03 : la transparence brouillait la case). */
+      /* Œuf couché sur un nid ROND cerclé d'or : la forme
+         ronde ne se confond pas avec une case de sol
+         (Taekun, 2026-11-03). Tout est opaque : la transparence brouillait
+         la case. */
       function creaturesConstruireOeuf() {
         const groupe = new THREE.Group();
         const nid = new THREE.Mesh(
-          kaykitGeometry("rotation-oeuf-nid-v2", () => new THREE.BoxGeometry(.84, .05, .84)),
+          kaykitGeometry("rotation-oeuf-nid-rond", () => new THREE.CylinderGeometry(.36, .38, .06, 32)),
           new THREE.MeshStandardMaterial({ color: 0x2f241b, roughness: .95, metalness: 0 })
         );
-        nid.position.y = .025;
+        nid.position.y = .03;
         const bord = new THREE.Mesh(
-          kaykitGeometry("rotation-oeuf-bord-v2", () => new THREE.BoxGeometry(.9, .03, .9)),
+          kaykitGeometry("rotation-oeuf-bord-rond", () => new THREE.TorusGeometry(.38, .035, 8, 40)),
           new THREE.MeshStandardMaterial({ color: 0xe9cf8e, roughness: .6, metalness: .1 })
         );
-        bord.position.y = .012;
+        bord.rotation.x = Math.PI / 2;
+        bord.position.y = .06;
         const coquille = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-v1", () => new THREE.SphereGeometry(.17, 18, 14)),
           new THREE.MeshStandardMaterial({ color: 0xf3e3c0, roughness: .55, metalness: 0, emissive: 0x3a2a10, emissiveIntensity: .25 })
         );
         // Couché : le grand axe à plat, posé dans le nid.
         coquille.scale.set(1.75, 1.25, 1.3);
-        coquille.position.y = .05 + .2;
+        coquille.position.y = .06 + .2;
         const taches = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-taches-v1", () => new THREE.SphereGeometry(.172, 9, 7)),
           new THREE.MeshBasicMaterial({ color: 0xc9b07c, wireframe: true })
