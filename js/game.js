@@ -44066,10 +44066,8 @@
           /* ================= LES SIGNES =================
              Ce que l'image de référence appelle de la magie : des ORBES d'or
              en perspective autour du plateau, avec leurs nœuds lumineux, des
-             glyphes qui scintillent et de la poussière de lumière qui monte.
-
-             Tout est en transform/opacity — composé par le GPU, aucun repaint,
-             aucune boucle JS — et rien ne capte le pointeur. Les traits sont
+             glyphes et de la poussière de lumière. Tout est IMMOBILE : aucune
+             animation ni boucle JS, et rien ne capte le pointeur. Les traits sont
              FINS et leur lumière est portée par la lueur (box-shadow), pas par
              l'épaisseur : c'est ce qui permet de les voir passer devant le
              plateau sans jamais gêner sa lecture. */
@@ -44110,7 +44108,13 @@
               rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
             box-shadow:0 0 20px rgba(255,190,90,.32),
               inset 0 0 70px rgba(255,190,90,.07);
-            animation:pz-tourne 220s linear infinite;}
+            /* IMMOBILES. Les orbes tournaient (un tour en 150 à 520 s) : un
+               mouvement imperceptible qui obligeait pourtant le navigateur à
+               recomposer huit très grands calques filtrés et masqués à chaque
+               rafraîchissement d'écran, au-dessus du plateau 3D (Taekun,
+               2026-11-03 : le mode puzzle faisait chauffer la machine). Même
+               dessin, posé une fois. */
+            transform:perspective(1400px) rotateX(var(--pz-assiette,72deg));}
           /* LES NŒUDS. Chaque orbe porte deux points de lumière posés sur son
              trait, qui tournent donc avec lui : un disque en haut, un losange
              à droite. C'est ce qui fait lire une ORBITE plutôt qu'un cercle
@@ -44137,20 +44141,20 @@
             left:57%;top:38%;--pz-assiette:67deg;
             border-color:rgba(255,222,150,.62);
             box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            animation-duration:220s;}
+            }
           #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
             border-style:dashed;border-color:rgba(255,230,166,.98);
             left:45%;top:47%;--pz-assiette:75deg;
-            animation-duration:150s;animation-direction:reverse;}
+            }
           #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
             left:45%;top:47%;--pz-assiette:75deg;
             border-color:rgba(255,222,150,.58);
             box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            animation-duration:150s;animation-direction:reverse;}
+            }
           /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
              il se perd hors du regard au lieu de se refermer sur lui-même. */
           #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,228,162,.92);animation-duration:310s;
+            border-color:rgba(255,228,162,.92);
             left:63%;top:33%;--pz-assiette:61deg;}
           /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
              ils coupent les orbes au lieu de les accompagner. Sans eux tout le
@@ -44158,28 +44162,25 @@
           #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
             left:28%;top:30%;--pz-assiette:24deg;
             border-color:rgba(255,222,150,.70);
-            box-shadow:0 0 16px rgba(255,190,90,.20);animation-duration:520s;}
+            box-shadow:0 0 16px rgba(255,190,90,.20);}
           #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
             left:78%;top:26%;--pz-assiette:38deg;
             border-color:rgba(255,222,150,.64);border-style:dashed;
-            box-shadow:none;animation-duration:380s;animation-direction:reverse;}
+            box-shadow:none;}
           /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
              lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
              profondeur. */
           #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
             border-color:rgba(255,224,152,.78);border-style:dashed;
             left:41%;top:52%;--pz-assiette:80deg;
-            animation-duration:420s;animation-direction:reverse;}
+            }
           /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
              empêche les orbes de se lire comme une cible. Quatre cercles
              partageant le même centre et le même angle se superposent en
              anneaux parfaitement emboîtés ; quatre orbes d'assiettes
              différentes se croisent, et le ciel prend de la profondeur. */
-          @keyframes pz-tourne{
-            from{transform:perspective(1400px) rotateX(var(--pz-assiette,72deg)) rotate(0deg)}
-            to{transform:perspective(1400px) rotateX(var(--pz-assiette,72deg)) rotate(360deg)}}
           /* LES RUNES. Elles ne flottent pas dans le cadre : elles sont posées
-             SUR un orbe, donc elles tournent avec lui. La contre-rotation leur
+             SUR un orbe, dans son assiette. La contre-rotation leur
              rend leur lisibilité — sans elle, elles se retrouvent couchées à
              plat dans l'assiette de l'orbe et deviennent illisibles. */
           #puzzleLayer .pz-rune{position:absolute;
@@ -44187,20 +44188,15 @@
             color:rgba(255,236,190,.82);letter-spacing:.04em;
             transform:translate(-50%,-50%) rotateX(calc(var(--pz-assiette,72deg) * -1));
             text-shadow:0 0 10px rgba(255,214,140,.85),0 0 24px rgba(255,190,90,.45);
-            animation:pz-scintille 9s ease-in-out infinite;}
+            opacity:.75;}
           #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
             color:rgba(255,238,196,.85);
             text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
-            animation:pz-scintille 7s ease-in-out infinite;}
+            opacity:.7;}
           #puzzleLayer .pz-mote{position:absolute;width:3px;height:3px;
             border-radius:50%;background:rgba(255,246,222,1);
             box-shadow:0 0 8px rgba(255,224,160,.95),0 0 18px rgba(255,196,96,.45);
-            animation:pz-monte 15s linear infinite;}
-          @keyframes pz-scintille{0%,100%{opacity:.3;transform:scale(.85)}
-            50%{opacity:1;transform:scale(1.15)}}
-          @keyframes pz-monte{0%{opacity:0;transform:translateY(16px)}
-            18%{opacity:1}70%{opacity:.6}
-            100%{opacity:0;transform:translateY(-130px)}}
+            opacity:.6;}
           /* Qui a demandé moins de mouvement n'en reçoit aucun : les signes
              sont un supplément d'âme, jamais une information. */
           @media (prefers-reduced-motion:reduce){
@@ -45551,8 +45547,8 @@
 
       /* Les signes : anneaux, glyphes, poussière de lumière. Les positions
          sortent d'une suite déterministe — deux ouvertures du même Sanctuaire
-         donnent le même ciel, et rien ne saute d'une image à l'autre. Aucune
-         boucle JS ne tourne ensuite : tout est en animations CSS. */
+         donnent le même ciel, et rien ne saute d'une image à l'autre. Rien ne
+         tourne ensuite : ni boucle JS ni animation CSS. */
       function puzzleBuildSignes(hote) {
         if (!hote) return;
         hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
@@ -45599,7 +45595,6 @@
           rune.textContent = runes[rangRune % runes.length];
           rune.style.left = `${(50 + 50 * Math.cos(milieu)).toFixed(2)}%`;
           rune.style.top = `${(50 + 50 * Math.sin(milieu)).toFixed(2)}%`;
-          rune.style.animationDelay = `${(rangRune * 1.3).toFixed(1)}s`;
           cible.appendChild(rune);
           rangRune++;
         });
@@ -45612,7 +45607,7 @@
           glyphe.textContent = glyphes[i % glyphes.length];
           glyphe.style.left = `${(5 + suivant() * 88).toFixed(1)}%`;
           glyphe.style.top = `${(8 + suivant() * 72).toFixed(1)}%`;
-          glyphe.style.animationDelay = `${(suivant() * 7).toFixed(2)}s`;
+          suivant(); // tirage gardé : les positions suivantes restent les mêmes
           hote.appendChild(glyphe);
         }
         for (let i = 0; i < 26; i++) {
@@ -45620,8 +45615,7 @@
           mote.className = "pz-mote";
           mote.style.left = `${(3 + suivant() * 94).toFixed(1)}%`;
           mote.style.top = `${(28 + suivant() * 64).toFixed(1)}%`;
-          mote.style.animationDelay = `${(suivant() * 15).toFixed(2)}s`;
-          mote.style.animationDuration = `${(11 + suivant() * 9).toFixed(1)}s`;
+          suivant(); suivant(); // tirages gardés : même ciel qu'avant
           hote.appendChild(mote);
         }
         requestAnimationFrame(() => hote.classList.add("on"));
