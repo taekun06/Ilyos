@@ -311,9 +311,55 @@
         if (!cle) return;
         choixMinuteur = setTimeout(() => {
           choixMinuteurCle = null;
-          const decision = choixJoueurAuTrait()?.id === joueur.id ? plannerChoisirDepart(joueur.id) : null;
-          if (decision) choixPrendre(decision.index);
+          /* Pendant une réflexion simulée, `state` peut être une copie : on
+             retente un peu plus tard au lieu de perdre le tour du CPU. Et si
+             le choix n'a pas abouti, on reprogramme : sans nouveau rendu,
+             rien d'autre ne relancerait le CPU (panneau « CPU choisit… »
+             figé). */
+          try {
+            if (!ilyosSimulationActive) choixJouerIA(joueur.id);
+          } catch (erreur) {
+            console.warn("[ILYOS] choix de départ", erreur);
+          } finally {
+            if (state && choixEnCours() && choixJoueurAuTrait()?.isAI) setTimeout(choixProgrammerIA, 300);
+          }
         }, 900);
+      }
+
+      /* Le CPU prend sa carte ; si la lecture du planner échoue, il prend la
+         première carte libre plutôt que de bloquer le choix. */
+      function choixJouerIA(playerId) {
+        if (choixJoueurAuTrait()?.id !== playerId) return false;
+        let index = null;
+        try { index = plannerChoisirDepart(playerId)?.index ?? null; } catch (erreur) { console.warn("[ILYOS] choix CPU", erreur); }
+        const choix = state.rotation.choix;
+        if (index === null) index = choix.cartes.findIndex((_, i) => !choix.pris.some(x => x.index === i));
+        return index >= 0 && choixPrendre(index);
+      }
+
+      /* Garde-fou du panneau, indépendant du rendu : tant qu'il est affiché,
+         il se ferme dès qu'aucun choix n'est en cours dans la partie affichée
+         (choix fini, autre mode, retour au menu) et relance le CPU s'il est
+         au trait. Ainsi, une erreur ailleurs dans le rendu ne peut plus le
+         laisser ouvert ni figer « CPU choisit… » (Taekun, 2026-11-03). */
+      let choixVeille = null;
+      function choixVeiller() {
+        if (choixVeille || typeof window === "undefined") return;
+        choixVeille = setInterval(() => {
+          if (ilyosSimulationActive) return;
+          const visible = !!choixPanneau && !choixPanneau.hidden;
+          const enJeu = !!state && !!els?.gameScreen && !els.gameScreen.classList.contains("hidden");
+          const attendu = enJeu && paquetActif() && choixEnCours();
+          if (!attendu) {
+            if (choixPanneau) choixPanneau.hidden = true;
+            document.body.classList.remove("rt-choix-actif");
+            choixEmpreinte = "";
+            if (!visible) { clearInterval(choixVeille); choixVeille = null; }
+            return;
+          }
+          try { paquetRendreChoix(); } catch (erreur) { console.warn("[ILYOS] choix de départ", erreur); }
+          if (choixJoueurAuTrait()?.isAI) choixProgrammerIA();
+        }, 600);
       }
 
       /* L'ordinateur ne commence son tour qu'une fois le choix terminé. */
@@ -334,9 +380,9 @@
            puis l'ouverture du tour attend la dernière carte (choixPrendre). */
         if (rotationEnPreparation && state && !state.rotation) rotationInstaller(rotationEnPreparation);
         rotationEnPreparation = null;
-        if (state && !ilyosSimulationActive && paquetActif() && state.turn === 1) {
-          paquetInstaller();
-          choixInstaller();
+        if (state && !ilyosSimulationActive && paquetActif()) {
+          if (state.turn === 1) { paquetInstaller(); choixInstaller(); }
+          /* Choix encore ouvert, quel que soit le tour : la partie attend. */
           if (choixEnCours()) {
             state.rotation.choix.ouvertureEnAttente = true;
             state.inputLocked = true;
@@ -450,7 +496,7 @@
       function paquetRendreChoix() {
         if (typeof document === "undefined" || ilyosSimulationActive) return;
         const ecran = els?.gameScreen;
-        const ouvert = !!ecran && paquetActif() && choixEnCours();
+        const ouvert = !!ecran && !ecran.classList.contains("hidden") && paquetActif() && choixEnCours();
         document.body.classList.toggle("rt-choix-actif", ouvert);
         if (!ouvert) {
           if (choixPanneau) choixPanneau.hidden = true;
@@ -474,6 +520,7 @@
         const joueur = choixJoueurAuTrait();
         const empreinte = JSON.stringify([choix.cartes, choix.pris, joueur?.id]);
         choixPanneau.hidden = false;
+        choixVeiller();
         if (empreinte === choixEmpreinte) return;
         choixEmpreinte = empreinte;
         const ia = !!joueur?.isAI;
@@ -517,10 +564,16 @@
       renderAll = function renderAllPaquet(...args) {
         const resultat = paquetRenderAllBase.apply(this, args);
         if (!ilyosSimulationActive) {
+          /* Le choix d'abord et à part : une erreur du marché ne doit pas
+             laisser le panneau du choix ouvert ou figé. */
           try {
-            paquetRendreMarche();
             paquetRendreChoix();
             if (choixEnCours()) choixProgrammerIA();
+          } catch (erreur) {
+            console.warn("[ILYOS] choix de départ", erreur);
+          }
+          try {
+            paquetRendreMarche();
             paquetMarquerDock();
           } catch (erreur) {
             console.warn("[ILYOS] marché", erreur);
