@@ -4,7 +4,7 @@
 #gameScreen>.rt-marche,.rt-marche{position:absolute!important;left:14px;top:50%;transform:translateY(-50%);z-index:40;width:150px;padding:10px 9px 9px;border-radius:16px;
   background:linear-gradient(180deg,rgba(12,26,40,.94),rgba(5,12,20,.95));border:1.5px solid rgba(225,176,71,.75);
   box-shadow:inset 0 0 0 1px rgba(255,230,166,.14),0 10px 26px rgba(0,0,0,.45);color:#f3e6c6;font-family:var(--font-ilyos-action,Georgia),Georgia,serif;user-select:none}
-.rt-marche[hidden]{display:none}
+#gameScreen>.rt-marche[hidden],.rt-marche[hidden]{display:none!important}
 .rt-marche::before{content:'';position:absolute;left:50%;top:-6px;width:10px;height:10px;transform:translateX(-50%) rotate(45deg);background:#f4d28e;box-shadow:0 0 8px rgba(244,210,142,.6)}
 .rt-marche-tete{text-align:center;margin-bottom:8px}
 .rt-marche-tete span{display:block;font-family:var(--font-ilyos-display,Georgia),serif;font-size:15px;letter-spacing:.16em;color:#f4d28e}
@@ -58,7 +58,9 @@
 /* Choix de départ : fenêtre posée sur le plateau, qui bloque les clics tant
    que les cartes ne sont pas toutes prises. */
 #gameScreen>.rt-choix,.rt-choix{position:absolute!important;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:radial-gradient(ellipse at 50% 45%,rgba(4,10,18,.35),rgba(4,10,18,.72))}
-.rt-choix[hidden]{display:none}
+/* L'id de la règle ci-dessus l'emportait sur [hidden] : le panneau restait
+   affiché une fois le choix fini, même dans un autre mode (2026-11-03). */
+#gameScreen>.rt-choix[hidden],.rt-choix[hidden]{display:none!important}
 .rt-choix-boite{position:relative;width:min(560px,100%);padding:16px 16px 14px;border-radius:18px;color:#f3e6c6;font-family:var(--font-ilyos-action,Georgia),Georgia,serif;
   background:linear-gradient(180deg,rgba(12,26,40,.97),rgba(5,12,20,.97));border:1.5px solid rgba(225,176,71,.8);
   box-shadow:inset 0 0 0 1px rgba(255,230,166,.14),0 14px 40px rgba(0,0,0,.55)}
