@@ -267,80 +267,100 @@
     const nom=etat.pseudo?safeText(etat.pseudo):'Voyageur';
     return `<div class="ar-tete">${etat.heros?`<div class="ar-heros"><img src="../${safeText(etat.heros)}" alt=""></div>`:''}<div class="ar-blason">${anneauSvg(part,3)}<b>${etat.niveau}</b></div><div class="ar-identite"><small>NIVEAU ${etat.niveau}${etat.titre?` · <i>${safeText(etat.titre)}</i>`:''}</small><h2>${nom}${compteBouton()}</h2><div class="pp-barre"><i style="width:${Math.round(100*part)}%"></i></div><em>${etat.xpDansNiveau} / ${etat.xpPourSuivant} XP${etat.offrande.vent?` · <span class="ar-vent-actif">${PP_ICONES.vent} Vent porteur : ${etat.offrande.vent} partie${etat.offrande.vent>1?'s':''}</span>`:''}</em></div></div>`;
   }
-  /* COMPTE : pseudo + mot de passe, la progression est gardée en ligne.
-     Le même formulaire sert à l'ouverture et dans le panneau. */
+  /* COMPTE : le nom du voyageur suffit pour retrouver sa progression en
+     ligne. Depuis le panneau, le joueur peut la sécuriser par un mot de
+     passe ; ce nom demande alors son mot de passe sur un autre appareil. */
   const NUAGE_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.5 4.5 0 0 0 7 18z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+  const CADENAS_SVG=ouvert=>`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="${ouvert?'M8.5 11V8a3.5 3.5 0 0 1 6.8-1.2':'M8.5 11V8a3.5 3.5 0 0 1 7 0v3'}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   function compteBouton(){
     const c=progressionApi()?.compte?.();
-    if(c) return `<span class="ar-nuage en-ligne" title="Progression sauvegardée en ligne" aria-label="Progression sauvegardée en ligne">${NUAGE_SVG}<i>✓</i></span>`;
+    if(c&&c.protege) return `<span class="ar-nuage en-ligne" title="Progression sécurisée" aria-label="Progression sécurisée">${CADENAS_SVG(false)}</span>`;
+    if(c) return `<button type="button" class="ar-nuage ar-securiser-ouvrir" title="Sécuriser ma progression" aria-label="Sécuriser ma progression">${CADENAS_SVG(true)}</button>`;
     return `<button type="button" class="ar-nuage ar-compte-ouvrir" title="Sauvegarder ma progression en ligne" aria-label="Sauvegarder ma progression en ligne">${NUAGE_SVG}<i>!</i></button>`;
   }
   const COMPTE_ERREURS={
     pseudo:'2 à 16 lettres ou chiffres.',
     'mot-de-passe':'6 caractères au moins pour le mot de passe.',
-    'pseudo-pris':'Ce pseudo est déjà pris. Si c’est le tien, choisis « J’ai déjà un compte ».',
-    identifiants:'Pseudo ou mot de passe incorrect.',
+    'mot-de-passe-requis':'Ce voyageur est protégé : entre son mot de passe.',
+    identifiants:'Mot de passe incorrect.',
     pause:'Trop d’essais : réessaie dans 15 minutes.',
     reseau:'Sauvegarde en ligne injoignable pour l’instant.'
   };
-  function compteFormHtml(classe,titre,valeur){
-    return `<form class="${classe} compte-form" data-mode="creer" novalidate>
-      <span class="cf-titre">${titre}</span>
-      <input name="pseudo" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Ton pseudo" aria-label="Ton pseudo" value="${safeText(valeur||'')}">
-      <input name="mdp" type="password" maxlength="128" autocomplete="new-password" placeholder="Crée un mot de passe" aria-label="Crée un mot de passe">
+  function compteFormHtml(classe,valeur){
+    return `<form class="${classe} compte-form" novalidate>
+      <span class="cf-titre">Nom du voyageur</span>
+      <input name="pseudo" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Ton nom" aria-label="Nom du voyageur" value="${safeText(valeur||'')}">
+      <input name="mdp" type="password" maxlength="128" autocomplete="current-password" placeholder="Son mot de passe" aria-label="Mot de passe" hidden>
       <small class="ar-pseudo-erreur" role="alert" hidden></small>
       <button type="submit" class="ar-continuer">COMMENCER</button>
-      <button type="button" class="cf-lien cf-bascule">J’ai déjà un compte</button>
       <button type="button" class="cf-lien cf-hors-ligne" hidden>Jouer sans compte</button>
-      <p class="cf-note">Note bien ton mot de passe : il te sert à retrouver ta progression sur un autre appareil.</p>
     </form>`;
   }
-  function brancherCompteForm(form,titres,apres){
+  function brancherCompteForm(form,options,apres){
     const api=()=>progressionApi();
     const pseudo=form.elements.pseudo, mdp=form.elements.mdp;
     const erreur=form.querySelector('.ar-pseudo-erreur'), envoyer=form.querySelector('[type=submit]');
-    const horsLigne=form.querySelector('.cf-hors-ligne'), bascule=form.querySelector('.cf-bascule');
-    const montrer=code=>{ erreur.textContent=COMPTE_ERREURS[code]||COMPTE_ERREURS.reseau; erreur.hidden=false; };
-    const mode=m=>{
-      form.dataset.mode=m;
-      form.querySelector('.cf-titre').textContent=m==='creer'?titres.creer:titres.connexion;
-      envoyer.textContent=m==='creer'?titres.bouton:'SE CONNECTER';
-      bascule.textContent=m==='creer'?'J’ai déjà un compte':'Créer un compte';
-      mdp.autocomplete=m==='creer'?'new-password':'current-password';
-      mdp.placeholder=m==='creer'?'Crée un mot de passe':'Ton mot de passe';
-      mdp.setAttribute('aria-label',mdp.placeholder);
-      form.querySelector('.cf-note').hidden=m!=='creer';
-      erreur.hidden=true; horsLigne.hidden=true;
-    };
-    mode('creer');
-    bascule.addEventListener('click',()=>{ mode(form.dataset.mode==='creer'?'connexion':'creer'); pseudo.focus({preventScroll:true}); });
+    const horsLigne=form.querySelector('.cf-hors-ligne');
+    if(options.bouton) envoyer.textContent=options.bouton;
+    const montrer=code=>{ erreur.textContent=COMPTE_ERREURS[code]||COMPTE_ERREURS.reseau; erreur.hidden=false; options.ajuster?.(); };
+    /* Un autre nom ne demande plus le mot de passe du précédent. */
+    pseudo.addEventListener('input',()=>{ if(!mdp.hidden){ mdp.hidden=true; mdp.value=''; erreur.hidden=true; options.ajuster?.(); } });
     horsLigne.addEventListener('click',()=>{ if(api()?.definirPseudo?.(pseudo.value)) apres({ok:true,horsLigne:true}); else montrer('pseudo'); });
     form.addEventListener('submit',async e=>{
       e.preventDefault();
       if(envoyer.disabled) return;
       erreur.hidden=true;
       if(!api()?.pseudoValide?.(pseudo.value)){ montrer('pseudo'); pseudo.focus(); return; }
-      if(mdp.value.length<6){ montrer('mot-de-passe'); mdp.focus(); return; }
+      if(!mdp.hidden&&!mdp.value){ montrer('mot-de-passe-requis'); mdp.focus(); return; }
       envoyer.disabled=true; const texte=envoyer.textContent; envoyer.textContent='…';
-      const r=await (form.dataset.mode==='creer'?api()?.creerCompte?.(pseudo.value,mdp.value):api()?.connecter?.(pseudo.value,mdp.value))||{ok:false,erreur:'reseau'};
+      const r=await api()?.entrer?.(pseudo.value,mdp.hidden?undefined:mdp.value)||{ok:false,erreur:'reseau'};
       envoyer.disabled=false; envoyer.textContent=texte;
       if(r.ok){ apres(r); return; }
+      if(r.erreur==='mot-de-passe-requis'){ mdp.hidden=false; setTimeout(()=>mdp.focus({preventScroll:true}),0); }
       montrer(r.erreur);
       /* Quelle que soit l'erreur, on peut toujours jouer sans compte. */
       horsLigne.hidden=false;
-      titres.ajuster?.();
+      options.ajuster?.();
     });
+  }
+  function retourPanneau(){
+    const nouvel=progressionApi()?.etat?.();
+    if(nouvel&&nouvel.pseudo) renderProgressionPanel(nouvel);
+    renderProfileBadge();
   }
   function renderCompte(etat){
     modalTitle.textContent='';
-    modalBody.innerHTML=`<div class="progression-panel"><div class="ar-pseudo"><img src="../assets/progression/ilot-chateau.webp" alt="" class="ar-pseudo-ilot">${compteFormHtml('ar-compte','Ton compte',etat.pseudo)}</div></div>`;
+    modalBody.innerHTML=`<div class="progression-panel"><div class="ar-pseudo"><img src="../assets/progression/ilot-chateau.webp" alt="" class="ar-pseudo-ilot">${compteFormHtml('ar-compte',etat.pseudo)}</div></div>`;
     const form=modalBody.querySelector('.compte-form');
-    brancherCompteForm(form,{creer:'Sauvegarde ta progression',connexion:'Retrouve ta progression',bouton:'VALIDER'},()=>{
-      const nouvel=progressionApi()?.etat?.();
-      if(nouvel&&nouvel.pseudo) renderProgressionPanel(nouvel);
-      renderProfileBadge();
+    brancherCompteForm(form,{bouton:'VALIDER'},retourPanneau);
+    form.elements.pseudo.focus({preventScroll:true});
+  }
+  /* Sécuriser : un mot de passe, désormais demandé pour ce nom. */
+  function renderSecuriser(etat){
+    modalTitle.textContent='';
+    modalBody.innerHTML=`<div class="progression-panel"><div class="ar-pseudo"><img src="../assets/progression/ilot-chateau.webp" alt="" class="ar-pseudo-ilot">
+      <form class="ar-compte compte-form" novalidate>
+        <span class="cf-titre">Sécurise ta progression</span>
+        <p class="cf-note">Avec un mot de passe, toi seul pourras retrouver <b>${safeText(etat.pseudo||'')}</b> sur un autre appareil. Il ne peut pas être récupéré : note-le bien.</p>
+        <input name="mdp" type="password" maxlength="128" autocomplete="new-password" placeholder="Crée un mot de passe" aria-label="Crée un mot de passe">
+        <small class="ar-pseudo-erreur" role="alert" hidden></small>
+        <button type="submit" class="ar-continuer">SÉCURISER</button>
+        <button type="button" class="cf-lien cf-plus-tard">Plus tard</button>
+      </form></div></div>`;
+    const form=modalBody.querySelector('.compte-form'), mdp=form.elements.mdp;
+    const erreur=form.querySelector('.ar-pseudo-erreur'), envoyer=form.querySelector('[type=submit]');
+    form.querySelector('.cf-plus-tard').addEventListener('click',retourPanneau);
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();
+      if(envoyer.disabled) return;
+      if(mdp.value.length<6){ erreur.textContent=COMPTE_ERREURS['mot-de-passe']; erreur.hidden=false; mdp.focus(); return; }
+      envoyer.disabled=true; envoyer.textContent='…';
+      const r=await progressionApi()?.securiser?.(mdp.value)||{ok:false,erreur:'reseau'};
+      envoyer.disabled=false; envoyer.textContent='SÉCURISER';
+      if(r.ok){ retourPanneau(); return; }
+      erreur.textContent=COMPTE_ERREURS[r.erreur]||COMPTE_ERREURS.reseau; erreur.hidden=false;
     });
-    form.elements[etat.pseudo?'mdp':'pseudo'].focus({preventScroll:true});
+    mdp.focus({preventScroll:true});
   }
   function renderProgressionPanel(etat,annonce){
     if(!etat.pseudo) return renderCompte(etat);
@@ -350,7 +370,10 @@
     const ongletsListe=[['progression','QUÊTES',etat.offrande.dispo],etat.saison?['saison','SAISON',false]:null,['collection','COLLECTION',etat.nouveautes>0],['journal','JOURNAL',false]].filter(Boolean);
     const onglets=`<div class="pp-onglets" role="tablist">${ongletsListe.map(([cle,lib,pastille])=>`<button type="button" role="tab" data-onglet="${cle}" aria-selected="${onglet===cle}">${PP_ICONES[cle]}<span>${lib}</span>${pastille?'<i class="pp-pastille"></i>':''}</button>`).join('')}</div>`;
     const entete=`<div class="ar-entete">${tete}${onglets}</div>`;
-    const bindPseudo=()=>modalBody.querySelector('.ar-compte-ouvrir')?.addEventListener('click',()=>renderCompte(progressionApi()?.etat?.()||etat));
+    const bindPseudo=()=>{
+      modalBody.querySelector('.ar-compte-ouvrir')?.addEventListener('click',()=>renderCompte(progressionApi()?.etat?.()||etat));
+      modalBody.querySelector('.ar-securiser-ouvrir')?.addEventListener('click',()=>renderSecuriser(progressionApi()?.etat?.()||etat));
+    };
     if(onglet==='journal'){
       modalBody.innerHTML=`<div class="progression-panel">${entete}${journalHtml(progressionApi()?.journal?.())}</div>`;
       bindProgressionTabs(); bindPseudo();
@@ -471,7 +494,7 @@
     const premiere=!etat.pseudo;
     let corps='';
     if(premiere){
-      corps=compteFormHtml('ouv-pseudo','Crée ton compte','');
+      corps=compteFormHtml('ouv-pseudo','');
     }
     el.innerHTML=`<div class="ouv-fond" aria-hidden="true"></div><img class="ouv-logo" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS, les îles célestes"><div class="ouv-corps">${corps}</div>`;
     document.body.appendChild(el);
@@ -487,7 +510,7 @@
     if(premiere){
       const form=el.querySelector('.ouv-pseudo');
       setTimeout(()=>form.elements.pseudo.focus({preventScroll:true}),400);
-      brancherCompteForm(form,{creer:'Crée ton compte',connexion:'Retrouve ta progression',bouton:'COMMENCER',ajuster},fermer);
+      brancherCompteForm(form,{ajuster},fermer);
       ajuster();
     }else{
       const zone=el.querySelector('.ouv-corps');

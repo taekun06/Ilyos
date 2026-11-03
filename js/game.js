@@ -51953,6 +51953,33 @@
         return "local";
       }
 
+      /* Le nom du voyageur suffit : nouveau nom = nouveau compte, nom connu
+         = sa progression revient. Un nom sécurisé demande son mot de passe. */
+      async function progressionEntrer(pseudo, motDePasse) {
+        const nom = progressionPseudoValide(pseudo);
+        if (!nom) return { ok: false, erreur: "pseudo" };
+        const profil = progressionCharger();
+        profil.pseudo = nom;
+        const corps = { action: "entrer", pseudo: nom, profil };
+        if (motDePasse) corps.motDePasse = motDePasse;
+        const r = await progressionCompteAppel(corps);
+        if (!r.ok) return r;
+        progressionCompteEcrire({ pseudo: r.pseudo, jeton: r.jeton, protege: !!r.protege, envoye: r.nouveau ? JSON.stringify(profil) : null });
+        if (r.nouveau) { progressionEnregistrer(profil); return { ok: true, pseudo: r.pseudo, garde: "local" }; }
+        const garde = progressionCompteFusionner(r.pseudo, r.profil);
+        if (garde === "local") await progressionCompteEnvoyer();
+        return { ok: true, pseudo: r.pseudo, garde };
+      }
+
+      async function progressionSecuriser(motDePasse) {
+        const compte = progressionCompteLire();
+        if (!compte) return { ok: false, erreur: "sans-compte" };
+        const r = await progressionCompteAppel({ action: "securiser", pseudo: compte.pseudo, jeton: compte.jeton, motDePasse });
+        if (r.ok) progressionCompteEcrire({ ...progressionCompteLire(), protege: true });
+        else if (r.erreur === "jeton") progressionCompteEcrire(null);
+        return r;
+      }
+
       async function progressionCreerCompte(pseudo, motDePasse) {
         const nom = progressionPseudoValide(pseudo);
         if (!nom) return { ok: false, erreur: "pseudo" };
@@ -51985,6 +52012,7 @@
           if (r.erreur === "jeton") progressionCompteEcrire(null);
           return r;
         }
+        if (typeof r.protege === "boolean") progressionCompteEcrire({ ...progressionCompteLire(), protege: r.protege });
         const garde = progressionCompteFusionner(r.pseudo, r.profil);
         if (garde === "local") await progressionCompteEnvoyer();
         return { ok: true, garde };
@@ -52856,10 +52884,12 @@
         pseudoValide: progressionPseudoValide,
         compte: () => {
           const c = progressionCompteLire();
-          return c ? { pseudo: c.pseudo, enLigne: true, aJour: c.envoye === localStorage.getItem(PROGRESSION_STORAGE_KEY) } : null;
+          return c ? { pseudo: c.pseudo, enLigne: true, protege: !!c.protege, aJour: c.envoye === localStorage.getItem(PROGRESSION_STORAGE_KEY) } : null;
         },
         creerCompte: progressionCreerCompte,
         connecter: progressionConnecter,
+        entrer: progressionEntrer,
+        securiser: progressionSecuriser,
         synchroniser: progressionSynchroniser,
         deconnecter: progressionDeconnecter,
         reclamerOffrande: progressionReclamerOffrande,
