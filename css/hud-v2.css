@@ -290,11 +290,13 @@ body[data-visual-mode="alternative"] .hud-v2-balises-score small {
 
 body[data-visual-mode="alternative"] .hud-v2-balise-icone {
   align-self: center;
-  width: 9px;
-  height: 14px;
-  border-radius: 5px 5px 2px 2px;
-  background: linear-gradient(180deg, #e8fbff, #7fd8f0);
-  box-shadow: 0 0 6px rgba(191, 244, 255, .7);
+  /* Balise carrée, comme sur le plateau. */
+  width: 10px;
+  height: 10px;
+  border: 2.5px solid #35c6f2;
+  border-radius: 1px;
+  box-sizing: border-box;
+  background: transparent;
 }
 
 /* ---------- Centre : Tour · ⚙ · Timer, ⚙ exactement sur l'axe central ---------- */

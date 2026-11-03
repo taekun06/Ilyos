@@ -416,25 +416,39 @@
         return texture;
       }
 
+      /* Œuf couché sur un nid carré qui remplit sa case : on lit d'un coup
+         d'œil sur QUELLE case il se trouve, même au-dessus du vide. Tout est
+         opaque (Taekun, 2026-11-03 : la transparence brouillait la case). */
       function creaturesConstruireOeuf() {
         const groupe = new THREE.Group();
+        const nid = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-nid-v2", () => new THREE.BoxGeometry(.84, .05, .84)),
+          new THREE.MeshStandardMaterial({ color: 0x2f241b, roughness: .95, metalness: 0 })
+        );
+        nid.position.y = .025;
+        const bord = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-bord-v2", () => new THREE.BoxGeometry(.9, .03, .9)),
+          new THREE.MeshStandardMaterial({ color: 0xe9cf8e, roughness: .6, metalness: .1 })
+        );
+        bord.position.y = .012;
         const coquille = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-v1", () => new THREE.SphereGeometry(.17, 18, 14)),
           new THREE.MeshStandardMaterial({ color: 0xf3e3c0, roughness: .55, metalness: 0, emissive: 0x3a2a10, emissiveIntensity: .25 })
         );
-        coquille.scale.set(1, 1.32, 1);
-        coquille.position.y = .22;
+        // Couché : le grand axe à plat, posé dans le nid.
+        coquille.scale.set(1.75, 1.25, 1.3);
+        coquille.position.y = .05 + .2;
         const taches = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-taches-v1", () => new THREE.SphereGeometry(.172, 9, 7)),
-          new THREE.MeshBasicMaterial({ color: 0x6a8f5a, wireframe: true, transparent: true, opacity: .35 })
+          new THREE.MeshBasicMaterial({ color: 0xc9b07c, wireframe: true })
         );
         taches.scale.copy(coquille.scale);
         taches.position.copy(coquille.position);
         const chiffre = new THREE.Sprite(new THREE.SpriteMaterial({ map: creaturesTextureChiffre(0), depthTest: false, transparent: true }));
         chiffre.scale.set(.3, .3, 1);
-        chiffre.position.y = .23; // au centre de la coquille
+        chiffre.position.y = coquille.position.y + .02;
         chiffre.renderOrder = 20;
-        groupe.add(coquille, taches, chiffre);
+        groupe.add(coquille, taches, chiffre, nid, bord);
         groupe.userData.chiffre = chiffre;
         groupe.traverse(o => { o.raycast = () => {}; });
         return groupe;
@@ -482,12 +496,9 @@
             coquille.color.setHex(mur ? 0xc8261a : 0xf3e3c0);
             coquille.emissive.setHex(mur ? 0xff3a10 : 0x3a2a10);
             coquille.emissiveIntensity = mur ? .85 : .25;
-            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0x6a8f5a);
+            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0xc9b07c);
             visuel.userData.chiffre.visible = !mur;
           }
-          visuel.children[0].material.opacity = surIle || mur ? 1 : .7;
-          visuel.children[0].material.transparent = !(surIle || mur);
-          visuel.children[1].material.opacity = mur ? .8 : .35;
         });
         [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
       }

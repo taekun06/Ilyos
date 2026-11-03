@@ -283,62 +283,47 @@
         return butBalises() && !cfg.globalPlanning ? { ...cfg, globalPlanning: true } : cfg;
       };
 
-      /* RENDU 3D. Une balise est un cercle de runes au sol et une colonne de
-         lumière. Allumée : lumière claire, ou couleur du camp qui la tient.
-         Éteinte (au-dessus du vide) : un simple anneau pâle qui flotte, pour
-         qu'on voie où construire. Matériaux de base, sans lumière ajoutée ni
-         animation : rien ne tourne en continu. */
+      /* RENDU 3D des balises : matériaux de base, sans lumière ajoutée ni
+         animation (rien ne tourne en continu). */
       const ROTATION_BALISE_CLAIRE = 0x35c6f2;
       const ROTATION_BALISE_CONTOUR = 0x0d1b26;
 
-      /* Mélange normal partout : en additif, la lumière virait au blanc sur
-         l'herbe claire et le ciel, et cachait le gardien qui tient la balise. */
-      function rotationMateriau(couleur, opacite, { additif = false, alphaMap = null } = {}) {
-        return new THREE.MeshBasicMaterial({
-          color: couleur, transparent: true, opacity: opacite, alphaMap,
-          depthWrite: false, blending: additif ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide
-        });
-      }
-
-      /* Dégradés partagés : la colonne s'efface vers le haut, le halo vers
-         son bord. Deux petites toiles, créées une fois. */
-      let rotationDegrades = null;
-      function rotationTexturesDegrade() {
-        if (rotationDegrades) return rotationDegrades;
-        const vertical = document.createElement("canvas");
-        vertical.width = 4; vertical.height = 64;
-        let ctx = vertical.getContext("2d");
-        let g = ctx.createLinearGradient(0, 64, 0, 0);
-        g.addColorStop(0, "#fff"); g.addColorStop(.35, "#888"); g.addColorStop(.85, "#000");
-        ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 64);
-        const radial = document.createElement("canvas");
-        radial.width = radial.height = 64;
-        ctx = radial.getContext("2d");
-        g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
-        g.addColorStop(0, "#fff"); g.addColorStop(.7, "#aaa"); g.addColorStop(1, "#000");
-        ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
-        rotationDegrades = { vertical: new THREE.CanvasTexture(vertical), radial: new THREE.CanvasTexture(radial) };
-        return rotationDegrades;
-      }
-
-      function rotationConstruireBalise() {
-        const { vertical, radial } = rotationTexturesDegrade();
+      /* Balise CARRÉE et opaque (Taekun, 2026-11-03) : un cadre qui longe
+         les bords de sa case et quatre bornes aux coins. Plus de colonne de
+         lumière transparente. Une balise MOBILE (qui tourne avec son île)
+         porte en plus un losange au centre. */
+      function rotationConstruireBalise(mobile) {
         const groupe = new THREE.Group();
-        const aplat = mesh => { mesh.rotation.x = -Math.PI / 2; return mesh; };
-        // Contour sombre puis anneau franc : lisible sur tout fond.
-        const runes = aplat(new THREE.Mesh(new THREE.RingGeometry(.4, .47, 48), rotationMateriau(ROTATION_BALISE_CONTOUR, .55)));
-        const sol = aplat(new THREE.Mesh(new THREE.RingGeometry(.31, .42, 48), rotationMateriau(ROTATION_BALISE_CLAIRE, .95)));
-        sol.position.y = .003;
-        const halo = aplat(new THREE.Mesh(new THREE.CircleGeometry(.31, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .4, { alphaMap: radial })));
-        halo.position.y = .002;
-        // Lumière plus basse et plus fine : elle signale sans aveugler le gardien.
-        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, 1.5, 32, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .3, { alphaMap: vertical }));
-        colonne.position.y = .75;
-        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.035, .05, 2.2, 10, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .55, { alphaMap: vertical }));
-        coeur.position.y = 1.1;
-        groupe.add(runes, sol, halo, colonne, coeur);
-        groupe.userData.rotationParties = { sol, runes, halo, colonne, coeur };
-        groupe.renderOrder = 4;
+        const matiere = couleur => new THREE.MeshStandardMaterial({ color: couleur, roughness: .55, metalness: .15, emissive: couleur, emissiveIntensity: .35 });
+        const cadreMat = matiere(ROTATION_BALISE_CLAIRE);
+        const contourMat = new THREE.MeshStandardMaterial({ color: ROTATION_BALISE_CONTOUR, roughness: .8 });
+        const cadre = new THREE.Group();
+        const L = .9, e = .08, h = .06;
+        [[0, -L / 2 + e / 2, L, e], [0, L / 2 - e / 2, L, e], [-L / 2 + e / 2, 0, e, L - 2 * e], [L / 2 - e / 2, 0, e, L - 2 * e]].forEach(([x, z, w, d]) => {
+          const barre = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cadreMat);
+          barre.position.set(x, h / 2, z);
+          const ombre = new THREE.Mesh(new THREE.BoxGeometry(w + .03, h * .6, d + .03), contourMat);
+          ombre.position.set(x, h * .3, z);
+          cadre.add(ombre, barre);
+        });
+        const bornes = new THREE.Group();
+        [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+          const borne = new THREE.Mesh(new THREE.BoxGeometry(.13, .26, .13), cadreMat);
+          borne.position.set(sx * (L / 2 - .065), .13, sz * (L / 2 - .065));
+          const chapeau = new THREE.Mesh(new THREE.ConeGeometry(.1, .1, 4), cadreMat);
+          chapeau.rotation.y = Math.PI / 4;
+          chapeau.position.set(borne.position.x, .31, borne.position.z);
+          bornes.add(borne, chapeau);
+        });
+        groupe.add(cadre, bornes);
+        let losange = null;
+        if (mobile) {
+          losange = new THREE.Mesh(new THREE.BoxGeometry(.24, .04, .24), cadreMat);
+          losange.rotation.y = Math.PI / 4;
+          losange.position.y = .02;
+          groupe.add(losange);
+        }
+        groupe.userData.rotationParties = { cadreMat, bornes, losange };
         return groupe;
       }
 
@@ -354,7 +339,7 @@
         if (!kaykit3D.rotationBalises || !kaykit3D.rotationBalises.parent) {
           const groupe = new THREE.Group();
           groupe.name = "rotation-balises";
-          state.rotation.balises.forEach(() => groupe.add(rotationConstruireBalise()));
+          state.rotation.balises.forEach((_, i) => groupe.add(rotationConstruireBalise(baliseMobile(i))));
           kaykit3D.dynamicGroup.add(groupe);
           kaykit3D.rotationBalises = groupe;
         }
@@ -363,25 +348,18 @@
           if (!balise) return;
           const allumee = baliseAllumee(r, c);
           const g = allumee ? gardienSurBalise(r, c) : null;
-          const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
+          /* Éteinte (au-dessus du vide) : cadre gris-bleu, sans bornes, posé
+             sur la grille. Allumée libre : cyan. Tenue : couleur du camp. */
+          const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex()
+            : allumee ? ROTATION_BALISE_CLAIRE : 0x5d7a8c;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
-          // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
-          balise.position.set(p.x, allumee ? p.y + .05 : KAYKIT_LEVELS.islandTop + .02, p.z);
-          const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
-          [sol, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
-          /* Éteinte : anneau pâle, pour voir où construire. Allumée libre :
-             anneau cyan franc et lumière. Tenue : tout à la couleur du camp,
-             halo au sol plein, lumière plus haute. */
-          sol.material.opacity = allumee ? .95 : .45;
-          runes.material.opacity = allumee ? .55 : .25;
-          halo.visible = allumee;
-          halo.material.opacity = g ? .45 : .25;
-          colonne.visible = allumee;
-          coeur.visible = allumee;
-          colonne.material.opacity = g ? .6 : .45;
-          colonne.scale.y = g ? 1.25 : 1;
-          colonne.position.y = .75 * colonne.scale.y;
-          coeur.material.opacity = g ? .85 : .65;
+          balise.position.set(p.x, allumee ? p.y + .005 : KAYKIT_LEVELS.islandTop + .01, p.z);
+          const { cadreMat, bornes } = balise.userData.rotationParties;
+          cadreMat.color.setHex(couleur);
+          cadreMat.emissive.setHex(couleur);
+          cadreMat.emissiveIntensity = g ? .5 : allumee ? .35 : .1;
+          bornes.visible = allumee;
+          bornes.scale.y = g ? 1.35 : 1;
         });
       }
 
