@@ -15,6 +15,9 @@
          — À la fin de ton tour, chaque balise allumée où se tient un de tes
            gardiens te rapporte 1 point. Premier à 10 points.
          — Pas de couronnes : les deux restent hors du terrain.
+         — Deux balises sur quatre, tirées au hasard et marquées, sont
+           MOBILES : elles tournent avec l'île sur laquelle elles se trouvent
+           (magie). Les deux autres restent sur leur case.
          Le décompte se fait à l'ouverture du tour suivant, sur la position
          exacte où le joueur a fini — comme la validation des couronnes.
          ===================================================================== */
@@ -118,12 +121,35 @@
         Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,
           balises: rotationCasesBalises(),
+          mobiles: shuffle([0, 1, 2, 3]).slice(0, 2).sort(),
           dernierDecompte: 0
         });
         state.rules = { ...(state.rules || {}), disableSecondCrown: true };
         rotationRangerCouronnes();
         rotationIntituleBilan();
       }
+
+      function baliseMobile(i) {
+        return !!state?.rotation?.mobiles?.includes(i);
+      }
+
+      /* Balises mobiles : elles suivent la case de leur île pendant une
+         rotation (rotation.absCells garde l'ordre de ile.cells). Hors
+         simulation, comme les œufs : le clone du planner partage
+         state.rotation avec la vraie partie. */
+      const rotationMagieBase = applyMagicRotationCore;
+      applyMagicRotationCore = function applyMagicRotationCoreBalises(islandId, rotation) {
+        const actif = !ilyosSimulationActive && butBalises() && rotation?.valid && state.rotation.mobiles?.length;
+        const ile = actif ? state.islands.find(is => is.id === islandId) : null;
+        const suivantes = ile ? state.rotation.balises.map(([r, c], i) => {
+          if (!baliseMobile(i)) return null;
+          const k = ile.cells.findIndex(([cr, cc]) => cr === r && cc === c);
+          return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
+        }).filter(Boolean) : [];
+        const resultat = rotationMagieBase(islandId, rotation);
+        if (resultat) suivantes.forEach(({ i, vers }) => { state.rotation.balises[i] = [vers[0], vers[1]]; });
+        return resultat;
+      };
 
       /* Le bilan de fin compte des points, plus des couronnes. */
       function rotationIntituleBilan() {

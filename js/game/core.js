@@ -1913,7 +1913,7 @@
         if (!char || availableActionCount("PUSH") <= 0) return new Set();
         return new Set(
           orthogonalNeighbors(char.r, char.c)
-            .filter(([nr, nc]) => characterAt(nr, nc) || looseArtifactAt(nr, nc))
+            .filter(([nr, nc]) => occupantPoussable(nr, nc))
             .map(([nr, nc]) => key(nr, nc))
         );
       }
@@ -1975,7 +1975,7 @@
           return { type: "PICKUP", path: [] };
         }
 
-        if (adjacent && (targetChar || targetCrown) && availableActionCount("PUSH") > 0) {
+        if (adjacent && (targetChar || targetCrown || poussableDuModeAt(r, c)) && availableActionCount("PUSH") > 0) {
           return { type: "PUSH", path: [] };
         }
 

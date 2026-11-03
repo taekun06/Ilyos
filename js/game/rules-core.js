@@ -100,11 +100,14 @@
 
         const cible = characterAt(r, c);
         const couronne = cible ? null : looseArtifactAt(r, c);
-        if (!cible && !couronne) return null;
+        const piece = cible || couronne ? null : poussableDuModeAt(r, c);
+        if (!cible && !couronne && !piece) return null;
 
         const resultat = cible
           ? pushCharacter(cible, dr, dc, force, r, c)
-          : pushLooseArtifact(couronne, dr, dc, force, r, c);
+          : couronne
+            ? pushLooseArtifact(couronne, dr, dc, force, r, c)
+            : appliquerPousseeDepuis(r, c, dr, dc, force);
         if (!resultat) return null;
 
         const depense = consumeSelectedActionCore("PUSH", force);
@@ -437,11 +440,27 @@
            franchie. Elle plafonne du même coup tout ce qui la suit dans le bloc.
       ================================================================== */
 
+      /* Pièces poussables propres à un mode de jeu (œufs du mode Rotation) :
+         [{ kind, id, r, c, ref }]. Vide par défaut ; un fragment de mode la
+         remplace. Ces pièces FLOTTENT : poussées, elles survolent le vide,
+         ne tombent jamais et s'arrêtent au bord du plateau. */
+      function poussablesDuMode() {
+        return [];
+      }
+      function poussableDuModeAt(r, c) {
+        return poussablesDuMode().find(p => p.r === r && p.c === c) || null;
+      }
+      function poussableDuModeParId(id) {
+        return poussablesDuMode().find(p => String(p.id) === String(id)) || null;
+      }
+
       function occupantPoussable(r, c) {
         const gardien = characterAt(r, c);
         if (gardien) return { kind: "char", ref: gardien };
         const couronne = looseArtifactAt(r, c);
         if (couronne) return { kind: "crown", ref: couronne };
+        const piece = poussableDuModeAt(r, c);
+        if (piece) return { kind: piece.kind, ref: piece };
         return null;
       }
 
@@ -486,6 +505,7 @@
         activeArtifacts().forEach(a => {
           if (!a.carrierId && Number.isFinite(a.r)) occupees.add(key(a.r, a.c));
         });
+        poussablesDuMode().forEach(p => occupees.add(key(p.r, p.c)));
         bloc.forEach(m => occupees.delete(key(m.r, m.c)));
 
         const mouvements = [];
@@ -509,6 +529,24 @@
             const to = [m.r + dr * d, m.c + dc * d];
             occupees.add(key(to[0], to[1]));
             mouvements.push({ kind: "crown", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+            plafond = d;
+            continue;
+          }
+
+          if (m.kind !== "char") {
+            // Pièce flottante : elle survole le vide et s'arrête au bord.
+            let d = 0;
+            for (let pas = plafond; pas >= 1; pas--) {
+              const r = m.r + dr * pas;
+              const c = m.c + dc * pas;
+              if (!inside(r, c) || occupees.has(key(r, c))) continue;
+              d = pas;
+              break;
+            }
+            if (d <= 0) { plafond = 0; break; }
+            const to = [m.r + dr * d, m.c + dc * d];
+            occupees.add(key(to[0], to[1]));
+            mouvements.push({ kind: m.kind, id: m.ref.id, from: [m.r, m.c], to, chute: false });
             plafond = d;
             continue;
           }
@@ -552,6 +590,11 @@
             if (!couronne) continue;
             couronne.r = mv.to[0];
             couronne.c = mv.to[1];
+            continue;
+          }
+          if (mv.kind !== "char") {
+            const piece = poussableDuModeParId(mv.id);
+            if (piece?.ref) { piece.ref.r = mv.to[0]; piece.ref.c = mv.to[1]; }
             continue;
           }
           const gardien = characterById(mv.id);

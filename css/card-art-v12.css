@@ -59,3 +59,45 @@ body .card-cycle-v10-backface::after,
 body .card-cycle-v10-backface > * {
   display: none !important;
 }
+
+/* Carte du marché piochée (mode Rotation : Élan, Bélier, Arcane) : même face
+   que son type, plus un ruban doré à son nom et sa valeur sur l'illustration
+   (Taekun, 2026-11-03 : la pioche doit montrer les nouvelles cartes). */
+body .card-cycle-v7-card.card-cycle-v10-card.is-speciale { container-type: inline-size; }
+body .card-cycle-v10-card .cc-speciale {
+  position: absolute;
+  left: 50%;
+  top: 31%;
+  transform: translateX(-50%) rotate(-3deg);
+  display: flex;
+  align-items: center;
+  gap: 5cqw;
+  padding: 2.4cqw 7cqw 2.4cqw 8cqw;
+  border-radius: 3cqw;
+  border: max(1px, .7cqw) solid #fff1bf;
+  background: linear-gradient(180deg, #ffe7a3 0%, #e8b44e 55%, #b97a22 100%);
+  box-shadow: 0 1.6cqw 3.6cqw rgba(0, 0, 0, .55), inset 0 0 0 max(1px, .5cqw) rgba(120, 66, 12, .55);
+  color: #3b1c06;
+  font: 700 11cqw/1 "Cinzel", Georgia, serif;
+  letter-spacing: .06em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+body .card-cycle-v10-card.is-revealed .cc-speciale,
+body .card-cycle-v10-card:not(.is-draw-back) .cc-speciale { opacity: 1; }
+body .card-cycle-v10-card .cc-speciale em {
+  display: grid;
+  place-items: center;
+  min-width: 15cqw;
+  height: 15cqw;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #c2402a, #6d140a);
+  border: max(1px, .6cqw) solid #ffe6a0;
+  color: #ffe9ad;
+  font: 800 8.5cqw/1 Georgia, serif;
+  font-style: normal;
+  letter-spacing: 0;
+}
+.cc-pioche-speciales { display: block; font-style: normal; color: #ffd76a; font-size: .8em; margin-top: 2px; }

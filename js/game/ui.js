@@ -1538,7 +1538,7 @@
             const pusher = characterById(state.selectedCharId);
             valid = !!pusher
               && Math.abs(pusher.r - r) + Math.abs(pusher.c - c) === 1
-              && !!(characterAt(r, c) || looseArtifactAt(r, c));
+              && !!occupantPoussable(r, c);
           }
 
           const next = valid ? [r, c] : null;
@@ -1967,7 +1967,7 @@
               return;
             }
 
-            const target = characterAt(r, c) || looseArtifactAt(r, c);
+            const target = characterAt(r, c) || looseArtifactAt(r, c) || poussableDuModeAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
               pusherId: state.selectedCharId || null,
@@ -2565,7 +2565,8 @@
 
       function computePushOptionsForTarget(target, targetType = "character") {
         if (!state || !target || availableActionCount("PUSH") < 1) return [];
-        const targetsCrown = targetType === "crown";
+        // Couronne ou pièce d'un mode (œuf) : jamais de chute à montrer.
+        const targetsCrown = targetType !== "character";
 
         const pushers = orthogonalNeighbors(target.r, target.c)
           .map(([r, c]) => characterAt(r, c))
@@ -2630,6 +2631,13 @@
               options.push(normalized);
             });
           });
+        poussablesDuMode().forEach(target => {
+          if (targetId != null && String(target.id) !== String(targetId)) return;
+          computePushOptionsForTarget(target, target.kind).forEach(option => {
+            if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
+            options.push({ ...option, id: pushOptionKey(option) });
+          });
+        });
 
         const unique = new Map();
         options.forEach(option => {
@@ -2688,7 +2696,9 @@
         const pusher = characterById(option.pusherId);
         const target = option.targetType === "crown"
           ? artifactById(option.targetId)
-          : characterById(option.targetId);
+          : option.targetType === "character" || !option.targetType
+            ? characterById(option.targetId)
+            : poussableDuModeParId(option.targetId);
         if (!pusher || !target) {
           clearUnifiedPushOptions();
           return false;
@@ -2793,7 +2803,7 @@
       // nearestPusherForTarget() reste un simple raccourci sur le premier —
       // utilisé là où l'ambiguïté n'a pas d'importance (ex: validité de survol).
       function pushersForTarget(r, c) {
-        if (!characterAt(r, c) && !looseArtifactAt(r, c)) return [];
+        if (!occupantPoussable(r, c)) return [];
         return orthogonalNeighbors(r, c)
           .map(([nr, nc]) => characterAt(nr, nc))
           .filter(char => char && char.player === state.currentPlayer)
@@ -3068,7 +3078,8 @@
 
         const targetChar = characterAt(targetR, targetC);
         const targetCrown = looseArtifactAt(targetR, targetC);
-        if (!targetChar && !targetCrown) return null;
+        const targetPiece = targetChar || targetCrown ? null : poussableDuModeAt(targetR, targetC);
+        if (!targetChar && !targetCrown && !targetPiece) return null;
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
@@ -3102,6 +3113,10 @@
             });
             return;
           }
+          if (mv.kind !== "char") {
+            impacts.push({ type: mv.kind, id: mv.id, from: mv.from, to: mv.to, fell: false, icon: "🥚", color: "#f3ead8", carrying: false });
+            return;
+          }
           const char = characterById(mv.id);
           const owner = char ? joueurDuGardien(char) : null;
           impacts.push({
@@ -3125,8 +3140,8 @@
         if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
           const owner = targetChar ? joueurDuGardien(targetChar) : null;
           impacts.unshift({
-            type: targetChar ? "character" : "crown",
-            id: targetChar ? targetChar.id : targetCrown.id,
+            type: targetChar ? "character" : targetCrown ? "crown" : targetPiece.kind,
+            id: targetChar ? targetChar.id : targetCrown ? targetCrown.id : targetPiece.id,
             from: [targetR, targetC],
             to: null,
             fell: false,
@@ -3197,9 +3212,8 @@
         const pusher = characterById(state.selectedCharId);
         const distance = Math.abs(pusher.r - r) + Math.abs(pusher.c - c);
         const targetChar = characterAt(r, c);
-        const targetArtifact = looseArtifactAt(r, c);
 
-        if (distance !== 1 || (!targetChar && !targetArtifact)) {
+        if (distance !== 1 || !occupantPoussable(r, c)) {
           if (clickedChar && clickedChar.player === state.currentPlayer) {
             state.actionHoverCell = null;
             state.selectedCharId = clickedChar.id;
@@ -4007,6 +4021,7 @@
         <span
           class="v64-mini-card action-${(ACTIONS[card.action]?.type || card.action).toLowerCase()}${ACTIONS[card.action]?.type ? " carte-forte" : ""} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
           style="--card-index:${index}"
+          data-action="${card.action}"
           title="${ACTIONS[card.action]?.name || card.action}"
           aria-label="${ACTIONS[card.action]?.name || card.action}"
         ></span>

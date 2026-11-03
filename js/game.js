@@ -9500,9 +9500,12 @@
         });
 
         lines.forEach(allOptions => {
-          const target = allOptions[0].targetType === "crown"
+          const type = allOptions[0].targetType || "character";
+          const target = type === "crown"
             ? artifactById(allOptions[0].targetId)
-            : characterById(allOptions[0].targetId);
+            : type === "character"
+              ? characterById(allOptions[0].targetId)
+              : poussableDuModeParId(allOptions[0].targetId);
           if (!target) return;
           /* Au repos : seulement les cases d'arrivée (anneau orange) et les
              chutes (halo rouge au-dessus du vide). Le résultat complet — tout
@@ -17016,7 +17019,7 @@
         if (!char || availableActionCount("PUSH") <= 0) return new Set();
         return new Set(
           orthogonalNeighbors(char.r, char.c)
-            .filter(([nr, nc]) => characterAt(nr, nc) || looseArtifactAt(nr, nc))
+            .filter(([nr, nc]) => occupantPoussable(nr, nc))
             .map(([nr, nc]) => key(nr, nc))
         );
       }
@@ -17078,7 +17081,7 @@
           return { type: "PICKUP", path: [] };
         }
 
-        if (adjacent && (targetChar || targetCrown) && availableActionCount("PUSH") > 0) {
+        if (adjacent && (targetChar || targetCrown || poussableDuModeAt(r, c)) && availableActionCount("PUSH") > 0) {
           return { type: "PUSH", path: [] };
         }
 
@@ -24052,7 +24055,7 @@
             const pusher = characterById(state.selectedCharId);
             valid = !!pusher
               && Math.abs(pusher.r - r) + Math.abs(pusher.c - c) === 1
-              && !!(characterAt(r, c) || looseArtifactAt(r, c));
+              && !!occupantPoussable(r, c);
           }
 
           const next = valid ? [r, c] : null;
@@ -24481,7 +24484,7 @@
               return;
             }
 
-            const target = characterAt(r, c) || looseArtifactAt(r, c);
+            const target = characterAt(r, c) || looseArtifactAt(r, c) || poussableDuModeAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
               pusherId: state.selectedCharId || null,
@@ -25079,7 +25082,8 @@
 
       function computePushOptionsForTarget(target, targetType = "character") {
         if (!state || !target || availableActionCount("PUSH") < 1) return [];
-        const targetsCrown = targetType === "crown";
+        // Couronne ou pièce d'un mode (œuf) : jamais de chute à montrer.
+        const targetsCrown = targetType !== "character";
 
         const pushers = orthogonalNeighbors(target.r, target.c)
           .map(([r, c]) => characterAt(r, c))
@@ -25144,6 +25148,13 @@
               options.push(normalized);
             });
           });
+        poussablesDuMode().forEach(target => {
+          if (targetId != null && String(target.id) !== String(targetId)) return;
+          computePushOptionsForTarget(target, target.kind).forEach(option => {
+            if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
+            options.push({ ...option, id: pushOptionKey(option) });
+          });
+        });
 
         const unique = new Map();
         options.forEach(option => {
@@ -25202,7 +25213,9 @@
         const pusher = characterById(option.pusherId);
         const target = option.targetType === "crown"
           ? artifactById(option.targetId)
-          : characterById(option.targetId);
+          : option.targetType === "character" || !option.targetType
+            ? characterById(option.targetId)
+            : poussableDuModeParId(option.targetId);
         if (!pusher || !target) {
           clearUnifiedPushOptions();
           return false;
@@ -25307,7 +25320,7 @@
       // nearestPusherForTarget() reste un simple raccourci sur le premier —
       // utilisé là où l'ambiguïté n'a pas d'importance (ex: validité de survol).
       function pushersForTarget(r, c) {
-        if (!characterAt(r, c) && !looseArtifactAt(r, c)) return [];
+        if (!occupantPoussable(r, c)) return [];
         return orthogonalNeighbors(r, c)
           .map(([nr, nc]) => characterAt(nr, nc))
           .filter(char => char && char.player === state.currentPlayer)
@@ -25582,7 +25595,8 @@
 
         const targetChar = characterAt(targetR, targetC);
         const targetCrown = looseArtifactAt(targetR, targetC);
-        if (!targetChar && !targetCrown) return null;
+        const targetPiece = targetChar || targetCrown ? null : poussableDuModeAt(targetR, targetC);
+        if (!targetChar && !targetCrown && !targetPiece) return null;
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
@@ -25616,6 +25630,10 @@
             });
             return;
           }
+          if (mv.kind !== "char") {
+            impacts.push({ type: mv.kind, id: mv.id, from: mv.from, to: mv.to, fell: false, icon: "🥚", color: "#f3ead8", carrying: false });
+            return;
+          }
           const char = characterById(mv.id);
           const owner = char ? joueurDuGardien(char) : null;
           impacts.push({
@@ -25639,8 +25657,8 @@
         if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
           const owner = targetChar ? joueurDuGardien(targetChar) : null;
           impacts.unshift({
-            type: targetChar ? "character" : "crown",
-            id: targetChar ? targetChar.id : targetCrown.id,
+            type: targetChar ? "character" : targetCrown ? "crown" : targetPiece.kind,
+            id: targetChar ? targetChar.id : targetCrown ? targetCrown.id : targetPiece.id,
             from: [targetR, targetC],
             to: null,
             fell: false,
@@ -25711,9 +25729,8 @@
         const pusher = characterById(state.selectedCharId);
         const distance = Math.abs(pusher.r - r) + Math.abs(pusher.c - c);
         const targetChar = characterAt(r, c);
-        const targetArtifact = looseArtifactAt(r, c);
 
-        if (distance !== 1 || (!targetChar && !targetArtifact)) {
+        if (distance !== 1 || !occupantPoussable(r, c)) {
           if (clickedChar && clickedChar.player === state.currentPlayer) {
             state.actionHoverCell = null;
             state.selectedCharId = clickedChar.id;
@@ -26521,6 +26538,7 @@
         <span
           class="v64-mini-card action-${(ACTIONS[card.action]?.type || card.action).toLowerCase()}${ACTIONS[card.action]?.type ? " carte-forte" : ""} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
           style="--card-index:${index}"
+          data-action="${card.action}"
           title="${ACTIONS[card.action]?.name || card.action}"
           aria-label="${ACTIONS[card.action]?.name || card.action}"
         ></span>
@@ -27588,11 +27606,14 @@
 
         const cible = characterAt(r, c);
         const couronne = cible ? null : looseArtifactAt(r, c);
-        if (!cible && !couronne) return null;
+        const piece = cible || couronne ? null : poussableDuModeAt(r, c);
+        if (!cible && !couronne && !piece) return null;
 
         const resultat = cible
           ? pushCharacter(cible, dr, dc, force, r, c)
-          : pushLooseArtifact(couronne, dr, dc, force, r, c);
+          : couronne
+            ? pushLooseArtifact(couronne, dr, dc, force, r, c)
+            : appliquerPousseeDepuis(r, c, dr, dc, force);
         if (!resultat) return null;
 
         const depense = consumeSelectedActionCore("PUSH", force);
@@ -27925,11 +27946,27 @@
            franchie. Elle plafonne du même coup tout ce qui la suit dans le bloc.
       ================================================================== */
 
+      /* Pièces poussables propres à un mode de jeu (œufs du mode Rotation) :
+         [{ kind, id, r, c, ref }]. Vide par défaut ; un fragment de mode la
+         remplace. Ces pièces FLOTTENT : poussées, elles survolent le vide,
+         ne tombent jamais et s'arrêtent au bord du plateau. */
+      function poussablesDuMode() {
+        return [];
+      }
+      function poussableDuModeAt(r, c) {
+        return poussablesDuMode().find(p => p.r === r && p.c === c) || null;
+      }
+      function poussableDuModeParId(id) {
+        return poussablesDuMode().find(p => String(p.id) === String(id)) || null;
+      }
+
       function occupantPoussable(r, c) {
         const gardien = characterAt(r, c);
         if (gardien) return { kind: "char", ref: gardien };
         const couronne = looseArtifactAt(r, c);
         if (couronne) return { kind: "crown", ref: couronne };
+        const piece = poussableDuModeAt(r, c);
+        if (piece) return { kind: piece.kind, ref: piece };
         return null;
       }
 
@@ -27974,6 +28011,7 @@
         activeArtifacts().forEach(a => {
           if (!a.carrierId && Number.isFinite(a.r)) occupees.add(key(a.r, a.c));
         });
+        poussablesDuMode().forEach(p => occupees.add(key(p.r, p.c)));
         bloc.forEach(m => occupees.delete(key(m.r, m.c)));
 
         const mouvements = [];
@@ -27997,6 +28035,24 @@
             const to = [m.r + dr * d, m.c + dc * d];
             occupees.add(key(to[0], to[1]));
             mouvements.push({ kind: "crown", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+            plafond = d;
+            continue;
+          }
+
+          if (m.kind !== "char") {
+            // Pièce flottante : elle survole le vide et s'arrête au bord.
+            let d = 0;
+            for (let pas = plafond; pas >= 1; pas--) {
+              const r = m.r + dr * pas;
+              const c = m.c + dc * pas;
+              if (!inside(r, c) || occupees.has(key(r, c))) continue;
+              d = pas;
+              break;
+            }
+            if (d <= 0) { plafond = 0; break; }
+            const to = [m.r + dr * d, m.c + dc * d];
+            occupees.add(key(to[0], to[1]));
+            mouvements.push({ kind: m.kind, id: m.ref.id, from: [m.r, m.c], to, chute: false });
             plafond = d;
             continue;
           }
@@ -28040,6 +28096,11 @@
             if (!couronne) continue;
             couronne.r = mv.to[0];
             couronne.c = mv.to[1];
+            continue;
+          }
+          if (mv.kind !== "char") {
+            const piece = poussableDuModeParId(mv.id);
+            if (piece?.ref) { piece.ref.r = mv.to[0]; piece.ref.c = mv.to[1]; }
             continue;
           }
           const gardien = characterById(mv.id);
@@ -36001,6 +36062,9 @@
          — À la fin de ton tour, chaque balise allumée où se tient un de tes
            gardiens te rapporte 1 point. Premier à 10 points.
          — Pas de couronnes : les deux restent hors du terrain.
+         — Deux balises sur quatre, tirées au hasard et marquées, sont
+           MOBILES : elles tournent avec l'île sur laquelle elles se trouvent
+           (magie). Les deux autres restent sur leur case.
          Le décompte se fait à l'ouverture du tour suivant, sur la position
          exacte où le joueur a fini — comme la validation des couronnes.
          ===================================================================== */
@@ -36104,12 +36168,35 @@
         Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,
           balises: rotationCasesBalises(),
+          mobiles: shuffle([0, 1, 2, 3]).slice(0, 2).sort(),
           dernierDecompte: 0
         });
         state.rules = { ...(state.rules || {}), disableSecondCrown: true };
         rotationRangerCouronnes();
         rotationIntituleBilan();
       }
+
+      function baliseMobile(i) {
+        return !!state?.rotation?.mobiles?.includes(i);
+      }
+
+      /* Balises mobiles : elles suivent la case de leur île pendant une
+         rotation (rotation.absCells garde l'ordre de ile.cells). Hors
+         simulation, comme les œufs : le clone du planner partage
+         state.rotation avec la vraie partie. */
+      const rotationMagieBase = applyMagicRotationCore;
+      applyMagicRotationCore = function applyMagicRotationCoreBalises(islandId, rotation) {
+        const actif = !ilyosSimulationActive && butBalises() && rotation?.valid && state.rotation.mobiles?.length;
+        const ile = actif ? state.islands.find(is => is.id === islandId) : null;
+        const suivantes = ile ? state.rotation.balises.map(([r, c], i) => {
+          if (!baliseMobile(i)) return null;
+          const k = ile.cells.findIndex(([cr, cc]) => cr === r && cc === c);
+          return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
+        }).filter(Boolean) : [];
+        const resultat = rotationMagieBase(islandId, rotation);
+        if (resultat) suivantes.forEach(({ i, vers }) => { state.rotation.balises[i] = [vers[0], vers[1]]; });
+        return resultat;
+      };
 
       /* Le bilan de fin compte des points, plus des couronnes. */
       function rotationIntituleBilan() {
@@ -36975,19 +37062,19 @@
 
          Règles (une ligne chacune) :
          — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
-           2 cases du sanctuaire, chacun avec le nombre de manches avant son
-           éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
-         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'il
-           touche une île : île dessous, ou sur une case voisine.
+           2 cases du sanctuaire, chacun avec le nombre de tours avant son
+           éclosion. Chaque fin de tour retire 1 à TOUS les œufs.
+         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'une
+           île est sous lui : la créature naît sur la case de l'œuf.
+         — Un œuf se pousse comme une couronne au sol, mais il flotte : il
+           survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
          — Un œuf bloque sa case : un gardien peut le traverser, jamais
            s'y arrêter en se déplaçant.
          — Une seule espèce par partie :
-             Loup : à chaque fin de manche, il avance d'une case vers le
+             Loup : à chaque fin de tour, il avance d'une case vers le
              gardien le plus proche ; s'il le touche déjà, il le pousse.
-             Vase : immobile ; un gardien qui finit son tour à côté d'elle
-             met une carte Boue (qui ne fait rien) dans la défausse de son
-             joueur.
+             (La Vase est retirée du jeu pour l'instant : Taekun, 2026-11-03.)
          — Une créature se fait tomber comme un gardien (poussée, magie).
            Celui qui l'a fait tomber est récompensé : avec le deckbuilding,
            un butin (carte du marché gratuite, ou exiler 2 cartes) ; sans,
@@ -37000,8 +37087,8 @@
          pack de créatures.
          ===================================================================== */
       const CREATURES = {
-        loup: { nom: "Loup", modele: "heroSkeletonRogue" },
-        vase: { nom: "Vase", modele: "heroSkeletonMage" }
+        loup: { nom: "Loup", modele: "heroSkeletonRogue" }
+        // vase: { nom: "Vase", modele: "heroSkeletonMage" } — retirée pour l'instant.
       };
       const CREATURES_DISTANCE_OEUFS = 2;
       /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
@@ -37030,9 +37117,10 @@
         };
       }
 
-      /** Manches restantes avant l'éclosion (chiffre affiché sur l'œuf). */
+      /** Tours restants avant l'éclosion (chiffre affiché sur l'œuf) : tous
+       *  les œufs perdent 1 à chaque fin de tour. */
       function oeufManches(oeuf) {
-        return Math.max(0, Math.ceil((oeuf.eclosion - (state?.turn || 1)) / 2));
+        return Math.max(0, oeuf.eclosion - (state?.turn || 1));
       }
 
       function creatureNom(char) {
@@ -37174,6 +37262,14 @@
          idiome que le porteur et la couronne au sol (core.js) : la règle
          passe par porteurBloqueParCouronne (chemin, déplacement, clic) et
          par movementRange (cases proposées, IA). */
+      /* Les œufs se poussent (règle unifiée, rules-core.js) : pièces
+         flottantes, jamais vues par la simulation du planner (le clone
+         partage state.rotation avec la vraie partie). */
+      poussablesDuMode = function poussablesOeufs() {
+        if (ilyosSimulationActive || !creaturesActives()) return [];
+        return (state.rotation.creatures?.oeufs || []).map(o => ({ kind: "egg", id: `oeuf-${o.id}`, r: o.r, c: o.c, ref: o }));
+      };
+
       function oeufSurCase(r, c) {
         return creaturesActives() && !!state.rotation.creatures?.oeufs?.some(o => o.r === r && o.c === c);
       }
@@ -37236,21 +37332,15 @@
         });
       }
 
-      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès qu'il
-         touche une île : île sous lui, sinon île sur une case voisine. La
-         créature naît sur l'œuf, sinon sur la case d'île voisine libre la
-         plus proche du centre. Pas d'île au contact : il attend. */
+      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès
+         qu'une île est sous lui : la créature naît sur la case de l'œuf,
+         jamais à côté. Sans île dessous (ou case occupée), il attend. */
       function oeufMur(oeuf) {
         return (state?.turn || 1) >= oeuf.eclosion;
       }
 
       function creaturesCaseNaissance(oeuf) {
-        if (islandAt(oeuf.r, oeuf.c)) return characterAt(oeuf.r, oeuf.c) ? null : [oeuf.r, oeuf.c];
-        const voisines = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-          .map(([dr, dc]) => [oeuf.r + dr, oeuf.c + dc])
-          .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
-          .sort((a, b) => (Math.abs(a[0] - CENTER.r) + Math.abs(a[1] - CENTER.c)) - (Math.abs(b[0] - CENTER.r) + Math.abs(b[1] - CENTER.c)));
-        return voisines[0] || null;
+        return islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
       function creaturesEclore() {
@@ -37260,7 +37350,7 @@
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
-          if (!naissance) return true; // aucune île au contact : il attend
+          if (!naissance) return true; // pas d'île dessous : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
           animateCellPulse(r, c, "crown-burst");
@@ -37326,8 +37416,8 @@
             const n = state.players.length;
             const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
             creaturesVase(precedentId);
-            // Fin de manche : la créature agit quand le premier joueur reprend la main.
-            if (state.currentPlayer === 0) creaturesLoups();
+            // Fin de tour : la créature agit à chaque tour, pas seulement par manche.
+            creaturesLoups();
             creaturesEclore();
           }
         }
@@ -37336,7 +37426,7 @@
         if (state && creaturesActives() && !state.rotation.creatures) {
           creaturesInstaller();
           if (!ilyosSimulationActive) {
-            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les manches avant l’éclosion."), 5200);
+            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les tours avant l’éclosion."), 5200);
             syncKayKitScene?.();
           }
         }
@@ -37501,7 +37591,30 @@
       window.ILYOS_ROTATION_CREATURES = {
         etat: () => (state?.rotation?.creatures ? JSON.parse(JSON.stringify(state.rotation.creatures)) : null),
         vivantes: () => creaturesVivantes().map(c => ({ id: c.id, espece: c.creature, r: c.r, c: c.c })),
-        butin: choix => creaturesPrendreButin(choix)
+        butin: choix => creaturesPrendreButin(choix),
+        /* Banc : poser un gardien sur une case (tests de poussée d'œuf). */
+        placer: (charId, r, c, joueur = null) => {
+          let g = characterById(charId);
+          if (!g && joueur !== null) { g = { id: charId, player: joueur, r, c }; state.characters.push(g); }
+          if (!g) return false;
+          g.r = r; g.c = c;
+          renderAll(); syncKayKitScene?.();
+          return true;
+        },
+        main: (joueur, actions) => {
+          const j = state?.players?.[joueur];
+          if (!j) return false;
+          j.hand = actions.map((action, i) => ({ id: `banc-${joueur}-${i}`, action, used: false }));
+          renderAll();
+          return true;
+        },
+        /* Banc : poser des cartes sur le dessus de la pioche (prochaine pioche). */
+        dessus: (joueur, actions) => {
+          const j = state?.players?.[joueur];
+          if (!j) return false;
+          actions.forEach((action, i) => j.deck.push({ id: `banc-d${joueur}-${i}`, action, used: false }));
+          return true;
+        }
       };
       /* =====================================================================
          TUTORIEL — « La Première Ascension »
