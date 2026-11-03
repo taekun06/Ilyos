@@ -9116,9 +9116,12 @@
         });
 
         lines.forEach(allOptions => {
-          const target = allOptions[0].targetType === "crown"
+          const type = allOptions[0].targetType || "character";
+          const target = type === "crown"
             ? artifactById(allOptions[0].targetId)
-            : characterById(allOptions[0].targetId);
+            : type === "character"
+              ? characterById(allOptions[0].targetId)
+              : poussableDuModeParId(allOptions[0].targetId);
           if (!target) return;
           /* Au repos : seulement les cases d'arrivée (anneau orange) et les
              chutes (halo rouge au-dessus du vide). Le résultat complet — tout

@@ -3,19 +3,19 @@
 
          Règles (une ligne chacune) :
          — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
-           2 cases du sanctuaire, chacun avec le nombre de manches avant son
-           éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
-         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'il
-           touche une île : île dessous, ou sur une case voisine.
+           2 cases du sanctuaire, chacun avec le nombre de tours avant son
+           éclosion. Chaque fin de tour retire 1 à TOUS les œufs.
+         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'une
+           île est sous lui : la créature naît sur la case de l'œuf.
+         — Un œuf se pousse comme une couronne au sol, mais il flotte : il
+           survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
          — Un œuf bloque sa case : un gardien peut le traverser, jamais
            s'y arrêter en se déplaçant.
          — Une seule espèce par partie :
-             Loup : à chaque fin de manche, il avance d'une case vers le
+             Loup : à chaque fin de tour, il avance d'une case vers le
              gardien le plus proche ; s'il le touche déjà, il le pousse.
-             Vase : immobile ; un gardien qui finit son tour à côté d'elle
-             met une carte Boue (qui ne fait rien) dans la défausse de son
-             joueur.
+             (La Vase est retirée du jeu pour l'instant : Taekun, 2026-11-03.)
          — Une créature se fait tomber comme un gardien (poussée, magie).
            Celui qui l'a fait tomber est récompensé : avec le deckbuilding,
            un butin (carte du marché gratuite, ou exiler 2 cartes) ; sans,
@@ -28,8 +28,8 @@
          pack de créatures.
          ===================================================================== */
       const CREATURES = {
-        loup: { nom: "Loup", modele: "heroSkeletonRogue" },
-        vase: { nom: "Vase", modele: "heroSkeletonMage" }
+        loup: { nom: "Loup", modele: "heroSkeletonRogue" }
+        // vase: { nom: "Vase", modele: "heroSkeletonMage" } — retirée pour l'instant.
       };
       const CREATURES_DISTANCE_OEUFS = 2;
       /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
@@ -58,9 +58,10 @@
         };
       }
 
-      /** Manches restantes avant l'éclosion (chiffre affiché sur l'œuf). */
+      /** Tours restants avant l'éclosion (chiffre affiché sur l'œuf) : tous
+       *  les œufs perdent 1 à chaque fin de tour. */
       function oeufManches(oeuf) {
-        return Math.max(0, Math.ceil((oeuf.eclosion - (state?.turn || 1)) / 2));
+        return Math.max(0, oeuf.eclosion - (state?.turn || 1));
       }
 
       function creatureNom(char) {
@@ -202,6 +203,14 @@
          idiome que le porteur et la couronne au sol (core.js) : la règle
          passe par porteurBloqueParCouronne (chemin, déplacement, clic) et
          par movementRange (cases proposées, IA). */
+      /* Les œufs se poussent (règle unifiée, rules-core.js) : pièces
+         flottantes, jamais vues par la simulation du planner (le clone
+         partage state.rotation avec la vraie partie). */
+      poussablesDuMode = function poussablesOeufs() {
+        if (ilyosSimulationActive || !creaturesActives()) return [];
+        return (state.rotation.creatures?.oeufs || []).map(o => ({ kind: "egg", id: `oeuf-${o.id}`, r: o.r, c: o.c, ref: o }));
+      };
+
       function oeufSurCase(r, c) {
         return creaturesActives() && !!state.rotation.creatures?.oeufs?.some(o => o.r === r && o.c === c);
       }
@@ -264,21 +273,15 @@
         });
       }
 
-      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès qu'il
-         touche une île : île sous lui, sinon île sur une case voisine. La
-         créature naît sur l'œuf, sinon sur la case d'île voisine libre la
-         plus proche du centre. Pas d'île au contact : il attend. */
+      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès
+         qu'une île est sous lui : la créature naît sur la case de l'œuf,
+         jamais à côté. Sans île dessous (ou case occupée), il attend. */
       function oeufMur(oeuf) {
         return (state?.turn || 1) >= oeuf.eclosion;
       }
 
       function creaturesCaseNaissance(oeuf) {
-        if (islandAt(oeuf.r, oeuf.c)) return characterAt(oeuf.r, oeuf.c) ? null : [oeuf.r, oeuf.c];
-        const voisines = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-          .map(([dr, dc]) => [oeuf.r + dr, oeuf.c + dc])
-          .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
-          .sort((a, b) => (Math.abs(a[0] - CENTER.r) + Math.abs(a[1] - CENTER.c)) - (Math.abs(b[0] - CENTER.r) + Math.abs(b[1] - CENTER.c)));
-        return voisines[0] || null;
+        return islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
       function creaturesEclore() {
@@ -288,7 +291,7 @@
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
-          if (!naissance) return true; // aucune île au contact : il attend
+          if (!naissance) return true; // pas d'île dessous : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
           animateCellPulse(r, c, "crown-burst");
@@ -354,8 +357,8 @@
             const n = state.players.length;
             const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
             creaturesVase(precedentId);
-            // Fin de manche : la créature agit quand le premier joueur reprend la main.
-            if (state.currentPlayer === 0) creaturesLoups();
+            // Fin de tour : la créature agit à chaque tour, pas seulement par manche.
+            creaturesLoups();
             creaturesEclore();
           }
         }
@@ -364,7 +367,7 @@
         if (state && creaturesActives() && !state.rotation.creatures) {
           creaturesInstaller();
           if (!ilyosSimulationActive) {
-            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les manches avant l’éclosion."), 5200);
+            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les tours avant l’éclosion."), 5200);
             syncKayKitScene?.();
           }
         }
@@ -413,25 +416,41 @@
         return texture;
       }
 
+      /* Œuf couché sur un nid ROND cerclé d'or : la forme
+         ronde ne se confond pas avec une case de sol
+         (Taekun, 2026-11-03). Tout est opaque : la transparence brouillait
+         la case. */
       function creaturesConstruireOeuf() {
         const groupe = new THREE.Group();
+        const nid = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-nid-rond", () => new THREE.CylinderGeometry(.36, .38, .06, 32)),
+          new THREE.MeshStandardMaterial({ color: 0x2f241b, roughness: .95, metalness: 0 })
+        );
+        nid.position.y = .03;
+        const bord = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-bord-rond", () => new THREE.TorusGeometry(.38, .035, 8, 40)),
+          new THREE.MeshStandardMaterial({ color: 0xe9cf8e, roughness: .6, metalness: .1 })
+        );
+        bord.rotation.x = Math.PI / 2;
+        bord.position.y = .06;
         const coquille = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-v1", () => new THREE.SphereGeometry(.17, 18, 14)),
           new THREE.MeshStandardMaterial({ color: 0xf3e3c0, roughness: .55, metalness: 0, emissive: 0x3a2a10, emissiveIntensity: .25 })
         );
-        coquille.scale.set(1, 1.32, 1);
-        coquille.position.y = .22;
+        // Couché : le grand axe à plat, posé dans le nid.
+        coquille.scale.set(1.75, 1.25, 1.3);
+        coquille.position.y = .06 + .2;
         const taches = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-taches-v1", () => new THREE.SphereGeometry(.172, 9, 7)),
-          new THREE.MeshBasicMaterial({ color: 0x6a8f5a, wireframe: true, transparent: true, opacity: .35 })
+          new THREE.MeshBasicMaterial({ color: 0xc9b07c, wireframe: true })
         );
         taches.scale.copy(coquille.scale);
         taches.position.copy(coquille.position);
         const chiffre = new THREE.Sprite(new THREE.SpriteMaterial({ map: creaturesTextureChiffre(0), depthTest: false, transparent: true }));
         chiffre.scale.set(.3, .3, 1);
-        chiffre.position.y = .23; // au centre de la coquille
+        chiffre.position.y = coquille.position.y + .02;
         chiffre.renderOrder = 20;
-        groupe.add(coquille, taches, chiffre);
+        groupe.add(coquille, taches, chiffre, nid, bord);
         groupe.userData.chiffre = chiffre;
         groupe.traverse(o => { o.raycast = () => {}; });
         return groupe;
@@ -479,12 +498,9 @@
             coquille.color.setHex(mur ? 0xc8261a : 0xf3e3c0);
             coquille.emissive.setHex(mur ? 0xff3a10 : 0x3a2a10);
             coquille.emissiveIntensity = mur ? .85 : .25;
-            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0x6a8f5a);
+            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0xc9b07c);
             visuel.userData.chiffre.visible = !mur;
           }
-          visuel.children[0].material.opacity = surIle || mur ? 1 : .7;
-          visuel.children[0].material.transparent = !(surIle || mur);
-          visuel.children[1].material.opacity = mur ? .8 : .35;
         });
         [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
       }
@@ -529,5 +545,28 @@
       window.ILYOS_ROTATION_CREATURES = {
         etat: () => (state?.rotation?.creatures ? JSON.parse(JSON.stringify(state.rotation.creatures)) : null),
         vivantes: () => creaturesVivantes().map(c => ({ id: c.id, espece: c.creature, r: c.r, c: c.c })),
-        butin: choix => creaturesPrendreButin(choix)
+        butin: choix => creaturesPrendreButin(choix),
+        /* Banc : poser un gardien sur une case (tests de poussée d'œuf). */
+        placer: (charId, r, c, joueur = null) => {
+          let g = characterById(charId);
+          if (!g && joueur !== null) { g = { id: charId, player: joueur, r, c }; state.characters.push(g); }
+          if (!g) return false;
+          g.r = r; g.c = c;
+          renderAll(); syncKayKitScene?.();
+          return true;
+        },
+        main: (joueur, actions) => {
+          const j = state?.players?.[joueur];
+          if (!j) return false;
+          j.hand = actions.map((action, i) => ({ id: `banc-${joueur}-${i}`, action, used: false }));
+          renderAll();
+          return true;
+        },
+        /* Banc : poser des cartes sur le dessus de la pioche (prochaine pioche). */
+        dessus: (joueur, actions) => {
+          const j = state?.players?.[joueur];
+          if (!j) return false;
+          actions.forEach((action, i) => j.deck.push({ id: `banc-d${joueur}-${i}`, action, used: false }));
+          return true;
+        }
       };

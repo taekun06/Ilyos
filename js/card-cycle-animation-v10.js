@@ -379,11 +379,19 @@
      en rotation — un chiffre n'y est pas lisible, il ne fait qu'encombrer la carte et
      brouiller son icône, qui est la seule information réellement utile à cette vitesse.
      Le compte exact reste affiché en permanence sur les boutons d'action du HUD. */
-  function makeCard(type, extraClass = '', count = 1, drawIndex = 0, drawTotal = 0) {
+  /* Carte du marché (mode Rotation : Élan, Bélier, Arcane…) : nom et valeur
+     viennent du jeu (window.ILYOS_CARTES_SPECIALES). Null pour une carte de
+     base. */
+  function specialeDe(action) {
+    const def = action ? (window.ILYOS_CARTES_SPECIALES || {})[action] : null;
+    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1 } : null;
+  }
+
+  function makeCard(type, extraClass = '', count = 1, drawIndex = 0, drawTotal = 0, speciale = null) {
     const meta = META[type] || META.MOVE;
     const isDraw = drawIndex > 0 && drawTotal > 0;
     const el = document.createElement('div');
-    el.className = `card-cycle-v7-card card-cycle-v10-card type-${type.toLowerCase()} ${extraClass}${count > 1 ? ' is-stack' : ''}${isDraw ? ' is-draw-back' : ''}`.trim();
+    el.className = `card-cycle-v7-card card-cycle-v10-card type-${type.toLowerCase()} ${extraClass}${count > 1 ? ' is-stack' : ''}${isDraw ? ' is-draw-back' : ''}${speciale ? ' is-speciale' : ''}`.trim();
     el.setAttribute('aria-hidden', 'true');
     /* Le dos ne porte plus un mot : un dos de carte est un MOTIF, pas une
        étiquette. « ILYOS » et « PIOCHE » y étaient gravés en 10 px et 6 px sur
@@ -399,6 +407,7 @@
       <b>${meta.label}</b>
       ${extraClass.includes('cc-detail') ? `<small class="cc-effet">${PIOCHE_EFFETS[type] || ''}</small>` : ''}
       <i class="card-cycle-v7-rune"></i>
+      ${speciale ? `<span class="cc-speciale"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b>${speciale.valeur > 1 ? `<em>×${speciale.valeur}</em>` : ''}</span>` : ''}
 `;
     document.body.appendChild(el);
     return el;
@@ -488,11 +497,14 @@
 
   async function runDeal(cards) {
     if (!isLocalVisualTurn()) return;
-    const types = cards.slice(0, 5).map(typeOf).filter(Boolean);
+    const tirees = cards.slice(0, 5).map(card => ({ type: typeOf(card), speciale: specialeDe(card?.dataset?.action) }))
+      .filter(t => t.type);
+    const types = tirees.map(t => t.type);
+    const speciales = tirees.map(t => t.speciale);
     if (!types.length) return;
     compterPartieSiNouvelle();
     if (piocheDetaillee()) {
-      await runDealDetaille(types);
+      await runDealDetaille(types, speciales);
       majPiles();
       return;
     }
@@ -530,7 +542,7 @@
     const source = deckSourceRect(cardW, cardH);
     const sourceHud = deckTarget();
     const ticket = openTicket();
-    const cardsGhost = types.map((type, index) => makeCard(type, 'showcase', 1, index + 1, types.length));
+    const cardsGhost = types.map((type, index) => makeCard(type, 'showcase', 1, index + 1, types.length, speciales[index]));
 
     sourceHud?.classList.add('card-cycle-v10-drawing');
     pulse(sourceHud, 'ov2-pile-hit');
@@ -617,10 +629,12 @@
     return el;
   }
 
-  function resumeTypes(types) {
+  function resumeTypes(types, speciales = []) {
     const n = { MOVE: 0, PUSH: 0, MAGIC: 0 };
     types.forEach(t => n[t]++);
-    return ['MOVE', 'PUSH', 'MAGIC'].filter(t => n[t]).map(t => `${n[t]} ${META[t].label.toLowerCase()}`).join(' · ');
+    const base = ['MOVE', 'PUSH', 'MAGIC'].filter(t => n[t]).map(t => `${n[t]} ${META[t].label.toLowerCase()}`).join(' · ');
+    const noms = speciales.filter(Boolean).map(s => s.nom);
+    return noms.length ? `${base} <i class="cc-pioche-speciales">dont ${noms.join(', ')}</i>` : base;
   }
 
   function attendreCompris(bouton, ticket) {
@@ -631,7 +645,7 @@
     });
   }
 
-  async function runDealDetaille(types) {
+  async function runDealDetaille(types, speciales = []) {
     const zoom = reglagesPioche().style === 'zoom';
     const premierTour = tourDuJoueur() === 1;
     const n = types.length;
@@ -706,7 +720,7 @@
 
     try {
       for (let i = 0; i < n; i++) {
-        const ghost = makeCard(types[i], 'showcase cc-detail', 1, i + 1, n);
+        const ghost = makeCard(types[i], 'showcase cc-detail', 1, i + 1, n, speciales[i]);
         ghosts.push(ghost);
         pulse(sourceHud, 'ov2-pile-hit');
         sonCarte();
@@ -750,7 +764,7 @@
       ghosts.forEach(g => g.classList.add('is-revealed'));
       if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal);
 
-      bas.innerHTML = `<span class="cc-pioche-resume">${resumeTypes(types)}</span>`
+      bas.innerHTML = `<span class="cc-pioche-resume">${resumeTypes(types, speciales)}</span>`
         + (premierTour
           ? `<small>Ces 5 cartes sont tes actions de ce tour. Elles vont dans les boutons du bas.</small><button type="button" class="cc-pioche-compris">Compris</button>`
           : `<small>Touche l’écran pour continuer</small>`);

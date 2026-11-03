@@ -9500,9 +9500,12 @@
         });
 
         lines.forEach(allOptions => {
-          const target = allOptions[0].targetType === "crown"
+          const type = allOptions[0].targetType || "character";
+          const target = type === "crown"
             ? artifactById(allOptions[0].targetId)
-            : characterById(allOptions[0].targetId);
+            : type === "character"
+              ? characterById(allOptions[0].targetId)
+              : poussableDuModeParId(allOptions[0].targetId);
           if (!target) return;
           /* Au repos : seulement les cases d'arrivée (anneau orange) et les
              chutes (halo rouge au-dessus du vide). Le résultat complet — tout
@@ -17016,7 +17019,7 @@
         if (!char || availableActionCount("PUSH") <= 0) return new Set();
         return new Set(
           orthogonalNeighbors(char.r, char.c)
-            .filter(([nr, nc]) => characterAt(nr, nc) || looseArtifactAt(nr, nc))
+            .filter(([nr, nc]) => occupantPoussable(nr, nc))
             .map(([nr, nc]) => key(nr, nc))
         );
       }
@@ -17078,7 +17081,7 @@
           return { type: "PICKUP", path: [] };
         }
 
-        if (adjacent && (targetChar || targetCrown) && availableActionCount("PUSH") > 0) {
+        if (adjacent && (targetChar || targetCrown || poussableDuModeAt(r, c)) && availableActionCount("PUSH") > 0) {
           return { type: "PUSH", path: [] };
         }
 
@@ -24052,7 +24055,7 @@
             const pusher = characterById(state.selectedCharId);
             valid = !!pusher
               && Math.abs(pusher.r - r) + Math.abs(pusher.c - c) === 1
-              && !!(characterAt(r, c) || looseArtifactAt(r, c));
+              && !!occupantPoussable(r, c);
           }
 
           const next = valid ? [r, c] : null;
@@ -24481,7 +24484,7 @@
               return;
             }
 
-            const target = characterAt(r, c) || looseArtifactAt(r, c);
+            const target = characterAt(r, c) || looseArtifactAt(r, c) || poussableDuModeAt(r, c);
             if (!target) return;
             const options = collectUnifiedPushOptions({
               pusherId: state.selectedCharId || null,
@@ -25079,7 +25082,8 @@
 
       function computePushOptionsForTarget(target, targetType = "character") {
         if (!state || !target || availableActionCount("PUSH") < 1) return [];
-        const targetsCrown = targetType === "crown";
+        // Couronne ou pièce d'un mode (œuf) : jamais de chute à montrer.
+        const targetsCrown = targetType !== "character";
 
         const pushers = orthogonalNeighbors(target.r, target.c)
           .map(([r, c]) => characterAt(r, c))
@@ -25144,6 +25148,13 @@
               options.push(normalized);
             });
           });
+        poussablesDuMode().forEach(target => {
+          if (targetId != null && String(target.id) !== String(targetId)) return;
+          computePushOptionsForTarget(target, target.kind).forEach(option => {
+            if (pusherId != null && String(option.pusherId) !== String(pusherId)) return;
+            options.push({ ...option, id: pushOptionKey(option) });
+          });
+        });
 
         const unique = new Map();
         options.forEach(option => {
@@ -25202,7 +25213,9 @@
         const pusher = characterById(option.pusherId);
         const target = option.targetType === "crown"
           ? artifactById(option.targetId)
-          : characterById(option.targetId);
+          : option.targetType === "character" || !option.targetType
+            ? characterById(option.targetId)
+            : poussableDuModeParId(option.targetId);
         if (!pusher || !target) {
           clearUnifiedPushOptions();
           return false;
@@ -25307,7 +25320,7 @@
       // nearestPusherForTarget() reste un simple raccourci sur le premier —
       // utilisé là où l'ambiguïté n'a pas d'importance (ex: validité de survol).
       function pushersForTarget(r, c) {
-        if (!characterAt(r, c) && !looseArtifactAt(r, c)) return [];
+        if (!occupantPoussable(r, c)) return [];
         return orthogonalNeighbors(r, c)
           .map(([nr, nc]) => characterAt(nr, nc))
           .filter(char => char && char.player === state.currentPlayer)
@@ -25582,7 +25595,8 @@
 
         const targetChar = characterAt(targetR, targetC);
         const targetCrown = looseArtifactAt(targetR, targetC);
-        if (!targetChar && !targetCrown) return null;
+        const targetPiece = targetChar || targetCrown ? null : poussableDuModeAt(targetR, targetC);
+        if (!targetChar && !targetCrown && !targetPiece) return null;
 
         const dr = targetR - pusher.r;
         const dc = targetC - pusher.c;
@@ -25616,6 +25630,10 @@
             });
             return;
           }
+          if (mv.kind !== "char") {
+            impacts.push({ type: mv.kind, id: mv.id, from: mv.from, to: mv.to, fell: false, icon: "🥚", color: "#f3ead8", carrying: false });
+            return;
+          }
           const char = characterById(mv.id);
           const owner = char ? joueurDuGardien(char) : null;
           impacts.push({
@@ -25639,8 +25657,8 @@
         if (!impacts.length || impacts[0].from[0] !== targetR || impacts[0].from[1] !== targetC) {
           const owner = targetChar ? joueurDuGardien(targetChar) : null;
           impacts.unshift({
-            type: targetChar ? "character" : "crown",
-            id: targetChar ? targetChar.id : targetCrown.id,
+            type: targetChar ? "character" : targetCrown ? "crown" : targetPiece.kind,
+            id: targetChar ? targetChar.id : targetCrown ? targetCrown.id : targetPiece.id,
             from: [targetR, targetC],
             to: null,
             fell: false,
@@ -25711,9 +25729,8 @@
         const pusher = characterById(state.selectedCharId);
         const distance = Math.abs(pusher.r - r) + Math.abs(pusher.c - c);
         const targetChar = characterAt(r, c);
-        const targetArtifact = looseArtifactAt(r, c);
 
-        if (distance !== 1 || (!targetChar && !targetArtifact)) {
+        if (distance !== 1 || !occupantPoussable(r, c)) {
           if (clickedChar && clickedChar.player === state.currentPlayer) {
             state.actionHoverCell = null;
             state.selectedCharId = clickedChar.id;
@@ -26521,6 +26538,7 @@
         <span
           class="v64-mini-card action-${(ACTIONS[card.action]?.type || card.action).toLowerCase()}${ACTIONS[card.action]?.type ? " carte-forte" : ""} ${mode === "deal" ? "deal-card" : ""} ${mode === "discard" ? "discard-card" : ""}"
           style="--card-index:${index}"
+          data-action="${card.action}"
           title="${ACTIONS[card.action]?.name || card.action}"
           aria-label="${ACTIONS[card.action]?.name || card.action}"
         ></span>
@@ -27588,11 +27606,14 @@
 
         const cible = characterAt(r, c);
         const couronne = cible ? null : looseArtifactAt(r, c);
-        if (!cible && !couronne) return null;
+        const piece = cible || couronne ? null : poussableDuModeAt(r, c);
+        if (!cible && !couronne && !piece) return null;
 
         const resultat = cible
           ? pushCharacter(cible, dr, dc, force, r, c)
-          : pushLooseArtifact(couronne, dr, dc, force, r, c);
+          : couronne
+            ? pushLooseArtifact(couronne, dr, dc, force, r, c)
+            : appliquerPousseeDepuis(r, c, dr, dc, force);
         if (!resultat) return null;
 
         const depense = consumeSelectedActionCore("PUSH", force);
@@ -27925,11 +27946,27 @@
            franchie. Elle plafonne du même coup tout ce qui la suit dans le bloc.
       ================================================================== */
 
+      /* Pièces poussables propres à un mode de jeu (œufs du mode Rotation) :
+         [{ kind, id, r, c, ref }]. Vide par défaut ; un fragment de mode la
+         remplace. Ces pièces FLOTTENT : poussées, elles survolent le vide,
+         ne tombent jamais et s'arrêtent au bord du plateau. */
+      function poussablesDuMode() {
+        return [];
+      }
+      function poussableDuModeAt(r, c) {
+        return poussablesDuMode().find(p => p.r === r && p.c === c) || null;
+      }
+      function poussableDuModeParId(id) {
+        return poussablesDuMode().find(p => String(p.id) === String(id)) || null;
+      }
+
       function occupantPoussable(r, c) {
         const gardien = characterAt(r, c);
         if (gardien) return { kind: "char", ref: gardien };
         const couronne = looseArtifactAt(r, c);
         if (couronne) return { kind: "crown", ref: couronne };
+        const piece = poussableDuModeAt(r, c);
+        if (piece) return { kind: piece.kind, ref: piece };
         return null;
       }
 
@@ -27974,6 +28011,7 @@
         activeArtifacts().forEach(a => {
           if (!a.carrierId && Number.isFinite(a.r)) occupees.add(key(a.r, a.c));
         });
+        poussablesDuMode().forEach(p => occupees.add(key(p.r, p.c)));
         bloc.forEach(m => occupees.delete(key(m.r, m.c)));
 
         const mouvements = [];
@@ -27997,6 +28035,24 @@
             const to = [m.r + dr * d, m.c + dc * d];
             occupees.add(key(to[0], to[1]));
             mouvements.push({ kind: "crown", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+            plafond = d;
+            continue;
+          }
+
+          if (m.kind !== "char") {
+            // Pièce flottante : elle survole le vide et s'arrête au bord.
+            let d = 0;
+            for (let pas = plafond; pas >= 1; pas--) {
+              const r = m.r + dr * pas;
+              const c = m.c + dc * pas;
+              if (!inside(r, c) || occupees.has(key(r, c))) continue;
+              d = pas;
+              break;
+            }
+            if (d <= 0) { plafond = 0; break; }
+            const to = [m.r + dr * d, m.c + dc * d];
+            occupees.add(key(to[0], to[1]));
+            mouvements.push({ kind: m.kind, id: m.ref.id, from: [m.r, m.c], to, chute: false });
             plafond = d;
             continue;
           }
@@ -28040,6 +28096,11 @@
             if (!couronne) continue;
             couronne.r = mv.to[0];
             couronne.c = mv.to[1];
+            continue;
+          }
+          if (mv.kind !== "char") {
+            const piece = poussableDuModeParId(mv.id);
+            if (piece?.ref) { piece.ref.r = mv.to[0]; piece.ref.c = mv.to[1]; }
             continue;
           }
           const gardien = characterById(mv.id);
@@ -36001,6 +36062,9 @@
          — À la fin de ton tour, chaque balise allumée où se tient un de tes
            gardiens te rapporte 1 point. Premier à 10 points.
          — Pas de couronnes : les deux restent hors du terrain.
+         — Deux balises sur quatre, tirées au hasard et marquées, sont
+           MOBILES : elles tournent avec l'île sur laquelle elles se trouvent
+           (magie). Les deux autres restent sur leur case.
          Le décompte se fait à l'ouverture du tour suivant, sur la position
          exacte où le joueur a fini — comme la validation des couronnes.
          ===================================================================== */
@@ -36104,12 +36168,35 @@
         Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,
           balises: rotationCasesBalises(),
+          mobiles: shuffle([0, 1, 2, 3]).slice(0, 2).sort(),
           dernierDecompte: 0
         });
         state.rules = { ...(state.rules || {}), disableSecondCrown: true };
         rotationRangerCouronnes();
         rotationIntituleBilan();
       }
+
+      function baliseMobile(i) {
+        return !!state?.rotation?.mobiles?.includes(i);
+      }
+
+      /* Balises mobiles : elles suivent la case de leur île pendant une
+         rotation (rotation.absCells garde l'ordre de ile.cells). Hors
+         simulation, comme les œufs : le clone du planner partage
+         state.rotation avec la vraie partie. */
+      const rotationMagieBase = applyMagicRotationCore;
+      applyMagicRotationCore = function applyMagicRotationCoreBalises(islandId, rotation) {
+        const actif = !ilyosSimulationActive && butBalises() && rotation?.valid && state.rotation.mobiles?.length;
+        const ile = actif ? state.islands.find(is => is.id === islandId) : null;
+        const suivantes = ile ? state.rotation.balises.map(([r, c], i) => {
+          if (!baliseMobile(i)) return null;
+          const k = ile.cells.findIndex(([cr, cc]) => cr === r && cc === c);
+          return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
+        }).filter(Boolean) : [];
+        const resultat = rotationMagieBase(islandId, rotation);
+        if (resultat) suivantes.forEach(({ i, vers }) => { state.rotation.balises[i] = [vers[0], vers[1]]; });
+        return resultat;
+      };
 
       /* Le bilan de fin compte des points, plus des couronnes. */
       function rotationIntituleBilan() {
@@ -36243,62 +36330,47 @@
         return butBalises() && !cfg.globalPlanning ? { ...cfg, globalPlanning: true } : cfg;
       };
 
-      /* RENDU 3D. Une balise est un cercle de runes au sol et une colonne de
-         lumière. Allumée : lumière claire, ou couleur du camp qui la tient.
-         Éteinte (au-dessus du vide) : un simple anneau pâle qui flotte, pour
-         qu'on voie où construire. Matériaux de base, sans lumière ajoutée ni
-         animation : rien ne tourne en continu. */
+      /* RENDU 3D des balises : matériaux de base, sans lumière ajoutée ni
+         animation (rien ne tourne en continu). */
       const ROTATION_BALISE_CLAIRE = 0x35c6f2;
       const ROTATION_BALISE_CONTOUR = 0x0d1b26;
 
-      /* Mélange normal partout : en additif, la lumière virait au blanc sur
-         l'herbe claire et le ciel, et cachait le gardien qui tient la balise. */
-      function rotationMateriau(couleur, opacite, { additif = false, alphaMap = null } = {}) {
-        return new THREE.MeshBasicMaterial({
-          color: couleur, transparent: true, opacity: opacite, alphaMap,
-          depthWrite: false, blending: additif ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide
-        });
-      }
-
-      /* Dégradés partagés : la colonne s'efface vers le haut, le halo vers
-         son bord. Deux petites toiles, créées une fois. */
-      let rotationDegrades = null;
-      function rotationTexturesDegrade() {
-        if (rotationDegrades) return rotationDegrades;
-        const vertical = document.createElement("canvas");
-        vertical.width = 4; vertical.height = 64;
-        let ctx = vertical.getContext("2d");
-        let g = ctx.createLinearGradient(0, 64, 0, 0);
-        g.addColorStop(0, "#fff"); g.addColorStop(.35, "#888"); g.addColorStop(.85, "#000");
-        ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 64);
-        const radial = document.createElement("canvas");
-        radial.width = radial.height = 64;
-        ctx = radial.getContext("2d");
-        g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
-        g.addColorStop(0, "#fff"); g.addColorStop(.7, "#aaa"); g.addColorStop(1, "#000");
-        ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
-        rotationDegrades = { vertical: new THREE.CanvasTexture(vertical), radial: new THREE.CanvasTexture(radial) };
-        return rotationDegrades;
-      }
-
-      function rotationConstruireBalise() {
-        const { vertical, radial } = rotationTexturesDegrade();
+      /* Balise CARRÉE et opaque (Taekun, 2026-11-03) : un cadre qui longe
+         les bords de sa case et quatre bornes aux coins. Plus de colonne de
+         lumière transparente. Une balise MOBILE (qui tourne avec son île)
+         porte en plus un losange au centre. */
+      function rotationConstruireBalise(mobile) {
         const groupe = new THREE.Group();
-        const aplat = mesh => { mesh.rotation.x = -Math.PI / 2; return mesh; };
-        // Contour sombre puis anneau franc : lisible sur tout fond.
-        const runes = aplat(new THREE.Mesh(new THREE.RingGeometry(.4, .47, 48), rotationMateriau(ROTATION_BALISE_CONTOUR, .55)));
-        const sol = aplat(new THREE.Mesh(new THREE.RingGeometry(.31, .42, 48), rotationMateriau(ROTATION_BALISE_CLAIRE, .95)));
-        sol.position.y = .003;
-        const halo = aplat(new THREE.Mesh(new THREE.CircleGeometry(.31, 40), rotationMateriau(ROTATION_BALISE_CLAIRE, .4, { alphaMap: radial })));
-        halo.position.y = .002;
-        // Lumière plus basse et plus fine : elle signale sans aveugler le gardien.
-        const colonne = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, 1.5, 32, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .3, { alphaMap: vertical }));
-        colonne.position.y = .75;
-        const coeur = new THREE.Mesh(new THREE.CylinderGeometry(.035, .05, 2.2, 10, 1, true), rotationMateriau(ROTATION_BALISE_CLAIRE, .55, { alphaMap: vertical }));
-        coeur.position.y = 1.1;
-        groupe.add(runes, sol, halo, colonne, coeur);
-        groupe.userData.rotationParties = { sol, runes, halo, colonne, coeur };
-        groupe.renderOrder = 4;
+        const matiere = couleur => new THREE.MeshStandardMaterial({ color: couleur, roughness: .55, metalness: .15, emissive: couleur, emissiveIntensity: .35 });
+        const cadreMat = matiere(ROTATION_BALISE_CLAIRE);
+        const contourMat = new THREE.MeshStandardMaterial({ color: ROTATION_BALISE_CONTOUR, roughness: .8 });
+        const cadre = new THREE.Group();
+        const L = .9, e = .08, h = .06;
+        [[0, -L / 2 + e / 2, L, e], [0, L / 2 - e / 2, L, e], [-L / 2 + e / 2, 0, e, L - 2 * e], [L / 2 - e / 2, 0, e, L - 2 * e]].forEach(([x, z, w, d]) => {
+          const barre = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cadreMat);
+          barre.position.set(x, h / 2, z);
+          const ombre = new THREE.Mesh(new THREE.BoxGeometry(w + .03, h * .6, d + .03), contourMat);
+          ombre.position.set(x, h * .3, z);
+          cadre.add(ombre, barre);
+        });
+        const bornes = new THREE.Group();
+        [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+          const borne = new THREE.Mesh(new THREE.BoxGeometry(.13, .26, .13), cadreMat);
+          borne.position.set(sx * (L / 2 - .065), .13, sz * (L / 2 - .065));
+          const chapeau = new THREE.Mesh(new THREE.ConeGeometry(.1, .1, 4), cadreMat);
+          chapeau.rotation.y = Math.PI / 4;
+          chapeau.position.set(borne.position.x, .31, borne.position.z);
+          bornes.add(borne, chapeau);
+        });
+        groupe.add(cadre, bornes);
+        let losange = null;
+        if (mobile) {
+          losange = new THREE.Mesh(new THREE.BoxGeometry(.24, .04, .24), cadreMat);
+          losange.rotation.y = Math.PI / 4;
+          losange.position.y = .02;
+          groupe.add(losange);
+        }
+        groupe.userData.rotationParties = { cadreMat, bornes, losange };
         return groupe;
       }
 
@@ -36314,7 +36386,7 @@
         if (!kaykit3D.rotationBalises || !kaykit3D.rotationBalises.parent) {
           const groupe = new THREE.Group();
           groupe.name = "rotation-balises";
-          state.rotation.balises.forEach(() => groupe.add(rotationConstruireBalise()));
+          state.rotation.balises.forEach((_, i) => groupe.add(rotationConstruireBalise(baliseMobile(i))));
           kaykit3D.dynamicGroup.add(groupe);
           kaykit3D.rotationBalises = groupe;
         }
@@ -36323,25 +36395,18 @@
           if (!balise) return;
           const allumee = baliseAllumee(r, c);
           const g = allumee ? gardienSurBalise(r, c) : null;
-          const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex() : ROTATION_BALISE_CLAIRE;
+          /* Éteinte (au-dessus du vide) : cadre gris-bleu, sans bornes, posé
+             sur la grille. Allumée libre : cyan. Tenue : couleur du camp. */
+          const couleur = g ? new THREE.Color(state.players[g.player]?.color || ROTATION_BALISE_CLAIRE).getHex()
+            : allumee ? ROTATION_BALISE_CLAIRE : 0x5d7a8c;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
-          // Case vide : la balise repose sur la grille, à hauteur du dessus des îles.
-          balise.position.set(p.x, allumee ? p.y + .05 : KAYKIT_LEVELS.islandTop + .02, p.z);
-          const { sol, runes, halo, colonne, coeur } = balise.userData.rotationParties;
-          [sol, halo, colonne, coeur].forEach(m => m.material.color.setHex(couleur));
-          /* Éteinte : anneau pâle, pour voir où construire. Allumée libre :
-             anneau cyan franc et lumière. Tenue : tout à la couleur du camp,
-             halo au sol plein, lumière plus haute. */
-          sol.material.opacity = allumee ? .95 : .45;
-          runes.material.opacity = allumee ? .55 : .25;
-          halo.visible = allumee;
-          halo.material.opacity = g ? .45 : .25;
-          colonne.visible = allumee;
-          coeur.visible = allumee;
-          colonne.material.opacity = g ? .6 : .45;
-          colonne.scale.y = g ? 1.25 : 1;
-          colonne.position.y = .75 * colonne.scale.y;
-          coeur.material.opacity = g ? .85 : .65;
+          balise.position.set(p.x, allumee ? p.y + .005 : KAYKIT_LEVELS.islandTop + .01, p.z);
+          const { cadreMat, bornes } = balise.userData.rotationParties;
+          cadreMat.color.setHex(couleur);
+          cadreMat.emissive.setHex(couleur);
+          cadreMat.emissiveIntensity = g ? .5 : allumee ? .35 : .1;
+          bornes.visible = allumee;
+          bornes.scale.y = g ? 1.35 : 1;
         });
       }
 
@@ -36393,20 +36458,28 @@
         ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer" },
         BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser" },
         ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie" },
+        /* Bond (doc des nouvelles cartes, validé par Taekun) : vaut 1
+           Déplacer, ou un SAUT par-dessus une case (gardien, œuf ou vide)
+           vers la case juste derrière, sur une île libre. */
+        BOND: { type: "MOVE", valeur: 1, saut: true, nom: "Bond", effet: "Saute par-dessus une case" },
         MOVE: { type: "MOVE", valeur: 1, nom: "Déplacer", effet: "1 case" },
         PUSH: { type: "PUSH", valeur: 1, nom: "Pousser", effet: "Force 1" },
         MAGIC: { type: "MAGIC", valeur: 1, nom: "Magie", effet: "Tourne une île" }
       };
       /* Nom et type affichés des cartes fortes (pioche, défausse, infobulles). */
+      /* Carte du marché à part (forte ou à pouvoir) : nom d'action propre. */
+      function defSpeciale(def) {
+        return !!def && (def.valeur > 1 || !!def.saut);
+      }
       Object.entries(PAQUET_CARTES).forEach(([cle, def]) => {
-        if (def.valeur > 1) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
+        if (defSpeciale(def)) ACTIONS[cle] = { ...ACTIONS[def.type], name: def.nom, desc: def.effet, type: def.type };
       });
       ACTIONS.BOUE = { name: "Boue", icon: "🟫", desc: "Ne fait rien : affine ton paquet pour t’en débarrasser.", bg: "#5a4a32" };
-      /* 19 cartes : 3 au marché et 9 révélées au choix de départ, dont 3
+      /* 22 cartes : 3 au marché et 9 révélées au choix de départ, dont 3
          reviennent sous la pile en duel. */
       const PAQUET_PILE_MARCHE = [
         "ELAN", "ELAN", "ELAN", "ELAN", "BELIER", "BELIER", "BELIER", "BELIER",
-        "ARCANE", "ARCANE", "ARCANE",
+        "ARCANE", "ARCANE", "ARCANE", "BOND", "BOND", "BOND",
         "PUSH", "PUSH", "PUSH", "PUSH", "MAGIC", "MAGIC", "MAGIC", "MAGIC"
       ];
       const PAQUET_PRIX = 2;
@@ -36418,7 +36491,7 @@
       }
 
       function carteForte(carte) {
-        return !!carte && carte.action in PAQUET_CARTES && PAQUET_CARTES[carte.action].valeur > 1;
+        return !!carte && carte.action in PAQUET_CARTES && defSpeciale(PAQUET_CARTES[carte.action]);
       }
 
       /** Cartes fortes de ce type encore chargées dans la main. */
@@ -36457,8 +36530,12 @@
         const demande = reste;
         let forte = false;
         /* Les cartes fortes d'abord : elles ne peuvent pas aller en réserve,
-           les cartes simples si. */
-        for (const carte of paquetCartesFortes(type, player)) {
+           les cartes simples si. Un Bond passe en premier pour un saut, en
+           dernier sinon (on le garde pour sauter). */
+        const fortes = paquetCartesFortes(type, player)
+          .sort((a, b) => (PAQUET_CARTES[a.action].saut ? 1 : 0) - (PAQUET_CARTES[b.action].saut ? 1 : 0));
+        if (paquetSautEnCours) fortes.reverse();
+        for (const carte of fortes) {
           if (reste <= 0) break;
           const charge = carte.restant ?? PAQUET_CARTES[carte.action].valeur;
           const pris = Math.min(reste, charge);
@@ -36474,6 +36551,69 @@
         if (reste > 0) reste -= paquetConsumeBase(type, reste, player);
         if (forte) carteJoueeEnvol(type, player);
         return demande - reste;
+      };
+
+      /* ---------- Bond : le saut ---------------------------------------- */
+      let paquetSautEnCours = false;
+
+      /** Le joueur de ce gardien a-t-il un Bond chargé en main ? */
+      function paquetBondDispo(char) {
+        if (!paquetActif() || !char || char.creature) return false;
+        const joueur = state.players?.[char.player];
+        return (joueur?.hand || []).some(c => PAQUET_CARTES[c.action]?.saut && (c.restant ?? 1) > 0);
+      }
+
+      /** Cases d'arrivée d'un saut depuis la case du gardien : deux cases en
+       *  ligne droite, par-dessus n'importe quelle case, sur une île libre. */
+      function paquetCasesSaut(char) {
+        if (!paquetBondDispo(char)) return [];
+        return [[-1, 0], [1, 0], [0, -1], [0, 1]]
+          .map(([dr, dc]) => [char.r + 2 * dr, char.c + 2 * dc])
+          .filter(([r, c]) => inside(r, c) && isLand(r, c) && !characterAt(r, c) && !porteurBloqueParCouronne(char, r, c));
+      }
+
+      function paquetEstSaut(char, r, c, cout) {
+        if (cout !== 1 || !char) return false;
+        const dr = r - char.r, dc = c - char.c;
+        if (!((Math.abs(dr) === 2 && dc === 0) || (Math.abs(dc) === 2 && dr === 0))) return false;
+        return paquetCasesSaut(char).some(([sr, sc]) => sr === r && sc === c);
+      }
+
+      const paquetPorteeBase = movementRange;
+      movementRange = function movementRangeBond(char, maxCost) {
+        const portee = paquetPorteeBase(char, maxCost);
+        if (maxCost < 1) return portee;
+        paquetCasesSaut(char).forEach(([r, c]) => {
+          const k = key(r, c);
+          if (portee.has(k) && (portee.costs?.get(k) ?? Infinity) <= 1) return;
+          portee.add(k);
+          portee.costs?.set(k, 1);
+        });
+        return portee;
+      };
+
+      const paquetCheminBase = shortestMovementPath;
+      shortestMovementPath = function shortestMovementPathBond(char, r, c, maxCost) {
+        const chemin = paquetCheminBase(char, r, c, maxCost);
+        const coutChemin = chemin ? chemin.reduce((t, pas) => t + (pas.stepCost || 1), 0) : Infinity;
+        if (maxCost >= 1 && coutChemin > 1 && paquetCasesSaut(char).some(([sr, sc]) => sr === r && sc === c)) {
+          // Un seul pas, la case sautée n'est pas traversée.
+          return [{ r, c, diagonal: false, stepCost: 1, saut: true }];
+        }
+        return chemin;
+      };
+
+      const paquetMoveCoreBase = applyMoveCore;
+      applyMoveCore = function applyMoveCoreBond(charId, r, c, cost) {
+        const saut = paquetEstSaut(characterById(charId), r, c, cost);
+        paquetSautEnCours = saut;
+        try {
+          const resultat = paquetMoveCoreBase(charId, r, c, cost);
+          if (resultat && saut) resultat.saut = true;
+          return resultat;
+        } finally {
+          paquetSautEnCours = false;
+        }
       };
 
       /* Une carte forte piochée repart pleine. */
@@ -36555,7 +36695,7 @@
       /* L'IA achète en fin de tour, avec les cartes de sa main que son plan
          n'a pas jouées. Choix simple et lisible : la carte la plus forte,
          en préférant le type dont son paquet manque le plus. */
-      const PAQUET_PRIORITE = { BELIER: 6, ELAN: 5, ARCANE: 5, MAGIC: 3, PUSH: 2, MOVE: 0 };
+      const PAQUET_PRIORITE = { BELIER: 6, ELAN: 5, ARCANE: 5, BOND: 4, MAGIC: 3, PUSH: 2, MOVE: 0 };
       function plannerChoisirAchat(playerId) {
         const player = state?.players?.[playerId];
         if (paquetRefusAchat(player)) return null;
@@ -36845,7 +36985,7 @@
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
               ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
         paquetPanneau.classList.toggle("butin", !!butin);
@@ -36900,7 +37040,7 @@
           return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}${prise ? " prise" : ""}" data-choix="${i}"
               ${ia || prise ? "disabled" : ""} ${preneur ? `style="--pc:${preneur.color}"` : ""}
               title="${preneur ? `Prise par ${defaitesEchapper(preneur.name)}` : `Prendre ${def.nom} (remplace un Déplacer)`}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i>${preneur ? `<u>${defaitesEchapper(preneur.name)}</u>` : ""}</button>`;
         }).join("");
         const pris = state.players.map(p => {
@@ -36953,7 +37093,7 @@
       /* Noms des cartes du marché pour les panneaux Pioche / Défausse
          (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
       window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
-        ...Object.entries(PAQUET_CARTES).filter(([, def]) => def.valeur > 1)
+        ...Object.entries(PAQUET_CARTES).filter(([, def]) => defSpeciale(def))
           .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet }]),
         ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
       ]);
@@ -36964,6 +37104,9 @@
         refus: () => paquetRefusAchat(),
         choix: () => (state?.rotation?.choix ? JSON.parse(JSON.stringify(state.rotation.choix)) : null),
         prendre: index => choixPrendre(index),
+        /* Banc du Bond : cases de saut d'un gardien, puis le geste complet. */
+        sauts: charId => paquetCasesSaut(characterById(charId)),
+        deplacer: (charId, r, c) => performMoveToCell(characterById(charId), r, c),
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
@@ -36975,19 +37118,19 @@
 
          Règles (une ligne chacune) :
          — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
-           2 cases du sanctuaire, chacun avec le nombre de manches avant son
-           éclosion. Ils éclosent à tour de rôle entre les deux joueurs.
-         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'il
-           touche une île : île dessous, ou sur une case voisine.
+           2 cases du sanctuaire, chacun avec le nombre de tours avant son
+           éclosion. Chaque fin de tour retire 1 à TOUS les œufs.
+         — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'une
+           île est sous lui : la créature naît sur la case de l'œuf.
+         — Un œuf se pousse comme une couronne au sol, mais il flotte : il
+           survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
          — Un œuf bloque sa case : un gardien peut le traverser, jamais
            s'y arrêter en se déplaçant.
          — Une seule espèce par partie :
-             Loup : à chaque fin de manche, il avance d'une case vers le
+             Loup : à chaque fin de tour, il avance d'une case vers le
              gardien le plus proche ; s'il le touche déjà, il le pousse.
-             Vase : immobile ; un gardien qui finit son tour à côté d'elle
-             met une carte Boue (qui ne fait rien) dans la défausse de son
-             joueur.
+             (La Vase est retirée du jeu pour l'instant : Taekun, 2026-11-03.)
          — Une créature se fait tomber comme un gardien (poussée, magie).
            Celui qui l'a fait tomber est récompensé : avec le deckbuilding,
            un butin (carte du marché gratuite, ou exiler 2 cartes) ; sans,
@@ -37000,8 +37143,8 @@
          pack de créatures.
          ===================================================================== */
       const CREATURES = {
-        loup: { nom: "Loup", modele: "heroSkeletonRogue" },
-        vase: { nom: "Vase", modele: "heroSkeletonMage" }
+        loup: { nom: "Loup", modele: "heroSkeletonRogue" }
+        // vase: { nom: "Vase", modele: "heroSkeletonMage" } — retirée pour l'instant.
       };
       const CREATURES_DISTANCE_OEUFS = 2;
       /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
@@ -37030,9 +37173,10 @@
         };
       }
 
-      /** Manches restantes avant l'éclosion (chiffre affiché sur l'œuf). */
+      /** Tours restants avant l'éclosion (chiffre affiché sur l'œuf) : tous
+       *  les œufs perdent 1 à chaque fin de tour. */
       function oeufManches(oeuf) {
-        return Math.max(0, Math.ceil((oeuf.eclosion - (state?.turn || 1)) / 2));
+        return Math.max(0, oeuf.eclosion - (state?.turn || 1));
       }
 
       function creatureNom(char) {
@@ -37174,6 +37318,14 @@
          idiome que le porteur et la couronne au sol (core.js) : la règle
          passe par porteurBloqueParCouronne (chemin, déplacement, clic) et
          par movementRange (cases proposées, IA). */
+      /* Les œufs se poussent (règle unifiée, rules-core.js) : pièces
+         flottantes, jamais vues par la simulation du planner (le clone
+         partage state.rotation avec la vraie partie). */
+      poussablesDuMode = function poussablesOeufs() {
+        if (ilyosSimulationActive || !creaturesActives()) return [];
+        return (state.rotation.creatures?.oeufs || []).map(o => ({ kind: "egg", id: `oeuf-${o.id}`, r: o.r, c: o.c, ref: o }));
+      };
+
       function oeufSurCase(r, c) {
         return creaturesActives() && !!state.rotation.creatures?.oeufs?.some(o => o.r === r && o.c === c);
       }
@@ -37236,21 +37388,15 @@
         });
       }
 
-      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès qu'il
-         touche une île : île sous lui, sinon île sur une case voisine. La
-         créature naît sur l'œuf, sinon sur la case d'île voisine libre la
-         plus proche du centre. Pas d'île au contact : il attend. */
+      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès
+         qu'une île est sous lui : la créature naît sur la case de l'œuf,
+         jamais à côté. Sans île dessous (ou case occupée), il attend. */
       function oeufMur(oeuf) {
         return (state?.turn || 1) >= oeuf.eclosion;
       }
 
       function creaturesCaseNaissance(oeuf) {
-        if (islandAt(oeuf.r, oeuf.c)) return characterAt(oeuf.r, oeuf.c) ? null : [oeuf.r, oeuf.c];
-        const voisines = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-          .map(([dr, dc]) => [oeuf.r + dr, oeuf.c + dc])
-          .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
-          .sort((a, b) => (Math.abs(a[0] - CENTER.r) + Math.abs(a[1] - CENTER.c)) - (Math.abs(b[0] - CENTER.r) + Math.abs(b[1] - CENTER.c)));
-        return voisines[0] || null;
+        return islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
       function creaturesEclore() {
@@ -37260,7 +37406,7 @@
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
-          if (!naissance) return true; // aucune île au contact : il attend
+          if (!naissance) return true; // pas d'île dessous : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
           animateCellPulse(r, c, "crown-burst");
@@ -37326,8 +37472,8 @@
             const n = state.players.length;
             const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
             creaturesVase(precedentId);
-            // Fin de manche : la créature agit quand le premier joueur reprend la main.
-            if (state.currentPlayer === 0) creaturesLoups();
+            // Fin de tour : la créature agit à chaque tour, pas seulement par manche.
+            creaturesLoups();
             creaturesEclore();
           }
         }
@@ -37336,7 +37482,7 @@
         if (state && creaturesActives() && !state.rotation.creatures) {
           creaturesInstaller();
           if (!ilyosSimulationActive) {
-            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les manches avant l’éclosion."), 5200);
+            setTimeout(() => showToast("Œufs sur la croix : le chiffre donne les tours avant l’éclosion."), 5200);
             syncKayKitScene?.();
           }
         }
@@ -37385,25 +37531,41 @@
         return texture;
       }
 
+      /* Œuf couché sur un nid ROND cerclé d'or : la forme
+         ronde ne se confond pas avec une case de sol
+         (Taekun, 2026-11-03). Tout est opaque : la transparence brouillait
+         la case. */
       function creaturesConstruireOeuf() {
         const groupe = new THREE.Group();
+        const nid = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-nid-rond", () => new THREE.CylinderGeometry(.36, .38, .06, 32)),
+          new THREE.MeshStandardMaterial({ color: 0x2f241b, roughness: .95, metalness: 0 })
+        );
+        nid.position.y = .03;
+        const bord = new THREE.Mesh(
+          kaykitGeometry("rotation-oeuf-bord-rond", () => new THREE.TorusGeometry(.38, .035, 8, 40)),
+          new THREE.MeshStandardMaterial({ color: 0xe9cf8e, roughness: .6, metalness: .1 })
+        );
+        bord.rotation.x = Math.PI / 2;
+        bord.position.y = .06;
         const coquille = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-v1", () => new THREE.SphereGeometry(.17, 18, 14)),
           new THREE.MeshStandardMaterial({ color: 0xf3e3c0, roughness: .55, metalness: 0, emissive: 0x3a2a10, emissiveIntensity: .25 })
         );
-        coquille.scale.set(1, 1.32, 1);
-        coquille.position.y = .22;
+        // Couché : le grand axe à plat, posé dans le nid.
+        coquille.scale.set(1.75, 1.25, 1.3);
+        coquille.position.y = .06 + .2;
         const taches = new THREE.Mesh(
           kaykitGeometry("rotation-oeuf-taches-v1", () => new THREE.SphereGeometry(.172, 9, 7)),
-          new THREE.MeshBasicMaterial({ color: 0x6a8f5a, wireframe: true, transparent: true, opacity: .35 })
+          new THREE.MeshBasicMaterial({ color: 0xc9b07c, wireframe: true })
         );
         taches.scale.copy(coquille.scale);
         taches.position.copy(coquille.position);
         const chiffre = new THREE.Sprite(new THREE.SpriteMaterial({ map: creaturesTextureChiffre(0), depthTest: false, transparent: true }));
         chiffre.scale.set(.3, .3, 1);
-        chiffre.position.y = .23; // au centre de la coquille
+        chiffre.position.y = coquille.position.y + .02;
         chiffre.renderOrder = 20;
-        groupe.add(coquille, taches, chiffre);
+        groupe.add(coquille, taches, chiffre, nid, bord);
         groupe.userData.chiffre = chiffre;
         groupe.traverse(o => { o.raycast = () => {}; });
         return groupe;
@@ -37451,12 +37613,9 @@
             coquille.color.setHex(mur ? 0xc8261a : 0xf3e3c0);
             coquille.emissive.setHex(mur ? 0xff3a10 : 0x3a2a10);
             coquille.emissiveIntensity = mur ? .85 : .25;
-            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0x6a8f5a);
+            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0xc9b07c);
             visuel.userData.chiffre.visible = !mur;
           }
-          visuel.children[0].material.opacity = surIle || mur ? 1 : .7;
-          visuel.children[0].material.transparent = !(surIle || mur);
-          visuel.children[1].material.opacity = mur ? .8 : .35;
         });
         [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
       }
@@ -37501,7 +37660,30 @@
       window.ILYOS_ROTATION_CREATURES = {
         etat: () => (state?.rotation?.creatures ? JSON.parse(JSON.stringify(state.rotation.creatures)) : null),
         vivantes: () => creaturesVivantes().map(c => ({ id: c.id, espece: c.creature, r: c.r, c: c.c })),
-        butin: choix => creaturesPrendreButin(choix)
+        butin: choix => creaturesPrendreButin(choix),
+        /* Banc : poser un gardien sur une case (tests de poussée d'œuf). */
+        placer: (charId, r, c, joueur = null) => {
+          let g = characterById(charId);
+          if (!g && joueur !== null) { g = { id: charId, player: joueur, r, c }; state.characters.push(g); }
+          if (!g) return false;
+          g.r = r; g.c = c;
+          renderAll(); syncKayKitScene?.();
+          return true;
+        },
+        main: (joueur, actions) => {
+          const j = state?.players?.[joueur];
+          if (!j) return false;
+          j.hand = actions.map((action, i) => ({ id: `banc-${joueur}-${i}`, action, used: false }));
+          renderAll();
+          return true;
+        },
+        /* Banc : poser des cartes sur le dessus de la pioche (prochaine pioche). */
+        dessus: (joueur, actions) => {
+          const j = state?.players?.[joueur];
+          if (!j) return false;
+          actions.forEach((action, i) => j.deck.push({ id: `banc-d${joueur}-${i}`, action, used: false }));
+          return true;
+        }
       };
       /* =====================================================================
          TUTORIEL — « La Première Ascension »
