@@ -311,8 +311,16 @@
         if (!cle) return;
         choixMinuteur = setTimeout(() => {
           choixMinuteurCle = null;
-          const decision = choixJoueurAuTrait()?.id === joueur.id ? plannerChoisirDepart(joueur.id) : null;
-          if (decision) choixPrendre(decision.index);
+          /* Pendant une réflexion simulée, `state` peut être une copie : on
+             retente un peu plus tard au lieu de perdre le tour du CPU. Et si
+             le choix n'a pas abouti, on reprogramme : sans nouveau rendu,
+             rien d'autre ne relancerait le CPU (panneau « CPU choisit… »
+             figé). */
+          if (!ilyosSimulationActive) {
+            const decision = choixJoueurAuTrait()?.id === joueur.id ? plannerChoisirDepart(joueur.id) : null;
+            if (decision) choixPrendre(decision.index);
+          }
+          if (state && choixEnCours() && choixJoueurAuTrait()?.isAI) setTimeout(choixProgrammerIA, 300);
         }, 900);
       }
 
