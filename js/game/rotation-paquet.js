@@ -266,6 +266,14 @@
         if (!ilyosSimulationActive) {
           playSfx("crownTake");
           showToast(`${player.name} prend ${PAQUET_CARTES[action].nom}.`);
+          if (choix.fini && choix.ouvertureEnAttente) {
+            // Dernière carte prise : la partie commence vraiment (pioche,
+            // annonce du tour, ordinateur s'il ouvre).
+            choix.ouvertureEnAttente = false;
+            paquetRendreChoix();
+            setTimeout(() => { if (state?.rotation?.choix === choix) beginTurn(); }, 450);
+            return true;
+          }
           renderAll();
           choixProgrammerIA();
         }
@@ -318,6 +326,26 @@
       /* ---------- Tours ------------------------------------------------- */
       const paquetBeginTurnBase = beginTurn;
       beginTurn = function beginTurnPaquet() {
+        /* Le choix de départ se fait AVANT la partie : avant la première
+           pioche, l'annonce du tour et le premier coup de l'ordinateur. Les
+           cartes prises peuvent ainsi tomber dès la première main (Taekun,
+           2026-11-03 : piochées avant le choix, elles ne pouvaient plus
+           sortir au premier tour). La demande du menu est donc posée ici,
+           puis l'ouverture du tour attend la dernière carte (choixPrendre). */
+        if (rotationEnPreparation && state && !state.rotation) rotationInstaller(rotationEnPreparation);
+        rotationEnPreparation = null;
+        if (state && !ilyosSimulationActive && paquetActif() && state.turn === 1) {
+          paquetInstaller();
+          choixInstaller();
+          if (choixEnCours()) {
+            state.rotation.choix.ouvertureEnAttente = true;
+            state.inputLocked = true;
+            renderAll();
+            paquetRendreChoix();
+            choixProgrammerIA();
+            return;
+          }
+        }
         paquetBeginTurnBase();
         if (!paquetActif()) return;
         paquetInstaller();
