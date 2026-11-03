@@ -397,6 +397,7 @@ button.ar-nuage:hover{color:#f4d28e;border-color:#f4d28e}
 .compte-form{display:flex;flex-direction:column;align-items:center;gap:10px}
 .compte-form .cf-titre{font:700 26px/1.1 'Almendra',Georgia,serif;color:#fff3d6}
 .ar-compte .cf-titre{font-size:30px}
+.compte-form input[hidden]{display:none}
 .compte-form input{width:min(340px,80vw);padding:13px 18px;border-radius:14px;border:1.5px solid rgba(244,210,142,.55);background:rgba(3,9,15,.75);color:#fff3d6;font:700 22px/1 'Almendra',Georgia,serif;text-align:center;outline:none}
 .compte-form input[type=password]{font:700 20px/1 system-ui,sans-serif;letter-spacing:.12em}
 .compte-form input[type=password]::placeholder{font:700 20px/1 'Almendra',Georgia,serif;letter-spacing:0}
@@ -406,6 +407,7 @@ button.ar-nuage:hover{color:#f4d28e;border-color:#f4d28e}
 .cf-lien{padding:4px 8px;border:0;background:none;color:#e9c97f;font:700 15px/1.2 'Almendra',Georgia,serif;text-decoration:underline;text-decoration-color:rgba(233,201,127,.45);text-underline-offset:4px;cursor:pointer}
 .cf-lien:hover{color:#fff3d6}
 .cf-lien[hidden],.cf-note[hidden]{display:none}
+.cf-note b{color:#fff3d6}
 .cf-note{max-width:330px;margin:0;color:#b9ab8d;font-size:13px;line-height:1.4;text-align:center}
 .compte-form .ar-pseudo-erreur{max-width:340px;text-align:center}
 @media (max-height:520px) and (orientation:landscape){

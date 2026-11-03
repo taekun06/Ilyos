@@ -1,6 +1,10 @@
 /*
  * Comptes ILYOS : pseudo + mot de passe, profil de progression sauvegardé.
  *
+ * Le nom du voyageur suffit pour retrouver sa progression (action
+ * « entrer ») ; le joueur peut ensuite la sécuriser par un mot de passe
+ * (« securiser »), qui devient alors obligatoire pour ce nom.
+ *
  * Logique pure, sans dépendance Netlify : `store` fournit get(cle) et
  * set(cle, valeur) (Netlify Blobs en ligne, une Map en développement).
  *
@@ -57,6 +61,18 @@ function nouveauJeton(compte) {
   return jeton;
 }
 
+async function verifierMotDePasse(compte, cle, mdp, store, maintenant) {
+  if (compte.pauseJusqua > maintenant) return erreur(429, "pause");
+  if (!motDePasseValide(mdp) || !egal(await empreinte(mdp, compte.sel), compte.empreinte)) {
+    compte.echecs = (compte.echecs || 0) + 1;
+    if (compte.echecs >= ECHECS_MAX) { compte.echecs = 0; compte.pauseJusqua = maintenant + PAUSE_MS; }
+    await store.set(cle, compte);
+    return erreur(401, "identifiants");
+  }
+  compte.echecs = 0;
+  return null;
+}
+
 const erreur = (statut, code) => ({ statut, corps: { ok: false, erreur: code } });
 const reussite = corps => ({ statut: 200, corps: { ok: true, ...corps } });
 
@@ -68,6 +84,38 @@ export async function traiter(demande, store, maintenant = Date.now()) {
   const compte = await store.get(cle);
 
   switch (demande.action) {
+    case "entrer": {
+      if (demande.profil !== undefined && !profilAccepte(demande.profil)) return erreur(413, "profil");
+      if (!compte) {
+        const neuf = {
+          pseudo, sel: null, empreinte: null, jetons: [], echecs: 0, pauseJusqua: 0,
+          profil: demande.profil || null, cree: maintenant, maj: maintenant
+        };
+        const jeton = nouveauJeton(neuf);
+        await store.set(cle, neuf);
+        return reussite({ pseudo, jeton, nouveau: true, protege: false });
+      }
+      if (compte.empreinte) {
+        if (demande.motDePasse === undefined || demande.motDePasse === "") return erreur(401, "mot-de-passe-requis");
+        const refus = await verifierMotDePasse(compte, cle, demande.motDePasse, store, maintenant);
+        if (refus) return refus;
+      }
+      const jeton = nouveauJeton(compte);
+      await store.set(cle, compte);
+      return reussite({ pseudo: compte.pseudo, jeton, profil: compte.profil, maj: compte.maj, protege: !!compte.empreinte });
+    }
+    case "securiser": {
+      if (!compte || typeof demande.jeton !== "string" || !(compte.jetons || []).some(j => egal(j, sha(demande.jeton)))) {
+        return erreur(401, "jeton");
+      }
+      if (!motDePasseValide(demande.motDePasse)) return erreur(400, "mot-de-passe");
+      compte.sel = randomBytes(16).toString("hex");
+      compte.empreinte = await empreinte(demande.motDePasse, compte.sel);
+      /* Seul l'appareil qui sécurise reste connecté. */
+      compte.jetons = [sha(demande.jeton)];
+      await store.set(cle, compte);
+      return reussite({ protege: true });
+    }
     case "creer": {
       if (!motDePasseValide(demande.motDePasse)) return erreur(400, "mot-de-passe");
       if (compte) return erreur(409, "pseudo-pris");
@@ -83,15 +131,9 @@ export async function traiter(demande, store, maintenant = Date.now()) {
       return reussite({ pseudo, jeton });
     }
     case "connexion": {
-      if (!compte) return erreur(401, "identifiants");
-      if (compte.pauseJusqua > maintenant) return erreur(429, "pause");
-      if (!motDePasseValide(demande.motDePasse) || !egal(await empreinte(demande.motDePasse, compte.sel), compte.empreinte)) {
-        compte.echecs = (compte.echecs || 0) + 1;
-        if (compte.echecs >= ECHECS_MAX) { compte.echecs = 0; compte.pauseJusqua = maintenant + PAUSE_MS; }
-        await store.set(cle, compte);
-        return erreur(401, "identifiants");
-      }
-      compte.echecs = 0;
+      if (!compte || !compte.empreinte) return erreur(401, "identifiants");
+      const refus = await verifierMotDePasse(compte, cle, demande.motDePasse, store, maintenant);
+      if (refus) return refus;
       const jeton = nouveauJeton(compte);
       await store.set(cle, compte);
       return reussite({ pseudo: compte.pseudo, jeton, profil: compte.profil, maj: compte.maj });
@@ -101,7 +143,7 @@ export async function traiter(demande, store, maintenant = Date.now()) {
       if (!compte || typeof demande.jeton !== "string" || !(compte.jetons || []).some(j => egal(j, sha(demande.jeton)))) {
         return erreur(401, "jeton");
       }
-      if (demande.action === "lire") return reussite({ pseudo: compte.pseudo, profil: compte.profil, maj: compte.maj });
+      if (demande.action === "lire") return reussite({ pseudo: compte.pseudo, profil: compte.profil, maj: compte.maj, protege: !!compte.empreinte });
       if (!profilAccepte(demande.profil)) return erreur(413, "profil");
       compte.profil = demande.profil;
       compte.maj = maintenant;
