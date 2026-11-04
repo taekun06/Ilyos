@@ -35911,6 +35911,17 @@
         return etape;
       }
 
+      /** Ce qui se passe à la fin d'un tour, après « Fin du tour » (loups,
+       *  éclosions) : rangé dans le tour qui s'achève, marqué `fin`. Le rejeu
+       *  part de la fin de MON tour précédent et va jusqu'à la fin du sien. */
+      function tourAdverseFinDeTour(etape, avant) {
+        if (!tourAdverseReleve()) return;
+        const joueur = tourAdverse.courant.joueur;
+        tourAdverseAjouter(etape, avant);
+        etape.joueur = joueur;
+        etape.fin = true;
+      }
+
       (function tourAdverseEnvelopper() {
         const origine = {
           move: applyMoveCore, push: applyPushCore, magie: applyMagicRotationCore,
@@ -36040,8 +36051,12 @@
         let depuis = tourAdverse.tours.length;
         while (depuis > 0 && tourAdverse.tours[depuis - 1].joueur !== moi) depuis--;
         const tours = tourAdverse.tours.slice(depuis);
+        // La fin de mon tour précédent (loups, éclosions) ouvre le rejeu.
+        const miennes = depuis > 0 ? tourAdverse.tours[depuis - 1].etapes : [];
+        let fin = miennes.length;
+        while (fin > 0 && miennes[fin - 1].fin) fin--;
         tourAdverse.tours = tours;
-        tourAdverse.aRevoir = tours.flatMap(t => t.etapes);
+        tourAdverse.aRevoir = [...miennes.slice(fin), ...tours.flatMap(t => t.etapes)];
         tourAdverseBadge();
         // Le HUD peut se reconstruire juste après le début du tour.
         requestAnimationFrame(tourAdverseBadge);
@@ -36131,7 +36146,9 @@
           phase: "ACTION_SELECT", reachable: [], pushOptions: [], placementCells: null,
           selectedMagicPivot: null, magicPreviewCells: null, selectedActionType: null,
           selectedIslandId: null, selectedIslandShape: null, hoverAnchor: null,
-          crownTransferTargetIds: [], selectedCharId: acteur
+          crownTransferTargetIds: [],
+          // Une créature (loup) n'a pas de fiche de gardien à afficher.
+          selectedCharId: (snap.characters || []).some(g => g.id === acteur && !g.creature) ? acteur : null
         });
         applyStateSnapshot(snap);
         state.inputLocked = true;
@@ -36139,6 +36156,12 @@
 
       function tourAdverseJouer(e) {
         const anime = isKayKitBoardActive() && !kaykitReducedMotion();
+        if (e.type === "loups-pas") {
+          tourAdversePoser(e.apres);
+          if (anime) e.pas.forEach(p => queueKayKitActionAnimation(p.id, "move", 700, { r: p.vers[0], c: p.vers[1] }, [p.vers], null, p.de));
+          renderAll();
+          return 950;
+        }
         if (e.type === "move") {
           const vers = e.chemin[e.chemin.length - 1];
           const duree = Math.min(1600, 140 + (e.chemin.length - 1) * 340);
@@ -37665,25 +37688,86 @@
           .sort((x, y) => dist(cible, x[0], x[1]) - dist(cible, y[0], y[1]));
         return pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible, loup.r, loup.c) ? pas[0] : null;
       }
-      function creaturesLoups() {
-        creaturesVivantes().filter(c => c.creature === "loup").forEach(loup => {
-          if (!characterById(loup.id)) return;
-          if (!loupAdjacents(loup).length) {
-            const pas = loupPas(loup);
-            if (pas) { loup.r = pas[0]; loup.c = pas[1]; }
-          }
-          const plans = loupAdjacents(loup).map(g => {
-            const dr = g.r - loup.r, dc = g.c - loup.c;
-            return { g, dr, dc, plan: resoudrePousseeBloc(g.r, g.c, dr, dc, 1) };
-          }).filter(x => x.plan);
-          if (!plans.length) return;
-          plans.sort((x, y) => (y.plan.chutes || 0) - (x.plan.chutes || 0));
-          const { g, dr, dc, plan } = plans[0];
-          const victime = joueurDuGardien(g);
-          appliquerPousseeBloc(plan, dr, dc);
-          playSfx("push", { c: loup.c });
-          showToast(`Le Loup bondit sur un gardien de ${victime?.name || "?"}${plan.chutes ? " et le fait tomber" : ""} !`);
+      /* La phase des loups se lit en deux temps (Taekun, 2026-11-04) :
+         d'abord TOUS les loups avancent, ensuite chacun pousse à son tour. */
+      function loupsVivants() {
+        return creaturesVivantes().filter(c => c.creature === "loup" && characterById(c.id));
+      }
+      function loupsAvancer() {
+        const pas = [];
+        loupsVivants().forEach(loup => {
+          if (loupAdjacents(loup).length) return;
+          const vers = loupPas(loup);
+          if (!vers) return;
+          pas.push({ id: loup.id, de: [loup.r, loup.c], vers: [vers[0], vers[1]] });
+          loup.r = vers[0]; loup.c = vers[1];
         });
+        return pas;
+      }
+      function loupChoixPoussee(loup) {
+        const plans = loupAdjacents(loup).map(g => {
+          const dr = g.r - loup.r, dc = g.c - loup.c;
+          return { g, dr, dc, plan: resoudrePousseeBloc(g.r, g.c, dr, dc, 1) };
+        }).filter(x => x.plan);
+        if (!plans.length) return null;
+        plans.sort((x, y) => (y.plan.chutes || 0) - (x.plan.chutes || 0));
+        return plans[0];
+      }
+      /** Applique la poussée d'un loup ; avec `anime`, le loup bondit, les
+       *  pièces touchées encaissent et celles qui tombent chutent. Rend la
+       *  même description qu'une poussée relevée par le rejeu du tour. */
+      function loupPousser(loup, choix, anime) {
+        const { g, dr, dc, plan } = choix;
+        const chutes = plan.mouvements
+          .filter(mv => mv.chute && mv.kind !== "crown" && mv.id != null)
+          .map(mv => ({ id: mv.id, direction: [mv.to[0] - mv.from[0], mv.to[1] - mv.from[1]] }));
+        const touches = plan.mouvements.filter(mv => mv.kind !== "crown" && mv.id != null && !mv.chute).map(mv => mv.id);
+        const poussee = { pusherId: loup.id, cible: [g.r, g.c], de: [loup.r, loup.c], chutes, touches };
+        if (anime) {
+          queueKayKitActionAnimation(loup.id, "attack", 900, { r: g.r, c: g.c });
+          touches.forEach(id => queueKayKitActionAnimation(id, "hurt", 850, { r: loup.r, c: loup.c }));
+          chutes.forEach(ch => queueKayKitCharacterFall(ch.id, ch.direction));
+        }
+        const victime = joueurDuGardien(g);
+        appliquerPousseeBloc(plan, dr, dc);
+        playSfx("push", { c: loup.c });
+        showToast(`Le Loup bondit sur un gardien de ${victime?.name || "?"}${plan.chutes ? " et le fait tomber" : ""} !`);
+        return poussee;
+      }
+      // Version immédiate (pas de plateau 3D, partie en ligne) : même ordre.
+      function creaturesLoups() {
+        loupsAvancer();
+        loupsVivants().forEach(loup => {
+          const choix = loupChoixPoussee(loup);
+          if (choix) loupPousser(loup, choix, false);
+        });
+      }
+      /** Phase animée : avancées ensemble, puis une poussée par loup, chaque
+       *  temps relevé pour le rejeu du tour adverse. Rend false si la partie
+       *  a changé entre-temps. */
+      async function creaturesLoupsAnimes(partie) {
+        const anime = isKayKitBoardActive() && !kaykitReducedMotion();
+        const avant = snapshotState();
+        const pas = loupsAvancer();
+        if (pas.length) {
+          if (anime) pas.forEach(p => queueKayKitActionAnimation(p.id, "move", 700, { r: p.vers[0], c: p.vers[1] }, [p.vers], null, p.de));
+          renderAll();
+          tourAdverseFinDeTour({ type: "loups-pas", pas }, avant);
+          await sleep(950);
+          if (state !== partie) return false;
+        }
+        for (const loup of loupsVivants()) {
+          if (state.winner !== null) break;
+          const choix = loupChoixPoussee(loup);
+          if (!choix) continue;
+          const avantPoussee = snapshotState();
+          const poussee = loupPousser(loup, choix, anime);
+          renderAll();
+          tourAdverseFinDeTour({ type: "push", ...poussee }, avantPoussee);
+          await sleep(poussee.chutes.length ? 1300 : 1000);
+          if (state !== partie) return false;
+        }
+        return true;
       }
 
       /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès
@@ -37694,7 +37778,8 @@
       }
 
       function creaturesCaseNaissance(oeuf) {
-        return islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
+        // Île, sanctuaire ou village : toute terre ferme fait éclore (Taekun, 2026-11-04).
+        return isLand(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
       /** Un nouvel œuf apparaît au hasard sur une case libre de TOUTE la
@@ -37743,8 +37828,10 @@
          un œuf mûr qui touche désormais une île éclot sans attendre le tour
          suivant. Vérifié au rendu, hors simulation de l'IA. */
       const creaturesRenderBase = renderAll;
+      // Phase des loups en cours (fin de tour animée) : l'éclosion attend la fin.
+      let creaturesPhaseEnCours = false;
       renderAll = function renderAllCreatures(...args) {
-        if (state && !ilyosSimulationActive && creaturesActives() && state.winner === null
+        if (state && !ilyosSimulationActive && !creaturesPhaseEnCours && !tourAdverse.rejeu && creaturesActives() && state.winner === null
           && state.rotation.creatures?.oeufs?.some(oeufMur)) {
           if (creaturesEclore()) syncKayKitScene?.();
         }
@@ -37788,15 +37875,31 @@
       const creaturesBeginTurnBase = beginTurn;
       beginTurn = function beginTurnCreatures() {
         if (state && creaturesActives() && !ilyosSimulationActive) {
+          if (creaturesPhaseEnCours) return;
           creaturesInstaller();
           if (state.turn > 1 && state.winner === null && state.rotation.creatures.dernierTour !== state.turn) {
             state.rotation.creatures.dernierTour = state.turn;
             const n = state.players.length;
             const precedentId = state.players[(state.currentPlayer - 1 + n) % n]?.id;
             creaturesVase(precedentId);
-            // Fin de tour : la créature agit à chaque tour, pas seulement par manche.
+            /* Fin de tour : les loups agissent sous les yeux des joueurs,
+               et la pioche du joueur suivant n'arrive qu'après. */
+            if (loupsVivants().length && !state.onlineMode) {
+              const partie = state;
+              state.inputLocked = true;
+              creaturesPhaseEnCours = true;
+              creaturesLoupsAnimes(partie).catch(erreur => console.warn("[ILYOS] loups", erreur)).then(suite => {
+                creaturesPhaseEnCours = false;
+                if (state !== partie || suite === false) return;
+                const avant = snapshotState();
+                if (creaturesEclore()) tourAdverseFinDeTour({ type: "eclosion" }, avant);
+                beginTurn();
+              });
+              return;
+            }
             creaturesLoups();
-            creaturesEclore();
+            const avant = snapshotState();
+            if (creaturesEclore()) tourAdverseFinDeTour({ type: "eclosion" }, avant);
           }
         }
         const resultat = creaturesBeginTurnBase();
@@ -37938,8 +38041,7 @@
             visuel.userData.oeufId = oeuf.id;
             groupe.add(visuel);
           }
-          const surIle = !!islandAt(oeuf.r, oeuf.c);
-          const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : KAYKIT_LEVELS.islandTop + .014; // case vide : posé sur la grille
+          const y = isLand(oeuf.r, oeuf.c) ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : KAYKIT_LEVELS.islandTop + .014; // case vide : posé sur la grille
           const p = kaykitCellPosition(oeuf.r, oeuf.c, y);
           visuel.position.set(p.x, p.y, p.z);
           creaturesHabillerOeuf(visuel, oeuf);
@@ -37992,7 +38094,7 @@
       function creaturesFantomeOeuf(oeuf, r, c, surfaceY, opacite) {
         const visuel = creaturesConstruireOeuf();
         creaturesHabillerOeuf(visuel, oeuf);
-        const y = surfaceY ?? (islandAt(r, c) ? kaykitCellSurfaceY(r, c) : KAYKIT_LEVELS.islandTop + .014);
+        const y = surfaceY ?? (isLand(r, c) ? kaykitCellSurfaceY(r, c) : KAYKIT_LEVELS.islandTop + .014);
         const p = kaykitCellPosition(r, c, y);
         visuel.position.set(p.x, p.y, p.z);
         // Le chiffre (sprite, sans test de profondeur) reste plein. Son
@@ -38115,6 +38217,19 @@
           renderAll(); syncKayKitScene?.();
           return true;
         },
+        /* Banc : faire naître un loup sur une case (phase des loups). */
+        loup: (r, c) => {
+          const etat = state?.rotation?.creatures;
+          if (!etat) return null;
+          const id = `creature-${etat.prochainId++}`;
+          state.characters.push({ id, player: -1, creature: "loup", r, c });
+          renderAll(); syncKayKitScene?.();
+          return id;
+        },
+        /* Banc : étapes que le rejeu du tour adverse montrerait. */
+        rejeu: () => tourAdverse.aRevoir.map(e => `${e.type}${e.fin ? "*" : ""}:${e.joueur}`),
+        revoir: () => tourAdverseRevoir(),
+        pioche: () => (state?.players || []).map(j => (j.hand || []).length),
         main: (joueur, actions) => {
           const j = state?.players?.[joueur];
           if (!j) return false;
