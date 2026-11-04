@@ -300,18 +300,21 @@
         const contourMat = new THREE.MeshStandardMaterial({ color: ROTATION_BALISE_CONTOUR, roughness: .8 });
         const cadre = new THREE.Group();
         const L = .9, e = .08, h = .06;
+        // Géométries partagées (cache kaykitGeometry) : les fantômes de magie
+        // reconstruisent des balises à chaque survol sans rien allouer.
+        const boite = (w, hh, d) => kaykitGeometry(`rotation-balise-${w.toFixed(3)}-${hh.toFixed(3)}-${d.toFixed(3)}`, () => new THREE.BoxGeometry(w, hh, d));
         [[0, -L / 2 + e / 2, L, e], [0, L / 2 - e / 2, L, e], [-L / 2 + e / 2, 0, e, L - 2 * e], [L / 2 - e / 2, 0, e, L - 2 * e]].forEach(([x, z, w, d]) => {
-          const barre = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cadreMat);
+          const barre = new THREE.Mesh(boite(w, h, d), cadreMat);
           barre.position.set(x, h / 2, z);
-          const ombre = new THREE.Mesh(new THREE.BoxGeometry(w + .03, h * .6, d + .03), contourMat);
+          const ombre = new THREE.Mesh(boite(w + .03, h * .6, d + .03), contourMat);
           ombre.position.set(x, h * .3, z);
           cadre.add(ombre, barre);
         });
         const bornes = new THREE.Group();
         [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
-          const borne = new THREE.Mesh(new THREE.BoxGeometry(.13, .26, .13), cadreMat);
+          const borne = new THREE.Mesh(boite(.13, .26, .13), cadreMat);
           borne.position.set(sx * (L / 2 - .065), .13, sz * (L / 2 - .065));
-          const chapeau = new THREE.Mesh(new THREE.ConeGeometry(.1, .1, 4), cadreMat);
+          const chapeau = new THREE.Mesh(kaykitGeometry("rotation-balise-chapeau", () => new THREE.ConeGeometry(.1, .1, 4)), cadreMat);
           chapeau.rotation.y = Math.PI / 4;
           chapeau.position.set(borne.position.x, .31, borne.position.z);
           bornes.add(borne, chapeau);
@@ -324,10 +327,10 @@
           croix = new THREE.Group();
           const diag = Math.SQRT2 * (L - 2 * e);
           [Math.PI / 4, -Math.PI / 4].forEach(angle => {
-            const ombre = new THREE.Mesh(new THREE.BoxGeometry(diag + .02, h * .6, e + .03), contourMat);
+            const ombre = new THREE.Mesh(boite(diag + .02, h * .6, e + .03), contourMat);
             ombre.rotation.y = angle;
             ombre.position.y = h * .3;
-            const barre = new THREE.Mesh(new THREE.BoxGeometry(diag, h, e), cadreMat);
+            const barre = new THREE.Mesh(boite(diag, h, e), cadreMat);
             barre.rotation.y = angle;
             barre.position.y = h / 2;
             croix.add(ombre, barre);
@@ -393,6 +396,7 @@
           const vers = rotation.absCells?.[i];
           if (!vers || (vers[0] === r && vers[1] === c)) return;
           const fantome = rotationConstruireBalise(true);
+          fantome.traverse(o => { if (o.material) o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true }; });
           const p = kaykitCellPosition(vers[0], vers[1], sol ?? kaykitCellSurfaceY(vers[0], vers[1]));
           fantome.position.set(p.x, p.y, p.z);
           res.fantomes.push(fantome);

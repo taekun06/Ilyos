@@ -13779,7 +13779,8 @@
           if (visual.crown) {
             crownAnchorPosition(visual, KAYKIT_TMP_CROWN);
             visual.crown.position.copy(KAYKIT_TMP_CROWN);
-            visual.crown.rotation.y = elapsed * .9;
+            // Plus de rotation continue de la couronne portée (Taekun,
+            // 2026-11-04 : inutile) ; seul le léger flottement reste.
             visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0);
           }
 

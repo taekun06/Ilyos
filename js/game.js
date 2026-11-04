@@ -14163,7 +14163,8 @@
           if (visual.crown) {
             crownAnchorPosition(visual, KAYKIT_TMP_CROWN);
             visual.crown.position.copy(KAYKIT_TMP_CROWN);
-            visual.crown.rotation.y = elapsed * .9;
+            // Plus de rotation continue de la couronne portée (Taekun,
+            // 2026-11-04 : inutile) ; seul le léger flottement reste.
             visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0);
           }
 
@@ -36389,18 +36390,21 @@
         const contourMat = new THREE.MeshStandardMaterial({ color: ROTATION_BALISE_CONTOUR, roughness: .8 });
         const cadre = new THREE.Group();
         const L = .9, e = .08, h = .06;
+        // Géométries partagées (cache kaykitGeometry) : les fantômes de magie
+        // reconstruisent des balises à chaque survol sans rien allouer.
+        const boite = (w, hh, d) => kaykitGeometry(`rotation-balise-${w.toFixed(3)}-${hh.toFixed(3)}-${d.toFixed(3)}`, () => new THREE.BoxGeometry(w, hh, d));
         [[0, -L / 2 + e / 2, L, e], [0, L / 2 - e / 2, L, e], [-L / 2 + e / 2, 0, e, L - 2 * e], [L / 2 - e / 2, 0, e, L - 2 * e]].forEach(([x, z, w, d]) => {
-          const barre = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cadreMat);
+          const barre = new THREE.Mesh(boite(w, h, d), cadreMat);
           barre.position.set(x, h / 2, z);
-          const ombre = new THREE.Mesh(new THREE.BoxGeometry(w + .03, h * .6, d + .03), contourMat);
+          const ombre = new THREE.Mesh(boite(w + .03, h * .6, d + .03), contourMat);
           ombre.position.set(x, h * .3, z);
           cadre.add(ombre, barre);
         });
         const bornes = new THREE.Group();
         [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
-          const borne = new THREE.Mesh(new THREE.BoxGeometry(.13, .26, .13), cadreMat);
+          const borne = new THREE.Mesh(boite(.13, .26, .13), cadreMat);
           borne.position.set(sx * (L / 2 - .065), .13, sz * (L / 2 - .065));
-          const chapeau = new THREE.Mesh(new THREE.ConeGeometry(.1, .1, 4), cadreMat);
+          const chapeau = new THREE.Mesh(kaykitGeometry("rotation-balise-chapeau", () => new THREE.ConeGeometry(.1, .1, 4)), cadreMat);
           chapeau.rotation.y = Math.PI / 4;
           chapeau.position.set(borne.position.x, .31, borne.position.z);
           bornes.add(borne, chapeau);
@@ -36413,10 +36417,10 @@
           croix = new THREE.Group();
           const diag = Math.SQRT2 * (L - 2 * e);
           [Math.PI / 4, -Math.PI / 4].forEach(angle => {
-            const ombre = new THREE.Mesh(new THREE.BoxGeometry(diag + .02, h * .6, e + .03), contourMat);
+            const ombre = new THREE.Mesh(boite(diag + .02, h * .6, e + .03), contourMat);
             ombre.rotation.y = angle;
             ombre.position.y = h * .3;
-            const barre = new THREE.Mesh(new THREE.BoxGeometry(diag, h, e), cadreMat);
+            const barre = new THREE.Mesh(boite(diag, h, e), cadreMat);
             barre.rotation.y = angle;
             barre.position.y = h / 2;
             croix.add(ombre, barre);
@@ -36482,6 +36486,7 @@
           const vers = rotation.absCells?.[i];
           if (!vers || (vers[0] === r && vers[1] === c)) return;
           const fantome = rotationConstruireBalise(true);
+          fantome.traverse(o => { if (o.material) o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true }; });
           const p = kaykitCellPosition(vers[0], vers[1], sol ?? kaykitCellSurfaceY(vers[0], vers[1]));
           fantome.position.set(p.x, p.y, p.z);
           res.fantomes.push(fantome);
@@ -37202,8 +37207,9 @@
          — Comptes de départ : 2, 3, 4 et 5, tirés au hasard.
          — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'une
            île est sous lui : la créature naît sur la case de l'œuf.
-         — Chaque éclosion fait apparaître un nouvel œuf (compte 2) au bout
-           d'un bras de la croix du sanctuaire, sur une case libre.
+         — Chaque éclosion fait apparaître un nouvel œuf (compte 2) au
+           hasard sur une case libre de la croix du sanctuaire (ligne et
+           colonne entières, hors balises).
          — Un œuf se pousse comme une couronne au sol, mais il flotte : il
            survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
@@ -37233,8 +37239,8 @@
       /* Comptes à rebours de départ (un tour = le tour d'un joueur), tirés
          au hasard entre les 4 œufs : 2, 3, 4 et 5 (Taekun, 2026-11-03). */
       const CREATURES_COMPTES = [2, 3, 4, 5];
-      /* Quand un œuf éclot, un nouvel œuf apparaît au bout d'un bras de la
-         croix du sanctuaire (case libre), avec ce compte à rebours. */
+      /* Quand un œuf éclot, un nouvel œuf apparaît sur une case libre de la
+         croix du sanctuaire, avec ce compte à rebours. */
       const CREATURES_COMPTE_RELEVE = 2;
 
       function creaturesActives(source = state) {
@@ -37520,13 +37526,19 @@
         return islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
-      /** Bouts de la croix du sanctuaire : (0, centre), (dernière, centre),
-       *  (centre, 0), (centre, dernière). Un nouvel œuf prend l'un d'eux,
-       *  au hasard parmi les cases sans gardien, œuf ni couronne. */
+      /** Un nouvel œuf apparaît au hasard sur une case libre de TOUTE la
+       *  croix du sanctuaire (sa ligne et sa colonne entières) : sans
+       *  gardien, œuf ni couronne, et jamais sur une balise (Taekun,
+       *  2026-11-04). */
       function creaturesNouveauxOeufs(etat, nombre) {
-        const bouts = [[0, CENTER.c], [GRID - 1, CENTER.c], [CENTER.r, 0], [CENTER.r, GRID - 1]];
+        const balises = new Set((state.rotation?.balises || []).map(([r, c]) => key(r, c)));
+        const croix = [];
+        for (let i = 0; i < GRID; i++) {
+          croix.push([CENTER.r, i]);
+          if (i !== CENTER.r) croix.push([i, CENTER.c]);
+        }
         for (let n = 0; n < nombre; n++) {
-          const libres = bouts.filter(([r, c]) => !characterAt(r, c) && !looseArtifactAt(r, c)
+          const libres = croix.filter(([r, c]) => !characterAt(r, c) && !looseArtifactAt(r, c) && !balises.has(key(r, c))
             && !etat.oeufs.some(o => o.r === r && o.c === c));
           if (!libres.length) return;
           const [r, c] = libres[Math.floor(gameRandom() * libres.length)];
@@ -37761,7 +37773,13 @@
           visuel.position.set(p.x, p.y, p.z);
           creaturesHabillerOeuf(visuel, oeuf);
         });
-        [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
+        [...groupe.children].forEach(o => {
+          if (vus.has(o.userData.oeufId)) return;
+          groupe.remove(o);
+          // Géométries (kaykitGeometry) et chiffres (cache) sont partagés :
+          // seuls les matériaux propres à l'œuf sont libérés.
+          o.traverse(m => { if (m.material) m.material.dispose(); });
+        });
       }
 
       const creaturesSyncSceneBase = syncKayKitScene;
@@ -37799,17 +37817,28 @@
       function oeufParPieceId(id) {
         return (state?.rotation?.creatures?.oeufs || []).find(o => `oeuf-${o.id}` === String(id) || o.id === id) || null;
       }
+      const creaturesSpritesFantomes = new Map();
       function creaturesFantomeOeuf(oeuf, r, c, surfaceY, opacite) {
         const visuel = creaturesConstruireOeuf();
         creaturesHabillerOeuf(visuel, oeuf);
         const y = surfaceY ?? (islandAt(r, c) ? kaykitCellSurfaceY(r, c) : KAYKIT_LEVELS.islandTop + .014);
         const p = kaykitCellPosition(r, c, y);
         visuel.position.set(p.x, p.y, p.z);
-        // Le chiffre (sprite, sans test de profondeur) reste plein.
+        // Le chiffre (sprite, sans test de profondeur) reste plein. Son
+        // matériau est partagé par chiffre : un sprite neuf à chaque survol
+        // faisait grossir la mémoire des textures.
         const chiffre = visuel.userData.chiffre;
         visuel.remove(chiffre);
         creaturesRendreFantome(visuel, opacite);
-        visuel.add(chiffre);
+        if (chiffre.visible) {
+          const n = oeufManches(oeuf);
+          if (!creaturesSpritesFantomes.has(n)) {
+            creaturesSpritesFantomes.set(n, new THREE.SpriteMaterial({ map: creaturesTextureChiffre(n), depthTest: false, transparent: true }));
+          }
+          chiffre.material.dispose();
+          chiffre.material = creaturesSpritesFantomes.get(n);
+          visuel.add(chiffre);
+        }
         return visuel;
       }
       function creaturesFantomeCreature(char, r, c, surfaceY, opacite) {
@@ -37820,17 +37849,16 @@
         const p = kaykitCellPosition(r, c, surfaceY ?? kaykitCellSurfaceY(r, c));
         piece.position.set(p.x, p.y, p.z);
         piece.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+        // Teinte vert de lichen des créatures, sur la copie éphémère.
+        creaturesRendreFantome(piece, opacite);
         piece.traverse(o => {
           if (!o.isMesh || !o.material) return;
-          const teinter = m => {
-            const copie = m.clone();
-            if (copie.color) copie.color.multiply(new THREE.Color(0x9fe0a4));
-            if (copie.emissive) { copie.emissive.setHex(0x163a1c); copie.emissiveIntensity = .55; }
-            return copie;
-          };
-          o.material = Array.isArray(o.material) ? o.material.map(teinter) : teinter(o.material);
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+            if (m.color) m.color.multiply(new THREE.Color(0x9fe0a4));
+            if (m.emissive) { m.emissive.setHex(0x163a1c); m.emissiveIntensity = .55; }
+          });
         });
-        return creaturesRendreFantome(piece, opacite);
+        return piece;
       }
       const creaturesFantomeBase = kaykitFantomeDuMode;
       kaykitFantomeDuMode = function kaykitFantomeDuModeCreatures(type, id, r, c, options = {}) {
@@ -37942,6 +37970,13 @@
           state.magicPreviewValid = true;
           renderAll(); syncKayKitScene?.();
           return magicRotationOptions().map(o => o.steps);
+        },
+        /* Banc : mémoire GPU et taille de la scène (recherche de fuites). */
+        memoire: () => {
+          const info = kaykit3D?.renderer?.info;
+          let objets = 0;
+          kaykit3D?.scene?.traverse(() => { objets++; });
+          return info ? { geometries: info.memory.geometries, textures: info.memory.textures, programmes: info.programs?.length || 0, appels: info.render.calls, objets } : null;
         },
         /* Banc : position à l'écran d'une case (survols simulés). */
         ecran: (r, c) => {
