@@ -290,8 +290,9 @@
 
       /* Balise CARRÉE et opaque (Taekun, 2026-11-03) : un cadre qui longe
          les bords de sa case et quatre bornes aux coins. Plus de colonne de
-         lumière transparente. Une balise MOBILE (qui tourne avec son île)
-         porte en plus un losange au centre. */
+         lumière transparente. Une balise FIXE porte une croix sur ses
+         diagonales ; une balise MOBILE (qui tourne avec son île) reste un
+         carré vide. */
       function rotationConstruireBalise(mobile) {
         const groupe = new THREE.Group();
         const matiere = couleur => new THREE.MeshStandardMaterial({ color: couleur, roughness: .55, metalness: .15, emissive: couleur, emissiveIntensity: .35 });
@@ -316,14 +317,24 @@
           bornes.add(borne, chapeau);
         });
         groupe.add(cadre, bornes);
-        let losange = null;
-        if (mobile) {
-          losange = new THREE.Mesh(new THREE.BoxGeometry(.24, .04, .24), cadreMat);
-          losange.rotation.y = Math.PI / 4;
-          losange.position.y = .02;
-          groupe.add(losange);
+        /* Balise FIXE : une croix trace les deux diagonales du carré. Balise
+           qui tourne avec son île : carré vide (Taekun, 2026-11-03). */
+        let croix = null;
+        if (!mobile) {
+          croix = new THREE.Group();
+          const diag = Math.SQRT2 * (L - 2 * e);
+          [Math.PI / 4, -Math.PI / 4].forEach(angle => {
+            const ombre = new THREE.Mesh(new THREE.BoxGeometry(diag + .02, h * .6, e + .03), contourMat);
+            ombre.rotation.y = angle;
+            ombre.position.y = h * .3;
+            const barre = new THREE.Mesh(new THREE.BoxGeometry(diag, h, e), cadreMat);
+            barre.rotation.y = angle;
+            barre.position.y = h / 2;
+            croix.add(ombre, barre);
+          });
+          groupe.add(croix);
         }
-        groupe.userData.rotationParties = { cadreMat, bornes, losange };
+        groupe.userData.rotationParties = { cadreMat, bornes, croix };
         return groupe;
       }
 
@@ -362,6 +373,32 @@
           bornes.scale.y = g ? 1.35 : 1;
         });
       }
+
+      /* Magie : une balise mobile de l'île tournée (hors pivot) part avec
+         elle ; son double se pose à l'arrivée (kaykit3d.js). */
+      const rotationMagieDuModeBase = kaykitMagieDuMode;
+      kaykitMagieDuMode = function kaykitMagieDuModeBalises(island, rotation, sol) {
+        const res = rotationMagieDuModeBase(island, rotation, sol);
+        if (!butBalises() || !island) return res;
+        const pivot = Array.isArray(state.selectedMagicPivot) ? state.selectedMagicPivot : null;
+        state.rotation.balises.forEach(([r, c], idx) => {
+          if (!baliseMobile(idx)) return;
+          const i = island.cells.findIndex(([ir, ic]) => ir === r && ic === c);
+          if (i < 0 || (pivot && pivot[0] === r && pivot[1] === c)) return;
+          if (!rotation) {
+            const reelle = kaykit3D?.rotationBalises?.children[idx];
+            if (reelle) res.masquer.push(reelle);
+            return;
+          }
+          const vers = rotation.absCells?.[i];
+          if (!vers || (vers[0] === r && vers[1] === c)) return;
+          const fantome = rotationConstruireBalise(true);
+          const p = kaykitCellPosition(vers[0], vers[1], sol ?? kaykitCellSurfaceY(vers[0], vers[1]));
+          fantome.position.set(p.x, p.y, p.z);
+          res.fantomes.push(fantome);
+        });
+        return res;
+      };
 
       const rotationSyncKayKitSceneBase = syncKayKitScene;
       syncKayKitScene = function syncKayKitSceneRotation() {

@@ -3109,6 +3109,16 @@
         return regles;
       }
 
+      /* Éléments du mode Rotation choisis dans le Personnalisé : une
+         demande comme celle de l'écran Rotation, ou null. */
+      function lireRotationPersonnalisee() {
+        const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
+        const couches = [];
+        if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
+        if (document.getElementById("customCreaturesCheckbox")?.checked) couches.push("creatures");
+        return but === "couronnes" && !couches.length ? null : { but, couches };
+      }
+
       function majResumePaquetPersonnalise() {
         if (!els.customDeckSummary) return;
         const paquet = compositionPaquet(lireReglesPersonnalisees());
@@ -3146,6 +3156,10 @@
             ...lireReglesPersonnalisees()
           };
           appliquerPaquetDesRegles();
+          // Éléments de Rotation : posés avant la mise en place, comme une
+          // partie lancée depuis l'écran Rotation.
+          const rotationPerso = lireRotationPersonnalisee();
+          if (rotationPerso && !state.rotation) rotationInstaller(rotationPerso);
           /* Terrain de départ : un setup du duel symétrique déjà posé, que la
              mise en place complète (voir customTerrainChoisi). */
           const terrain = customTerrainChoisi();

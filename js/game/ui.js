@@ -2258,8 +2258,9 @@
           const target = state.characters.some(char => {
             if (char.player !== state.currentPlayer) return false;
             return orthogonalNeighbors(char.r, char.c).some(([r, c]) => {
+              // occupantPoussable : gardiens, couronnes au sol et pièces du mode (œufs).
               const other = characterAt(r, c);
-              return !!(looseArtifactAt(r, c) || (other && other.id !== char.id));
+              return !!(other ? other.id !== char.id : occupantPoussable(r, c));
             });
           });
           if (!target) return "Aucun adversaire ou objet adjacent à pousser.";

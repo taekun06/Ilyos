@@ -9414,7 +9414,8 @@
             const sens = [Math.sign(vr - impact.from[0]), Math.sign(vc - impact.from[1])];
             const chute = [vr + sens[0] * rang * .5, vc + sens[1] * rang * .5];
             const sol = KAYKIT_LEVELS.islandTop - .32 - rang * .22;
-            const fantome = makeKayKitPieceGhost(chute[0], chute[1], { playerId, surfaceY: sol });
+            const fantome = kaykitFantomeDuMode(impact.type, impact.id, chute[0], chute[1], { surfaceY: sol, opacity: .82 })
+              || makeKayKitPieceGhost(chute[0], chute[1], { playerId, surfaceY: sol });
             if (fantome) {
               kaykitFantomeTexture(fantome, 0xff3b4a, .82, .85);
               group.add(fantome);
@@ -9435,7 +9436,8 @@
           if (impact.to[0] === impact.from[0] && impact.to[1] === impact.from[1]) return;
           // La vraie pièce est masquée : son double, presque plein, se lit
           // comme la position finale et non comme un calque.
-          const arrivee = makeKayKitPieceGhost(impact.to[0], impact.to[1], { playerId, crown: impact.type === "crown", opacity: .9 });
+          const arrivee = kaykitFantomeDuMode(impact.type, impact.id, impact.to[0], impact.to[1], { opacity: .9 })
+            || makeKayKitPieceGhost(impact.to[0], impact.to[1], { playerId, crown: impact.type === "crown", opacity: .9 });
           if (arrivee) group.add(arrivee);
           if (impact.carrying) {
             const couronne = makeKayKitPieceGhost(impact.to[0], impact.to[1], { crown: true, opacity: .9, surfaceY: kaykitCellSurfaceY(impact.to[0], impact.to[1]) + .74 });
@@ -9466,6 +9468,10 @@
           if (!bouge) return;
           if (impact.type === "crown") {
             (kaykit3D.looseCrownRegistry.get(String(impact.id))?.objects || []).forEach(masquer);
+            return;
+          }
+          if (impact.type !== "character") {
+            (kaykitObjetsDuMode(impact.type, impact.id) || []).forEach(masquer);
             return;
           }
           const visual = kaykit3D.characterVisuals.get(String(impact.id));
@@ -9641,6 +9647,19 @@
          donnerait le niveau du plateau et non celui de l'île. Les matériaux
          clonés sont marqués ilyosTransient : ils sont propres à ce fantôme et
          doivent être libérés avec lui. */
+      /* Points d'extension des modes de jeu (rotation-creatures.js,
+         rotation.js) : œufs, créatures et balises ont leurs propres
+         fantômes. Par défaut, rien.
+         — kaykitFantomeDuMode(type, id, r, c, options) : fantôme d'une pièce
+           du mode (œuf, créature) à la case (r, c), ou null.
+         — kaykitObjetsDuMode(type, id) : objets 3D réels d'une pièce du mode,
+           masqués pendant l'aperçu d'une poussée.
+         — kaykitMagieDuMode(island, rotation, sol) : { masquer: [objets 3D
+           qui partent avec l'île], fantomes: [objets à l'arrivée] }. */
+      function kaykitFantomeDuMode(type, id, r, c, options) { return null; }
+      function kaykitObjetsDuMode(type, id) { return []; }
+      function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
+
       function makeKayKitPieceGhost(r, c, { playerId = null, crown = false, opacity = .6, surfaceY = null } = {}) {
         let piece = null;
         if (crown) {
@@ -12398,7 +12417,8 @@
           };
           (rotation.characterMoves || []).forEach(move => {
             if (move.r === move.char.r && move.c === move.char.c) return;
-            poser(makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, surfaceY: sol }));
+            poser(kaykitFantomeDuMode("character", move.char.id, move.r, move.c, { surfaceY: sol, opacity: .9 })
+              || makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, surfaceY: sol }));
             let portee = null;
             try { portee = artifactCarriedBy(move.char.id); } catch (_) { }
             if (!portee) return;
@@ -12410,6 +12430,10 @@
             if (move.r === move.artifact.r && move.c === move.artifact.c) return;
             poser(makeKayKitPieceGhost(move.r, move.c, { crown: true, surfaceY: sol }));
           });
+          // Œufs et balises mobiles qui tournent avec l'île.
+          let duMode = null;
+          try { duMode = kaykitMagieDuMode(island, rotation, sol); } catch (_) { }
+          (duMode?.fantomes || []).forEach(poser);
         });
       }
 
@@ -12468,6 +12492,9 @@
           const slot = artifact.id != null ? String(artifact.id) : (idx === 0 ? "primary" : "secondary");
           (kaykit3D.looseCrownRegistry.get(slot)?.objects || []).forEach(masquer);
         });
+        let duMode = null;
+        try { duMode = kaykitMagieDuMode(island, null, null); } catch (_) { }
+        (duMode?.masquer || []).forEach(masquer);
       }
 
       // Avant même de cliquer un pivot : simple survol d'une case d'île pendant
@@ -18215,6 +18242,16 @@
         return regles;
       }
 
+      /* Éléments du mode Rotation choisis dans le Personnalisé : une
+         demande comme celle de l'écran Rotation, ou null. */
+      function lireRotationPersonnalisee() {
+        const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
+        const couches = [];
+        if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
+        if (document.getElementById("customCreaturesCheckbox")?.checked) couches.push("creatures");
+        return but === "couronnes" && !couches.length ? null : { but, couches };
+      }
+
       function majResumePaquetPersonnalise() {
         if (!els.customDeckSummary) return;
         const paquet = compositionPaquet(lireReglesPersonnalisees());
@@ -18252,6 +18289,10 @@
             ...lireReglesPersonnalisees()
           };
           appliquerPaquetDesRegles();
+          // Éléments de Rotation : posés avant la mise en place, comme une
+          // partie lancée depuis l'écran Rotation.
+          const rotationPerso = lireRotationPersonnalisee();
+          if (rotationPerso && !state.rotation) rotationInstaller(rotationPerso);
           /* Terrain de départ : un setup du duel symétrique déjà posé, que la
              mise en place complète (voir customTerrainChoisi). */
           const terrain = customTerrainChoisi();
@@ -24775,8 +24816,9 @@
           const target = state.characters.some(char => {
             if (char.player !== state.currentPlayer) return false;
             return orthogonalNeighbors(char.r, char.c).some(([r, c]) => {
+              // occupantPoussable : gardiens, couronnes au sol et pièces du mode (œufs).
               const other = characterAt(r, c);
-              return !!(looseArtifactAt(r, c) || (other && other.id !== char.id));
+              return !!(other ? other.id !== char.id : occupantPoussable(r, c));
             });
           });
           if (!target) return "Aucun adversaire ou objet adjacent à pousser.";
@@ -36337,8 +36379,9 @@
 
       /* Balise CARRÉE et opaque (Taekun, 2026-11-03) : un cadre qui longe
          les bords de sa case et quatre bornes aux coins. Plus de colonne de
-         lumière transparente. Une balise MOBILE (qui tourne avec son île)
-         porte en plus un losange au centre. */
+         lumière transparente. Une balise FIXE porte une croix sur ses
+         diagonales ; une balise MOBILE (qui tourne avec son île) reste un
+         carré vide. */
       function rotationConstruireBalise(mobile) {
         const groupe = new THREE.Group();
         const matiere = couleur => new THREE.MeshStandardMaterial({ color: couleur, roughness: .55, metalness: .15, emissive: couleur, emissiveIntensity: .35 });
@@ -36363,14 +36406,24 @@
           bornes.add(borne, chapeau);
         });
         groupe.add(cadre, bornes);
-        let losange = null;
-        if (mobile) {
-          losange = new THREE.Mesh(new THREE.BoxGeometry(.24, .04, .24), cadreMat);
-          losange.rotation.y = Math.PI / 4;
-          losange.position.y = .02;
-          groupe.add(losange);
+        /* Balise FIXE : une croix trace les deux diagonales du carré. Balise
+           qui tourne avec son île : carré vide (Taekun, 2026-11-03). */
+        let croix = null;
+        if (!mobile) {
+          croix = new THREE.Group();
+          const diag = Math.SQRT2 * (L - 2 * e);
+          [Math.PI / 4, -Math.PI / 4].forEach(angle => {
+            const ombre = new THREE.Mesh(new THREE.BoxGeometry(diag + .02, h * .6, e + .03), contourMat);
+            ombre.rotation.y = angle;
+            ombre.position.y = h * .3;
+            const barre = new THREE.Mesh(new THREE.BoxGeometry(diag, h, e), cadreMat);
+            barre.rotation.y = angle;
+            barre.position.y = h / 2;
+            croix.add(ombre, barre);
+          });
+          groupe.add(croix);
         }
-        groupe.userData.rotationParties = { cadreMat, bornes, losange };
+        groupe.userData.rotationParties = { cadreMat, bornes, croix };
         return groupe;
       }
 
@@ -36409,6 +36462,32 @@
           bornes.scale.y = g ? 1.35 : 1;
         });
       }
+
+      /* Magie : une balise mobile de l'île tournée (hors pivot) part avec
+         elle ; son double se pose à l'arrivée (kaykit3d.js). */
+      const rotationMagieDuModeBase = kaykitMagieDuMode;
+      kaykitMagieDuMode = function kaykitMagieDuModeBalises(island, rotation, sol) {
+        const res = rotationMagieDuModeBase(island, rotation, sol);
+        if (!butBalises() || !island) return res;
+        const pivot = Array.isArray(state.selectedMagicPivot) ? state.selectedMagicPivot : null;
+        state.rotation.balises.forEach(([r, c], idx) => {
+          if (!baliseMobile(idx)) return;
+          const i = island.cells.findIndex(([ir, ic]) => ir === r && ic === c);
+          if (i < 0 || (pivot && pivot[0] === r && pivot[1] === c)) return;
+          if (!rotation) {
+            const reelle = kaykit3D?.rotationBalises?.children[idx];
+            if (reelle) res.masquer.push(reelle);
+            return;
+          }
+          const vers = rotation.absCells?.[i];
+          if (!vers || (vers[0] === r && vers[1] === c)) return;
+          const fantome = rotationConstruireBalise(true);
+          const p = kaykitCellPosition(vers[0], vers[1], sol ?? kaykitCellSurfaceY(vers[0], vers[1]));
+          fantome.position.set(p.x, p.y, p.z);
+          res.fantomes.push(fantome);
+        });
+        return res;
+      };
 
       const rotationSyncKayKitSceneBase = syncKayKitScene;
       syncKayKitScene = function syncKayKitSceneRotation() {
@@ -37120,8 +37199,11 @@
          — Dès la mise en place, 4 œufs sont posés sur la croix centrale, à
            2 cases du sanctuaire, chacun avec le nombre de tours avant son
            éclosion. Chaque fin de tour retire 1 à TOUS les œufs.
+         — Comptes de départ : 2, 3, 4 et 5, tirés au hasard.
          — À zéro, l'œuf est mûr (il change de couleur) et éclot dès qu'une
            île est sous lui : la créature naît sur la case de l'œuf.
+         — Chaque éclosion fait apparaître un nouvel œuf (compte 2) au bout
+           d'un bras de la croix du sanctuaire, sur une case libre.
          — Un œuf se pousse comme une couronne au sol, mais il flotte : il
            survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
@@ -37129,7 +37211,8 @@
            s'y arrêter en se déplaçant.
          — Une seule espèce par partie :
              Loup : à chaque fin de tour, il avance d'une case vers le
-             gardien le plus proche ; s'il le touche déjà, il le pousse.
+             gardien le plus proche (s'il n'en touche pas déjà un), puis
+             pousse d'une case un gardien adjacent.
              (La Vase est retirée du jeu pour l'instant : Taekun, 2026-11-03.)
          — Une créature se fait tomber comme un gardien (poussée, magie).
            Celui qui l'a fait tomber est récompensé : avec le deckbuilding,
@@ -37147,9 +37230,12 @@
         // vase: { nom: "Vase", modele: "heroSkeletonMage" } — retirée pour l'instant.
       };
       const CREATURES_DISTANCE_OEUFS = 2;
-      /* Tours d'éclosion (un tour = le tour d'un joueur) : alternés, pour que
-         personne n'ait toujours la première action sur les créatures. */
-      const CREATURES_ECLOSIONS = [5, 6, 11, 12];
+      /* Comptes à rebours de départ (un tour = le tour d'un joueur), tirés
+         au hasard entre les 4 œufs : 2, 3, 4 et 5 (Taekun, 2026-11-03). */
+      const CREATURES_COMPTES = [2, 3, 4, 5];
+      /* Quand un œuf éclot, un nouvel œuf apparaît au bout d'un bras de la
+         croix du sanctuaire (case libre), avec ce compte à rebours. */
+      const CREATURES_COMPTE_RELEVE = 2;
 
       function creaturesActives(source = state) {
         return !!source?.rotation?.couches?.creatures;
@@ -37167,8 +37253,9 @@
         const especes = Object.keys(CREATURES);
         state.rotation.creatures = {
           espece: especes[Math.floor(gameRandom() * especes.length)],
-          oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: CREATURES_ECLOSIONS[ordre[i]] })),
+          oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: (state.turn || 1) + CREATURES_COMPTES[ordre[i]] })),
           prochainId: 1,
+          prochainOeuf: cases.length + 1,
           butins: {}
         };
       }
@@ -37358,33 +37445,67 @@
         if (boues) showToast(`La Vase colle : ${boues} carte${boues > 1 ? "s" : ""} Boue dans la défausse de ${joueur.name}.`);
       }
 
-      /** Loup : un pas vers le gardien le plus proche, ou une poussée. */
+      /** Loup, à chaque fin de tour : 1) il avance d'une case vers le
+       *  gardien le plus proche (plus court chemin sur les îles, sans
+       *  traverser gardiens ni œufs) ; 2) il pousse d'une case un gardien
+       *  qui lui est adjacent (celui qui tomberait en priorité). Sans chemin,
+       *  il prend le pas qui le rapproche le plus à vol d'oiseau. */
+      const LOUP_PAS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      function loupCaseLibre(r, c) {
+        return inside(r, c) && isLand(r, c) && !characterAt(r, c) && !oeufSurCase(r, c);
+      }
+      function loupAdjacents(loup) {
+        return (state.characters || []).filter(g => !g.creature && Math.abs(g.r - loup.r) + Math.abs(g.c - loup.c) === 1);
+      }
+      function loupPas(loup) {
+        const proies = (state.characters || []).filter(g => !g.creature);
+        if (!proies.length) return null;
+        const but = new Set();
+        proies.forEach(g => LOUP_PAS.forEach(([dr, dc]) => but.add(key(g.r + dr, g.c + dc))));
+        // Parcours en largeur : le premier pas du plus court chemin.
+        const vus = new Set([key(loup.r, loup.c)]);
+        let front = LOUP_PAS.map(([dr, dc]) => [loup.r + dr, loup.c + dc])
+          .filter(([r, c]) => loupCaseLibre(r, c))
+          .map(([r, c]) => ({ r, c, premier: [r, c] }));
+        front.forEach(n => vus.add(key(n.r, n.c)));
+        while (front.length) {
+          const atteint = front.find(n => but.has(key(n.r, n.c)));
+          if (atteint) return atteint.premier;
+          const suivant = [];
+          front.forEach(n => LOUP_PAS.forEach(([dr, dc]) => {
+            const r = n.r + dr, c = n.c + dc, k = key(r, c);
+            if (vus.has(k) || !loupCaseLibre(r, c)) return;
+            vus.add(k);
+            suivant.push({ r, c, premier: n.premier });
+          }));
+          front = suivant;
+        }
+        // Aucun chemin : le pas qui rapproche le plus du gardien le plus proche.
+        const dist = (g, r, c) => Math.abs(g.r - r) + Math.abs(g.c - c);
+        const cible = proies.reduce((x, y) => (dist(y, loup.r, loup.c) < dist(x, loup.r, loup.c) ? y : x));
+        const pas = LOUP_PAS.map(([dr, dc]) => [loup.r + dr, loup.c + dc])
+          .filter(([r, c]) => loupCaseLibre(r, c))
+          .sort((x, y) => dist(cible, x[0], x[1]) - dist(cible, y[0], y[1]));
+        return pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible, loup.r, loup.c) ? pas[0] : null;
+      }
       function creaturesLoups() {
         creaturesVivantes().filter(c => c.creature === "loup").forEach(loup => {
           if (!characterById(loup.id)) return;
-          const proies = (state.characters || []).filter(g => !g.creature);
-          if (!proies.length) return;
-          const dist = (g, r = loup.r, c = loup.c) => Math.abs(g.r - r) + Math.abs(g.c - c);
-          const cible = proies.reduce((a, b) => (dist(b) < dist(a) ? b : a));
-          if (dist(cible) === 1) {
-            const dr = cible.r - loup.r, dc = cible.c - loup.c;
-            const plan = resoudrePousseeBloc(cible.r, cible.c, dr, dc, 1);
-            if (plan) {
-              const victime = joueurDuGardien(cible);
-              appliquerPousseeBloc(plan, dr, dc);
-              playSfx("push", { c: loup.c });
-              showToast(`Le Loup bondit sur un gardien de ${victime?.name || "?"}${plan.chutes ? " et le fait tomber" : ""} !`);
-            }
-            return;
+          if (!loupAdjacents(loup).length) {
+            const pas = loupPas(loup);
+            if (pas) { loup.r = pas[0]; loup.c = pas[1]; }
           }
-          const pas = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-            .map(([dr, dc]) => [loup.r + dr, loup.c + dc])
-            .filter(([r, c]) => inside(r, c) && islandAt(r, c) && !characterAt(r, c))
-            .sort((a, b) => dist(cible, a[0], a[1]) - dist(cible, b[0], b[1]));
-          if (pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible)) {
-            loup.r = pas[0][0];
-            loup.c = pas[0][1];
-          }
+          const plans = loupAdjacents(loup).map(g => {
+            const dr = g.r - loup.r, dc = g.c - loup.c;
+            return { g, dr, dc, plan: resoudrePousseeBloc(g.r, g.c, dr, dc, 1) };
+          }).filter(x => x.plan);
+          if (!plans.length) return;
+          plans.sort((x, y) => (y.plan.chutes || 0) - (x.plan.chutes || 0));
+          const { g, dr, dc, plan } = plans[0];
+          const victime = joueurDuGardien(g);
+          appliquerPousseeBloc(plan, dr, dc);
+          playSfx("push", { c: loup.c });
+          showToast(`Le Loup bondit sur un gardien de ${victime?.name || "?"}${plan.chutes ? " et le fait tomber" : ""} !`);
         });
       }
 
@@ -37399,10 +37520,27 @@
         return islandAt(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
+      /** Bouts de la croix du sanctuaire : (0, centre), (dernière, centre),
+       *  (centre, 0), (centre, dernière). Un nouvel œuf prend l'un d'eux,
+       *  au hasard parmi les cases sans gardien, œuf ni couronne. */
+      function creaturesNouveauxOeufs(etat, nombre) {
+        const bouts = [[0, CENTER.c], [GRID - 1, CENTER.c], [CENTER.r, 0], [CENTER.r, GRID - 1]];
+        for (let n = 0; n < nombre; n++) {
+          const libres = bouts.filter(([r, c]) => !characterAt(r, c) && !looseArtifactAt(r, c)
+            && !etat.oeufs.some(o => o.r === r && o.c === c));
+          if (!libres.length) return;
+          const [r, c] = libres[Math.floor(gameRandom() * libres.length)];
+          etat.prochainOeuf = etat.prochainOeuf || (Math.max(0, ...etat.oeufs.map(o => o.id)) + 1);
+          etat.oeufs.push({ id: etat.prochainOeuf++, r, c, eclosion: (state.turn || 1) + CREATURES_COMPTE_RELEVE });
+          animateCellPulse(r, c, "crown-burst");
+        }
+      }
+
       function creaturesEclore() {
         const etat = state?.rotation?.creatures;
         if (!etat) return false;
         let eclos = false;
+        const avant = etat.oeufs.length;
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
@@ -37414,6 +37552,7 @@
           eclos = true;
           return false;
         });
+        if (eclos) creaturesNouveauxOeufs(etat, avant - etat.oeufs.length);
         return eclos;
       }
 
@@ -37571,6 +37710,27 @@
         return groupe;
       }
 
+      /* Chiffre du compte à rebours ; mûr : coquille rouge braise qui luit,
+         plus de chiffre. */
+      function creaturesHabillerOeuf(visuel, oeuf) {
+        const n = oeufManches(oeuf);
+        if (visuel.userData.n !== n) {
+          visuel.userData.n = n;
+          visuel.userData.chiffre.material.map = creaturesTextureChiffre(n);
+          visuel.userData.chiffre.material.needsUpdate = true;
+        }
+        const mur = oeufMur(oeuf);
+        if (visuel.userData.mur !== mur) {
+          visuel.userData.mur = mur;
+          const coquille = visuel.children[0].material;
+          coquille.color.setHex(mur ? 0xc8261a : 0xf3e3c0);
+          coquille.emissive.setHex(mur ? 0xff3a10 : 0x3a2a10);
+          coquille.emissiveIntensity = mur ? .85 : .25;
+          visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0xc9b07c);
+          visuel.userData.chiffre.visible = !mur;
+        }
+      }
+
       function creaturesSyncOeufs3D() {
         if (!kaykit3D?.scene) return;
         const oeufs = creaturesActives() ? (state?.rotation?.creatures?.oeufs || []) : [];
@@ -37599,23 +37759,7 @@
           const y = surIle ? kaykitCellSurfaceY(oeuf.r, oeuf.c) : KAYKIT_LEVELS.islandTop + .014; // case vide : posé sur la grille
           const p = kaykitCellPosition(oeuf.r, oeuf.c, y);
           visuel.position.set(p.x, p.y, p.z);
-          const n = oeufManches(oeuf);
-          if (visuel.userData.n !== n) {
-            visuel.userData.n = n;
-            visuel.userData.chiffre.material.map = creaturesTextureChiffre(n);
-            visuel.userData.chiffre.material.needsUpdate = true;
-          }
-          /* Mûr : coquille rouge braise qui luit, plus de chiffre. */
-          const mur = oeufMur(oeuf);
-          if (visuel.userData.mur !== mur) {
-            visuel.userData.mur = mur;
-            const coquille = visuel.children[0].material;
-            coquille.color.setHex(mur ? 0xc8261a : 0xf3e3c0);
-            coquille.emissive.setHex(mur ? 0xff3a10 : 0x3a2a10);
-            coquille.emissiveIntensity = mur ? .85 : .25;
-            visuel.children[1].material.color.setHex(mur ? 0xffd27a : 0xc9b07c);
-            visuel.userData.chiffre.visible = !mur;
-          }
+          creaturesHabillerOeuf(visuel, oeuf);
         });
         [...groupe.children].forEach(o => { if (!vus.has(o.userData.oeufId)) groupe.remove(o); });
       }
@@ -37629,6 +37773,108 @@
         } catch (erreur) {
           console.warn("[ILYOS] œufs 3D", erreur);
         }
+      };
+
+      /* ---------- Fantômes (aperçus de poussée et de magie) -------------
+         Un œuf poussé ou tourné montre son double à l'arrivée (même œuf,
+         même chiffre) ; une créature montre son squelette vert, pas un
+         gardien. Points d'extension de kaykit3d.js. */
+      function creaturesRendreFantome(objet, opacite) {
+        objet.traverse(o => {
+          if (!o.material) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          const copies = mats.map(m => {
+            const copie = m.clone();
+            copie.transparent = true;
+            copie.opacity = opacite * (m.opacity ?? 1);
+            copie.depthWrite = false;
+            copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
+            return copie;
+          });
+          o.material = Array.isArray(o.material) ? copies : copies[0];
+          o.renderOrder = Math.max(o.renderOrder || 0, 21);
+        });
+        return objet;
+      }
+      function oeufParPieceId(id) {
+        return (state?.rotation?.creatures?.oeufs || []).find(o => `oeuf-${o.id}` === String(id) || o.id === id) || null;
+      }
+      function creaturesFantomeOeuf(oeuf, r, c, surfaceY, opacite) {
+        const visuel = creaturesConstruireOeuf();
+        creaturesHabillerOeuf(visuel, oeuf);
+        const y = surfaceY ?? (islandAt(r, c) ? kaykitCellSurfaceY(r, c) : KAYKIT_LEVELS.islandTop + .014);
+        const p = kaykitCellPosition(r, c, y);
+        visuel.position.set(p.x, p.y, p.z);
+        // Le chiffre (sprite, sans test de profondeur) reste plein.
+        const chiffre = visuel.userData.chiffre;
+        visuel.remove(chiffre);
+        creaturesRendreFantome(visuel, opacite);
+        visuel.add(chiffre);
+        return visuel;
+      }
+      function creaturesFantomeCreature(char, r, c, surfaceY, opacite) {
+        const cle = creatureModele(char);
+        ensureKayKitAsset(cle);
+        const piece = cloneKayKitAsset(cle, { maxWidth: .63, maxHeight: 1.02, targetFloor: 0 });
+        if (!piece) return null;
+        const p = kaykitCellPosition(r, c, surfaceY ?? kaykitCellSurfaceY(r, c));
+        piece.position.set(p.x, p.y, p.z);
+        piece.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+        piece.traverse(o => {
+          if (!o.isMesh || !o.material) return;
+          const teinter = m => {
+            const copie = m.clone();
+            if (copie.color) copie.color.multiply(new THREE.Color(0x9fe0a4));
+            if (copie.emissive) { copie.emissive.setHex(0x163a1c); copie.emissiveIntensity = .55; }
+            return copie;
+          };
+          o.material = Array.isArray(o.material) ? o.material.map(teinter) : teinter(o.material);
+        });
+        return creaturesRendreFantome(piece, opacite);
+      }
+      const creaturesFantomeBase = kaykitFantomeDuMode;
+      kaykitFantomeDuMode = function kaykitFantomeDuModeCreatures(type, id, r, c, options = {}) {
+        if (creaturesActives()) {
+          const opacite = options.opacity ?? .6;
+          if (type === "egg") {
+            const oeuf = oeufParPieceId(id);
+            if (oeuf) return creaturesFantomeOeuf(oeuf, r, c, options.surfaceY, opacite);
+          }
+          if (type === "character") {
+            const char = characterById(id);
+            if (char?.creature) return creaturesFantomeCreature(char, r, c, options.surfaceY, opacite);
+          }
+        }
+        return creaturesFantomeBase(type, id, r, c, options);
+      };
+      const creaturesObjetsBase = kaykitObjetsDuMode;
+      kaykitObjetsDuMode = function kaykitObjetsDuModeCreatures(type, id) {
+        if (type === "egg") {
+          const oeuf = oeufParPieceId(id);
+          const visuel = oeuf && kaykit3D?.rotationOeufs?.children.find(o => o.userData.oeufId === oeuf.id);
+          if (visuel) return [visuel];
+        }
+        return creaturesObjetsBase(type, id);
+      };
+      /* Magie : les œufs de l'île (hors pivot) partent avec elle. */
+      const creaturesMagieDuModeBase = kaykitMagieDuMode;
+      kaykitMagieDuMode = function kaykitMagieDuModeCreatures(island, rotation, sol) {
+        const res = creaturesMagieDuModeBase(island, rotation, sol);
+        if (!creaturesActives() || !island) return res;
+        const pivot = Array.isArray(state.selectedMagicPivot) ? state.selectedMagicPivot : null;
+        (state.rotation.creatures?.oeufs || []).forEach(oeuf => {
+          const i = island.cells.findIndex(([r, c]) => r === oeuf.r && c === oeuf.c);
+          if (i < 0 || (pivot && pivot[0] === oeuf.r && pivot[1] === oeuf.c)) return;
+          if (!rotation) {
+            const visuel = kaykit3D?.rotationOeufs?.children.find(o => o.userData.oeufId === oeuf.id);
+            if (visuel) res.masquer.push(visuel);
+            return;
+          }
+          const vers = rotation.absCells?.[i];
+          if (!vers || (vers[0] === oeuf.r && vers[1] === oeuf.c)) return;
+          res.fantomes.push(creaturesFantomeOeuf(oeuf, vers[0], vers[1], sol, .9));
+        });
+        return res;
       };
 
       /* Les créatures sont des squelettes KayKit (choix de Taekun, 01/11) :
@@ -37676,6 +37922,35 @@
           j.hand = actions.map((action, i) => ({ id: `banc-${joueur}-${i}`, action, used: false }));
           renderAll();
           return true;
+        },
+        /* Banc : déplacer un œuf (aperçus de magie). */
+        oeuf: (id, r, c, compte = null) => {
+          const o = state?.rotation?.creatures?.oeufs?.find(x => x.id === id);
+          if (!o) return false;
+          o.r = r; o.c = c;
+          if (compte !== null) o.eclosion = (state.turn || 1) + compte;
+          renderAll(); syncKayKitScene?.();
+          return true;
+        },
+        /* Banc : aperçu de magie sans clic (île, pivot, crans 1 à 3). */
+        apercuMagie: (islandId, pivot, steps = 1) => {
+          state.phase = "ACTION";
+          state.selectedActionType = "MAGIC";
+          state.selectedIslandId = islandId;
+          state.selectedMagicPivot = pivot;
+          state.magicPreviewSteps = steps;
+          state.magicPreviewValid = true;
+          renderAll(); syncKayKitScene?.();
+          return magicRotationOptions().map(o => o.steps);
+        },
+        /* Banc : position à l'écran d'une case (survols simulés). */
+        ecran: (r, c) => {
+          const canvas = kaykit3D?.renderer?.domElement;
+          if (!kaykit3D?.camera || !canvas) return null;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+          const v = new THREE.Vector3(p.x, p.y, p.z).project(kaykit3D.camera);
+          const rect = canvas.getBoundingClientRect();
+          return { x: rect.left + (v.x * .5 + .5) * rect.width, y: rect.top + (-v.y * .5 + .5) * rect.height };
         },
         /* Banc : poser des cartes sur le dessus de la pioche (prochaine pioche). */
         dessus: (joueur, actions) => {

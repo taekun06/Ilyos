@@ -9030,7 +9030,8 @@
             const sens = [Math.sign(vr - impact.from[0]), Math.sign(vc - impact.from[1])];
             const chute = [vr + sens[0] * rang * .5, vc + sens[1] * rang * .5];
             const sol = KAYKIT_LEVELS.islandTop - .32 - rang * .22;
-            const fantome = makeKayKitPieceGhost(chute[0], chute[1], { playerId, surfaceY: sol });
+            const fantome = kaykitFantomeDuMode(impact.type, impact.id, chute[0], chute[1], { surfaceY: sol, opacity: .82 })
+              || makeKayKitPieceGhost(chute[0], chute[1], { playerId, surfaceY: sol });
             if (fantome) {
               kaykitFantomeTexture(fantome, 0xff3b4a, .82, .85);
               group.add(fantome);
@@ -9051,7 +9052,8 @@
           if (impact.to[0] === impact.from[0] && impact.to[1] === impact.from[1]) return;
           // La vraie pièce est masquée : son double, presque plein, se lit
           // comme la position finale et non comme un calque.
-          const arrivee = makeKayKitPieceGhost(impact.to[0], impact.to[1], { playerId, crown: impact.type === "crown", opacity: .9 });
+          const arrivee = kaykitFantomeDuMode(impact.type, impact.id, impact.to[0], impact.to[1], { opacity: .9 })
+            || makeKayKitPieceGhost(impact.to[0], impact.to[1], { playerId, crown: impact.type === "crown", opacity: .9 });
           if (arrivee) group.add(arrivee);
           if (impact.carrying) {
             const couronne = makeKayKitPieceGhost(impact.to[0], impact.to[1], { crown: true, opacity: .9, surfaceY: kaykitCellSurfaceY(impact.to[0], impact.to[1]) + .74 });
@@ -9082,6 +9084,10 @@
           if (!bouge) return;
           if (impact.type === "crown") {
             (kaykit3D.looseCrownRegistry.get(String(impact.id))?.objects || []).forEach(masquer);
+            return;
+          }
+          if (impact.type !== "character") {
+            (kaykitObjetsDuMode(impact.type, impact.id) || []).forEach(masquer);
             return;
           }
           const visual = kaykit3D.characterVisuals.get(String(impact.id));
@@ -9257,6 +9263,19 @@
          donnerait le niveau du plateau et non celui de l'île. Les matériaux
          clonés sont marqués ilyosTransient : ils sont propres à ce fantôme et
          doivent être libérés avec lui. */
+      /* Points d'extension des modes de jeu (rotation-creatures.js,
+         rotation.js) : œufs, créatures et balises ont leurs propres
+         fantômes. Par défaut, rien.
+         — kaykitFantomeDuMode(type, id, r, c, options) : fantôme d'une pièce
+           du mode (œuf, créature) à la case (r, c), ou null.
+         — kaykitObjetsDuMode(type, id) : objets 3D réels d'une pièce du mode,
+           masqués pendant l'aperçu d'une poussée.
+         — kaykitMagieDuMode(island, rotation, sol) : { masquer: [objets 3D
+           qui partent avec l'île], fantomes: [objets à l'arrivée] }. */
+      function kaykitFantomeDuMode(type, id, r, c, options) { return null; }
+      function kaykitObjetsDuMode(type, id) { return []; }
+      function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
+
       function makeKayKitPieceGhost(r, c, { playerId = null, crown = false, opacity = .6, surfaceY = null } = {}) {
         let piece = null;
         if (crown) {
@@ -12014,7 +12033,8 @@
           };
           (rotation.characterMoves || []).forEach(move => {
             if (move.r === move.char.r && move.c === move.char.c) return;
-            poser(makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, surfaceY: sol }));
+            poser(kaykitFantomeDuMode("character", move.char.id, move.r, move.c, { surfaceY: sol, opacity: .9 })
+              || makeKayKitPieceGhost(move.r, move.c, { playerId: move.char.player, surfaceY: sol }));
             let portee = null;
             try { portee = artifactCarriedBy(move.char.id); } catch (_) { }
             if (!portee) return;
@@ -12026,6 +12046,10 @@
             if (move.r === move.artifact.r && move.c === move.artifact.c) return;
             poser(makeKayKitPieceGhost(move.r, move.c, { crown: true, surfaceY: sol }));
           });
+          // Œufs et balises mobiles qui tournent avec l'île.
+          let duMode = null;
+          try { duMode = kaykitMagieDuMode(island, rotation, sol); } catch (_) { }
+          (duMode?.fantomes || []).forEach(poser);
         });
       }
 
@@ -12084,6 +12108,9 @@
           const slot = artifact.id != null ? String(artifact.id) : (idx === 0 ? "primary" : "secondary");
           (kaykit3D.looseCrownRegistry.get(slot)?.objects || []).forEach(masquer);
         });
+        let duMode = null;
+        try { duMode = kaykitMagieDuMode(island, null, null); } catch (_) { }
+        (duMode?.masquer || []).forEach(masquer);
       }
 
       // Avant même de cliquer un pivot : simple survol d'une case d'île pendant
