@@ -140,8 +140,8 @@
         // tirage au sort la désignait, elle ne jouait jamais (Taekun, 2026-10-24).
         const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
         if (ouvertureSymetrique) {
-          const setupName = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset]?.name
-            || "Archipels ouverts";
+          const setupDuel = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset];
+          const setupName = setupDuel ? setupDuel.name : "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
         }
         if (p.isAI) {

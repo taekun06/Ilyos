@@ -17773,6 +17773,18 @@
       function symmetricSetupDisponible(definition) {
         return !!definition && (!definition.grille || definition.grille === GRID);
       }
+      /* Un setup dont le camp 1 est déjà son propre miroir n'a pas de version
+         Défense distincte : échanger les équipes ne changerait rien. */
+      function symmetricSetupInvariantParEchange(definition) {
+        const bord = (definition.grille || SYMMETRIC_PRESET_SOURCE_GRID) - 1;
+        const signature = (iles, gardiens) => JSON.stringify([
+          iles.map(cells => cells.map(([r, c]) => `${r},${c}`).sort().join(" ")).sort(),
+          gardiens.map(([r, c]) => `${r},${c}`).sort()
+        ]);
+        return signature(definition.baseIslands, definition.characters) === signature(
+          definition.baseIslands.map(cells => cells.map(([r, c]) => [r, bord - c])),
+          definition.characters.map(([r, c]) => [r, bord - c]));
+      }
       function symmetricSetupIds() {
         return Object.keys(SYMMETRIC_DUEL_SETUPS)
           .filter(id => symmetricSetupDisponible(SYMMETRIC_DUEL_SETUPS[id]));
@@ -17794,7 +17806,7 @@
         return cells.map(([r, c]) => [r, GRID - 1 - c]);
       }
 
-      function buildSymmetricPreset(baseIslands, characters, grille = null) {
+      function buildSymmetricPreset(baseIslands, characters, grille = null, inverse = false) {
         const islands = [];
         let id = 1;
 
@@ -17803,25 +17815,25 @@
         const echelle = grille === GRID ? (cell => [cell[0], cell[1]]) : scalePresetCell;
         const ajustees = baseIslands.map(cells => cells.map(echelle));
 
+        // `inverse` (version Défense) : les deux équipes échangent leurs places.
+        const a = inverse ? 1 : 0;
+        const b = 1 - a;
         ajustees.forEach(cells => {
-          islands.push(makeSymmetricPresetIsland(id++, 0, cells));
+          islands.push(makeSymmetricPresetIsland(id++, a, cells));
         });
         ajustees.forEach(cells => {
-          islands.push(makeSymmetricPresetIsland(id++, 1, mirrorPresetCells(cells)));
+          islands.push(makeSymmetricPresetIsland(id++, b, mirrorPresetCells(cells)));
         });
 
+        const gardiens = (joueur, miroir) => characters.map((position, index) => {
+          const [r, c] = echelle(position);
+          return { id: `char-${joueur}-symmetric-${index}`, player: joueur, r, c: miroir ? GRID - 1 - c : c };
+        });
         return {
           islands,
-          characters: [
-            ...characters.map((position, index) => {
-              const [r, c] = echelle(position);
-              return { id: `char-0-symmetric-${index}`, player: 0, r, c };
-            }),
-            ...characters.map((position, index) => {
-              const [r, c] = echelle(position);
-              return { id: `char-1-symmetric-${index}`, player: 1, r, c: GRID - 1 - c };
-            })
-          ]
+          characters: inverse
+            ? [...gardiens(0, true), ...gardiens(1, false)]
+            : [...gardiens(0, false), ...gardiens(1, true)]
         };
       }
 
@@ -18108,6 +18120,25 @@
               [[4, 11]]
             ],
             characters: [[1, 1], [11, 11], [3, 3], [9, 9], [8, 1], [4, 11]]
+          },
+
+          /* Le même Grand large, redessiné pour le 11×11 (coordonnées
+             natives) : mêmes îles et mêmes six gardiens, le plateau en moins. */
+          grandLarge11: {
+            name: "Grand large",
+            posture: "Ouvert",
+            grille: 11,
+            description: "Six gardiens par équipe : l’équipe est complète dès le départ, et aucun renfort n’arrive tant qu’on n’a pas perdu de gardien. Peu d’îles et beaucoup de vide pour bâtir et faire pivoter.",
+            style: "12 îles • 6 gardiens",
+            baseIslands: [
+              [[0, 1], [1, 1]],
+              [[10, 9], [9, 9]],
+              [[2, 3], [3, 2], [3, 4], [4, 3]],
+              [[8, 7], [7, 8], [7, 6], [6, 7]],
+              [[6, 1]],
+              [[4, 9]]
+            ],
+            characters: [[0, 1], [10, 9], [2, 3], [8, 7], [6, 1], [4, 9]]
           }
         };
 
@@ -18119,8 +18150,7 @@
             moment de construire la partie. */
         const setups = {};
         Object.entries(definitions).forEach(([id, definition]) => {
-          setups[id] = {
-            id,
+          const commun = {
             name: definition.name,
             description: definition.description,
             style: definition.style,
@@ -18130,6 +18160,21 @@
             baseIslands: definition.baseIslands,
             characters: definition.characters
           };
+          setups[id] = { id, ...commun, camp: "attaque", base: id };
+          /* Version INVERSÉE : les deux équipes échangent leurs places. Chacun
+             retrouve, autour de ses villages, ce que l'adversaire avait
+             (buildSymmetricPreset avec `inverse`). Les filtres de famille du
+             menu (Offensif / Défensif) choisissent entre les deux. */
+          if (!symmetricSetupInvariantParEchange(definition)) {
+            // Équipes échangées : un setup offensif devient défensif et
+            // inversement ; équilibré et ouvert restent ce qu'ils sont.
+            const inverse = { Offensif: "Défensif", "Défensif": "Offensif" };
+            setups[`${id}Defense`] = {
+              id: `${id}Defense`, ...commun, name: `${commun.name} (inversé)`,
+              posture: inverse[commun.posture] || commun.posture,
+              camp: "defense", base: id
+            };
+          }
         });
         return setups;
       })();
@@ -18144,7 +18189,8 @@
         const cle = `${id}@${GRID}`;
         if (symmetricSetupCache.has(cle)) return symmetricSetupCache.get(cle);
         const definition = SYMMETRIC_DUEL_SETUPS[id];
-        const construit = buildSymmetricPreset(definition.baseIslands, definition.characters, definition.grille);
+        const construit = buildSymmetricPreset(definition.baseIslands, definition.characters, definition.grille,
+          definition.camp === "defense");
         const setup = { ...definition, islands: construit.islands, characters: construit.characters };
         symmetricSetupCache.set(cle, setup);
         return setup;
@@ -21028,8 +21074,8 @@
         // tirage au sort la désignait, elle ne jouait jamais (Taekun, 2026-10-24).
         const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
         if (ouvertureSymetrique) {
-          const setupName = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset]?.name
-            || "Archipels ouverts";
+          const setupDuel = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset];
+          const setupName = setupDuel ? setupDuel.name : "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
         }
         if (p.isAI) {
@@ -55918,8 +55964,8 @@
           : carte.querySelector(".symmetric-board-actions");
         if (bouton && cible && bouton.parentElement !== cible) cible.append(bouton);
         if (bouton) bouton.disabled = MENU_DUEL.attente;
-        document.getElementById("duelTailles")?.querySelectorAll("button")
-          .forEach(taille => { taille.disabled = MENU_DUEL.attente; });
+        document.querySelectorAll("#duelTailles button")
+          .forEach(bouton => { bouton.disabled = MENU_DUEL.attente; });
 
         majFiltresDuel();
         communes?.querySelectorAll("select").forEach(majListeMenu);

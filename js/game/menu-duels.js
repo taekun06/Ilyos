@@ -482,8 +482,8 @@
           : carte.querySelector(".symmetric-board-actions");
         if (bouton && cible && bouton.parentElement !== cible) cible.append(bouton);
         if (bouton) bouton.disabled = MENU_DUEL.attente;
-        document.getElementById("duelTailles")?.querySelectorAll("button")
-          .forEach(taille => { taille.disabled = MENU_DUEL.attente; });
+        document.querySelectorAll("#duelTailles button")
+          .forEach(bouton => { bouton.disabled = MENU_DUEL.attente; });
 
         majFiltresDuel();
         communes?.querySelectorAll("select").forEach(majListeMenu);
