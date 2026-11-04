@@ -961,6 +961,22 @@
         return onlineConnected && state.currentPlayer === localPlayerIndex;
       }
 
+      /** Joueur dont le dock du bas montre les infos (main, compteurs, pioche,
+       *  défausse). Pendant le tour du CPU, le dock garde celles du joueur
+       *  humain : sa pioche à lui ne s'affiche pas (Taekun, 2026-11-04). */
+      function joueurDuDock() {
+        if (!state) return null;
+        const p = currentPlayer();
+        if (state.onlineMode) return (Number.isInteger(localPlayerIndex) && state.players[localPlayerIndex]) || p;
+        if (!p?.isAI) return p;
+        const n = state.players.length;
+        for (let k = 1; k < n; k++) {
+          const q = state.players[(state.currentPlayer - k + n) % n];
+          if (q && !q.isAI) return q;
+        }
+        return p; // CPU contre CPU
+      }
+
       function sanitizeRoomCode(value) {
         return String(value || "")
           .toUpperCase()

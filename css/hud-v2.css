@@ -289,14 +289,41 @@ body[data-visual-mode="alternative"] .hud-v2-balises-score small {
 }
 
 body[data-visual-mode="alternative"] .hud-v2-balise-icone {
+  position: relative;
   align-self: center;
   /* Balise carrée, comme sur le plateau. */
-  width: 10px;
-  height: 10px;
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
   border: 2.5px solid #35c6f2;
   border-radius: 1px;
   box-sizing: border-box;
   background: transparent;
+}
+
+/* Balises tenues en ce moment : pastille chiffrée au coin de la balise. */
+body[data-visual-mode="alternative"] .hud-v2-balise-icone i {
+  position: absolute;
+  right: -9px;
+  bottom: -8px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: #0d2235;
+  border: 1px solid #35c6f2;
+  color: #e6f9ff;
+  font: 800 9px/11px system-ui, sans-serif;
+  font-style: normal;
+  text-align: center;
+  box-shadow: 0 0 6px rgba(53, 198, 242, .45);
+}
+
+body[data-visual-mode="alternative"] .hud-v2-balise-icone i.vide {
+  border-color: rgba(53, 198, 242, .35);
+  color: rgba(230, 249, 255, .45);
+  box-shadow: none;
 }
 
 /* ---------- Centre : Tour · ⚙ · Timer, ⚙ exactement sur l'axe central ---------- */
