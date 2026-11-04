@@ -43,6 +43,17 @@
         return etape;
       }
 
+      /** Ce qui se passe à la fin d'un tour, après « Fin du tour » (loups,
+       *  éclosions) : rangé dans le tour qui s'achève, marqué `fin`. Le rejeu
+       *  part de la fin de MON tour précédent et va jusqu'à la fin du sien. */
+      function tourAdverseFinDeTour(etape, avant) {
+        if (!tourAdverseReleve()) return;
+        const joueur = tourAdverse.courant.joueur;
+        tourAdverseAjouter(etape, avant);
+        etape.joueur = joueur;
+        etape.fin = true;
+      }
+
       (function tourAdverseEnvelopper() {
         const origine = {
           move: applyMoveCore, push: applyPushCore, magie: applyMagicRotationCore,
@@ -172,8 +183,12 @@
         let depuis = tourAdverse.tours.length;
         while (depuis > 0 && tourAdverse.tours[depuis - 1].joueur !== moi) depuis--;
         const tours = tourAdverse.tours.slice(depuis);
+        // La fin de mon tour précédent (loups, éclosions) ouvre le rejeu.
+        const miennes = depuis > 0 ? tourAdverse.tours[depuis - 1].etapes : [];
+        let fin = miennes.length;
+        while (fin > 0 && miennes[fin - 1].fin) fin--;
         tourAdverse.tours = tours;
-        tourAdverse.aRevoir = tours.flatMap(t => t.etapes);
+        tourAdverse.aRevoir = [...miennes.slice(fin), ...tours.flatMap(t => t.etapes)];
         tourAdverseBadge();
         // Le HUD peut se reconstruire juste après le début du tour.
         requestAnimationFrame(tourAdverseBadge);
@@ -263,7 +278,9 @@
           phase: "ACTION_SELECT", reachable: [], pushOptions: [], placementCells: null,
           selectedMagicPivot: null, magicPreviewCells: null, selectedActionType: null,
           selectedIslandId: null, selectedIslandShape: null, hoverAnchor: null,
-          crownTransferTargetIds: [], selectedCharId: acteur
+          crownTransferTargetIds: [],
+          // Une créature (loup) n'a pas de fiche de gardien à afficher.
+          selectedCharId: (snap.characters || []).some(g => g.id === acteur && !g.creature) ? acteur : null
         });
         applyStateSnapshot(snap);
         state.inputLocked = true;
@@ -271,6 +288,12 @@
 
       function tourAdverseJouer(e) {
         const anime = isKayKitBoardActive() && !kaykitReducedMotion();
+        if (e.type === "loups-pas") {
+          tourAdversePoser(e.apres);
+          if (anime) e.pas.forEach(p => queueKayKitActionAnimation(p.id, "move", 700, { r: p.vers[0], c: p.vers[1] }, [p.vers], null, p.de));
+          renderAll();
+          return 950;
+        }
         if (e.type === "move") {
           const vers = e.chemin[e.chemin.length - 1];
           const duree = Math.min(1600, 140 + (e.chemin.length - 1) * 340);
