@@ -18242,7 +18242,8 @@
           [els.customIslandCountSelect, els.customGuardianCountSelect, els.customGuardianPlacementSelect,
             document.getElementById("customMirrorSelect"),
             els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox,
+            document.getElementById("customImmediateScoreCheckbox")]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -18306,6 +18307,7 @@
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
+        if (document.getElementById("customImmediateScoreCheckbox")?.checked) regles.validationImmediate = true;
         if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }
@@ -20961,7 +20963,7 @@
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
       }
 
-      function scoreCrownsAtTurnStart(player) {
+      function scoreCrownsAtTurnStart(player, { immediat = false } = {}) {
         if (!state || !player || state.winner !== null) return 0;
         let scored = 0;
 
@@ -20983,7 +20985,7 @@
           queueKayKitActionAnimation(char.id, "victory", 1200);
           animateCellPulse(char.r, char.c, "crown-burst");
           playSfx("crown");
-          scoreCrownForPlayer(player, char, false, artifact);
+          scoreCrownForPlayer(player, char, false, artifact, { immediat });
           scored++;
         });
 
@@ -20992,6 +20994,21 @@
           crownValidationCellsForPlayer(player).forEach(([r, c]) => state.fxCells.push({ type: "score", r, c }));
         }
         return scored;
+      }
+
+      /* Option « Validation immédiate » du mode personnalisé
+         (validationImmediate, rules-core.js) : après chaque action, le joueur
+         actif marque aussitôt avec le porteur qui se tient sur son village.
+         Lu à chaque rendu (renderAll, ui.js), jamais en simulation ; en ligne,
+         seul le client du joueur actif le fait, puis synchronise. Un point
+         marqué ne se défait pas : l'historique d'annulation est vidé. */
+      function validerCouronnesImmediates() {
+        if (!state || !validationImmediate() || state.winner !== null || state.turnTransitioning) return;
+        if (state.phase !== "ACTION_SELECT") return;
+        if (state.onlineMode && state.currentPlayer !== localPlayerIndex) return;
+        const joueur = currentPlayer();
+        if (!joueur) return;
+        if (scoreCrownsAtTurnStart(joueur, { immediat: true }) > 0) state.undoHistory = [];
       }
 
       function beginTurn() {
@@ -23099,6 +23116,7 @@
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        validerCouronnesImmediates();
         // Retour au clic : un petit son quand le joueur prend un gardien en main.
         const gardienChoisi = state?.selectedCharId || null;
         if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
@@ -27034,7 +27052,7 @@
         return true;
       }
 
-      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
+      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id), { immediat = false } = {}) {
         player.score++;
         triggerScoreAnimation(player.id);
         /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
@@ -27059,7 +27077,8 @@
         } else {
           showToast(coequipier
             ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
-            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+            : immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
+              : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
@@ -28497,7 +28516,10 @@
            n'est plus obligatoire. Une seule île par tour, comme avant, et le
            gardien apparaît toujours sur l'île posée ;
          — `gardienRetireAuPoint` : l'ancienne règle, où le gardien qui valide
-           une couronne quitte le jeu. Par défaut il reste sur son village.
+           une couronne quitte le jeu. Par défaut il reste sur son village ;
+         — `validationImmediate` : la couronne est validée dès que son porteur
+           arrive sur une case de son village, pendant le tour du joueur qui la
+           porte, sans attendre le début de son tour suivant.
          La partie classique, les tutoriels et les énigmes n'ont aucune de ces
          clés : chaque lecteur retombe sur la valeur classique.
          ------------------------------------------------------------------- */
@@ -28529,6 +28551,10 @@
 
       function gardienRetireAuPoint(source = state) {
         return !!source?.rules?.gardienRetireAuPoint;
+      }
+
+      function validationImmediate(source = state) {
+        return !!source?.rules?.validationImmediate;
       }
 
       /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
@@ -51004,6 +51030,7 @@
         enchainement: null,
         relais: false,
         fini: false,
+        pause: false,
         dom: null,
         cles: {},
         vus: new Set(),
@@ -51294,7 +51321,20 @@
       const QK_L1 = [[7, 2], [7, 3], [7, 4]];
       const QK_L2 = [[7, 5], [7, 6], [7, 7]];
       const QK_VIDE = { iles: [], g: [], couronnes: [], reserve: {} };
-      const QK_INTRO_CHAPITRES = ["But", "Île", "Déplacer", "Couronne", "Pousser", "Magie"];
+      /* La première partie de Quick : quatre chapitres, un par action du
+         dock, précédés du but. La couronne (ramasser, passer) se range sous
+         Déplacer, la flèche ↶ sous Magie. */
+      const QK_CHAPITRES = [
+        { nom: "Île", titre: "L’île", dock: "ov2Island",
+          phrase: "Chaque tour, pose une île pour agrandir l’archipel et fais-y naître un gardien" },
+        { nom: "Déplacer", titre: "Déplacer", dock: "ov2Move",
+          phrase: "Avance tes gardiens case par case, ramasse la couronne et passe-la à un allié" },
+        { nom: "Pousser", titre: "Pousser", dock: "ov2Push",
+          phrase: "Repousse les rivaux, toute une file d’un coup, jusque dans le vide" },
+        { nom: "Magie", titre: "Magie", dock: "ov2Magic",
+          phrase: "Fais tourner une île entière avec tout ce qu’elle porte, puis défais un geste" }
+      ];
+      const QK_INTRO_CHAPITRES = QK_CHAPITRES.map(c => c.nom);
 
       // L'île n° i de la scène a-t-elle quitté sa position de départ ?
       const quickIleTournee = (i, depart) => !!state.islands[i] && !quickMemesCases(state.islands[i].cells, depart);
@@ -51318,7 +51358,7 @@
             },
             {
               texte: "Pour y parvenir, tu disposes de 4 actions très simples",
-              suite: "VOIR LES ACTIONS", bloque: true, dock: QK_DOCK, vue: [5, 5], zoom: -.25
+              suite: "CHAPITRE 1", bloque: true, dock: QK_DOCK, vue: [5, 5], zoom: -.25
             }
           ]
         },
@@ -51359,7 +51399,7 @@
           ]
         },
         {
-          chapitre: "Couronne",
+          chapitre: "Déplacer",
           debut: { ...QK_VIDE, iles: [[[[7, 2], [7, 3], [8, 2], [8, 3]], 0, "square"]],
             g: [{ key: "a", p: 0, r: 7, c: 2 }, { key: "b", p: 0, r: 8, c: 2 }], couronnes: [[7, 3]] },
           main: ["MOVE", "MOVE", "MOVE", "PUSH", "PUSH"],
@@ -51502,10 +51542,6 @@
               vue: [7, 3], bloque: true,
               but: () => quickCleSur("a", 7, 4) && !quickIleTournee(0, QK_L1)
             },
-            {
-              texte: "Tu connais les 4 actions. Place à une vraie partie, contre un rival",
-              suite: "JOUER", bloque: true, quitterAction: true, dock: QK_DOCK, vue: [7, 3]
-            }
           ]
         }
       ];
@@ -51964,6 +52000,36 @@
             font: 700 13px/1 var(--font-ilyos-display), Georgia, serif; letter-spacing: .08em; }
           #qk-layer .qk-jouer { border: 0; color: #2a1a04; background: linear-gradient(#ffe7a6, #e2b24c); }
           #qk-layer .qk-menu { border: 1px solid rgba(255,214,120,.45); color: #f6dc92; background: transparent; }
+          #qk-layer.qk-chap-active .qk-top, #qk-layer.qk-chap-active .qk-bot, #qk-layer.qk-chap-active .qk-halo { visibility: hidden; }
+          #qk-layer .qk-chap { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto;
+            background: radial-gradient(ellipse at center, rgba(8,10,20,.35), rgba(8,10,20,.62)); }
+          #qk-layer .qk-chap-carte { width: min(440px, calc(100vw - 32px)); padding: 22px 26px 20px; border-radius: 18px;
+            background: linear-gradient(180deg, rgba(24,28,48,.94), rgba(12,14,26,.94));
+            border: 1px solid rgba(255,214,120,.45); box-shadow: 0 20px 60px rgba(0,0,0,.45); color: #fff4dc; text-align: center; }
+          #qk-layer .qk-chap-carte p { margin: 6px 0 0; font-size: 14.5px; line-height: 1.45; color: rgba(255,244,220,.9); }
+          #qk-layer .qk-chap-carte .qk-actions { flex-wrap: wrap; }
+          #qk-layer .qk-chap.qk-chap-titre { cursor: pointer; transition: opacity .28s; }
+          #qk-layer .qk-chap.qk-chap-sortie { opacity: 0; }
+          #qk-layer .qk-chap-carte .qk-actions .qk-jouer { padding: 12px 30px; }
+          #qk-layer .qk-chap-carte .qk-actions-sec { margin-top: 10px; }
+          #qk-layer .qk-chap-carte .qk-actions-sec button { padding: 8px 14px; font-size: 11.5px; }
+          #qk-layer .qk-chap-num { margin-top: 16px; font: 700 11px/1 var(--font-ilyos-info); letter-spacing: .3em; color: #f6dc92; }
+          #qk-layer .qk-medaillons { display: flex; align-items: flex-start; justify-content: center; }
+          #qk-layer .qk-med { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 64px; }
+          #qk-layer .qk-med-rond { position: relative; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+            border: 1.5px solid rgba(255,214,120,.3); background: rgba(255,255,255,.04); color: rgba(255,244,220,.45); }
+          #qk-layer .qk-med-rond > svg, #qk-layer .qk-med-rond > img { width: 24px; height: 24px; opacity: .45; }
+          #qk-layer .qk-med-nom { font: 700 10px/1 var(--font-ilyos-info); letter-spacing: .14em; text-transform: uppercase; color: rgba(255,244,220,.45); }
+          #qk-layer .qk-med.ok .qk-med-rond { border-color: rgba(255,214,120,.7); background: rgba(226,178,76,.16); color: #f6dc92; }
+          #qk-layer .qk-med.ok .qk-med-rond > svg, #qk-layer .qk-med.ok .qk-med-rond > img { opacity: .8; }
+          #qk-layer .qk-med.ok .qk-med-nom { color: #f6dc92; }
+          #qk-layer .qk-med.cur .qk-med-rond { width: 52px; height: 52px; margin-top: -4px; border: 2px solid #ffd36a; color: #fff3c4;
+            background: radial-gradient(circle, rgba(255,214,110,.28), rgba(255,214,110,.06)); box-shadow: 0 0 16px rgba(255,205,95,.55); }
+          #qk-layer .qk-med.cur .qk-med-rond > svg, #qk-layer .qk-med.cur .qk-med-rond > img { width: 28px; height: 28px; opacity: 1; }
+          #qk-layer .qk-med.cur .qk-med-nom { color: #fff3c4; }
+          #qk-layer .qk-med-ok { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px;
+            border-radius: 50%; font: 700 10px/1 Inter, sans-serif; color: #1d1405; background: linear-gradient(#ffe7a6, #e2b24c); }
+          #qk-layer .qk-med-lien { flex: none; width: 14px; height: 1.5px; margin-top: 22px; background: rgba(255,214,120,.3); }
           @media (max-width: 720px) {
             #qk-layer .qk-top { top: 64px; }
             #qk-layer .qk-bot { bottom: 128px; }
@@ -51996,10 +52062,11 @@
         const calque = quickCalque();
         const etape = quickEtape();
         if (QUICK.intro >= 0) {
-          // L'introduction : ses chapitres, du but à la magie.
+          // Les quatre chapitres, précédés du but.
           const chapitre = QK_INTRO[QUICK.intro].chapitre;
           const rang = QK_INTRO_CHAPITRES.indexOf(chapitre);
-          calque.querySelector(".qk-titre").innerHTML = `INTRODUCTION · <b>${chapitre.toUpperCase()}</b>`;
+          calque.querySelector(".qk-titre").innerHTML = rang < 0 ? "<b>LE BUT</b>"
+            : `CHAPITRE ${rang + 1}/${QK_CHAPITRES.length} · <b>${chapitre.toUpperCase()}</b>`;
           calque.querySelector(".qk-bar").innerHTML = QK_INTRO_CHAPITRES.map((t, i) =>
             `<i class="${i === rang ? "cur" : i < rang ? "ok" : ""}" title="${t}"></i>`).join("");
           calque.querySelector(".qk-reprendre").hidden = !etape || !!etape.suite;
@@ -52112,7 +52179,7 @@
         if (!state?.quick) return false;
         if (state.currentPlayer !== 0 || QUICK.relais || QUICK.enchainement || QUICK.fini) return true;
         const etape = quickEtape();
-        if (!etape || etape.bloque) return true;
+        if (QUICK.pause || !etape || etape.bloque) return true;
         if (etape.pose) return !["PLACE_ISLAND", "PLACE_SPAWN"].includes(state.phase);
         if (state.phase === "PLACE_SPAWN" && etape.naissance) {
           return r !== etape.naissance[0] || c !== etape.naissance[1];
@@ -52234,8 +52301,14 @@
           quickEntrer();
           return;
         }
-        // Fin d'une scène de l'introduction : la suivante, puis la partie.
-        if (QUICK.intro >= 0) quickMonter(QUICK.intro + 1 < QK_INTRO.length ? QUICK.intro + 1 : -1, 0);
+        // Fin d'une scène : la suivante (ouverte par la carte de son chapitre
+        // s'il commence), puis, après le dernier chapitre, le carrefour.
+        if (QUICK.intro < 0) return;
+        if (QUICK.intro + 1 >= QK_INTRO.length) { quickCarrefour(); return; }
+        const suivante = QUICK.intro + 1;
+        quickMonter(suivante, 0);
+        const rang = QK_INTRO_CHAPITRES.indexOf(QK_INTRO[suivante].chapitre);
+        if (rang >= 0 && QK_INTRO[suivante - 1].chapitre !== QK_INTRO[suivante].chapitre) quickCarteChapitre(rang);
       }
 
       /* Monte une scène de l'introduction (`intro` ≥ 0) ou le début d'un tour
@@ -52255,7 +52328,7 @@
       }
 
       function quickTick() {
-        if (!QUICK.active || !state?.quick || QUICK.enchainement || QUICK.fini) return;
+        if (!QUICK.active || !state?.quick || QUICK.enchainement || QUICK.fini || QUICK.pause) return;
         quickGroupeRepere();
         quickPlacerHalos();
 
@@ -52322,6 +52395,92 @@
         try { playSfx("victory"); } catch (_) { }
       }
 
+      /* ---------- Chapitres ------------------------------------------------
+         Une carte ouvre chaque chapitre : les quatre médaillons (faits,
+         en cours, à venir), le titre et une phrase. Après le dernier, le
+         carrefour propose le début de partie guidé, jusqu'au premier point. */
+      function quickIconeAction(id) {
+        const source = document.getElementById(id)?.querySelector("svg, img");
+        if (!source) return "";
+        const copie = source.cloneNode(true);
+        copie.removeAttribute("id");
+        copie.removeAttribute("class");
+        copie.setAttribute("aria-hidden", "true");
+        return copie.outerHTML;
+      }
+
+      function quickMedaillons(rang) {
+        return `<div class="qk-medaillons">${QK_CHAPITRES.map((c, i) => {
+          const etat = i < rang ? "ok" : i === rang ? "cur" : "";
+          return `<div class="qk-med ${etat}"><span class="qk-med-rond">${quickIconeAction(c.dock)}`
+            + `${i < rang ? '<b class="qk-med-ok">✓</b>' : ""}</span><span class="qk-med-nom">${c.nom}</span></div>`;
+        }).join('<i class="qk-med-lien"></i>')}</div>`;
+      }
+
+      function quickFermerCarte() {
+        clearTimeout(QUICK.titreA);
+        QUICK.dom?.querySelector(".qk-chap")?.remove();
+        QUICK.dom?.classList.remove("qk-chap-active");
+        QUICK.pause = false;
+      }
+
+      function quickOuvrirCarte(html, boutons) {
+        const calque = quickCalque();
+        quickFermerCarte();
+        QUICK.pause = true;
+        clearTimeout(QUICK.aideA);
+        const carte = document.createElement("div");
+        carte.className = "qk-chap";
+        // Le premier bouton seul sur sa ligne, les autres plus discrets dessous.
+        const bouton = (b, i) => `<button class="${b.classe}" type="button" data-i="${i}">${b.texte}</button>`;
+        carte.innerHTML = `<div class="qk-chap-carte">${html}`
+          + (boutons.length ? `<div class="qk-actions">${bouton(boutons[0], 0)}</div>` : "")
+          + (boutons.length > 1 ? `<div class="qk-actions qk-actions-sec">${boutons.slice(1).map((b, i) => bouton(b, i + 1)).join("")}</div>` : "")
+          + "</div>";
+        carte.querySelectorAll("button[data-i]").forEach(bouton =>
+          bouton.addEventListener("click", () => boutons[+bouton.dataset.i].action()));
+        calque.appendChild(carte);
+        calque.classList.add("qk-chap-active");
+        return carte;
+      }
+
+      /* Le titre du chapitre : affiché un instant, sans bouton, puis le
+         chapitre commence de lui-même (un clic l'écourte). */
+      function quickCarteChapitre(rang) {
+        const chapitre = QK_CHAPITRES[rang];
+        if (!chapitre) return;
+        const carte = quickOuvrirCarte(`${quickMedaillons(rang)}
+          <div class="qk-chap-num">CHAPITRE ${rang + 1}</div>
+          <div class="qk-grand">${chapitre.titre}</div>
+          <p>${chapitre.phrase}</p>`, []);
+        carte.classList.add("qk-chap-titre");
+        let fait = false;
+        const commencer = () => {
+          if (fait || !carte.isConnected) return;
+          fait = true;
+          clearTimeout(QUICK.titreA);
+          carte.classList.add("qk-chap-sortie");
+          setTimeout(() => { if (carte.isConnected) { quickFermerCarte(); quickAfficher(); } }, 280);
+        };
+        carte.addEventListener("click", commencer);
+        clearTimeout(QUICK.titreA);
+        QUICK.titreA = setTimeout(commencer, 2600);
+      }
+
+      function quickCarrefour() {
+        clearTimeout(QUICK.enchainement);
+        QUICK.enchainement = null;
+        quickPoserRepere(null);
+        quickMettreEnAvant(null);
+        quickOuvrirCarte(`${quickMedaillons(QK_CHAPITRES.length)}
+          <div class="qk-chap-num">LES 4 CHAPITRES SONT FAITS</div>
+          <div class="qk-grand">Et maintenant ?</div>
+          <p>Mets tout ensemble dans un <b>début de partie</b> guidé contre un rival, jusqu’au premier point marqué.</p>`,
+        [{ classe: "qk-jouer", texte: "CONTINUER", action: () => { quickFermerCarte(); quickMonter(-1, 0); } },
+          { classe: "qk-menu", texte: "JOUER CONTRE LE CPU", action: () => quickJouer() },
+          { classe: "qk-menu", texte: "MENU", action: () => quickQuitter() }]);
+      }
+
       /* ---------- Entrée / sortie ---------------------------------------- */
       /* Sans `tour`, Quick s'ouvre sur l'introduction ; avec, directement sur
          ce tour de la partie (tests, captures). */
@@ -52332,6 +52491,7 @@
         QUICK.enchainement = null;
         QUICK.active = true;
         QUICK.fini = false;
+        QUICK.pause = false;
         const debutPartie = Math.max(0, Math.min(QK_DEBUTS.length - 1, tour ?? 0));
         QUICK.vus = new Set(QUICK_TOURS.slice(0, tour == null ? 0 : debutPartie)
           .flatMap(t => t.etapes.map(e => e.theme).filter(Boolean)));
@@ -52421,6 +52581,13 @@
           quickMonter(Math.max(0, Math.min(QK_INTRO.length - 1, scene)), 0);
           QUICK.etape = Math.max(0, Math.min(etape, QK_INTRO[QUICK.intro].etapes.length - 1));
           quickEntrer();
+        },
+        // Cartes des chapitres (captures) : 0 à 3, ou 4 pour le carrefour.
+        chapitre: (rang = 0) => {
+          if (!QUICK.active) quickStart();
+          if (rang >= QK_CHAPITRES.length) { quickMonter(QK_INTRO.length - 1, 0); quickCarrefour(); return; }
+          quickMonter(Math.max(0, QK_INTRO.findIndex(s => s.chapitre === QK_CHAPITRES[rang].nom)), 0);
+          quickCarteChapitre(rang);
         },
         etat: () => ({
           actif: QUICK.active, intro: QUICK.intro, tour: QUICK.tour, etape: QUICK.etape, fini: QUICK.fini,
@@ -55891,7 +56058,8 @@
         MENU_DUEL.branche = true;
         const carte = menuDuelCarte();
         carte?.querySelectorAll("select[data-pas], select[data-seg], select[data-compteur]").forEach(lierListeMenu);
-        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, els.symmetricAllowDissolveCheckbox]
+        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, document.getElementById("customImmediateScoreCheckbox"),
+          els.symmetricAllowDissolveCheckbox]
           .forEach(caseACocher => caseACocher?.addEventListener("change", majMenuPerso));
 
         document.getElementById("duelPostures")?.addEventListener("click", event => {
@@ -57111,7 +57279,16 @@
         state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
         const joueur = state.players[cas.joueur ?? 0];
         const avant = joueur.score;
-        const marques = scoreCrownsAtTurnStart(joueur);
+        /* `immediat` : la validation PENDANT le tour du porteur (option
+           « Validation immédiate »), par le vrai chemin appelé au rendu. */
+        if (cas.immediat) {
+          state.currentPlayer = joueur.id;
+          state.phase = "ACTION_SELECT";
+          state.turnTransitioning = false;
+          state.winner = null;
+          validerCouronnesImmediates();
+        }
+        const marques = cas.immediat ? joueur.score - avant : scoreCrownsAtTurnStart(joueur);
         // Gardiens du joueur encore en jeu : le porteur qui valide reste, sauf
         // avec l'option « gardien sacrifié » du mode personnalisé.
         const gardiens = state.characters.filter(g => g.player === joueur.id).length;

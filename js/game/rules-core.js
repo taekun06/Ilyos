@@ -754,7 +754,10 @@
            n'est plus obligatoire. Une seule île par tour, comme avant, et le
            gardien apparaît toujours sur l'île posée ;
          — `gardienRetireAuPoint` : l'ancienne règle, où le gardien qui valide
-           une couronne quitte le jeu. Par défaut il reste sur son village.
+           une couronne quitte le jeu. Par défaut il reste sur son village ;
+         — `validationImmediate` : la couronne est validée dès que son porteur
+           arrive sur une case de son village, pendant le tour du joueur qui la
+           porte, sans attendre le début de son tour suivant.
          La partie classique, les tutoriels et les énigmes n'ont aucune de ces
          clés : chaque lecteur retombe sur la valeur classique.
          ------------------------------------------------------------------- */
@@ -786,6 +789,10 @@
 
       function gardienRetireAuPoint(source = state) {
         return !!source?.rules?.gardienRetireAuPoint;
+      }
+
+      function validationImmediate(source = state) {
+        return !!source?.rules?.validationImmediate;
       }
 
       /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce

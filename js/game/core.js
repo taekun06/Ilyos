@@ -3108,7 +3108,8 @@
           [els.customIslandCountSelect, els.customGuardianCountSelect, els.customGuardianPlacementSelect,
             document.getElementById("customMirrorSelect"),
             els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox,
+            document.getElementById("customImmediateScoreCheckbox")]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -3172,6 +3173,7 @@
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
+        if (document.getElementById("customImmediateScoreCheckbox")?.checked) regles.validationImmediate = true;
         if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }

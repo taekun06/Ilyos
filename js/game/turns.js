@@ -11,7 +11,7 @@
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
       }
 
-      function scoreCrownsAtTurnStart(player) {
+      function scoreCrownsAtTurnStart(player, { immediat = false } = {}) {
         if (!state || !player || state.winner !== null) return 0;
         let scored = 0;
 
@@ -33,7 +33,7 @@
           queueKayKitActionAnimation(char.id, "victory", 1200);
           animateCellPulse(char.r, char.c, "crown-burst");
           playSfx("crown");
-          scoreCrownForPlayer(player, char, false, artifact);
+          scoreCrownForPlayer(player, char, false, artifact, { immediat });
           scored++;
         });
 
@@ -42,6 +42,21 @@
           crownValidationCellsForPlayer(player).forEach(([r, c]) => state.fxCells.push({ type: "score", r, c }));
         }
         return scored;
+      }
+
+      /* Option « Validation immédiate » du mode personnalisé
+         (validationImmediate, rules-core.js) : après chaque action, le joueur
+         actif marque aussitôt avec le porteur qui se tient sur son village.
+         Lu à chaque rendu (renderAll, ui.js), jamais en simulation ; en ligne,
+         seul le client du joueur actif le fait, puis synchronise. Un point
+         marqué ne se défait pas : l'historique d'annulation est vidé. */
+      function validerCouronnesImmediates() {
+        if (!state || !validationImmediate() || state.winner !== null || state.turnTransitioning) return;
+        if (state.phase !== "ACTION_SELECT") return;
+        if (state.onlineMode && state.currentPlayer !== localPlayerIndex) return;
+        const joueur = currentPlayer();
+        if (!joueur) return;
+        if (scoreCrownsAtTurnStart(joueur, { immediat: true }) > 0) state.undoHistory = [];
       }
 
       function beginTurn() {

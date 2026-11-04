@@ -384,7 +384,8 @@
         MENU_DUEL.branche = true;
         const carte = menuDuelCarte();
         carte?.querySelectorAll("select[data-pas], select[data-seg], select[data-compteur]").forEach(lierListeMenu);
-        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, els.symmetricAllowDissolveCheckbox]
+        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, document.getElementById("customImmediateScoreCheckbox"),
+          els.symmetricAllowDissolveCheckbox]
           .forEach(caseACocher => caseACocher?.addEventListener("change", majMenuPerso));
 
         document.getElementById("duelPostures")?.addEventListener("click", event => {

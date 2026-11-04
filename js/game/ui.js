@@ -353,6 +353,7 @@
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        validerCouronnesImmediates();
         // Retour au clic : un petit son quand le joueur prend un gardien en main.
         const gardienChoisi = state?.selectedCharId || null;
         if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
@@ -4288,7 +4289,7 @@
         return true;
       }
 
-      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
+      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id), { immediat = false } = {}) {
         player.score++;
         triggerScoreAnimation(player.id);
         /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
@@ -4313,7 +4314,8 @@
         } else {
           showToast(coequipier
             ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
-            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+            : immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
+              : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
