@@ -1013,6 +1013,8 @@
             border: 1px solid rgba(255,214,120,.45); box-shadow: 0 20px 60px rgba(0,0,0,.45); color: #fff4dc; text-align: center; }
           #qk-layer .qk-chap-carte p { margin: 6px 0 0; font-size: 14.5px; line-height: 1.45; color: rgba(255,244,220,.9); }
           #qk-layer .qk-chap-carte .qk-actions { flex-wrap: wrap; }
+          #qk-layer .qk-chap.qk-chap-titre { cursor: pointer; transition: opacity .28s; }
+          #qk-layer .qk-chap.qk-chap-sortie { opacity: 0; }
           #qk-layer .qk-chap-carte .qk-actions .qk-jouer { padding: 12px 30px; }
           #qk-layer .qk-chap-carte .qk-actions-sec { margin-top: 10px; }
           #qk-layer .qk-chap-carte .qk-actions-sec button { padding: 8px 14px; font-size: 11.5px; }
@@ -1421,6 +1423,7 @@
       }
 
       function quickFermerCarte() {
+        clearTimeout(QUICK.titreA);
         QUICK.dom?.querySelector(".qk-chap")?.remove();
         QUICK.dom?.classList.remove("qk-chap-active");
         QUICK.pause = false;
@@ -1435,7 +1438,8 @@
         carte.className = "qk-chap";
         // Le premier bouton seul sur sa ligne, les autres plus discrets dessous.
         const bouton = (b, i) => `<button class="${b.classe}" type="button" data-i="${i}">${b.texte}</button>`;
-        carte.innerHTML = `<div class="qk-chap-carte">${html}<div class="qk-actions">${bouton(boutons[0], 0)}</div>`
+        carte.innerHTML = `<div class="qk-chap-carte">${html}`
+          + (boutons.length ? `<div class="qk-actions">${bouton(boutons[0], 0)}</div>` : "")
           + (boutons.length > 1 ? `<div class="qk-actions qk-actions-sec">${boutons.slice(1).map((b, i) => bouton(b, i + 1)).join("")}</div>` : "")
           + "</div>";
         carte.querySelectorAll("button[data-i]").forEach(bouton =>
@@ -1445,14 +1449,27 @@
         return carte;
       }
 
+      /* Le titre du chapitre : affiché un instant, sans bouton, puis le
+         chapitre commence de lui-même (un clic l'écourte). */
       function quickCarteChapitre(rang) {
         const chapitre = QK_CHAPITRES[rang];
         if (!chapitre) return;
-        quickOuvrirCarte(`${quickMedaillons(rang)}
+        const carte = quickOuvrirCarte(`${quickMedaillons(rang)}
           <div class="qk-chap-num">CHAPITRE ${rang + 1}</div>
           <div class="qk-grand">${chapitre.titre}</div>
-          <p>${chapitre.phrase}</p>`,
-        [{ classe: "qk-jouer", texte: "COMMENCER", action: () => { quickFermerCarte(); quickAfficher(); } }]);
+          <p>${chapitre.phrase}</p>`, []);
+        carte.classList.add("qk-chap-titre");
+        let fait = false;
+        const commencer = () => {
+          if (fait || !carte.isConnected) return;
+          fait = true;
+          clearTimeout(QUICK.titreA);
+          carte.classList.add("qk-chap-sortie");
+          setTimeout(() => { if (carte.isConnected) { quickFermerCarte(); quickAfficher(); } }, 280);
+        };
+        carte.addEventListener("click", commencer);
+        clearTimeout(QUICK.titreA);
+        QUICK.titreA = setTimeout(commencer, 2600);
       }
 
       function quickCarrefour() {

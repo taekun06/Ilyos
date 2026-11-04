@@ -17,6 +17,11 @@
       sacrifié » du mode personnalisé (rules.gardienRetireAuPoint) rétablit
       l'ancienne règle : il quitte alors le jeu.
 
+   4. VALIDATION IMMÉDIATE (option du mode personnalisé,
+      rules.validationImmediate) : le porteur marque pendant son propre tour,
+      dès qu'il se tient sur son village ; sans l'option, rien pendant le tour.
+      Le blocage de zone s'applique de la même façon.
+
    Le premier cas est un TÉMOIN POSITIF : sans lui, un test qui ne marque jamais
    passerait pour un test réussi.
 
@@ -56,6 +61,39 @@ const CAS = [
       crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
     },
     gardiens: 0
+  },
+  {
+    nom: "Validation immédiate (option) : marque pendant le tour",
+    attendu: 1, immediat: true,
+    rules: { validationImmediate: true },
+    spec: {
+      islands: TERRAIN,
+      characters: [{ id: "porteur", player: 0, r: 0, c: 0 }],
+      crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
+    },
+    gardiens: 1
+  },
+  {
+    nom: "Sans l'option : rien de marqué pendant le tour",
+    attendu: 0, immediat: true,
+    spec: {
+      islands: TERRAIN,
+      characters: [{ id: "porteur", player: 0, r: 0, c: 0 }],
+      crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
+    }
+  },
+  {
+    nom: "Validation immédiate : le blocage de zone tient toujours",
+    attendu: 0, immediat: true,
+    rules: { validationImmediate: true },
+    spec: {
+      islands: TERRAIN,
+      characters: [
+        { id: "porteur", player: 0, r: 0, c: 0 },
+        { id: "bloqueur", player: 1, r: 1, c: 0 }
+      ],
+      crowns: [{ r: 0, c: 0, active: true, carrierId: "porteur" }]
+    }
   },
   {
     nom: "Couronne posée seule sur une case de validation",
@@ -132,6 +170,7 @@ async function main() {
     const r = await page.evaluate(c => window.ILYOS_BENCH.validation(c), {
       spec: Object.assign({ seed: 1, islandPlacedThisTurn: true, hands: { 0: [], 1: [] } }, cas.spec),
       rules: cas.rules,
+      immediat: !!cas.immediat,
       joueur: 0
     });
     const ok = r.marques === cas.attendu && (cas.gardiens === undefined || r.gardiens === cas.gardiens);

@@ -18226,7 +18226,8 @@
           [els.customIslandCountSelect, els.customGuardianCountSelect, els.customGuardianPlacementSelect,
             document.getElementById("customMirrorSelect"),
             els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
-            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox]
+            els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox,
+            document.getElementById("customImmediateScoreCheckbox")]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -18290,6 +18291,7 @@
         if (pioche !== PIOCHE_CLASSIQUE) regles.cartesPiochees = pioche;
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
+        if (document.getElementById("customImmediateScoreCheckbox")?.checked) regles.validationImmediate = true;
         if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }
@@ -20945,7 +20947,7 @@
         if (token === aiRunToken && state && state.winner === null) endTurn(true);
       }
 
-      function scoreCrownsAtTurnStart(player) {
+      function scoreCrownsAtTurnStart(player, { immediat = false } = {}) {
         if (!state || !player || state.winner !== null) return 0;
         let scored = 0;
 
@@ -20967,7 +20969,7 @@
           queueKayKitActionAnimation(char.id, "victory", 1200);
           animateCellPulse(char.r, char.c, "crown-burst");
           playSfx("crown");
-          scoreCrownForPlayer(player, char, false, artifact);
+          scoreCrownForPlayer(player, char, false, artifact, { immediat });
           scored++;
         });
 
@@ -20976,6 +20978,21 @@
           crownValidationCellsForPlayer(player).forEach(([r, c]) => state.fxCells.push({ type: "score", r, c }));
         }
         return scored;
+      }
+
+      /* Option « Validation immédiate » du mode personnalisé
+         (validationImmediate, rules-core.js) : après chaque action, le joueur
+         actif marque aussitôt avec le porteur qui se tient sur son village.
+         Lu à chaque rendu (renderAll, ui.js), jamais en simulation ; en ligne,
+         seul le client du joueur actif le fait, puis synchronise. Un point
+         marqué ne se défait pas : l'historique d'annulation est vidé. */
+      function validerCouronnesImmediates() {
+        if (!state || !validationImmediate() || state.winner !== null || state.turnTransitioning) return;
+        if (state.phase !== "ACTION_SELECT") return;
+        if (state.onlineMode && state.currentPlayer !== localPlayerIndex) return;
+        const joueur = currentPlayer();
+        if (!joueur) return;
+        if (scoreCrownsAtTurnStart(joueur, { immediat: true }) > 0) state.undoHistory = [];
       }
 
       function beginTurn() {
@@ -23083,6 +23100,7 @@
       function renderAll() {
         if (ilyosSimulationActive) return;
         ensureArtifactState();
+        validerCouronnesImmediates();
         // Retour au clic : un petit son quand le joueur prend un gardien en main.
         const gardienChoisi = state?.selectedCharId || null;
         if (gardienChoisi && gardienChoisi !== renderAll.dernierChoisi
@@ -27011,7 +27029,7 @@
         return true;
       }
 
-      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id)) {
+      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id), { immediat = false } = {}) {
         player.score++;
         triggerScoreAnimation(player.id);
         /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
@@ -27036,7 +27054,8 @@
         } else {
           showToast(coequipier
             ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
-            : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+            : immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
+              : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
         }
 
         if (player.score >= 3) {
@@ -28474,7 +28493,10 @@
            n'est plus obligatoire. Une seule île par tour, comme avant, et le
            gardien apparaît toujours sur l'île posée ;
          — `gardienRetireAuPoint` : l'ancienne règle, où le gardien qui valide
-           une couronne quitte le jeu. Par défaut il reste sur son village.
+           une couronne quitte le jeu. Par défaut il reste sur son village ;
+         — `validationImmediate` : la couronne est validée dès que son porteur
+           arrive sur une case de son village, pendant le tour du joueur qui la
+           porte, sans attendre le début de son tour suivant.
          La partie classique, les tutoriels et les énigmes n'ont aucune de ces
          clés : chaque lecteur retombe sur la valeur classique.
          ------------------------------------------------------------------- */
@@ -28506,6 +28528,10 @@
 
       function gardienRetireAuPoint(source = state) {
         return !!source?.rules?.gardienRetireAuPoint;
+      }
+
+      function validationImmediate(source = state) {
+        return !!source?.rules?.validationImmediate;
       }
 
       /** La pose du tour est-elle faite, ou n'est-elle pas exigée ? C'est ce
@@ -51957,6 +51983,8 @@
             border: 1px solid rgba(255,214,120,.45); box-shadow: 0 20px 60px rgba(0,0,0,.45); color: #fff4dc; text-align: center; }
           #qk-layer .qk-chap-carte p { margin: 6px 0 0; font-size: 14.5px; line-height: 1.45; color: rgba(255,244,220,.9); }
           #qk-layer .qk-chap-carte .qk-actions { flex-wrap: wrap; }
+          #qk-layer .qk-chap.qk-chap-titre { cursor: pointer; transition: opacity .28s; }
+          #qk-layer .qk-chap.qk-chap-sortie { opacity: 0; }
           #qk-layer .qk-chap-carte .qk-actions .qk-jouer { padding: 12px 30px; }
           #qk-layer .qk-chap-carte .qk-actions-sec { margin-top: 10px; }
           #qk-layer .qk-chap-carte .qk-actions-sec button { padding: 8px 14px; font-size: 11.5px; }
@@ -52365,6 +52393,7 @@
       }
 
       function quickFermerCarte() {
+        clearTimeout(QUICK.titreA);
         QUICK.dom?.querySelector(".qk-chap")?.remove();
         QUICK.dom?.classList.remove("qk-chap-active");
         QUICK.pause = false;
@@ -52379,7 +52408,8 @@
         carte.className = "qk-chap";
         // Le premier bouton seul sur sa ligne, les autres plus discrets dessous.
         const bouton = (b, i) => `<button class="${b.classe}" type="button" data-i="${i}">${b.texte}</button>`;
-        carte.innerHTML = `<div class="qk-chap-carte">${html}<div class="qk-actions">${bouton(boutons[0], 0)}</div>`
+        carte.innerHTML = `<div class="qk-chap-carte">${html}`
+          + (boutons.length ? `<div class="qk-actions">${bouton(boutons[0], 0)}</div>` : "")
           + (boutons.length > 1 ? `<div class="qk-actions qk-actions-sec">${boutons.slice(1).map((b, i) => bouton(b, i + 1)).join("")}</div>` : "")
           + "</div>";
         carte.querySelectorAll("button[data-i]").forEach(bouton =>
@@ -52389,14 +52419,27 @@
         return carte;
       }
 
+      /* Le titre du chapitre : affiché un instant, sans bouton, puis le
+         chapitre commence de lui-même (un clic l'écourte). */
       function quickCarteChapitre(rang) {
         const chapitre = QK_CHAPITRES[rang];
         if (!chapitre) return;
-        quickOuvrirCarte(`${quickMedaillons(rang)}
+        const carte = quickOuvrirCarte(`${quickMedaillons(rang)}
           <div class="qk-chap-num">CHAPITRE ${rang + 1}</div>
           <div class="qk-grand">${chapitre.titre}</div>
-          <p>${chapitre.phrase}</p>`,
-        [{ classe: "qk-jouer", texte: "COMMENCER", action: () => { quickFermerCarte(); quickAfficher(); } }]);
+          <p>${chapitre.phrase}</p>`, []);
+        carte.classList.add("qk-chap-titre");
+        let fait = false;
+        const commencer = () => {
+          if (fait || !carte.isConnected) return;
+          fait = true;
+          clearTimeout(QUICK.titreA);
+          carte.classList.add("qk-chap-sortie");
+          setTimeout(() => { if (carte.isConnected) { quickFermerCarte(); quickAfficher(); } }, 280);
+        };
+        carte.addEventListener("click", commencer);
+        clearTimeout(QUICK.titreA);
+        QUICK.titreA = setTimeout(commencer, 2600);
       }
 
       function quickCarrefour() {
@@ -55990,7 +56033,8 @@
         MENU_DUEL.branche = true;
         const carte = menuDuelCarte();
         carte?.querySelectorAll("select[data-pas], select[data-seg], select[data-compteur]").forEach(lierListeMenu);
-        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, els.symmetricAllowDissolveCheckbox]
+        [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, document.getElementById("customImmediateScoreCheckbox"),
+          els.symmetricAllowDissolveCheckbox]
           .forEach(caseACocher => caseACocher?.addEventListener("change", majMenuPerso));
 
         document.getElementById("duelPostures")?.addEventListener("click", event => {
@@ -57210,7 +57254,16 @@
         state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
         const joueur = state.players[cas.joueur ?? 0];
         const avant = joueur.score;
-        const marques = scoreCrownsAtTurnStart(joueur);
+        /* `immediat` : la validation PENDANT le tour du porteur (option
+           « Validation immédiate »), par le vrai chemin appelé au rendu. */
+        if (cas.immediat) {
+          state.currentPlayer = joueur.id;
+          state.phase = "ACTION_SELECT";
+          state.turnTransitioning = false;
+          state.winner = null;
+          validerCouronnesImmediates();
+        }
+        const marques = cas.immediat ? joueur.score - avant : scoreCrownsAtTurnStart(joueur);
         // Gardiens du joueur encore en jeu : le porteur qui valide reste, sauf
         // avec l'option « gardien sacrifié » du mode personnalisé.
         const gardiens = state.characters.filter(g => g.player === joueur.id).length;

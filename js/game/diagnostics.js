@@ -1107,7 +1107,16 @@
         state.rules = Object.assign({ allowDissolve: false, islandLimitPerPlayer: 0 }, cas.rules || {});
         const joueur = state.players[cas.joueur ?? 0];
         const avant = joueur.score;
-        const marques = scoreCrownsAtTurnStart(joueur);
+        /* `immediat` : la validation PENDANT le tour du porteur (option
+           « Validation immédiate »), par le vrai chemin appelé au rendu. */
+        if (cas.immediat) {
+          state.currentPlayer = joueur.id;
+          state.phase = "ACTION_SELECT";
+          state.turnTransitioning = false;
+          state.winner = null;
+          validerCouronnesImmediates();
+        }
+        const marques = cas.immediat ? joueur.score - avant : scoreCrownsAtTurnStart(joueur);
         // Gardiens du joueur encore en jeu : le porteur qui valide reste, sauf
         // avec l'option « gardien sacrifié » du mode personnalisé.
         const gardiens = state.characters.filter(g => g.player === joueur.id).length;
