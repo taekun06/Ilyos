@@ -214,8 +214,10 @@
       /* HUD : des points à la place des trois couronnes. */
       function rotationScoreHud(joueur) {
         if (!butBalises() || !joueur) return null;
-        return `<span class="hud-v2-balises-score" title="Points de balises">`
-          + `<span class="hud-v2-balise-icone" aria-hidden="true"></span>`
+        // Coin de l'icône : balises tenues en ce moment (Taekun, 2026-11-04).
+        const tenues = balisesTenuesPar(joueur.id);
+        return `<span class="hud-v2-balises-score" title="Points de balises · ${tenues} balise${tenues > 1 ? "s" : ""} tenue${tenues > 1 ? "s" : ""}">`
+          + `<span class="hud-v2-balise-icone" aria-hidden="true"><i${tenues ? "" : ' class="vide"'}>${tenues}</i></span>`
           + `<b>${joueur.score || 0}</b><small>/${rotationCible()}</small></span>`;
       }
 
