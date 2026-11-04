@@ -40,9 +40,10 @@
       const snapshot = parseStoredState();
       if (!snapshot?.players?.length) return { cards: [], player: null, stale: true };
       let index = Math.max(0, Math.min(snapshot.players.length - 1, Number(snapshot.currentPlayer) || 0));
-      /* La pioche montrée est la sienne : pendant le tour de l'IA, celle du
-         premier joueur humain plutôt que celle de l'adversaire. */
-      if (pile.champ === 'deck' && snapshot.players[index]?.isAI) {
+      /* La pioche et la défausse montrées sont les siennes : pendant le tour
+         de l'IA, celles du premier joueur humain plutôt que de l'adversaire
+         (le dock garde ses infos, Taekun 2026-11-04). */
+      if (snapshot.players[index]?.isAI) {
         const humain = snapshot.players.findIndex(joueur => joueur && !joueur.isAI);
         if (humain >= 0) index = humain;
       }

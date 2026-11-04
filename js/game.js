@@ -16095,6 +16095,22 @@
         return onlineConnected && state.currentPlayer === localPlayerIndex;
       }
 
+      /** Joueur dont le dock du bas montre les infos (main, compteurs, pioche,
+       *  défausse). Pendant le tour du CPU, le dock garde celles du joueur
+       *  humain : sa pioche à lui ne s'affiche pas (Taekun, 2026-11-04). */
+      function joueurDuDock() {
+        if (!state) return null;
+        const p = currentPlayer();
+        if (state.onlineMode) return (Number.isInteger(localPlayerIndex) && state.players[localPlayerIndex]) || p;
+        if (!p?.isAI) return p;
+        const n = state.players.length;
+        for (let k = 1; k < n; k++) {
+          const q = state.players[(state.currentPlayer - k + n) % n];
+          if (q && !q.isAI) return q;
+        }
+        return p; // CPU contre CPU
+      }
+
       function sanitizeRoomCode(value) {
         return String(value || "")
           .toUpperCase()
@@ -23260,7 +23276,7 @@
           const btn = document.getElementById(id);
           if (!btn) return;
           const action = ACTIONS[type];
-          const remaining = availableActionCount(type, active);
+          const remaining = availableActionCount(type, joueurDuDock() || active);
           const reason = actionUnavailableReason(type);
           const disabled = remaining <= 0 || !!reason;
           const isActive = (state.phase === "ACTION" && state.selectedActionType === type)
@@ -23372,18 +23388,19 @@
         }
 
         // --- Deck (ex-"Main") : commande autonome, valeurs reelles ---
+        const dock = joueurDuDock() || active;
         const handCountEl = document.getElementById("hudV2HandCount");
         if (handCountEl) {
-          const handLabel = `DECK ×${(active.hand || []).length}`;
+          const handLabel = `DECK ×${(dock.hand || []).length}`;
           handCountEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.DECK}</span><span class="hud-v2-pill-word">${handLabel}</span>`;
           handCountEl.setAttribute("aria-label", handLabel);
         }
         const popDeck = document.getElementById("hudV2HandPopoverDeck");
         const popHand = document.getElementById("hudV2HandPopoverHand");
         const popDiscard = document.getElementById("hudV2HandPopoverDiscard");
-        if (popDeck) popDeck.textContent = (active.deck || []).length;
-        if (popHand) popHand.textContent = (active.hand || []).length;
-        if (popDiscard) popDiscard.textContent = (active.discard || []).length;
+        if (popDeck) popDeck.textContent = (dock.deck || []).length;
+        if (popHand) popHand.textContent = (dock.hand || []).length;
+        if (popDiscard) popDiscard.textContent = (dock.discard || []).length;
 
         // --- Séparateur "·" du timer : invisible si le chrono de tour est
         // désactivé (isTurnTimerEnabled(), même lecture que updateTurnTimerDisplay()).
@@ -23513,9 +23530,13 @@
         return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= limite;
       }
 
+      /* Phases où l'on peut prendre une île : un gardien choisi ou une action
+         en cours de visée n'empêche pas de poser une île à la place (la
+         sélection est abandonnée, comme en changeant d'action). */
+      const PHASES_CHOIX_ILE = ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND", "SMART_CHAR", "ACTION"];
       function renderIslandSelector() {
         els.islandSelector.innerHTML = "";
-        const available = !state.islandPlacedThisTurn && ["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)
+        const available = !state.islandPlacedThisTurn && PHASES_CHOIX_ILE.includes(state.phase)
           && (!!state.draft || peutPayerIle(currentPlayer()));
         const emphasize = !state.islandPlacedThisTurn;
 
@@ -23549,11 +23570,12 @@
       function selectIslandShape(shapeKey) {
         if (!canLocalPlayerAct()) return;
         if (state.islandPlacedThisTurn) return;
-        if (!["ACTION_SELECT", "CHOOSE_ISLAND_SHAPE", "PLACE_ISLAND"].includes(state.phase)) return;
+        if (!PHASES_CHOIX_ILE.includes(state.phase)) return;
         if (!state.draft && !peutPayerIle(currentPlayer())) {
           refuserAction(`Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`);
           return;
         }
+        if ((state.phase === "SMART_CHAR" || state.phase === "ACTION") && !prepareActionSwitch()) return;
         if (shapeLimitReached(shapeKey)) {
           showToast(`Limite atteinte : ${shapeLimitPerOwner()} île${shapeLimitPerOwner() > 1 ? "s" : ""} « ${SHAPES[shapeKey].name} » maximum.`);
           return;
@@ -26740,7 +26762,8 @@
       function renderDeckDisplay() {
         if (!els.deckDisplay) return;
 
-        const p = currentPlayer();
+        // Tour du CPU : on garde la main et les piles du joueur humain.
+        const p = joueurDuDock() || currentPlayer();
         const deckLeft = p.deck.length;
         const discardCount = p.discard.length;
         const mode = state.deckAnimationMode || "";
@@ -26773,7 +26796,7 @@
       }
 
       function renderStats() {
-        const p = currentPlayer();
+        const p = joueurDuDock() || currentPlayer();
         els.deckCount.textContent = p.deck.length;
         els.handCount.textContent = p.hand.length;
         els.discardCount.textContent = p.discard.length;
@@ -36498,8 +36521,10 @@
       /* HUD : des points à la place des trois couronnes. */
       function rotationScoreHud(joueur) {
         if (!butBalises() || !joueur) return null;
-        return `<span class="hud-v2-balises-score" title="Points de balises">`
-          + `<span class="hud-v2-balise-icone" aria-hidden="true"></span>`
+        // Coin de l'icône : balises tenues en ce moment (Taekun, 2026-11-04).
+        const tenues = balisesTenuesPar(joueur.id);
+        return `<span class="hud-v2-balises-score" title="Points de balises · ${tenues} balise${tenues > 1 ? "s" : ""} tenue${tenues > 1 ? "s" : ""}">`
+          + `<span class="hud-v2-balise-icone" aria-hidden="true"><i${tenues ? "" : ' class="vide"'}>${tenues}</i></span>`
           + `<b>${joueur.score || 0}</b><small>/${rotationCible()}</small></span>`;
       }
 
