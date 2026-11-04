@@ -1327,6 +1327,26 @@
               </label>
               <div id="duelOptionsPerso" class="duel-options-slot"></div>
             </section>
+            <!-- Éléments du mode Rotation (rotation.js, rotation-paquet.js,
+                 rotation-creatures.js), lus par lireRotationPersonnalisee. -->
+            <section class="perso-bloc" id="customRotationBloc">
+              <h3><i aria-hidden="true">✦</i>Rotation</h3>
+              <div class="perso-reglage">
+                <span class="perso-lib">But de la partie</span>
+                <select id="customRotationButSelect" data-pas>
+                  <option value="couronnes" selected>Couronnes</option>
+                  <option value="balises">Balises</option>
+                </select>
+              </div>
+              <label class="perso-bascule" for="customDeckbuildingCheckbox">
+                <input type="checkbox" id="customDeckbuildingCheckbox">
+                <span><b>Deckbuilding</b><small>Choix de départ et marché de cartes fortes.</small></span>
+              </label>
+              <label class="perso-bascule" for="customCreaturesCheckbox">
+                <input type="checkbox" id="customCreaturesCheckbox">
+                <span><b>Créatures et œufs</b><small>Œufs sur la croix du sanctuaire ; des Loups en sortent.</small></span>
+              </label>
+            </section>
           </div>
         </div>
 
@@ -1635,7 +1655,7 @@
        première synchronisation de scène. -->
   <script id="v76-animation-system" src="./js/animation-system.js?v=20260815-gameplay-fixes2"></script>
     <script src="./js/gamepad-navigation.js?v=20260911-manette-feel"></script>
-    <script src="./js/game.js?v=20261104-son-lancement"></script>
+    <script src="./js/game.js?v=20261104-rotation-son"></script>
   <!-- Plateau tactique 2D : lit l'état, dessine, et relaie les clics aux vraies
        cases. Chargé APRÈS game.js, dont il utilise le plateau et l'état. -->
   <script src="./js/plateau-tactique.js?v=20261026-nuit-etoilee"></script>
