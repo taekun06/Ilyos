@@ -101,3 +101,34 @@ body .card-cycle-v10-card .cc-speciale em {
   letter-spacing: 0;
 }
 .cc-pioche-speciales { display: block; font-style: normal; color: #ffd76a; font-size: .8em; margin-top: 2px; }
+
+/* Pioche groupée (deckbuilding, 2026-11-04) : cartes identiques en léger
+   éventail derrière la carte de tête, quantité dans une pastille dorée. */
+body .card-cycle-v7-card.card-cycle-v10-card.cc-groupe { background: none !important; }
+body .card-cycle-v10-card.cc-groupe > .cc-face {
+  position: absolute;
+  inset: 0;
+  background: var(--carte-face) center / contain no-repeat;
+  transform-origin: 50% 112%;
+  transform: rotate(calc(var(--k) * -8deg)) translateX(calc(var(--k) * -5%));
+}
+body .card-cycle-v10-card.cc-groupe.is-draw-back:not(.is-revealed) > .cc-sous { opacity: 0; }
+body .card-cycle-v10-card.cc-groupe > .cc-sous { filter: brightness(.82); transition: opacity .2s ease; }
+body .card-cycle-v10-card .cc-qte {
+  position: absolute;
+  top: -6%;
+  right: -10%;
+  z-index: 3;
+  min-width: 30%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #23406a, #0b1a30);
+  border: 2px solid #e9c46a;
+  color: #ffe7a6;
+  font: 700 clamp(11px, 1.4vw, 20px)/1 "Cinzel", Georgia, serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .6);
+}
+body .card-cycle-v10-card.cc-groupe.is-draw-back:not(.is-revealed) .cc-qte { opacity: 0; }
+body .card-cycle-v10-card .cc-speciale { z-index: 2; }

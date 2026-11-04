@@ -164,6 +164,21 @@
   let dockMemo = null;
 
   function dockBox(){
+    // Deckbuilding : la main en cartes (#rtMain) remplace les trois socles et
+    // change de largeur avec la main : on suit sa vraie largeur.
+    const main = byId('rtMain')?.getBoundingClientRect();
+    if (main && main.width) {
+      const ile = byId('ov2Island')?.getBoundingClientRect();
+      const avecIle = ile && ile.width ? [ile, main] : [main];
+      dockMemo = {
+        left: Math.min(...avecIle.map(r => r.left)),
+        right: Math.max(...avecIle.map(r => r.right)),
+        bottom: Math.max(...avecIle.map(r => r.bottom)),
+        vw: window.innerWidth,
+        vh: window.innerHeight
+      };
+      return dockMemo;
+    }
     const rects = ['ov2Island','ov2Move','ov2Push','ov2Magic']
       .map(id => byId(id)?.getBoundingClientRect())
       .filter(rect => rect && (rect.width || rect.height));

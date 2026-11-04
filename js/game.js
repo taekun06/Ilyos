@@ -37397,6 +37397,78 @@
         });
       }
 
+      /* ---------- La main en cartes (deckbuilding) ------------------------
+         Taekun (2026-11-04) : en deckbuilding, le dock du bas montre
+         directement les cartes en main au lieu des trois boutons d'action.
+         Les cartes identiques sont regroupées en léger éventail avec leur
+         quantité ; les cartes du marché (Élan, Bond…) ont leur propre groupe.
+         Un groupe se joue comme le bouton de son type (même clic). */
+      const PAQUET_ORDRE_TYPES = ["MOVE", "PUSH", "MAGIC"];
+      const PAQUET_BOUTON_TYPE = { MOVE: "hudV2MoveCount", PUSH: "hudV2PushCount", MAGIC: "hudV2MagicCount" };
+      function paquetGroupesMain(joueur) {
+        const groupes = new Map();
+        (joueur?.hand || []).forEach(carte => {
+          if (!carte || carte.used) return;
+          if (carteForte(carte) && (carte.restant ?? PAQUET_CARTES[carte.action].valeur) <= 0) return;
+          const type = PAQUET_CARTES[carte.action]?.type || (carte.action === "BOUE" ? "BOUE" : carte.action);
+          const g = groupes.get(carte.action) || { action: carte.action, type, n: 0, forte: carteForte(carte) };
+          g.n++;
+          groupes.set(carte.action, g);
+        });
+        const liste = [...groupes.values()];
+        // Les types de base sans carte en main mais avec une réserve restent jouables.
+        PAQUET_ORDRE_TYPES.forEach(type => {
+          const reserve = storedActionCount(type, joueur);
+          const base = liste.find(g => g.action === type);
+          if (base) base.reserve = reserve;
+          else if (reserve > 0) liste.push({ action: type, type, n: 0, forte: false, reserve });
+        });
+        const rang = g => (PAQUET_ORDRE_TYPES.indexOf(g.type) + 1 || 9) * 10 + (g.forte ? 1 : 0);
+        return liste.sort((a, b) => rang(a) - rang(b));
+      }
+      function paquetRendreMain() {
+        if (typeof document === "undefined") return;
+        const actif = !!state && paquetActif() && !state.tutorial && !state.puzzle;
+        document.body.classList.toggle("rt-main-cartes", actif);
+        let main = document.getElementById("rtMain");
+        if (!actif) { main?.remove(); return; }
+        const dock = document.querySelector("#ilyosHudOrganicV2 .ov2-dock");
+        if (!dock) return;
+        if (!main || main.parentElement !== dock) {
+          main?.remove();
+          main = document.createElement("div");
+          main.id = "rtMain";
+          main.className = "rt-main";
+          main.addEventListener("click", evenement => {
+            const groupe = evenement.target.closest(".rt-main-groupe");
+            const bouton = groupe && document.getElementById(PAQUET_BOUTON_TYPE[groupe.dataset.type]);
+            if (bouton && !bouton.disabled) bouton.click();
+          });
+          dock.appendChild(main);
+        }
+        const joueur = joueurDuDock();
+        const html = paquetGroupesMain(joueur).map(g => {
+          const bouton = document.getElementById(PAQUET_BOUTON_TYPE[g.type]);
+          const def = PAQUET_CARTES[g.action];
+          const nom = def?.nom || ACTIONS[g.action]?.name || g.action;
+          const ruban = g.forte ? `<span class="cc-speciale"><b>${nom}</b>${def.valeur > 1 ? `<em>×${def.valeur}</em>` : ""}</span>` : "";
+          const visibles = Math.max(1, Math.min(3, g.n));
+          const cartes = Array.from({ length: visibles }, (_, i) =>
+            `<span class="card-cycle-v7-card card-cycle-v10-card type-${String(g.type).toLowerCase()}${g.forte ? " is-speciale" : ""}" style="--i:${i - (visibles - 1) / 2}">${i === visibles - 1 ? ruban : ""}</span>`).join("");
+          const classes = ["rt-main-groupe", `type-${String(g.type).toLowerCase()}`];
+          if (g.forte) classes.push("rt-main-forte");
+          if (!g.n) classes.push("rt-main-reserve-seule");
+          if (!bouton || bouton.disabled) classes.push("rt-main-off");
+          if (bouton?.classList.contains("hud-v2-pill-active")) classes.push("rt-main-actif");
+          const reserve = g.reserve ? `<small class="rt-main-res" title="En réserve">+${g.reserve}</small>` : "";
+          const titre = `${nom}${g.n ? ` ×${g.n}` : ""}${g.reserve ? ` · ${g.reserve} en réserve` : ""}${def?.effet && g.forte ? ` — ${def.effet}` : ""}`;
+          return `<button type="button" class="${classes.join(" ")}" data-type="${g.type}" data-action="${g.action}" title="${titre}" aria-label="${titre}">`
+            + `<span class="rt-main-eventail" data-n="${visibles}">${cartes}</span>`
+            + (g.n > 1 ? `<b class="rt-main-qte">×${g.n}</b>` : "") + reserve + `</button>`;
+        }).join("");
+        if (main.dataset.html !== html) { main.innerHTML = html; main.dataset.html = html; }
+      }
+
       const paquetRenderAllBase = renderAll;
       renderAll = function renderAllPaquet(...args) {
         const resultat = paquetRenderAllBase.apply(this, args);
@@ -37412,6 +37484,7 @@
           try {
             paquetRendreMarche();
             paquetMarquerDock();
+            paquetRendreMain();
           } catch (erreur) {
             console.warn("[ILYOS] marché", erreur);
           }
@@ -37430,6 +37503,8 @@
       window.ILYOS_ROTATION_PAQUET = {
         etat: () => (state?.rotation?.marche ? JSON.parse(JSON.stringify(state.rotation.marche)) : null),
         acheter: (index, exiler) => paquetAcheter(index, exiler),
+        /* Pour js/card-cycle-animation-v10.js : main en cartes (pioche groupée). */
+        mainEnCartes: () => !!state && paquetActif() && !state.tutorial && !state.puzzle,
         refus: () => paquetRefusAchat(),
         choix: () => (state?.rotation?.choix ? JSON.parse(JSON.stringify(state.rotation.choix)) : null),
         prendre: index => choixPrendre(index),

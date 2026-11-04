@@ -112,3 +112,81 @@ body.rt-choix-actif #ov2Instruction{visibility:hidden!important}
 .rt-recompense span{font:600 14px/1.2 system-ui,sans-serif;color:#f4ead0}
 @keyframes rt-recompense{from{transform:translate(-50%,10px) scale(.9)}}
 @media (max-width:600px){.rt-recompense{top:18%;padding:8px 18px}.rt-recompense b{font-size:21px}.rt-recompense span{font-size:12.5px}}
+
+/* ---------- Deckbuilding : la main en cartes dans le dock (2026-11-04) ----------
+   Les trois socles d'action laissent la place aux cartes en main, regroupées
+   par carte identique en léger éventail avec leur quantité
+   (paquetRendreMain, js/game/rotation-paquet.js). */
+body.rt-main-cartes #ilyosHudOrganicV2 #ov2Move,
+body.rt-main-cartes #ilyosHudOrganicV2 #ov2Push,
+body.rt-main-cartes #ilyosHudOrganicV2 #ov2Magic { display: none !important; }
+
+#rtMain {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(10px, 1.3vw, 18px);
+  pointer-events: auto;
+}
+.rt-main-groupe {
+  position: relative;
+  width: clamp(58px, 5.4vw, 78px);
+  height: clamp(90px, 8.4vw, 121px);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: transform .14s ease, filter .14s ease;
+}
+.rt-main-eventail { position: absolute; inset: 0; }
+.rt-main-groupe .card-cycle-v7-card.card-cycle-v10-card {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  transform-origin: 50% 115%;
+  transform: rotate(calc(var(--i) * 9deg)) translateX(calc(var(--i) * 6px));
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .45));
+}
+.rt-main-groupe:hover:not(.rt-main-off) { transform: translateY(-6px); }
+.rt-main-groupe.rt-main-actif { transform: translateY(-10px); }
+.rt-main-groupe.rt-main-actif .card-cycle-v7-card.card-cycle-v10-card {
+  filter: drop-shadow(0 0 7px rgba(255, 214, 120, .95)) drop-shadow(0 4px 6px rgba(0, 0, 0, .45));
+}
+/* Le filtre va sur l'éventail seul : sur le groupe, il enfermerait la
+   pastille de quantité sous le groupe voisin. */
+.rt-main-groupe.rt-main-off { cursor: default; }
+.rt-main-groupe.rt-main-off .rt-main-eventail { filter: saturate(.7) brightness(.8); }
+.rt-main-groupe.rt-main-reserve-seule .rt-main-eventail { opacity: .5; }
+
+/* Quantité : pastille ronde dorée au pied du groupe. */
+.rt-main-qte {
+  position: absolute;
+  z-index: 5;
+  right: -10px;
+  top: -8px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: radial-gradient(circle at 35% 30%, #23406a, #0b1a30);
+  border: 1.5px solid #e9c46a;
+  color: #ffe7a6;
+  font: 700 12px/1 "Cinzel", Georgia, serif;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .55);
+}
+/* Réserve du même type : petit « +2 » discret au pied gauche. */
+.rt-main-res {
+  position: absolute;
+  z-index: 2;
+  left: -8px;
+  top: -6px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(8, 18, 34, .88);
+  border: 1px solid rgba(233, 196, 106, .5);
+  color: #e9d6a4;
+  font: 700 10px/1.3 system-ui, sans-serif;
+}
