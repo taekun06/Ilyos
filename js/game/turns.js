@@ -141,9 +141,7 @@
         const ouvertureSymetrique = state.turn === 1 && state.startingBoardMode === "symmetric";
         if (ouvertureSymetrique) {
           const setupDuel = SYMMETRIC_DUEL_SETUPS[state.startingBoardPreset];
-          const setupName = setupDuel
-            ? `${setupDuel.name}${setupDuel.camp === "defense" ? " (défense)" : ""}`
-            : "Archipels ouverts";
+          const setupName = setupDuel ? setupDuel.name : "Archipels ouverts";
           showToast(`Duel symétrique — ${setupName}.`);
         }
         if (p.isAI) {

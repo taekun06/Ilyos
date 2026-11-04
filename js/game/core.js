@@ -649,7 +649,7 @@
             const guardiansPerTeam = setup.characters.filter(
               character => character.player === 0
             ).length;
-            return `<option value="${id}">${setup.name}${setup.camp === "defense" ? " (défense)" : ""} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
+            return `<option value="${id}">${setup.name} — ${setup.islands.length} îles • ${guardiansPerTeam} gardien${guardiansPerTeam > 1 ? "s" : ""}/équipe</option>`;
           })
           .join("");
       }
@@ -3027,12 +3027,19 @@
             characters: definition.characters
           };
           setups[id] = { id, ...commun, camp: "attaque", base: id };
-          /* Version DÉFENSE : les deux équipes échangent leurs places. Chacun
-             retrouve, autour de ses villages, ce que l'adversaire avait en
-             attaque (buildSymmetricPreset avec `inverse`). Le filtre
-             Attaque / Défense du menu choisit entre les deux. */
+          /* Version INVERSÉE : les deux équipes échangent leurs places. Chacun
+             retrouve, autour de ses villages, ce que l'adversaire avait
+             (buildSymmetricPreset avec `inverse`). Les filtres de famille du
+             menu (Offensif / Défensif) choisissent entre les deux. */
           if (!symmetricSetupInvariantParEchange(definition)) {
-            setups[`${id}Defense`] = { id: `${id}Defense`, ...commun, camp: "defense", base: id };
+            // Équipes échangées : un setup offensif devient défensif et
+            // inversement ; équilibré et ouvert restent ce qu'ils sont.
+            const inverse = { Offensif: "Défensif", "Défensif": "Offensif" };
+            setups[`${id}Defense`] = {
+              id: `${id}Defense`, ...commun, name: `${commun.name} (inversé)`,
+              posture: inverse[commun.posture] || commun.posture,
+              camp: "defense", base: id
+            };
           }
         });
         return setups;
