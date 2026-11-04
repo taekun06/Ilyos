@@ -37960,17 +37960,6 @@
           renderAll(); syncKayKitScene?.();
           return true;
         },
-        /* Banc : aperçu de magie sans clic (île, pivot, crans 1 à 3). */
-        apercuMagie: (islandId, pivot, steps = 1) => {
-          state.phase = "ACTION";
-          state.selectedActionType = "MAGIC";
-          state.selectedIslandId = islandId;
-          state.selectedMagicPivot = pivot;
-          state.magicPreviewSteps = steps;
-          state.magicPreviewValid = true;
-          renderAll(); syncKayKitScene?.();
-          return magicRotationOptions().map(o => o.steps);
-        },
         /* Banc : mémoire GPU et taille de la scène (recherche de fuites). */
         memoire: () => {
           const info = kaykit3D?.renderer?.info;
