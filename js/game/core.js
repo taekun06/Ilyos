@@ -103,6 +103,11 @@
       let musicGain = null;
       let musicDuck = null;
       let musicElementSource = null;
+      /* Thème de lancement (audio.js) et « une partie a demandé sa musique » :
+         déclarés ici pour exister avant tout appel à updateSoundLevels. */
+      let launchTheme = null;
+      let launchThemeState = "attente";
+      let ambientRequested = false;
       let reverbNode = null;
       let reverbDamp = null;
       let reverbReturn = null;
