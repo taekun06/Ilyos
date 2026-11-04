@@ -27,6 +27,8 @@
           catch (_) { return "apercu"; }
         })(),
         posture: "Tous",
+        // Attaque : le setup tel qu'il est dessiné ; Défense : équipes échangées.
+        camp: "attaque",
         // Setup servant de terrain au Personnalisé (retenu même quand le
         // plateau vide est choisi, pour y revenir en un clic).
         terrain: null,
@@ -41,6 +43,13 @@
       const menuDuelCarte = () => els.symmetricSetupOverlay?.querySelector(".symmetric-board-card");
       const photoDuel = id => `assets/duels/${id}-${GRID}.webp`;
       const gardiensDuel = id => symmetricSetup(id).characters.filter(g => g.player === 0).length;
+      const campDuel = id => SYMMETRIC_DUEL_SETUPS[id]?.camp || "attaque";
+      /** Le même setup dans l'autre camp (lui-même s'il n'a pas de version Défense). */
+      function autreCampDuel(id, camp) {
+        const base = SYMMETRIC_DUEL_SETUPS[id]?.base || id;
+        const cible = camp === "defense" ? `${base}Defense` : base;
+        return SYMMETRIC_DUEL_SETUPS[cible] ? cible : base;
+      }
       const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? "s" : ""}`;
 
       function elementMenu(balise, classe, texte) {
@@ -54,6 +63,7 @@
       function menuDuelIds() {
         const ordre = symmetricSetupIds();
         return ordre
+          .filter(id => campDuel(id) === MENU_DUEL.camp)
           .filter(id => MENU_DUEL.posture === "Tous" || SYMMETRIC_DUEL_SETUPS[id].posture === MENU_DUEL.posture)
           .sort((a, b) => gardiensDuel(a) - gardiensDuel(b) || ordre.indexOf(a) - ordre.indexOf(b));
       }
@@ -138,6 +148,14 @@
           photo.onerror = () => cadre?.classList.add("sans-photo");
           photo.src = photoDuel(setup.id);
         }
+        // Setup de l'autre camp (tirage au sort, reprise) : le filtre suit.
+        if (setup.camp && setup.camp !== MENU_DUEL.camp
+          && document.getElementById("duelMenuBande")?.childElementCount) {
+          MENU_DUEL.camp = setup.camp;
+          majFiltresDuel();
+          construireListesDuel();
+          return;
+        }
         // Un setup tiré au sort hors du filtre courant : on rouvre tout.
         if (MENU_DUEL.posture !== "Tous" && setup.posture !== MENU_DUEL.posture
           && document.getElementById("duelMenuBande")?.childElementCount) {
@@ -172,6 +190,8 @@
       function majFiltresDuel() {
         document.querySelectorAll("#duelPostures [data-posture]").forEach(bouton =>
           bouton.setAttribute("aria-pressed", String(bouton.dataset.posture === MENU_DUEL.posture)));
+        document.querySelectorAll("#duelCamps [data-camp]").forEach(bouton =>
+          bouton.setAttribute("aria-pressed", String(bouton.dataset.camp === MENU_DUEL.camp)));
         document.querySelectorAll("#duelTailles [data-taille]").forEach(bouton => {
           bouton.setAttribute("aria-pressed", String(Number(bouton.dataset.taille) === GRID));
         });
@@ -396,6 +416,17 @@
           const ids = menuDuelIds();
           if (ids.length && !ids.includes(els.symmetricSetupSelect?.value)) choisirSetupDuel(ids[0]);
         });
+        document.getElementById("duelCamps")?.addEventListener("click", event => {
+          const bouton = event.target.closest("[data-camp]");
+          if (!bouton || MENU_DUEL.attente) return;
+          MENU_DUEL.camp = bouton.dataset.camp === "defense" ? "defense" : "attaque";
+          majFiltresDuel();
+          construireListesDuel();
+          const ids = menuDuelIds();
+          const pareil = autreCampDuel(els.symmetricSetupSelect?.value, MENU_DUEL.camp);
+          if (ids.includes(pareil)) choisirSetupDuel(pareil);
+          else if (ids.length && !ids.includes(els.symmetricSetupSelect?.value)) choisirSetupDuel(ids[0]);
+        });
         document.getElementById("duelTailles")?.addEventListener("click", event => {
           const bouton = event.target.closest("[data-taille]");
           if (bouton) changerTailleDuel(bouton.dataset.taille);
@@ -482,8 +513,8 @@
           : carte.querySelector(".symmetric-board-actions");
         if (bouton && cible && bouton.parentElement !== cible) cible.append(bouton);
         if (bouton) bouton.disabled = MENU_DUEL.attente;
-        document.getElementById("duelTailles")?.querySelectorAll("button")
-          .forEach(taille => { taille.disabled = MENU_DUEL.attente; });
+        document.querySelectorAll("#duelTailles button, #duelCamps button")
+          .forEach(bouton => { bouton.disabled = MENU_DUEL.attente; });
 
         majFiltresDuel();
         communes?.querySelectorAll("select").forEach(majListeMenu);
