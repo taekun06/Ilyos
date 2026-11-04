@@ -15237,6 +15237,11 @@
       let musicGain = null;
       let musicDuck = null;
       let musicElementSource = null;
+      /* Thème de lancement (audio.js) et « une partie a demandé sa musique » :
+         déclarés ici pour exister avant tout appel à updateSoundLevels. */
+      let launchTheme = null;
+      let launchThemeState = "attente";
+      let ambientRequested = false;
       let reverbNode = null;
       let reverbDamp = null;
       let reverbReturn = null;
@@ -21493,7 +21498,7 @@
           audioCtx.addEventListener("statechange", () => {
             if (!ambientEnabled || audioCtx.state !== "suspended") return;
             audioCtx.resume().then(() => {
-              if (!document.hidden) updateMusicSource(false);
+              if (!document.hidden && ambientRequested) updateMusicSource(false);
             }).catch(() => { });
           });
         }
@@ -21941,6 +21946,9 @@
         if (ambienceAudio && !musicElementSource) {
           ambienceAudio.volume = Math.min(1, soundSettings.master * soundSettings.music * .92) * enabledMultiplier;
         }
+        if (launchTheme && !launchTheme.source && !launchTheme.stopping) {
+          launchTheme.el.volume = launchThemeFallbackVolume();
+        }
       }
 
       /* Ducking : la musique recule brièvement pour laisser passer un événement
@@ -21976,7 +21984,120 @@
         }
       }
 
+      /* ---------- Thème de lancement ----------
+         Le morceau « Lancement Ilyos » joue une fois à l'ouverture du jeu, sur
+         le menu. Les navigateurs refusent tout son avant une interaction : il
+         démarre donc au premier clic, toucher ou touche du clavier. Il passe par
+         le bus musique (volume général × musique, son coupé respecté) et
+         s'efface dès qu'une partie lance sa propre musique. Fichier chargé
+         seulement à ce moment-là : rien de plus au chargement de la page. */
+      const LAUNCH_THEME_SRC = "./assets/audio/lancement";
+      /* Même niveau perçu que les pistes des énigmes (PUZZLE_GAIN) : le bus
+         musique est réglé bas pour l'ambiance générative. */
+      const LAUNCH_THEME_GAIN = 3;
+
+      function launchThemeFallbackVolume() {
+        return Math.min(1, soundSettings.master * soundSettings.music * .92 * LAUNCH_THEME_GAIN) * (ambientEnabled ? 1 : 0);
+      }
+
+      function releaseLaunchTheme() {
+        const theme = launchTheme;
+        launchTheme = null;
+        launchThemeState = "fini";
+        if (!theme) return;
+        try { theme.el.pause(); theme.el.removeAttribute("src"); theme.el.load(); } catch (error) { }
+        try { theme.source?.disconnect(); theme.gain?.disconnect(); } catch (error) { }
+      }
+
+      function playLaunchTheme() {
+        if (launchThemeState !== "attente") return;
+        launchThemeState = "fini";
+        // Son coupé, partie déjà ouverte ou moteur muet (bancs) : pas de thème.
+        if (!ambientEnabled || ilyosSimulationActive) return;
+        if (els.gameScreen && !els.gameScreen.classList.contains("hidden")) return;
+        ensureAudio();
+        const el = new Audio();
+        const opus = el.canPlayType('audio/ogg; codecs="opus"') !== "";
+        el.preload = "auto";
+        el.src = `${LAUNCH_THEME_SRC}.${opus ? "ogg" : "m4a"}`;
+        const theme = { el, source: null, gain: null };
+        if (audioCtx) {
+          try {
+            theme.source = audioCtx.createMediaElementSource(el);
+            theme.gain = audioCtx.createGain();
+            theme.gain.gain.value = LAUNCH_THEME_GAIN;
+            theme.source.connect(theme.gain);
+            theme.gain.connect(musicGain);
+          } catch (error) {
+            theme.source = null;
+            theme.gain = null;
+          }
+        }
+        if (!theme.source) el.volume = launchThemeFallbackVolume();
+        el.addEventListener("ended", releaseLaunchTheme, { once: true });
+        el.addEventListener("error", releaseLaunchTheme, { once: true });
+        launchTheme = theme;
+        launchThemeState = "joue";
+        if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => { });
+        el.play().catch(releaseLaunchTheme);
+      }
+
+      /* Fondu court puis libération : la musique de partie prend le relais. */
+      function stopLaunchTheme(seconds = 1.2) {
+        if (launchThemeState === "attente") launchThemeState = "fini";
+        const theme = launchTheme;
+        if (!theme || theme.stopping) return;
+        theme.stopping = true;
+        if (theme.gain && audioCtx) {
+          const now = audioCtx.currentTime;
+          theme.gain.gain.cancelScheduledValues(now);
+          theme.gain.gain.setTargetAtTime(.0001, now, seconds / 4);
+        } else {
+          const start = theme.el.volume;
+          const t0 = performance.now();
+          const step = () => {
+            if (launchTheme !== theme) return;
+            const k = Math.min(1, (performance.now() - t0) / (seconds * 1000));
+            theme.el.volume = start * (1 - k);
+            if (k < 1) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        }
+        setTimeout(() => { if (launchTheme === theme) releaseLaunchTheme(); }, seconds * 1000 + 100);
+      }
+
+      /* Le menu vit dans un iframe de même origine (menu/frame.html) : le
+         premier geste y tombe le plus souvent. On écoute donc aussi son
+         document ; le geste active la page parente, qui peut alors jouer. */
+      (function armLaunchTheme() {
+        const events = ["pointerdown", "touchend", "keydown"];
+        const docs = new Set();
+        const onFirstGesture = () => {
+          docs.forEach(doc => events.forEach(type => doc.removeEventListener(type, onFirstGesture, true)));
+          docs.clear();
+          playLaunchTheme();
+        };
+        const listen = doc => {
+          if (!doc || docs.has(doc) || launchThemeState !== "attente") return;
+          docs.add(doc);
+          events.forEach(type => doc.addEventListener(type, onFirstGesture, true));
+        };
+        const hookMenuFrame = () => {
+          const frame = document.getElementById("ilyos-menu-v11-frame");
+          if (!frame || frame.dataset.ilyosLaunchTheme) return;
+          frame.dataset.ilyosLaunchTheme = "1";
+          frame.addEventListener("load", () => { try { listen(frame.contentDocument); } catch (error) { } });
+          try { if (frame.contentDocument?.readyState !== "loading") listen(frame.contentDocument); } catch (error) { }
+        };
+        listen(document);
+        hookMenuFrame();
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hookMenuFrame, { once: true });
+        window.addEventListener("load", hookMenuFrame, { once: true });
+      })();
+
       async function startAmbient() {
+        stopLaunchTheme();
+        ambientRequested = true;
         ensureAudio();
         if (!ambientEnabled) {
           updateSoundLevels();
@@ -22022,7 +22143,11 @@
         if (document.hidden) {
           stopGenerativeMusic({ immediate: false });
           stopMusicFile();
-        } else {
+          launchTheme?.el.pause();
+        } else if (launchTheme && !launchTheme.stopping) {
+          // Retour sur le menu pendant le thème : il reprend où il en était.
+          launchTheme.el.play().catch(() => { });
+        } else if (ambientRequested) {
           updateMusicSource(false);
         }
       });
