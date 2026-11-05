@@ -117,6 +117,68 @@ body .card-cycle-v10-card .cc-texte i {
   text-wrap: balance;
   text-shadow: 0 .4cqw .8cqw rgba(0, 0, 0, .6);
 }
+/* Logo d'achat à la place de l'illustration (Taekun, 2026-11-05) : un
+   panneau de la teinte de la carte couvre la scène, en laissant voir le
+   médaillon du coin ; au centre, le rond du marché (icône + ×2 ou ↷). */
+body .card-cycle-v10-card .cc-logo {
+  --cc-fond-a: #2b4d7d;
+  --cc-fond-b: #0d1b33;
+  position: absolute;
+  left: 9.6%;
+  right: 9.2%;
+  top: 4.4%;
+  bottom: 39.6%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: 3cqw 3cqw 1.5cqw 1.5cqw;
+  background:
+    radial-gradient(60% 50% at 50% 52%, rgba(255, 222, 150, .22), transparent 70%),
+    radial-gradient(120% 90% at 50% 40%, var(--cc-fond-a), var(--cc-fond-b));
+  box-shadow: inset 0 0 4cqw rgba(0, 0, 0, .55);
+  -webkit-mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+  mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+body .card-cycle-v10-card.type-push .cc-logo { --cc-fond-a: #8a3a22; --cc-fond-b: #2f1210; }
+body .card-cycle-v10-card.type-magic .cc-logo { --cc-fond-a: #5b3a9a; --cc-fond-b: #1c1236; }
+body .card-cycle-v10-card.is-revealed .cc-logo,
+body .card-cycle-v10-card:not(.is-draw-back) .cc-logo { opacity: 1; }
+body .card-cycle-v10-card .cc-logo-rond {
+  position: relative;
+  width: 46cqw;
+  aspect-ratio: 1;
+  margin-top: 6cqw;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #2a4d66, #0b1a28);
+  border: max(1.5px, 1.2cqw) solid #d8aa4c;
+  box-shadow: 0 0 0 max(1px, .6cqw) rgba(0, 0, 0, .5), 0 0 7cqw rgba(244, 210, 142, .35);
+}
+body .card-cycle-v10-card .cc-logo-rond svg {
+  width: 58%;
+  height: 58%;
+  fill: none;
+  stroke: #f4d28e;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body .card-cycle-v10-card .cc-logo-rond em {
+  position: absolute;
+  right: -5cqw;
+  bottom: -2cqw;
+  padding: 1.5cqw 3cqw;
+  border-radius: 4cqw;
+  background: #f4d28e;
+  color: #2a1a07;
+  font: 800 10cqw/1 "Nunito Sans", system-ui, sans-serif;
+  font-style: normal;
+  box-shadow: 0 1cqw 2.5cqw rgba(0, 0, 0, .5);
+}
 .cc-pioche-speciales { display: block; font-style: normal; color: #ffd76a; font-size: .8em; margin-top: 2px; }
 
 /* Pioche groupée (deckbuilding, 2026-11-04) : cartes identiques en léger
@@ -134,7 +196,7 @@ body .card-cycle-v10-card.cc-groupe > .cc-sous { filter: brightness(.82); transi
 body .card-cycle-v10-card .cc-qte {
   position: absolute;
   top: -6%;
-  left: -10%;
+  right: -10%;
   z-index: 3;
   min-width: 30%;
   aspect-ratio: 1;
@@ -149,3 +211,19 @@ body .card-cycle-v10-card .cc-qte {
 }
 body .card-cycle-v10-card.cc-groupe.is-draw-back:not(.is-revealed) .cc-qte { opacity: 0; }
 body .card-cycle-v10-card .cc-texte { z-index: 2; }
+/* Pioche groupée d'une carte avancée : les cartes du dessous perdent aussi
+   leur illustration (même panneau que .cc-logo). */
+body .card-cycle-v10-card.cc-groupe.is-speciale > .cc-sous::after {
+  content: "";
+  position: absolute;
+  left: 9.6%;
+  right: 9.2%;
+  top: 4.4%;
+  bottom: 39.6%;
+  border-radius: 3cqw 3cqw 1.5cqw 1.5cqw;
+  background: radial-gradient(120% 90% at 50% 40%, #2b4d7d, #0d1b33);
+  -webkit-mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+  mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+}
+body .card-cycle-v10-card.cc-groupe.is-speciale.type-push > .cc-sous::after { background: radial-gradient(120% 90% at 50% 40%, #8a3a22, #2f1210); }
+body .card-cycle-v10-card.cc-groupe.is-speciale.type-magic > .cc-sous::after { background: radial-gradient(120% 90% at 50% 40%, #5b3a9a, #1c1236); }

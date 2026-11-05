@@ -148,7 +148,12 @@
         if (titre) titre.textContent = nom;
         const compte = copie.querySelector('.ov2-discard-type-count');
         if (compte) { compte.removeAttribute('data-discard-count'); compte.textContent = `×${speciale.count}`; }
-        if (speciale.def.valeur > 1) {
+        /* Face d'une carte avancée (logo d'achat, nom, effet) : la même que
+           dans la main et la pioche (Taekun, 2026-11-05). */
+        if (speciale.def.face) {
+          copie.classList.add('is-speciale');
+          copie.insertAdjacentHTML('beforeend', speciale.def.face);
+        } else if (speciale.def.valeur > 1) {
           const badge = document.createElement('em');
           badge.className = 'ov2-discard-badge';
           badge.textContent = `×${speciale.def.valeur}`;

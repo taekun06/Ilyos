@@ -161,12 +161,12 @@ body.rt-main-cartes #ilyosHudOrganicV2 #ov2Magic { display: none !important; }
 .rt-main-groupe.rt-main-off .rt-main-eventail { filter: saturate(.7) brightness(.8); }
 .rt-main-groupe.rt-main-reserve-seule .rt-main-eventail { opacity: .5; }
 
-/* Quantité : un seul chiffre en haut à gauche, posé sur le médaillon de la
-   carte de tête = tout ce qui reste jouable de cette carte (main + réserve). */
+/* Quantité : un seul chiffre en haut à droite = tout ce qui reste jouable
+   de cette carte (main + réserve). */
 .rt-main-qte {
   position: absolute;
   z-index: 5;
-  left: -9px;
+  right: -9px;
   top: -9px;
   min-width: 26px;
   height: 26px;
@@ -184,8 +184,10 @@ body.rt-main-cartes #ilyosHudOrganicV2 #ov2Magic { display: none !important; }
 @media (max-width: 600px) {
   #rtMain { gap: 8px; }
   .rt-main-groupe { width: clamp(58px, 16vw, 76px); }
-  .rt-main-qte { min-width: 22px; height: 22px; font-size: 12px; left: -6px; top: -7px; }
+  .rt-main-qte { min-width: 22px; height: 22px; font-size: 12px; right: -6px; top: -7px; }
 }
 /* La consigne passe au-dessus des cartes, plus hautes que les anciens socles. */
 body.rt-main-cartes #ilyosHudOrganicV2 #ov2Instruction { translate: 0 -52px; }
 @media (max-width: 600px) { body.rt-main-cartes #ilyosHudOrganicV2 #ov2Instruction { translate: 0 -30px; } }
+/* Les cartes avancées, à droite des cartes de base, s'en détachent un peu. */
+#rtMain .rt-main-groupe:not(.rt-main-forte) + .rt-main-forte { margin-left: clamp(8px, 1.2vw, 18px); }

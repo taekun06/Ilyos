@@ -384,7 +384,7 @@
      base. */
   function specialeDe(action) {
     const def = action ? (window.ILYOS_CARTES_SPECIALES || {})[action] : null;
-    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1, effet: def.texte || def.effet || '' } : null;
+    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1, effet: def.texte || def.effet || '', face: def.face || '' } : null;
   }
 
   function makeCard(type, extraClass = '', count = 1, drawIndex = 0, drawTotal = 0, speciale = null) {
@@ -415,7 +415,7 @@
       <b>${meta.label}</b>
       ${extraClass.includes('cc-detail') ? `<small class="cc-effet">${PIOCHE_EFFETS[type] || ''}</small>` : ''}
       <i class="card-cycle-v7-rune"></i>
-      ${speciale ? `<span class="cc-texte"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b><i>${String(speciale.effet || '').replace(/[<>&"]/g, '')}</i></span>` : ''}
+      ${speciale ? (speciale.face || `<span class="cc-texte"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b><i>${String(speciale.effet || '').replace(/[<>&"]/g, '')}</i></span>`) : ''}
 `;
     document.body.appendChild(el);
     return el;
