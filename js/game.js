@@ -52899,7 +52899,7 @@
         if (/netlify\.app$/.test(hote) || hote === "localhost" || hote === "127.0.0.1" || location.protocol === "file:") return ["/api/compte"];
         return [
           "https://batbat.netlify.app/api/compte",
-          "https://deploy-preview-PREVIEW--batbat.netlify.app/api/compte"
+          "https://deploy-preview-196--batbat.netlify.app/api/compte"
         ];
       })();
       let progressionCompteUrlBonne = 0;
