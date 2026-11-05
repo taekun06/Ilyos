@@ -384,7 +384,7 @@
      base. */
   function specialeDe(action) {
     const def = action ? (window.ILYOS_CARTES_SPECIALES || {})[action] : null;
-    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1 } : null;
+    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1, effet: def.texte || def.effet || '' } : null;
   }
 
   function makeCard(type, extraClass = '', count = 1, drawIndex = 0, drawTotal = 0, speciale = null) {
@@ -409,13 +409,13 @@
     el.innerHTML = `
       ${faces}
       ${isDraw ? `<span class="card-cycle-v10-backface"><i>✦</i></span>` : ''}
-      ${groupe ? `<span class="cc-qte">×${count}</span>` : ''}
+      ${groupe ? `<span class="cc-qte">${count}</span>` : ''}
       <span class="card-cycle-v7-kicker">ACTION</span>
       <span class="card-cycle-v7-icon">${meta.icon}</span>
       <b>${meta.label}</b>
       ${extraClass.includes('cc-detail') ? `<small class="cc-effet">${PIOCHE_EFFETS[type] || ''}</small>` : ''}
       <i class="card-cycle-v7-rune"></i>
-      ${speciale ? `<span class="cc-speciale"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b>${speciale.valeur > 1 ? `<em>×${speciale.valeur}</em>` : ''}</span>` : ''}
+      ${speciale ? `<span class="cc-texte"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b><i>${String(speciale.effet || '').replace(/[<>&"]/g, '')}</i></span>` : ''}
 `;
     document.body.appendChild(el);
     return el;

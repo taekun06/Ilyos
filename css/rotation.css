@@ -129,8 +129,11 @@ body.rt-main-cartes #ilyosHudOrganicV2 #ov2Magic { display: none !important; }
 }
 .rt-main-groupe {
   position: relative;
-  width: clamp(58px, 5.4vw, 78px);
-  height: clamp(90px, 8.4vw, 121px);
+  /* Cartes nettement plus grandes (Taekun, 2026-11-05) : proportions de
+     l'image (416 × 680). */
+  width: clamp(76px, 7.2vw, 106px);
+  aspect-ratio: 416 / 680;
+  height: auto;
   padding: 0;
   border: 0;
   background: none;
@@ -158,35 +161,31 @@ body.rt-main-cartes #ilyosHudOrganicV2 #ov2Magic { display: none !important; }
 .rt-main-groupe.rt-main-off .rt-main-eventail { filter: saturate(.7) brightness(.8); }
 .rt-main-groupe.rt-main-reserve-seule .rt-main-eventail { opacity: .5; }
 
-/* Quantité : pastille ronde dorée au pied du groupe. */
+/* Quantité : un seul chiffre en haut à gauche, posé sur le médaillon de la
+   carte de tête = tout ce qui reste jouable de cette carte (main + réserve). */
 .rt-main-qte {
   position: absolute;
   z-index: 5;
-  right: -10px;
-  top: -8px;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 4px;
+  left: -9px;
+  top: -9px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 13px;
   background: radial-gradient(circle at 35% 30%, #23406a, #0b1a30);
   border: 1.5px solid #e9c46a;
   color: #ffe7a6;
-  font: 700 12px/1 "Cinzel", Georgia, serif;
+  font: 700 14px/1 Georgia, "Times New Roman", serif;
   box-shadow: 0 2px 6px rgba(0, 0, 0, .55);
 }
-/* Réserve du même type : petit « +2 » discret au pied gauche. */
-.rt-main-res {
-  position: absolute;
-  z-index: 2;
-  left: -8px;
-  top: -6px;
-  padding: 1px 5px;
-  border-radius: 8px;
-  background: rgba(8, 18, 34, .88);
-  border: 1px solid rgba(233, 196, 106, .5);
-  color: #e9d6a4;
-  font: 700 10px/1.3 system-ui, sans-serif;
+@media (max-width: 600px) {
+  #rtMain { gap: 8px; }
+  .rt-main-groupe { width: clamp(58px, 16vw, 76px); }
+  .rt-main-qte { min-width: 22px; height: 22px; font-size: 12px; left: -6px; top: -7px; }
 }
+/* La consigne passe au-dessus des cartes, plus hautes que les anciens socles. */
+body.rt-main-cartes #ilyosHudOrganicV2 #ov2Instruction { translate: 0 -52px; }
+@media (max-width: 600px) { body.rt-main-cartes #ilyosHudOrganicV2 #ov2Instruction { translate: 0 -30px; } }

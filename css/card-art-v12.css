@@ -60,45 +60,62 @@ body .card-cycle-v10-backface > * {
   display: none !important;
 }
 
-/* Carte du marché piochée (mode Rotation : Élan, Bélier, Arcane) : même face
-   que son type, plus un ruban doré à son nom et sa valeur sur l'illustration
-   (Taekun, 2026-11-03 : la pioche doit montrer les nouvelles cartes). */
+/* Carte du marché (mode Rotation : Élan, Bélier, Arcane, Bond) : même
+   illustration que son type, mais SON nom et SON effet écrits dans le
+   cartouche et le panneau du bas, par-dessus ceux de la carte de base
+   (Taekun, 2026-11-05 : une carte avancée doit porter son nom et son effet).
+   Les fonds reprennent la teinte de chaque carte (bleu, brun, violet). */
 body .card-cycle-v7-card.card-cycle-v10-card.is-speciale { container-type: inline-size; }
-body .card-cycle-v10-card .cc-speciale {
+body .card-cycle-v10-card .cc-texte {
+  --cc-nom: #13284c;
+  --cc-effet-haut: #182a4c;
+  --cc-effet-bas: #22406f;
   position: absolute;
-  left: 50%;
-  top: 31%;
-  transform: translateX(-50%) rotate(-3deg);
-  display: flex;
-  align-items: center;
-  gap: 5cqw;
-  padding: 2.4cqw 7cqw 2.4cqw 8cqw;
-  border-radius: 3cqw;
-  border: max(1px, .7cqw) solid #fff1bf;
-  background: linear-gradient(180deg, #ffe7a3 0%, #e8b44e 55%, #b97a22 100%);
-  box-shadow: 0 1.6cqw 3.6cqw rgba(0, 0, 0, .55), inset 0 0 0 max(1px, .5cqw) rgba(120, 66, 12, .55);
-  color: #3b1c06;
-  font: 700 11cqw/1 "Cinzel", Georgia, serif;
-  letter-spacing: .06em;
-  white-space: nowrap;
-  text-transform: uppercase;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
   opacity: 0;
   transition: opacity .2s ease;
 }
-body .card-cycle-v10-card.is-revealed .cc-speciale,
-body .card-cycle-v10-card:not(.is-draw-back) .cc-speciale { opacity: 1; }
-body .card-cycle-v10-card .cc-speciale em {
+body .card-cycle-v10-card.type-push .cc-texte { --cc-nom: #3e1d19; --cc-effet-haut: #36201f; --cc-effet-bas: #5c3432; }
+body .card-cycle-v10-card.type-magic .cc-texte { --cc-nom: #2f2047; --cc-effet-haut: #2c2148; --cc-effet-bas: #4a2f7c; }
+body .card-cycle-v10-card.is-revealed .cc-texte,
+body .card-cycle-v10-card:not(.is-draw-back) .cc-texte { opacity: 1; }
+body .card-cycle-v10-card .cc-texte b {
+  position: absolute;
+  left: 19%;
+  right: 19%;
+  top: 61.9%;
+  height: 7%;
   display: grid;
   place-items: center;
-  min-width: 15cqw;
-  height: 15cqw;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #c2402a, #6d140a);
-  border: max(1px, .6cqw) solid #ffe6a0;
-  color: #ffe9ad;
-  font: 800 8.5cqw/1 Georgia, serif;
+  border-radius: 1.5cqw;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cc-nom) 80%, #000) 0%, var(--cc-nom) 50%, color-mix(in srgb, var(--cc-nom) 80%, #000) 100%);
+  color: #fbf3df;
+  font: 600 10.5cqw/1 Georgia, "Times New Roman", serif;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 .5cqw 0 rgba(0, 0, 0, .55), 0 0 3cqw rgba(255, 214, 140, .35);
+}
+body .card-cycle-v10-card .cc-texte i {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 71.6%;
+  height: 14.6%;
+  display: grid;
+  place-items: center;
+  padding: 0 3cqw;
+  box-sizing: border-box;
+  border-radius: 3cqw;
+  background: radial-gradient(120% 90% at 50% 100%, var(--cc-effet-bas), var(--cc-effet-haut) 70%);
+  color: #f4eedf;
+  font: 400 9cqw/1.15 Georgia, "Times New Roman", serif;
   font-style: normal;
-  letter-spacing: 0;
+  text-align: center;
+  text-wrap: balance;
+  text-shadow: 0 .4cqw .8cqw rgba(0, 0, 0, .6);
 }
 .cc-pioche-speciales { display: block; font-style: normal; color: #ffd76a; font-size: .8em; margin-top: 2px; }
 
@@ -117,7 +134,7 @@ body .card-cycle-v10-card.cc-groupe > .cc-sous { filter: brightness(.82); transi
 body .card-cycle-v10-card .cc-qte {
   position: absolute;
   top: -6%;
-  right: -10%;
+  left: -10%;
   z-index: 3;
   min-width: 30%;
   aspect-ratio: 1;
@@ -131,4 +148,4 @@ body .card-cycle-v10-card .cc-qte {
   box-shadow: 0 2px 8px rgba(0, 0, 0, .6);
 }
 body .card-cycle-v10-card.cc-groupe.is-draw-back:not(.is-revealed) .cc-qte { opacity: 0; }
-body .card-cycle-v10-card .cc-speciale { z-index: 2; }
+body .card-cycle-v10-card .cc-texte { z-index: 2; }

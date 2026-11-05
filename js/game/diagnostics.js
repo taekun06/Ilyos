@@ -2182,6 +2182,12 @@
       };
 
       window.ILYOS_TEST = {
+        /* Banc : ramener le temps restant du tour (alerte des 30 s). */
+        tempsRestant: secondes => {
+          if (!state?.turnDeadline) return false;
+          state.turnDeadline = Date.now() + secondes * 1000;
+          return true;
+        },
         launchSpiral: launchIlyosSpiralDiagnostic,
         playSpiral: launchIlyosSpiralAutoplay,
         playAIvsAI: launchIlyosAIvsAI,

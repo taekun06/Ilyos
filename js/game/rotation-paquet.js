@@ -22,13 +22,13 @@
          deux fonctions, en profite sans rien savoir de plus.
          ===================================================================== */
       const PAQUET_CARTES = {
-        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer" },
-        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser" },
-        ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie" },
+        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer", texte: "Compte comme deux Déplacer." },
+        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser", texte: "Compte comme deux Pousser." },
+        ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie", texte: "Compte comme deux Magie." },
         /* Bond (doc des nouvelles cartes, validé par Taekun) : vaut 1
            Déplacer, ou un SAUT par-dessus une case (gardien, œuf ou vide)
            vers la case juste derrière, sur une île libre. */
-        BOND: { type: "MOVE", valeur: 1, saut: true, nom: "Bond", effet: "Saute par-dessus une case" },
+        BOND: { type: "MOVE", valeur: 1, saut: true, nom: "Bond", effet: "Saute par-dessus une case", texte: "Saute par-dessus une case." },
         MOVE: { type: "MOVE", valeur: 1, nom: "Déplacer", effet: "1 case" },
         PUSH: { type: "PUSH", valeur: 1, nom: "Pousser", effet: "Force 1" },
         MAGIC: { type: "MAGIC", valeur: 1, nom: "Magie", effet: "Tourne une île" }
@@ -689,20 +689,22 @@
           const bouton = document.getElementById(PAQUET_BOUTON_TYPE[g.type]);
           const def = PAQUET_CARTES[g.action];
           const nom = def?.nom || ACTIONS[g.action]?.name || g.action;
-          const ruban = g.forte ? `<span class="cc-speciale"><b>${nom}</b>${def.valeur > 1 ? `<em>×${def.valeur}</em>` : ""}</span>` : "";
+          const texte = g.forte ? `<span class="cc-texte"><b>${nom}</b><i>${def.texte || def.effet}</i></span>` : "";
           const visibles = Math.max(1, Math.min(3, g.n));
           const cartes = Array.from({ length: visibles }, (_, i) =>
-            `<span class="card-cycle-v7-card card-cycle-v10-card type-${String(g.type).toLowerCase()}${g.forte ? " is-speciale" : ""}" style="--i:${i - (visibles - 1) / 2}">${i === visibles - 1 ? ruban : ""}</span>`).join("");
+            `<span class="card-cycle-v7-card card-cycle-v10-card type-${String(g.type).toLowerCase()}${g.forte ? " is-speciale" : ""}" style="--i:${i - (visibles - 1) / 2}">${i === visibles - 1 ? texte : ""}</span>`).join("");
           const classes = ["rt-main-groupe", `type-${String(g.type).toLowerCase()}`];
           if (g.forte) classes.push("rt-main-forte");
           if (!g.n) classes.push("rt-main-reserve-seule");
           if (!bouton || bouton.disabled) classes.push("rt-main-off");
           if (bouton?.classList.contains("hud-v2-pill-active")) classes.push("rt-main-actif");
-          const reserve = g.reserve ? `<small class="rt-main-res" title="En réserve">+${g.reserve}</small>` : "";
-          const titre = `${nom}${g.n ? ` ×${g.n}` : ""}${g.reserve ? ` · ${g.reserve} en réserve` : ""}${def?.effet && g.forte ? ` — ${def.effet}` : ""}`;
+          /* Un seul chiffre, en haut à gauche : tout ce qui reste jouable de
+             cette carte, main et réserve comprises (Taekun, 2026-11-05). */
+          const total = g.n + (g.reserve || 0);
+          const titre = `${nom} : ${total} disponible${total > 1 ? "s" : ""}${g.forte && def?.effet ? ` — ${def.effet}` : ""}`;
           return `<button type="button" class="${classes.join(" ")}" data-type="${g.type}" data-action="${g.action}" title="${titre}" aria-label="${titre}">`
             + `<span class="rt-main-eventail" data-n="${visibles}">${cartes}</span>`
-            + (g.n > 1 ? `<b class="rt-main-qte">×${g.n}</b>` : "") + reserve + `</button>`;
+            + `<b class="rt-main-qte">${total}</b></button>`;
         }).join("");
         if (main.dataset.html !== html) { main.innerHTML = html; main.dataset.html = html; }
       }
@@ -734,7 +736,7 @@
          (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
       window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
         ...Object.entries(PAQUET_CARTES).filter(([, def]) => defSpeciale(def))
-          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet }]),
+          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet, texte: def.texte || def.effet }]),
         ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
       ]);
 

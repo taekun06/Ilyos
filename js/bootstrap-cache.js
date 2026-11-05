@@ -52,7 +52,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20261104-main-cartes';
+  const VERSION = '20261105-cartes-minuteur';
 
   function install() {
     ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);

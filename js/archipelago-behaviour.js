@@ -23,19 +23,19 @@
         ['hard', 'Difficile', 'Expérimenté'],
         ['expert', 'Expert', 'Maîtrise requise']
       ];
-      // Durée d'un tour, en secondes. '0' = aucune limite, et c'est le défaut :
-      // une partie de base n'est pas chronométrée (voir turnTimerControlsHTML
-      // côté moteur, qui expose le <select id="turnTimerSelect"> correspondant).
+      // Durée d'un tour, en secondes. '0' = aucune limite. Défaut : 2 minutes
+      // (Taekun, 2026-11-05 ; voir turnTimerControlsHTML côté moteur, qui
+      // expose le <select id="turnTimerSelect"> correspondant).
       const turnTimeMeta = [
-        ['0', 'Sans limite', 'Par défaut'],
+        ['0', 'Sans limite', 'Sans pression'],
         ['60', '1 minute', 'Rythme rapide'],
-        ['120', '2 minutes', 'Équilibré'],
+        ['120', '2 minutes', 'Par défaut'],
         ['180', '3 minutes', 'Confortable'],
         ['300', '5 minutes', 'Longue réflexion']
       ];
       let selectedBoard = 'classic';
       let selectedDifficulty = 'normal';
-      let selectedTurnTime = '0';
+      let selectedTurnTime = '120';
 
       function modeIcon(kind) {
         if (kind === 'online') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/></svg>';
