@@ -37548,7 +37548,10 @@
         document.body.classList.toggle("rt-main-cartes", actif);
         let main = document.getElementById("rtMain");
         if (!actif) { main?.remove(); return; }
-        const dock = document.querySelector("#ilyosHudOrganicV2 .ov2-dock");
+        /* Téléphone à l'horizontale : les actions sont en colonne à droite ;
+           la main se pose à part, en rangée en bas de l'écran. */
+        const horizontal = typeof matchMedia === "function" && matchMedia("(orientation: landscape) and (max-height: 500px)").matches;
+        const dock = horizontal ? els.gameScreen : document.querySelector("#ilyosHudOrganicV2 .ov2-dock");
         if (!dock) return;
         if (!main || main.parentElement !== dock) {
           main?.remove();
@@ -37570,7 +37573,8 @@
           const def = PAQUET_CARTES[g.action];
           const nom = def?.nom || ACTIONS[g.action]?.name || g.action;
           const face = g.forte ? paquetFaceSpeciale(g.action) : "";
-          const visibles = Math.max(1, Math.min(3, g.n));
+          // Plus d'éventail : une seule carte, le chiffre au-dessus suffit (Taekun, 2026-11-05).
+          const visibles = 1;
           const cartes = Array.from({ length: visibles }, (_, i) =>
             `<span class="card-cycle-v7-card card-cycle-v10-card type-${String(g.type).toLowerCase()}${g.forte ? " is-speciale" : ""}" style="--i:${i - (visibles - 1) / 2}">${face}</span>`).join("");
           const classes = ["rt-main-groupe", `type-${String(g.type).toLowerCase()}`];
@@ -37590,6 +37594,8 @@
             + `<b class="rt-main-qte">${total}</b></button>`;
         }).join("");
         if (main.dataset.html !== html) { main.innerHTML = html; main.dataset.html = html; }
+        main.style.setProperty("--n", String(main.children.length || 1));
+        document.body.style.setProperty("--rt-n", String(main.children.length || 1));
       }
 
       const paquetRenderAllBase = renderAll;
