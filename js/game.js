@@ -52889,7 +52889,20 @@
          secondes de calme. Au lancement, le profil le plus avancé (en XP)
          l'emporte : une progression n'est jamais écrasée par une plus petite. */
       const PROGRESSION_COMPTE_KEY = "ilyos-compte-v1";
-      const PROGRESSION_COMPTE_URL = "/api/compte";
+      /* Sur Netlify (et en local) la fonction est sur le même site. Ailleurs
+         (taekun.fr, GitHub Pages), on l'appelle chez Netlify : la production
+         d'abord, puis une préversion qui la porte tant que la production est
+         figée (crédits Netlify épuisés). Les comptes sont les mêmes partout
+         (magasin Netlify Blobs commun au site). */
+      const PROGRESSION_COMPTE_URLS = (() => {
+        const hote = location.hostname;
+        if (/netlify\.app$/.test(hote) || hote === "localhost" || hote === "127.0.0.1" || location.protocol === "file:") return ["/api/compte"];
+        return [
+          "https://batbat.netlify.app/api/compte",
+          "https://deploy-preview-196--batbat.netlify.app/api/compte"
+        ];
+      })();
+      let progressionCompteUrlBonne = 0;
       let progressionEnvoiMinuteur = null;
 
       function progressionCompteLire() {
@@ -52907,19 +52920,27 @@
       }
 
       async function progressionCompteAppel(corps, keepalive = false) {
-        try {
-          const reponse = await fetch(PROGRESSION_COMPTE_URL, {
+        /* text/plain : requête « simple », sans aller-retour CORS préalable. */
+        const essayer = async url => {
+          const reponse = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
             body: JSON.stringify(corps),
             keepalive
           });
-          if (reponse.status === 404 || reponse.status === 405) return { ok: false, erreur: "indisponible" };
+          if (reponse.status === 404 || reponse.status === 405) return null;
           const donnees = await reponse.json().catch(() => null);
           return donnees && typeof donnees === "object" ? donnees : { ok: false, erreur: "serveur" };
-        } catch (_) {
-          return { ok: false, erreur: "reseau" };
+        };
+        let erreur = "indisponible";
+        for (let i = 0; i < PROGRESSION_COMPTE_URLS.length; i++) {
+          const indice = (progressionCompteUrlBonne + i) % PROGRESSION_COMPTE_URLS.length;
+          try {
+            const r = await essayer(PROGRESSION_COMPTE_URLS[indice]);
+            if (r) { progressionCompteUrlBonne = indice; return r; }
+          } catch (_) { erreur = "reseau"; }
         }
+        return { ok: false, erreur };
       }
 
       function progressionCompteEnvoyer(keepalive = false) {
@@ -53018,7 +53039,7 @@
          sinon envoie celui de l'appareil. */
       async function progressionSynchroniser() {
         const compte = progressionCompteLire();
-        if (!compte) return { ok: false, erreur: "sans-compte" };
+        if (!compte) return progressionRattacher();
         const r = await progressionCompteAppel({ action: "lire", pseudo: compte.pseudo, jeton: compte.jeton });
         if (!r.ok) {
           if (r.erreur === "jeton") progressionCompteEcrire(null);
@@ -53028,6 +53049,19 @@
         const garde = progressionCompteFusionner(r.pseudo, r.profil);
         if (garde === "local") await progressionCompteEnvoyer();
         return { ok: true, garde };
+      }
+
+      /* Un nom choisi sans sauvegarde en ligne (serveur injoignable à ce
+         moment-là) y est rattaché tout seul au lancement suivant, s'il est
+         encore libre. Sinon l'icône nuage reste là pour le faire à la main. */
+      async function progressionRattacher() {
+        const profil = progressionCharger();
+        const nom = progressionPseudoValide(profil.pseudo);
+        if (!nom) return { ok: false, erreur: "sans-compte" };
+        const r = await progressionCompteAppel({ action: "entrer", pseudo: nom, profil, seulementNouveau: true });
+        if (!r.ok || !r.nouveau) return r.ok ? { ok: false, erreur: "pseudo-pris" } : r;
+        progressionCompteEcrire({ pseudo: r.pseudo, jeton: r.jeton, protege: false, envoye: JSON.stringify(profil) });
+        return { ok: true, garde: "local", rattache: true };
       }
 
       function progressionDeconnecter() {

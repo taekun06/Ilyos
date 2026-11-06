@@ -86,6 +86,9 @@ export async function traiter(demande, store, maintenant = Date.now()) {
   switch (demande.action) {
     case "entrer": {
       if (demande.profil !== undefined && !profilAccepte(demande.profil)) return erreur(413, "profil");
+      /* Rattachement automatique d'un nom choisi hors ligne : seulement s'il
+         est libre, pour ne jamais mêler sa progression à celle d'un autre. */
+      if (compte && demande.seulementNouveau) return erreur(409, "pseudo-pris");
       if (!compte) {
         const neuf = {
           pseudo, sel: null, empreinte: null, jetons: [], echecs: 0, pauseJusqua: 0,
