@@ -687,20 +687,20 @@
       `;
       }
 
-      // Chronomètre désactivé par défaut : une partie de base se joue sans
-      // pression de temps. La valeur est une durée en secondes ; "0" signifie
-      // "aucune limite" (voir isTurnTimerEnabled).
+      // Deux minutes par tour par défaut (Taekun, 2026-11-05). La valeur est
+      // une durée en secondes ; "0" signifie "aucune limite" (voir
+      // isTurnTimerEnabled). L'IA n'est jamais chronométrée.
       function turnTimerControlsHTML() {
         return `
         <label class="mode-option-row turn-timer-row" for="turnTimerSelect">
           <span>
             <b>Temps par tour</b>
-            <small>Sans limite par défaut. Avec une limite, une île est posée automatiquement à 0:00 puis le tour passe.</small>
+            <small>2 minutes par défaut. Alerte à 30 secondes ; à 0:00, une île est posée automatiquement puis le tour passe.</small>
           </span>
           <select id="turnTimerSelect">
-            <option value="0" selected>Aucune limite</option>
+            <option value="0">Aucune limite</option>
             <option value="60">1 minute</option>
-            <option value="120">2 minutes</option>
+            <option value="120" selected>2 minutes</option>
             <option value="180">3 minutes</option>
             <option value="300">5 minutes</option>
           </select>
@@ -4226,6 +4226,8 @@
         els.turnTimer.textContent = `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
         els.turnTimer.classList.toggle("warning", seconds <= 30 && seconds > 10);
         els.turnTimer.classList.toggle("danger", seconds <= 10);
+        // Les 30 dernières secondes ressortent nettement (Taekun, 2026-11-05).
+        els.turnTimer.classList.toggle("timer-fin", seconds <= 30);
       }
 
       function startTurnTimer(resetDeadline = true) {
@@ -4263,6 +4265,7 @@
           }
           state.turnTimeLeft = Math.max(0, (state.turnDeadline - Date.now()) / 1000);
           updateTurnTimerDisplay();
+          alerterTrenteSecondes();
 
           if (state.turnTimeLeft <= 0) {
             if (state.onlineMode && !canLocalPlayerAct()) {
@@ -4273,6 +4276,22 @@
             handleTurnTimeout();
           }
         }, 250);
+      }
+
+      /* Une seule alerte par tour, quand il reste 30 secondes : notification
+         et son, pour le joueur qui a la main (Taekun, 2026-11-05). */
+      let alerte30Tour = null;
+      function alerterTrenteSecondes() {
+        if (!state || state.turnTimeLeft > 30 || state.turnTimeLeft <= 0 || turnDurationSeconds() <= 30) return;
+        const tour = `${state.debutPartie}:${state.turn}:${state.currentPlayer}`;
+        if (alerte30Tour === tour) return;
+        alerte30Tour = tour;
+        if (state.onlineMode && !canLocalPlayerAct()) return;
+        showToast("Plus que 30 secondes !");
+        playSfx("turn");
+        els.turnTimer?.classList.remove("timer-alerte");
+        void els.turnTimer?.offsetWidth;
+        els.turnTimer?.classList.add("timer-alerte");
       }
 
       async function handleTurnTimeout() {

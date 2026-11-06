@@ -258,8 +258,11 @@
        *  qui lui est adjacent (celui qui tomberait en priorité). Sans chemin,
        *  il prend le pas qui le rapproche le plus à vol d'oiseau. */
       const LOUP_PAS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      function loupCaseLibre(r, c) {
-        return inside(r, c) && isLand(r, c) && !characterAt(r, c) && !oeufSurCase(r, c);
+      /* Un loup né dans le vide (œuf éclos hors du sol) agit quand même :
+         tant qu'il n'a pas touché terre, il peut aussi passer par les cases
+         vides pour rejoindre les îles (Taekun, 2026-11-05). */
+      function loupCaseLibre(r, c, volant = false) {
+        return inside(r, c) && (volant || isLand(r, c)) && !characterAt(r, c) && !oeufSurCase(r, c);
       }
       function loupAdjacents(loup) {
         return (state.characters || []).filter(g => !g.creature && Math.abs(g.r - loup.r) + Math.abs(g.c - loup.c) === 1);
@@ -267,12 +270,14 @@
       function loupPas(loup) {
         const proies = (state.characters || []).filter(g => !g.creature);
         if (!proies.length) return null;
+        const volant = !isLand(loup.r, loup.c);
+        const libre = (r, c) => loupCaseLibre(r, c, volant);
         const but = new Set();
         proies.forEach(g => LOUP_PAS.forEach(([dr, dc]) => but.add(key(g.r + dr, g.c + dc))));
         // Parcours en largeur : le premier pas du plus court chemin.
         const vus = new Set([key(loup.r, loup.c)]);
         let front = LOUP_PAS.map(([dr, dc]) => [loup.r + dr, loup.c + dc])
-          .filter(([r, c]) => loupCaseLibre(r, c))
+          .filter(([r, c]) => libre(r, c))
           .map(([r, c]) => ({ r, c, premier: [r, c] }));
         front.forEach(n => vus.add(key(n.r, n.c)));
         while (front.length) {
@@ -281,7 +286,7 @@
           const suivant = [];
           front.forEach(n => LOUP_PAS.forEach(([dr, dc]) => {
             const r = n.r + dr, c = n.c + dc, k = key(r, c);
-            if (vus.has(k) || !loupCaseLibre(r, c)) return;
+            if (vus.has(k) || !libre(r, c)) return;
             vus.add(k);
             suivant.push({ r, c, premier: n.premier });
           }));
@@ -291,7 +296,7 @@
         const dist = (g, r, c) => Math.abs(g.r - r) + Math.abs(g.c - c);
         const cible = proies.reduce((x, y) => (dist(y, loup.r, loup.c) < dist(x, loup.r, loup.c) ? y : x));
         const pas = LOUP_PAS.map(([dr, dc]) => [loup.r + dr, loup.c + dc])
-          .filter(([r, c]) => loupCaseLibre(r, c))
+          .filter(([r, c]) => libre(r, c))
           .sort((x, y) => dist(cible, x[0], x[1]) - dist(cible, y[0], y[1]));
         return pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible, loup.r, loup.c) ? pas[0] : null;
       }
@@ -377,16 +382,16 @@
         return true;
       }
 
-      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès
-         qu'une île est sous lui : la créature naît sur la case de l'œuf,
-         jamais à côté. Sans île dessous (ou case occupée), il attend. */
+      /* Un œuf éclot à la fin de son compte à rebours, qu'il soit sur une
+         île ou dans le vide (Taekun, 2026-11-05) : la créature naît sur la
+         case de l'œuf, jamais à côté, et agit à la fin du tour même hors
+         du sol. Seule une case occupée le fait attendre. */
       function oeufMur(oeuf) {
         return (state?.turn || 1) >= oeuf.eclosion;
       }
 
       function creaturesCaseNaissance(oeuf) {
-        // Île, sanctuaire ou village : toute terre ferme fait éclore (Taekun, 2026-11-04).
-        return isLand(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
+        return inside(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
       /** Un nouvel œuf apparaît au hasard sur une case libre de TOUTE la
@@ -419,7 +424,7 @@
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
-          if (!naissance) return true; // pas d'île dessous : il attend
+          if (!naissance) return true; // case occupée : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
           animateCellPulse(r, c, "crown-burst");
@@ -431,9 +436,8 @@
         return eclos;
       }
 
-      /* Éclosion immédiate : après chaque action (île posée, île tournée),
-         un œuf mûr qui touche désormais une île éclot sans attendre le tour
-         suivant. Vérifié au rendu, hors simulation de l'IA. */
+      /* Éclosion au rendu : un œuf mûr resté en attente (case occupée) éclot
+         dès que sa case se libère. Hors simulation de l'IA. */
       const creaturesRenderBase = renderAll;
       // Phase des loups en cours (fin de tour animée) : l'éclosion attend la fin.
       let creaturesPhaseEnCours = false;

@@ -4022,7 +4022,8 @@
         const deckLeft = p.deck.length;
         const discardCount = p.discard.length;
         const mode = state.deckAnimationMode || "";
-        const visibleCards = (p.hand || []).slice(0, 5);
+        // Cartes avancées gardées du tour d'avant : pas « piochées » (rotation-paquet.js).
+        const visibleCards = (p.hand || []).filter(card => !card.gardee).slice(0, 5);
 
         /* Une carte forte de la Rotation (Élan…) s'affiche comme son type de
            base : ACTIONS.ELAN.type === "MOVE" (rotation-paquet.js). */

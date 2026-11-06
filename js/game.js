@@ -15821,20 +15821,20 @@
       `;
       }
 
-      // Chronomètre désactivé par défaut : une partie de base se joue sans
-      // pression de temps. La valeur est une durée en secondes ; "0" signifie
-      // "aucune limite" (voir isTurnTimerEnabled).
+      // Deux minutes par tour par défaut (Taekun, 2026-11-05). La valeur est
+      // une durée en secondes ; "0" signifie "aucune limite" (voir
+      // isTurnTimerEnabled). L'IA n'est jamais chronométrée.
       function turnTimerControlsHTML() {
         return `
         <label class="mode-option-row turn-timer-row" for="turnTimerSelect">
           <span>
             <b>Temps par tour</b>
-            <small>Sans limite par défaut. Avec une limite, une île est posée automatiquement à 0:00 puis le tour passe.</small>
+            <small>2 minutes par défaut. Alerte à 30 secondes ; à 0:00, une île est posée automatiquement puis le tour passe.</small>
           </span>
           <select id="turnTimerSelect">
-            <option value="0" selected>Aucune limite</option>
+            <option value="0">Aucune limite</option>
             <option value="60">1 minute</option>
-            <option value="120">2 minutes</option>
+            <option value="120" selected>2 minutes</option>
             <option value="180">3 minutes</option>
             <option value="300">5 minutes</option>
           </select>
@@ -19360,6 +19360,8 @@
         els.turnTimer.textContent = `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
         els.turnTimer.classList.toggle("warning", seconds <= 30 && seconds > 10);
         els.turnTimer.classList.toggle("danger", seconds <= 10);
+        // Les 30 dernières secondes ressortent nettement (Taekun, 2026-11-05).
+        els.turnTimer.classList.toggle("timer-fin", seconds <= 30);
       }
 
       function startTurnTimer(resetDeadline = true) {
@@ -19397,6 +19399,7 @@
           }
           state.turnTimeLeft = Math.max(0, (state.turnDeadline - Date.now()) / 1000);
           updateTurnTimerDisplay();
+          alerterTrenteSecondes();
 
           if (state.turnTimeLeft <= 0) {
             if (state.onlineMode && !canLocalPlayerAct()) {
@@ -19407,6 +19410,22 @@
             handleTurnTimeout();
           }
         }, 250);
+      }
+
+      /* Une seule alerte par tour, quand il reste 30 secondes : notification
+         et son, pour le joueur qui a la main (Taekun, 2026-11-05). */
+      let alerte30Tour = null;
+      function alerterTrenteSecondes() {
+        if (!state || state.turnTimeLeft > 30 || state.turnTimeLeft <= 0 || turnDurationSeconds() <= 30) return;
+        const tour = `${state.debutPartie}:${state.turn}:${state.currentPlayer}`;
+        if (alerte30Tour === tour) return;
+        alerte30Tour = tour;
+        if (state.onlineMode && !canLocalPlayerAct()) return;
+        showToast("Plus que 30 secondes !");
+        playSfx("turn");
+        els.turnTimer?.classList.remove("timer-alerte");
+        void els.turnTimer?.offsetWidth;
+        els.turnTimer?.classList.add("timer-alerte");
       }
 
       async function handleTurnTimeout() {
@@ -26785,7 +26804,8 @@
         const deckLeft = p.deck.length;
         const discardCount = p.discard.length;
         const mode = state.deckAnimationMode || "";
-        const visibleCards = (p.hand || []).slice(0, 5);
+        // Cartes avancées gardées du tour d'avant : pas « piochées » (rotation-paquet.js).
+        const visibleCards = (p.hand || []).filter(card => !card.gardee).slice(0, 5);
 
         /* Une carte forte de la Rotation (Élan…) s'affiche comme son type de
            base : ACTIONS.ELAN.type === "MOVE" (rotation-paquet.js). */
@@ -36784,13 +36804,13 @@
          deux fonctions, en profite sans rien savoir de plus.
          ===================================================================== */
       const PAQUET_CARTES = {
-        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer" },
-        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser" },
-        ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie" },
+        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer", texte: "Compte comme deux Déplacer." },
+        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser", texte: "Compte comme deux Pousser." },
+        ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie", texte: "Compte comme deux Magie." },
         /* Bond (doc des nouvelles cartes, validé par Taekun) : vaut 1
            Déplacer, ou un SAUT par-dessus une case (gardien, œuf ou vide)
            vers la case juste derrière, sur une île libre. */
-        BOND: { type: "MOVE", valeur: 1, saut: true, nom: "Bond", effet: "Saute par-dessus une case" },
+        BOND: { type: "MOVE", valeur: 1, saut: true, nom: "Bond", effet: "Saute par-dessus une case", texte: "Saute par-dessus une case." },
         MOVE: { type: "MOVE", valeur: 1, nom: "Déplacer", effet: "1 case" },
         PUSH: { type: "PUSH", valeur: 1, nom: "Pousser", effet: "Force 1" },
         MAGIC: { type: "MAGIC", valeur: 1, nom: "Magie", effet: "Tourne une île" }
@@ -36836,25 +36856,65 @@
 
       /** Toutes les cartes du joueur : pioche, main, défausse et réserve. */
       function paquetTaille(player) {
-        return ["deck", "hand", "discard", "reserveCards"]
+        return ["deck", "hand", "discard", "reserveCards", "mainGardee"]
           .reduce((total, zone) => total + (Array.isArray(player?.[zone]) ? player[zone].length : 0), 0);
       }
 
       function paquetCompte(player, action) {
-        return ["deck", "hand", "discard", "reserveCards"].reduce((total, zone) =>
+        return ["deck", "hand", "discard", "reserveCards", "mainGardee"].reduce((total, zone) =>
           total + (player?.[zone] || []).filter(c => c?.action === action).length, 0);
       }
 
-      /* ---------- Comptes et consommation ------------------------------- */
+      /* ---------- Comptes et consommation -------------------------------
+         Joueur humain (Taekun, 2026-11-05) : une carte avancée ne se joue
+         QUE si on clique dessus. Elle est alors « armée » : l'action qui suit
+         ne puise que dans elle, et elle quitte la main dès qu'elle sert (le
+         reste de sa charge est perdu). Sans carte armée, les actions ne
+         puisent que dans les cartes de base et la réserve.
+         L'IA garde l'ancienne règle (cartes fortes puisées d'office) : elle
+         ne lit les cartes que par ces deux fonctions. */
+      let paquetArmeeId = null;
+      let paquetArmement = false;
+      function paquetAuClic(player) {
+        return paquetActif() && !!player && !player.isAI;
+      }
+      function paquetCarteArmee(player = state && currentPlayer()) {
+        if (!paquetArmeeId || !player || player !== currentPlayer()) return null;
+        return (player.hand || []).find(c => c.id === paquetArmeeId && carteForte(c)) || null;
+      }
+      function paquetChargeDe(carte) {
+        return carte.restant ?? PAQUET_CARTES[carte.action].valeur;
+      }
+
       const paquetAvailableBase = availableActionCount;
       availableActionCount = function availableActionCountPaquet(type, player = currentPlayer()) {
         const base = paquetAvailableBase(type, player);
-        return paquetActif() && player ? base + paquetCharges(type, player) : base;
+        if (!paquetActif() || !player) return base;
+        if (paquetAuClic(player)) {
+          const armee = paquetCarteArmee(player);
+          return armee && PAQUET_CARTES[armee.action].type === type ? paquetChargeDe(armee) : base;
+        }
+        return base + paquetCharges(type, player);
       };
+
+      function paquetDefausserForte(player, carte) {
+        player.hand = player.hand.filter(c => c !== carte);
+        player.discard = Array.isArray(player.discard) ? player.discard : [];
+        player.discard.push({ ...carte, restant: PAQUET_CARTES[carte.action].valeur, used: false });
+      }
 
       const paquetConsumeBase = consumeAvailableActions;
       consumeAvailableActions = function consumeAvailableActionsPaquet(type, count = 1, player = currentPlayer()) {
         if (!paquetActif() || !player || count < 1) return paquetConsumeBase(type, count, player);
+        if (paquetAuClic(player)) {
+          const armee = paquetCarteArmee(player);
+          if (!armee || PAQUET_CARTES[armee.action].type !== type) return paquetConsumeBase(type, count, player);
+          const pris = Math.min(Math.floor(count), paquetChargeDe(armee));
+          paquetDefausserForte(player, armee);
+          paquetArmeeId = null;
+          carteJoueeEnvol(type, player);
+          return pris;
+        }
         let reste = Math.min(Math.floor(count), availableActionCount(type, player));
         const demande = reste;
         let forte = false;
@@ -36866,21 +36926,44 @@
         if (paquetSautEnCours) fortes.reverse();
         for (const carte of fortes) {
           if (reste <= 0) break;
-          const charge = carte.restant ?? PAQUET_CARTES[carte.action].valeur;
+          const charge = paquetChargeDe(carte);
           const pris = Math.min(reste, charge);
           carte.restant = charge - pris;
           reste -= pris;
           forte = true;
-          if (carte.restant <= 0) {
-            player.hand = player.hand.filter(c => c !== carte);
-            player.discard = Array.isArray(player.discard) ? player.discard : [];
-            player.discard.push({ ...carte, restant: PAQUET_CARTES[carte.action].valeur, used: false });
-          }
+          if (carte.restant <= 0) paquetDefausserForte(player, carte);
         }
         if (reste > 0) reste -= paquetConsumeBase(type, reste, player);
         if (forte) carteJoueeEnvol(type, player);
         return demande - reste;
       };
+
+      /** Clic sur une carte de la main (dock) : une carte avancée s'arme et
+       *  lance son action ; une carte de base désarme et lance la sienne.
+       *  Recliquer la carte armée l'annule. */
+      function paquetJouerCarte(action, type) {
+        if (!canLocalPlayerAct()) return;
+        const joueur = currentPlayer();
+        const carte = carteForte({ action }) ? (joueur.hand || []).find(c => c.action === action && carteForte(c)) : null;
+        const armee = paquetCarteArmee(joueur);
+        const enCours = (state.phase === "ACTION" || state.phase === "SMART_CHAR") && !!state.selectedActionType;
+        if (carte && armee && armee.action === action && enCours) {
+          paquetArmeeId = null;
+          cancelSelectedCard();
+          renderAll();
+          return;
+        }
+        paquetArmement = true;
+        try {
+          if (enCours || state.phase === "SMART_CHAR") cancelSelectedCard();
+          paquetArmeeId = carte ? carte.id : null;
+          selectActionBatch(type, carte ? paquetChargeDe(carte) : 1);
+        } finally {
+          paquetArmement = false;
+        }
+        if (paquetArmeeId && state.selectedActionType !== type) paquetArmeeId = null;
+        renderAll();
+      }
 
       /* ---------- Bond : le saut ---------------------------------------- */
       let paquetSautEnCours = false;
@@ -36889,6 +36972,7 @@
       function paquetBondDispo(char) {
         if (!paquetActif() || !char || char.creature) return false;
         const joueur = state.players?.[char.player];
+        if (paquetAuClic(joueur)) return !!PAQUET_CARTES[paquetCarteArmee(joueur)?.action]?.saut;
         return (joueur?.hand || []).some(c => PAQUET_CARTES[c.action]?.saut && (c.restant ?? 1) > 0);
       }
 
@@ -36945,6 +37029,19 @@
         }
       };
 
+      /* Les cartes avancées non jouées RESTENT en main d'un tour à l'autre
+         (Taekun, 2026-11-05) : mises de côté au rangement de fin de tour,
+         elles reviennent en main avant la pioche du tour suivant. */
+      const paquetRangerBase = rangerCartesFinDeTour;
+      rangerCartesFinDeTour = function rangerCartesPaquet(player) {
+        if (!paquetActif() || !player) return paquetRangerBase(player);
+        const gardees = (player.hand || []).filter(c => carteForte(c) && paquetChargeDe(c) > 0);
+        player.hand = (player.hand || []).filter(c => !gardees.includes(c));
+        const range = paquetRangerBase(player);
+        player.mainGardee = [...(player.mainGardee || []), ...gardees.map(c => ({ ...c, restant: PAQUET_CARTES[c.action].valeur, used: false, gardee: false }))];
+        return range;
+      };
+
       /* Une carte forte piochée repart pleine. */
       const paquetDrawCardsBase = drawCards;
       drawCards = function drawCardsPaquet(player, count) {
@@ -36953,6 +37050,13 @@
         (player?.hand || []).forEach(c => {
           if (!avant.has(c) && carteForte(c)) c.restant = PAQUET_CARTES[c.action].valeur;
         });
+        /* Les cartes gardées rejoignent la main APRÈS la pioche : elles
+           s'ajoutent aux N nouvelles, et l'animation de pioche (qui lit les
+           cartes sans `gardee`) ne montre que les nouvelles. */
+        if (player?.mainGardee?.length) {
+          player.hand = [...(player.hand || []), ...player.mainGardee.map(c => ({ ...c, gardee: true }))];
+          player.mainGardee = [];
+        }
       };
 
       /* ---------- Marché ------------------------------------------------- */
@@ -37397,8 +37501,111 @@
         });
       }
 
+      /* ---------- La main en cartes (deckbuilding) ------------------------
+         Taekun (2026-11-04) : en deckbuilding, le dock du bas montre
+         directement les cartes en main au lieu des trois boutons d'action.
+         Les cartes identiques sont regroupées en léger éventail avec leur
+         quantité ; les cartes du marché (Élan, Bond…) ont leur propre groupe.
+         Un groupe se joue comme le bouton de son type (même clic). */
+      const PAQUET_ORDRE_TYPES = ["MOVE", "PUSH", "MAGIC"];
+      const PAQUET_BOUTON_TYPE = { MOVE: "hudV2MoveCount", PUSH: "hudV2PushCount", MAGIC: "hudV2MagicCount" };
+      function paquetGroupesMain(joueur) {
+        const groupes = new Map();
+        (joueur?.hand || []).forEach(carte => {
+          if (!carte || carte.used) return;
+          if (carteForte(carte) && (carte.restant ?? PAQUET_CARTES[carte.action].valeur) <= 0) return;
+          const type = PAQUET_CARTES[carte.action]?.type || (carte.action === "BOUE" ? "BOUE" : carte.action);
+          const g = groupes.get(carte.action) || { action: carte.action, type, n: 0, forte: carteForte(carte) };
+          g.n++;
+          groupes.set(carte.action, g);
+        });
+        const liste = [...groupes.values()];
+        // Les types de base sans carte en main mais avec une réserve restent jouables.
+        PAQUET_ORDRE_TYPES.forEach(type => {
+          const reserve = storedActionCount(type, joueur);
+          const base = liste.find(g => g.action === type);
+          if (base) base.reserve = reserve;
+          else if (reserve > 0) liste.push({ action: type, type, n: 0, forte: false, reserve });
+        });
+        // Déplacer, Pousser, Magie, puis les cartes avancées à droite (même ordre de types).
+        const rang = g => (g.forte ? 100 : 0) + (PAQUET_ORDRE_TYPES.indexOf(g.type) + 1 || 9) * 10;
+        return liste.sort((a, b) => rang(a) - rang(b));
+      }
+      /* Face d'une carte avancée (Taekun, 2026-11-05) : plus d'illustration,
+         le logo d'achat du marché (icône du type + ×2 ou ↷) à sa place, et
+         son nom et son effet écrits. Même balisage partout : main, pioche,
+         défausse (window.ILYOS_CARTES_SPECIALES[action].face). */
+      function paquetFaceSpeciale(action) {
+        const def = PAQUET_CARTES[action];
+        if (!def) return "";
+        const marque = def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "";
+        return `<span class="cc-logo"><span class="cc-logo-rond">${paquetIcone(action)}${marque ? `<em>${marque}</em>` : ""}</span></span>`
+          + `<span class="cc-texte"><b>${def.nom}</b><i>${def.texte || def.effet}</i></span>`;
+      }
+      function paquetRendreMain() {
+        if (typeof document === "undefined") return;
+        const actif = !!state && paquetActif() && !state.tutorial && !state.puzzle;
+        document.body.classList.toggle("rt-main-cartes", actif);
+        let main = document.getElementById("rtMain");
+        if (!actif) { main?.remove(); return; }
+        /* Téléphone à l'horizontale : les actions sont en colonne à droite ;
+           la main se pose à part, en rangée en bas de l'écran. */
+        const horizontal = typeof matchMedia === "function" && matchMedia("(orientation: landscape) and (max-height: 500px)").matches;
+        const dock = horizontal ? els.gameScreen : document.querySelector("#ilyosHudOrganicV2 .ov2-dock");
+        if (!dock) return;
+        if (!main || main.parentElement !== dock) {
+          main?.remove();
+          main = document.createElement("div");
+          main.id = "rtMain";
+          main.className = "rt-main";
+          main.addEventListener("click", evenement => {
+            const groupe = evenement.target.closest(".rt-main-groupe");
+            if (!groupe || groupe.classList.contains("rt-main-off")) return;
+            paquetJouerCarte(groupe.dataset.action, groupe.dataset.type);
+          });
+          dock.appendChild(main);
+        }
+        const joueur = joueurDuDock();
+        const aMoi = joueur === currentPlayer() && canLocalPlayerAct();
+        const armee = paquetCarteArmee();
+        const html = paquetGroupesMain(joueur).map(g => {
+          const bouton = document.getElementById(PAQUET_BOUTON_TYPE[g.type]);
+          const def = PAQUET_CARTES[g.action];
+          const nom = def?.nom || ACTIONS[g.action]?.name || g.action;
+          const face = g.forte ? paquetFaceSpeciale(g.action) : "";
+          // Plus d'éventail : une seule carte, le chiffre au-dessus suffit (Taekun, 2026-11-05).
+          const visibles = 1;
+          const cartes = Array.from({ length: visibles }, (_, i) =>
+            `<span class="card-cycle-v7-card card-cycle-v10-card type-${String(g.type).toLowerCase()}${g.forte ? " is-speciale" : ""}" style="--i:${i - (visibles - 1) / 2}">${face}</span>`).join("");
+          const classes = ["rt-main-groupe", `type-${String(g.type).toLowerCase()}`];
+          if (g.forte) classes.push("rt-main-forte");
+          if (!g.n) classes.push("rt-main-reserve-seule");
+          /* Une carte avancée se joue au clic tant que c'est mon tour ; une
+             carte de base suit son bouton d'action. */
+          if (g.forte ? !aMoi : (!bouton || bouton.disabled)) classes.push("rt-main-off");
+          const active = state.selectedActionType === g.type && (state.phase === "ACTION" || state.phase === "SMART_CHAR");
+          if (active && (g.forte ? armee?.action === g.action : !armee)) classes.push("rt-main-actif");
+          /* Un seul chiffre, en haut à droite : tout ce qui reste jouable de
+             cette carte, main et réserve comprises (Taekun, 2026-11-05). */
+          const total = g.n + (g.reserve || 0);
+          const titre = `${nom} : ${total} disponible${total > 1 ? "s" : ""}${g.forte && def?.effet ? ` — ${def.effet} (clic pour la jouer)` : ""}`;
+          return `<button type="button" class="${classes.join(" ")}" data-type="${g.type}" data-action="${g.action}" title="${titre}" aria-label="${titre}">`
+            + `<span class="rt-main-eventail" data-n="${visibles}">${cartes}</span>`
+            + `<b class="rt-main-qte">${total}</b></button>`;
+        }).join("");
+        if (main.dataset.html !== html) { main.innerHTML = html; main.dataset.html = html; }
+        main.style.setProperty("--n", String(main.children.length || 1));
+        document.body.style.setProperty("--rt-n", String(main.children.length || 1));
+      }
+
       const paquetRenderAllBase = renderAll;
       renderAll = function renderAllPaquet(...args) {
+        /* Carte avancée armée : elle ne vaut que pour l'action lancée par
+           son clic ; annulée ou finie, elle redevient une simple carte en main. */
+        if (paquetArmeeId && !paquetArmement && state) {
+          const armee = paquetCarteArmee();
+          if (!armee || state.selectedActionType !== PAQUET_CARTES[armee.action].type) paquetArmeeId = null;
+        }
         const resultat = paquetRenderAllBase.apply(this, args);
         if (!ilyosSimulationActive) {
           /* Le choix d'abord et à part : une erreur du marché ne doit pas
@@ -37412,6 +37619,7 @@
           try {
             paquetRendreMarche();
             paquetMarquerDock();
+            paquetRendreMain();
           } catch (erreur) {
             console.warn("[ILYOS] marché", erreur);
           }
@@ -37423,13 +37631,24 @@
          (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
       window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
         ...Object.entries(PAQUET_CARTES).filter(([, def]) => defSpeciale(def))
-          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet }]),
+          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet, texte: def.texte || def.effet, get face() { return paquetFaceSpeciale(cle); } }]),
         ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
       ]);
 
       window.ILYOS_ROTATION_PAQUET = {
+        /* Banc : cliquer une carte de la main, puis dépenser des actions. */
+        jouer: (action, type) => paquetJouerCarte(action, type || PAQUET_CARTES[action]?.type || action),
+        armee: () => paquetCarteArmee()?.action || null,
+        depenser: (type, n = 1) => {
+          const pris = consumeAvailableActions(type, n);
+          renderAll();
+          return { pris, main: currentPlayer().hand.map(c => c.action), dispo: availableActionCount(type) };
+        },
+        sauts: charId => paquetCasesSaut(characterById(charId)),
         etat: () => (state?.rotation?.marche ? JSON.parse(JSON.stringify(state.rotation.marche)) : null),
         acheter: (index, exiler) => paquetAcheter(index, exiler),
+        /* Pour js/card-cycle-animation-v10.js : main en cartes (pioche groupée). */
+        mainEnCartes: () => !!state && paquetActif() && !state.tutorial && !state.puzzle,
         refus: () => paquetRefusAchat(),
         choix: () => (state?.rotation?.choix ? JSON.parse(JSON.stringify(state.rotation.choix)) : null),
         prendre: index => choixPrendre(index),
@@ -37439,7 +37658,7 @@
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
-          return joueur ? { taille: paquetTaille(joueur), cartes: ["deck", "hand", "discard", "reserveCards"].flatMap(z => (joueur[z] || []).map(c => c.action)) } : null;
+          return joueur ? { taille: paquetTaille(joueur), cartes: ["deck", "hand", "discard", "reserveCards", "mainGardee"].flatMap(z => (joueur[z] || []).map(c => c.action)) } : null;
         }
       };
       /* =====================================================================
@@ -37702,8 +37921,11 @@
        *  qui lui est adjacent (celui qui tomberait en priorité). Sans chemin,
        *  il prend le pas qui le rapproche le plus à vol d'oiseau. */
       const LOUP_PAS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      function loupCaseLibre(r, c) {
-        return inside(r, c) && isLand(r, c) && !characterAt(r, c) && !oeufSurCase(r, c);
+      /* Un loup né dans le vide (œuf éclos hors du sol) agit quand même :
+         tant qu'il n'a pas touché terre, il peut aussi passer par les cases
+         vides pour rejoindre les îles (Taekun, 2026-11-05). */
+      function loupCaseLibre(r, c, volant = false) {
+        return inside(r, c) && (volant || isLand(r, c)) && !characterAt(r, c) && !oeufSurCase(r, c);
       }
       function loupAdjacents(loup) {
         return (state.characters || []).filter(g => !g.creature && Math.abs(g.r - loup.r) + Math.abs(g.c - loup.c) === 1);
@@ -37711,12 +37933,14 @@
       function loupPas(loup) {
         const proies = (state.characters || []).filter(g => !g.creature);
         if (!proies.length) return null;
+        const volant = !isLand(loup.r, loup.c);
+        const libre = (r, c) => loupCaseLibre(r, c, volant);
         const but = new Set();
         proies.forEach(g => LOUP_PAS.forEach(([dr, dc]) => but.add(key(g.r + dr, g.c + dc))));
         // Parcours en largeur : le premier pas du plus court chemin.
         const vus = new Set([key(loup.r, loup.c)]);
         let front = LOUP_PAS.map(([dr, dc]) => [loup.r + dr, loup.c + dc])
-          .filter(([r, c]) => loupCaseLibre(r, c))
+          .filter(([r, c]) => libre(r, c))
           .map(([r, c]) => ({ r, c, premier: [r, c] }));
         front.forEach(n => vus.add(key(n.r, n.c)));
         while (front.length) {
@@ -37725,7 +37949,7 @@
           const suivant = [];
           front.forEach(n => LOUP_PAS.forEach(([dr, dc]) => {
             const r = n.r + dr, c = n.c + dc, k = key(r, c);
-            if (vus.has(k) || !loupCaseLibre(r, c)) return;
+            if (vus.has(k) || !libre(r, c)) return;
             vus.add(k);
             suivant.push({ r, c, premier: n.premier });
           }));
@@ -37735,7 +37959,7 @@
         const dist = (g, r, c) => Math.abs(g.r - r) + Math.abs(g.c - c);
         const cible = proies.reduce((x, y) => (dist(y, loup.r, loup.c) < dist(x, loup.r, loup.c) ? y : x));
         const pas = LOUP_PAS.map(([dr, dc]) => [loup.r + dr, loup.c + dc])
-          .filter(([r, c]) => loupCaseLibre(r, c))
+          .filter(([r, c]) => libre(r, c))
           .sort((x, y) => dist(cible, x[0], x[1]) - dist(cible, y[0], y[1]));
         return pas.length && dist(cible, pas[0][0], pas[0][1]) < dist(cible, loup.r, loup.c) ? pas[0] : null;
       }
@@ -37821,16 +38045,16 @@
         return true;
       }
 
-      /* Un œuf « mûr » (compte à zéro) change de couleur et éclot dès
-         qu'une île est sous lui : la créature naît sur la case de l'œuf,
-         jamais à côté. Sans île dessous (ou case occupée), il attend. */
+      /* Un œuf éclot à la fin de son compte à rebours, qu'il soit sur une
+         île ou dans le vide (Taekun, 2026-11-05) : la créature naît sur la
+         case de l'œuf, jamais à côté, et agit à la fin du tour même hors
+         du sol. Seule une case occupée le fait attendre. */
       function oeufMur(oeuf) {
         return (state?.turn || 1) >= oeuf.eclosion;
       }
 
       function creaturesCaseNaissance(oeuf) {
-        // Île, sanctuaire ou village : toute terre ferme fait éclore (Taekun, 2026-11-04).
-        return isLand(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
+        return inside(oeuf.r, oeuf.c) && !characterAt(oeuf.r, oeuf.c) ? [oeuf.r, oeuf.c] : null;
       }
 
       /** Un nouvel œuf apparaît au hasard sur une case libre de TOUTE la
@@ -37863,7 +38087,7 @@
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
           const naissance = creaturesCaseNaissance(oeuf);
-          if (!naissance) return true; // pas d'île dessous : il attend
+          if (!naissance) return true; // case occupée : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
           animateCellPulse(r, c, "crown-burst");
@@ -37875,9 +38099,8 @@
         return eclos;
       }
 
-      /* Éclosion immédiate : après chaque action (île posée, île tournée),
-         un œuf mûr qui touche désormais une île éclot sans attendre le tour
-         suivant. Vérifié au rendu, hors simulation de l'IA. */
+      /* Éclosion au rendu : un œuf mûr resté en attente (case occupée) éclot
+         dès que sa case se libère. Hors simulation de l'IA. */
       const creaturesRenderBase = renderAll;
       // Phase des loups en cours (fin de tour animée) : l'éclosion attend la fin.
       let creaturesPhaseEnCours = false;
@@ -58388,6 +58611,12 @@
       };
 
       window.ILYOS_TEST = {
+        /* Banc : ramener le temps restant du tour (alerte des 30 s). */
+        tempsRestant: secondes => {
+          if (!state?.turnDeadline) return false;
+          state.turnDeadline = Date.now() + secondes * 1000;
+          return true;
+        },
         launchSpiral: launchIlyosSpiralDiagnostic,
         playSpiral: launchIlyosSpiralAutoplay,
         playAIvsAI: launchIlyosAIvsAI,

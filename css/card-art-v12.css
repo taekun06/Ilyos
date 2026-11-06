@@ -60,44 +60,170 @@ body .card-cycle-v10-backface > * {
   display: none !important;
 }
 
-/* Carte du marché piochée (mode Rotation : Élan, Bélier, Arcane) : même face
-   que son type, plus un ruban doré à son nom et sa valeur sur l'illustration
-   (Taekun, 2026-11-03 : la pioche doit montrer les nouvelles cartes). */
+/* Carte du marché (mode Rotation : Élan, Bélier, Arcane, Bond) : même
+   illustration que son type, mais SON nom et SON effet écrits dans le
+   cartouche et le panneau du bas, par-dessus ceux de la carte de base
+   (Taekun, 2026-11-05 : une carte avancée doit porter son nom et son effet).
+   Les fonds reprennent la teinte de chaque carte (bleu, brun, violet). */
 body .card-cycle-v7-card.card-cycle-v10-card.is-speciale { container-type: inline-size; }
-body .card-cycle-v10-card .cc-speciale {
+body .card-cycle-v10-card .cc-texte {
+  --cc-nom: #13284c;
+  --cc-effet-haut: #182a4c;
+  --cc-effet-bas: #22406f;
   position: absolute;
-  left: 50%;
-  top: 31%;
-  transform: translateX(-50%) rotate(-3deg);
-  display: flex;
-  align-items: center;
-  gap: 5cqw;
-  padding: 2.4cqw 7cqw 2.4cqw 8cqw;
-  border-radius: 3cqw;
-  border: max(1px, .7cqw) solid #fff1bf;
-  background: linear-gradient(180deg, #ffe7a3 0%, #e8b44e 55%, #b97a22 100%);
-  box-shadow: 0 1.6cqw 3.6cqw rgba(0, 0, 0, .55), inset 0 0 0 max(1px, .5cqw) rgba(120, 66, 12, .55);
-  color: #3b1c06;
-  font: 700 11cqw/1 "Cinzel", Georgia, serif;
-  letter-spacing: .06em;
-  white-space: nowrap;
-  text-transform: uppercase;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
   opacity: 0;
   transition: opacity .2s ease;
 }
-body .card-cycle-v10-card.is-revealed .cc-speciale,
-body .card-cycle-v10-card:not(.is-draw-back) .cc-speciale { opacity: 1; }
-body .card-cycle-v10-card .cc-speciale em {
+body .card-cycle-v10-card.type-push .cc-texte { --cc-nom: #3e1d19; --cc-effet-haut: #36201f; --cc-effet-bas: #5c3432; }
+body .card-cycle-v10-card.type-magic .cc-texte { --cc-nom: #2f2047; --cc-effet-haut: #2c2148; --cc-effet-bas: #4a2f7c; }
+body .card-cycle-v10-card.is-revealed .cc-texte,
+body .card-cycle-v10-card:not(.is-draw-back) .cc-texte { opacity: 1; }
+body .card-cycle-v10-card .cc-texte b {
+  position: absolute;
+  left: 19%;
+  right: 19%;
+  top: 61.9%;
+  height: 7%;
   display: grid;
   place-items: center;
-  min-width: 15cqw;
-  height: 15cqw;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #c2402a, #6d140a);
-  border: max(1px, .6cqw) solid #ffe6a0;
-  color: #ffe9ad;
-  font: 800 8.5cqw/1 Georgia, serif;
+  border-radius: 1.5cqw;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cc-nom) 80%, #000) 0%, var(--cc-nom) 50%, color-mix(in srgb, var(--cc-nom) 80%, #000) 100%);
+  color: #fbf3df;
+  font: 600 10.5cqw/1 Georgia, "Times New Roman", serif;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 .5cqw 0 rgba(0, 0, 0, .55), 0 0 3cqw rgba(255, 214, 140, .35);
+}
+body .card-cycle-v10-card .cc-texte i {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 71.6%;
+  height: 14.6%;
+  display: grid;
+  place-items: center;
+  padding: 0 3cqw;
+  box-sizing: border-box;
+  border-radius: 3cqw;
+  background: radial-gradient(120% 90% at 50% 100%, var(--cc-effet-bas), var(--cc-effet-haut) 70%);
+  color: #f4eedf;
+  font: 400 9cqw/1.15 Georgia, "Times New Roman", serif;
   font-style: normal;
-  letter-spacing: 0;
+  text-align: center;
+  text-wrap: balance;
+  text-shadow: 0 .4cqw .8cqw rgba(0, 0, 0, .6);
+}
+/* Logo d'achat à la place de l'illustration (Taekun, 2026-11-05) : un
+   panneau de la teinte de la carte couvre la scène, en laissant voir le
+   médaillon du coin ; au centre, le rond du marché (icône + ×2 ou ↷). */
+body .card-cycle-v10-card .cc-logo {
+  --cc-fond-a: #2b4d7d;
+  --cc-fond-b: #0d1b33;
+  position: absolute;
+  left: 9.6%;
+  right: 9.2%;
+  top: 4.4%;
+  bottom: 39.6%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: 3cqw 3cqw 1.5cqw 1.5cqw;
+  background:
+    radial-gradient(60% 50% at 50% 52%, rgba(255, 222, 150, .22), transparent 70%),
+    radial-gradient(120% 90% at 50% 40%, var(--cc-fond-a), var(--cc-fond-b));
+  box-shadow: inset 0 0 4cqw rgba(0, 0, 0, .55);
+  -webkit-mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+  mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+body .card-cycle-v10-card.type-push .cc-logo { --cc-fond-a: #8a3a22; --cc-fond-b: #2f1210; }
+body .card-cycle-v10-card.type-magic .cc-logo { --cc-fond-a: #5b3a9a; --cc-fond-b: #1c1236; }
+body .card-cycle-v10-card.is-revealed .cc-logo,
+body .card-cycle-v10-card:not(.is-draw-back) .cc-logo { opacity: 1; }
+body .card-cycle-v10-card .cc-logo-rond {
+  position: relative;
+  width: 46cqw;
+  aspect-ratio: 1;
+  margin-top: 6cqw;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #2a4d66, #0b1a28);
+  border: max(1.5px, 1.2cqw) solid #d8aa4c;
+  box-shadow: 0 0 0 max(1px, .6cqw) rgba(0, 0, 0, .5), 0 0 7cqw rgba(244, 210, 142, .35);
+}
+body .card-cycle-v10-card .cc-logo-rond svg {
+  width: 58%;
+  height: 58%;
+  fill: none;
+  stroke: #f4d28e;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body .card-cycle-v10-card .cc-logo-rond em {
+  position: absolute;
+  right: -5cqw;
+  bottom: -2cqw;
+  padding: 1.5cqw 3cqw;
+  border-radius: 4cqw;
+  background: #f4d28e;
+  color: #2a1a07;
+  font: 800 10cqw/1 "Nunito Sans", system-ui, sans-serif;
+  font-style: normal;
+  box-shadow: 0 1cqw 2.5cqw rgba(0, 0, 0, .5);
 }
 .cc-pioche-speciales { display: block; font-style: normal; color: #ffd76a; font-size: .8em; margin-top: 2px; }
+
+/* Pioche groupée (deckbuilding, 2026-11-04) : cartes identiques en léger
+   éventail derrière la carte de tête, quantité dans une pastille dorée. */
+body .card-cycle-v7-card.card-cycle-v10-card.cc-groupe { background: none !important; }
+body .card-cycle-v10-card.cc-groupe > .cc-face {
+  position: absolute;
+  inset: 0;
+  background: var(--carte-face) center / contain no-repeat;
+  transform-origin: 50% 112%;
+  transform: rotate(calc(var(--k) * -8deg)) translateX(calc(var(--k) * -5%));
+}
+body .card-cycle-v10-card.cc-groupe.is-draw-back:not(.is-revealed) > .cc-sous { opacity: 0; }
+body .card-cycle-v10-card.cc-groupe > .cc-sous { filter: brightness(.82); transition: opacity .2s ease; }
+body .card-cycle-v10-card .cc-qte {
+  position: absolute;
+  top: -6%;
+  right: -10%;
+  z-index: 3;
+  min-width: 30%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #23406a, #0b1a30);
+  border: 2px solid #e9c46a;
+  color: #ffe7a6;
+  font: 700 clamp(11px, 1.4vw, 20px)/1 "Cinzel", Georgia, serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .6);
+}
+body .card-cycle-v10-card.cc-groupe.is-draw-back:not(.is-revealed) .cc-qte { opacity: 0; }
+body .card-cycle-v10-card .cc-texte { z-index: 2; }
+/* Pioche groupée d'une carte avancée : les cartes du dessous perdent aussi
+   leur illustration (même panneau que .cc-logo). */
+body .card-cycle-v10-card.cc-groupe.is-speciale > .cc-sous::after {
+  content: "";
+  position: absolute;
+  left: 9.6%;
+  right: 9.2%;
+  top: 4.4%;
+  bottom: 39.6%;
+  border-radius: 3cqw 3cqw 1.5cqw 1.5cqw;
+  background: radial-gradient(120% 90% at 50% 40%, #2b4d7d, #0d1b33);
+  -webkit-mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+  mask: radial-gradient(circle at 6.6% 8.3%, transparent 14.5cqw, #000 15cqw);
+}
+body .card-cycle-v10-card.cc-groupe.is-speciale.type-push > .cc-sous::after { background: radial-gradient(120% 90% at 50% 40%, #8a3a22, #2f1210); }
+body .card-cycle-v10-card.cc-groupe.is-speciale.type-magic > .cc-sous::after { background: radial-gradient(120% 90% at 50% 40%, #5b3a9a, #1c1236); }

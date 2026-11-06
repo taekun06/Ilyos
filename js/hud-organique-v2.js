@@ -255,6 +255,8 @@
     const timer = legacy('ov2Timer');
     timer.textContent = timerText ? `◷ ${timerText.replace(/^◷\s*/,'')}` : '';
     timer.classList.toggle('ov2-off',!timerText);
+    /* Les 30 dernières secondes (Taekun, 2026-11-05) : mêmes états que la source. */
+    ['warning','danger','timer-fin','timer-alerte'].forEach(c=>timer.classList.toggle(c,!!timerText&&sourceTimer.classList.contains(c)));
 
     /* QUI JOUE — deux sources, la seconde en repli.
        La première lit une classe posée sur les portraits du HUD d'origine. Elle est

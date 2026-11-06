@@ -384,7 +384,7 @@
      base. */
   function specialeDe(action) {
     const def = action ? (window.ILYOS_CARTES_SPECIALES || {})[action] : null;
-    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1 } : null;
+    return def && def.type ? { action, nom: def.nom || action, valeur: def.valeur || 1, effet: def.texte || def.effet || '', face: def.face || '' } : null;
   }
 
   function makeCard(type, extraClass = '', count = 1, drawIndex = 0, drawTotal = 0, speciale = null) {
@@ -400,14 +400,22 @@
        filigrane : le losange doré et son étoile, qui se lisent à toute échelle
        et supportent le chevauchement. Même raison pour la mention « TIRÉE DE LA
        PIOCHE » sur la face : à cette vitesse, seuls l'icône et le verbe portent. */
+    /* Pioche groupée (deckbuilding) : les cartes identiques en léger
+       éventail, une pastille donne la quantité. */
+    const groupe = extraClass.includes('cc-groupe') && count > 1;
+    const nbFaces = groupe ? Math.min(count, 3) : 0;
+    const faces = Array.from({ length: nbFaces }, (_, k) =>
+      `<span class="cc-face${k < nbFaces - 1 ? ' cc-sous' : ''}" style="--k:${nbFaces - 1 - k}"></span>`).join('');
     el.innerHTML = `
+      ${faces}
       ${isDraw ? `<span class="card-cycle-v10-backface"><i>✦</i></span>` : ''}
+      ${groupe ? `<span class="cc-qte">${count}</span>` : ''}
       <span class="card-cycle-v7-kicker">ACTION</span>
       <span class="card-cycle-v7-icon">${meta.icon}</span>
       <b>${meta.label}</b>
       ${extraClass.includes('cc-detail') ? `<small class="cc-effet">${PIOCHE_EFFETS[type] || ''}</small>` : ''}
       <i class="card-cycle-v7-rune"></i>
-      ${speciale ? `<span class="cc-speciale"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b>${speciale.valeur > 1 ? `<em>×${speciale.valeur}</em>` : ''}</span>` : ''}
+      ${speciale ? (speciale.face || `<span class="cc-texte"><b>${String(speciale.nom).replace(/[<>&"]/g, '')}</b><i>${String(speciale.effet || '').replace(/[<>&"]/g, '')}</i></span>`) : ''}
 `;
     document.body.appendChild(el);
     return el;
@@ -495,19 +503,51 @@
     }
   }
 
+  /* Deckbuilding (Taekun, 2026-11-04) : la pioche regroupe les cartes
+     identiques, comme la main affichée dans le dock. */
+  function piocheGroupee() {
+    try { return !!window.ILYOS_ROTATION_PAQUET?.mainEnCartes?.(); } catch (_) { return false; }
+  }
+  function grouperTirees(tirees) {
+    const groupes = [];
+    tirees.forEach(t => {
+      const cle = t.speciale?.action || t.type;
+      const g = groupes.find(x => x.cle === cle);
+      if (g) g.n++;
+      else groupes.push({ cle, type: t.type, speciale: t.speciale, n: 1 });
+    });
+    // Même ordre que la main du dock : Déplacer, Pousser, Magie, carte de
+    // base avant ses cartes du marché.
+    const rang = g => ['MOVE', 'PUSH', 'MAGIC'].indexOf(g.type) * 10 + (g.speciale ? 1 : 0);
+    return groupes.sort((a, b) => rang(a) - rang(b));
+  }
+  /* Cible du rangement : le groupe de la main (deckbuilding), sinon le bouton. */
+  function cibleRangement(type, speciale) {
+    const main = byId('rtMain');
+    if (main) {
+      const cle = speciale?.action || type;
+      return main.querySelector(`.rt-main-groupe[data-action="${cle}"]`)
+        || main.querySelector(`.rt-main-groupe[data-type="${type}"]`) || main;
+    }
+    return bottomTarget(type);
+  }
+
   async function runDeal(cards) {
     if (!isLocalVisualTurn()) return;
     const tirees = cards.slice(0, 5).map(card => ({ type: typeOf(card), speciale: specialeDe(card?.dataset?.action) }))
       .filter(t => t.type);
-    const types = tirees.map(t => t.type);
-    const speciales = tirees.map(t => t.speciale);
-    if (!types.length) return;
+    if (!tirees.length) return;
     compterPartieSiNouvelle();
+    const groupes = piocheGroupee() ? grouperTirees(tirees) : tirees.map(t => ({ ...t, n: 1 }));
     if (piocheDetaillee()) {
-      await runDealDetaille(types, speciales);
+      await runDealDetaille(groupes, tirees);
       majPiles();
       return;
     }
+    const types = groupes.map(g => g.type);
+    const speciales = groupes.map(g => g.speciale);
+    const quantites = groupes.map(g => g.n);
+    const total = tirees.length;
 
     const compact = innerWidth < 980 || innerHeight < 720;
     /* Sur un téléphone en portrait, cinq cartes de 70 px au pas de 90 font
@@ -527,7 +567,7 @@
        se recouvraient. Un pas au moins égal à la largeur + 26 garantit qu'on
        voit cinq cartes distinctes, ce qui est la seule chose que cette
        animation a à dire. */
-    const spacing = cardW + (etroit ? ecartEtroit : compact ? 20 : 26);
+    const spacing = cardW + (etroit ? ecartEtroit : compact ? 20 : 26) + (quantites.some(q => q > 1) ? Math.round(cardW * .22) : 0);
     const tilt = compact ? 3.5 : 4.5;
     const mid = (types.length - 1) / 2;
     const anchor = fanAnchor(cardH);
@@ -542,11 +582,11 @@
     const source = deckSourceRect(cardW, cardH);
     const sourceHud = deckTarget();
     const ticket = openTicket();
-    const cardsGhost = types.map((type, index) => makeCard(type, 'showcase', 1, index + 1, types.length, speciales[index]));
+    const cardsGhost = types.map((type, index) => makeCard(type, quantites[index] > 1 ? 'showcase cc-groupe' : 'showcase', quantites[index], index + 1, types.length, speciales[index]));
 
     sourceHud?.classList.add('card-cycle-v10-drawing');
     pulse(sourceHud, 'ov2-pile-hit');
-    floatCount(sourceHud, `−${types.length}`);
+    floatCount(sourceHud, `−${total}`);
 
     try {
       /* Les cartes quittent PIOCHE encore face cachée.
@@ -575,7 +615,7 @@
       await wait(DEAL.hold, ticket);
 
       await Promise.all(cardsGhost.map(async (ghost, index) => {
-        const to = rectOf(bottomTarget(types[index]));
+        const to = rectOf(cibleRangement(types[index], speciales[index]));
         if (!to) return;
         await fly(ghost, fanRects[index], to, {
           ticket,
@@ -599,10 +639,10 @@
     }
 
     const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    types.forEach(type => counts[type]++);
+    tirees.forEach(t => counts[t.type]++);
     Object.entries(counts).forEach(([type, count]) => {
       if (!count) return;
-      const target = bottomTarget(type);
+      const target = cibleRangement(type, null);
       pulse(target);
       floatCount(target, `+${count}`);
     });
@@ -645,7 +685,10 @@
     });
   }
 
-  async function runDealDetaille(types, speciales = []) {
+  async function runDealDetaille(groupes, tirees) {
+    const types = groupes.map(g => g.type);
+    const speciales = groupes.map(g => g.speciale);
+    const quantites = groupes.map(g => g.n || 1);
     const zoom = reglagesPioche().style === 'zoom';
     const premierTour = tourDuJoueur() === 1;
     const n = types.length;
@@ -657,7 +700,8 @@
     // Écartement : la place disponible décide, et les cartes se chevauchent
     // plutôt que de sortir de l'écran sur un téléphone.
     const marge = 16;
-    const pasIdeal = cardW + (compact ? 14 : 22);
+    // Un groupe en éventail déborde sur sa gauche : un peu plus d'écart.
+    const pasIdeal = cardW + (compact ? 14 : 22) + (quantites.some(q => q > 1) ? Math.round(cardW * .22) : 0);
     const pasMax = n > 1 ? (innerWidth - 2 * marge - cardW) / (n - 1) : pasIdeal;
     const spacing = Math.min(pasIdeal, pasMax);
     const tilt = 3;
@@ -720,13 +764,14 @@
 
     try {
       for (let i = 0; i < n; i++) {
-        const ghost = makeCard(types[i], 'showcase cc-detail', 1, i + 1, n, speciales[i]);
+        const ghost = makeCard(types[i], quantites[i] > 1 ? 'showcase cc-detail cc-groupe' : 'showcase cc-detail', quantites[i], i + 1, n, speciales[i]);
         ghosts.push(ghost);
         pulse(sourceHud, 'ov2-pile-hit');
         sonCarte();
-        if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal + (n - i - 1));
-        compteTitre.textContent = String(i + 1);
-        libelle.lastChild.textContent = i ? ' cartes' : ' carte';
+        const tireesJusquIci = quantites.slice(0, i + 1).reduce((a, b) => a + b, 0);
+        if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal + (tirees.length - tireesJusquIci));
+        compteTitre.textContent = String(tireesJusquIci);
+        libelle.lastChild.textContent = tireesJusquIci > 1 ? ' cartes' : ' carte';
         const arrivee = zoom ? zoomRect : fanRects[i];
         const vol = fly(ghost, source, arrivee, {
           ticket,
@@ -764,9 +809,9 @@
       ghosts.forEach(g => g.classList.add('is-revealed'));
       if (compteur && compteurFinal != null) compteur.textContent = String(compteurFinal);
 
-      bas.innerHTML = `<span class="cc-pioche-resume">${resumeTypes(types, speciales)}</span>`
+      bas.innerHTML = `<span class="cc-pioche-resume">${resumeTypes(tirees.map(t => t.type), tirees.map(t => t.speciale))}</span>`
         + (premierTour
-          ? `<small>Ces 5 cartes sont tes actions de ce tour. Elles vont dans les boutons du bas.</small><button type="button" class="cc-pioche-compris">Compris</button>`
+          ? `<small>Ces ${tirees.length} cartes sont tes actions de ce tour. Elles vont ${piocheGroupee() ? 'dans ta main, en bas' : 'dans les boutons du bas'}.</small><button type="button" class="cc-pioche-compris">Compris</button>`
           : `<small>Touche l’écran pour continuer</small>`);
       bas.classList.add('is-on');
       if (premierTour) {
@@ -781,7 +826,7 @@
       titre.classList.remove('is-on');
       voile.classList.remove('is-on', 'is-bloquant');
       await Promise.all(ghosts.map(async (ghost, i) => {
-        const to = rectOf(bottomTarget(types[i]));
+        const to = rectOf(cibleRangement(types[i], speciales[i]));
         if (!to) return;
         await fly(ghost, fanRects[i], to, {
           ticket,
@@ -804,10 +849,10 @@
     }
 
     const counts = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-    types.forEach(type => counts[type]++);
+    tirees.forEach(t => counts[t.type]++);
     Object.entries(counts).forEach(([type, count]) => {
       if (!count) return;
-      const target = bottomTarget(type);
+      const target = cibleRangement(type, null);
       pulse(target);
       floatCount(target, `+${count}`);
     });
