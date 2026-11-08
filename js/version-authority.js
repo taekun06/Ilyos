@@ -6,7 +6,7 @@
         window.ILYOS.version = VERSION;
         window.ILYOS.build = BUILD;
         window.ILYOS_BUILD = VERSION;
-        document.title = 'ILYOS V76 — Animations';
+        document.title = 'ILYOS — Les îles célestes';
         const badge = document.getElementById('ilyosBuildBadge');
         if (badge && badge.textContent !== 'VERSION V76') badge.textContent = 'VERSION V76';
       };

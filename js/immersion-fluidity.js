@@ -100,7 +100,7 @@
       }
       function boot() {
         ensureLayer(); wrapSfx(); tuneRenderer(); pauseInvisibleMedia();
-        document.title = 'ILYOS V76 — Animations';
+        document.title = 'ILYOS — Les îles célestes';
         const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         window.ILYOS_IMMERSION = { announce, impact, monitorTurn, version: VERSION };
         [400, 1200, 3000].forEach(delay => setTimeout(tuneRenderer, delay));

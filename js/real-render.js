@@ -2,7 +2,7 @@
       'use strict';
       const VERSION = 'V76';
       function apply() {
-        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS V76 — Animations';
+        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS — Les îles célestes';
         const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         if (window.kaykit3D) {
           const k = window.kaykit3D;
