@@ -36365,14 +36365,15 @@
            (4 en 13×13), donc à la même distance des deux camps.
          — Une balise n'est allumée que sur une île : sur le vide, elle attend
            qu'on construise dessous.
-         — À la fin de ton tour, chaque balise allumée où se tient un de tes
-           gardiens te rapporte 1 point. Premier à 10 points.
+         — Au début de ton tour, chaque balise allumée où se tient encore un
+           de tes gardiens te rapporte 1 point : il faut la garder pendant le
+           tour adverse. Dès qu'un joueur atteint 10 points, on finit la
+           manche ; le meilleur score gagne (égalité : match nul).
+         — Le premier joueur ne pose pas d'île à son premier tour.
          — Pas de couronnes : les deux restent hors du terrain.
          — Deux balises sur quatre, tirées au hasard et marquées, sont
            MOBILES : elles tournent avec l'île sur laquelle elles se trouvent
            (magie). Les deux autres restent sur leur case.
-         Le décompte se fait à l'ouverture du tour suivant, sur la position
-         exacte où le joueur a fini — comme la validation des couronnes.
          ===================================================================== */
       const ROTATION_CIBLE_BALISES = 10;
       let rotationDemande = null;
@@ -36510,42 +36511,71 @@
         if (colonne) colonne.titre = butBalises() ? "Points" : "Couronnes";
       }
 
-      /* Décompte des balises du joueur qui vient de finir son tour. Rend
-         true si la partie est gagnée. */
+      /* Décompte AU DÉBUT DU TOUR (Taekun, 2026-11-08) : le joueur qui prend
+         la main marque chaque balise allumée qu'il tient ENCORE, donc après
+         le tour de l'adversaire, qui a pu l'en chasser. FIN DE MANCHE : dès
+         qu'un joueur atteint la cible, on laisse finir la manche pour que
+         tout le monde ait joué autant de tours ; le meilleur score gagne,
+         une égalité est un match nul. Rend true si la partie est finie. */
       function rotationDecompterBalises() {
         if (!butBalises() || state.winner !== null || state.turn <= 1) return false;
         if (state.rotation.dernierDecompte === state.turn) return false;
         state.rotation.dernierDecompte = state.turn;
-        const n = state.players.length;
-        const precedent = state.players[(state.currentPlayer - 1 + n) % n];
-        if (!precedent) return false;
-        const gagnes = balisesTenuesPar(precedent.id);
-        if (!gagnes) return false;
-        state.players.forEach(p => {
-          if (memeEquipe(p.id, precedent.id)) p.score = (p.score || 0) + gagnes;
-        });
-        if (!ilyosSimulationActive) {
-          state.fxCells ||= [];
-          state.rotation.balises.forEach(([r, c]) => {
-            const g = gardienSurBalise(r, c);
-            if (g && memeEquipe(g.player, precedent.id) && baliseAllumee(r, c)) {
-              state.fxCells.push({ type: "score", r, c });
-              animateCellPulse(r, c, "crown-burst");
-            }
+        const joueur = state.players[state.currentPlayer];
+        if (!joueur) return false;
+        const gagnes = balisesTenuesPar(joueur.id);
+        if (gagnes) {
+          state.players.forEach(p => {
+            if (memeEquipe(p.id, joueur.id)) p.score = (p.score || 0) + gagnes;
           });
-          triggerScoreAnimation(precedent.id);
-          playSfx("crownTake");
-          showToast(`${precedent.name} tient ${gagnes > 1 ? `${gagnes} balises` : "une balise"} : +${gagnes} (${precedent.score}/${rotationCible()})`);
+          if (!ilyosSimulationActive) {
+            state.fxCells ||= [];
+            state.rotation.balises.forEach(([r, c]) => {
+              const g = gardienSurBalise(r, c);
+              if (g && memeEquipe(g.player, joueur.id) && baliseAllumee(r, c)) {
+                state.fxCells.push({ type: "score", r, c });
+                animateCellPulse(r, c, "crown-burst");
+              }
+            });
+            triggerScoreAnimation(joueur.id);
+            playSfx("crownTake");
+            showToast(`${joueur.name} tient ${gagnes > 1 ? `${gagnes} balises` : "une balise"} : +${gagnes} (${joueur.score}/${rotationCible()})`);
+          }
         }
-        if (precedent.score < rotationCible()) return false;
-        state.winner = precedent.id;
+        const meilleur = Math.max(...state.players.map(p => p.score || 0));
+        if (meilleur < rotationCible()) return false;
+        // Le tour n vient de s'ouvrir : la manche est complète quand chaque
+        // joueur a eu autant de tours (n multiple du nombre de joueurs).
+        const n = state.players.length;
+        if (state.turn % n !== 0) {
+          if (!ilyosSimulationActive && !state.rotation.derniereManche) {
+            state.rotation.derniereManche = true;
+            setTimeout(() => showToast(`${rotationCible()} points atteints : dernière manche, chacun rejoue jusqu’au bout du tour de table.`), 1600);
+          }
+          return false;
+        }
+        const tete = state.players.filter(p => (p.score || 0) === meilleur);
+        const nul = tete.some(p => !memeEquipe(p.id, tete[0].id));
+        state.winner = nul ? MATCH_NUL : tete[0].id;
         if (!ilyosSimulationActive) {
-          playVictoryCelebration(precedent.id);
-          setTimeout(() => showVictory(precedent,
-            `${precedent.name} a tenu les balises jusqu’à ${precedent.score} points et prend le contrôle d’ILYOS.`), 900);
+          const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+          stopTurnTimer();
+          if (nul) {
+            setTimeout(() => showEgalite(scores), 900);
+          } else {
+            playVictoryCelebration(tete[0].id);
+            setTimeout(() => showVictory(tete[0],
+              `${tete[0].name} a tenu les balises jusqu’à ${meilleur} points et prend le contrôle d’ILYOS.`), 900);
+          }
         }
         return true;
       }
+
+      const rotationScoreDebutBase = scoreCrownsAtTurnStart;
+      scoreCrownsAtTurnStart = function scoreCrownsAtTurnStartBalises(player, options = {}) {
+        if (butBalises() && !options.immediat && rotationDecompterBalises()) return 1;
+        return rotationScoreDebutBase(player, options);
+      };
 
       const rotationBeginTurnBase = beginTurn;
       beginTurn = function beginTurnRotation() {
@@ -36558,9 +36588,16 @@
         }
         const premierTour = butBalises() && state.turn === 1 && !state.rotation.annonce;
         rotationBeginTurnBase();
+        /* Compensation du premier joueur (Taekun, 2026-11-08) : pas d'île à
+           son premier tour. L'IA est lancée plus tard (setTimeout), elle
+           voit donc déjà le verrou. */
+        if (butBalises() && state.turn === 1 && state.winner === null) {
+          state.islandPlacedThisTurn = true;
+          renderAll();
+        }
         if (premierTour && !ilyosSimulationActive) {
           state.rotation.annonce = true;
-          setTimeout(() => showToast(`Rotation · Balises : tiens les balises allumées. ${rotationCible()} points pour gagner.`), 1400);
+          setTimeout(() => showToast(`Rotation · Balises : tiens une balise allumée jusqu’à ton tour suivant pour marquer. ${rotationCible()} points pour gagner.`), 1400);
         }
       };
 
@@ -36778,7 +36815,17 @@
         etat: () => (state?.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null),
         /* Banc : la note que l'IA donne à la position courante pour ce camp. */
         evaluer: playerId => (butBalises() ? Math.round(rotationEvaluerBalises(playerId)) : null),
-        balisesTenues: playerId => balisesTenuesPar(playerId)
+        balisesTenues: playerId => balisesTenuesPar(playerId),
+        /* Banc (scripts/selfplay-balises.js) : un départ de self-play
+           converti en partie Balises. */
+        departBalises(json) {
+          return withSimulatedState(JSON.parse(json), () => {
+            state.rotation = null;
+            rotationInstaller({ but: "balises", couches: [] });
+            if (state.turn === 1) state.islandPlacedThisTurn = true;
+            return snapshotState();
+          });
+        }
       };
       /* =====================================================================
          MODE ROTATION — couche DECKBUILDING : le marché du sanctuaire.
