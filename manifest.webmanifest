@@ -10,24 +10,21 @@
   "orientation": "landscape",
   "background_color": "#0a1722",
   "theme_color": "#0a1722",
-  "categories": ["games", "board"],
+  "categories": [
+    "games",
+    "board"
+  ],
   "icons": [
     {
-      "src": "./assets/icone-192.png",
+      "src": "./assets/icone-192.png?v=20261108",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./assets/icone-512.png",
+      "src": "./assets/icone-512.png?v=20261108",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/icone.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
       "purpose": "any"
     }
   ]
