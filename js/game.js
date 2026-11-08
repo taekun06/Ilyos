@@ -36488,12 +36488,18 @@
       }
 
       /* Balises mobiles : elles suivent la case de leur île pendant une
-         rotation (rotation.absCells garde l'ordre de ile.cells). Hors
-         simulation, comme les œufs : le clone du planner partage
-         state.rotation avec la vraie partie. */
+         rotation (rotation.absCells garde l'ordre de ile.cells). Aussi en
+         simulation, pour que l'IA sache où la balise ira : la liste est alors
+         recopiée (copie à l'écriture), jamais modifiée en place, au cas où
+         un clone partagerait state.rotation avec la vraie partie. */
+      function rotationEcrire() {
+        if (ilyosSimulationActive) state.rotation = { ...state.rotation, balises: state.rotation.balises.map(b => [b[0], b[1]]) };
+        return state.rotation;
+      }
+
       const rotationMagieBase = applyMagicRotationCore;
       applyMagicRotationCore = function applyMagicRotationCoreBalises(islandId, rotation) {
-        const actif = !ilyosSimulationActive && butBalises() && rotation?.valid && state.rotation.mobiles?.length;
+        const actif = butBalises() && rotation?.valid && state.rotation.mobiles?.length;
         const ile = actif ? state.islands.find(is => is.id === islandId) : null;
         const suivantes = ile ? state.rotation.balises.map(([r, c], i) => {
           if (!baliseMobile(i)) return null;
@@ -36501,7 +36507,10 @@
           return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
         }).filter(Boolean) : [];
         const resultat = rotationMagieBase(islandId, rotation);
-        if (resultat) suivantes.forEach(({ i, vers }) => { state.rotation.balises[i] = [vers[0], vers[1]]; });
+        if (resultat && suivantes.length) {
+          const ecrit = rotationEcrire();
+          suivantes.forEach(({ i, vers }) => { ecrit.balises[i] = [vers[0], vers[1]]; });
+        }
         return resultat;
       };
 
@@ -36520,7 +36529,7 @@
       function rotationDecompterBalises() {
         if (!butBalises() || state.winner !== null || state.turn <= 1) return false;
         if (state.rotation.dernierDecompte === state.turn) return false;
-        state.rotation.dernierDecompte = state.turn;
+        rotationEcrire().dernierDecompte = state.turn;
         const joueur = state.players[state.currentPlayer];
         if (!joueur) return false;
         const gagnes = balisesTenuesPar(joueur.id);
@@ -36577,6 +36586,14 @@
         return rotationScoreDebutBase(player, options);
       };
 
+      /* Le premier joueur ne pose pas d'île à son premier tour. Rend true
+         si le verrou vient d'être posé. */
+      function rotationOuvertureBalises() {
+        if (!butBalises() || state.turn !== 1 || state.winner !== null) return false;
+        state.islandPlacedThisTurn = true;
+        return true;
+      }
+
       const rotationBeginTurnBase = beginTurn;
       beginTurn = function beginTurnRotation() {
         if (rotationEnPreparation && state && !state.rotation) rotationInstaller(rotationEnPreparation);
@@ -36591,10 +36608,7 @@
         /* Compensation du premier joueur (Taekun, 2026-11-08) : pas d'île à
            son premier tour. L'IA est lancée plus tard (setTimeout), elle
            voit donc déjà le verrou. */
-        if (butBalises() && state.turn === 1 && state.winner === null) {
-          state.islandPlacedThisTurn = true;
-          renderAll();
-        }
+        if (rotationOuvertureBalises()) renderAll();
         if (premierTour && !ilyosSimulationActive) {
           state.rotation.annonce = true;
           setTimeout(() => showToast(`Rotation · Balises : tiens une balise allumée jusqu’à ton tour suivant pour marquer. ${rotationCible()} points pour gagner.`), 1400);
@@ -36614,13 +36628,22 @@
       /* L'IA. Le planner sait déjà jouer îles, déplacements, poussées et
          magie ; seule son évaluation parle de couronnes. En mode Balises,
          elle est remplacée par une évaluation qui compte ce qui rapporte :
-         le score, les balises tenues à la fin du tour, et la distance qui
-         sépare chaque camp des balises. Tous les niveaux de CPU passent par
+         le score, les balises tenues, et la distance qui sépare chaque camp
+         des balises.
+
+         Le décompte a lieu au début du tour : une balise tenue par le camp
+         qui ne joue PAS (currentPlayer) est un point quasi acquis, puisqu'il
+         marque dès l'ouverture de son tour ; une balise tenue par le camp qui
+         joue doit encore survivre au tour adverse. Vu de l'IA en fin de son
+         tour, chasser l'adversaire d'une balise vaut donc presque un point,
+         et la riposte simulée (décompte compris) dit si la sienne tiendra. Tous les niveaux de CPU passent par
          le planner : les niveaux sans planner ne savent viser qu'une couronne. */
       const ROTATION_POIDS = {
         point: 1000,
-        baliseTenue: 620,
-        baliseAdverse: 520,
+        // Balise qui marquera à l'ouverture du prochain tour (camp qui attend).
+        baliseSure: 950,
+        // Balise du camp qui joue : elle doit tenir pendant le tour adverse.
+        baliseExposee: 450,
         distanceBalise: 45,
         distanceBaliseEteinte: 12,
         gardien: 150
@@ -36650,7 +36673,9 @@
           const allumee = baliseAllumee(r, c);
           const g = gardienSurBalise(r, c);
           if (allumee && g) {
-            valeur += memeEquipe(g.player, playerId) ? ROTATION_POIDS.baliseTenue : -ROTATION_POIDS.baliseAdverse;
+            const poidsTenue = memeEquipe(g.player, state.currentPlayer)
+              ? ROTATION_POIDS.baliseExposee : ROTATION_POIDS.baliseSure;
+            valeur += memeEquipe(g.player, playerId) ? poidsTenue : -poidsTenue;
           }
           const poids = allumee ? ROTATION_POIDS.distanceBalise : ROTATION_POIDS.distanceBaliseEteinte;
           const dMoi = Math.min(8, rotationDistanceAuCamp(playerId, r, c));
@@ -36663,6 +36688,15 @@
         if (plannerTraceEval) plannerTraceEval.push({ terme: "balises", montant: valeur, note: null });
         return valeur;
       }
+
+      /* Mise en place (draft du Personnalisé) : l'IA vise les balises, pas
+         le sanctuaire vide — ses îles s'en approchent et ses gardiens s'y
+         placent au plus près (plannerDraftIle / plannerDraftGardien). */
+      const rotationDraftCiblesBase = plannerDraftCouronnes;
+      plannerDraftCouronnes = function plannerDraftCiblesBalises() {
+        if (!butBalises()) return rotationDraftCiblesBase();
+        return state.rotation.balises.map(([r, c]) => [r, c]);
+      };
 
       const rotationEvaluerEtatBase = evaluerEtatStrategique;
       evaluerEtatStrategique = function evaluerEtatStrategiqueRotation(playerId) {
@@ -36816,13 +36850,21 @@
         /* Banc : la note que l'IA donne à la position courante pour ce camp. */
         evaluer: playerId => (butBalises() ? Math.round(rotationEvaluerBalises(playerId)) : null),
         balisesTenues: playerId => balisesTenuesPar(playerId),
+        /* Banc : poids de l'évaluation prêtés à un camp ; rend les anciens. */
+        poids(nouveaux) {
+          const avant = { ...ROTATION_POIDS };
+          if (nouveaux) Object.assign(ROTATION_POIDS, nouveaux);
+          return avant;
+        },
         /* Banc (scripts/selfplay-balises.js) : un départ de self-play
            converti en partie Balises. */
-        departBalises(json) {
+        departBalises(json, { setup = null } = {}) {
           return withSimulatedState(JSON.parse(json), () => {
+            // Terrain d'un duel symétrique (11×11) à la place du classique.
+            if (setup) applyStartingBoardMode("symmetric", setup);
             state.rotation = null;
             rotationInstaller({ but: "balises", couches: [] });
-            if (state.turn === 1) state.islandPlacedThisTurn = true;
+            rotationOuvertureBalises();
             return snapshotState();
           });
         }
@@ -58276,7 +58318,7 @@
          `expert` choisit la logique Expert ou historique, `poids` les réglages
          de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
       function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
-                                            expert = [true, true], libre = false } = {}) {
+                                            expert = [true, true], libre = false, rotation = null } = {}) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
@@ -58285,6 +58327,12 @@
               shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT,
               // Placement libre des gardiens (option du Personnalisé).
               ...(libre ? { placementGardiensLibre: true } : {}) };
+            // But de la Rotation (ex. { but: "balises" }) : posé avant la mise
+            // en place, comme dans le Personnalisé.
+            if (rotation) {
+              state.rotation = null;
+              rotationInstaller(rotation);
+            }
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));
@@ -58322,6 +58370,7 @@
             state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
             state.centerCrownTakenThisTurn = false;
             faireEntrerCouronnesEnAttente();
+            if (rotation) rotationOuvertureBalises();
             state.phase = "ACTION_SELECT";
             return snapshotState();
           });
