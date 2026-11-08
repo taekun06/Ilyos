@@ -4,14 +4,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ILYOS V76 — Animations</title>
-  <!-- L'onglet et le favori avaient une icône explicitement vide (data:,).
-       L'icône SVG couvre les navigateurs modernes, les PNG servent au manifeste
-       et à l'écran d'accueil iOS, qui ne lit pas le SVG. -->
-  <link rel="icon" type="image/svg+xml" href="./assets/icone.svg">
-  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icone-192.png">
-  <link rel="apple-touch-icon" href="./assets/icone-192.png">
-  <link rel="manifest" href="./manifest.webmanifest">
+  <title>ILYOS — Les îles célestes</title>
+  <meta name="description" content="ILYOS, jeu de stratégie gratuit en 3D : posez des îles, déplacez vos gardiens et rapportez trois couronnes à votre village avant votre adversaire. Solo contre le CPU, duel local ou en ligne.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="ILYOS">
+  <meta property="og:title" content="ILYOS — Les îles célestes">
+  <meta property="og:description" content="Jeu de stratégie gratuit en 3D : posez des îles, déplacez vos gardiens et rapportez trois couronnes à votre village.">
+  <meta property="og:url" content="https://taekun.fr/">
+  <meta property="og:image" content="https://taekun.fr/assets/icone-512.png?v=20261108">
+  <!-- Nom du site dans les résultats Google (sinon Google affiche « taekun.fr »). -->
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"ILYOS","alternateName":"ILYOS — Les îles célestes","url":"https://taekun.fr/"}</script>
+  <!-- Icône « Emblème céleste » fournie par Taekun (2026-11-08). favicon.ico
+       (16/32/48 px) sert l'onglet et Google, les PNG le manifeste et iOS. -->
+  <link rel="icon" href="/favicon.ico?v=20261108" sizes="48x48">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icone-192.png?v=20261108">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/icone-apple-180.png?v=20261108">
+  <link rel="manifest" href="./manifest.webmanifest?v=20261108">
   <meta name="theme-color" content="#0a1722">
   
   <link rel="stylesheet" href="./css/base.css?v=20261102-cpu">
@@ -95,7 +103,7 @@
       position: relative
     }
   </style>
-  <script src="./js/version-bootstrap.js?v=20261105-minuteur"></script>
+  <script src="./js/version-bootstrap.js?v=20261108-titre"></script>
 
   <style id="ilyos-v58-autoplay">
     .ilyos-autoplay-panel {
@@ -846,7 +854,6 @@
 
   <section id="setupScreen">
     <div class="setup-card">
-      <div class="ilyos-build-badge" id="ilyosBuildBadge">VERSION V76</div>
       <div class="setup-stars" aria-hidden="true">✦ ✧ ✦</div>
       <h1 class="logo">ILYOS</h1>
       <p class="subtitle">KayKit Edition · Les îles célestes</p>
@@ -1637,7 +1644,7 @@
     <div class="alt-intro-grid"></div>
     <div class="alt-intro-copy">
       <small>NOUVELLE ÉDITION 3D</small>
-      <strong>ILYOS · ARCHIPEL CÉLESTE V64</strong>
+      <strong>ILYOS · ARCHIPEL CÉLESTE</strong>
       <span>Un jeu de stratégie lumineux, lisible et vivant.</span>
     </div>
   </div>
@@ -4712,10 +4719,10 @@
     }
   </style>
 
-  <script id="ilyos-v64-archipel-behaviour" src="./js/archipelago-behaviour.js?v=20261105-minuteur-2min"></script>
+  <script id="ilyos-v64-archipel-behaviour" src="./js/archipelago-behaviour.js?v=20261108-titre"></script>
 
 
-  <script id="v67-immersion-fluidity-js" src="./js/immersion-fluidity.js?v=20260815-gameplay-fixes2"></script>
+  <script id="v67-immersion-fluidity-js" src="./js/immersion-fluidity.js?v=20261108-titre"></script>
 
   <style id="v69-complete-polish-css">
     :root {
@@ -4924,7 +4931,7 @@
       }
     }
   </style>
-  <script id="v69-complete-polish-js" src="./js/complete-polish.js?v=20261022-qualite-stable-2"></script>
+  <script id="v69-complete-polish-js" src="./js/complete-polish.js?v=20261108-titre"></script>
 
   <style id="v70-real-render-corrections">
     :root {
@@ -5202,7 +5209,7 @@
       }
     }
   </style>
-  <script id="v70-real-render-js" src="./js/real-render.js?v=20260815-gameplay-fixes2"></script>
+  <script id="v70-real-render-js" src="./js/real-render.js?v=20261108-titre"></script>
 
 
 
@@ -5320,7 +5327,7 @@
     }
   </style>
   <script id="v74-stable-turn-transition-timing" src="./js/turn-transition-timing.js?v=20260815-gameplay-fixes2"></script>
-  <script id="v74-contrast-version-marker" src="./js/contrast-version-marker.js?v=20260815-gameplay-fixes2"></script>
+  <script id="v74-contrast-version-marker" src="./js/contrast-version-marker.js?v=20261108-titre"></script>
 
 
   <style id="v74-3d-contrast-css">
@@ -5351,7 +5358,7 @@
   <link rel="stylesheet" href="./css/bilan-fin-de-partie.css?v=20260826-bilan1">
   <link rel="stylesheet" href="./css/defaites-expert.css?v=20260927-visionneuse2">
   <link rel="stylesheet" href="./css/progression.css?v=20261013-dvh">
-  <script id="v75-1-version-authority" src="./js/version-authority.js?v=20260815-gameplay-fixes2"></script>
+  <script id="v75-1-version-authority" src="./js/version-authority.js?v=20261108-titre"></script>
 </body>
 
 </html>

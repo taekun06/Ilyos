@@ -163,7 +163,7 @@
         const top = document.querySelector('#gameScreen .topbar'); if (!top || top.querySelector('.v64-game-build')) return; const badge = document.createElement('span'); badge.className = 'v64-game-build sr-only'; badge.textContent = 'Version ' + BUILD; top.appendChild(badge);
       }
       function boot() {
-        window.ILYOS_BUILD = BUILD; document.title = 'ILYOS V76 — Animations';
+        window.ILYOS_BUILD = BUILD; document.title = 'ILYOS — Les îles célestes';
         const badge = nativeSelect('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         buildSetup(); improveRules(); addGameBuildBadge(); updateVisualState();
         // V78 : plus de MutationObserver global sur #gameScreen — updateVisualState()

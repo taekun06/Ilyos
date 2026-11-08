@@ -112,7 +112,7 @@
         document.addEventListener('visibilitychange', () => { document.documentElement.classList.toggle('v69-page-hidden', document.hidden); if (!document.hidden) requestAnimationFrame(() => window.dispatchEvent(new Event('resize'))) });
       }
       function boot() {
-        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS V76 — Animations';
+        window.ILYOS_BUILD = VERSION; document.title = 'ILYOS — Les îles célestes';
         const badge = document.getElementById('ilyosBuildBadge'); if (badge) badge.textContent = 'VERSION V76';
         ensureUI(); hookSound(); improveButtons(); cleanupHiddenAnimations();
         const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 4; applyQuality(cores >= 8 && mem >= 8 ? 'high' : cores >= 4 ? 'balanced' : 'performance', 'init');

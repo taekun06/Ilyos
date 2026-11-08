@@ -1,7 +1,7 @@
 /* ILYOS — version canonique.
    Toute version visible doit lire window.ILYOS_BUILD au lieu de recopier un numéro. */
 window.ILYOS_BUILD = "V76";
-document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
+document.title = "ILYOS — Les îles célestes";
 
 /* L'ancien splash contient encore un fallback HTML historique (V64).
    Il n'est plus une source de vérité : avant qu'il puisse être affiché,
@@ -9,7 +9,7 @@ document.title = `ILYOS ${window.ILYOS_BUILD} — Animations`;
 (function syncVisibleBuildLabel(){
   function applyBuildLabel(){
     const label = document.querySelector('#altModeIntro .alt-intro-copy strong');
-    if (label) label.textContent = `ILYOS · ARCHIPEL CÉLESTE ${window.ILYOS_BUILD}`;
+    if (label) label.textContent = "ILYOS · ARCHIPEL CÉLESTE";
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', applyBuildLabel, { once:true });
