@@ -29808,7 +29808,22 @@
 
       /* L'évaluation ne modifie rien : elle profite de la grille de terre. */
       function evaluateStrategicState(playerId) {
-        return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+        /* Minion neutre (rules-core.js) : la position s'évalue en fin de
+           tour, et au tour suivant c'est l'adversaire qui le jouera. Il est
+           donc compté comme un gardien ADVERSE : l'IA s'en sert pendant son
+           tour, mais évite de le laisser près de son village ou de ses
+           porteurs, et de lui laisser une couronne qui serait livrée chez
+           l'adversaire. */
+        const neutres = (state.characters || []).filter(ch => ch.neutre);
+        if (!neutres.length) return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+        const suivant = (playerId + 1) % state.players.length;
+        const avant = neutres.map(ch => ch.player);
+        neutres.forEach(ch => { ch.player = suivant; });
+        try {
+          return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+        } finally {
+          neutres.forEach((ch, i) => { ch.player = avant[i]; });
+        }
       }
 
       /** Coût d'une couronne dont le porteur est expulsable, selon l'endroit
