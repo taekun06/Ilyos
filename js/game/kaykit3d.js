@@ -8920,8 +8920,8 @@
         const zoomReference = 12.4 * (GRID / 11);
         const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
         const fin = kaykitSurvolsV2();
-        const epaisseurClaire = (fin ? .06 : .12) * echelleZoom;
-        const epaisseurSombre = epaisseurClaire + (fin ? .025 : .045) * echelleZoom;
+        const epaisseurClaire = (fin ? .085 : .12) * echelleZoom;
+        const epaisseurSombre = epaisseurClaire + (fin ? .03 : .045) * echelleZoom;
         for (const segment of segments) ajouterRuban(segment, -.002, options.sombre ?? 0x0d3a56, .85, epaisseurSombre);
         for (const segment of segments) ajouterRuban(segment, .002, options.claire ?? 0x7fd8ff, 1, epaisseurClaire);
 
@@ -9320,30 +9320,62 @@
       function kaykitObjetsDuMode(type, id) { return []; }
       function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
 
-      /* Essai v2 : où la couronne peut aller. Au repos, un anneau doré fin
-         au sol de chaque case libre et sous chaque allié qui peut la
-         recevoir. Au survol d'un de ces choix, la couronne quitte la tête
-         du porteur et se montre, presque pleine, à l'arrivée. Rien à lire,
-         rien d'animé en continu. */
+      /* Essai v2 : où la couronne peut aller. Retour de Taekun (09/11) :
+         l'anneau ne disait pas assez « la couronne est prise, pose-la sur
+         une de ces cases ». Donc des DALLES, comme avant, mais dorées et
+         nettes : un aplat or léger, un liseré or fin à l'intérieur de la
+         case, sur chaque case libre voisine et sous chaque allié qui peut la
+         recevoir. La couronne portée reste levée tant que le choix dure.
+         Au survol, la dalle s'éclaire et la couronne fantôme se pose à
+         l'arrivée (validé). Rien n'est animé en continu. */
       function addKayKitCrownDropGhosts() {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
         const survol = kaykit3D.hoverCell;
         const allies = new Set(state.crownTransferTargetIds || []);
-        const anneau = kaykitGeometry("crown-drop-ring-v1", () => new THREE.TorusGeometry(.2, .014, 6, 32));
+        const taille = KAYKIT_CELL_SPACING * .9;
+        const plaque = kaykitGeometry("crown-drop-tile-v1", () => new THREE.PlaneGeometry(taille, taille));
+        const bord = .045, ombre = .085;
+        const barre = kaykitGeometry("crown-drop-edge-v2", () => new THREE.PlaneGeometry(taille, bord));
+        const barreOmbre = kaykitGeometry("crown-drop-edge-shadow-v1", () => new THREE.PlaneGeometry(taille + ombre - bord, ombre));
         for (const cellKey of state.reachable || []) {
           const [r, c] = cellKey.split(",").map(Number);
           const occupant = characterAt(r, c);
           if (occupant && !allies.has(occupant.id)) continue;
-          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .026);
-          const rond = new THREE.Mesh(anneau, new THREE.MeshBasicMaterial({ color: 0xffd76a, transparent: true, opacity: .9, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
-          rond.material.userData = { ilyosTransient: true };
-          rond.rotation.x = -Math.PI / 2;
-          rond.position.set(p.x, p.y, p.z);
-          rond.renderOrder = 20;
-          group.add(rond);
-          registerKayKitFadeIn(rond);
-          if (!survol || survol.r !== r || survol.c !== c) continue;
+          const vise = !!survol && survol.r === r && survol.c === c;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
+          const dalle = new THREE.Group();
+          dalle.position.set(p.x, p.y, p.z);
+          const materiau = (couleur, opacite) => {
+            const m = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+            m.userData = { ilyosTransient: true };
+            return m;
+          };
+          const aplat = new THREE.Mesh(plaque, materiau(vise ? 0xffe680 : 0xffcf3f, vise ? .66 : .36));
+          aplat.rotation.x = -Math.PI / 2;
+          aplat.renderOrder = 19;
+          dalle.add(aplat);
+          /* Liseré à deux couches, comme le contour de zone : un trait
+             sombre dessous pour se détacher même sur une île dorée, un
+             trait or clair dessus. */
+          const matOmbre = materiau(0x4a2a00, .6);
+          const matBord = materiau(vise ? 0xfffbe6 : 0xffe48a, 1);
+          for (let i = 0; i < 4; i++) {
+            const pivot = new THREE.Group();
+            pivot.rotation.y = i * Math.PI / 2;
+            const dessous = new THREE.Mesh(barreOmbre, matOmbre);
+            dessous.rotation.x = -Math.PI / 2;
+            dessous.position.set(0, .001, taille / 2 - bord / 2);
+            dessous.renderOrder = 20;
+            const cote = new THREE.Mesh(barre, matBord);
+            cote.rotation.x = -Math.PI / 2;
+            cote.position.set(0, .003, taille / 2 - bord / 2);
+            cote.renderOrder = 21;
+            pivot.add(dessous, cote);
+            dalle.add(pivot);
+          }
+          group.add(dalle);
+          if (!vise) continue;
           const fantome = makeKayKitPieceGhost(r, c, { crown: true, opacity: .9, surfaceY: kaykitCellSurfaceY(r, c) + .02 });
           const allie = occupant ? kaykit3D.characterVisuals?.get(String(occupant.id)) : null;
           if (fantome && allie) {
@@ -13871,7 +13903,9 @@
             visual.crown.position.copy(KAYKIT_TMP_CROWN);
             // Plus de rotation continue de la couronne portée (Taekun,
             // 2026-11-04 : inutile) ; seul le léger flottement reste.
-            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0);
+            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0)
+              // Essai v2 : couronne choisie pour être posée = elle reste levée.
+              + (kaykitSurvolsV2() && state?.phase === "DROP_TREASURE" && String(state.treasureDropFromId) === String(visual.id) ? .14 : 0);
           }
 
           /* --- 10. Halo de sélection -------------------------------- */
