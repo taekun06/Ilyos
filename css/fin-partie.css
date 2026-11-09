@@ -550,6 +550,39 @@ body.fin2-ouverte .kaykit-camera-hint { opacity: 0 !important; transition: opaci
 #victoryModal .defaite-ia .defaite-ia-etat { color: var(--fin-adouci); }
 #victoryModal .defaite-ia .defaite-ia-resume { background: rgba(255, 255, 255, .05); color: var(--fin-encre); }
 
+/* Onglet Analyse : moments clés de la partie, puis revoir / exporter / bibliothèque */
+#victoryModal .fin2-page[data-fin-page="analyse"] { overflow-y: auto; }
+#victoryModal .defaite-ia { display: grid; gap: 12px; }
+#victoryModal .fin2-analyse-tete { display: grid; gap: 4px; }
+#victoryModal .fin2-analyse-tete b { font: 700 16px/1.2 'Cinzel', Georgia, serif; letter-spacing: .1em; color: var(--fin-or-clair); text-transform: uppercase; }
+#victoryModal .fin2-analyse-tete small { font-size: 13px; }
+#victoryModal .fin2-moments { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; width: 100%; }
+#victoryModal .fin2-moments li {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--fin-trait);
+  border-left: 3px solid var(--fin-or);
+}
+#victoryModal .fin2-moments li b { font: 800 13px/1.2 'Nunito Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--fin-or-clair); }
+#victoryModal .fin2-moments li span { font-size: 14px; line-height: 1.35; color: var(--fin-encre); }
+#victoryModal .fin2-moments-vide { color: var(--fin-adouci); font-size: 14px; }
+#victoryModal .fin2-analyse-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#victoryModal .fin2-analyse-actions .fin2-btn { min-width: 0; height: 42px; padding: 0 18px; font-size: 13px !important; }
+#victoryModal .fin2-analyse-actions .court { display: none; }
+@media (max-width: 820px), (max-height: 560px) {
+  #victoryModal .fin2-analyse-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+  #victoryModal .fin2-analyse-actions .fin2-btn { padding: 0 6px; white-space: nowrap; font-size: 12px !important; letter-spacing: .04em; }
+  #victoryModal .fin2-analyse-actions .long { display: none; }
+  #victoryModal .fin2-analyse-actions .court { display: inline; }
+  #victoryModal .fin2-moments li { grid-template-columns: 64px 1fr; }
+}
+#victoryModal .defaite-ia .defaite-ia-resume { max-height: 160px; overflow: auto; padding: 10px 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; width: 100%; }
+
 /* ---------- Téléphone ---------- */
 
 @media (max-width: 820px), (max-height: 560px) {
