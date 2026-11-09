@@ -38781,7 +38781,7 @@
           <div class="tuto-void"></div>
           <div class="tuto-bar top"></div>
           <div class="tuto-bar bot"></div>
-          <button type="button" class="tuto-quit">Quitter le tutoriel</button>
+          <button type="button" class="tuto-quit">Quitter l’immersion</button>
           <button type="button" class="tuto-voice" title="Voix de la Mer">🔊</button>
           <div class="tuto-objective"></div>
           <div class="tuto-speech">
@@ -38792,7 +38792,7 @@
           <div class="tuto-fade on"></div>`;
         document.body.appendChild(layer);
         layer.querySelector(".tuto-quit").addEventListener("click", () => {
-          if (confirm("Quitter le tutoriel ? Il reprendra depuis le début.")) tutoExit(true);
+          if (confirm("Quitter l’immersion ? Elle reprendra depuis le début.")) tutoExit(true);
         });
         layer.querySelector(".tuto-voice").addEventListener("click", tutoToggleVoice);
         TUTO.dom = {
@@ -52253,6 +52253,13 @@
           #qk-layer .qk-med-ok { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px;
             border-radius: 50%; font: 700 10px/1 Inter, sans-serif; color: #1d1405; background: linear-gradient(#ffe7a6, #e2b24c); }
           #qk-layer .qk-med-lien { flex: none; width: 14px; height: 1.5px; margin-top: 22px; background: rgba(255,214,120,.3); }
+          #qk-layer .qk-bot { transition: bottom .22s ease; }
+          @media (max-height: 520px) and (orientation: landscape) {
+            #qk-layer .qk-top { top: 54px; }
+            #qk-layer .qk-bot { bottom: 110px; max-width: min(560px, 62vw); }
+            #qk-layer .qk-line { font-size: 13.5px; padding: 6px 14px; }
+            #qk-layer .qk-rule { font-size: 12px; }
+          }
           @media (max-width: 720px) {
             #qk-layer .qk-top { top: 64px; }
             #qk-layer .qk-bot { bottom: 128px; }
@@ -52271,14 +52278,60 @@
         calque.id = "qk-layer";
         calque.innerHTML = `<div class="qk-top"><div class="qk-lbl"><span class="qk-titre"></span>
             <button class="qk-btn qk-reprendre" type="button" title="Remettre ce tour à son début">↺ REPRENDRE LE TOUR</button>
-            <button class="qk-btn qk-quitter" type="button" aria-label="Quitter Quick">✕</button></div>
+            <button class="qk-btn qk-quitter" type="button" aria-label="Quitter le tutoriel">✕</button></div>
           <div class="qk-bar"></div></div>
           <div class="qk-bot"><div class="qk-line"></div><div class="qk-rule"></div></div>`;
         calque.querySelector(".qk-reprendre").addEventListener("click", () => quickReprendre());
         calque.querySelector(".qk-quitter").addEventListener("click", () => quickQuitter());
         document.body.appendChild(calque);
         QUICK.dom = calque;
+        quickSuivreTiroir();
         return calque;
+      }
+
+      /* Le texte du bas ne doit jamais couvrir le tiroir des îles (demande de
+         Taekun, 2026-11-09) : tant que le tiroir est ouvert, la consigne se
+         range juste au-dessus de ses îles, quelle que soit la taille d'écran.
+         Recalculé seulement quand le tiroir change ou que la fenêtre change de
+         taille : aucune boucle d'animation. */
+      function quickPlacerTexte() {
+        const bas = QUICK.dom?.querySelector(".qk-bot");
+        if (!bas) return;
+        const tiroir = document.getElementById("hudV2IslandDrawer");
+        const iles = tiroir && !tiroir.classList.contains("hidden")
+          ? Array.from(tiroir.querySelectorAll(".island-choice")).map(e => e.getBoundingClientRect()).filter(r => r.height > 0)
+          : [];
+        if (!iles.length) { bas.style.bottom = ""; bas.style.top = ""; return; }
+        // Téléphone tenu droit : le tiroir occupe deux rangées au milieu de
+        // l'écran, juste sous les cases dorées. La consigne passe alors en haut,
+        // sous la barre de progression, pour laisser voir où poser l'île.
+        const entete = QUICK.dom.querySelector(".qk-top")?.getBoundingClientRect();
+        if (window.innerWidth <= 720 && window.innerHeight > window.innerWidth && entete) {
+          bas.style.bottom = "auto";
+          bas.style.top = `${Math.round(entete.bottom + 6)}px`;
+          return;
+        }
+        const haut = Math.min(...iles.map(r => r.top));
+        bas.style.top = "";
+        bas.style.bottom = `${Math.max(0, Math.round(window.innerHeight - haut + 10))}px`;
+      }
+
+      function quickSuivreTiroir() {
+        if (QUICK.suiviTiroir) return;
+        const tiroir = document.getElementById("hudV2IslandDrawer");
+        if (!tiroir) return;
+        let attente = 0;
+        const planifier = () => {
+          if (attente) return;
+          attente = requestAnimationFrame(() => { attente = 0; quickPlacerTexte(); });
+        };
+        const obs = new MutationObserver(planifier);
+        obs.observe(tiroir, { attributes: true, attributeFilter: ["class", "style"], childList: true, subtree: true });
+        window.addEventListener("resize", planifier);
+        // Le tiroir glisse en s'ouvrant : on reprend la mesure une fois posé.
+        tiroir.addEventListener("transitionend", planifier);
+        QUICK.suiviTiroir = obs;
+        planifier();
       }
 
       function quickEntete(rival) {

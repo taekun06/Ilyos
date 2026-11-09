@@ -272,7 +272,7 @@ document.title = "ILYOS — Les îles célestes";
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=10'
+    './js/menu-jeu.js?v=11'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
@@ -461,7 +461,8 @@ document.title = "ILYOS — Les îles célestes";
       }
       if (msg.type === 'action') {
         const action = msg.detail?.action;
-        if (action === 'settings') document.getElementById('soundBtn')?.click();
+        // RÉGLAGES de l'accueil : le menu de jeu, ouvert hors partie (js/menu-jeu.js).
+        if (action === 'settings') window.ILYOS_MENU_JEU?.ouvrirDepuisAccueil?.();
         if (action === 'tutorial') {
           window.dispatchEvent(new CustomEvent('ilyos-menu-tutorial-requested'));
           setTimeout(() => syncFrame(frame), 120);
