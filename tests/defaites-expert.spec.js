@@ -2,7 +2,7 @@
    bout, dans une vraie partie solo lancée par le menu.
 
    Ce que le joueur doit pouvoir faire sans rien activer : jouer contre
-   l'Expert, gagner, cliquer sur « Analyser cette défaite de l'IA » et obtenir
+   l'Expert, gagner, cliquer sur « Analyse partie » et obtenir
    un dossier complet ; retrouver la partie dans la bibliothèque ; la rejouer
    depuis un tour.
 

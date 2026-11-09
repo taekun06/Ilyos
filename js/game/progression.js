@@ -1159,13 +1159,16 @@
          qui se compte, barre qui se remplit, détail en pastilles. Un niveau
          franchi fait briller l'emblème. */
       function progressionRendreVictoire(gain) {
-        const carte = els.victoryModal && els.victoryModal.querySelector(".victory-card");
+        // Onglet Progression du bandeau de fin (fin-partie.js), et son
+        // résumé dans la colonne du milieu de l'onglet Résumé.
+        const carte = finPartiePage("progression");
+        finPartieProgressionMini(gain);
         if (!carte) return;
         let bloc = carte.querySelector(".progression-gain");
         if (!gain) { if (bloc) bloc.remove(); return; }
         if (!bloc) {
           bloc = document.createElement("div");
-          carte.insertBefore(bloc, carte.querySelector(".modal-actions") || null);
+          carte.appendChild(bloc);
         }
         const { avant, apres, niveauxGagnes } = gain;
         const monte = niveauxGagnes > 0;

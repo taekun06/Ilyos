@@ -479,30 +479,36 @@
           .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
 
+      /* Onglet « Analyse » du bandeau de fin (fin-partie.js) et bouton
+         « Analyse partie » de sa rangée d'actions : seulement quand la partie
+         a un dossier (victoire humaine contre l'Expert). */
       function defaitesRendreVictoire(dossier, nombre = null) {
-        const carte = els.victoryModal && els.victoryModal.querySelector(".victory-card");
-        if (!carte) return;
-        let bloc = carte.querySelector(".defaite-ia");
-        if (!dossier) { if (bloc) bloc.remove(); return; }
+        const page = finPartiePage("analyse");
+        const bouton = els.victoryModal && els.victoryModal.querySelector(".fin2-analyse");
+        if (!page) return;
+        let bloc = page.querySelector(".defaite-ia");
+        if (!dossier) { if (bloc) bloc.remove(); finPartieAnalyseDisponible(false); return; }
+        finPartieAnalyseDisponible(true);
         if (!bloc) {
           bloc = document.createElement("div");
           bloc.className = "defaite-ia";
-          const actions = carte.querySelector(".modal-actions");
-          carte.insertBefore(bloc, actions || null);
+          page.appendChild(bloc);
         }
         const signales = dossier.analyse ? dossier.analyse.signales.length : 0;
         bloc.innerHTML = `
-          <button type="button" class="defaite-ia-analyser">🧠 Analyser cette défaite de l’IA</button>
           <small class="defaite-ia-etat">${nombre === null
             ? "Enregistrement dans la bibliothèque…"
-            : `Enregistrée dans la bibliothèque des défaites · ${signales} tour(s) à regarder`}</small>
-          <button type="button" class="secondary-btn defaite-ia-biblio">📚 Bibliothèque des défaites</button>
-          <pre class="defaite-ia-resume" hidden></pre>`;
-        bloc.querySelector(".defaite-ia-analyser").addEventListener("click", () => {
-          const analyse = defaitesExporter(dossier);
-          const resume = bloc.querySelector(".defaite-ia-resume");
-          if (analyse && resume) { resume.textContent = analyse.resume; resume.hidden = false; }
-        });
+            : `Enregistrée dans la bibliothèque des parties · ${signales} tour(s) à regarder`}</small>
+          <pre class="defaite-ia-resume" hidden></pre>
+          <button type="button" class="secondary-btn defaite-ia-biblio">📚 Bibliothèque des parties</button>`;
+        if (bouton) {
+          bouton.onclick = () => {
+            finPartieOnglet("analyse");
+            const analyse = defaitesExporter(dossier);
+            const resume = bloc.querySelector(".defaite-ia-resume");
+            if (analyse && resume) { resume.textContent = analyse.resume; resume.hidden = false; }
+          };
+        }
         bloc.querySelector(".defaite-ia-biblio").addEventListener("click", defaitesOuvrirBibliotheque);
       }
 

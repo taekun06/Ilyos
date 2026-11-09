@@ -67,6 +67,9 @@ const fragmentNames = [
   // Profil du joueur : XP et niveau. N'appelle que des fonctions déjà
   // déclarées ; l'écran de fin, les puzzles et les tutoriels l'appellent.
   'progression.js',
+  // Écran de fin en deux temps et célébration de la couronne validée.
+  // Lit la progression, les énigmes et les Boucles : placé après eux.
+  'fin-partie.js',
   // Couche manette : purement additive, elle n'appelle que des fonctions
   // deja definies (dispatchKayKitClick, handleCancelButton, zoomKayKitCamera).
   // Placee en dernier pour que son IIFE s'execute quand tout est declare.
