@@ -163,6 +163,19 @@
         return Math.min(...cellules.map(([vr, vc]) => Math.abs(vr - r) + Math.abs(vc - c)));
       }
 
+      /* Note de l'IA sur une position, l'humain au trait : le point de vue de
+         la riposte prévue. Repli sur la note enregistrée si l'état manque. */
+      function defaitesNoteTraitHumain(etat, ia, humain, repli) {
+        if (!etat || !Array.isArray(etat.players)) return repli;
+        try {
+          const copie = structuredClone(etat);
+          copie.currentPlayer = humain;
+          return Math.round(withSimulatedState(copie, () => evaluateStrategicState(ia)));
+        } catch (erreur) {
+          return repli;
+        }
+      }
+
       function defaitesAnalyser(dossier) {
         const ia = dossier.ia, humain = dossier.humain;
         const tours = dossier.tours || [];
@@ -179,7 +192,16 @@
           let gravite = 0;
 
           const prevu = d.noteRobuste ?? d.noteArrivee;
-          const constate = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          const noteDepartSuivante = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          /* La riposte prévue se note à la FIN du tour humain, l'humain encore
+             au trait. noteDepart se lit au début du tour suivant de l'IA, l'IA
+             au trait : l'évaluateur y prend l'IA pour celle qui vient de jouer
+             (lAdversaireJoue) et compte des menaces humaines qui ne seront
+             jamais jouées — jusqu'à −4 000 de périls fantômes par couronne au
+             sol. Comparer les deux grossissait la « menace non anticipée » :
+             défaite du 22/10, tour 3, −6 010 lus contre −2 010 réels. */
+          const constate = Number.isFinite(noteDepartSuivante)
+            ? defaitesNoteTraitHumain(B, ia, humain, noteDepartSuivante) : null;
           if (Number.isFinite(prevu) && Number.isFinite(constate)) {
             const surprise = prevu - constate;
             if (surprise >= DEFAITES_SEUILS.surprise) {
@@ -187,10 +209,11 @@
               gravite += surprise;
             }
           }
-          if (Number.isFinite(d.noteDepart) && Number.isFinite(constate)) {
-            const chute = d.noteDepart - constate;
+          if (Number.isFinite(d.noteDepart) && Number.isFinite(noteDepartSuivante)) {
+            // Deux débuts de tour de l'IA : même point de vue, comparables.
+            const chute = d.noteDepart - noteDepartSuivante;
             if (chute >= DEFAITES_SEUILS.bascule) {
-              raisons.push(`forte bascule (${d.noteDepart} → ${constate})`);
+              raisons.push(`forte bascule (${d.noteDepart} → ${noteDepartSuivante})`);
               gravite += chute / 2;
             }
           }

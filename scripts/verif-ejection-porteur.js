@@ -43,7 +43,11 @@ const assert = require('node:assert/strict');
     const robuste = r.anticipation && r.anticipation.noteRobuste;
     console.log(`plan : ${r.detail.map(a => a.type).join(' ')} · après riposte ${robuste}`);
     assert.ok(ejecte, 'le porteur adossé au vide doit être éjecté');
-    assert.ok(robuste > -2000, `après riposte ${robuste} : le voleur resté dans le coin (−4 941) est de retour`);
+    /* Seuil en points de l'évaluateur, donc lié à son échelle. Depuis le
+       09/11 (PLAN_RIPOSTE.poidsMenacePlausible 0,65 → 1), le MÊME plan note
+       −2 218 au lieu de −649 ; « voler puis rester » (POSE, MOVE, VOL) passe
+       de −6 214 à −7 738. L'écart qui distingue les deux reste ~5 500. */
+    assert.ok(robuste > -3500, `après riposte ${robuste} : le voleur resté dans le coin est de retour`);
     console.log('verif-ejection-porteur : 1/1');
   } finally {
     await browser.close();

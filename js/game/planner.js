@@ -3658,9 +3658,14 @@
         tempsMaxMs: 300,
         /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
            Une menace qui a besoin de cartes encore à piocher n'est que
-           plausible et pèse moins — sans quoi l'IA se paralyserait devant des
-           combinaisons hypothétiques. */
-        poidsMenacePlausible: 0.65
+           plausible : elle se joue avec la main PLAUSIBLE (espérance de la
+           pioche), déjà une moyenne. 0,65 jusqu'au 09/11 la rabotait une
+           seconde fois : sur les 3 défaites archivées (24 tours signalés), la
+           riposte prévue restait au-dessus du résultat réel lu avec l'humain au
+           trait (22/10, tour 3 : −880 prévu, −2 010 réel ; à 1 : −2 682).
+           Self-play 80 parties contre 0,65 (graines 9500 et 9600) : 44-34-2,
+           56 % ± 5,5, couronnes 63 contre 53, même temps de réflexion. */
+        poidsMenacePlausible: 1
       };
 
       const PLAN_RIPOSTE_CRITIQUE = {
