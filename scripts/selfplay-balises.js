@@ -24,7 +24,11 @@ const SETUP = process.env.ILYOS_SETUP || null;
 const PERSO = process.env.ILYOS_PERSO ? process.env.ILYOS_PERSO.split(',').map(Number) : null;
 const DRAFT_A = process.env.ILYOS_DRAFT_A ? JSON.parse(process.env.ILYOS_DRAFT_A) : null;
 const DRAFT_B = process.env.ILYOS_DRAFT_B ? JSON.parse(process.env.ILYOS_DRAFT_B) : null;
-const AB = !!URL_B || (!!PERSO && !!DRAFT_B);
+/* Poids de l'évaluation Balises propres à chaque camp (ILYOS_ROTATION.poids),
+   ex. ILYOS_ROT_B='{"baliseExposee":250}' : A contre B dans le même build. */
+const ROT_A = process.env.ILYOS_ROT_A ? JSON.parse(process.env.ILYOS_ROT_A) : null;
+const ROT_B = process.env.ILYOS_ROT_B ? JSON.parse(process.env.ILYOS_ROT_B) : null;
+const AB = !!URL_B || (!!PERSO && !!DRAFT_B) || !!ROT_B;
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 160;
 
 async function ouvrir(navigateur, url) {
@@ -58,11 +62,15 @@ function depart(page, graine, campA) {
 }
 
 /* pages[j] joue le joueur j. */
-async function partie(pages, etat, graine) {
+async function partie(pages, etat, graine, rot = [null, null]) {
   let r = null;
   for (let i = 0; i < TOURS_MAX; i++) {
     const joueur = JSON.parse(etat).currentPlayer;
-    r = await pages[joueur].evaluate(([e, s]) => window.ILYOS_SELFPLAY.tour(e, { graine: s }), [etat, graine * 1000 + i]);
+    r = await pages[joueur].evaluate(([e, s, p]) => {
+      const avant = p ? window.ILYOS_ROTATION.poids(p) : null;
+      try { return window.ILYOS_SELFPLAY.tour(e, { graine: s }); }
+      finally { if (avant) window.ILYOS_ROTATION.poids(avant); }
+    }, [etat, graine * 1000 + i, rot[joueur]]);
     etat = r.etat;
     if (r.fin || (r.vainqueur !== null && r.vainqueur !== undefined)) break;
   }
@@ -85,7 +93,8 @@ async function partie(pages, etat, graine) {
         const debut = await depart(pageA, g, campA);
         const pages = campA === 0 ? [pageA, pageB] : [pageB, pageA];
         const t0 = Date.now();
-        const x = await partie(pages, debut, g);
+        const rot = ROT_B ? (campA === 0 ? [ROT_A, ROT_B] : [ROT_B, ROT_A]) : [null, null];
+        const x = await partie(pages, debut, g, rot);
         if (x.v === 0) b.premier++; else if (x.v === 1) b.second++; else b.nul++;
         if (x.v === campA) b.A++; else if (x.v !== null) b.B++;
         if (Math.max(...x.scores) >= 10) b.a10++;
@@ -100,6 +109,6 @@ async function partie(pages, etat, graine) {
   const terrain = PERSO ? `draft ${PERSO.join('/')}` : (SETUP ? `setup ${SETUP}` : 'classique');
   console.log(`\nBALISES ${terrain} : ${n} parties, premier ${b.premier}, second ${b.second}, nuls ${b.nul}`);
   console.log(`premier joueur ${taux(b.premier)} ; ${b.a10} parties à 10 points ; tours moyens ${Math.round(b.tours.reduce((a, c) => a + c, 0) / n)}`);
-  if (AB) console.log(`A ${URL_B ? `${URL_A} contre B ${URL_B}` : `draft ${JSON.stringify(DRAFT_A)} contre ${JSON.stringify(DRAFT_B)}`} : A ${b.A}, B ${b.B}, nuls ${b.nul} -> A ${taux(b.A)}`);
+  if (AB) console.log(`A ${URL_B ? `${URL_A} contre B ${URL_B}` : (ROT_B ? `éval ${JSON.stringify(ROT_A)} contre ${JSON.stringify(ROT_B)}` : `draft ${JSON.stringify(DRAFT_A)} contre ${JSON.stringify(DRAFT_B)}`)} : A ${b.A}, B ${b.B}, nuls ${b.nul} -> A ${taux(b.A)}`);
   await navigateur.close();
 })();

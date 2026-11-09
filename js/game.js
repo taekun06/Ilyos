@@ -36369,7 +36369,8 @@
            de tes gardiens te rapporte 1 point : il faut la garder pendant le
            tour adverse. Dès qu'un joueur atteint 10 points, on finit la
            manche ; le meilleur score gagne (égalité : match nul).
-         — Le premier joueur ne pose pas d'île à son premier tour.
+         — En draft et en setup, le premier joueur ne pose pas d'île à son
+           premier tour (en classique, il pose normalement).
          — Mise en place (draft) : aucun gardien ne se place sur une balise.
          — Pas de couronnes : les deux restent hors du terrain.
          — Deux balises sur quatre, tirées au hasard et marquées, sont
@@ -36587,10 +36588,12 @@
         return rotationScoreDebutBase(player, options);
       };
 
-      /* Le premier joueur ne pose pas d'île à son premier tour. Rend true
-         si le verrou vient d'être posé. */
+      /* Draft et setup : le premier joueur ne pose pas d'île à son premier
+         tour (Taekun, 2026-11-09 ; en classique, trop pénalisant : plateau
+         vide). Rend true si le verrou vient d'être posé. */
       function rotationOuvertureBalises() {
         if (!butBalises() || state.turn !== 1 || state.winner !== null) return false;
+        if (!state.startingBoardMode || state.startingBoardMode === "classic") return false;
         state.islandPlacedThisTurn = true;
         return true;
       }
@@ -36644,7 +36647,9 @@
         // Balise qui marquera à l'ouverture du prochain tour (camp qui attend).
         baliseSure: 950,
         // Balise du camp qui joue : elle doit tenir pendant le tour adverse.
-        baliseExposee: 450,
+        // 450 → 700 (2026-11-09) : 60 % contre 450 en draft 4/3, 57 % contre
+        // 950 ; neutre en classique (46 % ± 6,4 sur 60 parties).
+        baliseExposee: 700,
         distanceBalise: 45,
         distanceBaliseEteinte: 12,
         gardien: 150
@@ -36710,9 +36715,9 @@
          île qui avance vers une balise rapporte déjà.
 
          Une île vaut : ses meilleurs postes de gardien près des balises, la
-         COURSE à chaque balise (qui y arrive le premier, mes îles, villages et
-         gardiens contre les siens) et le fait d'allumer une balise de mon côté
-         plutôt que du sien. PLAN_POIDS.draftBalises = 0 rend le draft
+         COURSE à chaque balise (qui y arrive le premier : mes îles et
+         gardiens contre les siens) et le fait d'allumer une balise que mes
+         pièces atteindront avant les siennes plutôt que l'inverse. PLAN_POIDS.draftBalises = 0 rend le draft
          historique (banc). */
       PLAN_POIDS.draftBalises = 1;
       const ROTATION_DRAFT = { course: 260, courseMax: 4, allumerMienne: 320, allumerSienne: 260 };
@@ -36749,12 +36754,12 @@
         return cout;
       }
 
-      /* Ce que tient un camp au début de la partie : gardiens, îles, villages. */
+      /* D'où partira un camp : ses gardiens et ses îles. Les villages ne
+         servent à rien dans ce mode, ils ne comptent pas. */
       function rotationSourcesCamp(joueur) {
         const sources = [];
         for (const g of state.characters || []) if (memeEquipe(g.player, joueur.id)) sources.push([g.r, g.c]);
         for (const ile of state.islands || []) if (memeEquipe(ile.owner, joueur.id)) sources.push(...ile.cells);
-        for (const v of villagesForPlayer(joueur)) sources.push([v.r, v.c]);
         return sources;
       }
 
@@ -58485,6 +58490,7 @@
               state.rotation = null;
               rotationInstaller(rotation);
             }
+            state.startingBoardMode = "custom";
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));

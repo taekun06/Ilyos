@@ -1815,6 +1815,7 @@
               state.rotation = null;
               rotationInstaller(rotation);
             }
+            state.startingBoardMode = "custom";
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));
