@@ -24,6 +24,10 @@
       const ROTATION_CIBLE_BALISES = 10;
       let rotationDemande = null;
       let rotationEnPreparation = null;
+      /* Demande de la dernière partie lancée : « Rejouer » la redépose
+         (diagnostics.js, replay), sans quoi la revanche repartait en partie
+         classique. */
+      let rotationDerniereDemande = null;
 
       function butBalises(source = state) {
         return source?.rotation?.but === "balises";
@@ -92,6 +96,7 @@
       const rotationStartLocalGameBase = startLocalGame;
       startLocalGame = function startLocalGameRotation() {
         rotationEnPreparation = rotationDemande;
+        rotationDerniereDemande = rotationDemande;
         rotationDemande = null;
         try {
           rotationStartLocalGameBase();
@@ -99,6 +104,11 @@
           rotationEnPreparation = null;
         }
       };
+
+      /** Rejouer : la même demande Rotation que la partie qui s'achève. */
+      function rotationRedemanderDerniere() {
+        rotationDemande = rotationDerniereDemande;
+      }
 
       const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes

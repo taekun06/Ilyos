@@ -36377,6 +36377,10 @@
       const ROTATION_CIBLE_BALISES = 10;
       let rotationDemande = null;
       let rotationEnPreparation = null;
+      /* Demande de la dernière partie lancée : « Rejouer » la redépose
+         (diagnostics.js, replay), sans quoi la revanche repartait en partie
+         classique. */
+      let rotationDerniereDemande = null;
 
       function butBalises(source = state) {
         return source?.rotation?.but === "balises";
@@ -36445,6 +36449,7 @@
       const rotationStartLocalGameBase = startLocalGame;
       startLocalGame = function startLocalGameRotation() {
         rotationEnPreparation = rotationDemande;
+        rotationDerniereDemande = rotationDemande;
         rotationDemande = null;
         try {
           rotationStartLocalGameBase();
@@ -36452,6 +36457,11 @@
           rotationEnPreparation = null;
         }
       };
+
+      /** Rejouer : la même demande Rotation que la partie qui s'achève. */
+      function rotationRedemanderDerniere() {
+        rotationDemande = rotationDerniereDemande;
+      }
 
       const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes
@@ -56437,8 +56447,29 @@
           renderSetupFields();
           return;
         }
-        if (state && !state.tutorial && !state.puzzle) restaurerReglagesPartie(state);
+        const precedente = state && !state.tutorial && !state.puzzle ? state : null;
+        if (precedente) restaurerReglagesPartie(precedente);
+        rotationRedemanderDerniere();
         startGame();
+        if (precedente) reprendreMiseEnPlace(precedente);
+      }
+
+      /* Duel symétrique et Personnalisé : la partie s'ouvre sur le choix du
+         terrain. « Rejouer » le passe et reprend le choix de la partie qui
+         s'achève — même setup, mêmes options (les champs de l'écran de choix
+         gardent leurs valeurs, et le terrain du Personnalisé vit dans
+         MENU_DUEL). */
+      function reprendreMiseEnPlace(partie) {
+        if (!state || state.onlineMode || !state.setupSelectionPending) return;
+        if (state.startingBoardMode === "symmetric") {
+          const id = partie.startingBoardPreset;
+          if (!id || !SYMMETRIC_DUEL_SETUPS[id] || !els.symmetricSetupSelect) return;
+          if (![...els.symmetricSetupSelect.options].some(option => option.value === id)) return;
+          els.symmetricSetupSelect.value = id;
+        } else if (state.startingBoardMode !== "custom") {
+          return;
+        }
+        confirmSymmetricSetup();
       }
 
       /* « Rejouer » relance la MÊME partie : mêmes joueurs, même difficulté,
