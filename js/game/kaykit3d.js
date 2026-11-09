@@ -162,7 +162,7 @@
          Ils restent déclarés dans KAYKIT_ASSETS : seul le lancement groupé les
          ignore. Toute demande ultérieure passe par ensureKayKitAsset(), qui
          mémoïse via kaykit3D.assetPromises. */
-      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage"]);
+      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage", "heroSkeletonMinion"]);
 
       const KAYKIT_CATALOG_CACHE_VERSION = "v45-local-2026-08";
       const KAYKIT_ASSET_MODE = "local-verified";
@@ -202,6 +202,8 @@
         heroSkeletonWarrior: kaykitAssetSpec("skeletonCharacters", "Skeleton_Warrior.glb"),
         heroSkeletonRogue: kaykitAssetSpec("skeletonCharacters", "Skeleton_Rogue.glb"),
         heroSkeletonMage: kaykitAssetSpec("skeletonCharacters", "Skeleton_Mage.glb"),
+        // Minion neutre (maquette ?minion=1, rules-core.js).
+        heroSkeletonMinion: kaykitAssetSpec("skeletonCharacters", "Skeleton_Minion.glb"),
 
         /* Le pack Squelettes (4 GLB, 18,4 Mo) était chargé ici avec tout le
            reste au démarrage de la scène. Il ne servait qu'au navigateur de
@@ -12318,6 +12320,7 @@
       function resolveHeroAssetKey(character, index) {
         // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
         if (character?.creature) return creatureModele(character);
+        if (character?.neutre) return "heroSkeletonMinion";
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;
@@ -12667,7 +12670,8 @@
          boule au ras du plateau, retirés de l'archipel (le ciel peint porte
          déjà ses nuages). */
       function attacherPlaqueEquipe(visual, character) {
-        const couleur = state?.players?.[character.player]?.color;
+        // Minion neutre : plaque gris pierre, sans couleur d'équipe.
+        const couleur = character.neutre ? "#b9b2a4" : state?.players?.[character.player]?.color;
         if (couleur === undefined || couleur === null) return;
         const plaque = new THREE.Mesh(
           kaykitGeometry("plaque-equipe-v1", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .86, KAYKIT_CELL_SPACING * .86)),

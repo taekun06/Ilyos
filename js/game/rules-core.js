@@ -648,6 +648,39 @@
       }
 
       /* ==================================================================
+         MINION NEUTRE (maquette, ?minion=1) — un gardien qui n'appartient à
+         personne. Au début de chaque tour, il passe aux mains du joueur qui
+         prend la main (char.player), comme les gardiens d'équipe du 2 contre
+         2 : chacun le joue avec ses cartes (déplacer, pousser, passe, magie).
+         Il peut porter une couronne et faire ou recevoir des passes, mais il
+         ne marque jamais (turns.js). Choix de Taekun, 2026-11-09.
+      ================================================================== */
+      const MINION_NEUTRE_ACTIF = (() => {
+        try { return /[?&]minion=1(&|$)/.test(location.search); } catch (_) { return false; }
+      })();
+
+      function estNeutre(char) { return !!char?.neutre; }
+
+      function installerMinionNeutre() {
+        if (!MINION_NEUTRE_ACTIF || !state || state.quick || state.puzzle) return;
+        if ((state.characters || []).some(estNeutre)) return;
+        // Case libre la plus proche du sanctuaire, sur la terre ferme.
+        let meilleure = null;
+        for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+          if (!isLand(r, c) || characterAt(r, c) || looseArtifactAt(r, c)) continue;
+          const d = Math.abs(r - CENTER.r) + Math.abs(c - CENTER.c);
+          if (!meilleure || d < meilleure.d) meilleure = { r, c, d };
+        }
+        if (!meilleure) return;
+        state.characters.push({ id: "minion-neutre", player: state.currentPlayer, neutre: true, r: meilleure.r, c: meilleure.c });
+      }
+
+      function confierMinionNeutre(playerId) {
+        installerMinionNeutre();
+        (state.characters || []).forEach(char => { if (estNeutre(char)) char.player = playerId; });
+      }
+
+      /* ==================================================================
          BLOCAGE DE ZONE (règle V67)
 
          Un gardien adverse posté sur l'une des trois cases d'un village y

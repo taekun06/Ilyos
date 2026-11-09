@@ -546,7 +546,7 @@
          Ils restent déclarés dans KAYKIT_ASSETS : seul le lancement groupé les
          ignore. Toute demande ultérieure passe par ensureKayKitAsset(), qui
          mémoïse via kaykit3D.assetPromises. */
-      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage"]);
+      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage", "heroSkeletonMinion"]);
 
       const KAYKIT_CATALOG_CACHE_VERSION = "v45-local-2026-08";
       const KAYKIT_ASSET_MODE = "local-verified";
@@ -586,6 +586,8 @@
         heroSkeletonWarrior: kaykitAssetSpec("skeletonCharacters", "Skeleton_Warrior.glb"),
         heroSkeletonRogue: kaykitAssetSpec("skeletonCharacters", "Skeleton_Rogue.glb"),
         heroSkeletonMage: kaykitAssetSpec("skeletonCharacters", "Skeleton_Mage.glb"),
+        // Minion neutre (maquette ?minion=1, rules-core.js).
+        heroSkeletonMinion: kaykitAssetSpec("skeletonCharacters", "Skeleton_Minion.glb"),
 
         /* Le pack Squelettes (4 GLB, 18,4 Mo) était chargé ici avec tout le
            reste au démarrage de la scène. Il ne servait qu'au navigateur de
@@ -12702,6 +12704,7 @@
       function resolveHeroAssetKey(character, index) {
         // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
         if (character?.creature) return creatureModele(character);
+        if (character?.neutre) return "heroSkeletonMinion";
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;
@@ -13051,7 +13054,8 @@
          boule au ras du plateau, retirés de l'archipel (le ciel peint porte
          déjà ses nuages). */
       function attacherPlaqueEquipe(visual, character) {
-        const couleur = state?.players?.[character.player]?.color;
+        // Minion neutre : plaque gris pierre, sans couleur d'équipe.
+        const couleur = character.neutre ? "#b9b2a4" : state?.players?.[character.player]?.color;
         if (couleur === undefined || couleur === null) return;
         const plaque = new THREE.Mesh(
           kaykitGeometry("plaque-equipe-v1", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .86, KAYKIT_CELL_SPACING * .86)),
@@ -16603,7 +16607,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
+        return state.characters.filter(char => !char.neutre && proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
@@ -20992,6 +20996,7 @@
         // dans les trois cases du village y interdit toute validation.
         const eligibleCarriers = (state.characters || []).filter(char =>
           char.player === player.id
+          && !estNeutre(char)
           && !!artifactCarriedBy(char.id)
           && isCrownValidationCell(player, char.r, char.c)
           && !validationBloqueeParAdversaire(player, char.r, char.c)
@@ -21035,6 +21040,7 @@
         // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
         // qui prend la main, avant même la validation des couronnes.
         confierGardiensEquipe(p.id);
+        confierMinionNeutre(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();
@@ -26936,6 +26942,15 @@
 
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
+        if (ch?.neutre) {
+          els.unitCard.classList.remove("empty");
+          ficheUnite("💀", [
+            [{ balise: "b", texte: "Minion neutre", couleur: "#d8d2c4" }],
+            ["N'appartient à personne : chaque joueur le joue pendant son tour"],
+            ["Porte et passe les couronnes, mais ne marque jamais"]
+          ]);
+          return;
+        }
         if (ch) {
           const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
@@ -28427,6 +28442,39 @@
           char.proprietaire ??= char.player;
           char.player = playerId;
         });
+      }
+
+      /* ==================================================================
+         MINION NEUTRE (maquette, ?minion=1) — un gardien qui n'appartient à
+         personne. Au début de chaque tour, il passe aux mains du joueur qui
+         prend la main (char.player), comme les gardiens d'équipe du 2 contre
+         2 : chacun le joue avec ses cartes (déplacer, pousser, passe, magie).
+         Il peut porter une couronne et faire ou recevoir des passes, mais il
+         ne marque jamais (turns.js). Choix de Taekun, 2026-11-09.
+      ================================================================== */
+      const MINION_NEUTRE_ACTIF = (() => {
+        try { return /[?&]minion=1(&|$)/.test(location.search); } catch (_) { return false; }
+      })();
+
+      function estNeutre(char) { return !!char?.neutre; }
+
+      function installerMinionNeutre() {
+        if (!MINION_NEUTRE_ACTIF || !state || state.quick || state.puzzle) return;
+        if ((state.characters || []).some(estNeutre)) return;
+        // Case libre la plus proche du sanctuaire, sur la terre ferme.
+        let meilleure = null;
+        for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+          if (!isLand(r, c) || characterAt(r, c) || looseArtifactAt(r, c)) continue;
+          const d = Math.abs(r - CENTER.r) + Math.abs(c - CENTER.c);
+          if (!meilleure || d < meilleure.d) meilleure = { r, c, d };
+        }
+        if (!meilleure) return;
+        state.characters.push({ id: "minion-neutre", player: state.currentPlayer, neutre: true, r: meilleure.r, c: meilleure.c });
+      }
+
+      function confierMinionNeutre(playerId) {
+        installerMinionNeutre();
+        (state.characters || []).forEach(char => { if (estNeutre(char)) char.player = playerId; });
       }
 
       /* ==================================================================

@@ -4154,6 +4154,15 @@
 
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
+        if (ch?.neutre) {
+          els.unitCard.classList.remove("empty");
+          ficheUnite("💀", [
+            [{ balise: "b", texte: "Minion neutre", couleur: "#d8d2c4" }],
+            ["N'appartient à personne : chaque joueur le joue pendant son tour"],
+            ["Porte et passe les couronnes, mais ne marque jamais"]
+          ]);
+          return;
+        }
         if (ch) {
           const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");

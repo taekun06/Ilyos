@@ -1469,7 +1469,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
+        return state.characters.filter(char => !char.neutre && proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
