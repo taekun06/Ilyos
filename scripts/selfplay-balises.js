@@ -8,7 +8,10 @@
    Sans ILYOS_URL_B : le même build joue les deux camps, et le banc mesure
    l'avantage du joueur qui commence (J0 commence toujours).
    Avec ILYOS_URL_B (ex. worktree d'un commit servi sur 8125) : A contre B,
-   chaque graine jouée deux fois camps inversés ; le banc mesure A. */
+   chaque graine jouée deux fois camps inversés ; le banc mesure A.
+   Avec ILYOS_PERSO et ILYOS_DRAFT_B (poids de PLAN_POIDS, ex.
+   '{"draftBalises":0}') : A contre B pour la seule MISE EN PLACE, même build
+   ensuite ; ILYOS_DRAFT_A donne les poids de A (défaut : aucun). */
 
 const { chromium } = require('playwright');
 
@@ -19,6 +22,9 @@ const GRAINE = Number(process.argv[3]) || 9000;
 const PARALLELE = Math.max(1, Number(process.argv[4]) || 3);
 const SETUP = process.env.ILYOS_SETUP || null;
 const PERSO = process.env.ILYOS_PERSO ? process.env.ILYOS_PERSO.split(',').map(Number) : null;
+const DRAFT_A = process.env.ILYOS_DRAFT_A ? JSON.parse(process.env.ILYOS_DRAFT_A) : null;
+const DRAFT_B = process.env.ILYOS_DRAFT_B ? JSON.parse(process.env.ILYOS_DRAFT_B) : null;
+const AB = !!URL_B || (!!PERSO && !!DRAFT_B);
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 160;
 
 async function ouvrir(navigateur, url) {
@@ -40,11 +46,12 @@ async function ouvrir(navigateur, url) {
   return page;
 }
 
-function depart(page, graine) {
+function depart(page, graine, campA) {
   if (PERSO) {
-    return page.evaluate(([g, iles, gardiens]) =>
-      window.ILYOS_SELFPLAY.departPerso(g, { iles, gardiens, rotation: { but: 'balises' } }),
-      [graine, PERSO[0], PERSO[1]]);
+    const poids = DRAFT_B ? (campA === 0 ? [DRAFT_A, DRAFT_B] : [DRAFT_B, DRAFT_A]) : [null, null];
+    return page.evaluate(([g, iles, gardiens, p]) =>
+      window.ILYOS_SELFPLAY.departPerso(g, { iles, gardiens, poids: p, rotation: { but: 'balises' } }),
+      [graine, PERSO[0], PERSO[1], poids]);
   }
   return page.evaluate(([g, setup]) =>
     window.ILYOS_ROTATION.departBalises(window.ILYOS_SELFPLAY.departMelange(g), { setup }), [graine, SETUP]);
@@ -67,15 +74,15 @@ async function partie(pages, etat, graine) {
 
 (async () => {
   const navigateur = await chromium.launch({ headless: true });
-  const file = Array.from({ length: URL_B ? Math.ceil(N / 2) : N }, (_, i) => GRAINE + i);
+  const file = Array.from({ length: AB ? Math.ceil(N / 2) : N }, (_, i) => GRAINE + i);
   const b = { premier: 0, second: 0, A: 0, B: 0, nul: 0, a10: 0, tours: [] };
   await Promise.all(Array.from({ length: PARALLELE }, async () => {
     const pageA = await ouvrir(navigateur, URL_A);
     const pageB = URL_B ? await ouvrir(navigateur, URL_B) : pageA;
     while (file.length) {
       const g = file.shift();
-      const debut = await depart(pageA, g);
-      for (const campA of URL_B ? [0, 1] : [0]) {
+      for (const campA of AB ? [0, 1] : [0]) {
+        const debut = await depart(pageA, g, campA);
         const pages = campA === 0 ? [pageA, pageB] : [pageB, pageA];
         const t0 = Date.now();
         const x = await partie(pages, debut, g);
@@ -83,8 +90,8 @@ async function partie(pages, etat, graine) {
         if (x.v === campA) b.A++; else if (x.v !== null) b.B++;
         if (Math.max(...x.scores) >= 10) b.a10++;
         b.tours.push(x.tour);
-        const issue = x.v === null ? 'nul' : (x.v === 0 ? 'PREMIER' : 'second') + (URL_B ? (x.v === campA ? ' (A)' : ' (B)') : '');
-        console.log(`graine ${g}${URL_B ? ` A=J${campA}` : ''} : ${issue} ${x.scores.join('-')} tour ${x.tour} (${Math.round((Date.now() - t0) / 1000)} s)`);
+        const issue = x.v === null ? 'nul' : (x.v === 0 ? 'PREMIER' : 'second') + (AB ? (x.v === campA ? ' (A)' : ' (B)') : '');
+        console.log(`graine ${g}${AB ? ` A=J${campA}` : ''} : ${issue} ${x.scores.join('-')} tour ${x.tour} (${Math.round((Date.now() - t0) / 1000)} s)`);
       }
     }
   }));
@@ -93,6 +100,6 @@ async function partie(pages, etat, graine) {
   const terrain = PERSO ? `draft ${PERSO.join('/')}` : (SETUP ? `setup ${SETUP}` : 'classique');
   console.log(`\nBALISES ${terrain} : ${n} parties, premier ${b.premier}, second ${b.second}, nuls ${b.nul}`);
   console.log(`premier joueur ${taux(b.premier)} ; ${b.a10} parties à 10 points ; tours moyens ${Math.round(b.tours.reduce((a, c) => a + c, 0) / n)}`);
-  if (URL_B) console.log(`A ${URL_A} contre B ${URL_B} : A ${b.A}, B ${b.B}, nuls ${b.nul} -> A ${taux(b.A)}`);
+  if (AB) console.log(`A ${URL_B ? `${URL_A} contre B ${URL_B}` : `draft ${JSON.stringify(DRAFT_A)} contre ${JSON.stringify(DRAFT_B)}`} : A ${b.A}, B ${b.B}, nuls ${b.nul} -> A ${taux(b.A)}`);
   await navigateur.close();
 })();

@@ -17,6 +17,7 @@
            tour adverse. Dès qu'un joueur atteint 10 points, on finit la
            manche ; le meilleur score gagne (égalité : match nul).
          — Le premier joueur ne pose pas d'île à son premier tour.
+         — Mise en place (draft) : aucun gardien ne se place sur une balise.
          — Pas de couronnes : les deux restent hors du terrain.
          — Deux balises sur quatre, tirées au hasard et marquées, sont
            MOBILES : elles tournent avec l'île sur laquelle elles se trouvent
@@ -343,6 +344,157 @@
       plannerDraftCouronnes = function plannerDraftCiblesBalises() {
         if (!butBalises()) return rotationDraftCiblesBase();
         return state.rotation.balises.map(([r, c]) => [r, c]);
+      };
+
+      /* MISE EN PLACE (draft) pour les Balises (Taekun, 2026-11-08 : « il doit
+         apprendre à se placer au mieux en début de partie »).
+
+         Le draft historique mesure tout sur la TERRE : au début du draft, les
+         balises sont presque toutes sur le vide, si bien que chaque île et
+         chaque gardien valaient zéro côté balises et que l'IA se plaçait au
+         hasard de la vulnérabilité. Ici les distances traversent le vide
+         avec un surcoût (draftCoutVide), comme la route de la couronne : une
+         île qui avance vers une balise rapporte déjà.
+
+         Une île vaut : ses meilleurs postes de gardien près des balises, la
+         COURSE à chaque balise (qui y arrive le premier, mes îles, villages et
+         gardiens contre les siens) et le fait d'allumer une balise de mon côté
+         plutôt que du sien. PLAN_POIDS.draftBalises = 0 rend le draft
+         historique (banc). */
+      PLAN_POIDS.draftBalises = 1;
+      const ROTATION_DRAFT = { course: 260, courseMax: 4, allumerMienne: 320, allumerSienne: 260 };
+
+      /* Distance de chaque case aux sources, le vide coûtant draftCoutVide en
+         plus (une pose devra le combler). */
+      function rotationChampAvecVide(sources) {
+        const vide = PLAN_POIDS.draftCoutVide;
+        const cout = new Map();
+        const files = [[]];
+        for (const [r, c] of sources) {
+          if (!inside(r, c)) continue;
+          const d = isLand(r, c) ? 0 : vide;
+          const k = key(r, c);
+          if ((cout.get(k) ?? Infinity) <= d) continue;
+          cout.set(k, d);
+          (files[d] ||= []).push([r, c, d]);
+        }
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const [r, c, d] = file[i];
+            if (d !== cout.get(key(r, c))) continue;
+            for (const arete of movementEdges(r, c)) {
+              const nd = d + arete.cost + (isLand(arete.r, arete.c) ? 0 : vide);
+              const k = key(arete.r, arete.c);
+              if (nd >= (cout.get(k) ?? Infinity)) continue;
+              cout.set(k, nd);
+              (files[nd] ||= []).push([arete.r, arete.c, nd]);
+            }
+          }
+        }
+        return cout;
+      }
+
+      /* Ce que tient un camp au début de la partie : gardiens, îles, villages. */
+      function rotationSourcesCamp(joueur) {
+        const sources = [];
+        for (const g of state.characters || []) if (memeEquipe(g.player, joueur.id)) sources.push([g.r, g.c]);
+        for (const ile of state.islands || []) if (memeEquipe(ile.owner, joueur.id)) sources.push(...ile.cells);
+        for (const v of villagesForPlayer(joueur)) sources.push([v.r, v.c]);
+        return sources;
+      }
+
+      function rotationDraftCourse(playerId) {
+        const moi = state.players[playerId];
+        const lui = plannerAdversaire(playerId);
+        if (!moi || !lui) return 0;
+        const balises = state.rotation.balises;
+        const champsBalises = balises.map(b => rotationChampAvecVide([b]));
+        const plusPres = (champ, sources) => Math.min(60, ...sources.map(([r, c]) => champ.get(key(r, c)) ?? 60));
+        const miennes = rotationSourcesCamp(moi);
+        const siennes = rotationSourcesCamp(lui);
+        let total = 0;
+        balises.forEach(([r, c], i) => {
+          const dMoi = plusPres(champsBalises[i], miennes);
+          const dLui = plusPres(champsBalises[i], siennes);
+          const ecart = Math.max(-ROTATION_DRAFT.courseMax, Math.min(ROTATION_DRAFT.courseMax, dLui - dMoi));
+          total += ROTATION_DRAFT.course * ecart;
+          // Une balise allumée sert celui qui en est le plus près.
+          if (isLand(r, c)) total += dMoi <= dLui ? ROTATION_DRAFT.allumerMienne : -ROTATION_DRAFT.allumerSienne;
+        });
+        return total;
+      }
+
+      /* Règle de mise en place : aucun gardien ne se place SUR une balise.
+         Sinon chaque camp démarre en tenant deux balises, et comme le
+         décompte a lieu au début du tour, le second joueur marquait le
+         premier sans avoir rien fait (85 % de victoires mesurées en draft). */
+      const rotationCaseGardienBase = draftCaseGardienLibre;
+      draftCaseGardienLibre = function draftCaseGardienLibreBalises(playerId, r, c) {
+        if (butBalises()
+          && state.rotation.balises.some(([br, bc]) => br === r && bc === c)) return false;
+        return rotationCaseGardienBase(playerId, r, c);
+      };
+
+      const rotationDraftIleBase = plannerDraftIle;
+      plannerDraftIle = function plannerDraftIleBalises(playerId) {
+        if (!butBalises() || !PLAN_POIDS.draftBalises) return rotationDraftIleBase(playerId);
+        const toutes = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX);
+        if (!Array.isArray(toutes) || !toutes.length) return null;
+        const draft = state.draft;
+        const gardiensAPoser = Math.max(1, draft ? draft.guardiansPerPlayer - draft.placedGuardians[playerId] : 1);
+        const balises = state.rotation.balises;
+        const pres = cells => Math.min(...cells.flatMap(([r, c]) => balises.map(([br, bc]) => Math.abs(r - br) + Math.abs(c - bc))));
+        const choisies = new Set();
+        toutes.slice(0, 30).forEach(p => choisies.add(p));
+        [...toutes].sort((a, b) => pres(a.cells) - pres(b.cells)).slice(0, 40).forEach(p => choisies.add(p));
+
+        let meilleure = null;
+        let meilleureNote = -Infinity;
+        for (const pose of choisies) {
+          const note = withSimulatedState(cloneStateForSimulation(), () => {
+            state.islands.push({ id: -1, owner: playerId, shapeKey: pose.shapeKey,
+              cells: pose.cells.map(([r, c]) => [r, c]), fromSetup: true });
+            return avecGrilleTerre(() => {
+              const champB = rotationChampAvecVide(balises);
+              const champAdverse = plannerDraftChampAdverse(playerId);
+              const notes = [];
+              for (const ile of state.islands) {
+                if (ile.owner !== playerId) continue;
+                for (const [r, c] of ile.cells) {
+                  if (characterAt(r, c)) continue;
+                  notes.push(PLAN_POIDS.draftAccesGardien * plannerProximite(champB.get(key(r, c)) ?? Infinity)
+                    - PLAN_POIDS.draftVulnerabilite * plannerDraftVulnerabilite(playerId, r, c, champAdverse));
+                }
+              }
+              notes.sort((a, b) => b - a);
+              return notes.slice(0, gardiensAPoser).reduce((t, n) => t + n, 0) + rotationDraftCourse(playerId);
+            });
+          });
+          if (note > meilleureNote) { meilleureNote = note; meilleure = pose; }
+        }
+        return meilleure;
+      };
+
+      const rotationDraftGardienBase = plannerDraftGardien;
+      plannerDraftGardien = function plannerDraftGardienBalises(playerId, candidates) {
+        if (!butBalises() || !PLAN_POIDS.draftBalises) return rotationDraftGardienBase(playerId, candidates);
+        const champB = avecGrilleTerre(() => rotationChampAvecVide(state.rotation.balises));
+        let meilleure = candidates[0];
+        let meilleureNote = -Infinity;
+        for (const [r, c] of candidates) {
+          const note = withSimulatedState(cloneStateForSimulation(), () => {
+            state.characters.push({ id: "draft-essai", player: playerId, r, c });
+            state.currentPlayer = playerId;
+            return avecGrilleTerre(() => evaluateStrategicState(playerId)
+              + PLAN_POIDS.draftAccesGardien * plannerProximite(champB.get(key(r, c)) ?? Infinity)
+              + rotationDraftCourse(playerId)
+              - PLAN_POIDS.draftVulnerabilite * plannerDraftVulnerabilite(playerId, r, c, plannerDraftChampAdverse(playerId)));
+          });
+          if (note > meilleureNote) { meilleureNote = note; meilleure = [r, c]; }
+        }
+        return meilleure;
       };
 
       const rotationEvaluerEtatBase = evaluerEtatStrategique;
