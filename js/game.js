@@ -28115,12 +28115,58 @@
          — RESTAURATION EN `finally`. Une exception au milieu d'une simulation
            laisserait sinon le jeu réel branché sur un état de travail.
          ------------------------------------------------------------------- */
+      /* COPIE RAPIDE D'UN ÉTAT DE JEU.
+
+         La recherche de l'Expert copie l'état avant chaque coup simulé : près
+         de 200 000 copies en douze tours. Avec structuredClone, généraliste
+         (cycles, types transférables, sérialisation interne), ces copies
+         prenaient un tiers du temps de réflexion (profil sous Node, 10/11).
+
+         Un état de jeu n'est fait que d'objets simples, de tableaux, de Set et
+         de valeurs primitives — relevé sur une partie : aucun autre type,
+         aucun objet référencé deux fois. Cette copie ne traite donc que cela,
+         à la main. Tout le reste (Map, Date, objet à prototype…) est confié à
+         structuredClone, sous-arbre par sous-arbre : le résultat reste le
+         même, seule la vitesse change.
+
+         Une différence assumée : structuredClone conserve les références
+         partagées (un même objet atteint par deux chemins reste un seul objet
+         dans la copie) ; ici il serait dédoublé. Un état de jeu n'en contient
+         pas, et ne doit pas en contenir : la sauvegarde et le jeu en ligne
+         passent par JSON, qui les dédouble déjà. */
+      function copieRapide(valeur) {
+        if (valeur === null || typeof valeur !== "object") return valeur;
+        if (Array.isArray(valeur)) {
+          const n = valeur.length;
+          const copie = new Array(n);
+          for (let i = 0; i < n; i++) {
+            const v = valeur[i];
+            copie[i] = (v === null || typeof v !== "object") ? v : copieRapide(v);
+          }
+          return copie;
+        }
+        const proto = Object.getPrototypeOf(valeur);
+        if (proto === Object.prototype || proto === null) {
+          const copie = {};
+          for (const cle in valeur) {
+            const v = valeur[cle];
+            copie[cle] = (v === null || typeof v !== "object") ? v : copieRapide(v);
+          }
+          return copie;
+        }
+        if (proto === Set.prototype) {
+          const copie = new Set();
+          for (const v of valeur) copie.add((v === null || typeof v !== "object") ? v : copieRapide(v));
+          return copie;
+        }
+        return structuredClone(valeur);
+      }
+
       function cloneStateForSimulation(source = state) {
-        // structuredClone plutôt que JSON : `state` contient des Set (reachable,
+        // copieRapide plutôt que JSON : `state` contient des Set (reachable,
         // smartPushTargets) qu'un aller-retour JSON transformerait silencieusement
-        // en objets vides. Les champs non clonables (aucun aujourd'hui, mais la
-        // garde évite une régression sournoise) feraient échouer bruyamment.
-        const clone = structuredClone({
+        // en objets vides.
+        const clone = copieRapide({
           players: source.players,
           currentPlayer: source.currentPlayer,
           round: source.round,
@@ -32185,7 +32231,7 @@
               if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
-              const clone = structuredClone(noeud.etat);
+              const clone = copieRapide(noeud.etat);
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
@@ -32199,7 +32245,7 @@
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
                     if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -32208,7 +32254,7 @@
                 if (PLAN_POIDS.fermeturePoussee) {
                   for (const t of plannerCandidatsPush(playerId)) {
                     if (!t.ejection) continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -32440,7 +32486,7 @@
         const sans = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
         if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
-        const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
+        const pioche = withSimulatedState(copieRapide(noeudFinal.etat),
           () => plannerPiocheProchaine(adverse.id));
         /* POUSSÉE ADVERSE DE PLUS. Même arrondi, même angle mort que la
            MAGIE : la main plausible ne prête qu'un nombre fixe de POUSSER.
@@ -32479,7 +32525,7 @@
       }
 
       function* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
-        const apres = structuredClone(noeudFinal.etat);
+        const apres = copieRapide(noeudFinal.etat);
         return yield* plannerSimuler(apres, (function* () {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };

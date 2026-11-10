@@ -3509,7 +3509,7 @@
               if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
-              const clone = structuredClone(noeud.etat);
+              const clone = copieRapide(noeud.etat);
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
@@ -3523,7 +3523,7 @@
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
                     if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -3532,7 +3532,7 @@
                 if (PLAN_POIDS.fermeturePoussee) {
                   for (const t of plannerCandidatsPush(playerId)) {
                     if (!t.ejection) continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -3764,7 +3764,7 @@
         const sans = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
         if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
-        const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
+        const pioche = withSimulatedState(copieRapide(noeudFinal.etat),
           () => plannerPiocheProchaine(adverse.id));
         /* POUSSÉE ADVERSE DE PLUS. Même arrondi, même angle mort que la
            MAGIE : la main plausible ne prête qu'un nombre fixe de POUSSER.
@@ -3803,7 +3803,7 @@
       }
 
       function* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
-        const apres = structuredClone(noeudFinal.etat);
+        const apres = copieRapide(noeudFinal.etat);
         return yield* plannerSimuler(apres, (function* () {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
