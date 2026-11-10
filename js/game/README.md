@@ -35,6 +35,25 @@ nouvelle s'y ajoute en même temps qu'au planner. Le vol a manqué à l'IA jusqu
 
 `npm run verif:ia` lance tous les bancs de l'IA et en donne le bilan.
 
+## Moteur sans écran (Node)
+
+`scripts/moteur-sans-ecran.js` charge `js/game.js` sous Node avec un écran
+factice : règles et IA tournent sans navigateur, par les tours simulés de
+`ILYOS_SELFPLAY`. Rien n'y est dessiné ; seuls les chemins de simulation
+(`ilyosSimulationActive`) sont garantis.
+
+- `npm run verif:moteur` (serveur `npm start` sur 8123) : joue les mêmes tours
+  sous Node et dans Chromium et compare l'état complet après chaque tour. À
+  relancer après tout changement de règle ou de fragment chargé tôt.
+- `npm run selfplay:node -- [parties] [graine] [parallèle]` : Expert contre
+  Expert sans Chromium ; `ILYOS_BUNDLE_A` / `ILYOS_BUNDLE_B` opposent deux
+  builds (deux fichiers `game.js`).
+
+Une présentation ajoutée dans un chemin de règle doit rester sous la garde
+`ilyosSimulationActive` : c'est ce qui permet au moteur de tourner sans écran,
+et demain dans un Worker. Les budgets de l'IA sont encore en millisecondes :
+deux machines (ou une machine chargée) peuvent donc diverger sur un tour long.
+
 ## Recent UX passes (guardian interaction, turn flow, island/spawn)
 
 Several UX-only passes landed on top of each other without being committed yet
