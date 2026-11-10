@@ -9320,58 +9320,55 @@
       function kaykitObjetsDuMode(type, id) { return []; }
       function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
 
-      /* Essai v2 : où la couronne peut aller. Retour de Taekun (09/11) :
-         l'anneau ne disait pas assez « la couronne est prise, pose-la sur
-         une de ces cases ». Donc des DALLES, comme avant, mais dorées et
-         nettes : un aplat or léger, un liseré or fin à l'intérieur de la
-         case, sur chaque case libre voisine et sous chaque allié qui peut la
-         recevoir. La couronne portée reste levée tant que le choix dure.
-         Au survol, la dalle s'éclaire et la couronne fantôme se pose à
+      /* Essai v2 : où la couronne peut aller. Retours de Taekun (09-10/11) :
+         l'anneau ne suffisait pas, les dalles dessinées PAR-DESSUS tout
+         non plus — le gardien, l'arbre, ce qui occupe la case doit rester
+         au premier plan. Retour aux dalles d'origine (aplat plein de la
+         case, sous les pièces), mais plus soignées : ombre douce pour le
+         contraste, aplat or chaud, bordure or fine et nette, sans les traits
+         blancs. La couronne portée reste levée tant que le choix dure. Au
+         survol, la dalle s'éclaire et la couronne fantôme se pose à
          l'arrivée (validé). Rien n'est animé en continu. */
       function addKayKitCrownDropGhosts() {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
         const survol = kaykit3D.hoverCell;
         const allies = new Set(state.crownTransferTargetIds || []);
-        const taille = KAYKIT_CELL_SPACING * .9;
-        const plaque = kaykitGeometry("crown-drop-tile-v1", () => new THREE.PlaneGeometry(taille, taille));
-        const bord = .045, ombre = .085;
-        const barre = kaykitGeometry("crown-drop-edge-v2", () => new THREE.PlaneGeometry(taille, bord));
-        const barreOmbre = kaykitGeometry("crown-drop-edge-shadow-v1", () => new THREE.PlaneGeometry(taille + ombre - bord, ombre));
+        const taille = .88;
+        const plaque = kaykitGeometry("crown-drop-tile-v3", () => new THREE.PlaneGeometry(taille, taille));
+        const plaqueOmbre = kaykitGeometry("crown-drop-shadow-v3", () => new THREE.PlaneGeometry(.94, .94));
+        const epaisseur = .05;
+        const barre = kaykitGeometry("crown-drop-edge-v3", () => new THREE.BoxGeometry(taille + epaisseur, .022, epaisseur));
+        const materiau = (couleur, opacite) => {
+          const m = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
+          m.userData = { ilyosTransient: true };
+          return m;
+        };
         for (const cellKey of state.reachable || []) {
           const [r, c] = cellKey.split(",").map(Number);
           const occupant = characterAt(r, c);
           if (occupant && !allies.has(occupant.id)) continue;
           const vise = !!survol && survol.r === r && survol.c === c;
-          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .026);
           const dalle = new THREE.Group();
           dalle.position.set(p.x, p.y, p.z);
-          const materiau = (couleur, opacite) => {
-            const m = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
-            m.userData = { ilyosTransient: true };
-            return m;
-          };
-          const aplat = new THREE.Mesh(plaque, materiau(vise ? 0xffe680 : 0xffcf3f, vise ? .66 : .36));
+          const ombre = new THREE.Mesh(plaqueOmbre, materiau(0x2a1600, .34));
+          ombre.rotation.x = -Math.PI / 2;
+          ombre.position.y = .004;
+          ombre.renderOrder = 27;
+          const aplat = new THREE.Mesh(plaque, materiau(vise ? 0xffd45a : 0xf0ad28, vise ? .82 : .6));
           aplat.rotation.x = -Math.PI / 2;
-          aplat.renderOrder = 19;
-          dalle.add(aplat);
-          /* Liseré à deux couches, comme le contour de zone : un trait
-             sombre dessous pour se détacher même sur une île dorée, un
-             trait or clair dessus. */
-          const matOmbre = materiau(0x4a2a00, .6);
-          const matBord = materiau(vise ? 0xfffbe6 : 0xffe48a, 1);
+          aplat.position.y = .01;
+          aplat.renderOrder = 30;
+          dalle.add(ombre, aplat);
+          const matBord = materiau(vise ? 0xfff4c4 : 0xffdf7a, 1);
           for (let i = 0; i < 4; i++) {
             const pivot = new THREE.Group();
             pivot.rotation.y = i * Math.PI / 2;
-            const dessous = new THREE.Mesh(barreOmbre, matOmbre);
-            dessous.rotation.x = -Math.PI / 2;
-            dessous.position.set(0, .001, taille / 2 - bord / 2);
-            dessous.renderOrder = 20;
             const cote = new THREE.Mesh(barre, matBord);
-            cote.rotation.x = -Math.PI / 2;
-            cote.position.set(0, .003, taille / 2 - bord / 2);
-            cote.renderOrder = 21;
-            pivot.add(dessous, cote);
+            cote.position.set(0, .02, taille / 2);
+            cote.renderOrder = 36;
+            pivot.add(cote);
             dalle.add(pivot);
           }
           group.add(dalle);
