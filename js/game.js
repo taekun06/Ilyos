@@ -5227,12 +5227,12 @@
          face arrière et gonflée en espace écran (épaisseur constante quel que
          soit le zoom). Pour un gardien animé, la copie partage le squelette de
          l'original et suit donc chaque pose. */
-      function kaykitMateriauContour(couleur, skinne) {
+      function kaykitMateriauContour(couleur, skinne, epaisseur = .0055) {
         kaykit3D.contoursCache = kaykit3D.contoursCache || new Map();
-        const cleCache = couleur + (skinne ? "|s" : "");
+        const cleCache = couleur + (skinne ? "|s" : "") + "|" + epaisseur;
         let materiau = kaykit3D.contoursCache.get(cleCache);
         if (materiau) return materiau;
-        const u = { epaisseur: { value: .0055 } };
+        const u = { epaisseur: { value: epaisseur } };
         materiau = new THREE.MeshBasicMaterial({ color: couleur, side: THREE.BackSide, skinning: skinne, transparent: true, opacity: .95, depthWrite: false });
         materiau.onBeforeCompile = shader => {
           shader.uniforms.ilyosEpaisseur = u.epaisseur;
@@ -5254,10 +5254,10 @@
         kaykit3D.contoursCache.set(cleCache, materiau);
         return materiau;
       }
-      function kaykitAjouterContour(mesh, couleur) {
+      function kaykitAjouterContour(mesh, couleur, epaisseur) {
         if (!mesh?.geometry || !mesh.parent) return;
         const skinne = !!mesh.isSkinnedMesh;
-        const materiau = kaykitMateriauContour(couleur, skinne);
+        const materiau = kaykitMateriauContour(couleur, skinne, epaisseur);
         let contour;
         if (skinne) {
           contour = new THREE.SkinnedMesh(mesh.geometry, materiau);
@@ -5379,6 +5379,38 @@
         return { copie, u };
       }
 
+      /* ESSAI (10/11) : style du survol d'un gardien, à choisir par Taekun.
+         ?gardien=A contour fin seul, B anneau fin au sol seul, C les deux.
+         Sans paramètre : survol actuel (reflet + contour épais). */
+      function kaykitStyleSurvolGardien() {
+        if (kaykitStyleSurvolGardien.valeur === undefined) {
+          let style = null;
+          try { style = (new URLSearchParams(location.search).get("gardien") || window.ILYOS_SURVOL_GARDIEN || "").toUpperCase() || null; } catch (_) { }
+          kaykitStyleSurvolGardien.valeur = ["A", "B", "C"].includes(style) ? style : null;
+        }
+        return kaykitStyleSurvolGardien.valeur;
+      }
+      /* Anneau fin au sol : trait clair sur un trait sombre plus large, lisible
+         sur l'herbe comme sur une île dorée (la couleur d'équipe or s'y
+         perdait). */
+      function kaykitAnneauSurvolGardien(r, c) {
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
+        kaykit3D.contoursSurvol = kaykit3D.contoursSurvol || [];
+        [[.034, 0x1b1208, .55, 21], [.016, 0xffffff, .98, 22]].forEach(([tube, couleur, opacite, ordre]) => {
+          const anneau = new THREE.Mesh(
+            kaykitGeometry("survol-gardien-anneau-" + tube, () => new THREE.TorusGeometry(.34, tube, 6, 44)),
+            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false })
+          );
+          anneau.material.userData = { ilyosTransient: true };
+          anneau.rotation.x = -Math.PI / 2;
+          anneau.position.set(p.x, p.y + (ordre - 21) * .004, p.z);
+          anneau.renderOrder = ordre;
+          anneau.raycast = () => {};
+          kaykit3D.dynamicGroup.add(anneau);
+          kaykit3D.contoursSurvol.push(anneau);
+        });
+      }
+
       function setKayKitVisualHover(cell, intent) {
         // Clone temporairement les matériaux afin de ne jamais modifier les matériaux partagés.
         if (!kaykit3D) return;
@@ -5414,11 +5446,21 @@
         if (intent.kind === "crown") kaykitSouleverCase(visuals);
         const aContourer = [];
 
+        const styleGardien = kaykitStyleSurvolGardien();
+        if (styleGardien && occupant && (styleGardien === "B" || styleGardien === "C")
+          && visuals.some(objet => objet?.userData?.ilyosContour && objet.userData.ilyosContour !== "couronne")) {
+          kaykitAnneauSurvolGardien(cell.r, cell.c);
+        }
         visuals.forEach(object => object?.traverse?.(mesh => {
           if (!mesh.isMesh || !mesh.material) return;
           const originalMaterial = mesh.material;
           const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
           const role = object.userData?.ilyosContour;
+          // Essai : en style A/B/C, le gardien garde ses matériaux (pas de reflet).
+          if (styleGardien && role && role !== "couronne") {
+            if (styleGardien !== "B") aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
+            return;
+          }
           const clonedMaterials = originals.map(material => {
             if (role) return kaykitMateriauLisere(material, couleurLisere(role));
             const clone = material.clone();
@@ -5434,7 +5476,7 @@
           kaykit3D.hoveredVisuals.push({ mesh, originalMaterial, clonedMaterials });
           if (role) aContourer.push({ mesh, couleur: couleurLisere(role) });
         }));
-        aContourer.forEach(({ mesh, couleur }) => kaykitAjouterContour(mesh, couleur));
+        aContourer.forEach(({ mesh, couleur, epaisseur }) => kaykitAjouterContour(mesh, couleur, epaisseur));
         kaykit3D.hoveredVisualKey = visualKey;
       }
 
@@ -9747,14 +9789,25 @@
           }
           group.add(dalle);
           if (!vise) continue;
-          /* La vraie couronne, opaque : le fantôme translucide se lisait
-             mal (Taekun, 10/11). Elle remplace celle du porteur, masquée
-             juste après — le nombre de lumières de la scène ne change pas. */
+          /* La vraie couronne, à peine transparente : le fantôme d'origine se
+             lisait mal, une couronne opaque laissait croire le coup déjà joué
+             (Taekun, 10/11). Écriture de profondeur gardée : on ne voit pas
+             l'intérieur de la couronne à travers. Elle remplace celle du
+             porteur, masquée juste après — le nombre de lumières de la scène
+             ne change pas. */
           const fantome = makeCrown();
           if (fantome) {
             const pos = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .02);
             fantome.position.set(pos.x, pos.y, pos.z);
-            fantome.traverse(o => { o.raycast = () => {}; });
+            fantome.traverse(o => {
+              o.raycast = () => {};
+              if (!o.isMesh || !o.material || o.material.visible === false) return;
+              const copie = o.material.clone();
+              copie.transparent = true;
+              copie.opacity = Math.min(copie.opacity ?? 1, .68);
+              copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
+              o.material = copie;
+            });
           }
           const allie = occupant ? kaykit3D.characterVisuals?.get(String(occupant.id)) : null;
           if (fantome && allie) {
