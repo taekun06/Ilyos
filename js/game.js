@@ -5614,18 +5614,6 @@
         if (classes?.contains("selected") || classes?.contains("selected-character")) return { kind: "select", actionable: true, color: 0xf4c84b, label: "SÉLECTION ACTIVE" };
         return { kind: "neutral", actionable: false, color: 0xf4c84b, label: "" };
       }
-      /* ESSAI « SURVOLS V2 » (09/11), à valider par Taekun avant d'en faire
-         le rendu par défaut : ?survols=v2 dans l'adresse. Contour de zone
-         fin, plus de bandeau de texte, plus de croix rouge sur une case
-         sans action, pose de couronne montrée par des couronnes fantômes. */
-      function kaykitSurvolsV2() {
-        if (kaykitSurvolsV2.valeur === undefined) {
-          let actif = false;
-          try { actif = new URLSearchParams(location.search).get("survols") === "v2" || window.ILYOS_SURVOL_ESSAI === true; } catch (_) { }
-          kaykitSurvolsV2.valeur = actif;
-        }
-        return kaykitSurvolsV2.valeur;
-      }
       function applyKayKitHoverIntent(intent) {
         if (!kaykit3D?.hoverMarker) return;
         const glyphKind = intent.kind === "crown-place"
@@ -5637,7 +5625,8 @@
         const unifiedPushActive = !!state?.pushOptions?.length;
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const sobre = kaykitSurvolsV2() && (intent.kind === "invalid" || intent.kind === "crown-place" || (intent.kind === "enemy" && !intent.actionable));
+        // Pose de couronne : la dalle dorée et la couronne fantôme suffisent.
+        const sobre = intent.kind === "crown-place";
         const glyphSuppressed = sobre || intent.kind === "crown" || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
@@ -5707,7 +5696,7 @@
         if (kaykit3D.cursorLabel) {
           kaykit3D.cursorLabel.textContent = intent.label || "";
           kaykit3D.cursorLabel.dataset.kind = intent.kind;
-          kaykit3D.cursorLabel.classList.toggle("visible", !kaykitSurvolsV2() && intent.kind !== "neutral" && !!intent.label);
+          kaykit3D.cursorLabel.classList.toggle("visible", intent.kind !== "neutral" && !!intent.label);
         }
       }
 
@@ -6003,7 +5992,7 @@
           }
           refreshKayKitHoverPreviews();
           canvas.style.cursor = next
-            ? (intent.actionable ? "pointer" : (kaykitSurvolsV2() ? "default" : (intent.kind === "invalid" ? "not-allowed" : "crosshair")))
+            ? (intent.actionable ? "pointer" : (intent.kind === "invalid" ? "not-allowed" : "crosshair"))
             : "default";
           return next;
         };
@@ -8844,8 +8833,8 @@
         else if (classList.contains("diagonal-step-preview")) { color = 0xd9922f; fillOpacity = .46; kind = "move" }
         else if (classList.contains("move-target-preview")) { color = 0xd9922f; fillOpacity = .58; kind = "move"; size = .90 }
         else if (classList.contains("move-path-preview")) { color = 0xd9922f; fillOpacity = .34; kind = "move" }
-        // Essai v2 : en pose de couronne, les couronnes fantômes remplacent la dalle.
-        else if (classList.contains("reachable") && !(kaykitSurvolsV2() && state?.phase === "DROP_TREASURE")) { color = 0xd9922f; fillOpacity = .52; kind = "move" }
+        // Pose de couronne : addKayKitCrownDropGhosts() dessine ses propres dalles.
+        else if (classList.contains("reachable") && state?.phase !== "DROP_TREASURE") { color = 0xd9922f; fillOpacity = .52; kind = "move" }
 
         // SYNCHRONISATION INCRÉMENTALE (V77) : cette fonction est appelée pour
         // les 121 cases à CHAQUE sync (survol, sélection, déplacement...), mais
@@ -9303,9 +9292,9 @@
         // à l'échelle du zoom pour rester constante à l'écran.
         const zoomReference = 12.4 * (GRID / 11);
         const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
-        const fin = kaykitSurvolsV2();
-        const epaisseurClaire = (fin ? .085 : .12) * echelleZoom;
-        const epaisseurSombre = epaisseurClaire + (fin ? .03 : .045) * echelleZoom;
+        // Affiné à la demande de Taekun (09/11) : .12 jugé trop épais.
+        const epaisseurClaire = .085 * echelleZoom;
+        const epaisseurSombre = epaisseurClaire + .03 * echelleZoom;
         for (const segment of segments) ajouterRuban(segment, -.002, options.sombre ?? 0x0d3a56, .85, epaisseurSombre);
         for (const segment of segments) ajouterRuban(segment, .002, options.claire ?? 0x7fd8ff, 1, epaisseurClaire);
 
@@ -9704,15 +9693,16 @@
       function kaykitObjetsDuMode(type, id) { return []; }
       function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
 
-      /* Essai v2 : où la couronne peut aller. Retours de Taekun (09-10/11) :
+      /* Pose de couronne : où elle peut aller. Retours de Taekun (09-10/11) :
          l'anneau ne suffisait pas, les dalles dessinées PAR-DESSUS tout
          non plus — le gardien, l'arbre, ce qui occupe la case doit rester
          au premier plan. Retour aux dalles d'origine (aplat plein de la
          case, sous les pièces), mais plus soignées : ombre douce pour le
          contraste, aplat or chaud, bordure or fine et nette, sans les traits
          blancs. La couronne portée reste levée tant que le choix dure. Au
-         survol, la dalle s'éclaire et la couronne fantôme se pose à
-         l'arrivée (validé). Rien n'est animé en continu. */
+         survol, la couronne fantôme, pleine, se pose à l'arrivée ; la dalle
+         ne s'éclaire plus (elle délavait le fantôme). Rien n'est animé en
+         continu. */
       function addKayKitCrownDropGhosts() {
         const group = kaykit3D?.actionPreviewGroup;
         if (!group) return;
@@ -9740,12 +9730,12 @@
           ombre.rotation.x = -Math.PI / 2;
           ombre.position.y = .004;
           ombre.renderOrder = 27;
-          const aplat = new THREE.Mesh(plaque, materiau(vise ? 0xffd45a : 0xf0ad28, vise ? .82 : .6));
+          const aplat = new THREE.Mesh(plaque, materiau(0xf0ad28, .6));
           aplat.rotation.x = -Math.PI / 2;
           aplat.position.y = .01;
           aplat.renderOrder = 30;
           dalle.add(ombre, aplat);
-          const matBord = materiau(vise ? 0xfff4c4 : 0xffdf7a, 1);
+          const matBord = materiau(0xffdf7a, 1);
           for (let i = 0; i < 4; i++) {
             const pivot = new THREE.Group();
             pivot.rotation.y = i * Math.PI / 2;
@@ -9757,7 +9747,15 @@
           }
           group.add(dalle);
           if (!vise) continue;
-          const fantome = makeKayKitPieceGhost(r, c, { crown: true, opacity: .9, surfaceY: kaykitCellSurfaceY(r, c) + .02 });
+          /* La vraie couronne, opaque : le fantôme translucide se lisait
+             mal (Taekun, 10/11). Elle remplace celle du porteur, masquée
+             juste après — le nombre de lumières de la scène ne change pas. */
+          const fantome = makeCrown();
+          if (fantome) {
+            const pos = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .02);
+            fantome.position.set(pos.x, pos.y, pos.z);
+            fantome.traverse(o => { o.raycast = () => {}; });
+          }
           const allie = occupant ? kaykit3D.characterVisuals?.get(String(occupant.id)) : null;
           if (fantome && allie) {
             // Sur la tête de l'allié, à la place exacte d'une couronne portée.
@@ -10346,7 +10344,7 @@
           return;
         }
 
-        if (state.phase === "DROP_TREASURE" && kaykitSurvolsV2()) {
+        if (state.phase === "DROP_TREASURE") {
           addKayKitCrownDropGhosts();
           return;
         }
@@ -14285,8 +14283,8 @@
             // Plus de rotation continue de la couronne portée (Taekun,
             // 2026-11-04 : inutile) ; seul le léger flottement reste.
             visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0)
-              // Essai v2 : couronne choisie pour être posée = elle reste levée.
-              + (kaykitSurvolsV2() && state?.phase === "DROP_TREASURE" && String(state.treasureDropFromId) === String(visual.id) ? .14 : 0);
+              // Couronne choisie pour être posée : elle reste levée.
+              + (state?.phase === "DROP_TREASURE" && String(state.treasureDropFromId) === String(visual.id) ? .14 : 0);
           }
 
           /* --- 10. Halo de sélection -------------------------------- */
