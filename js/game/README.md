@@ -51,8 +51,10 @@ factice : règles et IA tournent sans navigateur, par les tours simulés de
 
 Une présentation ajoutée dans un chemin de règle doit rester sous la garde
 `ilyosSimulationActive` : c'est ce qui permet au moteur de tourner sans écran,
-et demain dans un Worker. Les budgets de l'IA sont encore en millisecondes :
-deux machines (ou une machine chargée) peuvent donc diverger sur un tour long.
+et demain dans un Worker. La recherche de l'IA est bornée en nombre d'états ;
+ses plafonds de temps (`PLAN_SECURITE`) ne sont que des filets, mais un filet
+atteint change la décision. Les bancs qui comparent des états les écartent
+(`securiteFacteur`, ou `ILYOS_SANS_COUPURE=1` pour le self-play Node).
 
 ## Recent UX passes (guardian interaction, turn flow, island/spawn)
 

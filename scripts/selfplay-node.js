@@ -17,9 +17,9 @@
 
    Un moteur par processus : chaque partie en cours emploie deux processus
    enfants (un par bundle), dont un seul réfléchit à la fois. `parallèle`
-   compte donc les parties simultanées = les cœurs occupés. Les budgets de
-   l'IA étant en millisecondes, ne pas dépasser le nombre de cœurs libres :
-   au-delà, les tours sont coupés par le temps et la mesure ne vaut plus rien.
+   compte donc les parties simultanées = les cœurs occupés. L'IA a des
+   filets de temps : au-delà du nombre de cœurs libres, des tours sont coupés
+   et la mesure ne vaut plus rien — sauf avec ILYOS_SANS_COUPURE=1.
 
    Non repris pour l'instant : le mode personnalisé (ILYOS_PERSO). */
 
@@ -54,6 +54,14 @@ const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 120;
 const lireJson = nom => (process.env[nom] ? JSON.parse(process.env[nom]) : undefined);
 const POIDS = { A: lireJson('ILYOS_POIDS_A') || null, B: lireJson('ILYOS_POIDS_B') || null };
 const BUDGETS = { A: lireJson('ILYOS_BUDGET_A'), B: lireJson('ILYOS_BUDGET_B') };
+/* ILYOS_SANS_COUPURE=1 : écarte les filets de temps de l'IA (securiteFacteur).
+   Les décisions ne dépendent plus de la charge de la machine : on peut alors
+   occuper tous les cœurs, et rejouer une série donne les mêmes parties. À
+   employer pour comparer deux RÉGLAGES ; pas pour mesurer un gain de vitesse,
+   qui se voit justement aux tours coupés. */
+if (process.env.ILYOS_SANS_COUPURE === '1') {
+  for (const camp of ['A', 'B']) POIDS[camp] = { ...(POIDS[camp] || {}), securiteFacteur: 20 };
+}
 
 function ouvrir(bundle) {
   return new Promise((resolve, reject) => {

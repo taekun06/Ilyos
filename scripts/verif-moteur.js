@@ -8,11 +8,10 @@
    (empreinte SHA-1 du JSON rendu par ILYOS_SELFPLAY.tour). Une seule
    différence et le banc échoue, en nommant le premier tour divergent.
 
-   Limite connue : les budgets de réflexion de l'IA sont en millisecondes,
-   même en « rechercheDeterministe » (qui ne fait qu'élargir les délais). Sur
-   une machine très chargée, un tour long peut donc être coupé d'un côté et
-   pas de l'autre. Le banc affiche durées et coupures pour le reconnaître ;
-   il ne l'excuse pas. Ne pas lancer d'autre calcul lourd en même temps. */
+   Les budgets de l'IA sont en nombre d'états ; ses plafonds de TEMPS ne sont
+   que des filets (PLAN_SECURITE), mais un filet atteint change la décision.
+   Le banc les écarte donc (securiteFacteur) : les deux côtés doivent alors
+   donner exactement le même état, quelle que soit la charge de la machine. */
 
 const crypto = require('node:crypto');
 const { chromium } = require('playwright');
@@ -24,7 +23,10 @@ const sortie = console;
 const TOURS = Math.max(1, Number(process.argv[2]) || 6);
 const GRAINE = Number(process.argv[3]) || 7101;
 const URL_JEU = process.env.ILYOS_URL || 'http://localhost:8123/';
-const POIDS = { rechercheDeterministe: 1 };
+/* Filets de temps écartés (×20) : la recherche n'est plus bornée que par ses
+   budgets en nombre d'états, donc la décision ne dépend plus de la vitesse
+   de la machine ni de sa charge. */
+const POIDS = { securiteFacteur: 20 };
 
 const empreinte = texte => crypto.createHash('sha1').update(texte).digest('hex').slice(0, 12);
 const resume = r => `${r.dureeMs} ms${r.coupures && (r.coupures.principale || r.coupures.ripostes || r.coupures.magie) ? ' COUPÉ ' + JSON.stringify(r.coupures) : ''}`;
