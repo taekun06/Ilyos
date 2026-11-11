@@ -101,6 +101,8 @@
     });
 
     const stockage = {};
+    function Observateur() {}
+    Observateur.prototype = { observe() {}, unobserve() {}, disconnect() {}, takeRecords: () => [] };
     const substituts = {
       document,
       setTimeout: (fn, ms) => {
@@ -125,7 +127,9 @@
       AudioContext: undefined, indexedDB: undefined,
       fetch: () => new Promise(() => {}),
       Image: function () { return leurre(); },
-      CustomEvent: function () {}, Event: function () {}, HTMLElement: function () {}
+      CustomEvent: function () {}, Event: function () {}, HTMLElement: function () {},
+      /* Observateurs du navigateur : rien n'est dessiné, ils n'ont rien à voir. */
+      MutationObserver: Observateur, ResizeObserver: Observateur, IntersectionObserver: Observateur
     };
     return { substituts, avancer };
   }

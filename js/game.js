@@ -5227,12 +5227,12 @@
          face arrière et gonflée en espace écran (épaisseur constante quel que
          soit le zoom). Pour un gardien animé, la copie partage le squelette de
          l'original et suit donc chaque pose. */
-      function kaykitMateriauContour(couleur, skinne) {
+      function kaykitMateriauContour(couleur, skinne, epaisseur = .0055) {
         kaykit3D.contoursCache = kaykit3D.contoursCache || new Map();
-        const cleCache = couleur + (skinne ? "|s" : "");
+        const cleCache = couleur + (skinne ? "|s" : "") + "|" + epaisseur;
         let materiau = kaykit3D.contoursCache.get(cleCache);
         if (materiau) return materiau;
-        const u = { epaisseur: { value: .0055 } };
+        const u = { epaisseur: { value: epaisseur } };
         materiau = new THREE.MeshBasicMaterial({ color: couleur, side: THREE.BackSide, skinning: skinne, transparent: true, opacity: .95, depthWrite: false });
         materiau.onBeforeCompile = shader => {
           shader.uniforms.ilyosEpaisseur = u.epaisseur;
@@ -5254,10 +5254,10 @@
         kaykit3D.contoursCache.set(cleCache, materiau);
         return materiau;
       }
-      function kaykitAjouterContour(mesh, couleur) {
+      function kaykitAjouterContour(mesh, couleur, epaisseur) {
         if (!mesh?.geometry || !mesh.parent) return;
         const skinne = !!mesh.isSkinnedMesh;
-        const materiau = kaykitMateriauContour(couleur, skinne);
+        const materiau = kaykitMateriauContour(couleur, skinne, epaisseur);
         let contour;
         if (skinne) {
           contour = new THREE.SkinnedMesh(mesh.geometry, materiau);
@@ -5379,6 +5379,38 @@
         return { copie, u };
       }
 
+      /* ESSAI (10/11) : style du survol d'un gardien, à choisir par Taekun.
+         ?gardien=A contour fin seul, B anneau fin au sol seul, C les deux.
+         Sans paramètre : survol actuel (reflet + contour épais). */
+      function kaykitStyleSurvolGardien() {
+        if (kaykitStyleSurvolGardien.valeur === undefined) {
+          let style = null;
+          try { style = (new URLSearchParams(location.search).get("gardien") || window.ILYOS_SURVOL_GARDIEN || "").toUpperCase() || null; } catch (_) { }
+          kaykitStyleSurvolGardien.valeur = ["A", "B", "C"].includes(style) ? style : null;
+        }
+        return kaykitStyleSurvolGardien.valeur;
+      }
+      /* Anneau fin au sol : trait clair sur un trait sombre plus large, lisible
+         sur l'herbe comme sur une île dorée (la couleur d'équipe or s'y
+         perdait). */
+      function kaykitAnneauSurvolGardien(r, c) {
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
+        kaykit3D.contoursSurvol = kaykit3D.contoursSurvol || [];
+        [[.034, 0x1b1208, .55, 21], [.016, 0xffffff, .98, 22]].forEach(([tube, couleur, opacite, ordre]) => {
+          const anneau = new THREE.Mesh(
+            kaykitGeometry("survol-gardien-anneau-" + tube, () => new THREE.TorusGeometry(.34, tube, 6, 44)),
+            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false })
+          );
+          anneau.material.userData = { ilyosTransient: true };
+          anneau.rotation.x = -Math.PI / 2;
+          anneau.position.set(p.x, p.y + (ordre - 21) * .004, p.z);
+          anneau.renderOrder = ordre;
+          anneau.raycast = () => {};
+          kaykit3D.dynamicGroup.add(anneau);
+          kaykit3D.contoursSurvol.push(anneau);
+        });
+      }
+
       function setKayKitVisualHover(cell, intent) {
         // Clone temporairement les matériaux afin de ne jamais modifier les matériaux partagés.
         if (!kaykit3D) return;
@@ -5414,11 +5446,21 @@
         if (intent.kind === "crown") kaykitSouleverCase(visuals);
         const aContourer = [];
 
+        const styleGardien = kaykitStyleSurvolGardien();
+        if (styleGardien && occupant && (styleGardien === "B" || styleGardien === "C")
+          && visuals.some(objet => objet?.userData?.ilyosContour && objet.userData.ilyosContour !== "couronne")) {
+          kaykitAnneauSurvolGardien(cell.r, cell.c);
+        }
         visuals.forEach(object => object?.traverse?.(mesh => {
           if (!mesh.isMesh || !mesh.material) return;
           const originalMaterial = mesh.material;
           const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
           const role = object.userData?.ilyosContour;
+          // Essai : en style A/B/C, le gardien garde ses matériaux (pas de reflet).
+          if (styleGardien && role && role !== "couronne") {
+            if (styleGardien !== "B") aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
+            return;
+          }
           const clonedMaterials = originals.map(material => {
             if (role) return kaykitMateriauLisere(material, couleurLisere(role));
             const clone = material.clone();
@@ -5434,7 +5476,7 @@
           kaykit3D.hoveredVisuals.push({ mesh, originalMaterial, clonedMaterials });
           if (role) aContourer.push({ mesh, couleur: couleurLisere(role) });
         }));
-        aContourer.forEach(({ mesh, couleur }) => kaykitAjouterContour(mesh, couleur));
+        aContourer.forEach(({ mesh, couleur, epaisseur }) => kaykitAjouterContour(mesh, couleur, epaisseur));
         kaykit3D.hoveredVisualKey = visualKey;
       }
 
@@ -5521,6 +5563,15 @@
           if (character?.player === state.currentPlayer) {
             return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHANGER DE GARDIEN" };
           }
+          /* Couronne portée par un rival voisin : un clic SUR la couronne la
+             vole (handleSmartCharacterClick, badgeCouronne), avant toute poussée. */
+          if (hitAction === "crown-carried" && character && character.player !== state.currentPlayer) {
+            const acteur = characterById(state.selectedCharId);
+            const voisin = acteur && Math.abs(acteur.r - r) + Math.abs(acteur.c - c) === 1;
+            if (voisin && !characterCarriesCrown(acteur.id) && artifactCarriedBy(character.id)) {
+              return { kind: "crown", actionable: true, color: 0xffc928, label: "PRENDRE LA COURONNE" };
+            }
+          }
           const smartHovered = isSameCell(state.actionHoverCell, [r, c]);
           if (smartHovered && state.smartHoverType === "MOVE") {
             const moveCost = state.smartHoverPath?.cost ?? state.smartHoverPath?.length ?? 1;
@@ -5550,6 +5601,13 @@
                 ? `FORCE ${required} REQUISE · VOUS AVEZ ${force}`
                 : (preview?.fell ? `POUSSER · CHUTE · F${force}` : `POUSSER · FORCE ${force}`)
             };
+          }
+          /* Couronne voisine : le clic la RAMASSE (previewSmartCharacterTarget
+             renvoie PICKUP). Ce cas manquait ici, donc le survol tombait sur
+             « DESTINATION IMPOSSIBLE » et la croix d'interdiction, alors que
+             le clic prenait bien la couronne — signalé en jeu le 09/11. */
+          if (smartHovered && state.smartHoverType === "PICKUP") {
+            return { kind: "crown", actionable: true, color: 0xffc928, label: "PRENDRE LA COURONNE" };
           }
           if (character) {
             return { kind: "enemy", actionable: false, color: 0xff6f72, label: "CIBLE NON ATTEIGNABLE" };
@@ -5609,7 +5667,9 @@
         const unifiedPushActive = !!state?.pushOptions?.length;
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = intent.kind === "crown" || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        // Pose de couronne : la dalle dorée et la couronne fantôme suffisent.
+        const sobre = intent.kind === "crown-place";
+        const glyphSuppressed = sobre || intent.kind === "crown" || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
@@ -5631,7 +5691,7 @@
         // Gardien ou couronne : leur liseré lumineux (setKayKitVisualHover)
         // suffit, l'anneau peint par-dessus les délavait. Même chose pour la
         // destination d'un trajet : case soulevée, pointe et chiffre suffisent.
-        const hoverRingsSuppressed = ["ally", "enemy", "crown"].includes(intent.kind) || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        const hoverRingsSuppressed = sobre || ["ally", "enemy", "crown"].includes(intent.kind) || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -5780,11 +5840,24 @@
              l'identité et le rayon les manquait : un clic rapide après le survol
              tombait sur la case en dessous. */
           kaykit3D.actionPreviewGroup?.updateMatrixWorld?.(true);
-          const interactifs =
+          let interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
               false
             );
+          /* POSER LA COURONNE : la couronne portée (zone de clic agrandie,
+             au-dessus de la tête) cachait la case libre derrière le porteur.
+             Le survol annonçait « COURONNE » au lieu de la pose, et le clic
+             retombait sur la couronne. Pendant ce choix, ni elle ni son
+             porteur ne se visent : le rayon va à la case derrière eux. */
+          if (state?.phase === "DROP_TREASURE") {
+            const porteur = characterById(state.treasureDropFromId);
+            interactifs = interactifs.filter(item => {
+              const data = item.object?.userData || {};
+              if (data.kaykitAction === "crown-carried") return false;
+              return !(porteur && data.kaykitAction === "character" && data.r === porteur.r && data.c === porteur.c);
+            });
+          }
 
           /* UN CHOIX DE POUSSÉE PASSE DEVANT CE QUI LE MASQUE.
 
@@ -8802,7 +8875,8 @@
         else if (classList.contains("diagonal-step-preview")) { color = 0xd9922f; fillOpacity = .46; kind = "move" }
         else if (classList.contains("move-target-preview")) { color = 0xd9922f; fillOpacity = .58; kind = "move"; size = .90 }
         else if (classList.contains("move-path-preview")) { color = 0xd9922f; fillOpacity = .34; kind = "move" }
-        else if (classList.contains("reachable")) { color = 0xd9922f; fillOpacity = .52; kind = "move" }
+        // Pose de couronne : addKayKitCrownDropGhosts() dessine ses propres dalles.
+        else if (classList.contains("reachable") && state?.phase !== "DROP_TREASURE") { color = 0xd9922f; fillOpacity = .52; kind = "move" }
 
         // SYNCHRONISATION INCRÉMENTALE (V77) : cette fonction est appelée pour
         // les 121 cases à CHAQUE sync (survol, sélection, déplacement...), mais
@@ -9260,8 +9334,9 @@
         // à l'échelle du zoom pour rester constante à l'écran.
         const zoomReference = 12.4 * (GRID / 11);
         const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
-        const epaisseurClaire = .12 * echelleZoom;
-        const epaisseurSombre = epaisseurClaire + .045 * echelleZoom;
+        // Affiné à la demande de Taekun (09/11) : .12 jugé trop épais.
+        const epaisseurClaire = .085 * echelleZoom;
+        const epaisseurSombre = epaisseurClaire + .03 * echelleZoom;
         for (const segment of segments) ajouterRuban(segment, -.002, options.sombre ?? 0x0d3a56, .85, epaisseurSombre);
         for (const segment of segments) ajouterRuban(segment, .002, options.claire ?? 0x7fd8ff, 1, epaisseurClaire);
 
@@ -9659,6 +9734,95 @@
       function kaykitFantomeDuMode(type, id, r, c, options) { return null; }
       function kaykitObjetsDuMode(type, id) { return []; }
       function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
+
+      /* Pose de couronne : où elle peut aller. Retours de Taekun (09-10/11) :
+         l'anneau ne suffisait pas, les dalles dessinées PAR-DESSUS tout
+         non plus — le gardien, l'arbre, ce qui occupe la case doit rester
+         au premier plan. Retour aux dalles d'origine (aplat plein de la
+         case, sous les pièces), mais plus soignées : ombre douce pour le
+         contraste, aplat or chaud, bordure or fine et nette, sans les traits
+         blancs. La couronne portée reste levée tant que le choix dure. Au
+         survol, la couronne fantôme, pleine, se pose à l'arrivée ; la dalle
+         ne s'éclaire plus (elle délavait le fantôme). Rien n'est animé en
+         continu. */
+      function addKayKitCrownDropGhosts() {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const survol = kaykit3D.hoverCell;
+        const allies = new Set(state.crownTransferTargetIds || []);
+        const taille = .88;
+        const plaque = kaykitGeometry("crown-drop-tile-v3", () => new THREE.PlaneGeometry(taille, taille));
+        const plaqueOmbre = kaykitGeometry("crown-drop-shadow-v3", () => new THREE.PlaneGeometry(.94, .94));
+        const epaisseur = .05;
+        const barre = kaykitGeometry("crown-drop-edge-v3", () => new THREE.BoxGeometry(taille + epaisseur, .022, epaisseur));
+        const materiau = (couleur, opacite) => {
+          const m = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
+          m.userData = { ilyosTransient: true };
+          return m;
+        };
+        for (const cellKey of state.reachable || []) {
+          const [r, c] = cellKey.split(",").map(Number);
+          const occupant = characterAt(r, c);
+          if (occupant && !allies.has(occupant.id)) continue;
+          const vise = !!survol && survol.r === r && survol.c === c;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .026);
+          const dalle = new THREE.Group();
+          dalle.position.set(p.x, p.y, p.z);
+          const ombre = new THREE.Mesh(plaqueOmbre, materiau(0x2a1600, .34));
+          ombre.rotation.x = -Math.PI / 2;
+          ombre.position.y = .004;
+          ombre.renderOrder = 27;
+          const aplat = new THREE.Mesh(plaque, materiau(0xf0ad28, .6));
+          aplat.rotation.x = -Math.PI / 2;
+          aplat.position.y = .01;
+          aplat.renderOrder = 30;
+          dalle.add(ombre, aplat);
+          const matBord = materiau(0xffdf7a, 1);
+          for (let i = 0; i < 4; i++) {
+            const pivot = new THREE.Group();
+            pivot.rotation.y = i * Math.PI / 2;
+            const cote = new THREE.Mesh(barre, matBord);
+            cote.position.set(0, .02, taille / 2);
+            cote.renderOrder = 36;
+            pivot.add(cote);
+            dalle.add(pivot);
+          }
+          group.add(dalle);
+          if (!vise) continue;
+          /* La vraie couronne, à peine transparente : le fantôme d'origine se
+             lisait mal, une couronne opaque laissait croire le coup déjà joué
+             (Taekun, 10/11). Écriture de profondeur gardée : on ne voit pas
+             l'intérieur de la couronne à travers. Elle remplace celle du
+             porteur, masquée juste après — le nombre de lumières de la scène
+             ne change pas. */
+          const fantome = makeCrown();
+          if (fantome) {
+            const pos = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .02);
+            fantome.position.set(pos.x, pos.y, pos.z);
+            fantome.traverse(o => {
+              o.raycast = () => {};
+              if (!o.isMesh || !o.material || o.material.visible === false) return;
+              const copie = o.material.clone();
+              copie.transparent = true;
+              copie.opacity = Math.min(copie.opacity ?? 1, .68);
+              copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
+              o.material = copie;
+            });
+          }
+          const allie = occupant ? kaykit3D.characterVisuals?.get(String(occupant.id)) : null;
+          if (fantome && allie) {
+            // Sur la tête de l'allié, à la place exacte d'une couronne portée.
+            crownAnchorPosition(allie, fantome.position);
+            fantome.scale.setScalar(.62);
+          }
+          if (fantome) group.add(fantome);
+          const porteur = kaykit3D.characterVisuals?.get(String(state.treasureDropFromId));
+          if (porteur?.crown?.visible) {
+            porteur.crown.visible = false;
+            kaykit3D.poussePiecesMasquees = [...(kaykit3D.poussePiecesMasquees || []), porteur.crown];
+          }
+        }
+      }
 
       function makeKayKitPieceGhost(r, c, { playerId = null, crown = false, opacity = .6, surfaceY = null } = {}) {
         let piece = null;
@@ -10185,7 +10349,8 @@
              null), donc sans le rang du draft la clé serait identique d'un
              joueur à l'autre — les cases éclairées du précédent resteraient
              affichées pour le suivant. */
-          draftPick: state.draft ? [state.draft.index, state.currentPlayer] : null
+          draftPick: state.draft ? [state.draft.index, state.currentPlayer] : null,
+          dropHover: state.phase === "DROP_TREASURE" && kaykit3D.hoverCell ? [kaykit3D.hoverCell.r, kaykit3D.hoverCell.c] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
@@ -10229,6 +10394,11 @@
 
         if (unifiedPushActive) {
           renderUnifiedPushAffordances();
+          return;
+        }
+
+        if (state.phase === "DROP_TREASURE") {
+          addKayKitCrownDropGhosts();
           return;
         }
 
@@ -14165,7 +14335,9 @@
             visual.crown.position.copy(KAYKIT_TMP_CROWN);
             // Plus de rotation continue de la couronne portée (Taekun,
             // 2026-11-04 : inutile) ; seul le léger flottement reste.
-            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0);
+            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0)
+              // Couronne choisie pour être posée : elle reste levée.
+              + (state?.phase === "DROP_TREASURE" && String(state.treasureDropFromId) === String(visual.id) ? .14 : 0);
           }
 
           /* --- 10. Halo de sélection -------------------------------- */
@@ -27094,12 +27266,15 @@
         // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
         kaykitChoc(2);
         kaykitHameauEclat(player.id);
+        // La couronne rejoint sa place dans le HUD (fin-partie.js), avec un
+        // bandeau « Couronne validée » qui remplace la notification.
+        const celebree = couronneCelebrer(player, char);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
           respawnCharacter(char);
           showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
-        } else {
+        } else if (!celebree) {
           showToast(coequipier
             ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
             : immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
@@ -27330,18 +27505,17 @@
         });
         kaykitBandesCinema(true, 4000);
 
-        tonFinDePartie("egalite");
-        els.victoryPortrait.textContent = "⚖️";
-        els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
-        els.victoryTitle.textContent = "Match nul";
-        els.victoryTitle.style.color = "#cfd6ea";
-        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne ne départage.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
+        renderVictoryRecap(null);
+        // Titre plein écran puis bandeau à onglets (fin-partie.js).
+        finPartieOuvrir({
+          ton: "egalite",
+          titre: "MATCH NUL",
+          kicker: "PERSONNE NE PREND ILYOS",
+          texte: "Plus aucune île ne peut être posée, et rien ne départage les couronnes."
+        });
         defaitesFinPartie(null);
         progressionFinPartie(null);
-        els.victoryModal.classList.remove("hidden");
-        void els.victoryModal.offsetWidth;
-        els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
         playSfx("draw");
       }
@@ -27374,41 +27548,29 @@
         const defaite = !!joueurAppareil
           && (state.onlineMode || player.isAI)
           && !memeEquipe(player.id, joueurAppareil.id);
-        tonFinDePartie(defaite ? "defaite" : "victoire");
-
-        els.victoryPortrait.textContent = player.icon || "🧙";
-        els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
-        els.victoryTitle.textContent = gardiensPartages()
-          ? (player.id % 2 === 0 ? "Équipe or" : "Équipe violette")
-          : player.name;
-        els.victoryTitle.style.color = player.color;
-        els.victoryText.textContent = texte
-          || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
+        const nomCamp = gardiensPartages()
+          ? (player.id % 2 === 0 ? "ÉQUIPE OR" : "ÉQUIPE VIOLETTE")
+          : String(player.name || "").toLocaleUpperCase("fr-FR");
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/${rotationCible()}`;
         renderVictoryRecap(player);
+        // Titre plein écran (2 s) puis bandeau à onglets (fin-partie.js).
+        finPartieOuvrir({
+          ton: defaite ? "defaite" : "victoire",
+          vainqueur: player,
+          titre: defaite ? "DÉFAITE" : "VICTOIRE",
+          kicker: defaite ? `${nomCamp} PREND ILYOS` : `${nomCamp} · SOUVERAIN D’ILYOS`,
+          texte: texte || (butBalises()
+            ? `${defaite ? `${player.name} : ` : ""}${player.score} points de balises en ${state.turn} tours.`
+            : defaite ? `${player.name} a validé trois couronnes en ${state.turn} tours.`
+              : `Trois couronnes validées en ${state.turn} tours.`)
+        });
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);
-        // Profil de l'appareil : XP et niveau, affichés sous le bilan.
+        // Profil de l'appareil : XP et niveau, dans l'onglet Progression.
         progressionFinPartie(player);
-
-        els.victoryModal.classList.remove("hidden");
-        void els.victoryModal.offsetWidth;
-        els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
         playSfx(defaite ? "defeat" : "victory");
-      }
-
-      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
-         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
-         fenêtre, ses boutons et le bilan restent les mêmes. */
-      function tonFinDePartie(ton) {
-        const modal = els.victoryModal;
-        if (!modal) return;
-        modal.classList.toggle("fin-defaite", ton === "defaite");
-        modal.classList.toggle("fin-egalite", ton === "egalite");
-        const kicker = modal.querySelector(".victory-kicker");
-        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {
@@ -32385,9 +32547,14 @@
         tempsMaxMs: 300,
         /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
            Une menace qui a besoin de cartes encore à piocher n'est que
-           plausible et pèse moins — sans quoi l'IA se paralyserait devant des
-           combinaisons hypothétiques. */
-        poidsMenacePlausible: 0.65
+           plausible : elle se joue avec la main PLAUSIBLE (espérance de la
+           pioche), déjà une moyenne. 0,65 jusqu'au 09/11 la rabotait une
+           seconde fois : sur les 3 défaites archivées (24 tours signalés), la
+           riposte prévue restait au-dessus du résultat réel lu avec l'humain au
+           trait (22/10, tour 3 : −880 prévu, −2 010 réel ; à 1 : −2 682).
+           Self-play 80 parties contre 0,65 (graines 9500 et 9600) : 44-34-2,
+           56 % ± 5,5, couronnes 63 contre 53, même temps de réflexion. */
+        poidsMenacePlausible: 1
       };
 
       const PLAN_RIPOSTE_CRITIQUE = {
@@ -34216,15 +34383,25 @@
       let defaitesJournal = null;
       let defaitesDerniere = null;
 
-      /* Une partie compte si un humain y affronte un Expert, en local, hors
-         tutoriel, puzzle, simulation et parties automatiques. */
+      /* Toute partie locale où joue un humain est suivie : « Analyse partie »
+         (écran de fin) existe pour chacune, pas seulement contre l'Expert
+         (demande de Taekun, 2026-11-09). Hors ligne, tutoriel, puzzle,
+         simulation et parties automatiques. */
       function defaitesPartieSuivie() {
         if (!state || state.onlineMode || state.tutorial || state.puzzle) return false;
         if (typeof ilyosSimulationActive !== "undefined" && ilyosSimulationActive) return false;
         try { if (ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active) return false; } catch (erreur) { /* harnais absent */ }
         const joueurs = state.players || [];
-        if (joueurs.length !== 2) return false;
-        return joueurs.some(j => !j.isAI) && joueurs.some(j => j.isAI && j.aiDifficulty === "expert");
+        return joueurs.length >= 2 && joueurs.some(j => !j.isAI);
+      }
+
+      /* Défaite de l'Expert (humain vainqueur d'un Expert, en duel) : le
+         dossier historique, que l'analyse de l'IA sait lire. Toute autre
+         partie est un dossier « partie ». */
+      function defaitesEstDefaiteExpert(vainqueur) {
+        if (!state || !vainqueur || vainqueur.isAI || state.players.length !== 2) return false;
+        const perdant = state.players.find(j => j.id !== vainqueur.id);
+        return !!perdant && perdant.isAI && perdant.aiDifficulty === "expert";
       }
 
       function defaitesRegles() {
@@ -34343,7 +34520,74 @@
         return Math.min(...cellules.map(([vr, vc]) => Math.abs(vr - r) + Math.abs(vc - c)));
       }
 
+      /* Note de l'IA sur une position, l'humain au trait : le point de vue de
+         la riposte prévue. Repli sur la note enregistrée si l'état manque. */
+      function defaitesNoteTraitHumain(etat, ia, humain, repli) {
+        if (!etat || !Array.isArray(etat.players)) return repli;
+        try {
+          const copie = structuredClone(etat);
+          copie.currentPlayer = humain;
+          return Math.round(withSimulatedState(copie, () => evaluateStrategicState(ia)));
+        } catch (erreur) {
+          return repli;
+        }
+      }
+
+      /* Partie quelconque : les moments clés lus dans les positions de début
+         de tour — couronnes validées, gardiens perdus, couronnes ramassées ou
+         volées. Aucun jugement d'IA ici : la visionneuse le donne, tour par
+         tour, à qui le demande. */
+      function defaitesAnalyserPartie(dossier) {
+        const tours = dossier.tours || [];
+        const nom = j => ((dossier.joueurs || [])[j] || {}).nom || `Joueur ${j + 1}`;
+        const signales = [];
+        let precedent = null;
+        const porteurs = etat => new Map([etat.artifact, etat.secondArtifact]
+          .filter(a => a && a.active && a.carrierId)
+          .map(a => [a.carrierId, ((etat.characters || []).find(g => g.id === a.carrierId) || {}).player]));
+        const etats = tours.map((t, i) => ({ t, i, etat: defaitesLire(t.etat) })).filter(x => x.etat);
+        etats.push({ t: { tour: dossier.fin ? dossier.fin.tours : null }, i: tours.length - 1, etat: defaitesLire(dossier.etatFinal), fin: true });
+        etats.forEach(({ t, i, etat, fin }) => {
+          if (!etat) return;
+          if (precedent) {
+            const A = precedent.etat, raisons = [];
+            let gravite = 0;
+            (etat.players || []).forEach((j, k) => {
+              const avant = ((A.players || [])[k] || {}).score || 0, apres = j.score || 0;
+              if (apres > avant) { raisons.push(`${nom(k)} valide une couronne (${apres})`); gravite += 3000; }
+            });
+            const ids = new Set((etat.characters || []).map(g => g.id));
+            const perdus = {};
+            (A.characters || []).forEach(g => { if (!ids.has(g.id)) perdus[g.player] = (perdus[g.player] || 0) + 1; });
+            Object.entries(perdus).forEach(([k, n]) => {
+              raisons.push(`${nom(Number(k))} perd ${n} gardien${n > 1 ? "s" : ""}`);
+              gravite += 900 * n;
+            });
+            const pA = porteurs(A), pB = porteurs(etat);
+            pB.forEach((camp, id) => {
+              if (camp === undefined) return;
+              const avant = [...pA.values()].includes(camp);
+              if (!avant) { raisons.push(`${nom(camp)} prend une couronne`); gravite += 600; }
+            });
+            if (raisons.length) {
+              const t0 = precedent.t;
+              signales.push({ index: precedent.i, tour: t0.tour, joueur: t0.joueur, gravite, raisons });
+            }
+          }
+          if (!fin) precedent = { t, i, etat };
+        });
+        const principaux = signales.slice().sort((x, y) => y.gravite - x.gravite).slice(0, 8)
+          .sort((x, y) => x.tour - y.tour);
+        const scores = dossier.fin ? dossier.fin.scores : [];
+        const lignes = [`Partie — ${dossier.fin ? dossier.fin.tours : "?"} tours, `
+          + (dossier.joueurs || []).map((j, k) => `${j.nom} ${scores[k] ?? 0}`).join(" · ")];
+        principaux.forEach(s => lignes.push(`• Tour ${s.tour} : ${s.raisons.join(" ; ")}`));
+        if (!principaux.length) lignes.push("• Aucun moment ne se détache nettement.");
+        return { decisions: 0, signales: principaux, tousSignales: signales.length, resume: lignes.join("\n") };
+      }
+
       function defaitesAnalyser(dossier) {
+        if (dossier && dossier.type === "partie") return defaitesAnalyserPartie(dossier);
         const ia = dossier.ia, humain = dossier.humain;
         const tours = dossier.tours || [];
         const decisions = tours.map((t, i) => ({ t, i })).filter(x => x.t.ia && x.t.joueur === ia && x.t.decision);
@@ -34359,7 +34603,16 @@
           let gravite = 0;
 
           const prevu = d.noteRobuste ?? d.noteArrivee;
-          const constate = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          const noteDepartSuivante = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          /* La riposte prévue se note à la FIN du tour humain, l'humain encore
+             au trait. noteDepart se lit au début du tour suivant de l'IA, l'IA
+             au trait : l'évaluateur y prend l'IA pour celle qui vient de jouer
+             (lAdversaireJoue) et compte des menaces humaines qui ne seront
+             jamais jouées — jusqu'à −4 000 de périls fantômes par couronne au
+             sol. Comparer les deux grossissait la « menace non anticipée » :
+             défaite du 22/10, tour 3, −6 010 lus contre −2 010 réels. */
+          const constate = Number.isFinite(noteDepartSuivante)
+            ? defaitesNoteTraitHumain(B, ia, humain, noteDepartSuivante) : null;
           if (Number.isFinite(prevu) && Number.isFinite(constate)) {
             const surprise = prevu - constate;
             if (surprise >= DEFAITES_SEUILS.surprise) {
@@ -34367,10 +34620,11 @@
               gravite += surprise;
             }
           }
-          if (Number.isFinite(d.noteDepart) && Number.isFinite(constate)) {
-            const chute = d.noteDepart - constate;
+          if (Number.isFinite(d.noteDepart) && Number.isFinite(noteDepartSuivante)) {
+            // Deux débuts de tour de l'IA : même point de vue, comparables.
+            const chute = d.noteDepart - noteDepartSuivante;
             if (chute >= DEFAITES_SEUILS.bascule) {
-              raisons.push(`forte bascule (${d.noteDepart} → ${constate})`);
+              raisons.push(`forte bascule (${d.noteDepart} → ${noteDepartSuivante})`);
               gravite += chute / 2;
             }
           }
@@ -34453,15 +34707,15 @@
 
       function defaitesFermer(vainqueur) {
         const journal = defaitesJournal;
-        if (!journal || journal.etatRef !== state || !vainqueur) return null;
-        const humain = vainqueur.id;
-        const perdant = state.players.find(j => j.id !== humain);
-        if (vainqueur.isAI || !perdant || !perdant.isAI || perdant.aiDifficulty !== "expert") return null;
+        if (!journal || journal.etatRef !== state) return null;
+        const expert = defaitesEstDefaiteExpert(vainqueur);
+        const humain = expert ? vainqueur.id : null;
+        const perdant = expert ? state.players.find(j => j.id !== humain) : null;
         let cadre = null;
         try { cadre = serializeGameStateForSave(); } catch (erreur) { cadre = null; }
         const dossier = {
           jeu: "ILYOS",
-          type: "defaite-expert",
+          type: expert ? "defaite-expert" : "partie",
           schema: 1,
           id: journal.id,
           debut: journal.debut,
@@ -34470,7 +34724,7 @@
             dureeMin: Math.round((Date.now() - journal.debutMs) / 60000),
             tours: state.turn,
             manches: state.round,
-            vainqueur: humain,
+            vainqueur: vainqueur ? vainqueur.id : null,
             scores: state.players.map(j => j.score || 0)
           },
           version: journal.version,
@@ -34478,7 +34732,7 @@
           regles: journal.regles,
           joueurs: journal.joueurs,
           humain,
-          ia: perdant.id,
+          ia: perdant ? perdant.id : null,
           reprise: journal.reprise,
           origine: journal.origine,
           poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
@@ -34494,7 +34748,7 @@
       /** Appelé par showVictory / showEgalite (ui.js). */
       function defaitesFinPartie(vainqueur) {
         let dossier = null;
-        try { dossier = vainqueur ? defaitesFermer(vainqueur) : null; } catch (erreur) {
+        try { dossier = defaitesFermer(vainqueur); } catch (erreur) {
           console.warn("[ILYOS] journal des défaites : dossier non fermé", erreur);
         }
         defaitesDerniere = dossier;
@@ -34538,8 +34792,9 @@
         const tout = () => requete("readonly", m => m ? m.getAll() : [...memoire.values()]);
         const resume = d => ({
           id: d.id, date: d.fin.date, tours: d.fin.tours, dureeMin: d.fin.dureeMin,
-          scores: d.fin.scores, humain: d.humain, ia: d.ia,
+          scores: d.fin.scores, humain: d.humain, ia: d.ia, type: d.type || "defaite-expert",
           nomHumain: ((d.joueurs || [])[d.humain] || {}).nom || "Joueur",
+          noms: (d.joueurs || []).map(j => j.nom),
           epinglee: !!d.epinglee, signales: d.analyse ? d.analyse.signales.map(s => s.tour) : [],
           version: d.version
         });
@@ -34549,8 +34804,12 @@
             await requete("readwrite", m => m ? m.put(dossier) : memoire.set(dossier.id, dossier));
             // Au-delà du plafond, les plus anciennes NON épinglées partent.
             const toutes = (await tout()).sort((a, b) => String(a.fin.date).localeCompare(String(b.fin.date)));
-            let exces = toutes.length - DEFAITES_MAX;
-            for (const d of toutes) {
+            // Plafond par sorte : les parties ordinaires ne chassent pas les
+            // défaites de l'Expert, qui servent à régler l'IA.
+            const sorte = d => d.type === "partie" ? "partie" : "expert";
+            const memes = toutes.filter(d => sorte(d) === sorte(dossier));
+            let exces = memes.length - DEFAITES_MAX;
+            for (const d of memes) {
               if (exces <= 0) break;
               if (d.epinglee || d.id === dossier.id) continue;
               await this.supprimer(d.id);
@@ -34594,7 +34853,7 @@
       function defaitesExporter(dossier) {
         if (!dossier) return null;
         if (!dossier.analyse) dossier.analyse = defaitesAnalyser(dossier);
-        defaitesTelecharger(dossier, defaitesNomFichier("ilyos-defaite", dossier.fin.date));
+        defaitesTelecharger(dossier, defaitesNomFichier(dossier.type === "partie" ? "ilyos-partie" : "ilyos-defaite", dossier.fin.date));
         return dossier.analyse;
       }
 
@@ -34616,7 +34875,7 @@
         if (!tour || !tour.etat || !dossier.cadre) { showToast("Position indisponible."); return false; }
         if (dossier.regles && dossier.regles.grille) setBoardSize(dossier.regles.grille);
         const restaure = normalizeRestoredState(dossier.cadre);
-        if (!restaure) { showToast("Cette défaite n’est plus compatible avec le jeu."); return false; }
+        if (!restaure) { showToast("Cette partie n’est plus compatible avec le jeu."); return false; }
         stopTurnTimer();
         aiRunToken++;
         closeOnlineNetwork(false);
@@ -34659,29 +34918,50 @@
           .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
 
+      /* Onglet « Analyse » du bandeau de fin (fin-partie.js) et bouton
+         « Analyse partie » de sa rangée d'actions, pour toute partie suivie :
+         les moments clés, puis revoir la partie tour par tour dans la
+         visionneuse, l'exporter, ou ouvrir la bibliothèque. */
       function defaitesRendreVictoire(dossier, nombre = null) {
-        const carte = els.victoryModal && els.victoryModal.querySelector(".victory-card");
-        if (!carte) return;
-        let bloc = carte.querySelector(".defaite-ia");
-        if (!dossier) { if (bloc) bloc.remove(); return; }
+        const page = finPartiePage("analyse");
+        const bouton = els.victoryModal && els.victoryModal.querySelector(".fin2-analyse");
+        if (!page) return;
+        let bloc = page.querySelector(".defaite-ia");
+        if (!dossier) { if (bloc) bloc.remove(); finPartieAnalyseDisponible(false); return; }
+        finPartieAnalyseDisponible(true);
         if (!bloc) {
           bloc = document.createElement("div");
           bloc.className = "defaite-ia";
-          const actions = carte.querySelector(".modal-actions");
-          carte.insertBefore(bloc, actions || null);
+          page.appendChild(bloc);
         }
-        const signales = dossier.analyse ? dossier.analyse.signales.length : 0;
+        if (!dossier.analyse) {
+          try { dossier.analyse = defaitesAnalyser(dossier); } catch (erreur) { dossier.analyse = null; }
+        }
+        const analyse = dossier.analyse;
+        const expert = dossier.type !== "partie";
+        const moments = analyse && analyse.signales.length
+          ? `<ol class="fin2-moments">${analyse.signales.map(s => `<li><b>Tour ${s.tour}</b><span>${s.raisons.map(defaitesEchapper).join(" · ")}</span></li>`).join("")}</ol>`
+          : `<p class="fin2-moments-vide">Aucun moment ne se détache nettement : revois la partie tour par tour.</p>`;
         bloc.innerHTML = `
-          <button type="button" class="defaite-ia-analyser">🧠 Analyser cette défaite de l’IA</button>
-          <small class="defaite-ia-etat">${nombre === null
-            ? "Enregistrement dans la bibliothèque…"
-            : `Enregistrée dans la bibliothèque des défaites · ${signales} tour(s) à regarder`}</small>
-          <button type="button" class="secondary-btn defaite-ia-biblio">📚 Bibliothèque des défaites</button>
-          <pre class="defaite-ia-resume" hidden></pre>`;
-        bloc.querySelector(".defaite-ia-analyser").addEventListener("click", () => {
-          const analyse = defaitesExporter(dossier);
+          <div class="fin2-analyse-tete">
+            <b>${expert ? "Ce qui a fait perdre l’Expert" : "Les moments clés"}</b>
+            <small class="defaite-ia-etat">${nombre === null
+              ? "Enregistrement dans la bibliothèque…"
+              : `Enregistrée dans la bibliothèque des parties · ${analyse ? analyse.signales.length : 0} tour(s) à regarder`}</small>
+          </div>
+          ${moments}
+          <div class="fin2-analyse-actions">
+            <button type="button" class="fin2-btn fin2-btn-or defaite-ia-voir">👁 Revoir<span class="long"> la partie tour par tour</span></button>
+            <button type="button" class="fin2-btn defaite-ia-exporter">⬇ Exporter</button>
+            <button type="button" class="fin2-btn defaite-ia-biblio">📚 <span class="long">Bibliothèque</span><span class="court">Parties</span></button>
+          </div>
+          <pre class="defaite-ia-resume" hidden>${defaitesEchapper(analyse ? analyse.resume : "")}</pre>`;
+        if (bouton) bouton.onclick = () => finPartieOnglet("analyse");
+        bloc.querySelector(".defaite-ia-voir").addEventListener("click", () => defaitesVoir(dossier));
+        bloc.querySelector(".defaite-ia-exporter").addEventListener("click", () => {
+          const resultat = defaitesExporter(dossier);
           const resume = bloc.querySelector(".defaite-ia-resume");
-          if (analyse && resume) { resume.textContent = analyse.resume; resume.hidden = false; }
+          if (resultat && resume) { resume.textContent = resultat.resume; resume.hidden = false; }
         });
         bloc.querySelector(".defaite-ia-biblio").addEventListener("click", defaitesOuvrirBibliotheque);
       }
@@ -34696,10 +34976,10 @@
         const modal = document.createElement("div");
         modal.className = "defaites-biblio";
         modal.innerHTML = `<div class="modal-card defaites-biblio-carte">
-          <h2>📚 Défaites de l’IA Expert</h2>
-          <p class="defaites-biblio-aide">Chaque partie gagnée contre l’Expert est gardée ici
-            (${DEFAITES_MAX} au plus, sauf les épinglées). Exportez-en une, ou cochez-en plusieurs
-            pour un seul fichier.</p>
+          <h2>📚 Bibliothèque des parties</h2>
+          <p class="defaites-biblio-aide">Chaque partie terminée est gardée ici pour être revue tour par tour
+            (${DEFAITES_MAX} parties et ${DEFAITES_MAX} défaites de l’Expert au plus, sauf les épinglées).
+            Exportez-en une, ou cochez-en plusieurs pour un seul fichier.</p>
           <div class="defaites-biblio-liste">Chargement…</div>
           <div class="modal-actions">
             <button type="button" class="defaites-lot" data-defaites="lot" disabled>Exporter la sélection</button>
@@ -34713,15 +34993,15 @@
         const coches = () => [...modal.querySelectorAll(".defaites-choix:checked")].map(x => x.value);
         boutonLot.addEventListener("click", async () => {
           const n = await defaitesExporterLot(coches());
-          if (n) showToast(`${n} défaite(s) exportée(s) dans un seul fichier.`);
+          if (n) showToast(`${n} partie(s) exportée(s) dans un seul fichier.`);
         });
 
         const liste = modal.querySelector(".defaites-biblio-liste");
         const rendre = async () => {
           const entrees = await defaitesBiblio.lister();
           if (!entrees.length) {
-            liste.innerHTML = `<p class="defaites-vide">Aucune défaite enregistrée pour l’instant.
-              Battez l’Expert : la partie apparaîtra ici toute seule.</p>`;
+            liste.innerHTML = `<p class="defaites-vide">Aucune partie enregistrée pour l’instant.
+              Terminez une partie : elle apparaîtra ici toute seule.</p>`;
             boutonLot.disabled = true;
             return;
           }
@@ -34730,7 +35010,9 @@
             return `<div class="defaites-ligne" data-id="${defaitesEchapper(e.id)}">
               <label class="defaites-titre"><input type="checkbox" class="defaites-choix" value="${defaitesEchapper(e.id)}">
                 ${e.epinglee ? "📌 " : ""}${date.toLocaleDateString("fr-FR")} ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-                · ${defaitesEchapper(e.nomHumain)} ${e.scores[e.humain]}-${e.scores[e.ia]}
+                · ${e.type === "partie"
+                  ? (e.noms || []).map((n, k) => `${defaitesEchapper(n)} ${e.scores[k] ?? 0}`).join(" · ")
+                  : `${defaitesEchapper(e.nomHumain)} ${e.scores[e.humain]}-${e.scores[e.ia]} contre l’Expert`}
                 · ${e.tours} tours${e.dureeMin ? ` · ${e.dureeMin} min` : ""}
                 · ${e.signales.length} tour(s) signalé(s)</label>
               <div class="defaites-actions">
@@ -34750,7 +35032,7 @@
               const action = bouton.dataset.action;
               if (action === "exporter") { defaitesExporter(await defaitesBiblio.lire(id)); return; }
               if (action === "supprimer") {
-                if (!window.confirm("Supprimer cette défaite de la bibliothèque ?")) return;
+                if (!window.confirm("Supprimer cette partie de la bibliothèque ?")) return;
                 await defaitesBiblio.supprimer(id);
               } else if (action === "epingler") {
                 await defaitesBiblio.epingler(id, bouton.textContent === "Épingler");
@@ -34788,7 +35070,7 @@
             bouton.addEventListener("click", defaitesOuvrirBibliotheque);
             document.body.appendChild(bouton);
           }
-          bouton.textContent = `📚 Défaites de l’IA Expert (${entrees.length})`;
+          bouton.textContent = `📚 Parties enregistrées (${entrees.length})`;
         } catch (erreur) { /* accessoire : jamais bloquant */ }
       }
 
@@ -35759,6 +36041,9 @@
           : v.direct
           ? `<b>Partie IA contre IA — ${state && v.direct ? "en pause" : ""}</b>
              <small>${(d.joueurs || []).map((j, k) => `${defaitesEchapper(j.nom)} ${scores[k] ?? 0}`).join(" · ")} · tour ${d.fin.tours}</small>`
+          : d.humain === null || d.humain === undefined
+          ? `<b>Partie du ${date.toLocaleDateString("fr-FR")}</b>
+             <small>${(d.joueurs || []).map((j, k) => `${defaitesEchapper(j.nom || `J${k}`)} ${scores[k] ?? 0}`).join(" · ")} · ${d.fin.tours} tours</small>`
           : `<b>Partie du ${date.toLocaleDateString("fr-FR")}</b>
              <small>${defaitesEchapper(defaitesVueNom(d.humain))} ${scores[d.humain]}-${scores[d.ia]} IA Expert · ${d.fin.tours} tours</small>`;
         const traceNom = v.trace ? v.trace.nom : null;
@@ -35769,7 +36054,7 @@
             <button type="button" data-vue="fermer" aria-label="Fermer la visionneuse">✕</button>
           </header>
           <div class="dv-courbe-bloc">
-            <small class="dv-discret">Confiance ${d.ia !== null && d.ia !== undefined ? "de l’IA" : "de chaque IA"} au début de ses tours
+            <small class="dv-discret">Confiance ${d.ia !== null && d.ia !== undefined ? "de l’IA" : "de chaque camp, jugée par l’IA,"} au début de ses tours
               (au-dessus : elle pense mener) — cliquez un point. <span class="dv-leg-signale">●</span> tour signalé</small>
             ${defaitesVueCourbeSVG()}
           </div>
@@ -36653,6 +36938,10 @@
       const ROTATION_CIBLE_BALISES = 10;
       let rotationDemande = null;
       let rotationEnPreparation = null;
+      /* Demande de la dernière partie lancée : « Rejouer » la redépose
+         (diagnostics.js, replay), sans quoi la revanche repartait en partie
+         classique. */
+      let rotationDerniereDemande = null;
 
       function butBalises(source = state) {
         return source?.rotation?.but === "balises";
@@ -36721,6 +37010,7 @@
       const rotationStartLocalGameBase = startLocalGame;
       startLocalGame = function startLocalGameRotation() {
         rotationEnPreparation = rotationDemande;
+        rotationDerniereDemande = rotationDemande;
         rotationDemande = null;
         try {
           rotationStartLocalGameBase();
@@ -36728,6 +37018,11 @@
           rotationEnPreparation = null;
         }
       };
+
+      /** Rejouer : la même demande Rotation que la partie qui s'achève. */
+      function rotationRedemanderDerniere() {
+        rotationDemande = rotationDerniereDemande;
+      }
 
       const ROTATION_COUCHES = ["deckbuilding", "creatures"];
       /* Une demande valide : un but connu, des couches connues. Couronnes
@@ -45099,7 +45394,8 @@
         I: "Acte I · Les Voies éteintes",
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
-        CONFLUENCE: "Confluence"
+        CONFLUENCE: "Confluence",
+        IV: "Acte IV · Les Cimes"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -48969,15 +49265,24 @@
 
       /* Toutes les cartes en main d'emblée : c'est la relaxation décrite plus
          haut, seule façon d'explorer sans simuler les fins de tour. */
-      function puzzleSearchBuild(def) {
+      /* `serie` FIGE l'identité des Gardiens. puzzleBuildState numérote chaque
+         montage (pz1-100, pz2-100…) pour que le rendu ne confonde pas deux
+         énigmes ; mais le chercheur reconstruit le plateau à CHAQUE nœud et
+         rejoue des coups qui désignent les Gardiens par leur identifiant. Sans
+         ce gel, chaque reconstruction changeait les noms, tout rejeu au-delà
+         du premier coup échouait en silence, et la recherche concluait
+         « aucune solution » après une seule couche — y compris sur des
+         énigmes dont la solution de référence passe. */
+      function puzzleSearchBuild(def, serie = null) {
+        if (Number.isFinite(serie)) PUZZLE.serie = serie - 1;
         puzzleBuildState(def);
         const joueur = state.players[0];
         (joueur.deck || []).forEach(carte => joueur.hand.push({ ...carte, used: false }));
         joueur.deck = [];
       }
 
-      function puzzleSearchReplay(def, chemin) {
-        puzzleSearchBuild(def);
+      function puzzleSearchReplay(def, chemin, serie = null) {
+        puzzleSearchBuild(def, serie);
         for (const action of chemin) {
           if (!puzzleSearchApply(action)) return false;
         }
@@ -49008,7 +49313,14 @@
         const defAvant = PUZZLE.def;
         const depart = Date.now();
         const finAu = depart + secondesMax * 1000;
+        /* Présentation COUPÉE pendant toute la recherche, comme pour les
+           simulations du planner (withSimulatedState) : sans ce drapeau,
+           chaque coup essayé déclenchait sons, effets et synchronisation 3D,
+           et une poussée coûtait six millisecondes au lieu d'une fraction.
+           La recherche plafonnait alors à quelques nœuds par seconde. */
+        const simulationAvant = ilyosSimulationActive;
         try {
+          ilyosSimulationActive = true;
           PUZZLE.active = true;
           PUZZLE.def = def;
 
@@ -49037,6 +49349,7 @@
           };
 
           puzzleSearchBuild(def);
+          const serie = PUZZLE.serie;
           if (atteint()) return { id: def.id, cout: 0, chemin: [] };
           vus.add(strategicStateFingerprint());
           const coupsRacine = puzzleSearchActions().map(puzzleSearchLabel);
@@ -49057,7 +49370,7 @@
                     : `exploration interrompue à ${noeuds} nœuds`
                 };
               }
-              if (!puzzleSearchReplay(def, chemin)) continue;
+              if (!puzzleSearchReplay(def, chemin, serie)) continue;
 
               /* L'objectif se teste ICI, au dépilement, et non à la génération
                  des successeurs. Un successeur porte son coût TOTAL : en
@@ -49106,6 +49419,7 @@
         } catch (error) {
           return { id: def.id, error: `exception : ${error && error.message}` };
         } finally {
+          ilyosSimulationActive = simulationAvant;
           PUZZLE.active = actifAvant;
           PUZZLE.def = defAvant;
           state = etatReel;
@@ -49285,7 +49599,7 @@
           menuOpen: PUZZLE.menuOpen,
           /* Le déblocage linéaire est suspendu pendant le chantier des
              transitions. Exposé ici pour que le test du menu vérifie le
-             comportement RÉEL au lieu d'être assoupli : il exige les 22 cartes
+             comportement RÉEL au lieu d'être assoupli : il exige toutes les cartes
              ouvertes tant que ce drapeau tient, et le verrou linéaire dès
              qu'il retombe. */
           toutOuvert: PUZZLE_TOUT_OUVERT,
@@ -49328,7 +49642,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-deux énigmes, de la leçon de poussée à l'archipel des neuf
+         Vingt-cinq énigmes, de la leçon de poussée aux Cimes, au-delà des neuf
          mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
@@ -50721,6 +51035,207 @@
               { a: "PUSH", who: "D", on: [0, 1], force: 2 },
               { a: "MOVE", who: "D", to: [0, 1] }
             ]
+          ]
+        },
+        /* =================================================================
+           ACTE IV — LES CIMES
+
+           Après la Confluence, des énigmes d'un seul tour, longues et sans
+           marge, dont l'optimum est PROUVÉ par le chercheur (ILYOS_PUZZLE.solve
+           explore tout l'espace des coups sous le barème) et dont la solution
+           optimale est UNIQUE à l'ordre près des gestes gratuits. Aucune règle
+           nouvelle : seulement des usages que la campagne n'a jamais combinés.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           LA CHARNIÈRE GARDÉE
+
+           Le rival est assis sur le bout de la barre, et c'est exactement là
+           qu'il faut la faire pivoter : un Gardien sur le pivot ne bouge pas,
+           il ne gêne donc rien. Le chasser coûterait des cartes qui manqueront
+           au lancer.
+
+           La barre se dresse, le porteur y POSE la couronne au bout, puis va
+           s'asseoir au milieu en enjambant sa propre couronne ; la barre se
+           recouche, et les deux reviennent alignés, la couronne devant — à
+           quatre cases d'une terre que personne ne peut atteindre à pied. Le
+           second rival, collé au départ, n'est là que pour être poussé à tort.
+
+           Optimum 12 PROUVÉ (131 000 nœuds), solution unique. */
+        {
+          id: "p24-charniere-gardee",
+          acte: "IV",
+          principe: "TRACE",
+          avant: "Au-dessus de la Confluence, les Voies se resserrent.",
+          verite: "Un pivot occupé tourne quand même.",
+          title: "La charnière gardée",
+          tagline: "Il s'est assis sur la charnière. Laisse-le : elle tournera quand même.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [3, 3],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]],
+            { key: "BARRE", cells: [[3, 4], [3, 5], [3, 6]] },
+            [[3, 7]], [[4, 7]], [[5, 7]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 5, c: 7, crown: 1 },
+            { key: "H", p: 0, r: 3, c: 0 },
+            { key: "R1", p: 1, r: 0, c: 1 },
+            { key: "R2", p: 1, r: 3, c: 6 },
+            { key: "R3", p: 1, r: 4, c: 7 }
+          ],
+          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
+          par: 12,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La charnière a tourné",
+          winLine: "Il gardait le pivot. Un pivot ne bouge pas : il n'a rien gardé.",
+          failLine: "La barre pouvait tourner avec lui dessus.",
+          solution: [
+            { a: "MAGIC", island: "BARRE", pivot: [3, 6], turns: 1, direction: -1 },
+            { a: "DROP", who: "G", on: [5, 6] },
+            { a: "MOVE", who: "H", to: [2, 0] },
+            { a: "MOVE", who: "G", to: [4, 6] },
+            { a: "MAGIC", island: "BARRE", pivot: [3, 6], turns: 1, direction: 1 },
+            { a: "PUSH", who: "G", on: [3, 4], force: 4 },
+            { a: "PICKUP", who: "H", on: [3, 0] },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [0, 1], force: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           LE PASSAGER CLANDESTIN
+
+           Un rival barre la seule route, assis au pied de la barre qui porte
+           tout le puzzle. Le pousser jusqu'au vide coûterait quatre cartes ; on
+           ne le pousse que d'UNE case, sur la barre, et c'est la barre qui
+           l'emporte : retournée par son milieu, elle le dépose sur son autre
+           bout, qui deviendra justement le pivot du second retournement. Il
+           voyage, il ne gêne plus, et il sert de charnière.
+
+           Le porteur, lui, ne doit PAS monter avec la couronne : posée sur le
+           bout de la barre puis enjambée, elle voyage seule pendant que le
+           Gardien s'assoit au milieu. Le second retournement les dépose l'un
+           derrière l'autre, la couronne devant — juste ce qu'il faut pour la
+           lancer par-dessus le gouffre. Encore faut-il que le receveur ait
+           libéré la case d'arrivée.
+
+           Au nord, deux rivaux gardent le village. Celui de la rangée se jette
+           dans le vide en le poussant VERS le château, par-dessus le coin du
+           plateau ; le second ne tombe que poussé depuis le château lui-même.
+
+           Optimum 14 PROUVÉ (234 000 nœuds), solution unique. */
+        {
+          id: "p23-passager-clandestin",
+          acte: "IV",
+          principe: "TRACE",
+          verite: "Ce qui te barre la route peut aussi la porter.",
+          title: "Le passager clandestin",
+          tagline: "Il barre la seule route. La route, elle, peut l'emporter.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            /* Le nord : le village et sa rangée, toutes en pierres d'une case,
+               donc immobiles. */
+            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]],
+            /* La barre, seule pièce mobile du plateau. */
+            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
+            /* Le départ. */
+            [[7, 3]], [[8, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
+            { key: "H", p: 0, r: 0, c: 3 },
+            { key: "R1", p: 1, r: 1, c: 0 },
+            { key: "R2", p: 1, r: 0, c: 1 },
+            { key: "R3", p: 1, r: 7, c: 3 }
+          ],
+          /* Deux cartes de marge : de quoi tenter l'éjection directe du rival
+             de la route — qui ne laisse ensuite plus rien pour le village. */
+          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
+          par: 14,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Le passager est descendu",
+          winLine: "Il barrait la route ; la barre l'a emporté, et il a servi de charnière.",
+          failLine: "La route était là. Il fallait la faire tourner avec lui dessus.",
+          solution: [
+            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [7, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
+            { a: "DROP", who: "G", on: [6, 3] },
+            { a: "MOVE", who: "H", to: [0, 2] },
+            { a: "MOVE", who: "G", to: [5, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
+            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
+            { a: "PICKUP", who: "H", on: [0, 3] },
+            { a: "PUSH", who: "H", on: [0, 1], force: 2 },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           LE BÉLIER
+
+           Le même gouffre que le Passager clandestin, et une case de plus au
+           nord — ce qui change tout. Le receveur est au bout de la rangée, et
+           un rival dort sur la seule case où la couronne peut atterrir.
+
+           On le décale d'une case vers le château : la couronne se pose à sa
+           place. Mais il est maintenant entre elle et le village, et il n'y a
+           plus personne à l'ouest pour le pousser. Une couronne au sol se
+           POUSSE, et une poussée emporte toute la file : poussée vers l'ouest,
+           elle devient un bélier, chasse le rival par-dessus le coin du plateau
+           et s'arrête d'elle-même sur le château. Il ne reste qu'à la suivre.
+
+           Optimum 17 PROUVÉ (383 000 nœuds), solution unique. */
+        {
+          id: "p25-belier",
+          acte: "IV",
+          principe: "MESURE",
+          verite: "La lumière ne tombe jamais. Elle pousse.",
+          title: "Le bélier",
+          tagline: "Personne ne peut pousser le dernier rival. Sauf la couronne.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]], [[0, 4]],
+            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
+            [[7, 3]], [[8, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
+            { key: "H", p: 0, r: 0, c: 4 },
+            { key: "R1", p: 1, r: 1, c: 0 },
+            { key: "R2", p: 1, r: 0, c: 3 },
+            { key: "R3", p: 1, r: 7, c: 3 }
+          ],
+          /* Une seule carte de marge. */
+          hand: { MOVE: 8, PUSH: 8, MAGIC: 2 },
+          par: 17,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Le bélier a frappé",
+          winLine: "Une couronne poussée emporte la file entière. Même un rival.",
+          failLine: "Il restait un rival que personne ne pouvait atteindre.",
+          solution: [
+            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [7, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
+            { a: "DROP", who: "G", on: [6, 3] },
+            { a: "PUSH", who: "H", on: [0, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [5, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
+            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
+            { a: "PUSH", who: "H", on: [0, 3], force: 3 },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
           ]
         }
       );
@@ -54550,13 +55065,16 @@
          qui se compte, barre qui se remplit, détail en pastilles. Un niveau
          franchi fait briller l'emblème. */
       function progressionRendreVictoire(gain) {
-        const carte = els.victoryModal && els.victoryModal.querySelector(".victory-card");
+        // Onglet Progression du bandeau de fin (fin-partie.js), et son
+        // résumé dans la colonne du milieu de l'onglet Résumé.
+        const carte = finPartiePage("progression");
+        finPartieProgressionMini(gain);
         if (!carte) return;
         let bloc = carte.querySelector(".progression-gain");
         if (!gain) { if (bloc) bloc.remove(); return; }
         if (!bloc) {
           bloc = document.createElement("div");
-          carte.insertBefore(bloc, carte.querySelector(".modal-actions") || null);
+          carte.appendChild(bloc);
         }
         const { avant, apres, niveauxGagnes } = gain;
         const monte = niveauxGagnes > 0;
@@ -54746,6 +55264,413 @@
         cleJournal: PROGRESSION_JOURNAL_KEY,
         cle: PROGRESSION_STORAGE_KEY
       };
+      /* =====================================================================
+         FIN DE PARTIE ET COURONNE VALIDÉE
+
+         Fin de partie en deux temps (choix de Taekun, 2026-11-09) :
+         1. le TITRE plein écran — VICTOIRE, DÉFAITE ou MATCH NUL — pendant
+            deux secondes, sur le plateau assombri ;
+         2. le titre remonte en haut et le BANDEAU monte du bas : le plateau
+            reste visible au milieu. Le bandeau a des onglets : Résumé,
+            Statistiques, Progression, À découvrir et, après une victoire
+            contre l'Expert, Analyse.
+         Un clic ou une touche pendant le titre passe directement au bandeau.
+
+         Couronne validée : la couronne part du village (ou du gardien) et
+         rejoint sa place dans le HUD, qui éclate en lumière ; un bandeau
+         « Couronne validée » se pose sous le portrait du joueur.
+
+         Tout est en HTML/CSS, animé une seule fois puis retiré : aucune
+         animation infinie, aucun objet 3D ni shader (machines faibles). La
+         feuille : css/fin-partie.css.
+         ===================================================================== */
+
+      const FIN_TITRE_MS = 2000;
+      let finMinuteur = null;
+
+      function finEchapper(texte) {
+        return String(texte == null ? "" : texte)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
+      function finCouronneSvg(classe = "") {
+        return `<svg class="fin-couronne ${classe}" viewBox="0 0 36 25" aria-hidden="true"><path d="M3 18L6 6l9 7 4-10 6 10 7-7 1 12H3Z" fill="currentColor"/><path d="M5 20h27v3H5z" fill="currentColor"/></svg>`;
+      }
+
+      /* Portrait d'un joueur : le gardien choisi dans la collection, sinon
+         l'illustration du HUD (chevalier pour les places paires, mage sinon). */
+      function finPortrait(joueur) {
+        let image = null;
+        try { image = progressionPortraitDuJoueur(joueur); } catch (_) { }
+        if (image) return `./${image}`;
+        return joueur && joueur.id % 2 === 1 ? "./assets/hud/mage-portrait.png" : "./assets/hud/knight-portrait.png";
+      }
+
+      /* ---------- Ouverture ---------------------------------------------- */
+
+      /* ton : "victoire" | "defaite" | "egalite". */
+      function finPartieOuvrir({ ton, vainqueur = null, titre, kicker, texte }) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        clearTimeout(finMinuteur);
+        modal.classList.toggle("fin-defaite", ton === "defaite");
+        modal.classList.toggle("fin-egalite", ton === "egalite");
+        modal.classList.toggle("fin-victoire", ton === "victoire");
+        modal.style.setProperty("--fin-couleur", vainqueur?.color || "#e8c26a");
+
+        const kickerEl = modal.querySelector(".fin2-kicker");
+        if (kickerEl) kickerEl.textContent = kicker;
+        if (els.victoryTitle) els.victoryTitle.textContent = titre;
+        if (els.victoryText) els.victoryText.textContent = texte;
+
+        // Couronnes du vainqueur (aucune en Balises, où l'on compte des points).
+        const couronnes = modal.querySelector(".fin2-couronnes");
+        if (couronnes) {
+          const balises = typeof butBalises === "function" && butBalises();
+          const marquees = vainqueur ? Math.min(3, vainqueur.score || 0) : 0;
+          couronnes.innerHTML = balises ? ""
+            : [0, 1, 2].map(i => finCouronneSvg(i < marquees ? "pleine" : "vide")).join("");
+        }
+
+        finPartieRendreResume(vainqueur);
+        finPartieRendreDecouvrir();
+        finPartieOnglet("resume");
+        // Analyse : rouverte par defaitesRendreVictoire si la partie y a droit.
+        finPartieAnalyseDisponible(false);
+
+        modal.classList.remove("hidden", "fin2-bandeau-visible");
+        modal.classList.add("fin2-moment");
+        void modal.offsetWidth;
+        modal.classList.add("victory-visible");
+        finMinuteur = setTimeout(finPartieMontrerBandeau, FIN_TITRE_MS);
+      }
+
+      function finPartieMontrerBandeau() {
+        const modal = els.victoryModal;
+        if (!modal || modal.classList.contains("hidden")) return;
+        clearTimeout(finMinuteur);
+        modal.classList.remove("fin2-moment");
+        modal.classList.add("fin2-bandeau-visible");
+      }
+
+      function finPartieOnglet(nom) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.querySelectorAll("[data-fin-onglet]").forEach(bouton => {
+          const actif = bouton.dataset.finOnglet === nom;
+          bouton.classList.toggle("actif", actif);
+          bouton.setAttribute("aria-selected", String(actif));
+        });
+        modal.querySelectorAll("[data-fin-page]").forEach(page => {
+          page.hidden = page.dataset.finPage !== nom;
+        });
+      }
+
+      function finPartiePage(nom) {
+        return els.victoryModal?.querySelector(`[data-fin-page="${nom}"]`) || null;
+      }
+
+      function finPartieAnalyseDisponible(oui) {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        modal.querySelectorAll('[data-fin-onglet="analyse"], .fin2-analyse').forEach(n => { n.hidden = !oui; });
+      }
+
+      /* ---------- Résumé : le duel ---------------------------------------- */
+
+      function finPartieRendreResume(vainqueur) {
+        const zone = els.victoryModal?.querySelector(".fin2-duel");
+        if (!zone || !state) return;
+        const joueurs = state.players || [];
+        const portrait = (j, petit) => `<span class="fin2-portrait${petit ? " petit" : ""}${vainqueur && !memeEquipe(j.id, vainqueur.id) ? " vaincu" : ""}"
+          style="--c:${finEchapper(j.color || "#e8c26a")}"><img src="${finEchapper(finPortrait(j))}" alt=""></span>`;
+        let face;
+        if (joueurs.length === 2) {
+          const [a, b] = joueurs;
+          face = `<div class="fin2-face">
+            <div class="fin2-camp">${portrait(a)}<b style="color:${finEchapper(a.color)}">${finEchapper(a.name)}</b></div>
+            <div class="fin2-score">${a.score || 0}<span>–</span>${b.score || 0}</div>
+            <div class="fin2-camp">${portrait(b)}<b style="color:${finEchapper(b.color)}">${finEchapper(b.name)}</b></div>
+          </div>`;
+        } else {
+          face = `<div class="fin2-face fin2-face-equipe">${joueurs.map(j =>
+            `<div class="fin2-camp">${portrait(j, true)}<b style="color:${finEchapper(j.color)}">${finEchapper(j.name)}</b><em>${j.score || 0}</em></div>`).join("")}</div>`;
+        }
+        // Les chiffres du joueur de l'appareil (ou du vainqueur, sans humain).
+        let moi = null;
+        try { moi = progressionJoueurDeLAppareil(); } catch (_) { }
+        const sujet = moi || vainqueur || joueurs[0];
+        const stats = sujet ? statistiquesDuJoueur(sujet.id) || {} : {};
+        const iles = sujet && typeof ilesPoseesPar === "function" ? ilesPoseesPar(sujet.id) : 0;
+        zone.innerHTML = `<div class="fin2-entete">${joueurs.length === 2 ? "Le duel" : "La partie"}</div>${face}
+          <div class="fin2-chiffres">
+            <span><b>${state.turn}</b> tours</span>
+            <span><b>${stats.poussees || 0}</b> poussées</span>
+            <span><b>${stats.chutes || 0}</b> chutes</span>
+            <span><b>${iles}</b> îles</span>
+          </div>`;
+      }
+
+      /* Colonne « Progression » du résumé : le niveau et le gain en bref ; le
+         détail complet (saison, quêtes, déblocages) est dans son onglet. */
+      function finPartieProgressionMini(gain) {
+        const zone = els.victoryModal?.querySelector(".fin2-prog-mini");
+        if (!zone) return;
+        if (!gain) {
+          zone.hidden = true;
+          els.victoryModal.querySelector('[data-fin-onglet="progression"]')?.setAttribute("hidden", "");
+          return;
+        }
+        zone.hidden = false;
+        els.victoryModal.querySelector('[data-fin-onglet="progression"]')?.removeAttribute("hidden");
+        const { apres, niveauxGagnes } = gain;
+        const pct = Math.round(100 * apres.xpDansNiveau / apres.xpPourSuivant);
+        // Les quêtes accomplies par CETTE partie sont des lignes du gain.
+        const quete = (gain.lignes || []).find(ligne => ligne.quete) || null;
+        const debloque = (gain.debloques || [])[0] || null;
+        zone.innerHTML = `<div class="fin2-entete">Progression</div>
+          <div class="fin2-niv">
+            <span class="fin2-hex">${apres.niveau}</span>
+            <div class="fin2-niv-corps">
+              <div class="fin2-niv-tete"><b>${niveauxGagnes > 0 ? `Niveau ${apres.niveau} atteint&nbsp;!` : `Niveau ${apres.niveau}`}</b><span>+${gain.total} XP</span></div>
+              <div class="fin2-barre"><i style="width:${pct}%"></i></div>
+            </div>
+          </div>
+          ${quete ? `<div class="fin2-ligne-ok">✓ ${finEchapper(quete.libelle)} +${quete.xp}</div>` : ""}
+          ${debloque ? `<div class="fin2-ligne-ok">✦ Débloqué : ${finEchapper(debloque.nom)}</div>` : ""}`;
+      }
+
+      /* ---------- À découvrir --------------------------------------------- */
+
+      /* Tout ce que le jeu propose, fait ou non : le joueur voit l'étendue de
+         ce qui lui reste. Lu sur l'appareil (journal des parties, énigmes,
+         Boucles, tutoriels, collection). */
+      function finPartieADecouvrir() {
+        const liste = [];
+        let journal = [];
+        let profil = null;
+        try { journal = progressionJournalCharger().filter(e => e.type === "partie"); } catch (_) { }
+        try { profil = progressionCharger(); } catch (_) { }
+        const lire = cle => { try { return localStorage.getItem(cle); } catch (_) { return null; } };
+        const modes = new Set(journal.map(e => e.mode));
+        const plateaux = new Set(journal.map(e => e.plateau).filter(Boolean));
+        // La partie qui s'achève compte déjà.
+        if (state) {
+          try { modes.add(progressionModeDeLaPartie()); } catch (_) { }
+          plateaux.add(state.startingBoardMode);
+        }
+        const rotationJouee = journal.some(e => e.rotation) || !!state?.rotation;
+
+        liste.push({ ic: "⚡", nom: "Tutoriel", fait: lire("ilyos.quick.fait") === "1",
+          texte: "Toutes les règles en quelques minutes" });
+        liste.push({ ic: "▣", nom: "Immersion", fait: !!profil?.tutorielRecompense,
+          texte: "Le récit de l’Éveil des îles" });
+
+        let puzzles = 0;
+        try { puzzles = progressionPuzzlesResolus(); } catch (_) { }
+        const totalPuzzles = (typeof PUZZLES !== "undefined" && PUZZLES.length) || 0;
+        if (totalPuzzles) liste.push({ ic: "◈", nom: "Puzzles", fait: puzzles >= totalPuzzles,
+          texte: `${puzzles} sur ${totalPuzzles} résolus`, avance: puzzles / totalPuzzles });
+
+        let boucles = 0;
+        try { boucles = Object.keys(bouclesLireProgres()).length; } catch (_) { }
+        const totalBoucles = (typeof BOUCLES_NIVEAUX !== "undefined" && BOUCLES_NIVEAUX.length) || 0;
+        if (totalBoucles) liste.push({ ic: "↻", nom: "Boucles", fait: boucles >= totalBoucles,
+          texte: boucles ? `${boucles} sanctuaire${boucles > 1 ? "s" : ""} sur ${totalBoucles}` : "Jamais essayé",
+          avance: boucles / totalBoucles });
+
+        // Le premier niveau de CPU pas encore battu.
+        const battus = new Set(journal.filter(e => e.resultat === "victoire" && e.difficulte).map(e => e.difficulte));
+        if (profil?.exploits?.expert) battus.add("expert");
+        if (state && state.winner !== null && state.winner !== undefined) {
+          try {
+            const moi = progressionJoueurDeLAppareil();
+            const gagnant = state.players[state.winner];
+            if (moi && gagnant && memeEquipe(gagnant.id, moi.id)) {
+              state.players.filter(j => j.isAI && j.aiDifficulty).forEach(j => battus.add(j.aiDifficulty));
+            }
+          } catch (_) { }
+        }
+        const niveaux = ["easy", "normal", "hard", "expert"];
+        const prochain = niveaux.find(n => !battus.has(n));
+        liste.push({ ic: "⚔", nom: prochain ? `CPU ${PROGRESSION_DIFFICULTE_NOM[prochain]}` : "CPU Expert",
+          fait: !prochain, texte: prochain ? "Pas encore battu" : "Tous les niveaux battus",
+          avance: niveaux.filter(n => battus.has(n)).length / niveaux.length });
+
+        liste.push({ ic: "♙♙", nom: "Duel local", fait: modes.has("duel"), texte: "À deux sur le même écran" });
+        liste.push({ ic: "♜", nom: "2 contre 2", fait: modes.has("team"), texte: "En équipes, gardiens partagés" });
+        liste.push({ ic: "◎", nom: "En ligne", fait: modes.has("online"), texte: "Contre un ami à distance" });
+        liste.push({ ic: "⚖", nom: "Duels symétriques", fait: plateaux.has("symmetric"), texte: "Des terrains en miroir" });
+        liste.push({ ic: "✎", nom: "Personnalisé", fait: plateaux.has("custom"), texte: "Tes propres règles" });
+        liste.push({ ic: "✦", nom: "Rotation", fait: rotationJouee, texte: "Balises, créatures, paquet à bâtir" });
+
+        // Collection : les prochains objets à débloquer.
+        try {
+          if (profil) {
+            const aVenir = [];
+            progressionVueCollection(profil).forEach(categorie => categorie.objets.forEach(objet => {
+              if (!objet.debloque && !objet.saison) aVenir.push({ ...objet, categorie: categorie.nom });
+            }));
+            aVenir.sort((a, b) => (a.cible || 0) - (b.cible || 0) || String(a.texte).localeCompare(String(b.texte)));
+            aVenir.slice(0, 2).forEach(objet => {
+              const source = progressionObjet(PROGRESSION_COLLECTION.find(c => c.nom === objet.categorie)?.cle, objet.id);
+              liste.push({ ic: "✧", image: source?.portrait || source?.image || null, nom: objet.nom,
+                fait: false, texte: `${objet.categorie} · ${objet.texte}`, collection: true });
+            });
+          }
+        } catch (_) { }
+        return liste;
+      }
+
+      function finTuile(t) {
+        const icone = t.image
+          ? `<span class="fin2-ic" style="background-image:url('./${finEchapper(t.image)}')"></span>`
+          : `<span class="fin2-ic">${finEchapper(t.ic)}</span>`;
+        return `<li class="fin2-tuile${t.fait ? " faite" : ""}">${icone}<span><b>${finEchapper(t.nom)}</b><small>${t.fait ? "✓ " : ""}${finEchapper(t.texte)}</small></span></li>`;
+      }
+
+      function finPartieRendreDecouvrir() {
+        const liste = finPartieADecouvrir();
+        const restants = liste.filter(t => !t.fait);
+        const mini = els.victoryModal?.querySelector(".fin2-decouvrir-mini");
+        if (mini) {
+          mini.innerHTML = `<div class="fin2-entete">Encore à découvrir</div>
+            <ul class="fin2-tuiles">${restants.slice(0, 4).map(finTuile).join("")}</ul>`;
+          mini.hidden = !restants.length;
+        }
+        const page = finPartiePage("decouvrir");
+        if (page) {
+          const modes = liste.filter(t => !t.collection);
+          const faits = modes.filter(t => t.fait).length;
+          page.innerHTML = `<div class="fin2-explore">
+              <b>Tu as exploré ${faits} sur ${modes.length}</b>
+              <span class="fin2-barre"><i style="width:${Math.round(100 * faits / Math.max(1, modes.length))}%"></i></span>
+            </div>
+            <ul class="fin2-tuiles fin2-tuiles-toutes">${[...restants, ...liste.filter(t => t.fait)].map(finTuile).join("")}</ul>`;
+        }
+      }
+
+      /* ---------- Couronne validée ----------------------------------------- */
+
+      /* Appelée par scoreCrownForPlayer (ui.js) après le point. `char` peut
+         manquer (sortie, banc) : la couronne part alors du village. */
+      function couronneCelebrer(player, char) {
+        if (ilyosSimulationActive || !player || !state) return false;
+        if (typeof butBalises === "function" && butBalises()) return false;
+        try {
+          const score = Math.min(3, player.score || 0);
+          const gagnante = score >= 3;
+          const reduit = (() => { try { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches; } catch (_) { return false; } })();
+
+          // Côté du HUD qui porte ce joueur (son nom à gauche ou à droite).
+          const hud = document.getElementById("ilyosHudOrganicV2");
+          const nomGauche = (document.getElementById("ov2LeftName")?.textContent || "").trim();
+          const cote = nomGauche && nomGauche === String(player.name).trim() ? "gauche"
+            : ((document.getElementById("ov2RightName")?.textContent || "").trim() === String(player.name).trim() ? "droite" : null);
+          const rangee = cote ? document.getElementById(cote === "gauche" ? "ov2LeftScore" : "ov2RightScore") : null;
+          const emplacement = rangee?.children?.[score - 1] || rangee || null;
+          const cible = emplacement?.getBoundingClientRect?.();
+          const arrivee = cible && cible.width
+            ? { x: cible.left + cible.width / 2, y: cible.top + cible.height / 2 }
+            : { x: innerWidth / 2, y: 60 };
+
+          // Départ : le gardien, sinon la case du village, projetés à l'écran.
+          let depart = { x: innerWidth / 2, y: innerHeight * .55 };
+          const caseDepart = char || villagesForPlayer(player)?.[0] || player.village;
+          if (caseDepart && kaykit3D?.camera && isKayKitBoardActive() && typeof kaykitCellPosition === "function") {
+            const p = kaykitCellPosition(caseDepart.r, caseDepart.c, kaykitCellSurfaceY(caseDepart.r, caseDepart.c) + .6);
+            const v = new THREE.Vector3(p.x, p.y, p.z).project(kaykit3D.camera);
+            const rect = kaykit3D.renderer?.domElement?.getBoundingClientRect?.() || { left: 0, top: 0, width: innerWidth, height: innerHeight };
+            if (Number.isFinite(v.x) && v.z < 1) {
+              depart = { x: rect.left + (v.x + 1) / 2 * rect.width, y: rect.top + (1 - v.y) / 2 * rect.height };
+            }
+          }
+
+          document.querySelector(".cv-couche")?.remove();
+          const couche = document.createElement("div");
+          couche.className = `cv-couche${cote ? ` cv-${cote}` : ""}`;
+          couche.setAttribute("aria-hidden", "true");
+          couche.style.setProperty("--cv-couleur", player.color || "#e8c26a");
+          const etincelles = reduit ? "" : Array.from({ length: 14 }, (_, i) =>
+            `<i style="--a:${Math.round(i * 25.7) + (i % 2) * 9}deg;--d:${52 + (i % 3) * 22}px"></i>`).join("");
+          couche.innerHTML = `
+            <div class="cv-voile"></div>
+            ${reduit ? "" : `<div class="cv-vol">${finCouronneSvg("pleine")}</div>`}
+            <div class="cv-eclat" style="left:${arrivee.x}px;top:${arrivee.y}px">
+              <span class="cv-rayons"></span><span class="cv-anneau"></span><span class="cv-etincelles">${etincelles}</span>
+            </div>
+            ${gagnante ? "" : `<div class="cv-bandeau">
+              <div class="cv-rang">${[0, 1, 2].map(i => finCouronneSvg(i < score - 1 ? "pleine" : i === score - 1 ? "pleine neuve" : "vide")).join("")}</div>
+              <div><b>Couronne validée</b><small>${finEchapper(player.name)} · ${score === 2 ? "balle de match" : `${score} / 3`}</small></div>
+            </div>`}`;
+          document.body.appendChild(couche);
+          // Le bandeau se pose sous le côté du HUD de ce joueur.
+          const bandeau = couche.querySelector(".cv-bandeau");
+          if (bandeau) {
+            const flanc = cote && hud?.querySelector(cote === "gauche" ? ".ov2-left" : ".ov2-right")?.getBoundingClientRect();
+            if (flanc && flanc.height) {
+              bandeau.style.top = `${Math.round(flanc.bottom + 12)}px`;
+              if (cote === "gauche") bandeau.style.left = `${Math.round(Math.max(12, flanc.left + 96))}px`;
+              else bandeau.style.right = `${Math.round(Math.max(12, innerWidth - flanc.right + 96))}px`;
+            } else {
+              bandeau.style.top = "96px";
+              bandeau.classList.add("cv-centre");
+            }
+          }
+
+          const vol = couche.querySelector(".cv-vol");
+          const eclater = () => {
+            couche.classList.add("cv-arrivee");
+            emplacement?.classList?.add?.("cv-slot-allume");
+            setTimeout(() => emplacement?.classList?.remove?.("cv-slot-allume"), 900);
+          };
+          if (vol && vol.animate) {
+            const dx = arrivee.x - depart.x, dy = arrivee.y - depart.y;
+            // Arc : la couronne monte d'abord, puis file vers le HUD.
+            const milieu = { x: depart.x + dx * .35, y: Math.min(depart.y, arrivee.y) + dy * .1 - 120 };
+            vol.style.left = "0px"; vol.style.top = "0px";
+            const pos = (p, s, o) => ({ transform: `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) scale(${s})`, opacity: o });
+            const animation = vol.animate([
+              { ...pos(depart, .3, 0), offset: 0 },
+              { ...pos({ x: depart.x, y: depart.y - 40 }, 1.7, 1), offset: .22 },
+              { ...pos(milieu, 1.4, 1), offset: .55 },
+              { ...pos(arrivee, .7, 1), offset: 1 }
+            ], { duration: 1050, easing: "cubic-bezier(.45,0,.3,1)", fill: "forwards" });
+            animation.onfinish = () => { vol.remove(); eclater(); };
+          } else {
+            setTimeout(eclater, 200);
+          }
+          setTimeout(() => couche.classList.add("cv-sortie"), gagnante ? 1700 : 2900);
+          setTimeout(() => couche.remove(), gagnante ? 2100 : 3400);
+          // Le bandeau (ou, pour la couronne gagnante, l'écran de fin) dit
+          // déjà tout : l'appelant peut taire sa notification.
+          return true;
+        } catch (erreur) {
+          console.warn("[ILYOS] couronne validée", erreur);
+        }
+        return false;
+      }
+
+      /* ---------- Branchements --------------------------------------------- */
+
+      (function finPartieBrancher() {
+        const modal = els.victoryModal;
+        if (!modal) return;
+        /* Le HUD de jeu s'efface tant que l'écran de fin est ouvert. L'écran
+           est fermé à plusieurs endroits (Rejouer, Menu, bibliothèque…) par
+           la classe hidden : on suit cette classe plutôt que chaque appel. */
+        const suivre = () => document.body.classList.toggle("fin2-ouverte", !modal.classList.contains("hidden"));
+        new MutationObserver(suivre).observe(modal, { attributes: true, attributeFilter: ["class"] });
+        suivre();
+        modal.addEventListener("click", evenement => {
+          const onglet = evenement.target.closest?.("[data-fin-onglet]");
+          if (onglet) { finPartieOnglet(onglet.dataset.finOnglet); return; }
+          if (modal.classList.contains("fin2-moment")) finPartieMontrerBandeau();
+        });
+        document.addEventListener("keydown", () => {
+          if (modal.classList.contains("fin2-moment") && !modal.classList.contains("hidden")) finPartieMontrerBandeau();
+        }, true);
+      })();
       /* ILYOS — Manette (Gamepad API native)
 
          Couche d'entree uniquement : aucune regle de jeu n'est redefinie ici.
@@ -57009,8 +57934,29 @@
           renderSetupFields();
           return;
         }
-        if (state && !state.tutorial && !state.puzzle) restaurerReglagesPartie(state);
+        const precedente = state && !state.tutorial && !state.puzzle ? state : null;
+        if (precedente) restaurerReglagesPartie(precedente);
+        rotationRedemanderDerniere();
         startGame();
+        if (precedente) reprendreMiseEnPlace(precedente);
+      }
+
+      /* Duel symétrique et Personnalisé : la partie s'ouvre sur le choix du
+         terrain. « Rejouer » le passe et reprend le choix de la partie qui
+         s'achève — même setup, mêmes options (les champs de l'écran de choix
+         gardent leurs valeurs, et le terrain du Personnalisé vit dans
+         MENU_DUEL). */
+      function reprendreMiseEnPlace(partie) {
+        if (!state || state.onlineMode || !state.setupSelectionPending) return;
+        if (state.startingBoardMode === "symmetric") {
+          const id = partie.startingBoardPreset;
+          if (!id || !SYMMETRIC_DUEL_SETUPS[id] || !els.symmetricSetupSelect) return;
+          if (![...els.symmetricSetupSelect.options].some(option => option.value === id)) return;
+          els.symmetricSetupSelect.value = id;
+        } else if (state.startingBoardMode !== "custom") {
+          return;
+        }
+        confirmSymmetricSetup();
       }
 
       /* « Rejouer » relance la MÊME partie : mêmes joueurs, même difficulté,

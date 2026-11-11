@@ -118,6 +118,8 @@ test('une partie solo gagnée rapporte de l’XP, affichée et enregistrée', as
   const humain = await page.evaluate(() => window.ILYOS_TEST.joueurs().find(j => !j.ia).id);
   await page.evaluate(id => { for (let i = 0; i < 3; i++) window.ILYOS_TEST.marquer(id); }, humain);
 
+  // Écran de fin : le détail de la progression est dans son onglet.
+  await page.locator('#victoryModal [data-fin-onglet="progression"]').click({ timeout: 20000 });
   const bloc = page.locator('#victoryModal .progression-gain');
   await expect(bloc).toBeVisible({ timeout: 20000 });
   // Partie de moins de 4 manches : (50 + 50) × 0,5, puis +100 pour la

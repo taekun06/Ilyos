@@ -36,15 +36,25 @@
       let defaitesJournal = null;
       let defaitesDerniere = null;
 
-      /* Une partie compte si un humain y affronte un Expert, en local, hors
-         tutoriel, puzzle, simulation et parties automatiques. */
+      /* Toute partie locale où joue un humain est suivie : « Analyse partie »
+         (écran de fin) existe pour chacune, pas seulement contre l'Expert
+         (demande de Taekun, 2026-11-09). Hors ligne, tutoriel, puzzle,
+         simulation et parties automatiques. */
       function defaitesPartieSuivie() {
         if (!state || state.onlineMode || state.tutorial || state.puzzle) return false;
         if (typeof ilyosSimulationActive !== "undefined" && ilyosSimulationActive) return false;
         try { if (ILYOS_AUTOPLAY && ILYOS_AUTOPLAY.active) return false; } catch (erreur) { /* harnais absent */ }
         const joueurs = state.players || [];
-        if (joueurs.length !== 2) return false;
-        return joueurs.some(j => !j.isAI) && joueurs.some(j => j.isAI && j.aiDifficulty === "expert");
+        return joueurs.length >= 2 && joueurs.some(j => !j.isAI);
+      }
+
+      /* Défaite de l'Expert (humain vainqueur d'un Expert, en duel) : le
+         dossier historique, que l'analyse de l'IA sait lire. Toute autre
+         partie est un dossier « partie ». */
+      function defaitesEstDefaiteExpert(vainqueur) {
+        if (!state || !vainqueur || vainqueur.isAI || state.players.length !== 2) return false;
+        const perdant = state.players.find(j => j.id !== vainqueur.id);
+        return !!perdant && perdant.isAI && perdant.aiDifficulty === "expert";
       }
 
       function defaitesRegles() {
@@ -163,7 +173,74 @@
         return Math.min(...cellules.map(([vr, vc]) => Math.abs(vr - r) + Math.abs(vc - c)));
       }
 
+      /* Note de l'IA sur une position, l'humain au trait : le point de vue de
+         la riposte prévue. Repli sur la note enregistrée si l'état manque. */
+      function defaitesNoteTraitHumain(etat, ia, humain, repli) {
+        if (!etat || !Array.isArray(etat.players)) return repli;
+        try {
+          const copie = structuredClone(etat);
+          copie.currentPlayer = humain;
+          return Math.round(withSimulatedState(copie, () => evaluateStrategicState(ia)));
+        } catch (erreur) {
+          return repli;
+        }
+      }
+
+      /* Partie quelconque : les moments clés lus dans les positions de début
+         de tour — couronnes validées, gardiens perdus, couronnes ramassées ou
+         volées. Aucun jugement d'IA ici : la visionneuse le donne, tour par
+         tour, à qui le demande. */
+      function defaitesAnalyserPartie(dossier) {
+        const tours = dossier.tours || [];
+        const nom = j => ((dossier.joueurs || [])[j] || {}).nom || `Joueur ${j + 1}`;
+        const signales = [];
+        let precedent = null;
+        const porteurs = etat => new Map([etat.artifact, etat.secondArtifact]
+          .filter(a => a && a.active && a.carrierId)
+          .map(a => [a.carrierId, ((etat.characters || []).find(g => g.id === a.carrierId) || {}).player]));
+        const etats = tours.map((t, i) => ({ t, i, etat: defaitesLire(t.etat) })).filter(x => x.etat);
+        etats.push({ t: { tour: dossier.fin ? dossier.fin.tours : null }, i: tours.length - 1, etat: defaitesLire(dossier.etatFinal), fin: true });
+        etats.forEach(({ t, i, etat, fin }) => {
+          if (!etat) return;
+          if (precedent) {
+            const A = precedent.etat, raisons = [];
+            let gravite = 0;
+            (etat.players || []).forEach((j, k) => {
+              const avant = ((A.players || [])[k] || {}).score || 0, apres = j.score || 0;
+              if (apres > avant) { raisons.push(`${nom(k)} valide une couronne (${apres})`); gravite += 3000; }
+            });
+            const ids = new Set((etat.characters || []).map(g => g.id));
+            const perdus = {};
+            (A.characters || []).forEach(g => { if (!ids.has(g.id)) perdus[g.player] = (perdus[g.player] || 0) + 1; });
+            Object.entries(perdus).forEach(([k, n]) => {
+              raisons.push(`${nom(Number(k))} perd ${n} gardien${n > 1 ? "s" : ""}`);
+              gravite += 900 * n;
+            });
+            const pA = porteurs(A), pB = porteurs(etat);
+            pB.forEach((camp, id) => {
+              if (camp === undefined) return;
+              const avant = [...pA.values()].includes(camp);
+              if (!avant) { raisons.push(`${nom(camp)} prend une couronne`); gravite += 600; }
+            });
+            if (raisons.length) {
+              const t0 = precedent.t;
+              signales.push({ index: precedent.i, tour: t0.tour, joueur: t0.joueur, gravite, raisons });
+            }
+          }
+          if (!fin) precedent = { t, i, etat };
+        });
+        const principaux = signales.slice().sort((x, y) => y.gravite - x.gravite).slice(0, 8)
+          .sort((x, y) => x.tour - y.tour);
+        const scores = dossier.fin ? dossier.fin.scores : [];
+        const lignes = [`Partie — ${dossier.fin ? dossier.fin.tours : "?"} tours, `
+          + (dossier.joueurs || []).map((j, k) => `${j.nom} ${scores[k] ?? 0}`).join(" · ")];
+        principaux.forEach(s => lignes.push(`• Tour ${s.tour} : ${s.raisons.join(" ; ")}`));
+        if (!principaux.length) lignes.push("• Aucun moment ne se détache nettement.");
+        return { decisions: 0, signales: principaux, tousSignales: signales.length, resume: lignes.join("\n") };
+      }
+
       function defaitesAnalyser(dossier) {
+        if (dossier && dossier.type === "partie") return defaitesAnalyserPartie(dossier);
         const ia = dossier.ia, humain = dossier.humain;
         const tours = dossier.tours || [];
         const decisions = tours.map((t, i) => ({ t, i })).filter(x => x.t.ia && x.t.joueur === ia && x.t.decision);
@@ -179,7 +256,16 @@
           let gravite = 0;
 
           const prevu = d.noteRobuste ?? d.noteArrivee;
-          const constate = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          const noteDepartSuivante = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          /* La riposte prévue se note à la FIN du tour humain, l'humain encore
+             au trait. noteDepart se lit au début du tour suivant de l'IA, l'IA
+             au trait : l'évaluateur y prend l'IA pour celle qui vient de jouer
+             (lAdversaireJoue) et compte des menaces humaines qui ne seront
+             jamais jouées — jusqu'à −4 000 de périls fantômes par couronne au
+             sol. Comparer les deux grossissait la « menace non anticipée » :
+             défaite du 22/10, tour 3, −6 010 lus contre −2 010 réels. */
+          const constate = Number.isFinite(noteDepartSuivante)
+            ? defaitesNoteTraitHumain(B, ia, humain, noteDepartSuivante) : null;
           if (Number.isFinite(prevu) && Number.isFinite(constate)) {
             const surprise = prevu - constate;
             if (surprise >= DEFAITES_SEUILS.surprise) {
@@ -187,10 +273,11 @@
               gravite += surprise;
             }
           }
-          if (Number.isFinite(d.noteDepart) && Number.isFinite(constate)) {
-            const chute = d.noteDepart - constate;
+          if (Number.isFinite(d.noteDepart) && Number.isFinite(noteDepartSuivante)) {
+            // Deux débuts de tour de l'IA : même point de vue, comparables.
+            const chute = d.noteDepart - noteDepartSuivante;
             if (chute >= DEFAITES_SEUILS.bascule) {
-              raisons.push(`forte bascule (${d.noteDepart} → ${constate})`);
+              raisons.push(`forte bascule (${d.noteDepart} → ${noteDepartSuivante})`);
               gravite += chute / 2;
             }
           }
@@ -273,15 +360,15 @@
 
       function defaitesFermer(vainqueur) {
         const journal = defaitesJournal;
-        if (!journal || journal.etatRef !== state || !vainqueur) return null;
-        const humain = vainqueur.id;
-        const perdant = state.players.find(j => j.id !== humain);
-        if (vainqueur.isAI || !perdant || !perdant.isAI || perdant.aiDifficulty !== "expert") return null;
+        if (!journal || journal.etatRef !== state) return null;
+        const expert = defaitesEstDefaiteExpert(vainqueur);
+        const humain = expert ? vainqueur.id : null;
+        const perdant = expert ? state.players.find(j => j.id !== humain) : null;
         let cadre = null;
         try { cadre = serializeGameStateForSave(); } catch (erreur) { cadre = null; }
         const dossier = {
           jeu: "ILYOS",
-          type: "defaite-expert",
+          type: expert ? "defaite-expert" : "partie",
           schema: 1,
           id: journal.id,
           debut: journal.debut,
@@ -290,7 +377,7 @@
             dureeMin: Math.round((Date.now() - journal.debutMs) / 60000),
             tours: state.turn,
             manches: state.round,
-            vainqueur: humain,
+            vainqueur: vainqueur ? vainqueur.id : null,
             scores: state.players.map(j => j.score || 0)
           },
           version: journal.version,
@@ -298,7 +385,7 @@
           regles: journal.regles,
           joueurs: journal.joueurs,
           humain,
-          ia: perdant.id,
+          ia: perdant ? perdant.id : null,
           reprise: journal.reprise,
           origine: journal.origine,
           poids: typeof PLAN_POIDS === "object" ? { ...PLAN_POIDS } : null,
@@ -314,7 +401,7 @@
       /** Appelé par showVictory / showEgalite (ui.js). */
       function defaitesFinPartie(vainqueur) {
         let dossier = null;
-        try { dossier = vainqueur ? defaitesFermer(vainqueur) : null; } catch (erreur) {
+        try { dossier = defaitesFermer(vainqueur); } catch (erreur) {
           console.warn("[ILYOS] journal des défaites : dossier non fermé", erreur);
         }
         defaitesDerniere = dossier;
@@ -358,8 +445,9 @@
         const tout = () => requete("readonly", m => m ? m.getAll() : [...memoire.values()]);
         const resume = d => ({
           id: d.id, date: d.fin.date, tours: d.fin.tours, dureeMin: d.fin.dureeMin,
-          scores: d.fin.scores, humain: d.humain, ia: d.ia,
+          scores: d.fin.scores, humain: d.humain, ia: d.ia, type: d.type || "defaite-expert",
           nomHumain: ((d.joueurs || [])[d.humain] || {}).nom || "Joueur",
+          noms: (d.joueurs || []).map(j => j.nom),
           epinglee: !!d.epinglee, signales: d.analyse ? d.analyse.signales.map(s => s.tour) : [],
           version: d.version
         });
@@ -369,8 +457,12 @@
             await requete("readwrite", m => m ? m.put(dossier) : memoire.set(dossier.id, dossier));
             // Au-delà du plafond, les plus anciennes NON épinglées partent.
             const toutes = (await tout()).sort((a, b) => String(a.fin.date).localeCompare(String(b.fin.date)));
-            let exces = toutes.length - DEFAITES_MAX;
-            for (const d of toutes) {
+            // Plafond par sorte : les parties ordinaires ne chassent pas les
+            // défaites de l'Expert, qui servent à régler l'IA.
+            const sorte = d => d.type === "partie" ? "partie" : "expert";
+            const memes = toutes.filter(d => sorte(d) === sorte(dossier));
+            let exces = memes.length - DEFAITES_MAX;
+            for (const d of memes) {
               if (exces <= 0) break;
               if (d.epinglee || d.id === dossier.id) continue;
               await this.supprimer(d.id);
@@ -414,7 +506,7 @@
       function defaitesExporter(dossier) {
         if (!dossier) return null;
         if (!dossier.analyse) dossier.analyse = defaitesAnalyser(dossier);
-        defaitesTelecharger(dossier, defaitesNomFichier("ilyos-defaite", dossier.fin.date));
+        defaitesTelecharger(dossier, defaitesNomFichier(dossier.type === "partie" ? "ilyos-partie" : "ilyos-defaite", dossier.fin.date));
         return dossier.analyse;
       }
 
@@ -436,7 +528,7 @@
         if (!tour || !tour.etat || !dossier.cadre) { showToast("Position indisponible."); return false; }
         if (dossier.regles && dossier.regles.grille) setBoardSize(dossier.regles.grille);
         const restaure = normalizeRestoredState(dossier.cadre);
-        if (!restaure) { showToast("Cette défaite n’est plus compatible avec le jeu."); return false; }
+        if (!restaure) { showToast("Cette partie n’est plus compatible avec le jeu."); return false; }
         stopTurnTimer();
         aiRunToken++;
         closeOnlineNetwork(false);
@@ -479,29 +571,50 @@
           .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
 
+      /* Onglet « Analyse » du bandeau de fin (fin-partie.js) et bouton
+         « Analyse partie » de sa rangée d'actions, pour toute partie suivie :
+         les moments clés, puis revoir la partie tour par tour dans la
+         visionneuse, l'exporter, ou ouvrir la bibliothèque. */
       function defaitesRendreVictoire(dossier, nombre = null) {
-        const carte = els.victoryModal && els.victoryModal.querySelector(".victory-card");
-        if (!carte) return;
-        let bloc = carte.querySelector(".defaite-ia");
-        if (!dossier) { if (bloc) bloc.remove(); return; }
+        const page = finPartiePage("analyse");
+        const bouton = els.victoryModal && els.victoryModal.querySelector(".fin2-analyse");
+        if (!page) return;
+        let bloc = page.querySelector(".defaite-ia");
+        if (!dossier) { if (bloc) bloc.remove(); finPartieAnalyseDisponible(false); return; }
+        finPartieAnalyseDisponible(true);
         if (!bloc) {
           bloc = document.createElement("div");
           bloc.className = "defaite-ia";
-          const actions = carte.querySelector(".modal-actions");
-          carte.insertBefore(bloc, actions || null);
+          page.appendChild(bloc);
         }
-        const signales = dossier.analyse ? dossier.analyse.signales.length : 0;
+        if (!dossier.analyse) {
+          try { dossier.analyse = defaitesAnalyser(dossier); } catch (erreur) { dossier.analyse = null; }
+        }
+        const analyse = dossier.analyse;
+        const expert = dossier.type !== "partie";
+        const moments = analyse && analyse.signales.length
+          ? `<ol class="fin2-moments">${analyse.signales.map(s => `<li><b>Tour ${s.tour}</b><span>${s.raisons.map(defaitesEchapper).join(" · ")}</span></li>`).join("")}</ol>`
+          : `<p class="fin2-moments-vide">Aucun moment ne se détache nettement : revois la partie tour par tour.</p>`;
         bloc.innerHTML = `
-          <button type="button" class="defaite-ia-analyser">🧠 Analyser cette défaite de l’IA</button>
-          <small class="defaite-ia-etat">${nombre === null
-            ? "Enregistrement dans la bibliothèque…"
-            : `Enregistrée dans la bibliothèque des défaites · ${signales} tour(s) à regarder`}</small>
-          <button type="button" class="secondary-btn defaite-ia-biblio">📚 Bibliothèque des défaites</button>
-          <pre class="defaite-ia-resume" hidden></pre>`;
-        bloc.querySelector(".defaite-ia-analyser").addEventListener("click", () => {
-          const analyse = defaitesExporter(dossier);
+          <div class="fin2-analyse-tete">
+            <b>${expert ? "Ce qui a fait perdre l’Expert" : "Les moments clés"}</b>
+            <small class="defaite-ia-etat">${nombre === null
+              ? "Enregistrement dans la bibliothèque…"
+              : `Enregistrée dans la bibliothèque des parties · ${analyse ? analyse.signales.length : 0} tour(s) à regarder`}</small>
+          </div>
+          ${moments}
+          <div class="fin2-analyse-actions">
+            <button type="button" class="fin2-btn fin2-btn-or defaite-ia-voir">👁 Revoir<span class="long"> la partie tour par tour</span></button>
+            <button type="button" class="fin2-btn defaite-ia-exporter">⬇ Exporter</button>
+            <button type="button" class="fin2-btn defaite-ia-biblio">📚 <span class="long">Bibliothèque</span><span class="court">Parties</span></button>
+          </div>
+          <pre class="defaite-ia-resume" hidden>${defaitesEchapper(analyse ? analyse.resume : "")}</pre>`;
+        if (bouton) bouton.onclick = () => finPartieOnglet("analyse");
+        bloc.querySelector(".defaite-ia-voir").addEventListener("click", () => defaitesVoir(dossier));
+        bloc.querySelector(".defaite-ia-exporter").addEventListener("click", () => {
+          const resultat = defaitesExporter(dossier);
           const resume = bloc.querySelector(".defaite-ia-resume");
-          if (analyse && resume) { resume.textContent = analyse.resume; resume.hidden = false; }
+          if (resultat && resume) { resume.textContent = resultat.resume; resume.hidden = false; }
         });
         bloc.querySelector(".defaite-ia-biblio").addEventListener("click", defaitesOuvrirBibliotheque);
       }
@@ -516,10 +629,10 @@
         const modal = document.createElement("div");
         modal.className = "defaites-biblio";
         modal.innerHTML = `<div class="modal-card defaites-biblio-carte">
-          <h2>📚 Défaites de l’IA Expert</h2>
-          <p class="defaites-biblio-aide">Chaque partie gagnée contre l’Expert est gardée ici
-            (${DEFAITES_MAX} au plus, sauf les épinglées). Exportez-en une, ou cochez-en plusieurs
-            pour un seul fichier.</p>
+          <h2>📚 Bibliothèque des parties</h2>
+          <p class="defaites-biblio-aide">Chaque partie terminée est gardée ici pour être revue tour par tour
+            (${DEFAITES_MAX} parties et ${DEFAITES_MAX} défaites de l’Expert au plus, sauf les épinglées).
+            Exportez-en une, ou cochez-en plusieurs pour un seul fichier.</p>
           <div class="defaites-biblio-liste">Chargement…</div>
           <div class="modal-actions">
             <button type="button" class="defaites-lot" data-defaites="lot" disabled>Exporter la sélection</button>
@@ -533,15 +646,15 @@
         const coches = () => [...modal.querySelectorAll(".defaites-choix:checked")].map(x => x.value);
         boutonLot.addEventListener("click", async () => {
           const n = await defaitesExporterLot(coches());
-          if (n) showToast(`${n} défaite(s) exportée(s) dans un seul fichier.`);
+          if (n) showToast(`${n} partie(s) exportée(s) dans un seul fichier.`);
         });
 
         const liste = modal.querySelector(".defaites-biblio-liste");
         const rendre = async () => {
           const entrees = await defaitesBiblio.lister();
           if (!entrees.length) {
-            liste.innerHTML = `<p class="defaites-vide">Aucune défaite enregistrée pour l’instant.
-              Battez l’Expert : la partie apparaîtra ici toute seule.</p>`;
+            liste.innerHTML = `<p class="defaites-vide">Aucune partie enregistrée pour l’instant.
+              Terminez une partie : elle apparaîtra ici toute seule.</p>`;
             boutonLot.disabled = true;
             return;
           }
@@ -550,7 +663,9 @@
             return `<div class="defaites-ligne" data-id="${defaitesEchapper(e.id)}">
               <label class="defaites-titre"><input type="checkbox" class="defaites-choix" value="${defaitesEchapper(e.id)}">
                 ${e.epinglee ? "📌 " : ""}${date.toLocaleDateString("fr-FR")} ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-                · ${defaitesEchapper(e.nomHumain)} ${e.scores[e.humain]}-${e.scores[e.ia]}
+                · ${e.type === "partie"
+                  ? (e.noms || []).map((n, k) => `${defaitesEchapper(n)} ${e.scores[k] ?? 0}`).join(" · ")
+                  : `${defaitesEchapper(e.nomHumain)} ${e.scores[e.humain]}-${e.scores[e.ia]} contre l’Expert`}
                 · ${e.tours} tours${e.dureeMin ? ` · ${e.dureeMin} min` : ""}
                 · ${e.signales.length} tour(s) signalé(s)</label>
               <div class="defaites-actions">
@@ -570,7 +685,7 @@
               const action = bouton.dataset.action;
               if (action === "exporter") { defaitesExporter(await defaitesBiblio.lire(id)); return; }
               if (action === "supprimer") {
-                if (!window.confirm("Supprimer cette défaite de la bibliothèque ?")) return;
+                if (!window.confirm("Supprimer cette partie de la bibliothèque ?")) return;
                 await defaitesBiblio.supprimer(id);
               } else if (action === "epingler") {
                 await defaitesBiblio.epingler(id, bouton.textContent === "Épingler");
@@ -608,7 +723,7 @@
             bouton.addEventListener("click", defaitesOuvrirBibliotheque);
             document.body.appendChild(bouton);
           }
-          bouton.textContent = `📚 Défaites de l’IA Expert (${entrees.length})`;
+          bouton.textContent = `📚 Parties enregistrées (${entrees.length})`;
         } catch (erreur) { /* accessoire : jamais bloquant */ }
       }
 
