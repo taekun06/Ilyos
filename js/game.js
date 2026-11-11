@@ -32557,9 +32557,14 @@
         tempsMaxMs: 300,
         /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
            Une menace qui a besoin de cartes encore à piocher n'est que
-           plausible et pèse moins — sans quoi l'IA se paralyserait devant des
-           combinaisons hypothétiques. */
-        poidsMenacePlausible: 0.65
+           plausible : elle se joue avec la main PLAUSIBLE (espérance de la
+           pioche), déjà une moyenne. 0,65 jusqu'au 09/11 la rabotait une
+           seconde fois : sur les 3 défaites archivées (24 tours signalés), la
+           riposte prévue restait au-dessus du résultat réel lu avec l'humain au
+           trait (22/10, tour 3 : −880 prévu, −2 010 réel ; à 1 : −2 682).
+           Self-play 80 parties contre 0,65 (graines 9500 et 9600) : 44-34-2,
+           56 % ± 5,5, couronnes 63 contre 53, même temps de réflexion. */
+        poidsMenacePlausible: 1
       };
 
       const PLAN_RIPOSTE_CRITIQUE = {
@@ -34515,6 +34520,19 @@
         return Math.min(...cellules.map(([vr, vc]) => Math.abs(vr - r) + Math.abs(vc - c)));
       }
 
+      /* Note de l'IA sur une position, l'humain au trait : le point de vue de
+         la riposte prévue. Repli sur la note enregistrée si l'état manque. */
+      function defaitesNoteTraitHumain(etat, ia, humain, repli) {
+        if (!etat || !Array.isArray(etat.players)) return repli;
+        try {
+          const copie = structuredClone(etat);
+          copie.currentPlayer = humain;
+          return Math.round(withSimulatedState(copie, () => evaluateStrategicState(ia)));
+        } catch (erreur) {
+          return repli;
+        }
+      }
+
       function defaitesAnalyser(dossier) {
         const ia = dossier.ia, humain = dossier.humain;
         const tours = dossier.tours || [];
@@ -34531,7 +34549,16 @@
           let gravite = 0;
 
           const prevu = d.noteRobuste ?? d.noteArrivee;
-          const constate = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          const noteDepartSuivante = suivante && suivante.decision ? suivante.decision.noteDepart : null;
+          /* La riposte prévue se note à la FIN du tour humain, l'humain encore
+             au trait. noteDepart se lit au début du tour suivant de l'IA, l'IA
+             au trait : l'évaluateur y prend l'IA pour celle qui vient de jouer
+             (lAdversaireJoue) et compte des menaces humaines qui ne seront
+             jamais jouées — jusqu'à −4 000 de périls fantômes par couronne au
+             sol. Comparer les deux grossissait la « menace non anticipée » :
+             défaite du 22/10, tour 3, −6 010 lus contre −2 010 réels. */
+          const constate = Number.isFinite(noteDepartSuivante)
+            ? defaitesNoteTraitHumain(B, ia, humain, noteDepartSuivante) : null;
           if (Number.isFinite(prevu) && Number.isFinite(constate)) {
             const surprise = prevu - constate;
             if (surprise >= DEFAITES_SEUILS.surprise) {
@@ -34539,10 +34566,11 @@
               gravite += surprise;
             }
           }
-          if (Number.isFinite(d.noteDepart) && Number.isFinite(constate)) {
-            const chute = d.noteDepart - constate;
+          if (Number.isFinite(d.noteDepart) && Number.isFinite(noteDepartSuivante)) {
+            // Deux débuts de tour de l'IA : même point de vue, comparables.
+            const chute = d.noteDepart - noteDepartSuivante;
             if (chute >= DEFAITES_SEUILS.bascule) {
-              raisons.push(`forte bascule (${d.noteDepart} → ${constate})`);
+              raisons.push(`forte bascule (${d.noteDepart} → ${noteDepartSuivante})`);
               gravite += chute / 2;
             }
           }
