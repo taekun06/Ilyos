@@ -1,0 +1,82 @@
+# Banc de self-play : Expert contre Expert, sans navigateur, sur les machines
+# de GitHub. Sert à dire si un réglage ou un build du CPU est PLUS FORT qu'un
+# autre — une mesure de plusieurs heures de calcul, qu'aucun poste de travail
+# n'a à porter.
+#
+# Lancement à la main (onglet Actions > « Self-play » > Run workflow). Quatre
+# lots tournent en parallèle, chacun sur ses propres graines ; chaque graine
+# est jouée deux fois, camps inversés. Le bilan de chaque lot est dans le
+# résumé du job.
+#
+#   A = le candidat   (le js/game.js de la branche choisie, + budget_a/poids_a)
+#   B = la référence  (le js/game.js de ref_b, sinon le même, + budget_b/poids_b)
+name: Self-play
+
+on:
+  workflow_dispatch:
+    inputs:
+      parties:
+        description: Parties par lot (4 lots ; nombre pair)
+        default: '10'
+      graine:
+        description: Première graine
+        default: '9000'
+      budget_a:
+        description: Budget de recherche du candidat (JSON), vide = celui du bundle
+        default: ''
+      budget_b:
+        description: Budget de recherche de la référence (JSON)
+        default: ''
+      poids_a:
+        description: Réglages du candidat (JSON, clés de PLAN_POIDS ou « PLAN_RIPOSTE.finalistes »…)
+        default: ''
+      poids_b:
+        description: Réglages de la référence (JSON)
+        default: ''
+      ref_b:
+        description: Branche, tag ou commit du build de référence (vide = même build)
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  lot:
+    name: lot ${{ matrix.lot }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        lot: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build de référence
+        if: inputs.ref_b != ''
+        env:
+          REF_B: ${{ inputs.ref_b }}
+        run: |
+          git show "$(git rev-parse --verify "origin/$REF_B" 2>/dev/null || git rev-parse --verify "$REF_B")":js/game.js > "$RUNNER_TEMP/reference.js"
+          echo "ILYOS_BUNDLE_B=$RUNNER_TEMP/reference.js" >> "$GITHUB_ENV"
+      - name: Parties
+        env:
+          PARTIES: ${{ inputs.parties }}
+          GRAINE: ${{ inputs.graine }}
+          LOT: ${{ matrix.lot }}
+          ILYOS_BUDGET_A: ${{ inputs.budget_a }}
+          ILYOS_BUDGET_B: ${{ inputs.budget_b }}
+          ILYOS_POIDS_A: ${{ inputs.poids_a }}
+          ILYOS_POIDS_B: ${{ inputs.poids_b }}
+          # Les filets de temps du CPU dépendent de la vitesse de la machine :
+          # écartés, la mesure ne juge que la recherche.
+          ILYOS_SANS_COUPURE: '1'
+        run: |
+          # Chaque graine donne deux parties : les lots ne se chevauchent pas.
+          depart=$(( GRAINE + LOT * (PARTIES / 2 + 1) ))
+          node scripts/selfplay-node.js "$PARTIES" "$depart" 4 | tee "$RUNNER_TEMP/bilan.txt"
+          { echo '```'; cat "$RUNNER_TEMP/bilan.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

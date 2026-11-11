@@ -49,6 +49,16 @@ factice : règles et IA tournent sans navigateur, par les tours simulés de
   Expert sans Chromium ; `ILYOS_BUNDLE_A` / `ILYOS_BUNDLE_B` opposent deux
   builds (deux fichiers `game.js`).
 
+### Self-play sur les machines de GitHub
+
+Dire qu'un réglage du CPU est « plus fort » demande des dizaines de parties,
+soit des heures de calcul. Le workflow `Self-play`
+(`.github/workflows/selfplay.yml`, lancement à la main) les joue sur quatre
+machines en parallèle : candidat (branche choisie, `budget_a`, `poids_a`)
+contre référence (`ref_b`, `budget_b`, `poids_b`), filets de temps écartés.
+Le bilan de chaque lot est dans le résumé du job. Ne pas lancer ces séries
+sur un poste ou dans une session d'assistant : elles n'y survivent pas.
+
 ### Réflexion en arrière-plan (Worker)
 
 En partie, le CPU Expert réfléchit dans un Worker : `js/moteur/worker.js`
