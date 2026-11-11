@@ -20633,8 +20633,13 @@
         try {
           // Découpée : l'écran reste vivant pendant la réflexion (planner.js,
           // « RÉFLEXION DÉCOUPÉE »), pour exactement la même décision.
-          rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur),
-            () => token === aiRunToken && !!state && state.winner === null);
+          const encoreUtile = () => token === aiRunToken && !!state && state.winner === null;
+          // En arrière-plan si possible (planner.js, « RÉFLEXION EN
+          // ARRIÈRE-PLAN ») ; `undefined` = à faire ici, comme avant.
+          rapport = await moteurReflechir(joueur, encoreUtile, null, null, MOTEUR_BUDGET_ARRIERE_PLAN);
+          if (rapport === undefined) {
+            rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur), encoreUtile);
+          }
         } catch (erreur) {
           console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
           autopsieConsigner(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);
@@ -28115,12 +28120,58 @@
          — RESTAURATION EN `finally`. Une exception au milieu d'une simulation
            laisserait sinon le jeu réel branché sur un état de travail.
          ------------------------------------------------------------------- */
+      /* COPIE RAPIDE D'UN ÉTAT DE JEU.
+
+         La recherche de l'Expert copie l'état avant chaque coup simulé : près
+         de 200 000 copies en douze tours. Avec structuredClone, généraliste
+         (cycles, types transférables, sérialisation interne), ces copies
+         prenaient un tiers du temps de réflexion (profil sous Node, 10/11).
+
+         Un état de jeu n'est fait que d'objets simples, de tableaux, de Set et
+         de valeurs primitives — relevé sur une partie : aucun autre type,
+         aucun objet référencé deux fois. Cette copie ne traite donc que cela,
+         à la main. Tout le reste (Map, Date, objet à prototype…) est confié à
+         structuredClone, sous-arbre par sous-arbre : le résultat reste le
+         même, seule la vitesse change.
+
+         Une différence assumée : structuredClone conserve les références
+         partagées (un même objet atteint par deux chemins reste un seul objet
+         dans la copie) ; ici il serait dédoublé. Un état de jeu n'en contient
+         pas, et ne doit pas en contenir : la sauvegarde et le jeu en ligne
+         passent par JSON, qui les dédouble déjà. */
+      function copieRapide(valeur) {
+        if (valeur === null || typeof valeur !== "object") return valeur;
+        if (Array.isArray(valeur)) {
+          const n = valeur.length;
+          const copie = new Array(n);
+          for (let i = 0; i < n; i++) {
+            const v = valeur[i];
+            copie[i] = (v === null || typeof v !== "object") ? v : copieRapide(v);
+          }
+          return copie;
+        }
+        const proto = Object.getPrototypeOf(valeur);
+        if (proto === Object.prototype || proto === null) {
+          const copie = {};
+          for (const cle in valeur) {
+            const v = valeur[cle];
+            copie[cle] = (v === null || typeof v !== "object") ? v : copieRapide(v);
+          }
+          return copie;
+        }
+        if (proto === Set.prototype) {
+          const copie = new Set();
+          for (const v of valeur) copie.add((v === null || typeof v !== "object") ? v : copieRapide(v));
+          return copie;
+        }
+        return structuredClone(valeur);
+      }
+
       function cloneStateForSimulation(source = state) {
-        // structuredClone plutôt que JSON : `state` contient des Set (reachable,
+        // copieRapide plutôt que JSON : `state` contient des Set (reachable,
         // smartPushTargets) qu'un aller-retour JSON transformerait silencieusement
-        // en objets vides. Les champs non clonables (aucun aujourd'hui, mais la
-        // garde évite une régression sournoise) feraient échouer bruyamment.
-        const clone = structuredClone({
+        // en objets vides.
+        const clone = copieRapide({
           players: source.players,
           currentPlayer: source.currentPlayer,
           round: source.round,
@@ -32185,7 +32236,7 @@
               if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
-              const clone = structuredClone(noeud.etat);
+              const clone = copieRapide(noeud.etat);
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
@@ -32199,7 +32250,7 @@
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
                     if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -32208,7 +32259,7 @@
                 if (PLAN_POIDS.fermeturePoussee) {
                   for (const t of plannerCandidatsPush(playerId)) {
                     if (!t.ejection) continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -32440,7 +32491,7 @@
         const sans = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
         if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
-        const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
+        const pioche = withSimulatedState(copieRapide(noeudFinal.etat),
           () => plannerPiocheProchaine(adverse.id));
         /* POUSSÉE ADVERSE DE PLUS. Même arrondi, même angle mort que la
            MAGIE : la main plausible ne prête qu'un nombre fixe de POUSSER.
@@ -32479,7 +32530,7 @@
       }
 
       function* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
-        const apres = structuredClone(noeudFinal.etat);
+        const apres = copieRapide(noeudFinal.etat);
         return yield* plannerSimuler(apres, (function* () {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
@@ -32704,6 +32755,228 @@
         plannerDernierRapport = principal;
         return principal;
       }
+
+      /* =====================================================================
+         RÉFLEXION EN ARRIÈRE-PLAN — le planner dans un Web Worker.
+
+         Le même bundle est chargé une seconde fois dans un Worker, derrière un
+         écran factice (js/moteur/worker.js). La page lui envoie l'état de
+         simulation — exactement celui que la recherche copie de toute façon à
+         sa racine (cloneStateForSimulation) — et reçoit le plan. La recherche
+         ne partage alors plus son cœur de processeur avec le rendu 3D.
+
+         LA DÉCISION EST CELLE QUE LA PAGE AURAIT PU PRENDRE : même code, même
+         état. Elle n'est pas forcément identique au coup près, car la
+         recherche tire au hasard par endroits ; à graine égale elle l'est, et
+         `ILYOS_MOTEUR.comparer()` le vérifie.
+
+         RIEN NE DÉPEND DU WORKER. Absent, en panne, trop lent, ou hors des
+         cas prévus : moteurReflechir() rend `undefined` et l'appelant garde la
+         réflexion découpée dans la page, comme avant. Deux garde-fous :
+         - l'empreinte de l'état vue par le Worker doit être celle de la page,
+           sinon le plan est refusé (un réglage de partie que le Worker
+           ignorerait se verrait ici) ;
+         - après exécution, runExpertPlannedTurn compare déjà l'état obtenu à
+           l'état prévu.
+
+         Cas laissés à la page : autopsie active (elle a besoin des états
+         examinés, trop lourds à transférer), mode Rotation (marché, créatures :
+         pas encore vérifié dans le Worker), simulation en cours.
+         ===================================================================== */
+      const MOTEUR_ATTENTE_MAX_MS = 30000;
+      /* En arrière-plan, la recherche ne coûte plus d'images : l'Expert y
+         cherche deux fois plus large. Mesuré en self-play Node (11 parties,
+         filets de temps écartés) contre le budget de la page : 8 victoires,
+         2 défaites, 1 nul, pour environ 35 % de temps de réflexion en plus.
+         Le repli dans la page garde PLAN_BUDGET, donc les bancs aussi. */
+      const MOTEUR_BUDGET_ARRIERE_PLAN = { largeurFaisceau: 96, etatsMax: 24000 };
+      const MOTEUR_DANS_WORKER = typeof WorkerGlobalScope !== "undefined"
+        && typeof self !== "undefined" && self instanceof WorkerGlobalScope;
+      const moteur = {
+        ouvrier: null, pret: false, enPanne: false, numero: 0, attente: null,
+        // Compteurs lus par les tests et le diagnostic.
+        reponses: 0, replis: 0, dernierRepli: null, dernierMs: null
+      };
+
+      /* Côté Worker : une demande, un rapport. */
+      function moteurPlanifier(demande) {
+        setBoardSize(demande.grille);
+        const debut = performance.now();
+        return moteurAvecPoids(demande.poids, () => withSimulatedState(demande.etat, () => {
+          const empreinteDepart = strategicStateFingerprint();
+          const rapport = plannerChercherPlanRobuste(state.currentPlayer, demande.budget || undefined);
+          return { empreinteDepart, rapport: moteurRapportLeger(rapport), ms: Math.round(performance.now() - debut) };
+        }));
+      }
+
+      /* Réglages prêtés le temps d'un calcul (diagnostic seulement : en partie,
+         page et Worker gardent tous deux les réglages du bundle). */
+      function moteurAvecPoids(reglages, fn) {
+        if (!reglages) return fn();
+        /* `graine` : la recherche tire au hasard par endroits (pioches
+           simulées, départages) ; sans graine commune, deux calculs de la même
+           position peuvent différer sans qu'aucun ne soit faux. */
+        const { graine = null, ...poids } = reglages;
+        const memoire = {};
+        for (const cle of Object.keys(poids)) { memoire[cle] = PLAN_POIDS[cle]; PLAN_POIDS[cle] = poids[cle]; }
+        if (graine !== null) setTestRandomSeed(graine);
+        try { return fn(); }
+        finally {
+          if (graine !== null) setTestRandomSeed(null);
+          for (const cle of Object.keys(memoire)) PLAN_POIDS[cle] = memoire[cle];
+        }
+      }
+
+      /* Le rapport sans ses états complets (finalistes, relevés d'autopsie) :
+         seuls le plan et ses chiffres traversent. */
+      function moteurRapportLeger(rapport) {
+        if (!rapport) return null;
+        const { finalistes, releveCandidats, etatDepart, etatRetenu, ...leger } = rapport;
+        return leger;
+      }
+
+      function moteurAutorise() {
+        if (MOTEUR_DANS_WORKER || moteur.enPanne || ilyosSimulationActive) return false;
+        if (typeof Worker !== "function" || !state) return false;
+        if (plannerAutopsieActive() || state.rotation) return false;
+        try {
+          if (/(?:^|[?&])moteur=page(?:&|$)/.test(location.search)) return false;
+        } catch (_) { return false; }
+        return true;
+      }
+
+      function moteurArreter(raison) {
+        if (moteur.ouvrier) { try { moteur.ouvrier.terminate(); } catch (_) {} }
+        moteur.ouvrier = null;
+        moteur.pret = false;
+        const attente = moteur.attente;
+        moteur.attente = null;
+        if (attente) attente.finir(undefined, raison);
+      }
+
+      /* Lance le Worker (une fois). Appelé dès qu'un tour d'Expert commence :
+         le premier tour se joue dans la page pendant qu'il charge. */
+      function moteurDemarrer() {
+        if (moteur.ouvrier || !moteurAutorise()) return;
+        try {
+          const script = document.querySelector('script[src*="js/game.js"]');
+          if (!script || !script.src) { moteur.enPanne = true; return; }
+          const adresse = new URL("moteur/worker.js", script.src);
+          adresse.searchParams.set("jeu", script.src);
+          const ouvrier = new Worker(adresse.href);
+          moteur.ouvrier = ouvrier;
+          ouvrier.onmessage = evenement => {
+            if (ouvrier !== moteur.ouvrier) return;
+            const message = evenement.data || {};
+            if (message.pret) { moteur.pret = true; return; }
+            const attente = moteur.attente;
+            if (!attente || message.id !== attente.id) return;
+            moteur.attente = null;
+            if (message.erreur) attente.finir(undefined, "erreur du Worker : " + message.erreur);
+            else attente.finir(message.resultat, null);
+          };
+          ouvrier.onerror = evenement => {
+            if (ouvrier !== moteur.ouvrier) return;
+            // Un Worker qui ne charge pas ne chargera pas mieux au tour suivant.
+            moteur.enPanne = true;
+            moteurArreter("Worker en erreur : " + (evenement && evenement.message || "chargement"));
+          };
+        } catch (erreur) {
+          moteur.enPanne = true;
+          moteur.ouvrier = null;
+        }
+      }
+
+      /** Demande le plan du joueur courant au Worker. Rend le rapport, `null`
+       *  si la réflexion a été abandonnée (partie quittée), ou `undefined` si
+       *  l'appelant doit réfléchir lui-même. */
+      function moteurReflechir(joueur, continuer = null, etatFourni = null, poids = null, budget = null) {
+        moteurDemarrer();
+        if (!moteurAutorise() || !moteur.ouvrier || !moteur.pret) return Promise.resolve(undefined);
+        // Une demande encore en cours : son Worker calcule pour une position
+        // périmée. On le remplace plutôt que d'attendre derrière lui.
+        if (moteur.attente) { moteurArreter("demande remplacée"); return Promise.resolve(undefined); }
+
+        const etat = etatFourni || cloneStateForSimulation();
+        const empreintePage = withSimulatedState(etat, () => strategicStateFingerprint());
+        const id = ++moteur.numero;
+        const debut = performance.now();
+        return new Promise(resoudre => {
+          const delai = setTimeout(() => {
+            if (moteur.attente && moteur.attente.id === id) moteurArreter("sans réponse après " + MOTEUR_ATTENTE_MAX_MS + " ms");
+          }, MOTEUR_ATTENTE_MAX_MS);
+          moteur.attente = {
+            id,
+            finir(resultat, raison) {
+              clearTimeout(delai);
+              if (continuer && !continuer()) { resoudre(null); return; }
+              if (resultat && resultat.empreinteDepart !== empreintePage) {
+                raison = "le Worker ne voit pas la même position que la page";
+                resultat = undefined;
+              }
+              if (!resultat || !resultat.rapport) {
+                moteur.replis++;
+                moteur.dernierRepli = raison || "rapport vide";
+                console.warn("[ILYOS] réflexion en arrière-plan abandonnée, reprise dans la page :", moteur.dernierRepli);
+                resoudre(undefined);
+                return;
+              }
+              moteur.reponses++;
+              moteur.dernierMs = Math.round(performance.now() - debut);
+              plannerDernierRapport = resultat.rapport;
+              resoudre(resultat.rapport);
+            }
+          };
+          try {
+            moteur.ouvrier.postMessage({ id, type: "planifier", demande: { etat, grille: GRID, joueur, poids, budget } });
+          } catch (erreur) {
+            moteur.enPanne = true;
+            moteurArreter("envoi impossible : " + erreur.message);
+          }
+        });
+      }
+
+      /* Diagnostic : le plan de la position en cours, calculé dans la page puis
+         dans le Worker. Les deux doivent être identiques — à condition
+         d'écarter les filets de temps et de fixer le hasard
+         (`{ poids: { securiteFacteur: 20, graine: 1 } }`) : un filet atteint
+         d'un seul côté, ou un tirage différent, suffit à changer le plan. */
+      async function moteurComparer({ poids = null, etatJson = null } = {}) {
+        if (!state) return null;
+        moteurDemarrer();
+        for (let i = 0; i < 400 && moteur.ouvrier && !moteur.pret; i++) await new Promise(r => setTimeout(r, 50));
+        /* UNE photo pour les deux. À lancer sur une position FIGÉE : pendant
+           un tour d'IA en cours, sa réflexion découpée et celle-ci se
+           partageraient les variables de la recherche. `etatJson` : une
+           position de self-play (ILYOS_SELFPLAY), sans partie en cours. */
+        const etat = etatJson ? JSON.parse(etatJson) : cloneStateForSimulation();
+        const joueur = etat.currentPlayer;
+        const t0 = performance.now();
+        const page = moteurAvecPoids(poids, () => withSimulatedState(copieRapide(etat), () => plannerChercherPlanRobuste(joueur)));
+        const msPage = Math.round(performance.now() - t0);
+        const ouvrier = await moteurReflechir(joueur, null, etat, poids);
+        const planPage = JSON.stringify(page ? page.plan : null);
+        const planOuvrier = JSON.stringify(ouvrier ? ouvrier.plan : null);
+        return {
+          identiques: !!ouvrier && planPage === planOuvrier,
+          planPage, planOuvrier, msPage, msOuvrier: moteur.dernierMs,
+          // Premiers chiffres à diverger = où chercher la cause d'un écart.
+          chiffresPage: page ? [page.noteDepart, page.noteArrivee, page.etatsExplores, page.candidatsGeneres] : null,
+          chiffresOuvrier: ouvrier ? [ouvrier.noteDepart, ouvrier.noteArrivee, ouvrier.etatsExplores, ouvrier.candidatsGeneres] : null,
+          coupePage: page && page.anticipation ? { principale: page.anticipation.principaleCoupee, ripostes: page.anticipation.ripostesCoupees } : null,
+          coupeOuvrier: ouvrier && ouvrier.anticipation ? { principale: ouvrier.anticipation.principaleCoupee, ripostes: ouvrier.anticipation.ripostesCoupees } : null,
+          repli: ouvrier ? null : moteur.dernierRepli
+        };
+      }
+
+      window.ILYOS_MOTEUR = {
+        planifier: moteurPlanifier,
+        comparer: moteurComparer,
+        etat: () => ({
+          dansWorker: MOTEUR_DANS_WORKER, lance: !!moteur.ouvrier, pret: moteur.pret, enPanne: moteur.enPanne,
+          reponses: moteur.reponses, replis: moteur.replis, dernierRepli: moteur.dernierRepli, dernierMs: moteur.dernierMs
+        })
+      };
 
       /* =====================================================================
          MISE EN PLACE DU MODE PERSONNALISÉ — îles puis gardiens, en serpentin.
