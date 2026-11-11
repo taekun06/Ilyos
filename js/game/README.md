@@ -49,9 +49,25 @@ factice : règles et IA tournent sans navigateur, par les tours simulés de
   Expert sans Chromium ; `ILYOS_BUNDLE_A` / `ILYOS_BUNDLE_B` opposent deux
   builds (deux fichiers `game.js`).
 
+### Réflexion en arrière-plan (Worker)
+
+En partie, le CPU Expert réfléchit dans un Worker : `js/moteur/worker.js`
+charge le même `js/game.js` derrière le même écran factice
+(`js/moteur/ecran-factice.js`, partagé avec Node), reçoit une copie de l'état
+et rend le plan ; la page reste seule à l'exécuter. Côté page, tout est dans
+`planner.js` (`moteurReflechir`). Le repli est automatique : si le Worker
+manque, tarde (30 s), tombe ou part d'un état différent (empreinte), le tour
+est réfléchi dans la page comme avant. L'autopsie et le mode Rotation restent
+dans la page ; `?moteur=page` y force tout.
+
+`ILYOS_MOTEUR.etat()` dit ce qui s'est passé (réponses, replis) ;
+`ILYOS_MOTEUR.comparer({ etatJson, poids })` calcule une même position dans la
+page puis dans le Worker. Pour que les deux soient comparables, passer une
+`graine` dans `poids` : la recherche tire au hasard par endroits.
+
 Une présentation ajoutée dans un chemin de règle doit rester sous la garde
-`ilyosSimulationActive` : c'est ce qui permet au moteur de tourner sans écran,
-et demain dans un Worker. La recherche de l'IA est bornée en nombre d'états ;
+`ilyosSimulationActive` : c'est ce qui permet au moteur de tourner sans écran
+et dans le Worker. La recherche de l'IA est bornée en nombre d'états ;
 ses plafonds de temps (`PLAN_SECURITE`) ne sont que des filets, mais un filet
 atteint change la décision. Les bancs qui comparent des états les écartent
 (`securiteFacteur`, ou `ILYOS_SANS_COUPURE=1` pour le self-play Node).
