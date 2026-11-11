@@ -235,7 +235,7 @@
           <div class="tuto-void"></div>
           <div class="tuto-bar top"></div>
           <div class="tuto-bar bot"></div>
-          <button type="button" class="tuto-quit">Quitter le tutoriel</button>
+          <button type="button" class="tuto-quit">Quitter l’immersion</button>
           <button type="button" class="tuto-voice" title="Voix de la Mer">🔊</button>
           <div class="tuto-objective"></div>
           <div class="tuto-speech">
@@ -246,7 +246,7 @@
           <div class="tuto-fade on"></div>`;
         document.body.appendChild(layer);
         layer.querySelector(".tuto-quit").addEventListener("click", () => {
-          if (confirm("Quitter le tutoriel ? Il reprendra depuis le début.")) tutoExit(true);
+          if (confirm("Quitter l’immersion ? Elle reprendra depuis le début.")) tutoExit(true);
         });
         layer.querySelector(".tuto-voice").addEventListener("click", tutoToggleVoice);
         TUTO.dom = {

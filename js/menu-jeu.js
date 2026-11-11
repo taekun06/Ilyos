@@ -102,7 +102,7 @@
         </header>
         <button type="button" class="mj-reprendre" data-mj-fermer>
           ${svg('<path d="M8 5v14l11-7L8 5Z" fill="currentColor"/>')}
-          <span>Reprendre</span><kbd>Échap</kbd>
+          <span class="mj-reprendre-jeu">Reprendre</span><span class="mj-reprendre-accueil">Retour à l’accueil</span><kbd>Échap</kbd>
         </button>
         <div class="mj-nav-label">Réglages</div>
         <div class="mj-onglets" role="tablist" aria-label="Réglages">
@@ -345,7 +345,10 @@
   }
 
   function fermer() {
-    if (estOuvert()) $('hudV2GearBtn')?.click();
+    if (!estOuvert()) return;
+    $('hudV2GearBtn')?.click();
+    // Hors partie, le bouton du HUD peut ne pas répondre : on ferme à la main.
+    if (estOuvert()) { menu.classList.add('hidden'); menu.setAttribute('aria-hidden', 'true'); }
   }
 
   function actualiser() {
@@ -374,6 +377,7 @@
       requestAnimationFrame(() => menu.querySelector('.mj-reprendre')?.focus({ preventScroll: true }));
     } else if (!ouvert && menu.dataset.mjOuvert) {
       delete menu.dataset.mjOuvert;
+      quitterAccueil();
       const retour = dernierFocus && document.contains(dernierFocus) ? dernierFocus : $('ov2Gear');
       if (retour && menu.contains(document.activeElement)) retour.focus?.({ preventScroll: true });
     }
@@ -406,7 +410,7 @@
     if (document.querySelector('link[data-menu-jeu]')) return;
     const lien = document.createElement('link');
     lien.rel = 'stylesheet';
-    lien.href = './css/menu-jeu.css?v=10';
+    lien.href = './css/menu-jeu.css?v=11';
     lien.dataset.menuJeu = '';
     document.head.appendChild(lien);
   }
@@ -420,8 +424,37 @@
     attendre();
   }
 
+  /* RÉGLAGES depuis l'écran d'accueil (bouton ⚙ › RÉGLAGES du menu, qui ne
+     menait à rien : il cliquait le bouton Son d'un HUD invisible hors partie).
+     Le même menu s'ouvre par-dessus l'accueil, réduit aux réglages qui ont un
+     sens hors partie : Partie (cartes, commandes), Audio, Graphismes. La
+     classe body.mj-accueil rend #gameScreen présent mais invisible
+     (css/menu-jeu.css) pour que seul le menu apparaisse, au-dessus du cadre
+     de l'accueil. */
+  function ouvrirDepuisAccueil(onglet) {
+    if (!construire() || estOuvert()) return;
+    document.body.classList.add('mj-accueil');
+    const id = onglet || lireOnglet();
+    choisirOnglet(id === 'camera' ? 'audio' : id, false);
+    $('hudV2GearBtn')?.click();
+    if (!estOuvert()) { menu.classList.remove('hidden'); menu.setAttribute('aria-hidden', 'false'); }
+  }
+
+  function quitterAccueil() {
+    if (!estOuvert()) document.body.classList.remove('mj-accueil');
+  }
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.body.classList.contains('mj-accueil') && estOuvert()) {
+      event.preventDefault();
+      menu.classList.add('hidden');
+      menu.setAttribute('aria-hidden', 'true');
+    }
+  });
+
   window.ILYOS_MENU_JEU = {
     ouvrir: () => { if (!estOuvert()) $('ov2Gear')?.click(); },
+    ouvrirDepuisAccueil,
     fermer,
     onglet: id => menu && choisirOnglet(id, false),
     estOuvert

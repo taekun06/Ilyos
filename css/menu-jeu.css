@@ -731,3 +731,30 @@ body[data-visual-mode] #gameScreen.puzzle-on > #hudV2GearPopover.mj-menu { margi
   body[data-visual-mode] #gameScreen > #hudV2GearPopover.mj-menu,
   #hudV2GearPopover.mj-menu .mj-coque { animation: none; }
 }
+
+/* ---------- Ouvert depuis l'accueil (⚙ › RÉGLAGES) ----------
+   js/menu-jeu.js pose body.mj-accueil : #gameScreen, normalement masqué hors
+   partie, est rendu présent mais invisible pour que seul le menu s'affiche,
+   au-dessus du cadre de l'accueil (#ilyos-menu-v11-frame, z-index 2147483000).
+   Les réglages propres à une partie en cours (caméra, rendu 2D/3D, règles,
+   revue IA, quitter) sont masqués. */
+body.mj-accueil #gameScreen.hidden {
+  display: block !important;
+  position: fixed !important;
+  inset: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: 2147483100 !important;
+}
+body.mj-accueil #gameScreen > *:not(#hudV2GearPopover) { display: none !important; }
+body.mj-accueil #gameScreen > #hudV2GearPopover.mj-menu:not(.hidden) {
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+body.mj-accueil #hudV2GearPopover.mj-menu #mjOnglet-camera,
+body.mj-accueil #hudV2GearPopover.mj-menu .mj-section-rendu,
+body.mj-accueil #hudV2GearPopover.mj-menu .mj-nav-actions,
+body.mj-accueil #hudV2GearPopover.mj-menu .mj-contexte,
+#hudV2GearPopover.mj-menu .mj-reprendre-accueil { display: none !important; }
+body.mj-accueil #hudV2GearPopover.mj-menu .mj-reprendre-accueil { display: inline !important; }
+body.mj-accueil #hudV2GearPopover.mj-menu .mj-reprendre-jeu { display: none !important; }
