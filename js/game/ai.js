@@ -921,7 +921,7 @@
           const encoreUtile = () => token === aiRunToken && !!state && state.winner === null;
           // En arrière-plan si possible (planner.js, « RÉFLEXION EN
           // ARRIÈRE-PLAN ») ; `undefined` = à faire ici, comme avant.
-          rapport = await moteurReflechir(joueur, encoreUtile);
+          rapport = await moteurReflechir(joueur, encoreUtile, null, null, MOTEUR_BUDGET_ARRIERE_PLAN);
           if (rapport === undefined) {
             rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur), encoreUtile);
           }

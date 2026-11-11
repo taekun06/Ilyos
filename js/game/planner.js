@@ -4057,6 +4057,12 @@
          pas encore vérifié dans le Worker), simulation en cours.
          ===================================================================== */
       const MOTEUR_ATTENTE_MAX_MS = 30000;
+      /* En arrière-plan, la recherche ne coûte plus d'images : l'Expert y
+         cherche deux fois plus large. Mesuré en self-play Node (11 parties,
+         filets de temps écartés) contre le budget de la page : 8 victoires,
+         2 défaites, 1 nul, pour environ 35 % de temps de réflexion en plus.
+         Le repli dans la page garde PLAN_BUDGET, donc les bancs aussi. */
+      const MOTEUR_BUDGET_ARRIERE_PLAN = { largeurFaisceau: 96, etatsMax: 24000 };
       const MOTEUR_DANS_WORKER = typeof WorkerGlobalScope !== "undefined"
         && typeof self !== "undefined" && self instanceof WorkerGlobalScope;
       const moteur = {
@@ -4071,7 +4077,7 @@
         const debut = performance.now();
         return moteurAvecPoids(demande.poids, () => withSimulatedState(demande.etat, () => {
           const empreinteDepart = strategicStateFingerprint();
-          const rapport = plannerChercherPlanRobuste(state.currentPlayer);
+          const rapport = plannerChercherPlanRobuste(state.currentPlayer, demande.budget || undefined);
           return { empreinteDepart, rapport: moteurRapportLeger(rapport), ms: Math.round(performance.now() - debut) };
         }));
       }
@@ -4157,7 +4163,7 @@
       /** Demande le plan du joueur courant au Worker. Rend le rapport, `null`
        *  si la réflexion a été abandonnée (partie quittée), ou `undefined` si
        *  l'appelant doit réfléchir lui-même. */
-      function moteurReflechir(joueur, continuer = null, etatFourni = null, poids = null) {
+      function moteurReflechir(joueur, continuer = null, etatFourni = null, poids = null, budget = null) {
         moteurDemarrer();
         if (!moteurAutorise() || !moteur.ouvrier || !moteur.pret) return Promise.resolve(undefined);
         // Une demande encore en cours : son Worker calcule pour une position
@@ -4195,7 +4201,7 @@
             }
           };
           try {
-            moteur.ouvrier.postMessage({ id, type: "planifier", demande: { etat, grille: GRID, joueur, poids } });
+            moteur.ouvrier.postMessage({ id, type: "planifier", demande: { etat, grille: GRID, joueur, poids, budget } });
           } catch (erreur) {
             moteur.enPanne = true;
             moteurArreter("envoi impossible : " + erreur.message);
