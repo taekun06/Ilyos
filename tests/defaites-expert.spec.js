@@ -1,8 +1,9 @@
-/* Bibliothèque des défaites de l'IA Expert (js/game/defaites.js), de bout en
-   bout, dans une vraie partie solo lancée par le menu.
+/* Bibliothèque des parties (js/game/defaites.js), de bout en bout, dans une
+   vraie partie solo lancée par le menu : défaites de l'Expert en détail, et
+   toute autre partie locale (CPU Normal) avec son onglet « Analyse ».
 
    Ce que le joueur doit pouvoir faire sans rien activer : jouer contre
-   l'Expert, gagner, cliquer sur « Analyser cette défaite de l'IA » et obtenir
+   l'Expert, gagner, cliquer sur « Analyse partie » et obtenir
    un dossier complet ; retrouver la partie dans la bibliothèque ; la rejouer
    depuis un tour.
 
@@ -83,7 +84,12 @@ test("une défaite de l'Expert s'enregistre, s'exporte d'un clic et se rejoue", 
   await expect(bouton).toBeVisible({ timeout: 20000 });
   await expect(page.locator('#victoryModal .defaite-ia-etat')).toContainText('Enregistrée', { timeout: 20000 });
 
-  const [telechargement] = await Promise.all([page.waitForEvent('download'), bouton.click()]);
+  // « Analyse partie » ouvre l'onglet Analyse ; l'export y est un bouton à part.
+  await bouton.click();
+  await expect(page.locator('#victoryModal [data-fin-page="analyse"]')).toBeVisible();
+  await expect(page.locator('#victoryModal .fin2-moments li').first()).toBeVisible();
+  const [telechargement] = await Promise.all([page.waitForEvent('download'),
+    page.locator('#victoryModal .defaite-ia-exporter').click()]);
   expect(telechargement.suggestedFilename()).toMatch(/^ilyos-defaite-.*\.json$/);
   const dossier = JSON.parse(require('fs').readFileSync(await telechargement.path(), 'utf8'));
 
@@ -185,6 +191,47 @@ test("une défaite de l'Expert s'enregistre, s'exporte d'un clic et se rejoue", 
   });
   expect(dessus, 'la bibliothèque passe au-dessus du menu').toBe(true);
 
+  expect(incidents, incidents.join('\n')).toEqual([]);
+});
+
+/* Toute partie locale, pas seulement contre l'Expert : la partie contre le
+   CPU Normal est enregistrée, l'onglet Analyse montre ses moments clés et
+   « Revoir » ouvre la visionneuse. */
+test("une partie contre le CPU Normal a aussi son analyse et se revoit", async ({ page }) => {
+  const incidents = [];
+  page.on('pageerror', erreur => incidents.push(erreur.message));
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('defaites-normal')) {
+      sessionStorage.setItem('defaites-normal', '1');
+      indexedDB.deleteDatabase('ilyos-defaites');
+    }
+  });
+  await page.goto('/');
+  const menu = page.frameLocator('iframe[src*="menu/frame.html"]');
+  await menu.locator('[data-mode="solo"]').first().click();
+  await expect(menu.locator('.difficulty-selector b').first()).not.toContainText('EXPERT');
+  await menu.locator('text=AFFRONTER LE CPU').first().click();
+  await page.waitForSelector('#gameScreen:not(.hidden)', { timeout: 40000 });
+  await page.waitForFunction(() => !!window.ILYOS_DEFAITES?.journal?.(), null, { timeout: 60000 });
+  const journal = await page.evaluate(() => window.ILYOS_DEFAITES.journal().joueurs);
+  expect(journal.some(j => j.ia && j.difficulte === 'expert'), 'pas contre l’Expert').toBe(false);
+
+  const ia = journal.find(j => j.ia).id;
+  await page.evaluate(id => { for (let i = 0; i < 3; i++) window.ILYOS_TEST.marquer(id); }, ia);
+  const bouton = page.locator('#victoryModal .defaite-ia-analyser');
+  await expect(bouton).toBeVisible({ timeout: 20000 });
+  await expect(bouton).toHaveText('Analyse partie');
+  await expect(page.locator('#victoryModal .defaite-ia-etat')).toContainText('Enregistrée', { timeout: 20000 });
+  await bouton.click();
+  await expect(page.locator('#victoryModal .fin2-analyse-tete')).toContainText('Les moments clés');
+  await expect(page.locator('#victoryModal .fin2-moments li').first()).toContainText('couronne');
+  const dossier = await page.evaluate(() => window.ILYOS_DEFAITES.derniere());
+  expect(dossier.type).toBe('partie');
+  expect(dossier.fin.vainqueur).toBe(ia);
+
+  await page.locator('#victoryModal .defaite-ia-voir').click();
+  await expect(page.locator('.defaites-vue')).toBeVisible();
+  await expect(page.locator('.defaites-vue .dv-tete')).not.toContainText('IA Expert');
   expect(incidents, incidents.join('\n')).toEqual([]);
 });
 

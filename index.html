@@ -1620,23 +1620,44 @@
       <div class="modal-actions"><button id="closeRulesBtn" class="primary-btn">Compris</button></div>
     </div>
   </div>
-  <div id="victoryModal" class="modal hidden">
-    <div class="modal-card victory-card">
-      <div class="victory-light" aria-hidden="true"></div>
-      <div class="victory-emblem">
-        <div id="victoryPortrait" class="portrait victory-portrait">🧙</div>
-        <div class="victory-crowns" aria-hidden="true">
-          <span>👑</span><span>👑</span><span>👑</span>
-        </div>
+  <!-- Fin de partie en deux temps (js/game/fin-partie.js, css/fin-partie.css) :
+       le titre plein écran, puis le bandeau à onglets en bas du plateau. -->
+  <div id="victoryModal" class="fin2 hidden" role="dialog" aria-modal="true" aria-labelledby="victoryTitle">
+    <div class="fin2-voile" aria-hidden="true"></div>
+    <div class="fin2-titre">
+      <small class="fin2-kicker">SOUVERAIN D’ILYOS</small>
+      <h2 id="victoryTitle" class="fin2-h">VICTOIRE</h2>
+      <div class="fin2-couronnes" aria-hidden="true"></div>
+      <p id="victoryText" class="fin2-recit"></p>
+    </div>
+    <div class="fin2-bandeau">
+      <div class="fin2-onglets" role="tablist">
+        <button type="button" role="tab" data-fin-onglet="resume">Résumé</button>
+        <button type="button" role="tab" data-fin-onglet="stats"><span class="long">Statistiques</span><span class="court">Stats</span></button>
+        <button type="button" role="tab" data-fin-onglet="progression"><span class="long">Progression</span><span class="court">Niveau</span></button>
+        <button type="button" role="tab" data-fin-onglet="decouvrir"><span class="long">À découvrir</span><span class="court">Découvrir</span></button>
+        <button type="button" role="tab" data-fin-onglet="analyse" hidden>Analyse</button>
       </div>
-      <small class="victory-kicker">SOUVERAIN D’ILYOS</small>
-      <h2 id="victoryTitle">Victoire !</h2>
-      <p id="victoryText" class="victory-text"></p>
-      <div id="victoryStats" class="victory-stats"></div>
-      <div id="victoryRecap" class="victory-recap"></div>
-      <div class="modal-actions">
-        <button id="replayBtn" class="primary-btn">Rejouer</button>
-        <button id="backSetupBtn" class="secondary-btn">Configuration</button>
+      <div class="fin2-contenu">
+        <div class="fin2-pages">
+          <section class="fin2-page fin2-page-resume" data-fin-page="resume">
+            <div class="fin2-col fin2-duel"></div>
+            <div class="fin2-col fin2-prog-mini" hidden></div>
+            <div class="fin2-col fin2-decouvrir-mini"></div>
+          </section>
+          <section class="fin2-page" data-fin-page="stats" hidden>
+            <div id="victoryStats" class="victory-stats"></div>
+            <div id="victoryRecap" class="victory-recap"></div>
+          </section>
+          <section class="fin2-page" data-fin-page="progression" hidden></section>
+          <section class="fin2-page" data-fin-page="decouvrir" hidden></section>
+          <section class="fin2-page" data-fin-page="analyse" hidden></section>
+        </div>
+        <div class="modal-actions fin2-actions">
+          <button id="replayBtn" class="primary-btn fin2-btn fin2-btn-or">↻ Rejouer</button>
+          <button type="button" class="fin2-btn fin2-analyse defaite-ia-analyser" hidden>Analyse partie</button>
+          <button id="backSetupBtn" class="secondary-btn fin2-btn">Menu</button>
+        </div>
       </div>
     </div>
   </div>
@@ -5358,6 +5379,7 @@
   <link rel="stylesheet" href="./css/bilan-fin-de-partie.css?v=20260826-bilan1">
   <link rel="stylesheet" href="./css/defaites-expert.css?v=20260927-visionneuse2">
   <link rel="stylesheet" href="./css/progression.css?v=20261013-dvh">
+  <link rel="stylesheet" href="./css/fin-partie.css?v=7">
   <script id="v75-1-version-authority" src="./js/version-authority.js?v=20261108-titre"></script>
 </body>
 

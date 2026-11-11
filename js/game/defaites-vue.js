@@ -938,6 +938,9 @@
           : v.direct
           ? `<b>Partie IA contre IA — ${state && v.direct ? "en pause" : ""}</b>
              <small>${(d.joueurs || []).map((j, k) => `${defaitesEchapper(j.nom)} ${scores[k] ?? 0}`).join(" · ")} · tour ${d.fin.tours}</small>`
+          : d.humain === null || d.humain === undefined
+          ? `<b>Partie du ${date.toLocaleDateString("fr-FR")}</b>
+             <small>${(d.joueurs || []).map((j, k) => `${defaitesEchapper(j.nom || `J${k}`)} ${scores[k] ?? 0}`).join(" · ")} · ${d.fin.tours} tours</small>`
           : `<b>Partie du ${date.toLocaleDateString("fr-FR")}</b>
              <small>${defaitesEchapper(defaitesVueNom(d.humain))} ${scores[d.humain]}-${scores[d.ia]} IA Expert · ${d.fin.tours} tours</small>`;
         const traceNom = v.trace ? v.trace.nom : null;
@@ -948,7 +951,7 @@
             <button type="button" data-vue="fermer" aria-label="Fermer la visionneuse">✕</button>
           </header>
           <div class="dv-courbe-bloc">
-            <small class="dv-discret">Confiance ${d.ia !== null && d.ia !== undefined ? "de l’IA" : "de chaque IA"} au début de ses tours
+            <small class="dv-discret">Confiance ${d.ia !== null && d.ia !== undefined ? "de l’IA" : "de chaque camp, jugée par l’IA,"} au début de ses tours
               (au-dessus : elle pense mener) — cliquez un point. <span class="dv-leg-signale">●</span> tour signalé</small>
             ${defaitesVueCourbeSVG()}
           </div>
