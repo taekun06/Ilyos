@@ -285,7 +285,10 @@
 
         // Passer son tour n'est presque plus pénalisé : ce peut être un bon
         // choix. On garde un départage négligeable contre la passivité pure.
-        tempoPerdu: 20
+        tempoPerdu: 20,
+        /* Part de « ma suite après la riposte » ajoutée à la note d'un
+           finaliste (plannerSuiteApresRiposte). 0 = horizon d'avant. */
+        suiteApresRiposte: 0
       };
 
       /** Proximité décroissante et bornée, tirée d'une distance de déplacement
@@ -3883,16 +3886,54 @@
           };
           const coupee = !!reponse.coupeParTemps;
           const candidates = reponse.finalistes || [];
+          let pire = null;
+          let etatPire = null;
           if (!candidates.length) {
             for (const action of reponse.plan) plannerAppliquerAction(action);
-            return { ...mesurer(reponse.plan), ripostesComparees: 1, coupee, magieCertaine };
+            pire = mesurer(reponse.plan);
+          } else {
+            for (const candidate of candidates) {
+              const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
+              if (!pire || resultat.note < pire.note) { pire = resultat; etatPire = candidate.etat; }
+            }
           }
-          let pire = null;
-          for (const candidate of candidates) {
-            const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
-            if (!pire || resultat.note < pire.note) pire = resultat;
+          const rendu = { ...pire, ripostesComparees: candidates.length || 1, coupee, magieCertaine };
+          // La suite ne se cherche qu'une fois, sur la main adverse plausible.
+          if (!(PLAN_POIDS.suiteApresRiposte > 0) || variante || state.players.length !== 2) return rendu;
+          const suite = yield* plannerSuiteApresRiposte(etatPire, playerId, budget);
+          if (suite === null) return rendu;
+          return { ...rendu, note: rendu.note + PLAN_POIDS.suiteApresRiposte * suite, suite: Math.round(suite) };
+        })());
+      }
+
+      /* MA SUITE APRÈS LA RIPOSTE. L'horizon s'arrêtait à la réplique adverse :
+         un plan valait ce qu'il en restait, jamais ce qu'il PRÉPARAIT. Deux
+         plans également sûrs se départageaient donc à l'estimation, et près
+         d'une partie d'Expert sur deux finissait 0-0. Ici on rejoue aussi mon
+         tour suivant (courte recherche, main plausible, couronnes validées au
+         début du tour comme dans la règle) depuis l'état laissé par la pire
+         riposte : ce qu'il rapporte s'ajoute à la note du plan.
+         `etat` nul = l'état de simulation courant (riposte déjà appliquée). */
+      function* plannerSuiteApresRiposte(etat, playerId, budget = {}) {
+        const depart = etat ? copieRapide(etat) : cloneStateForSimulation();
+        return yield* plannerSimuler(depart, (function* () {
+          const avant = evaluateStrategicState(playerId);
+          const transition = applyTurnTransitionCore();
+          if (transition && transition.vainqueur !== null && transition.vainqueur !== undefined) {
+            return evaluateStrategicState(playerId) - avant;
           }
-          return { ...pire, ripostesComparees: candidates.length, coupee, magieCertaine };
+          if (state.currentPlayer !== playerId) return null;
+          const debutTour = evaluateStrategicState(playerId);
+          const reponse = yield* plannerChercherPlanEtapes(playerId, {
+            largeurFaisceau: PLAN_RIPOSTE.largeurFaisceau,
+            decisionsMax: PLAN_RIPOSTE.decisionsMax,
+            etatsMax: PLAN_RIPOSTE.etatsMax,
+            tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs,
+            tempsSecuriteMs: PLAN_SECURITE.riposteMs * plannerSecurite(),
+            ...budget
+          });
+          // Passer reste permis : la suite ne vaut jamais moins que le début du tour.
+          return Math.max(debutTour, reponse.noteArrivee) - avant;
         })());
       }
 
@@ -4068,6 +4109,13 @@
          2 défaites, 1 nul, pour environ 35 % de temps de réflexion en plus.
          Le repli dans la page garde PLAN_BUDGET, donc les bancs aussi. */
       const MOTEUR_BUDGET_ARRIERE_PLAN = { largeurFaisceau: 96, etatsMax: 24000 };
+      /* En arrière-plan aussi : l'Expert rejoue son propre tour suivant après
+         la riposte (plannerSuiteApresRiposte). Self-play Node, 160 parties,
+         budget ci-dessus des deux côtés, filets de temps écartés : 88
+         victoires, 64 défaites, 8 nuls (57,5 % ± 3,9), environ 30 % de
+         réflexion en plus. À 1 la suite pèse trop (12-26-2 sur 40) ; à 0,25
+         elle ne se voit plus (19-17-4). */
+      const MOTEUR_POIDS_ARRIERE_PLAN = { suiteApresRiposte: 0.5 };
       const MOTEUR_DANS_WORKER = typeof WorkerGlobalScope !== "undefined"
         && typeof self !== "undefined" && self instanceof WorkerGlobalScope;
       const moteur = {
