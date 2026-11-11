@@ -9,7 +9,7 @@
      2. le danger : un porteur qu'un gardien adverse peut rejoindre est
         « volable » (terme porteurVolable) ;
      3. la position de la capture du 29/09, côté jaune (6 MOVE, 3 PUSH,
-        1 MAGIC) : l'IA vole au moins une couronne.                          */
+        1 MAGIC) : l'IA prend au moins une couronne à violet.                          */
 
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -73,7 +73,12 @@ const TERRE = [[2,5],[2,6],[3,3],[3,4],[3,5],[3,7],[4,2],[4,3],[4,4],[4,6],[4,7]
     // 3. Position de la capture, côté jaune.
     const partie = await t([4, 3], ['MOVE','MOVE','MOVE','MOVE','MOVE','MOVE','PUSH','PUSH','PUSH','MAGIC']);
     console.log(`plan jaune : ${partie.lisible}`);
-    assert.ok(partie.plan.some(a => a.type === 'VOL'), 'l’IA doit voler une couronne');
+    /* Le résultat, pas la tactique : jaune part sans couronne, donc un VOL ou
+       un RAMASSAGE dans son plan veut dire qu'il en a pris une à violet. Depuis
+       que toute poussée déplace la file, faire tomber le porteur puis ramasser
+       sa couronne vaut souvent mieux que la lui voler. */
+    assert.ok(partie.plan.some(a => a.type === 'VOL' || a.type === 'RAMASSAGE'),
+      'l’IA doit prendre une couronne à violet (vol, ou chute du porteur puis ramassage)');
     console.log('verif-vol-couronne : 3/3');
   } finally {
     await browser.close();
