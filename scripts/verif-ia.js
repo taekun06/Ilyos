@@ -1,6 +1,7 @@
 /* Tous les bancs de l'IA, d'une commande, avec un bilan clair.
 
      npm start   puis   npm run verif:ia        (serveur port 8123)
+                        npm run verif:ia -- vol fidelite   (bancs choisis)
 
    Chaque scripts/verif-*.js est lancé tour à tour ; le bilan liste les échecs
    et la commande échoue s'il y en a un. Des bancs rouges ont longtemps passé
@@ -13,9 +14,14 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const MOTS = process.argv.slice(2);
 const MESURES = new Set(['verif-exposes-partie.js', 'verif-ia.js']);
 const bancs = fs.readdirSync(__dirname)
   .filter(f => /^verif-.*\.js$/.test(f) && !MESURES.has(f))
+  /* npm run verif:ia -- couronne fidelite : seulement les bancs dont le nom
+     contient l'un des mots. Un changement qui ne touche qu'un sujet n'a pas à
+     payer les vingt autres. */
+  .filter(f => !MOTS.length || MOTS.some(mot => f.includes(mot)))
   .sort();
 
 (async () => {

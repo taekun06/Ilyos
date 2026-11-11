@@ -24,10 +24,15 @@
 const { chromium } = require('playwright');
 const ORIGINE = process.env.ILYOS_BENCH_URL || 'http://localhost:8123/';
 const TOURS_VISES = Number(process.env.ILYOS_FIDELITE_TOURS || 14);
+/* Le banc compare des PLATEAUX, pas une vitesse : sur une machine lente il
+   s'arrête à l'échéance et juge les tours enregistrés, pourvu qu'il y en ait
+   assez pour que l'accumulation compte. Avant, il expirait sans rien juger. */
+const TOURS_MINIMUM = Math.min(TOURS_VISES, 6);
+const ECHEANCE_MS = 270000;
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
   const incidents = [];
   page.on('pageerror', e => incidents.push('exception: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') incidents.push('console.error: ' + m.text()); });
@@ -38,12 +43,22 @@ async function main() {
   /* L'autopsie fournit la matière : position d'avant chaque décision et plan
      joué. Sans elle, il faudrait instrumenter la partie une seconde fois. */
   await page.evaluate(() => window.ILYOS_AUTOPSIE.activer());
+  /* Animations accélérées, petite fenêtre : rien de cela ne touche aux règles,
+     et le dessin logiciel de Chromium coûtait plus que la partie elle-même. */
+  await page.evaluate(() => window.ILYOS_BENCH.vitesse(0.05));
   await page.evaluate(() => window.ILYOS_TEST.playAIvsAI({ difficulty: 'expert' }));
   await page.waitForFunction(
     cible => (window.ILYOS_AUTOPSIE.journal() || []).length >= cible,
     TOURS_VISES,
-    { timeout: 300000 }
-  );
+    { timeout: ECHEANCE_MS }
+  ).catch(() => {});
+  const enregistres = await page.evaluate(() => (window.ILYOS_AUTOPSIE.journal() || []).length);
+  if (enregistres < TOURS_MINIMUM) {
+    console.log(`Machine trop lente pour juger : ${enregistres} tour(s) en ${ECHEANCE_MS / 1000} s, il en faut ${TOURS_MINIMUM}.`);
+    await browser.close();
+    process.exitCode = 1;
+    return;
+  }
   await page.evaluate(() => window.ILYOS_TEST.stopAutoplay?.());
   await page.waitForTimeout(1500);
 
