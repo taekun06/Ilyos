@@ -29177,7 +29177,11 @@
         tempoPerdu: 20,
         /* Part de « ma suite après la riposte » ajoutée à la note d'un
            finaliste (plannerSuiteApresRiposte). 0 = horizon d'avant. */
-        suiteApresRiposte: 0
+        suiteApresRiposte: 0,
+        /* Lancer de couronne élargi (plannerCandidatsLancer) : couronne déjà
+           au sol, receveur déjà sur place, île posée au vide sans gardien à
+           créer. 0 = seulement le lancer du porteur vers un gardien apparu. */
+        lancerElargi: 0
       };
 
       /** Proximité décroissante et bornée, tirée d'une distance de déplacement
@@ -31640,67 +31644,110 @@
          combinaison est jugée sur ce qu'elle donne. */
       const PLAN_LANCER_MAX = 8;
       function plannerCandidatsLancer(playerId) {
-        if (!PLAN_POIDS.lancerCouronne || state.islandPlacedThisTurn || !canCreateGuardian(playerId)
-          || !peutPayerIle(state.players[playerId])) return [];
+        if (!PLAN_POIDS.lancerCouronne) return [];
         const moi = state.players[playerId];
+        const elargi = !!PLAN_POIDS.lancerElargi;
+        const peutPoser = !state.islandPlacedThisTurn && peutPayerIle(moi);
+        const peutCreer = canCreateGuardian(playerId);
+        if (!elargi && !(peutPoser && peutCreer)) return [];
         const forceMax = Math.min(availableActionCount("PUSH", moi), Math.max(1, PLAN_POIDS.pousseeLongue || 1));
         if (forceMax < 1) return [];
-        const porteurs = plannerGardiensDe(playerId).filter(g => characterCarriesCrown(g.id));
-        if (!porteurs.length) return [];
         const validation = crownValidationCellsForPlayer(moi);
         const versMoi = (r, c) => Math.min(...validation.map(([vr, vc]) => Math.abs(r - vr) + Math.abs(c - vc)));
-        const poses = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX, false) || [];
-        if (!poses.length) return [];
-        const options = [];
-        const essayer = actions => {
-          const clone = cloneStateForSimulation();
-          return withSimulatedState(clone, () => {
-            for (const action of actions) if (!plannerAppliquerAction(action)) return false;
-            return true;
-          });
-        };
-        for (const porteur of porteurs) {
+        const miens = plannerGardiensDe(playerId);
+
+        /* D'où part la couronne. Historique : mon porteur la dépose à côté de
+           lui puis la pousse. Élargi (lancerElargi) : une couronne DÉJÀ au sol,
+           poussée par n'importe lequel de mes gardiens voisins. */
+        const sources = [];
+        for (const porteur of miens.filter(g => characterCarriesCrown(g.id))) {
           const couronne = artifactCarriedBy(porteur.id);
-          const depart = versMoi(porteur.r, porteur.c);
           for (const [xr, xc] of orthogonalNeighbors(porteur.r, porteur.c)) {
             if (!isLand(xr, xc) || characterAt(xr, xc) || looseArtifactAt(xr, xc)) continue;
-            const dr = xr - porteur.r, dc = xc - porteur.c;
-            const depot = { type: "DEPOT", charId: porteur.id, artifactId: couronne.id, r: xr, c: xc };
-            for (let force = 1; force <= forceMax; force++) {
-              const [lr, lc] = [xr + dr * force, xc + dc * force];
-              if (!inside(lr, lc) || versMoi(lr, lc) >= depart) continue;
-              const pousse = { type: "PUSH", pusherId: porteur.id, r: xr, c: xc, force };
-              const auVide = !isLand(lr, lc);
-              // Poses qui font apparaître un gardien à côté de l'arrivée (et la
-              // couvrent si c'est du vide), les plus proches de mon village d'abord.
+            sources.push({ pousseur: porteur, couronne, r: xr, c: xc, dr: xr - porteur.r, dc: xc - porteur.c,
+              depart: versMoi(porteur.r, porteur.c),
+              prelude: [{ type: "DEPOT", charId: porteur.id, artifactId: couronne.id, r: xr, c: xc }] });
+          }
+        }
+        if (elargi) {
+          for (const couronne of activeArtifacts()) {
+            if (couronne.carrierId !== null) continue;
+            for (const pousseur of miens) {
+              const dr = couronne.r - pousseur.r, dc = couronne.c - pousseur.c;
+              if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
+              sources.push({ pousseur, couronne, r: couronne.r, c: couronne.c, dr, dc,
+                depart: versMoi(couronne.r, couronne.c), prelude: [] });
+            }
+          }
+        }
+        if (!sources.length) return [];
+        const poses = peutPoser ? (findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX, false) || []) : [];
+
+        const options = [];
+        /* La combinaison est jouée en simulation : elle n'est proposée que si
+           la couronne finit bien dans les mains du receveur. */
+        const valider = (ordre, couronne, receveurId, lr, lc) => {
+          let nouveau = null;
+          const ok = withSimulatedState(cloneStateForSimulation(), () => {
+            for (const action of ordre) {
+              const r = plannerAppliquerAction(action);
+              if (!r) return false;
+              if (action.type === "POSE") nouveau = r.gardienId;
+            }
+            const posee = [state.artifact, state.secondArtifact].find(a => a && a.id === couronne.id);
+            if (!(posee && posee.carrierId === null && posee.r === lr && posee.c === lc)) return false;
+            return !!plannerAppliquerAction({ type: "RAMASSAGE", charId: receveurId || nouveau, artifactId: couronne.id });
+          });
+          const receveur = receveurId || nouveau;
+          return ok && receveur ? [...ordre, { type: "RAMASSAGE", charId: receveur, artifactId: couronne.id }] : null;
+        };
+        const poserSur = (pose, spawn) => ({ type: "POSE", shapeKey: pose.shapeKey, cells: pose.cells,
+          relCells: pose.relCells, anchor: pose.anchor, owner: playerId, spawn, but: "lancer" });
+
+        for (const source of sources) {
+          for (let force = 1; force <= forceMax; force++) {
+            const [lr, lc] = [source.r + source.dr * force, source.c + source.dc * force];
+            if (!inside(lr, lc) || versMoi(lr, lc) >= source.depart) continue;
+            const pousse = { type: "PUSH", pusherId: source.pousseur.id, r: source.r, c: source.c, force };
+            const auVide = !isLand(lr, lc);
+            const couvrantes = auVide ? poses.filter(pose => pose.cells.some(([r, c]) => r === lr && c === lc)) : poses;
+
+            // Receveur APPARU : une pose fait naître un gardien à côté de l'arrivée
+            // (et la couvre si c'est du vide), au plus près de mon village.
+            if (peutPoser && peutCreer) {
               const retenues = [];
-              for (const pose of poses) {
-                if (auVide && !pose.cells.some(([r, c]) => r === lr && c === lc)) continue;
+              for (const pose of couvrantes) {
                 const spawns = pose.cells.filter(([r, c]) => Math.abs(r - lr) + Math.abs(c - lc) === 1
                   && !characterAt(r, c));
                 for (const spawn of spawns) retenues.push({ pose, spawn, rang: versMoi(spawn[0], spawn[1]) });
               }
               retenues.sort((a, b) => a.rang - b.rang);
               for (const { pose, spawn } of retenues.slice(0, 2)) {
-                const poser = { type: "POSE", shapeKey: pose.shapeKey, cells: pose.cells, relCells: pose.relCells,
-                  anchor: pose.anchor, owner: playerId, spawn, but: "lancer" };
-                const ordre = auVide ? [poser, depot, pousse] : [depot, pousse, poser];
-                // L'identifiant du gardien apparu se lit dans la simulation.
-                let nouveau = null;
-                const clone = cloneStateForSimulation();
-                const ok = withSimulatedState(clone, () => {
-                  for (const action of ordre) {
-                    const r = plannerAppliquerAction(action);
-                    if (!r) return false;
-                    if (action.type === "POSE") nouveau = r.gardienId;
-                  }
-                  const posee = [state.artifact, state.secondArtifact].find(a => a && a.id === couronne.id);
-                  return !!(posee && posee.carrierId === null && posee.r === lr && posee.c === lc);
-                });
-                if (!ok || !nouveau) continue;
-                const actions = [...ordre, { type: "RAMASSAGE", charId: nouveau, artifactId: couronne.id }];
-                if (!essayer(actions)) continue;
-                options.push({ type: "SEQUENCE", actions, gain: depart - versMoi(spawn[0], spawn[1]) });
+                const poser = poserSur(pose, spawn);
+                const ordre = auVide ? [poser, ...source.prelude, pousse] : [...source.prelude, pousse, poser];
+                const actions = valider(ordre, source.couronne, null, lr, lc);
+                if (actions) options.push({ type: "SEQUENCE", actions, gain: source.depart - versMoi(spawn[0], spawn[1]) });
+              }
+            }
+
+            /* Receveur DÉJÀ LÀ (élargi) : un de mes gardiens voisin de l'arrivée
+               ramasse. Sur la terre, aucune île à poser. Au vide, une île couvre
+               l'arrivée — c'est le seul lancer possible quand j'ai déjà tous mes
+               gardiens, et la pose ne sert alors qu'à cela. */
+            if (!elargi) continue;
+            const receveurs = miens.filter(g => g.id !== source.pousseur.id && !characterCarriesCrown(g.id)
+              && Math.abs(g.r - lr) + Math.abs(g.c - lc) === 1);
+            for (const receveur of receveurs.slice(0, 2)) {
+              const gain = source.depart - versMoi(receveur.r, receveur.c);
+              if (gain <= 0) continue;
+              if (!auVide) {
+                const actions = valider([...source.prelude, pousse], source.couronne, receveur.id, lr, lc);
+                if (actions) options.push({ type: "SEQUENCE", actions, gain });
+                continue;
+              }
+              for (const pose of couvrantes.slice(0, 2)) {
+                const actions = valider([poserSur(pose, null), ...source.prelude, pousse], source.couronne, receveur.id, lr, lc);
+                if (actions) { options.push({ type: "SEQUENCE", actions, gain }); break; }
               }
             }
           }
