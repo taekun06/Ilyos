@@ -20808,7 +20808,7 @@
           const encoreUtile = () => token === aiRunToken && !!state && state.winner === null;
           // En arrière-plan si possible (planner.js, « RÉFLEXION EN
           // ARRIÈRE-PLAN ») ; `undefined` = à faire ici, comme avant.
-          rapport = await moteurReflechir(joueur, encoreUtile, null, null, MOTEUR_BUDGET_ARRIERE_PLAN);
+          rapport = await moteurReflechir(joueur, encoreUtile, null, MOTEUR_POIDS_ARRIERE_PLAN, MOTEUR_BUDGET_ARRIERE_PLAN);
           if (rapport === undefined) {
             rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur), encoreUtile);
           }
@@ -32998,6 +32998,13 @@
          2 défaites, 1 nul, pour environ 35 % de temps de réflexion en plus.
          Le repli dans la page garde PLAN_BUDGET, donc les bancs aussi. */
       const MOTEUR_BUDGET_ARRIERE_PLAN = { largeurFaisceau: 96, etatsMax: 24000 };
+      /* En arrière-plan aussi : l'Expert rejoue son propre tour suivant après
+         la riposte (plannerSuiteApresRiposte). Self-play Node, 160 parties,
+         budget ci-dessus des deux côtés, filets de temps écartés : 88
+         victoires, 64 défaites, 8 nuls (57,5 % ± 3,9), environ 30 % de
+         réflexion en plus. À 1 la suite pèse trop (12-26-2 sur 40) ; à 0,25
+         elle ne se voit plus (19-17-4). */
+      const MOTEUR_POIDS_ARRIERE_PLAN = { suiteApresRiposte: 0.5 };
       const MOTEUR_DANS_WORKER = typeof WorkerGlobalScope !== "undefined"
         && typeof self !== "undefined" && self instanceof WorkerGlobalScope;
       const moteur = {
