@@ -27,7 +27,7 @@
    <button class="card violet" data-mode="team"><div class="card-icon">♜ ♜</div><div class="card-title">2 CONTRE 2</div><div class="card-sub">Équipes</div></button>
    <button class="card amber" data-mode="online"><div class="card-icon">◎</div><div class="card-title">EN LIGNE</div><div class="card-sub">Joueurs du monde</div></button>
   </div>
-  <div class="home-nav"><button class="pill" data-action="rules">♛ RÈGLES</button><button class="pill" data-action="tutorial">▣ TUTORIEL</button><button class="pill" data-action="credits">★ CRÉDITS</button></div>
+  <div class="home-nav"><button class="pill" data-action="rules">♛ RÈGLES</button><button class="pill" data-action="tutorial">▣ IMMERSION</button><button class="pill" data-action="credits">★ CRÉDITS</button></div>
  </div>
 </section>
 
@@ -40,7 +40,7 @@
  <div class="duel-ui">
   <img class="logo-duel" src="./menu/assets/ilyos-logo.svg" alt="ILYOS">
   <button class="pill back" id="back">← RETOUR</button>
-  <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" data-action="tutorial">TUTORIEL</button><button class="pill" data-action="credits">CRÉDITS</button></div>
+  <div class="duel-nav"><button class="pill" data-action="rules">RÈGLES</button><button class="pill" data-action="tutorial">IMMERSION</button><button class="pill" data-action="credits">CRÉDITS</button></div>
   <div class="setup">
    <div class="panel" id="panel"></div>
    <button class="play" id="play">JOUER</button>

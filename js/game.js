@@ -20805,8 +20805,13 @@
         try {
           // Découpée : l'écran reste vivant pendant la réflexion (planner.js,
           // « RÉFLEXION DÉCOUPÉE »), pour exactement la même décision.
-          rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur),
-            () => token === aiRunToken && !!state && state.winner === null);
+          const encoreUtile = () => token === aiRunToken && !!state && state.winner === null;
+          // En arrière-plan si possible (planner.js, « RÉFLEXION EN
+          // ARRIÈRE-PLAN ») ; `undefined` = à faire ici, comme avant.
+          rapport = await moteurReflechir(joueur, encoreUtile, null, null, MOTEUR_BUDGET_ARRIERE_PLAN);
+          if (rapport === undefined) {
+            rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur), encoreUtile);
+          }
         } catch (erreur) {
           console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
           autopsieConsigner(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);
@@ -28287,12 +28292,58 @@
          — RESTAURATION EN `finally`. Une exception au milieu d'une simulation
            laisserait sinon le jeu réel branché sur un état de travail.
          ------------------------------------------------------------------- */
+      /* COPIE RAPIDE D'UN ÉTAT DE JEU.
+
+         La recherche de l'Expert copie l'état avant chaque coup simulé : près
+         de 200 000 copies en douze tours. Avec structuredClone, généraliste
+         (cycles, types transférables, sérialisation interne), ces copies
+         prenaient un tiers du temps de réflexion (profil sous Node, 10/11).
+
+         Un état de jeu n'est fait que d'objets simples, de tableaux, de Set et
+         de valeurs primitives — relevé sur une partie : aucun autre type,
+         aucun objet référencé deux fois. Cette copie ne traite donc que cela,
+         à la main. Tout le reste (Map, Date, objet à prototype…) est confié à
+         structuredClone, sous-arbre par sous-arbre : le résultat reste le
+         même, seule la vitesse change.
+
+         Une différence assumée : structuredClone conserve les références
+         partagées (un même objet atteint par deux chemins reste un seul objet
+         dans la copie) ; ici il serait dédoublé. Un état de jeu n'en contient
+         pas, et ne doit pas en contenir : la sauvegarde et le jeu en ligne
+         passent par JSON, qui les dédouble déjà. */
+      function copieRapide(valeur) {
+        if (valeur === null || typeof valeur !== "object") return valeur;
+        if (Array.isArray(valeur)) {
+          const n = valeur.length;
+          const copie = new Array(n);
+          for (let i = 0; i < n; i++) {
+            const v = valeur[i];
+            copie[i] = (v === null || typeof v !== "object") ? v : copieRapide(v);
+          }
+          return copie;
+        }
+        const proto = Object.getPrototypeOf(valeur);
+        if (proto === Object.prototype || proto === null) {
+          const copie = {};
+          for (const cle in valeur) {
+            const v = valeur[cle];
+            copie[cle] = (v === null || typeof v !== "object") ? v : copieRapide(v);
+          }
+          return copie;
+        }
+        if (proto === Set.prototype) {
+          const copie = new Set();
+          for (const v of valeur) copie.add((v === null || typeof v !== "object") ? v : copieRapide(v));
+          return copie;
+        }
+        return structuredClone(valeur);
+      }
+
       function cloneStateForSimulation(source = state) {
-        // structuredClone plutôt que JSON : `state` contient des Set (reachable,
+        // copieRapide plutôt que JSON : `state` contient des Set (reachable,
         // smartPushTargets) qu'un aller-retour JSON transformerait silencieusement
-        // en objets vides. Les champs non clonables (aucun aujourd'hui, mais la
-        // garde évite une régression sournoise) feraient échouer bruyamment.
-        const clone = structuredClone({
+        // en objets vides.
+        const clone = copieRapide({
           players: source.players,
           currentPlayer: source.currentPlayer,
           round: source.round,
@@ -32357,7 +32408,7 @@
               if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
-              const clone = structuredClone(noeud.etat);
+              const clone = copieRapide(noeud.etat);
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
@@ -32371,7 +32422,7 @@
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
                     if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -32380,7 +32431,7 @@
                 if (PLAN_POIDS.fermeturePoussee) {
                   for (const t of plannerCandidatsPush(playerId)) {
                     if (!t.ejection) continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -32612,7 +32663,7 @@
         const sans = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
         if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
-        const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
+        const pioche = withSimulatedState(copieRapide(noeudFinal.etat),
           () => plannerPiocheProchaine(adverse.id));
         /* POUSSÉE ADVERSE DE PLUS. Même arrondi, même angle mort que la
            MAGIE : la main plausible ne prête qu'un nombre fixe de POUSSER.
@@ -32651,7 +32702,7 @@
       }
 
       function* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
-        const apres = structuredClone(noeudFinal.etat);
+        const apres = copieRapide(noeudFinal.etat);
         return yield* plannerSimuler(apres, (function* () {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
@@ -32876,6 +32927,228 @@
         plannerDernierRapport = principal;
         return principal;
       }
+
+      /* =====================================================================
+         RÉFLEXION EN ARRIÈRE-PLAN — le planner dans un Web Worker.
+
+         Le même bundle est chargé une seconde fois dans un Worker, derrière un
+         écran factice (js/moteur/worker.js). La page lui envoie l'état de
+         simulation — exactement celui que la recherche copie de toute façon à
+         sa racine (cloneStateForSimulation) — et reçoit le plan. La recherche
+         ne partage alors plus son cœur de processeur avec le rendu 3D.
+
+         LA DÉCISION EST CELLE QUE LA PAGE AURAIT PU PRENDRE : même code, même
+         état. Elle n'est pas forcément identique au coup près, car la
+         recherche tire au hasard par endroits ; à graine égale elle l'est, et
+         `ILYOS_MOTEUR.comparer()` le vérifie.
+
+         RIEN NE DÉPEND DU WORKER. Absent, en panne, trop lent, ou hors des
+         cas prévus : moteurReflechir() rend `undefined` et l'appelant garde la
+         réflexion découpée dans la page, comme avant. Deux garde-fous :
+         - l'empreinte de l'état vue par le Worker doit être celle de la page,
+           sinon le plan est refusé (un réglage de partie que le Worker
+           ignorerait se verrait ici) ;
+         - après exécution, runExpertPlannedTurn compare déjà l'état obtenu à
+           l'état prévu.
+
+         Cas laissés à la page : autopsie active (elle a besoin des états
+         examinés, trop lourds à transférer), mode Rotation (marché, créatures :
+         pas encore vérifié dans le Worker), simulation en cours.
+         ===================================================================== */
+      const MOTEUR_ATTENTE_MAX_MS = 30000;
+      /* En arrière-plan, la recherche ne coûte plus d'images : l'Expert y
+         cherche deux fois plus large. Mesuré en self-play Node (11 parties,
+         filets de temps écartés) contre le budget de la page : 8 victoires,
+         2 défaites, 1 nul, pour environ 35 % de temps de réflexion en plus.
+         Le repli dans la page garde PLAN_BUDGET, donc les bancs aussi. */
+      const MOTEUR_BUDGET_ARRIERE_PLAN = { largeurFaisceau: 96, etatsMax: 24000 };
+      const MOTEUR_DANS_WORKER = typeof WorkerGlobalScope !== "undefined"
+        && typeof self !== "undefined" && self instanceof WorkerGlobalScope;
+      const moteur = {
+        ouvrier: null, pret: false, enPanne: false, numero: 0, attente: null,
+        // Compteurs lus par les tests et le diagnostic.
+        reponses: 0, replis: 0, dernierRepli: null, dernierMs: null
+      };
+
+      /* Côté Worker : une demande, un rapport. */
+      function moteurPlanifier(demande) {
+        setBoardSize(demande.grille);
+        const debut = performance.now();
+        return moteurAvecPoids(demande.poids, () => withSimulatedState(demande.etat, () => {
+          const empreinteDepart = strategicStateFingerprint();
+          const rapport = plannerChercherPlanRobuste(state.currentPlayer, demande.budget || undefined);
+          return { empreinteDepart, rapport: moteurRapportLeger(rapport), ms: Math.round(performance.now() - debut) };
+        }));
+      }
+
+      /* Réglages prêtés le temps d'un calcul (diagnostic seulement : en partie,
+         page et Worker gardent tous deux les réglages du bundle). */
+      function moteurAvecPoids(reglages, fn) {
+        if (!reglages) return fn();
+        /* `graine` : la recherche tire au hasard par endroits (pioches
+           simulées, départages) ; sans graine commune, deux calculs de la même
+           position peuvent différer sans qu'aucun ne soit faux. */
+        const { graine = null, ...poids } = reglages;
+        const memoire = {};
+        for (const cle of Object.keys(poids)) { memoire[cle] = PLAN_POIDS[cle]; PLAN_POIDS[cle] = poids[cle]; }
+        if (graine !== null) setTestRandomSeed(graine);
+        try { return fn(); }
+        finally {
+          if (graine !== null) setTestRandomSeed(null);
+          for (const cle of Object.keys(memoire)) PLAN_POIDS[cle] = memoire[cle];
+        }
+      }
+
+      /* Le rapport sans ses états complets (finalistes, relevés d'autopsie) :
+         seuls le plan et ses chiffres traversent. */
+      function moteurRapportLeger(rapport) {
+        if (!rapport) return null;
+        const { finalistes, releveCandidats, etatDepart, etatRetenu, ...leger } = rapport;
+        return leger;
+      }
+
+      function moteurAutorise() {
+        if (MOTEUR_DANS_WORKER || moteur.enPanne || ilyosSimulationActive) return false;
+        if (typeof Worker !== "function" || !state) return false;
+        if (plannerAutopsieActive() || state.rotation) return false;
+        try {
+          if (/(?:^|[?&])moteur=page(?:&|$)/.test(location.search)) return false;
+        } catch (_) { return false; }
+        return true;
+      }
+
+      function moteurArreter(raison) {
+        if (moteur.ouvrier) { try { moteur.ouvrier.terminate(); } catch (_) {} }
+        moteur.ouvrier = null;
+        moteur.pret = false;
+        const attente = moteur.attente;
+        moteur.attente = null;
+        if (attente) attente.finir(undefined, raison);
+      }
+
+      /* Lance le Worker (une fois). Appelé dès qu'un tour d'Expert commence :
+         le premier tour se joue dans la page pendant qu'il charge. */
+      function moteurDemarrer() {
+        if (moteur.ouvrier || !moteurAutorise()) return;
+        try {
+          const script = document.querySelector('script[src*="js/game.js"]');
+          if (!script || !script.src) { moteur.enPanne = true; return; }
+          const adresse = new URL("moteur/worker.js", script.src);
+          adresse.searchParams.set("jeu", script.src);
+          const ouvrier = new Worker(adresse.href);
+          moteur.ouvrier = ouvrier;
+          ouvrier.onmessage = evenement => {
+            if (ouvrier !== moteur.ouvrier) return;
+            const message = evenement.data || {};
+            if (message.pret) { moteur.pret = true; return; }
+            const attente = moteur.attente;
+            if (!attente || message.id !== attente.id) return;
+            moteur.attente = null;
+            if (message.erreur) attente.finir(undefined, "erreur du Worker : " + message.erreur);
+            else attente.finir(message.resultat, null);
+          };
+          ouvrier.onerror = evenement => {
+            if (ouvrier !== moteur.ouvrier) return;
+            // Un Worker qui ne charge pas ne chargera pas mieux au tour suivant.
+            moteur.enPanne = true;
+            moteurArreter("Worker en erreur : " + (evenement && evenement.message || "chargement"));
+          };
+        } catch (erreur) {
+          moteur.enPanne = true;
+          moteur.ouvrier = null;
+        }
+      }
+
+      /** Demande le plan du joueur courant au Worker. Rend le rapport, `null`
+       *  si la réflexion a été abandonnée (partie quittée), ou `undefined` si
+       *  l'appelant doit réfléchir lui-même. */
+      function moteurReflechir(joueur, continuer = null, etatFourni = null, poids = null, budget = null) {
+        moteurDemarrer();
+        if (!moteurAutorise() || !moteur.ouvrier || !moteur.pret) return Promise.resolve(undefined);
+        // Une demande encore en cours : son Worker calcule pour une position
+        // périmée. On le remplace plutôt que d'attendre derrière lui.
+        if (moteur.attente) { moteurArreter("demande remplacée"); return Promise.resolve(undefined); }
+
+        const etat = etatFourni || cloneStateForSimulation();
+        const empreintePage = withSimulatedState(etat, () => strategicStateFingerprint());
+        const id = ++moteur.numero;
+        const debut = performance.now();
+        return new Promise(resoudre => {
+          const delai = setTimeout(() => {
+            if (moteur.attente && moteur.attente.id === id) moteurArreter("sans réponse après " + MOTEUR_ATTENTE_MAX_MS + " ms");
+          }, MOTEUR_ATTENTE_MAX_MS);
+          moteur.attente = {
+            id,
+            finir(resultat, raison) {
+              clearTimeout(delai);
+              if (continuer && !continuer()) { resoudre(null); return; }
+              if (resultat && resultat.empreinteDepart !== empreintePage) {
+                raison = "le Worker ne voit pas la même position que la page";
+                resultat = undefined;
+              }
+              if (!resultat || !resultat.rapport) {
+                moteur.replis++;
+                moteur.dernierRepli = raison || "rapport vide";
+                console.warn("[ILYOS] réflexion en arrière-plan abandonnée, reprise dans la page :", moteur.dernierRepli);
+                resoudre(undefined);
+                return;
+              }
+              moteur.reponses++;
+              moteur.dernierMs = Math.round(performance.now() - debut);
+              plannerDernierRapport = resultat.rapport;
+              resoudre(resultat.rapport);
+            }
+          };
+          try {
+            moteur.ouvrier.postMessage({ id, type: "planifier", demande: { etat, grille: GRID, joueur, poids, budget } });
+          } catch (erreur) {
+            moteur.enPanne = true;
+            moteurArreter("envoi impossible : " + erreur.message);
+          }
+        });
+      }
+
+      /* Diagnostic : le plan de la position en cours, calculé dans la page puis
+         dans le Worker. Les deux doivent être identiques — à condition
+         d'écarter les filets de temps et de fixer le hasard
+         (`{ poids: { securiteFacteur: 20, graine: 1 } }`) : un filet atteint
+         d'un seul côté, ou un tirage différent, suffit à changer le plan. */
+      async function moteurComparer({ poids = null, etatJson = null } = {}) {
+        if (!state) return null;
+        moteurDemarrer();
+        for (let i = 0; i < 400 && moteur.ouvrier && !moteur.pret; i++) await new Promise(r => setTimeout(r, 50));
+        /* UNE photo pour les deux. À lancer sur une position FIGÉE : pendant
+           un tour d'IA en cours, sa réflexion découpée et celle-ci se
+           partageraient les variables de la recherche. `etatJson` : une
+           position de self-play (ILYOS_SELFPLAY), sans partie en cours. */
+        const etat = etatJson ? JSON.parse(etatJson) : cloneStateForSimulation();
+        const joueur = etat.currentPlayer;
+        const t0 = performance.now();
+        const page = moteurAvecPoids(poids, () => withSimulatedState(copieRapide(etat), () => plannerChercherPlanRobuste(joueur)));
+        const msPage = Math.round(performance.now() - t0);
+        const ouvrier = await moteurReflechir(joueur, null, etat, poids);
+        const planPage = JSON.stringify(page ? page.plan : null);
+        const planOuvrier = JSON.stringify(ouvrier ? ouvrier.plan : null);
+        return {
+          identiques: !!ouvrier && planPage === planOuvrier,
+          planPage, planOuvrier, msPage, msOuvrier: moteur.dernierMs,
+          // Premiers chiffres à diverger = où chercher la cause d'un écart.
+          chiffresPage: page ? [page.noteDepart, page.noteArrivee, page.etatsExplores, page.candidatsGeneres] : null,
+          chiffresOuvrier: ouvrier ? [ouvrier.noteDepart, ouvrier.noteArrivee, ouvrier.etatsExplores, ouvrier.candidatsGeneres] : null,
+          coupePage: page && page.anticipation ? { principale: page.anticipation.principaleCoupee, ripostes: page.anticipation.ripostesCoupees } : null,
+          coupeOuvrier: ouvrier && ouvrier.anticipation ? { principale: ouvrier.anticipation.principaleCoupee, ripostes: ouvrier.anticipation.ripostesCoupees } : null,
+          repli: ouvrier ? null : moteur.dernierRepli
+        };
+      }
+
+      window.ILYOS_MOTEUR = {
+        planifier: moteurPlanifier,
+        comparer: moteurComparer,
+        etat: () => ({
+          dansWorker: MOTEUR_DANS_WORKER, lance: !!moteur.ouvrier, pret: moteur.pret, enPanne: moteur.enPanne,
+          reponses: moteur.reponses, replis: moteur.replis, dernierRepli: moteur.dernierRepli, dernierMs: moteur.dernierMs
+        })
+      };
 
       /* =====================================================================
          MISE EN PLACE DU MODE PERSONNALISÉ — îles puis gardiens, en serpentin.
@@ -36537,14 +36810,17 @@
            (4 en 13×13), donc à la même distance des deux camps.
          — Une balise n'est allumée que sur une île : sur le vide, elle attend
            qu'on construise dessous.
-         — À la fin de ton tour, chaque balise allumée où se tient un de tes
-           gardiens te rapporte 1 point. Premier à 10 points.
+         — Au début de ton tour, chaque balise allumée où se tient encore un
+           de tes gardiens te rapporte 1 point : il faut la garder pendant le
+           tour adverse. Dès qu'un joueur atteint 10 points, on finit la
+           manche ; le meilleur score gagne (égalité : match nul).
+         — En draft et en setup, le premier joueur ne pose pas d'île à son
+           premier tour (en classique, il pose normalement).
+         — Mise en place (draft) : aucun gardien ne se place sur une balise.
          — Pas de couronnes : les deux restent hors du terrain.
          — Deux balises sur quatre, tirées au hasard et marquées, sont
            MOBILES : elles tournent avec l'île sur laquelle elles se trouvent
            (magie). Les deux autres restent sur leur case.
-         Le décompte se fait à l'ouverture du tour suivant, sur la position
-         exacte où le joueur a fini — comme la validation des couronnes.
          ===================================================================== */
       const ROTATION_CIBLE_BALISES = 10;
       let rotationDemande = null;
@@ -36659,12 +36935,18 @@
       }
 
       /* Balises mobiles : elles suivent la case de leur île pendant une
-         rotation (rotation.absCells garde l'ordre de ile.cells). Hors
-         simulation, comme les œufs : le clone du planner partage
-         state.rotation avec la vraie partie. */
+         rotation (rotation.absCells garde l'ordre de ile.cells). Aussi en
+         simulation, pour que l'IA sache où la balise ira : la liste est alors
+         recopiée (copie à l'écriture), jamais modifiée en place, au cas où
+         un clone partagerait state.rotation avec la vraie partie. */
+      function rotationEcrire() {
+        if (ilyosSimulationActive) state.rotation = { ...state.rotation, balises: state.rotation.balises.map(b => [b[0], b[1]]) };
+        return state.rotation;
+      }
+
       const rotationMagieBase = applyMagicRotationCore;
       applyMagicRotationCore = function applyMagicRotationCoreBalises(islandId, rotation) {
-        const actif = !ilyosSimulationActive && butBalises() && rotation?.valid && state.rotation.mobiles?.length;
+        const actif = butBalises() && rotation?.valid && state.rotation.mobiles?.length;
         const ile = actif ? state.islands.find(is => is.id === islandId) : null;
         const suivantes = ile ? state.rotation.balises.map(([r, c], i) => {
           if (!baliseMobile(i)) return null;
@@ -36672,7 +36954,10 @@
           return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
         }).filter(Boolean) : [];
         const resultat = rotationMagieBase(islandId, rotation);
-        if (resultat) suivantes.forEach(({ i, vers }) => { state.rotation.balises[i] = [vers[0], vers[1]]; });
+        if (resultat && suivantes.length) {
+          const ecrit = rotationEcrire();
+          suivantes.forEach(({ i, vers }) => { ecrit.balises[i] = [vers[0], vers[1]]; });
+        }
         return resultat;
       };
 
@@ -36682,40 +36967,79 @@
         if (colonne) colonne.titre = butBalises() ? "Points" : "Couronnes";
       }
 
-      /* Décompte des balises du joueur qui vient de finir son tour. Rend
-         true si la partie est gagnée. */
+      /* Décompte AU DÉBUT DU TOUR (Taekun, 2026-11-08) : le joueur qui prend
+         la main marque chaque balise allumée qu'il tient ENCORE, donc après
+         le tour de l'adversaire, qui a pu l'en chasser. FIN DE MANCHE : dès
+         qu'un joueur atteint la cible, on laisse finir la manche pour que
+         tout le monde ait joué autant de tours ; le meilleur score gagne,
+         une égalité est un match nul. Rend true si la partie est finie. */
       function rotationDecompterBalises() {
         if (!butBalises() || state.winner !== null || state.turn <= 1) return false;
         if (state.rotation.dernierDecompte === state.turn) return false;
-        state.rotation.dernierDecompte = state.turn;
-        const n = state.players.length;
-        const precedent = state.players[(state.currentPlayer - 1 + n) % n];
-        if (!precedent) return false;
-        const gagnes = balisesTenuesPar(precedent.id);
-        if (!gagnes) return false;
-        state.players.forEach(p => {
-          if (memeEquipe(p.id, precedent.id)) p.score = (p.score || 0) + gagnes;
-        });
-        if (!ilyosSimulationActive) {
-          state.fxCells ||= [];
-          state.rotation.balises.forEach(([r, c]) => {
-            const g = gardienSurBalise(r, c);
-            if (g && memeEquipe(g.player, precedent.id) && baliseAllumee(r, c)) {
-              state.fxCells.push({ type: "score", r, c });
-              animateCellPulse(r, c, "crown-burst");
-            }
+        rotationEcrire().dernierDecompte = state.turn;
+        const joueur = state.players[state.currentPlayer];
+        if (!joueur) return false;
+        const gagnes = balisesTenuesPar(joueur.id);
+        if (gagnes) {
+          state.players.forEach(p => {
+            if (memeEquipe(p.id, joueur.id)) p.score = (p.score || 0) + gagnes;
           });
-          triggerScoreAnimation(precedent.id);
-          playSfx("crownTake");
-          showToast(`${precedent.name} tient ${gagnes > 1 ? `${gagnes} balises` : "une balise"} : +${gagnes} (${precedent.score}/${rotationCible()})`);
+          if (!ilyosSimulationActive) {
+            state.fxCells ||= [];
+            state.rotation.balises.forEach(([r, c]) => {
+              const g = gardienSurBalise(r, c);
+              if (g && memeEquipe(g.player, joueur.id) && baliseAllumee(r, c)) {
+                state.fxCells.push({ type: "score", r, c });
+                animateCellPulse(r, c, "crown-burst");
+              }
+            });
+            triggerScoreAnimation(joueur.id);
+            playSfx("crownTake");
+            showToast(`${joueur.name} tient ${gagnes > 1 ? `${gagnes} balises` : "une balise"} : +${gagnes} (${joueur.score}/${rotationCible()})`);
+          }
         }
-        if (precedent.score < rotationCible()) return false;
-        state.winner = precedent.id;
+        const meilleur = Math.max(...state.players.map(p => p.score || 0));
+        if (meilleur < rotationCible()) return false;
+        // Le tour n vient de s'ouvrir : la manche est complète quand chaque
+        // joueur a eu autant de tours (n multiple du nombre de joueurs).
+        const n = state.players.length;
+        if (state.turn % n !== 0) {
+          if (!ilyosSimulationActive && !state.rotation.derniereManche) {
+            state.rotation.derniereManche = true;
+            setTimeout(() => showToast(`${rotationCible()} points atteints : dernière manche, chacun rejoue jusqu’au bout du tour de table.`), 1600);
+          }
+          return false;
+        }
+        const tete = state.players.filter(p => (p.score || 0) === meilleur);
+        const nul = tete.some(p => !memeEquipe(p.id, tete[0].id));
+        state.winner = nul ? MATCH_NUL : tete[0].id;
         if (!ilyosSimulationActive) {
-          playVictoryCelebration(precedent.id);
-          setTimeout(() => showVictory(precedent,
-            `${precedent.name} a tenu les balises jusqu’à ${precedent.score} points et prend le contrôle d’ILYOS.`), 900);
+          const scores = state.players.map(p => `${p.name} ${p.score || 0}`).join(" · ");
+          stopTurnTimer();
+          if (nul) {
+            setTimeout(() => showEgalite(scores), 900);
+          } else {
+            playVictoryCelebration(tete[0].id);
+            setTimeout(() => showVictory(tete[0],
+              `${tete[0].name} a tenu les balises jusqu’à ${meilleur} points et prend le contrôle d’ILYOS.`), 900);
+          }
         }
+        return true;
+      }
+
+      const rotationScoreDebutBase = scoreCrownsAtTurnStart;
+      scoreCrownsAtTurnStart = function scoreCrownsAtTurnStartBalises(player, options = {}) {
+        if (butBalises() && !options.immediat && rotationDecompterBalises()) return 1;
+        return rotationScoreDebutBase(player, options);
+      };
+
+      /* Draft et setup : le premier joueur ne pose pas d'île à son premier
+         tour (Taekun, 2026-11-09 ; en classique, trop pénalisant : plateau
+         vide). Rend true si le verrou vient d'être posé. */
+      function rotationOuvertureBalises() {
+        if (!butBalises() || state.turn !== 1 || state.winner !== null) return false;
+        if (!state.startingBoardMode || state.startingBoardMode === "classic") return false;
+        state.islandPlacedThisTurn = true;
         return true;
       }
 
@@ -36730,9 +37054,13 @@
         }
         const premierTour = butBalises() && state.turn === 1 && !state.rotation.annonce;
         rotationBeginTurnBase();
+        /* Compensation du premier joueur (Taekun, 2026-11-08) : pas d'île à
+           son premier tour. L'IA est lancée plus tard (setTimeout), elle
+           voit donc déjà le verrou. */
+        if (rotationOuvertureBalises()) renderAll();
         if (premierTour && !ilyosSimulationActive) {
           state.rotation.annonce = true;
-          setTimeout(() => showToast(`Rotation · Balises : tiens les balises allumées. ${rotationCible()} points pour gagner.`), 1400);
+          setTimeout(() => showToast(`Rotation · Balises : tiens une balise allumée jusqu’à ton tour suivant pour marquer. ${rotationCible()} points pour gagner.`), 1400);
         }
       };
 
@@ -36749,13 +37077,24 @@
       /* L'IA. Le planner sait déjà jouer îles, déplacements, poussées et
          magie ; seule son évaluation parle de couronnes. En mode Balises,
          elle est remplacée par une évaluation qui compte ce qui rapporte :
-         le score, les balises tenues à la fin du tour, et la distance qui
-         sépare chaque camp des balises. Tous les niveaux de CPU passent par
+         le score, les balises tenues, et la distance qui sépare chaque camp
+         des balises.
+
+         Le décompte a lieu au début du tour : une balise tenue par le camp
+         qui ne joue PAS (currentPlayer) est un point quasi acquis, puisqu'il
+         marque dès l'ouverture de son tour ; une balise tenue par le camp qui
+         joue doit encore survivre au tour adverse. Vu de l'IA en fin de son
+         tour, chasser l'adversaire d'une balise vaut donc presque un point,
+         et la riposte simulée (décompte compris) dit si la sienne tiendra. Tous les niveaux de CPU passent par
          le planner : les niveaux sans planner ne savent viser qu'une couronne. */
       const ROTATION_POIDS = {
         point: 1000,
-        baliseTenue: 620,
-        baliseAdverse: 520,
+        // Balise qui marquera à l'ouverture du prochain tour (camp qui attend).
+        baliseSure: 950,
+        // Balise du camp qui joue : elle doit tenir pendant le tour adverse.
+        // 450 → 700 (2026-11-09) : 60 % contre 450 en draft 4/3, 57 % contre
+        // 950 ; neutre en classique (46 % ± 6,4 sur 60 parties).
+        baliseExposee: 700,
         distanceBalise: 45,
         distanceBaliseEteinte: 12,
         gardien: 150
@@ -36785,7 +37124,9 @@
           const allumee = baliseAllumee(r, c);
           const g = gardienSurBalise(r, c);
           if (allumee && g) {
-            valeur += memeEquipe(g.player, playerId) ? ROTATION_POIDS.baliseTenue : -ROTATION_POIDS.baliseAdverse;
+            const poidsTenue = memeEquipe(g.player, state.currentPlayer)
+              ? ROTATION_POIDS.baliseExposee : ROTATION_POIDS.baliseSure;
+            valeur += memeEquipe(g.player, playerId) ? poidsTenue : -poidsTenue;
           }
           const poids = allumee ? ROTATION_POIDS.distanceBalise : ROTATION_POIDS.distanceBaliseEteinte;
           const dMoi = Math.min(8, rotationDistanceAuCamp(playerId, r, c));
@@ -36798,6 +37139,166 @@
         if (plannerTraceEval) plannerTraceEval.push({ terme: "balises", montant: valeur, note: null });
         return valeur;
       }
+
+      /* Mise en place (draft du Personnalisé) : l'IA vise les balises, pas
+         le sanctuaire vide — ses îles s'en approchent et ses gardiens s'y
+         placent au plus près (plannerDraftIle / plannerDraftGardien). */
+      const rotationDraftCiblesBase = plannerDraftCouronnes;
+      plannerDraftCouronnes = function plannerDraftCiblesBalises() {
+        if (!butBalises()) return rotationDraftCiblesBase();
+        return state.rotation.balises.map(([r, c]) => [r, c]);
+      };
+
+      /* MISE EN PLACE (draft) pour les Balises (Taekun, 2026-11-08 : « il doit
+         apprendre à se placer au mieux en début de partie »).
+
+         Le draft historique mesure tout sur la TERRE : au début du draft, les
+         balises sont presque toutes sur le vide, si bien que chaque île et
+         chaque gardien valaient zéro côté balises et que l'IA se plaçait au
+         hasard de la vulnérabilité. Ici les distances traversent le vide
+         avec un surcoût (draftCoutVide), comme la route de la couronne : une
+         île qui avance vers une balise rapporte déjà.
+
+         Une île vaut : ses meilleurs postes de gardien près des balises, la
+         COURSE à chaque balise (qui y arrive le premier : mes îles et
+         gardiens contre les siens) et le fait d'allumer une balise que mes
+         pièces atteindront avant les siennes plutôt que l'inverse. PLAN_POIDS.draftBalises = 0 rend le draft
+         historique (banc). */
+      PLAN_POIDS.draftBalises = 1;
+      const ROTATION_DRAFT = { course: 260, courseMax: 4, allumerMienne: 320, allumerSienne: 260 };
+
+      /* Distance de chaque case aux sources, le vide coûtant draftCoutVide en
+         plus (une pose devra le combler). */
+      function rotationChampAvecVide(sources) {
+        const vide = PLAN_POIDS.draftCoutVide;
+        const cout = new Map();
+        const files = [[]];
+        for (const [r, c] of sources) {
+          if (!inside(r, c)) continue;
+          const d = isLand(r, c) ? 0 : vide;
+          const k = key(r, c);
+          if ((cout.get(k) ?? Infinity) <= d) continue;
+          cout.set(k, d);
+          (files[d] ||= []).push([r, c, d]);
+        }
+        for (let niveau = 0; niveau < files.length; niveau++) {
+          const file = files[niveau];
+          if (!file) continue;
+          for (let i = 0; i < file.length; i++) {
+            const [r, c, d] = file[i];
+            if (d !== cout.get(key(r, c))) continue;
+            for (const arete of movementEdges(r, c)) {
+              const nd = d + arete.cost + (isLand(arete.r, arete.c) ? 0 : vide);
+              const k = key(arete.r, arete.c);
+              if (nd >= (cout.get(k) ?? Infinity)) continue;
+              cout.set(k, nd);
+              (files[nd] ||= []).push([arete.r, arete.c, nd]);
+            }
+          }
+        }
+        return cout;
+      }
+
+      /* D'où partira un camp : ses gardiens et ses îles. Les villages ne
+         servent à rien dans ce mode, ils ne comptent pas. */
+      function rotationSourcesCamp(joueur) {
+        const sources = [];
+        for (const g of state.characters || []) if (memeEquipe(g.player, joueur.id)) sources.push([g.r, g.c]);
+        for (const ile of state.islands || []) if (memeEquipe(ile.owner, joueur.id)) sources.push(...ile.cells);
+        return sources;
+      }
+
+      function rotationDraftCourse(playerId) {
+        const moi = state.players[playerId];
+        const lui = plannerAdversaire(playerId);
+        if (!moi || !lui) return 0;
+        const balises = state.rotation.balises;
+        const champsBalises = balises.map(b => rotationChampAvecVide([b]));
+        const plusPres = (champ, sources) => Math.min(60, ...sources.map(([r, c]) => champ.get(key(r, c)) ?? 60));
+        const miennes = rotationSourcesCamp(moi);
+        const siennes = rotationSourcesCamp(lui);
+        let total = 0;
+        balises.forEach(([r, c], i) => {
+          const dMoi = plusPres(champsBalises[i], miennes);
+          const dLui = plusPres(champsBalises[i], siennes);
+          const ecart = Math.max(-ROTATION_DRAFT.courseMax, Math.min(ROTATION_DRAFT.courseMax, dLui - dMoi));
+          total += ROTATION_DRAFT.course * ecart;
+          // Une balise allumée sert celui qui en est le plus près.
+          if (isLand(r, c)) total += dMoi <= dLui ? ROTATION_DRAFT.allumerMienne : -ROTATION_DRAFT.allumerSienne;
+        });
+        return total;
+      }
+
+      /* Règle de mise en place : aucun gardien ne se place SUR une balise.
+         Sinon chaque camp démarre en tenant deux balises, et comme le
+         décompte a lieu au début du tour, le second joueur marquait le
+         premier sans avoir rien fait (85 % de victoires mesurées en draft). */
+      const rotationCaseGardienBase = draftCaseGardienLibre;
+      draftCaseGardienLibre = function draftCaseGardienLibreBalises(playerId, r, c) {
+        if (butBalises()
+          && state.rotation.balises.some(([br, bc]) => br === r && bc === c)) return false;
+        return rotationCaseGardienBase(playerId, r, c);
+      };
+
+      const rotationDraftIleBase = plannerDraftIle;
+      plannerDraftIle = function plannerDraftIleBalises(playerId) {
+        if (!butBalises() || !PLAN_POIDS.draftBalises) return rotationDraftIleBase(playerId);
+        const toutes = findAutomaticIslandPlacement(playerId, PLAN_POSE_ENUM_MAX);
+        if (!Array.isArray(toutes) || !toutes.length) return null;
+        const draft = state.draft;
+        const gardiensAPoser = Math.max(1, draft ? draft.guardiansPerPlayer - draft.placedGuardians[playerId] : 1);
+        const balises = state.rotation.balises;
+        const pres = cells => Math.min(...cells.flatMap(([r, c]) => balises.map(([br, bc]) => Math.abs(r - br) + Math.abs(c - bc))));
+        const choisies = new Set();
+        toutes.slice(0, 30).forEach(p => choisies.add(p));
+        [...toutes].sort((a, b) => pres(a.cells) - pres(b.cells)).slice(0, 40).forEach(p => choisies.add(p));
+
+        let meilleure = null;
+        let meilleureNote = -Infinity;
+        for (const pose of choisies) {
+          const note = withSimulatedState(cloneStateForSimulation(), () => {
+            state.islands.push({ id: -1, owner: playerId, shapeKey: pose.shapeKey,
+              cells: pose.cells.map(([r, c]) => [r, c]), fromSetup: true });
+            return avecGrilleTerre(() => {
+              const champB = rotationChampAvecVide(balises);
+              const champAdverse = plannerDraftChampAdverse(playerId);
+              const notes = [];
+              for (const ile of state.islands) {
+                if (ile.owner !== playerId) continue;
+                for (const [r, c] of ile.cells) {
+                  if (characterAt(r, c)) continue;
+                  notes.push(PLAN_POIDS.draftAccesGardien * plannerProximite(champB.get(key(r, c)) ?? Infinity)
+                    - PLAN_POIDS.draftVulnerabilite * plannerDraftVulnerabilite(playerId, r, c, champAdverse));
+                }
+              }
+              notes.sort((a, b) => b - a);
+              return notes.slice(0, gardiensAPoser).reduce((t, n) => t + n, 0) + rotationDraftCourse(playerId);
+            });
+          });
+          if (note > meilleureNote) { meilleureNote = note; meilleure = pose; }
+        }
+        return meilleure;
+      };
+
+      const rotationDraftGardienBase = plannerDraftGardien;
+      plannerDraftGardien = function plannerDraftGardienBalises(playerId, candidates) {
+        if (!butBalises() || !PLAN_POIDS.draftBalises) return rotationDraftGardienBase(playerId, candidates);
+        const champB = avecGrilleTerre(() => rotationChampAvecVide(state.rotation.balises));
+        let meilleure = candidates[0];
+        let meilleureNote = -Infinity;
+        for (const [r, c] of candidates) {
+          const note = withSimulatedState(cloneStateForSimulation(), () => {
+            state.characters.push({ id: "draft-essai", player: playerId, r, c });
+            state.currentPlayer = playerId;
+            return avecGrilleTerre(() => evaluateStrategicState(playerId)
+              + PLAN_POIDS.draftAccesGardien * plannerProximite(champB.get(key(r, c)) ?? Infinity)
+              + rotationDraftCourse(playerId)
+              - PLAN_POIDS.draftVulnerabilite * plannerDraftVulnerabilite(playerId, r, c, plannerDraftChampAdverse(playerId)));
+          });
+          if (note > meilleureNote) { meilleureNote = note; meilleure = [r, c]; }
+        }
+        return meilleure;
+      };
 
       const rotationEvaluerEtatBase = evaluerEtatStrategique;
       evaluerEtatStrategique = function evaluerEtatStrategiqueRotation(playerId) {
@@ -36950,7 +37451,25 @@
         etat: () => (state?.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null),
         /* Banc : la note que l'IA donne à la position courante pour ce camp. */
         evaluer: playerId => (butBalises() ? Math.round(rotationEvaluerBalises(playerId)) : null),
-        balisesTenues: playerId => balisesTenuesPar(playerId)
+        balisesTenues: playerId => balisesTenuesPar(playerId),
+        /* Banc : poids de l'évaluation prêtés à un camp ; rend les anciens. */
+        poids(nouveaux) {
+          const avant = { ...ROTATION_POIDS };
+          if (nouveaux) Object.assign(ROTATION_POIDS, nouveaux);
+          return avant;
+        },
+        /* Banc (scripts/selfplay-balises.js) : un départ de self-play
+           converti en partie Balises. */
+        departBalises(json, { setup = null } = {}) {
+          return withSimulatedState(JSON.parse(json), () => {
+            // Terrain d'un duel symétrique (11×11) à la place du classique.
+            if (setup) applyStartingBoardMode("symmetric", setup);
+            state.rotation = null;
+            rotationInstaller({ but: "balises", couches: [] });
+            rotationOuvertureBalises();
+            return snapshotState();
+          });
+        }
       };
       /* =====================================================================
          MODE ROTATION — couche DECKBUILDING : le marché du sanctuaire.
@@ -38953,7 +39472,7 @@
           <div class="tuto-void"></div>
           <div class="tuto-bar top"></div>
           <div class="tuto-bar bot"></div>
-          <button type="button" class="tuto-quit">Quitter le tutoriel</button>
+          <button type="button" class="tuto-quit">Quitter l’immersion</button>
           <button type="button" class="tuto-voice" title="Voix de la Mer">🔊</button>
           <div class="tuto-objective"></div>
           <div class="tuto-speech">
@@ -38964,7 +39483,7 @@
           <div class="tuto-fade on"></div>`;
         document.body.appendChild(layer);
         layer.querySelector(".tuto-quit").addEventListener("click", () => {
-          if (confirm("Quitter le tutoriel ? Il reprendra depuis le début.")) tutoExit(true);
+          if (confirm("Quitter l’immersion ? Elle reprendra depuis le début.")) tutoExit(true);
         });
         layer.querySelector(".tuto-voice").addEventListener("click", tutoToggleVoice);
         TUTO.dom = {
@@ -44752,7 +45271,8 @@
         I: "Acte I · Les Voies éteintes",
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
-        CONFLUENCE: "Confluence"
+        CONFLUENCE: "Confluence",
+        IV: "Acte IV · Les Cimes"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -48622,15 +49142,24 @@
 
       /* Toutes les cartes en main d'emblée : c'est la relaxation décrite plus
          haut, seule façon d'explorer sans simuler les fins de tour. */
-      function puzzleSearchBuild(def) {
+      /* `serie` FIGE l'identité des Gardiens. puzzleBuildState numérote chaque
+         montage (pz1-100, pz2-100…) pour que le rendu ne confonde pas deux
+         énigmes ; mais le chercheur reconstruit le plateau à CHAQUE nœud et
+         rejoue des coups qui désignent les Gardiens par leur identifiant. Sans
+         ce gel, chaque reconstruction changeait les noms, tout rejeu au-delà
+         du premier coup échouait en silence, et la recherche concluait
+         « aucune solution » après une seule couche — y compris sur des
+         énigmes dont la solution de référence passe. */
+      function puzzleSearchBuild(def, serie = null) {
+        if (Number.isFinite(serie)) PUZZLE.serie = serie - 1;
         puzzleBuildState(def);
         const joueur = state.players[0];
         (joueur.deck || []).forEach(carte => joueur.hand.push({ ...carte, used: false }));
         joueur.deck = [];
       }
 
-      function puzzleSearchReplay(def, chemin) {
-        puzzleSearchBuild(def);
+      function puzzleSearchReplay(def, chemin, serie = null) {
+        puzzleSearchBuild(def, serie);
         for (const action of chemin) {
           if (!puzzleSearchApply(action)) return false;
         }
@@ -48661,7 +49190,14 @@
         const defAvant = PUZZLE.def;
         const depart = Date.now();
         const finAu = depart + secondesMax * 1000;
+        /* Présentation COUPÉE pendant toute la recherche, comme pour les
+           simulations du planner (withSimulatedState) : sans ce drapeau,
+           chaque coup essayé déclenchait sons, effets et synchronisation 3D,
+           et une poussée coûtait six millisecondes au lieu d'une fraction.
+           La recherche plafonnait alors à quelques nœuds par seconde. */
+        const simulationAvant = ilyosSimulationActive;
         try {
+          ilyosSimulationActive = true;
           PUZZLE.active = true;
           PUZZLE.def = def;
 
@@ -48690,6 +49226,7 @@
           };
 
           puzzleSearchBuild(def);
+          const serie = PUZZLE.serie;
           if (atteint()) return { id: def.id, cout: 0, chemin: [] };
           vus.add(strategicStateFingerprint());
           const coupsRacine = puzzleSearchActions().map(puzzleSearchLabel);
@@ -48710,7 +49247,7 @@
                     : `exploration interrompue à ${noeuds} nœuds`
                 };
               }
-              if (!puzzleSearchReplay(def, chemin)) continue;
+              if (!puzzleSearchReplay(def, chemin, serie)) continue;
 
               /* L'objectif se teste ICI, au dépilement, et non à la génération
                  des successeurs. Un successeur porte son coût TOTAL : en
@@ -48759,6 +49296,7 @@
         } catch (error) {
           return { id: def.id, error: `exception : ${error && error.message}` };
         } finally {
+          ilyosSimulationActive = simulationAvant;
           PUZZLE.active = actifAvant;
           PUZZLE.def = defAvant;
           state = etatReel;
@@ -48938,7 +49476,7 @@
           menuOpen: PUZZLE.menuOpen,
           /* Le déblocage linéaire est suspendu pendant le chantier des
              transitions. Exposé ici pour que le test du menu vérifie le
-             comportement RÉEL au lieu d'être assoupli : il exige les 22 cartes
+             comportement RÉEL au lieu d'être assoupli : il exige toutes les cartes
              ouvertes tant que ce drapeau tient, et le verrou linéaire dès
              qu'il retombe. */
           toutOuvert: PUZZLE_TOUT_OUVERT,
@@ -48981,7 +49519,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-deux énigmes, de la leçon de poussée à l'archipel des neuf
+         Vingt-cinq énigmes, de la leçon de poussée aux Cimes, au-delà des neuf
          mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
@@ -50374,6 +50912,207 @@
               { a: "PUSH", who: "D", on: [0, 1], force: 2 },
               { a: "MOVE", who: "D", to: [0, 1] }
             ]
+          ]
+        },
+        /* =================================================================
+           ACTE IV — LES CIMES
+
+           Après la Confluence, des énigmes d'un seul tour, longues et sans
+           marge, dont l'optimum est PROUVÉ par le chercheur (ILYOS_PUZZLE.solve
+           explore tout l'espace des coups sous le barème) et dont la solution
+           optimale est UNIQUE à l'ordre près des gestes gratuits. Aucune règle
+           nouvelle : seulement des usages que la campagne n'a jamais combinés.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           LA CHARNIÈRE GARDÉE
+
+           Le rival est assis sur le bout de la barre, et c'est exactement là
+           qu'il faut la faire pivoter : un Gardien sur le pivot ne bouge pas,
+           il ne gêne donc rien. Le chasser coûterait des cartes qui manqueront
+           au lancer.
+
+           La barre se dresse, le porteur y POSE la couronne au bout, puis va
+           s'asseoir au milieu en enjambant sa propre couronne ; la barre se
+           recouche, et les deux reviennent alignés, la couronne devant — à
+           quatre cases d'une terre que personne ne peut atteindre à pied. Le
+           second rival, collé au départ, n'est là que pour être poussé à tort.
+
+           Optimum 12 PROUVÉ (131 000 nœuds), solution unique. */
+        {
+          id: "p24-charniere-gardee",
+          acte: "IV",
+          principe: "TRACE",
+          avant: "Au-dessus de la Confluence, les Voies se resserrent.",
+          verite: "Un pivot occupé tourne quand même.",
+          title: "La charnière gardée",
+          tagline: "Il s'est assis sur la charnière. Laisse-le : elle tournera quand même.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [3, 3],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]],
+            { key: "BARRE", cells: [[3, 4], [3, 5], [3, 6]] },
+            [[3, 7]], [[4, 7]], [[5, 7]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 5, c: 7, crown: 1 },
+            { key: "H", p: 0, r: 3, c: 0 },
+            { key: "R1", p: 1, r: 0, c: 1 },
+            { key: "R2", p: 1, r: 3, c: 6 },
+            { key: "R3", p: 1, r: 4, c: 7 }
+          ],
+          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
+          par: 12,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La charnière a tourné",
+          winLine: "Il gardait le pivot. Un pivot ne bouge pas : il n'a rien gardé.",
+          failLine: "La barre pouvait tourner avec lui dessus.",
+          solution: [
+            { a: "MAGIC", island: "BARRE", pivot: [3, 6], turns: 1, direction: -1 },
+            { a: "DROP", who: "G", on: [5, 6] },
+            { a: "MOVE", who: "H", to: [2, 0] },
+            { a: "MOVE", who: "G", to: [4, 6] },
+            { a: "MAGIC", island: "BARRE", pivot: [3, 6], turns: 1, direction: 1 },
+            { a: "PUSH", who: "G", on: [3, 4], force: 4 },
+            { a: "PICKUP", who: "H", on: [3, 0] },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [0, 1], force: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           LE PASSAGER CLANDESTIN
+
+           Un rival barre la seule route, assis au pied de la barre qui porte
+           tout le puzzle. Le pousser jusqu'au vide coûterait quatre cartes ; on
+           ne le pousse que d'UNE case, sur la barre, et c'est la barre qui
+           l'emporte : retournée par son milieu, elle le dépose sur son autre
+           bout, qui deviendra justement le pivot du second retournement. Il
+           voyage, il ne gêne plus, et il sert de charnière.
+
+           Le porteur, lui, ne doit PAS monter avec la couronne : posée sur le
+           bout de la barre puis enjambée, elle voyage seule pendant que le
+           Gardien s'assoit au milieu. Le second retournement les dépose l'un
+           derrière l'autre, la couronne devant — juste ce qu'il faut pour la
+           lancer par-dessus le gouffre. Encore faut-il que le receveur ait
+           libéré la case d'arrivée.
+
+           Au nord, deux rivaux gardent le village. Celui de la rangée se jette
+           dans le vide en le poussant VERS le château, par-dessus le coin du
+           plateau ; le second ne tombe que poussé depuis le château lui-même.
+
+           Optimum 14 PROUVÉ (234 000 nœuds), solution unique. */
+        {
+          id: "p23-passager-clandestin",
+          acte: "IV",
+          principe: "TRACE",
+          verite: "Ce qui te barre la route peut aussi la porter.",
+          title: "Le passager clandestin",
+          tagline: "Il barre la seule route. La route, elle, peut l'emporter.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            /* Le nord : le village et sa rangée, toutes en pierres d'une case,
+               donc immobiles. */
+            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]],
+            /* La barre, seule pièce mobile du plateau. */
+            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
+            /* Le départ. */
+            [[7, 3]], [[8, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
+            { key: "H", p: 0, r: 0, c: 3 },
+            { key: "R1", p: 1, r: 1, c: 0 },
+            { key: "R2", p: 1, r: 0, c: 1 },
+            { key: "R3", p: 1, r: 7, c: 3 }
+          ],
+          /* Deux cartes de marge : de quoi tenter l'éjection directe du rival
+             de la route — qui ne laisse ensuite plus rien pour le village. */
+          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
+          par: 14,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Le passager est descendu",
+          winLine: "Il barrait la route ; la barre l'a emporté, et il a servi de charnière.",
+          failLine: "La route était là. Il fallait la faire tourner avec lui dessus.",
+          solution: [
+            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [7, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
+            { a: "DROP", who: "G", on: [6, 3] },
+            { a: "MOVE", who: "H", to: [0, 2] },
+            { a: "MOVE", who: "G", to: [5, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
+            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
+            { a: "PICKUP", who: "H", on: [0, 3] },
+            { a: "PUSH", who: "H", on: [0, 1], force: 2 },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           LE BÉLIER
+
+           Le même gouffre que le Passager clandestin, et une case de plus au
+           nord — ce qui change tout. Le receveur est au bout de la rangée, et
+           un rival dort sur la seule case où la couronne peut atterrir.
+
+           On le décale d'une case vers le château : la couronne se pose à sa
+           place. Mais il est maintenant entre elle et le village, et il n'y a
+           plus personne à l'ouest pour le pousser. Une couronne au sol se
+           POUSSE, et une poussée emporte toute la file : poussée vers l'ouest,
+           elle devient un bélier, chasse le rival par-dessus le coin du plateau
+           et s'arrête d'elle-même sur le château. Il ne reste qu'à la suivre.
+
+           Optimum 17 PROUVÉ (383 000 nœuds), solution unique. */
+        {
+          id: "p25-belier",
+          acte: "IV",
+          principe: "MESURE",
+          verite: "La lumière ne tombe jamais. Elle pousse.",
+          title: "Le bélier",
+          tagline: "Personne ne peut pousser le dernier rival. Sauf la couronne.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]], [[0, 4]],
+            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
+            [[7, 3]], [[8, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
+            { key: "H", p: 0, r: 0, c: 4 },
+            { key: "R1", p: 1, r: 1, c: 0 },
+            { key: "R2", p: 1, r: 0, c: 3 },
+            { key: "R3", p: 1, r: 7, c: 3 }
+          ],
+          /* Une seule carte de marge. */
+          hand: { MOVE: 8, PUSH: 8, MAGIC: 2 },
+          par: 17,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Le bélier a frappé",
+          winLine: "Une couronne poussée emporte la file entière. Même un rival.",
+          failLine: "Il restait un rival que personne ne pouvait atteindre.",
+          solution: [
+            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [7, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
+            { a: "DROP", who: "G", on: [6, 3] },
+            { a: "PUSH", who: "H", on: [0, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [5, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
+            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
+            { a: "PUSH", who: "H", on: [0, 3], force: 3 },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
           ]
         }
       );
@@ -52425,6 +53164,13 @@
           #qk-layer .qk-med-ok { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 17px; height: 17px;
             border-radius: 50%; font: 700 10px/1 Inter, sans-serif; color: #1d1405; background: linear-gradient(#ffe7a6, #e2b24c); }
           #qk-layer .qk-med-lien { flex: none; width: 14px; height: 1.5px; margin-top: 22px; background: rgba(255,214,120,.3); }
+          #qk-layer .qk-bot { transition: bottom .22s ease; }
+          @media (max-height: 520px) and (orientation: landscape) {
+            #qk-layer .qk-top { top: 54px; }
+            #qk-layer .qk-bot { bottom: 110px; max-width: min(560px, 62vw); }
+            #qk-layer .qk-line { font-size: 13.5px; padding: 6px 14px; }
+            #qk-layer .qk-rule { font-size: 12px; }
+          }
           @media (max-width: 720px) {
             #qk-layer .qk-top { top: 64px; }
             #qk-layer .qk-bot { bottom: 128px; }
@@ -52443,14 +53189,60 @@
         calque.id = "qk-layer";
         calque.innerHTML = `<div class="qk-top"><div class="qk-lbl"><span class="qk-titre"></span>
             <button class="qk-btn qk-reprendre" type="button" title="Remettre ce tour à son début">↺ REPRENDRE LE TOUR</button>
-            <button class="qk-btn qk-quitter" type="button" aria-label="Quitter Quick">✕</button></div>
+            <button class="qk-btn qk-quitter" type="button" aria-label="Quitter le tutoriel">✕</button></div>
           <div class="qk-bar"></div></div>
           <div class="qk-bot"><div class="qk-line"></div><div class="qk-rule"></div></div>`;
         calque.querySelector(".qk-reprendre").addEventListener("click", () => quickReprendre());
         calque.querySelector(".qk-quitter").addEventListener("click", () => quickQuitter());
         document.body.appendChild(calque);
         QUICK.dom = calque;
+        quickSuivreTiroir();
         return calque;
+      }
+
+      /* Le texte du bas ne doit jamais couvrir le tiroir des îles (demande de
+         Taekun, 2026-11-09) : tant que le tiroir est ouvert, la consigne se
+         range juste au-dessus de ses îles, quelle que soit la taille d'écran.
+         Recalculé seulement quand le tiroir change ou que la fenêtre change de
+         taille : aucune boucle d'animation. */
+      function quickPlacerTexte() {
+        const bas = QUICK.dom?.querySelector(".qk-bot");
+        if (!bas) return;
+        const tiroir = document.getElementById("hudV2IslandDrawer");
+        const iles = tiroir && !tiroir.classList.contains("hidden")
+          ? Array.from(tiroir.querySelectorAll(".island-choice")).map(e => e.getBoundingClientRect()).filter(r => r.height > 0)
+          : [];
+        if (!iles.length) { bas.style.bottom = ""; bas.style.top = ""; return; }
+        // Téléphone tenu droit : le tiroir occupe deux rangées au milieu de
+        // l'écran, juste sous les cases dorées. La consigne passe alors en haut,
+        // sous la barre de progression, pour laisser voir où poser l'île.
+        const entete = QUICK.dom.querySelector(".qk-top")?.getBoundingClientRect();
+        if (window.innerWidth <= 720 && window.innerHeight > window.innerWidth && entete) {
+          bas.style.bottom = "auto";
+          bas.style.top = `${Math.round(entete.bottom + 6)}px`;
+          return;
+        }
+        const haut = Math.min(...iles.map(r => r.top));
+        bas.style.top = "";
+        bas.style.bottom = `${Math.max(0, Math.round(window.innerHeight - haut + 10))}px`;
+      }
+
+      function quickSuivreTiroir() {
+        if (QUICK.suiviTiroir) return;
+        const tiroir = document.getElementById("hudV2IslandDrawer");
+        if (!tiroir) return;
+        let attente = 0;
+        const planifier = () => {
+          if (attente) return;
+          attente = requestAnimationFrame(() => { attente = 0; quickPlacerTexte(); });
+        };
+        const obs = new MutationObserver(planifier);
+        obs.observe(tiroir, { attributes: true, attributeFilter: ["class", "style"], childList: true, subtree: true });
+        window.addEventListener("resize", planifier);
+        // Le tiroir glisse en s'ouvrant : on reprend la mesure une fois posé.
+        tiroir.addEventListener("transitionend", planifier);
+        QUICK.suiviTiroir = obs;
+        planifier();
       }
 
       function quickEntete(rival) {
@@ -58401,7 +59193,7 @@
          `expert` choisit la logique Expert ou historique, `poids` les réglages
          de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
       function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
-                                            expert = [true, true], libre = false } = {}) {
+                                            expert = [true, true], libre = false, rotation = null } = {}) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
@@ -58410,6 +59202,13 @@
               shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT,
               // Placement libre des gardiens (option du Personnalisé).
               ...(libre ? { placementGardiensLibre: true } : {}) };
+            // But de la Rotation (ex. { but: "balises" }) : posé avant la mise
+            // en place, comme dans le Personnalisé.
+            if (rotation) {
+              state.rotation = null;
+              rotationInstaller(rotation);
+            }
+            state.startingBoardMode = "custom";
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));
@@ -58447,6 +59246,7 @@
             state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
             state.centerCrownTakenThisTurn = false;
             faireEntrerCouronnesEnAttente();
+            if (rotation) rotationOuvertureBalises();
             state.phase = "ACTION_SELECT";
             return snapshotState();
           });

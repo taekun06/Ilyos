@@ -75,7 +75,8 @@
     host.addEventListener('ilyos-menu-action', e => {
       const action = e.detail.action;
       if (action === 'rules' || action === 'help') (rulesSetupBtn || rulesBtn)?.click();
-      if (action === 'settings') document.getElementById('soundBtn')?.click();
+      // RÉGLAGES de l'accueil : le menu de jeu, ouvert hors partie (js/menu-jeu.js).
+      if (action === 'settings') window.ILYOS_MENU_JEU?.ouvrirDepuisAccueil?.();
       if (action === 'tutorial') window.dispatchEvent(new CustomEvent('ilyos-menu-tutorial-requested'));
       if (action === 'credits') window.dispatchEvent(new CustomEvent('ilyos-menu-credits-requested'));
     });
