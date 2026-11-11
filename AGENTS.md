@@ -73,8 +73,10 @@ du temps sans rien apprendre : ne pas la lancer.
 - Un banc juge un résultat (une couronne prise, un état identique), pas une
   tactique précise ni une vitesse de machine.
 - Plusieurs PR prêtes en même temps : les regrouper en un lot (une seule passe
-  de CI) plutôt que les remettre à jour une par une ; toutes changent le `?v=`
-  de `game.js` et entrent donc en conflit dès que l'une est fusionnée.
+  de CI) plutôt que les remettre à jour une par une.
+- Ne plus toucher au `?v=` de `js/game.js` dans `index.html` : il reste à
+  `dev` dans le dépôt, et la mise en ligne (`.github/workflows/pages.yml`,
+  `scripts/estampiller.js`) le remplace par l'empreinte du bundle publié.
 - Toute action de joueur ajoutée ou modifiée (`ui.js`) doit exister dans le
   planner et dans `scripts/verif-couverture-regles.js`. Un banc ne recopie
   jamais une règle : il interroge le moteur (ex. `ILYOS_BENCH.actionGratuite`).
