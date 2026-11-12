@@ -111,7 +111,7 @@
       // portrait HUD (or / violet) — les villages, fanions et halos de
       // sélection lisaient auparavant bleu/rouge, sans rapport avec le reste
       // de l'identité visuelle du joueur.
-      const PLAYER_COLORS = ["#ddb653", "#8052bc", "#62e36b", "#bb7cff"];
+      const PLAYER_COLORS = ["#ddb653", "#8052bc", "#62e36b", "#e5484d"];
       const PLAYER_ICONS = ["🧙", "🧝", "🛡️", "🧑‍🚀"];
       let CORNERS = [
         { r: 0, c: 0 },
