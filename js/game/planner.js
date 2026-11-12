@@ -285,7 +285,10 @@
 
         // Passer son tour n'est presque plus pénalisé : ce peut être un bon
         // choix. On garde un départage négligeable contre la passivité pure.
-        tempoPerdu: 20
+        tempoPerdu: 20,
+        /* Part de « ma suite après la riposte » ajoutée à la note d'un
+           finaliste (plannerSuiteApresRiposte). 0 = horizon d'avant. */
+        suiteApresRiposte: 0
       };
 
       /** Proximité décroissante et bornée, tirée d'une distance de déplacement
@@ -3524,7 +3527,7 @@
               if (plannerHorloge() - debut > budget.tempsMaxMs) { coupeParTemps = true; break; }
               if (etatsExplores > budget.etatsMax) break;
 
-              const clone = structuredClone(noeud.etat);
+              const clone = copieRapide(noeud.etat);
               const resultat = withSimulatedState(clone, () => {
                 const applique = plannerAppliquerAction(action);
                 if (!applique) return null;
@@ -3538,7 +3541,7 @@
                 if (PLAN_POIDS.fermetureGratuite) {
                   for (const t of plannerTransitionsGratuites(playerId)) {
                     if (t.type !== "RAMASSAGE" && t.type !== "VOL") continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : PLAN_POIDS.triPotentiel ? plannerNotePotentiel(playerId) : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -3547,7 +3550,7 @@
                 if (PLAN_POIDS.fermeturePoussee) {
                   for (const t of plannerCandidatsPush(playerId)) {
                     if (!t.ejection) continue;
-                    const essai = structuredClone(state);
+                    const essai = copieRapide(state);
                     const n = withSimulatedState(essai, () => !plannerAppliquerAction(t) ? -Infinity
                       : evaluateStrategicState(playerId));
                     if (n > noteTri) noteTri = n;
@@ -3673,9 +3676,14 @@
         tempsMaxMs: 300,
         /* Une menace exécutable avec la seule RÉSERVE adverse est certaine.
            Une menace qui a besoin de cartes encore à piocher n'est que
-           plausible et pèse moins — sans quoi l'IA se paralyserait devant des
-           combinaisons hypothétiques. */
-        poidsMenacePlausible: 0.65
+           plausible : elle se joue avec la main PLAUSIBLE (espérance de la
+           pioche), déjà une moyenne. 0,65 jusqu'au 09/11 la rabotait une
+           seconde fois : sur les 3 défaites archivées (24 tours signalés), la
+           riposte prévue restait au-dessus du résultat réel lu avec l'humain au
+           trait (22/10, tour 3 : −880 prévu, −2 010 réel ; à 1 : −2 682).
+           Self-play 80 parties contre 0,65 (graines 9500 et 9600) : 44-34-2,
+           56 % ± 5,5, couronnes 63 contre 53, même temps de réflexion. */
+        poidsMenacePlausible: 1
       };
 
       const PLAN_RIPOSTE_CRITIQUE = {
@@ -3779,7 +3787,7 @@
         const sans = yield* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget, null);
         const adverse = plannerAdversaire(playerId);
         if (!adverse || sans.riposte[0] === "FIN DE PARTIE") return sans;
-        const pioche = withSimulatedState(structuredClone(noeudFinal.etat),
+        const pioche = withSimulatedState(copieRapide(noeudFinal.etat),
           () => plannerPiocheProchaine(adverse.id));
         /* POUSSÉE ADVERSE DE PLUS. Même arrondi, même angle mort que la
            MAGIE : la main plausible ne prête qu'un nombre fixe de POUSSER.
@@ -3818,7 +3826,7 @@
       }
 
       function* plannerEvaluerRobustesseMain(noeudFinal, playerId, budget = {}, variante = null) {
-        const apres = structuredClone(noeudFinal.etat);
+        const apres = copieRapide(noeudFinal.etat);
         return yield* plannerSimuler(apres, (function* () {
           const adverse = plannerAdversaire(playerId);
           if (!adverse) return { note: noeudFinal.note, riposte: [], menace: 0, garantie: true };
@@ -3893,16 +3901,54 @@
           };
           const coupee = !!reponse.coupeParTemps;
           const candidates = reponse.finalistes || [];
+          let pire = null;
+          let etatPire = null;
           if (!candidates.length) {
             for (const action of reponse.plan) plannerAppliquerAction(action);
-            return { ...mesurer(reponse.plan), ripostesComparees: 1, coupee, magieCertaine };
+            pire = mesurer(reponse.plan);
+          } else {
+            for (const candidate of candidates) {
+              const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
+              if (!pire || resultat.note < pire.note) { pire = resultat; etatPire = candidate.etat; }
+            }
           }
-          let pire = null;
-          for (const candidate of candidates) {
-            const resultat = withSimulatedState(candidate.etat, () => mesurer(candidate.plan));
-            if (!pire || resultat.note < pire.note) pire = resultat;
+          const rendu = { ...pire, ripostesComparees: candidates.length || 1, coupee, magieCertaine };
+          // La suite ne se cherche qu'une fois, sur la main adverse plausible.
+          if (!(PLAN_POIDS.suiteApresRiposte > 0) || variante || state.players.length !== 2) return rendu;
+          const suite = yield* plannerSuiteApresRiposte(etatPire, playerId, budget);
+          if (suite === null) return rendu;
+          return { ...rendu, note: rendu.note + PLAN_POIDS.suiteApresRiposte * suite, suite: Math.round(suite) };
+        })());
+      }
+
+      /* MA SUITE APRÈS LA RIPOSTE. L'horizon s'arrêtait à la réplique adverse :
+         un plan valait ce qu'il en restait, jamais ce qu'il PRÉPARAIT. Deux
+         plans également sûrs se départageaient donc à l'estimation, et près
+         d'une partie d'Expert sur deux finissait 0-0. Ici on rejoue aussi mon
+         tour suivant (courte recherche, main plausible, couronnes validées au
+         début du tour comme dans la règle) depuis l'état laissé par la pire
+         riposte : ce qu'il rapporte s'ajoute à la note du plan.
+         `etat` nul = l'état de simulation courant (riposte déjà appliquée). */
+      function* plannerSuiteApresRiposte(etat, playerId, budget = {}) {
+        const depart = etat ? copieRapide(etat) : cloneStateForSimulation();
+        return yield* plannerSimuler(depart, (function* () {
+          const avant = evaluateStrategicState(playerId);
+          const transition = applyTurnTransitionCore();
+          if (transition && transition.vainqueur !== null && transition.vainqueur !== undefined) {
+            return evaluateStrategicState(playerId) - avant;
           }
-          return { ...pire, ripostesComparees: candidates.length, coupee, magieCertaine };
+          if (state.currentPlayer !== playerId) return null;
+          const debutTour = evaluateStrategicState(playerId);
+          const reponse = yield* plannerChercherPlanEtapes(playerId, {
+            largeurFaisceau: PLAN_RIPOSTE.largeurFaisceau,
+            decisionsMax: PLAN_RIPOSTE.decisionsMax,
+            etatsMax: PLAN_RIPOSTE.etatsMax,
+            tempsMaxMs: PLAN_RIPOSTE.tempsMaxMs,
+            tempsSecuriteMs: PLAN_SECURITE.riposteMs * plannerSecurite(),
+            ...budget
+          });
+          // Passer reste permis : la suite ne vaut jamais moins que le début du tour.
+          return Math.max(debutTour, reponse.noteArrivee) - avant;
         })());
       }
 
@@ -4043,6 +4089,235 @@
         plannerDernierRapport = principal;
         return principal;
       }
+
+      /* =====================================================================
+         RÉFLEXION EN ARRIÈRE-PLAN — le planner dans un Web Worker.
+
+         Le même bundle est chargé une seconde fois dans un Worker, derrière un
+         écran factice (js/moteur/worker.js). La page lui envoie l'état de
+         simulation — exactement celui que la recherche copie de toute façon à
+         sa racine (cloneStateForSimulation) — et reçoit le plan. La recherche
+         ne partage alors plus son cœur de processeur avec le rendu 3D.
+
+         LA DÉCISION EST CELLE QUE LA PAGE AURAIT PU PRENDRE : même code, même
+         état. Elle n'est pas forcément identique au coup près, car la
+         recherche tire au hasard par endroits ; à graine égale elle l'est, et
+         `ILYOS_MOTEUR.comparer()` le vérifie.
+
+         RIEN NE DÉPEND DU WORKER. Absent, en panne, trop lent, ou hors des
+         cas prévus : moteurReflechir() rend `undefined` et l'appelant garde la
+         réflexion découpée dans la page, comme avant. Deux garde-fous :
+         - l'empreinte de l'état vue par le Worker doit être celle de la page,
+           sinon le plan est refusé (un réglage de partie que le Worker
+           ignorerait se verrait ici) ;
+         - après exécution, runExpertPlannedTurn compare déjà l'état obtenu à
+           l'état prévu.
+
+         Cas laissés à la page : autopsie active (elle a besoin des états
+         examinés, trop lourds à transférer), mode Rotation (marché, créatures :
+         pas encore vérifié dans le Worker), simulation en cours.
+         ===================================================================== */
+      const MOTEUR_ATTENTE_MAX_MS = 30000;
+      /* En arrière-plan, la recherche ne coûte plus d'images : l'Expert y
+         cherche deux fois plus large. Mesuré en self-play Node (11 parties,
+         filets de temps écartés) contre le budget de la page : 8 victoires,
+         2 défaites, 1 nul, pour environ 35 % de temps de réflexion en plus.
+         Le repli dans la page garde PLAN_BUDGET, donc les bancs aussi. */
+      const MOTEUR_BUDGET_ARRIERE_PLAN = { largeurFaisceau: 96, etatsMax: 24000 };
+      /* En arrière-plan aussi : l'Expert rejoue son propre tour suivant après
+         la riposte (plannerSuiteApresRiposte). Self-play Node, 160 parties,
+         budget ci-dessus des deux côtés, filets de temps écartés : 88
+         victoires, 64 défaites, 8 nuls (57,5 % ± 3,9), environ 30 % de
+         réflexion en plus. À 1 la suite pèse trop (12-26-2 sur 40) ; à 0,25
+         elle ne se voit plus (19-17-4). */
+      const MOTEUR_POIDS_ARRIERE_PLAN = { suiteApresRiposte: 0.5 };
+      const MOTEUR_DANS_WORKER = typeof WorkerGlobalScope !== "undefined"
+        && typeof self !== "undefined" && self instanceof WorkerGlobalScope;
+      const moteur = {
+        ouvrier: null, pret: false, enPanne: false, numero: 0, attente: null,
+        // Compteurs lus par les tests et le diagnostic.
+        reponses: 0, replis: 0, dernierRepli: null, dernierMs: null
+      };
+
+      /* Côté Worker : une demande, un rapport. */
+      function moteurPlanifier(demande) {
+        setBoardSize(demande.grille);
+        const debut = performance.now();
+        return moteurAvecPoids(demande.poids, () => withSimulatedState(demande.etat, () => {
+          const empreinteDepart = strategicStateFingerprint();
+          const rapport = plannerChercherPlanRobuste(state.currentPlayer, demande.budget || undefined);
+          return { empreinteDepart, rapport: moteurRapportLeger(rapport), ms: Math.round(performance.now() - debut) };
+        }));
+      }
+
+      /* Réglages prêtés le temps d'un calcul (diagnostic seulement : en partie,
+         page et Worker gardent tous deux les réglages du bundle). */
+      function moteurAvecPoids(reglages, fn) {
+        if (!reglages) return fn();
+        /* `graine` : la recherche tire au hasard par endroits (pioches
+           simulées, départages) ; sans graine commune, deux calculs de la même
+           position peuvent différer sans qu'aucun ne soit faux. */
+        const { graine = null, ...poids } = reglages;
+        const memoire = {};
+        for (const cle of Object.keys(poids)) { memoire[cle] = PLAN_POIDS[cle]; PLAN_POIDS[cle] = poids[cle]; }
+        if (graine !== null) setTestRandomSeed(graine);
+        try { return fn(); }
+        finally {
+          if (graine !== null) setTestRandomSeed(null);
+          for (const cle of Object.keys(memoire)) PLAN_POIDS[cle] = memoire[cle];
+        }
+      }
+
+      /* Le rapport sans ses états complets (finalistes, relevés d'autopsie) :
+         seuls le plan et ses chiffres traversent. */
+      function moteurRapportLeger(rapport) {
+        if (!rapport) return null;
+        const { finalistes, releveCandidats, etatDepart, etatRetenu, ...leger } = rapport;
+        return leger;
+      }
+
+      function moteurAutorise() {
+        if (MOTEUR_DANS_WORKER || moteur.enPanne || ilyosSimulationActive) return false;
+        if (typeof Worker !== "function" || !state) return false;
+        if (plannerAutopsieActive() || state.rotation) return false;
+        try {
+          if (/(?:^|[?&])moteur=page(?:&|$)/.test(location.search)) return false;
+        } catch (_) { return false; }
+        return true;
+      }
+
+      function moteurArreter(raison) {
+        if (moteur.ouvrier) { try { moteur.ouvrier.terminate(); } catch (_) {} }
+        moteur.ouvrier = null;
+        moteur.pret = false;
+        const attente = moteur.attente;
+        moteur.attente = null;
+        if (attente) attente.finir(undefined, raison);
+      }
+
+      /* Lance le Worker (une fois). Appelé dès qu'un tour d'Expert commence :
+         le premier tour se joue dans la page pendant qu'il charge. */
+      function moteurDemarrer() {
+        if (moteur.ouvrier || !moteurAutorise()) return;
+        try {
+          const script = document.querySelector('script[src*="js/game.js"]');
+          if (!script || !script.src) { moteur.enPanne = true; return; }
+          const adresse = new URL("moteur/worker.js", script.src);
+          adresse.searchParams.set("jeu", script.src);
+          const ouvrier = new Worker(adresse.href);
+          moteur.ouvrier = ouvrier;
+          ouvrier.onmessage = evenement => {
+            if (ouvrier !== moteur.ouvrier) return;
+            const message = evenement.data || {};
+            if (message.pret) { moteur.pret = true; return; }
+            const attente = moteur.attente;
+            if (!attente || message.id !== attente.id) return;
+            moteur.attente = null;
+            if (message.erreur) attente.finir(undefined, "erreur du Worker : " + message.erreur);
+            else attente.finir(message.resultat, null);
+          };
+          ouvrier.onerror = evenement => {
+            if (ouvrier !== moteur.ouvrier) return;
+            // Un Worker qui ne charge pas ne chargera pas mieux au tour suivant.
+            moteur.enPanne = true;
+            moteurArreter("Worker en erreur : " + (evenement && evenement.message || "chargement"));
+          };
+        } catch (erreur) {
+          moteur.enPanne = true;
+          moteur.ouvrier = null;
+        }
+      }
+
+      /** Demande le plan du joueur courant au Worker. Rend le rapport, `null`
+       *  si la réflexion a été abandonnée (partie quittée), ou `undefined` si
+       *  l'appelant doit réfléchir lui-même. */
+      function moteurReflechir(joueur, continuer = null, etatFourni = null, poids = null, budget = null) {
+        moteurDemarrer();
+        if (!moteurAutorise() || !moteur.ouvrier || !moteur.pret) return Promise.resolve(undefined);
+        // Une demande encore en cours : son Worker calcule pour une position
+        // périmée. On le remplace plutôt que d'attendre derrière lui.
+        if (moteur.attente) { moteurArreter("demande remplacée"); return Promise.resolve(undefined); }
+
+        const etat = etatFourni || cloneStateForSimulation();
+        const empreintePage = withSimulatedState(etat, () => strategicStateFingerprint());
+        const id = ++moteur.numero;
+        const debut = performance.now();
+        return new Promise(resoudre => {
+          const delai = setTimeout(() => {
+            if (moteur.attente && moteur.attente.id === id) moteurArreter("sans réponse après " + MOTEUR_ATTENTE_MAX_MS + " ms");
+          }, MOTEUR_ATTENTE_MAX_MS);
+          moteur.attente = {
+            id,
+            finir(resultat, raison) {
+              clearTimeout(delai);
+              if (continuer && !continuer()) { resoudre(null); return; }
+              if (resultat && resultat.empreinteDepart !== empreintePage) {
+                raison = "le Worker ne voit pas la même position que la page";
+                resultat = undefined;
+              }
+              if (!resultat || !resultat.rapport) {
+                moteur.replis++;
+                moteur.dernierRepli = raison || "rapport vide";
+                console.warn("[ILYOS] réflexion en arrière-plan abandonnée, reprise dans la page :", moteur.dernierRepli);
+                resoudre(undefined);
+                return;
+              }
+              moteur.reponses++;
+              moteur.dernierMs = Math.round(performance.now() - debut);
+              plannerDernierRapport = resultat.rapport;
+              resoudre(resultat.rapport);
+            }
+          };
+          try {
+            moteur.ouvrier.postMessage({ id, type: "planifier", demande: { etat, grille: GRID, joueur, poids, budget } });
+          } catch (erreur) {
+            moteur.enPanne = true;
+            moteurArreter("envoi impossible : " + erreur.message);
+          }
+        });
+      }
+
+      /* Diagnostic : le plan de la position en cours, calculé dans la page puis
+         dans le Worker. Les deux doivent être identiques — à condition
+         d'écarter les filets de temps et de fixer le hasard
+         (`{ poids: { securiteFacteur: 20, graine: 1 } }`) : un filet atteint
+         d'un seul côté, ou un tirage différent, suffit à changer le plan. */
+      async function moteurComparer({ poids = null, etatJson = null } = {}) {
+        if (!state) return null;
+        moteurDemarrer();
+        for (let i = 0; i < 400 && moteur.ouvrier && !moteur.pret; i++) await new Promise(r => setTimeout(r, 50));
+        /* UNE photo pour les deux. À lancer sur une position FIGÉE : pendant
+           un tour d'IA en cours, sa réflexion découpée et celle-ci se
+           partageraient les variables de la recherche. `etatJson` : une
+           position de self-play (ILYOS_SELFPLAY), sans partie en cours. */
+        const etat = etatJson ? JSON.parse(etatJson) : cloneStateForSimulation();
+        const joueur = etat.currentPlayer;
+        const t0 = performance.now();
+        const page = moteurAvecPoids(poids, () => withSimulatedState(copieRapide(etat), () => plannerChercherPlanRobuste(joueur)));
+        const msPage = Math.round(performance.now() - t0);
+        const ouvrier = await moteurReflechir(joueur, null, etat, poids);
+        const planPage = JSON.stringify(page ? page.plan : null);
+        const planOuvrier = JSON.stringify(ouvrier ? ouvrier.plan : null);
+        return {
+          identiques: !!ouvrier && planPage === planOuvrier,
+          planPage, planOuvrier, msPage, msOuvrier: moteur.dernierMs,
+          // Premiers chiffres à diverger = où chercher la cause d'un écart.
+          chiffresPage: page ? [page.noteDepart, page.noteArrivee, page.etatsExplores, page.candidatsGeneres] : null,
+          chiffresOuvrier: ouvrier ? [ouvrier.noteDepart, ouvrier.noteArrivee, ouvrier.etatsExplores, ouvrier.candidatsGeneres] : null,
+          coupePage: page && page.anticipation ? { principale: page.anticipation.principaleCoupee, ripostes: page.anticipation.ripostesCoupees } : null,
+          coupeOuvrier: ouvrier && ouvrier.anticipation ? { principale: ouvrier.anticipation.principaleCoupee, ripostes: ouvrier.anticipation.ripostesCoupees } : null,
+          repli: ouvrier ? null : moteur.dernierRepli
+        };
+      }
+
+      window.ILYOS_MOTEUR = {
+        planifier: moteurPlanifier,
+        comparer: moteurComparer,
+        etat: () => ({
+          dansWorker: MOTEUR_DANS_WORKER, lance: !!moteur.ouvrier, pret: moteur.pret, enPanne: moteur.enPanne,
+          reponses: moteur.reponses, replis: moteur.replis, dernierRepli: moteur.dernierRepli, dernierMs: moteur.dernierMs
+        })
+      };
 
       /* =====================================================================
          MISE EN PLACE DU MODE PERSONNALISÉ — îles puis gardiens, en serpentin.

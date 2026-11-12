@@ -918,8 +918,13 @@
         try {
           // Découpée : l'écran reste vivant pendant la réflexion (planner.js,
           // « RÉFLEXION DÉCOUPÉE »), pour exactement la même décision.
-          rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur),
-            () => token === aiRunToken && !!state && state.winner === null);
+          const encoreUtile = () => token === aiRunToken && !!state && state.winner === null;
+          // En arrière-plan si possible (planner.js, « RÉFLEXION EN
+          // ARRIÈRE-PLAN ») ; `undefined` = à faire ici, comme avant.
+          rapport = await moteurReflechir(joueur, encoreUtile, null, MOTEUR_POIDS_ARRIERE_PLAN, MOTEUR_BUDGET_ARRIERE_PLAN);
+          if (rapport === undefined) {
+            rapport = await plannerExecuterDecoupe(plannerChercherPlanRobusteEtapes(joueur), encoreUtile);
+          }
         } catch (erreur) {
           console.error("[ILYOS] planner en échec, repli sur la logique historique", erreur);
           autopsieConsigner(joueur, instantaneAutopsie, null, "exception du planner : " + erreur.message);

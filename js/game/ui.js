@@ -4316,12 +4316,15 @@
         // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
         kaykitChoc(2);
         kaykitHameauEclat(player.id);
+        // La couronne rejoint sa place dans le HUD (fin-partie.js), avec un
+        // bandeau « Couronne validée » qui remplace la notification.
+        const celebree = couronneCelebrer(player, char);
         if (artifact) artifact.carrierId = null;
 
         if (throughExit && char) {
           respawnCharacter(char);
           showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
-        } else {
+        } else if (!celebree) {
           showToast(coequipier
             ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
             : immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
@@ -4552,18 +4555,17 @@
         });
         kaykitBandesCinema(true, 4000);
 
-        tonFinDePartie("egalite");
-        els.victoryPortrait.textContent = "⚖️";
-        els.victoryPortrait.style.setProperty("--pcolor", "#cfd6ea");
-        els.victoryTitle.textContent = "Match nul";
-        els.victoryTitle.style.color = "#cfd6ea";
-        els.victoryText.textContent = "Plus aucune île ne peut être posée, les couronnes sont à égalité et aucune couronne ne départage.";
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • ${scores}`;
+        renderVictoryRecap(null);
+        // Titre plein écran puis bandeau à onglets (fin-partie.js).
+        finPartieOuvrir({
+          ton: "egalite",
+          titre: "MATCH NUL",
+          kicker: "PERSONNE NE PREND ILYOS",
+          texte: "Plus aucune île ne peut être posée, et rien ne départage les couronnes."
+        });
         defaitesFinPartie(null);
         progressionFinPartie(null);
-        els.victoryModal.classList.remove("hidden");
-        void els.victoryModal.offsetWidth;
-        els.victoryModal.classList.add("victory-visible");
         if (!state.onlineMode) clearLocalSession();
         playSfx("draw");
       }
@@ -4596,41 +4598,29 @@
         const defaite = !!joueurAppareil
           && (state.onlineMode || player.isAI)
           && !memeEquipe(player.id, joueurAppareil.id);
-        tonFinDePartie(defaite ? "defaite" : "victoire");
-
-        els.victoryPortrait.textContent = player.icon || "🧙";
-        els.victoryPortrait.style.setProperty("--pcolor", player.color || "#fff");
-        els.victoryTitle.textContent = gardiensPartages()
-          ? (player.id % 2 === 0 ? "Équipe or" : "Équipe violette")
-          : player.name;
-        els.victoryTitle.style.color = player.color;
-        els.victoryText.textContent = texte
-          || `${player.name} a validé trois couronnes et prend le contrôle d’ILYOS.`;
+        const nomCamp = gardiensPartages()
+          ? (player.id % 2 === 0 ? "ÉQUIPE OR" : "ÉQUIPE VIOLETTE")
+          : String(player.name || "").toLocaleUpperCase("fr-FR");
         els.victoryStats.textContent = `${state.turn} tours • ${state.round} manches • Score ${player.score}/${rotationCible()}`;
         renderVictoryRecap(player);
+        // Titre plein écran (2 s) puis bandeau à onglets (fin-partie.js).
+        finPartieOuvrir({
+          ton: defaite ? "defaite" : "victoire",
+          vainqueur: player,
+          titre: defaite ? "DÉFAITE" : "VICTOIRE",
+          kicker: defaite ? `${nomCamp} PREND ILYOS` : `${nomCamp} · SOUVERAIN D’ILYOS`,
+          texte: texte || (butBalises()
+            ? `${defaite ? `${player.name} : ` : ""}${player.score} points de balises en ${state.turn} tours.`
+            : defaite ? `${player.name} a validé trois couronnes en ${state.turn} tours.`
+              : `Trois couronnes validées en ${state.turn} tours.`)
+        });
         // Humain vainqueur de l'Expert : la défaite est archivée et s'exporte d'un clic.
         defaitesFinPartie(player);
-        // Profil de l'appareil : XP et niveau, affichés sous le bilan.
+        // Profil de l'appareil : XP et niveau, dans l'onglet Progression.
         progressionFinPartie(player);
-
-        els.victoryModal.classList.remove("hidden");
-        void els.victoryModal.offsetWidth;
-        els.victoryModal.classList.add("victory-visible");
 
         if (!state.onlineMode) clearLocalSession();
         playSfx(defaite ? "defeat" : "victory");
-      }
-
-      /* Ton de la fenêtre de fin : victoire (or, fanfare), défaite (éteinte)
-         ou égalité (neutre). Seuls l'intitulé et une classe changent : la
-         fenêtre, ses boutons et le bilan restent les mêmes. */
-      function tonFinDePartie(ton) {
-        const modal = els.victoryModal;
-        if (!modal) return;
-        modal.classList.toggle("fin-defaite", ton === "defaite");
-        modal.classList.toggle("fin-egalite", ton === "egalite");
-        const kicker = modal.querySelector(".victory-kicker");
-        if (kicker) kicker.textContent = { victoire: "SOUVERAIN D’ILYOS", defaite: "DÉFAITE", egalite: "ÉGALITÉ" }[ton];
       }
 
       function resetToSetup() {

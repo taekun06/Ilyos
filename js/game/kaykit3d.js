@@ -4845,12 +4845,12 @@
          face arrière et gonflée en espace écran (épaisseur constante quel que
          soit le zoom). Pour un gardien animé, la copie partage le squelette de
          l'original et suit donc chaque pose. */
-      function kaykitMateriauContour(couleur, skinne) {
+      function kaykitMateriauContour(couleur, skinne, epaisseur = .0055) {
         kaykit3D.contoursCache = kaykit3D.contoursCache || new Map();
-        const cleCache = couleur + (skinne ? "|s" : "");
+        const cleCache = couleur + (skinne ? "|s" : "") + "|" + epaisseur;
         let materiau = kaykit3D.contoursCache.get(cleCache);
         if (materiau) return materiau;
-        const u = { epaisseur: { value: .0055 } };
+        const u = { epaisseur: { value: epaisseur } };
         materiau = new THREE.MeshBasicMaterial({ color: couleur, side: THREE.BackSide, skinning: skinne, transparent: true, opacity: .95, depthWrite: false });
         materiau.onBeforeCompile = shader => {
           shader.uniforms.ilyosEpaisseur = u.epaisseur;
@@ -4872,10 +4872,10 @@
         kaykit3D.contoursCache.set(cleCache, materiau);
         return materiau;
       }
-      function kaykitAjouterContour(mesh, couleur) {
+      function kaykitAjouterContour(mesh, couleur, epaisseur) {
         if (!mesh?.geometry || !mesh.parent) return;
         const skinne = !!mesh.isSkinnedMesh;
-        const materiau = kaykitMateriauContour(couleur, skinne);
+        const materiau = kaykitMateriauContour(couleur, skinne, epaisseur);
         let contour;
         if (skinne) {
           contour = new THREE.SkinnedMesh(mesh.geometry, materiau);
@@ -4997,6 +4997,38 @@
         return { copie, u };
       }
 
+      /* ESSAI (10/11) : style du survol d'un gardien, à choisir par Taekun.
+         ?gardien=A contour fin seul, B anneau fin au sol seul, C les deux.
+         Sans paramètre : survol actuel (reflet + contour épais). */
+      function kaykitStyleSurvolGardien() {
+        if (kaykitStyleSurvolGardien.valeur === undefined) {
+          let style = null;
+          try { style = (new URLSearchParams(location.search).get("gardien") || window.ILYOS_SURVOL_GARDIEN || "").toUpperCase() || null; } catch (_) { }
+          kaykitStyleSurvolGardien.valeur = ["A", "B", "C"].includes(style) ? style : null;
+        }
+        return kaykitStyleSurvolGardien.valeur;
+      }
+      /* Anneau fin au sol : trait clair sur un trait sombre plus large, lisible
+         sur l'herbe comme sur une île dorée (la couleur d'équipe or s'y
+         perdait). */
+      function kaykitAnneauSurvolGardien(r, c) {
+        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
+        kaykit3D.contoursSurvol = kaykit3D.contoursSurvol || [];
+        [[.034, 0x1b1208, .55, 21], [.016, 0xffffff, .98, 22]].forEach(([tube, couleur, opacite, ordre]) => {
+          const anneau = new THREE.Mesh(
+            kaykitGeometry("survol-gardien-anneau-" + tube, () => new THREE.TorusGeometry(.34, tube, 6, 44)),
+            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false })
+          );
+          anneau.material.userData = { ilyosTransient: true };
+          anneau.rotation.x = -Math.PI / 2;
+          anneau.position.set(p.x, p.y + (ordre - 21) * .004, p.z);
+          anneau.renderOrder = ordre;
+          anneau.raycast = () => {};
+          kaykit3D.dynamicGroup.add(anneau);
+          kaykit3D.contoursSurvol.push(anneau);
+        });
+      }
+
       function setKayKitVisualHover(cell, intent) {
         // Clone temporairement les matériaux afin de ne jamais modifier les matériaux partagés.
         if (!kaykit3D) return;
@@ -5032,11 +5064,21 @@
         if (intent.kind === "crown") kaykitSouleverCase(visuals);
         const aContourer = [];
 
+        const styleGardien = kaykitStyleSurvolGardien();
+        if (styleGardien && occupant && (styleGardien === "B" || styleGardien === "C")
+          && visuals.some(objet => objet?.userData?.ilyosContour && objet.userData.ilyosContour !== "couronne")) {
+          kaykitAnneauSurvolGardien(cell.r, cell.c);
+        }
         visuals.forEach(object => object?.traverse?.(mesh => {
           if (!mesh.isMesh || !mesh.material) return;
           const originalMaterial = mesh.material;
           const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
           const role = object.userData?.ilyosContour;
+          // Essai : en style A/B/C, le gardien garde ses matériaux (pas de reflet).
+          if (styleGardien && role && role !== "couronne") {
+            if (styleGardien !== "B") aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
+            return;
+          }
           const clonedMaterials = originals.map(material => {
             if (role) return kaykitMateriauLisere(material, couleurLisere(role));
             const clone = material.clone();
@@ -5052,7 +5094,7 @@
           kaykit3D.hoveredVisuals.push({ mesh, originalMaterial, clonedMaterials });
           if (role) aContourer.push({ mesh, couleur: couleurLisere(role) });
         }));
-        aContourer.forEach(({ mesh, couleur }) => kaykitAjouterContour(mesh, couleur));
+        aContourer.forEach(({ mesh, couleur, epaisseur }) => kaykitAjouterContour(mesh, couleur, epaisseur));
         kaykit3D.hoveredVisualKey = visualKey;
       }
 
@@ -5139,6 +5181,15 @@
           if (character?.player === state.currentPlayer) {
             return { kind: "ally", actionable: true, color: 0x43e6d0, label: "CHANGER DE GARDIEN" };
           }
+          /* Couronne portée par un rival voisin : un clic SUR la couronne la
+             vole (handleSmartCharacterClick, badgeCouronne), avant toute poussée. */
+          if (hitAction === "crown-carried" && character && character.player !== state.currentPlayer) {
+            const acteur = characterById(state.selectedCharId);
+            const voisin = acteur && Math.abs(acteur.r - r) + Math.abs(acteur.c - c) === 1;
+            if (voisin && !characterCarriesCrown(acteur.id) && artifactCarriedBy(character.id)) {
+              return { kind: "crown", actionable: true, color: 0xffc928, label: "PRENDRE LA COURONNE" };
+            }
+          }
           const smartHovered = isSameCell(state.actionHoverCell, [r, c]);
           if (smartHovered && state.smartHoverType === "MOVE") {
             const moveCost = state.smartHoverPath?.cost ?? state.smartHoverPath?.length ?? 1;
@@ -5168,6 +5219,13 @@
                 ? `FORCE ${required} REQUISE · VOUS AVEZ ${force}`
                 : (preview?.fell ? `POUSSER · CHUTE · F${force}` : `POUSSER · FORCE ${force}`)
             };
+          }
+          /* Couronne voisine : le clic la RAMASSE (previewSmartCharacterTarget
+             renvoie PICKUP). Ce cas manquait ici, donc le survol tombait sur
+             « DESTINATION IMPOSSIBLE » et la croix d'interdiction, alors que
+             le clic prenait bien la couronne — signalé en jeu le 09/11. */
+          if (smartHovered && state.smartHoverType === "PICKUP") {
+            return { kind: "crown", actionable: true, color: 0xffc928, label: "PRENDRE LA COURONNE" };
           }
           if (character) {
             return { kind: "enemy", actionable: false, color: 0xff6f72, label: "CIBLE NON ATTEIGNABLE" };
@@ -5227,7 +5285,9 @@
         const unifiedPushActive = !!state?.pushOptions?.length;
         // Un gardien 3D est déjà visible sous le curseur : superposer un pictogramme
         // "personnage" redondant n'apporte rien et surcharge le survol.
-        const glyphSuppressed = intent.kind === "crown" || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        // Pose de couronne : la dalle dorée et la couronne fantôme suffisent.
+        const sobre = intent.kind === "crown-place";
+        const glyphSuppressed = sobre || intent.kind === "crown" || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "character" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         // Le gardien sélectionné a déjà son propre halo persistant au sol
         // (addCellHighlight, kind "selected") : re-dessiner un second réticule de
         // survol par-dessus (remplissage + anneau + coches) en plus de ce halo ne
@@ -5249,7 +5309,7 @@
         // Gardien ou couronne : leur liseré lumineux (setKayKitVisualHover)
         // suffit, l'anneau peint par-dessus les délavait. Même chose pour la
         // destination d'un trajet : case soulevée, pointe et chiffre suffisent.
-        const hoverRingsSuppressed = ["ally", "enemy", "crown"].includes(intent.kind) || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
+        const hoverRingsSuppressed = sobre || ["ally", "enemy", "crown"].includes(intent.kind) || (intent.kind === "move" && !!state?.smartHoverPath?.length) || glyphKind === "neutral" || glyphKind === "select" || glyphKind === "invocation" || (unifiedPushActive && glyphKind === "push") || (placingIsland && (glyphKind === "place" || glyphKind === "invalid"));
         kaykit3D.hoverMarker.traverse?.(child => {
           if (child.userData.hoverRole === "light") {
             child.color.setHex(intent.color);
@@ -5398,11 +5458,24 @@
              l'identité et le rayon les manquait : un clic rapide après le survol
              tombait sur la case en dessous. */
           kaykit3D.actionPreviewGroup?.updateMatrixWorld?.(true);
-          const interactifs =
+          let interactifs =
             kaykit3D.raycaster.intersectObjects(
               kaykit3D.interactiveMeshes || [],
               false
             );
+          /* POSER LA COURONNE : la couronne portée (zone de clic agrandie,
+             au-dessus de la tête) cachait la case libre derrière le porteur.
+             Le survol annonçait « COURONNE » au lieu de la pose, et le clic
+             retombait sur la couronne. Pendant ce choix, ni elle ni son
+             porteur ne se visent : le rayon va à la case derrière eux. */
+          if (state?.phase === "DROP_TREASURE") {
+            const porteur = characterById(state.treasureDropFromId);
+            interactifs = interactifs.filter(item => {
+              const data = item.object?.userData || {};
+              if (data.kaykitAction === "crown-carried") return false;
+              return !(porteur && data.kaykitAction === "character" && data.r === porteur.r && data.c === porteur.c);
+            });
+          }
 
           /* UN CHOIX DE POUSSÉE PASSE DEVANT CE QUI LE MASQUE.
 
@@ -8420,7 +8493,8 @@
         else if (classList.contains("diagonal-step-preview")) { color = 0xd9922f; fillOpacity = .46; kind = "move" }
         else if (classList.contains("move-target-preview")) { color = 0xd9922f; fillOpacity = .58; kind = "move"; size = .90 }
         else if (classList.contains("move-path-preview")) { color = 0xd9922f; fillOpacity = .34; kind = "move" }
-        else if (classList.contains("reachable")) { color = 0xd9922f; fillOpacity = .52; kind = "move" }
+        // Pose de couronne : addKayKitCrownDropGhosts() dessine ses propres dalles.
+        else if (classList.contains("reachable") && state?.phase !== "DROP_TREASURE") { color = 0xd9922f; fillOpacity = .52; kind = "move" }
 
         // SYNCHRONISATION INCRÉMENTALE (V77) : cette fonction est appelée pour
         // les 121 cases à CHAQUE sync (survol, sélection, déplacement...), mais
@@ -8878,8 +8952,9 @@
         // à l'échelle du zoom pour rester constante à l'écran.
         const zoomReference = 12.4 * (GRID / 11);
         const echelleZoom = THREE.MathUtils.clamp((kaykit3D.zoomDistance || zoomReference) / zoomReference, .4, 1.6);
-        const epaisseurClaire = .12 * echelleZoom;
-        const epaisseurSombre = epaisseurClaire + .045 * echelleZoom;
+        // Affiné à la demande de Taekun (09/11) : .12 jugé trop épais.
+        const epaisseurClaire = .085 * echelleZoom;
+        const epaisseurSombre = epaisseurClaire + .03 * echelleZoom;
         for (const segment of segments) ajouterRuban(segment, -.002, options.sombre ?? 0x0d3a56, .85, epaisseurSombre);
         for (const segment of segments) ajouterRuban(segment, .002, options.claire ?? 0x7fd8ff, 1, epaisseurClaire);
 
@@ -9277,6 +9352,95 @@
       function kaykitFantomeDuMode(type, id, r, c, options) { return null; }
       function kaykitObjetsDuMode(type, id) { return []; }
       function kaykitMagieDuMode(island, rotation, sol) { return { masquer: [], fantomes: [] }; }
+
+      /* Pose de couronne : où elle peut aller. Retours de Taekun (09-10/11) :
+         l'anneau ne suffisait pas, les dalles dessinées PAR-DESSUS tout
+         non plus — le gardien, l'arbre, ce qui occupe la case doit rester
+         au premier plan. Retour aux dalles d'origine (aplat plein de la
+         case, sous les pièces), mais plus soignées : ombre douce pour le
+         contraste, aplat or chaud, bordure or fine et nette, sans les traits
+         blancs. La couronne portée reste levée tant que le choix dure. Au
+         survol, la couronne fantôme, pleine, se pose à l'arrivée ; la dalle
+         ne s'éclaire plus (elle délavait le fantôme). Rien n'est animé en
+         continu. */
+      function addKayKitCrownDropGhosts() {
+        const group = kaykit3D?.actionPreviewGroup;
+        if (!group) return;
+        const survol = kaykit3D.hoverCell;
+        const allies = new Set(state.crownTransferTargetIds || []);
+        const taille = .88;
+        const plaque = kaykitGeometry("crown-drop-tile-v3", () => new THREE.PlaneGeometry(taille, taille));
+        const plaqueOmbre = kaykitGeometry("crown-drop-shadow-v3", () => new THREE.PlaneGeometry(.94, .94));
+        const epaisseur = .05;
+        const barre = kaykitGeometry("crown-drop-edge-v3", () => new THREE.BoxGeometry(taille + epaisseur, .022, epaisseur));
+        const materiau = (couleur, opacite) => {
+          const m = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, depthTest: true, side: THREE.DoubleSide });
+          m.userData = { ilyosTransient: true };
+          return m;
+        };
+        for (const cellKey of state.reachable || []) {
+          const [r, c] = cellKey.split(",").map(Number);
+          const occupant = characterAt(r, c);
+          if (occupant && !allies.has(occupant.id)) continue;
+          const vise = !!survol && survol.r === r && survol.c === c;
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .026);
+          const dalle = new THREE.Group();
+          dalle.position.set(p.x, p.y, p.z);
+          const ombre = new THREE.Mesh(plaqueOmbre, materiau(0x2a1600, .34));
+          ombre.rotation.x = -Math.PI / 2;
+          ombre.position.y = .004;
+          ombre.renderOrder = 27;
+          const aplat = new THREE.Mesh(plaque, materiau(0xf0ad28, .6));
+          aplat.rotation.x = -Math.PI / 2;
+          aplat.position.y = .01;
+          aplat.renderOrder = 30;
+          dalle.add(ombre, aplat);
+          const matBord = materiau(0xffdf7a, 1);
+          for (let i = 0; i < 4; i++) {
+            const pivot = new THREE.Group();
+            pivot.rotation.y = i * Math.PI / 2;
+            const cote = new THREE.Mesh(barre, matBord);
+            cote.position.set(0, .02, taille / 2);
+            cote.renderOrder = 36;
+            pivot.add(cote);
+            dalle.add(pivot);
+          }
+          group.add(dalle);
+          if (!vise) continue;
+          /* La vraie couronne, à peine transparente : le fantôme d'origine se
+             lisait mal, une couronne opaque laissait croire le coup déjà joué
+             (Taekun, 10/11). Écriture de profondeur gardée : on ne voit pas
+             l'intérieur de la couronne à travers. Elle remplace celle du
+             porteur, masquée juste après — le nombre de lumières de la scène
+             ne change pas. */
+          const fantome = makeCrown();
+          if (fantome) {
+            const pos = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .02);
+            fantome.position.set(pos.x, pos.y, pos.z);
+            fantome.traverse(o => {
+              o.raycast = () => {};
+              if (!o.isMesh || !o.material || o.material.visible === false) return;
+              const copie = o.material.clone();
+              copie.transparent = true;
+              copie.opacity = Math.min(copie.opacity ?? 1, .68);
+              copie.userData = { ...(copie.userData || {}), ilyosTransient: true };
+              o.material = copie;
+            });
+          }
+          const allie = occupant ? kaykit3D.characterVisuals?.get(String(occupant.id)) : null;
+          if (fantome && allie) {
+            // Sur la tête de l'allié, à la place exacte d'une couronne portée.
+            crownAnchorPosition(allie, fantome.position);
+            fantome.scale.setScalar(.62);
+          }
+          if (fantome) group.add(fantome);
+          const porteur = kaykit3D.characterVisuals?.get(String(state.treasureDropFromId));
+          if (porteur?.crown?.visible) {
+            porteur.crown.visible = false;
+            kaykit3D.poussePiecesMasquees = [...(kaykit3D.poussePiecesMasquees || []), porteur.crown];
+          }
+        }
+      }
 
       function makeKayKitPieceGhost(r, c, { playerId = null, crown = false, opacity = .6, surfaceY = null } = {}) {
         let piece = null;
@@ -9803,7 +9967,8 @@
              null), donc sans le rang du draft la clé serait identique d'un
              joueur à l'autre — les cases éclairées du précédent resteraient
              affichées pour le suivant. */
-          draftPick: state.draft ? [state.draft.index, state.currentPlayer] : null
+          draftPick: state.draft ? [state.draft.index, state.currentPlayer] : null,
+          dropHover: state.phase === "DROP_TREASURE" && kaykit3D.hoverCell ? [kaykit3D.hoverCell.r, kaykit3D.hoverCell.c] : null
         });
         if (previewKey === kaykit3D.actionPreviewKey) return;
         kaykit3D.actionPreviewKey = previewKey;
@@ -9847,6 +10012,11 @@
 
         if (unifiedPushActive) {
           renderUnifiedPushAffordances();
+          return;
+        }
+
+        if (state.phase === "DROP_TREASURE") {
+          addKayKitCrownDropGhosts();
           return;
         }
 
@@ -13785,7 +13955,9 @@
             visual.crown.position.copy(KAYKIT_TMP_CROWN);
             // Plus de rotation continue de la couronne portée (Taekun,
             // 2026-11-04 : inutile) ; seul le léger flottement reste.
-            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0);
+            visual.crown.position.y += Math.sin(elapsed * 2.4 + visual.seed * 6) * .015 + (visual.crown.userData.ilyosLevee || 0)
+              // Couronne choisie pour être posée : elle reste levée.
+              + (state?.phase === "DROP_TREASURE" && String(state.treasureDropFromId) === String(visual.id) ? .14 : 0);
           }
 
           /* --- 10. Halo de sélection -------------------------------- */

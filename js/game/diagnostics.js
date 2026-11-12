@@ -8,8 +8,29 @@
           renderSetupFields();
           return;
         }
-        if (state && !state.tutorial && !state.puzzle) restaurerReglagesPartie(state);
+        const precedente = state && !state.tutorial && !state.puzzle ? state : null;
+        if (precedente) restaurerReglagesPartie(precedente);
+        rotationRedemanderDerniere();
         startGame();
+        if (precedente) reprendreMiseEnPlace(precedente);
+      }
+
+      /* Duel symétrique et Personnalisé : la partie s'ouvre sur le choix du
+         terrain. « Rejouer » le passe et reprend le choix de la partie qui
+         s'achève — même setup, mêmes options (les champs de l'écran de choix
+         gardent leurs valeurs, et le terrain du Personnalisé vit dans
+         MENU_DUEL). */
+      function reprendreMiseEnPlace(partie) {
+        if (!state || state.onlineMode || !state.setupSelectionPending) return;
+        if (state.startingBoardMode === "symmetric") {
+          const id = partie.startingBoardPreset;
+          if (!id || !SYMMETRIC_DUEL_SETUPS[id] || !els.symmetricSetupSelect) return;
+          if (![...els.symmetricSetupSelect.options].some(option => option.value === id)) return;
+          els.symmetricSetupSelect.value = id;
+        } else if (state.startingBoardMode !== "custom") {
+          return;
+        }
+        confirmSymmetricSetup();
       }
 
       /* « Rejouer » relance la MÊME partie : mêmes joueurs, même difficulté,
@@ -1800,7 +1821,7 @@
          `expert` choisit la logique Expert ou historique, `poids` les réglages
          de PLAN_POIDS prêtés pendant ses choix (ex. { draftExpert: 0 }). */
       function selfplayDepartPerso(graine, { iles = 4, gardiens = 2, poids = [null, null],
-                                            expert = [true, true], libre = false } = {}) {
+                                            expert = [true, true], libre = false, rotation = null } = {}) {
         const depart = canonicalDepart();
         setTestRandomSeed(graine);
         try {
@@ -1809,6 +1830,13 @@
               shapeLimitPerOwner: SHAPE_LIMIT_PER_OWNER_DEFAULT,
               // Placement libre des gardiens (option du Personnalisé).
               ...(libre ? { placementGardiensLibre: true } : {}) };
+            // But de la Rotation (ex. { but: "balises" }) : posé avant la mise
+            // en place, comme dans le Personnalisé.
+            if (rotation) {
+              state.rotation = null;
+              rotationInstaller(rotation);
+            }
+            state.startingBoardMode = "custom";
             state.players.forEach(joueur => {
               joueur.deck = shuffle([...joueur.deck, ...joueur.hand, ...(joueur.discard || [])]
                 .map(carte => ({ ...carte, used: false, fromStash: false })));
@@ -1846,6 +1874,7 @@
             state.islandPlacedThisTurn = islandLimitReachedForPlayer(0) || poseImpossiblePour(0);
             state.centerCrownTakenThisTurn = false;
             faireEntrerCouronnesEnAttente();
+            if (rotation) rotationOuvertureBalises();
             state.phase = "ACTION_SELECT";
             return snapshotState();
           });

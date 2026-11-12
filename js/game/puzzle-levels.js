@@ -1,7 +1,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-deux énigmes, de la leçon de poussée à l'archipel des neuf
+         Vingt-cinq énigmes, de la leçon de poussée aux Cimes, au-delà des neuf
          mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
@@ -1394,6 +1394,207 @@
               { a: "PUSH", who: "D", on: [0, 1], force: 2 },
               { a: "MOVE", who: "D", to: [0, 1] }
             ]
+          ]
+        },
+        /* =================================================================
+           ACTE IV — LES CIMES
+
+           Après la Confluence, des énigmes d'un seul tour, longues et sans
+           marge, dont l'optimum est PROUVÉ par le chercheur (ILYOS_PUZZLE.solve
+           explore tout l'espace des coups sous le barème) et dont la solution
+           optimale est UNIQUE à l'ordre près des gestes gratuits. Aucune règle
+           nouvelle : seulement des usages que la campagne n'a jamais combinés.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           LA CHARNIÈRE GARDÉE
+
+           Le rival est assis sur le bout de la barre, et c'est exactement là
+           qu'il faut la faire pivoter : un Gardien sur le pivot ne bouge pas,
+           il ne gêne donc rien. Le chasser coûterait des cartes qui manqueront
+           au lancer.
+
+           La barre se dresse, le porteur y POSE la couronne au bout, puis va
+           s'asseoir au milieu en enjambant sa propre couronne ; la barre se
+           recouche, et les deux reviennent alignés, la couronne devant — à
+           quatre cases d'une terre que personne ne peut atteindre à pied. Le
+           second rival, collé au départ, n'est là que pour être poussé à tort.
+
+           Optimum 12 PROUVÉ (131 000 nœuds), solution unique. */
+        {
+          id: "p24-charniere-gardee",
+          acte: "IV",
+          principe: "TRACE",
+          avant: "Au-dessus de la Confluence, les Voies se resserrent.",
+          verite: "Un pivot occupé tourne quand même.",
+          title: "La charnière gardée",
+          tagline: "Il s'est assis sur la charnière. Laisse-le : elle tournera quand même.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [3, 3],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]],
+            { key: "BARRE", cells: [[3, 4], [3, 5], [3, 6]] },
+            [[3, 7]], [[4, 7]], [[5, 7]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 5, c: 7, crown: 1 },
+            { key: "H", p: 0, r: 3, c: 0 },
+            { key: "R1", p: 1, r: 0, c: 1 },
+            { key: "R2", p: 1, r: 3, c: 6 },
+            { key: "R3", p: 1, r: 4, c: 7 }
+          ],
+          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
+          par: 12,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "La charnière a tourné",
+          winLine: "Il gardait le pivot. Un pivot ne bouge pas : il n'a rien gardé.",
+          failLine: "La barre pouvait tourner avec lui dessus.",
+          solution: [
+            { a: "MAGIC", island: "BARRE", pivot: [3, 6], turns: 1, direction: -1 },
+            { a: "DROP", who: "G", on: [5, 6] },
+            { a: "MOVE", who: "H", to: [2, 0] },
+            { a: "MOVE", who: "G", to: [4, 6] },
+            { a: "MAGIC", island: "BARRE", pivot: [3, 6], turns: 1, direction: 1 },
+            { a: "PUSH", who: "G", on: [3, 4], force: 4 },
+            { a: "PICKUP", who: "H", on: [3, 0] },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [0, 1], force: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           LE PASSAGER CLANDESTIN
+
+           Un rival barre la seule route, assis au pied de la barre qui porte
+           tout le puzzle. Le pousser jusqu'au vide coûterait quatre cartes ; on
+           ne le pousse que d'UNE case, sur la barre, et c'est la barre qui
+           l'emporte : retournée par son milieu, elle le dépose sur son autre
+           bout, qui deviendra justement le pivot du second retournement. Il
+           voyage, il ne gêne plus, et il sert de charnière.
+
+           Le porteur, lui, ne doit PAS monter avec la couronne : posée sur le
+           bout de la barre puis enjambée, elle voyage seule pendant que le
+           Gardien s'assoit au milieu. Le second retournement les dépose l'un
+           derrière l'autre, la couronne devant — juste ce qu'il faut pour la
+           lancer par-dessus le gouffre. Encore faut-il que le receveur ait
+           libéré la case d'arrivée.
+
+           Au nord, deux rivaux gardent le village. Celui de la rangée se jette
+           dans le vide en le poussant VERS le château, par-dessus le coin du
+           plateau ; le second ne tombe que poussé depuis le château lui-même.
+
+           Optimum 14 PROUVÉ (234 000 nœuds), solution unique. */
+        {
+          id: "p23-passager-clandestin",
+          acte: "IV",
+          principe: "TRACE",
+          verite: "Ce qui te barre la route peut aussi la porter.",
+          title: "Le passager clandestin",
+          tagline: "Il barre la seule route. La route, elle, peut l'emporter.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            /* Le nord : le village et sa rangée, toutes en pierres d'une case,
+               donc immobiles. */
+            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]],
+            /* La barre, seule pièce mobile du plateau. */
+            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
+            /* Le départ. */
+            [[7, 3]], [[8, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
+            { key: "H", p: 0, r: 0, c: 3 },
+            { key: "R1", p: 1, r: 1, c: 0 },
+            { key: "R2", p: 1, r: 0, c: 1 },
+            { key: "R3", p: 1, r: 7, c: 3 }
+          ],
+          /* Deux cartes de marge : de quoi tenter l'éjection directe du rival
+             de la route — qui ne laisse ensuite plus rien pour le village. */
+          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
+          par: 14,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Le passager est descendu",
+          winLine: "Il barrait la route ; la barre l'a emporté, et il a servi de charnière.",
+          failLine: "La route était là. Il fallait la faire tourner avec lui dessus.",
+          solution: [
+            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [7, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
+            { a: "DROP", who: "G", on: [6, 3] },
+            { a: "MOVE", who: "H", to: [0, 2] },
+            { a: "MOVE", who: "G", to: [5, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
+            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
+            { a: "PICKUP", who: "H", on: [0, 3] },
+            { a: "PUSH", who: "H", on: [0, 1], force: 2 },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
+          ]
+        },
+        /* -----------------------------------------------------------------
+           LE BÉLIER
+
+           Le même gouffre que le Passager clandestin, et une case de plus au
+           nord — ce qui change tout. Le receveur est au bout de la rangée, et
+           un rival dort sur la seule case où la couronne peut atterrir.
+
+           On le décale d'une case vers le château : la couronne se pose à sa
+           place. Mais il est maintenant entre elle et le village, et il n'y a
+           plus personne à l'ouest pour le pousser. Une couronne au sol se
+           POUSSE, et une poussée emporte toute la file : poussée vers l'ouest,
+           elle devient un bélier, chasse le rival par-dessus le coin du plateau
+           et s'arrête d'elle-même sur le château. Il ne reste qu'à la suivre.
+
+           Optimum 17 PROUVÉ (383 000 nœuds), solution unique. */
+        {
+          id: "p25-belier",
+          acte: "IV",
+          principe: "MESURE",
+          verite: "La lumière ne tombe jamais. Elle pousse.",
+          title: "Le bélier",
+          tagline: "Personne ne peut pousser le dernier rival. Sauf la couronne.",
+          brief: "Ramène la couronne jusqu'à ton village.",
+          board: 11,
+          sanctuary: false,
+          focus: [4, 2],
+          villages: { 0: [[0, 0]] },
+          islands: [
+            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]], [[0, 4]],
+            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
+            [[7, 3]], [[8, 3]]
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
+            { key: "H", p: 0, r: 0, c: 4 },
+            { key: "R1", p: 1, r: 1, c: 0 },
+            { key: "R2", p: 1, r: 0, c: 3 },
+            { key: "R3", p: 1, r: 7, c: 3 }
+          ],
+          /* Une seule carte de marge. */
+          hand: { MOVE: 8, PUSH: 8, MAGIC: 2 },
+          par: 17,
+          goal: { type: "crownDelivered", player: 0 },
+          winTitle: "Le bélier a frappé",
+          winLine: "Une couronne poussée emporte la file entière. Même un rival.",
+          failLine: "Il restait un rival que personne ne pouvait atteindre.",
+          solution: [
+            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [7, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
+            { a: "DROP", who: "G", on: [6, 3] },
+            { a: "PUSH", who: "H", on: [0, 3], force: 1 },
+            { a: "MOVE", who: "G", to: [5, 3] },
+            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
+            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
+            { a: "PUSH", who: "H", on: [0, 3], force: 3 },
+            { a: "MOVE", who: "H", to: [0, 0] },
+            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
           ]
         }
       );

@@ -51,18 +51,38 @@ preuves et ne pas annoncer une validation non exécutée.
 
 ## Vérifier proportionnellement
 
-- `npm run doctor` : diagnostic de la machine, sans installer ni appeler d'IA.
-- `npm run check` : cohérence bundle + syntaxe des scripts autonomes.
-- UI/menu/caméra/tutoriel : `npm run test:smoke` (Chromium, serveur port 8124).
-  Vérifier aussi le rendu visible pour une modification graphique.
-- Règles/IA : banc `scripts/verif-*.js` pertinent, serveur `npm start` port 8123,
-  puis tests plus larges si nécessaire. Lire le banc avant de choisir sa commande.
-  Avant de livrer un changement d'IA : `npm run verif:ia` (tous les bancs, bilan).
+Une vérification doit pouvoir échouer à cause du changement. Sinon elle coûte
+du temps sans rien apprendre : ne pas la lancer.
+
+| Ce qui change | À lancer | Pas la peine |
+|---|---|---|
+| Texte, style, visuel, menu sans logique | `npm run build` + `npm run check`, une capture du rendu | bancs, smoke local, self-play |
+| UI avec logique, caméra, tutoriel | idem + la spec Playwright concernée (`npx playwright test tests/<spec>`) | bancs de l'IA, self-play |
+| Règle du jeu | idem + les bancs du sujet (`npm run verif:ia -- <mots>`) + `npm run verif:moteur` | self-play |
+| IA (planner, évaluation, budgets) | `npm run verif:ia` complet une fois, avant de livrer ; self-play seulement pour affirmer « plus fort » | smoke local |
+| Outils, docs, bancs | `npm run check` | tout le reste |
+
+- `npm run check` (quelques secondes, sans serveur) : bundle fidèle aux
+  fragments, syntaxe, et chargement du jeu sans écran (`scripts/check-moteur.js` ;
+  s'il échoue, le Worker du CPU Expert ne démarrerait pas).
+- La CI rejoue `check` et le smoke sur chaque PR : inutile de relancer le smoke
+  complet en local avant de pousser, sauf pour reproduire un échec.
+- Un banc rouge sur `main` se répare ou se retire tout de suite. Ne jamais
+  livrer « rouge aussi sur main » deux fois de suite : c'est du temps perdu à
+  chaque PR suivante.
+- Un banc juge un résultat (une couronne prise, un état identique), pas une
+  tactique précise ni une vitesse de machine.
+- Plusieurs PR prêtes en même temps : les regrouper en un lot (une seule passe
+  de CI) plutôt que les remettre à jour une par une.
+- Ne plus toucher au `?v=` de `js/game.js` dans `index.html` : il reste à
+  `dev` dans le dépôt, et la mise en ligne (`.github/workflows/pages.yml`,
+  `scripts/estampiller.js`) le remplace par l'empreinte du bundle publié.
 - Toute action de joueur ajoutée ou modifiée (`ui.js`) doit exister dans le
   planner et dans `scripts/verif-couverture-regles.js`. Un banc ne recopie
   jamais une règle : il interroge le moteur (ex. `ILYOS_BENCH.actionGratuite`).
-- `npm test` comprend une partie Expert longue ; pas à chaque changement de texte.
-  Ne pas assouplir les assertions ou délais pour masquer un échec.
+- `npm run doctor` : diagnostic de la machine. `npm test` comprend une partie
+  Expert longue : seulement sur demande.
+- Ne pas assouplir une assertion pour masquer un échec.
 - CSS de cascade : empreintes avant/après selon `tests/README.md`.
 - Résumer résultat, contrôles réellement exécutés et limites observées. Ne pas
   annoncer une installation, connexion, publication ou validation non vérifiée.

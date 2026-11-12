@@ -32,7 +32,8 @@
         I: "Acte I · Les Voies éteintes",
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
-        CONFLUENCE: "Confluence"
+        CONFLUENCE: "Confluence",
+        IV: "Acte IV · Les Cimes"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -3902,15 +3903,24 @@
 
       /* Toutes les cartes en main d'emblée : c'est la relaxation décrite plus
          haut, seule façon d'explorer sans simuler les fins de tour. */
-      function puzzleSearchBuild(def) {
+      /* `serie` FIGE l'identité des Gardiens. puzzleBuildState numérote chaque
+         montage (pz1-100, pz2-100…) pour que le rendu ne confonde pas deux
+         énigmes ; mais le chercheur reconstruit le plateau à CHAQUE nœud et
+         rejoue des coups qui désignent les Gardiens par leur identifiant. Sans
+         ce gel, chaque reconstruction changeait les noms, tout rejeu au-delà
+         du premier coup échouait en silence, et la recherche concluait
+         « aucune solution » après une seule couche — y compris sur des
+         énigmes dont la solution de référence passe. */
+      function puzzleSearchBuild(def, serie = null) {
+        if (Number.isFinite(serie)) PUZZLE.serie = serie - 1;
         puzzleBuildState(def);
         const joueur = state.players[0];
         (joueur.deck || []).forEach(carte => joueur.hand.push({ ...carte, used: false }));
         joueur.deck = [];
       }
 
-      function puzzleSearchReplay(def, chemin) {
-        puzzleSearchBuild(def);
+      function puzzleSearchReplay(def, chemin, serie = null) {
+        puzzleSearchBuild(def, serie);
         for (const action of chemin) {
           if (!puzzleSearchApply(action)) return false;
         }
@@ -3941,7 +3951,14 @@
         const defAvant = PUZZLE.def;
         const depart = Date.now();
         const finAu = depart + secondesMax * 1000;
+        /* Présentation COUPÉE pendant toute la recherche, comme pour les
+           simulations du planner (withSimulatedState) : sans ce drapeau,
+           chaque coup essayé déclenchait sons, effets et synchronisation 3D,
+           et une poussée coûtait six millisecondes au lieu d'une fraction.
+           La recherche plafonnait alors à quelques nœuds par seconde. */
+        const simulationAvant = ilyosSimulationActive;
         try {
+          ilyosSimulationActive = true;
           PUZZLE.active = true;
           PUZZLE.def = def;
 
@@ -3970,6 +3987,7 @@
           };
 
           puzzleSearchBuild(def);
+          const serie = PUZZLE.serie;
           if (atteint()) return { id: def.id, cout: 0, chemin: [] };
           vus.add(strategicStateFingerprint());
           const coupsRacine = puzzleSearchActions().map(puzzleSearchLabel);
@@ -3990,7 +4008,7 @@
                     : `exploration interrompue à ${noeuds} nœuds`
                 };
               }
-              if (!puzzleSearchReplay(def, chemin)) continue;
+              if (!puzzleSearchReplay(def, chemin, serie)) continue;
 
               /* L'objectif se teste ICI, au dépilement, et non à la génération
                  des successeurs. Un successeur porte son coût TOTAL : en
@@ -4039,6 +4057,7 @@
         } catch (error) {
           return { id: def.id, error: `exception : ${error && error.message}` };
         } finally {
+          ilyosSimulationActive = simulationAvant;
           PUZZLE.active = actifAvant;
           PUZZLE.def = defAvant;
           state = etatReel;
@@ -4218,7 +4237,7 @@
           menuOpen: PUZZLE.menuOpen,
           /* Le déblocage linéaire est suspendu pendant le chantier des
              transitions. Exposé ici pour que le test du menu vérifie le
-             comportement RÉEL au lieu d'être assoupli : il exige les 22 cartes
+             comportement RÉEL au lieu d'être assoupli : il exige toutes les cartes
              ouvertes tant que ce drapeau tient, et le verrou linéaire dès
              qu'il retombe. */
           toutOuvert: PUZZLE_TOUT_OUVERT,
