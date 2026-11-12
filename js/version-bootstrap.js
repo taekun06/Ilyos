@@ -251,7 +251,7 @@ document.title = "ILYOS — Les îles célestes";
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
-    './css/portrait-mobile.css?v=8-hud-ref-11'
+    './css/portrait-mobile.css?v=9-textes-encoche'
   ];
   styles.forEach(href=>{
     const link=document.createElement('link');
