@@ -76,7 +76,7 @@
   ];
   const COUCHES = [
     { id: 'deckbuilding', dispo: true, nom: 'Deckbuilding', ligne: 'Marché · cartes fortes · affinage', ico: '<rect x="3" y="5" width="11" height="15" rx="2" transform="rotate(-10 8 12)"/><rect x="9" y="4" width="11" height="15" rx="2"/><path d="M14.5 9 l2 2.5 -2 2.5 -2 -2.5 Z"/>' },
-    { id: 'creatures', dispo: true, nom: 'Créatures et œufs', ligne: 'Œufs sur la croix · Loup', ico: '<path d="M12 3 C7 3 5 11 5 14 C5 18 8 21 12 21 C16 21 19 18 19 14 C19 11 17 3 12 3 Z"/><path d="M8 13 l2 -2 2 2 2 -2 2 2"/>' },
+    { id: 'creatures', dispo: true, nom: 'Créatures', ligne: 'Œufs et personnages neutres', ico: '<path d="M12 3 C7 3 5 11 5 14 C5 18 8 21 12 21 C16 21 19 18 19 14 C19 11 17 3 12 3 Z"/><path d="M8 13 l2 -2 2 2 2 -2 2 2"/>' },
     { id: 'objectifs', nom: 'Objectifs communs', ligne: '3 courses secondaires', ico: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2"/><path d="M12 1 v4 M12 19 v4 M1 12 h4 M19 12 h4"/>' }
   ];
   const TAILLES = [['11', '11×11'], ['13', '13×13']];
@@ -86,6 +86,13 @@
   const choix = { but: 'balises', taille: '11', adversaire: 'duel', niveau: 'normal' };
   const verrous = new Set();
   const couches = new Set();
+  /* Couche Créatures : œufs (espèces) et personnages neutres, choisis un
+     par un (Taekun, 2026-11-12). Les deux, l'un ou l'autre. */
+  const CREATURES_LISTE = [
+    { genre: 'especes', id: 'loup', nom: 'Loup', ligne: 'Œufs' },
+    { genre: 'neutres', id: 'minion', nom: 'Minion', ligne: 'Neutre' }
+  ];
+  const creaturesChoix = { especes: new Set(['loup']), neutres: new Set() };
   let tirage = false;
 
   const filet = sens => `<svg class="rt-filet ${sens}" viewBox="0 0 160 20" aria-hidden="true"><path d="M0 10 H120"/><path class="fin" d="M120 10 c8 -9 18 -9 22 -2 c3 6 -4 10 -8 6 c-3 -3 0 -7 3 -5"/><path class="fin" d="M120 10 c8 9 18 9 22 2"/><path class="plein" d="M148 10 l6 -5 l6 5 l-6 5 Z"/></svg>`;
@@ -132,6 +139,10 @@
       <span class="rt-plaque"><b>${b.nom}</b>${b.dispo ? `<i>${b.ligne}</i>` : '<em>BIENTÔT</em>'}</span></button>`).join('');
     $('.rt-couches').innerHTML = COUCHES.map(c => c.dispo
       ? `<button type="button" class="rt-couche${couches.has(c.id) ? ' on' : ''}" data-couche="${c.id}" aria-pressed="${couches.has(c.id)}"><span class="rt-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${c.ico}</svg></span><span class="rt-txt"><b>${c.nom}</b><i>${c.ligne}</i></span><span class="rt-bascule" aria-hidden="true"></span></button>`
+      + (c.id === 'creatures' && couches.has('creatures') ? `<div class="rt-creatures">${CREATURES_LISTE.map(x => {
+        const on = creaturesChoix[x.genre].has(x.id);
+        return `<button type="button" class="rt-creature${on ? ' on' : ''}" data-creature="${x.genre}:${x.id}" aria-pressed="${on}"><i>${x.ligne}</i><b>${x.nom}</b></button>`;
+      }).join('')}</div>` : '')
       : `<div class="rt-couche bientot"><span class="rt-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${c.ico}</svg></span><span class="rt-txt"><b>${c.nom}</b><i>${c.ligne}</i></span><em>BIENTÔT</em></div>`).join('');
     $('.rt-selecteurs').innerHTML = `<div class="rt-ligne">${selecteur('taille', TAILLES, choix.taille)}${selecteur('adversaire', ADVERSAIRES, choix.adversaire)}</div>`
       + (choix.adversaire === 'solo' ? `<div class="rt-ligne un">${selecteur('niveau', NIVEAUX, choix.niveau)}</div>` : '');
@@ -165,6 +176,7 @@
     const mode = choix.adversaire === 'solo' ? 'solo' : 'duel';
     const values = { board: 'classic', size: choix.taille, timer: '0', difficulty: choix.niveau };
     if (choix.but !== 'couronnes' || couches.size) values.rotation = { but: choix.but, couches: [...couches] };
+    if (values.rotation && couches.has('creatures')) values.rotation.creatures = { especes: [...creaturesChoix.especes], neutres: [...creaturesChoix.neutres] };
     parent.postMessage({ source: 'ilyos-menu', type: 'play', detail: { mode, values } }, location.origin);
   }
 
@@ -187,6 +199,15 @@
     const cible = e.target.closest('button');
     if (!cible || !ecran.contains(cible)) return;
     if (cible.dataset.but) { choix.but = cible.dataset.but; rendre(); return; }
+    if (cible.dataset.creature) {
+      const [genre, id] = cible.dataset.creature.split(':');
+      const liste = creaturesChoix[genre];
+      liste.has(id) ? liste.delete(id) : liste.add(id);
+      // Plus rien de choisi : la couche se coupe.
+      if (!creaturesChoix.especes.size && !creaturesChoix.neutres.size) { couches.delete('creatures'); creaturesChoix.especes.add('loup'); }
+      rendre();
+      return;
+    }
     if (cible.dataset.couche) {
       const id = cible.dataset.couche;
       couches.has(id) ? couches.delete(id) : couches.add(id);

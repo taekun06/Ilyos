@@ -119,8 +119,22 @@
       function rotationNormaliser(demande) {
         const but = demande?.but === "balises" ? "balises" : "couronnes";
         const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
+        /* Couche Créatures : les œufs (espèces qui en sortent) et les
+           personnages neutres sont choisis séparément (Taekun, 2026-11-12).
+           Une ancienne demande sans détail garde les œufs de Loup. */
+        const choixCreatures = rotationNormaliserCreatures(demande?.creatures);
+        const i = couches.indexOf("creatures");
+        if (i >= 0 && !choixCreatures.especes.length && !choixCreatures.neutres.length) couches.splice(i, 1);
         if (but === "couronnes" && !couches.length) return null;
-        return { but, couches };
+        return couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+      }
+
+      const ROTATION_ESPECES = ["loup"];
+      const ROTATION_NEUTRES = ["minion"];
+      function rotationNormaliserCreatures(choix) {
+        if (!choix || typeof choix !== "object") return { especes: ["loup"], neutres: [] };
+        const garder = (liste, connus) => (Array.isArray(liste) ? liste : []).filter(x => connus.includes(x));
+        return { especes: garder(choix.especes, ROTATION_ESPECES), neutres: garder(choix.neutres, ROTATION_NEUTRES) };
       }
 
       function rotationInstaller(demande) {
@@ -128,7 +142,8 @@
         if (!state || state.rotation || !voulue) return;
         state.rotation = {
           but: voulue.but,
-          couches: Object.fromEntries(voulue.couches.map(c => [c, true]))
+          couches: Object.fromEntries(voulue.couches.map(c => [c, true])),
+          ...(voulue.creatures ? { choixCreatures: voulue.creatures } : {})
         };
         if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
         Object.assign(state.rotation, {

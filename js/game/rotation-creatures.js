@@ -45,7 +45,12 @@
       const CREATURES_COMPTE_RELEVE = 2;
 
       function creaturesActives(source = state) {
-        return !!source?.rotation?.couches?.creatures;
+        /* Les œufs (et les créatures qui en sortent) : couche Créatures avec
+           au moins une espèce choisie. Les personnages neutres, eux, sont
+           posés par installerMinionNeutre (rules-core.js). */
+        const r = source?.rotation;
+        if (!r?.couches?.creatures) return false;
+        return !r.choixCreatures || r.choixCreatures.especes.length > 0;
       }
 
       function creaturesVivantes() {
@@ -57,7 +62,8 @@
         const d = CREATURES_DISTANCE_OEUFS;
         const cases = [[CENTER.r - d, CENTER.c], [CENTER.r + d, CENTER.c], [CENTER.r, CENTER.c - d], [CENTER.r, CENTER.c + d]];
         const ordre = shuffle([0, 1, 2, 3]);
-        const especes = Object.keys(CREATURES);
+        const choisies = state.rotation.choixCreatures?.especes;
+        const especes = (choisies?.length ? choisies : Object.keys(CREATURES)).filter(e => CREATURES[e]);
         state.rotation.creatures = {
           espece: especes[Math.floor(gameRandom() * especes.length)],
           oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: (state.turn || 1) + CREATURES_COMPTES[ordre[i]] })),

@@ -1469,7 +1469,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
+        return state.characters.filter(char => !char.neutre && proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
@@ -3184,8 +3184,11 @@
         const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
         const couches = [];
         if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
-        if (document.getElementById("customCreaturesCheckbox")?.checked) couches.push("creatures");
-        return but === "couronnes" && !couches.length ? null : { but, couches };
+        const especes = document.getElementById("customOeufsLoupCheckbox")?.checked ? ["loup"] : [];
+        const neutres = document.getElementById("customNeutreMinionCheckbox")?.checked ? ["minion"] : [];
+        if (especes.length || neutres.length) couches.push("creatures");
+        if (but === "couronnes" && !couches.length) return null;
+        return couches.includes("creatures") ? { but, couches, creatures: { especes, neutres } } : { but, couches };
       }
 
       function majResumePaquetPersonnalise() {

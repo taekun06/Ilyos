@@ -21,6 +21,7 @@
         // dans les trois cases du village y interdit toute validation.
         const eligibleCarriers = (state.characters || []).filter(char =>
           char.player === player.id
+          && !estNeutre(char)
           && !!artifactCarriedBy(char.id)
           && isCrownValidationCell(player, char.r, char.c)
           && !validationBloqueeParAdversaire(player, char.r, char.c)
@@ -64,6 +65,7 @@
         // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
         // qui prend la main, avant même la validation des couronnes.
         confierGardiensEquipe(p.id);
+        confierMinionNeutre(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();

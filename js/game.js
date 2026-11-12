@@ -546,7 +546,7 @@
          Ils restent déclarés dans KAYKIT_ASSETS : seul le lancement groupé les
          ignore. Toute demande ultérieure passe par ensureKayKitAsset(), qui
          mémoïse via kaykit3D.assetPromises. */
-      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage"]);
+      const KAYKIT_DEFERRED_ASSETS = new Set(["hero2", "hero2Hooded", "hero3", "heroSkeletonWarrior", "heroSkeletonRogue", "heroSkeletonMage", "heroSkeletonMinion"]);
 
       const KAYKIT_CATALOG_CACHE_VERSION = "v45-local-2026-08";
       const KAYKIT_ASSET_MODE = "local-verified";
@@ -586,6 +586,8 @@
         heroSkeletonWarrior: kaykitAssetSpec("skeletonCharacters", "Skeleton_Warrior.glb"),
         heroSkeletonRogue: kaykitAssetSpec("skeletonCharacters", "Skeleton_Rogue.glb"),
         heroSkeletonMage: kaykitAssetSpec("skeletonCharacters", "Skeleton_Mage.glb"),
+        // Minion neutre (maquette ?minion=1, rules-core.js).
+        heroSkeletonMinion: kaykitAssetSpec("skeletonCharacters", "Skeleton_Minion.glb"),
 
         /* Le pack Squelettes (4 GLB, 18,4 Mo) était chargé ici avec tout le
            reste au démarrage de la scène. Il ne servait qu'au navigateur de
@@ -12872,6 +12874,7 @@
       function resolveHeroAssetKey(character, index) {
         // Créature neutre de la Rotation : son propre modèle (rotation-creatures.js).
         if (character?.creature) return creatureModele(character);
+        if (character?.neutre) return "heroSkeletonMinion";
         // Apparence du camp d'origine : en 2 contre 2 à gardiens communs,
         // char.player suit le joueur qui commande (voir confierGardiensEquipe).
         const playerId = proprietaireGardien(character) ?? 0;
@@ -13221,7 +13224,8 @@
          boule au ras du plateau, retirés de l'archipel (le ciel peint porte
          déjà ses nuages). */
       function attacherPlaqueEquipe(visual, character) {
-        const couleur = state?.players?.[character.player]?.color;
+        // Minion neutre : plaque gris pierre, sans couleur d'équipe.
+        const couleur = character.neutre ? "#b9b2a4" : state?.players?.[character.player]?.color;
         if (couleur === undefined || couleur === null) return;
         const plaque = new THREE.Mesh(
           kaykitGeometry("plaque-equipe-v1", () => new THREE.PlaneGeometry(KAYKIT_CELL_SPACING * .86, KAYKIT_CELL_SPACING * .86)),
@@ -16775,7 +16779,7 @@
       function characterAt(r, c) { return state.characters.find(ch => ch.r === r && ch.c === c); }
 
       function guardianCount(playerId) {
-        return state.characters.filter(char => proprietaireGardien(char) === playerId).length;
+        return state.characters.filter(char => !char.neutre && proprietaireGardien(char) === playerId).length;
       }
 
       function canCreateGuardian(playerId) {
@@ -18490,8 +18494,11 @@
         const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
         const couches = [];
         if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
-        if (document.getElementById("customCreaturesCheckbox")?.checked) couches.push("creatures");
-        return but === "couronnes" && !couches.length ? null : { but, couches };
+        const especes = document.getElementById("customOeufsLoupCheckbox")?.checked ? ["loup"] : [];
+        const neutres = document.getElementById("customNeutreMinionCheckbox")?.checked ? ["minion"] : [];
+        if (especes.length || neutres.length) couches.push("creatures");
+        if (but === "couronnes" && !couches.length) return null;
+        return couches.includes("creatures") ? { but, couches, creatures: { especes, neutres } } : { but, couches };
       }
 
       function majResumePaquetPersonnalise() {
@@ -21169,6 +21176,7 @@
         // dans les trois cases du village y interdit toute validation.
         const eligibleCarriers = (state.characters || []).filter(char =>
           char.player === player.id
+          && !estNeutre(char)
           && !!artifactCarriedBy(char.id)
           && isCrownValidationCell(player, char.r, char.c)
           && !validationBloqueeParAdversaire(player, char.r, char.c)
@@ -21212,6 +21220,7 @@
         // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
         // qui prend la main, avant même la validation des couronnes.
         confierGardiensEquipe(p.id);
+        confierMinionNeutre(p.id);
         const scoredAtStart = scoreCrownsAtTurnStart(p);
         if (state.winner !== null) {
           renderAll();
@@ -27113,6 +27122,15 @@
 
       function renderUnitCard() {
         const ch = characterById(state.selectedCharId);
+        if (ch?.neutre) {
+          els.unitCard.classList.remove("empty");
+          ficheUnite("💀", [
+            [{ balise: "b", texte: "Minion neutre", couleur: "#d8d2c4" }],
+            ["N'appartient à personne : chaque joueur le joue pendant son tour"],
+            ["Porte et passe les couronnes, mais ne marque jamais"]
+          ]);
+          return;
+        }
         if (ch) {
           const p = state.players[proprietaireGardien(ch)];
           els.unitCard.classList.remove("empty");
@@ -28643,6 +28661,40 @@
       }
 
       /* ==================================================================
+         MINION NEUTRE (maquette, ?minion=1) — un gardien qui n'appartient à
+         personne. Au début de chaque tour, il passe aux mains du joueur qui
+         prend la main (char.player), comme les gardiens d'équipe du 2 contre
+         2 : chacun le joue avec ses cartes (déplacer, pousser, passe, magie).
+         Il peut porter une couronne et faire ou recevoir des passes, mais il
+         ne marque jamais (turns.js). Choix de Taekun, 2026-11-09.
+      ================================================================== */
+      const MINION_NEUTRE_ACTIF = (() => {
+        try { return /[?&]minion=1(&|$)/.test(location.search); } catch (_) { return false; }
+      })();
+
+      function estNeutre(char) { return !!char?.neutre; }
+
+      function installerMinionNeutre() {
+        const demande = MINION_NEUTRE_ACTIF || !!state?.rotation?.choixCreatures?.neutres?.includes("minion");
+        if (!demande || !state || state.quick || state.puzzle) return;
+        if ((state.characters || []).some(estNeutre)) return;
+        // Case libre la plus proche du sanctuaire, sur la terre ferme.
+        let meilleure = null;
+        for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+          if (!isLand(r, c) || characterAt(r, c) || looseArtifactAt(r, c)) continue;
+          const d = Math.abs(r - CENTER.r) + Math.abs(c - CENTER.c);
+          if (!meilleure || d < meilleure.d) meilleure = { r, c, d };
+        }
+        if (!meilleure) return;
+        state.characters.push({ id: "minion-neutre", player: state.currentPlayer, neutre: true, r: meilleure.r, c: meilleure.c });
+      }
+
+      function confierMinionNeutre(playerId) {
+        installerMinionNeutre();
+        (state.characters || []).forEach(char => { if (estNeutre(char)) char.player = playerId; });
+      }
+
+      /* ==================================================================
          BLOCAGE DE ZONE (règle V67)
 
          Un gardien adverse posté sur l'une des trois cases d'un village y
@@ -29980,7 +30032,22 @@
 
       /* L'évaluation ne modifie rien : elle profite de la grille de terre. */
       function evaluateStrategicState(playerId) {
-        return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+        /* Minion neutre (rules-core.js) : la position s'évalue en fin de
+           tour, et au tour suivant c'est l'adversaire qui le jouera. Il est
+           donc compté comme un gardien ADVERSE : l'IA s'en sert pendant son
+           tour, mais évite de le laisser près de son village ou de ses
+           porteurs, et de lui laisser une couronne qui serait livrée chez
+           l'adversaire. */
+        const neutres = (state.characters || []).filter(ch => ch.neutre);
+        if (!neutres.length) return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+        const suivant = (playerId + 1) % state.players.length;
+        const avant = neutres.map(ch => ch.player);
+        neutres.forEach(ch => { ch.player = suivant; });
+        try {
+          return avecGrilleTerre(() => evaluerEtatStrategique(playerId));
+        } finally {
+          neutres.forEach((ch, i) => { ch.player = avant[i]; });
+        }
       }
 
       /** Coût d'une couronne dont le porteur est expulsable, selon l'endroit
@@ -37141,8 +37208,22 @@
       function rotationNormaliser(demande) {
         const but = demande?.but === "balises" ? "balises" : "couronnes";
         const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
+        /* Couche Créatures : les œufs (espèces qui en sortent) et les
+           personnages neutres sont choisis séparément (Taekun, 2026-11-12).
+           Une ancienne demande sans détail garde les œufs de Loup. */
+        const choixCreatures = rotationNormaliserCreatures(demande?.creatures);
+        const i = couches.indexOf("creatures");
+        if (i >= 0 && !choixCreatures.especes.length && !choixCreatures.neutres.length) couches.splice(i, 1);
         if (but === "couronnes" && !couches.length) return null;
-        return { but, couches };
+        return couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+      }
+
+      const ROTATION_ESPECES = ["loup"];
+      const ROTATION_NEUTRES = ["minion"];
+      function rotationNormaliserCreatures(choix) {
+        if (!choix || typeof choix !== "object") return { especes: ["loup"], neutres: [] };
+        const garder = (liste, connus) => (Array.isArray(liste) ? liste : []).filter(x => connus.includes(x));
+        return { especes: garder(choix.especes, ROTATION_ESPECES), neutres: garder(choix.neutres, ROTATION_NEUTRES) };
       }
 
       function rotationInstaller(demande) {
@@ -37150,7 +37231,8 @@
         if (!state || state.rotation || !voulue) return;
         state.rotation = {
           but: voulue.but,
-          couches: Object.fromEntries(voulue.couches.map(c => [c, true]))
+          couches: Object.fromEntries(voulue.couches.map(c => [c, true])),
+          ...(voulue.creatures ? { choixCreatures: voulue.creatures } : {})
         };
         if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
         Object.assign(state.rotation, {
@@ -38633,7 +38715,12 @@
       const CREATURES_COMPTE_RELEVE = 2;
 
       function creaturesActives(source = state) {
-        return !!source?.rotation?.couches?.creatures;
+        /* Les œufs (et les créatures qui en sortent) : couche Créatures avec
+           au moins une espèce choisie. Les personnages neutres, eux, sont
+           posés par installerMinionNeutre (rules-core.js). */
+        const r = source?.rotation;
+        if (!r?.couches?.creatures) return false;
+        return !r.choixCreatures || r.choixCreatures.especes.length > 0;
       }
 
       function creaturesVivantes() {
@@ -38645,7 +38732,8 @@
         const d = CREATURES_DISTANCE_OEUFS;
         const cases = [[CENTER.r - d, CENTER.c], [CENTER.r + d, CENTER.c], [CENTER.r, CENTER.c - d], [CENTER.r, CENTER.c + d]];
         const ordre = shuffle([0, 1, 2, 3]);
-        const especes = Object.keys(CREATURES);
+        const choisies = state.rotation.choixCreatures?.especes;
+        const especes = (choisies?.length ? choisies : Object.keys(CREATURES)).filter(e => CREATURES[e]);
         state.rotation.creatures = {
           espece: especes[Math.floor(gameRandom() * especes.length)],
           oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: (state.turn || 1) + CREATURES_COMPTES[ordre[i]] })),
