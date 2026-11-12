@@ -298,8 +298,7 @@ document.title = "ILYOS — Les îles célestes";
      s'affiche pendant tout le chargement des scripts synchrones (three.js,
      game.js…), jusqu'à DOMContentLoaded où boot() pose la classe du body.
      <html> existe déjà ici : on le masque tout de suite, puis boot() rend la
-     main à la classe du body (que revealOnlineSetup() retire volontairement
-     pour la partie EN LIGNE). */
+     main à la classe du body. */
   document.documentElement.classList.add('ilyos-menu-v11-boot');
 
   const guardStyle = document.createElement('style');
@@ -309,8 +308,6 @@ document.title = "ILYOS — Les îles célestes";
     body.ilyos-menu-v11-active > #setupScreen{visibility:hidden!important;pointer-events:none!important}
     #ilyos-menu-v11-frame{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;border:0;z-index:2147483000;background:#040a11;display:block}
     #ilyos-menu-v11-frame[hidden]{display:none!important}
-    .online-menu-back{margin-top:14px;display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:10px;border:1px solid rgba(216,170,76,.45);background:rgba(216,170,76,.12);color:#f4d28e;font:inherit;font-weight:600;cursor:pointer}
-    .online-menu-back:hover{background:rgba(216,170,76,.22)}
   `;
   document.head.appendChild(guardStyle);
 
@@ -387,35 +384,18 @@ document.title = "ILYOS — Les îles célestes";
     });
   }
 
-  /* Mode EN LIGNE : contrairement aux autres modes, JOUER ne fait pas
-     apparaître #gameScreen tout de suite — l'hôte doit d'abord voir son code
-     de salon et attendre l'invité (ou l'invité doit se connecter). Cet écran
-     d'attente n'existe que dans l'ancien #setupScreen (#onlineSetupStatus,
-     code généré, etc.) : sans ce bridge, la partie EN LIGNE se lance bien en
-     coulisses mais reste invisible sous l'iframe du menu, qui elle ne se
-     cache que quand #gameScreen devient visible. On révèle donc l'ancien
-     écran dès que le panneau EN LIGNE existe, avec un bouton de retour. */
-  function revealOnlineSetup(frame) {
-    let attempts = 0;
-    const timer = setInterval(() => {
-      attempts++;
-      const panel = document.querySelector('.online-setup-panel');
-      if (panel) {
-        clearInterval(timer);
-        frame.hidden = true;
-        document.body.classList.remove('ilyos-menu-v11-active');
-        if (!panel.querySelector('.online-menu-back')) {
-          const back = document.createElement('button');
-          back.type = 'button';
-          back.className = 'online-menu-back';
-          back.textContent = '← Retour au menu';
-          back.addEventListener('click', () => location.reload());
-          panel.appendChild(back);
-        }
-      } else if (attempts >= 25) {
-        clearInterval(timer);
-      }
-    }, 40);
+  /* Mode EN LIGNE : JOUER ne fait pas apparaître #gameScreen tout de suite —
+     l'hôte attend son ami, l'invité se connecte. Cette salle d'attente vit
+     dans le menu (menu/frame.js, écran « Face-à-face ») : le cadre reste
+     affiché et reçoit ici l'état du salon (code, erreurs) que le jeu publie
+     par l'événement « ilyos-online-status » (core.js, setOnlineSetupStatus).
+     Il se masque de lui-même quand la partie démarre (syncFrame). */
+  function relayOnlineStatus(frame) {
+    window.addEventListener('ilyos-online-status', (event) => {
+      try {
+        frame.contentWindow?.postMessage({ source:'ilyos-jeu', type:'online-status', detail:event.detail || {} }, location.origin);
+      } catch (error) { }
+    });
   }
 
   function syncFrame(frame) {
@@ -440,9 +420,10 @@ document.title = "ILYOS — Les îles célestes";
     frame.id = 'ilyos-menu-v11-frame';
     frame.title = 'Menu ILYOS';
     frame.src = `./menu/frame.html?v=${encodeURIComponent(window.ILYOS_BUILD)}`;
-    frame.setAttribute('allow', 'autoplay; fullscreen');
+    frame.setAttribute('allow', 'autoplay; fullscreen; clipboard-write; web-share');
     frame.allowFullscreen = true;
     document.body.appendChild(frame);
+    relayOnlineStatus(frame);
 
     window.addEventListener('message', (event) => {
       if (event.origin !== location.origin || event.source !== frame.contentWindow) return;
@@ -452,9 +433,7 @@ document.title = "ILYOS — Les îles célestes";
       if (msg.type === 'settings') applySettings(msg.detail?.mode, msg.detail?.values || {});
       if (msg.type === 'play') {
         launchGame(msg.detail?.mode, msg.detail?.values || {});
-        if (msg.detail?.mode === 'online') {
-          revealOnlineSetup(frame);
-        } else {
+        if (msg.detail?.mode !== 'online') {
           setTimeout(() => syncFrame(frame), 100);
           setTimeout(() => syncFrame(frame), 700);
         }
@@ -483,6 +462,17 @@ document.title = "ILYOS — Les îles célestes";
           window.dispatchEvent(new CustomEvent('ilyos-boucles-requested'));
           setTimeout(() => syncFrame(frame), 120);
           setTimeout(() => syncFrame(frame), 800);
+        }
+        // Salle d'attente EN LIGNE : ANNULER ferme le salon ; REPRENDRE
+        // relance la partie en ligne sauvegardée (bouton de l'ancien panneau).
+        if (action === 'online-cancel') window.ILYOS_EN_LIGNE?.annuler?.();
+        if (action === 'online-resume') {
+          setLegacyMode('online');
+          requestAnimationFrame(() => {
+            document.getElementById('resumeOnlineBtn')?.click();
+            setTimeout(() => syncFrame(frame), 100);
+            setTimeout(() => syncFrame(frame), 700);
+          });
         }
         if (action === 'resume') {
           document.getElementById('resumeLocalBtn')?.click();
