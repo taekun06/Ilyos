@@ -708,7 +708,8 @@
       function estNeutre(char) { return !!char?.neutre; }
 
       function installerMinionNeutre() {
-        if (!MINION_NEUTRE_ACTIF || !state || state.quick || state.puzzle) return;
+        const demande = MINION_NEUTRE_ACTIF || !!state?.rotation?.choixCreatures?.neutres?.includes("minion");
+        if (!demande || !state || state.quick || state.puzzle) return;
         if ((state.characters || []).some(estNeutre)) return;
         // Case libre la plus proche du sanctuaire, sur la terre ferme.
         let meilleure = null;

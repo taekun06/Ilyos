@@ -18494,8 +18494,11 @@
         const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
         const couches = [];
         if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
-        if (document.getElementById("customCreaturesCheckbox")?.checked) couches.push("creatures");
-        return but === "couronnes" && !couches.length ? null : { but, couches };
+        const especes = document.getElementById("customOeufsLoupCheckbox")?.checked ? ["loup"] : [];
+        const neutres = document.getElementById("customNeutreMinionCheckbox")?.checked ? ["minion"] : [];
+        if (especes.length || neutres.length) couches.push("creatures");
+        if (but === "couronnes" && !couches.length) return null;
+        return couches.includes("creatures") ? { but, couches, creatures: { especes, neutres } } : { but, couches };
       }
 
       function majResumePaquetPersonnalise() {
@@ -28672,7 +28675,8 @@
       function estNeutre(char) { return !!char?.neutre; }
 
       function installerMinionNeutre() {
-        if (!MINION_NEUTRE_ACTIF || !state || state.quick || state.puzzle) return;
+        const demande = MINION_NEUTRE_ACTIF || !!state?.rotation?.choixCreatures?.neutres?.includes("minion");
+        if (!demande || !state || state.quick || state.puzzle) return;
         if ((state.characters || []).some(estNeutre)) return;
         // Case libre la plus proche du sanctuaire, sur la terre ferme.
         let meilleure = null;
@@ -37141,8 +37145,22 @@
       function rotationNormaliser(demande) {
         const but = demande?.but === "balises" ? "balises" : "couronnes";
         const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
+        /* Couche Créatures : les œufs (espèces qui en sortent) et les
+           personnages neutres sont choisis séparément (Taekun, 2026-11-12).
+           Une ancienne demande sans détail garde les œufs de Loup. */
+        const choixCreatures = rotationNormaliserCreatures(demande?.creatures);
+        const i = couches.indexOf("creatures");
+        if (i >= 0 && !choixCreatures.especes.length && !choixCreatures.neutres.length) couches.splice(i, 1);
         if (but === "couronnes" && !couches.length) return null;
-        return { but, couches };
+        return couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+      }
+
+      const ROTATION_ESPECES = ["loup"];
+      const ROTATION_NEUTRES = ["minion"];
+      function rotationNormaliserCreatures(choix) {
+        if (!choix || typeof choix !== "object") return { especes: ["loup"], neutres: [] };
+        const garder = (liste, connus) => (Array.isArray(liste) ? liste : []).filter(x => connus.includes(x));
+        return { especes: garder(choix.especes, ROTATION_ESPECES), neutres: garder(choix.neutres, ROTATION_NEUTRES) };
       }
 
       function rotationInstaller(demande) {
@@ -37150,7 +37168,8 @@
         if (!state || state.rotation || !voulue) return;
         state.rotation = {
           but: voulue.but,
-          couches: Object.fromEntries(voulue.couches.map(c => [c, true]))
+          couches: Object.fromEntries(voulue.couches.map(c => [c, true])),
+          ...(voulue.creatures ? { choixCreatures: voulue.creatures } : {})
         };
         if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
         Object.assign(state.rotation, {
@@ -38633,7 +38652,12 @@
       const CREATURES_COMPTE_RELEVE = 2;
 
       function creaturesActives(source = state) {
-        return !!source?.rotation?.couches?.creatures;
+        /* Les œufs (et les créatures qui en sortent) : couche Créatures avec
+           au moins une espèce choisie. Les personnages neutres, eux, sont
+           posés par installerMinionNeutre (rules-core.js). */
+        const r = source?.rotation;
+        if (!r?.couches?.creatures) return false;
+        return !r.choixCreatures || r.choixCreatures.especes.length > 0;
       }
 
       function creaturesVivantes() {
@@ -38645,7 +38669,8 @@
         const d = CREATURES_DISTANCE_OEUFS;
         const cases = [[CENTER.r - d, CENTER.c], [CENTER.r + d, CENTER.c], [CENTER.r, CENTER.c - d], [CENTER.r, CENTER.c + d]];
         const ordre = shuffle([0, 1, 2, 3]);
-        const especes = Object.keys(CREATURES);
+        const choisies = state.rotation.choixCreatures?.especes;
+        const especes = (choisies?.length ? choisies : Object.keys(CREATURES)).filter(e => CREATURES[e]);
         state.rotation.creatures = {
           espece: especes[Math.floor(gameRandom() * especes.length)],
           oeufs: cases.map(([r, c], i) => ({ id: i + 1, r, c, eclosion: (state.turn || 1) + CREATURES_COMPTES[ordre[i]] })),
