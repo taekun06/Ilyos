@@ -145,7 +145,7 @@
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-active {
     top: 46px !important;
-    font-size: 9px !important;
+    font-size: 11px !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-left .ov2-active { left: 50px !important; }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-active { right: 50px !important; left: auto !important; }
@@ -205,7 +205,7 @@
     white-space: nowrap !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small {
-    font-size: 10px !important;
+    font-size: 11px !important;
     margin: 0 !important;
     white-space: nowrap !important;
   }
@@ -243,6 +243,12 @@
     bottom: calc(var(--pm-bottom) + var(--pm-dock-h) + 6px) !important;
     top: auto !important;
     transform: scale(.78) !important;
+  }
+  /* Taille de texte minimale (2026-11-12) : réduite à .78, l'étiquette de 7 px
+     ne faisait plus que 5,5 px à l'écran. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-pile-hud .ov2-pile-label {
+    font-size: 11px !important;
+    letter-spacing: .02em !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-deck-hud {
     left: auto !important;
@@ -433,14 +439,22 @@
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top {
     transform: scale(.6) !important;
     transform-origin: top center !important;
-    left: calc(50vw + 22px - (100vw - 84px) / 1.2) !important;
+    /* Visible de 64 px à 100vw - 20 px, décalée de l'encoche de chaque côté
+       (viewport-fit=cover, 2026-11-12). */
+    --pc-top-l: calc(64px + var(--pc-safe-left) - 8px);
+    --pc-top-w: calc(100vw - 84px - (var(--pc-safe-left) - 8px) - (var(--pc-safe-right) - 8px));
+    left: calc(var(--pc-top-l) + var(--pc-top-w) / 2 - var(--pc-top-w) / 1.2) !important;
     right: auto !important;
-    width: calc((100vw - 84px) / .6) !important;
+    width: calc(var(--pc-top-w) / .6) !important;
   }
   html body[data-visual-mode]:not(.puzzle-mode) #gameScreen #ilyosHudOrganicV2 .ov2-top .ov2-turn {
     min-width: 170px !important;
     padding: 0 24px !important;
   }
+  /* Bande réduite à .6 : chiffres de la réserve et « À VOUS » agrandis pour
+     rester lisibles (≈ 10 px à l'écran au lieu de 6 à 7 px). */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top .ov2-reserve-action b { font-size: 17px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-top .ov2-active { font-size: 16px !important; }
   html body #tourAdverseFrise {
     top: 58px !important;
     right: 128px !important;
@@ -508,8 +522,8 @@
     text-align: left !important;
     justify-self: start !important;
   }
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong { font-size: 10px !important; }
-  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small { font-size: 9px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action strong { font-size: 11px !important; }
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-action small { font-size: 9.5px !important; letter-spacing: 0 !important; }
 
   /* FIN DU TOUR sous les actions, sous le pouce droit. */
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 .ov2-end {
@@ -517,7 +531,7 @@
     left: auto !important;
     right: var(--pc-safe-right) !important;
     top: auto !important;
-    bottom: 8px !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
     width: var(--pc-col) !important;
     height: 44px !important;
     min-height: 0 !important;
@@ -536,9 +550,15 @@
     position: fixed !important;
     top: auto !important;
     right: auto !important;
-    bottom: 8px !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
     transform: scale(.72) !important;
     transform-origin: bottom left !important;
+  }
+  /* Réduite à .72, l'étiquette de 7 px ne faisait plus que 5 px à l'écran. */
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud .ov2-pile-label,
+  html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud .ov2-pile-label {
+    font-size: 12px !important;
+    letter-spacing: .04em !important;
   }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DeckHud { left: calc(var(--pc-safe-left) + 50px) !important; }
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2DiscardHud { left: calc(var(--pc-safe-left) + 98px) !important; }
@@ -546,7 +566,7 @@
     position: fixed !important;
     top: auto !important;
     left: var(--pc-safe-left) !important;
-    bottom: 10px !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
     transform: scale(.85) !important;
     transform-origin: bottom left !important;
   }
@@ -555,7 +575,7 @@
   html body[data-visual-mode] #gameScreen #ilyosHudOrganicV2 #ov2Instruction {
     position: fixed !important;
     top: auto !important;
-    bottom: 6px !important;
+    bottom: max(6px, env(safe-area-inset-bottom)) !important;
     left: 50% !important;
     transform: translateX(-50%) scale(.85) !important;
   }
@@ -567,8 +587,8 @@
   html body[data-visual-mode] #gameScreen #ov2IslandRotationV12 {
     position: fixed !important;
     top: auto !important;
-    bottom: 34px !important;
-    left: 160px !important;
+    bottom: calc(max(6px, env(safe-area-inset-bottom)) + 28px) !important;
+    left: calc(var(--pc-safe-left) + 152px) !important;
     right: calc(var(--pc-col) + 16px) !important;
     width: max-content !important;
     max-width: calc(100vw - 288px) !important;
