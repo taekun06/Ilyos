@@ -17419,6 +17419,11 @@
       }
 
       function setOnlineSetupStatus(message, type = "") {
+        // La salle d'attente du menu (écran EN LIGNE « Face-à-face ») suit
+        // l'état du salon par cet événement, relayé par version-bootstrap.js.
+        window.dispatchEvent(new CustomEvent("ilyos-online-status", {
+          detail: { message, type, role: onlineRole, code: onlineRoomCode }
+        }));
         const node = document.getElementById("onlineSetupStatus");
         if (!node) return;
         node.textContent = message;
@@ -17511,6 +17516,10 @@
       function clearOnlineSession() {
         try { localStorage.removeItem(ONLINE_STORAGE_KEY); } catch (error) { }
       }
+
+      // ANNULER de la salle d'attente du menu : ferme le salon ouvert, sans
+      // effacer une partie en ligne sauvegardée.
+      window.ILYOS_EN_LIGNE = { annuler: () => closeOnlineNetwork(false) };
 
       function closeOnlineNetwork(clearSaved = false) {
         if (onlineReconnectTimer) {

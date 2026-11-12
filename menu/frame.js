@@ -694,6 +694,11 @@
     const controls=c.controls||[];
     duel.dataset.mode=mode;
     document.body.dataset.duelMode=mode;
+    if(mode==='online'){
+      renderEnLigne();
+      if(emit){ send('mode',{mode,config:c}); notifySettings(); }
+      return;
+    }
     desc.textContent=c.description||'';
     play.innerHTML=`<span class="play-main">${safeText(playLabel())}</span><small>${safeText(playSubLabel())}</small>`;
 
@@ -735,6 +740,252 @@
     if(emit){ send('mode',{mode,config:c}); notifySettings(); }
   }
 
+  /* ─── EN LIGNE « Face-à-face » ───────────────────────────────────────
+     Le mode EN LIGNE a son propre écran : choix CRÉER / REJOINDRE, puis
+     salle d'attente (code du salon, copier, partager le lien, annuler).
+     La logique réseau reste dans le jeu (core.js) : le cadre envoie « play »
+     comme les autres modes et reçoit l'état du salon par « online-status ».
+     Hôte = chevalier or, invité = mage violet, comme en partie. */
+  const enLigne=document.createElement('div');
+  enLigne.className='en-ligne';
+  duel.appendChild(enLigne);
+  let elVue='config';
+  let elStatut={message:'',type:'',code:''};
+  let elNomPret=false;
+  const EL_NOMS_DEFAUT=['','JOUEUR','JOUEUR 1','JOUEUR 2'];
+
+  function elNomParDefaut(role){
+    let pseudo='';
+    try{ pseudo=progressionApi()?.etat?.()?.pseudo||''; }catch(_){}
+    pseudo=String(pseudo).replace(/[<>]/g,'').slice(0,18).toLocaleUpperCase('fr-FR');
+    return pseudo||(role==='guest'?'JOUEUR 2':'JOUEUR 1');
+  }
+  function elValeurs(){
+    const v=ensureSelections('online');
+    if(!elNomPret||EL_NOMS_DEFAUT.includes(String(v.name1||'').trim())){ v.name1=elNomParDefaut(v.role); elNomPret=true; }
+    return v;
+  }
+  function elCodeSaisi(v){ return v.roomCode&&v.roomCode!=='AUTO' ? v.roomCode : ''; }
+  function elSessionSauvee(){
+    try{
+      const s=JSON.parse(localStorage.getItem('ilyos-online-session-v1')||'null');
+      return s?.roomCode&&s?.role ? s : null;
+    }catch(_){ return null; }
+  }
+  function elLien(code){
+    try{ const u=new URL(parent.location.href); u.search=''; u.hash=''; u.searchParams.set('salon',code); return u.toString(); }
+    catch(_){ return ''; }
+  }
+  function elSiege(couleur,nom,role,eteint){
+    return `<div class="el-siege ${couleur}${eteint?' eteint':''}"><div class="el-anneau"><div class="el-portrait"></div></div><b>${nom}</b><span class="el-role el-nu">${role}</span></div>`;
+  }
+  function elPoints(){ return '<span class="el-pts" aria-hidden="true"><i></i><i></i><i></i></span>'; }
+  function elTuiles(code,{min=6,curseur=false}={}){
+    const n=Math.max(min,code.length);
+    let h='';
+    for(let i=0;i<n;i++){
+      const c=code[i];
+      h+=c?`<i>${safeText(c)}</i>`:`<i class="vide${curseur&&i===code.length?' cur':''}"></i>`;
+    }
+    return h;
+  }
+  function elReglage(key,v){
+    const control=controlByKey('online',key);
+    const court={board:'PLATEAU',size:'TAILLE',timer:'TOUR'}[key];
+    return `<div class="el-chip field" data-key="${key}"><span class="el-lab el-nu">${court}</span><div class="el-fl"><button type="button" data-step="-1" data-key="${key}" aria-label="${court} précédent">‹</button><b>${safeText(optionLabel(control,v[key]))}</b><button type="button" data-step="1" data-key="${key}" aria-label="${court} suivant">›</button></div></div>`;
+  }
+  function elRecap(v){
+    return `<div class="el-reglages">${['board','size','timer'].map(key=>`<div class="el-chip"><span class="el-lab el-nu">${{board:'PLATEAU',size:'TAILLE',timer:'TOUR'}[key]}</span><b>${safeText(labelFor('online',key,v[key]))}</b></div>`).join('')}</div>`;
+  }
+  function elOnglets(invite){
+    return `<div class="el-onglets field" data-key="role" role="tablist">
+      <button type="button" role="tab" data-step="-1" data-role="host" aria-selected="${!invite}" class="${invite?'':'on'}">✦ CRÉER<small>OUVRIR UN SALON</small></button>
+      <button type="button" role="tab" data-step="1" data-role="guest" aria-selected="${invite}" class="${invite?'on v':''}">⚿ REJOINDRE<small>AVEC UN CODE</small></button></div>`;
+  }
+  function elChampNom(v){
+    return `<div class="el-centre field" data-key="name1"><span class="el-lab el-nu">VOTRE NOM</span><input class="el-nom" data-el="nom" maxlength="18" value="${safeText(v.name1)}" placeholder="NOM" autocomplete="off" spellcheck="false" aria-label="Votre nom"></div>`;
+  }
+  function elReprise(){
+    const s=elSessionSauvee();
+    return s?`<button type="button" class="el-btn petit el-reprendre el-pad" data-el="reprendre">↻ REPRENDRE LA PARTIE ${safeText(s.roomCode)}</button>`:'';
+  }
+
+  function elCadreCreer(v){
+    const nom=safeText(v.name1);
+    return `<div class="el-cadre">${elOnglets(false)}
+      <div class="el-tete">${elSiege('o',nom,'VOUS · HÔTE')}${elChampNom(v)}${elSiege('v','?','VOTRE AMI',true)}</div>
+      <div class="el-sep"></div>
+      <div class="el-reglages">${elReglage('board',v)}${elReglage('size',v)}${elReglage('timer',v)}</div>
+      <button type="button" class="el-jouer el-pad" data-el="jouer"><b>OUVRIR LE SALON</b><small>UN CODE À PARTAGER</small></button>
+      ${elReprise()}</div>`;
+  }
+  function elCadreRejoindre(v){
+    const nom=safeText(v.name1);
+    const code=elCodeSaisi(v);
+    return `<div class="el-cadre rej">${elOnglets(true)}
+      <div class="el-tete">${elSiege('o','?','L’HÔTE',true)}${elChampNom(v)}${elSiege('v',nom,'VOUS · INVITÉ')}</div>
+      <div class="el-sep"></div>
+      <div class="el-centre field" data-key="roomCode"><span class="el-lab el-nu">CODE REÇU</span>
+        <div class="el-code" data-el="tuiles">${elTuiles(code,{curseur:true})}<input data-el="code" maxlength="8" value="${safeText(code)}" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" aria-label="Code du salon"></div></div>
+      <button type="button" class="el-jouer v el-pad" data-el="jouer" ${code.length<4?'disabled':''}><b>REJOINDRE</b><small>ENTRER DANS LE SALON</small></button>
+      ${elReprise()}</div>`;
+  }
+  function elMessageErreur(){
+    return elStatut.type==='error'&&elStatut.message ? `<p class="el-info erreur" role="alert">${safeText(elStatut.message)}</p>` : '';
+  }
+  function elCadreSalon(v){
+    const code=elStatut.code||'';
+    const lien=code?elLien(code):'';
+    return `<div class="el-cadre">
+      <div class="el-entete"><span>◆</span><b>SALON OUVERT</b><span>◆</span></div>
+      <div class="el-tete">${elSiege('o',safeText(v.name1),'HÔTE')}
+        <div class="el-centre"><span class="el-lab el-nu">ENVOIE CE CODE À TON AMI</span><div class="el-code">${elTuiles(code)}</div>
+          <div class="el-act"><button type="button" class="el-btn el-pad" data-el="copier" ${code?'':'disabled'}>⧉ COPIER</button><button type="button" class="el-btn el-pad" data-el="partager" ${code?'':'disabled'}>↗ PARTAGER LE LIEN</button></div>
+          ${elMessageErreur()}</div>
+        <div class="el-siege v eteint"><div class="el-anneau"><div class="el-portrait"></div></div><b class="el-attente">EN ATTENTE${elPoints()}</b><span class="el-role el-nu">VOTRE AMI</span></div></div>
+      <div class="el-sep"></div>${elRecap(v)}
+      <div class="el-barre"><button type="button" class="el-btn petit el-pad" data-el="annuler">← ANNULER</button><span class="el-lien">${safeText(lien.replace(/^https?:\/\//,''))}</span></div></div>`;
+  }
+  function elCadreConnexion(v){
+    const code=elCodeSaisi(v);
+    return `<div class="el-cadre rej">
+      <div class="el-entete"><span>◆</span><b>SALON ${safeText(code)}</b><span>◆</span></div>
+      <div class="el-tete">${elSiege('o','L’HÔTE','',false)}
+        <div class="el-centre"><span class="el-vs" aria-hidden="true">⚔</span><b class="el-attente">CONNEXION${elPoints()}</b></div>
+        ${elSiege('v',safeText(v.name1),'VOUS · INVITÉ')}</div>
+      <div class="el-sep"></div>
+      ${elMessageErreur()||'<p class="el-info">L’hôte a choisi le plateau. La partie démarre dès que vous êtes reliés.</p>'}
+      <div class="el-barre"><button type="button" class="el-btn petit el-pad" data-el="annuler">← ANNULER</button><span></span></div></div>`;
+  }
+
+  function renderEnLigne(){
+    const v=elValeurs();
+    const invite=v.role==='guest';
+    const cadre=elVue==='attente'
+      ? (invite?elCadreConnexion(v):elCadreSalon(v))
+      : (invite?elCadreRejoindre(v):elCadreCreer(v));
+    enLigne.innerHTML=`<img class="el-logo" src="./assets/ilyos-logo.svg?v=celestes-2" alt="ILYOS">${cadre}`;
+    cablerEnLigne(v);
+  }
+
+  function elRetour(bouton,texte){
+    const avant=bouton.innerHTML;
+    bouton.textContent=texte;
+    setTimeout(()=>{ if(bouton.isConnected) bouton.innerHTML=avant; },1600);
+  }
+  async function elCopier(texte){
+    try{ await navigator.clipboard.writeText(texte); return true; }
+    catch(_){
+      const zone=document.createElement('textarea');
+      zone.value=texte; zone.setAttribute('readonly',''); zone.style.position='fixed'; zone.style.opacity='0';
+      document.body.appendChild(zone); zone.select();
+      let ok=false; try{ ok=document.execCommand('copy'); }catch(__){}
+      zone.remove(); return ok;
+    }
+  }
+  function annulerEnLigne(rendre=true){
+    send('action',{action:'online-cancel'});
+    elVue='config';
+    elStatut={message:'',type:'',code:''};
+    if(rendre) renderEnLigne();
+  }
+  function lancerEnLigne(v){
+    const invite=v.role==='guest';
+    if(invite&&elCodeSaisi(v).length<4){ enLigne.querySelector('[data-el="code"]')?.focus(); return; }
+    const values={...v};
+    if(!invite) values.roomCode='AUTO';
+    if(!String(values.name1||'').trim()) values.name1=elNomParDefaut(v.role);
+    elVue='attente';
+    elStatut={message:'',type:'',code:invite?elCodeSaisi(v):''};
+    renderEnLigne();
+    send('play',{mode:'online',config:cfg.online,values});
+  }
+
+  function cablerEnLigne(v){
+    enLigne.querySelectorAll('[data-role]').forEach(btn=>btn.addEventListener('click',()=>{
+      if(v.role===btn.dataset.role) return;
+      const nomAuto=String(v.name1)===elNomParDefaut(v.role);
+      v.role=btn.dataset.role;
+      if(nomAuto) v.name1=elNomParDefaut(v.role);
+      renderEnLigne(); notifySettings();
+    }));
+    enLigne.querySelectorAll('.el-chip [data-step]').forEach(btn=>btn.addEventListener('click',()=>{
+      stepControl(controlByKey('online',btn.dataset.key),Number(btn.dataset.step)||1);
+    }));
+    const nom=enLigne.querySelector('[data-el="nom"]');
+    nom?.addEventListener('input',()=>{
+      const brut=nom.value.replace(/[<>]/g,'').slice(0,18);
+      if(brut!==nom.value) nom.value=brut;
+      v.name1=brut.trim()?brut.toLocaleUpperCase('fr-FR'):elNomParDefaut(v.role);
+      const cible=enLigne.querySelector(v.role==='guest'?'.el-siege.v b':'.el-siege.o b');
+      if(cible) cible.textContent=v.name1;
+      notifySettings();
+    });
+    const code=enLigne.querySelector('[data-el="code"]');
+    if(code){
+      const tuiles=enLigne.querySelector('[data-el="tuiles"]');
+      const jouer=enLigne.querySelector('[data-el="jouer"]');
+      const maj=()=>{
+        const brut=code.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
+        if(brut!==code.value) code.value=brut;
+        v.roomCode=brut||'AUTO';
+        tuiles.querySelectorAll('i').forEach(i=>i.remove());
+        tuiles.insertAdjacentHTML('afterbegin',elTuiles(brut,{curseur:true}));
+        if(jouer) jouer.disabled=brut.length<4;
+        notifySettings();
+      };
+      code.addEventListener('input',maj);
+      code.addEventListener('focus',()=>tuiles.classList.add('focus'));
+      code.addEventListener('blur',()=>tuiles.classList.remove('focus'));
+      code.addEventListener('keydown',e=>{ if(e.key==='Enter') lancerEnLigne(v); });
+    }
+    enLigne.querySelector('[data-el="jouer"]')?.addEventListener('click',()=>lancerEnLigne(v));
+    enLigne.querySelector('[data-el="reprendre"]')?.addEventListener('click',()=>send('action',{action:'online-resume'}));
+    enLigne.querySelector('[data-el="annuler"]')?.addEventListener('click',()=>annulerEnLigne());
+    enLigne.querySelector('[data-el="copier"]')?.addEventListener('click',async e=>{
+      const btn=e.currentTarget;
+      if(elStatut.code&&await elCopier(elStatut.code)) elRetour(btn,'✓ COPIÉ');
+    });
+    enLigne.querySelector('[data-el="partager"]')?.addEventListener('click',async e=>{
+      const btn=e.currentTarget;
+      const lien=elStatut.code?elLien(elStatut.code):'';
+      if(!lien) return;
+      if(navigator.share){
+        try{ await navigator.share({title:'ILYOS',text:`Rejoins-moi sur ILYOS : salon ${elStatut.code}`,url:lien}); return; }
+        catch(err){ if(err?.name==='AbortError') return; }
+      }
+      if(await elCopier(lien)) elRetour(btn,'✓ LIEN COPIÉ');
+    });
+  }
+
+  /* L'état du salon, relayé par le jeu (js/version-bootstrap.js). */
+  addEventListener('message',e=>{
+    if(e.origin!==location.origin||e.source!==parent) return;
+    const m=e.data||{};
+    if(m.source!=='ilyos-jeu'||m.type!=='online-status') return;
+    const d=m.detail||{};
+    if(d.code) elStatut.code=String(d.code).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
+    elStatut.message=String(d.message||'');
+    elStatut.type=String(d.type||'');
+    if(selectedMode==='online'&&elVue==='attente') renderEnLigne();
+  });
+
+  /* Lien partagé (…/?salon=CODE) : on arrive directement sur REJOINDRE,
+     code déjà rempli. Le paramètre est retiré de l'adresse aussitôt. */
+  function ouvrirSalonDuLien(){
+    let code='';
+    try{
+      const u=new URL(parent.location.href);
+      code=(u.searchParams.get('salon')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);
+      if(u.searchParams.has('salon')){ u.searchParams.delete('salon'); parent.history.replaceState(parent.history.state,'',u.pathname+u.search+u.hash); }
+    }catch(_){}
+    if(code.length<4) return;
+    const v=ensureSelections('online');
+    v.role='guest'; v.roomCode=code; elNomPret=false;
+    render('online',true);
+    home.classList.remove('active'); duel.classList.add('active','enter');
+  }
+
   function flash(){veil.classList.remove('run');void veil.offsetWidth;veil.classList.add('run')}
   function openMode(card){
     document.querySelectorAll('.card').forEach(x=>x.classList.remove('selected'));
@@ -772,7 +1023,7 @@
   function openComingSoon(label){resetModalView();modalTitle.textContent=label;modalBody.innerHTML='<div class="coming-soon">BIENTÔT</div>';modal.classList.add('open')}
 
   document.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>openMode(card)));
-  document.getElementById('back').addEventListener('click',()=>{flash();setTimeout(()=>{duel.classList.remove('active','enter');home.classList.add('active')},430)});
+  document.getElementById('back').addEventListener('click',()=>{if(selectedMode==='online'&&elVue==='attente') annulerEnLigne(false);flash();setTimeout(()=>{duel.classList.remove('active','enter');home.classList.add('active')},430)});
   play.addEventListener('click',()=>{
     play.classList.remove('pressed'); void play.offsetWidth; play.classList.add('pressed');
     send('play',{mode:selectedMode,config:cfg[selectedMode],values:{...ensureSelections(selectedMode)}});
@@ -841,4 +1092,5 @@
   fullscreenDocument().addEventListener('fullscreenchange',resize);
   fullscreenDocument().addEventListener('webkitfullscreenchange',resize);
   resize();requestAnimationFrame(draw);render(selectedMode,true);send('ready',{});
+  ouvrirSalonDuLien();
 })();

@@ -1,0 +1,143 @@
+/* ILYOS — menu EN LIGNE « Face-à-face » (choix validé le 12/11).
+   Remplace, pour le seul mode EN LIGNE, le panneau générique et l'ancien
+   écran clair qui servait de salle d'attente. Rien n'est animé : machines
+   faibles. Portraits : assets/hud (chevalier = hôte, mage = invité). */
+
+.duel[data-mode="online"] .setup,
+.duel[data-mode="online"] .logo-duel{display:none!important}
+.duel:not([data-mode="online"]) .en-ligne{display:none!important}
+
+.en-ligne{position:absolute;inset:0;z-index:4;padding:0 10px;display:flex;flex-direction:column;align-items:center;overflow-y:auto;pointer-events:none;
+  font-family:var(--font-ilyos-action,'Almendra'),Georgia,serif;color:#f6e3b4;scrollbar-width:none}
+.en-ligne::-webkit-scrollbar{display:none}
+.en-ligne *{box-sizing:border-box}
+.en-ligne .el-logo{flex:none;height:12.5vh;margin-top:2.6vh;filter:drop-shadow(0 9px 20px rgba(0,0,0,.42))}
+.en-ligne .el-nu{font-family:var(--font-ilyos-info,'Nunito Sans'),system-ui,sans-serif;font-weight:800;letter-spacing:.16em}
+.en-ligne .el-lab{font-size:11px;color:rgba(246,227,180,.62)}
+.en-ligne button{font:inherit;color:inherit;cursor:pointer}
+
+.el-cadre{pointer-events:auto;position:relative;flex:none;width:min(780px,92vw);margin:auto 0;padding:24px 30px 22px;
+  background:linear-gradient(180deg,rgba(6,14,26,.90),rgba(4,9,18,.94));border:1.5px solid rgba(229,180,77,.55);border-radius:22px;
+  box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,220,140,.08)}
+.el-cadre:after{content:"";position:absolute;inset:6px;border-radius:17px;border:1px solid rgba(255,220,140,.10);pointer-events:none}
+.en-ligne .el-logo + .el-cadre{margin-top:2.5vh;margin-bottom:auto}
+
+/* Onglets CRÉER / REJOINDRE */
+.el-onglets{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid rgba(229,180,77,.45);border-radius:16px;overflow:hidden;margin-bottom:12px}
+.el-onglets button{border:0;padding:10px;text-align:center;font-size:20px;letter-spacing:.1em;color:rgba(246,227,180,.55);background:rgba(4,12,22,.6)}
+.el-onglets button small{display:block;font-size:11px;letter-spacing:.16em;opacity:.8}
+.el-onglets button:hover:not(.on){color:#ffd789;background:rgba(255,207,103,.08)}
+.el-onglets button.on{color:#2a1606;background:linear-gradient(180deg,#f4cf7d,#c98d2c);font-weight:700;cursor:default}
+.el-onglets button.on.v{color:#1c0b33;background:linear-gradient(180deg,#e4cbff,#9a6ad8)}
+
+/* Face-à-face : deux sièges et le centre */
+.el-tete{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px}
+.el-siege{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}
+.el-anneau{position:relative;width:116px;display:grid;place-items:center}
+.el-anneau:before{content:"";position:absolute;width:112px;height:112px;top:24px;border-radius:50%;background:radial-gradient(circle,rgba(255,200,90,.30),transparent 68%)}
+.el-siege.v .el-anneau:before{background:radial-gradient(circle,rgba(170,120,255,.32),transparent 68%)}
+.el-siege.eteint .el-anneau:before{opacity:.25}
+.el-portrait{position:relative;width:106px;aspect-ratio:368/564;background:url(../assets/hud/knight-portrait.png) center/cover;
+  -webkit-mask-image:radial-gradient(ellipse 58% 52% at 50% 47%,#000 62%,transparent 100%);mask-image:radial-gradient(ellipse 58% 52% at 50% 47%,#000 62%,transparent 100%);
+  filter:drop-shadow(0 10px 22px rgba(0,0,0,.6))}
+.el-siege.v .el-portrait{background-image:url(../assets/hud/mage-portrait.png)}
+.el-siege.eteint .el-portrait{filter:grayscale(1) brightness(.38) sepia(.4) hue-rotate(220deg) saturate(2.2)}
+.el-siege b{font-size:18px;letter-spacing:.06em;white-space:nowrap;color:#ffd789;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.el-siege.v b{color:#d9b8ff}
+.el-role{font-size:11px;color:rgba(246,227,180,.55)}
+.el-siege.v .el-role{color:rgba(217,184,255,.6)}
+.el-centre{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;min-width:0}
+.el-pts{display:inline-flex;gap:6px;vertical-align:middle;margin-left:6px}
+.el-pts i{width:7px;height:7px;border-radius:50%;background:#c9a2ff;opacity:.35}
+.el-pts i:first-child{opacity:1}.el-pts i:nth-child(2){opacity:.65}
+.el-vs{font-family:var(--font-ilyos-display,'Cinzel Decorative'),serif;font-weight:900;font-size:22px;color:rgba(255,215,137,.5)}
+
+/* Nom */
+.el-nom{width:260px;max-width:100%;text-align:center;padding:12px 34px;border-radius:14px;border:1.5px solid rgba(229,180,77,.5);
+  background:rgba(4,12,22,.85) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M2 12l1-3 6-6 2 2-6 6z' fill='none' stroke='%23ffd789' stroke-opacity='.5' stroke-width='1.3'/%3E%3C/svg%3E") no-repeat right 14px center;
+  font:inherit;font-size:20px;letter-spacing:.08em;color:#ffe2a0;outline:none}
+.el-nom:focus{border-color:#ffe6a0;box-shadow:0 0 0 3px rgba(255,214,130,.18)}
+.el-cadre.rej .el-nom{border-color:rgba(190,150,255,.5);color:#ecdcff}
+.el-cadre.rej .el-nom:focus{border-color:#d9b8ff;box-shadow:0 0 0 3px rgba(190,150,255,.18)}
+
+.el-sep{height:1px;margin:12px 0;background:linear-gradient(90deg,transparent,rgba(229,180,77,.45),transparent)}
+
+/* Réglages de l'hôte et récapitulatif */
+.el-reglages{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.el-chip{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:112px;padding:8px 6px;border-radius:14px;border:1px solid rgba(229,180,77,.35);background:rgba(4,12,22,.72)}
+.el-chip b{font-size:16px;color:#ffe2a0;letter-spacing:.06em;white-space:nowrap}
+.el-chip .el-fl{display:flex;align-items:center;gap:4px}
+.el-chip .el-fl button{border:0;background:none;color:#c99a45;font-size:20px;line-height:1;padding:2px 8px;border-radius:8px}
+.el-chip .el-fl button:hover{color:#ffd789;background:rgba(255,207,103,.12)}
+
+/* Code en tuiles */
+.el-code{position:relative;display:flex;gap:10px;justify-content:center}
+.el-code i{font-style:normal;width:58px;height:72px;display:grid;place-items:center;font-family:var(--font-ilyos-display,'Cinzel Decorative'),serif;font-weight:900;font-size:38px;
+  color:#ffe2a0;border-radius:12px;border:1.5px solid rgba(255,214,130,.7);background:linear-gradient(180deg,rgba(255,215,130,.10),rgba(4,10,20,.9) 55%);
+  box-shadow:inset 0 -3px 0 rgba(255,200,90,.25),0 6px 16px rgba(0,0,0,.5);text-shadow:0 0 12px rgba(255,200,90,.45)}
+.el-code i.vide{color:transparent;border-style:dashed;border-color:rgba(255,214,130,.4);background:rgba(4,10,20,.75);box-shadow:none}
+.el-cadre.rej .el-code i{color:#ecdcff;border-color:rgba(205,170,255,.75);text-shadow:0 0 12px rgba(180,130,255,.5);background:linear-gradient(180deg,rgba(190,150,255,.12),rgba(4,10,20,.9) 55%)}
+.el-cadre.rej .el-code i.vide{border-color:rgba(190,150,255,.4);background:rgba(4,10,20,.75)}
+.el-cadre.rej .el-code.focus i.cur{border-style:solid;border-color:#d9b8ff;box-shadow:0 0 0 3px rgba(190,150,255,.18)}
+.el-code input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;border:0;cursor:text;text-transform:uppercase}
+
+/* Boutons */
+.el-act{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.el-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;border:1.5px solid rgba(229,180,77,.65);background:rgba(4,12,22,.78);
+  color:#ffd789!important;font-size:15px;padding:10px 20px;letter-spacing:.08em;white-space:nowrap}
+.el-btn:hover{background:rgba(255,207,103,.12)}
+.el-btn.petit{font-size:13px;padding:7px 16px}
+.el-jouer{display:block;margin:14px auto 0;border-radius:18px;border:2px solid #ffe6a0;background:linear-gradient(180deg,#f4cf7d,#c98d2c 70%,#a8701d);
+  color:#2a1606!important;box-shadow:0 8px 24px rgba(0,0,0,.55),inset 0 2px 0 rgba(255,255,255,.45);text-align:center;padding:12px 34px}
+.el-jouer b{display:block;font-size:30px;font-family:var(--font-ilyos-display,'Cinzel Decorative'),serif;font-weight:900}
+.el-jouer small{font-size:12px;letter-spacing:.2em;opacity:.8}
+.el-jouer:hover{filter:brightness(1.06)}
+.el-jouer.v{border-color:#eadbff;background:linear-gradient(180deg,#dcc2ff,#9767d6 70%,#7445b4);color:#1a0930!important}
+.el-jouer:disabled{filter:grayscale(.6) brightness(.7);cursor:default}
+.el-reprendre{display:flex;margin:12px auto 0}
+
+/* Salle d'attente */
+.el-entete{display:flex;align-items:center;justify-content:center;gap:14px;margin:-2px 0 16px}
+.el-entete b{font-family:var(--font-ilyos-display,'Cinzel Decorative'),serif;font-weight:900;font-size:26px;letter-spacing:.07em;color:#ffd789;text-shadow:0 2px 6px rgba(0,0,0,.8),0 0 18px rgba(255,190,80,.25)}
+.el-entete:before,.el-entete:after{content:"";height:1px;flex:1;max-width:150px;background:linear-gradient(90deg,transparent,rgba(229,180,77,.7))}
+.el-entete:after{transform:scaleX(-1)}
+.el-entete span{color:#ffd789;font-size:12px}
+.el-attente{display:flex;align-items:center;gap:4px;color:#d9b8ff;font-size:17px;white-space:nowrap}
+.el-info{font-size:14px;color:rgba(246,227,180,.72);text-align:center;margin:0}
+.el-info.erreur{color:#ffb19a}
+.el-barre{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px}
+.el-lien{font-size:12px;color:rgba(246,227,180,.5);font-family:var(--font-ilyos-info,'Nunito Sans'),sans-serif;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* Téléphone (portrait) */
+@media (max-width:600px){
+  .en-ligne .el-logo{height:9vh;margin-top:5.5vh}
+  .el-cadre{width:92vw;padding:16px 14px}
+  .el-tete{grid-template-columns:1fr 1fr;gap:6px}
+  .el-tete .el-centre{grid-column:1/-1;order:3;margin-top:6px}
+  .el-anneau{width:84px}.el-portrait{width:78px}.el-anneau:before{width:80px;height:80px;top:16px}
+  .el-siege b{font-size:15px}
+  .el-onglets button{font-size:16px}
+  .el-nom{width:100%}
+  .el-chip{min-width:96px}.el-chip b{font-size:14px}
+  .el-code{gap:7px}.el-code i{width:44px;height:56px;font-size:28px}
+  .el-btn{font-size:13px;padding:9px 14px}
+  .el-jouer b{font-size:24px}
+  .el-entete{margin-bottom:12px}.el-entete b{font-size:20px}
+  .el-barre{flex-direction:column;gap:10px}
+}
+/* Téléphone à l'horizontale et petites fenêtres : tout tient sans logo. */
+@media (max-height:560px){
+  .en-ligne .el-logo{display:none}
+  .el-cadre{margin:52px 0 10px!important;padding:10px 16px}
+  .el-tete{gap:12px}
+  .el-siege b{font-size:15px}
+  .el-nom{padding:8px 34px;font-size:17px}
+  .el-chip{padding:5px 6px}
+  .el-onglets button small,.el-role{display:none}
+  .el-anneau{width:64px}.el-portrait{width:58px}.el-anneau:before{width:60px;height:60px;top:12px}
+  .el-onglets button{padding:6px;font-size:16px}
+  .el-sep{margin:8px 0}
+  .el-code i{width:42px;height:52px;font-size:26px}
+  .el-jouer{margin-top:10px;padding:8px 26px}.el-jouer b{font-size:22px}
+  .el-entete{margin-bottom:8px}.el-entete b{font-size:20px}
+}

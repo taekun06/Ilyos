@@ -61,7 +61,8 @@
     const config = ecranConfig();
     if (config) {
       const lignes = [...config.querySelectorAll('.field[data-key], .difficulty-zone[data-key]')];
-      const boutons = [config.querySelector('#play'), config.querySelector('#back')]
+      // Écran EN LIGNE : ses boutons (jouer, copier, annuler…) portent .el-pad.
+      const boutons = [config.querySelector('#play'), ...config.querySelectorAll('.el-pad'), config.querySelector('#back')]
         .filter(Boolean)
         .filter(NAV.estUtilisable);
       return lignes.filter(NAV.estUtilisable).concat(boutons);
