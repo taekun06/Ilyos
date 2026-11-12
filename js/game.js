@@ -38768,6 +38768,11 @@
         state.characters = state.characters.filter(ch => ch.id !== char.id);
         if (state.selectedCharId === char.id) state.selectedCharId = null;
         if (!ilyosSimulationActive) creaturesRecompenser(char, dropR, dropC);
+        else {
+          // Dans les simulations du CPU : qui l'a abattue (lu par l'évaluation).
+          const abattues = state.creaturesAbattues = { ...(state.creaturesAbattues || {}) };
+          abattues[state.currentPlayer] = (abattues[state.currentPlayer] || 0) + 1;
+        }
       };
 
       /* Une créature ne ramasse jamais de couronne. */
@@ -38942,6 +38947,62 @@
           if (choix) loupPousser(loup, choix, false);
         });
       }
+      /* ---------- Ce que le CPU voit des créatures ---------------------
+         Les phases des créatures n'ont pas lieu dans les simulations du
+         planner (beginTurn y est coupé). Sans ce qui suit, le CPU ne
+         prévoyait pas les poussées des loups en fin de tour, ne craignait
+         pas la Vase et ignorait qu'abattre une créature rapporte (Taekun,
+         2026-11-12). L'éclosion des œufs reste hors de sa vue : leur état
+         est partagé avec la vraie partie. */
+      const CREATURES_POIDS = {
+        // Une créature abattue : une carte en plus ou le butin du marché.
+        abattue: 350,
+        // Une Boue dans la défausse par gardien collé à une Vase en fin de tour.
+        boue: 120
+      };
+      function loupsSimuler() {
+        loupsAvancer();
+        loupsVivants().forEach(loup => {
+          const choix = loupChoixPoussee(loup);
+          if (choix) appliquerPousseeBloc(choix.plan, choix.dr, choix.dc);
+        });
+      }
+      /* La fin de tour simulée (riposte, tour suivant) passe aussi par les
+         loups, comme la vraie : sans quoi la riposte se cherchait sur un
+         plateau où ils n'avaient pas encore bondi. */
+      // Vrai pendant l'aperçu des loups dans l'évaluation (et pour le témoin du banc).
+      let creaturesEvaluationEnCours = false;
+      const creaturesTransitionBase = applyTurnTransitionCore;
+      applyTurnTransitionCore = function applyTurnTransitionCoreCreatures(...args) {
+        if (ilyosSimulationActive && !creaturesEvaluationEnCours && creaturesActives() && loupsVivants().length) loupsSimuler();
+        return creaturesTransitionBase.apply(this, args);
+      };
+      const creaturesEvaluerBase = evaluerEtatStrategique;
+      evaluerEtatStrategique = function evaluerEtatStrategiqueCreatures(playerId) {
+        if (!ilyosSimulationActive || creaturesEvaluationEnCours || !creaturesActives()
+          || (state.winner !== null && state.winner !== undefined)) return creaturesEvaluerBase(playerId);
+        let bonus = 0;
+        Object.entries(state.creaturesAbattues || {}).forEach(([joueur, n]) => {
+          bonus += (memeEquipe(Number(joueur), playerId) ? 1 : -1) * n * CREATURES_POIDS.abattue;
+        });
+        // La Vase colle le camp qui vient de jouer : celui qui est au trait ici.
+        const vases = creaturesVivantes().filter(v => v.creature === "vase");
+        const colles = (state.characters || []).filter(g => !g.creature && g.player === state.currentPlayer
+          && vases.some(v => Math.abs(g.r - v.r) + Math.abs(g.c - v.c) === 1)).length;
+        bonus += (memeEquipe(state.currentPlayer, playerId) ? -1 : 1) * colles * CREATURES_POIDS.boue;
+        if (!loupsVivants().length) return creaturesEvaluerBase(playerId) + bonus;
+        // Les loups agissent à chaque fin de tour : on note l'état d'après eux.
+        creaturesEvaluationEnCours = true;
+        try {
+          return withSimulatedState(cloneStateForSimulation(), () => {
+            loupsSimuler();
+            return creaturesEvaluerBase(playerId);
+          }) + bonus;
+        } finally {
+          creaturesEvaluationEnCours = false;
+        }
+      };
+
       /** Phase animée : avancées ensemble, puis une poussée par loup, chaque
        *  temps relevé pour le rejeu du tour adverse. Rend false si la partie
        *  a changé entre-temps. */
