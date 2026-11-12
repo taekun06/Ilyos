@@ -36,6 +36,9 @@ on:
       ref_b:
         description: Branche, tag ou commit du build de référence (vide = même build)
         default: ''
+      positions:
+        description: '1 = enregistrer les positions et proposer un réglage du barème (scripts/regler-bareme.js)'
+        default: '0'
 
 permissions:
   contents: read
@@ -75,8 +78,36 @@ jobs:
           # Les filets de temps du CPU dépendent de la vitesse de la machine :
           # écartés, la mesure ne juge que la recherche.
           ILYOS_SANS_COUPURE: '1'
+          ILYOS_POSITIONS: ${{ inputs.positions == '1' && format('{0}/positions-{1}.jsonl', runner.temp, matrix.lot) || '' }}
         run: |
           # Chaque graine donne deux parties : les lots ne se chevauchent pas.
           depart=$(( GRAINE + LOT * (PARTIES / 2 + 1) ))
           node scripts/selfplay-node.js "$PARTIES" "$depart" 4 | tee "$RUNNER_TEMP/bilan.txt"
           { echo '```'; cat "$RUNNER_TEMP/bilan.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Positions
+        if: inputs.positions == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: positions-${{ matrix.lot }}
+          path: ${{ runner.temp }}/positions-${{ matrix.lot }}.jsonl
+          retention-days: 7
+
+  bareme:
+    name: réglage du barème
+    needs: lot
+    if: always() && inputs.positions == '1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: positions-*
+          path: ${{ runner.temp }}/positions
+          merge-multiple: true
+      - name: Ajustement
+        run: |
+          node scripts/regler-bareme.js "$RUNNER_TEMP"/positions/*.jsonl | tee "$RUNNER_TEMP/bareme.txt"
+          { echo '```'; cat "$RUNNER_TEMP/bareme.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
