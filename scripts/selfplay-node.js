@@ -21,14 +21,8 @@
    filets de temps : au-delà du nombre de cœurs libres, des tours sont coupés
    et la mesure ne vaut plus rien — sauf avec ILYOS_SANS_COUPURE=1.
 
-   ILYOS_POSITIONS=fichier : enregistre, à la fin de chaque tour, la note du
-   joueur qui vient de jouer, terme par terme (vue par le camp A), avec
-   l'issue de la partie pour ce joueur. Une ligne JSON par position ; sert à
-   régler le barème sans rejouer de parties (scripts/regler-bareme.js).
-
    Non repris pour l'instant : le mode personnalisé (ILYOS_PERSO). */
 
-const fs = require('node:fs');
 const path = require('node:path');
 const { fork } = require('node:child_process');
 
@@ -57,7 +51,6 @@ const PAIRES = Math.max(1, Math.ceil((Number(process.argv[2]) || 20) / 2));
 const GRAINE = Number(process.argv[3]) || 5000;
 const PARALLELE = Math.max(1, Number(process.argv[4]) || 2);
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 120;
-const POSITIONS = process.env.ILYOS_POSITIONS || '';
 const lireJson = nom => (process.env[nom] ? JSON.parse(process.env[nom]) : undefined);
 const POIDS = { A: lireJson('ILYOS_POIDS_A') || null, B: lireJson('ILYOS_POIDS_B') || null };
 const BUDGETS = { A: lireJson('ILYOS_BUDGET_A'), B: lireJson('ILYOS_BUDGET_B') };
@@ -108,7 +101,6 @@ async function jouerPartie(camps, depart, campA, graine) {
   let tour = 0;
   const temps = { A: [], B: [] };
   const coupes = { A: 0, B: 0 };
-  const positions = [];
   for (let i = 0; i < TOURS_MAX; i++) {
     const qui = JSON.parse(etat).currentPlayer === campA ? 'A' : 'B';
     const r = await camps[qui].appeler('tour', etat, { graine: graine * 1000 + i, budget: BUDGETS[qui], poids: POIDS[qui] });
@@ -117,27 +109,12 @@ async function jouerPartie(camps, depart, campA, graine) {
     etat = r.etat;
     tour = r.tour;
     vainqueur = r.vainqueur;
-    if (POSITIONS && !r.fin && (vainqueur === null || vainqueur === undefined)) {
-      // La position que le planner note à la fin de SON tour : l'adversaire au trait.
-      const joueur = qui === 'A' ? campA : 1 - campA;
-      const detail = await camps.A.appeler('evaluer', etat, joueur, { poids: POIDS.A });
-      const termes = {};
-      for (const t of detail.termes) termes[t.terme] = t.montant;
-      positions.push({ joueur, tour, note: detail.note, termes });
-    }
     if (r.fin || (vainqueur !== null && vainqueur !== undefined)) break;
   }
   const scores = JSON.parse(etat).players.map(p => p.score || 0);
   // Partie coupée ou plateau saturé : départage aux couronnes, comme le banc navigateur.
   if (vainqueur === null || vainqueur === undefined || vainqueur === -1 || typeof vainqueur !== 'number') {
     vainqueur = scores[0] === scores[1] ? null : (scores[0] > scores[1] ? 0 : 1);
-  }
-  if (POSITIONS) {
-    const lignes = positions.map(p => JSON.stringify({
-      graine, campA, ...p,
-      resultat: vainqueur === null ? 0.5 : (vainqueur === p.joueur ? 1 : 0)
-    }));
-    if (lignes.length) fs.appendFileSync(POSITIONS, lignes.join('\n') + '\n');
   }
   return { vainqueur, tour, scores, temps, coupes };
 }
