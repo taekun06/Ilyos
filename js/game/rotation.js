@@ -180,7 +180,7 @@
           const k = ile.cells.findIndex(([cr, cc]) => cr === r && cc === c);
           return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
         }).filter(Boolean) : [];
-        const resultat = rotationMagieBase(islandId, rotation);
+        const resultat = rotationMagieBase.apply(this, arguments);
         if (resultat && suivantes.length) {
           const ecrit = rotationEcrire();
           suivantes.forEach(({ i, vers }) => { ecrit.balises[i] = [vers[0], vers[1]]; });

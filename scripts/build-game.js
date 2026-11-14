@@ -18,6 +18,9 @@ const fragmentNames = [
   // Placé après card-rules-physical-reserve.js : consumeAvailableActions y est
   // réassigné, et les noyaux doivent appeler la version en vigueur.
   'rules-core.js',
+  // Murs étoilés : règles (passage, poussée, magie) appelées par core.js,
+  // rules-core.js, ui.js et le planner.
+  'murs.js',
   // Cerveau Expert V2 : s'appuie sur les noyaux de rules-core.js et sur
   // withSimulatedState, donc placé juste après.
   'planner.js',

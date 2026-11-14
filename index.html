@@ -1056,6 +1056,13 @@
         <button id="hudV2MagicDissolve" type="button" class="hud-v2-magic-btn hud-v2-magic-dissolve hidden" title="Retire une île vide pour 1 magie">✦ Dissoudre</button>
         <button id="hudV2MagicConfirm" type="button" class="hud-v2-magic-btn hud-v2-magic-confirm" aria-label="Confirmer la rotation" title="Confirmer">✓</button>
         <button id="hudV2MagicCancel" type="button" class="hud-v2-magic-btn hud-v2-magic-cancel hidden" aria-label="Annuler" hidden>Annuler</button>
+        <!-- Murs étoilés (js/game/murs.js) : sur une île qui porte un mur, deuxième
+             ligne juste en dessous — tourner le mur, l'île, ou les deux. -->
+        <div id="hudV2MagicModes" class="hud-v2-magic-modes hidden" role="group" aria-label="Que faire tourner">
+          <button type="button" class="hud-v2-magic-mode" data-magie-mode="mur" aria-label="Tourner le mur" title="Le mur"><svg viewBox="0 0 40 40" width="26" height="26" aria-hidden="true"><defs><linearGradient id="murVoileIcone" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#1c2270"/><stop offset=".55" stop-color="#3a2a92"/><stop offset="1" stop-color="#6a4cc8" stop-opacity=".1"/></linearGradient></defs><rect x="9" y="13" width="22" height="16" fill="url(#murVoileIcone)"/><circle cx="15" cy="20" r=".9" fill="#fff"/><circle cx="25" cy="17" r="1.1" fill="#fff"/><rect x="6" y="10" width="4.5" height="21" rx="2" fill="#dfe6ff"/><rect x="29.5" y="10" width="4.5" height="21" rx="2" fill="#dfe6ff"/></svg></button>
+          <button type="button" class="hud-v2-magic-mode" data-magie-mode="ile" aria-label="Tourner l’île" title="L’île"><svg viewBox="0 0 40 40" width="26" height="26" aria-hidden="true"><path d="M20 9 L34 16 L20 23 L6 16 Z" fill="#7fd6a4"/><path d="M6 16 L20 23 L20 27 L6 20 Z" fill="#4a3f6e"/><path d="M34 16 L20 23 L20 27 L34 20 Z" fill="#2e2850"/><path d="M9 20.5 L20 27 L31 20.5 L20 35 Z" fill="#231d3d"/></svg></button>
+          <button type="button" class="hud-v2-magic-mode" data-magie-mode="deux" aria-label="Tourner l’île et son mur" title="Les deux"><svg viewBox="0 0 40 40" width="26" height="26" aria-hidden="true"><path d="M20 13 L34 20 L20 27 L6 20 Z" fill="#7fd6a4"/><path d="M6 20 L20 27 L20 31 L6 24 Z" fill="#4a3f6e"/><path d="M34 20 L20 27 L20 31 L34 24 Z" fill="#2e2850"/><path d="M11 17.5 L20 13 L20 4 L11 8.5 Z" fill="#3a2a92" opacity=".9"/><rect x="9.6" y="7" width="2.8" height="12" rx="1.2" fill="#dfe6ff"/><rect x="18.6" y="2.5" width="2.8" height="12" rx="1.2" fill="#dfe6ff"/></svg></button>
+        </div>
       </div>
 
       <!--
@@ -1335,6 +1342,10 @@
               <label class="perso-bascule" for="customImmediateScoreCheckbox">
                 <input type="checkbox" id="customImmediateScoreCheckbox">
                 <span><b>Validation immédiate</b><small>La couronne est validée dès que son porteur arrive au village, sans attendre le tour suivant.</small></span>
+              </label>
+              <label class="perso-bascule" for="customWallsCheckbox">
+                <input type="checkbox" id="customWallsCheckbox">
+                <span><b>Murs étoilés</b><small>Deux murs neutres entre les cases : ils bloquent passages et poussées, se poussent et tournent avec la Magie.</small></span>
               </label>
               <div id="duelOptionsPerso" class="duel-options-slot"></div>
             </section>
@@ -1694,7 +1705,7 @@
     <script src="./js/game.js?v=dev"></script>
   <!-- Plateau tactique 2D : lit l'état, dessine, et relaie les clics aux vraies
        cases. Chargé APRÈS game.js, dont il utilise le plateau et l'état. -->
-  <script src="./js/plateau-tactique.js?v=20261026-nuit-etoilee"></script>
+  <script src="./js/plateau-tactique.js?v=20261114-murs"></script>
   <!-- HUD V2 (correction post-Passe 3) : ui-layout.js ne fait que créer les
        flèches ‹›  qui replient/déplient .left-panel/.right-panel — panneaux
        désormais toujours masqués (.hud-v1-legacy). Script devenu sans objet,

@@ -155,6 +155,37 @@
     return [m.x0 + c * m.cote + m.cote / 2, m.y0 + r * m.cote + m.cote / 2];
   }
 
+  /* MURS ÉTOILÉS (js/game/murs.js) : un trait de nuit étoilée sur la ligne
+     de la grille, une perle d'argent à chaque pilier. Vus de dessus. */
+  function peindreMurs(m) {
+    const murs = etat.murs || [];
+    if (!murs.length) return;
+    const coin = (i, j) => [m.x0 + j * m.cote, m.y0 + i * m.cote];
+    ctx.save();
+    ctx.lineCap = "round";
+    murs.forEach(mur => {
+      const [ax, ay] = coin(mur.i, mur.j);
+      const [bx, by] = mur.o === "h" ? coin(mur.i, mur.j + mur.n) : coin(mur.i + mur.n, mur.j);
+      ctx.strokeStyle = "rgba(40,36,120,.95)";
+      ctx.lineWidth = Math.max(4, m.cote * .16);
+      ctx.shadowColor = "rgba(140,160,255,.8)";
+      ctx.shadowBlur = m.cote * .2;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(170,190,255,.9)";
+      ctx.lineWidth = Math.max(1, m.cote * .03);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      for (let k = 0; k <= mur.n; k++) {
+        const [px, py] = mur.o === "h" ? coin(mur.i, mur.j + k) : coin(mur.i + k, mur.j);
+        ctx.fillStyle = "#dfe6ff";
+        ctx.beginPath(); ctx.arc(px, py, Math.max(3, m.cote * .1), 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#ffe7a6";
+        ctx.beginPath(); ctx.arc(px, py, Math.max(1.5, m.cote * .04), 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    ctx.restore();
+  }
+
   /* Les pieds d'un gardien : un peu sous le centre de sa case. */
   function piedCase(m, r, c) {
     const [x, y] = centreCase(m, r, c);
@@ -918,6 +949,7 @@
     ctx.drawImage(peindreFond(m), 0, 0);
     peindreVillages(m);
     ctx.drawImage(peindreIles(m), 0, 0);
+    peindreMurs(m);
 
     /* 2. LE CADRE, liseré de la couleur du joueur qui a la main. */
     const trait = couleurJoueur(etat.currentPlayer);

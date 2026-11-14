@@ -7253,7 +7253,7 @@
           return;
         }
         const e = kaykit3D.camera.matrixWorld.elements;
-        const cle = [ile.id, ile.cells.length, (state.selectedMagicPivot || []).join(","), innerWidth, innerHeight,
+        const cle = [ile.id, ile.cells.length, (state.selectedMagicPivot || []).join(","), innerWidth, innerHeight, state.magicMode || "",
           barre.offsetWidth, barre.offsetHeight, ...[0, 1, 2, 4, 5, 6, 12, 13, 14].map(i => e[i].toFixed(3))].join("|");
         if (cle === kaykitBarreMagie.cle) return;
         kaykitBarreMagie.cle = cle;
@@ -7274,7 +7274,10 @@
             x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
           }));
         });
-        const w = barre.offsetWidth, h = barre.offsetHeight, marge = 16, haut = 150, bas = innerHeight - 170;
+        // La deuxième ligne des murs (mur / île / les deux) pend sous la pastille.
+        const modes = document.getElementById("hudV2MagicModes");
+        const sousLigne = modes && !modes.classList.contains("hidden") ? modes.offsetHeight + 6 : 0;
+        const w = Math.max(barre.offsetWidth, sousLigne ? modes.offsetWidth : 0), h = barre.offsetHeight + sousLigne, marge = 16, haut = 150, bas = innerHeight - 170;
         const cy = Math.max(haut, Math.min(bas - h, (y0 + y1) / 2 - h / 2));
         const cx = Math.max(marge, Math.min(innerWidth - marge - w, (x0 + x1) / 2 - w / 2));
         const essais = [
@@ -9267,6 +9270,24 @@
 
         lines.forEach(allOptions => {
           const type = allOptions[0].targetType || "character";
+          if (type === "mur") {
+            // Mur étoilé (murs.js) : anneaux d'arrivée devant sa place finale ;
+            // le mur doré au survol (renderKayKitMurs).
+            const triees = [...allOptions].sort((a, b) => a.force - b.force);
+            triees.forEach(option => {
+              const survole = option.id === hoveredId;
+              if (survole) kaykitApercuPousseeMur(option, kaykit3D.actionPreviewGroup);
+              if (!option.fell) addKayKitPushDestination(option, survole, false);
+              else {
+                const bord = kaykitCellPosition(option.lastLandR, option.lastLandC, kaykitCellSurfaceY(option.lastLandR, option.lastLandC));
+                const sens = new THREE.Vector3(option.dc, 0, option.dr).normalize();
+                const ou = new THREE.Vector3(bord.x, bord.y, bord.z).add(sens.multiplyScalar(.85));
+                ou.y += .35;
+                addKayKitDeathPushDestination(option, ou, survole, false);
+              }
+            });
+            return;
+          }
           const target = type === "crown"
             ? artifactById(allOptions[0].targetId)
             : type === "character"
@@ -12074,7 +12095,9 @@
         const hiddenId = (state?.phase === "ACTION"
           && state?.selectedActionType === "MAGIC"
           && state?.selectedIslandId
-          && Array.isArray(state?.magicPreviewCells))
+          && Array.isArray(state?.magicPreviewCells)
+          // Le mur seul tourne (murs.js) : l'île reste visible, à sa place.
+          && !(typeof modeMagie === "function" && modeMagie() === "mur"))
           ? String(state.selectedIslandId)
           : null;
         kaykit3D.islandObjectRegistry.forEach((entry, id) => {
@@ -12112,6 +12135,10 @@
         // amorcée (magicPreviewSteps ≠ 0) : le joueur doit voir d'où part l'île
         // pendant toute l'action, pas seulement après le premier cran de rotation.
         if (!state.selectedIslandId || !Array.isArray(state.magicPreviewCells)) return;
+        if (modeMagie() === "mur") {
+          renderKayKitMagicRotationGhosts(state.islands.find(item => item.id === state.selectedIslandId));
+          return;
+        }
 
         // Trace au sol, discrète, de l'emplacement de départ : le bloc normal de
         // cette île est caché pendant toute l'action (voir refreshKayKitMagicHiddenIsland),
@@ -12255,6 +12282,147 @@
         });
       }
 
+      /* ==================================================================
+         MURS ÉTOILÉS — rendu (règles : murs.js). Look validé par Taekun le
+         2026-11-12 : voile dégradé étoilé FIN entre deux piliers d'argent
+         épais, une étoile au sommet de chaque pilier. Les aperçus (Magie,
+         poussée) sont du même dessin, teinté de la couleur de leur choix.
+         Aucune animation : géométrie simple, textures dessinées une fois.
+      ================================================================== */
+      const KAYKIT_MUR = { hauteur: .46, pilier: .52, textures: null, materiaux: null };
+      function kaykitMurTextures() {
+        if (KAYKIT_MUR.textures) return KAYKIT_MUR.textures;
+        const toile = (w, h, dessin) => {
+          const c = document.createElement("canvas"); c.width = w; c.height = h;
+          dessin(c.getContext("2d"), w, h);
+          const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+        };
+        let graine = 7;
+        const hasard = () => (graine = (graine * 16807) % 2147483647) / 2147483647;
+        const etoiles = (g, w, h, n) => {
+          for (let k = 0; k < n; k++) {
+            const x = hasard() * w, y = hasard() * h, r = hasard() < .12 ? 2.4 : hasard() * 1.3 + .4;
+            g.fillStyle = `rgba(255,${235 + hasard() * 20 | 0},${200 + hasard() * 55 | 0},${.55 + hasard() * .45})`;
+            g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+            if (r > 2) {
+              g.strokeStyle = "rgba(255,240,210,.7)"; g.lineWidth = 1; g.beginPath();
+              g.moveTo(x - 7, y); g.lineTo(x + 7, y); g.moveTo(x, y - 7); g.lineTo(x, y + 7); g.stroke();
+            }
+          }
+        };
+        KAYKIT_MUR.textures = {
+          voile: toile(256, 128, (g, w, h) => {
+            const d = g.createLinearGradient(0, h, 0, 0);
+            d.addColorStop(0, "rgba(22,26,90,.95)"); d.addColorStop(.5, "rgba(48,36,130,.75)"); d.addColorStop(1, "rgba(90,60,190,.05)");
+            g.fillStyle = d; g.fillRect(0, 0, w, h);
+            g.fillStyle = "rgba(150,175,255,.95)"; g.fillRect(0, h - 4, w, 4);
+            etoiles(g, w, h * .85, 55);
+          }),
+          eclat: toile(64, 64, (g, w, h) => {
+            const d = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+            d.addColorStop(0, "rgba(255,250,230,1)"); d.addColorStop(.12, "rgba(255,225,150,.85)");
+            d.addColorStop(.4, "rgba(255,200,120,.18)"); d.addColorStop(1, "rgba(255,200,120,0)");
+            g.fillStyle = d; g.fillRect(0, 0, w, h);
+            g.fillStyle = "rgba(255,248,225,.95)"; g.beginPath();
+            g.moveTo(32, 2); g.lineTo(35, 29); g.lineTo(62, 32); g.lineTo(35, 35); g.lineTo(32, 62);
+            g.lineTo(29, 35); g.lineTo(2, 32); g.lineTo(29, 29); g.closePath(); g.fill();
+          })
+        };
+        return KAYKIT_MUR.textures;
+      }
+      /** Matériaux partagés du vrai mur (jamais libérés) ; ceux d'un aperçu
+       *  sont neufs et marqués éphémères. */
+      function kaykitMurMateriaux(teinte) {
+        const t = kaykitMurTextures();
+        if (teinte == null) {
+          if (!KAYKIT_MUR.materiaux) {
+            KAYKIT_MUR.materiaux = {
+              voile: new THREE.MeshBasicMaterial({ map: t.voile, transparent: true, opacity: .92, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }),
+              pilier: new THREE.MeshLambertMaterial({ color: 0xdfe6ff, emissive: 0x334488 }),
+              etoile: new THREE.SpriteMaterial({ map: t.eclat, transparent: true, depthWrite: false, toneMapped: false })
+            };
+          }
+          return KAYKIT_MUR.materiaux;
+        }
+        const ephemere = mat => { mat.userData = { ilyosTransient: true }; return mat; };
+        return {
+          // Verre de la couleur du choix : la texture de nuit l'assombrissait trop.
+          voile: ephemere(new THREE.MeshBasicMaterial({ color: teinte, transparent: true, opacity: .4, side: THREE.DoubleSide, depthWrite: false, toneMapped: false })),
+          pilier: ephemere(new THREE.MeshBasicMaterial({ color: teinte, transparent: true, opacity: .85, depthWrite: false, toneMapped: false })),
+          etoile: ephemere(new THREE.SpriteMaterial({ map: t.eclat, color: teinte, transparent: true, opacity: .9, depthWrite: false, toneMapped: false }))
+        };
+      }
+      /** Sol d'un segment : le plus haut des dessus de case qu'il borde. */
+      function kaykitMurSolSegment(s) {
+        const cases = s.o === "h" ? [[s.i - 1, s.j], [s.i, s.j]] : [[s.i, s.j - 1], [s.i, s.j]];
+        let y = KAYKIT_LEVELS.islandTop + .014;
+        cases.forEach(([r, c]) => { if (inside(r, c) && isLand(r, c)) y = Math.max(y, kaykitCellSurfaceY(r, c)); });
+        return y;
+      }
+      function kaykitConstruireMur(m, teinte = null) {
+        const S = KAYKIT_CELL_SPACING, H = KAYKIT_MUR.hauteur, HP = KAYKIT_MUR.pilier;
+        const mats = kaykitMurMateriaux(teinte);
+        const groupe = new THREE.Group();
+        groupe.userData.mur = m.id;
+        const coin = (i, j) => ({ x: (j - GRID / 2) * S, z: (i - GRID / 2) * S });
+        const segments = murSegments(m);
+        const sols = segments.map(kaykitMurSolSegment);
+        segments.forEach((s, k) => {
+          const a = coin(s.i, s.j);
+          const voile = new THREE.Mesh(kaykitGeometry("mur-voile-v1", () => new THREE.PlaneGeometry(S, H)), mats.voile);
+          voile.position.set(a.x + (s.o === "h" ? S / 2 : 0), sols[k] + H / 2, a.z + (s.o === "v" ? S / 2 : 0));
+          voile.rotation.y = s.o === "h" ? 0 : Math.PI / 2;
+          voile.renderOrder = teinte == null ? 7 : 60;
+          groupe.add(voile);
+        });
+        for (let k = 0; k <= segments.length; k++) {
+          const [i, j] = m.o === "h" ? [m.i, m.j + k] : [m.i + k, m.j];
+          const p = coin(i, j);
+          const y = Math.max(sols[Math.max(0, k - 1)], sols[Math.min(k, sols.length - 1)]);
+          const pilier = new THREE.Mesh(kaykitGeometry("mur-pilier-v1", () => new THREE.CylinderGeometry(.055, .07, HP + .1, 12)), mats.pilier);
+          pilier.position.set(p.x, y + (HP + .1) / 2, p.z);
+          pilier.renderOrder = teinte == null ? 0 : 61;
+          pilier.castShadow = teinte == null;
+          groupe.add(pilier);
+          const etoile = new THREE.Sprite(mats.etoile);
+          etoile.position.set(p.x, y + HP + .16, p.z);
+          etoile.scale.set(.3, .3, 1);
+          etoile.renderOrder = 8;
+          groupe.add(etoile);
+        }
+        return groupe;
+      }
+      /** Les murs de la partie et leurs aperçus : reconstruits à chaque
+       *  synchronisation, avec les autres éléments éphémères. */
+      function renderKayKitMurs() {
+        if (!kaykit3D || !mursActifs()) return;
+        const groupe = kaykit3D.dynamicGroup;
+        state.murs.forEach(m => groupe.add(kaykitConstruireMur(m)));
+      }
+      /** Poussée de mur survolée : le mur à sa place d'arrivée, en or, et la
+       *  file qu'il balaie (calque des aperçus, refait à chaque survol). */
+      function kaykitApercuPousseeMur(option, groupe) {
+        const apercu = option?.apercuMur;
+        if (!apercu || !groupe) return;
+        if (apercu.apres) groupe.add(kaykitConstruireMur(apercu.apres, 0xffc23a));
+        (apercu.gardiens || []).forEach(g => {
+          const vrai = characterById(g.id);
+          if (!vrai || (vrai.r === g.r && vrai.c === g.c)) return;
+          const fantome = makeKayKitPieceGhost(g.r, g.c, { playerId: vrai.player, surfaceY: kaykitCellSurfaceY(g.r, g.c) });
+          if (fantome) { kaykitFantomeFranc(fantome, 0xffc23a, .7); groupe.add(fantome); }
+        });
+      }
+      /** Magie : chaque position possible du mur, de la couleur de son bouton. */
+      function renderKayKitMursMagie(options, courant) {
+        if (!mursActifs()) return;
+        options.forEach(({ steps, planMurs }) => {
+          const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
+          if (!style || !planMurs?.murs?.length) return;
+          if (courant && steps !== courant) return;
+          planMurs.murs.forEach(({ apres }) => kaykit3D.dynamicGroup.add(kaykitConstruireMur(apres, style.franc)));
+        });
+      }
+
       function renderKayKitMagicRotationGhosts(island) {
         if (!island || typeof magicRotationOptions !== "function") return;
         const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
@@ -12267,6 +12435,7 @@
         // verres superposés sur la même case.
         const horsPivot = cells => cells.filter(([r, c]) => !pivot || r !== pivot[0] || c !== pivot[1]);
 
+        renderKayKitMursMagie(options, courant);
         options.forEach(({ steps, rotation }) => {
           const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
           if (!style) return;
@@ -14452,6 +14621,7 @@
             renderKayKitPlacementPreview();
             renderKayKitMagicRotationPreview();
             renderKayKitMagicHoverPreview();
+            renderKayKitMurs();
             kaykit3D.transientDynamicChildren.push(...dynamic.children.slice(before));
           }
 
