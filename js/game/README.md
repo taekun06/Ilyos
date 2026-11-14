@@ -79,7 +79,8 @@ copie, car plusieurs modes enveloppent les noyaux avec des effets hors de
 adverse). `verif:regles` vérifie que la garde et l'essai complet acceptent
 les mêmes coups du CPU.
 
-Pas encore fait : pose d'île, ramassage, vol et passe du joueur ne passent pas
+La pose d'île du joueur passe aussi par la garde (hors mise en place).
+Pas encore fait : ramassage, vol et passe du joueur ne passent pas
 encore par la garde ; le réseau échange des états entiers.
 
 ## Moteur sans écran (Node)

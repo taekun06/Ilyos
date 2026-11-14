@@ -2168,9 +2168,13 @@
       function placeIsland(anchorR, anchorC) {
         /* Îles payantes (mode personnalisé) : 2 cartes, prélevées avant la
            pose. La mise en place, elle, ne coûte rien. */
+        const absCells = previewAbsoluteCells(anchorR, anchorC);
+        // Hors mise en place, le moteur de règles a le dernier mot (regles.js).
+        if (!state.draft && reglesRefuserAuJoueur({
+          type: "POSE", shapeKey: state.selectedIslandShape, cells: absCells, owner: state.currentPlayer
+        })) return;
         const paiement = state.draft ? [] : payerIle(currentPlayer());
         if (!paiement) return;
-        const absCells = previewAbsoluteCells(anchorR, anchorC);
         const islandId = state.nextIslandId++;
         const island = {
           id: islandId,
