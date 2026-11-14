@@ -7228,6 +7228,73 @@
         }
       }
 
+      /* Barre de rotation Magie flottante près de l'île (Taekun, 2026-11-14 :
+         « 2 si ça ne gêne pas »). Posée à côté de l'emprise écran de l'île et
+         de toutes ses positions possibles : à droite, sinon à gauche, dessous,
+         dessus, jamais sur le HUD du haut (150 px) ni le dock du bas (170 px).
+         Si rien ne tient (petit écran, téléphone), la barre garde sa place CSS
+         (en bas à gauche). Le DOM n'est touché que si la vue ou l'île changent. */
+      const kaykitBarreMagie = { cle: "", place: false };
+      function kaykitBarreMagieRelacher(barre) {
+        if (!kaykitBarreMagie.place) return;
+        ["left", "top", "bottom", "right"].forEach(p => barre.style.removeProperty(p));
+        barre.classList.remove("ov2-magie-flottante");
+        kaykitBarreMagie.place = false;
+      }
+      function kaykitPlacerBarreMagie() {
+        const barre = document.getElementById("hudV2MagicRow");
+        if (!barre || !kaykit3D?.camera) return;
+        const actif = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!state?.selectedIslandId
+          && !barre.classList.contains("hidden") && innerWidth >= 720 && innerHeight >= 480;
+        const ile = actif ? (state.islands || []).find(item => item.id === state.selectedIslandId) : null;
+        if (!ile?.cells?.length) {
+          kaykitBarreMagie.cle = "";
+          kaykitBarreMagieRelacher(barre);
+          return;
+        }
+        const e = kaykit3D.camera.matrixWorld.elements;
+        const cle = [ile.id, ile.cells.length, (state.selectedMagicPivot || []).join(","), innerWidth, innerHeight,
+          barre.offsetWidth, barre.offsetHeight, ...[0, 1, 2, 4, 5, 6, 12, 13, 14].map(i => e[i].toFixed(3))].join("|");
+        if (cle === kaykitBarreMagie.cle) return;
+        kaykitBarreMagie.cle = cle;
+
+        const cases = ile.cells.slice();
+        if (typeof magicRotationOptions === "function") {
+          magicRotationOptions().forEach(option => (option.rotation?.absCells || []).forEach(cell => cases.push(cell)));
+        }
+        const toile = kaykit3D.renderer.domElement.getBoundingClientRect();
+        const demi = KAYKIT_CELL_SPACING / 2;
+        const v = new THREE.Vector3();
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        cases.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c);
+          [[-demi, -demi], [demi, -demi], [-demi, demi], [demi, demi]].forEach(([dx, dz]) => [0, 1].forEach(y => {
+            v.set(p.x + dx, y, p.z + dz).project(kaykit3D.camera);
+            const sx = toile.left + (v.x + 1) / 2 * toile.width, sy = toile.top + (1 - v.y) / 2 * toile.height;
+            x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+          }));
+        });
+        const w = barre.offsetWidth, h = barre.offsetHeight, marge = 16, haut = 150, bas = innerHeight - 170;
+        const cy = Math.max(haut, Math.min(bas - h, (y0 + y1) / 2 - h / 2));
+        const cx = Math.max(marge, Math.min(innerWidth - marge - w, (x0 + x1) / 2 - w / 2));
+        const essais = [
+          [x1 + marge, cy], [x0 - marge - w, cy], [cx, y1 + marge], [cx, y0 - marge - h]
+        ];
+        const choix = essais.find(([x, y]) => x >= marge && x + w <= innerWidth - marge && y >= haut && y + h <= bas);
+        if (!choix) { kaykitBarreMagieRelacher(barre); return; }
+        // #hudV2MagicRow vit dans #hudV2Dock, dont le transform devient le bloc
+        // conteneur même en position fixe : on mesure l'écart et on le rattrape.
+        barre.classList.add("ov2-magie-flottante");
+        barre.style.setProperty("bottom", "auto", "important");
+        barre.style.setProperty("right", "auto", "important");
+        barre.style.setProperty("left", `${Math.round(choix[0])}px`, "important");
+        barre.style.setProperty("top", `${Math.round(choix[1])}px`, "important");
+        const vu = barre.getBoundingClientRect();
+        barre.style.setProperty("left", `${Math.round(2 * choix[0] - vu.left)}px`, "important");
+        barre.style.setProperty("top", `${Math.round(2 * choix[1] - vu.top)}px`, "important");
+        kaykitBarreMagie.place = true;
+      }
+
       // Appelée par la boucle de rendu, au plus tous les 120 ms.
       function kaykitCameraSelonAction(maintenant) {
         const suivi = kaykitCameraAction;
@@ -12085,7 +12152,7 @@
         block.position.y = .055;
         block.userData.magicRotationPreview = true;
         if (legale && KAYKIT_MAGIC_OPTION_STYLE[crans]) {
-          kaykitFantomeTexture(block, KAYKIT_MAGIC_OPTION_STYLE[crans].teinte, .9, .35);
+          kaykitFantomeFranc(block, KAYKIT_MAGIC_OPTION_STYLE[crans].franc, .78);
         }
         kaykit3D.dynamicGroup.add(block);
 
@@ -12127,9 +12194,13 @@
       const KAYKIT_MAGIC_OPTION_STYLE = {
         // couleur : curseur et barre ; teinte : verre des îles, plus douce
         // pour rester une île teintée plutôt qu'un aplat.
-        1: { couleur: 0x1fb4ff, teinte: 0x56c8ff },
-        2: { couleur: 0xffaa12, teinte: 0xffb547 },
-        3: { couleur: 0xb04dff, teinte: 0xb47cff }
+        // franc : verre des positions, en couleur PLEINE (Taekun, 2026-11-13 :
+        // la teinte douce sortait presque blanche, on ne savait plus quel
+        // fantôme allait avec quel bouton). Mêmes valeurs que les boutons de
+        // la barre (css/hud-consolidation-v12.css).
+        1: { couleur: 0x1fb4ff, teinte: 0x56c8ff, franc: 0x1fa8ff },
+        2: { couleur: 0xffaa12, teinte: 0xffb547, franc: 0xff8a00 },
+        3: { couleur: 0xb04dff, teinte: 0xb47cff, franc: 0xa040ff }
       };
       /* Au-dessus des décors d'objectif (cases marquées d'or, ordres 48 à 52,
          dessinés sans test de profondeur) : en dessous, une position qui
@@ -12164,6 +12235,26 @@
         });
       }
 
+      /* Verre de couleur FRANCHE : aplat translucide hors du rendu tonal
+         (toneMapped:false). Le traitement de lumière de la scène délavait
+         toute teinte vers le blanc ; ici la couleur du bouton reste celle
+         qu'on voit au sol. Aucun coût : un matériau de base, sans lumière. */
+      function kaykitFantomeFranc(objet, couleur, opacite) {
+        objet.traverse(obj => {
+          if (!obj.isMesh || !obj.material) return;
+          obj.castShadow = false;
+          obj.receiveShadow = false;
+          obj.renderOrder = Math.max(obj.renderOrder || 0, KAYKIT_MAGIC_FANTOME_ORDRE);
+          const n = Array.isArray(obj.material) ? obj.material.length : 1;
+          const mats = Array.from({ length: n }, () => {
+            const mat = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, toneMapped: false });
+            mat.userData = { ilyosTransient: true };
+            return mat;
+          });
+          obj.material = Array.isArray(obj.material) ? mats : mats[0];
+        });
+      }
+
       function renderKayKitMagicRotationGhosts(island) {
         if (!island || typeof magicRotationOptions !== "function") return;
         const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
@@ -12188,7 +12279,7 @@
             const cases = horsPivot(rotation.absCells);
             if (cases.length) {
               const bloc = makeKayKitIslandBlock({ id: `magic-option-${steps}`, owner: null, cells: cases }, { fantome: true });
-              kaykitFantomeTexture(bloc, style.teinte, estompe ? .14 : .72, .72);
+              kaykitFantomeFranc(bloc, style.franc, estompe ? .14 : .6);
               bloc.position.y = .055;
               group.add(bloc);
             }
@@ -12200,7 +12291,7 @@
           const poser = objet => {
             if (!objet) return;
             objet.scale.multiplyScalar(echelle);
-            kaykitFantomeTexture(objet, style.teinte, opacite, .35);
+            kaykitFantomeFranc(objet, style.franc, opacite);
             group.add(objet);
           };
           (rotation.characterMoves || []).forEach(move => {
@@ -14799,6 +14890,7 @@
           return;
         }
         kaykitCameraSelonAction(frameTime);
+        kaykitPlacerBarreMagie();
         if (kaykitImageSautee(frameTime)) return;
         // Retouches de couleurs de js/ether-game-theme.js : appliquées ici, au
         // même moment qu'avant (avant toute mise à jour de l'image), mais

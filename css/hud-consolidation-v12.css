@@ -126,12 +126,13 @@ body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-fo
    liseré au sol (KAYKIT_MAGIC_OPTION_STYLE, kaykit3d.js). La barre sert de
    légende : aucun nom n'est écrit sur le plateau. */
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot{
-  --rot:#1fb4ff;color:#0f1426!important;background:var(--rot)!important;border:2px solid rgba(255,255,255,.88)!important;
-  font:800 12.5px/1 Inter,system-ui,sans-serif!important;letter-spacing:.02em!important;padding:8px 13px!important;min-height:34px;
+  --rot:#1fa8ff;color:#0f1426!important;background:var(--rot)!important;border:2px solid rgba(255,255,255,.88)!important;
+  font:800 17px/1 Inter,system-ui,sans-serif!important;letter-spacing:0!important;padding:0!important;
+  width:38px;height:38px;min-height:38px;border-radius:50%!important;display:inline-grid;place-items:center;
   box-shadow:0 2px 8px rgba(0,0,0,.28);transition:transform 140ms ease,box-shadow 140ms ease,opacity 140ms ease!important
 }
-body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="2"]{--rot:#ffaa12}
-body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="3"]{--rot:#b04dff;color:#fff!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="2"]{--rot:#ff8a00;font-size:12px!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="3"]{--rot:#a040ff;color:#fff!important}
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot:hover:not(:disabled),
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot.ov2-magie-actif{
   transform:translateY(-2px) scale(1.06);box-shadow:0 0 0 3px #fff,0 0 18px var(--rot)
@@ -139,4 +140,22 @@ body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-ro
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow.ov2-magie-choix .hud-v2-magic-rot:not(.ov2-magie-actif):not(:hover){opacity:.6}
 body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot:disabled{
   opacity:.32!important;filter:grayscale(.85);cursor:not-allowed;transform:none;box-shadow:none
+}
+
+/* Pastille ronde compacte (Taekun, 2026-11-14) : ↻ 180 ↺ dans la couleur de
+   leur position au sol, ✓ doré, sans croix (Échap ou un nouveau clic sur
+   MAGIE annulent). Flottante près de l'île : kaykitPlacerBarreMagie(). */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow{
+  gap:7px!important;padding:6px 8px!important;border-radius:999px!important
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-confirm{
+  width:38px;height:38px;min-height:38px;padding:0!important;border-radius:50%!important;display:inline-grid;place-items:center;
+  font:900 18px/1 Inter,system-ui,sans-serif!important;color:#1c1710!important;
+  background:linear-gradient(180deg,#ffe39a,#e0a83a)!important;border:2px solid rgba(255,255,255,.88)!important
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-cancel{display:none!important}
+/* Flottante, la barre peut sortir de la largeur du dock (son bloc conteneur) :
+   elle garde sa ligne au lieu de se replier en carré. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow.ov2-magie-flottante{
+  flex-wrap:nowrap!important;width:max-content!important;max-width:none!important
 }
