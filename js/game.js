@@ -17572,6 +17572,7 @@
           state.networkRevision = networkRevision;
           const payload = serializeOnlineState();
           sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+          if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
           saveOnlineSession();
         }, 100);
       }
@@ -17584,6 +17585,7 @@
         state.networkRevision = networkRevision;
         const payload = serializeOnlineState();
         sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+        if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
         saveOnlineSession();
       }
 
@@ -17653,6 +17655,9 @@
         if (onlineRole === "host") {
           if (revision <= (networkRevision || 0)) return false;
           if (!state?.onlineMode || state.currentPlayer === localPlayerIndex) return false;
+          /* Arbitre (regles.js) : l'hôte rejoue les coups de l'invité et
+             compare. En observation pour l'instant : rien n'est refusé. */
+          if (validerEtatEnLigne(message.state)) reglesArbitreObserver(message.state, localPlayerIndex);
         } else if (revision < (networkRevision || 0)) {
           return false;
         }
@@ -20864,6 +20869,13 @@
         for (const action of rapport.plan) {
           if (token !== aiRunToken || !state || state.winner !== null) return true;
           let applique = false;
+          /* Le moteur de règles a le dernier mot (regles.js) : un coup qu'il
+             refuse n'est pas joué, le tour se termine proprement. */
+          const verdict = reglesVerifier(action, { essai: false });
+          if (!verdict.ok) {
+            console.warn("[ILYOS] coup du CPU refusé par le moteur de règles :", action.type, verdict.raison);
+            break;
+          }
           try {
             applique = await executerActionPlanifiee(action, token);
           } catch (erreur) {
@@ -20922,6 +20934,7 @@
               action.spawn || null
             );
             if (!applique) return false;
+            reglesNoter(action);
             playIslandDrop(applique.ileId);
             benchJournaliser({ type: "POSE", automatique: false, case: applique.gardienCase });
             renderAll();
@@ -20931,6 +20944,7 @@
           case "DEPOT": {
             const applique = applyFreeDropCore(action.charId, action.r, action.c);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser(applique);
             renderAll();
             await sleep(320);
@@ -20939,6 +20953,7 @@
           case "RAMASSAGE": {
             const applique = applyFreePickupCore(action.charId, action.artifactId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "RAMASSAGE", gardien: action.charId });
             renderAll();
             await sleep(320);
@@ -20947,6 +20962,7 @@
           case "DISSOLUTION": {
             const applique = applyDissolutionCore(action.islandId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "DISSOLUTION", ile: action.islandId });
             applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
             if (kaykit3D) kaykit3D.lastStateSignature = "";
@@ -20960,6 +20976,7 @@
           case "VOL": {
             const applique = applyFreeStealCore(action.charId, action.artifactId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "VOL", gardien: action.charId, de: applique.deId });
             renderAll();
             const voleur = characterById(action.charId);
@@ -20972,6 +20989,7 @@
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId,
               directe: applique.directe, depot: applique.depot });
             renderAll();
@@ -21226,46 +21244,22 @@
 
       function beginTurn() {
         const p = currentPlayer();
-        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
-        // qui prend la main, avant même la validation des couronnes.
-        confierGardiensEquipe(p.id);
-        confierMinionNeutre(p.id);
-        const scoredAtStart = scoreCrownsAtTurnStart(p);
-        if (state.winner !== null) {
+        /* Toute la RÈGLE de l'ouverture du tour est dans le moteur
+           (applyTurnStartCore, regles.js), la même que pour le self-play et
+           ILYOS_REGLES : gardiens d'équipe et minion confiés, couronnes
+           validées, fin au décompte si plus aucune île ne tient, pioche, pose
+           due ou levée, verrou du sanctuaire relâché, couronnes en attente
+           entrées. Il ne reste ici que la mise en scène. */
+        const ouverture = applyTurnStartCore();
+        if (!ouverture || !ouverture.continuer) {
+          if (ouverture && ouverture.raison === "plateau-plein") terminerPartiePlateauPlein();
           renderAll();
           return;
         }
-        /* Le joueur qui prend la main ne peut plus poser d'île : la partie
-           s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
-           Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
-           tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (finParPoseImpossible(p.id)) {
-          state.winner = vainqueurAuxCouronnes();
-          if (state.winner === null) state.winner = MATCH_NUL;
-          terminerPartiePlateauPlein();
-          renderAll();
-          return;
-        }
-
         state.turnTransitioning = false;
-        p.hand = [];
-        p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
-        state.phase = "ACTION_SELECT";
-        // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
-        // atteinte, la pose d'île redevient facultative au lieu de rester
-        // obligatoire sans qu'aucune forme ne puisse plus être choisie.
-        // Même levée quand aucune forme restant en stock ne tient plus sur le
-        // plateau (poseImpossiblePour, rules-core.js) : sinon « Fin du tour »
-        // resterait bloqué pour un joueur humain jusqu'au minuteur.
+        // Pose levée faute de forme qui tienne : annoncée au joueur plus bas.
         const poseSansForme = !islandLimitReachedForPlayer(p.id) && poseImpossiblePour(p.id);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id) || poseSansForme;
-        /* Le verrou du sanctuaire se relâche ici, et les couronnes qui
-           attendaient leur entrée en jeu arrivent alors — dans cet ordre, sans
-           quoi elles se remettraient aussitôt en attente. */
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
         state.treasureDropFromId = null;
         state.crownPickupCell = null;
         state.selectedIslandShape = null;
@@ -21356,6 +21350,9 @@
           artifact: state.artifact,
           secondArtifact: state.secondArtifact,
           couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          // Journal des coups du tour (regles.js) : l'annulation le ramène aussi.
+          journalCoups: [...(state.journalCoups || [])],
+          journalTourPrecedent: [...(state.journalTourPrecedent || [])],
           phase: state.phase,
           islandPlacedThisTurn: state.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!state.centerCrownTakenThisTurn,
@@ -21450,6 +21447,8 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        if (Array.isArray(snap.journalCoups)) state.journalCoups = [...snap.journalCoups];
+        if (Array.isArray(snap.journalTourPrecedent)) state.journalTourPrecedent = [...snap.journalTourPrecedent];
         if (snap.rotation !== undefined) state.rotation = snap.rotation;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
@@ -24632,6 +24631,7 @@
             showToast("Ce gardien porte déjà une couronne.");
             return false;
           }
+          reglesNoter({ type: stealTargetId ? "VOL" : "RAMASSAGE", charId: claimer.id, artifactId: artifact.id });
           if (isCenterCrownCell(crownCell)) state.centerCrownTakenThisTurn = true;
           state.crownPickupCell = null;
           state.crownStealTargetId = null;
@@ -24783,6 +24783,7 @@
               r, c
             };
             state.characters.push(char);
+            reglesNoterApparition(r, c);
             resolveArtifactForCharacter(char);
             state.phase = "ACTION_SELECT";
             state.selectedIslandShape = null;
@@ -24830,6 +24831,7 @@
                 showToast("Ce gardien porte déjà une couronne.");
                 return;
               }
+              reglesNoter({ type: "TRANSMISSION", deId: owner.id, versId: clickedAlly.id });
 
               if (kaykit3D) {
                 kaykit3D.characterFacing.set(String(owner.id), kaykitFacingRotation(owner.r, owner.c, clickedAlly.r, clickedAlly.c));
@@ -24854,10 +24856,12 @@
               return;
             }
 
-            if (!applyFreeDropCore(owner.id, r, c)) {
+            if (reglesRefuserAuJoueur({ type: "DEPOT", charId: owner.id, r, c })
+              || !applyFreeDropCore(owner.id, r, c)) {
               discardLastUndoSnapshot();
               return;
             }
+            reglesNoter({ type: "DEPOT", charId: owner.id, r, c });
             state.treasureDropFromId = null;
             state.treasureDropArtifactId = null;
             state.crownTransferTargetIds = [];
@@ -24886,6 +24890,7 @@
               showToast("Ce gardien porte déjà une couronne.");
               return;
             }
+            reglesNoter({ type: stolenFrom ? "VOL" : "RAMASSAGE", charId: pickedChar.id, artifactId: artifact.id });
             if (isCenterCrownCell(state.crownPickupCell)) state.centerCrownTakenThisTurn = true;
             state.crownPickupCell = null;
             state.crownStealTargetId = null;
@@ -25144,9 +25149,13 @@
       function placeIsland(anchorR, anchorC) {
         /* Îles payantes (mode personnalisé) : 2 cartes, prélevées avant la
            pose. La mise en place, elle, ne coûte rien. */
+        const absCells = previewAbsoluteCells(anchorR, anchorC);
+        // Hors mise en place, le moteur de règles a le dernier mot (regles.js).
+        if (!state.draft && reglesRefuserAuJoueur({
+          type: "POSE", shapeKey: state.selectedIslandShape, cells: absCells, owner: state.currentPlayer
+        })) return;
         const paiement = state.draft ? [] : payerIle(currentPlayer());
         if (!paiement) return;
-        const absCells = previewAbsoluteCells(anchorR, anchorC);
         const islandId = state.nextIslandId++;
         const island = {
           id: islandId,
@@ -25198,6 +25207,10 @@
         }
 
         state.islandPlacedThisTurn = true;
+        reglesNoter({
+          type: "POSE", shapeKey: island.shapeKey, cells: island.cells, owner: island.owner,
+          relCells: island.relCells, anchor: island.anchor
+        });
         if (paiement.length) {
           showToast(`Île posée : ${paiement.map(type => ACTIONS[type].name).join(" et ")} payés.`);
         }
@@ -25866,6 +25879,7 @@
           return false;
         }
 
+        if (reglesRefuserAuJoueur({ type: "MOVE", charId: char.id, r, c, cost })) return false;
         const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
@@ -25906,6 +25920,7 @@
            désormais sa case de départ explicitement, puisqu'elle ne peut plus
            la relire depuis un état déjà à jour. */
         const resultat = applyMoveCore(char.id, r, c, cost);
+        if (resultat) reglesNoter({ type: "MOVE", charId: char.id, r, c, cost });
         if (resultat?.couronneRamassee) {
           showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
         }
@@ -26213,6 +26228,7 @@
         // Exactement la force qui vient d'être montrée en aperçu : sans cette
         // égalité, le joueur jouait autre chose que ce qu'il avait sous les yeux.
         const force = forcePousseeCourante();
+        if (reglesRefuserAuJoueur({ type: "PUSH", pusherId: pusher.id, r, c, force })) return;
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
@@ -26222,6 +26238,7 @@
            callback d'animation : entre les deux, l'IA pouvait relire un compte
            d'actions encore intact et décider sur une base périmée. */
         const applique = applyPushCore(pusher.id, r, c, force);
+        if (applique) reglesNoter({ type: "PUSH", pusherId: pusher.id, r, c, force });
         if (!applique) {
           discardLastUndoSnapshot();
           /* ÉCHEC SILENCIEUX auparavant : le noyau refusait, l'interface gardait
@@ -26545,6 +26562,7 @@
           animateBoardMagic();
           playSfx("magic");
           showToast("Rotation complète de 360° pour 1 magie.");
+          reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction: 1, turns: 4 });
           useSelectedCard(1);
           return;
         }
@@ -26565,6 +26583,9 @@
           return;
         }
 
+        if (reglesRefuserAuJoueur({
+          type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns
+        })) return;
         saveUndoSnapshot();
         const [pivotR, pivotC] = state.selectedMagicPivot;
         // Rotation réellement effectuée, signée : un cran « 3 » est un quart de
@@ -26594,6 +26615,7 @@
            l'animation — même principe que pour les gardiens, dont le visuel
            n'est pas recalé tant qu'un déplacement est en cours. */
         const applique = applyMagicRotationCore(island.id, rotation);
+        if (applique) reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [pivotR, pivotC], direction, turns });
         kaykitGelerCalqueIles(true);
 
         animateIslandLiftRotation(island.id, steps * 90, () => {
@@ -26650,6 +26672,7 @@
         }
 
         saveUndoSnapshot();
+        reglesNoter({ type: "DISSOLUTION", islandId: island.id });
         const cells = island.cells.map(([ir, ic]) => [ir, ic]);
         state.islands = state.islands.filter(is => is.id !== island.id);
         cells.forEach(([ir, ic]) => animateCellPulse(ir, ic, "magic-vanish"));
@@ -27414,10 +27437,8 @@
         p.hand = [];
         state.deckAnimationMode = null;
 
-        const wasLast = state.currentPlayer === state.players.length - 1;
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-        if (wasLast) state.round++;
+        // Passage de la main : le même que le moteur (regles.js).
+        applyPassageTourCore();
 
         playSfx("turn");
         beginTurn();
@@ -32737,34 +32758,19 @@
            suivant, une réserve différente de celle que la partie aurait
            réellement eue — et le surplus ne partait jamais à la défausse. */
         rangerEtDefausserFinDeTour(sortant);
+        applyPassageTourCore();
 
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-
-        const entrant = state.players[state.currentPlayer];
-        scoreCrownsAtTurnStart(entrant);
-        if (state.winner !== null && state.winner !== undefined) {
-          return { vainqueur: state.winner };
-        }
-        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
-        if (finParPoseImpossible(entrant.id)) {
-          const vainqueur = vainqueurAuxCouronnes();
-          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
-          return { vainqueur: state.winner };
-        }
-
-        const plausible = plannerPiocheProchaine(entrant.id).main;
-        entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
-          .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
-        state.phase = "ACTION_SELECT";
-        state.selectedActionType = null;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        state.reachable = new Set();
-        return { vainqueur: null };
+        /* Ouverture du tour : la MÊME que la partie réelle (regles.js), à la
+           main près — l'anticipation ne lit pas la pioche cachée, elle donne
+           à l'entrant sa main plausible. */
+        const ouverture = applyTurnStartCore({
+          distribuer: entrant => {
+            const plausible = plannerPiocheProchaine(entrant.id).main;
+            entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
+              .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
+          }
+        });
+        return { vainqueur: ouverture && !ouverture.continuer ? state.winner : null };
       }
 
       /** Ce que vaut un plan APRÈS la meilleure réplique adverse courte. */
@@ -33552,6 +33558,581 @@
         }
         return meilleure;
       }
+      /* =====================================================================
+         MOTEUR DE RÈGLES — porte d'entrée unique (refonte, étape 1)
+
+         Avant ce fragment, les règles existaient en morceaux : les noyaux de
+         rules-core.js appliquaient une action supposée valide, la légalité
+         vivait dans les clics de ui.js (portée affichée, cartes disponibles,
+         case libre…), les actions gratuites dans planner.js, et la fin de tour
+         en trois exemplaires (ui.js, planner.js, diagnostics.js). Rien ne
+         permettait de demander simplement : « ce coup est-il permis ici, et
+         qu'en résulte-t-il ? ».
+
+         Ce fragment répond à cette question, et à elle seule :
+
+           reglesVerifier(action)   le coup est-il permis dans `state` ?
+           reglesAppliquer(action)  le joue dans `state`, rend les événements
+           applyTurnStartCore()     ouverture du tour (règle seule)
+           applyEndTurnCore()       fin du tour complète (règle seule)
+
+         et, sans toucher à la partie en cours, sur un état fourni :
+
+           ILYOS_REGLES.verifier(etat, action) → { ok, raison }
+           ILYOS_REGLES.appliquer(etat, action) → { ok, raison, etat, evenements }
+           ILYOS_REGLES.finDeTour(etat)         → { ok, etat, evenements }
+
+         Une action est une DONNÉE, la même que celle du planner :
+           MOVE { charId, r, c, cost }        PUSH { pusherId, r, c, force }
+           MAGIC { islandId, pivot, direction, turns }
+           POSE { shapeKey, cells, owner, relCells?, anchor?, spawn? }
+           DEPOT { charId, r, c }   RAMASSAGE { charId, artifactId }
+           VOL { charId, artifactId }   TRANSMISSION { deId, versId }
+           DISSOLUTION { islandId }     SEQUENCE { actions: [...] }
+           FIN_TOUR {}
+
+         La légalité ne recopie aucune règle : elle interroge les fonctions
+         que l'interface utilise déjà (movementRange, availableActionCount,
+         calculateIslandRotationAroundPivot, occupantPoussable…), puis joue le
+         coup sur une copie avec le noyau : un noyau qui refuse rend le coup
+         illégal. Un mode qui remplace l'une de ces fonctions (Rotation, Bond,
+         œufs) est donc suivi sans rien changer ici.
+
+         Les ÉVÉNEMENTS sont déduits de l'état avant/après (qui a bougé, qui
+         est tombé, quelle couronne a changé de mains, quelles cartes sont
+         parties) : ils disent ce qui s'est passé, quel que soit le mode qui
+         l'a produit. L'interface ne les consomme pas encore (étape suivante).
+
+         Rien ici ne dessine, ne joue de son ni n'attend : tout est appelé
+         sous ilyosSimulationActive quand l'état n'est pas la partie réelle.
+         ===================================================================== */
+
+      const REGLES_TYPES_CARTES = ["MOVE", "PUSH", "MAGIC"];
+
+      function reglesRefus(raison) {
+        return { ok: false, raison };
+      }
+
+      function reglesEntier(valeur, min, max) {
+        return Number.isInteger(valeur) && valeur >= min && valeur <= max;
+      }
+
+      function reglesCase(r, c) {
+        return Number.isInteger(r) && Number.isInteger(c) && inside(r, c);
+      }
+
+      /** Le gardien appartient-il au joueur au trait ? (2 contre 2 et minion
+       *  neutre : char.player est déjà le joueur qui l'a en main ce tour-ci,
+       *  voir confierGardiensEquipe.) Une créature n'obéit à personne. */
+      function reglesGardienDuJoueur(id) {
+        const gardien = characterById(id);
+        if (!gardien) return { refus: "gardien introuvable" };
+        if (gardien.creature) return { refus: "une créature ne se commande pas" };
+        if (gardien.player !== state.currentPlayer) return { refus: "ce gardien n'est pas au joueur qui a la main" };
+        return { gardien };
+      }
+
+      /** Les cellules forment-elles la forme `shapeKey`, dans l'une des
+       *  orientations que la pose propose (rotations, miroir si retournable) ? */
+      function reglesCellulesDeLaForme(shapeKey, cells) {
+        const forme = SHAPES[shapeKey];
+        if (!forme || !Array.isArray(cells) || cells.length !== forme.cells.length) return false;
+        const signature = liste => normalizeShape(liste).map(([r, c]) => `${r},${c}`).sort().join("|");
+        const cible = signature(cells);
+        const depart = normalizeShape(forme.cells);
+        const orientations = forme.flippable
+          ? [depart, normalizeShape(depart.map(([r, c]) => [r, -c]))]
+          : [depart];
+        for (const orientation of orientations) {
+          let tournee = orientation;
+          for (let i = 0; i < 4; i++) {
+            if (signature(tournee) === cible) return true;
+            tournee = rotateCells(tournee, 1);
+          }
+        }
+        return false;
+      }
+
+      /** Contrôles propres à chaque type, AVANT d'essayer le noyau. Rend une
+       *  raison de refus, ou null si rien ne s'y oppose. */
+      function reglesControleAvant(action) {
+        switch (action.type) {
+          case "MOVE": {
+            const { gardien, refus } = reglesGardienDuJoueur(action.charId);
+            if (refus) return refus;
+            if (!reglesCase(action.r, action.c)) return "case hors du plateau";
+            const dispo = availableActionCount("MOVE");
+            if (!reglesEntier(action.cost, 1, Math.max(1, dispo))) return "coût de déplacement invalide";
+            if (action.cost > dispo) return "pas assez de cartes Déplacer";
+            const portee = movementRange(gardien, dispo);
+            const cle = key(action.r, action.c);
+            if (!portee.has(cle)) return "case hors d'atteinte";
+            const cout = portee.costs?.get(cle);
+            if (Number.isFinite(cout) && cout !== action.cost) return "le coût ne correspond pas au chemin le plus court";
+            return null;
+          }
+          case "PUSH": {
+            const { gardien, refus } = reglesGardienDuJoueur(action.pusherId);
+            if (refus) return refus;
+            if (!reglesCase(action.r, action.c)) return "case hors du plateau";
+            if (Math.abs(gardien.r - action.r) + Math.abs(gardien.c - action.c) !== 1) return "la cible doit être adjacente";
+            if (!occupantPoussable(action.r, action.c)) return "rien à pousser sur cette case";
+            const dispo = availableActionCount("PUSH");
+            if (!reglesEntier(action.force, 1, Math.max(1, dispo)) || action.force > dispo) return "pas assez de cartes Pousser";
+            return null;
+          }
+          case "MAGIC": {
+            const ile = state.islands.find(i => i.id === action.islandId);
+            if (!ile) return "île introuvable";
+            if (availableActionCount("MAGIC") < 1) return "pas de carte Magie";
+            if (action.direction !== 1 && action.direction !== -1) return "sens de rotation invalide";
+            if (!reglesEntier(action.turns, 1, 4)) return "nombre de quarts de tour invalide";
+            // Tour complet (360°) : l'île revient à sa place, la carte est jouée.
+            if (action.turns === 4) return null;
+            const pivot = action.pivot;
+            if (!Array.isArray(pivot) || !ile.cells.some(([r, c]) => r === pivot[0] && c === pivot[1])) {
+              return "le pivot doit être une case de l'île";
+            }
+            const rotation = calculateIslandRotationAroundPivot(ile, pivot[0], pivot[1], action.direction, action.turns);
+            if (!rotation?.valid) return "l'île ne peut pas tourner ainsi";
+            return null;
+          }
+          case "POSE": {
+            if (action.owner !== state.currentPlayer) return "seul le joueur qui a la main pose une île";
+            if (state.islandPlacedThisTurn) return "une île a déjà été posée ce tour";
+            if (!SHAPES[action.shapeKey]) return "forme inconnue";
+            const limite = shapeLimitPerOwner();
+            if (limite && shapeUsageCountForOwner(action.owner, action.shapeKey) >= limite) return "plus aucune île de cette forme";
+            if (!peutPayerIle(state.players[action.owner])) return "pas assez de cartes pour payer l'île";
+            const cells = action.cells;
+            if (!reglesCellulesDeLaForme(action.shapeKey, cells)) return "les cases ne forment pas cette île";
+            if (!cells.every(([r, c]) => reglesCase(r, c) && !isLand(r, c))) return "l'île doit tenir sur des cases vides du plateau";
+            if (!refletIleValide(cells)) return "le reflet de l'île ne tient pas";
+            if (state.quick && !quickPoseAutorisee(cells)) return "pose non prévue par cette étape";
+            if (action.spawn) {
+              const [sr, sc] = action.spawn;
+              if (!cells.some(([r, c]) => r === sr && c === sc) || characterAt(sr, sc)) return "case d'apparition invalide";
+            }
+            return null;
+          }
+          case "DEPOT":
+          case "RAMASSAGE":
+          case "VOL":
+            return reglesGardienDuJoueur(action.charId).refus || null;
+          case "TRANSMISSION":
+            return reglesGardienDuJoueur(action.deId).refus || null;
+          case "DISSOLUTION":
+            return null;
+          case "FIN_TOUR":
+            return null;
+          default:
+            return "type d'action inconnu";
+        }
+      }
+
+      /** Exécute une action déjà contrôlée, par le noyau correspondant. */
+      function reglesExecuterNoyau(action) {
+        switch (action.type) {
+          case "DEPOT": return applyFreeDropCore(action.charId, action.r, action.c);
+          case "RAMASSAGE": return applyFreePickupCore(action.charId, action.artifactId);
+          case "VOL": return applyFreeStealCore(action.charId, action.artifactId);
+          case "TRANSMISSION": return applyFreeHandoffCore(action.deId, action.versId);
+          case "DISSOLUTION": return applyDissolutionCore(action.islandId);
+          case "FIN_TOUR": return applyEndTurnCore();
+          case "MAGIC":
+            if (action.turns === 4) {
+              const depense = consumeSelectedActionCore("MAGIC", 1);
+              return depense ? { type: "MAGIC", islandId: action.islandId, tourComplet: true, cout: depense } : null;
+            }
+            return appliquerActionNoyau(action);
+          default: return appliquerActionNoyau(action);
+        }
+      }
+
+      /* Photo minimale de ce qui peut changer, pour déduire les événements. */
+      function reglesPhoto() {
+        const joueur = state.players[state.currentPlayer];
+        const cartes = {};
+        if (joueur) REGLES_TYPES_CARTES.forEach(type => { cartes[type] = availableActionCount(type, joueur); });
+        return {
+          joueur: state.currentPlayer,
+          tour: state.turn,
+          cartes,
+          gardiens: new Map((state.characters || []).map(g => [g.id, { r: g.r, c: g.c, player: g.player }])),
+          couronnes: new Map([state.artifact, state.secondArtifact].filter(Boolean)
+            .map(a => [a.id, { r: a.r, c: a.c, porteur: a.carrierId ?? null, active: !!a.active }])),
+          iles: new Map((state.islands || []).map(i => [i.id, i.cells.map(([r, c]) => key(r, c)).sort().join(";")])),
+          scores: (state.players || []).map(p => p.score || 0),
+          vainqueur: state.winner ?? null
+        };
+      }
+
+      function reglesEvenements(avant, apres) {
+        const evenements = [];
+        for (const [id, a] of avant.iles) {
+          if (!apres.iles.has(id)) evenements.push({ type: "ile-retiree", ileId: id });
+          else if (apres.iles.get(id) !== a) evenements.push({ type: "ile-tournee", ileId: id });
+        }
+        for (const id of apres.iles.keys()) {
+          if (!avant.iles.has(id)) evenements.push({ type: "ile-posee", ileId: id });
+        }
+        for (const [id, a] of avant.gardiens) {
+          const b = apres.gardiens.get(id);
+          if (!b) evenements.push({ type: "chute", gardienId: id, depuis: [a.r, a.c] });
+          else if (a.r !== b.r || a.c !== b.c) evenements.push({ type: "gardien-deplace", gardienId: id, depuis: [a.r, a.c], vers: [b.r, b.c] });
+        }
+        for (const [id, b] of apres.gardiens) {
+          if (!avant.gardiens.has(id)) evenements.push({ type: "apparition", gardienId: id, case: [b.r, b.c] });
+        }
+        for (const [id, a] of avant.couronnes) {
+          const b = apres.couronnes.get(id);
+          if (!b) continue;
+          if (a.porteur !== b.porteur) {
+            evenements.push({ type: "couronne-change-de-mains", couronneId: id, de: a.porteur, vers: b.porteur });
+          } else if (b.porteur === null && (a.r !== b.r || a.c !== b.c)) {
+            evenements.push({ type: "couronne-deplacee", couronneId: id, depuis: [a.r, a.c], vers: [b.r, b.c] });
+          }
+          if (!a.active && b.active) evenements.push({ type: "couronne-entree", couronneId: id });
+        }
+        if (avant.joueur === apres.joueur) {
+          REGLES_TYPES_CARTES.forEach(type => {
+            const depense = (avant.cartes[type] || 0) - (apres.cartes[type] || 0);
+            if (depense > 0) evenements.push({ type: "cartes-depensees", carte: type, nombre: depense });
+          });
+        }
+        avant.scores.forEach((score, joueur) => {
+          if ((apres.scores[joueur] || 0) > score) {
+            evenements.push({ type: "point", joueur, score: apres.scores[joueur] });
+          }
+        });
+        if (avant.joueur !== apres.joueur || avant.tour !== apres.tour) {
+          evenements.push({ type: "nouveau-tour", joueur: apres.joueur, tour: apres.tour });
+        }
+        if (avant.vainqueur === null && apres.vainqueur !== null) {
+          evenements.push({ type: "fin-de-partie", vainqueur: apres.vainqueur === MATCH_NUL ? null : apres.vainqueur, nul: apres.vainqueur === MATCH_NUL });
+        }
+        return evenements;
+      }
+
+      /** Joue `action` dans `state` si elle est permise.
+       *  ATTENTION : mute l'état courant. Sur la partie réelle, l'appelant doit
+       *  jouer sur une copie (reglesVerifier) avant, s'il veut pouvoir refuser
+       *  sans rien avoir touché ; ILYOS_REGLES le fait toujours. */
+      function reglesAppliquer(action) {
+        if (!state) return reglesRefus("aucune partie");
+        if (!action || typeof action !== "object" || typeof action.type !== "string") return reglesRefus("action illisible");
+        if (state.winner !== null && state.winner !== undefined) return reglesRefus("la partie est terminée");
+
+        if (action.type === "SEQUENCE") {
+          if (!Array.isArray(action.actions) || !action.actions.length) return reglesRefus("séquence vide");
+          const evenements = [];
+          for (let i = 0; i < action.actions.length; i++) {
+            const etape = reglesAppliquer(action.actions[i]);
+            if (!etape.ok) return reglesRefus(`étape ${i + 1} : ${etape.raison}`);
+            evenements.push(...etape.evenements);
+          }
+          return { ok: true, raison: null, evenements };
+        }
+
+        const refus = reglesControleAvant(action);
+        if (refus) return reglesRefus(refus);
+
+        const avant = reglesPhoto();
+        const resultat = reglesExecuterNoyau(action);
+        if (!resultat) return reglesRefus("refusé par les règles");
+        // Option « Validation immédiate » : même déclenchement qu'après chaque
+        // action de la partie réelle (validerCouronnesImmediates, turns.js).
+        if (action.type !== "FIN_TOUR" && validationImmediate() && state.winner === null) {
+          scoreCrownsAtTurnStart(state.players[state.currentPlayer], { immediat: true });
+        }
+        return { ok: true, raison: null, evenements: reglesEvenements(avant, reglesPhoto()) };
+      }
+
+      /** Le coup est-il permis dans `state` ? Ne touche à rien.
+       *
+       *  Complet par défaut : contrôles propres au type, PUIS essai du noyau
+       *  sur une copie. `essai: false` s'en tient aux contrôles, sans exécuter
+       *  aucun noyau. C'est le mode des gardes de la PARTIE RÉELLE : plusieurs
+       *  modes enveloppent les noyaux avec des effets hors de `state` (compte
+       *  des cartes dépensées d'une énigme, carte armée du marché, relevé du
+       *  tour adverse…), qu'un essai, même sur une copie, déclencherait. */
+      function reglesVerifier(action, { essai = true } = {}) {
+        if (!state) return reglesRefus("aucune partie");
+        if (!essai) {
+          if (!action || typeof action !== "object" || typeof action.type !== "string") return reglesRefus("action illisible");
+          if (state.winner !== null && state.winner !== undefined) return reglesRefus("la partie est terminée");
+          // Une séquence se juge pas à pas : sans essai, seul son premier pas
+          // se lit sur l'état présent.
+          const premier = action.type === "SEQUENCE" ? (action.actions || [])[0] : action;
+          if (!premier) return reglesRefus("séquence vide");
+          if (premier.type === "SEQUENCE") return reglesVerifier(premier, { essai: false });
+          const refus = reglesControleAvant(premier);
+          return refus ? reglesRefus(refus) : { ok: true, raison: null };
+        }
+        const copie = cloneStateForSimulation();
+        // Contexte de pose que la copie de simulation ne garde pas.
+        copie.quick = state.quick;
+        copie.draft = state.draft;
+        const { ok, raison } = withSimulatedState(copie, () => reglesAppliquer(action));
+        return { ok, raison };
+      }
+
+      /** Garde des gestes du joueur (ui.js) : demande au moteur, juste avant
+       *  d'agir, si le coup est permis. Refusé, rien ne bouge et le joueur
+       *  lit pourquoi. Rend true si le coup est REFUSÉ. L'interface filtre
+       *  déjà ses clics ; ce contrôle garantit que la porte d'entrée et
+       *  l'interface disent la même chose. */
+      function reglesRefuserAuJoueur(action) {
+        const verdict = reglesVerifier(action, { essai: false });
+        if (verdict.ok) return false;
+        console.warn("[ILYOS] coup refusé par le moteur de règles :", action && action.type, verdict.raison);
+        showToast(`Coup impossible : ${verdict.raison}.`);
+        return true;
+      }
+
+      /* ---------------------------------------------------------------------
+         TOUR : ouverture et fin, réduites à leurs effets de règle.
+
+         Même ordre que la partie réelle (endTurn de ui.js, réserve physique
+         puis beginTurn de turns.js) : cartes non jouées rangées, joueur
+         suivant, gardiens d'équipe confiés, couronnes validées au début du
+         tour, fin au décompte si plus aucune île ne tient, pioche, verrou du
+         sanctuaire relâché, couronnes en attente entrées.
+         ------------------------------------------------------------------- */
+      /* `distribuer(joueur)` remplace la pioche : l'anticipation du planner
+         y donne la main PLAUSIBLE du joueur (applyTurnTransitionCore), au lieu
+         de lire l'ordre caché de sa pioche. */
+      function applyTurnStartCore({ distribuer = null } = {}) {
+        const entrant = state.players[state.currentPlayer];
+        if (!entrant) return null;
+        state.journalCoups = [];
+        confierGardiensEquipe(entrant.id);
+        confierMinionNeutre(entrant.id);
+        scoreCrownsAtTurnStart(entrant);
+        if (state.winner !== null && state.winner !== undefined) return { continuer: false, vainqueur: state.winner, raison: "couronnes" };
+
+        if (finParPoseImpossible(entrant.id)) {
+          const vainqueur = vainqueurAuxCouronnes();
+          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
+          return { continuer: false, vainqueur: state.winner, raison: "plateau-plein" };
+        }
+
+        if (distribuer) {
+          distribuer(entrant);
+        } else {
+          entrant.hand = [];
+          entrant.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          drawCards(entrant, cartesPiocheesParTour());
+        }
+        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
+        state.centerCrownTakenThisTurn = false;
+        faireEntrerCouronnesEnAttente();
+        state.phase = "ACTION_SELECT";
+        state.selectedActionType = null;
+        state.selectedCharId = null;
+        state.selectedIslandId = null;
+        state.reachable = new Set();
+        return { continuer: true, vainqueur: null };
+      }
+
+      /** La main passe au joueur suivant ; une manche s'achève après le
+       *  dernier joueur. Même passage que la vraie fin de tour (ui.js). */
+      function applyPassageTourCore() {
+        // Le tour qui s'achève, coup par coup, pour l'arbitre en ligne.
+        state.journalTourPrecedent = [...(state.journalCoups || []), { type: "FIN_TOUR" }];
+        state.journalCoups = [];
+        const dernier = state.currentPlayer === state.players.length - 1;
+        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+        state.turn++;
+        if (dernier) state.round = (state.round || 1) + 1;
+      }
+
+      /** Fin de tour complète. La pose d'île encore due est faite d'office,
+       *  comme à la fin du minuteur (createAutomaticIslandAndSpawn). */
+      function applyEndTurnCore() {
+        const sortant = state.players[state.currentPlayer];
+        if (!sortant) return null;
+        let poseAutomatique = null;
+        if (!obligationIleRemplie()) {
+          const pose = findAutomaticIslandPlacement(sortant.id);
+          if (pose) {
+            poseAutomatique = applyIslandPlacementCore(pose.shapeKey, pose.cells, sortant.id, pose.relCells, pose.anchor);
+          } else {
+            state.islandPlacedThisTurn = true;
+          }
+        }
+
+        rangerEtDefausserFinDeTour(sortant);
+        applyPassageTourCore();
+
+        const ouverture = applyTurnStartCore();
+        return { type: "FIN_TOUR", poseAutomatique, ...(ouverture || { continuer: false, vainqueur: state.winner }) };
+      }
+
+
+      /* ---------------------------------------------------------------------
+         JOURNAL DES COUPS ET ARBITRE EN LIGNE (étape 4, en observation)
+
+         Chaque coup réellement joué est noté en DONNÉE dans state.journalCoups
+         (remis à zéro au début du tour ; le tour achevé passe dans
+         state.journalTourPrecedent, terminé par FIN_TOUR). Le journal voyage
+         avec l'état en ligne et suit l'annulation (snapshotState).
+
+         En ligne, l'hôte garde l'état du début du tour de l'invité, rejoue le
+         journal reçu avec le moteur et compare le plateau obtenu à celui que
+         l'invité annonce. Pour l'instant il OBSERVE seulement : un désaccord
+         est compté et signalé dans la console, l'état est accepté comme avant.
+         Le refus viendra quand des parties réelles auront montré que l'arbitre
+         ne contredit jamais un joueur honnête.
+         ------------------------------------------------------------------- */
+      const REGLES_CHAMPS = {
+        MOVE: ["charId", "r", "c", "cost"],
+        PUSH: ["pusherId", "r", "c", "force"],
+        MAGIC: ["islandId", "pivot", "direction", "turns"],
+        POSE: ["shapeKey", "cells", "owner", "relCells", "anchor", "spawn"],
+        DEPOT: ["charId", "r", "c"],
+        RAMASSAGE: ["charId", "artifactId"],
+        VOL: ["charId", "artifactId"],
+        TRANSMISSION: ["deId", "versId"],
+        DISSOLUTION: ["islandId"]
+      };
+
+      function reglesNoter(action) {
+        if (ilyosSimulationActive || !state || !action || !REGLES_CHAMPS[action.type]) return;
+        const note = { type: action.type };
+        REGLES_CHAMPS[action.type].forEach(champ => {
+          if (action[champ] !== undefined && action[champ] !== null) note[champ] = copieRapide(action[champ]);
+        });
+        (state.journalCoups ||= []).push(note);
+      }
+
+      /** Le gardien d'une île posée par le joueur naît après la pose : sa case
+       *  complète la dernière pose notée. */
+      function reglesNoterApparition(r, c) {
+        if (ilyosSimulationActive || !state) return;
+        const pose = [...(state.journalCoups || [])].reverse().find(a => a.type === "POSE");
+        if (pose && !pose.spawn) pose.spawn = [r, c];
+      }
+
+      /** Ce que l'arbitre compare : le plateau et le score, pas les cartes
+       *  (une pioche remélangée tire au hasard). */
+      function reglesEmpreintePlateau(etat) {
+        const iles = (etat.islands || []).map(i => `${i.id}:${i.cells.map(([r, c]) => `${r},${c}`).sort().join(";")}`).sort();
+        const gardiens = (etat.characters || []).map(g => `${g.id}:${g.r},${g.c}:${g.player}`).sort();
+        const couronnes = [etat.artifact, etat.secondArtifact].filter(Boolean)
+          .map(a => `${a.id}:${a.carrierId ?? "-"}:${a.carrierId ? "" : `${a.r},${a.c}`}:${a.active ? 1 : 0}`).sort();
+        return JSON.stringify({
+          iles, gardiens, couronnes,
+          scores: (etat.players || []).map(p => p.score || 0),
+          main: etat.currentPlayer, tour: etat.turn, vainqueur: etat.winner ?? null
+        });
+      }
+
+      /** Rejoue `actions` depuis `depart` ; rend l'état obtenu ou le refus. */
+      function reglesRejouer(depart, actions) {
+        let copie;
+        try {
+          copie = reglesEtatDepuis(depart);
+        } catch (erreur) {
+          return { ok: false, raison: String(erreur.message || erreur) };
+        }
+        return withSimulatedState(copie, () => {
+          for (let i = 0; i < actions.length; i++) {
+            const r = reglesAppliquer(actions[i]);
+            if (!r.ok) return { ok: false, raison: `coup ${i + 1} (${actions[i].type}) : ${r.raison}` };
+          }
+          return { ok: true, raison: null, etat: copie };
+        });
+      }
+
+      const reglesArbitre = { reference: null, verifications: 0, accords: 0, desaccords: 0, ignores: 0, dernier: null };
+
+      /** L'hôte note l'état du début du tour de l'invité (journal vide). */
+      function reglesArbitreReference(etat, joueurLocal) {
+        if (!etat || etat.currentPlayer === joueurLocal || (etat.journalCoups || []).length) return;
+        reglesArbitre.reference = JSON.stringify(etat);
+      }
+
+      /** Juge un état reçu de l'invité. N'en refuse aucun (observation). */
+      function reglesArbitreObserver(recu, joueurLocal) {
+        try {
+          if (!reglesArbitre.reference || !recu) return null;
+          const finDeTour = recu.currentPlayer === joueurLocal;
+          if (!finDeTour && recu.phase === "PLACE_SPAWN") { reglesArbitre.ignores++; return null; }
+          const coups = finDeTour ? recu.journalTourPrecedent : recu.journalCoups;
+          if (!Array.isArray(coups)) { reglesArbitre.ignores++; return null; }
+          reglesArbitre.verifications++;
+          const rejeu = reglesRejouer(reglesArbitre.reference, coups);
+          const accord = rejeu.ok && reglesEmpreintePlateau(rejeu.etat) === reglesEmpreintePlateau(recu);
+          const verdict = { accord, raison: rejeu.ok ? (accord ? null : "plateau différent de celui rejoué") : rejeu.raison, coups: coups.length, finDeTour };
+          reglesArbitre.dernier = verdict;
+          if (accord) reglesArbitre.accords++;
+          else {
+            reglesArbitre.desaccords++;
+            console.warn("[ILYOS] arbitre en ligne : désaccord (observation seule)", verdict);
+          }
+          if (finDeTour) reglesArbitre.reference = null;
+          return verdict;
+        } catch (erreur) {
+          reglesArbitre.ignores++;
+          return null;
+        }
+      }
+
+      /* ---------------------------------------------------------------------
+         API PUBLIQUE, sur un état FOURNI (objet ou JSON de snapshotState).
+         La partie en cours n'est jamais touchée.
+         ------------------------------------------------------------------- */
+      function reglesEtatDepuis(etat) {
+        const brut = typeof etat === "string" ? JSON.parse(etat) : copieRapide(etat);
+        if (!brut || !Array.isArray(brut.players) || !Array.isArray(brut.islands) || !Array.isArray(brut.characters)) {
+          throw new Error("état illisible");
+        }
+        if (brut.boardSize && Number(brut.boardSize) !== GRID) {
+          throw new Error(`plateau ${brut.boardSize}×${brut.boardSize} : le moteur est réglé sur ${GRID}×${GRID}`);
+        }
+        brut.reachable = new Set();
+        brut.smartPushTargets = new Set();
+        brut.undoHistory = [];
+        brut.fxCells = [];
+        brut.crownTransferTargetIds = [];
+        brut.smartHoverPath = [];
+        brut.winner ??= null;
+        brut.couronnesEnAttente ||= [];
+        brut.onlineMode = false;
+        return brut;
+      }
+
+      function reglesSurEtat(etat, action) {
+        let copie;
+        try {
+          copie = reglesEtatDepuis(etat);
+        } catch (erreur) {
+          return { ok: false, raison: String(erreur.message || erreur), etat: null, evenements: [] };
+        }
+        const resultat = withSimulatedState(copie, () => reglesAppliquer(action));
+        return resultat.ok
+          ? { ok: true, raison: null, etat: copie, evenements: resultat.evenements }
+          : { ok: false, raison: resultat.raison, etat: null, evenements: [] };
+      }
+
+      window.ILYOS_REGLES = {
+        verifier: (etat, action) => {
+          const { ok, raison } = reglesSurEtat(etat, action);
+          return { ok, raison };
+        },
+        appliquer: reglesSurEtat,
+        finDeTour: etat => reglesSurEtat(etat, { type: "FIN_TOUR" }),
+        /* Sur la partie en cours, sans la modifier. */
+        verifierIci: action => reglesVerifier(action),
+        rejouer: (etat, actions) => {
+          const r = reglesRejouer(etat, actions || []);
+          return r.ok ? { ok: true, raison: null, etat: r.etat, empreinte: reglesEmpreintePlateau(r.etat) } : r;
+        },
+        empreintePlateau: etat => reglesEmpreintePlateau(typeof etat === "string" ? JSON.parse(etat) : etat),
+        journal: () => copieRapide((state && state.journalCoups) || []),
+        arbitre: () => { const { reference, ...bilan } = reglesArbitre; return { ...bilan, reference: !!reference }; }
+      };
 
       /* =====================================================================
          AUTOPSIE IA — enregistrement des décisions en partie réelle
@@ -59565,40 +60146,14 @@
       /* Transition de tour d'une VRAIE partie : contrairement à
          applyTurnTransitionCore, qui distribue la main plausible utilisée par
          l'anticipation, celle-ci pioche réellement. */
+      /* Une seule fin de tour pour toute la base : celle du moteur de règles
+         (applyEndTurnCore, regles.js). Elle range les cartes avec la même
+         fonction que la vraie fin de tour — une première version recopiée ici
+         divergeait aussitôt (cartes jouées jamais défaussées, partie de 121
+         tours sans un point). */
       function selfplayTransitionTour() {
-        const sortant = state.players[state.currentPlayer];
-
-        /* Rangement des cartes : MÊME fonction que la vraie fin de tour.
-           Une première version recopiait la logique et divergeait aussitôt —
-           les cartes jouées n'allaient plus à la défausse, la pioche se vidait
-           et une partie simulée durait 121 tours sans un seul point. */
-        rangerEtDefausserFinDeTour(sortant);
-
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-
-        const entrant = state.players[state.currentPlayer];
-        scoreCrownsAtTurnStart(entrant);
-        if (state.winner !== null && state.winner !== undefined) return false;
-
-        // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
-        if (finParPoseImpossible(entrant.id)) {
-          const vainqueur = vainqueurAuxCouronnes();
-          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
-          return false;
-        }
-
-        entrant.hand = [];
-        drawCards(entrant, cartesPiocheesParTour());
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
-        state.phase = "ACTION_SELECT";
-        state.selectedActionType = null;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        state.reachable = new Set();
-        return true;
+        const fin = applyEndTurnCore();
+        return !!(fin && fin.continuer);
       }
 
       /* Joue un tour complet pour le joueur au trait. Renvoie le nombre
@@ -59849,6 +60404,58 @@
          défaut) : c'est la force qu'affronte un joueur humain qu'on mesure.
          Chaque build joue ses tours ; `scripts/selfplay-rapide.js` transporte
          l'état de l'un à l'autre. */
+      /* CONTRÔLE DU MOTEUR DE RÈGLES (scripts/verif-regles.js). Joue un tour
+         du CPU comme selfplayTourIsole et, avant chaque action du plan :
+         - demande au moteur si elle est permise (une action que l'IA joue et
+           que le moteur refuse = règle mal décrite d'un côté ou de l'autre) ;
+         - l'applique sur deux copies, par le moteur et par le planner, et
+           compare les états complets obtenus.
+         Le tour se termine par la fin de tour du moteur. */
+      function selfplayTourControle(json, { graine = null, budget } = {}) {
+        const clone = JSON.parse(json);
+        if (graine !== null) setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(clone, () => {
+            const controle = { actions: 0, refusees: [], ecarts: [], evenements: {} };
+            const compter = evenements => evenements.forEach(e => {
+              controle.evenements[e.type] = (controle.evenements[e.type] || 0) + 1;
+            });
+            const rapport = plannerChercherPlanRobuste(state.currentPlayer, budget);
+            for (const action of (rapport && rapport.plan) || []) {
+              const verdict = reglesVerifier(action);
+              if (!verdict.ok) controle.refusees.push({ type: action.type, raison: verdict.raison });
+              // La garde de la partie réelle (sans essai) doit dire la même chose.
+              const garde = reglesVerifier(action, { essai: false });
+              if (!garde.ok) controle.refusees.push({ type: action.type, raison: "garde : " + garde.raison });
+              const parMoteur = copieRapide(state);
+              const parPlanner = copieRapide(state);
+              const moteur = withSimulatedState(parMoteur, () => {
+                const r = reglesAppliquer(action);
+                return { ok: r.ok, evenements: r.evenements || [], etat: snapshotState() };
+              });
+              const planner = withSimulatedState(parPlanner, () => ({
+                ok: !!plannerAppliquerAction(action), etat: snapshotState()
+              }));
+              if (moteur.ok !== planner.ok || (moteur.ok && moteur.etat !== planner.etat)) {
+                controle.ecarts.push({ type: action.type, moteur: moteur.ok, planner: planner.ok });
+              }
+              compter(moteur.evenements);
+              if (!plannerAppliquerAction(action)) break;
+              controle.actions++;
+            }
+            const fin = reglesAppliquer({ type: "FIN_TOUR" });
+            if (!fin.ok) controle.refusees.push({ type: "FIN_TOUR", raison: fin.raison });
+            compter(fin.evenements || []);
+            return {
+              etat: snapshotState(), vainqueur: state.winner ?? null, tour: state.turn,
+              fin: state.winner !== null && state.winner !== undefined, controle
+            };
+          });
+        } finally {
+          if (graine !== null) setTestRandomSeed(null);
+        }
+      }
+
       function selfplayTourIsole(json, { graine = null, budget, poids = null } = {}) {
         const clone = JSON.parse(json);
         if (graine !== null) setTestRandomSeed(graine);
@@ -60288,6 +60895,7 @@
         depart: canonicalDepart,
         departMelange: selfplayDepartMelange,
         tour: selfplayTourIsole,
+        tourControle: selfplayTourControle,
         departPropre: selfplayDepartPropre,
         voir: selfplayVoir,
         coups: selfplayCoups,

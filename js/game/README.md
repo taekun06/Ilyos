@@ -11,7 +11,7 @@ The fragment order is intentional:
 5. `turns.js` — turn lifecycle and undo handling
 6. `audio.js` — embedded music, settings and sound effects
 7. `ui.js` — board rendering and player interactions
-8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `autopsie.js`, `defaites.js` — rules cores, Expert planner, AI autopsy, automatic record of games lost by the Expert (library, one-click export; see `docs/DEFAITES-EXPERT.md`)
+8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `regles.js` (porte d'entrée unique des règles), `autopsie.js`, `defaites.js` — rules cores, Expert planner, AI autopsy, automatic record of games lost by the Expert (library, one-click export; see `docs/DEFAITES-EXPERT.md`)
 9. `tutorial.js` — scripted tutorial « La Première Ascension » (self-contained: builds a normal state, gates input via a capture listener on `els.board`, watches `window.ILYOS_VISUAL_EVENTS`)
 9b. `menu-duels.js` — start menus of the symmetric duel (photo preview, strip and grid) and of Personnalisé (formation, deck, rules, starting terrain), driving the hidden selects read by `core.js`
 10. `diagnostics.js` — diagnostics, public API, event wiring and closure end
@@ -34,6 +34,67 @@ nouvelle s'y ajoute en même temps qu'au planner. Le vol a manqué à l'IA jusqu
 29/09 sans qu'aucun banc ne le signale.
 
 `npm run verif:ia` lance tous les bancs de l'IA et en donne le bilan.
+
+## Moteur de règles : porte d'entrée unique
+
+`regles.js` répond à une seule question : « ce coup est-il permis ici, et
+qu'en résulte-t-il ? ». Une action est une donnée (la même que celle du
+planner : `MOVE`, `PUSH`, `MAGIC`, `POSE`, `DEPOT`, `RAMASSAGE`, `VOL`,
+`TRANSMISSION`, `DISSOLUTION`, `SEQUENCE`, `FIN_TOUR`).
+
+- Dans la fermeture : `reglesVerifier(action)` (sans rien toucher),
+  `reglesAppliquer(action)` (joue dans `state`, rend `{ ok, raison,
+  evenements }`), `applyTurnStartCore()` et `applyEndTurnCore()`.
+- Depuis la page ou Node, sur un état FOURNI (objet ou JSON de
+  `snapshotState`) : `ILYOS_REGLES.verifier(etat, action)`,
+  `ILYOS_REGLES.appliquer(etat, action)`, `ILYOS_REGLES.finDeTour(etat)`.
+  La partie en cours n'est jamais modifiée.
+
+La légalité ne recopie aucune règle : elle interroge les fonctions de
+l'interface (`movementRange`, `availableActionCount`,
+`calculateIslandRotationAroundPivot`, `occupantPoussable`…) puis essaie le
+noyau sur une copie. Les événements (`gardien-deplace`, `chute`,
+`couronne-change-de-mains`, `point`, `nouveau-tour`, `fin-de-partie`…) sont
+déduits de l'état avant/après. Le self-play termine ses tours par
+`applyEndTurnCore`.
+
+`npm run verif:regles` (sans serveur, ~1 min) : coups illégaux refusés, et
+sur une partie CPU contre CPU, chaque coup de l'IA accepté par le moteur et
+donnant le même état que par le planner.
+
+Étape 2 : il n'y a plus qu'UNE ouverture de tour (`applyTurnStartCore`),
+utilisée par `beginTurn` (turns.js), par l'anticipation du planner
+(`applyTurnTransitionCore`, avec la main plausible à la place de la pioche) et
+par le self-play ; et un seul passage de la main (`applyPassageTourCore`),
+utilisé aussi par `endTurn` (ui.js). Le rangement des cartes de `endTurn`
+reste mêlé à son animation ; `verif-reserve.js` vérifie qu'il donne le même
+résultat que `rangerEtDefausserFinDeTour`.
+
+Étape 3 : en partie, les gestes du joueur (déplacer, pousser, magie, poser
+la couronne : `reglesRefuserAuJoueur`, ui.js) et chaque coup du CPU Expert
+(ai.js) demandent `reglesVerifier(action, { essai: false })` juste avant
+d'agir. Sans essai : en partie réelle, n'exécuter AUCUN noyau, même sur une
+copie, car plusieurs modes enveloppent les noyaux avec des effets hors de
+`state` (cartes dépensées d'une énigme, carte armée du marché, relevé du tour
+adverse). `verif:regles` vérifie que la garde et l'essai complet acceptent
+les mêmes coups du CPU.
+
+La pose d'île du joueur passe aussi par la garde (hors mise en place).
+Étape 4a : chaque coup réellement joué (joueur et CPU Expert) est noté en
+donnée dans `state.journalCoups` (`reglesNoter`, ui.js et ai.js) ; à la fin du
+tour il passe dans `state.journalTourPrecedent`, terminé par `FIN_TOUR`. Le
+journal suit l'annulation (`snapshotState`) et voyage avec l'état en ligne.
+L'hôte garde l'état du début du tour de l'invité, rejoue le journal reçu
+(`reglesArbitreObserver`, core.js) et compare le plateau. EN OBSERVATION :
+un désaccord est compté (`ILYOS_REGLES.arbitre()`) et signalé dans la console,
+rien n'est refusé. `scripts/verif-journal.js` (serveur 8123) rejoue ainsi
+chaque tour d'une partie CPU contre CPU et vérifie qu'un plateau trafiqué est
+repéré. Un nouveau geste du joueur doit appeler `reglesNoter`, sinon l'arbitre
+le verra comme une triche.
+
+Pas encore fait : refuser l'état d'un invité en désaccord (4b, après des
+parties en ligne réelles) ; ramassage, vol et passe du joueur sont notés mais
+pas encore gardés.
 
 ## Moteur sans écran (Node)
 

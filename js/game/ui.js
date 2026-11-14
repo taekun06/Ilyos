@@ -1655,6 +1655,7 @@
             showToast("Ce gardien porte déjà une couronne.");
             return false;
           }
+          reglesNoter({ type: stealTargetId ? "VOL" : "RAMASSAGE", charId: claimer.id, artifactId: artifact.id });
           if (isCenterCrownCell(crownCell)) state.centerCrownTakenThisTurn = true;
           state.crownPickupCell = null;
           state.crownStealTargetId = null;
@@ -1806,6 +1807,7 @@
               r, c
             };
             state.characters.push(char);
+            reglesNoterApparition(r, c);
             resolveArtifactForCharacter(char);
             state.phase = "ACTION_SELECT";
             state.selectedIslandShape = null;
@@ -1853,6 +1855,7 @@
                 showToast("Ce gardien porte déjà une couronne.");
                 return;
               }
+              reglesNoter({ type: "TRANSMISSION", deId: owner.id, versId: clickedAlly.id });
 
               if (kaykit3D) {
                 kaykit3D.characterFacing.set(String(owner.id), kaykitFacingRotation(owner.r, owner.c, clickedAlly.r, clickedAlly.c));
@@ -1877,10 +1880,12 @@
               return;
             }
 
-            if (!applyFreeDropCore(owner.id, r, c)) {
+            if (reglesRefuserAuJoueur({ type: "DEPOT", charId: owner.id, r, c })
+              || !applyFreeDropCore(owner.id, r, c)) {
               discardLastUndoSnapshot();
               return;
             }
+            reglesNoter({ type: "DEPOT", charId: owner.id, r, c });
             state.treasureDropFromId = null;
             state.treasureDropArtifactId = null;
             state.crownTransferTargetIds = [];
@@ -1909,6 +1914,7 @@
               showToast("Ce gardien porte déjà une couronne.");
               return;
             }
+            reglesNoter({ type: stolenFrom ? "VOL" : "RAMASSAGE", charId: pickedChar.id, artifactId: artifact.id });
             if (isCenterCrownCell(state.crownPickupCell)) state.centerCrownTakenThisTurn = true;
             state.crownPickupCell = null;
             state.crownStealTargetId = null;
@@ -2167,9 +2173,13 @@
       function placeIsland(anchorR, anchorC) {
         /* Îles payantes (mode personnalisé) : 2 cartes, prélevées avant la
            pose. La mise en place, elle, ne coûte rien. */
+        const absCells = previewAbsoluteCells(anchorR, anchorC);
+        // Hors mise en place, le moteur de règles a le dernier mot (regles.js).
+        if (!state.draft && reglesRefuserAuJoueur({
+          type: "POSE", shapeKey: state.selectedIslandShape, cells: absCells, owner: state.currentPlayer
+        })) return;
         const paiement = state.draft ? [] : payerIle(currentPlayer());
         if (!paiement) return;
-        const absCells = previewAbsoluteCells(anchorR, anchorC);
         const islandId = state.nextIslandId++;
         const island = {
           id: islandId,
@@ -2221,6 +2231,10 @@
         }
 
         state.islandPlacedThisTurn = true;
+        reglesNoter({
+          type: "POSE", shapeKey: island.shapeKey, cells: island.cells, owner: island.owner,
+          relCells: island.relCells, anchor: island.anchor
+        });
         if (paiement.length) {
           showToast(`Île posée : ${paiement.map(type => ACTIONS[type].name).join(" et ")} payés.`);
         }
@@ -2889,6 +2903,7 @@
           return false;
         }
 
+        if (reglesRefuserAuJoueur({ type: "MOVE", charId: char.id, r, c, cost })) return false;
         const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
@@ -2929,6 +2944,7 @@
            désormais sa case de départ explicitement, puisqu'elle ne peut plus
            la relire depuis un état déjà à jour. */
         const resultat = applyMoveCore(char.id, r, c, cost);
+        if (resultat) reglesNoter({ type: "MOVE", charId: char.id, r, c, cost });
         if (resultat?.couronneRamassee) {
           showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
         }
@@ -3236,6 +3252,7 @@
         // Exactement la force qui vient d'être montrée en aperçu : sans cette
         // égalité, le joueur jouait autre chose que ce qu'il avait sous les yeux.
         const force = forcePousseeCourante();
+        if (reglesRefuserAuJoueur({ type: "PUSH", pusherId: pusher.id, r, c, force })) return;
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
@@ -3245,6 +3262,7 @@
            callback d'animation : entre les deux, l'IA pouvait relire un compte
            d'actions encore intact et décider sur une base périmée. */
         const applique = applyPushCore(pusher.id, r, c, force);
+        if (applique) reglesNoter({ type: "PUSH", pusherId: pusher.id, r, c, force });
         if (!applique) {
           discardLastUndoSnapshot();
           /* ÉCHEC SILENCIEUX auparavant : le noyau refusait, l'interface gardait
@@ -3568,6 +3586,7 @@
           animateBoardMagic();
           playSfx("magic");
           showToast("Rotation complète de 360° pour 1 magie.");
+          reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction: 1, turns: 4 });
           useSelectedCard(1);
           return;
         }
@@ -3588,6 +3607,9 @@
           return;
         }
 
+        if (reglesRefuserAuJoueur({
+          type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns
+        })) return;
         saveUndoSnapshot();
         const [pivotR, pivotC] = state.selectedMagicPivot;
         // Rotation réellement effectuée, signée : un cran « 3 » est un quart de
@@ -3617,6 +3639,7 @@
            l'animation — même principe que pour les gardiens, dont le visuel
            n'est pas recalé tant qu'un déplacement est en cours. */
         const applique = applyMagicRotationCore(island.id, rotation);
+        if (applique) reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [pivotR, pivotC], direction, turns });
         kaykitGelerCalqueIles(true);
 
         animateIslandLiftRotation(island.id, steps * 90, () => {
@@ -3673,6 +3696,7 @@
         }
 
         saveUndoSnapshot();
+        reglesNoter({ type: "DISSOLUTION", islandId: island.id });
         const cells = island.cells.map(([ir, ic]) => [ir, ic]);
         state.islands = state.islands.filter(is => is.id !== island.id);
         cells.forEach(([ir, ic]) => animateCellPulse(ir, ic, "magic-vanish"));
@@ -4437,10 +4461,8 @@
         p.hand = [];
         state.deckAnimationMode = null;
 
-        const wasLast = state.currentPlayer === state.players.length - 1;
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-        if (wasLast) state.round++;
+        // Passage de la main : le même que le moteur (regles.js).
+        applyPassageTourCore();
 
         playSfx("turn");
         beginTurn();
