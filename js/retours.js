@@ -25,7 +25,7 @@
     if (/netlify\.app$/.test(hote) || hote === 'localhost' || hote === '127.0.0.1' || location.protocol === 'file:') return ['/api/retours'];
     return [
       'https://batbat.netlify.app/api/retours',
-      'https://deploy-preview-213--batbat.netlify.app/api/retours'
+      'https://deploy-preview-214--batbat.netlify.app/api/retours'
     ];
   })();
   let urlBonne = 0;
