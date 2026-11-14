@@ -1,0 +1,1623 @@
+@import url('https://fonts.googleapis.com/css2?family=Almendra:wght@400;700&family=Cinzel+Decorative:wght@700;900&family=Nunito+Sans:wght@600;700;800;900&display=swap');
+
+/* ILYOS — HUD organique : feuille unique.
+
+   Huit feuilles se chargeaient l'une après l'autre (v2, polish v6, lisibilité
+   v7, final v8, profondeur v9 et v10, consolidation v12, disposition v10),
+   plus la typographie importée par la septième. Elles sont ici bout à bout,
+   DANS LE MÊME ORDRE : la cascade est strictement celle d'avant, pour une
+   seule requête au lieu de neuf. Vérifié par empreinte (tests/README.md).
+
+   L'ordre des sections porte le rendu : une règle plus bas l'emporte sur une
+   règle plus haut de même poids. Corriger une règle là où elle est, ne pas
+   ajouter de section. css/typography-g2c.css reste un fichier à part pour le
+   menu (menu/frame.html) ; sa copie ici doit lui rester identique. */
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 DIRECT
+   Géométrie issue du prototype validé ILYOS_HUD_ORGANIQUE_V2.html.
+   L'ancien HUD reste uniquement comme source de données/actions, jamais comme visuel. */
+
+body[data-visual-mode="alternative"] #gameScreen{
+  --ov2-gold:#e6b74b;
+  --ov2-gold2:#ffd879;
+  --ov2-gold3:#a87622;
+  --ov2-violet:#a86df2;
+  --ov2-violet2:#d6b0ff;
+  --ov2-green:#8fe26f;
+  --ov2-orange:#ff9b38;
+  --ov2-ink:#07131e;
+  --ov2-ink2:rgba(4,13,22,.78);
+  --ov2-text:#f3efe4;
+  --ov2-muted:#aeb9c1;
+}
+
+/* L'ancien HUD V2 continue de recevoir les valeurs du moteur mais n'est plus dessiné. */
+body[data-visual-mode="alternative"] #hudV2Top{
+  opacity:0!important;
+  pointer-events:none!important;
+}
+body[data-visual-mode="alternative"] #hudV2Dock > #hudV2Instruction,
+body[data-visual-mode="alternative"] #hudV2Dock > #hudV2Toast,
+body[data-visual-mode="alternative"] #hudV2Dock > .hud-v2-action-row{
+  display:none!important;
+}
+/* Les contrôles contextuels métier de l'ancien HUD restent disponibles. */
+body[data-visual-mode="alternative"] #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #hudV2PushForce,
+body[data-visual-mode="alternative"] #hudV2MagicControls{
+  z-index:96!important;
+}
+body[data-visual-mode="alternative"] #gameScreen > #hudV2GearPopover{
+  position:fixed!important;
+  top:88px!important;
+  left:50%!important;
+  right:auto!important;
+  bottom:auto!important;
+  transform:translateX(-50%)!important;
+  z-index:110!important;
+  pointer-events:auto!important;
+}
+
+#ilyosHudOrganicV2,
+#ilyosHudOrganicV2 *{box-sizing:border-box}
+#ilyosHudOrganicV2{
+  position:fixed;
+  inset:0;
+  z-index:72;
+  pointer-events:none;
+  color:var(--ov2-text);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+}
+#ilyosHudOrganicV2 button{font:inherit}
+#ilyosHudOrganicV2 .ov2-interactive{pointer-events:auto}
+#ilyosHudOrganicV2 .ov2-off{display:none!important}
+body:not([data-visual-mode="alternative"]) #ilyosHudOrganicV2,
+#gameScreen.hidden #ilyosHudOrganicV2{display:none!important}
+
+/* ---------- TOP ORGANIC PLAYER STRIPS : copie de la V2 validée ---------- */
+#ilyosHudOrganicV2 .ov2-top{
+  position:absolute;left:24px;right:24px;top:18px;height:86px;
+  display:grid;grid-template-columns:1fr auto 1fr;gap:32px;align-items:start;
+}
+#ilyosHudOrganicV2 .ov2-side{position:relative;height:82px;min-width:0}
+#ilyosHudOrganicV2 .ov2-avatar{
+  position:absolute;top:0;width:82px;height:82px;border-radius:46% 54% 48% 52% / 52% 46% 54% 48%;
+  display:grid;place-items:center;
+  background:radial-gradient(circle at 48% 36%,rgba(255,226,145,.20),transparent 42%),linear-gradient(145deg,#16364b,#07131e 65%);
+  border:2px solid var(--ov2-gold);
+  box-shadow:0 0 0 4px rgba(3,11,19,.76),0 0 22px rgba(230,183,75,.26);
+}
+#ilyosHudOrganicV2 .ov2-side.ov2-left .ov2-avatar{left:0;transform:rotate(-2deg)}
+#ilyosHudOrganicV2 .ov2-side.ov2-right .ov2-avatar{
+  right:0;transform:rotate(2deg);border-color:var(--ov2-violet);
+  box-shadow:0 0 0 4px rgba(14,7,24,.78),0 0 22px rgba(168,109,242,.25)
+}
+#ilyosHudOrganicV2 .ov2-avatar svg{width:48px;height:48px}
+#ilyosHudOrganicV2 .ov2-avatar .ov2-portrait-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+#ilyosHudOrganicV2 .ov2-ribbon{
+  position:absolute;top:12px;height:56px;display:flex;align-items:center;
+  background:linear-gradient(90deg,rgba(5,17,28,.90),rgba(5,17,28,.52) 67%,transparent);
+  border-top:1px solid rgba(230,183,75,.23);border-bottom:1px solid rgba(230,183,75,.42);
+}
+#ilyosHudOrganicV2 .ov2-left .ov2-ribbon{
+  left:94px;right:0;padding:0 40px 0 16px;
+  clip-path:polygon(0 0,94% 0,100% 50%,94% 100%,0 100%,2% 50%);
+}
+#ilyosHudOrganicV2 .ov2-right .ov2-ribbon{
+  left:0;right:94px;padding:0 16px 0 40px;justify-content:flex-end;
+  background:linear-gradient(-90deg,rgba(24,10,39,.92),rgba(24,10,39,.50) 67%,transparent);
+  border-color:rgba(168,109,242,.42);
+  clip-path:polygon(6% 0,100% 0,98% 50%,100% 100%,6% 100%,0 50%);
+}
+#ilyosHudOrganicV2 .ov2-ribbon:after{
+  content:"";position:absolute;bottom:-4px;height:1px;width:52%;
+  background:linear-gradient(90deg,var(--ov2-gold),transparent);
+  filter:drop-shadow(0 0 4px rgba(230,183,75,.45));
+}
+#ilyosHudOrganicV2 .ov2-left .ov2-ribbon:after{left:14px}
+#ilyosHudOrganicV2 .ov2-right .ov2-ribbon:after{right:14px;background:linear-gradient(-90deg,var(--ov2-violet),transparent)}
+#ilyosHudOrganicV2 .ov2-player-main{display:flex;align-items:center;gap:18px;min-width:0}
+#ilyosHudOrganicV2 .ov2-right .ov2-player-main{flex-direction:row-reverse}
+#ilyosHudOrganicV2 .ov2-pname{
+  font-family:Georgia,"Times New Roman",serif;font-size:23px;letter-spacing:.055em;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:min(26vw,420px)
+}
+#ilyosHudOrganicV2 .ov2-score{display:flex;align-items:center;gap:7px;flex:none}
+#ilyosHudOrganicV2 .ov2-crown{width:25px;height:19px;color:var(--ov2-gold2);filter:drop-shadow(0 0 5px rgba(255,216,121,.24))}
+#ilyosHudOrganicV2 .ov2-right .ov2-crown{color:var(--ov2-violet2)}
+#ilyosHudOrganicV2 .ov2-crown.ov2-empty{opacity:.23;filter:none}
+#ilyosHudOrganicV2 .ov2-active{
+  position:absolute;top:69px;left:100px;font-size:12px;letter-spacing:.13em;color:var(--ov2-gold2)
+}
+#ilyosHudOrganicV2 .ov2-right .ov2-active{left:auto;right:100px;color:var(--ov2-violet2)}
+#ilyosHudOrganicV2 .ov2-active:before{
+  content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;
+  background:currentColor;box-shadow:0 0 10px currentColor
+}
+
+/* TOUR : dimensions exactes du prototype. Le petit diamant ouvre le menu HUD existant. */
+#ilyosHudOrganicV2 .ov2-turn{
+  min-width:300px;height:64px;display:flex;align-items:center;justify-content:center;gap:20px;padding:0 30px;
+  background:linear-gradient(180deg,rgba(5,16,27,.72),rgba(4,12,21,.50));
+  border:1px solid rgba(230,183,75,.24);
+  clip-path:polygon(10% 0,90% 0,100% 50%,90% 100%,10% 100%,0 50%);
+  backdrop-filter:blur(10px);font-family:Georgia,"Times New Roman",serif;
+}
+#ilyosHudOrganicV2 .ov2-turn strong{font-size:24px;letter-spacing:.06em;white-space:nowrap}
+#ilyosHudOrganicV2 .ov2-turn .ov2-timer{font-size:18px;color:#e8e0d1;white-space:nowrap}
+#ilyosHudOrganicV2 .ov2-gem{
+  width:9px;height:9px;min-width:9px;padding:0;border:0;background:var(--ov2-gold);transform:rotate(45deg);
+  box-shadow:0 0 9px rgba(230,183,75,.5);cursor:pointer
+}
+#ilyosHudOrganicV2 .ov2-gem:hover{box-shadow:0 0 14px var(--ov2-gold2)}
+
+/* ---------- CONTEXT PANEL ---------- */
+#ilyosHudOrganicV2 .ov2-guardian{
+  position:absolute;left:28px;bottom:114px;width:286px;padding:15px 16px 14px;
+  background:linear-gradient(145deg,rgba(5,17,28,.93),rgba(3,10,17,.82));
+  border:1px solid rgba(230,183,75,.38);
+  clip-path:polygon(7% 0,100% 0,100% 91%,93% 100%,0 100%,0 9%);
+  backdrop-filter:blur(14px);box-shadow:0 17px 36px rgba(0,0,0,.31);transition:.25s ease;
+}
+#ilyosHudOrganicV2 .ov2-guardian:before{content:"";position:absolute;left:0;top:0;width:68%;height:1px;background:linear-gradient(90deg,var(--ov2-gold),transparent)}
+#ilyosHudOrganicV2 .ov2-guardian.ov2-hidden-context{transform:translateX(-120%);opacity:0;pointer-events:none}
+#ilyosHudOrganicV2 .ov2-gh{display:grid;grid-template-columns:58px 1fr;gap:12px;align-items:center;padding-bottom:11px;border-bottom:1px solid rgba(255,255,255,.06)}
+#ilyosHudOrganicV2 .ov2-gportrait{
+  position:relative;width:56px;height:56px;display:grid;place-items:center;border:1px solid rgba(230,183,75,.40);
+  border-radius:45% 55% 50% 50%;background:linear-gradient(145deg,#15354a,#07131e);overflow:hidden
+}
+#ilyosHudOrganicV2 .ov2-gportrait svg{width:38px;height:38px}
+#ilyosHudOrganicV2 .ov2-gportrait .ov2-portrait-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+#ilyosHudOrganicV2 .ov2-gh b{display:block;font-family:Georgia,serif;font-size:18px;color:#f2d486;letter-spacing:.05em}
+#ilyosHudOrganicV2 .ov2-gh small{display:block;color:#aeb8bf;margin-top:3px}
+#ilyosHudOrganicV2 .ov2-grow{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+#ilyosHudOrganicV2 .ov2-grow:last-child{border-bottom:0}
+#ilyosHudOrganicV2 .ov2-grow svg{width:28px;height:28px}
+#ilyosHudOrganicV2 .ov2-grow strong{font-size:18px}
+#ilyosHudOrganicV2 .ov2-green{color:var(--ov2-green)}
+#ilyosHudOrganicV2 .ov2-orange{color:var(--ov2-orange)}
+
+/* ---------- INSTRUCTION ---------- */
+#ilyosHudOrganicV2 .ov2-instruction{
+  position:absolute;left:50%;bottom:139px;transform:translateX(-50%);min-width:500px;max-width:700px;
+  padding:10px 52px;text-align:center;color:#f4e7c3;font-family:Georgia,serif;font-size:16px;
+  text-shadow:0 2px 8px rgba(0,0,0,.68)
+}
+#ilyosHudOrganicV2 .ov2-instruction:before,
+#ilyosHudOrganicV2 .ov2-instruction:after{content:"✦";position:absolute;top:8px;color:var(--ov2-gold);text-shadow:0 0 8px rgba(230,183,75,.55)}
+#ilyosHudOrganicV2 .ov2-instruction:before{left:11%}
+#ilyosHudOrganicV2 .ov2-instruction:after{right:11%}
+#ilyosHudOrganicV2 .ov2-instruction-line{position:absolute;left:17%;right:17%;bottom:2px;height:1px;background:linear-gradient(90deg,transparent,rgba(230,183,75,.5),transparent)}
+
+/* ---------- ORGANIC ACTION DOCK ---------- */
+#ilyosHudOrganicV2 .ov2-dock{position:absolute;left:50%;bottom:17px;transform:translateX(-50%);display:flex;align-items:flex-end;gap:18px}
+#ilyosHudOrganicV2 .ov2-action{
+  position:relative;width:112px;height:103px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  padding:0 8px 6px;border:0;background:transparent;color:#d9d6ce;cursor:pointer;transition:.18s ease
+}
+#ilyosHudOrganicV2 .ov2-action:before{
+  content:"";position:absolute;left:50%;top:3px;transform:translateX(-50%) rotate(1deg);width:70px;height:70px;
+  border:1px solid rgba(230,183,75,.24);background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.80),rgba(3,12,20,.78));
+  clip-path:polygon(24% 0,76% 0,100% 21%,92% 78%,50% 100%,8% 78%,0 21%);z-index:-1;
+  box-shadow:0 10px 19px rgba(0,0,0,.24);transition:.18s ease
+}
+#ilyosHudOrganicV2 .ov2-action:hover:not(:disabled){transform:translateY(-4px)}
+#ilyosHudOrganicV2 .ov2-action:hover:not(:disabled):before{border-color:rgba(230,183,75,.48)}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected{color:#f5d58b}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected:before{border-color:var(--ov2-gold);background:radial-gradient(circle at 50% 55%,rgba(112,75,22,.26),rgba(3,12,20,.84) 64%);box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 19px rgba(0,0,0,.24)}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic{color:#cba8ff}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic:before{border-color:rgba(168,109,242,.30)}
+#ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected:before{border-color:var(--ov2-violet);background:radial-gradient(circle at 50% 55%,rgba(105,53,150,.24),rgba(3,12,20,.84) 64%);box-shadow:0 0 18px rgba(168,109,242,.18),0 10px 19px rgba(0,0,0,.24)}
+#ilyosHudOrganicV2 .ov2-action .ov2-ico{width:38px;height:38px;margin-bottom:13px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))}
+#ilyosHudOrganicV2 .ov2-action strong{font-family:Georgia,serif;font-size:13px;letter-spacing:.04em;text-shadow:0 2px 6px rgba(0,0,0,.68)}
+#ilyosHudOrganicV2 .ov2-action small{font-size:11px;color:#aab3ba;margin-top:3px}
+#ilyosHudOrganicV2 .ov2-action.ov2-selected small{color:inherit}
+#ilyosHudOrganicV2 .ov2-action:disabled{opacity:.43;filter:saturate(.25);cursor:default}
+#ilyosHudOrganicV2 .ov2-dock:before{content:"";position:absolute;left:-34px;right:-34px;bottom:20px;height:1px;background:linear-gradient(90deg,transparent 0,var(--ov2-gold3) 14%,rgba(230,183,75,.52) 50%,var(--ov2-gold3) 86%,transparent 100%);z-index:-2}
+#ilyosHudOrganicV2 .ov2-dock:after{content:"";position:absolute;left:50%;bottom:16px;transform:translateX(-50%) rotate(45deg);width:7px;height:7px;background:var(--ov2-gold);box-shadow:0 0 10px rgba(230,183,75,.45)}
+
+/* ---------- FIN DU TOUR / UNDO ---------- */
+#ilyosHudOrganicV2 .ov2-end{
+  position:absolute;right:28px;bottom:25px;width:205px;height:68px;border:1px solid rgba(230,183,75,.48);color:#f3d388;
+  background:linear-gradient(90deg,rgba(46,32,16,.82),rgba(87,61,25,.86),rgba(46,32,16,.82));
+  clip-path:polygon(9% 0,91% 0,100% 22%,100% 78%,91% 100%,9% 100%,0 78%,0 22%);
+  display:flex;align-items:center;justify-content:center;gap:13px;cursor:pointer;box-shadow:0 11px 25px rgba(0,0,0,.27),0 0 14px rgba(230,183,75,.08);transition:.18s ease
+}
+#ilyosHudOrganicV2 .ov2-end:hover:not(:disabled){filter:brightness(1.09);transform:translateY(-2px)}
+#ilyosHudOrganicV2 .ov2-end:disabled{opacity:.48;filter:saturate(.35);cursor:default}
+#ilyosHudOrganicV2 .ov2-end svg{width:28px;height:28px}
+#ilyosHudOrganicV2 .ov2-end b{font-family:Georgia,serif;font-size:18px;letter-spacing:.05em}
+#ilyosHudOrganicV2 .ov2-undo{
+  position:absolute;left:28px;bottom:26px;width:54px;height:54px;border-radius:50%;border:1px solid rgba(230,183,75,.30);
+  background:rgba(4,13,22,.69);color:#f0cd76;display:grid;place-items:center;font-size:26px;cursor:pointer
+}
+#ilyosHudOrganicV2 .ov2-undo:disabled{opacity:.38;cursor:default}
+
+/* ---------- TOAST ---------- */
+#ilyosHudOrganicV2 .ov2-toast{
+  position:absolute;right:28px;bottom:112px;width:310px;min-height:70px;display:grid;grid-template-columns:42px 1fr 22px;
+  gap:10px;align-items:center;padding:11px 12px;background:rgba(4,13,22,.88);border:1px solid rgba(230,183,75,.29);
+  clip-path:polygon(5% 0,100% 0,100% 87%,95% 100%,0 100%,0 13%);backdrop-filter:blur(12px);box-shadow:0 14px 30px rgba(0,0,0,.28)
+}
+#ilyosHudOrganicV2 .ov2-toast b{display:block;font-size:14px}
+#ilyosHudOrganicV2 .ov2-toast small{display:block;color:#aab5bd;margin-top:3px}
+#ilyosHudOrganicV2 .ov2-toast button{border:0;background:transparent;color:#aeb6bc;font-size:18px;cursor:pointer}
+#ilyosHudOrganicV2 .ov2-toasticon{width:38px;height:38px;display:grid;place-items:center;border:1px solid rgba(230,183,75,.22);border-radius:50%;background:rgba(230,183,75,.08)}
+
+/* Lueurs du côté actif et de l'action choisie : fixes. Une pulsation sans fin
+   obligeait le navigateur à recomposer l'écran à chaque rafraîchissement. */
+
+/* Responsive identique à la V2 : on scale le système complet, pas chaque élément séparément. */
+@media(max-height:800px){
+  #ilyosHudOrganicV2 .ov2-top{top:8px;transform:scale(.91);transform-origin:top center}
+  #ilyosHudOrganicV2 .ov2-guardian{bottom:93px;transform:scale(.88);transform-origin:bottom left}
+  #ilyosHudOrganicV2 .ov2-guardian.ov2-hidden-context{transform:translateX(-120%) scale(.88)}
+  #ilyosHudOrganicV2 .ov2-instruction{bottom:116px;transform:translateX(-50%) scale(.90)}
+  #ilyosHudOrganicV2 .ov2-dock{bottom:4px;transform:translateX(-50%) scale(.86);transform-origin:bottom center}
+  #ilyosHudOrganicV2 .ov2-end{right:17px;bottom:14px;transform:scale(.90);transform-origin:bottom right}
+  #ilyosHudOrganicV2 .ov2-undo{left:17px;bottom:14px;transform:scale(.90);transform-origin:bottom left}
+  #ilyosHudOrganicV2 .ov2-toast{right:17px;bottom:88px;transform:scale(.88);transform-origin:bottom right}
+}
+@media(max-width:1180px){
+  #ilyosHudOrganicV2 .ov2-top{left:14px;right:14px;gap:18px}
+  #ilyosHudOrganicV2 .ov2-turn{min-width:260px;padding:0 22px;gap:15px}
+  #ilyosHudOrganicV2 .ov2-pname{font-size:19px;max-width:20vw}
+  #ilyosHudOrganicV2 .ov2-crown{width:21px;height:16px}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2-polish-v6.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 / POLISH V6
+   Passe visuelle ciblée d'après capture réelle. Aucun gameplay. */
+
+/* TOP — réduire la masse, augmenter l'air, garder les rubans premium. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+  left:34px!important;
+  right:34px!important;
+  top:16px!important;
+  height:78px!important;
+  grid-template-columns:minmax(360px,1fr) auto minmax(360px,1fr)!important;
+  gap:26px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-side{height:76px!important}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar{
+  width:74px!important;
+  height:74px!important;
+  top:1px!important;
+  border-width:1.5px!important;
+  box-shadow:0 0 0 3px rgba(3,11,19,.72),0 0 18px rgba(230,183,75,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-avatar{
+  box-shadow:0 0 0 3px rgba(14,7,24,.74),0 0 18px rgba(168,109,242,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon{
+  top:10px!important;
+  height:50px!important;
+  border-top-color:rgba(230,183,75,.16)!important;
+  border-bottom-color:rgba(230,183,75,.30)!important;
+  backdrop-filter:blur(5px)!important;
+}
+/* La gouttière droite était de 8% du côté — 44px inutilisés à 1440px, juste à
+   côté d'un nom tronqué. Elle reste assez large pour que le dégradé de fond
+   s'éteigne avant le bord, et le ruban demeure dans sa propre colonne de la
+   grille : aucun risque de toucher l'indicateur de tour, séparé par le gap. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-left .ov2-ribbon{
+  left:86px!important;
+  right:2%!important;
+  padding-left:18px!important;
+  padding-right:18px!important;
+  background:linear-gradient(90deg,rgba(5,17,28,.72),rgba(5,17,28,.38) 62%,transparent)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-ribbon{
+  left:2%!important;
+  right:86px!important;
+  padding-right:18px!important;
+  padding-left:18px!important;
+  background:linear-gradient(-90deg,rgba(24,10,39,.74),rgba(24,10,39,.38) 62%,transparent)!important;
+  border-color:rgba(168,109,242,.30)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon:after{
+  width:46%!important;
+  bottom:-3px!important;
+  opacity:.80!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname{
+  font-size:clamp(18px,1.28vw,22px)!important;
+  letter-spacing:.045em!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.82),0 2px 8px rgba(0,0,0,.45)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-player-main{
+  gap:16px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-score{
+  gap:8px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown{
+  width:23px!important;
+  height:17px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
+  opacity:.18!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-active{
+  top:62px!important;
+  left:91px!important;
+  font-size:10px!important;
+  letter-spacing:.14em!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-active{
+  left:auto!important;
+  right:91px!important;
+}
+
+/* TOUR — plus petit et plus élégant. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn{
+  min-width:238px!important;
+  height:50px!important;
+  margin-top:3px!important;
+  gap:12px!important;
+  padding:0 22px!important;
+  background:linear-gradient(180deg,rgba(5,16,27,.60),rgba(4,12,21,.38))!important;
+  border-color:rgba(230,183,75,.18)!important;
+  clip-path:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%)!important;
+  backdrop-filter:blur(6px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn strong{
+  font-size:clamp(18px,1.25vw,21px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn .ov2-timer{
+  font-size:clamp(13px,.95vw,15px)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem{
+  width:7px!important;
+  height:7px!important;
+  min-width:7px!important;
+}
+
+/* INSTRUCTION — alléger ; suit le dock, descendu de 14 px (Taekun, 2026-10-26). */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
+  bottom:133px!important;
+  min-width:430px!important;
+  max-width:600px!important;
+  padding:7px 46px!important;
+  font-size:clamp(14px,1vw,16px)!important;
+  color:#fff0c6!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.52)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction:before,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction:after{
+  opacity:.85!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction-line{
+  left:24%!important;
+  right:24%!important;
+  opacity:.68!important;
+}
+
+/* DOCK — lisible, rapproché du bord : Taekun le trouvait trop haut sur PC
+   (2026-10-26) : bas de l'écran descendu de 14 px, puis les actions de 10 px
+   de plus ; leur filet doré remonte d'autant (hud-organique-v2-depth-v10.css). */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{
+  bottom:2px!important;
+  gap:22px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action{
+  width:120px!important;
+  height:112px!important;
+  padding-bottom:8px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:before{
+  width:76px!important;
+  height:76px!important;
+  top:1px!important;
+  border-color:rgba(230,183,75,.20)!important;
+  background:radial-gradient(circle at 50% 55%,rgba(20,31,40,.72),rgba(3,12,20,.66))!important;
+  box-shadow:0 9px 18px rgba(0,0,0,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action .ov2-ico{
+  width:42px!important;
+  height:42px!important;
+  margin-bottom:14px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong{
+  font-size:14px!important;
+  letter-spacing:.045em!important;
+  color:inherit!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small{
+  font-size:12px!important;
+  margin-top:4px!important;
+  color:rgba(236,232,220,.72)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled{
+  opacity:.56!important;
+  filter:saturate(.38)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected:before{
+  border-color:rgba(255,215,121,.92)!important;
+  box-shadow:0 0 20px rgba(230,183,75,.22),0 9px 18px rgba(0,0,0,.22)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock:before{
+  bottom:23px!important;
+  opacity:.72!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock:after{
+  bottom:19px!important;
+}
+
+/* FIN DU TOUR — moins gris, mieux hiérarchisé. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end{
+  right:32px!important;
+  bottom:14px!important;
+  width:190px!important;
+  height:62px!important;
+  /* Bleu nuit cerné d'or (images de référence, 2026-10-22) ; le liseré est le
+     SVG du premier fond, une bordure disparaîtrait dans les pans coupés. */
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='9,0 91,0 100,22 100,78 91,100 9,100 0,78 0,22' fill='none' stroke='rgba(230,183,75,.5)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(180deg,rgba(17,33,56,.95),rgba(7,16,31,.95))!important;
+  border-color:transparent!important;
+  box-shadow:0 9px 20px rgba(0,0,0,.23),0 0 13px rgba(230,183,75,.06)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:not(:disabled){
+  color:#ffe19a!important;
+  border-color:transparent!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='9,0 91,0 100,22 100,78 91,100 9,100 0,78 0,22' fill='none' stroke='%23f2cf7a' stroke-width='4' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(ellipse at 50% 35%,rgba(64,82,112,.55),transparent 70%),linear-gradient(180deg,rgba(17,33,56,.95),rgba(7,16,31,.95))!important;
+  box-shadow:0 0 18px rgba(230,183,75,.16),0 10px 22px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
+  font-size:16px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled{
+  opacity:.58!important;
+}
+
+/* UNDO — même langage visuel que le reste du HUD. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+  left:30px!important;
+  bottom:15px!important;
+  width:50px!important;
+  height:50px!important;
+  border-color:transparent!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='25,3 75,3 97,25 97,75 75,97 25,97 3,75 3,25' fill='none' stroke='rgba(230,183,75,.62)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(180deg,rgba(17,33,56,.95),rgba(7,16,31,.95))!important;
+  color:#f3cf79!important;
+  box-shadow:0 8px 18px rgba(0,0,0,.19)!important;
+}
+
+/* TOAST — éloigner du bord et l'éclaircir légèrement. */
+/* Carte de notification sous le bandeau du joueur dont c'est le tour
+   (classes posées par syncToast, js/hud-organique-v2.js) ; la bulle #toast
+   du haut n'est plus montrée tant que cette carte est affichable. */
+body.ov2-toast-carte #toast{display:none!important}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast{
+  top:164px!important;
+  bottom:auto!important;
+  right:auto!important;
+  left:34px!important;
+  width:292px!important;
+  min-height:66px!important;
+  background:rgba(5,15,25,.83)!important;
+  border-color:rgba(230,183,75,.25)!important;
+  box-shadow:0 12px 28px rgba(0,0,0,.24)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast.ov2-toast-droite{
+  left:auto!important;
+  right:34px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast b{
+  color:#f4ead0!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast small{
+  color:#bdc5cb!important;
+}
+
+/* CONTEXT GUARDIAN — légèrement plus compact. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-guardian{
+  left:30px!important;
+  bottom:120px!important;
+  width:272px!important;
+  padding:13px 14px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gportrait{
+  width:52px!important;
+  height:52px!important;
+}
+
+/* Fenêtre Chrome courte : conserver la hiérarchie sans écraser les éléments. */
+@media(max-height:800px){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+    top:7px!important;
+    transform:scale(.92)!important;
+    transform-origin:top center!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
+    bottom:120px!important;
+    transform:translateX(-50%) scale(.90)!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{
+    bottom:7px!important;
+    transform:translateX(-50%) scale(.86)!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end{
+    right:18px!important;
+    bottom:15px!important;
+    transform:scale(.90)!important;
+    transform-origin:bottom right!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+    left:18px!important;
+    bottom:15px!important;
+    transform:scale(.90)!important;
+    transform-origin:bottom left!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast{
+    left:18px!important;
+    top:144px!important;
+    transform:scale(.88)!important;
+    transform-origin:top left!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast.ov2-toast-droite{
+    left:auto!important;
+    right:18px!important;
+    transform-origin:top right!important;
+  }
+}
+
+@media(max-width:1180px){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-top{
+    left:16px!important;
+    right:16px!important;
+    gap:14px!important;
+    grid-template-columns:minmax(280px,1fr) auto minmax(280px,1fr)!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-left .ov2-ribbon{right:4%!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-right .ov2-ribbon{left:4%!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname{font-size:18px!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown{width:20px!important;height:15px!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn{min-width:210px!important}
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock{gap:12px!important}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2-readability-v7.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 / READABILITY V7
+   Priorité absolue : HUD clairement au premier plan et informations toujours lisibles.
+   Aucun changement de gameplay ni de taille des icônes. */
+
+/* =========================================================
+   1. SÉPARATION VISUELLE HUD / MONDE 3D
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2::before{
+  content:"";
+  position:fixed;
+  z-index:0;
+  pointer-events:none;
+  left:0;
+  right:0;
+  top:0;
+  height:118px;
+  background:linear-gradient(180deg,
+    rgba(3,10,17,.27) 0%,
+    rgba(3,10,17,.15) 44%,
+    rgba(3,10,17,.045) 76%,
+    transparent 100%);
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2::after{
+  content:"";
+  position:fixed;
+  z-index:0;
+  pointer-events:none;
+  left:0;
+  right:0;
+  bottom:0;
+  height:158px;
+  background:linear-gradient(0deg,
+    rgba(3,10,17,.22) 0%,
+    rgba(3,10,17,.10) 46%,
+    transparent 100%);
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 > *{
+  z-index:2;
+}
+
+/* Le texte essentiel ne dépend jamais de la luminosité du plateau. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn strong,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn .ov2-timer,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
+  text-shadow:
+    0 1px 2px rgba(0,0,0,.98),
+    0 2px 6px rgba(0,0,0,.78),
+    0 0 10px rgba(2,8,14,.38)!important;
+}
+
+/* =========================================================
+   2. BARRES HAUTES / COURONNES : TOUJOURS LISIBLE
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-pname{
+  color:#fff8e9!important;
+  font-weight:700!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown{
+  width:24px!important;
+  height:18px!important;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.7)) drop-shadow(0 0 5px rgba(255,216,121,.24))!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
+  opacity:.34!important;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))!important;
+}
+
+/* =========================================================
+   3. TOUR / TIMER : LE MENU REMPLACE LE SÉPARATEUR
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn{
+  gap:11px!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem{
+  position:relative!important;
+  width:28px!important;
+  height:28px!important;
+  min-width:28px!important;
+  padding:0!important;
+  transform:none!important;
+  border-radius:50%!important;
+  border:1px solid rgba(255,215,121,.54)!important;
+  background:rgba(5,15,24,.88)!important;
+  box-shadow:
+    0 4px 10px rgba(0,0,0,.30),
+    inset 0 0 0 1px rgba(255,255,255,.025),
+    0 0 8px rgba(230,183,75,.10)!important;
+  color:#f5d47f!important;
+  cursor:pointer!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem::before{
+  content:"⚙";
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  color:#f5d47f;
+  font:700 14px/1 system-ui,sans-serif;
+  transform:none;
+  text-shadow:0 1px 3px rgba(0,0,0,.9);
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-gem:hover{
+  border-color:#ffe19a!important;
+  background:rgba(33,27,16,.92)!important;
+  box-shadow:0 0 13px rgba(230,183,75,.24),0 4px 10px rgba(0,0,0,.32)!important;
+}
+
+/* =========================================================
+   4. DOCK : INFORMATIONS TOUJOURS NETTES
+   ========================================================= */
+/* Demande utilisateur : conserver exactement la taille d'icône V2. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action .ov2-ico{
+  width:38px!important;
+  height:38px!important;
+  margin-bottom:13px!important;
+}
+
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong{
+  color:#fff8e9!important;
+  font-weight:800!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small{
+  color:#f4dfad!important;
+  font-size:13px!important;
+  line-height:1!important;
+  font-weight:900!important;
+  letter-spacing:.045em!important;
+  opacity:1!important;
+  font-variant-numeric:tabular-nums!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MoveCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2PushCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MagicCount{
+  color:#ffe5a2!important;
+  font-size:13px!important;
+  font-weight:900!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2Island small{
+  color:#ffd879!important;
+  font-size:11px!important;
+  font-weight:900!important;
+  letter-spacing:.055em!important;
+}
+
+/* Une action indisponible reste identifiable : on assombrit l'objet, jamais l'information. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled{
+  opacity:1!important;
+  filter:none!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  border-color:rgba(176,184,191,.14)!important;
+  background:radial-gradient(circle at 50% 55%,rgba(15,25,34,.49),rgba(3,12,20,.42))!important;
+  box-shadow:0 7px 14px rgba(0,0,0,.14)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
+  opacity:.42!important;
+  filter:saturate(.20) brightness(.82)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  color:rgba(255,248,233,.88)!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled small{
+  color:#ead59f!important;
+  opacity:1!important;
+}
+
+/* Disponible mais non sélectionné : icône claire, sans faux glow. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected) .ov2-ico{
+  opacity:.91!important;
+}
+/* Sélection : état sans ambiguïté. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
+  border-color:#ffd879!important;
+  box-shadow:0 0 0 1px rgba(255,216,121,.15),0 0 20px rgba(230,183,75,.25),0 9px 18px rgba(0,0,0,.22)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected strong,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected small{
+  color:#ffe6a5!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::before{
+  border-color:#c99cff!important;
+  box-shadow:0 0 0 1px rgba(201,156,255,.14),0 0 21px rgba(168,109,242,.27),0 9px 18px rgba(0,0,0,.22)!important;
+}
+
+/* La ligne d'or est désormais réellement SOUS les quantités. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock::before{
+  bottom:-3px!important;
+  height:1px!important;
+  opacity:.70!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-dock::after{
+  bottom:-7px!important;
+}
+
+/* =========================================================
+   5. FIN DE TOUR / UNDO / INSTRUCTION
+   ========================================================= */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled{
+  opacity:1!important;
+  color:rgba(255,244,217,.82)!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='9,0 91,0 100,22 100,78 91,100 9,100 0,78 0,22' fill='none' stroke='rgba(230,183,75,.3)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(180deg,rgba(17,27,40,.86),rgba(8,14,24,.86))!important;
+  border-color:transparent!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled svg{
+  opacity:.56!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end:disabled b{
+  color:rgba(255,244,217,.84)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+  font-size:25px!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.9)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo:disabled{
+  opacity:.62!important;
+  color:#dec783!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-instruction{
+  font-weight:700!important;
+}
+
+/* =========================================================
+   6. CHROME FENÊTRÉ : NE JAMAIS SACRIFIER LE TEXTE
+   ========================================================= */
+@media(max-height:800px){
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action strong{
+    font-size:13px!important;
+  }
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action small,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MoveCount,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2PushCount,
+  body[data-visual-mode="alternative"] #ilyosHudOrganicV2 #ov2MagicCount{
+    font-size:12px!important;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2-final-v8.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 / FINAL POLISH V8
+   Profondeur, états d'action, couronnes contour, Undo SVG et portraits KayKit.
+   Aucun changement de gameplay. */
+
+/* ===== Profondeur locale : le HUD appartient clairement au premier plan ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-ribbon,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-turn,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-toast,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-guardian{
+  -webkit-backdrop-filter:blur(6px) saturate(.92)!important;
+  backdrop-filter:blur(6px) saturate(.92)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action::before{
+  -webkit-backdrop-filter:blur(4px) saturate(.88);
+  backdrop-filter:blur(4px) saturate(.88);
+}
+
+/* ===== Portraits : image fournie, recadrée dans le cercle d'origine ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar{
+  overflow:hidden!important;
+  isolation:isolate!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-avatar > svg{
+  opacity:1!important;
+  z-index:1!important;
+}
+
+/* ===== Couronnes : gagnée pleine / non gagnée réellement en contour ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown:not(.ov2-empty) path{
+  fill:currentColor!important;
+  stroke:none!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty{
+  opacity:.56!important;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.62))!important;
+}
+/* Balle de match : la couronne qui manque luit, sans animation. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty.ov2-balle{
+  opacity:1!important;
+  filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 9px currentColor) drop-shadow(0 1px 2px rgba(0,0,0,.6))!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-crown.ov2-empty path{
+  fill:transparent;
+  stroke:currentColor;
+  stroke-width:1.65;
+  stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+}
+
+/* ===== Actions : disponible / indisponible / sélectionnée ===== */
+/* Disponible : matière subtilement éclairée, sans voler la sélection. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(230,183,75,.36)!important;
+  background:radial-gradient(circle at 50% 52%,rgba(32,43,48,.72),rgba(3,12,20,.60) 72%)!important;
+  box-shadow:0 0 8px rgba(230,183,75,.055),0 8px 16px rgba(0,0,0,.20)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(168,109,242,.40)!important;
+}
+
+/* Indisponible : l'objet baisse, JAMAIS son information. */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  border-color:rgba(178,187,194,.16)!important;
+  background:radial-gradient(circle at 50% 52%,rgba(16,25,32,.46),rgba(3,12,20,.38) 72%)!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
+  opacity:.48!important;
+  filter:saturate(.20) brightness(.80) drop-shadow(0 2px 4px rgba(0,0,0,.35))!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  opacity:1!important;
+  color:#f3eee3!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled small,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov2MoveCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov2PushCount,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action:disabled #ov2MagicCount{
+  opacity:1!important;
+  color:#f3dca3!important;
+}
+
+/* Sélection : petite étincelle fixe. Plus de pulsation ni d'étincelle animée :
+   une animation sans fin faisait recomposer l'écran à chaque image (Taekun a
+   choisi des lueurs fixes, 2026-10-22). */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-selected::after{
+  content:"✦";
+  position:absolute;
+  z-index:3;
+  left:calc(50% + 27px);
+  top:0;
+  color:#ffe7a4;
+  font:700 12px/1 Georgia,serif;
+  text-shadow:0 0 5px #ffd879,0 0 11px rgba(255,216,121,.72);
+  pointer-events:none;
+  opacity:.8;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::after{
+  color:#ddb9ff;
+  text-shadow:0 0 5px #c99cff,0 0 11px rgba(168,109,242,.74);
+}
+
+/* ===== Undo : vrai pictogramme SVG, aucun compteur ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo{
+  font-size:0!important;
+  overflow:visible!important;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo .ov2-undo-svg{
+  display:block;
+  width:27px;
+  height:27px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  pointer-events:none;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo::after{
+  content:"ANNULER";
+  position:absolute;
+  left:60px;
+  top:50%;
+  transform:translate(-4px,-50%);
+  padding:6px 9px;
+  border:1px solid rgba(230,183,75,.24);
+  border-radius:8px;
+  background:rgba(4,13,22,.91);
+  color:#f5de9d;
+  font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.08em;
+  white-space:nowrap;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+  opacity:0;
+  visibility:hidden;
+  transition:opacity .14s ease,transform .14s ease,visibility .14s ease;
+  pointer-events:none;
+}
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo:hover::after,
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-undo:focus-visible::after{
+  opacity:1;
+  visibility:visible;
+  transform:translate(0,-50%);
+}
+
+/* ===== Fin du tour : texte toujours sûr ===== */
+body[data-visual-mode="alternative"] #ilyosHudOrganicV2 .ov2-end b{
+  color:inherit!important;
+  opacity:1!important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2-depth-v9.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 / DEPTH V9
+   Ombres locales, socles renforcés et hiérarchie d'action.
+   Aucun changement de gameplay, aucune augmentation des icônes. */
+
+/* 1) HUD clairement devant le monde 3D : ombres courtes et diffuses. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon{
+  filter:drop-shadow(0 7px 9px rgba(0,0,0,.24))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-avatar{
+  filter:drop-shadow(0 8px 10px rgba(0,0,0,.30))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn{
+  box-shadow:0 10px 20px rgba(0,0,0,.23),inset 0 1px 0 rgba(255,236,185,.035)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-toast{
+  filter:drop-shadow(0 11px 16px rgba(0,0,0,.27))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end{
+  filter:drop-shadow(0 9px 12px rgba(0,0,0,.25))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-undo{
+  box-shadow:0 8px 15px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,230,157,.035)!important;
+}
+
+/* Ombre commune sous le dock : sensation d'un ensemble qui flotte devant le plateau. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+  filter:drop-shadow(0 12px 12px rgba(0,0,0,.25))!important;
+}
+
+/* 2) Socles : un peu plus denses, mais toujours organiques et légers. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action::before{
+  background:radial-gradient(circle at 50% 43%,rgba(39,51,58,.82),rgba(6,16,25,.77) 58%,rgba(3,10,17,.72) 100%)!important;
+  border-color:rgba(230,183,75,.30)!important;
+  box-shadow:0 9px 17px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,237,190,.035)!important;
+}
+
+/* Disponible : bordure subtile, icône nette, texte/quantité inchangés. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(240,197,94,.43)!important;
+  box-shadow:0 0 0 1px rgba(255,220,132,.025),0 9px 17px rgba(0,0,0,.28),0 0 9px rgba(230,183,75,.055)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-magic:not(:disabled):not(.ov2-selected)::before{
+  border-color:rgba(181,126,246,.46)!important;
+}
+
+/* Indisponible : matière éteinte, mais nom et quantité restent prioritaires. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  background:radial-gradient(circle at 50% 43%,rgba(26,33,38,.63),rgba(5,13,21,.61) 68%,rgba(3,9,15,.58))!important;
+  border-color:rgba(167,178,184,.18)!important;
+  box-shadow:0 7px 13px rgba(0,0,0,.20)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  color:#f8f1e4!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled small{
+  color:#f0d99f!important;
+  opacity:1!important;
+}
+
+/* Actif : liseré lumineux précis + glow intérieur, sans grossir le bouton. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
+  border-color:#ffe095!important;
+  background:radial-gradient(circle at 50% 43%,rgba(132,91,28,.34),rgba(7,16,24,.81) 65%,rgba(3,10,17,.76))!important;
+  box-shadow:0 0 0 1px rgba(255,225,154,.24),inset 0 0 16px rgba(255,201,76,.075),0 0 18px rgba(230,183,75,.24),0 10px 18px rgba(0,0,0,.30)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::before{
+  border-color:#d1a5ff!important;
+  background:radial-gradient(circle at 50% 43%,rgba(98,53,145,.34),rgba(9,13,25,.82) 65%,rgba(4,8,17,.77))!important;
+  box-shadow:0 0 0 1px rgba(215,176,255,.22),inset 0 0 16px rgba(179,111,255,.075),0 0 19px rgba(168,109,242,.26),0 10px 18px rgba(0,0,0,.30)!important;
+}
+
+/* La ligne reste sous la quantité : surtout ne pas la remonter. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before{bottom:-4px!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after{bottom:-8px!important}
+
+/* Focus clavier aussi lisible que le hover. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:focus-visible,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end:focus-visible,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-undo:focus-visible,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-gem:focus-visible{
+  outline:2px solid rgba(255,224,149,.88)!important;
+  outline-offset:3px!important;
+}
+
+@media(prefers-reduced-motion:reduce){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action{transition:none!important}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2-depth-v10.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 / DEPTH V10
+   Version volontairement plus perceptible que V9 sur ciel très clair.
+   Aucun changement de gameplay, aucune modification de taille d'icône. */
+
+/* =========================
+   HUD / MONDE 3D : séparation visible
+   ========================= */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2::before{
+  background:linear-gradient(180deg,
+    rgba(2,9,16,.34) 0%,
+    rgba(2,9,16,.20) 42%,
+    rgba(2,9,16,.07) 75%,
+    transparent 100%)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2::after{
+  background:linear-gradient(0deg,
+    rgba(2,9,16,.28) 0%,
+    rgba(2,9,16,.15) 44%,
+    rgba(2,9,16,.04) 76%,
+    transparent 100%)!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-ribbon{
+  filter:drop-shadow(0 9px 12px rgba(0,0,0,.38))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-avatar{
+  filter:drop-shadow(0 10px 13px rgba(0,0,0,.42))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn{
+  box-shadow:0 12px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,237,192,.06)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-toast{
+  filter:drop-shadow(0 13px 18px rgba(0,0,0,.38))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end{
+  filter:drop-shadow(0 10px 15px rgba(0,0,0,.34))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-undo{
+  box-shadow:0 10px 18px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,230,157,.06)!important;
+}
+
+/* Le dock est un seul plan visuel devant le monde. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+  filter:drop-shadow(0 16px 16px rgba(0,0,0,.38))!important;
+}
+
+/* =========================
+   SOCLES D'ACTION
+   ========================= */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action::before{
+  /* Socle bleu nuit ; le liseré est dessiné par le SVG du premier fond : une
+     bordure ordinaire disparaît dans les pans coupés par clip-path. */
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='rgba(214,186,122,.55)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='rgba(214,186,122,.55)' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 38%,rgba(34,58,92,.97),rgba(13,27,48,.97) 60%,rgba(6,14,28,.96) 100%)!important;
+  border-color:transparent!important;
+  box-shadow:0 11px 20px rgba(0,0,0,.38)!important;
+}
+
+/* Disponible : identifiable immédiatement. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:not(:disabled):not(.ov2-selected)::before{
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='rgba(232,200,128,.8)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='rgba(232,200,128,.8)' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 38%,rgba(34,58,92,.97),rgba(13,27,48,.97) 60%,rgba(6,14,28,.96) 100%)!important;
+  box-shadow:0 11px 20px rgba(0,0,0,.38)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-magic:not(:disabled):not(.ov2-selected)::before{
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='rgba(200,150,255,.8)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='rgba(200,150,255,.8)' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 38%,rgba(34,58,92,.97),rgba(13,27,48,.97) 60%,rgba(6,14,28,.96) 100%)!important;
+  box-shadow:0 11px 20px rgba(0,0,0,.38)!important;
+}
+
+/* ÎLE obligatoire : socle cerné d'or, comme une action choisie. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required:not(.ov2-selected)::before{
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='%23f2cf7a' stroke-width='4' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='%23f2cf7a' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 40%,rgba(151,101,29,.45),rgba(14,27,46,.96) 62%,rgba(6,14,28,.94))!important;
+  box-shadow:0 0 18px rgba(230,183,75,.28),0 11px 20px rgba(0,0,0,.38)!important;
+}
+
+/* Indisponible : le socle s'éteint, pas les informations. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled::before{
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='rgba(170,176,186,.28)' stroke-width='3' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='rgba(170,176,186,.28)' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 40%,rgba(24,38,58,.86),rgba(9,18,32,.84) 68%,rgba(5,11,22,.8))!important;
+  border-color:transparent!important;
+  box-shadow:0 9px 16px rgba(0,0,0,.28)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled .ov2-ico{
+  opacity:.46!important;
+  filter:saturate(.18) brightness(.80) drop-shadow(0 3px 5px rgba(0,0,0,.48))!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled strong{
+  color:#fff8ea!important;
+  opacity:1!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action:disabled small{
+  color:#f5dfa7!important;
+  opacity:1!important;
+}
+
+/* Sélection : liseré clairement perceptible sans changement de dimensions. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-selected::before{
+  border-color:transparent!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='%23ffe29a' stroke-width='4' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='%23ffe29a' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 40%,rgba(151,101,29,.55),rgba(14,27,46,.96) 62%,rgba(6,14,28,.94))!important;
+  box-shadow:0 0 22px rgba(230,183,75,.34),0 12px 22px rgba(0,0,0,.42)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action.ov2-magic.ov2-selected::before{
+  border-color:transparent!important;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpolygon points='24,0 76,0 100,21 92,78 50,100 8,78 0,21' fill='none' stroke='%23d8b0ff' stroke-width='4' vector-effect='non-scaling-stroke'/%3E%3Cpolygon points='27.6,7 72.4,7 93,25.1 86.1,74.1 50,93 13.9,74.1 7,25.1' fill='none' stroke='%23d8b0ff' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat,radial-gradient(circle at 50% 40%,rgba(108,59,160,.55),rgba(14,22,46,.96) 62%,rgba(6,12,28,.94))!important;
+  box-shadow:0 0 22px rgba(168,109,242,.35),0 12px 22px rgba(0,0,0,.42)!important;
+}
+
+/* Texte et quantités au-dessus de tout. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{
+  color:#fffaf0!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 9px rgba(0,0,0,.78)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MoveCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2PushCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MagicCount{
+  color:#ffe5a5!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(0,0,0,.75)!important;
+}
+
+/* Ligne de base toujours sous les quantités. Le dock touche presque le bord
+   (2026-10-26) : la ligne se loge dans la marge basse des socles, toujours
+   sous les quantités, au lieu de dépasser sous l'écran. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::before{
+  bottom:5px!important;
+  opacity:.86!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock::after{
+  bottom:1px!important;
+}
+
+/* Le liseré (SVG du premier fond) se cale sur le bord extérieur. Le raccourci
+   `background` des états ci-dessus remet l'origine au bord intérieur : la
+   bordure transparente de 1 px laissait alors voir le fond bleu au-delà du
+   filet or, en traits sombres le long des bords et aux angles. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 :is(#ov2Island,#ov2Move,#ov2Push,#ov2Magic).ov2-action.ov2-action.ov2-action::before,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2End.ov2-end.ov2-end.ov2-end,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Undo.ov2-undo.ov2-undo.ov2-undo{
+  background-origin:border-box!important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/typography-g2c.css (importée par hud-consolidation-v12.css)
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — TYPOGRAPHY G2C / POLISH 2
+   Cinzel Decorative = identité / univers
+   Almendra = actions + instruction + panneau gardien
+   Nunito Sans = chiffres / infos fonctionnelles
+   Purement typographique : aucun layout/gameplay modifié. */
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2{
+  --font-ilyos-display:'Cinzel Decorative', Georgia, serif;
+  --font-ilyos-action:'Almendra', Georgia, serif;
+  --font-ilyos-info:'Nunito Sans', Inter, system-ui, sans-serif;
+}
+
+/* IDENTITÉ / UNIVERS */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-pname,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-turn strong,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-gh b,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-end,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian-title,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover h2,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover h3{
+  font-family:var(--font-ilyos-display)!important;
+  font-weight:700!important;
+  letter-spacing:.035em!important;
+}
+
+/* ACTIONS / MAGIE */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action > span:not(.ov2-count),
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-gh small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-grow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer button,
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow button,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow button,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 button{
+  font-family:var(--font-ilyos-action)!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{
+  font-size:15px!important;
+  font-weight:700!important;
+  letter-spacing:.02em!important;
+  color:#fffaf0!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 9px rgba(0,0,0,.82)!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:700!important;
+  letter-spacing:.012em!important;
+  text-shadow:0 2px 4px rgba(0,0,0,.98),0 0 10px rgba(0,0,0,.66),0 0 14px rgba(230,183,75,.16)!important;
+}
+
+/* PANNEAU GARDIEN = G2C : Almendra pour le contenu, Cinzel pour le nom/titre */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian{
+  font-family:var(--font-ilyos-action)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-gh b{
+  font-family:var(--font-ilyos-display)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-gh small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-guardian .ov2-grow{
+  text-shadow:0 1px 3px rgba(0,0,0,.88)!important;
+}
+
+/* INFOS / CHIFFRES */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-active,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-timer,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-count,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-grow strong,
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer small,
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow small,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow small,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover label,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover input,
+body[data-visual-mode="alternative"] #gameScreen #hudV2GearPopover select{
+  font-family:var(--font-ilyos-info)!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-count,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MoveCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2PushCount,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2MagicCount{
+  font-weight:900!important;
+  letter-spacing:.015em!important;
+  color:#ffe5a5!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(0,0,0,.78),0 0 10px rgba(230,183,75,.15)!important;
+}
+
+/* OBLIGATOIRE : info stratégique très lisible + retour du relief doré. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island small{
+  font-family:var(--font-ilyos-info)!important;
+  font-weight:900!important;
+  color:#ffe18a!important;
+  opacity:1!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 8px rgba(255,207,80,.74),0 0 14px rgba(255,170,32,.28)!important;
+}
+
+/* PRIORITÉ FINALE face aux shorthands de V12 chargés après l'import. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction .ov2-v12-instruction-text{
+  font-family:var(--font-ilyos-action)!important;
+  font-weight:700!important;
+  letter-spacing:.012em!important;
+  text-shadow:0 2px 4px rgba(0,0,0,.98),0 0 10px rgba(0,0,0,.66),0 0 14px rgba(230,183,75,.18)!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island#ov2Island small{
+  font-family:var(--font-ilyos-info)!important;
+  font-weight:900!important;
+  color:#ffe18a!important;
+  opacity:1!important;
+  text-shadow:0 2px 4px rgba(0,0,0,1),0 0 9px rgba(255,207,80,.82),0 0 16px rgba(255,170,32,.32)!important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-consolidation-v12.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD CONSOLIDATION V12
+   Source unique pour les correctifs contextuels validés. */
+
+body[data-visual-mode="alternative"] #gameScreen{--ov2-context-bottom:188px}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{gap:clamp(14px,1.5vw,24px)!important;padding:6px 8px!important}
+
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
+  position:fixed!important;left:50%!important;right:auto!important;top:auto!important;bottom:var(--ov2-context-bottom)!important;
+  margin:0!important;transform:translateX(-50%)!important;transform-origin:bottom center!important;z-index:100050!important;pointer-events:auto!important
+}
+/* LES BARRES DE ROTATION (magie, pose d'île) : en bas à GAUCHE, au-dessus du
+   bouton d'annulation (Taekun, 2026-10-26 : à droite, au-dessus de « Fin du
+   tour », elles étaient mal placées). Au centre bas, elles tombaient au milieu
+   du plateau, juste là où passe l'aperçu de l'île qu'on tourne (signalé
+   « super mal placée ») : l'angle reste sous la main et ne cache rien. Les
+   énigmes ajustent l'ancrage par --ov2-rotation-bottom (js/game/puzzle.js). */
+body[data-visual-mode="alternative"] #gameScreen{--ov2-rotation-bottom:76px}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
+  /* left: 20px du bord de l'ÉCRAN. #hudV2MagicRow vit dans #hudV2Dock, centré
+     par translateX(-50%) : ce transform en fait le bloc conteneur, même en
+     position fixe, et un simple left:20px collait la barre au bord du dock.
+     Les pourcentages se rapportent alors à sa largeur : 50% - 50vw rattrape
+     l'écart (et vaut zéro quand le bloc conteneur est l'écran). */
+  position:fixed!important;left:calc(20px - 50vw + 50%)!important;right:auto!important;top:auto!important;bottom:var(--ov2-rotation-bottom)!important;
+  margin:0!important;transform:none!important;transform-origin:bottom left!important;z-index:100050!important;pointer-events:auto!important;
+  max-width:calc(100vw - 40px)!important;flex-wrap:wrap!important;justify-content:flex-start!important
+}
+body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #gameScreen.ov2-v12-force-close #ov2IslandRotationV12{display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v12-rotation-mode{display:none!important}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12{
+  display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 10px;border-radius:16px;background:rgba(18,22,30,.72);
+  border:1px solid rgba(226,200,138,.34);-webkit-backdrop-filter:blur(14px) saturate(.95);backdrop-filter:blur(14px) saturate(.95);box-shadow:0 12px 30px rgba(0,0,0,.32)
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12.hidden{display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .ov2-v12-rotation-label{margin-right:3px;color:#f5dfaa;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.12em;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12 .hud-v2-magic-btn{min-height:32px}
+
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{background:rgba(18,22,30,.72)!important;border-color:rgba(226,200,138,.28)!important;box-shadow:0 11px 27px rgba(0,0,0,.29)!important;-webkit-backdrop-filter:blur(14px) saturate(.95)!important;backdrop-filter:blur(14px) saturate(.95)!important}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction{font-size:0!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::before,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v12-instruction::after{content:none!important;display:none!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{display:inline-flex;align-items:center;justify-content:center;gap:16px;max-width:100%;white-space:nowrap}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-text{color:#fff0c6;font:700 clamp(14px,1vw,16px)/1.25 Georgia,"Times New Roman",serif;text-shadow:0 1px 3px rgba(0,0,0,.96),0 2px 8px rgba(0,0,0,.58),0 0 10px rgba(2,8,14,.42)}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-star{flex:0 0 auto;color:#e6b74b;font:700 12px/1 Georgia,"Times New Roman",serif;text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72)}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{left:50%!important;right:auto!important;width:min(360px,70%)!important;transform:translateX(-50%)!important}
+
+/* Réserve V12.6 : au même niveau que le nom, sans libellé ni capsule. */
+/* Cette passe a ajouté le bloc réserve dans la rangée du nom ET élargi l'écart
+   de 18px à 24-34px, sans compenser au-dessus de 1100px. Le nom, seul élément
+   élastique de la rangée, encaissait toute la différence : mesuré à 1440px, il
+   recevait 51px pour 96px nécessaires, et 0px à 1280px. L'écart revient donc à
+   une valeur qui laisse le nom entier. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-player-main{
+  gap:clamp(14px,1.1vw,24px)!important
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve{
+  display:inline-flex;align-items:center;justify-content:center;gap:0;height:32px;padding:0!important;
+  border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;
+  color:#f0d68e;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.74);flex:none
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve{color:#d8b5ff!important;border:0!important;background:transparent!important;box-shadow:none!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-label{display:none}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:46px;height:28px;padding:0 11px!important;
+  border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action:first-of-type{padding-left:0!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action:last-of-type{padding-right:0!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action + .ov2-reserve-action::before{
+  content:"";position:absolute;left:0;top:50%;width:1px;height:18px;transform:translateY(-50%);
+  background:linear-gradient(180deg,transparent,rgba(245,220,160,.44) 22%,rgba(245,220,160,.44) 78%,transparent)
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve-action + .ov2-reserve-action::before{
+  background:linear-gradient(180deg,transparent,rgba(216,181,255,.40) 22%,rgba(216,181,255,.40) 78%,transparent)
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{
+  width:20px;height:20px;flex:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.48))
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{
+  min-width:12px;font:900 16px/1 Georgia,"Times New Roman",serif;color:#fff1c4;letter-spacing:0;text-align:left;
+  text-shadow:0 1px 3px rgba(0,0,0,.84)
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-right .ov2-reserve-action b{color:#f0ddff}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-move{color:#f2d47f}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-push{color:#ffb05e}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-magic{color:#d5a5ff}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action{justify-content:flex-start!important;padding-top:11px!important;padding-bottom:6px!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action .ov2-ico{margin-bottom:9px!important;flex:0 0 38px!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action strong{min-height:16px;display:flex;align-items:center;justify-content:center}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-action small{min-height:14px;display:flex;align-items:center;justify-content:center;margin-top:2px!important}
+
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island{overflow:visible!important}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 #ov2Island.ov2-island-required small{color:#ffe18a!important;text-shadow:0 0 8px rgba(255,207,80,.62),0 1px 3px rgba(0,0,0,.85)!important}
+
+/* Retour à la taille/orientation précédente des empreintes. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-move-footprints{overflow:visible;transform:scale(.92)!important;transform-origin:center;filter:drop-shadow(0 3px 5px rgba(0,0,0,.36))}
+
+@media(max-width:1400px){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{min-width:39px;padding:0 8px!important}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{width:17px;height:17px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{font-size:14px}
+}
+@media(max-width:900px){
+  body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{gap:12px!important}
+  body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationV12,
+  body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+  body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{gap:5px!important;padding:7px 8px!important}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v12-instruction-copy{gap:12px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-player-main{gap:12px!important}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action{min-width:34px;padding:0 6px!important;gap:3px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action svg{width:15px;height:15px}
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-reserve-action b{font-size:12px}
+}
+
+/* Boutons de rotation Magie : un par position possible, de la couleur de son
+   liseré au sol (KAYKIT_MAGIC_OPTION_STYLE, kaykit3d.js). La barre sert de
+   légende : aucun nom n'est écrit sur le plateau. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot{
+  --rot:#1fb4ff;color:#0f1426!important;background:var(--rot)!important;border:2px solid rgba(255,255,255,.88)!important;
+  font:800 12.5px/1 Inter,system-ui,sans-serif!important;letter-spacing:.02em!important;padding:8px 13px!important;min-height:34px;
+  box-shadow:0 2px 8px rgba(0,0,0,.28);transition:transform 140ms ease,box-shadow 140ms ease,opacity 140ms ease!important
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="2"]{--rot:#ffaa12}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot[data-magie-crans="3"]{--rot:#b04dff;color:#fff!important}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot:hover:not(:disabled),
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot.ov2-magie-actif{
+  transform:translateY(-2px) scale(1.06);box-shadow:0 0 0 3px #fff,0 0 18px var(--rot)
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow.ov2-magie-choix .hud-v2-magic-rot:not(.ov2-magie-actif):not(:hover){opacity:.6}
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow .hud-v2-magic-rot:disabled{
+  opacity:.32!important;filter:grayscale(.85);cursor:not-allowed;transform:none;box-shadow:none
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Anciennement css/hud-organique-v2-layout-v10.css
+   ════════════════════════════════════════════════════════════════════ */
+/* ILYOS — HUD Organique V2 / LAYOUT V10
+   Placement des tiroirs contextuels, espacement du dock et étoiles d'instruction.
+   Purement visuel : aucune règle, aucun coût, aucun déplacement n'est modifié. */
+
+/* Le point d'ancrage est calculé par hud-organique-v2-layout-v10.js à partir
+   du bord supérieur réel de la phrase centrale. Ainsi le tiroir reste juste
+   au-dessus de la phrase, y compris en fenêtre courte / responsive. */
+body[data-visual-mode="alternative"] #gameScreen{
+  --ov2-context-bottom:188px;
+}
+
+/* #hudV2MagicRow n'est plus ici : les barres de rotation sont rangées en bas à
+   droite par css/hud-consolidation-v12.css. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow,
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow{
+  position:fixed!important;
+  left:50%!important;
+  right:auto!important;
+  top:auto!important;
+  bottom:var(--ov2-context-bottom)!important;
+  margin:0!important;
+  transform:translateX(-50%)!important;
+  transform-origin:bottom center!important;
+  z-index:100040!important;
+  pointer-events:auto!important;
+}
+
+/* Le sélecteur reste léger et centré, mais respire davantage. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer #islandSelector{
+  gap:12px!important;
+  padding:5px 4px!important;
+}
+
+/* Une fois la forme choisie, l'ancien bloc avec seulement deux flèches est
+   remplacé visuellement par la barre V10 ci-dessous. Le drawer reste dans le
+   DOM pour ne jamais perturber l'état du jeu. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandRotate{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #hudV2IslandDrawer.ov2-v10-rotation-mode{
+  visibility:hidden!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
+
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:8px 10px;
+  border-radius:16px;
+  background:rgba(18,22,30,.66);
+  border:1px solid rgba(226,200,138,.30);
+  -webkit-backdrop-filter:blur(14px) saturate(.95);
+  backdrop-filter:blur(14px) saturate(.95);
+  box-shadow:0 10px 30px rgba(0,0,0,.28);
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow.hidden{
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow .ov2-v10-rotation-label{
+  margin:0 4px 0 2px;
+  color:#f5dfaa;
+  font:800 10px/1 Inter,system-ui,sans-serif;
+  letter-spacing:.12em;
+  text-shadow:0 1px 3px rgba(0,0,0,.85);
+  white-space:nowrap;
+}
+body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow .hud-v2-magic-btn{
+  min-height:32px;
+}
+
+/* Même ancrage pour la magie : la barre ne coupe plus les libellés du dock. */
+body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow,
+body[data-visual-mode="alternative"] #gameScreen #hudV2PushForceRow{
+  background:rgba(18,22,30,.66)!important;
+}
+
+/* Les quatre actions principales sont volontairement plus espacées. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+  gap:clamp(34px,3.1vw,50px)!important;
+}
+
+/* Étoiles attachées au texte et non plus à une largeur arbitraire de panneau. */
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v10-instruction{
+  font-size:0!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v10-instruction::before,
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction.ov2-v10-instruction::after{
+  content:none!important;
+  display:none!important;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-copy{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:18px;
+  max-width:100%;
+  white-space:nowrap;
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-text{
+  color:#fff0c6;
+  font:700 clamp(14px,1vw,16px)/1.25 Georgia,"Times New Roman",serif;
+  text-shadow:0 1px 3px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.52),0 0 10px rgba(2,8,14,.38);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-star{
+  flex:0 0 auto;
+  color:#e6b74b;
+  font:700 12px/1 Georgia,"Times New Roman",serif;
+  text-shadow:0 0 8px rgba(230,183,75,.58),0 1px 3px rgba(0,0,0,.72);
+}
+body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-instruction-line{
+  left:50%!important;
+  right:auto!important;
+  width:min(360px,70%)!important;
+  transform:translateX(-50%)!important;
+}
+
+@media(max-width:1180px){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+    gap:26px!important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-v10-instruction-copy{
+    gap:13px;
+  }
+}
+
+@media(max-width:900px){
+  body[data-visual-mode="alternative"] #gameScreen #ilyosHudOrganicV2 .ov2-dock{
+    gap:18px!important;
+  }
+  body[data-visual-mode="alternative"] #gameScreen #ov2IslandRotationRow,
+  body[data-visual-mode="alternative"] #gameScreen #hudV2MagicRow{
+    gap:5px!important;
+    padding:7px 8px!important;
+  }
+}

@@ -240,14 +240,8 @@ document.title = "ILYOS — Les îles célestes";
   window.__ILYOS_HUD_ORGANIC_LOADER__ = true;
 
   const styles = [
-    './css/hud-organique-v2.css?v=12.8-sans-flou',
-    './css/hud-organique-v2-polish-v6.css?v=12.8-notification-joueur',
-    './css/hud-organique-v2-readability-v7.css?v=12.7-hud-ref',
-    './css/hud-organique-v2-final-v8.css?v=12.9-sans-flou',
-    './css/hud-organique-v2-depth-v9.css?v=12.7',
-    './css/hud-organique-v2-depth-v10.css?v=12.7-hud-bas-2',
-    './css/hud-consolidation-v12.css?v=12.9-rotation-gauche',
-    './css/hud-organique-v2-layout-v10.css?v=2',
+    // Les huit anciennes feuilles du HUD, bout à bout dans leur ordre d'origine.
+    './css/hud-organique.css?v=1',
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.

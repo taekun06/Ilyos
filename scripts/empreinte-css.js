@@ -85,6 +85,15 @@ const PROPRIETES = [
   'grid-template-columns', 'grid-template-rows'
 ];
 
+/* Les écrans relevés. Une règle sous `@media` ne se voit que dans la fenêtre
+   qui la déclenche : le PC seul ne dit rien du téléphone. Un relevé par écran
+   (`--ecran portrait`), chacun dans son fichier. */
+const ECRANS = {
+  pc: { viewport: { width: 1280, height: 800 } },
+  portrait: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+  paysage: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
+};
+
 function scriptDeterminisme(graine) {
   return `(() => {
     let etat = ${graine} >>> 0;
@@ -95,6 +104,31 @@ function scriptDeterminisme(graine) {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   })();`;
+}
+
+/* Attend que la page ne bouge plus : même nombre d'éléments et mêmes classes
+   sur quatre coups d'œil de suite. Le délai fixe ne suffisait plus depuis que
+   la première pioche s'anime carte par carte — sur une machine lente, le relevé
+   tombait au milieu du vol des cartes, et deux relevés du même code
+   différaient de vingt éléments. */
+async function attendreCalme(page, minimum) {
+  await page.waitForTimeout(minimum);
+  const signature = () => page.evaluate(() => {
+    let h = 0;
+    const tout = document.querySelectorAll('*');
+    for (const e of tout) {
+      const c = typeof e.className === 'string' ? e.className : '';
+      for (let i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) | 0;
+    }
+    return tout.length + ':' + h;
+  });
+  let precedente = await signature();
+  for (let stables = 0, essais = 0; stables < 4 && essais < 80; essais++) {
+    await page.waitForTimeout(700);
+    const actuelle = await signature();
+    stables = actuelle === precedente ? stables + 1 : 0;
+    precedente = actuelle;
+  }
 }
 
 /* Les états relevés. Chacun doit être atteignable sans intervention humaine et
@@ -110,7 +144,7 @@ function scriptDeterminisme(graine) {
 const ETATS = {
   async menu(page) {
     // L'état de départ : menu affiché, aucune partie lancée.
-    await page.waitForTimeout(STABILISATION_MS);
+    await attendreCalme(page, STABILISATION_MS);
   },
 
   async partieNeuve(page) {
@@ -127,7 +161,7 @@ const ETATS = {
       () => !document.getElementById('gameScreen')?.classList.contains('hidden'),
       null, { timeout: 30000 }
     );
-    await page.waitForTimeout(STABILISATION_MS);
+    await attendreCalme(page, STABILISATION_MS);
   },
 
   async regles(page) {
@@ -136,7 +170,7 @@ const ETATS = {
        DOM que les deux états précédents ne mesurent pas vraiment. */
     await ETATS.partieNeuve(page);
     await page.evaluate(() => document.getElementById('rulesModal')?.classList.remove('hidden'));
-    await page.waitForTimeout(2500);
+    await attendreCalme(page, 2500);
   },
 
   async menuSon(page) {
@@ -147,7 +181,7 @@ const ETATS = {
        pas le câblage qui y mène. */
     await ETATS.partieNeuve(page);
     await page.evaluate(() => document.getElementById('soundMenu')?.classList.remove('hidden'));
-    await page.waitForTimeout(2500);
+    await attendreCalme(page, 2500);
   }
 };
 
@@ -175,6 +209,13 @@ function fonctionDeReleve() {
       const morceaux = [];
       let noeud = element;
       while (noeud && noeud.nodeType === 1 && noeud.parentNode && noeud !== document.documentElement) {
+        /* Un identifiant unique ancre le chemin. Sans cela, les boutons que
+           plusieurs scripts ajoutent à <body> changeaient de rang selon
+           l'ordre d'arrivée des scripts, et tout leur sous-arbre avec eux. */
+        if (noeud.id && document.querySelectorAll('#' + CSS.escape(noeud.id)).length === 1) {
+          morceaux.unshift('#' + noeud.id);
+          break;
+        }
         const memeBalise = [...noeud.parentNode.children].filter(enfant => enfant.tagName === noeud.tagName);
         const rang = memeBalise.indexOf(noeud) + 1;
         morceaux.unshift(memeBalise.length > 1
@@ -192,7 +233,7 @@ function fonctionDeReleve() {
       const calcule = getComputedStyle(element);
       const rectangle = element.getBoundingClientRect();
       const valeurs = {
-        '@classes': typeof element.className === 'string' ? element.className.trim() : '',
+        '@classes': typeof element.className === 'string' ? element.className.trim().split(/\s+/).sort().join(' ') : '',
         '@rect': [rectangle.x, rectangle.y, rectangle.width, rectangle.height].map(Math.round).join(' ')
       };
       for (const propriete of proprietes) valeurs[propriete] = calcule.getPropertyValue(propriete);
@@ -203,13 +244,13 @@ function fonctionDeReleve() {
 }
 
 async function relever(destination, options) {
-  const navigateur = await chromium.launch();
+  const navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
   const empreinte = { graine: options.graine, releveLe: new Date().toISOString(), etats: {} };
   const incidents = [];
 
   for (const [nom, preparer] of Object.entries(ETATS)) {
     process.stdout.write(`  ${nom}… `);
-    const contexte = await navigateur.newContext({ viewport: { width: 1280, height: 800 } });
+    const contexte = await navigateur.newContext(ECRANS[options.ecran] || ECRANS.pc);
     await contexte.addInitScript(scriptDeterminisme(options.graine));
     const page = await contexte.newPage();
     page.on('pageerror', erreur => incidents.push(`${nom} · ${erreur.message}`));
@@ -326,7 +367,8 @@ function comparer(cheminAvant, cheminApres, options) {
   const options = {
     port: option('port', PORT_DEFAUT),
     graine: option('graine', GRAINE),
-    detail: option('detail', 12)
+    detail: option('detail', 12),
+    ecran: args.includes('--ecran') ? args[args.indexOf('--ecran') + 1] : 'pc'
   };
   const fichiers = [];
   for (let i = 1; i < args.length; i++) {
@@ -343,7 +385,7 @@ function comparer(cheminAvant, cheminApres, options) {
     return;
   }
   console.error('Usage :\n'
-    + '  node scripts/empreinte-css.js relever  <sortie.json>        [--port 8126] [--graine 20260825]\n'
+    + '  node scripts/empreinte-css.js relever  <sortie.json>        [--port 8126] [--graine 20260825] [--ecran pc|portrait|paysage]\n'
     + '  node scripts/empreinte-css.js comparer <avant.json> <apres.json> [--detail 12]');
   process.exitCode = 2;
 })();
