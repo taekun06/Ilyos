@@ -11,7 +11,7 @@ The fragment order is intentional:
 5. `turns.js` — turn lifecycle and undo handling
 6. `audio.js` — embedded music, settings and sound effects
 7. `ui.js` — board rendering and player interactions
-8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `autopsie.js`, `defaites.js` — rules cores, Expert planner, AI autopsy, automatic record of games lost by the Expert (library, one-click export; see `docs/DEFAITES-EXPERT.md`)
+8. `card-rules-physical-reserve.js`, `rules-core.js`, `planner.js`, `regles.js` (porte d'entrée unique des règles), `autopsie.js`, `defaites.js` — rules cores, Expert planner, AI autopsy, automatic record of games lost by the Expert (library, one-click export; see `docs/DEFAITES-EXPERT.md`)
 9. `tutorial.js` — scripted tutorial « La Première Ascension » (self-contained: builds a normal state, gates input via a capture listener on `els.board`, watches `window.ILYOS_VISUAL_EVENTS`)
 9b. `menu-duels.js` — start menus of the symmetric duel (photo preview, strip and grid) and of Personnalisé (formation, deck, rules, starting terrain), driving the hidden selects read by `core.js`
 10. `diagnostics.js` — diagnostics, public API, event wiring and closure end
@@ -34,6 +34,37 @@ nouvelle s'y ajoute en même temps qu'au planner. Le vol a manqué à l'IA jusqu
 29/09 sans qu'aucun banc ne le signale.
 
 `npm run verif:ia` lance tous les bancs de l'IA et en donne le bilan.
+
+## Moteur de règles : porte d'entrée unique
+
+`regles.js` répond à une seule question : « ce coup est-il permis ici, et
+qu'en résulte-t-il ? ». Une action est une donnée (la même que celle du
+planner : `MOVE`, `PUSH`, `MAGIC`, `POSE`, `DEPOT`, `RAMASSAGE`, `VOL`,
+`TRANSMISSION`, `DISSOLUTION`, `SEQUENCE`, `FIN_TOUR`).
+
+- Dans la fermeture : `reglesVerifier(action)` (sans rien toucher),
+  `reglesAppliquer(action)` (joue dans `state`, rend `{ ok, raison,
+  evenements }`), `applyTurnStartCore()` et `applyEndTurnCore()`.
+- Depuis la page ou Node, sur un état FOURNI (objet ou JSON de
+  `snapshotState`) : `ILYOS_REGLES.verifier(etat, action)`,
+  `ILYOS_REGLES.appliquer(etat, action)`, `ILYOS_REGLES.finDeTour(etat)`.
+  La partie en cours n'est jamais modifiée.
+
+La légalité ne recopie aucune règle : elle interroge les fonctions de
+l'interface (`movementRange`, `availableActionCount`,
+`calculateIslandRotationAroundPivot`, `occupantPoussable`…) puis essaie le
+noyau sur une copie. Les événements (`gardien-deplace`, `chute`,
+`couronne-change-de-mains`, `point`, `nouveau-tour`, `fin-de-partie`…) sont
+déduits de l'état avant/après. Le self-play termine ses tours par
+`applyEndTurnCore`.
+
+`npm run verif:regles` (sans serveur, ~1 min) : coups illégaux refusés, et
+sur une partie CPU contre CPU, chaque coup de l'IA accepté par le moteur et
+donnant le même état que par le planner.
+
+Pas encore fait (étapes suivantes de la refonte) : l'interface et le CPU ne
+passent pas encore par cette porte ; la fin de tour de `ui.js`/`turns.js`
+garde son propre exemplaire ; le réseau échange encore des états entiers.
 
 ## Moteur sans écran (Node)
 

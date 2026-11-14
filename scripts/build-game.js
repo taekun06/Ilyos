@@ -21,6 +21,10 @@ const fragmentNames = [
   // Cerveau Expert V2 : s'appuie sur les noyaux de rules-core.js et sur
   // withSimulatedState, donc placé juste après.
   'planner.js',
+  // Moteur de règles, porte d'entrée unique : légalité, application et
+  // événements d'une action donnée en DONNÉE, fin de tour réduite à la règle.
+  // Après planner.js, dont il réutilise les noyaux des actions gratuites.
+  'regles.js',
   // Autopsie des décisions IA : doit fonctionner en PARTIE RÉELLE, elle ne
   // peut donc pas vivre dans diagnostics.js, qui a vocation à sortir du
   // bundle en fin de chantier. Placée après planner.js, dont elle lit les
