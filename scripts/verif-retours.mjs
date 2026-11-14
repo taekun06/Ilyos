@@ -63,6 +63,11 @@ r = await traiter({ action: "partie", id: victoire.id, code: "secret" }, store, 
 assert.equal(r.corps.partie.type, "defaite-expert");
 await traiter({ action: "marquer", id: victoire.id, lu: true, code: "secret" }, store, opts());
 assert.equal((await store.get(`r/${victoire.id}`)).lu, true);
+// Partie rangée compressée, rendue intacte
+assert.ok(typeof (await store.get(`p/${victoire.id}`)).gz === "string");
+await traiter({ action: "marquer", id: victoire.id, analysee: true, code: "secret" }, store, opts());
+assert.equal((await store.get(`r/${victoire.id}`)).analysee, true);
+assert.equal((await store.get(`r/${victoire.id}`)).lu, true);
 await traiter({ action: "supprimer", id: victoire.id, code: "secret" }, store, opts());
 assert.equal(await store.get(`p/${victoire.id}`), null);
 

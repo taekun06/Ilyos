@@ -34,3 +34,19 @@ la PR qui a ajouté la fonction (voir `URLS` dans `js/retours.js` et
 
 `node scripts/verif-retours.mjs` (logique seule). En local, `npm start` sert
 aussi `/api/retours` en mémoire ; code de la page privée : `dev`.
+
+## Analyser les victoires pour améliorer le CPU
+
+Chaque partie est rangée compressée (≈ 30 Ko au lieu de ≈ 0,6 Mo).
+
+```
+ILYOS_RETOURS_CODE=<code> node scripts/recuperer-victoires.mjs --marquer
+npm start
+node scripts/analyser-defaite.js retours-victoires/ilyos-defaite-<id>.json
+```
+
+`recuperer-victoires.mjs` ne prend que les victoires pas encore analysées et,
+avec `--marquer`, les marque sur le serveur : la session suivante ne reprend
+que les nouvelles. Dans une session Claude, donner le code par une variable
+d'environnement secrète de l'environnement (`ILYOS_RETOURS_CODE`) plutôt que
+dans la conversation.

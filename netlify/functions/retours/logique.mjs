@@ -11,13 +11,19 @@
  *
  * Rangement :
  *   r/<id>  un retour (signalement, avis ou victoire), sans la partie
- *   p/<id>  la partie jointe (JSON du journal des défaites, ≈ 0,5 Mo)
+ *   p/<id>  la partie jointe (journal des défaites, gzip ≈ 30 Ko)
  *   e/<empreinte>  une erreur JavaScript, comptée (mêmes erreurs regroupées)
  *   l/<ip>/<heure> compteur anti-abus
  * Lecture (« lister », « lire », « partie », « supprimer ») : réservée au code
  * secret RETOURS_CODE.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
+
+/* Une partie (≈ 0,6 Mo de JSON) se compresse ~20 fois (≈ 30 Ko) : elle est
+   rangée compressée, et rendue telle quelle à la lecture. */
+const ranger = json => ({ gz: gzipSync(Buffer.from(json, "utf8"), { level: 9 }).toString("base64") });
+const deballer = brut => (brut && typeof brut.gz === "string" ? JSON.parse(gunzipSync(Buffer.from(brut.gz, "base64")).toString("utf8")) : brut);
 
 const TEXTE_MAX = 3000;
 const CONTACT_MAX = 120;
@@ -113,7 +119,7 @@ export async function traiter(demande, store, { ip = "", code = "", prevenir = n
         contexte: contexte(demande.contexte), partie: !!partie, recu: maintenant, lu: false
       };
       await store.set(`r/${id}`, retour);
-      if (partie) await store.set(`p/${id}`, JSON.parse(partie));
+      if (partie) await store.set(`p/${id}`, ranger(partie));
       await avertir({
         titre: type === "bug" ? "🐞 Bug signalé" : "💬 Avis d'un joueur",
         texte: message, contact: retour.contact, details: ligneContexte(retour.contexte),
@@ -133,7 +139,7 @@ export async function traiter(demande, store, { ip = "", code = "", prevenir = n
       const resume = resumeVictoire(dossier);
       const retour = { id, type: "victoire", texte: resume, contact: "", contexte: contexte(demande.contexte), partie: true, recu: maintenant, lu: false };
       await store.set(`r/${id}`, retour);
-      await store.set(`p/${id}`, dossier);
+      await store.set(`p/${id}`, ranger(partie));
       await avertir({
         titre: "🏆 Victoire contre le CPU Expert", texte: resume, details: ligneContexte(retour.contexte),
         fichier: { nom: `ilyos-defaite-${id}.json`, contenu: partie }
@@ -193,13 +199,16 @@ export async function traiter(demande, store, { ip = "", code = "", prevenir = n
       }
       if (!id) return erreur(400, "id");
       if (demande.action === "partie") {
-        const partie = await store.get(`p/${id}`);
+        const partie = deballer(await store.get(`p/${id}`));
         return partie ? reussite({ partie }) : erreur(404, "absent");
       }
       if (demande.action === "marquer") {
         const r = await store.get(`r/${id}`);
         if (!r) return erreur(404, "absent");
-        r.lu = !!demande.lu;
+        if (typeof demande.lu === "boolean") r.lu = demande.lu;
+        /* « analysée » : posé par scripts/recuperer-victoires.mjs, pour que la
+           prochaine session d'analyse ne reprenne que les nouvelles parties. */
+        if (typeof demande.analysee === "boolean") r.analysee = demande.analysee;
         await store.set(`r/${id}`, r);
         return reussite({});
       }
