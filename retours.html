@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ILYOS — Retours des joueurs</title>
+  <link rel="icon" href="./favicon.ico">
+  <style>
+    :root { --or: #e9bd5b; --or-clair: #f6dc97; --texte: #f1ead8; --doux: rgba(241,234,216,.62); --trait: rgba(233,189,91,.22); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(120% 70% at 50% 0%, #182a44, #070d17 70%); color: var(--texte); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { width: min(920px, 100%); margin: 0 auto; padding: 28px 16px 60px; }
+    h1 { margin: 0 0 4px; font: 700 26px/1.2 Georgia, serif; color: var(--or-clair); letter-spacing: .05em; }
+    .sous { margin: 0 0 22px; color: var(--doux); }
+    .entree { display: flex; gap: 10px; flex-wrap: wrap; }
+    input, button, select { font: inherit; }
+    input[type=password] { flex: 1; min-width: 200px; padding: 10px 12px; border: 1px solid var(--trait); border-radius: 10px; background: rgba(0,0,0,.35); color: var(--texte); }
+    button { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--trait); background: rgba(255,255,255,.04); color: var(--texte); cursor: pointer; }
+    button:hover { border-color: var(--or); }
+    button.principal { border-color: var(--or-clair); background: linear-gradient(180deg,#f6d887,#d9a441); color: #1b1406; font-weight: 800; }
+    .onglets { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0 14px; }
+    .onglets button[aria-pressed=true] { border-color: var(--or); background: rgba(233,189,91,.14); color: var(--or-clair); }
+    .compte { opacity: .7; font-size: 13px; }
+    .fiche { margin: 0 0 12px; padding: 14px 16px; border: 1px solid var(--trait); border-radius: 14px; background: rgba(9,18,31,.85); }
+    .fiche.lu { opacity: .6; }
+    .tete { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+    .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; letter-spacing: .04em; }
+    .bug { background: rgba(255,130,110,.18); color: #ffb4a2; }
+    .avis { background: rgba(120,190,255,.16); color: #a9d4ff; }
+    .victoire { background: rgba(233,189,91,.2); color: var(--or-clair); }
+    .erreur { background: rgba(255,90,90,.16); color: #ff9c9c; }
+    .date { color: var(--doux); font-size: 13px; }
+    .texte { white-space: pre-wrap; word-break: break-word; }
+    .details { margin-top: 8px; color: var(--doux); font-size: 12.5px; word-break: break-word; }
+    pre { margin: 8px 0 0; padding: 8px 10px; max-height: 180px; overflow: auto; border-radius: 8px; background: rgba(0,0,0,.4); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .actions button { padding: 6px 12px; font-size: 13px; }
+    .vide, .etat { color: var(--doux); text-align: center; padding: 24px 0; }
+    .etat:empty { display: none; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Retours des joueurs</h1>
+  <p class="sous">Bugs, avis, erreurs du jeu et victoires contre le CPU Expert. Page privée : le code est celui de la variable Netlify <code>RETOURS_CODE</code>.</p>
+  <form class="entree" id="entree">
+    <input type="password" id="code" placeholder="Code secret" autocomplete="current-password">
+    <button class="principal" type="submit">Ouvrir</button>
+    <button type="button" id="rafraichir" hidden>↻ Rafraîchir</button>
+  </form>
+  <div class="onglets" id="onglets" hidden>
+    <button type="button" data-filtre="tout" aria-pressed="true">Tout <span class="compte"></span></button>
+    <button type="button" data-filtre="bug" aria-pressed="false">🐞 Bugs <span class="compte"></span></button>
+    <button type="button" data-filtre="avis" aria-pressed="false">💬 Avis <span class="compte"></span></button>
+    <button type="button" data-filtre="victoire" aria-pressed="false">🏆 Victoires <span class="compte"></span></button>
+    <button type="button" data-filtre="erreur" aria-pressed="false">⚠️ Erreurs <span class="compte"></span></button>
+  </div>
+  <p class="etat" id="etat"></p>
+  <div id="liste"></div>
+</main>
+<script>
+(function () {
+  const hote = location.hostname;
+  const URLS = (/netlify\.app$/.test(hote) || hote === 'localhost' || hote === '127.0.0.1')
+    ? ['/api/retours']
+    : ['https://batbat.netlify.app/api/retours', 'https://deploy-preview-213--batbat.netlify.app/api/retours'];
+  let donnees = { retours: [], erreurs: [] };
+  let filtre = 'tout';
+  const $ = id => document.getElementById(id);
+  const echapper = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const date = ms => new Date(ms).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+  const code = () => sessionStorage.getItem('ilyos-retours-code') || '';
+
+  async function appeler(corps) {
+    for (const url of URLS) {
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ ...corps, code: code() }) });
+        if (r.status === 404 && !corps.id) continue;
+        return await r.json();
+      } catch (_) { }
+    }
+    return { ok: false, erreur: 'indisponible' };
+  }
+
+  async function charger() {
+    $('etat').textContent = 'Chargement…';
+    const r = await appeler({ action: 'lister' });
+    if (!r.ok) {
+      $('etat').textContent = r.erreur === 'code' ? 'Code incorrect.' : 'Service indisponible pour le moment.';
+      if (r.erreur === 'code') sessionStorage.removeItem('ilyos-retours-code');
+      return;
+    }
+    donnees = r;
+    $('etat').textContent = '';
+    $('onglets').hidden = false;
+    $('rafraichir').hidden = false;
+    $('code').hidden = true;
+    document.querySelector('#entree .principal').hidden = true;
+    afficher();
+  }
+
+  function ficheRetour(r) {
+    const c = r.contexte || {};
+    const libelle = { bug: '🐞 BUG', avis: '💬 AVIS', victoire: '🏆 VICTOIRE' }[r.type] || r.type;
+    return `<article class="fiche ${r.lu ? 'lu' : ''}" data-id="${echapper(r.id)}">
+      <div class="tete"><span class="badge ${echapper(r.type)}">${libelle}</span><span class="date">${date(r.recu)}</span>${c.pseudo ? `<span class="date">· ${echapper(c.pseudo)}</span>` : ''}</div>
+      <div class="texte">${echapper(r.texte)}</div>
+      ${r.contact ? `<div class="details">Contact : <b>${echapper(r.contact)}</b></div>` : ''}
+      <div class="details">${echapper([c.version, c.mode, c.ecran, c.langue].filter(Boolean).join(' · '))}<br>${echapper(c.navigateur || '')}</div>
+      ${c.erreurs && c.erreurs.length ? `<pre>${echapper(c.erreurs.join('\n'))}</pre>` : ''}
+      <div class="actions">
+        ${r.partie ? '<button data-action="partie">⬇ Télécharger la partie</button>' : ''}
+        <button data-action="lu">${r.lu ? 'Marquer non lu' : 'Marquer lu'}</button>
+        <button data-action="supprimer">🗑 Supprimer</button>
+      </div></article>`;
+  }
+
+  function ficheErreur(e) {
+    return `<article class="fiche" data-id="${echapper(e.id)}" data-erreur="1">
+      <div class="tete"><span class="badge erreur">⚠️ ERREUR ×${e.nombre}</span><span class="date">dernière : ${date(e.dernier)} · première : ${date(e.premier)}</span></div>
+      <div class="texte"><b>${echapper(e.message)}</b></div>
+      <div class="details">${echapper(e.source || '')}${e.versions && e.versions.length ? ' · versions : ' + echapper(e.versions.join(', ')) : ''}</div>
+      ${e.pile ? `<pre>${echapper(e.pile)}</pre>` : ''}
+      ${(e.exemples || []).length ? `<div class="details">${e.exemples.map(x => echapper([x.mode, x.ecran, x.navigateur].filter(Boolean).join(' · '))).join('<br>')}</div>` : ''}
+      <div class="actions"><button data-action="supprimer">✓ Corrigée (effacer)</button></div></article>`;
+  }
+
+  function afficher() {
+    const comptes = { tout: donnees.retours.length + donnees.erreurs.length, erreur: donnees.erreurs.length };
+    ['bug', 'avis', 'victoire'].forEach(t => comptes[t] = donnees.retours.filter(r => r.type === t).length);
+    document.querySelectorAll('[data-filtre]').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.filtre === filtre));
+      b.querySelector('.compte').textContent = comptes[b.dataset.filtre] ? `(${comptes[b.dataset.filtre]})` : '';
+    });
+    const retours = filtre === 'erreur' ? [] : donnees.retours.filter(r => filtre === 'tout' || r.type === filtre);
+    const erreurs = filtre === 'tout' || filtre === 'erreur' ? donnees.erreurs : [];
+    const html = retours.map(ficheRetour).join('') + erreurs.map(ficheErreur).join('');
+    $('liste').innerHTML = html || '<p class="vide">Rien pour l’instant.</p>';
+  }
+
+  $('entree').addEventListener('submit', e => {
+    e.preventDefault();
+    sessionStorage.setItem('ilyos-retours-code', $('code').value);
+    charger();
+  });
+  $('rafraichir').addEventListener('click', charger);
+  $('onglets').addEventListener('click', e => {
+    const b = e.target.closest('[data-filtre]');
+    if (b) { filtre = b.dataset.filtre; afficher(); }
+  });
+  $('liste').addEventListener('click', async e => {
+    const b = e.target.closest('[data-action]');
+    if (!b) return;
+    const fiche = b.closest('.fiche');
+    const id = fiche.dataset.id;
+    if (b.dataset.action === 'partie') {
+      b.disabled = true;
+      const r = await appeler({ action: 'partie', id });
+      b.disabled = false;
+      if (!r.ok) return alert('Partie introuvable.');
+      const lien = document.createElement('a');
+      lien.href = URL.createObjectURL(new Blob([JSON.stringify(r.partie)], { type: 'application/json' }));
+      lien.download = `ilyos-${r.partie.type === 'defaite-expert' ? 'defaite' : 'partie'}-${id}.json`;
+      document.body.appendChild(lien); lien.click(); lien.remove();
+      return;
+    }
+    if (b.dataset.action === 'lu') {
+      const r = donnees.retours.find(x => x.id === id);
+      await appeler({ action: 'marquer', id, lu: !r.lu });
+      r.lu = !r.lu;
+      afficher();
+      return;
+    }
+    if (b.dataset.action === 'supprimer') {
+      if (!confirm('Effacer définitivement ?')) return;
+      await appeler({ action: 'supprimer', id });
+      donnees.retours = donnees.retours.filter(x => x.id !== id);
+      donnees.erreurs = donnees.erreurs.filter(x => x.id !== id);
+      afficher();
+    }
+  });
+  if (code()) charger();
+})();
+</script>
+</body>
+</html>

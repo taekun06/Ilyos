@@ -34941,6 +34941,14 @@
         defaitesDerniere = dossier;
         defaitesRendreVictoire(dossier);
         if (!dossier) return;
+        /* Victoire contre l'Expert : la partie part à Taekun pour améliorer le
+           CPU (js/retours.js), sauf si le joueur l'a refusé dans le menu. */
+        if (dossier.type === "defaite-expert" && window.ILYOS_RETOURS) {
+          try {
+            if (!dossier.analyse) dossier.analyse = defaitesAnalyser(dossier);
+            window.ILYOS_RETOURS.envoyerVictoire(dossier);
+          } catch (erreur) { console.warn("[ILYOS] envoi de la victoire impossible", erreur); }
+        }
         defaitesBiblio.enregistrer(dossier).then(nombre => {
           defaitesRendreVictoire(dossier, nombre);
           defaitesMajAcces();
@@ -35284,7 +35292,26 @@
         } : null,
         // Plan du planner en langage de jeu (cases, gardiens), pour les outils.
         decrire: (plan, etat) => autopsieDecrirePlan(plan, etat),
-        seuils: DEFAITES_SEUILS
+        seuils: DEFAITES_SEUILS,
+        /* Partie en cours jointe à un signalement de bug (js/retours.js) :
+           l'état de reprise et les tours déjà joués, sans fermer le journal. */
+        instantanePartie: () => {
+          if (!state || !state.players || !state.players.length) return null;
+          let cadre = null;
+          try { cadre = serializeGameStateForSave(); } catch (erreur) { cadre = null; }
+          const journal = defaitesJournal && defaitesJournal.etatRef === state ? defaitesJournal : null;
+          return {
+            jeu: "ILYOS", type: "signalement", schema: 1,
+            date: new Date().toISOString(),
+            version: window.ILYOS_BUILD || null,
+            bundle: (document.querySelector('script[src*="game.js"]') || {}).src || null,
+            regles: defaitesRegles(),
+            tour: state.turn, manche: state.round,
+            joueurs: state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI, difficulte: j.aiDifficulty || null, score: j.score || 0 })),
+            tours: journal ? journal.tours.map(t => ({ ...t })) : [],
+            cadre
+          };
+        }
       };
 
       setTimeout(defaitesMajAcces, 0);

@@ -177,6 +177,25 @@
       page('partie').appendChild(toucher);
     }
 
+    /* AIDER ILYOS : signalements et victoires contre l'Expert (js/retours.js). */
+    {
+      const aider = section('Aider ILYOS', 'Ton message ou ta partie arrive directement chez Taekun.');
+      aider.insertAdjacentHTML('beforeend', `
+        <div class="mj-grille-chocs">
+          <button type="button" class="mj-choix" data-mj-signaler><b>Signaler un bug ou donner un avis</b><small>Ouvre un petit formulaire</small></button>
+          <button type="button" class="mj-choix" data-mj-victoires><b>Envoyer mes victoires contre l'Expert</b><small>Pour rendre le CPU plus fort</small></button>
+        </div>`);
+      aider.querySelector('[data-mj-signaler]').addEventListener('click', () => window.ILYOS_RETOURS?.ouvrir());
+      const victoires = aider.querySelector('[data-mj-victoires]');
+      const majVictoires = () => victoires.setAttribute('aria-pressed', String(window.ILYOS_RETOURS ? window.ILYOS_RETOURS.victoiresAutorisees() : true));
+      victoires.addEventListener('click', () => {
+        window.ILYOS_RETOURS?.reglerVictoires(!window.ILYOS_RETOURS.victoiresAutorisees());
+        majVictoires();
+      });
+      majVictoires();
+      page('partie').appendChild(aider);
+    }
+
     // CAMÉRA : AUTO/LIBRE sont des modes, FACE/ISO des recadrages ponctuels.
     const camera = section('Caméra', 'Le choix s’applique aussitôt et referme le menu.');
     deplacer(cameraGrille, camera);
