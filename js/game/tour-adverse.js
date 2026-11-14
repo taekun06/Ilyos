@@ -109,7 +109,8 @@
             magie = { islandId, pivot: Array.isArray(pivot) ? [pivot[0], pivot[1]] : null, degres: pas === 3 ? -90 : pas * 90, lanceur };
           }
           const resultat = origine.magie.apply(this, arguments);
-          if (resultat && releve && magie) tourAdverseAjouter({ type: "magie", ...magie }, avant);
+          // Mur tourné seul (murs.js) : l'île ne bouge pas, rien à rejouer d'elle.
+          if (resultat && releve && magie && arguments[2]?.mode !== "mur") tourAdverseAjouter({ type: "magie", ...magie }, avant);
           return resultat;
         };
         applyIslandPlacementCore = function () {

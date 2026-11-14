@@ -200,6 +200,43 @@ const assert = require('node:assert/strict');
           }) };
         state.characters = state.characters.filter(c => !c.creature);
         state.rotation = null;
+        /* MURS ÉTOILÉS (murs.js, 14/11) : un mur bloque le passage et sert de
+           garde-fou ; l'IA le pousse et le fait tourner (le mur seul, ou
+           l'île avec lui). */
+        benchPoserPosition({ seed: 7, islandPlacedThisTurn: true, aiPlayer: 0,
+          islands: [{ owner: 0, cells: [[5,0],[5,1],[5,2],[5,3],[5,4]] }, { owner: 1, cells: [[8,8]] }],
+          characters: [{ id: 'A', player: 0, r: 5, c: 2 }, { id: 'B', player: 1, r: 5, c: 4 }, { id: 'E', player: 1, r: 8, c: 8 }],
+          crowns: [null, null], hands: [['PUSH', 'PUSH', 'MOVE'], []] });
+        state.currentPlayer = 0;
+        state.murs = [{ id: 'm1', o: 'v', i: 5, j: 3, n: 1 }, { id: 'm2', o: 'v', i: 5, j: 5, n: 1 }];
+        const pousseMur = avecGrilleTerre(() => plannerCandidatsPush(0)).find(a => a.type === 'POUSSER_MUR' && a.murId === 'm1') || null;
+        resultat['MUR bloque et garde-fou'] = {
+          genere: !movementRange(characterById('A'), 1).has(key(5, 3)) && !!movementRange(characterById('A'), 3).size,
+          applique: resoudrePousseeBloc(5, 4, 0, 1, 1) === null };
+        resultat['POUSSER_MUR'] = { genere: !!pousseMur,
+          applique: !!pousseMur && withSimulatedState(cloneStateForSimulation(), () =>
+            !!plannerAppliquerAction(pousseMur) && murParId('m1').j === 4 && availableActionCount('PUSH') === 2 - pousseMur.force) };
+        benchPoserPosition({ seed: 7, islandPlacedThisTurn: true, aiPlayer: 0,
+          islands: [{ owner: 0, cells: [[3,1],[3,2],[3,3]] }, { owner: 1, cells: [[8,8]] }],
+          characters: [{ id: 'A', player: 0, r: 3, c: 3 }, { id: 'E', player: 1, r: 8, c: 8 }],
+          crowns: [{ r: 3, c: 3, carrierId: 'A', active: true }, null],
+          hands: [['MAGIC'], []] });
+        state.currentPlayer = 0;
+        state.murs = [{ id: 'm1', o: 'h', i: 3, j: 1, n: 2 }];
+        const magieMur = avecGrilleTerre(() => plannerCandidatsMagic(0)).find(a => a.mode === 'deux') || null;
+        resultat['MAGIC île et mur'] = { genere: !!magieMur,
+          applique: !!magieMur && withSimulatedState(cloneStateForSimulation(), () => {
+            const avant = JSON.stringify(state.murs);
+            return !!plannerAppliquerAction(magieMur) && JSON.stringify(state.murs) !== avant && availableActionCount('MAGIC') === 0;
+          }) };
+        const murSeul = withSimulatedState(cloneStateForSimulation(), () => {
+          const action = { type: 'MAGIC', islandId: state.islands[0].id, pivot: [3, 1], direction: 1, turns: 1, mode: 'mur' };
+          const cellules = JSON.stringify(state.islands[0].cells);
+          return !!plannerAppliquerAction(action) && JSON.stringify(state.islands[0].cells) === cellules
+            && murParId('m1').o === 'v';
+        });
+        resultat['MAGIC mur seul'] = { genere: murSeul, applique: murSeul };
+        state.murs = [];
         // Les gratuites selon le moteur.
         resultat.gratuites = ['RAMASSAGE', 'DEPOT', 'TRANSMISSION', 'VOL']
           .filter(t => !plannerActionGratuite({ type: t }));

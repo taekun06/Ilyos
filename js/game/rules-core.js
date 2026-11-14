@@ -61,6 +61,7 @@
         state.smartHoverPath = [];
         state.pendingDirectMoveTarget = null;
         state.reachable = new Set();
+        state.magicMode = "ile";
         state.phase = "ACTION_SELECT";
         return depense;
       }
@@ -133,9 +134,17 @@
        *  d'animation. Elle est désormais immédiate ; c'est l'appelant qui doit
        *  empêcher la scène de reconstruire le calque d'îles pendant que
        *  l'animation raconte encore la rotation (voir islandRotationEnCours). */
-      function applyMagicRotationCore(islandId, rotation) {
+      function applyMagicRotationCore(islandId, rotation, planMurs = null) {
         const ile = state.islands.find(is => is.id === islandId);
+        // Murs (murs.js) : « mur » seul — l'île ne bouge pas.
+        if (ile && planMurs?.mode === "mur") {
+          if (!planMurs.valid) return null;
+          const tombes = appliquerMursDuPlan(planMurs);
+          const depenseMur = consumeSelectedActionCore("MAGIC", 1);
+          return { type: "MAGIC", islandId, mode: "mur", cellulesAvant: ile.cells.map(([r, c]) => [r, c]), cout: depenseMur, mursTombes: tombes };
+        }
         if (!ile || !rotation?.valid) return null;
+        if (planMurs && !planMurs.valid) return null;
 
         const avant = ile.cells.map(([r, c]) => [r, c]);
         ile.cells = rotation.absCells;
@@ -151,8 +160,11 @@
           deplacement.artifact.c = deplacement.c;
         }
 
+        // L'île et ses murs (« les deux »), puis les murs qui ne bordent plus
+        // aucune île tombent — même quand l'île tourne seule.
+        const mursTombes = appliquerMursDuPlan(planMurs);
         const depense = consumeSelectedActionCore("MAGIC", 1);
-        return { type: "MAGIC", islandId, cellulesAvant: avant, cout: depense };
+        return { type: "MAGIC", islandId, mode: planMurs?.mode || "ile", cellulesAvant: avant, cout: depense, mursTombes };
       }
 
       /** Pose d'île — macro-action COMPLÈTE.
@@ -296,6 +308,7 @@
             active: !!a.active,
             porteur: a.carrierId ?? null
           })).sort((a, b) => String(a.id).localeCompare(String(b.id))),
+          murs: (source.murs || []).map(m => `${m.o}${m.i},${m.j},${m.n}`).sort(),
           iles: (source.islands || [])
             .map(i => ({
               id: i.id,
@@ -407,7 +420,8 @@
           selectedIslandId: source.selectedIslandId,
           pushForceChoice: source.pushForceChoice || 1,
           // But de la Rotation (balises…) : l'évaluation de l'IA le lit.
-          rotation: source.rotation || null
+          rotation: source.rotation || null,
+          murs: source.murs || []
         });
         // Champs attendus par les fonctions de règles, reconstruits vides : ils
         // ne portent aucune information de jeu.
@@ -456,11 +470,17 @@
           case "MAGIC": {
             const ile = state.islands.find(is => is.id === action.islandId);
             if (!ile) return null;
+            if (action.mode === "mur" || action.mode === "deux") {
+              const steps = action.direction === -1 ? 3 : action.turns;
+              const plan = planMagieMurs(ile, action.pivot, steps, action.mode);
+              return plan ? applyMagicRotationCore(action.islandId, plan.rotation, plan) : null;
+            }
             const rotation = calculateIslandRotationAroundPivot(
               ile, action.pivot[0], action.pivot[1], action.direction, action.turns
             );
             return applyMagicRotationCore(action.islandId, rotation);
           }
+          case "POUSSER_MUR": return appliquerPousseeMurCore(action.murId, action.pusherId, action.force);
           case "POSE": return applyIslandPlacementCore(
             action.shapeKey, action.cells, action.owner, action.relCells, action.anchor,
             action.spawn || null
@@ -518,6 +538,8 @@
           const occupant = occupantPoussable(r, c);
           if (!occupant) break;
           bloc.push({ kind: occupant.kind, ref: occupant.ref, r, c });
+          // Un mur sépare la file : ce qui est derrière n'est pas poussé.
+          if (passageBloque(r, c, r + dr, c + dc)) break;
           r += dr;
           c += dc;
         }
@@ -526,7 +548,10 @@
 
       /** Calcule, sans rien modifier, ce que produirait la poussée.
        *  Renvoie null si rien ne peut bouger. */
-      function resoudrePousseeBloc(startR, startC, dr, dc, force) {
+      function resoudrePousseeBloc(startR, startC, dr, dc, force, { depuisMur = null } = {}) {
+        // Murs : on ne pousse pas à travers un mur (sauf quand c'est le mur
+        // lui-même qui balaie la file, voir murs.js).
+        if (depuisMur === null && passageBloque(startR - dr, startC - dc, startR, startC)) return null;
         const bloc = collectPushBlock(startR, startC, dr, dc);
         if (!bloc.length) return null;
 
@@ -539,6 +564,7 @@
         for (let pas = 1; pas <= demande; pas++) {
           const r = tete.r + dr * pas;
           const c = tete.c + dc * pas;
+          if (passageBloque(r - dr, c - dc, r, c)) { distance = pas - 1; break; }
           if (!inside(r, c)) break;
           if (occupantPoussable(r, c)) { distance = pas - 1; break; }
         }
@@ -564,7 +590,8 @@
 
           if (m.kind === "crown") {
             let d = 0;
-            for (let pas = plafond; pas >= 1; pas--) {
+            const murCouronne = pasAvantMur(m.r, m.c, dr, dc, plafond);
+            for (let pas = Math.min(plafond, murCouronne); pas >= 1; pas--) {
               const r = m.r + dr * pas;
               const c = m.c + dc * pas;
               if (!inside(r, c) || !isLand(r, c) || occupees.has(key(r, c))) continue;
@@ -582,7 +609,7 @@
           if (m.kind !== "char") {
             // Pièce flottante : elle survole le vide et s'arrête au bord.
             let d = 0;
-            for (let pas = plafond; pas >= 1; pas--) {
+            for (let pas = Math.min(plafond, pasAvantMur(m.r, m.c, dr, dc, plafond)); pas >= 1; pas--) {
               const r = m.r + dr * pas;
               const c = m.c + dc * pas;
               if (!inside(r, c) || occupees.has(key(r, c))) continue;
@@ -603,6 +630,8 @@
           for (let pas = 1; pas <= plafond; pas++) {
             const r = m.r + dr * pas;
             const c = m.c + dc * pas;
+            // Garde-fou : un mur arrête le gardien avant le vide.
+            if (passageBloque(r - dr, c - dc, r, c)) { d = pas - 1; break; }
             if (!inside(r, c) || !isLand(r, c)) { vide = [r, c]; d = pas - 1; break; }
           }
           const to = [m.r + dr * d, m.c + dc * d];
@@ -613,6 +642,7 @@
           }
           occupees.add(key(to[0], to[1]));
           mouvements.push({ kind: "char", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+          plafond = Math.min(plafond, d);
         }
 
         if (!mouvements.length) return null;
@@ -625,6 +655,15 @@
           chutes: mouvements.filter(mv => mv.chute).length,
           deplaces: mouvements.filter(mv => !mv.chute).length
         };
+      }
+
+      /** Nombre de pas possibles avant le premier mur (plafonné). */
+      function pasAvantMur(r, c, dr, dc, plafond) {
+        if (!mursActifs()) return plafond;
+        for (let pas = 1; pas <= plafond; pas++) {
+          if (passageBloque(r + dr * (pas - 1), c + dc * (pas - 1), r + dr * pas, c + dc * pas)) return pas - 1;
+        }
+        return plafond;
       }
 
       /** Applique un plan produit par resoudrePousseeBloc(). */

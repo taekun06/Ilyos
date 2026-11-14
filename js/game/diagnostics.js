@@ -2105,6 +2105,8 @@
            verif-profondeur-gratuite avait oublié le dépôt, puis aurait oublié
            le vol. */
         actionGratuite: type => plannerActionGratuite({ type }),
+        // Murs étoilés (murs.js) : poser, pousser, tourner sans interface.
+        murs: benchMurs(),
         poussee: benchPoussee,
         validation: benchValidation,
         reserve: benchReserve,
@@ -2404,6 +2406,9 @@
         btn.addEventListener("click", () => { avant = crans; jouerRotationMagie(crans); });
       });
       document.getElementById("hudV2MagicDissolve")?.addEventListener("click", () => dissolveSelectedIsland());
+      document.querySelectorAll("#hudV2MagicModes [data-magie-mode]").forEach(btn => {
+        btn.addEventListener("click", () => choisirModeMagie(btn.dataset.magieMode));
+      });
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
 

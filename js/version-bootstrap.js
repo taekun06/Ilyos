@@ -246,7 +246,7 @@ document.title = "ILYOS — Les îles célestes";
     './css/hud-organique-v2-final-v8.css?v=12.9-sans-flou',
     './css/hud-organique-v2-depth-v9.css?v=12.7',
     './css/hud-organique-v2-depth-v10.css?v=12.7-hud-bas-2',
-    './css/hud-consolidation-v12.css?v=12.9-rotation-gauche',
+    './css/hud-consolidation-v12.css?v=12.11-murs',
     './css/hud-organique-v2-layout-v10.css?v=2',
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
