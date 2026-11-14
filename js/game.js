@@ -21226,46 +21226,22 @@
 
       function beginTurn() {
         const p = currentPlayer();
-        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
-        // qui prend la main, avant même la validation des couronnes.
-        confierGardiensEquipe(p.id);
-        confierMinionNeutre(p.id);
-        const scoredAtStart = scoreCrownsAtTurnStart(p);
-        if (state.winner !== null) {
+        /* Toute la RÈGLE de l'ouverture du tour est dans le moteur
+           (applyTurnStartCore, regles.js), la même que pour le self-play et
+           ILYOS_REGLES : gardiens d'équipe et minion confiés, couronnes
+           validées, fin au décompte si plus aucune île ne tient, pioche, pose
+           due ou levée, verrou du sanctuaire relâché, couronnes en attente
+           entrées. Il ne reste ici que la mise en scène. */
+        const ouverture = applyTurnStartCore();
+        if (!ouverture || !ouverture.continuer) {
+          if (ouverture && ouverture.raison === "plateau-plein") terminerPartiePlateauPlein();
           renderAll();
           return;
         }
-        /* Le joueur qui prend la main ne peut plus poser d'île : la partie
-           s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
-           Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
-           tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (finParPoseImpossible(p.id)) {
-          state.winner = vainqueurAuxCouronnes();
-          if (state.winner === null) state.winner = MATCH_NUL;
-          terminerPartiePlateauPlein();
-          renderAll();
-          return;
-        }
-
         state.turnTransitioning = false;
-        p.hand = [];
-        p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
-        state.phase = "ACTION_SELECT";
-        // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
-        // atteinte, la pose d'île redevient facultative au lieu de rester
-        // obligatoire sans qu'aucune forme ne puisse plus être choisie.
-        // Même levée quand aucune forme restant en stock ne tient plus sur le
-        // plateau (poseImpossiblePour, rules-core.js) : sinon « Fin du tour »
-        // resterait bloqué pour un joueur humain jusqu'au minuteur.
+        // Pose levée faute de forme qui tienne : annoncée au joueur plus bas.
         const poseSansForme = !islandLimitReachedForPlayer(p.id) && poseImpossiblePour(p.id);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id) || poseSansForme;
-        /* Le verrou du sanctuaire se relâche ici, et les couronnes qui
-           attendaient leur entrée en jeu arrivent alors — dans cet ordre, sans
-           quoi elles se remettraient aussitôt en attente. */
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
         state.treasureDropFromId = null;
         state.crownPickupCell = null;
         state.selectedIslandShape = null;
@@ -27414,10 +27390,8 @@
         p.hand = [];
         state.deckAnimationMode = null;
 
-        const wasLast = state.currentPlayer === state.players.length - 1;
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-        if (wasLast) state.round++;
+        // Passage de la main : le même que le moteur (regles.js).
+        applyPassageTourCore();
 
         playSfx("turn");
         beginTurn();
@@ -32737,34 +32711,19 @@
            suivant, une réserve différente de celle que la partie aurait
            réellement eue — et le surplus ne partait jamais à la défausse. */
         rangerEtDefausserFinDeTour(sortant);
+        applyPassageTourCore();
 
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-
-        const entrant = state.players[state.currentPlayer];
-        scoreCrownsAtTurnStart(entrant);
-        if (state.winner !== null && state.winner !== undefined) {
-          return { vainqueur: state.winner };
-        }
-        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
-        if (finParPoseImpossible(entrant.id)) {
-          const vainqueur = vainqueurAuxCouronnes();
-          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
-          return { vainqueur: state.winner };
-        }
-
-        const plausible = plannerPiocheProchaine(entrant.id).main;
-        entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
-          .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
-        state.phase = "ACTION_SELECT";
-        state.selectedActionType = null;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        state.reachable = new Set();
-        return { vainqueur: null };
+        /* Ouverture du tour : la MÊME que la partie réelle (regles.js), à la
+           main près — l'anticipation ne lit pas la pioche cachée, elle donne
+           à l'entrant sa main plausible. */
+        const ouverture = applyTurnStartCore({
+          distribuer: entrant => {
+            const plausible = plannerPiocheProchaine(entrant.id).main;
+            entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
+              .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
+          }
+        });
+        return { vainqueur: ouverture && !ouverture.continuer ? state.winner : null };
       }
 
       /** Ce que vaut un plan APRÈS la meilleure réplique adverse courte. */
@@ -33854,23 +33813,30 @@
          tour, fin au décompte si plus aucune île ne tient, pioche, verrou du
          sanctuaire relâché, couronnes en attente entrées.
          ------------------------------------------------------------------- */
-      function applyTurnStartCore() {
+      /* `distribuer(joueur)` remplace la pioche : l'anticipation du planner
+         y donne la main PLAUSIBLE du joueur (applyTurnTransitionCore), au lieu
+         de lire l'ordre caché de sa pioche. */
+      function applyTurnStartCore({ distribuer = null } = {}) {
         const entrant = state.players[state.currentPlayer];
         if (!entrant) return null;
         confierGardiensEquipe(entrant.id);
         confierMinionNeutre(entrant.id);
         scoreCrownsAtTurnStart(entrant);
-        if (state.winner !== null && state.winner !== undefined) return { continuer: false, vainqueur: state.winner };
+        if (state.winner !== null && state.winner !== undefined) return { continuer: false, vainqueur: state.winner, raison: "couronnes" };
 
         if (finParPoseImpossible(entrant.id)) {
           const vainqueur = vainqueurAuxCouronnes();
           state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
-          return { continuer: false, vainqueur: state.winner };
+          return { continuer: false, vainqueur: state.winner, raison: "plateau-plein" };
         }
 
-        entrant.hand = [];
-        entrant.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(entrant, cartesPiocheesParTour());
+        if (distribuer) {
+          distribuer(entrant);
+        } else {
+          entrant.hand = [];
+          entrant.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
+          drawCards(entrant, cartesPiocheesParTour());
+        }
         state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
         state.centerCrownTakenThisTurn = false;
         faireEntrerCouronnesEnAttente();
@@ -33880,6 +33846,15 @@
         state.selectedIslandId = null;
         state.reachable = new Set();
         return { continuer: true, vainqueur: null };
+      }
+
+      /** La main passe au joueur suivant ; une manche s'achève après le
+       *  dernier joueur. Même passage que la vraie fin de tour (ui.js). */
+      function applyPassageTourCore() {
+        const dernier = state.currentPlayer === state.players.length - 1;
+        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+        state.turn++;
+        if (dernier) state.round = (state.round || 1) + 1;
       }
 
       /** Fin de tour complète. La pose d'île encore due est faite d'office,
@@ -33898,10 +33873,7 @@
         }
 
         rangerEtDefausserFinDeTour(sortant);
-        const dernier = state.currentPlayer === state.players.length - 1;
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-        if (dernier) state.round = (state.round || 1) + 1;
+        applyPassageTourCore();
 
         const ouverture = applyTurnStartCore();
         return { type: "FIN_TOUR", poseAutomatique, ...(ouverture || { continuer: false, vainqueur: state.winner }) };

@@ -62,46 +62,22 @@
 
       function beginTurn() {
         const p = currentPlayer();
-        // 2 contre 2 à gardiens communs : l'équipe passe aux mains du joueur
-        // qui prend la main, avant même la validation des couronnes.
-        confierGardiensEquipe(p.id);
-        confierMinionNeutre(p.id);
-        const scoredAtStart = scoreCrownsAtTurnStart(p);
-        if (state.winner !== null) {
+        /* Toute la RÈGLE de l'ouverture du tour est dans le moteur
+           (applyTurnStartCore, regles.js), la même que pour le self-play et
+           ILYOS_REGLES : gardiens d'équipe et minion confiés, couronnes
+           validées, fin au décompte si plus aucune île ne tient, pioche, pose
+           due ou levée, verrou du sanctuaire relâché, couronnes en attente
+           entrées. Il ne reste ici que la mise en scène. */
+        const ouverture = applyTurnStartCore();
+        if (!ouverture || !ouverture.continuer) {
+          if (ouverture && ouverture.raison === "plateau-plein") terminerPartiePlateauPlein();
           renderAll();
           return;
         }
-        /* Le joueur qui prend la main ne peut plus poser d'île : la partie
-           s'arrête ici, au décompte (finParPoseImpossible, rules-core.js).
-           Vérifié à l'ouverture du tour, avant la pioche, pour que la fin
-           tombe au même endroit qu'une victoire aux trois couronnes. */
-        if (finParPoseImpossible(p.id)) {
-          state.winner = vainqueurAuxCouronnes();
-          if (state.winner === null) state.winner = MATCH_NUL;
-          terminerPartiePlateauPlein();
-          renderAll();
-          return;
-        }
-
         state.turnTransitioning = false;
-        p.hand = [];
-        p.stash ||= { MOVE: 0, PUSH: 0, MAGIC: 0 };
-        drawCards(p, cartesPiocheesParTour());
         state.deckAnimationMode = "deal";
-        state.phase = "ACTION_SELECT";
-        // Limite d'îles par équipe (duel symétrique personnalisé) : une fois
-        // atteinte, la pose d'île redevient facultative au lieu de rester
-        // obligatoire sans qu'aucune forme ne puisse plus être choisie.
-        // Même levée quand aucune forme restant en stock ne tient plus sur le
-        // plateau (poseImpossiblePour, rules-core.js) : sinon « Fin du tour »
-        // resterait bloqué pour un joueur humain jusqu'au minuteur.
+        // Pose levée faute de forme qui tienne : annoncée au joueur plus bas.
         const poseSansForme = !islandLimitReachedForPlayer(p.id) && poseImpossiblePour(p.id);
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(p.id) || poseSansForme;
-        /* Le verrou du sanctuaire se relâche ici, et les couronnes qui
-           attendaient leur entrée en jeu arrivent alors — dans cet ordre, sans
-           quoi elles se remettraient aussitôt en attente. */
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
         state.treasureDropFromId = null;
         state.crownPickupCell = null;
         state.selectedIslandShape = null;

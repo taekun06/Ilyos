@@ -4437,10 +4437,8 @@
         p.hand = [];
         state.deckAnimationMode = null;
 
-        const wasLast = state.currentPlayer === state.players.length - 1;
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-        if (wasLast) state.round++;
+        // Passage de la main : le même que le moteur (regles.js).
+        applyPassageTourCore();
 
         playSfx("turn");
         beginTurn();

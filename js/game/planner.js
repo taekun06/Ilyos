@@ -3787,34 +3787,19 @@
            suivant, une réserve différente de celle que la partie aurait
            réellement eue — et le surplus ne partait jamais à la défausse. */
         rangerEtDefausserFinDeTour(sortant);
+        applyPassageTourCore();
 
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-
-        const entrant = state.players[state.currentPlayer];
-        scoreCrownsAtTurnStart(entrant);
-        if (state.winner !== null && state.winner !== undefined) {
-          return { vainqueur: state.winner };
-        }
-        // Même règle que le jeu : l'entrant ne peut plus poser, fin au décompte.
-        if (finParPoseImpossible(entrant.id)) {
-          const vainqueur = vainqueurAuxCouronnes();
-          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
-          return { vainqueur: state.winner };
-        }
-
-        const plausible = plannerPiocheProchaine(entrant.id).main;
-        entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
-          .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
-        state.phase = "ACTION_SELECT";
-        state.selectedActionType = null;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        state.reachable = new Set();
-        return { vainqueur: null };
+        /* Ouverture du tour : la MÊME que la partie réelle (regles.js), à la
+           main près — l'anticipation ne lit pas la pioche cachée, elle donne
+           à l'entrant sa main plausible. */
+        const ouverture = applyTurnStartCore({
+          distribuer: entrant => {
+            const plausible = plannerPiocheProchaine(entrant.id).main;
+            entrant.hand = PLAN_TYPES_CARTES.flatMap(action => Array(plausible[action]).fill(action))
+              .map((action, i) => ({ id: "plausible-" + state.turn + "-" + i, action, used: false }));
+          }
+        });
+        return { vainqueur: ouverture && !ouverture.continuer ? state.winner : null };
       }
 
       /** Ce que vaut un plan APRÈS la meilleure réplique adverse courte. */

@@ -62,9 +62,16 @@ déduits de l'état avant/après. Le self-play termine ses tours par
 sur une partie CPU contre CPU, chaque coup de l'IA accepté par le moteur et
 donnant le même état que par le planner.
 
-Pas encore fait (étapes suivantes de la refonte) : l'interface et le CPU ne
-passent pas encore par cette porte ; la fin de tour de `ui.js`/`turns.js`
-garde son propre exemplaire ; le réseau échange encore des états entiers.
+Étape 2 : il n'y a plus qu'UNE ouverture de tour (`applyTurnStartCore`),
+utilisée par `beginTurn` (turns.js), par l'anticipation du planner
+(`applyTurnTransitionCore`, avec la main plausible à la place de la pioche) et
+par le self-play ; et un seul passage de la main (`applyPassageTourCore`),
+utilisé aussi par `endTurn` (ui.js). Le rangement des cartes de `endTurn`
+reste mêlé à son animation ; `verif-reserve.js` vérifie qu'il donne le même
+résultat que `rangerEtDefausserFinDeTour`.
+
+Pas encore fait (étapes suivantes) : les clics et le CPU en partie ne
+demandent pas encore `reglesVerifier` ; le réseau échange des états entiers.
 
 ## Moteur sans écran (Node)
 
