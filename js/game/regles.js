@@ -126,7 +126,9 @@
             if (!ile) return "île introuvable";
             if (availableActionCount("MAGIC") < 1) return "pas de carte Magie";
             if (action.direction !== 1 && action.direction !== -1) return "sens de rotation invalide";
-            if (!reglesEntier(action.turns, 1, 3)) return "nombre de quarts de tour invalide";
+            if (!reglesEntier(action.turns, 1, 4)) return "nombre de quarts de tour invalide";
+            // Tour complet (360°) : l'île revient à sa place, la carte est jouée.
+            if (action.turns === 4) return null;
             const pivot = action.pivot;
             if (!Array.isArray(pivot) || !ile.cells.some(([r, c]) => r === pivot[0] && c === pivot[1])) {
               return "le pivot doit être une case de l'île";
@@ -177,6 +179,12 @@
           case "TRANSMISSION": return applyFreeHandoffCore(action.deId, action.versId);
           case "DISSOLUTION": return applyDissolutionCore(action.islandId);
           case "FIN_TOUR": return applyEndTurnCore();
+          case "MAGIC":
+            if (action.turns === 4) {
+              const depense = consumeSelectedActionCore("MAGIC", 1);
+              return depense ? { type: "MAGIC", islandId: action.islandId, tourComplet: true, cout: depense } : null;
+            }
+            return appliquerActionNoyau(action);
           default: return appliquerActionNoyau(action);
         }
       }
@@ -337,6 +345,7 @@
       function applyTurnStartCore({ distribuer = null } = {}) {
         const entrant = state.players[state.currentPlayer];
         if (!entrant) return null;
+        state.journalCoups = [];
         confierGardiensEquipe(entrant.id);
         confierMinionNeutre(entrant.id);
         scoreCrownsAtTurnStart(entrant);
@@ -369,6 +378,9 @@
       /** La main passe au joueur suivant ; une manche s'achève après le
        *  dernier joueur. Même passage que la vraie fin de tour (ui.js). */
       function applyPassageTourCore() {
+        // Le tour qui s'achève, coup par coup, pour l'arbitre en ligne.
+        state.journalTourPrecedent = [...(state.journalCoups || []), { type: "FIN_TOUR" }];
+        state.journalCoups = [];
         const dernier = state.currentPlayer === state.players.length - 1;
         state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
         state.turn++;
@@ -395,6 +407,116 @@
 
         const ouverture = applyTurnStartCore();
         return { type: "FIN_TOUR", poseAutomatique, ...(ouverture || { continuer: false, vainqueur: state.winner }) };
+      }
+
+
+      /* ---------------------------------------------------------------------
+         JOURNAL DES COUPS ET ARBITRE EN LIGNE (étape 4, en observation)
+
+         Chaque coup réellement joué est noté en DONNÉE dans state.journalCoups
+         (remis à zéro au début du tour ; le tour achevé passe dans
+         state.journalTourPrecedent, terminé par FIN_TOUR). Le journal voyage
+         avec l'état en ligne et suit l'annulation (snapshotState).
+
+         En ligne, l'hôte garde l'état du début du tour de l'invité, rejoue le
+         journal reçu avec le moteur et compare le plateau obtenu à celui que
+         l'invité annonce. Pour l'instant il OBSERVE seulement : un désaccord
+         est compté et signalé dans la console, l'état est accepté comme avant.
+         Le refus viendra quand des parties réelles auront montré que l'arbitre
+         ne contredit jamais un joueur honnête.
+         ------------------------------------------------------------------- */
+      const REGLES_CHAMPS = {
+        MOVE: ["charId", "r", "c", "cost"],
+        PUSH: ["pusherId", "r", "c", "force"],
+        MAGIC: ["islandId", "pivot", "direction", "turns"],
+        POSE: ["shapeKey", "cells", "owner", "relCells", "anchor", "spawn"],
+        DEPOT: ["charId", "r", "c"],
+        RAMASSAGE: ["charId", "artifactId"],
+        VOL: ["charId", "artifactId"],
+        TRANSMISSION: ["deId", "versId"],
+        DISSOLUTION: ["islandId"]
+      };
+
+      function reglesNoter(action) {
+        if (ilyosSimulationActive || !state || !action || !REGLES_CHAMPS[action.type]) return;
+        const note = { type: action.type };
+        REGLES_CHAMPS[action.type].forEach(champ => {
+          if (action[champ] !== undefined && action[champ] !== null) note[champ] = copieRapide(action[champ]);
+        });
+        (state.journalCoups ||= []).push(note);
+      }
+
+      /** Le gardien d'une île posée par le joueur naît après la pose : sa case
+       *  complète la dernière pose notée. */
+      function reglesNoterApparition(r, c) {
+        if (ilyosSimulationActive || !state) return;
+        const pose = [...(state.journalCoups || [])].reverse().find(a => a.type === "POSE");
+        if (pose && !pose.spawn) pose.spawn = [r, c];
+      }
+
+      /** Ce que l'arbitre compare : le plateau et le score, pas les cartes
+       *  (une pioche remélangée tire au hasard). */
+      function reglesEmpreintePlateau(etat) {
+        const iles = (etat.islands || []).map(i => `${i.id}:${i.cells.map(([r, c]) => `${r},${c}`).sort().join(";")}`).sort();
+        const gardiens = (etat.characters || []).map(g => `${g.id}:${g.r},${g.c}:${g.player}`).sort();
+        const couronnes = [etat.artifact, etat.secondArtifact].filter(Boolean)
+          .map(a => `${a.id}:${a.carrierId ?? "-"}:${a.carrierId ? "" : `${a.r},${a.c}`}:${a.active ? 1 : 0}`).sort();
+        return JSON.stringify({
+          iles, gardiens, couronnes,
+          scores: (etat.players || []).map(p => p.score || 0),
+          main: etat.currentPlayer, tour: etat.turn, vainqueur: etat.winner ?? null
+        });
+      }
+
+      /** Rejoue `actions` depuis `depart` ; rend l'état obtenu ou le refus. */
+      function reglesRejouer(depart, actions) {
+        let copie;
+        try {
+          copie = reglesEtatDepuis(depart);
+        } catch (erreur) {
+          return { ok: false, raison: String(erreur.message || erreur) };
+        }
+        return withSimulatedState(copie, () => {
+          for (let i = 0; i < actions.length; i++) {
+            const r = reglesAppliquer(actions[i]);
+            if (!r.ok) return { ok: false, raison: `coup ${i + 1} (${actions[i].type}) : ${r.raison}` };
+          }
+          return { ok: true, raison: null, etat: copie };
+        });
+      }
+
+      const reglesArbitre = { reference: null, verifications: 0, accords: 0, desaccords: 0, ignores: 0, dernier: null };
+
+      /** L'hôte note l'état du début du tour de l'invité (journal vide). */
+      function reglesArbitreReference(etat, joueurLocal) {
+        if (!etat || etat.currentPlayer === joueurLocal || (etat.journalCoups || []).length) return;
+        reglesArbitre.reference = JSON.stringify(etat);
+      }
+
+      /** Juge un état reçu de l'invité. N'en refuse aucun (observation). */
+      function reglesArbitreObserver(recu, joueurLocal) {
+        try {
+          if (!reglesArbitre.reference || !recu) return null;
+          const finDeTour = recu.currentPlayer === joueurLocal;
+          if (!finDeTour && recu.phase === "PLACE_SPAWN") { reglesArbitre.ignores++; return null; }
+          const coups = finDeTour ? recu.journalTourPrecedent : recu.journalCoups;
+          if (!Array.isArray(coups)) { reglesArbitre.ignores++; return null; }
+          reglesArbitre.verifications++;
+          const rejeu = reglesRejouer(reglesArbitre.reference, coups);
+          const accord = rejeu.ok && reglesEmpreintePlateau(rejeu.etat) === reglesEmpreintePlateau(recu);
+          const verdict = { accord, raison: rejeu.ok ? (accord ? null : "plateau différent de celui rejoué") : rejeu.raison, coups: coups.length, finDeTour };
+          reglesArbitre.dernier = verdict;
+          if (accord) reglesArbitre.accords++;
+          else {
+            reglesArbitre.desaccords++;
+            console.warn("[ILYOS] arbitre en ligne : désaccord (observation seule)", verdict);
+          }
+          if (finDeTour) reglesArbitre.reference = null;
+          return verdict;
+        } catch (erreur) {
+          reglesArbitre.ignores++;
+          return null;
+        }
       }
 
       /* ---------------------------------------------------------------------
@@ -442,5 +564,12 @@
         appliquer: reglesSurEtat,
         finDeTour: etat => reglesSurEtat(etat, { type: "FIN_TOUR" }),
         /* Sur la partie en cours, sans la modifier. */
-        verifierIci: action => reglesVerifier(action)
+        verifierIci: action => reglesVerifier(action),
+        rejouer: (etat, actions) => {
+          const r = reglesRejouer(etat, actions || []);
+          return r.ok ? { ok: true, raison: null, etat: r.etat, empreinte: reglesEmpreintePlateau(r.etat) } : r;
+        },
+        empreintePlateau: etat => reglesEmpreintePlateau(typeof etat === "string" ? JSON.parse(etat) : etat),
+        journal: () => copieRapide((state && state.journalCoups) || []),
+        arbitre: () => { const { reference, ...bilan } = reglesArbitre; return { ...bilan, reference: !!reference }; }
       };

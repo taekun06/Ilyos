@@ -17572,6 +17572,7 @@
           state.networkRevision = networkRevision;
           const payload = serializeOnlineState();
           sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+          if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
           saveOnlineSession();
         }, 100);
       }
@@ -17584,6 +17585,7 @@
         state.networkRevision = networkRevision;
         const payload = serializeOnlineState();
         sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+        if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
         saveOnlineSession();
       }
 
@@ -17653,6 +17655,9 @@
         if (onlineRole === "host") {
           if (revision <= (networkRevision || 0)) return false;
           if (!state?.onlineMode || state.currentPlayer === localPlayerIndex) return false;
+          /* Arbitre (regles.js) : l'hôte rejoue les coups de l'invité et
+             compare. En observation pour l'instant : rien n'est refusé. */
+          if (validerEtatEnLigne(message.state)) reglesArbitreObserver(message.state, localPlayerIndex);
         } else if (revision < (networkRevision || 0)) {
           return false;
         }
@@ -20929,6 +20934,7 @@
               action.spawn || null
             );
             if (!applique) return false;
+            reglesNoter(action);
             playIslandDrop(applique.ileId);
             benchJournaliser({ type: "POSE", automatique: false, case: applique.gardienCase });
             renderAll();
@@ -20938,6 +20944,7 @@
           case "DEPOT": {
             const applique = applyFreeDropCore(action.charId, action.r, action.c);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser(applique);
             renderAll();
             await sleep(320);
@@ -20946,6 +20953,7 @@
           case "RAMASSAGE": {
             const applique = applyFreePickupCore(action.charId, action.artifactId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "RAMASSAGE", gardien: action.charId });
             renderAll();
             await sleep(320);
@@ -20954,6 +20962,7 @@
           case "DISSOLUTION": {
             const applique = applyDissolutionCore(action.islandId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "DISSOLUTION", ile: action.islandId });
             applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
             if (kaykit3D) kaykit3D.lastStateSignature = "";
@@ -20967,6 +20976,7 @@
           case "VOL": {
             const applique = applyFreeStealCore(action.charId, action.artifactId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "VOL", gardien: action.charId, de: applique.deId });
             renderAll();
             const voleur = characterById(action.charId);
@@ -20979,6 +20989,7 @@
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId,
               directe: applique.directe, depot: applique.depot });
             renderAll();
@@ -21339,6 +21350,9 @@
           artifact: state.artifact,
           secondArtifact: state.secondArtifact,
           couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          // Journal des coups du tour (regles.js) : l'annulation le ramène aussi.
+          journalCoups: [...(state.journalCoups || [])],
+          journalTourPrecedent: [...(state.journalTourPrecedent || [])],
           phase: state.phase,
           islandPlacedThisTurn: state.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!state.centerCrownTakenThisTurn,
@@ -21433,6 +21447,8 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        if (Array.isArray(snap.journalCoups)) state.journalCoups = [...snap.journalCoups];
+        if (Array.isArray(snap.journalTourPrecedent)) state.journalTourPrecedent = [...snap.journalTourPrecedent];
         if (snap.rotation !== undefined) state.rotation = snap.rotation;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
@@ -24615,6 +24631,7 @@
             showToast("Ce gardien porte déjà une couronne.");
             return false;
           }
+          reglesNoter({ type: stealTargetId ? "VOL" : "RAMASSAGE", charId: claimer.id, artifactId: artifact.id });
           if (isCenterCrownCell(crownCell)) state.centerCrownTakenThisTurn = true;
           state.crownPickupCell = null;
           state.crownStealTargetId = null;
@@ -24766,6 +24783,7 @@
               r, c
             };
             state.characters.push(char);
+            reglesNoterApparition(r, c);
             resolveArtifactForCharacter(char);
             state.phase = "ACTION_SELECT";
             state.selectedIslandShape = null;
@@ -24813,6 +24831,7 @@
                 showToast("Ce gardien porte déjà une couronne.");
                 return;
               }
+              reglesNoter({ type: "TRANSMISSION", deId: owner.id, versId: clickedAlly.id });
 
               if (kaykit3D) {
                 kaykit3D.characterFacing.set(String(owner.id), kaykitFacingRotation(owner.r, owner.c, clickedAlly.r, clickedAlly.c));
@@ -24842,6 +24861,7 @@
               discardLastUndoSnapshot();
               return;
             }
+            reglesNoter({ type: "DEPOT", charId: owner.id, r, c });
             state.treasureDropFromId = null;
             state.treasureDropArtifactId = null;
             state.crownTransferTargetIds = [];
@@ -24870,6 +24890,7 @@
               showToast("Ce gardien porte déjà une couronne.");
               return;
             }
+            reglesNoter({ type: stolenFrom ? "VOL" : "RAMASSAGE", charId: pickedChar.id, artifactId: artifact.id });
             if (isCenterCrownCell(state.crownPickupCell)) state.centerCrownTakenThisTurn = true;
             state.crownPickupCell = null;
             state.crownStealTargetId = null;
@@ -25186,6 +25207,10 @@
         }
 
         state.islandPlacedThisTurn = true;
+        reglesNoter({
+          type: "POSE", shapeKey: island.shapeKey, cells: island.cells, owner: island.owner,
+          relCells: island.relCells, anchor: island.anchor
+        });
         if (paiement.length) {
           showToast(`Île posée : ${paiement.map(type => ACTIONS[type].name).join(" et ")} payés.`);
         }
@@ -25895,6 +25920,7 @@
            désormais sa case de départ explicitement, puisqu'elle ne peut plus
            la relire depuis un état déjà à jour. */
         const resultat = applyMoveCore(char.id, r, c, cost);
+        if (resultat) reglesNoter({ type: "MOVE", charId: char.id, r, c, cost });
         if (resultat?.couronneRamassee) {
           showToast(`${joueurDuGardien(char).name} récupère une couronne !`);
         }
@@ -26212,6 +26238,7 @@
            callback d'animation : entre les deux, l'IA pouvait relire un compte
            d'actions encore intact et décider sur une base périmée. */
         const applique = applyPushCore(pusher.id, r, c, force);
+        if (applique) reglesNoter({ type: "PUSH", pusherId: pusher.id, r, c, force });
         if (!applique) {
           discardLastUndoSnapshot();
           /* ÉCHEC SILENCIEUX auparavant : le noyau refusait, l'interface gardait
@@ -26535,6 +26562,7 @@
           animateBoardMagic();
           playSfx("magic");
           showToast("Rotation complète de 360° pour 1 magie.");
+          reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction: 1, turns: 4 });
           useSelectedCard(1);
           return;
         }
@@ -26587,6 +26615,7 @@
            l'animation — même principe que pour les gardiens, dont le visuel
            n'est pas recalé tant qu'un déplacement est en cours. */
         const applique = applyMagicRotationCore(island.id, rotation);
+        if (applique) reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [pivotR, pivotC], direction, turns });
         kaykitGelerCalqueIles(true);
 
         animateIslandLiftRotation(island.id, steps * 90, () => {
@@ -26643,6 +26672,7 @@
         }
 
         saveUndoSnapshot();
+        reglesNoter({ type: "DISSOLUTION", islandId: island.id });
         const cells = island.cells.map(([ir, ic]) => [ir, ic]);
         state.islands = state.islands.filter(is => is.id !== island.id);
         cells.forEach(([ir, ic]) => animateCellPulse(ir, ic, "magic-vanish"));
@@ -33656,7 +33686,9 @@
             if (!ile) return "île introuvable";
             if (availableActionCount("MAGIC") < 1) return "pas de carte Magie";
             if (action.direction !== 1 && action.direction !== -1) return "sens de rotation invalide";
-            if (!reglesEntier(action.turns, 1, 3)) return "nombre de quarts de tour invalide";
+            if (!reglesEntier(action.turns, 1, 4)) return "nombre de quarts de tour invalide";
+            // Tour complet (360°) : l'île revient à sa place, la carte est jouée.
+            if (action.turns === 4) return null;
             const pivot = action.pivot;
             if (!Array.isArray(pivot) || !ile.cells.some(([r, c]) => r === pivot[0] && c === pivot[1])) {
               return "le pivot doit être une case de l'île";
@@ -33707,6 +33739,12 @@
           case "TRANSMISSION": return applyFreeHandoffCore(action.deId, action.versId);
           case "DISSOLUTION": return applyDissolutionCore(action.islandId);
           case "FIN_TOUR": return applyEndTurnCore();
+          case "MAGIC":
+            if (action.turns === 4) {
+              const depense = consumeSelectedActionCore("MAGIC", 1);
+              return depense ? { type: "MAGIC", islandId: action.islandId, tourComplet: true, cout: depense } : null;
+            }
+            return appliquerActionNoyau(action);
           default: return appliquerActionNoyau(action);
         }
       }
@@ -33867,6 +33905,7 @@
       function applyTurnStartCore({ distribuer = null } = {}) {
         const entrant = state.players[state.currentPlayer];
         if (!entrant) return null;
+        state.journalCoups = [];
         confierGardiensEquipe(entrant.id);
         confierMinionNeutre(entrant.id);
         scoreCrownsAtTurnStart(entrant);
@@ -33899,6 +33938,9 @@
       /** La main passe au joueur suivant ; une manche s'achève après le
        *  dernier joueur. Même passage que la vraie fin de tour (ui.js). */
       function applyPassageTourCore() {
+        // Le tour qui s'achève, coup par coup, pour l'arbitre en ligne.
+        state.journalTourPrecedent = [...(state.journalCoups || []), { type: "FIN_TOUR" }];
+        state.journalCoups = [];
         const dernier = state.currentPlayer === state.players.length - 1;
         state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
         state.turn++;
@@ -33925,6 +33967,116 @@
 
         const ouverture = applyTurnStartCore();
         return { type: "FIN_TOUR", poseAutomatique, ...(ouverture || { continuer: false, vainqueur: state.winner }) };
+      }
+
+
+      /* ---------------------------------------------------------------------
+         JOURNAL DES COUPS ET ARBITRE EN LIGNE (étape 4, en observation)
+
+         Chaque coup réellement joué est noté en DONNÉE dans state.journalCoups
+         (remis à zéro au début du tour ; le tour achevé passe dans
+         state.journalTourPrecedent, terminé par FIN_TOUR). Le journal voyage
+         avec l'état en ligne et suit l'annulation (snapshotState).
+
+         En ligne, l'hôte garde l'état du début du tour de l'invité, rejoue le
+         journal reçu avec le moteur et compare le plateau obtenu à celui que
+         l'invité annonce. Pour l'instant il OBSERVE seulement : un désaccord
+         est compté et signalé dans la console, l'état est accepté comme avant.
+         Le refus viendra quand des parties réelles auront montré que l'arbitre
+         ne contredit jamais un joueur honnête.
+         ------------------------------------------------------------------- */
+      const REGLES_CHAMPS = {
+        MOVE: ["charId", "r", "c", "cost"],
+        PUSH: ["pusherId", "r", "c", "force"],
+        MAGIC: ["islandId", "pivot", "direction", "turns"],
+        POSE: ["shapeKey", "cells", "owner", "relCells", "anchor", "spawn"],
+        DEPOT: ["charId", "r", "c"],
+        RAMASSAGE: ["charId", "artifactId"],
+        VOL: ["charId", "artifactId"],
+        TRANSMISSION: ["deId", "versId"],
+        DISSOLUTION: ["islandId"]
+      };
+
+      function reglesNoter(action) {
+        if (ilyosSimulationActive || !state || !action || !REGLES_CHAMPS[action.type]) return;
+        const note = { type: action.type };
+        REGLES_CHAMPS[action.type].forEach(champ => {
+          if (action[champ] !== undefined && action[champ] !== null) note[champ] = copieRapide(action[champ]);
+        });
+        (state.journalCoups ||= []).push(note);
+      }
+
+      /** Le gardien d'une île posée par le joueur naît après la pose : sa case
+       *  complète la dernière pose notée. */
+      function reglesNoterApparition(r, c) {
+        if (ilyosSimulationActive || !state) return;
+        const pose = [...(state.journalCoups || [])].reverse().find(a => a.type === "POSE");
+        if (pose && !pose.spawn) pose.spawn = [r, c];
+      }
+
+      /** Ce que l'arbitre compare : le plateau et le score, pas les cartes
+       *  (une pioche remélangée tire au hasard). */
+      function reglesEmpreintePlateau(etat) {
+        const iles = (etat.islands || []).map(i => `${i.id}:${i.cells.map(([r, c]) => `${r},${c}`).sort().join(";")}`).sort();
+        const gardiens = (etat.characters || []).map(g => `${g.id}:${g.r},${g.c}:${g.player}`).sort();
+        const couronnes = [etat.artifact, etat.secondArtifact].filter(Boolean)
+          .map(a => `${a.id}:${a.carrierId ?? "-"}:${a.carrierId ? "" : `${a.r},${a.c}`}:${a.active ? 1 : 0}`).sort();
+        return JSON.stringify({
+          iles, gardiens, couronnes,
+          scores: (etat.players || []).map(p => p.score || 0),
+          main: etat.currentPlayer, tour: etat.turn, vainqueur: etat.winner ?? null
+        });
+      }
+
+      /** Rejoue `actions` depuis `depart` ; rend l'état obtenu ou le refus. */
+      function reglesRejouer(depart, actions) {
+        let copie;
+        try {
+          copie = reglesEtatDepuis(depart);
+        } catch (erreur) {
+          return { ok: false, raison: String(erreur.message || erreur) };
+        }
+        return withSimulatedState(copie, () => {
+          for (let i = 0; i < actions.length; i++) {
+            const r = reglesAppliquer(actions[i]);
+            if (!r.ok) return { ok: false, raison: `coup ${i + 1} (${actions[i].type}) : ${r.raison}` };
+          }
+          return { ok: true, raison: null, etat: copie };
+        });
+      }
+
+      const reglesArbitre = { reference: null, verifications: 0, accords: 0, desaccords: 0, ignores: 0, dernier: null };
+
+      /** L'hôte note l'état du début du tour de l'invité (journal vide). */
+      function reglesArbitreReference(etat, joueurLocal) {
+        if (!etat || etat.currentPlayer === joueurLocal || (etat.journalCoups || []).length) return;
+        reglesArbitre.reference = JSON.stringify(etat);
+      }
+
+      /** Juge un état reçu de l'invité. N'en refuse aucun (observation). */
+      function reglesArbitreObserver(recu, joueurLocal) {
+        try {
+          if (!reglesArbitre.reference || !recu) return null;
+          const finDeTour = recu.currentPlayer === joueurLocal;
+          if (!finDeTour && recu.phase === "PLACE_SPAWN") { reglesArbitre.ignores++; return null; }
+          const coups = finDeTour ? recu.journalTourPrecedent : recu.journalCoups;
+          if (!Array.isArray(coups)) { reglesArbitre.ignores++; return null; }
+          reglesArbitre.verifications++;
+          const rejeu = reglesRejouer(reglesArbitre.reference, coups);
+          const accord = rejeu.ok && reglesEmpreintePlateau(rejeu.etat) === reglesEmpreintePlateau(recu);
+          const verdict = { accord, raison: rejeu.ok ? (accord ? null : "plateau différent de celui rejoué") : rejeu.raison, coups: coups.length, finDeTour };
+          reglesArbitre.dernier = verdict;
+          if (accord) reglesArbitre.accords++;
+          else {
+            reglesArbitre.desaccords++;
+            console.warn("[ILYOS] arbitre en ligne : désaccord (observation seule)", verdict);
+          }
+          if (finDeTour) reglesArbitre.reference = null;
+          return verdict;
+        } catch (erreur) {
+          reglesArbitre.ignores++;
+          return null;
+        }
       }
 
       /* ---------------------------------------------------------------------
@@ -33972,7 +34124,14 @@
         appliquer: reglesSurEtat,
         finDeTour: etat => reglesSurEtat(etat, { type: "FIN_TOUR" }),
         /* Sur la partie en cours, sans la modifier. */
-        verifierIci: action => reglesVerifier(action)
+        verifierIci: action => reglesVerifier(action),
+        rejouer: (etat, actions) => {
+          const r = reglesRejouer(etat, actions || []);
+          return r.ok ? { ok: true, raison: null, etat: r.etat, empreinte: reglesEmpreintePlateau(r.etat) } : r;
+        },
+        empreintePlateau: etat => reglesEmpreintePlateau(typeof etat === "string" ? JSON.parse(etat) : etat),
+        journal: () => copieRapide((state && state.journalCoups) || []),
+        arbitre: () => { const { reference, ...bilan } = reglesArbitre; return { ...bilan, reference: !!reference }; }
       };
 
       /* =====================================================================

@@ -2262,6 +2262,7 @@
           state.networkRevision = networkRevision;
           const payload = serializeOnlineState();
           sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+          if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
           saveOnlineSession();
         }, 100);
       }
@@ -2274,6 +2275,7 @@
         state.networkRevision = networkRevision;
         const payload = serializeOnlineState();
         sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+        if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
         saveOnlineSession();
       }
 
@@ -2343,6 +2345,9 @@
         if (onlineRole === "host") {
           if (revision <= (networkRevision || 0)) return false;
           if (!state?.onlineMode || state.currentPlayer === localPlayerIndex) return false;
+          /* Arbitre (regles.js) : l'hôte rejoue les coups de l'invité et
+             compare. En observation pour l'instant : rien n'est refusé. */
+          if (validerEtatEnLigne(message.state)) reglesArbitreObserver(message.state, localPlayerIndex);
         } else if (revision < (networkRevision || 0)) {
           return false;
         }

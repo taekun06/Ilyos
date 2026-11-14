@@ -168,6 +168,9 @@
           artifact: state.artifact,
           secondArtifact: state.secondArtifact,
           couronnesEnAttente: [...(state.couronnesEnAttente || [])],
+          // Journal des coups du tour (regles.js) : l'annulation le ramène aussi.
+          journalCoups: [...(state.journalCoups || [])],
+          journalTourPrecedent: [...(state.journalTourPrecedent || [])],
           phase: state.phase,
           islandPlacedThisTurn: state.islandPlacedThisTurn,
           centerCrownTakenThisTurn: !!state.centerCrownTakenThisTurn,
@@ -262,6 +265,8 @@
         state.artifact = snap.artifact;
         state.secondArtifact = snap.secondArtifact || { id: "crown-2", r: CENTER.r, c: CENTER.c, carrierId: null, active: false };
         state.couronnesEnAttente = [...(snap.couronnesEnAttente || [])];
+        if (Array.isArray(snap.journalCoups)) state.journalCoups = [...snap.journalCoups];
+        if (Array.isArray(snap.journalTourPrecedent)) state.journalTourPrecedent = [...snap.journalTourPrecedent];
         if (snap.rotation !== undefined) state.rotation = snap.rotation;
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;

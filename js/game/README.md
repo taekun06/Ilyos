@@ -80,8 +80,21 @@ adverse). `verif:regles` vérifie que la garde et l'essai complet acceptent
 les mêmes coups du CPU.
 
 La pose d'île du joueur passe aussi par la garde (hors mise en place).
-Pas encore fait : ramassage, vol et passe du joueur ne passent pas
-encore par la garde ; le réseau échange des états entiers.
+Étape 4a : chaque coup réellement joué (joueur et CPU Expert) est noté en
+donnée dans `state.journalCoups` (`reglesNoter`, ui.js et ai.js) ; à la fin du
+tour il passe dans `state.journalTourPrecedent`, terminé par `FIN_TOUR`. Le
+journal suit l'annulation (`snapshotState`) et voyage avec l'état en ligne.
+L'hôte garde l'état du début du tour de l'invité, rejoue le journal reçu
+(`reglesArbitreObserver`, core.js) et compare le plateau. EN OBSERVATION :
+un désaccord est compté (`ILYOS_REGLES.arbitre()`) et signalé dans la console,
+rien n'est refusé. `scripts/verif-journal.js` (serveur 8123) rejoue ainsi
+chaque tour d'une partie CPU contre CPU et vérifie qu'un plateau trafiqué est
+repéré. Un nouveau geste du joueur doit appeler `reglesNoter`, sinon l'arbitre
+le verra comme une triche.
+
+Pas encore fait : refuser l'état d'un invité en désaccord (4b, après des
+parties en ligne réelles) ; ramassage, vol et passe du joueur sont notés mais
+pas encore gardés.
 
 ## Moteur sans écran (Node)
 
