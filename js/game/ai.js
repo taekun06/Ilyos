@@ -961,6 +961,13 @@
         for (const action of rapport.plan) {
           if (token !== aiRunToken || !state || state.winner !== null) return true;
           let applique = false;
+          /* Le moteur de règles a le dernier mot (regles.js) : un coup qu'il
+             refuse n'est pas joué, le tour se termine proprement. */
+          const verdict = reglesVerifier(action, { essai: false });
+          if (!verdict.ok) {
+            console.warn("[ILYOS] coup du CPU refusé par le moteur de règles :", action.type, verdict.raison);
+            break;
+          }
           try {
             applique = await executerActionPlanifiee(action, token);
           } catch (erreur) {

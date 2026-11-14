@@ -1877,7 +1877,8 @@
               return;
             }
 
-            if (!applyFreeDropCore(owner.id, r, c)) {
+            if (reglesRefuserAuJoueur({ type: "DEPOT", charId: owner.id, r, c })
+              || !applyFreeDropCore(owner.id, r, c)) {
               discardLastUndoSnapshot();
               return;
             }
@@ -2889,6 +2890,7 @@
           return false;
         }
 
+        if (reglesRefuserAuJoueur({ type: "MOVE", charId: char.id, r, c, cost })) return false;
         const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
@@ -3236,6 +3238,7 @@
         // Exactement la force qui vient d'être montrée en aperçu : sans cette
         // égalité, le joueur jouait autre chose que ce qu'il avait sous les yeux.
         const force = forcePousseeCourante();
+        if (reglesRefuserAuJoueur({ type: "PUSH", pusherId: pusher.id, r, c, force })) return;
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
@@ -3588,6 +3591,9 @@
           return;
         }
 
+        if (reglesRefuserAuJoueur({
+          type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns
+        })) return;
         saveUndoSnapshot();
         const [pivotR, pivotC] = state.selectedMagicPivot;
         // Rotation réellement effectuée, signée : un cran « 3 » est un quart de

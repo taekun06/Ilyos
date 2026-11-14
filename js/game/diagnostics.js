@@ -1648,6 +1648,9 @@
             for (const action of (rapport && rapport.plan) || []) {
               const verdict = reglesVerifier(action);
               if (!verdict.ok) controle.refusees.push({ type: action.type, raison: verdict.raison });
+              // La garde de la partie réelle (sans essai) doit dire la même chose.
+              const garde = reglesVerifier(action, { essai: false });
+              if (!garde.ok) controle.refusees.push({ type: action.type, raison: "garde : " + garde.raison });
               const parMoteur = copieRapide(state);
               const parPlanner = copieRapide(state);
               const moteur = withSimulatedState(parMoteur, () => {

@@ -20864,6 +20864,13 @@
         for (const action of rapport.plan) {
           if (token !== aiRunToken || !state || state.winner !== null) return true;
           let applique = false;
+          /* Le moteur de règles a le dernier mot (regles.js) : un coup qu'il
+             refuse n'est pas joué, le tour se termine proprement. */
+          const verdict = reglesVerifier(action, { essai: false });
+          if (!verdict.ok) {
+            console.warn("[ILYOS] coup du CPU refusé par le moteur de règles :", action.type, verdict.raison);
+            break;
+          }
           try {
             applique = await executerActionPlanifiee(action, token);
           } catch (erreur) {
@@ -24830,7 +24837,8 @@
               return;
             }
 
-            if (!applyFreeDropCore(owner.id, r, c)) {
+            if (reglesRefuserAuJoueur({ type: "DEPOT", charId: owner.id, r, c })
+              || !applyFreeDropCore(owner.id, r, c)) {
               discardLastUndoSnapshot();
               return;
             }
@@ -25842,6 +25850,7 @@
           return false;
         }
 
+        if (reglesRefuserAuJoueur({ type: "MOVE", charId: char.id, r, c, cost })) return false;
         const owner = joueurDuGardien(char);
         const from = [char.r, char.c];
         saveUndoSnapshot();
@@ -26189,6 +26198,7 @@
         // Exactement la force qui vient d'être montrée en aperçu : sans cette
         // égalité, le joueur jouait autre chose que ce qu'il avait sous les yeux.
         const force = forcePousseeCourante();
+        if (reglesRefuserAuJoueur({ type: "PUSH", pusherId: pusher.id, r, c, force })) return;
         saveUndoSnapshot();
         queueKayKitActionAnimation(pusher.id, "attack", 900, { r, c });
         if (targetChar) queueKayKitActionAnimation(targetChar.id, "hurt", 850, { r: pusher.r, c: pusher.c });
@@ -26541,6 +26551,9 @@
           return;
         }
 
+        if (reglesRefuserAuJoueur({
+          type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns
+        })) return;
         saveUndoSnapshot();
         const [pivotR, pivotC] = state.selectedMagicPivot;
         // Rotation réellement effectuée, signée : un cran « 3 » est un quart de
@@ -33793,15 +33806,46 @@
         return { ok: true, raison: null, evenements: reglesEvenements(avant, reglesPhoto()) };
       }
 
-      /** Le coup est-il permis dans `state` ? Ne touche à rien. */
-      function reglesVerifier(action) {
+      /** Le coup est-il permis dans `state` ? Ne touche à rien.
+       *
+       *  Complet par défaut : contrôles propres au type, PUIS essai du noyau
+       *  sur une copie. `essai: false` s'en tient aux contrôles, sans exécuter
+       *  aucun noyau. C'est le mode des gardes de la PARTIE RÉELLE : plusieurs
+       *  modes enveloppent les noyaux avec des effets hors de `state` (compte
+       *  des cartes dépensées d'une énigme, carte armée du marché, relevé du
+       *  tour adverse…), qu'un essai, même sur une copie, déclencherait. */
+      function reglesVerifier(action, { essai = true } = {}) {
         if (!state) return reglesRefus("aucune partie");
+        if (!essai) {
+          if (!action || typeof action !== "object" || typeof action.type !== "string") return reglesRefus("action illisible");
+          if (state.winner !== null && state.winner !== undefined) return reglesRefus("la partie est terminée");
+          // Une séquence se juge pas à pas : sans essai, seul son premier pas
+          // se lit sur l'état présent.
+          const premier = action.type === "SEQUENCE" ? (action.actions || [])[0] : action;
+          if (!premier) return reglesRefus("séquence vide");
+          if (premier.type === "SEQUENCE") return reglesVerifier(premier, { essai: false });
+          const refus = reglesControleAvant(premier);
+          return refus ? reglesRefus(refus) : { ok: true, raison: null };
+        }
         const copie = cloneStateForSimulation();
         // Contexte de pose que la copie de simulation ne garde pas.
         copie.quick = state.quick;
         copie.draft = state.draft;
         const { ok, raison } = withSimulatedState(copie, () => reglesAppliquer(action));
         return { ok, raison };
+      }
+
+      /** Garde des gestes du joueur (ui.js) : demande au moteur, juste avant
+       *  d'agir, si le coup est permis. Refusé, rien ne bouge et le joueur
+       *  lit pourquoi. Rend true si le coup est REFUSÉ. L'interface filtre
+       *  déjà ses clics ; ce contrôle garantit que la porte d'entrée et
+       *  l'interface disent la même chose. */
+      function reglesRefuserAuJoueur(action) {
+        const verdict = reglesVerifier(action, { essai: false });
+        if (verdict.ok) return false;
+        console.warn("[ILYOS] coup refusé par le moteur de règles :", action && action.type, verdict.raison);
+        showToast(`Coup impossible : ${verdict.raison}.`);
+        return true;
       }
 
       /* ---------------------------------------------------------------------
@@ -60217,6 +60261,9 @@
             for (const action of (rapport && rapport.plan) || []) {
               const verdict = reglesVerifier(action);
               if (!verdict.ok) controle.refusees.push({ type: action.type, raison: verdict.raison });
+              // La garde de la partie réelle (sans essai) doit dire la même chose.
+              const garde = reglesVerifier(action, { essai: false });
+              if (!garde.ok) controle.refusees.push({ type: action.type, raison: "garde : " + garde.raison });
               const parMoteur = copieRapide(state);
               const parPlanner = copieRapide(state);
               const moteur = withSimulatedState(parMoteur, () => {

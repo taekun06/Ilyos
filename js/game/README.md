@@ -70,8 +70,17 @@ utilisé aussi par `endTurn` (ui.js). Le rangement des cartes de `endTurn`
 reste mêlé à son animation ; `verif-reserve.js` vérifie qu'il donne le même
 résultat que `rangerEtDefausserFinDeTour`.
 
-Pas encore fait (étapes suivantes) : les clics et le CPU en partie ne
-demandent pas encore `reglesVerifier` ; le réseau échange des états entiers.
+Étape 3 : en partie, les gestes du joueur (déplacer, pousser, magie, poser
+la couronne : `reglesRefuserAuJoueur`, ui.js) et chaque coup du CPU Expert
+(ai.js) demandent `reglesVerifier(action, { essai: false })` juste avant
+d'agir. Sans essai : en partie réelle, n'exécuter AUCUN noyau, même sur une
+copie, car plusieurs modes enveloppent les noyaux avec des effets hors de
+`state` (cartes dépensées d'une énigme, carte armée du marché, relevé du tour
+adverse). `verif:regles` vérifie que la garde et l'essai complet acceptent
+les mêmes coups du CPU.
+
+Pas encore fait : pose d'île, ramassage, vol et passe du joueur ne passent pas
+encore par la garde ; le réseau échange des états entiers.
 
 ## Moteur sans écran (Node)
 

@@ -280,15 +280,46 @@
         return { ok: true, raison: null, evenements: reglesEvenements(avant, reglesPhoto()) };
       }
 
-      /** Le coup est-il permis dans `state` ? Ne touche à rien. */
-      function reglesVerifier(action) {
+      /** Le coup est-il permis dans `state` ? Ne touche à rien.
+       *
+       *  Complet par défaut : contrôles propres au type, PUIS essai du noyau
+       *  sur une copie. `essai: false` s'en tient aux contrôles, sans exécuter
+       *  aucun noyau. C'est le mode des gardes de la PARTIE RÉELLE : plusieurs
+       *  modes enveloppent les noyaux avec des effets hors de `state` (compte
+       *  des cartes dépensées d'une énigme, carte armée du marché, relevé du
+       *  tour adverse…), qu'un essai, même sur une copie, déclencherait. */
+      function reglesVerifier(action, { essai = true } = {}) {
         if (!state) return reglesRefus("aucune partie");
+        if (!essai) {
+          if (!action || typeof action !== "object" || typeof action.type !== "string") return reglesRefus("action illisible");
+          if (state.winner !== null && state.winner !== undefined) return reglesRefus("la partie est terminée");
+          // Une séquence se juge pas à pas : sans essai, seul son premier pas
+          // se lit sur l'état présent.
+          const premier = action.type === "SEQUENCE" ? (action.actions || [])[0] : action;
+          if (!premier) return reglesRefus("séquence vide");
+          if (premier.type === "SEQUENCE") return reglesVerifier(premier, { essai: false });
+          const refus = reglesControleAvant(premier);
+          return refus ? reglesRefus(refus) : { ok: true, raison: null };
+        }
         const copie = cloneStateForSimulation();
         // Contexte de pose que la copie de simulation ne garde pas.
         copie.quick = state.quick;
         copie.draft = state.draft;
         const { ok, raison } = withSimulatedState(copie, () => reglesAppliquer(action));
         return { ok, raison };
+      }
+
+      /** Garde des gestes du joueur (ui.js) : demande au moteur, juste avant
+       *  d'agir, si le coup est permis. Refusé, rien ne bouge et le joueur
+       *  lit pourquoi. Rend true si le coup est REFUSÉ. L'interface filtre
+       *  déjà ses clics ; ce contrôle garantit que la porte d'entrée et
+       *  l'interface disent la même chose. */
+      function reglesRefuserAuJoueur(action) {
+        const verdict = reglesVerifier(action, { essai: false });
+        if (verdict.ok) return false;
+        console.warn("[ILYOS] coup refusé par le moteur de règles :", action && action.type, verdict.raison);
+        showToast(`Coup impossible : ${verdict.raison}.`);
+        return true;
       }
 
       /* ---------------------------------------------------------------------
