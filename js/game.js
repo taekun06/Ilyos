@@ -5379,38 +5379,6 @@
         return { copie, u };
       }
 
-      /* ESSAI (10/11) : style du survol d'un gardien, à choisir par Taekun.
-         ?gardien=A contour fin seul, B anneau fin au sol seul, C les deux.
-         Sans paramètre : survol actuel (reflet + contour épais). */
-      function kaykitStyleSurvolGardien() {
-        if (kaykitStyleSurvolGardien.valeur === undefined) {
-          let style = null;
-          try { style = (new URLSearchParams(location.search).get("gardien") || window.ILYOS_SURVOL_GARDIEN || "").toUpperCase() || null; } catch (_) { }
-          kaykitStyleSurvolGardien.valeur = ["A", "B", "C"].includes(style) ? style : null;
-        }
-        return kaykitStyleSurvolGardien.valeur;
-      }
-      /* Anneau fin au sol : trait clair sur un trait sombre plus large, lisible
-         sur l'herbe comme sur une île dorée (la couleur d'équipe or s'y
-         perdait). */
-      function kaykitAnneauSurvolGardien(r, c) {
-        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
-        kaykit3D.contoursSurvol = kaykit3D.contoursSurvol || [];
-        [[.034, 0x1b1208, .55, 21], [.016, 0xffffff, .98, 22]].forEach(([tube, couleur, opacite, ordre]) => {
-          const anneau = new THREE.Mesh(
-            kaykitGeometry("survol-gardien-anneau-" + tube, () => new THREE.TorusGeometry(.34, tube, 6, 44)),
-            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false })
-          );
-          anneau.material.userData = { ilyosTransient: true };
-          anneau.rotation.x = -Math.PI / 2;
-          anneau.position.set(p.x, p.y + (ordre - 21) * .004, p.z);
-          anneau.renderOrder = ordre;
-          anneau.raycast = () => {};
-          kaykit3D.dynamicGroup.add(anneau);
-          kaykit3D.contoursSurvol.push(anneau);
-        });
-      }
-
       function setKayKitVisualHover(cell, intent) {
         // Clone temporairement les matériaux afin de ne jamais modifier les matériaux partagés.
         if (!kaykit3D) return;
@@ -5446,19 +5414,17 @@
         if (intent.kind === "crown") kaykitSouleverCase(visuals);
         const aContourer = [];
 
-        const styleGardien = kaykitStyleSurvolGardien();
-        if (styleGardien && occupant && (styleGardien === "B" || styleGardien === "C")
-          && visuals.some(objet => objet?.userData?.ilyosContour && objet.userData.ilyosContour !== "couronne")) {
-          kaykitAnneauSurvolGardien(cell.r, cell.c);
-        }
         visuals.forEach(object => object?.traverse?.(mesh => {
           if (!mesh.isMesh || !mesh.material) return;
           const originalMaterial = mesh.material;
           const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
           const role = object.userData?.ilyosContour;
-          // Essai : en style A/B/C, le gardien garde ses matériaux (pas de reflet).
-          if (styleGardien && role && role !== "couronne") {
-            if (styleGardien !== "B") aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
+          /* Gardien survolé : un contour fin à la couleur de son équipe, sans
+             reflet ni pulsation — le modèle reste intact. Le reflet pulsé et
+             le contour épais d'avant étaient « grossiers et peu lisibles »
+             (Taekun, 10/11, style A choisi le 14/11). */
+          if (role && role !== "couronne") {
+            aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
             return;
           }
           const clonedMaterials = originals.map(material => {
