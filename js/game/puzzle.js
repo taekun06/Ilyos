@@ -33,7 +33,8 @@
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
         CONFLUENCE: "Confluence",
-        IV: "Acte IV · Les Cimes"
+        IV: "Acte IV · Les Cimes",
+        V: "Acte V · Les Grands Archipels"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -100,6 +101,55 @@
           .some(v => v.r === village?.r && v.c === village?.c);
         if (relais && villageDuJoueur) return relais.map(([r, c]) => [r, c]);
         return puzzleCornerCrownCellsBase(village);
+      };
+
+      /* ---------- Couronne validée --------------------------------------
+         Dans une partie, une couronne validée renaît au sanctuaire. Dans une
+         énigme elle a fini son voyage : elle quitte le plateau. Sans cela, une
+         énigme à deux couronnes se gagnerait en validant deux fois la même,
+         revenue au centre à mi-chemin du village. */
+      const puzzleResetArtifactBase = resetArtifactObject;
+      resetArtifactObject = function resetArtifactObjectPuzzleAware(artifact) {
+        if (PUZZLE.active && artifact) {
+          artifact.active = false;
+          artifact.carrierId = null;
+          return;
+        }
+        puzzleResetArtifactBase(artifact);
+      };
+
+      /* ---------- Formes autorisées ------------------------------------
+         `placement: { formes: { domino: 1 } }` n'ouvre que les formes listées,
+         chacune en nombre compté. Sans cette liste, une énigme qui rouvre la
+         pose offrirait les neuf formes à volonté — une Croix pose un pont
+         n'importe où et dissout le puzzle. */
+      function puzzleFormesAutorisees() {
+        return PUZZLE.active && PUZZLE.def?.placement?.formes || null;
+      }
+      const puzzleShapeLimitReachedBase = shapeLimitReached;
+      shapeLimitReached = function shapeLimitReachedPuzzleAware(shapeKey) {
+        const formes = puzzleFormesAutorisees();
+        if (!formes) return puzzleShapeLimitReachedBase(shapeKey);
+        const nombre = formes[shapeKey] || 0;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= nombre;
+      };
+
+      /* Îles encore posables dans l'énigme en cours, ou null si elle ne compte
+         pas ses formes. Le HUD l'affiche sur le bouton Île (ui.js). */
+      function puzzleIlesRestantes() {
+        const formes = puzzleFormesAutorisees();
+        if (!formes || !state) return null;
+        return Object.keys(formes).reduce((total, forme) =>
+          total + Math.max(0, (formes[forme] || 0) - shapeUsageCountForOwner(0, forme)), 0);
+      }
+
+      /* Dans une énigme, poser une île n'est JAMAIS une obligation : c'est un
+         coup comme un autre, à jouer au bon moment ou pas du tout. Sans cela,
+         le tour ne pourrait plus finir une fois le stock de formes épuisé. */
+      const puzzleObligationIleBase = obligationIleRemplie;
+      obligationIleRemplie = function obligationIleRempliePuzzleAware(source = state) {
+        if (PUZZLE.active && source?.puzzle) return true;
+        return puzzleObligationIleBase(source);
       };
 
       /* ---------- Comptage exact des cartes -----------------------------
@@ -251,7 +301,11 @@
              allié en faisait apparaître une seconde. */
           rules: {
             allowDissolve: false, islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: 0, disableSecondCrown: true
+            shapeLimitPerOwner: 0, disableSecondCrown: true,
+            /* Une énigme qui rouvre la pose peut la rendre PAYANTE (deux
+               cartes, la règle du mode personnalisé) : invoquer un Gardien
+               devient alors un choix d'optimisation, pas un cadeau. */
+            ilesPayantes: !!def.placement?.payante
           },
           /* La pose est neutralisée : une énigme se résout avec les cartes
              qu'on lui donne, pas en fabriquant du terrain. Une définition peut
@@ -3618,6 +3672,23 @@
           couronne.c = dc;
           return { action: null, cout: 0 };
         }
+        /* Pose d'île avec invocation : `cells` absolues, `spawn` la case où le
+           Gardien apparaît, `key` le nom sous lequel les coups suivants le
+           désignent. Le coût est celui du jeu (payerIle) : deux cartes si la
+           pose est payante, rien sinon. */
+        if (step.a === "POSE") {
+          if (state.islandPlacedThisTurn) return { error: "une seule île par tour" };
+          if (shapeLimitReached(step.forme)) return { error: `forme ${step.forme} non disponible` };
+          if (!step.cells.every(([r, c]) => inside(r, c) && !isLand(r, c))) {
+            return { error: `pose impossible en ${JSON.stringify(step.cells)}` };
+          }
+          if (!peutPayerIle(state.players[0])) return { error: "pas de quoi payer l'île" };
+          return {
+            action: { type: "POSE", shapeKey: step.forme, cells: step.cells, owner: 0, spawn: step.spawn },
+            cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0,
+            nouveau: step.key || null
+          };
+        }
         if (step.a === "MAGIC") {
           const islandId = PUZZLE.islandsByKey[step.island];
           if (islandId == null) return { error: `île ${step.island} introuvable` };
@@ -3659,6 +3730,7 @@
               if (!resultat) {
                 return { id: def.id, ok: false, raison: `coup ${i + 1} refusé par le noyau (${resolu.action.type})`, journal };
               }
+              if (resolu.nouveau && resultat.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             }
             journal.push(`${resolu.action ? resolu.action.type : def.solution[i].a} ${resolu.cout}`);
           }
@@ -3711,9 +3783,11 @@
             if (resolu.error) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} : ${resolu.error}`, journal };
             }
-            if (resolu.action && !appliquerActionNoyau(resolu.action)) {
+            const resultat = resolu.action ? appliquerActionNoyau(resolu.action) : null;
+            if (resolu.action && !resultat) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} refusé par le noyau`, journal };
             }
+            if (resolu.nouveau && resultat?.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             journal.push(`T${t + 1} ${resolu.action ? resolu.action.type : tours[t][i].a} ${resolu.cout}`);
             tutoRender();
           }
@@ -3838,6 +3912,26 @@
           });
         }
 
+        /* Pose d'île : toutes les orientations des formes autorisées, toutes
+           les places libres, et chaque case d'invocation. Énorme, mais une
+           seule fois par tour — la recherche cesse de l'énumérer dès la pose. */
+        const formes = puzzleFormesAutorisees();
+        if (formes && !state.islandPlacedThisTurn && peutPayerIle(state.players[0])) {
+          Object.keys(formes).filter(forme => !shapeLimitReached(forme)).forEach(forme => {
+            puzzleOrientations(forme).forEach(rel => {
+              for (let r = 0; r < GRID; r++) {
+                for (let c = 0; c < GRID; c++) {
+                  const cells = rel.map(([dr, dc]) => [r + dr, c + dc]);
+                  if (!cells.every(([a, b]) => inside(a, b) && !isLand(a, b))) continue;
+                  cells.forEach(spawn => actions.push({
+                    a: "POSE", forme, cells, spawn, cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0
+                  }));
+                }
+              }
+            });
+          });
+        }
+
         if (availableActionCount("MAGIC") > 0) {
           (state.islands || []).forEach(ile => {
             ile.cells.forEach(([pr, pc]) => {
@@ -3857,7 +3951,31 @@
         return actions;
       }
 
+      /* Les orientations distinctes d'une forme : quatre quarts de tour, plus
+         le miroir pour les formes qui se retournent. */
+      function puzzleOrientations(forme) {
+        const base = SHAPES[forme]?.cells || [];
+        const vues = new Map();
+        const variantes = SHAPES[forme]?.flippable ? [base, base.map(([r, c]) => [r, -c])] : [base];
+        variantes.forEach(cellules => {
+          let courant = cellules.map(([r, c]) => [r, c]);
+          for (let k = 0; k < 4; k++) {
+            courant = courant.map(([r, c]) => [c, -r]);
+            const mr = Math.min(...courant.map(x => x[0]));
+            const mc = Math.min(...courant.map(x => x[1]));
+            const norme = courant.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            vues.set(JSON.stringify(norme), norme);
+          }
+        });
+        return [...vues.values()];
+      }
+
       function puzzleSearchApply(action) {
+        if (action.a === "POSE") {
+          return !!appliquerActionNoyau({
+            type: "POSE", shapeKey: action.forme, cells: action.cells, owner: 0, spawn: action.spawn
+          });
+        }
         if (action.a === "PICKUP") {
           const char = characterById(action.charId);
           const couronne = artifactById(action.crownId);
@@ -3934,6 +4052,7 @@
         if (action.a === "PICKUP") return `PICKUP ${action.charId}`;
         if (action.a === "TRANSFER") return `TRANSFER ${action.fromId}->${action.toId}`;
         if (action.a === "DROP") return `DROP ${action.charId} en ${action.r},${action.c}`;
+        if (action.a === "POSE") return `POSE ${action.forme} ${JSON.stringify(action.cells)} gardien ${action.spawn}`;
         return action.a;
       }
 

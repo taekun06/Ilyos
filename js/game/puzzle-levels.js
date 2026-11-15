@@ -1,8 +1,8 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-cinq énigmes, de la leçon de poussée aux Cimes, au-delà des neuf
-         mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
+         Vingt-six énigmes, de la leçon de poussée aux Grands Archipels, au-delà
+         des Cimes. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
          l'ordre des identifiants, qui ne dit plus que l'ancienneté.
@@ -1595,6 +1595,117 @@
             { a: "PUSH", who: "H", on: [0, 3], force: 3 },
             { a: "MOVE", who: "H", to: [0, 0] },
             { a: "PUSH", who: "H", on: [1, 0], force: 1 }
+          ]
+        },
+        /* =================================================================
+           ACTE V — LES GRANDS ARCHIPELS
+
+           Treize cases de côté, treize îles, et chacune est une vraie forme
+           du jeu : toutes pivotent, aucune case n'est figée en cachette. Le
+           plateau entier sert, plusieurs routes gagnent, et la moins chère ne
+           se voit pas d'abord. L'île à poser (et le Gardien qu'elle invoque)
+           fait partie du problème : on n'en a qu'une.
+
+           Ces énigmes dépassent le chercheur exhaustif. `par` y est la
+           MEILLEURE SOLUTION CONNUE, trouvée par une recherche guidée hors
+           moteur puis rejouée ici par l'oracle : rien ne prouve qu'on ne fait
+           pas mieux, et l'énigme reste gagnée au-dessus du barème tant que la
+           pioche suffit.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           L'ARCHIPEL SANS PONT
+
+           Une couronne, du coin sud-est au village du nord-ouest, et pas un
+           seul pont. Personne ne garde le village côté joueur : c'est l'île
+           posée qui y invoque un Gardien, et ce Gardien, placé de côté, fait
+           tomber les deux rivaux d'une carte chacun.
+
+           Ligne connue en 14 : le Carré pivote et dépose le porteur au pied
+           du Carrefour ; la couronne, posée dessus, tourne AVEC lui jusqu'au
+           Serpent déjà retourné ; un lancer de quatre cases la pose sur la
+           Croix creuse, qui la porte seule jusqu'au Mât ; une dernière
+           poussée, et le Gardien invoqué la cueille. Quatre Gardiens, aucun
+           ne fait le trajet.
+
+           Autres routes vérifiées, plus chères : par la Croix pleine en
+           poussant la couronne À TRAVERS le rival (18), par le sud. */
+        {
+          id: "p27-archipel-sans-pont",
+          acte: "V",
+          principe: "TRACE",
+          verite: "Ce qui ne se franchit pas se déplace.",
+          title: "L'archipel sans pont",
+          tagline: "Treize îles, aucune ne touche l'autre. Toutes tournent.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: { 0: [[0, 0]] },
+          placement: { formes: { l3: 1 } },
+          islands: [
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            { key: "VOL", cells: [[0, 8], [0, 10], [1, 9]] },
+            { key: "GUET", cells: [[1, 0], [2, 0], [2, 1]] },
+            { key: "FLECHE", cells: [[1, 12], [2, 12], [3, 12]] },
+            { key: "MAT", cells: [[3, 0], [4, 0], [5, 0]] },
+            { key: "CREUSE", cells: [[5, 3], [6, 2], [6, 4], [7, 3]] },
+            { key: "CROIX", cells: [[5, 7], [6, 6], [6, 7], [6, 8], [7, 7]] },
+            { key: "SERPENT", cells: [[5, 11], [5, 12], [6, 10], [6, 11]] },
+            { key: "CARREFOUR", cells: [[8, 11], [9, 10], [9, 11], [9, 12]] },
+            { key: "COUDE", cells: [[9, 2], [10, 2], [10, 3]] },
+            { key: "ECLAIR", cells: [[11, 1], [11, 2], [12, 2], [12, 3]] },
+            { key: "CARRE", cells: [[11, 11], [11, 12], [12, 11], [12, 12]] },
+            { key: "QUAI", cells: [[12, 6], [12, 7], [12, 8]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 12, c: 12, crown: 1 },
+            { key: "B", p: 0, r: 5, c: 11 },
+            { key: "C", p: 0, r: 5, c: 0 },
+            { key: "Q", p: 1, r: 0, c: 1 },
+            { key: "P", p: 1, r: 1, c: 0 },
+            { key: "R", p: 1, r: 6, c: 7 }
+          ],
+          deck: [
+            ["MAGIC", "MAGIC", "PUSH", "PUSH", "PUSH"],
+            ["MAGIC", "MOVE", "PUSH", "PUSH", "PUSH"],
+            ["MAGIC", "MOVE", "MOVE", "PUSH", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "PUSH", "MOVE"]
+          ],
+          par: 14,
+          rivalPlan: [
+            "ils campent sur ton village et n'en bougeront pas."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "L'archipel a tourné",
+          winLine: "Quatre Gardiens, et aucun n'a fait le voyage. Les îles l'ont fait pour eux.",
+          failLine: "Il restait une île à faire tourner.",
+          solution: [
+            [
+              { a: "POSE", forme: "l3", cells: [[1, 1], [1, 2], [2, 2]], spawn: [1, 1], key: "N" },
+              { a: "MAGIC", island: "CARRE", pivot: [11, 11], turns: 2 },
+              { a: "MAGIC", island: "SERPENT", pivot: [6, 10], turns: 2 },
+              { a: "PUSH", who: "N", on: [1, 0], force: 1 },
+              { a: "PUSH", who: "N", on: [0, 1], force: 1 }
+            ],
+            [
+              { a: "DROP", who: "G", on: [9, 10] },
+              { a: "MAGIC", island: "CARREFOUR", pivot: [8, 11], turns: 1, direction: 1 },
+              { a: "PICKUP", who: "B", on: [7, 10] },
+              { a: "MOVE", who: "B", to: [7, 8] },
+              { a: "DROP", who: "B", on: [7, 7] },
+              { a: "PUSH", who: "B", on: [7, 7], force: 4 }
+            ],
+            [
+              { a: "MAGIC", island: "CREUSE", pivot: [6, 2], turns: 2 },
+              { a: "PICKUP", who: "C", on: [5, 1] },
+              { a: "MOVE", who: "C", to: [4, 0] },
+              { a: "MOVE", who: "N", to: [1, 0] },
+              { a: "DROP", who: "C", on: [3, 0] },
+              { a: "PUSH", who: "C", on: [3, 0], force: 1 },
+              { a: "PICKUP", who: "N", on: [2, 0] }
+            ]
           ]
         }
       );

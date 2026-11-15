@@ -23481,12 +23481,16 @@
         const islandStatusEl = document.getElementById("hudV2IslandStatus");
         const islandDrawer = document.getElementById("hudV2IslandDrawer");
         if (islandStatusEl) {
-          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
+          /* Énigme à formes comptées : le bouton dit combien d'îles il reste,
+             et s'efface quand il n'y en a plus (puzzle.js). */
+          const ilesEnigme = state.puzzle ? puzzleIlesRestantes() : null;
+          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn || ilesEnigme === 0);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
           /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
              organique lit ce sous-titre (js/hud-organique-v2.js). */
           const payante = ilesPayantes() && !state.draft;
-          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES`
+            : (ilesEnigme != null ? `×${ilesEnigme}` : "OBLIGATOIRE");
           islandStatusEl.disabled = payante && !peutPayerIle(active);
           islandStatusEl.title = islandStatusEl.disabled
             ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`
@@ -45664,7 +45668,8 @@
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
         CONFLUENCE: "Confluence",
-        IV: "Acte IV · Les Cimes"
+        IV: "Acte IV · Les Cimes",
+        V: "Acte V · Les Grands Archipels"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -45731,6 +45736,55 @@
           .some(v => v.r === village?.r && v.c === village?.c);
         if (relais && villageDuJoueur) return relais.map(([r, c]) => [r, c]);
         return puzzleCornerCrownCellsBase(village);
+      };
+
+      /* ---------- Couronne validée --------------------------------------
+         Dans une partie, une couronne validée renaît au sanctuaire. Dans une
+         énigme elle a fini son voyage : elle quitte le plateau. Sans cela, une
+         énigme à deux couronnes se gagnerait en validant deux fois la même,
+         revenue au centre à mi-chemin du village. */
+      const puzzleResetArtifactBase = resetArtifactObject;
+      resetArtifactObject = function resetArtifactObjectPuzzleAware(artifact) {
+        if (PUZZLE.active && artifact) {
+          artifact.active = false;
+          artifact.carrierId = null;
+          return;
+        }
+        puzzleResetArtifactBase(artifact);
+      };
+
+      /* ---------- Formes autorisées ------------------------------------
+         `placement: { formes: { domino: 1 } }` n'ouvre que les formes listées,
+         chacune en nombre compté. Sans cette liste, une énigme qui rouvre la
+         pose offrirait les neuf formes à volonté — une Croix pose un pont
+         n'importe où et dissout le puzzle. */
+      function puzzleFormesAutorisees() {
+        return PUZZLE.active && PUZZLE.def?.placement?.formes || null;
+      }
+      const puzzleShapeLimitReachedBase = shapeLimitReached;
+      shapeLimitReached = function shapeLimitReachedPuzzleAware(shapeKey) {
+        const formes = puzzleFormesAutorisees();
+        if (!formes) return puzzleShapeLimitReachedBase(shapeKey);
+        const nombre = formes[shapeKey] || 0;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= nombre;
+      };
+
+      /* Îles encore posables dans l'énigme en cours, ou null si elle ne compte
+         pas ses formes. Le HUD l'affiche sur le bouton Île (ui.js). */
+      function puzzleIlesRestantes() {
+        const formes = puzzleFormesAutorisees();
+        if (!formes || !state) return null;
+        return Object.keys(formes).reduce((total, forme) =>
+          total + Math.max(0, (formes[forme] || 0) - shapeUsageCountForOwner(0, forme)), 0);
+      }
+
+      /* Dans une énigme, poser une île n'est JAMAIS une obligation : c'est un
+         coup comme un autre, à jouer au bon moment ou pas du tout. Sans cela,
+         le tour ne pourrait plus finir une fois le stock de formes épuisé. */
+      const puzzleObligationIleBase = obligationIleRemplie;
+      obligationIleRemplie = function obligationIleRempliePuzzleAware(source = state) {
+        if (PUZZLE.active && source?.puzzle) return true;
+        return puzzleObligationIleBase(source);
       };
 
       /* ---------- Comptage exact des cartes -----------------------------
@@ -45882,7 +45936,11 @@
              allié en faisait apparaître une seconde. */
           rules: {
             allowDissolve: false, islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: 0, disableSecondCrown: true
+            shapeLimitPerOwner: 0, disableSecondCrown: true,
+            /* Une énigme qui rouvre la pose peut la rendre PAYANTE (deux
+               cartes, la règle du mode personnalisé) : invoquer un Gardien
+               devient alors un choix d'optimisation, pas un cadeau. */
+            ilesPayantes: !!def.placement?.payante
           },
           /* La pose est neutralisée : une énigme se résout avec les cartes
              qu'on lui donne, pas en fabriquant du terrain. Une définition peut
@@ -49249,6 +49307,23 @@
           couronne.c = dc;
           return { action: null, cout: 0 };
         }
+        /* Pose d'île avec invocation : `cells` absolues, `spawn` la case où le
+           Gardien apparaît, `key` le nom sous lequel les coups suivants le
+           désignent. Le coût est celui du jeu (payerIle) : deux cartes si la
+           pose est payante, rien sinon. */
+        if (step.a === "POSE") {
+          if (state.islandPlacedThisTurn) return { error: "une seule île par tour" };
+          if (shapeLimitReached(step.forme)) return { error: `forme ${step.forme} non disponible` };
+          if (!step.cells.every(([r, c]) => inside(r, c) && !isLand(r, c))) {
+            return { error: `pose impossible en ${JSON.stringify(step.cells)}` };
+          }
+          if (!peutPayerIle(state.players[0])) return { error: "pas de quoi payer l'île" };
+          return {
+            action: { type: "POSE", shapeKey: step.forme, cells: step.cells, owner: 0, spawn: step.spawn },
+            cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0,
+            nouveau: step.key || null
+          };
+        }
         if (step.a === "MAGIC") {
           const islandId = PUZZLE.islandsByKey[step.island];
           if (islandId == null) return { error: `île ${step.island} introuvable` };
@@ -49290,6 +49365,7 @@
               if (!resultat) {
                 return { id: def.id, ok: false, raison: `coup ${i + 1} refusé par le noyau (${resolu.action.type})`, journal };
               }
+              if (resolu.nouveau && resultat.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             }
             journal.push(`${resolu.action ? resolu.action.type : def.solution[i].a} ${resolu.cout}`);
           }
@@ -49342,9 +49418,11 @@
             if (resolu.error) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} : ${resolu.error}`, journal };
             }
-            if (resolu.action && !appliquerActionNoyau(resolu.action)) {
+            const resultat = resolu.action ? appliquerActionNoyau(resolu.action) : null;
+            if (resolu.action && !resultat) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} refusé par le noyau`, journal };
             }
+            if (resolu.nouveau && resultat?.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             journal.push(`T${t + 1} ${resolu.action ? resolu.action.type : tours[t][i].a} ${resolu.cout}`);
             tutoRender();
           }
@@ -49469,6 +49547,26 @@
           });
         }
 
+        /* Pose d'île : toutes les orientations des formes autorisées, toutes
+           les places libres, et chaque case d'invocation. Énorme, mais une
+           seule fois par tour — la recherche cesse de l'énumérer dès la pose. */
+        const formes = puzzleFormesAutorisees();
+        if (formes && !state.islandPlacedThisTurn && peutPayerIle(state.players[0])) {
+          Object.keys(formes).filter(forme => !shapeLimitReached(forme)).forEach(forme => {
+            puzzleOrientations(forme).forEach(rel => {
+              for (let r = 0; r < GRID; r++) {
+                for (let c = 0; c < GRID; c++) {
+                  const cells = rel.map(([dr, dc]) => [r + dr, c + dc]);
+                  if (!cells.every(([a, b]) => inside(a, b) && !isLand(a, b))) continue;
+                  cells.forEach(spawn => actions.push({
+                    a: "POSE", forme, cells, spawn, cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0
+                  }));
+                }
+              }
+            });
+          });
+        }
+
         if (availableActionCount("MAGIC") > 0) {
           (state.islands || []).forEach(ile => {
             ile.cells.forEach(([pr, pc]) => {
@@ -49488,7 +49586,31 @@
         return actions;
       }
 
+      /* Les orientations distinctes d'une forme : quatre quarts de tour, plus
+         le miroir pour les formes qui se retournent. */
+      function puzzleOrientations(forme) {
+        const base = SHAPES[forme]?.cells || [];
+        const vues = new Map();
+        const variantes = SHAPES[forme]?.flippable ? [base, base.map(([r, c]) => [r, -c])] : [base];
+        variantes.forEach(cellules => {
+          let courant = cellules.map(([r, c]) => [r, c]);
+          for (let k = 0; k < 4; k++) {
+            courant = courant.map(([r, c]) => [c, -r]);
+            const mr = Math.min(...courant.map(x => x[0]));
+            const mc = Math.min(...courant.map(x => x[1]));
+            const norme = courant.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            vues.set(JSON.stringify(norme), norme);
+          }
+        });
+        return [...vues.values()];
+      }
+
       function puzzleSearchApply(action) {
+        if (action.a === "POSE") {
+          return !!appliquerActionNoyau({
+            type: "POSE", shapeKey: action.forme, cells: action.cells, owner: 0, spawn: action.spawn
+          });
+        }
         if (action.a === "PICKUP") {
           const char = characterById(action.charId);
           const couronne = artifactById(action.crownId);
@@ -49565,6 +49687,7 @@
         if (action.a === "PICKUP") return `PICKUP ${action.charId}`;
         if (action.a === "TRANSFER") return `TRANSFER ${action.fromId}->${action.toId}`;
         if (action.a === "DROP") return `DROP ${action.charId} en ${action.r},${action.c}`;
+        if (action.a === "POSE") return `POSE ${action.forme} ${JSON.stringify(action.cells)} gardien ${action.spawn}`;
         return action.a;
       }
 
@@ -49911,8 +50034,8 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-cinq énigmes, de la leçon de poussée aux Cimes, au-delà des neuf
-         mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
+         Vingt-six énigmes, de la leçon de poussée aux Grands Archipels, au-delà
+         des Cimes. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
          l'ordre des identifiants, qui ne dit plus que l'ancienneté.
@@ -51505,6 +51628,117 @@
             { a: "PUSH", who: "H", on: [0, 3], force: 3 },
             { a: "MOVE", who: "H", to: [0, 0] },
             { a: "PUSH", who: "H", on: [1, 0], force: 1 }
+          ]
+        },
+        /* =================================================================
+           ACTE V — LES GRANDS ARCHIPELS
+
+           Treize cases de côté, treize îles, et chacune est une vraie forme
+           du jeu : toutes pivotent, aucune case n'est figée en cachette. Le
+           plateau entier sert, plusieurs routes gagnent, et la moins chère ne
+           se voit pas d'abord. L'île à poser (et le Gardien qu'elle invoque)
+           fait partie du problème : on n'en a qu'une.
+
+           Ces énigmes dépassent le chercheur exhaustif. `par` y est la
+           MEILLEURE SOLUTION CONNUE, trouvée par une recherche guidée hors
+           moteur puis rejouée ici par l'oracle : rien ne prouve qu'on ne fait
+           pas mieux, et l'énigme reste gagnée au-dessus du barème tant que la
+           pioche suffit.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           L'ARCHIPEL SANS PONT
+
+           Une couronne, du coin sud-est au village du nord-ouest, et pas un
+           seul pont. Personne ne garde le village côté joueur : c'est l'île
+           posée qui y invoque un Gardien, et ce Gardien, placé de côté, fait
+           tomber les deux rivaux d'une carte chacun.
+
+           Ligne connue en 14 : le Carré pivote et dépose le porteur au pied
+           du Carrefour ; la couronne, posée dessus, tourne AVEC lui jusqu'au
+           Serpent déjà retourné ; un lancer de quatre cases la pose sur la
+           Croix creuse, qui la porte seule jusqu'au Mât ; une dernière
+           poussée, et le Gardien invoqué la cueille. Quatre Gardiens, aucun
+           ne fait le trajet.
+
+           Autres routes vérifiées, plus chères : par la Croix pleine en
+           poussant la couronne À TRAVERS le rival (18), par le sud. */
+        {
+          id: "p27-archipel-sans-pont",
+          acte: "V",
+          principe: "TRACE",
+          verite: "Ce qui ne se franchit pas se déplace.",
+          title: "L'archipel sans pont",
+          tagline: "Treize îles, aucune ne touche l'autre. Toutes tournent.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: { 0: [[0, 0]] },
+          placement: { formes: { l3: 1 } },
+          islands: [
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            { key: "VOL", cells: [[0, 8], [0, 10], [1, 9]] },
+            { key: "GUET", cells: [[1, 0], [2, 0], [2, 1]] },
+            { key: "FLECHE", cells: [[1, 12], [2, 12], [3, 12]] },
+            { key: "MAT", cells: [[3, 0], [4, 0], [5, 0]] },
+            { key: "CREUSE", cells: [[5, 3], [6, 2], [6, 4], [7, 3]] },
+            { key: "CROIX", cells: [[5, 7], [6, 6], [6, 7], [6, 8], [7, 7]] },
+            { key: "SERPENT", cells: [[5, 11], [5, 12], [6, 10], [6, 11]] },
+            { key: "CARREFOUR", cells: [[8, 11], [9, 10], [9, 11], [9, 12]] },
+            { key: "COUDE", cells: [[9, 2], [10, 2], [10, 3]] },
+            { key: "ECLAIR", cells: [[11, 1], [11, 2], [12, 2], [12, 3]] },
+            { key: "CARRE", cells: [[11, 11], [11, 12], [12, 11], [12, 12]] },
+            { key: "QUAI", cells: [[12, 6], [12, 7], [12, 8]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 12, c: 12, crown: 1 },
+            { key: "B", p: 0, r: 5, c: 11 },
+            { key: "C", p: 0, r: 5, c: 0 },
+            { key: "Q", p: 1, r: 0, c: 1 },
+            { key: "P", p: 1, r: 1, c: 0 },
+            { key: "R", p: 1, r: 6, c: 7 }
+          ],
+          deck: [
+            ["MAGIC", "MAGIC", "PUSH", "PUSH", "PUSH"],
+            ["MAGIC", "MOVE", "PUSH", "PUSH", "PUSH"],
+            ["MAGIC", "MOVE", "MOVE", "PUSH", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "PUSH", "MOVE"]
+          ],
+          par: 14,
+          rivalPlan: [
+            "ils campent sur ton village et n'en bougeront pas."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "L'archipel a tourné",
+          winLine: "Quatre Gardiens, et aucun n'a fait le voyage. Les îles l'ont fait pour eux.",
+          failLine: "Il restait une île à faire tourner.",
+          solution: [
+            [
+              { a: "POSE", forme: "l3", cells: [[1, 1], [1, 2], [2, 2]], spawn: [1, 1], key: "N" },
+              { a: "MAGIC", island: "CARRE", pivot: [11, 11], turns: 2 },
+              { a: "MAGIC", island: "SERPENT", pivot: [6, 10], turns: 2 },
+              { a: "PUSH", who: "N", on: [1, 0], force: 1 },
+              { a: "PUSH", who: "N", on: [0, 1], force: 1 }
+            ],
+            [
+              { a: "DROP", who: "G", on: [9, 10] },
+              { a: "MAGIC", island: "CARREFOUR", pivot: [8, 11], turns: 1, direction: 1 },
+              { a: "PICKUP", who: "B", on: [7, 10] },
+              { a: "MOVE", who: "B", to: [7, 8] },
+              { a: "DROP", who: "B", on: [7, 7] },
+              { a: "PUSH", who: "B", on: [7, 7], force: 4 }
+            ],
+            [
+              { a: "MAGIC", island: "CREUSE", pivot: [6, 2], turns: 2 },
+              { a: "PICKUP", who: "C", on: [5, 1] },
+              { a: "MOVE", who: "C", to: [4, 0] },
+              { a: "MOVE", who: "N", to: [1, 0] },
+              { a: "DROP", who: "C", on: [3, 0] },
+              { a: "PUSH", who: "C", on: [3, 0], force: 1 },
+              { a: "PICKUP", who: "N", on: [2, 0] }
+            ]
           ]
         }
       );
