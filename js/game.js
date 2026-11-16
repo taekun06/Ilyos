@@ -12991,6 +12991,10 @@
           id: String(character.id),
           assetKey,
           playerId,
+          /* Couleur propre au gardien (énigmes « chacun sa case ») : lue par
+             js/character-materials-v1.js, qui a le dernier mot sur les
+             matériaux des personnages. */
+          teinte: character.teinte ?? null,
           wrapper,
           model,
           animator,
@@ -45753,6 +45757,18 @@
         puzzleResetArtifactBase(artifact);
       };
 
+      /* UNE COURONNE ÉTEINTE LE RESTE. ensureArtifactState() (core.js) rallume
+         la première couronne « par précaution » à chaque lecture : juste en
+         partie, faux en énigme, où une énigme SANS couronne en voyait surgir
+         une au centre du plateau (Destinée) et où une couronne validée
+         revenait en jeu sur la case du village. */
+      const puzzleEnsureArtifactBase = ensureArtifactState;
+      ensureArtifactState = function ensureArtifactStatePuzzleAware() {
+        const eteinte = !!(state && state.puzzle && state.artifact && state.artifact.active === false);
+        puzzleEnsureArtifactBase();
+        if (eteinte) state.artifact.active = false;
+      };
+
       /* ---------- Formes autorisées ------------------------------------
          `placement: { formes: { domino: 1 } }` n'ouvre que les formes listées,
          chacune en nombre compté. Sans cette liste, une énigme qui rouvre la
@@ -46000,6 +46016,12 @@
              faisait surgir les gardiens du Sanctuaire suivant au lieu de les
              faire entrer. */
           const char = { id: `pz${PUZZLE.serie}-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
+          /* CHACUN SA COULEUR. Quand l'énigme attend chaque Gardien sur SA case
+             (assignedCells), le chevalier prend la couleur de cette case :
+             c'est le seul appariement, sans signe à déchiffrer. */
+          const rangCouleur = def.goal?.type === "assignedCells" && g.key
+            ? Object.keys(def.goal.pairs || {}).indexOf(g.key) + 1 : 0;
+          if (rangCouleur > 0 && PUZZLE_SCEAU_COLORS[rangCouleur] != null) char.teinte = PUZZLE_SCEAU_COLORS[rangCouleur];
           state.characters.push(char);
           if (g.key) PUZZLE.charsByKey[g.key] = char.id;
           if (g.crown) {
@@ -46300,131 +46322,19 @@
             border-color:rgba(255,232,170,.30);box-shadow:0 4px 14px rgba(0,0,0,.32);}
 
           /* ================= LES SIGNES =================
-             Ce que l'image de référence appelle de la magie : des ORBES d'or
-             en perspective autour du plateau, avec leurs nœuds lumineux, des
-             glyphes et de la poussière de lumière. Tout est IMMOBILE : aucune
-             animation ni boucle JS, et rien ne capte le pointeur. Les traits sont
-             FINS et leur lumière est portée par la lueur (box-shadow), pas par
-             l'épaisseur : c'est ce qui permet de les voir passer devant le
-             plateau sans jamais gêner sa lecture. */
+             Ce que l'image de référence appelle de la magie : des glyphes et
+             de la poussière de lumière autour du plateau. Tout est IMMOBILE :
+             aucune animation ni boucle JS, et rien ne capte le pointeur. */
           #puzzleLayer .pz-signes{position:absolute;inset:0;z-index:1;
             overflow:hidden;pointer-events:none;opacity:0;
             transition:opacity 1.8s ease;}
           #puzzleLayer .pz-signes.on{opacity:1;}
-          /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
-             un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
-             le plateau ; une lueur, on la traverse du regard. */
-          /* DES ARCS, PAS DES CERCLES. Rendre une bordure transparente
-             n'enlevait qu'un quart du tour, avec une coupe nette en diagonale :
-             il restait trois quarts de tracé, et l'œil refermait le cercle tout
-             seul. Un masque conique découpe un arc de longueur LIBRE et, mieux,
-             laisse ses deux extrémités s'éteindre en fondu — c'est ce fondu qui
-             fait qu'un arc se perd au loin au lieu d'être coupé.
-             Les deux variables d'arc sont posées par la construction,
-             avec les runes, pour que celles-ci tombent toujours SUR le tracé
-             conservé — masquées avec lui sinon. */
-          /* LE POIDS DU TRAIT. Le masque conique découpe aussi la lueur portée
-             par box-shadow : les arcs avaient beau être justes, ils ne pesaient
-             plus rien sur un ciel doré très clair. La lueur passe donc par
-             la propriete filter, qui suit le contour réellement conservé au lieu de
-             rayonner depuis la boîte carrée — elle survit au masque. Et le
-             trait passe à 1,4 px : sous cette épaisseur, l'anti-crénelage d'un
-             cercle incliné mange la moitié du pixel et le tracé clignote. */
-          #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
-            border:1.4px solid rgba(255,226,158,.95);border-radius:50%;
-            filter:drop-shadow(0 0 4px rgba(255,198,110,.85))
-                   drop-shadow(0 0 12px rgba(255,170,70,.45));
-            -webkit-mask-image:conic-gradient(from var(--pz-arc-de,0deg),
-              rgba(0,0,0,0) 0deg, #000 26deg,
-              #000 calc(var(--pz-arc-long,150deg) - 26deg),
-              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
-            mask-image:conic-gradient(from var(--pz-arc-de,0deg),
-              rgba(0,0,0,0) 0deg, #000 26deg,
-              #000 calc(var(--pz-arc-long,150deg) - 26deg),
-              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
-            box-shadow:0 0 20px rgba(255,190,90,.32),
-              inset 0 0 70px rgba(255,190,90,.07);
-            /* IMMOBILES. Les orbes tournaient (un tour en 150 à 520 s) : un
-               mouvement imperceptible qui obligeait pourtant le navigateur à
-               recomposer huit très grands calques filtrés et masqués à chaque
-               rafraîchissement d'écran, au-dessus du plateau 3D (Taekun,
-               2026-11-03 : le mode puzzle faisait chauffer la machine). Même
-               dessin, posé une fois. */
-            transform:perspective(1400px) rotateX(var(--pz-assiette,72deg));}
-          /* LES NŒUDS. Chaque orbe porte deux points de lumière posés sur son
-             trait, qui tournent donc avec lui : un disque en haut, un losange
-             à droite. C'est ce qui fait lire une ORBITE plutôt qu'un cercle
-             dessiné — et cela ne coûte pas un élément de plus. */
-          #puzzleLayer .pz-anneau::before,#puzzleLayer .pz-anneau::after{
-            content:"";position:absolute;width:9px;height:9px;
-            background:rgba(255,244,214,.9);border-radius:50%;
-            box-shadow:0 0 12px rgba(255,214,140,.9),0 0 26px rgba(255,196,96,.5);}
-          #puzzleLayer .pz-anneau::before{left:50%;top:0;margin:-5px 0 0 -5px;}
-          #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
-            border-radius:2px;transform:rotate(45deg);
-            background:rgba(255,236,186,.85);}
-          /* Chaque orbe a SON centre et SON assiette. Les décentrages sont
-             volontairement inégaux : deux orbes décalés du même écart
-             recréeraient une symétrie, qui est exactement ce qu'on fuit. */
-          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;
-            left:57%;top:38%;--pz-assiette:67deg;}
-          /* ORBES DÉDOUBLÉS. Un second tracé collé au premier, à peine plus
-             large et un peu plus pâle : deux traits qui courent ensemble se
-             lisent comme une trajectoire, là où un trait seul n'est qu'un
-             cercle. Ils partagent la même assiette et le même centre, donc ils
-             restent parallèles en tournant. */
-          #puzzleLayer .pz-anneau.a2{width:160vmin;height:160vmin;margin:-80vmin 0 0 -80vmin;
-            left:57%;top:38%;--pz-assiette:67deg;
-            border-color:rgba(255,222,150,.62);
-            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            }
-          #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
-            border-style:dashed;border-color:rgba(255,230,166,.98);
-            left:45%;top:47%;--pz-assiette:75deg;
-            }
-          #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
-            left:45%;top:47%;--pz-assiette:75deg;
-            border-color:rgba(255,222,150,.58);
-            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            }
-          /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
-             il se perd hors du regard au lieu de se refermer sur lui-même. */
-          #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,228,162,.92);
-            left:63%;top:33%;--pz-assiette:61deg;}
-          /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
-             ils coupent les orbes au lieu de les accompagner. Sans eux tout le
-             réseau reste couché dans le même plan et le ciel paraît plat. */
-          #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
-            left:28%;top:30%;--pz-assiette:24deg;
-            border-color:rgba(255,222,150,.70);
-            box-shadow:0 0 16px rgba(255,190,90,.20);}
-          #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
-            left:78%;top:26%;--pz-assiette:38deg;
-            border-color:rgba(255,222,150,.64);border-style:dashed;
-            box-shadow:none;}
-          /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
-             lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
-             profondeur. */
-          #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
-            border-color:rgba(255,224,152,.78);border-style:dashed;
-            left:41%;top:52%;--pz-assiette:80deg;
-            }
-          /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
-             empêche les orbes de se lire comme une cible. Quatre cercles
-             partageant le même centre et le même angle se superposent en
-             anneaux parfaitement emboîtés ; quatre orbes d'assiettes
-             différentes se croisent, et le ciel prend de la profondeur. */
-          /* LES RUNES. Elles ne flottent pas dans le cadre : elles sont posées
-             SUR un orbe, dans son assiette. La contre-rotation leur
-             rend leur lisibilité — sans elle, elles se retrouvent couchées à
-             plat dans l'assiette de l'orbe et deviennent illisibles. */
-          #puzzleLayer .pz-rune{position:absolute;
-            font-family:'Cinzel Decorative','Almendra',serif;font-size:14px;
-            color:rgba(255,236,190,.82);letter-spacing:.04em;
-            transform:translate(-50%,-50%) rotateX(calc(var(--pz-assiette,72deg) * -1));
-            text-shadow:0 0 10px rgba(255,214,140,.85),0 0 24px rgba(255,190,90,.45);
-            opacity:.75;}
+          /* PLUS D'ARCS. Les huit grands orbes d'or (jusqu'à 3 000 px de large,
+             filtrés et masqués) étaient recomposés par-dessus le plateau 3D à
+             chaque image : mesuré le 2026-11-15, une énigme au repos dessinait
+             quatre fois moins d'images que le solo, et autant que lui une fois
+             les arcs masqués. Ils sont retirés (Taekun) ; restent les glyphes
+             et la poussière de lumière, qui ne coûtent rien. */
           #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
             color:rgba(255,238,196,.85);
             text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
@@ -46569,7 +46479,7 @@
           #puzzleLayer.reveil .pz-signes{opacity:0;transition:opacity .8s ease;
             pointer-events:none;}
           /* EXCEPTION : l'ouverture des Voies garde ses signes célestes.
-             Les anneaux dorés, les glyphes et les poussières sont TOUT ce qu'il
+             Les glyphes et les poussières sont TOUT ce qu'il
              y a à voir pendant les premières secondes, quand la caméra est à
              240 unités d'altitude et que le monde 3D est hors de portée. Les
              masquer comme le reste du chrome — ce que fait toute séquence —
@@ -47017,10 +46927,9 @@
          sur les îles. */
       const PUZZLE_SCEAU_COLORS = {
         1: 0x2b9dff,   // bleu
-        2: 0xff8a32,   // orange
-        3: 0xe256cf,   // magenta
-        4: 0xff4d4d    // vermillon — le jaune essayé d'abord se dissolvait
-                       //   sur le vert clair des îles comme sur le ciel
+        2: 0xff4d4d,   // rouge
+        3: 0xffc93c,   // jaune — lisible depuis que la case porte son fond de nuit
+        4: 0xc86bff    // violet
       };
 
       function puzzleGoalCellsFrom(goal, sortie = []) {
@@ -47188,38 +47097,14 @@
           losange(.84);
           ctx.strokeStyle = teinte; ctx.lineWidth = 4; ctx.stroke();
 
-          /* Le motif tient dans le carré INSCRIT au losange, pas dans le
-             losange : au-delà il déborderait sur les pointes. */
-          const r = 54;
-          ctx.beginPath();
-          if (rang === 1) {
-            // le Croissant
-            ctx.arc(0, 0, r, Math.PI * .42, Math.PI * 1.58, false);
-            ctx.arc(r * .42, 0, r * .86, Math.PI * 1.5, Math.PI * .5, true);
-            ctx.closePath();
-          } else if (rang === 2) {
-            // l'Étoile — quatre branches, pas cinq : elles restent effilées
-            for (let i = 0; i < 8; i++) {
-              const a = i * Math.PI / 4 - Math.PI / 2;
-              const rr = i % 2 ? r * .32 : r;
-              ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
-            }
-            ctx.closePath();
-          } else if (rang === 3) {
-            // la Croix
-            const b = r * .32;
-            ctx.rect(-b, -r, b * 2, r * 2);
-            ctx.rect(-r, -b, r * 2, b * 2);
-          } else {
-            // l'Anneau — le trou est large, c'est lui qui porte la lecture
-            ctx.arc(0, 0, r, 0, Math.PI * 2);
-            ctx.arc(0, 0, r * .54, 0, Math.PI * 2, true);
-          }
+          /* UNE COULEUR, PAS UN SIGNE. Les quatre lumières (croissant, étoile,
+             croix, anneau) demandaient d'être déchiffrées ; la case porte
+             maintenant un losange plein de la couleur de SON chevalier
+             (Taekun, 2026-11-15). */
+          losange(.62);
           halo(teinte, 12);
           ctx.fillStyle = teinte; ctx.fill();
           sansHalo();
-          // Un liseré ivoire À L'INTÉRIEUR du motif : il lui donne son éclat
-          // sans lui retirer sa couleur, qui reste le signe d'appariement.
           ctx.strokeStyle = "rgba(255,246,226,.85)"; ctx.lineWidth = 4; ctx.stroke();
 
         } else {
@@ -47601,8 +47486,9 @@
         couche(
           new THREE.PlaneGeometry(cote, cote),
           new THREE.MeshBasicMaterial({
-            color: couleur, transparent: true,
-            opacity: kind === "sceau" ? .12 : (surTerre ? .34 : .24),
+            color: kind === "sceau" ? new THREE.Color(couleur).convertSRGBToLinear() : couleur,
+            transparent: true,
+            opacity: kind === "sceau" ? .82 : (surTerre ? .34 : .24),
             side: THREE.DoubleSide, depthWrite: false, depthTest: true
           }),
           .075, 44
@@ -47631,6 +47517,9 @@
         /* Le glyphe, à plat dans le carré. Il bat très légèrement — assez pour
            attirer l'oeil au premier regard, pas assez pour tirer dessus pendant
            toute la durée de l'énigme. */
+        /* La case d'un chevalier de couleur est une DALLE PLEINE de sa couleur,
+           sans motif : il n'y a rien d'autre à lire que la teinte. */
+        if (kind === "sceau") return;
         const glyphe = couche(
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
@@ -47678,62 +47567,12 @@
         cells.forEach(marque => puzzleAddMarker(marque === coeur ? { ...marque, faisceau: true } : marque));
       }
 
-      /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
-         alliés sont visuellement identiques, et une consigne « celui-ci va
-         là-bas » serait injouable telle quelle. On accroche donc au-dessus de
-         chacun le même sceau que celui posé au sol — un sprite enfant de son
-         wrapper, qui le suit sans qu'on ait à le repositionner. C'est la
-         solution la plus légère : des variantes de modèle seraient un chantier
-         dans kaykit3d.js, pour une énigme.
-
-         Reconstruit quand un sceau a perdu son parent : les visuels de
-         personnage sont recréés par syncKayKitCharacters, et un sprite orphelin
-         cesse silencieusement d'être rendu. */
+      /* Plus de signe porté : le chevalier est TEINT de la couleur de sa case
+         (voir `teinte` au montage, appliquée par createCharacterVisual). On ne
+         fait ici que retirer d'anciens socles s'il en restait. */
       function puzzleRefreshSceaux() {
-        const paires = PUZZLE.def?.goal?.type === "assignedCells"
-          ? PUZZLE.def.goal.pairs : null;
         const poses = PUZZLE.sceaux || (PUZZLE.sceaux = []);
-        if (!paires || typeof kaykit3D === "undefined" || !kaykit3D?.characterVisuals) {
-          if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
-          return;
-        }
-        const cles = Object.keys(paires);
-        const complet = poses.length === cles.length && poses.every(sp => !!sp.parent);
-        if (complet) return;
-
-        poses.forEach(sp => sp.parent?.remove(sp));
-        poses.length = 0;
-        cles.forEach((cle, index) => {
-          const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
-          if (!visual?.wrapper) return;
-          /* LE MÊME LOSANGE, à plat sous les pieds, et non un insigne flottant.
-             Deux essais ont échoué avant : haut dans le ciel, le sprite
-             dérivait sur la case du voisin — la vue est inclinée, tout ce qui
-             monte part vers le haut de l'écran, et les Gardiens se suivent en
-             file d'une case ; posé sur le casque, il se confondait avec le
-             modèle. Au sol, il ne peut désigner que la case où se tient son
-             porteur, et il porte exactement le tracé gravé sur la case
-             attendue : aucune traduction à faire. */
-          const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
-          /* Plus petit qu'une case : à pleine taille le losange débordait sous
-             les pieds et, la vue étant inclinée, se lisait comme une dalle
-             POSÉE DEVANT le Gardien plutôt que sous lui. Resserré, il devient
-             un socle et le Gardien se tient dedans. */
-          const anneau = new THREE.Mesh(
-            new THREE.PlaneGeometry(.82, .82),
-            new THREE.MeshBasicMaterial({
-              map: puzzleGlyphTexture("sceau", teinte, index + 1),
-              transparent: true,
-              side: THREE.DoubleSide, depthWrite: false, depthTest: false
-            })
-          );
-          anneau.rotation.x = -Math.PI / 2;
-          anneau.position.set(0, .05, 0);
-          anneau.renderOrder = 58;
-          anneau.userData = { ilyosTransient: true };
-          visual.wrapper.add(anneau);
-          poses.push(anneau);
-        });
+        if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
       }
 
       function puzzleClearMarkers() {
@@ -47781,59 +47620,13 @@
         }, duree);
       }
 
-      /* Les signes : anneaux, glyphes, poussière de lumière. Les positions
+      /* Les signes : glyphes et poussière de lumière. Les positions
          sortent d'une suite déterministe — deux ouvertures du même Sanctuaire
          donnent le même ciel, et rien ne saute d'une image à l'autre. Rien ne
          tourne ensuite : ni boucle JS ni animation CSS. */
       function puzzleBuildSignes(hote) {
         if (!hote) return;
-        hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
-          + '<div class="pz-anneau a2"></div><div class="pz-anneau b"></div>'
-          + '<div class="pz-anneau b2"></div><div class="pz-anneau c"></div>'
-          + '<div class="pz-anneau e"></div><div class="pz-anneau f"></div>';
-
-        /* LES ARCS, et les runes qui vont avec.
-
-           `de` et `long` sont des angles de dégradé conique : ils partent de
-           midi et tournent dans le sens des aiguilles. Les runes, elles, sont
-           placées en coordonnées polaires ordinaires, où zéro est à trois
-           heures — d'où le quart de tour entre les deux repères.
-
-           Les deux sont décidés ICI et non dans la feuille de style, parce
-           qu'ils dépendent l'un de l'autre : une rune posée hors de l'arc
-           conservé serait masquée en même temps que lui et disparaîtrait sans
-           rien dire. On pose donc chaque rune au milieu de son arc.
-
-           Les longueurs vont de 96 à 168 degrés : entre le quart et la moitié
-           du tour. Au-delà, l'œil referme le cercle de lui-même et tout le
-           bénéfice de l'arc est perdu. */
-        const runes = ["ᛉ", "ᚨ", "ᛟ", "ᛞ", "ᚱ", "ᛊ"];
-        const arcs = [
-          { orbe: "a", de: 196, long: 150, rune: true },
-          { orbe: "a2", de: 188, long: 166 },
-          { orbe: "b", de: 32, long: 138, rune: true },
-          { orbe: "b2", de: 40, long: 124 },
-          { orbe: "c", de: 148, long: 112, rune: true },
-          { orbe: "d", de: 244, long: 168, rune: true },
-          { orbe: "e", de: 300, long: 96, rune: true },
-          { orbe: "f", de: 86, long: 118, rune: true }
-        ];
-        let rangRune = 0;
-        arcs.forEach(arc => {
-          const cible = hote.querySelector(`.pz-anneau.${arc.orbe}`);
-          if (!cible) return;
-          cible.style.setProperty("--pz-arc-de", `${arc.de}deg`);
-          cible.style.setProperty("--pz-arc-long", `${arc.long}deg`);
-          if (!arc.rune) return;
-          const milieu = (arc.de + arc.long / 2 - 90) * Math.PI / 180;
-          const rune = document.createElement("span");
-          rune.className = "pz-rune";
-          rune.textContent = runes[rangRune % runes.length];
-          rune.style.left = `${(50 + 50 * Math.cos(milieu)).toFixed(2)}%`;
-          rune.style.top = `${(50 + 50 * Math.sin(milieu)).toFixed(2)}%`;
-          cible.appendChild(rune);
-          rangRune++;
-        });
+        hote.innerHTML = "";
         let graine = 7;
         const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
         const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
@@ -50034,7 +49827,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-six énigmes, de la leçon de poussée aux Grands Archipels, au-delà
+         Vingt-trois énigmes, de la leçon de poussée aux Grands Archipels, au-delà
          des Cimes. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
@@ -50204,45 +49997,6 @@
           ]
         },
         /* -----------------------------------------------------------------
-           04 — Le budget. Marcher jusqu'à la barre coûte trois cartes, et la
-           barre ne sert qu'au Gardien qui se tient DESSUS : pivoter avant
-           d'avoir marché laisse le porteur sur une corniche sans issue. Le
-           dernier rival, lui, ne se déloge que depuis la case du village. */
-        {
-          id: "p04-main-serree",
-          acte: "I",
-          principe: "MESURE",
-          verite: "Ce qui est dépensé trop tôt manque toujours au dernier instant.",
-          title: "Main serrée",
-          tagline: "Sept cartes, six coups justes. L'ordre décide de tout.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 13,
-          sanctuary: false,
-          focus: [2, 1],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[1, 0]],
-            { key: "B", cells: [[2, 1], [3, 1], [4, 1]] },
-            [[4, 2], [4, 3], [4, 4]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 4, c: 4, crown: 1 },
-            { p: 1, r: 1, c: 0 }
-          ],
-          hand: { MOVE: 4, MAGIC: 1, PUSH: 2 },
-          par: 6,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Six coups, pas un de plus",
-          winLine: "Marcher d'abord, pivoter ensuite : la barre ne porte que son passager.",
-          failLine: "La barre a tourné sans toi.",
-          solution: [
-            { a: "MOVE", who: "G", to: [4, 1] },
-            { a: "MAGIC", island: "B", pivot: [2, 1], turns: 2 },
-            { a: "MOVE", who: "G", to: [0, 0] },
-            { a: "PUSH", who: "G", on: [1, 0], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
            05 — Tout à la fois : une chaîne à éjecter par le bord de la
            corniche, une barre-navette pour franchir le gouffre, un dernier
            rival à décrocher du village. Les quatre cartes MOVE de la marche
@@ -50330,53 +50084,6 @@
             { a: "PICKUP", who: "C", on: [3, 0] },
             { a: "MOVE", who: "C", to: [0, 0] },
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
-           18 — LES ACTIONS GRATUITES. Déposer, ramasser, transmettre ne coûtent
-           rien : ce sont les trois gestes que la collection n'avait jamais
-           obligé personne à voir, et dont l'oubli a faussé six barèmes. Ici le
-           gouffre interdit de porter la couronne, et un Gardien ne peut pas
-           voler : il faut la POSER, la POUSSER par-dessus le vide — une
-           couronne ne tombe jamais, elle atterrit sur la dernière terre à
-           portée — puis la faire RAMASSER par qui attend de l'autre côté. Le
-           Veilleur assis sur le Sanctuaire bloque la validation tant qu'il y
-           reste ; le déloger coûte la dernière carte de poussée. */
-        {
-          id: "p18-relais-des-mains",
-          acte: "II",
-          principe: "TRACE",
-          title: "Le relais des mains",
-          tagline: "Le gouffre ne se marche pas. La couronne, elle, se lance.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
-          sanctuary: false,
-          focus: [4, 0],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[0, 1]], [[1, 0]],
-            [[2, 0]], [[3, 0]], [[5, 0]], [[6, 0]], [[7, 0]], [[8, 0]], [[6, 1]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "A", p: 0, r: 6, c: 1 },
-            { key: "B", p: 0, r: 0, c: 0 },
-            { p: 1, r: 0, c: 1 }
-          ],
-          hand: { MOVE: 3, PUSH: 5 },
-          par: 6,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Les mains se sont passé la lumière",
-          winLine: "Poser, lancer, ramasser : trois gestes qui ne coûtent rien, et une seule poussée qui compte.",
-          failLine: "La couronne est restée du mauvais côté du vide.",
-          solution: [
-            { a: "DROP", who: "G", on: [7, 0] },
-            { a: "MOVE", who: "A", to: [6, 0] },
-            { a: "PICKUP", who: "A", on: [7, 0] },
-            { a: "DROP", who: "A", on: [5, 0] },
-            { a: "PUSH", who: "A", on: [5, 0], force: 4 },
-            { a: "PUSH", who: "B", on: [0, 1], force: 1 },
-            { a: "PICKUP", who: "B", on: [1, 0] }
           ]
         },
         /* -----------------------------------------------------------------
@@ -50840,69 +50547,6 @@
           ]
         },
         /* -----------------------------------------------------------------
-           LA RELÈVE — libérer une place ne suffit pas, il faut s'y tenir.
-
-           Refonte. La première version ne pouvait pas fonctionner : le second
-           Veilleur était programmé pour prendre la place au troisième tour,
-           alors que la couronne comptait au début de ce même tour. La relève
-           n'arrivait jamais, et la leçon ne se jouait pas.
-
-           Elle arrive maintenant à la riposte SUIVANTE. Et comme un Veilleur
-           sur n'importe laquelle des trois cases du village interdit toute
-           validation, rester sur la case voisine — pourtant valide elle aussi —
-           ne sert à rien : il faut occuper précisément celle qu'on vient de
-           vider. Le paquet est calculé pour que ce pas de côté soit la
-           dernière carte, et pour qu'il ne reste rien après. */
-        {
-          id: "p21-la-releve",
-          acte: "III",
-          principe: "CADENCE",
-          verite: "On ne délivre pas une place. On la tient.",
-          title: "La relève",
-          tagline: "Tu peux le chasser. Un autre attend déjà son tour.",
-          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
-          board: 13,
-          sanctuary: false,
-          focus: [2, 0],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]],
-            [[1, 1]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 6, c: 0, crown: 1 },
-            { key: "R", p: 1, r: 0, c: 1 },
-            { key: "S", p: 1, r: 1, c: 1 }
-          ],
-          deck: [
-            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"]
-          ],
-          par: 8,
-          rivalPlan: [
-            "le second Veilleur attend son tour.",
-            "il prend la place laissée vide."
-          ],
-          replies: [
-            [],
-            [{ a: "MOVE", who: "S", to: [0, 1] }]
-          ],
-          goal: { type: "scored", player: 0, count: 1 },
-          winTitle: "La place est tenue",
-          winLine: "La case voisine valide aussi. Elle ne défend rien.",
-          failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
-          solution: [
-            [
-              { a: "MOVE", who: "G", to: [1, 0] }
-            ],
-            [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [0, 1] }
-            ]
-          ]
-        },
-        /* -----------------------------------------------------------------
            15 — Le relais du vide.
 
            Trois Gardiens, deux terres, un gouffre entre elles. Aucun ne
@@ -51190,7 +50834,7 @@
            choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
            et aucun ne peut prendre la place d'un autre.
 
-           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           La case de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
            croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
            ne font qu'une case de large : personne ne double personne. Il faut
            GARER quelqu'un sur un bras déjà libéré, le temps que les autres
@@ -51213,38 +50857,38 @@
           avant: "Ils étaient trois.",
           verite: "Le carrefour en demandait quatre.",
           title: "Destinée",
-          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
-          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
-          board: 13,
+          tagline: "Quatre chevaliers, quatre couleurs, et jamais la case la plus proche.",
+          brief: "Conduis chaque chevalier sur la case de sa couleur.",
+          board: 11,
           sanctuary: false,
-          focus: [6, 6],
+          focus: [5, 5],
           villages: {},
           islands: [
-            [[3, 6]], [[4, 6]], [[5, 6]], [[6, 6]], [[7, 6]], [[8, 6]], [[9, 6]],
-            [[6, 3]], [[6, 4]], [[6, 5]], [[6, 7]], [[6, 8]], [[6, 9]]
+            [[2, 5]], [[3, 5]], [[4, 5]], [[5, 5]], [[6, 5]], [[7, 5]], [[8, 5]],
+            [[5, 2]], [[5, 3]], [[5, 4]], [[5, 6]], [[5, 7]], [[5, 8]]
           ],
           guardians: [
-            { key: "A", p: 0, r: 5, c: 6 },
-            { key: "B", p: 0, r: 6, c: 7 },
-            { key: "C", p: 0, r: 7, c: 6 },
-            { key: "D", p: 0, r: 8, c: 6 },
-            { key: "R", p: 1, r: 6, c: 6 }
+            { key: "A", p: 0, r: 4, c: 5 },
+            { key: "B", p: 0, r: 5, c: 6 },
+            { key: "C", p: 0, r: 6, c: 5 },
+            { key: "D", p: 0, r: 7, c: 5 },
+            { key: "R", p: 1, r: 5, c: 5 }
           ],
           hand: { MOVE: 20, PUSH: 5 },
           goal: {
             type: "assignedCells", player: 0,
-            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+            pairs: { A: [8, 5], B: [5, 2], C: [2, 5], D: [5, 8] }
           },
           winTitle: "Chacun à sa place",
           winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
-          failLine: "Un Gardien n'est pas sur son signe.",
+          failLine: "Un chevalier n'est pas sur sa couleur.",
           solution: [
-            { a: "PUSH", who: "B", on: [6, 6], force: 4 },
-            { a: "MOVE", who: "B", to: [6, 3] },
-            { a: "MOVE", who: "A", to: [6, 5] },
-            { a: "MOVE", who: "C", to: [3, 6] },
-            { a: "MOVE", who: "D", to: [6, 9] },
-            { a: "MOVE", who: "A", to: [9, 6] }
+            { a: "PUSH", who: "B", on: [5, 5], force: 4 },
+            { a: "MOVE", who: "B", to: [5, 2] },
+            { a: "MOVE", who: "A", to: [5, 4] },
+            { a: "MOVE", who: "C", to: [2, 5] },
+            { a: "MOVE", who: "D", to: [5, 8] },
+            { a: "MOVE", who: "A", to: [8, 5] }
           ]
         },
         /* =================================================================
@@ -51498,83 +51142,12 @@
           ]
         },
         /* -----------------------------------------------------------------
-           LE PASSAGER CLANDESTIN
-
-           Un rival barre la seule route, assis au pied de la barre qui porte
-           tout le puzzle. Le pousser jusqu'au vide coûterait quatre cartes ; on
-           ne le pousse que d'UNE case, sur la barre, et c'est la barre qui
-           l'emporte : retournée par son milieu, elle le dépose sur son autre
-           bout, qui deviendra justement le pivot du second retournement. Il
-           voyage, il ne gêne plus, et il sert de charnière.
-
-           Le porteur, lui, ne doit PAS monter avec la couronne : posée sur le
-           bout de la barre puis enjambée, elle voyage seule pendant que le
-           Gardien s'assoit au milieu. Le second retournement les dépose l'un
-           derrière l'autre, la couronne devant — juste ce qu'il faut pour la
-           lancer par-dessus le gouffre. Encore faut-il que le receveur ait
-           libéré la case d'arrivée.
-
-           Au nord, deux rivaux gardent le village. Celui de la rangée se jette
-           dans le vide en le poussant VERS le château, par-dessus le coin du
-           plateau ; le second ne tombe que poussé depuis le château lui-même.
-
-           Optimum 14 PROUVÉ (234 000 nœuds), solution unique. */
-        {
-          id: "p23-passager-clandestin",
-          acte: "IV",
-          principe: "TRACE",
-          verite: "Ce qui te barre la route peut aussi la porter.",
-          title: "Le passager clandestin",
-          tagline: "Il barre la seule route. La route, elle, peut l'emporter.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
-          sanctuary: false,
-          focus: [4, 2],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            /* Le nord : le village et sa rangée, toutes en pierres d'une case,
-               donc immobiles. */
-            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]],
-            /* La barre, seule pièce mobile du plateau. */
-            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
-            /* Le départ. */
-            [[7, 3]], [[8, 3]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
-            { key: "H", p: 0, r: 0, c: 3 },
-            { key: "R1", p: 1, r: 1, c: 0 },
-            { key: "R2", p: 1, r: 0, c: 1 },
-            { key: "R3", p: 1, r: 7, c: 3 }
-          ],
-          /* Deux cartes de marge : de quoi tenter l'éjection directe du rival
-             de la route — qui ne laisse ensuite plus rien pour le village. */
-          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
-          par: 14,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Le passager est descendu",
-          winLine: "Il barrait la route ; la barre l'a emporté, et il a servi de charnière.",
-          failLine: "La route était là. Il fallait la faire tourner avec lui dessus.",
-          solution: [
-            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
-            { a: "MOVE", who: "G", to: [7, 3] },
-            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
-            { a: "DROP", who: "G", on: [6, 3] },
-            { a: "MOVE", who: "H", to: [0, 2] },
-            { a: "MOVE", who: "G", to: [5, 3] },
-            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
-            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
-            { a: "PICKUP", who: "H", on: [0, 3] },
-            { a: "PUSH", who: "H", on: [0, 1], force: 2 },
-            { a: "MOVE", who: "H", to: [0, 0] },
-            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
            LE BÉLIER
 
-           Le même gouffre que le Passager clandestin, et une case de plus au
-           nord — ce qui change tout. Le receveur est au bout de la rangée, et
+           (Le Passager clandestin, même gouffre moins une case au nord, a été
+           retiré le 2026-11-15 : celle-ci le contient en entier.)
+           Un rival barre la route au pied de la barre : poussé d'UNE case, il
+           monte dessus et c'est la barre retournée qui l'emporte. Le receveur est au bout de la rangée, et
            un rival dort sur la seule case où la couronne peut atterrir.
 
            On le décale d'une case vers le château : la couronne se pose à sa
@@ -51738,6 +51311,122 @@
               { a: "DROP", who: "C", on: [3, 0] },
               { a: "PUSH", who: "C", on: [3, 0], force: 1 },
               { a: "PICKUP", who: "N", on: [2, 0] }
+            ]
+          ]
+        },
+        /* -----------------------------------------------------------------
+           L'ARCHIPEL AUX DEUX COURONNES
+
+           Le même archipel, privé de son Quai, et DEUX couronnes : l'une part
+           du coin sud-est, l'autre du sud-ouest. Elles ne se valident pas
+           ensemble — la première compte au début d'un tour, quitte le
+           plateau, et son porteur reste assis sur la case que la seconde
+           devra prendre.
+
+           Ligne connue en 25 : le Seuil pivote et emporte le rival loin du
+           village ; l'Éclair monte en trois rotations et dépose la première
+           couronne sur la Croix creuse, qui la retourne jusqu'au Mât. Le
+           Carré, lui, roule le long du sud en trois rotations, un lancer de
+           quatre cases rend la seconde couronne à l'Éclair revenu la
+           chercher, et la dernière poussée emporte TOUTE la file : le
+           Gardien assis avance sur le château, la couronne prend sa place.
+
+           La route de l'est (Carrefour, Serpent, Croix pleine), celle de
+           L'archipel sans pont, marche toujours et coûte plus cher. */
+        {
+          id: "p28-deux-couronnes",
+          acte: "V",
+          principe: "TRACE",
+          verite: "Deux chemins qui se croisent n'en font pas un.",
+          title: "L'archipel aux deux couronnes",
+          tagline: "Deux couronnes, deux coins, et une seule porte.",
+          brief: "Valide les deux couronnes — chacune ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: { 0: [[0, 0]] },
+          placement: { formes: { l3: 1 } },
+          islands: [
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            { key: "VOL", cells: [[0, 8], [0, 10], [1, 9]] },
+            { key: "GUET", cells: [[1, 0], [2, 0], [2, 1]] },
+            { key: "FLECHE", cells: [[1, 12], [2, 12], [3, 12]] },
+            { key: "MAT", cells: [[3, 0], [4, 0], [5, 0]] },
+            { key: "CREUSE", cells: [[5, 3], [6, 2], [6, 4], [7, 3]] },
+            { key: "CROIX", cells: [[5, 7], [6, 6], [6, 7], [6, 8], [7, 7]] },
+            { key: "SERPENT", cells: [[5, 11], [5, 12], [6, 10], [6, 11]] },
+            { key: "CARREFOUR", cells: [[8, 11], [9, 10], [9, 11], [9, 12]] },
+            { key: "COUDE", cells: [[9, 2], [10, 2], [10, 3]] },
+            { key: "ECLAIR", cells: [[11, 1], [11, 2], [12, 2], [12, 3]] },
+            { key: "CARRE", cells: [[11, 11], [11, 12], [12, 11], [12, 12]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 12, c: 12, crown: 1 },
+            { key: "H", p: 0, r: 12, c: 3, crown: 2 },
+            { key: "B", p: 0, r: 5, c: 11 },
+            { key: "C", p: 0, r: 5, c: 0 },
+            { key: "Q", p: 1, r: 0, c: 1 },
+            { key: "P", p: 1, r: 1, c: 0 },
+            { key: "R", p: 1, r: 6, c: 7 }
+          ],
+          deck: [
+            ["MAGIC", "PUSH", "MAGIC", "MAGIC", "MOVE"],
+            ["MAGIC", "MAGIC", "MAGIC", "PUSH", "MOVE"],
+            ["MAGIC", "MOVE", "MAGIC", "MAGIC", "PUSH"],
+            ["PUSH", "PUSH", "PUSH", "MAGIC", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MAGIC"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
+            ["MOVE", "MOVE", "PUSH", "MAGIC", "MOVE"]
+          ],
+          par: 25,
+          rivalPlan: [
+            "ils campent sur ton village et n'en bougeront pas."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 2 },
+          winTitle: "Les deux sont rentrées",
+          winLine: "Deux couronnes, une seule porte : la première a dû laisser sa place à la seconde.",
+          failLine: "Il manque une couronne au village.",
+          solution: [
+            [
+              { a: "POSE", forme: "l3", cells: [[1, 1], [1, 2], [2, 2]], spawn: [1, 1], key: "N" },
+              { a: "MAGIC", island: "SEUIL", pivot: [0, 3], turns: 1, direction: -1 },
+              { a: "PUSH", who: "N", on: [1, 0], force: 1 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [12, 3], turns: 1, direction: 1 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [10, 4], turns: 2 }
+            ],
+            [
+              { a: "MAGIC", island: "ECLAIR", pivot: [9, 4], turns: 1, direction: -1 },
+              { a: "DROP", who: "H", on: [7, 3] },
+              { a: "MAGIC", island: "CREUSE", pivot: [6, 2], turns: 2 },
+              { a: "PICKUP", who: "C", on: [5, 1] },
+              { a: "MAGIC", island: "MAT", pivot: [4, 0], turns: 2 },
+              { a: "MOVE", who: "N", to: [1, 0] },
+              { a: "DROP", who: "C", on: [2, 0] },
+              { a: "PICKUP", who: "N", on: [2, 0] }
+            ],
+            [
+              { a: "MAGIC", island: "CARRE", pivot: [12, 11], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "CARRE", pivot: [11, 10], turns: 2 },
+              { a: "MAGIC", island: "CARRE", pivot: [10, 9], turns: 2 },
+              { a: "DROP", who: "G", on: [9, 8] }
+            ],
+            [
+              { a: "PUSH", who: "G", on: [9, 8], force: 4 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [8, 3], turns: 1, direction: -1 },
+              { a: "MOVE", who: "H", to: [7, 3] },
+              { a: "PICKUP", who: "H", on: [7, 4] },
+              { a: "MOVE", who: "H", to: [6, 2] }
+            ],
+            [
+              { a: "MOVE", who: "H", to: [5, 1] }
+            ],
+            [
+              { a: "MOVE", who: "H", to: [4, 0] },
+              { a: "TRANSFER", who: "H", to: "C" },
+              { a: "DROP", who: "C", on: [2, 0] },
+              { a: "PUSH", who: "H", on: [3, 0], force: 1 },
+              { a: "MOVE", who: "C", to: [1, 0] }
             ]
           ]
         }

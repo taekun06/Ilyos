@@ -1,7 +1,7 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-six énigmes, de la leçon de poussée aux Grands Archipels, au-delà
+         Vingt-trois énigmes, de la leçon de poussée aux Grands Archipels, au-delà
          des Cimes. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
@@ -171,45 +171,6 @@
           ]
         },
         /* -----------------------------------------------------------------
-           04 — Le budget. Marcher jusqu'à la barre coûte trois cartes, et la
-           barre ne sert qu'au Gardien qui se tient DESSUS : pivoter avant
-           d'avoir marché laisse le porteur sur une corniche sans issue. Le
-           dernier rival, lui, ne se déloge que depuis la case du village. */
-        {
-          id: "p04-main-serree",
-          acte: "I",
-          principe: "MESURE",
-          verite: "Ce qui est dépensé trop tôt manque toujours au dernier instant.",
-          title: "Main serrée",
-          tagline: "Sept cartes, six coups justes. L'ordre décide de tout.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 13,
-          sanctuary: false,
-          focus: [2, 1],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[1, 0]],
-            { key: "B", cells: [[2, 1], [3, 1], [4, 1]] },
-            [[4, 2], [4, 3], [4, 4]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 4, c: 4, crown: 1 },
-            { p: 1, r: 1, c: 0 }
-          ],
-          hand: { MOVE: 4, MAGIC: 1, PUSH: 2 },
-          par: 6,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Six coups, pas un de plus",
-          winLine: "Marcher d'abord, pivoter ensuite : la barre ne porte que son passager.",
-          failLine: "La barre a tourné sans toi.",
-          solution: [
-            { a: "MOVE", who: "G", to: [4, 1] },
-            { a: "MAGIC", island: "B", pivot: [2, 1], turns: 2 },
-            { a: "MOVE", who: "G", to: [0, 0] },
-            { a: "PUSH", who: "G", on: [1, 0], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
            05 — Tout à la fois : une chaîne à éjecter par le bord de la
            corniche, une barre-navette pour franchir le gouffre, un dernier
            rival à décrocher du village. Les quatre cartes MOVE de la marche
@@ -297,53 +258,6 @@
             { a: "PICKUP", who: "C", on: [3, 0] },
             { a: "MOVE", who: "C", to: [0, 0] },
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
-           18 — LES ACTIONS GRATUITES. Déposer, ramasser, transmettre ne coûtent
-           rien : ce sont les trois gestes que la collection n'avait jamais
-           obligé personne à voir, et dont l'oubli a faussé six barèmes. Ici le
-           gouffre interdit de porter la couronne, et un Gardien ne peut pas
-           voler : il faut la POSER, la POUSSER par-dessus le vide — une
-           couronne ne tombe jamais, elle atterrit sur la dernière terre à
-           portée — puis la faire RAMASSER par qui attend de l'autre côté. Le
-           Veilleur assis sur le Sanctuaire bloque la validation tant qu'il y
-           reste ; le déloger coûte la dernière carte de poussée. */
-        {
-          id: "p18-relais-des-mains",
-          acte: "II",
-          principe: "TRACE",
-          title: "Le relais des mains",
-          tagline: "Le gouffre ne se marche pas. La couronne, elle, se lance.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
-          sanctuary: false,
-          focus: [4, 0],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[0, 1]], [[1, 0]],
-            [[2, 0]], [[3, 0]], [[5, 0]], [[6, 0]], [[7, 0]], [[8, 0]], [[6, 1]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "A", p: 0, r: 6, c: 1 },
-            { key: "B", p: 0, r: 0, c: 0 },
-            { p: 1, r: 0, c: 1 }
-          ],
-          hand: { MOVE: 3, PUSH: 5 },
-          par: 6,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Les mains se sont passé la lumière",
-          winLine: "Poser, lancer, ramasser : trois gestes qui ne coûtent rien, et une seule poussée qui compte.",
-          failLine: "La couronne est restée du mauvais côté du vide.",
-          solution: [
-            { a: "DROP", who: "G", on: [7, 0] },
-            { a: "MOVE", who: "A", to: [6, 0] },
-            { a: "PICKUP", who: "A", on: [7, 0] },
-            { a: "DROP", who: "A", on: [5, 0] },
-            { a: "PUSH", who: "A", on: [5, 0], force: 4 },
-            { a: "PUSH", who: "B", on: [0, 1], force: 1 },
-            { a: "PICKUP", who: "B", on: [1, 0] }
           ]
         },
         /* -----------------------------------------------------------------
@@ -807,69 +721,6 @@
           ]
         },
         /* -----------------------------------------------------------------
-           LA RELÈVE — libérer une place ne suffit pas, il faut s'y tenir.
-
-           Refonte. La première version ne pouvait pas fonctionner : le second
-           Veilleur était programmé pour prendre la place au troisième tour,
-           alors que la couronne comptait au début de ce même tour. La relève
-           n'arrivait jamais, et la leçon ne se jouait pas.
-
-           Elle arrive maintenant à la riposte SUIVANTE. Et comme un Veilleur
-           sur n'importe laquelle des trois cases du village interdit toute
-           validation, rester sur la case voisine — pourtant valide elle aussi —
-           ne sert à rien : il faut occuper précisément celle qu'on vient de
-           vider. Le paquet est calculé pour que ce pas de côté soit la
-           dernière carte, et pour qu'il ne reste rien après. */
-        {
-          id: "p21-la-releve",
-          acte: "III",
-          principe: "CADENCE",
-          verite: "On ne délivre pas une place. On la tient.",
-          title: "La relève",
-          tagline: "Tu peux le chasser. Un autre attend déjà son tour.",
-          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
-          board: 13,
-          sanctuary: false,
-          focus: [2, 0],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]],
-            [[1, 1]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 6, c: 0, crown: 1 },
-            { key: "R", p: 1, r: 0, c: 1 },
-            { key: "S", p: 1, r: 1, c: 1 }
-          ],
-          deck: [
-            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"]
-          ],
-          par: 8,
-          rivalPlan: [
-            "le second Veilleur attend son tour.",
-            "il prend la place laissée vide."
-          ],
-          replies: [
-            [],
-            [{ a: "MOVE", who: "S", to: [0, 1] }]
-          ],
-          goal: { type: "scored", player: 0, count: 1 },
-          winTitle: "La place est tenue",
-          winLine: "La case voisine valide aussi. Elle ne défend rien.",
-          failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
-          solution: [
-            [
-              { a: "MOVE", who: "G", to: [1, 0] }
-            ],
-            [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [0, 1] }
-            ]
-          ]
-        },
-        /* -----------------------------------------------------------------
            15 — Le relais du vide.
 
            Trois Gardiens, deux terres, un gouffre entre elles. Aucun ne
@@ -1157,7 +1008,7 @@
            choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
            et aucun ne peut prendre la place d'un autre.
 
-           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           La case de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
            croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
            ne font qu'une case de large : personne ne double personne. Il faut
            GARER quelqu'un sur un bras déjà libéré, le temps que les autres
@@ -1180,38 +1031,38 @@
           avant: "Ils étaient trois.",
           verite: "Le carrefour en demandait quatre.",
           title: "Destinée",
-          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
-          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
-          board: 13,
+          tagline: "Quatre chevaliers, quatre couleurs, et jamais la case la plus proche.",
+          brief: "Conduis chaque chevalier sur la case de sa couleur.",
+          board: 11,
           sanctuary: false,
-          focus: [6, 6],
+          focus: [5, 5],
           villages: {},
           islands: [
-            [[3, 6]], [[4, 6]], [[5, 6]], [[6, 6]], [[7, 6]], [[8, 6]], [[9, 6]],
-            [[6, 3]], [[6, 4]], [[6, 5]], [[6, 7]], [[6, 8]], [[6, 9]]
+            [[2, 5]], [[3, 5]], [[4, 5]], [[5, 5]], [[6, 5]], [[7, 5]], [[8, 5]],
+            [[5, 2]], [[5, 3]], [[5, 4]], [[5, 6]], [[5, 7]], [[5, 8]]
           ],
           guardians: [
-            { key: "A", p: 0, r: 5, c: 6 },
-            { key: "B", p: 0, r: 6, c: 7 },
-            { key: "C", p: 0, r: 7, c: 6 },
-            { key: "D", p: 0, r: 8, c: 6 },
-            { key: "R", p: 1, r: 6, c: 6 }
+            { key: "A", p: 0, r: 4, c: 5 },
+            { key: "B", p: 0, r: 5, c: 6 },
+            { key: "C", p: 0, r: 6, c: 5 },
+            { key: "D", p: 0, r: 7, c: 5 },
+            { key: "R", p: 1, r: 5, c: 5 }
           ],
           hand: { MOVE: 20, PUSH: 5 },
           goal: {
             type: "assignedCells", player: 0,
-            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+            pairs: { A: [8, 5], B: [5, 2], C: [2, 5], D: [5, 8] }
           },
           winTitle: "Chacun à sa place",
           winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
-          failLine: "Un Gardien n'est pas sur son signe.",
+          failLine: "Un chevalier n'est pas sur sa couleur.",
           solution: [
-            { a: "PUSH", who: "B", on: [6, 6], force: 4 },
-            { a: "MOVE", who: "B", to: [6, 3] },
-            { a: "MOVE", who: "A", to: [6, 5] },
-            { a: "MOVE", who: "C", to: [3, 6] },
-            { a: "MOVE", who: "D", to: [6, 9] },
-            { a: "MOVE", who: "A", to: [9, 6] }
+            { a: "PUSH", who: "B", on: [5, 5], force: 4 },
+            { a: "MOVE", who: "B", to: [5, 2] },
+            { a: "MOVE", who: "A", to: [5, 4] },
+            { a: "MOVE", who: "C", to: [2, 5] },
+            { a: "MOVE", who: "D", to: [5, 8] },
+            { a: "MOVE", who: "A", to: [8, 5] }
           ]
         },
         /* =================================================================
@@ -1465,83 +1316,12 @@
           ]
         },
         /* -----------------------------------------------------------------
-           LE PASSAGER CLANDESTIN
-
-           Un rival barre la seule route, assis au pied de la barre qui porte
-           tout le puzzle. Le pousser jusqu'au vide coûterait quatre cartes ; on
-           ne le pousse que d'UNE case, sur la barre, et c'est la barre qui
-           l'emporte : retournée par son milieu, elle le dépose sur son autre
-           bout, qui deviendra justement le pivot du second retournement. Il
-           voyage, il ne gêne plus, et il sert de charnière.
-
-           Le porteur, lui, ne doit PAS monter avec la couronne : posée sur le
-           bout de la barre puis enjambée, elle voyage seule pendant que le
-           Gardien s'assoit au milieu. Le second retournement les dépose l'un
-           derrière l'autre, la couronne devant — juste ce qu'il faut pour la
-           lancer par-dessus le gouffre. Encore faut-il que le receveur ait
-           libéré la case d'arrivée.
-
-           Au nord, deux rivaux gardent le village. Celui de la rangée se jette
-           dans le vide en le poussant VERS le château, par-dessus le coin du
-           plateau ; le second ne tombe que poussé depuis le château lui-même.
-
-           Optimum 14 PROUVÉ (234 000 nœuds), solution unique. */
-        {
-          id: "p23-passager-clandestin",
-          acte: "IV",
-          principe: "TRACE",
-          verite: "Ce qui te barre la route peut aussi la porter.",
-          title: "Le passager clandestin",
-          tagline: "Il barre la seule route. La route, elle, peut l'emporter.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
-          sanctuary: false,
-          focus: [4, 2],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            /* Le nord : le village et sa rangée, toutes en pierres d'une case,
-               donc immobiles. */
-            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]],
-            /* La barre, seule pièce mobile du plateau. */
-            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
-            /* Le départ. */
-            [[7, 3]], [[8, 3]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
-            { key: "H", p: 0, r: 0, c: 3 },
-            { key: "R1", p: 1, r: 1, c: 0 },
-            { key: "R2", p: 1, r: 0, c: 1 },
-            { key: "R3", p: 1, r: 7, c: 3 }
-          ],
-          /* Deux cartes de marge : de quoi tenter l'éjection directe du rival
-             de la route — qui ne laisse ensuite plus rien pour le village. */
-          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
-          par: 14,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Le passager est descendu",
-          winLine: "Il barrait la route ; la barre l'a emporté, et il a servi de charnière.",
-          failLine: "La route était là. Il fallait la faire tourner avec lui dessus.",
-          solution: [
-            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
-            { a: "MOVE", who: "G", to: [7, 3] },
-            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
-            { a: "DROP", who: "G", on: [6, 3] },
-            { a: "MOVE", who: "H", to: [0, 2] },
-            { a: "MOVE", who: "G", to: [5, 3] },
-            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
-            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
-            { a: "PICKUP", who: "H", on: [0, 3] },
-            { a: "PUSH", who: "H", on: [0, 1], force: 2 },
-            { a: "MOVE", who: "H", to: [0, 0] },
-            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
            LE BÉLIER
 
-           Le même gouffre que le Passager clandestin, et une case de plus au
-           nord — ce qui change tout. Le receveur est au bout de la rangée, et
+           (Le Passager clandestin, même gouffre moins une case au nord, a été
+           retiré le 2026-11-15 : celle-ci le contient en entier.)
+           Un rival barre la route au pied de la barre : poussé d'UNE case, il
+           monte dessus et c'est la barre retournée qui l'emporte. Le receveur est au bout de la rangée, et
            un rival dort sur la seule case où la couronne peut atterrir.
 
            On le décale d'une case vers le château : la couronne se pose à sa
@@ -1705,6 +1485,122 @@
               { a: "DROP", who: "C", on: [3, 0] },
               { a: "PUSH", who: "C", on: [3, 0], force: 1 },
               { a: "PICKUP", who: "N", on: [2, 0] }
+            ]
+          ]
+        },
+        /* -----------------------------------------------------------------
+           L'ARCHIPEL AUX DEUX COURONNES
+
+           Le même archipel, privé de son Quai, et DEUX couronnes : l'une part
+           du coin sud-est, l'autre du sud-ouest. Elles ne se valident pas
+           ensemble — la première compte au début d'un tour, quitte le
+           plateau, et son porteur reste assis sur la case que la seconde
+           devra prendre.
+
+           Ligne connue en 25 : le Seuil pivote et emporte le rival loin du
+           village ; l'Éclair monte en trois rotations et dépose la première
+           couronne sur la Croix creuse, qui la retourne jusqu'au Mât. Le
+           Carré, lui, roule le long du sud en trois rotations, un lancer de
+           quatre cases rend la seconde couronne à l'Éclair revenu la
+           chercher, et la dernière poussée emporte TOUTE la file : le
+           Gardien assis avance sur le château, la couronne prend sa place.
+
+           La route de l'est (Carrefour, Serpent, Croix pleine), celle de
+           L'archipel sans pont, marche toujours et coûte plus cher. */
+        {
+          id: "p28-deux-couronnes",
+          acte: "V",
+          principe: "TRACE",
+          verite: "Deux chemins qui se croisent n'en font pas un.",
+          title: "L'archipel aux deux couronnes",
+          tagline: "Deux couronnes, deux coins, et une seule porte.",
+          brief: "Valide les deux couronnes — chacune ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: { 0: [[0, 0]] },
+          placement: { formes: { l3: 1 } },
+          islands: [
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            { key: "VOL", cells: [[0, 8], [0, 10], [1, 9]] },
+            { key: "GUET", cells: [[1, 0], [2, 0], [2, 1]] },
+            { key: "FLECHE", cells: [[1, 12], [2, 12], [3, 12]] },
+            { key: "MAT", cells: [[3, 0], [4, 0], [5, 0]] },
+            { key: "CREUSE", cells: [[5, 3], [6, 2], [6, 4], [7, 3]] },
+            { key: "CROIX", cells: [[5, 7], [6, 6], [6, 7], [6, 8], [7, 7]] },
+            { key: "SERPENT", cells: [[5, 11], [5, 12], [6, 10], [6, 11]] },
+            { key: "CARREFOUR", cells: [[8, 11], [9, 10], [9, 11], [9, 12]] },
+            { key: "COUDE", cells: [[9, 2], [10, 2], [10, 3]] },
+            { key: "ECLAIR", cells: [[11, 1], [11, 2], [12, 2], [12, 3]] },
+            { key: "CARRE", cells: [[11, 11], [11, 12], [12, 11], [12, 12]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 12, c: 12, crown: 1 },
+            { key: "H", p: 0, r: 12, c: 3, crown: 2 },
+            { key: "B", p: 0, r: 5, c: 11 },
+            { key: "C", p: 0, r: 5, c: 0 },
+            { key: "Q", p: 1, r: 0, c: 1 },
+            { key: "P", p: 1, r: 1, c: 0 },
+            { key: "R", p: 1, r: 6, c: 7 }
+          ],
+          deck: [
+            ["MAGIC", "PUSH", "MAGIC", "MAGIC", "MOVE"],
+            ["MAGIC", "MAGIC", "MAGIC", "PUSH", "MOVE"],
+            ["MAGIC", "MOVE", "MAGIC", "MAGIC", "PUSH"],
+            ["PUSH", "PUSH", "PUSH", "MAGIC", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MAGIC"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
+            ["MOVE", "MOVE", "PUSH", "MAGIC", "MOVE"]
+          ],
+          par: 25,
+          rivalPlan: [
+            "ils campent sur ton village et n'en bougeront pas."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 2 },
+          winTitle: "Les deux sont rentrées",
+          winLine: "Deux couronnes, une seule porte : la première a dû laisser sa place à la seconde.",
+          failLine: "Il manque une couronne au village.",
+          solution: [
+            [
+              { a: "POSE", forme: "l3", cells: [[1, 1], [1, 2], [2, 2]], spawn: [1, 1], key: "N" },
+              { a: "MAGIC", island: "SEUIL", pivot: [0, 3], turns: 1, direction: -1 },
+              { a: "PUSH", who: "N", on: [1, 0], force: 1 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [12, 3], turns: 1, direction: 1 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [10, 4], turns: 2 }
+            ],
+            [
+              { a: "MAGIC", island: "ECLAIR", pivot: [9, 4], turns: 1, direction: -1 },
+              { a: "DROP", who: "H", on: [7, 3] },
+              { a: "MAGIC", island: "CREUSE", pivot: [6, 2], turns: 2 },
+              { a: "PICKUP", who: "C", on: [5, 1] },
+              { a: "MAGIC", island: "MAT", pivot: [4, 0], turns: 2 },
+              { a: "MOVE", who: "N", to: [1, 0] },
+              { a: "DROP", who: "C", on: [2, 0] },
+              { a: "PICKUP", who: "N", on: [2, 0] }
+            ],
+            [
+              { a: "MAGIC", island: "CARRE", pivot: [12, 11], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "CARRE", pivot: [11, 10], turns: 2 },
+              { a: "MAGIC", island: "CARRE", pivot: [10, 9], turns: 2 },
+              { a: "DROP", who: "G", on: [9, 8] }
+            ],
+            [
+              { a: "PUSH", who: "G", on: [9, 8], force: 4 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [8, 3], turns: 1, direction: -1 },
+              { a: "MOVE", who: "H", to: [7, 3] },
+              { a: "PICKUP", who: "H", on: [7, 4] },
+              { a: "MOVE", who: "H", to: [6, 2] }
+            ],
+            [
+              { a: "MOVE", who: "H", to: [5, 1] }
+            ],
+            [
+              { a: "MOVE", who: "H", to: [4, 0] },
+              { a: "TRANSFER", who: "H", to: "C" },
+              { a: "DROP", who: "C", on: [2, 0] },
+              { a: "PUSH", who: "H", on: [3, 0], force: 1 },
+              { a: "MOVE", who: "C", to: [1, 0] }
             ]
           ]
         }
