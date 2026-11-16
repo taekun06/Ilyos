@@ -8,7 +8,8 @@
 
    Médaillons dessinés à la main en SVG (choix C de Taekun, 01/11) : aucun
    fichier image, rien à télécharger. Disponible aujourd'hui : Couronnes
-   (partie classique) et Balises. Le reste est affiché « Bientôt ». */
+   (partie classique), Balises et Effondrement. Le reste est affiché
+   « Bientôt ». */
 (function(){
   'use strict';
 
@@ -67,7 +68,7 @@
   const BUTS = [
     { id: 'couronnes', nom: 'Couronnes', ligne: 'Ramène 3 couronnes', dispo: true },
     { id: 'balises', nom: 'Balises', ligne: 'Tiens les balises · 10 points', dispo: true },
-    { id: 'effondrement', nom: 'Effondrement', ligne: 'L’archipel coule' },
+    { id: 'effondrement', nom: 'Effondrement', ligne: 'L’archipel coule · 3 chutes', dispo: true },
     { id: 'traversee', nom: 'Traversée', ligne: 'Relie tes deux villages' },
     { id: 'pelerin', nom: 'Pèlerin', ligne: 'Pousse le pèlerin chez toi' },
     { id: 'territoire', nom: 'Territoire', ligne: 'Le plus de cases' },

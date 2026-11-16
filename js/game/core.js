@@ -3190,7 +3190,8 @@
       /* Éléments du mode Rotation choisis dans le Personnalisé : une
          demande comme celle de l'écran Rotation, ou null. */
       function lireRotationPersonnalisee() {
-        const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
+        const choisi = document.getElementById("customRotationButSelect")?.value;
+        const but = ["balises", "effondrement"].includes(choisi) ? choisi : "couronnes";
         const couches = [];
         if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
         const especes = document.getElementById("customOeufsLoupCheckbox")?.checked ? ["loup"] : [];

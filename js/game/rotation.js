@@ -37,7 +37,14 @@
       }
 
       function rotationCible(source = state) {
+        if (butEffondrement(source)) return source.rotation.cible || EFFONDREMENT_CIBLE;
         return butBalises(source) ? (source.rotation.cible || ROTATION_CIBLE_BALISES) : 3;
+      }
+
+      /* Buts sans couronnes (Balises, Effondrement) : les deux couronnes
+         restent hors du terrain toute la partie. */
+      function butSansCouronnes(source = state) {
+        return butBalises(source) || butEffondrement(source);
       }
 
       /* Les balises sont des CASES du plateau, fixées à la mise en place. */
@@ -70,7 +77,7 @@
 
       /* Les couronnes restent hors du terrain pendant toute la partie. */
       function rotationRangerCouronnes() {
-        if (!butBalises() || !state) return;
+        if (!state || !butSansCouronnes()) return;
         [state.artifact, state.secondArtifact].forEach(artifact => {
           if (!artifact) return;
           artifact.active = false;
@@ -87,7 +94,7 @@
 
       const rotationResetArtifactObjectBase = resetArtifactObject;
       resetArtifactObject = function resetArtifactObjectRotation(artifact) {
-        if (butBalises() && artifact) {
+        if (butSansCouronnes() && artifact) {
           artifact.active = false;
           artifact.carrierId = null;
           return;
@@ -104,7 +111,10 @@
         try {
           rotationStartLocalGameBase();
         } finally {
-          rotationEnPreparation = null;
+          /* Plateau du duel symétrique : la partie attend le choix de la
+             disposition, le premier tour viendra après. La demande est
+             gardée jusque-là (beginTurn l'installe puis l'efface). */
+          if (!state?.setupSelectionPending || state.rotation) rotationEnPreparation = null;
         }
       };
 
@@ -117,7 +127,7 @@
       /* Une demande valide : un but connu, des couches connues. Couronnes
          sans couche, c'est la partie classique : pas de Rotation. */
       function rotationNormaliser(demande) {
-        const but = demande?.but === "balises" ? "balises" : "couronnes";
+        const but = ["balises", "effondrement"].includes(demande?.but) ? demande.but : "couronnes";
         const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
         /* Couche Créatures : les œufs (espèces qui en sortent) et les
            personnages neutres sont choisis séparément (Taekun, 2026-11-12).
@@ -145,6 +155,7 @@
           couches: Object.fromEntries(voulue.couches.map(c => [c, true])),
           ...(voulue.creatures ? { choixCreatures: voulue.creatures } : {})
         };
+        if (voulue.but === "effondrement") effondrementInstaller();
         if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
         Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,
@@ -190,8 +201,8 @@
 
       /* Le bilan de fin compte des points, plus des couronnes. */
       function rotationIntituleBilan() {
-        const colonne = BILAN_COLONNES.find(col => col.titre === "Couronnes" || col.titre === "Points");
-        if (colonne) colonne.titre = butBalises() ? "Points" : "Couronnes";
+        const colonne = BILAN_COLONNES.find(col => ["Couronnes", "Points", "Éjectés"].includes(col.titre));
+        if (colonne) colonne.titre = butBalises() ? "Points" : butEffondrement() ? "Éjectés" : "Couronnes";
       }
 
       /* Décompte AU DÉBUT DU TOUR (Taekun, 2026-11-08) : le joueur qui prend

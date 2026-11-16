@@ -60,7 +60,7 @@
         // Couronnes du vainqueur (aucune en Balises, où l'on compte des points).
         const couronnes = modal.querySelector(".fin2-couronnes");
         if (couronnes) {
-          const balises = typeof butBalises === "function" && butBalises();
+          const balises = typeof butSansCouronnes === "function" && butSansCouronnes();
           const marquees = vainqueur ? Math.min(3, vainqueur.score || 0) : 0;
           couronnes.innerHTML = balises ? ""
             : [0, 1, 2].map(i => finCouronneSvg(i < marquees ? "pleine" : "vide")).join("");
@@ -236,7 +236,7 @@
         liste.push({ ic: "◎", nom: "En ligne", fait: modes.has("online"), texte: "Contre un ami à distance" });
         liste.push({ ic: "⚖", nom: "Duels symétriques", fait: plateaux.has("symmetric"), texte: "Des terrains en miroir" });
         liste.push({ ic: "✎", nom: "Personnalisé", fait: plateaux.has("custom"), texte: "Tes propres règles" });
-        liste.push({ ic: "✦", nom: "Rotation", fait: rotationJouee, texte: "Balises, créatures, paquet à bâtir" });
+        liste.push({ ic: "✦", nom: "Rotation", fait: rotationJouee, texte: "Balises, Effondrement, créatures, paquet à bâtir" });
 
         // Collection : les prochains objets à débloquer.
         try {
@@ -290,7 +290,7 @@
          manquer (sortie, banc) : la couronne part alors du village. */
       function couronneCelebrer(player, char) {
         if (ilyosSimulationActive || !player || !state) return false;
-        if (typeof butBalises === "function" && butBalises()) return false;
+        if (typeof butSansCouronnes === "function" && butSansCouronnes()) return false;
         try {
           const score = Math.min(3, player.score || 0);
           const gagnante = score >= 3;
