@@ -136,7 +136,10 @@
         const i = couches.indexOf("creatures");
         if (i >= 0 && !choixCreatures.especes.length && !choixCreatures.neutres.length) couches.splice(i, 1);
         if (but === "couronnes" && !couches.length) return null;
-        return couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+        const demandeNette = couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+        // Effondrement · Survie (rotation-effondrement.js).
+        if (but === "effondrement" && demande?.variante === "survie") demandeNette.variante = "survie";
+        return demandeNette;
       }
 
       const ROTATION_ESPECES = ["loup"];
@@ -155,7 +158,7 @@
           couches: Object.fromEntries(voulue.couches.map(c => [c, true])),
           ...(voulue.creatures ? { choixCreatures: voulue.creatures } : {})
         };
-        if (voulue.but === "effondrement") effondrementInstaller();
+        if (voulue.but === "effondrement") effondrementInstaller(voulue.variante);
         if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
         Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,

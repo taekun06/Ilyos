@@ -32,8 +32,10 @@ const ROT_B = process.env.ILYOS_ROT_B ? JSON.parse(process.env.ILYOS_ROT_B) : nu
 /* ILYOS_POIDS : poids prêtés aux DEUX camps (réglage de l'évaluation). */
 const POIDS_TOUS = process.env.ILYOS_POIDS ? JSON.parse(process.env.ILYOS_POIDS) : null;
 const AB = !!URL_B || (!!PERSO && !!DRAFT_B) || !!ROT_B;
-/* ILYOS_CIBLE : chutes pour gagner (défaut : celui du jeu, 3). */
+/* ILYOS_CIBLE : chutes pour gagner (défaut : celui du jeu, 5). */
 const CIBLE = Number(process.env.ILYOS_CIBLE) || null;
+/* ILYOS_VARIANTE=survie : setup, 6 gardiens chacun, aucune pose, dernier debout. */
+const VARIANTE = process.env.ILYOS_VARIANTE || null;
 const TOURS_MAX = Number(process.env.ILYOS_TOURS_MAX) || 160;
 
 async function ouvrir(navigateur, url) {
@@ -62,8 +64,8 @@ function depart(page, graine, campA) {
       window.ILYOS_SELFPLAY.departPerso(g, { iles, gardiens, poids: p, rotation: { but: 'effondrement' } }),
       [graine, PERSO[0], PERSO[1], poids]);
   }
-  return page.evaluate(([g, setup, cible]) =>
-    window.ILYOS_EFFONDREMENT.depart(window.ILYOS_SELFPLAY.departMelange(g), { setup, cible }), [graine, SETUP, CIBLE]);
+  return page.evaluate(([g, setup, cible, variante]) =>
+    window.ILYOS_EFFONDREMENT.depart(window.ILYOS_SELFPLAY.departMelange(g), { setup, cible, variante }), [graine, SETUP, CIBLE, VARIANTE]);
 }
 
 /* pages[j] joue le joueur j. */
@@ -107,7 +109,7 @@ async function partie(pages, etat, graine, rot = [null, null]) {
         const x = await partie(pages, debut, g, rot);
         if (x.v === 0) b.premier++; else if (x.v === 1) b.second++; else b.nul++;
         if (x.v === campA) b.A++; else if (x.v !== null) b.B++;
-        if (Math.max(...x.scores) >= (CIBLE || 3)) b.a10++;
+        if (Math.max(...x.scores) >= (CIBLE || (VARIANTE === 'survie' ? 6 : 5))) b.a10++;
         b.tours.push(x.tour);
         if (x.saut >= 2) b.sauts = (b.sauts || 0) + 1;
         const issue = x.v === null ? 'nul' : (x.v === 0 ? 'PREMIER' : 'second') + (AB ? (x.v === campA ? ' (A)' : ' (B)') : '');
@@ -117,10 +119,10 @@ async function partie(pages, etat, graine, rot = [null, null]) {
   }));
   const n = b.premier + b.second + b.nul;
   const taux = (k) => { const p = (k + b.nul / 2) / n; return `${(100 * p).toFixed(1)} % ± ${(100 * Math.sqrt(p * (1 - p) / n)).toFixed(1)}`; };
-  const terrain = PERSO ? `draft ${PERSO.join('/')}` : (SETUP ? `setup ${SETUP}` : 'classique');
+  const terrain = (VARIANTE ? `${VARIANTE} ` : '') + (PERSO ? `draft ${PERSO.join('/')}` : (SETUP ? `setup ${SETUP}` : 'classique'));
   console.log(`\nEFFONDREMENT ${terrain} : ${n} parties, premier ${b.premier}, second ${b.second}, nuls ${b.nul}`);
   console.log(`${b.sauts || 0} parties avec 2 chutes ou plus en un seul tour`);
-  console.log(`premier joueur ${taux(b.premier)} ; ${b.a10} parties finies à 3 chutes ; tours moyens ${Math.round(b.tours.reduce((a, c) => a + c, 0) / n)}`);
+  console.log(`premier joueur ${taux(b.premier)} ; ${b.a10} parties finies à la cible ; tours moyens ${Math.round(b.tours.reduce((a, c) => a + c, 0) / n)}`);
   if (AB) console.log(`A ${URL_B ? `${URL_A} contre B ${URL_B}` : (ROT_B ? `éval ${JSON.stringify(ROT_A)} contre ${JSON.stringify(ROT_B)}` : `draft ${JSON.stringify(DRAFT_A)} contre ${JSON.stringify(DRAFT_B)}`)} : A ${b.A}, B ${b.B}, nuls ${b.nul} -> A ${taux(b.A)}`);
   await navigateur.close();
 })();

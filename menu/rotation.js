@@ -68,7 +68,7 @@
   const BUTS = [
     { id: 'couronnes', nom: 'Couronnes', ligne: 'Ramène 3 couronnes', dispo: true },
     { id: 'balises', nom: 'Balises', ligne: 'Tiens les balises · 10 points', dispo: true },
-    { id: 'effondrement', nom: 'Effondrement', ligne: 'L’archipel coule · 3 chutes', dispo: true },
+    { id: 'effondrement', nom: 'Effondrement', ligne: 'L’archipel coule · 5 chutes', dispo: true },
     { id: 'traversee', nom: 'Traversée', ligne: 'Relie tes deux villages' },
     { id: 'pelerin', nom: 'Pèlerin', ligne: 'Pousse le pèlerin chez toi' },
     { id: 'territoire', nom: 'Territoire', ligne: 'Le plus de cases' },
@@ -94,6 +94,13 @@
     { genre: 'neutres', id: 'minion', nom: 'Minion', ligne: 'Neutre' }
   ];
   const creaturesChoix = { especes: new Set(['loup']), neutres: new Set() };
+  /* Effondrement : 5 chutes (partie libre, îles à 2 cartes) ou Survie
+     (setup, 6 gardiens chacun, aucune pose, dernier debout ; Taekun 17/11). */
+  const VARIANTES_EFFONDREMENT = [
+    { id: 'chutes', nom: '5 chutes', ligne: 'Îles à 2 cartes' },
+    { id: 'survie', nom: 'Survie', ligne: 'Setup · 6 gardiens' }
+  ];
+  let varianteEffondrement = 'chutes';
   let tirage = false;
 
   const filet = sens => `<svg class="rt-filet ${sens}" viewBox="0 0 160 20" aria-hidden="true"><path d="M0 10 H120"/><path class="fin" d="M120 10 c8 -9 18 -9 22 -2 c3 6 -4 10 -8 6 c-3 -3 0 -7 3 -5"/><path class="fin" d="M120 10 c8 9 18 9 22 2"/><path class="plein" d="M148 10 l6 -5 l6 5 l-6 5 Z"/></svg>`;
@@ -113,6 +120,7 @@
         <div class="rt-panneau">
           <div class="rt-col-buts"><div class="rt-lbl">BUT</div><div class="rt-buts"></div></div>
           <div class="rt-col-reglages">
+            <div class="rt-variantes"></div>
             <div class="rt-lbl">COUCHES</div><div class="rt-couches"></div>
             <div class="rt-lbl">PLATEAU</div><div class="rt-selecteurs"></div>
           </div>
@@ -138,6 +146,11 @@
     $('.rt-buts').innerHTML = BUTS.map(b => `<button type="button" class="rt-but${b.dispo ? '' : ' bientot'}${b.id === choix.but ? ' choisi' : ''}" data-but="${b.id}"${b.dispo ? '' : ' disabled'} aria-pressed="${b.id === choix.but}">
       <span class="rt-img">${medaillon(b.id)}</span>
       <span class="rt-plaque"><b>${b.nom}</b>${b.dispo ? `<i>${b.ligne}</i>` : '<em>BIENTÔT</em>'}</span></button>`).join('');
+    $('.rt-variantes').innerHTML = choix.but === 'effondrement'
+      ? `<div class="rt-lbl">VARIANTE</div><div class="rt-creatures rt-variante">${VARIANTES_EFFONDREMENT.map(v => {
+        const on = v.id === varianteEffondrement;
+        return `<button type="button" class="rt-creature${on ? ' on' : ''}" data-variante="${v.id}" aria-pressed="${on}"><i>${v.ligne}</i><b>${v.nom}</b></button>`;
+      }).join('')}</div>` : '';
     $('.rt-couches').innerHTML = COUCHES.map(c => c.dispo
       ? `<button type="button" class="rt-couche${couches.has(c.id) ? ' on' : ''}" data-couche="${c.id}" aria-pressed="${couches.has(c.id)}"><span class="rt-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${c.ico}</svg></span><span class="rt-txt"><b>${c.nom}</b><i>${c.ligne}</i></span><span class="rt-bascule" aria-hidden="true"></span></button>`
       + (c.id === 'creatures' && couches.has('creatures') ? `<div class="rt-creatures">${CREATURES_LISTE.map(x => {
@@ -153,7 +166,7 @@
       const brique = (cle, texte) => `<button type="button" class="rt-brique${verrous.has(cle) ? ' verrou' : ''}" data-verrou="${cle}" aria-pressed="${verrous.has(cle)}" title="Garder au prochain tirage"><span class="rt-cadenas" aria-hidden="true">${verrous.has(cle) ? '🔒' : '🔓'}</span>${texte}</button>`;
       t.innerHTML = `<span class="rt-tirage-titre">PARTIE TIRÉE</span>${brique('but', butCourant().nom)}${brique('taille', libelle(TAILLES, choix.taille))}${brique('couches', couches.size ? COUCHES.filter(c => couches.has(c.id)).map(c => c.nom).join(' + ') : 'Sans couche')}<button type="button" class="rt-relancer" data-rt="alea">↻ RELANCER</button>`;
     }
-    $('.rt-lancer small').textContent = [butCourant().nom, ...COUCHES.filter(c => couches.has(c.id)).map(c => c.nom), libelle(TAILLES, choix.taille), choix.adversaire === 'solo' ? libelle(NIVEAUX, choix.niveau) : 'DUEL LOCAL'].join(' · ').toUpperCase();
+    $('.rt-lancer small').textContent = [butCourant().nom + (choix.but === 'effondrement' && varianteEffondrement === 'survie' ? ' Survie' : ''), ...COUCHES.filter(c => couches.has(c.id)).map(c => c.nom), libelle(TAILLES, choix.taille), choix.adversaire === 'solo' ? libelle(NIVEAUX, choix.niveau) : 'DUEL LOCAL'].join(' · ').toUpperCase();
     ajuster();
   }
 
@@ -177,6 +190,7 @@
     const mode = choix.adversaire === 'solo' ? 'solo' : 'duel';
     const values = { board: 'classic', size: choix.taille, timer: '0', difficulty: choix.niveau };
     if (choix.but !== 'couronnes' || couches.size) values.rotation = { but: choix.but, couches: [...couches] };
+    if (values.rotation && choix.but === 'effondrement' && varianteEffondrement === 'survie') values.rotation.variante = 'survie';
     if (values.rotation && couches.has('creatures')) values.rotation.creatures = { especes: [...creaturesChoix.especes], neutres: [...creaturesChoix.neutres] };
     parent.postMessage({ source: 'ilyos-menu', type: 'play', detail: { mode, values } }, location.origin);
   }
@@ -200,6 +214,7 @@
     const cible = e.target.closest('button');
     if (!cible || !ecran.contains(cible)) return;
     if (cible.dataset.but) { choix.but = cible.dataset.but; rendre(); return; }
+    if (cible.dataset.variante) { varianteEffondrement = cible.dataset.variante; rendre(); return; }
     if (cible.dataset.creature) {
       const [genre, id] = cible.dataset.creature.split(':');
       const liste = creaturesChoix[genre];
