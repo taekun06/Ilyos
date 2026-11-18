@@ -92,6 +92,14 @@ chaque tour d'une partie CPU contre CPU et vérifie qu'un plateau trafiqué est
 repéré. Un nouveau geste du joueur doit appeler `reglesNoter`, sinon l'arbitre
 le verra comme une triche.
 
+Étape 5 (en cours) : la présentation s'abonne aux annonces de la règle.
+`reglesAnnoncer(evenement)` (regles.js) ne fait rien en simulation ;
+`reglesAbonner(type, presenter)` branche un affichage. Le point
+(`scoreCrownForPlayer`, ui.js) ne fait plus que la règle et annonce `point`
+puis `victoire` ; `presenterPoint` et `presenterVictoire` (ui.js) jouent
+l'animation, le son, la secousse, le hameau, le bandeau et l'écran de fin.
+Une nouvelle présentation s'ajoute en abonné, pas dans la règle.
+
 Pas encore fait : refuser l'état d'un invité en désaccord (4b, après des
 parties en ligne réelles) ; ramassage, vol et passe du joueur sont notés mais
 pas encore gardés.

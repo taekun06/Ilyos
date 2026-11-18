@@ -31,10 +31,7 @@
           if (state.winner !== null) return;
           const artifact = artifactCarriedBy(char.id);
           if (!artifact) return;
-          queueKayKitActionAnimation(char.id, "victory", 1200);
-          animateCellPulse(char.r, char.c, "crown-burst");
-          playSfx("crown");
-          scoreCrownForPlayer(player, char, false, artifact, { immediat });
+          scoreCrownForPlayer(player, char, false, artifact, { immediat, auVillage: true });
           scored++;
         });
 
