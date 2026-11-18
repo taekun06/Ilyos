@@ -11,3 +11,6 @@ playwright/.cache/
 
 # Empreintes de style calculé : sorties de travail, jamais versionnées.
 .empreintes/
+
+# Parties récupérées par scripts/recuperer-victoires.mjs
+retours-victoires/

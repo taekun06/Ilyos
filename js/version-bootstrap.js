@@ -442,6 +442,8 @@ document.title = "ILYOS — Les îles célestes";
         const action = msg.detail?.action;
         // RÉGLAGES de l'accueil : le menu de jeu, ouvert hors partie (js/menu-jeu.js).
         if (action === 'settings') window.ILYOS_MENU_JEU?.ouvrirDepuisAccueil?.();
+        // ⚙ › SIGNALER UN BUG : fenêtre « Aider ILYOS » (js/retours.js).
+        if (action === 'retours') window.ILYOS_RETOURS?.ouvrir();
         if (action === 'tutorial') {
           window.dispatchEvent(new CustomEvent('ilyos-menu-tutorial-requested'));
           setTimeout(() => syncFrame(frame), 120);
