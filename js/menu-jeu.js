@@ -261,6 +261,27 @@
     plateau.appendChild(plateauGrille);
     page('graphismes').appendChild(plateau);
 
+    // MODE BALISES : trônes (par défaut) ou balises carrées d'origine
+    // (js/game/rotation.js, ILYOS_BALISES_STYLE).
+    const balises = section('Mode Balises', 'L’apparence des balises à tenir.');
+    const balisesGrille = document.createElement('div');
+    balisesGrille.className = 'mj-grille-chocs';
+    balisesGrille.innerHTML = [['trone', 'Trônes', 'Par défaut, le gardien s’y assoit'], ['balise', 'Balises', 'Cadres carrés d’origine']]
+      .map(([n, titre, sous]) => `<button type="button" class="mj-choix" data-mj-balises="${n}"><b>${titre}</b><small>${sous}</small></button>`).join('');
+    const majBalises = () => {
+      const style = window.ILYOS_BALISES_STYLE?.style?.() || 'trone';
+      balisesGrille.querySelectorAll('[data-mj-balises]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mjBalises === style)));
+    };
+    balisesGrille.addEventListener('click', e => {
+      const bouton = e.target.closest('[data-mj-balises]');
+      if (!bouton || !window.ILYOS_BALISES_STYLE) return;
+      window.ILYOS_BALISES_STYLE.regler(bouton.dataset.mjBalises);
+      majBalises();
+    });
+    majBalises();
+    balises.appendChild(balisesGrille);
+    page('graphismes').appendChild(balises);
+
     // CHOCS : secousse de caméra et vibration au moment des coups forts
     // (js/game/kaykit3d.js, KAYKIT_CHOCS). Sans coût de rendu.
     const chocs = section('Chocs', 'Le poids des coups : poussées, chutes, couronnes volées.');
