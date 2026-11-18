@@ -504,12 +504,16 @@
         const islandStatusEl = document.getElementById("hudV2IslandStatus");
         const islandDrawer = document.getElementById("hudV2IslandDrawer");
         if (islandStatusEl) {
-          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
+          /* Énigme à formes comptées : le bouton dit combien d'îles il reste,
+             et s'efface quand il n'y en a plus (puzzle.js). */
+          const ilesEnigme = state.puzzle ? puzzleIlesRestantes() : null;
+          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn || ilesEnigme === 0);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
           /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
              organique lit ce sous-titre (js/hud-organique-v2.js). */
           const payante = ilesPayantes() && !state.draft;
-          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES`
+            : (ilesEnigme != null ? `×${ilesEnigme}` : "OBLIGATOIRE");
           islandStatusEl.disabled = payante && !peutPayerIle(active);
           islandStatusEl.title = islandStatusEl.disabled
             ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`
@@ -564,6 +568,18 @@
             const crans = Number(btn.dataset.magieCrans);
             btn.disabled = pivotChoisi && !legales.includes(crans);
             btn.classList.toggle("ov2-magie-actif", pivotChoisi && crans === montree);
+          });
+        }
+        const magicModes = document.getElementById("hudV2MagicModes");
+        if (magicModes) {
+          const rotatingMurs = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
+          const ileChoisie = rotatingMurs ? state.islands.find(is => is.id === state.selectedIslandId) : null;
+          const porte = !!ileChoisie && mursPortesParIle(ileChoisie).length > 0;
+          magicModes.classList.toggle("hidden", !porte);
+          const actif = porte ? modeMagie() : "ile";
+          magicModes.querySelectorAll("[data-magie-mode]").forEach(btn => {
+            btn.classList.toggle("ov2-magie-actif", btn.dataset.magieMode === actif);
+            btn.setAttribute("aria-pressed", String(btn.dataset.magieMode === actif));
           });
         }
         const magicDissolveBtn = document.getElementById("hudV2MagicDissolve");
@@ -2270,7 +2286,10 @@
               return !!(other ? other.id !== char.id : occupantPoussable(r, c));
             });
           });
-          if (!target) return "Aucun adversaire ou objet adjacent à pousser.";
+          // Murs étoilés (murs.js) : un mur que touche un de mes gardiens.
+          const mur = !target && mursActifs() && state.characters.some(char =>
+            char.player === state.currentPlayer && mursDe().some(m => sensPousseeMur(m, char.r, char.c)));
+          if (!target && !mur) return "Aucun adversaire ou objet adjacent à pousser.";
         }
         if (type === "MAGIC" && !(state.islands || []).length) return "Aucune île compatible avec la magie.";
         return "";
@@ -2647,6 +2666,9 @@
           });
         });
 
+        // Murs étoilés (murs.js) : un mur que borde ou touche un de mes gardiens.
+        optionsPousseeMurInterface({ pusherId, targetId }).forEach(option => options.push(option));
+
         const unique = new Map();
         options.forEach(option => {
           if (!unique.has(option.id)) unique.set(option.id, option);
@@ -2700,6 +2722,7 @@
       function executeUnifiedPushOption(optionId) {
         const option = state?.pushOptions?.find(item => item.id === optionId);
         if (!option) return false;
+        if (option.targetType === "mur") return executerPousseeMur(option);
 
         const pusher = characterById(option.pusherId);
         const target = option.targetType === "crown"
@@ -3535,6 +3558,14 @@
         const direction = steps === 3 ? -1 : 1;
         const turns = steps === 3 ? 1 : steps;
 
+        // Le mur seul tourne : l'île reste où elle est.
+        if (modeMagie() === "mur") {
+          const plan = planMagieMurs(island, state.selectedMagicPivot, steps, "mur");
+          state.magicPreviewCells = island.cells.map(([r, c]) => [r, c]);
+          state.magicPreviewValid = !!plan?.valid;
+          return;
+        }
+
         const rotation = calculateIslandRotationAroundPivot(
           island,
           state.selectedMagicPivot[0],
@@ -3542,6 +3573,8 @@
           direction,
           turns
         );
+        if (rotation.valid && modeMagie() === "deux"
+          && !planMagieMurs(island, state.selectedMagicPivot, steps, "deux")?.valid) rotation.valid = false;
 
         if (rotation.valid) {
           state.magicPreviewCells = rotation.absCells.map(([r, c]) => [r, c]);
@@ -3583,6 +3616,26 @@
           turns
         );
 
+        const mode = modeMagie();
+        const planMurs = mode === "ile" ? null : planMagieMurs(island, state.selectedMagicPivot, steps, mode);
+        if (planMurs && !planMurs.valid) {
+          showToast("Rotation impossible : le mur sortirait du plateau, croiserait un autre mur ou ne toucherait plus d’île.");
+          return;
+        }
+        if (mode === "mur") {
+          saveUndoSnapshot();
+          playSfx("magic");
+          const appliqueMur = applyMagicRotationCore(island.id, null, planMurs);
+          if (!appliqueMur) { discardLastUndoSnapshot(); return; }
+          animateBoardMagic();
+          showToast(`Mur tourné de ${steps * 90}° pour 1 magie.`);
+          resetKayKitPointerFeedback();
+          renderAll();
+          scheduleKayKitSync();
+          showActionConsumption("MAGIC", appliqueMur.cout ?? 1, availableActionCount("MAGIC"));
+          return;
+        }
+
         if (!rotation.valid) {
           showToast(`Rotation impossible : ${rotation.reason}`);
           return;
@@ -3616,7 +3669,7 @@
            fait encore tourner les anciens blocs. On gèle ce calque le temps de
            l'animation — même principe que pour les gardiens, dont le visuel
            n'est pas recalé tant qu'un déplacement est en cours. */
-        const applique = applyMagicRotationCore(island.id, rotation);
+        const applique = applyMagicRotationCore(island.id, rotation, planMurs);
         kaykitGelerCalqueIles(true);
 
         animateIslandLiftRotation(island.id, steps * 90, () => {
@@ -3703,6 +3756,17 @@
         if (!island) return [];
         const [pr, pc] = state.selectedMagicPivot;
         const options = [];
+        // Murs (murs.js) : le mur seul, ou l'île avec ses murs.
+        const mode = modeMagie();
+        if (mode !== "ile") {
+          [1, 2, 3].forEach(steps => {
+            const plan = planMagieMurs(island, state.selectedMagicPivot, steps, mode);
+            if (!plan?.valid) return;
+            const rotation = plan.rotation || { valid: true, absCells: [], characterMoves: [], artifactMoves: [] };
+            options.push({ steps, rotation, planMurs: plan });
+          });
+          return options;
+        }
         [1, 2, 3].forEach(steps => {
           const direction = steps === 3 ? -1 : 1;
           const turns = steps === 3 ? 1 : steps;

@@ -194,7 +194,7 @@
           const k = ile.cells.findIndex(([cr, cc]) => cr === r && cc === c);
           return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
         }).filter(Boolean) : [];
-        const resultat = rotationMagieBase(islandId, rotation);
+        const resultat = rotationMagieBase.apply(this, arguments);
         if (resultat && suivantes.length) {
           const ecrit = rotationEcrire();
           suivantes.forEach(({ i, vers }) => { ecrit.balises[i] = [vers[0], vers[1]]; });
@@ -610,19 +610,125 @@
         return groupe;
       }
 
+
+      /* TRÔNES (Taekun, 2026-11-18) : apparence PAR DÉFAUT des balises. Un
+         trône royal (bois sombre et or, bloc plein, haut dossier à tenture)
+         tourné vers le centre du plateau ; le gardien qui tient la balise s'y
+         ASSOIT (pose figée Sit_Chair_Pose, aucune animation en continu). La
+         couleur d'état (éteinte gris, libre cyan, tenue couleur du camp) est
+         portée par le liseré au sol, le coussin, la tenture et la gemme. Une
+         balise FIXE repose sur une grande estrade de pierre à deux marches,
+         une balise MOBILE n'en a pas.
+         Menu > Graphismes > Mode Balises : « Balises » remet les cadres carrés
+         d'origine (réglage `ilyosBalisesStyle` dans le stockage local). */
+      const ROTATION_STYLE_CLE = "ilyosBalisesStyle";
+      let rotationStyleBalises = (() => {
+        try { return localStorage.getItem(ROTATION_STYLE_CLE) === "balise" ? "balise" : "trone"; } catch (_) { return "trone"; }
+      })();
+      const rotationTrones = () => rotationStyleBalises === "trone";
+      // Hauteur de l'estrade et de l'assise (mesurée sur les personnages KayKit :
+      // le bassin de la pose assise est à 0,105 au-dessus des pieds).
+      const ROTATION_TRONE_ECHELLE = .8;
+      const ROTATION_TRONE_ESTRADE = .26;
+      const ROTATION_TRONE_ASSISE = .35;
+
+      function rotationConstruireTrone(mobile) {
+        const groupe = new THREE.Group();
+        const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color: new THREE.Color(color).convertSRGBToLinear(), roughness: .78, metalness: 0, flatShading: true, ...extra });
+        const etatMat = new THREE.MeshStandardMaterial({ color: ROTATION_BALISE_CLAIRE, roughness: .5, metalness: .1, flatShading: true, emissive: ROTATION_BALISE_CLAIRE, emissiveIntensity: .35 });
+        // Géométries partagées (cache kaykitGeometry), comme les balises.
+        const box = (w, h, d, m, x, y, z) => {
+          const o = new THREE.Mesh(kaykitGeometry(`trone-b-${w}-${h}-${d}`, () => new THREE.BoxGeometry(w, h, d)), m);
+          o.position.set(x, y, z);
+          return o;
+        };
+        const geo = (cle, f) => kaykitGeometry("trone-" + cle, f);
+        // Liseré au sol à la couleur d'état : la case se lit de loin.
+        const L = .9, e = .06;
+        [[0, -L / 2 + e / 2, L, e], [0, L / 2 - e / 2, L, e], [-L / 2 + e / 2, 0, e, L - 2 * e], [L / 2 - e / 2, 0, e, L - 2 * e]]
+          .forEach(([x, z, w, d]) => groupe.add(box(w, .04, d, etatMat, x, .02, z)));
+        const estrade = mobile ? 0 : ROTATION_TRONE_ESTRADE;
+        if (!mobile) {
+          const pierre = mat(0x575d68), pierreHaut = mat(0x6c7380);
+          groupe.add(box(.88, .13, .88, pierre, 0, .065, 0), box(.72, .13, .72, pierreHaut, 0, .195, 0));
+          [[0, -.36, .72, .03], [0, .36, .72, .03], [-.36, 0, .03, .72], [.36, 0, .03, .72]]
+            .forEach(([x, z, w, d]) => groupe.add(box(w, .025, d, etatMat, x, .26, z)));
+        }
+        const bois = mat(0x4a2c19), boisClair = mat(0x6b4127), or = mat(0xe0b04a, { metalness: .5, roughness: .38 });
+        const siege = new THREE.Group();
+        [
+          box(.66, .1, .6, boisClair, 0, .05, 0),            // socle
+          box(.68, .03, .62, or, 0, .115, 0),                // filet doré du socle
+          box(.52, .16, .48, bois, 0, .21, 0),               // assise pleine
+          box(.46, .06, .42, etatMat, 0, .32, .02),          // coussin
+          box(.1, .3, .52, bois, -.3, .28, 0),               // accoudoirs pleins
+          box(.1, .3, .52, bois, .3, .28, 0),
+          box(.13, .035, .55, or, -.3, .445, 0),             // chapeaux dorés
+          box(.13, .035, .55, or, .3, .445, 0),
+          box(.62, .86, .1, bois, 0, .56, -.25),             // haut dossier
+          box(.44, .66, .03, etatMat, 0, .57, -.19),         // tenture
+          box(.05, .7, .04, or, -.245, .57, -.19),           // montants dorés
+          box(.05, .7, .04, or, .245, .57, -.19),
+          box(.54, .045, .04, or, 0, .93, -.19),
+          box(.62, .05, .12, or, 0, 1.0, -.25),              // linteau
+          // Dos du dossier, vu depuis l'autre camp : cadre doré.
+          box(.5, .04, .03, or, 0, .9, -.31), box(.5, .04, .03, or, 0, .24, -.31),
+          box(.04, .66, .03, or, -.23, .57, -.31), box(.04, .66, .03, or, .23, .57, -.31)
+        ].forEach(piece => siege.add(piece));
+        // Fronton doré ARRONDI, gemme d'état au sommet : aucune pointe derrière
+        // la tête du gardien assis.
+        const arche = new THREE.Mesh(geo("arche", () => new THREE.CylinderGeometry(.22, .22, .1, 14, 1, false, -Math.PI / 2, Math.PI)), or);
+        arche.rotation.x = Math.PI / 2;
+        arche.position.set(0, 1.02, -.25);
+        const gemme = new THREE.Mesh(geo("gemme", () => new THREE.OctahedronGeometry(.075)), etatMat);
+        gemme.scale.set(1, 1, .6);
+        gemme.position.set(0, 1.1, -.19);
+        const blason = new THREE.Mesh(geo("blason", () => new THREE.OctahedronGeometry(.11)), etatMat);
+        blason.scale.set(1, 1.3, .35);
+        blason.position.set(0, .6, -.31);
+        siege.add(arche, gemme, blason);
+        siege.scale.setScalar(ROTATION_TRONE_ECHELLE);
+        siege.position.y = estrade;
+        groupe.add(siege);
+        groupe.userData.rotationParties = {
+          cadreMat: etatMat, bornes: null, croix: null, trone: true,
+          assise: estrade + ROTATION_TRONE_ASSISE * ROTATION_TRONE_ECHELLE
+        };
+        return groupe;
+      }
+
+      const rotationConstruirePiece = mobile => (rotationTrones() ? rotationConstruireTrone(mobile) : rotationConstruireBalise(mobile));
+
+      /* Gardien assis sur son trône (lu à chaque image par kaykit3d.js) :
+         au repos, sur une balise allumée, hors sélection. Se lève de lui-même
+         dès qu'il bouge, est poussé ou sélectionné. */
+      kaykitPoseAssise = function kaykitPoseAssiseTrone(visual) {
+        if (!rotationTrones() || !butBalises() || !kaykit3D?.rotationBalises) return null;
+        const g = (state.characters || []).find(x => String(x.id) === visual.id);
+        if (!g) return null;
+        const i = state.rotation.balises.findIndex(([r, c]) => r === g.r && c === g.c);
+        if (i < 0 || !baliseAllumee(g.r, g.c)) return null;
+        const trone = kaykit3D.rotationBalises.children[i];
+        if (!trone?.userData.rotationParties?.trone) return null;
+        // Assis au bord de l'assise : le chapeau du mage ne traverse plus le dossier.
+        return { facing: trone.rotation.y, hauteur: trone.userData.rotationParties.assise - .105, avance: .08 };
+      };
+
       function rotationSyncBalises3D() {
         if (!kaykit3D?.dynamicGroup) return;
-        if (!butBalises()) {
+        const voulu = rotationStyleBalises;
+        if (!butBalises() || (kaykit3D.rotationBalises && kaykit3D.rotationBalises.userData.style !== voulu)) {
           if (kaykit3D.rotationBalises) {
             disposeKayKitObjects([kaykit3D.rotationBalises]);
             kaykit3D.rotationBalises = null;
           }
-          return;
+          if (!butBalises()) return;
         }
         if (!kaykit3D.rotationBalises || !kaykit3D.rotationBalises.parent) {
           const groupe = new THREE.Group();
           groupe.name = "rotation-balises";
-          state.rotation.balises.forEach((_, i) => groupe.add(rotationConstruireBalise(baliseMobile(i))));
+          groupe.userData.style = voulu;
+          state.rotation.balises.forEach((_, i) => groupe.add(rotationConstruirePiece(baliseMobile(i))));
           kaykit3D.dynamicGroup.add(groupe);
           kaykit3D.rotationBalises = groupe;
         }
@@ -637,14 +743,33 @@
             : allumee ? ROTATION_BALISE_CLAIRE : 0x5d7a8c;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
           balise.position.set(p.x, allumee ? p.y + .005 : KAYKIT_LEVELS.islandTop + .01, p.z);
-          const { cadreMat, bornes } = balise.userData.rotationParties;
+          const { cadreMat, bornes, trone } = balise.userData.rotationParties;
           cadreMat.color.setHex(couleur);
           cadreMat.emissive.setHex(couleur);
+          if (trone) {
+            balise.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+            // Couleurs du jeu en sRGB, passées en linéaire : sans cela le soleil
+            // les blanchit sur ces matières unies.
+            cadreMat.color.convertSRGBToLinear();
+            cadreMat.emissive.convertSRGBToLinear();
+            cadreMat.emissiveIntensity = g ? .45 : allumee ? .3 : 0;
+            return;
+          }
           cadreMat.emissiveIntensity = g ? .5 : allumee ? .35 : .1;
           bornes.visible = allumee;
           bornes.scale.y = g ? 1.35 : 1;
         });
       }
+
+      window.ILYOS_BALISES_STYLE = {
+        style: () => rotationStyleBalises,
+        regler(style) {
+          rotationStyleBalises = style === "balise" ? "balise" : "trone";
+          try { localStorage.setItem(ROTATION_STYLE_CLE, rotationStyleBalises); } catch (_) { /* stockage indisponible */ }
+          if (state) renderAll();
+          return rotationStyleBalises;
+        }
+      };
 
       /* Magie : une balise mobile de l'île tournée (hors pivot) part avec
          elle ; son double se pose à l'arrivée (kaykit3d.js). */
@@ -664,7 +789,7 @@
           }
           const vers = rotation.absCells?.[i];
           if (!vers || (vers[0] === r && vers[1] === c)) return;
-          const fantome = rotationConstruireBalise(true);
+          const fantome = rotationConstruirePiece(true);
           fantome.traverse(o => { if (o.material) o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true }; });
           const p = kaykitCellPosition(vers[0], vers[1], sol ?? kaykitCellSurfaceY(vers[0], vers[1]));
           fantome.position.set(p.x, p.y, p.z);
@@ -672,6 +797,9 @@
         });
         return res;
       };
+
+      // Ni herbe ni arbre sur une case de balise : le décor passerait dans le trône.
+      kaykitCaseReservee = (r, c) => butBalises() && state.rotation.balises.some(([br, bc]) => br === r && bc === c);
 
       const rotationSyncKayKitSceneBase = syncKayKitScene;
       syncKayKitScene = function syncKayKitSceneRotation() {

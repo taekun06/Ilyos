@@ -201,6 +201,20 @@
         const accent = visual.assetKey === 'hero1'
           ? applyMageAccent(targetMesh, targetMaterial, sourceMaterial)
           : applyKnightAccent(targetMesh, targetMaterial, sourceMaterial);
+        /* Couleur propre au gardien (énigme « chacun sa case ») : armure,
+           cape et bouclier prennent sa couleur ; la tête et l'épée restent
+           telles quelles. */
+        if (Number.isFinite(visual.teinte) && targetMaterial.color
+          && !/(?:^|\b)(head|sword)(?:\b|$)/.test(materialLabel(targetMesh, targetMaterial))) {
+          /* Couleur UNIE : la texture du chevalier (acier, tabard rouge) se
+             multiplierait avec la teinte et la fausserait — un jaune devenait
+             olive, son bouclier orange. */
+          targetMaterial.map = null;
+          targetMaterial.color.setHex(visual.teinte).convertSRGBToLinear();
+          if ('roughness' in targetMaterial) targetMaterial.roughness = .6;
+          if ('metalness' in targetMaterial) targetMaterial.metalness = .08;
+          targetMaterial.needsUpdate = true;
+        }
         if (accent) accents.push({ mesh:targetMesh.name || '(sans nom)', material:targetMaterial.name || '(sans nom)', accent });
       }
     }

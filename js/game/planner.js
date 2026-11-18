@@ -2157,6 +2157,21 @@
           }
         }
 
+        /* Murs étoilés (murs.js) : pousser un mur, de face (il balaie la file
+           devant lui) ou dans sa longueur. Une option par force qui le fait
+           réellement avancer d'autant. */
+        if (mursActifs()) {
+          for (const pousseur of plannerGardiensDe(playerId)) {
+            for (const option of optionsPousseeMur(pousseur, budget)) {
+              const chutes = (option.apercu.gardiens || []).length < state.characters.length
+                ? state.characters.filter(g => !option.apercu.gardiens.some(x => x.id === g.id)) : [];
+              let indice = 4 - option.force;
+              chutes.forEach(g => { indice += g.player === playerId ? -120 : 90; });
+              options.push({ type: "POUSSER_MUR", murId: option.murId, pusherId: pousseur.id, force: option.force, indice });
+            }
+          }
+        }
+
         options.sort((a, b) => b.indice - a.indice);
         return plannerRetenir(options, plafonds().push, "PUSH");
       }
@@ -2273,6 +2288,40 @@
                 continue;
               }
               options.push(candidat);
+            }
+          }
+        }
+
+        /* Murs étoilés (murs.js) : sur une île qui porte un mur, tourner le
+           mur seul ou l'île avec lui. Mêmes mesures que pour une île ; un
+           résultat déjà vu (même mur, même île) n'est pas recompté. */
+        if (mursActifs()) {
+          const vus = new Set();
+          for (const ile of state.islands) {
+            if (!mursPortesParIle(ile).length) continue;
+            for (const [pr, pc] of ile.cells) {
+              for (const mode of ["mur", "deux"]) {
+                for (const pas of [1, 2, 3]) {
+                  if (plannerHorloge() > echeance) break;
+                  const plan = planMagieMurs(ile, [pr, pc], pas, mode);
+                  if (!plan?.valid) continue;
+                  const cle = mode + plan.murs.map(m => `${m.apres.o}${m.apres.i},${m.apres.j},${m.apres.n}`).join("|")
+                    + (plan.rotation ? JSON.stringify(plan.rotation.absCells) : "");
+                  if (vus.has(cle)) continue;
+                  vus.add(cle);
+                  const direction = pas === 3 ? -1 : 1;
+                  const tours = pas === 3 ? 1 : pas;
+                  const candidat = { type: "MAGIC", islandId: ile.id, pivot: [pr, pc], direction, turns: tours, mode };
+                  const impact = withSimulatedState(cloneStateForSimulation(), () =>
+                    appliquerActionNoyau(candidat) ? avecGrilleTerre(mesurer) : null);
+                  if (!impact) continue;
+                  const gainMoi = plannerProximite(impact.moi) - plannerProximite(avant.moi);
+                  const gainContre = plannerProximite(avant.adverse) - plannerProximite(impact.adverse);
+                  candidat.indice = (gainMoi + gainContre) * 100;
+                  if (Math.abs(candidat.indice) < 1) continue;
+                  options.push(candidat);
+                }
+              }
             }
           }
         }
