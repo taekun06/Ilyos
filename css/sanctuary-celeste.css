@@ -374,22 +374,9 @@ body[data-visual-mode="alternative"] .topbar {
   box-shadow: 0 4px 16px rgba(90, 68, 30, .10) !important;
 }
 
-body[data-visual-mode="alternative"] .turn-heading strong {
-  color: #29586a !important;
-  font-size: 20px !important;
-  letter-spacing: .01em !important;
-}
 
-body[data-visual-mode="alternative"] .turn-summary::after {
-  content: "";
-  display: block;
-  width: 30px;
-  height: 2px;
-  margin: 2px auto 0;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--ilyos-gold), transparent);
-  opacity: .8;
-}
+
+
 
 body[data-visual-mode="alternative"] .turn-timer,
 body[data-visual-mode="alternative"] .online-badge,
@@ -405,9 +392,7 @@ body[data-visual-mode="alternative"] #instruction {
   font-size: 11px !important;
 }
 
-body[data-visual-mode="alternative"] .player-text h2 {
-  font-family: var(--ilyos-font-display) !important;
-}
+
 
 /* =====================================================================
    12 — COMMANDES CAMÉRA : toolbar sculptée flottante, discrète
@@ -580,15 +565,9 @@ body[data-visual-mode="alternative"] .modal-card::before {
 
 /* Frise dorée sous "Tour N", plus épaisse, avec un petit losange central en
    écho au blason de la référence. */
-body[data-visual-mode="alternative"] .turn-summary {
-  position: relative;
-}
 
-body[data-visual-mode="alternative"] .turn-summary::after {
-  width: 64px;
-  height: 4px;
-  background: linear-gradient(90deg, transparent, var(--ilyos-gold), var(--ilyos-gold-deep), var(--ilyos-gold), transparent);
-}
+
+
 
 /* =====================================================================
    17 — TOOLTIP DE SURVOL 3D (kaykit-cursor-label) : agrandi, lisible.

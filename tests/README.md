@@ -110,6 +110,11 @@ npm run empreinte -- .empreintes/apres.json
 npm run empreinte:comparer -- .empreintes/avant.json .empreintes/apres.json
 ```
 
+Un relevé ne voit que l'écran qu'il ouvre : les règles sous `@media` du
+téléphone échappent au PC. Relever aussi `--ecran portrait` et `--ecran paysage`
+(un fichier par écran) dès que la feuille touchée en contient. Sur une machine
+dont le Chromium n'est pas celui de Playwright : `CHROMIUM=/chemin/chromium`.
+
 Le serveur doit tourner sur le port 8126 (`node scripts/dev-server.js 8126`),
 ou passer `--port`. Les sorties vont dans `.empreintes/`, qui n'est pas
 versionné.
@@ -193,3 +198,27 @@ suppose de savoir en quelles propriétés longues chaque raccourci se développe
 Le moteur sait le faire — `element.style.setProperty(raccourci, valeur)` puis
 énumération — mais ce n'est pas encore branché ici. C'est le prochain pas, et
 c'est lui qui ouvre les 40 %.
+
+---
+
+# Règles mortes
+
+`scripts/audit-css-mort.js` retire les règles qui exigent une classe ou un
+identifiant qu'aucun fichier HTML ou JavaScript du dépôt ne contient plus, ni
+entier ni recollé à l'exécution. Sans navigateur : la preuve vaut pour tous les
+états du jeu, pas seulement ceux de l'empreinte.
+
+```
+npm run audit:css-mort
+npm run audit:css-mort -- --noms       la liste des noms introuvables
+npm run audit:css-mort -- --corriger
+```
+
+Le 14 novembre 2026 : 163 règles entières et 26 sélecteurs retirés sur 4 372,
+empreinte sans écart sur les trois écrans. Le même jour, les 19 feuilles
+empilées du HUD et des cartes ont été mises bout à bout, dans leur ordre, en
+`css/hud-organique.css` et `css/cartes-hud.css`.
+
+Ce que l'outil ne sait pas dire : une règle dont le nom existe encore mais qui
+perd toujours la cascade. C'est le travail déclaration par déclaration décrit
+plus haut.

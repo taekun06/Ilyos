@@ -33,7 +33,7 @@ Cette branche est la base de consolidation du HUD Organique V2.
 
 ## Fichiers canoniques ajoutés
 
-- `css/hud-consolidation-v12.css`
+- `css/hud-organique.css` (section « hud-consolidation-v12.css »)
 - `js/hud-consolidation-v12.js`
 
 Ils sont chargés en dernier par `js/version-bootstrap.js` avec `?v=12`.

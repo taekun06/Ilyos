@@ -22,12 +22,12 @@
   <link rel="manifest" href="./manifest.webmanifest?v=20261108">
   <meta name="theme-color" content="#0a1722">
   
-  <link rel="stylesheet" href="./css/base.css?v=20261102-cpu">
+  <link rel="stylesheet" href="./css/base.css?v=20261114-styles">
   <!-- Plateau tactique 2D : additif, sans effet tant que le mode est éteint. -->
   <link rel="stylesheet" href="./css/plateau-tactique.css?v=20261026-nuit-etoilee">
   <link rel="stylesheet" href="./css/turn-flow-ux.css?v=20260815-gameplay-fixes2">
 
-  <script src="./js/bootstrap-cache.js?v=20261105-cartes-clic"></script>
+  <script src="./js/bootstrap-cache.js?v=20261114-styles"></script>
 
   <style id="ilyos-v54-safe-layout-fix">
     /* V54 : correctif stable, sans repositionnement absolu des panneaux du jeu. */
@@ -103,7 +103,7 @@
       position: relative
     }
   </style>
-  <script src="./js/version-bootstrap.js?v=20261118-integration"></script>
+  <script src="./js/version-bootstrap.js?v=20261118-integration-styles"></script>
   <script src="./js/retours.js?v=2"></script>
 
   <style id="ilyos-v58-autoplay">
@@ -536,8 +536,7 @@
     }
 
     .board-wrap,
-    .board-shell,
-    .board-container {
+    .board-shell {
       isolation: isolate
     }
 
@@ -589,10 +588,7 @@
     }
 
     /* Le plateau réagit brièvement aux actions, jamais en boucle. */
-    #gameScreen.v67-impact-move .board-wrap,
-    #gameScreen.v67-impact-move .board-shell {
-      animation: v67MoveImpact 420ms var(--v67-ease)
-    }
+
 
     #gameScreen.v67-impact-push .board-wrap,
     #gameScreen.v67-impact-push .board-shell {
@@ -604,10 +600,7 @@
       animation: v67MagicImpact 700ms var(--v67-ease)
     }
 
-    #gameScreen.v67-impact-crown .board-wrap,
-    #gameScreen.v67-impact-crown .board-shell {
-      animation: v67CrownImpact 850ms var(--v67-ease)
-    }
+
 
     @keyframes v67MoveImpact {
       0% {
@@ -830,10 +823,8 @@
 
     @media (prefers-reduced-motion:reduce) {
 
-      #gameScreen.v67-impact-move .board-wrap,
       #gameScreen.v67-impact-push .board-wrap,
       #gameScreen.v67-impact-magic .board-wrap,
-      #gameScreen.v67-impact-crown .board-wrap,
       .v67-turn-wash.play,
       .cell.valid,
       .cell.invalid {
@@ -1889,7 +1880,6 @@
 
     .secondary-btn,
     .small-btn,
-    .random-setup-btn,
     .online-tool-btn,
     .sound-test-btn {
       border: 1px solid var(--ilyos-line-strong) !important;
@@ -1903,7 +1893,6 @@
 
     .secondary-btn:hover:not(:disabled),
     .small-btn:hover:not(:disabled),
-    .random-setup-btn:hover:not(:disabled),
     .online-tool-btn:hover:not(:disabled) {
       background: #fff !important;
       border-color: #4c879d !important
@@ -2447,7 +2436,6 @@
       margin-top: 10px !important
     }
 
-    .player-row,
     .online-config,
     .mode-option-row,
     .resume-local-card {
@@ -2458,18 +2446,9 @@
       color: var(--ilyos-ink) !important
     }
 
-    .player-row {
-      min-height: 48px !important;
-      padding: 7px 10px !important
-    }
 
-    .player-row input {
-      min-height: 36px !important;
-      border: 1px solid var(--ilyos-line-strong) !important;
-      border-radius: 9px !important;
-      background: #fff !important;
-      color: var(--ilyos-ink) !important
-    }
+
+
 
     .mode-options {
       display: grid !important;
@@ -2588,12 +2567,7 @@
       backdrop-filter: blur(12px)
     }
 
-    body[data-visual-mode="alternative"] .player-summary {
-      display: flex !important;
-      align-items: center !important;
-      gap: 10px !important;
-      min-width: 0
-    }
+
 
     .portrait {
       position: relative !important;
@@ -2636,47 +2610,17 @@
       opacity: .26
     }
 
-    .player-text {
-      min-width: 0
-    }
 
-    .player-text h2 {
-      margin: 0 !important;
-      overflow: hidden;
-      color: #234f61 !important;
-      font-size: 15px !important;
-      line-height: 1.15 !important;
-      text-overflow: ellipsis;
-      white-space: nowrap
-    }
 
-    .player-text small {
-      display: block;
-      margin-top: 3px;
-      color: #65818d !important;
-      font-size: 10px !important
-    }
 
-    .turn-summary {
-      display: grid !important;
-      justify-items: center !important;
-      gap: 3px !important;
-      min-width: 0 !important;
-      color: var(--ilyos-ink) !important;
-      text-shadow: none !important
-    }
 
-    .turn-heading {
-      display: flex !important;
-      align-items: center !important;
-      gap: 8px !important
-    }
 
-    .turn-heading strong {
-      color: #29586a !important;
-      font-family: var(--ilyos-font-display) !important;
-      font-size: 17px !important
-    }
+
+
+
+
+
+
 
     .turn-timer,
     .online-badge,
@@ -2773,11 +2717,7 @@
       min-width: 0 !important
     }
 
-    .score-list {
-      display: flex !important;
-      justify-content: flex-end !important;
-      gap: 6px !important
-    }
+
 
     .score-card {
       min-width: 0 !important;
@@ -3505,9 +3445,7 @@
       background: var(--ilyos-paper) !important
     }
 
-    .victory-light {
-      background: radial-gradient(circle, rgba(255, 222, 116, .48), transparent 67%) !important
-    }
+
 
     @keyframes v64-island-arrival {
       0% {
@@ -3831,7 +3769,6 @@
         height: 40px !important
       }
 
-      .player-text small,
       .score-card small {
         display: none !important
       }
@@ -3881,9 +3818,7 @@
         margin-top: 8px
       }
 
-      .player-row {
-        min-height: 43px !important
-      }
+
 
       .v64-board-card {
         min-height: 66px !important
@@ -4077,10 +4012,7 @@
       text-shadow: none !important
     }
 
-    body[data-visual-mode="alternative"] .turn-heading strong {
-      color: #29586a !important;
-      text-shadow: none !important
-    }
+
 
     body[data-visual-mode="alternative"] .turn-timer,
     body[data-visual-mode="alternative"] .online-badge,
@@ -4213,8 +4145,7 @@
 
 
     body[data-visual-mode="alternative"] .topbar #turnLabel,
-    body[data-visual-mode="alternative"] .topbar #phaseLabel,
-    body[data-visual-mode="alternative"] .topbar .turn-heading strong {
+    body[data-visual-mode="alternative"] .topbar #phaseLabel {
       color: #29586a !important;
       text-shadow: none !important
     }
@@ -4224,10 +4155,7 @@
       text-shadow: none !important
     }
 
-    body[data-visual-mode="alternative"] .topbar .player-text small {
-      color: #65818d !important;
-      text-shadow: none !important
-    }
+
 
     .v64-deck-summary {
       display: grid;
@@ -4505,14 +4433,10 @@
       overflow: hidden !important
     }
 
-    .game-layout,
-    .game-shell {
-      gap: var(--v66-space-2) !important
-    }
+
 
     .left-panel,
     .right-panel,
-    .side-panel,
     .panel {
       border-radius: var(--v66-radius-md) !important;
       box-shadow: var(--v66-shadow) !important;
@@ -4630,8 +4554,7 @@
       min-width: 0 !important
     }
 
-    .cell.reachable,
-    .cell.valid-target {
+    .cell.reachable {
       --cell-accent: var(--v66-valid)
     }
 
@@ -4646,8 +4569,7 @@
       box-shadow: inset 0 0 0 3px rgba(255, 215, 94, .95) !important
     }
 
-    .cell.reachable::after,
-    .cell.valid-target::after {
+    .cell.reachable::after {
       opacity: .72 !important;
       filter: none !important
     }
@@ -4658,9 +4580,7 @@
       filter: none !important
     }
 
-    .village-cell::before {
-      opacity: .64 !important
-    }
+
 
     .crown-burst {
       animation-duration: 1.15s !important
@@ -4673,11 +4593,7 @@
       box-shadow: 0 24px 70px rgba(25, 59, 75, .30) !important
     }
 
-    #setupScreen .version-badge::after {
-      content: " · GAMEPLAY UI POLISH";
-      font-size: .72em;
-      opacity: .75
-    }
+
 
     @media (max-width:1366px),
     (max-height:800px) {
@@ -4842,25 +4758,15 @@
       box-shadow: inset 0 1px rgba(255, 255, 255, .75) !important
     }
 
-    body[data-visual-mode="alternative"] .turn-step.active {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, .9), 0 0 0 4px rgba(53, 146, 163, .35) !important
-    }
 
-    body[data-visual-mode="alternative"] [data-context="move"] .phase-instruction {
-      border-left: 4px solid var(--v69-move) !important
-    }
 
-    body[data-visual-mode="alternative"] [data-context="push"] .phase-instruction {
-      border-left: 4px solid var(--v69-push) !important
-    }
 
-    body[data-visual-mode="alternative"] [data-context="magic"] .phase-instruction {
-      border-left: 4px solid var(--v69-magic) !important
-    }
 
-    body[data-visual-mode="alternative"] [data-context="build"] .phase-instruction {
-      border-left: 4px solid var(--v69-build) !important
-    }
+
+
+
+
+
 
     .v69-quality-pill {
       position: fixed;
@@ -4996,17 +4902,11 @@
       height: 40px !important
     }
 
-    .player-text h2 {
-      font-size: 14px !important
-    }
 
-    .player-text small {
-      font-size: 9px !important
-    }
 
-    .turn-heading strong {
-      font-size: 16px !important
-    }
+
+
+
 
     .turn-timer,
     .online-badge,
@@ -5214,7 +5114,6 @@
         --v70-side: 146px
       }
 
-      .player-text small,
       .score-card small {
         display: none !important
       }
@@ -5389,7 +5288,7 @@
   </style>
 
   <link rel="stylesheet" href="./css/hover-feedback.css?v=20260815-gameplay-fixes2">
-  <link rel="stylesheet" href="./css/sanctuary-celeste.css?v=20261026-libelle-pose">
+  <link rel="stylesheet" href="./css/sanctuary-celeste.css?v=20261114-styles">
   <link rel="stylesheet" href="./css/fluidity.css?v=20260815-gameplay-fixes2">
   <link rel="stylesheet" href="./css/hud-v2.css?v=20261116-effondrement">
   <link rel="stylesheet" href="./css/rotation.css?v=16-tel">

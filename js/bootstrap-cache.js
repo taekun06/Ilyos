@@ -55,17 +55,8 @@ function ilyosLoadScriptOnce(marker, src) {
   const VERSION = '20261105-cartes-clic';
 
   function install() {
-    ilyosLoadStyleOnce('deck-discard-base-v10', `./css/deck-discard-hud-v1.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-cycle-v7-base-v10', `./css/card-cycle-animation-v7.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-cycle-v8-overrides-v10', `./css/card-cycle-animation-v8.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-cycle-v10-polish', `./css/card-cycle-animation-v10.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-art-v12', `./css/card-art-v12.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('card-art-v12-tuning', `./css/card-art-v12-tuning.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('hud-polish-targeted-v1', `./css/hud-polish-targeted-v1.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('hud-polish-targeted-v1-final', `./css/hud-polish-targeted-v1-final.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('hud-card-piles-discard-v11', `./css/hud-card-piles-discard-v11.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('hud-card-piles-discard-v11-layer', `./css/hud-card-piles-discard-v11-layer.css?v=${VERSION}`);
-    ilyosLoadStyleOnce('hud-islands-reserve-discard-v13', `./css/hud-islands-reserve-discard-v13.css?v=${VERSION}-bulle`);
+    // Les onze anciennes feuilles des cartes et des piles, bout à bout dans leur ordre d'origine.
+    ilyosLoadStyleOnce('cartes-hud', `./css/cartes-hud.css?v=${VERSION}`);
 
     ilyosLoadScriptOnce('deck-discard-hud-v11', `./js/deck-discard-hud-v1.js?v=${VERSION}`);
     ilyosLoadScriptOnce('discard-viewer-v11', `./js/deck-discard-viewer-v2.js?v=${VERSION}`);
