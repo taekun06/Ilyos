@@ -4675,6 +4675,8 @@
           kicker: defaite ? `${nomCamp} PREND ILYOS` : `${nomCamp} · SOUVERAIN D’ILYOS`,
           texte: texte || (butBalises()
             ? `${defaite ? `${player.name} : ` : ""}${player.score} points de balises en ${state.turn} tours.`
+            : butEffondrement()
+            ? `${defaite ? `${player.name} : ` : ""}${player.score} gardiens adverses tombés en ${state.turn} tours.`
             : defaite ? `${player.name} a validé trois couronnes en ${state.turn} tours.`
               : `Trois couronnes validées en ${state.turn} tours.`)
         });

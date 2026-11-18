@@ -227,7 +227,8 @@
     if (!target) return;
     /* Mode Rotation · Balises : des points au lieu des couronnes, copiés
        tels quels (rotationScoreHud, js/game/rotation.js). */
-    const balises = source?.querySelector('.hud-v2-balises-score');
+    /* Effondrement : les gardiens adverses tombés (même principe). */
+    const balises = source?.querySelector('.hud-v2-balises-score, .hud-v2-chutes');
     if (balises){ target.innerHTML = balises.outerHTML; return; }
     let filled = source ? source.querySelectorAll('.hud-v2-crown-icon.is-filled').length : 0;
     if (!Number.isFinite(filled)) filled = 0;
