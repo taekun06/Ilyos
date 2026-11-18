@@ -13803,6 +13803,9 @@
 
           if (visual.plaque) visual.plaque.rotation.y = -visual.wrapper.rotation.y;
 
+          /* --- 1 bis. Pose assise (trône des Balises, rotation.js) ---- */
+          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual));
+
           /* --- 2. Orientation --------------------------------------- */
           // Une rotation progressive, jamais instantanée : c'est l'anticipation
           // qui rend un déplacement lisible. ~10 rad/s couvre un demi-tour en
@@ -13935,8 +13938,8 @@
               // Modèle animé : plus aucun balancement procédural. L'animation
               // squelette suffit, et la superposer produisait un flottement
               // parasite.
-              model.position.y = visual.baseModelY + settleOffset;
-              model.position.z = recoilOffset;
+              model.position.y = visual.baseModelY + settleOffset + (visual.assis?.hauteur || 0);
+              model.position.z = recoilOffset + (visual.assis?.avance || 0);
               model.scale.setScalar(visual.baseModelScale * spawnScale);
             } else {
               // Modèle de secours sans squelette : on conserve l'animation
@@ -14025,6 +14028,40 @@
       // hexagonale ne se lisait pas comme un élément naturel posé sur une île, mais
       // comme une tuile étrangère collée sur la case. Restent trois décors végétaux et
       // minéraux, tous cohérents avec l'univers de l'archipel.
+      /* POSE ASSISE d'un gardien au repos, fournie par un mode (trône des
+         Balises, rotation.js) : { facing, hauteur, avance } ou null. La pose
+         Sit_Chair_Pose est figée : rien ne tourne en continu. Le gardien se
+         relève de lui-même dès qu'il est occupé ou sélectionné. */
+      let kaykitPoseAssise = () => null;
+      function kaykitAppliquerPoseAssise(visual, pose) {
+        const anim = visual.animator;
+        const clip = pose ? anim?.clipIndex?.get("Sit_Chair_Pose") : null;
+        if (pose && clip) {
+          if (anim.state !== "assis") {
+            const action = anim._action(clip);
+            action.reset();
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+            if (anim.current && anim.current !== action) anim.current.crossFadeTo(action, .2, false);
+            action.play();
+            anim.current = action;
+            anim.currentClipName = clip.name;
+            anim.state = "assis";
+          }
+          visual.assis = pose;
+          visual.facingTarget = pose.facing;
+          return;
+        }
+        if (!visual.assis && anim?.state !== "assis") return;
+        visual.assis = null;
+        // Encore figé dans la pose (plus sur un trône) : retour au repos.
+        if (anim?.state === "assis") anim.toIdle({ selected: visual.selected, carrying: visual.carrying, fade: .2 });
+      }
+
+      /* Case occupée par une pièce d'un mode (balise…) : pas de décor dessus.
+         Les modes la redéfinissent (rotation.js). */
+      let kaykitCaseReservee = () => false;
+
       const KAYKIT_FOREST_ASSETS = [
         { key: "forestTree", width: .34, height: .70, scale: .90 },
         { key: "forestRock", width: .30, height: .24, scale: .92 },
@@ -14041,7 +14078,7 @@
         const objects = [];
         const cells = (island.cells || []).filter(([r, c]) => {
           const cellKey = key(r, c);
-          return !occupied.has(cellKey) && !villageAt(r, c) && !isSanctuary(r, c);
+          return !occupied.has(cellKey) && !villageAt(r, c) && !isSanctuary(r, c) && !kaykitCaseReservee(r, c);
         });
         if (cells.length < 3) return objects;
         cells.sort((a, b) => kaykitHash("forest-cell", island.id, b[0], b[1]) - kaykitHash("forest-cell", island.id, a[0], a[1]));

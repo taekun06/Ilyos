@@ -272,7 +272,7 @@ document.title = "ILYOS — Les îles célestes";
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=11'
+    './js/menu-jeu.js?v=12'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
