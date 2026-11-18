@@ -1804,6 +1804,7 @@
         state.magicPreviewSteps = 0;
         state.magicPreviewCells = null;
         state.magicPreviewValid = false;
+        state.magicMode = "ile";
       }
       function isSameCell(a, b) {
         return !!a && !!b && a[0] === b[0] && a[1] === b[1];
@@ -1836,6 +1837,9 @@
           }
         }
 
+        // Murs étoilés (murs.js) : un mur coupe le passage. Filtré ici pour
+        // que tous les parcours (jeu, IA, aperçus) le respectent.
+        if (mursActifs()) return edges.filter(e => !passageBloque(r, c, e.r, e.c));
         return edges;
       }
 
@@ -2262,6 +2266,7 @@
           state.networkRevision = networkRevision;
           const payload = serializeOnlineState();
           sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+          if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
           saveOnlineSession();
         }, 100);
       }
@@ -2274,6 +2279,7 @@
         state.networkRevision = networkRevision;
         const payload = serializeOnlineState();
         sendOnlineMessage({ type: "state", revision: networkRevision, state: payload });
+        if (onlineRole === "host") reglesArbitreReference(payload, localPlayerIndex);
         saveOnlineSession();
       }
 
@@ -2310,6 +2316,7 @@
         return Object.values(valeur).some(v => contientBalisage(v, profondeur + 1));
       }
 
+      const GRID_MAX_ONLINE = 32;
       function validerEtatEnLigne(incoming) {
         if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) return false;
         if (!Array.isArray(incoming.players) || incoming.players.length !== 2) return false;
@@ -2329,6 +2336,12 @@
           if (joueur.heros != null && !heros.includes(joueur.heros)) delete joueur.heros;
           if (joueur.titre != null && !titres.includes(joueur.titre)) delete joueur.titre;
         }
+        if (incoming.murs != null) {
+          if (!Array.isArray(incoming.murs) || incoming.murs.length > 12) return false;
+          const coin = v => Number.isInteger(v) && v >= 0 && v <= GRID_MAX_ONLINE;
+          if (!incoming.murs.every(m => m && (m.o === "h" || m.o === "v") && coin(m.i) && coin(m.j)
+            && Number.isInteger(m.n) && m.n >= 1 && m.n <= 3)) return false;
+        }
         return !contientBalisage(incoming);
       }
 
@@ -2343,6 +2356,9 @@
         if (onlineRole === "host") {
           if (revision <= (networkRevision || 0)) return false;
           if (!state?.onlineMode || state.currentPlayer === localPlayerIndex) return false;
+          /* Arbitre (regles.js) : l'hôte rejoue les coups de l'invité et
+             compare. En observation pour l'instant : rien n'est refusé. */
+          if (validerEtatEnLigne(message.state)) reglesArbitreObserver(message.state, localPlayerIndex);
         } else if (revision < (networkRevision || 0)) {
           return false;
         }
@@ -3118,7 +3134,7 @@
             document.getElementById("customMirrorSelect"),
             els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
             els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox,
-            document.getElementById("customImmediateScoreCheckbox")]
+            document.getElementById("customImmediateScoreCheckbox"), document.getElementById("customWallsCheckbox")]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -3183,6 +3199,7 @@
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
         if (document.getElementById("customImmediateScoreCheckbox")?.checked) regles.validationImmediate = true;
+        if (document.getElementById("customWallsCheckbox")?.checked) regles.murs = true;
         if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }
@@ -3190,7 +3207,8 @@
       /* Éléments du mode Rotation choisis dans le Personnalisé : une
          demande comme celle de l'écran Rotation, ou null. */
       function lireRotationPersonnalisee() {
-        const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
+        const choisi = document.getElementById("customRotationButSelect")?.value;
+        const but = ["balises", "effondrement"].includes(choisi) ? choisi : "couronnes";
         const couches = [];
         if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
         const especes = document.getElementById("customOeufsLoupCheckbox")?.checked ? ["loup"] : [];

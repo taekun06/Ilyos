@@ -11,6 +11,7 @@
     "check": "npm run build:check && node scripts/check-syntax.js && node scripts/check-moteur.js",
     "verif:ia": "node scripts/verif-ia.js",
     "verif:moteur": "node scripts/verif-moteur.js",
+    "verif:regles": "node scripts/verif-regles.js",
     "selfplay:node": "node scripts/selfplay-node.js",
     "assets:audit": "node scripts/audit-assets.js",
     "build": "node scripts/build-game.js --write",

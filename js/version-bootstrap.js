@@ -25,7 +25,7 @@ document.title = "ILYOS — Les îles célestes";
   if (window.__ILYOS_CHARACTER_MATERIALS_V1_LOADER__) return;
   window.__ILYOS_CHARACTER_MATERIALS_V1_LOADER__ = true;
   const script = document.createElement('script');
-  script.src = './js/character-materials-v1.js?v=1';
+  script.src = './js/character-materials-v1.js?v=2';
   script.defer = true;
   document.head.appendChild(script);
 })();
@@ -241,7 +241,7 @@ document.title = "ILYOS — Les îles célestes";
 
   const styles = [
     // Les huit anciennes feuilles du HUD, bout à bout dans leur ordre d'origine.
-    './css/hud-organique.css?v=1',
+    './css/hud-organique.css?v=2',
     // Chargée en dernier : voir l'en-tête du fichier pour la raison.
     './css/sound-lab.css?v=1',
     // Téléphone en portrait uniquement (media query interne) : après tout le HUD.
@@ -255,7 +255,7 @@ document.title = "ILYOS — Les îles célestes";
   });
 
   const scripts = [
-    './js/hud-organique-v2.js?v=13.8-minuteur-30s',
+    './js/hud-organique-v2.js?v=13.9-effondrement',
     './js/hud-organique-v2-final-v8.js?v=12.7',
     /* Les scripts depth-v9 et depth-v10 ont été retirés : ils ne réglaient que
        les lumières de scène, jamais le HUD malgré leur nom, et ces réglages
@@ -266,7 +266,7 @@ document.title = "ILYOS — Les îles célestes";
     './js/ai-move-tail-guard-v12.js?v=12.7',
     './js/hud-organique-v2-layout-v10.js?v=1',
     // Menu de jeu plein écran, bâti sur #hudV2GearPopover (charge sa propre feuille).
-    './js/menu-jeu.js?v=11'
+    './js/menu-jeu.js?v=12'
   ];
   scripts.forEach(src=>{
     const script=document.createElement('script');
@@ -436,6 +436,8 @@ document.title = "ILYOS — Les îles célestes";
         const action = msg.detail?.action;
         // RÉGLAGES de l'accueil : le menu de jeu, ouvert hors partie (js/menu-jeu.js).
         if (action === 'settings') window.ILYOS_MENU_JEU?.ouvrirDepuisAccueil?.();
+        // ⚙ › SIGNALER UN BUG : fenêtre « Aider ILYOS » (js/retours.js).
+        if (action === 'retours') window.ILYOS_RETOURS?.ouvrir();
         if (action === 'tutorial') {
           window.dispatchEvent(new CustomEvent('ilyos-menu-tutorial-requested'));
           setTimeout(() => syncFrame(frame), 120);

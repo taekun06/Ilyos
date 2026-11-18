@@ -213,7 +213,7 @@
           const i = ile.cells.findIndex(([r, c]) => r === oeuf.r && c === oeuf.c);
           return i >= 0 && rotation.absCells[i] ? { oeuf, vers: rotation.absCells[i] } : null;
         }).filter(Boolean) : [];
-        const resultat = creaturesMagieBase(islandId, rotation);
+        const resultat = creaturesMagieBase.apply(this, arguments);
         if (resultat) suivants.forEach(({ oeuf, vers }) => { oeuf.r = vers[0]; oeuf.c = vers[1]; });
         return resultat;
       };
