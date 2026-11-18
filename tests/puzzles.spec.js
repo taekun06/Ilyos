@@ -28,11 +28,11 @@ async function ouvrirJeu(page) {
   return erreurs;
 }
 
-test('les vingt-cinq Sanctuaires se résolvent exactement par leur solution de référence', async ({ page }) => {
+test('les vingt-trois Sanctuaires se résolvent exactement par leur solution de référence', async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
 
   const liste = await page.evaluate(() => window.ILYOS_PUZZLE.list());
-  expect(liste.length).toBe(25);
+  expect(liste.length).toBe(23);
 
   const resultats = await page.evaluate(() => window.ILYOS_PUZZLE.verifyAll());
 
@@ -61,7 +61,7 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
   await page.waitForSelector('#puzzleMenu', { timeout: 10000 });
 
   /* Déblocage linéaire : seule la première carte est cliquable au premier
-     lancement, les vingt-quatre autres restent verrouillées.
+     lancement, les vingt-deux autres restent verrouillées.
 
      SAUF pendant le chantier des transitions, où tout est ouvert (drapeau
      PUZZLE_TOUT_OUVERT dans js/game/puzzle.js). On lit l'état réel plutôt que
@@ -69,12 +69,12 @@ test('le bouton PUZZLES du menu ouvre la liste, et la première énigme se lance
      remettre le verrou fait automatiquement repasser le test à l'exigence
      d'origine. */
   const cartes = page.locator('#puzzleMenu .pz-card');
-  await expect(cartes).toHaveCount(25);
+  await expect(cartes).toHaveCount(23);
   await expect(cartes.nth(0)).toBeEnabled();
   const toutOuvert = await page.evaluate(() => window.ILYOS_PUZZLE._debug().toutOuvert === true);
   if (toutOuvert) {
     await expect(cartes.nth(1)).toBeEnabled();
-    await expect(cartes.nth(24)).toBeEnabled();
+    await expect(cartes.nth(22)).toBeEnabled();
   } else {
     await expect(cartes.nth(1)).toBeDisabled();
   }
@@ -405,10 +405,10 @@ test("dans une énigme, la roue ouvre le menu", async ({ page }) => {
 test("en vue 2D, une éjection par le bord du plateau est dessinée et cliquable", async ({ page }) => {
   const erreurs = await ouvrirJeu(page);
   await page.evaluate(() => window.ILYOS_PUZZLE.unlockAll());
-  await page.evaluate(() => window.ILYOS_PUZZLE.startById('p18-relais-des-mains'));
+  await page.evaluate(() => window.ILYOS_PUZZLE.startById('p06-couronne-vole'));
   await page.waitForFunction(() => !window.ILYOS_PUZZLE._debug().inputLocked, null, { timeout: 15000 });
 
-  // Le Veilleur de p18 est en [0,1], sur le bord nord. On fabrique l'option
+  // Le Veilleur de p06 est en [0,1], sur le bord nord. On fabrique l'option
   // qui l'en chasse vers le haut : arrivee [-1,1], hors grille.
   const info = await page.evaluate(() => {
     const brut = window.ILYOS_BENCH.etatComplet();

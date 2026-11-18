@@ -504,12 +504,16 @@
         const islandStatusEl = document.getElementById("hudV2IslandStatus");
         const islandDrawer = document.getElementById("hudV2IslandDrawer");
         if (islandStatusEl) {
-          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
+          /* Énigme à formes comptées : le bouton dit combien d'îles il reste,
+             et s'efface quand il n'y en a plus (puzzle.js). */
+          const ilesEnigme = state.puzzle ? puzzleIlesRestantes() : null;
+          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn || ilesEnigme === 0);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
           /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
              organique lit ce sous-titre (js/hud-organique-v2.js). */
           const payante = ilesPayantes() && !state.draft;
-          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES`
+            : (ilesEnigme != null ? `×${ilesEnigme}` : "OBLIGATOIRE");
           islandStatusEl.disabled = payante && !peutPayerIle(active);
           islandStatusEl.title = islandStatusEl.disabled
             ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`

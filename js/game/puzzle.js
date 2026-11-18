@@ -33,7 +33,8 @@
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
         CONFLUENCE: "Confluence",
-        IV: "Acte IV · Les Cimes"
+        IV: "Acte IV · Les Cimes",
+        V: "Acte V · Les Grands Archipels"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -100,6 +101,67 @@
           .some(v => v.r === village?.r && v.c === village?.c);
         if (relais && villageDuJoueur) return relais.map(([r, c]) => [r, c]);
         return puzzleCornerCrownCellsBase(village);
+      };
+
+      /* ---------- Couronne validée --------------------------------------
+         Dans une partie, une couronne validée renaît au sanctuaire. Dans une
+         énigme elle a fini son voyage : elle quitte le plateau. Sans cela, une
+         énigme à deux couronnes se gagnerait en validant deux fois la même,
+         revenue au centre à mi-chemin du village. */
+      const puzzleResetArtifactBase = resetArtifactObject;
+      resetArtifactObject = function resetArtifactObjectPuzzleAware(artifact) {
+        if (PUZZLE.active && artifact) {
+          artifact.active = false;
+          artifact.carrierId = null;
+          return;
+        }
+        puzzleResetArtifactBase(artifact);
+      };
+
+      /* UNE COURONNE ÉTEINTE LE RESTE. ensureArtifactState() (core.js) rallume
+         la première couronne « par précaution » à chaque lecture : juste en
+         partie, faux en énigme, où une énigme SANS couronne en voyait surgir
+         une au centre du plateau (Destinée) et où une couronne validée
+         revenait en jeu sur la case du village. */
+      const puzzleEnsureArtifactBase = ensureArtifactState;
+      ensureArtifactState = function ensureArtifactStatePuzzleAware() {
+        const eteinte = !!(state && state.puzzle && state.artifact && state.artifact.active === false);
+        puzzleEnsureArtifactBase();
+        if (eteinte) state.artifact.active = false;
+      };
+
+      /* ---------- Formes autorisées ------------------------------------
+         `placement: { formes: { domino: 1 } }` n'ouvre que les formes listées,
+         chacune en nombre compté. Sans cette liste, une énigme qui rouvre la
+         pose offrirait les neuf formes à volonté — une Croix pose un pont
+         n'importe où et dissout le puzzle. */
+      function puzzleFormesAutorisees() {
+        return PUZZLE.active && PUZZLE.def?.placement?.formes || null;
+      }
+      const puzzleShapeLimitReachedBase = shapeLimitReached;
+      shapeLimitReached = function shapeLimitReachedPuzzleAware(shapeKey) {
+        const formes = puzzleFormesAutorisees();
+        if (!formes) return puzzleShapeLimitReachedBase(shapeKey);
+        const nombre = formes[shapeKey] || 0;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= nombre;
+      };
+
+      /* Îles encore posables dans l'énigme en cours, ou null si elle ne compte
+         pas ses formes. Le HUD l'affiche sur le bouton Île (ui.js). */
+      function puzzleIlesRestantes() {
+        const formes = puzzleFormesAutorisees();
+        if (!formes || !state) return null;
+        return Object.keys(formes).reduce((total, forme) =>
+          total + Math.max(0, (formes[forme] || 0) - shapeUsageCountForOwner(0, forme)), 0);
+      }
+
+      /* Dans une énigme, poser une île n'est JAMAIS une obligation : c'est un
+         coup comme un autre, à jouer au bon moment ou pas du tout. Sans cela,
+         le tour ne pourrait plus finir une fois le stock de formes épuisé. */
+      const puzzleObligationIleBase = obligationIleRemplie;
+      obligationIleRemplie = function obligationIleRempliePuzzleAware(source = state) {
+        if (PUZZLE.active && source?.puzzle) return true;
+        return puzzleObligationIleBase(source);
       };
 
       /* ---------- Comptage exact des cartes -----------------------------
@@ -251,7 +313,11 @@
              allié en faisait apparaître une seconde. */
           rules: {
             allowDissolve: false, islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: 0, disableSecondCrown: true
+            shapeLimitPerOwner: 0, disableSecondCrown: true,
+            /* Une énigme qui rouvre la pose peut la rendre PAYANTE (deux
+               cartes, la règle du mode personnalisé) : invoquer un Gardien
+               devient alors un choix d'optimisation, pas un cadeau. */
+            ilesPayantes: !!def.placement?.payante
           },
           /* La pose est neutralisée : une énigme se résout avec les cartes
              qu'on lui donne, pas en fabriquant du terrain. Une définition peut
@@ -311,6 +377,12 @@
              faisait surgir les gardiens du Sanctuaire suivant au lieu de les
              faire entrer. */
           const char = { id: `pz${PUZZLE.serie}-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
+          /* CHACUN SA COULEUR. Quand l'énigme attend chaque Gardien sur SA case
+             (assignedCells), le chevalier prend la couleur de cette case :
+             c'est le seul appariement, sans signe à déchiffrer. */
+          const rangCouleur = def.goal?.type === "assignedCells" && g.key
+            ? Object.keys(def.goal.pairs || {}).indexOf(g.key) + 1 : 0;
+          if (rangCouleur > 0 && PUZZLE_SCEAU_COLORS[rangCouleur] != null) char.teinte = PUZZLE_SCEAU_COLORS[rangCouleur];
           state.characters.push(char);
           if (g.key) PUZZLE.charsByKey[g.key] = char.id;
           if (g.crown) {
@@ -611,131 +683,19 @@
             border-color:rgba(255,232,170,.30);box-shadow:0 4px 14px rgba(0,0,0,.32);}
 
           /* ================= LES SIGNES =================
-             Ce que l'image de référence appelle de la magie : des ORBES d'or
-             en perspective autour du plateau, avec leurs nœuds lumineux, des
-             glyphes et de la poussière de lumière. Tout est IMMOBILE : aucune
-             animation ni boucle JS, et rien ne capte le pointeur. Les traits sont
-             FINS et leur lumière est portée par la lueur (box-shadow), pas par
-             l'épaisseur : c'est ce qui permet de les voir passer devant le
-             plateau sans jamais gêner sa lecture. */
+             Ce que l'image de référence appelle de la magie : des glyphes et
+             de la poussière de lumière autour du plateau. Tout est IMMOBILE :
+             aucune animation ni boucle JS, et rien ne capte le pointeur. */
           #puzzleLayer .pz-signes{position:absolute;inset:0;z-index:1;
             overflow:hidden;pointer-events:none;opacity:0;
             transition:opacity 1.8s ease;}
           #puzzleLayer .pz-signes.on{opacity:1;}
-          /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
-             un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
-             le plateau ; une lueur, on la traverse du regard. */
-          /* DES ARCS, PAS DES CERCLES. Rendre une bordure transparente
-             n'enlevait qu'un quart du tour, avec une coupe nette en diagonale :
-             il restait trois quarts de tracé, et l'œil refermait le cercle tout
-             seul. Un masque conique découpe un arc de longueur LIBRE et, mieux,
-             laisse ses deux extrémités s'éteindre en fondu — c'est ce fondu qui
-             fait qu'un arc se perd au loin au lieu d'être coupé.
-             Les deux variables d'arc sont posées par la construction,
-             avec les runes, pour que celles-ci tombent toujours SUR le tracé
-             conservé — masquées avec lui sinon. */
-          /* LE POIDS DU TRAIT. Le masque conique découpe aussi la lueur portée
-             par box-shadow : les arcs avaient beau être justes, ils ne pesaient
-             plus rien sur un ciel doré très clair. La lueur passe donc par
-             la propriete filter, qui suit le contour réellement conservé au lieu de
-             rayonner depuis la boîte carrée — elle survit au masque. Et le
-             trait passe à 1,4 px : sous cette épaisseur, l'anti-crénelage d'un
-             cercle incliné mange la moitié du pixel et le tracé clignote. */
-          #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
-            border:1.4px solid rgba(255,226,158,.95);border-radius:50%;
-            filter:drop-shadow(0 0 4px rgba(255,198,110,.85))
-                   drop-shadow(0 0 12px rgba(255,170,70,.45));
-            -webkit-mask-image:conic-gradient(from var(--pz-arc-de,0deg),
-              rgba(0,0,0,0) 0deg, #000 26deg,
-              #000 calc(var(--pz-arc-long,150deg) - 26deg),
-              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
-            mask-image:conic-gradient(from var(--pz-arc-de,0deg),
-              rgba(0,0,0,0) 0deg, #000 26deg,
-              #000 calc(var(--pz-arc-long,150deg) - 26deg),
-              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
-            box-shadow:0 0 20px rgba(255,190,90,.32),
-              inset 0 0 70px rgba(255,190,90,.07);
-            /* IMMOBILES. Les orbes tournaient (un tour en 150 à 520 s) : un
-               mouvement imperceptible qui obligeait pourtant le navigateur à
-               recomposer huit très grands calques filtrés et masqués à chaque
-               rafraîchissement d'écran, au-dessus du plateau 3D (Taekun,
-               2026-11-03 : le mode puzzle faisait chauffer la machine). Même
-               dessin, posé une fois. */
-            transform:perspective(1400px) rotateX(var(--pz-assiette,72deg));}
-          /* LES NŒUDS. Chaque orbe porte deux points de lumière posés sur son
-             trait, qui tournent donc avec lui : un disque en haut, un losange
-             à droite. C'est ce qui fait lire une ORBITE plutôt qu'un cercle
-             dessiné — et cela ne coûte pas un élément de plus. */
-          #puzzleLayer .pz-anneau::before,#puzzleLayer .pz-anneau::after{
-            content:"";position:absolute;width:9px;height:9px;
-            background:rgba(255,244,214,.9);border-radius:50%;
-            box-shadow:0 0 12px rgba(255,214,140,.9),0 0 26px rgba(255,196,96,.5);}
-          #puzzleLayer .pz-anneau::before{left:50%;top:0;margin:-5px 0 0 -5px;}
-          #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
-            border-radius:2px;transform:rotate(45deg);
-            background:rgba(255,236,186,.85);}
-          /* Chaque orbe a SON centre et SON assiette. Les décentrages sont
-             volontairement inégaux : deux orbes décalés du même écart
-             recréeraient une symétrie, qui est exactement ce qu'on fuit. */
-          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;
-            left:57%;top:38%;--pz-assiette:67deg;}
-          /* ORBES DÉDOUBLÉS. Un second tracé collé au premier, à peine plus
-             large et un peu plus pâle : deux traits qui courent ensemble se
-             lisent comme une trajectoire, là où un trait seul n'est qu'un
-             cercle. Ils partagent la même assiette et le même centre, donc ils
-             restent parallèles en tournant. */
-          #puzzleLayer .pz-anneau.a2{width:160vmin;height:160vmin;margin:-80vmin 0 0 -80vmin;
-            left:57%;top:38%;--pz-assiette:67deg;
-            border-color:rgba(255,222,150,.62);
-            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            }
-          #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
-            border-style:dashed;border-color:rgba(255,230,166,.98);
-            left:45%;top:47%;--pz-assiette:75deg;
-            }
-          #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
-            left:45%;top:47%;--pz-assiette:75deg;
-            border-color:rgba(255,222,150,.58);
-            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            }
-          /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
-             il se perd hors du regard au lieu de se refermer sur lui-même. */
-          #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,228,162,.92);
-            left:63%;top:33%;--pz-assiette:61deg;}
-          /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
-             ils coupent les orbes au lieu de les accompagner. Sans eux tout le
-             réseau reste couché dans le même plan et le ciel paraît plat. */
-          #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
-            left:28%;top:30%;--pz-assiette:24deg;
-            border-color:rgba(255,222,150,.70);
-            box-shadow:0 0 16px rgba(255,190,90,.20);}
-          #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
-            left:78%;top:26%;--pz-assiette:38deg;
-            border-color:rgba(255,222,150,.64);border-style:dashed;
-            box-shadow:none;}
-          /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
-             lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
-             profondeur. */
-          #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
-            border-color:rgba(255,224,152,.78);border-style:dashed;
-            left:41%;top:52%;--pz-assiette:80deg;
-            }
-          /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
-             empêche les orbes de se lire comme une cible. Quatre cercles
-             partageant le même centre et le même angle se superposent en
-             anneaux parfaitement emboîtés ; quatre orbes d'assiettes
-             différentes se croisent, et le ciel prend de la profondeur. */
-          /* LES RUNES. Elles ne flottent pas dans le cadre : elles sont posées
-             SUR un orbe, dans son assiette. La contre-rotation leur
-             rend leur lisibilité — sans elle, elles se retrouvent couchées à
-             plat dans l'assiette de l'orbe et deviennent illisibles. */
-          #puzzleLayer .pz-rune{position:absolute;
-            font-family:'Cinzel Decorative','Almendra',serif;font-size:14px;
-            color:rgba(255,236,190,.82);letter-spacing:.04em;
-            transform:translate(-50%,-50%) rotateX(calc(var(--pz-assiette,72deg) * -1));
-            text-shadow:0 0 10px rgba(255,214,140,.85),0 0 24px rgba(255,190,90,.45);
-            opacity:.75;}
+          /* PLUS D'ARCS. Les huit grands orbes d'or (jusqu'à 3 000 px de large,
+             filtrés et masqués) étaient recomposés par-dessus le plateau 3D à
+             chaque image : mesuré le 2026-11-15, une énigme au repos dessinait
+             quatre fois moins d'images que le solo, et autant que lui une fois
+             les arcs masqués. Ils sont retirés (Taekun) ; restent les glyphes
+             et la poussière de lumière, qui ne coûtent rien. */
           #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
             color:rgba(255,238,196,.85);
             text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
@@ -880,7 +840,7 @@
           #puzzleLayer.reveil .pz-signes{opacity:0;transition:opacity .8s ease;
             pointer-events:none;}
           /* EXCEPTION : l'ouverture des Voies garde ses signes célestes.
-             Les anneaux dorés, les glyphes et les poussières sont TOUT ce qu'il
+             Les glyphes et les poussières sont TOUT ce qu'il
              y a à voir pendant les premières secondes, quand la caméra est à
              240 unités d'altitude et que le monde 3D est hors de portée. Les
              masquer comme le reste du chrome — ce que fait toute séquence —
@@ -1328,10 +1288,9 @@
          sur les îles. */
       const PUZZLE_SCEAU_COLORS = {
         1: 0x2b9dff,   // bleu
-        2: 0xff8a32,   // orange
-        3: 0xe256cf,   // magenta
-        4: 0xff4d4d    // vermillon — le jaune essayé d'abord se dissolvait
-                       //   sur le vert clair des îles comme sur le ciel
+        2: 0xff4d4d,   // rouge
+        3: 0xffc93c,   // jaune — lisible depuis que la case porte son fond de nuit
+        4: 0xc86bff    // violet
       };
 
       function puzzleGoalCellsFrom(goal, sortie = []) {
@@ -1499,38 +1458,14 @@
           losange(.84);
           ctx.strokeStyle = teinte; ctx.lineWidth = 4; ctx.stroke();
 
-          /* Le motif tient dans le carré INSCRIT au losange, pas dans le
-             losange : au-delà il déborderait sur les pointes. */
-          const r = 54;
-          ctx.beginPath();
-          if (rang === 1) {
-            // le Croissant
-            ctx.arc(0, 0, r, Math.PI * .42, Math.PI * 1.58, false);
-            ctx.arc(r * .42, 0, r * .86, Math.PI * 1.5, Math.PI * .5, true);
-            ctx.closePath();
-          } else if (rang === 2) {
-            // l'Étoile — quatre branches, pas cinq : elles restent effilées
-            for (let i = 0; i < 8; i++) {
-              const a = i * Math.PI / 4 - Math.PI / 2;
-              const rr = i % 2 ? r * .32 : r;
-              ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
-            }
-            ctx.closePath();
-          } else if (rang === 3) {
-            // la Croix
-            const b = r * .32;
-            ctx.rect(-b, -r, b * 2, r * 2);
-            ctx.rect(-r, -b, r * 2, b * 2);
-          } else {
-            // l'Anneau — le trou est large, c'est lui qui porte la lecture
-            ctx.arc(0, 0, r, 0, Math.PI * 2);
-            ctx.arc(0, 0, r * .54, 0, Math.PI * 2, true);
-          }
+          /* UNE COULEUR, PAS UN SIGNE. Les quatre lumières (croissant, étoile,
+             croix, anneau) demandaient d'être déchiffrées ; la case porte
+             maintenant un losange plein de la couleur de SON chevalier
+             (Taekun, 2026-11-15). */
+          losange(.62);
           halo(teinte, 12);
           ctx.fillStyle = teinte; ctx.fill();
           sansHalo();
-          // Un liseré ivoire À L'INTÉRIEUR du motif : il lui donne son éclat
-          // sans lui retirer sa couleur, qui reste le signe d'appariement.
           ctx.strokeStyle = "rgba(255,246,226,.85)"; ctx.lineWidth = 4; ctx.stroke();
 
         } else {
@@ -1912,8 +1847,9 @@
         couche(
           new THREE.PlaneGeometry(cote, cote),
           new THREE.MeshBasicMaterial({
-            color: couleur, transparent: true,
-            opacity: kind === "sceau" ? .12 : (surTerre ? .34 : .24),
+            color: kind === "sceau" ? new THREE.Color(couleur).convertSRGBToLinear() : couleur,
+            transparent: true,
+            opacity: kind === "sceau" ? .82 : (surTerre ? .34 : .24),
             side: THREE.DoubleSide, depthWrite: false, depthTest: true
           }),
           .075, 44
@@ -1942,6 +1878,9 @@
         /* Le glyphe, à plat dans le carré. Il bat très légèrement — assez pour
            attirer l'oeil au premier regard, pas assez pour tirer dessus pendant
            toute la durée de l'énigme. */
+        /* La case d'un chevalier de couleur est une DALLE PLEINE de sa couleur,
+           sans motif : il n'y a rien d'autre à lire que la teinte. */
+        if (kind === "sceau") return;
         const glyphe = couche(
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
@@ -1989,62 +1928,12 @@
         cells.forEach(marque => puzzleAddMarker(marque === coeur ? { ...marque, faisceau: true } : marque));
       }
 
-      /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
-         alliés sont visuellement identiques, et une consigne « celui-ci va
-         là-bas » serait injouable telle quelle. On accroche donc au-dessus de
-         chacun le même sceau que celui posé au sol — un sprite enfant de son
-         wrapper, qui le suit sans qu'on ait à le repositionner. C'est la
-         solution la plus légère : des variantes de modèle seraient un chantier
-         dans kaykit3d.js, pour une énigme.
-
-         Reconstruit quand un sceau a perdu son parent : les visuels de
-         personnage sont recréés par syncKayKitCharacters, et un sprite orphelin
-         cesse silencieusement d'être rendu. */
+      /* Plus de signe porté : le chevalier est TEINT de la couleur de sa case
+         (voir `teinte` au montage, appliquée par createCharacterVisual). On ne
+         fait ici que retirer d'anciens socles s'il en restait. */
       function puzzleRefreshSceaux() {
-        const paires = PUZZLE.def?.goal?.type === "assignedCells"
-          ? PUZZLE.def.goal.pairs : null;
         const poses = PUZZLE.sceaux || (PUZZLE.sceaux = []);
-        if (!paires || typeof kaykit3D === "undefined" || !kaykit3D?.characterVisuals) {
-          if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
-          return;
-        }
-        const cles = Object.keys(paires);
-        const complet = poses.length === cles.length && poses.every(sp => !!sp.parent);
-        if (complet) return;
-
-        poses.forEach(sp => sp.parent?.remove(sp));
-        poses.length = 0;
-        cles.forEach((cle, index) => {
-          const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
-          if (!visual?.wrapper) return;
-          /* LE MÊME LOSANGE, à plat sous les pieds, et non un insigne flottant.
-             Deux essais ont échoué avant : haut dans le ciel, le sprite
-             dérivait sur la case du voisin — la vue est inclinée, tout ce qui
-             monte part vers le haut de l'écran, et les Gardiens se suivent en
-             file d'une case ; posé sur le casque, il se confondait avec le
-             modèle. Au sol, il ne peut désigner que la case où se tient son
-             porteur, et il porte exactement le tracé gravé sur la case
-             attendue : aucune traduction à faire. */
-          const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
-          /* Plus petit qu'une case : à pleine taille le losange débordait sous
-             les pieds et, la vue étant inclinée, se lisait comme une dalle
-             POSÉE DEVANT le Gardien plutôt que sous lui. Resserré, il devient
-             un socle et le Gardien se tient dedans. */
-          const anneau = new THREE.Mesh(
-            new THREE.PlaneGeometry(.82, .82),
-            new THREE.MeshBasicMaterial({
-              map: puzzleGlyphTexture("sceau", teinte, index + 1),
-              transparent: true,
-              side: THREE.DoubleSide, depthWrite: false, depthTest: false
-            })
-          );
-          anneau.rotation.x = -Math.PI / 2;
-          anneau.position.set(0, .05, 0);
-          anneau.renderOrder = 58;
-          anneau.userData = { ilyosTransient: true };
-          visual.wrapper.add(anneau);
-          poses.push(anneau);
-        });
+        if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
       }
 
       function puzzleClearMarkers() {
@@ -2092,59 +1981,13 @@
         }, duree);
       }
 
-      /* Les signes : anneaux, glyphes, poussière de lumière. Les positions
+      /* Les signes : glyphes et poussière de lumière. Les positions
          sortent d'une suite déterministe — deux ouvertures du même Sanctuaire
          donnent le même ciel, et rien ne saute d'une image à l'autre. Rien ne
          tourne ensuite : ni boucle JS ni animation CSS. */
       function puzzleBuildSignes(hote) {
         if (!hote) return;
-        hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
-          + '<div class="pz-anneau a2"></div><div class="pz-anneau b"></div>'
-          + '<div class="pz-anneau b2"></div><div class="pz-anneau c"></div>'
-          + '<div class="pz-anneau e"></div><div class="pz-anneau f"></div>';
-
-        /* LES ARCS, et les runes qui vont avec.
-
-           `de` et `long` sont des angles de dégradé conique : ils partent de
-           midi et tournent dans le sens des aiguilles. Les runes, elles, sont
-           placées en coordonnées polaires ordinaires, où zéro est à trois
-           heures — d'où le quart de tour entre les deux repères.
-
-           Les deux sont décidés ICI et non dans la feuille de style, parce
-           qu'ils dépendent l'un de l'autre : une rune posée hors de l'arc
-           conservé serait masquée en même temps que lui et disparaîtrait sans
-           rien dire. On pose donc chaque rune au milieu de son arc.
-
-           Les longueurs vont de 96 à 168 degrés : entre le quart et la moitié
-           du tour. Au-delà, l'œil referme le cercle de lui-même et tout le
-           bénéfice de l'arc est perdu. */
-        const runes = ["ᛉ", "ᚨ", "ᛟ", "ᛞ", "ᚱ", "ᛊ"];
-        const arcs = [
-          { orbe: "a", de: 196, long: 150, rune: true },
-          { orbe: "a2", de: 188, long: 166 },
-          { orbe: "b", de: 32, long: 138, rune: true },
-          { orbe: "b2", de: 40, long: 124 },
-          { orbe: "c", de: 148, long: 112, rune: true },
-          { orbe: "d", de: 244, long: 168, rune: true },
-          { orbe: "e", de: 300, long: 96, rune: true },
-          { orbe: "f", de: 86, long: 118, rune: true }
-        ];
-        let rangRune = 0;
-        arcs.forEach(arc => {
-          const cible = hote.querySelector(`.pz-anneau.${arc.orbe}`);
-          if (!cible) return;
-          cible.style.setProperty("--pz-arc-de", `${arc.de}deg`);
-          cible.style.setProperty("--pz-arc-long", `${arc.long}deg`);
-          if (!arc.rune) return;
-          const milieu = (arc.de + arc.long / 2 - 90) * Math.PI / 180;
-          const rune = document.createElement("span");
-          rune.className = "pz-rune";
-          rune.textContent = runes[rangRune % runes.length];
-          rune.style.left = `${(50 + 50 * Math.cos(milieu)).toFixed(2)}%`;
-          rune.style.top = `${(50 + 50 * Math.sin(milieu)).toFixed(2)}%`;
-          cible.appendChild(rune);
-          rangRune++;
-        });
+        hote.innerHTML = "";
         let graine = 7;
         const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
         const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
@@ -3618,6 +3461,23 @@
           couronne.c = dc;
           return { action: null, cout: 0 };
         }
+        /* Pose d'île avec invocation : `cells` absolues, `spawn` la case où le
+           Gardien apparaît, `key` le nom sous lequel les coups suivants le
+           désignent. Le coût est celui du jeu (payerIle) : deux cartes si la
+           pose est payante, rien sinon. */
+        if (step.a === "POSE") {
+          if (state.islandPlacedThisTurn) return { error: "une seule île par tour" };
+          if (shapeLimitReached(step.forme)) return { error: `forme ${step.forme} non disponible` };
+          if (!step.cells.every(([r, c]) => inside(r, c) && !isLand(r, c))) {
+            return { error: `pose impossible en ${JSON.stringify(step.cells)}` };
+          }
+          if (!peutPayerIle(state.players[0])) return { error: "pas de quoi payer l'île" };
+          return {
+            action: { type: "POSE", shapeKey: step.forme, cells: step.cells, owner: 0, spawn: step.spawn },
+            cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0,
+            nouveau: step.key || null
+          };
+        }
         if (step.a === "MAGIC") {
           const islandId = PUZZLE.islandsByKey[step.island];
           if (islandId == null) return { error: `île ${step.island} introuvable` };
@@ -3659,6 +3519,7 @@
               if (!resultat) {
                 return { id: def.id, ok: false, raison: `coup ${i + 1} refusé par le noyau (${resolu.action.type})`, journal };
               }
+              if (resolu.nouveau && resultat.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             }
             journal.push(`${resolu.action ? resolu.action.type : def.solution[i].a} ${resolu.cout}`);
           }
@@ -3711,9 +3572,11 @@
             if (resolu.error) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} : ${resolu.error}`, journal };
             }
-            if (resolu.action && !appliquerActionNoyau(resolu.action)) {
+            const resultat = resolu.action ? appliquerActionNoyau(resolu.action) : null;
+            if (resolu.action && !resultat) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} refusé par le noyau`, journal };
             }
+            if (resolu.nouveau && resultat?.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             journal.push(`T${t + 1} ${resolu.action ? resolu.action.type : tours[t][i].a} ${resolu.cout}`);
             tutoRender();
           }
@@ -3838,6 +3701,26 @@
           });
         }
 
+        /* Pose d'île : toutes les orientations des formes autorisées, toutes
+           les places libres, et chaque case d'invocation. Énorme, mais une
+           seule fois par tour — la recherche cesse de l'énumérer dès la pose. */
+        const formes = puzzleFormesAutorisees();
+        if (formes && !state.islandPlacedThisTurn && peutPayerIle(state.players[0])) {
+          Object.keys(formes).filter(forme => !shapeLimitReached(forme)).forEach(forme => {
+            puzzleOrientations(forme).forEach(rel => {
+              for (let r = 0; r < GRID; r++) {
+                for (let c = 0; c < GRID; c++) {
+                  const cells = rel.map(([dr, dc]) => [r + dr, c + dc]);
+                  if (!cells.every(([a, b]) => inside(a, b) && !isLand(a, b))) continue;
+                  cells.forEach(spawn => actions.push({
+                    a: "POSE", forme, cells, spawn, cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0
+                  }));
+                }
+              }
+            });
+          });
+        }
+
         if (availableActionCount("MAGIC") > 0) {
           (state.islands || []).forEach(ile => {
             ile.cells.forEach(([pr, pc]) => {
@@ -3857,7 +3740,31 @@
         return actions;
       }
 
+      /* Les orientations distinctes d'une forme : quatre quarts de tour, plus
+         le miroir pour les formes qui se retournent. */
+      function puzzleOrientations(forme) {
+        const base = SHAPES[forme]?.cells || [];
+        const vues = new Map();
+        const variantes = SHAPES[forme]?.flippable ? [base, base.map(([r, c]) => [r, -c])] : [base];
+        variantes.forEach(cellules => {
+          let courant = cellules.map(([r, c]) => [r, c]);
+          for (let k = 0; k < 4; k++) {
+            courant = courant.map(([r, c]) => [c, -r]);
+            const mr = Math.min(...courant.map(x => x[0]));
+            const mc = Math.min(...courant.map(x => x[1]));
+            const norme = courant.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            vues.set(JSON.stringify(norme), norme);
+          }
+        });
+        return [...vues.values()];
+      }
+
       function puzzleSearchApply(action) {
+        if (action.a === "POSE") {
+          return !!appliquerActionNoyau({
+            type: "POSE", shapeKey: action.forme, cells: action.cells, owner: 0, spawn: action.spawn
+          });
+        }
         if (action.a === "PICKUP") {
           const char = characterById(action.charId);
           const couronne = artifactById(action.crownId);
@@ -3934,6 +3841,7 @@
         if (action.a === "PICKUP") return `PICKUP ${action.charId}`;
         if (action.a === "TRANSFER") return `TRANSFER ${action.fromId}->${action.toId}`;
         if (action.a === "DROP") return `DROP ${action.charId} en ${action.r},${action.c}`;
+        if (action.a === "POSE") return `POSE ${action.forme} ${JSON.stringify(action.cells)} gardien ${action.spawn}`;
         return action.a;
       }
 

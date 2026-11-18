@@ -25,7 +25,7 @@ document.title = "ILYOS — Les îles célestes";
   if (window.__ILYOS_CHARACTER_MATERIALS_V1_LOADER__) return;
   window.__ILYOS_CHARACTER_MATERIALS_V1_LOADER__ = true;
   const script = document.createElement('script');
-  script.src = './js/character-materials-v1.js?v=1';
+  script.src = './js/character-materials-v1.js?v=2';
   script.defer = true;
   document.head.appendChild(script);
 })();
