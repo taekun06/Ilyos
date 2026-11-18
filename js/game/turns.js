@@ -62,6 +62,9 @@
 
       function beginTurn() {
         const p = currentPlayer();
+        // Murs étoilés (murs.js) : posés une fois, au premier tour, quand les
+        // îles de départ sont en place.
+        if (state.murs === undefined && !ilyosSimulationActive) installerMursDeDepart();
         /* Toute la RÈGLE de l'ouverture du tour est dans le moteur
            (applyTurnStartCore, regles.js), la même que pour le self-play et
            ILYOS_REGLES : gardiens d'équipe et minion confiés, couronnes
@@ -219,7 +222,9 @@
           aiDifficulty: state.aiDifficulty ?? null,
           rules: state.rules ? { ...state.rules } : null,
           // Mode Rotation (rotation.js) : but et balises de la partie.
-          rotation: state.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null
+          rotation: state.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null,
+          // Murs étoilés (murs.js).
+          murs: (state.murs || []).map(m => ({ ...m }))
         });
       }
 
@@ -268,6 +273,7 @@
         if (Array.isArray(snap.journalCoups)) state.journalCoups = [...snap.journalCoups];
         if (Array.isArray(snap.journalTourPrecedent)) state.journalTourPrecedent = [...snap.journalTourPrecedent];
         if (snap.rotation !== undefined) state.rotation = snap.rotation;
+        state.murs = Array.isArray(snap.murs) ? snap.murs.map(m => ({ ...m })) : [];
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;

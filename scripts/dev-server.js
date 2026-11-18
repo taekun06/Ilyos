@@ -67,8 +67,40 @@ function servirCompte(req, res) {
   });
 }
 
+/* Retours des joueurs (fonction Netlify /api/retours) : en mémoire aussi.
+   Code de la page privée en local : ILYOS_RETOURS_CODE, sinon « dev ». Les
+   notifications sont écrites dans la console au lieu de Discord. */
+const retoursMemoire = new Map();
+const storeRetours = {
+  get: async cle => (retoursMemoire.has(cle) ? JSON.parse(retoursMemoire.get(cle)) : null),
+  set: async (cle, valeur) => { retoursMemoire.set(cle, JSON.stringify(valeur)); },
+  delete: async cle => { retoursMemoire.delete(cle); },
+  list: async prefixe => [...retoursMemoire.keys()].filter(cle => cle.startsWith(prefixe))
+};
+
+function servirRetours(req, res) {
+  if (req.method !== "POST") { res.writeHead(405).end(); return; }
+  let texte = "";
+  req.setEncoding("utf8");
+  req.on("data", morceau => { texte += morceau; if (texte.length > 4 * 1024 * 1024) req.destroy(); });
+  req.on("end", async () => {
+    try {
+      const { repondre } = await import("../netlify/functions/retours/logique.mjs");
+      const { statut, corps } = await repondre(texte, storeRetours, {
+        ip: req.socket.remoteAddress || "local",
+        code: process.env.ILYOS_RETOURS_CODE || "dev",
+        prevenir: async m => console.log(`[retours] ${m.titre} — ${String(m.texte).slice(0, 120)}${m.fichier ? " (+ " + m.fichier.nom + ")" : ""}`)
+      });
+      res.writeHead(statut, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }).end(JSON.stringify(corps));
+    } catch (error) {
+      res.writeHead(500).end(String(error && error.message));
+    }
+  });
+}
+
 const server = http.createServer((req, res) => {
   if (req.url.split("?")[0] === "/api/compte") { servirCompte(req, res); return; }
+  if (req.url.split("?")[0] === "/api/retours") { servirRetours(req, res); return; }
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url, `http://localhost:${PORT}`).pathname);

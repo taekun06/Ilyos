@@ -385,6 +385,7 @@
         const carte = menuDuelCarte();
         carte?.querySelectorAll("select[data-pas], select[data-seg], select[data-compteur]").forEach(lierListeMenu);
         [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, document.getElementById("customImmediateScoreCheckbox"),
+          document.getElementById("customWallsCheckbox"),
           els.symmetricAllowDissolveCheckbox]
           .forEach(caseACocher => caseACocher?.addEventListener("change", majMenuPerso));
 

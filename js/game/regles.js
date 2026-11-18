@@ -24,7 +24,8 @@
 
          Une action est une DONNÉE, la même que celle du planner :
            MOVE { charId, r, c, cost }        PUSH { pusherId, r, c, force }
-           MAGIC { islandId, pivot, direction, turns }
+           MAGIC { islandId, pivot, direction, turns, mode? (« mur » | « deux », murs.js) }
+           POUSSER_MUR { murId, pusherId, force }
            POSE { shapeKey, cells, owner, relCells?, anchor?, spawn? }
            DEPOT { charId, r, c }   RAMASSAGE { charId, artifactId }
            VOL { charId, artifactId }   TRANSMISSION { deId, versId }
@@ -127,6 +128,14 @@
             if (availableActionCount("MAGIC") < 1) return "pas de carte Magie";
             if (action.direction !== 1 && action.direction !== -1) return "sens de rotation invalide";
             if (!reglesEntier(action.turns, 1, 4)) return "nombre de quarts de tour invalide";
+            // Murs étoilés (murs.js) : tourner le mur porté seul, ou l'île avec lui.
+            if (action.mode === "mur" || action.mode === "deux") {
+              if (!mursActifs() || action.turns === 4) return "aucun mur à tourner ainsi";
+              const steps = action.direction === -1 ? 3 : action.turns;
+              const plan = Array.isArray(action.pivot) ? planMagieMurs(ile, action.pivot, steps, action.mode) : null;
+              if (!plan?.valid) return "le mur ne peut pas tourner ainsi";
+              return null;
+            }
             // Tour complet (360°) : l'île revient à sa place, la carte est jouée.
             if (action.turns === 4) return null;
             const pivot = action.pivot;
@@ -153,6 +162,15 @@
               const [sr, sc] = action.spawn;
               if (!cells.some(([r, c]) => r === sr && c === sc) || characterAt(sr, sc)) return "case d'apparition invalide";
             }
+            return null;
+          }
+          case "POUSSER_MUR": {
+            const { gardien, refus } = reglesGardienDuJoueur(action.pusherId);
+            if (refus) return refus;
+            if (!mursActifs()) return "aucun mur en jeu";
+            const dispo = availableActionCount("PUSH");
+            if (!reglesEntier(action.force, 1, Math.max(1, dispo)) || action.force > dispo) return "pas assez de cartes Pousser";
+            if (!optionsPousseeMur(gardien, action.force).some(o => o.murId === action.murId)) return "ce mur ne peut pas être poussé ainsi";
             return null;
           }
           case "DEPOT":
@@ -428,7 +446,8 @@
       const REGLES_CHAMPS = {
         MOVE: ["charId", "r", "c", "cost"],
         PUSH: ["pusherId", "r", "c", "force"],
-        MAGIC: ["islandId", "pivot", "direction", "turns"],
+        MAGIC: ["islandId", "pivot", "direction", "turns", "mode"],
+        POUSSER_MUR: ["murId", "pusherId", "force"],
         POSE: ["shapeKey", "cells", "owner", "relCells", "anchor", "spawn"],
         DEPOT: ["charId", "r", "c"],
         RAMASSAGE: ["charId", "artifactId"],
@@ -461,8 +480,9 @@
         const gardiens = (etat.characters || []).map(g => `${g.id}:${g.r},${g.c}:${g.player}`).sort();
         const couronnes = [etat.artifact, etat.secondArtifact].filter(Boolean)
           .map(a => `${a.id}:${a.carrierId ?? "-"}:${a.carrierId ? "" : `${a.r},${a.c}`}:${a.active ? 1 : 0}`).sort();
+        const murs = (etat.murs || []).map(m => `${m.id}:${m.o}${m.i},${m.j},${m.n}`).sort();
         return JSON.stringify({
-          iles, gardiens, couronnes,
+          iles, gardiens, couronnes, murs,
           scores: (etat.players || []).map(p => p.score || 0),
           main: etat.currentPlayer, tour: etat.turn, vainqueur: etat.winner ?? null
         });

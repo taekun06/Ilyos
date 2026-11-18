@@ -18,6 +18,9 @@ const fragmentNames = [
   // Placé après card-rules-physical-reserve.js : consumeAvailableActions y est
   // réassigné, et les noyaux doivent appeler la version en vigueur.
   'rules-core.js',
+  // Murs étoilés : règles (passage, poussée, magie) appelées par core.js,
+  // rules-core.js, ui.js et le planner.
+  'murs.js',
   // Cerveau Expert V2 : s'appuie sur les noyaux de rules-core.js et sur
   // withSimulatedState, donc placé juste après.
   'planner.js',
@@ -47,6 +50,9 @@ const fragmentNames = [
   'rotation-paquet.js',
   // Couche créatures et œufs : s'appuie sur le marché (butin) ci-dessus.
   'rotation-creatures.js',
+  // But Effondrement : enveloppe le passage de tour, les chutes, le HUD,
+  // l'évaluation et la sync 3D après les autres fragments de la Rotation.
+  'rotation-effondrement.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve

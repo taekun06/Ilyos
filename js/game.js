@@ -5381,38 +5381,6 @@
         return { copie, u };
       }
 
-      /* ESSAI (10/11) : style du survol d'un gardien, à choisir par Taekun.
-         ?gardien=A contour fin seul, B anneau fin au sol seul, C les deux.
-         Sans paramètre : survol actuel (reflet + contour épais). */
-      function kaykitStyleSurvolGardien() {
-        if (kaykitStyleSurvolGardien.valeur === undefined) {
-          let style = null;
-          try { style = (new URLSearchParams(location.search).get("gardien") || window.ILYOS_SURVOL_GARDIEN || "").toUpperCase() || null; } catch (_) { }
-          kaykitStyleSurvolGardien.valeur = ["A", "B", "C"].includes(style) ? style : null;
-        }
-        return kaykitStyleSurvolGardien.valeur;
-      }
-      /* Anneau fin au sol : trait clair sur un trait sombre plus large, lisible
-         sur l'herbe comme sur une île dorée (la couleur d'équipe or s'y
-         perdait). */
-      function kaykitAnneauSurvolGardien(r, c) {
-        const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c) + .03);
-        kaykit3D.contoursSurvol = kaykit3D.contoursSurvol || [];
-        [[.034, 0x1b1208, .55, 21], [.016, 0xffffff, .98, 22]].forEach(([tube, couleur, opacite, ordre]) => {
-          const anneau = new THREE.Mesh(
-            kaykitGeometry("survol-gardien-anneau-" + tube, () => new THREE.TorusGeometry(.34, tube, 6, 44)),
-            new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false })
-          );
-          anneau.material.userData = { ilyosTransient: true };
-          anneau.rotation.x = -Math.PI / 2;
-          anneau.position.set(p.x, p.y + (ordre - 21) * .004, p.z);
-          anneau.renderOrder = ordre;
-          anneau.raycast = () => {};
-          kaykit3D.dynamicGroup.add(anneau);
-          kaykit3D.contoursSurvol.push(anneau);
-        });
-      }
-
       function setKayKitVisualHover(cell, intent) {
         // Clone temporairement les matériaux afin de ne jamais modifier les matériaux partagés.
         if (!kaykit3D) return;
@@ -5448,19 +5416,17 @@
         if (intent.kind === "crown") kaykitSouleverCase(visuals);
         const aContourer = [];
 
-        const styleGardien = kaykitStyleSurvolGardien();
-        if (styleGardien && occupant && (styleGardien === "B" || styleGardien === "C")
-          && visuals.some(objet => objet?.userData?.ilyosContour && objet.userData.ilyosContour !== "couronne")) {
-          kaykitAnneauSurvolGardien(cell.r, cell.c);
-        }
         visuals.forEach(object => object?.traverse?.(mesh => {
           if (!mesh.isMesh || !mesh.material) return;
           const originalMaterial = mesh.material;
           const originals = Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial];
           const role = object.userData?.ilyosContour;
-          // Essai : en style A/B/C, le gardien garde ses matériaux (pas de reflet).
-          if (styleGardien && role && role !== "couronne") {
-            if (styleGardien !== "B") aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
+          /* Gardien survolé : un contour fin à la couleur de son équipe, sans
+             reflet ni pulsation — le modèle reste intact. Le reflet pulsé et
+             le contour épais d'avant étaient « grossiers et peu lisibles »
+             (Taekun, 10/11, style A choisi le 14/11). */
+          if (role && role !== "couronne") {
+            aContourer.push({ mesh, couleur: couleurLisere(role), epaisseur: .0042 });
             return;
           }
           const clonedMaterials = originals.map(material => {
@@ -7612,6 +7578,76 @@
         }
       }
 
+      /* Barre de rotation Magie flottante près de l'île (Taekun, 2026-11-14 :
+         « 2 si ça ne gêne pas »). Posée à côté de l'emprise écran de l'île et
+         de toutes ses positions possibles : à droite, sinon à gauche, dessous,
+         dessus, jamais sur le HUD du haut (150 px) ni le dock du bas (170 px).
+         Si rien ne tient (petit écran, téléphone), la barre garde sa place CSS
+         (en bas à gauche). Le DOM n'est touché que si la vue ou l'île changent. */
+      const kaykitBarreMagie = { cle: "", place: false };
+      function kaykitBarreMagieRelacher(barre) {
+        if (!kaykitBarreMagie.place) return;
+        ["left", "top", "bottom", "right"].forEach(p => barre.style.removeProperty(p));
+        barre.classList.remove("ov2-magie-flottante");
+        kaykitBarreMagie.place = false;
+      }
+      function kaykitPlacerBarreMagie() {
+        const barre = document.getElementById("hudV2MagicRow");
+        if (!barre || !kaykit3D?.camera) return;
+        const actif = state?.phase === "ACTION" && state?.selectedActionType === "MAGIC" && !!state?.selectedIslandId
+          && !barre.classList.contains("hidden") && innerWidth >= 720 && innerHeight >= 480;
+        const ile = actif ? (state.islands || []).find(item => item.id === state.selectedIslandId) : null;
+        if (!ile?.cells?.length) {
+          kaykitBarreMagie.cle = "";
+          kaykitBarreMagieRelacher(barre);
+          return;
+        }
+        const e = kaykit3D.camera.matrixWorld.elements;
+        const cle = [ile.id, ile.cells.length, (state.selectedMagicPivot || []).join(","), innerWidth, innerHeight, state.magicMode || "",
+          barre.offsetWidth, barre.offsetHeight, ...[0, 1, 2, 4, 5, 6, 12, 13, 14].map(i => e[i].toFixed(3))].join("|");
+        if (cle === kaykitBarreMagie.cle) return;
+        kaykitBarreMagie.cle = cle;
+
+        const cases = ile.cells.slice();
+        if (typeof magicRotationOptions === "function") {
+          magicRotationOptions().forEach(option => (option.rotation?.absCells || []).forEach(cell => cases.push(cell)));
+        }
+        const toile = kaykit3D.renderer.domElement.getBoundingClientRect();
+        const demi = KAYKIT_CELL_SPACING / 2;
+        const v = new THREE.Vector3();
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        cases.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c);
+          [[-demi, -demi], [demi, -demi], [-demi, demi], [demi, demi]].forEach(([dx, dz]) => [0, 1].forEach(y => {
+            v.set(p.x + dx, y, p.z + dz).project(kaykit3D.camera);
+            const sx = toile.left + (v.x + 1) / 2 * toile.width, sy = toile.top + (1 - v.y) / 2 * toile.height;
+            x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+          }));
+        });
+        // La deuxième ligne des murs (mur / île / les deux) pend sous la pastille.
+        const modes = document.getElementById("hudV2MagicModes");
+        const sousLigne = modes && !modes.classList.contains("hidden") ? modes.offsetHeight + 6 : 0;
+        const w = Math.max(barre.offsetWidth, sousLigne ? modes.offsetWidth : 0), h = barre.offsetHeight + sousLigne, marge = 16, haut = 150, bas = innerHeight - 170;
+        const cy = Math.max(haut, Math.min(bas - h, (y0 + y1) / 2 - h / 2));
+        const cx = Math.max(marge, Math.min(innerWidth - marge - w, (x0 + x1) / 2 - w / 2));
+        const essais = [
+          [x1 + marge, cy], [x0 - marge - w, cy], [cx, y1 + marge], [cx, y0 - marge - h]
+        ];
+        const choix = essais.find(([x, y]) => x >= marge && x + w <= innerWidth - marge && y >= haut && y + h <= bas);
+        if (!choix) { kaykitBarreMagieRelacher(barre); return; }
+        // #hudV2MagicRow vit dans #hudV2Dock, dont le transform devient le bloc
+        // conteneur même en position fixe : on mesure l'écart et on le rattrape.
+        barre.classList.add("ov2-magie-flottante");
+        barre.style.setProperty("bottom", "auto", "important");
+        barre.style.setProperty("right", "auto", "important");
+        barre.style.setProperty("left", `${Math.round(choix[0])}px`, "important");
+        barre.style.setProperty("top", `${Math.round(choix[1])}px`, "important");
+        const vu = barre.getBoundingClientRect();
+        barre.style.setProperty("left", `${Math.round(2 * choix[0] - vu.left)}px`, "important");
+        barre.style.setProperty("top", `${Math.round(2 * choix[1] - vu.top)}px`, "important");
+        kaykitBarreMagie.place = true;
+      }
+
       // Appelée par la boucle de rendu, au plus tous les 120 ms.
       function kaykitCameraSelonAction(maintenant) {
         const suivi = kaykitCameraAction;
@@ -9584,6 +9620,24 @@
 
         lines.forEach(allOptions => {
           const type = allOptions[0].targetType || "character";
+          if (type === "mur") {
+            // Mur étoilé (murs.js) : anneaux d'arrivée devant sa place finale ;
+            // le mur doré au survol (renderKayKitMurs).
+            const triees = [...allOptions].sort((a, b) => a.force - b.force);
+            triees.forEach(option => {
+              const survole = option.id === hoveredId;
+              if (survole) kaykitApercuPousseeMur(option, kaykit3D.actionPreviewGroup);
+              if (!option.fell) addKayKitPushDestination(option, survole, false);
+              else {
+                const bord = kaykitCellPosition(option.lastLandR, option.lastLandC, kaykitCellSurfaceY(option.lastLandR, option.lastLandC));
+                const sens = new THREE.Vector3(option.dc, 0, option.dr).normalize();
+                const ou = new THREE.Vector3(bord.x, bord.y, bord.z).add(sens.multiplyScalar(.85));
+                ou.y += .35;
+                addKayKitDeathPushDestination(option, ou, survole, false);
+              }
+            });
+            return;
+          }
           const target = type === "crown"
             ? artifactById(allOptions[0].targetId)
             : type === "character"
@@ -12391,7 +12445,9 @@
         const hiddenId = (state?.phase === "ACTION"
           && state?.selectedActionType === "MAGIC"
           && state?.selectedIslandId
-          && Array.isArray(state?.magicPreviewCells))
+          && Array.isArray(state?.magicPreviewCells)
+          // Le mur seul tourne (murs.js) : l'île reste visible, à sa place.
+          && !(typeof modeMagie === "function" && modeMagie() === "mur"))
           ? String(state.selectedIslandId)
           : null;
         kaykit3D.islandObjectRegistry.forEach((entry, id) => {
@@ -12429,6 +12485,10 @@
         // amorcée (magicPreviewSteps ≠ 0) : le joueur doit voir d'où part l'île
         // pendant toute l'action, pas seulement après le premier cran de rotation.
         if (!state.selectedIslandId || !Array.isArray(state.magicPreviewCells)) return;
+        if (modeMagie() === "mur") {
+          renderKayKitMagicRotationGhosts(state.islands.find(item => item.id === state.selectedIslandId));
+          return;
+        }
 
         // Trace au sol, discrète, de l'emplacement de départ : le bloc normal de
         // cette île est caché pendant toute l'action (voir refreshKayKitMagicHiddenIsland),
@@ -12469,7 +12529,7 @@
         block.position.y = .055;
         block.userData.magicRotationPreview = true;
         if (legale && KAYKIT_MAGIC_OPTION_STYLE[crans]) {
-          kaykitFantomeTexture(block, KAYKIT_MAGIC_OPTION_STYLE[crans].teinte, .9, .35);
+          kaykitFantomeFranc(block, KAYKIT_MAGIC_OPTION_STYLE[crans].franc, .78);
         }
         kaykit3D.dynamicGroup.add(block);
 
@@ -12511,9 +12571,13 @@
       const KAYKIT_MAGIC_OPTION_STYLE = {
         // couleur : curseur et barre ; teinte : verre des îles, plus douce
         // pour rester une île teintée plutôt qu'un aplat.
-        1: { couleur: 0x1fb4ff, teinte: 0x56c8ff },
-        2: { couleur: 0xffaa12, teinte: 0xffb547 },
-        3: { couleur: 0xb04dff, teinte: 0xb47cff }
+        // franc : verre des positions, en couleur PLEINE (Taekun, 2026-11-13 :
+        // la teinte douce sortait presque blanche, on ne savait plus quel
+        // fantôme allait avec quel bouton). Mêmes valeurs que les boutons de
+        // la barre (css/hud-consolidation-v12.css).
+        1: { couleur: 0x1fb4ff, teinte: 0x56c8ff, franc: 0x1fa8ff },
+        2: { couleur: 0xffaa12, teinte: 0xffb547, franc: 0xff8a00 },
+        3: { couleur: 0xb04dff, teinte: 0xb47cff, franc: 0xa040ff }
       };
       /* Au-dessus des décors d'objectif (cases marquées d'or, ordres 48 à 52,
          dessinés sans test de profondeur) : en dessous, une position qui
@@ -12548,6 +12612,167 @@
         });
       }
 
+      /* Verre de couleur FRANCHE : aplat translucide hors du rendu tonal
+         (toneMapped:false). Le traitement de lumière de la scène délavait
+         toute teinte vers le blanc ; ici la couleur du bouton reste celle
+         qu'on voit au sol. Aucun coût : un matériau de base, sans lumière. */
+      function kaykitFantomeFranc(objet, couleur, opacite) {
+        objet.traverse(obj => {
+          if (!obj.isMesh || !obj.material) return;
+          obj.castShadow = false;
+          obj.receiveShadow = false;
+          obj.renderOrder = Math.max(obj.renderOrder || 0, KAYKIT_MAGIC_FANTOME_ORDRE);
+          const n = Array.isArray(obj.material) ? obj.material.length : 1;
+          const mats = Array.from({ length: n }, () => {
+            const mat = new THREE.MeshBasicMaterial({ color: couleur, transparent: true, opacity: opacite, depthWrite: false, toneMapped: false });
+            mat.userData = { ilyosTransient: true };
+            return mat;
+          });
+          obj.material = Array.isArray(obj.material) ? mats : mats[0];
+        });
+      }
+
+      /* ==================================================================
+         MURS ÉTOILÉS — rendu (règles : murs.js). Look validé par Taekun le
+         2026-11-12 : voile dégradé étoilé FIN entre deux piliers d'argent
+         épais, une étoile au sommet de chaque pilier. Les aperçus (Magie,
+         poussée) sont du même dessin, teinté de la couleur de leur choix.
+         Aucune animation : géométrie simple, textures dessinées une fois.
+      ================================================================== */
+      const KAYKIT_MUR = { hauteur: .46, pilier: .52, textures: null, materiaux: null };
+      function kaykitMurTextures() {
+        if (KAYKIT_MUR.textures) return KAYKIT_MUR.textures;
+        const toile = (w, h, dessin) => {
+          const c = document.createElement("canvas"); c.width = w; c.height = h;
+          dessin(c.getContext("2d"), w, h);
+          const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+        };
+        let graine = 7;
+        const hasard = () => (graine = (graine * 16807) % 2147483647) / 2147483647;
+        const etoiles = (g, w, h, n) => {
+          for (let k = 0; k < n; k++) {
+            const x = hasard() * w, y = hasard() * h, r = hasard() < .12 ? 2.4 : hasard() * 1.3 + .4;
+            g.fillStyle = `rgba(255,${235 + hasard() * 20 | 0},${200 + hasard() * 55 | 0},${.55 + hasard() * .45})`;
+            g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+            if (r > 2) {
+              g.strokeStyle = "rgba(255,240,210,.7)"; g.lineWidth = 1; g.beginPath();
+              g.moveTo(x - 7, y); g.lineTo(x + 7, y); g.moveTo(x, y - 7); g.lineTo(x, y + 7); g.stroke();
+            }
+          }
+        };
+        KAYKIT_MUR.textures = {
+          voile: toile(256, 128, (g, w, h) => {
+            const d = g.createLinearGradient(0, h, 0, 0);
+            d.addColorStop(0, "rgba(22,26,90,.95)"); d.addColorStop(.5, "rgba(48,36,130,.75)"); d.addColorStop(1, "rgba(90,60,190,.05)");
+            g.fillStyle = d; g.fillRect(0, 0, w, h);
+            g.fillStyle = "rgba(150,175,255,.95)"; g.fillRect(0, h - 4, w, 4);
+            etoiles(g, w, h * .85, 55);
+          }),
+          eclat: toile(64, 64, (g, w, h) => {
+            const d = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+            d.addColorStop(0, "rgba(255,250,230,1)"); d.addColorStop(.12, "rgba(255,225,150,.85)");
+            d.addColorStop(.4, "rgba(255,200,120,.18)"); d.addColorStop(1, "rgba(255,200,120,0)");
+            g.fillStyle = d; g.fillRect(0, 0, w, h);
+            g.fillStyle = "rgba(255,248,225,.95)"; g.beginPath();
+            g.moveTo(32, 2); g.lineTo(35, 29); g.lineTo(62, 32); g.lineTo(35, 35); g.lineTo(32, 62);
+            g.lineTo(29, 35); g.lineTo(2, 32); g.lineTo(29, 29); g.closePath(); g.fill();
+          })
+        };
+        return KAYKIT_MUR.textures;
+      }
+      /** Matériaux partagés du vrai mur (jamais libérés) ; ceux d'un aperçu
+       *  sont neufs et marqués éphémères. */
+      function kaykitMurMateriaux(teinte) {
+        const t = kaykitMurTextures();
+        if (teinte == null) {
+          if (!KAYKIT_MUR.materiaux) {
+            KAYKIT_MUR.materiaux = {
+              voile: new THREE.MeshBasicMaterial({ map: t.voile, transparent: true, opacity: .92, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }),
+              pilier: new THREE.MeshLambertMaterial({ color: 0xdfe6ff, emissive: 0x334488 }),
+              etoile: new THREE.SpriteMaterial({ map: t.eclat, transparent: true, depthWrite: false, toneMapped: false })
+            };
+          }
+          return KAYKIT_MUR.materiaux;
+        }
+        const ephemere = mat => { mat.userData = { ilyosTransient: true }; return mat; };
+        return {
+          // Verre de la couleur du choix : la texture de nuit l'assombrissait trop.
+          voile: ephemere(new THREE.MeshBasicMaterial({ color: teinte, transparent: true, opacity: .4, side: THREE.DoubleSide, depthWrite: false, toneMapped: false })),
+          pilier: ephemere(new THREE.MeshBasicMaterial({ color: teinte, transparent: true, opacity: .85, depthWrite: false, toneMapped: false })),
+          etoile: ephemere(new THREE.SpriteMaterial({ map: t.eclat, color: teinte, transparent: true, opacity: .9, depthWrite: false, toneMapped: false }))
+        };
+      }
+      /** Sol d'un segment : le plus haut des dessus de case qu'il borde. */
+      function kaykitMurSolSegment(s) {
+        const cases = s.o === "h" ? [[s.i - 1, s.j], [s.i, s.j]] : [[s.i, s.j - 1], [s.i, s.j]];
+        let y = KAYKIT_LEVELS.islandTop + .014;
+        cases.forEach(([r, c]) => { if (inside(r, c) && isLand(r, c)) y = Math.max(y, kaykitCellSurfaceY(r, c)); });
+        return y;
+      }
+      function kaykitConstruireMur(m, teinte = null) {
+        const S = KAYKIT_CELL_SPACING, H = KAYKIT_MUR.hauteur, HP = KAYKIT_MUR.pilier;
+        const mats = kaykitMurMateriaux(teinte);
+        const groupe = new THREE.Group();
+        groupe.userData.mur = m.id;
+        const coin = (i, j) => ({ x: (j - GRID / 2) * S, z: (i - GRID / 2) * S });
+        const segments = murSegments(m);
+        const sols = segments.map(kaykitMurSolSegment);
+        segments.forEach((s, k) => {
+          const a = coin(s.i, s.j);
+          const voile = new THREE.Mesh(kaykitGeometry("mur-voile-v1", () => new THREE.PlaneGeometry(S, H)), mats.voile);
+          voile.position.set(a.x + (s.o === "h" ? S / 2 : 0), sols[k] + H / 2, a.z + (s.o === "v" ? S / 2 : 0));
+          voile.rotation.y = s.o === "h" ? 0 : Math.PI / 2;
+          voile.renderOrder = teinte == null ? 7 : 60;
+          groupe.add(voile);
+        });
+        for (let k = 0; k <= segments.length; k++) {
+          const [i, j] = m.o === "h" ? [m.i, m.j + k] : [m.i + k, m.j];
+          const p = coin(i, j);
+          const y = Math.max(sols[Math.max(0, k - 1)], sols[Math.min(k, sols.length - 1)]);
+          const pilier = new THREE.Mesh(kaykitGeometry("mur-pilier-v1", () => new THREE.CylinderGeometry(.055, .07, HP + .1, 12)), mats.pilier);
+          pilier.position.set(p.x, y + (HP + .1) / 2, p.z);
+          pilier.renderOrder = teinte == null ? 0 : 61;
+          pilier.castShadow = teinte == null;
+          groupe.add(pilier);
+          const etoile = new THREE.Sprite(mats.etoile);
+          etoile.position.set(p.x, y + HP + .16, p.z);
+          etoile.scale.set(.3, .3, 1);
+          etoile.renderOrder = 8;
+          groupe.add(etoile);
+        }
+        return groupe;
+      }
+      /** Les murs de la partie et leurs aperçus : reconstruits à chaque
+       *  synchronisation, avec les autres éléments éphémères. */
+      function renderKayKitMurs() {
+        if (!kaykit3D || !mursActifs()) return;
+        const groupe = kaykit3D.dynamicGroup;
+        state.murs.forEach(m => groupe.add(kaykitConstruireMur(m)));
+      }
+      /** Poussée de mur survolée : le mur à sa place d'arrivée, en or, et la
+       *  file qu'il balaie (calque des aperçus, refait à chaque survol). */
+      function kaykitApercuPousseeMur(option, groupe) {
+        const apercu = option?.apercuMur;
+        if (!apercu || !groupe) return;
+        if (apercu.apres) groupe.add(kaykitConstruireMur(apercu.apres, 0xffc23a));
+        (apercu.gardiens || []).forEach(g => {
+          const vrai = characterById(g.id);
+          if (!vrai || (vrai.r === g.r && vrai.c === g.c)) return;
+          const fantome = makeKayKitPieceGhost(g.r, g.c, { playerId: vrai.player, surfaceY: kaykitCellSurfaceY(g.r, g.c) });
+          if (fantome) { kaykitFantomeFranc(fantome, 0xffc23a, .7); groupe.add(fantome); }
+        });
+      }
+      /** Magie : chaque position possible du mur, de la couleur de son bouton. */
+      function renderKayKitMursMagie(options, courant) {
+        if (!mursActifs()) return;
+        options.forEach(({ steps, planMurs }) => {
+          const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
+          if (!style || !planMurs?.murs?.length) return;
+          if (courant && steps !== courant) return;
+          planMurs.murs.forEach(({ apres }) => kaykit3D.dynamicGroup.add(kaykitConstruireMur(apres, style.franc)));
+        });
+      }
+
       function renderKayKitMagicRotationGhosts(island) {
         if (!island || typeof magicRotationOptions !== "function") return;
         const courant = ((state.magicPreviewSteps || 0) % 4 + 4) % 4;
@@ -12560,6 +12785,7 @@
         // verres superposés sur la même case.
         const horsPivot = cells => cells.filter(([r, c]) => !pivot || r !== pivot[0] || c !== pivot[1]);
 
+        renderKayKitMursMagie(options, courant);
         options.forEach(({ steps, rotation }) => {
           const style = KAYKIT_MAGIC_OPTION_STYLE[steps];
           if (!style) return;
@@ -12572,7 +12798,7 @@
             const cases = horsPivot(rotation.absCells);
             if (cases.length) {
               const bloc = makeKayKitIslandBlock({ id: `magic-option-${steps}`, owner: null, cells: cases }, { fantome: true });
-              kaykitFantomeTexture(bloc, style.teinte, estompe ? .14 : .72, .72);
+              kaykitFantomeFranc(bloc, style.franc, estompe ? .14 : .6);
               bloc.position.y = .055;
               group.add(bloc);
             }
@@ -12584,7 +12810,7 @@
           const poser = objet => {
             if (!objet) return;
             objet.scale.multiplyScalar(echelle);
-            kaykitFantomeTexture(objet, style.teinte, opacite, .35);
+            kaykitFantomeFranc(objet, style.franc, opacite);
             group.add(objet);
           };
           (rotation.characterMoves || []).forEach(move => {
@@ -12991,6 +13217,10 @@
           id: String(character.id),
           assetKey,
           playerId,
+          /* Couleur propre au gardien (énigmes « chacun sa case ») : lue par
+             js/character-materials-v1.js, qui a le dernier mot sur les
+             matériaux des personnages. */
+          teinte: character.teinte ?? null,
           wrapper,
           model,
           animator,
@@ -14187,6 +14417,9 @@
 
           if (visual.plaque) visual.plaque.rotation.y = -visual.wrapper.rotation.y;
 
+          /* --- 1 bis. Pose assise (trône des Balises, rotation.js) ---- */
+          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual));
+
           /* --- 2. Orientation --------------------------------------- */
           // Une rotation progressive, jamais instantanée : c'est l'anticipation
           // qui rend un déplacement lisible. ~10 rad/s couvre un demi-tour en
@@ -14319,8 +14552,8 @@
               // Modèle animé : plus aucun balancement procédural. L'animation
               // squelette suffit, et la superposer produisait un flottement
               // parasite.
-              model.position.y = visual.baseModelY + settleOffset;
-              model.position.z = recoilOffset;
+              model.position.y = visual.baseModelY + settleOffset + (visual.assis?.hauteur || 0);
+              model.position.z = recoilOffset + (visual.assis?.avance || 0);
               model.scale.setScalar(visual.baseModelScale * spawnScale);
             } else {
               // Modèle de secours sans squelette : on conserve l'animation
@@ -14409,6 +14642,40 @@
       // hexagonale ne se lisait pas comme un élément naturel posé sur une île, mais
       // comme une tuile étrangère collée sur la case. Restent trois décors végétaux et
       // minéraux, tous cohérents avec l'univers de l'archipel.
+      /* POSE ASSISE d'un gardien au repos, fournie par un mode (trône des
+         Balises, rotation.js) : { facing, hauteur, avance } ou null. La pose
+         Sit_Chair_Pose est figée : rien ne tourne en continu. Le gardien se
+         relève de lui-même dès qu'il est occupé ou sélectionné. */
+      let kaykitPoseAssise = () => null;
+      function kaykitAppliquerPoseAssise(visual, pose) {
+        const anim = visual.animator;
+        const clip = pose ? anim?.clipIndex?.get("Sit_Chair_Pose") : null;
+        if (pose && clip) {
+          if (anim.state !== "assis") {
+            const action = anim._action(clip);
+            action.reset();
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+            if (anim.current && anim.current !== action) anim.current.crossFadeTo(action, .2, false);
+            action.play();
+            anim.current = action;
+            anim.currentClipName = clip.name;
+            anim.state = "assis";
+          }
+          visual.assis = pose;
+          visual.facingTarget = pose.facing;
+          return;
+        }
+        if (!visual.assis && anim?.state !== "assis") return;
+        visual.assis = null;
+        // Encore figé dans la pose (plus sur un trône) : retour au repos.
+        if (anim?.state === "assis") anim.toIdle({ selected: visual.selected, carrying: visual.carrying, fade: .2 });
+      }
+
+      /* Case occupée par une pièce d'un mode (balise…) : pas de décor dessus.
+         Les modes la redéfinissent (rotation.js). */
+      let kaykitCaseReservee = () => false;
+
       const KAYKIT_FOREST_ASSETS = [
         { key: "forestTree", width: .34, height: .70, scale: .90 },
         { key: "forestRock", width: .30, height: .24, scale: .92 },
@@ -14425,7 +14692,7 @@
         const objects = [];
         const cells = (island.cells || []).filter(([r, c]) => {
           const cellKey = key(r, c);
-          return !occupied.has(cellKey) && !villageAt(r, c) && !isSanctuary(r, c);
+          return !occupied.has(cellKey) && !villageAt(r, c) && !isSanctuary(r, c) && !kaykitCaseReservee(r, c);
         });
         if (cells.length < 3) return objects;
         cells.sort((a, b) => kaykitHash("forest-cell", island.id, b[0], b[1]) - kaykitHash("forest-cell", island.id, a[0], a[1]));
@@ -14745,6 +15012,7 @@
             renderKayKitPlacementPreview();
             renderKayKitMagicRotationPreview();
             renderKayKitMagicHoverPreview();
+            renderKayKitMurs();
             kaykit3D.transientDynamicChildren.push(...dynamic.children.slice(before));
           }
 
@@ -15183,6 +15451,7 @@
           return;
         }
         kaykitCameraSelonAction(frameTime);
+        kaykitPlacerBarreMagie();
         if (kaykitImageSautee(frameTime)) return;
         // Retouches de couleurs de js/ether-game-theme.js : appliquées ici, au
         // même moment qu'avant (avant toute mise à jour de l'image), mais
@@ -17114,6 +17383,7 @@
         state.magicPreviewSteps = 0;
         state.magicPreviewCells = null;
         state.magicPreviewValid = false;
+        state.magicMode = "ile";
       }
       function isSameCell(a, b) {
         return !!a && !!b && a[0] === b[0] && a[1] === b[1];
@@ -17146,6 +17416,9 @@
           }
         }
 
+        // Murs étoilés (murs.js) : un mur coupe le passage. Filtré ici pour
+        // que tous les parcours (jeu, IA, aperçus) le respectent.
+        if (mursActifs()) return edges.filter(e => !passageBloque(r, c, e.r, e.c));
         return edges;
       }
 
@@ -17622,6 +17895,7 @@
         return Object.values(valeur).some(v => contientBalisage(v, profondeur + 1));
       }
 
+      const GRID_MAX_ONLINE = 32;
       function validerEtatEnLigne(incoming) {
         if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) return false;
         if (!Array.isArray(incoming.players) || incoming.players.length !== 2) return false;
@@ -17640,6 +17914,12 @@
           if (!PLAYER_ICONS.includes(joueur.icon)) joueur.icon = PLAYER_ICONS[i];
           if (joueur.heros != null && !heros.includes(joueur.heros)) delete joueur.heros;
           if (joueur.titre != null && !titres.includes(joueur.titre)) delete joueur.titre;
+        }
+        if (incoming.murs != null) {
+          if (!Array.isArray(incoming.murs) || incoming.murs.length > 12) return false;
+          const coin = v => Number.isInteger(v) && v >= 0 && v <= GRID_MAX_ONLINE;
+          if (!incoming.murs.every(m => m && (m.o === "h" || m.o === "v") && coin(m.i) && coin(m.j)
+            && Number.isInteger(m.n) && m.n >= 1 && m.n <= 3)) return false;
         }
         return !contientBalisage(incoming);
       }
@@ -18433,7 +18713,7 @@
             document.getElementById("customMirrorSelect"),
             els.customDeckMoveSelect, els.customDeckPushSelect, els.customDeckMagicSelect,
             els.customDrawCountSelect, els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox,
-            document.getElementById("customImmediateScoreCheckbox")]
+            document.getElementById("customImmediateScoreCheckbox"), document.getElementById("customWallsCheckbox")]
             .forEach(champ => { if (champ) champ.disabled = waiting; });
           majResumePaquetPersonnalise();
         } else {
@@ -18498,6 +18778,7 @@
         if (els.customPaidIslandsCheckbox?.checked) regles.ilesPayantes = true;
         if (els.customScorerLeavesCheckbox?.checked) regles.gardienRetireAuPoint = true;
         if (document.getElementById("customImmediateScoreCheckbox")?.checked) regles.validationImmediate = true;
+        if (document.getElementById("customWallsCheckbox")?.checked) regles.murs = true;
         if (els.customGuardianPlacementSelect?.value === "libre") regles.placementGardiensLibre = true;
         return regles;
       }
@@ -18505,7 +18786,8 @@
       /* Éléments du mode Rotation choisis dans le Personnalisé : une
          demande comme celle de l'écran Rotation, ou null. */
       function lireRotationPersonnalisee() {
-        const but = document.getElementById("customRotationButSelect")?.value === "balises" ? "balises" : "couronnes";
+        const choisi = document.getElementById("customRotationButSelect")?.value;
+        const but = ["balises", "effondrement"].includes(choisi) ? choisi : "couronnes";
         const couches = [];
         if (document.getElementById("customDeckbuildingCheckbox")?.checked) couches.push("deckbuilding");
         const especes = document.getElementById("customOeufsLoupCheckbox")?.checked ? ["loup"] : [];
@@ -20920,9 +21202,34 @@
               pusher: pousseur, r: action.r, c: action.c, count: action.force
             }, token);
           }
+          case "POUSSER_MUR": {
+            // Murs étoilés (murs.js).
+            const applique = appliquerPousseeMurCore(action.murId, action.pusherId, action.force);
+            if (!applique) return false;
+            benchJournaliser({ type: "POUSSER_MUR", mur: action.murId, force: applique.force });
+            playSfx("push");
+            showToast(`${nomJoueurIA()} pousse un mur étoilé.`);
+            renderAll();
+            scheduleKayKitSync();
+            await sleep(720);
+            return true;
+          }
           case "MAGIC": {
             const ile = state.islands.find(i => i.id === action.islandId);
             if (!ile) return false;
+            if (action.mode === "mur" || action.mode === "deux") {
+              // Magie sur une île qui porte un mur : le mur seul, ou les deux.
+              const applique = appliquerActionNoyau(action);
+              if (!applique) return false;
+              benchJournaliser({ type: "MAGIC", mode: action.mode, ile: action.islandId });
+              playSfx("magic");
+              showToast(action.mode === "mur" ? `${nomJoueurIA()} fait tourner un mur.` : `${nomJoueurIA()} fait tourner une île et son mur.`);
+              if (kaykit3D) kaykit3D.lastStateSignature = "";
+              renderAll();
+              scheduleKayKitSync();
+              await sleep(820);
+              return true;
+            }
             return await aiPerformMagic({
               island: ile, pivot: action.pivot,
               steps: action.direction === -1 ? 3 : action.turns
@@ -21244,6 +21551,9 @@
 
       function beginTurn() {
         const p = currentPlayer();
+        // Murs étoilés (murs.js) : posés une fois, au premier tour, quand les
+        // îles de départ sont en place.
+        if (state.murs === undefined && !ilyosSimulationActive) installerMursDeDepart();
         /* Toute la RÈGLE de l'ouverture du tour est dans le moteur
            (applyTurnStartCore, regles.js), la même que pour le self-play et
            ILYOS_REGLES : gardiens d'équipe et minion confiés, couronnes
@@ -21401,7 +21711,9 @@
           aiDifficulty: state.aiDifficulty ?? null,
           rules: state.rules ? { ...state.rules } : null,
           // Mode Rotation (rotation.js) : but et balises de la partie.
-          rotation: state.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null
+          rotation: state.rotation ? JSON.parse(JSON.stringify(state.rotation)) : null,
+          // Murs étoilés (murs.js).
+          murs: (state.murs || []).map(m => ({ ...m }))
         });
       }
 
@@ -21450,6 +21762,7 @@
         if (Array.isArray(snap.journalCoups)) state.journalCoups = [...snap.journalCoups];
         if (Array.isArray(snap.journalTourPrecedent)) state.journalTourPrecedent = [...snap.journalTourPrecedent];
         if (snap.rotation !== undefined) state.rotation = snap.rotation;
+        state.murs = Array.isArray(snap.murs) ? snap.murs.map(m => ({ ...m })) : [];
         state.phase = snap.phase;
         state.islandPlacedThisTurn = !!snap.islandPlacedThisTurn;
         state.centerCrownTakenThisTurn = !!snap.centerCrownTakenThisTurn;
@@ -23480,12 +23793,16 @@
         const islandStatusEl = document.getElementById("hudV2IslandStatus");
         const islandDrawer = document.getElementById("hudV2IslandDrawer");
         if (islandStatusEl) {
-          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn);
+          /* Énigme à formes comptées : le bouton dit combien d'îles il reste,
+             et s'efface quand il n'y en a plus (puzzle.js). */
+          const ilesEnigme = state.puzzle ? puzzleIlesRestantes() : null;
+          islandStatusEl.classList.toggle("hidden", !!state.islandPlacedThisTurn || ilesEnigme === 0);
           islandStatusEl.innerHTML = `<span class="hud-v2-pill-icon" aria-hidden="true">${HUD_V2_ICONS.ISLAND}</span><span class="hud-v2-pill-word">ÎLE</span>`;
           /* Îles payantes : la pose est facultative et coûte 2 cartes. Le HUD
              organique lit ce sous-titre (js/hud-organique-v2.js). */
           const payante = ilesPayantes() && !state.draft;
-          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES` : "OBLIGATOIRE";
+          islandStatusEl.dataset.sousTitre = payante ? `${COUT_ILE_PAYANTE} CARTES`
+            : (ilesEnigme != null ? `×${ilesEnigme}` : "OBLIGATOIRE");
           islandStatusEl.disabled = payante && !peutPayerIle(active);
           islandStatusEl.title = islandStatusEl.disabled
             ? `Il faut ${COUT_ILE_PAYANTE} cartes pour poser une île.`
@@ -23540,6 +23857,18 @@
             const crans = Number(btn.dataset.magieCrans);
             btn.disabled = pivotChoisi && !legales.includes(crans);
             btn.classList.toggle("ov2-magie-actif", pivotChoisi && crans === montree);
+          });
+        }
+        const magicModes = document.getElementById("hudV2MagicModes");
+        if (magicModes) {
+          const rotatingMurs = state.phase === "ACTION" && state.selectedActionType === "MAGIC";
+          const ileChoisie = rotatingMurs ? state.islands.find(is => is.id === state.selectedIslandId) : null;
+          const porte = !!ileChoisie && mursPortesParIle(ileChoisie).length > 0;
+          magicModes.classList.toggle("hidden", !porte);
+          const actif = porte ? modeMagie() : "ile";
+          magicModes.querySelectorAll("[data-magie-mode]").forEach(btn => {
+            btn.classList.toggle("ov2-magie-actif", btn.dataset.magieMode === actif);
+            btn.setAttribute("aria-pressed", String(btn.dataset.magieMode === actif));
           });
         }
         const magicDissolveBtn = document.getElementById("hudV2MagicDissolve");
@@ -25260,7 +25589,10 @@
               return !!(other ? other.id !== char.id : occupantPoussable(r, c));
             });
           });
-          if (!target) return "Aucun adversaire ou objet adjacent à pousser.";
+          // Murs étoilés (murs.js) : un mur que touche un de mes gardiens.
+          const mur = !target && mursActifs() && state.characters.some(char =>
+            char.player === state.currentPlayer && mursDe().some(m => sensPousseeMur(m, char.r, char.c)));
+          if (!target && !mur) return "Aucun adversaire ou objet adjacent à pousser.";
         }
         if (type === "MAGIC" && !(state.islands || []).length) return "Aucune île compatible avec la magie.";
         return "";
@@ -25637,6 +25969,9 @@
           });
         });
 
+        // Murs étoilés (murs.js) : un mur que borde ou touche un de mes gardiens.
+        optionsPousseeMurInterface({ pusherId, targetId }).forEach(option => options.push(option));
+
         const unique = new Map();
         options.forEach(option => {
           if (!unique.has(option.id)) unique.set(option.id, option);
@@ -25690,6 +26025,7 @@
       function executeUnifiedPushOption(optionId) {
         const option = state?.pushOptions?.find(item => item.id === optionId);
         if (!option) return false;
+        if (option.targetType === "mur") return executerPousseeMur(option);
 
         const pusher = characterById(option.pusherId);
         const target = option.targetType === "crown"
@@ -26529,6 +26865,14 @@
         const direction = steps === 3 ? -1 : 1;
         const turns = steps === 3 ? 1 : steps;
 
+        // Le mur seul tourne : l'île reste où elle est.
+        if (modeMagie() === "mur") {
+          const plan = planMagieMurs(island, state.selectedMagicPivot, steps, "mur");
+          state.magicPreviewCells = island.cells.map(([r, c]) => [r, c]);
+          state.magicPreviewValid = !!plan?.valid;
+          return;
+        }
+
         const rotation = calculateIslandRotationAroundPivot(
           island,
           state.selectedMagicPivot[0],
@@ -26536,6 +26880,8 @@
           direction,
           turns
         );
+        if (rotation.valid && modeMagie() === "deux"
+          && !planMagieMurs(island, state.selectedMagicPivot, steps, "deux")?.valid) rotation.valid = false;
 
         if (rotation.valid) {
           state.magicPreviewCells = rotation.absCells.map(([r, c]) => [r, c]);
@@ -26578,13 +26924,37 @@
           turns
         );
 
+        const mode = modeMagie();
+        const planMurs = mode === "ile" ? null : planMagieMurs(island, state.selectedMagicPivot, steps, mode);
+        if (planMurs && !planMurs.valid) {
+          showToast("Rotation impossible : le mur sortirait du plateau, croiserait un autre mur ou ne toucherait plus d’île.");
+          return;
+        }
+        if (mode === "mur") {
+          const noteMur = { type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns, mode };
+          if (reglesRefuserAuJoueur(noteMur)) return;
+          saveUndoSnapshot();
+          playSfx("magic");
+          const appliqueMur = applyMagicRotationCore(island.id, null, planMurs);
+          if (!appliqueMur) { discardLastUndoSnapshot(); return; }
+          reglesNoter(noteMur);
+          animateBoardMagic();
+          showToast(`Mur tourné de ${steps * 90}° pour 1 magie.`);
+          resetKayKitPointerFeedback();
+          renderAll();
+          scheduleKayKitSync();
+          showActionConsumption("MAGIC", appliqueMur.cout ?? 1, availableActionCount("MAGIC"));
+          return;
+        }
+
         if (!rotation.valid) {
           showToast(`Rotation impossible : ${rotation.reason}`);
           return;
         }
 
         if (reglesRefuserAuJoueur({
-          type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns
+          type: "MAGIC", islandId: island.id, pivot: [...state.selectedMagicPivot], direction, turns,
+          mode: planMurs ? mode : undefined
         })) return;
         saveUndoSnapshot();
         const [pivotR, pivotC] = state.selectedMagicPivot;
@@ -26614,8 +26984,8 @@
            fait encore tourner les anciens blocs. On gèle ce calque le temps de
            l'animation — même principe que pour les gardiens, dont le visuel
            n'est pas recalé tant qu'un déplacement est en cours. */
-        const applique = applyMagicRotationCore(island.id, rotation);
-        if (applique) reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [pivotR, pivotC], direction, turns });
+        const applique = applyMagicRotationCore(island.id, rotation, planMurs);
+        if (applique) reglesNoter({ type: "MAGIC", islandId: island.id, pivot: [pivotR, pivotC], direction, turns, mode: planMurs ? mode : undefined });
         kaykitGelerCalqueIles(true);
 
         animateIslandLiftRotation(island.id, steps * 90, () => {
@@ -26703,6 +27073,17 @@
         if (!island) return [];
         const [pr, pc] = state.selectedMagicPivot;
         const options = [];
+        // Murs (murs.js) : le mur seul, ou l'île avec ses murs.
+        const mode = modeMagie();
+        if (mode !== "ile") {
+          [1, 2, 3].forEach(steps => {
+            const plan = planMagieMurs(island, state.selectedMagicPivot, steps, mode);
+            if (!plan?.valid) return;
+            const rotation = plan.rotation || { valid: true, absCells: [], characterMoves: [], artifactMoves: [] };
+            options.push({ steps, rotation, planMurs: plan });
+          });
+          return options;
+        }
         [1, 2, 3].forEach(steps => {
           const direction = steps === 3 ? -1 : 1;
           const turns = steps === 3 ? 1 : steps;
@@ -27609,6 +27990,8 @@
           kicker: defaite ? `${nomCamp} PREND ILYOS` : `${nomCamp} · SOUVERAIN D’ILYOS`,
           texte: texte || (butBalises()
             ? `${defaite ? `${player.name} : ` : ""}${player.score} points de balises en ${state.turn} tours.`
+            : butEffondrement()
+            ? `${defaite ? `${player.name} : ` : ""}${player.score} gardiens adverses tombés en ${state.turn} tours.`
             : defaite ? `${player.name} a validé trois couronnes en ${state.turn} tours.`
               : `Trois couronnes validées en ${state.turn} tours.`)
         });
@@ -28058,6 +28441,7 @@
         state.smartHoverPath = [];
         state.pendingDirectMoveTarget = null;
         state.reachable = new Set();
+        state.magicMode = "ile";
         state.phase = "ACTION_SELECT";
         return depense;
       }
@@ -28130,9 +28514,17 @@
        *  d'animation. Elle est désormais immédiate ; c'est l'appelant qui doit
        *  empêcher la scène de reconstruire le calque d'îles pendant que
        *  l'animation raconte encore la rotation (voir islandRotationEnCours). */
-      function applyMagicRotationCore(islandId, rotation) {
+      function applyMagicRotationCore(islandId, rotation, planMurs = null) {
         const ile = state.islands.find(is => is.id === islandId);
+        // Murs (murs.js) : « mur » seul — l'île ne bouge pas.
+        if (ile && planMurs?.mode === "mur") {
+          if (!planMurs.valid) return null;
+          const tombes = appliquerMursDuPlan(planMurs);
+          const depenseMur = consumeSelectedActionCore("MAGIC", 1);
+          return { type: "MAGIC", islandId, mode: "mur", cellulesAvant: ile.cells.map(([r, c]) => [r, c]), cout: depenseMur, mursTombes: tombes };
+        }
         if (!ile || !rotation?.valid) return null;
+        if (planMurs && !planMurs.valid) return null;
 
         const avant = ile.cells.map(([r, c]) => [r, c]);
         ile.cells = rotation.absCells;
@@ -28148,8 +28540,11 @@
           deplacement.artifact.c = deplacement.c;
         }
 
+        // L'île et ses murs (« les deux »), puis les murs qui ne bordent plus
+        // aucune île tombent — même quand l'île tourne seule.
+        const mursTombes = appliquerMursDuPlan(planMurs);
         const depense = consumeSelectedActionCore("MAGIC", 1);
-        return { type: "MAGIC", islandId, cellulesAvant: avant, cout: depense };
+        return { type: "MAGIC", islandId, mode: planMurs?.mode || "ile", cellulesAvant: avant, cout: depense, mursTombes };
       }
 
       /** Pose d'île — macro-action COMPLÈTE.
@@ -28293,6 +28688,7 @@
             active: !!a.active,
             porteur: a.carrierId ?? null
           })).sort((a, b) => String(a.id).localeCompare(String(b.id))),
+          murs: (source.murs || []).map(m => `${m.o}${m.i},${m.j},${m.n}`).sort(),
           iles: (source.islands || [])
             .map(i => ({
               id: i.id,
@@ -28404,7 +28800,8 @@
           selectedIslandId: source.selectedIslandId,
           pushForceChoice: source.pushForceChoice || 1,
           // But de la Rotation (balises…) : l'évaluation de l'IA le lit.
-          rotation: source.rotation || null
+          rotation: source.rotation || null,
+          murs: source.murs || []
         });
         // Champs attendus par les fonctions de règles, reconstruits vides : ils
         // ne portent aucune information de jeu.
@@ -28453,11 +28850,17 @@
           case "MAGIC": {
             const ile = state.islands.find(is => is.id === action.islandId);
             if (!ile) return null;
+            if (action.mode === "mur" || action.mode === "deux") {
+              const steps = action.direction === -1 ? 3 : action.turns;
+              const plan = planMagieMurs(ile, action.pivot, steps, action.mode);
+              return plan ? applyMagicRotationCore(action.islandId, plan.rotation, plan) : null;
+            }
             const rotation = calculateIslandRotationAroundPivot(
               ile, action.pivot[0], action.pivot[1], action.direction, action.turns
             );
             return applyMagicRotationCore(action.islandId, rotation);
           }
+          case "POUSSER_MUR": return appliquerPousseeMurCore(action.murId, action.pusherId, action.force);
           case "POSE": return applyIslandPlacementCore(
             action.shapeKey, action.cells, action.owner, action.relCells, action.anchor,
             action.spawn || null
@@ -28515,6 +28918,8 @@
           const occupant = occupantPoussable(r, c);
           if (!occupant) break;
           bloc.push({ kind: occupant.kind, ref: occupant.ref, r, c });
+          // Un mur sépare la file : ce qui est derrière n'est pas poussé.
+          if (passageBloque(r, c, r + dr, c + dc)) break;
           r += dr;
           c += dc;
         }
@@ -28523,7 +28928,10 @@
 
       /** Calcule, sans rien modifier, ce que produirait la poussée.
        *  Renvoie null si rien ne peut bouger. */
-      function resoudrePousseeBloc(startR, startC, dr, dc, force) {
+      function resoudrePousseeBloc(startR, startC, dr, dc, force, { depuisMur = null } = {}) {
+        // Murs : on ne pousse pas à travers un mur (sauf quand c'est le mur
+        // lui-même qui balaie la file, voir murs.js).
+        if (depuisMur === null && passageBloque(startR - dr, startC - dc, startR, startC)) return null;
         const bloc = collectPushBlock(startR, startC, dr, dc);
         if (!bloc.length) return null;
 
@@ -28536,6 +28944,7 @@
         for (let pas = 1; pas <= demande; pas++) {
           const r = tete.r + dr * pas;
           const c = tete.c + dc * pas;
+          if (passageBloque(r - dr, c - dc, r, c)) { distance = pas - 1; break; }
           if (!inside(r, c)) break;
           if (occupantPoussable(r, c)) { distance = pas - 1; break; }
         }
@@ -28561,7 +28970,8 @@
 
           if (m.kind === "crown") {
             let d = 0;
-            for (let pas = plafond; pas >= 1; pas--) {
+            const murCouronne = pasAvantMur(m.r, m.c, dr, dc, plafond);
+            for (let pas = Math.min(plafond, murCouronne); pas >= 1; pas--) {
               const r = m.r + dr * pas;
               const c = m.c + dc * pas;
               if (!inside(r, c) || !isLand(r, c) || occupees.has(key(r, c))) continue;
@@ -28579,7 +28989,7 @@
           if (m.kind !== "char") {
             // Pièce flottante : elle survole le vide et s'arrête au bord.
             let d = 0;
-            for (let pas = plafond; pas >= 1; pas--) {
+            for (let pas = Math.min(plafond, pasAvantMur(m.r, m.c, dr, dc, plafond)); pas >= 1; pas--) {
               const r = m.r + dr * pas;
               const c = m.c + dc * pas;
               if (!inside(r, c) || occupees.has(key(r, c))) continue;
@@ -28600,6 +29010,8 @@
           for (let pas = 1; pas <= plafond; pas++) {
             const r = m.r + dr * pas;
             const c = m.c + dc * pas;
+            // Garde-fou : un mur arrête le gardien avant le vide.
+            if (passageBloque(r - dr, c - dc, r, c)) { d = pas - 1; break; }
             if (!inside(r, c) || !isLand(r, c)) { vide = [r, c]; d = pas - 1; break; }
           }
           const to = [m.r + dr * d, m.c + dc * d];
@@ -28610,6 +29022,7 @@
           }
           occupees.add(key(to[0], to[1]));
           mouvements.push({ kind: "char", id: m.ref.id, from: [m.r, m.c], to, chute: false });
+          plafond = Math.min(plafond, d);
         }
 
         if (!mouvements.length) return null;
@@ -28622,6 +29035,15 @@
           chutes: mouvements.filter(mv => mv.chute).length,
           deplaces: mouvements.filter(mv => !mv.chute).length
         };
+      }
+
+      /** Nombre de pas possibles avant le premier mur (plafonné). */
+      function pasAvantMur(r, c, dr, dc, plafond) {
+        if (!mursActifs()) return plafond;
+        for (let pas = 1; pas <= plafond; pas++) {
+          if (passageBloque(r + dr * (pas - 1), c + dc * (pas - 1), r + dr * pas, c + dc * pas)) return pas - 1;
+        }
+        return plafond;
       }
 
       /** Applique un plan produit par resoudrePousseeBloc(). */
@@ -28969,6 +29391,513 @@
         return meilleure;
       }
 
+      /* ==================================================================
+         MURS ÉTOILÉS (Taekun, novembre 2026)
+
+         Un mur se pose ENTRE deux cases, sur les lignes de la grille, et
+         mesure de 1 à 3 cases. Il est neutre. Option de partie
+         `rules.murs` (Personnalisé) ou `?murs=1` dans l'adresse.
+
+         - Il bloque le déplacement (une diagonale passe seulement si l'un
+           des deux chemins en L est libre), la poussée et donc la couronne
+           lancée. On ne s'arrête jamais « dessus » : il n'occupe aucune case.
+         - Au bord du vide il sert de garde-fou : la file poussée s'arrête
+           contre lui au lieu de tomber.
+         - POUSSER (action « POUSSER_MUR », une carte Pousser par cran) :
+           · de face, depuis une case qu'il borde : il glisse d'une ligne par
+             cran et balaie la file de chaque case qu'il traverse ;
+           · dans le sens de la longueur, depuis une case qui touche son
+             extrémité : il glisse le long de sa ligne.
+           Un autre mur l'arrête ; il ne traverse jamais un autre mur.
+         - MAGIE : sur une île qui porte un mur (un mur qui borde une de ses
+           cases), le joueur choisit de tourner l'île, le mur, ou les deux.
+           Le mur seul tourne autour de son extrémité la plus proche du pivot
+           choisi (un coin de case) ; « les deux » tournent ensemble autour
+           du pivot de l'île.
+         - Un mur peut dépasser au-dessus du vide ; il tombe seulement quand
+           il ne borde plus aucune case d'île.
+
+         Coordonnées : un mur part du COIN (i, j) — ligne de coin i (0..GRID),
+         colonne de coin j (0..GRID). o = "h" : il suit la ligne i, de j à
+         j + n, entre les cases (i-1, j+k) et (i, j+k). o = "v" : il suit la
+         colonne j, de i à i + n, entre les cases (i+k, j-1) et (i+k, j).
+      ================================================================== */
+
+      function mursDe(source = state) { return source?.murs || []; }
+      function mursActifs(source = state) { return !!(source?.murs && source.murs.length); }
+      function murParId(id, source = state) { return mursDe(source).find(m => String(m.id) === String(id)) || null; }
+
+      function murExtremites(m) {
+        return m.o === "h" ? [[m.i, m.j], [m.i, m.j + m.n]] : [[m.i, m.j], [m.i + m.n, m.j]];
+      }
+      function murDepuisExtremites(a, b, id) {
+        if (a[0] === b[0]) return { id, o: "h", i: a[0], j: Math.min(a[1], b[1]), n: Math.abs(b[1] - a[1]) };
+        return { id, o: "v", i: Math.min(a[0], b[0]), j: a[1], n: Math.abs(b[0] - a[0]) };
+      }
+      /** Segments unitaires { o, i, j } : « h » de (i, j) à (i, j+1), « v » de (i, j) à (i+1, j). */
+      function murSegments(m) {
+        const segments = [];
+        for (let k = 0; k < m.n; k++) {
+          segments.push(m.o === "h" ? { o: "h", i: m.i, j: m.j + k } : { o: "v", i: m.i + k, j: m.j });
+        }
+        return segments;
+      }
+      function segmentCle(s) { return `${s.o}${s.i},${s.j}`; }
+      function segmentsDesMurs(sauf = null) {
+        const cles = new Set();
+        mursDe().forEach(m => {
+          if (sauf !== null && String(m.id) === String(sauf)) return;
+          murSegments(m).forEach(s => cles.add(segmentCle(s)));
+        });
+        return cles;
+      }
+      /** Le segment qui sépare deux cases orthogonalement voisines. */
+      function segmentEntre(r1, c1, r2, c2) {
+        if (r1 === r2 && Math.abs(c1 - c2) === 1) return { o: "v", i: r1, j: Math.max(c1, c2) };
+        if (c1 === c2 && Math.abs(r1 - r2) === 1) return { o: "h", i: Math.max(r1, r2), j: c1 };
+        return null;
+      }
+      function murSurArete(r1, c1, r2, c2) {
+        if (!mursActifs()) return null;
+        const s = segmentEntre(r1, c1, r2, c2);
+        if (!s) return null;
+        const cle = segmentCle(s);
+        return mursDe().find(m => murSegments(m).some(x => segmentCle(x) === cle)) || null;
+      }
+      /** Passage d'une case à sa voisine (orthogonale ou diagonale). Une
+       *  diagonale passe si l'un des deux chemins en L est libre : on contourne
+       *  le bout d'un mur, on ne traverse pas un mur qui passe par le coin. */
+      function passageBloque(r1, c1, r2, c2) {
+        if (!mursActifs()) return false;
+        const dr = r2 - r1, dc = c2 - c1;
+        if (Math.abs(dr) + Math.abs(dc) === 1) return !!murSurArete(r1, c1, r2, c2);
+        if (Math.abs(dr) !== 1 || Math.abs(dc) !== 1) return false;
+        const parColonne = !murSurArete(r1, c1, r1, c2) && !murSurArete(r1, c2, r2, c2);
+        const parLigne = !murSurArete(r1, c1, r2, c1) && !murSurArete(r2, c1, r2, c2);
+        return !parColonne && !parLigne;
+      }
+
+      /** Cases bordées par le mur, des deux côtés, sur le plateau. */
+      function murCasesBordees(m) {
+        const cases = [];
+        murSegments(m).forEach(s => {
+          const deux = s.o === "h" ? [[s.i - 1, s.j], [s.i, s.j]] : [[s.i, s.j - 1], [s.i, s.j]];
+          deux.forEach(([r, c]) => { if (inside(r, c)) cases.push([r, c]); });
+        });
+        return cases;
+      }
+      function murToucheIle(m) { return murCasesBordees(m).some(([r, c]) => isLand(r, c)); }
+      function murPorteParIle(m, ile) {
+        if (!ile) return false;
+        const cles = new Set(ile.cells.map(([r, c]) => key(r, c)));
+        return murCasesBordees(m).some(([r, c]) => cles.has(key(r, c)));
+      }
+      function mursPortesParIle(ile) { return ile ? mursDe().filter(m => murPorteParIle(m, ile)) : []; }
+
+      /** Le mur tient-il ici : sur le plateau et sans chevaucher un autre mur
+       *  ni être traversé par lui (un autre mur ne touche ses coins
+       *  intérieurs que s'il le croise). */
+      function murPlacementLibre(m) {
+        const [a, b] = murExtremites(m);
+        const dans = ([i, j]) => i >= 0 && j >= 0 && i <= GRID && j <= GRID;
+        if (m.n < 1 || !dans(a) || !dans(b)) return false;
+        const autres = segmentsDesMurs(m.id);
+        if (murSegments(m).some(s => autres.has(segmentCle(s)))) return false;
+        for (let k = 1; k < m.n; k++) {
+          const [ci, cj] = m.o === "h" ? [m.i, m.j + k] : [m.i + k, m.j];
+          const croise = m.o === "h"
+            ? autres.has(segmentCle({ o: "v", i: ci - 1, j: cj })) || autres.has(segmentCle({ o: "v", i: ci, j: cj }))
+            : autres.has(segmentCle({ o: "h", i: ci, j: cj - 1 })) || autres.has(segmentCle({ o: "h", i: ci, j: cj }));
+          if (croise) return false;
+        }
+        return true;
+      }
+
+      /** Les murs qui ne bordent plus aucune île tombent. */
+      function faireTomberMurs() {
+        if (!mursActifs()) return [];
+        const tombes = state.murs.filter(m => !murToucheIle(m));
+        if (tombes.length) state.murs = state.murs.filter(m => !tombes.includes(m));
+        return tombes.map(m => m.id);
+      }
+
+      /* ---------- Rotation ---------- */
+      /** Rotation d'un coin (i, j). Pivot de CASE (r, c) : autour de son
+       *  centre, dans le sens de calculateIslandRotationAroundPivot ; pivot de
+       *  COIN : autour de ce coin. direction 1 = ↻, -1 = ↺. */
+      function tournerCoin([i, j], pivot, direction, pivotCoin) {
+        if (pivotCoin) {
+          const [pi, pj] = pivot;
+          return direction === 1 ? [pi + (j - pj), pj - (i - pi)] : [pi - (j - pj), pj + (i - pi)];
+        }
+        const [pr, pc] = pivot;
+        return direction === 1 ? [pr + j - pc, pc + pr + 1 - i] : [pr + pc + 1 - j, pc + i - pr];
+      }
+      function murTourne(m, pivot, direction, turns, pivotCoin) {
+        let [a, b] = murExtremites(m);
+        for (let t = 0; t < turns; t++) {
+          a = tournerCoin(a, pivot, direction, pivotCoin);
+          b = tournerCoin(b, pivot, direction, pivotCoin);
+        }
+        return murDepuisExtremites(a, b, m.id);
+      }
+      /** Crans (1 = ↻ 90°, 2 = 180°, 3 = ↺ 90°) → direction et nombre de quarts. */
+      function murCrans(steps) { return steps === 3 ? { direction: -1, turns: 1 } : { direction: 1, turns: steps }; }
+
+      /** Le mur que la Magie fait tourner seul : celui que porte l'île, le
+       *  plus proche du pivot choisi, autour de son extrémité la plus proche. */
+      function murPourMagie(ile, pivot) {
+        const portes = mursPortesParIle(ile);
+        if (!portes.length || !pivot) return null;
+        const [pr, pc] = pivot;
+        const distance = ([i, j]) => Math.abs(i - (pr + .5)) + Math.abs(j - (pc + .5));
+        let meilleur = null;
+        portes.forEach(m => murExtremites(m).forEach(coin => {
+          const d = distance(coin);
+          if (!meilleur || d < meilleur.d) meilleur = { mur: m, coin, d };
+        }));
+        return meilleur ? { mur: meilleur.mur, coin: meilleur.coin } : null;
+      }
+
+      /** Plan de Magie pour un mode : "ile" (comportement historique), "mur"
+       *  (le mur seul autour de son extrémité) ou "deux" (l'île et les murs
+       *  qu'elle porte, autour du pivot de l'île). Ne modifie rien. */
+      function planMagieMurs(ile, pivot, steps, mode) {
+        if (!ile || !pivot || !steps) return null;
+        const { direction, turns } = murCrans(steps);
+        if (mode === "mur") {
+          const choix = murPourMagie(ile, pivot);
+          if (!choix) return null;
+          const tourne = murTourne(choix.mur, choix.coin, direction, turns, true);
+          const valide = murPlacementLibre(tourne) && murToucheIle(tourne);
+          return { mode, valid: valide, murs: [{ id: choix.mur.id, avant: { ...choix.mur }, apres: tourne }], coin: choix.coin, rotation: null };
+        }
+        const rotation = calculateIslandRotationAroundPivot(ile, pivot[0], pivot[1], direction, turns);
+        if (mode !== "deux") return { mode: "ile", valid: !!rotation?.valid, murs: [], rotation };
+        const portes = mursPortesParIle(ile);
+        const tournes = portes.map(m => ({ id: m.id, avant: { ...m }, apres: murTourne(m, pivot, direction, turns, false) }));
+        // Les murs tournés ne se chevauchent pas entre eux, ni avec les autres.
+        const ids = new Set(portes.map(m => String(m.id)));
+        const autres = new Set();
+        mursDe().forEach(m => { if (!ids.has(String(m.id))) murSegments(m).forEach(s => autres.add(segmentCle(s))); });
+        let valide = !!rotation?.valid;
+        const vus = new Set();
+        tournes.forEach(({ apres }) => {
+          const [a, b] = murExtremites(apres);
+          const dans = ([i, j]) => i >= 0 && j >= 0 && i <= GRID && j <= GRID;
+          if (!dans(a) || !dans(b)) valide = false;
+          murSegments(apres).forEach(s => {
+            const cle = segmentCle(s);
+            if (autres.has(cle) || vus.has(cle)) valide = false;
+            vus.add(cle);
+          });
+        });
+        return { mode, valid: valide, murs: tournes, rotation };
+      }
+
+      /** Applique les murs d'un plan de Magie (après la rotation d'île
+       *  éventuelle), puis fait tomber ce qui ne borde plus aucune île. */
+      function appliquerMursDuPlan(plan) {
+        (plan?.murs || []).forEach(({ id, apres }) => {
+          const m = murParId(id);
+          if (m) Object.assign(m, { o: apres.o, i: apres.i, j: apres.j, n: apres.n });
+        });
+        return faireTomberMurs();
+      }
+
+      /* ---------- Poussée d'un mur ---------- */
+      /** Comment ce gardien peut pousser ce mur : "face" (il borde le mur et
+       *  pousse à travers) ou "long" (il touche une extrémité et pousse dans
+       *  l'axe). Renvoie la direction, ou null. */
+      function sensPousseeMur(m, pr, pc) {
+        if (m.o === "h") {
+          for (let k = 0; k < m.n; k++) {
+            if (pr === m.i - 1 && pc === m.j + k) return { sens: "face", dr: 1, dc: 0 };
+            if (pr === m.i && pc === m.j + k) return { sens: "face", dr: -1, dc: 0 };
+          }
+          if ((pr === m.i - 1 || pr === m.i) && pc === m.j - 1) return { sens: "long", dr: 0, dc: 1 };
+          if ((pr === m.i - 1 || pr === m.i) && pc === m.j + m.n) return { sens: "long", dr: 0, dc: -1 };
+          return null;
+        }
+        for (let k = 0; k < m.n; k++) {
+          if (pc === m.j - 1 && pr === m.i + k) return { sens: "face", dr: 0, dc: 1 };
+          if (pc === m.j && pr === m.i + k) return { sens: "face", dr: 0, dc: -1 };
+        }
+        if ((pc === m.j - 1 || pc === m.j) && pr === m.i - 1) return { sens: "long", dr: 1, dc: 0 };
+        if ((pc === m.j - 1 || pc === m.j) && pr === m.i + m.n) return { sens: "long", dr: -1, dc: 0 };
+        return null;
+      }
+
+      /** Un cran de poussée. Modifie l'état ; renvoie false si le mur ne
+       *  peut pas avancer (rien n'est alors modifié). */
+      function pousserMurUnCran(m, sens, dr, dc) {
+        const suivant = { ...m, i: m.i + dr, j: m.j + dc };
+        if (sens === "long") {
+          if (!murPlacementLibre(suivant)) return false;
+          Object.assign(m, suivant);
+          return true;
+        }
+        // De face : il sort du plateau en franchissant le bord → il tombe.
+        const ligne = m.o === "h" ? suivant.i : suivant.j;
+        const sort = ligne < 0 || ligne > GRID;
+        if (!sort && !murPlacementLibre(suivant)) return false;
+        // Cases balayées : la rangée entre l'ancienne et la nouvelle ligne.
+        const balayees = [];
+        for (let k = 0; k < m.n; k++) {
+          const cellule = m.o === "h"
+            ? [dr > 0 ? m.i : m.i - 1, m.j + k]
+            : [m.i + k, dc > 0 ? m.j : m.j - 1];
+          if (inside(cellule[0], cellule[1])) balayees.push(cellule);
+        }
+        // Un autre mur en travers de la bande balayée l'arrête.
+        const autres = segmentsDesMurs(m.id);
+        for (let k = 0; k + 1 < balayees.length; k++) {
+          const [r1, c1] = balayees[k], [r2, c2] = balayees[k + 1];
+          const s = segmentEntre(r1, c1, r2, c2);
+          if (s && autres.has(segmentCle(s))) return false;
+        }
+        // Chaque case balayée pousse sa file d'un cran ; toutes ou rien.
+        const plans = [];
+        for (const [r, c] of balayees) {
+          if (!occupantPoussable(r, c)) continue;
+          const plan = resoudrePousseeBloc(r, c, dr, dc, 1, { depuisMur: m.id });
+          const file = collectPushBlock(r, c, dr, dc);
+          if (!plan || plan.mouvements.length !== file.length
+            || plan.mouvements.some(mv => !mv.chute && (mv.to[0] - mv.from[0] !== dr || mv.to[1] - mv.from[1] !== dc))) return false;
+          plans.push(plan);
+        }
+        plans.forEach(plan => appliquerPousseeBloc(plan, dr, dc));
+        if (sort) {
+          state.murs = state.murs.filter(x => x !== m);
+          return true;
+        }
+        Object.assign(m, suivant);
+        return true;
+      }
+
+      /** Poussée d'un mur par un gardien, force = crans (une carte chacun).
+       *  Modifie l'état et dépense les cartes ; null si rien ne bouge. */
+      function appliquerPousseeMurCore(murId, pusherId, force, { payer = true } = {}) {
+        const m = murParId(murId);
+        const pousseur = characterById(pusherId);
+        if (!m || !pousseur) return null;
+        const sens = sensPousseeMur(m, pousseur.r, pousseur.c);
+        if (!sens) return null;
+        const avant = { ...m };
+        const demande = Math.max(1, Math.floor(force || 1));
+        let crans = 0;
+        for (; crans < demande; crans++) {
+          if (!state.murs.includes(m)) break;
+          if (!pousserMurUnCran(m, sens.sens, sens.dr, sens.dc)) break;
+        }
+        if (!crans) return null;
+        const tombes = faireTomberMurs();
+        const depense = payer ? consumeSelectedActionCore("PUSH", crans) : crans;
+        return { type: "POUSSER_MUR", murId, pusherId, sens: sens.sens, dr: sens.dr, dc: sens.dc,
+          avant, apres: murParId(murId) ? { ...murParId(murId) } : null, tombe: tombes.includes(m.id), force: depense };
+      }
+
+      /** Ce que donnerait la poussée, sans rien modifier (aperçu, IA). */
+      function apercuPousseeMur(murId, pusherId, force) {
+        if (!state) return null;
+        return withSimulatedState(cloneStateForSimulation(), () => {
+          const resultat = appliquerPousseeMurCore(murId, pusherId, force, { payer: false });
+          if (!resultat) return null;
+          return {
+            ...resultat,
+            gardiens: state.characters.map(ch => ({ id: ch.id, r: ch.r, c: ch.c })),
+            couronnes: activeArtifacts().filter(a => !a.carrierId).map(a => ({ id: a.id, r: a.r, c: a.c }))
+          };
+        });
+      }
+
+      /** Toutes les poussées de mur possibles pour un gardien : une par force
+       *  qui fait réellement avancer le mur d'autant de crans. */
+      function optionsPousseeMur(gardien, forceMax) {
+        if (!gardien || !mursActifs() || forceMax < 1) return [];
+        const options = [];
+        mursDe().forEach(m => {
+          const sens = sensPousseeMur(m, gardien.r, gardien.c);
+          if (!sens) return;
+          let precedent = 0;
+          for (let force = 1; force <= forceMax; force++) {
+            const apercu = apercuPousseeMur(m.id, gardien.id, force);
+            if (!apercu || apercu.force <= precedent) break;
+            precedent = apercu.force;
+            options.push({ murId: m.id, pusherId: gardien.id, force: apercu.force, apercu });
+            if (apercu.tombe) break;
+          }
+        });
+        return options;
+      }
+
+      /* ---------- Mise en place ---------- */
+      function mursDemandes(rules = state?.rules) {
+        if (rules?.murs) return true;
+        try { return new URLSearchParams(location.search).get("murs") === "1"; } catch (erreur) { return false; }
+      }
+
+      /** Deux murs neutres de 2 cases, symétriques par le centre, au plus près
+       *  du milieu du plateau, chacun bordant une île sans toucher un village. */
+      function installerMursDeDepart() {
+        if (!mursDemandes()) { state.murs = []; return; }
+        // Attendre les îles de départ (duel symétrique, formation choisie).
+        if (state.setupSelectionPending || !(state.islands || []).length) return;
+        state.murs = [];
+        const miroir = m => {
+          const [a, b] = murExtremites(m);
+          return murDepuisExtremites([GRID - a[0], GRID - a[1]], [GRID - b[0], GRID - b[1]], m.id);
+        };
+        const pres = (r, c) => (state.players || []).some(p => villageCellsContaining(p, r, c)?.length);
+        const candidats = [];
+        for (const o of ["h", "v"]) {
+          for (let i = 0; i <= GRID; i++) {
+            for (let j = 0; j <= GRID; j++) {
+              const m = { id: "mur-a", o, i, j, n: 2 };
+              const [a, b] = murExtremites(m);
+              if (b[0] > GRID || b[1] > GRID) continue;
+              const bordees = murCasesBordees(m);
+              if (bordees.length < 4 || bordees.filter(([r, c]) => isLand(r, c)).length < 2) continue;
+              if (bordees.some(([r, c]) => pres(r, c))) continue;
+              const centre = [(a[0] + b[0]) / 2 - GRID / 2, (a[1] + b[1]) / 2 - GRID / 2];
+              const d = Math.hypot(centre[0], centre[1]);
+              if (d < 1) continue; // pas sur le centre même : son miroir le chevaucherait
+              candidats.push({ m, d });
+            }
+          }
+        }
+        candidats.sort((x, y) => x.d - y.d || x.m.o.localeCompare(y.m.o) || x.m.i - y.m.i || x.m.j - y.m.j);
+        for (const { m } of candidats) {
+          const reflet = { ...miroir(m), id: "mur-b" };
+          state.murs = [m];
+          if (!murToucheIle(reflet) || !murPlacementLibre(reflet)) continue;
+          state.murs = [m, reflet];
+          return;
+        }
+        state.murs = [];
+      }
+
+      /* ---------- Interface : poussée d'un mur ---------- */
+      /** Case repère d'une poussée de mur : l'anneau d'arrivée cliquable,
+       *  juste devant la place finale du mur (comme la case d'arrivée d'une
+       *  file poussée). Hors du plateau → repère de chute. */
+      function repereOptionMur(apercu, pousseur, force) {
+        const { sens, dr, dc, avant } = apercu;
+        const fin = apercu.apres || { ...avant, i: avant.i + dr * force, j: avant.j + dc * force };
+        const k = Math.floor((fin.n - 1) / 2);
+        let cellule;
+        if (sens === "face") {
+          cellule = fin.o === "h"
+            ? [dr > 0 ? fin.i : fin.i - 1, fin.j + k]
+            : [fin.i + k, dc > 0 ? fin.j : fin.j - 1];
+        } else {
+          cellule = fin.o === "h"
+            ? [pousseur.r, dc > 0 ? fin.j + fin.n : fin.j - 1]
+            : [dr > 0 ? fin.i + fin.n : fin.i - 1, pousseur.c];
+        }
+        if (inside(cellule[0], cellule[1]) && apercu.apres) return { r: cellule[0], c: cellule[1], fell: false };
+        return { r: null, c: null, fell: true, lr: cellule[0] - dr, lc: cellule[1] - dc };
+      }
+
+      function optionsPousseeMurInterface({ pusherId = null, targetId = null } = {}) {
+        if (!state || !mursActifs() || state.quick || availableActionCount("PUSH") < 1) return [];
+        if (targetId != null && !murParId(targetId)) return [];
+        const forceMax = availableActionCount("PUSH");
+        const options = [];
+        (state.characters || []).forEach(g => {
+          if (g.player !== state.currentPlayer) return;
+          if (pusherId != null && String(g.id) !== String(pusherId)) return;
+          optionsPousseeMur(g, forceMax).forEach(o => {
+            if (targetId != null && String(o.murId) !== String(targetId)) return;
+            const repere = repereOptionMur(o.apercu, g, o.force);
+            options.push({
+              id: `${g.id}:mur:${o.murId}:${o.apercu.dr},${o.apercu.dc}:${o.force}`,
+              pusherId: g.id, targetType: "mur", targetId: o.murId,
+              dr: o.apercu.dr, dc: o.apercu.dc, force: o.force,
+              r: repere.r, c: repere.c, fell: repere.fell,
+              lastLandR: repere.fell ? repere.lr : null, lastLandC: repere.fell ? repere.lc : null,
+              apercuMur: o.apercu
+            });
+          });
+        });
+        return options;
+      }
+
+      function executerPousseeMur(option) {
+        if (!option || option.targetType !== "mur") return false;
+        const pousseur = characterById(option.pusherId);
+        if (!pousseur) return false;
+        const note = { type: "POUSSER_MUR", murId: option.targetId, pusherId: option.pusherId, force: option.force };
+        if (reglesRefuserAuJoueur(note)) return false;
+        saveUndoSnapshot();
+        state.phase = "ACTION";
+        state.selectedActionType = "PUSH";
+        state.selectedActionCount = option.force;
+        const applique = appliquerPousseeMurCore(option.targetId, option.pusherId, option.force);
+        clearUnifiedPushOptions();
+        if (applique) reglesNoter(note);
+        if (!applique) {
+          discardLastUndoSnapshot();
+          showToast("Ce mur ne peut plus être poussé ainsi.");
+          renderAll();
+          scheduleKayKitSync();
+          return false;
+        }
+        queueKayKitActionAnimation(pousseur.id, "attack", 900, { r: pousseur.r + option.dr, c: pousseur.c + option.dc });
+        playSfx("push");
+        if (typeof kaykitChoc === "function") kaykitChoc(applique.force >= 2 ? 2 : 1);
+        renderAll();
+        scheduleKayKitSync();
+        showActionConsumption("PUSH", applique.force, availableActionCount("PUSH"));
+        return true;
+      }
+
+      /* ---------- Interface : Magie sur une île qui porte un mur ---------- */
+      function modeMagie() {
+        const mode = state?.magicMode;
+        if (mode !== "mur" && mode !== "deux") return "ile";
+        const ile = state.islands?.find(is => is.id === state.selectedIslandId);
+        return mursPortesParIle(ile).length ? mode : "ile";
+      }
+      function choisirModeMagie(mode) {
+        if (!(state?.phase === "ACTION" && state.selectedActionType === "MAGIC")) return;
+        state.magicMode = mode === "mur" || mode === "deux" ? mode : "ile";
+        state.magicPreviewSteps = 0;
+        updateMagicPreview();
+        renderAll();
+        if (kaykit3D) {
+          kaykit3D.lastStateSignature = "";
+          scheduleKayKitSync();
+        }
+      }
+
+      /* ---------- Banc d'essai (window.ILYOS_BENCH.murs) ---------- */
+      function benchMurs() {
+        const rafraichir = () => { renderAll(); if (kaykit3D) { kaykit3D.lastStateSignature = ""; scheduleKayKitSync(); } };
+        return {
+          etat: () => (state?.murs || []).map(m => ({ ...m })),
+          gardiens: () => (state?.characters || []).map(g => ({ id: g.id, player: g.player, r: g.r, c: g.c })),
+          iles: () => (state?.islands || []).map(i => ({ id: i.id, cells: i.cells })),
+          joueur: () => state?.currentPlayer,
+          optionsInterface: () => (state?.pushOptions || []).map(o => o.id),
+          phase: () => [state?.phase, state?.selectedActionType, state?.magicMode],
+          cartes: (type, n) => {
+            const j = state.players[state.currentPlayer];
+            j.hand = (j.hand || []).filter(c => c.action !== type || c.used);
+            for (let k = 0; k < n; k++) j.hand.push({ id: `banc-${type}-${k}-${Date.now()}`, action: type, used: false });
+            state.islandPlacedThisTurn = true;
+            state.phase = "ACTION_SELECT";
+            renderAll();
+            return availableActionCount(type);
+          },
+          poser: murs => { if (!state) return null; state.murs = (murs || []).map((m, k) => ({ id: m.id || `mur-${k}`, o: m.o, i: m.i, j: m.j, n: m.n })); rafraichir(); return state.murs.length; },
+          installer: () => { if (!state) return null; const avant = state.rules?.murs; state.rules = { ...(state.rules || {}), murs: true }; installerMursDeDepart(); if (!avant) delete state.rules.murs; rafraichir(); return state.murs.map(m => ({ ...m })); },
+          passage: (r1, c1, r2, c2) => !passageBloque(r1, c1, r2, c2),
+          pousser: (murId, pusherId, force) => { const r = appliquerPousseeMurCore(murId, pusherId, force, { payer: false }); rafraichir(); return r; },
+          optionsPoussee: pusherId => optionsPousseeMur(characterById(pusherId), 3).map(o => ({ murId: o.murId, force: o.force, apres: o.apercu.apres, tombe: o.apercu.tombe })),
+          planMagie: (ileId, pivot, steps, mode) => { const p = planMagieMurs(state.islands.find(i => i.id === ileId), pivot, steps, mode); return p ? { mode: p.mode, valid: p.valid, murs: p.murs.map(x => x.apres) } : null; }
+        };
+      }
       /* =====================================================================
          CERVEAU EXPERT V2 — évaluateur, candidats, recherche de plan de tour.
 
@@ -31128,6 +32057,21 @@
           }
         }
 
+        /* Murs étoilés (murs.js) : pousser un mur, de face (il balaie la file
+           devant lui) ou dans sa longueur. Une option par force qui le fait
+           réellement avancer d'autant. */
+        if (mursActifs()) {
+          for (const pousseur of plannerGardiensDe(playerId)) {
+            for (const option of optionsPousseeMur(pousseur, budget)) {
+              const chutes = (option.apercu.gardiens || []).length < state.characters.length
+                ? state.characters.filter(g => !option.apercu.gardiens.some(x => x.id === g.id)) : [];
+              let indice = 4 - option.force;
+              chutes.forEach(g => { indice += g.player === playerId ? -120 : 90; });
+              options.push({ type: "POUSSER_MUR", murId: option.murId, pusherId: pousseur.id, force: option.force, indice });
+            }
+          }
+        }
+
         options.sort((a, b) => b.indice - a.indice);
         return plannerRetenir(options, plafonds().push, "PUSH");
       }
@@ -31244,6 +32188,40 @@
                 continue;
               }
               options.push(candidat);
+            }
+          }
+        }
+
+        /* Murs étoilés (murs.js) : sur une île qui porte un mur, tourner le
+           mur seul ou l'île avec lui. Mêmes mesures que pour une île ; un
+           résultat déjà vu (même mur, même île) n'est pas recompté. */
+        if (mursActifs()) {
+          const vus = new Set();
+          for (const ile of state.islands) {
+            if (!mursPortesParIle(ile).length) continue;
+            for (const [pr, pc] of ile.cells) {
+              for (const mode of ["mur", "deux"]) {
+                for (const pas of [1, 2, 3]) {
+                  if (plannerHorloge() > echeance) break;
+                  const plan = planMagieMurs(ile, [pr, pc], pas, mode);
+                  if (!plan?.valid) continue;
+                  const cle = mode + plan.murs.map(m => `${m.apres.o}${m.apres.i},${m.apres.j},${m.apres.n}`).join("|")
+                    + (plan.rotation ? JSON.stringify(plan.rotation.absCells) : "");
+                  if (vus.has(cle)) continue;
+                  vus.add(cle);
+                  const direction = pas === 3 ? -1 : 1;
+                  const tours = pas === 3 ? 1 : pas;
+                  const candidat = { type: "MAGIC", islandId: ile.id, pivot: [pr, pc], direction, turns: tours, mode };
+                  const impact = withSimulatedState(cloneStateForSimulation(), () =>
+                    appliquerActionNoyau(candidat) ? avecGrilleTerre(mesurer) : null);
+                  if (!impact) continue;
+                  const gainMoi = plannerProximite(impact.moi) - plannerProximite(avant.moi);
+                  const gainContre = plannerProximite(avant.adverse) - plannerProximite(impact.adverse);
+                  candidat.indice = (gainMoi + gainContre) * 100;
+                  if (Math.abs(candidat.indice) < 1) continue;
+                  options.push(candidat);
+                }
+              }
             }
           }
         }
@@ -33584,7 +34562,8 @@
 
          Une action est une DONNÉE, la même que celle du planner :
            MOVE { charId, r, c, cost }        PUSH { pusherId, r, c, force }
-           MAGIC { islandId, pivot, direction, turns }
+           MAGIC { islandId, pivot, direction, turns, mode? (« mur » | « deux », murs.js) }
+           POUSSER_MUR { murId, pusherId, force }
            POSE { shapeKey, cells, owner, relCells?, anchor?, spawn? }
            DEPOT { charId, r, c }   RAMASSAGE { charId, artifactId }
            VOL { charId, artifactId }   TRANSMISSION { deId, versId }
@@ -33687,6 +34666,14 @@
             if (availableActionCount("MAGIC") < 1) return "pas de carte Magie";
             if (action.direction !== 1 && action.direction !== -1) return "sens de rotation invalide";
             if (!reglesEntier(action.turns, 1, 4)) return "nombre de quarts de tour invalide";
+            // Murs étoilés (murs.js) : tourner le mur porté seul, ou l'île avec lui.
+            if (action.mode === "mur" || action.mode === "deux") {
+              if (!mursActifs() || action.turns === 4) return "aucun mur à tourner ainsi";
+              const steps = action.direction === -1 ? 3 : action.turns;
+              const plan = Array.isArray(action.pivot) ? planMagieMurs(ile, action.pivot, steps, action.mode) : null;
+              if (!plan?.valid) return "le mur ne peut pas tourner ainsi";
+              return null;
+            }
             // Tour complet (360°) : l'île revient à sa place, la carte est jouée.
             if (action.turns === 4) return null;
             const pivot = action.pivot;
@@ -33713,6 +34700,15 @@
               const [sr, sc] = action.spawn;
               if (!cells.some(([r, c]) => r === sr && c === sc) || characterAt(sr, sc)) return "case d'apparition invalide";
             }
+            return null;
+          }
+          case "POUSSER_MUR": {
+            const { gardien, refus } = reglesGardienDuJoueur(action.pusherId);
+            if (refus) return refus;
+            if (!mursActifs()) return "aucun mur en jeu";
+            const dispo = availableActionCount("PUSH");
+            if (!reglesEntier(action.force, 1, Math.max(1, dispo)) || action.force > dispo) return "pas assez de cartes Pousser";
+            if (!optionsPousseeMur(gardien, action.force).some(o => o.murId === action.murId)) return "ce mur ne peut pas être poussé ainsi";
             return null;
           }
           case "DEPOT":
@@ -33988,7 +34984,8 @@
       const REGLES_CHAMPS = {
         MOVE: ["charId", "r", "c", "cost"],
         PUSH: ["pusherId", "r", "c", "force"],
-        MAGIC: ["islandId", "pivot", "direction", "turns"],
+        MAGIC: ["islandId", "pivot", "direction", "turns", "mode"],
+        POUSSER_MUR: ["murId", "pusherId", "force"],
         POSE: ["shapeKey", "cells", "owner", "relCells", "anchor", "spawn"],
         DEPOT: ["charId", "r", "c"],
         RAMASSAGE: ["charId", "artifactId"],
@@ -34021,8 +35018,9 @@
         const gardiens = (etat.characters || []).map(g => `${g.id}:${g.r},${g.c}:${g.player}`).sort();
         const couronnes = [etat.artifact, etat.secondArtifact].filter(Boolean)
           .map(a => `${a.id}:${a.carrierId ?? "-"}:${a.carrierId ? "" : `${a.r},${a.c}`}:${a.active ? 1 : 0}`).sort();
+        const murs = (etat.murs || []).map(m => `${m.id}:${m.o}${m.i},${m.j},${m.n}`).sort();
         return JSON.stringify({
-          iles, gardiens, couronnes,
+          iles, gardiens, couronnes, murs,
           scores: (etat.players || []).map(p => p.score || 0),
           main: etat.currentPlayer, tour: etat.turn, vainqueur: etat.winner ?? null
         });
@@ -35522,6 +36520,14 @@
         defaitesDerniere = dossier;
         defaitesRendreVictoire(dossier);
         if (!dossier) return;
+        /* Victoire contre l'Expert : la partie part à Taekun pour améliorer le
+           CPU (js/retours.js), sauf si le joueur l'a refusé dans le menu. */
+        if (dossier.type === "defaite-expert" && window.ILYOS_RETOURS) {
+          try {
+            if (!dossier.analyse) dossier.analyse = defaitesAnalyser(dossier);
+            window.ILYOS_RETOURS.envoyerVictoire(dossier);
+          } catch (erreur) { console.warn("[ILYOS] envoi de la victoire impossible", erreur); }
+        }
         defaitesBiblio.enregistrer(dossier).then(nombre => {
           defaitesRendreVictoire(dossier, nombre);
           defaitesMajAcces();
@@ -35865,7 +36871,26 @@
         } : null,
         // Plan du planner en langage de jeu (cases, gardiens), pour les outils.
         decrire: (plan, etat) => autopsieDecrirePlan(plan, etat),
-        seuils: DEFAITES_SEUILS
+        seuils: DEFAITES_SEUILS,
+        /* Partie en cours jointe à un signalement de bug (js/retours.js) :
+           l'état de reprise et les tours déjà joués, sans fermer le journal. */
+        instantanePartie: () => {
+          if (!state || !state.players || !state.players.length) return null;
+          let cadre = null;
+          try { cadre = serializeGameStateForSave(); } catch (erreur) { cadre = null; }
+          const journal = defaitesJournal && defaitesJournal.etatRef === state ? defaitesJournal : null;
+          return {
+            jeu: "ILYOS", type: "signalement", schema: 1,
+            date: new Date().toISOString(),
+            version: window.ILYOS_BUILD || null,
+            bundle: (document.querySelector('script[src*="game.js"]') || {}).src || null,
+            regles: defaitesRegles(),
+            tour: state.turn, manche: state.round,
+            joueurs: state.players.map(j => ({ id: j.id, nom: j.name, ia: !!j.isAI, difficulte: j.aiDifficulty || null, score: j.score || 0 })),
+            tours: journal ? journal.tours.map(t => ({ ...t })) : [],
+            cadre
+          };
+        }
       };
 
       setTimeout(defaitesMajAcces, 0);
@@ -37372,7 +38397,8 @@
             magie = { islandId, pivot: Array.isArray(pivot) ? [pivot[0], pivot[1]] : null, degres: pas === 3 ? -90 : pas * 90, lanceur };
           }
           const resultat = origine.magie.apply(this, arguments);
-          if (resultat && releve && magie) tourAdverseAjouter({ type: "magie", ...magie }, avant);
+          // Mur tourné seul (murs.js) : l'île ne bouge pas, rien à rejouer d'elle.
+          if (resultat && releve && magie && arguments[2]?.mode !== "mur") tourAdverseAjouter({ type: "magie", ...magie }, avant);
           return resultat;
         };
         applyIslandPlacementCore = function () {
@@ -37716,7 +38742,14 @@
       }
 
       function rotationCible(source = state) {
+        if (butEffondrement(source)) return source.rotation.cible || EFFONDREMENT_CIBLE;
         return butBalises(source) ? (source.rotation.cible || ROTATION_CIBLE_BALISES) : 3;
+      }
+
+      /* Buts sans couronnes (Balises, Effondrement) : les deux couronnes
+         restent hors du terrain toute la partie. */
+      function butSansCouronnes(source = state) {
+        return butBalises(source) || butEffondrement(source);
       }
 
       /* Les balises sont des CASES du plateau, fixées à la mise en place. */
@@ -37749,7 +38782,7 @@
 
       /* Les couronnes restent hors du terrain pendant toute la partie. */
       function rotationRangerCouronnes() {
-        if (!butBalises() || !state) return;
+        if (!state || !butSansCouronnes()) return;
         [state.artifact, state.secondArtifact].forEach(artifact => {
           if (!artifact) return;
           artifact.active = false;
@@ -37766,7 +38799,7 @@
 
       const rotationResetArtifactObjectBase = resetArtifactObject;
       resetArtifactObject = function resetArtifactObjectRotation(artifact) {
-        if (butBalises() && artifact) {
+        if (butSansCouronnes() && artifact) {
           artifact.active = false;
           artifact.carrierId = null;
           return;
@@ -37783,7 +38816,10 @@
         try {
           rotationStartLocalGameBase();
         } finally {
-          rotationEnPreparation = null;
+          /* Plateau du duel symétrique : la partie attend le choix de la
+             disposition, le premier tour viendra après. La demande est
+             gardée jusque-là (beginTurn l'installe puis l'efface). */
+          if (!state?.setupSelectionPending || state.rotation) rotationEnPreparation = null;
         }
       };
 
@@ -37796,7 +38832,7 @@
       /* Une demande valide : un but connu, des couches connues. Couronnes
          sans couche, c'est la partie classique : pas de Rotation. */
       function rotationNormaliser(demande) {
-        const but = demande?.but === "balises" ? "balises" : "couronnes";
+        const but = ["balises", "effondrement"].includes(demande?.but) ? demande.but : "couronnes";
         const couches = (Array.isArray(demande?.couches) ? demande.couches : []).filter(c => ROTATION_COUCHES.includes(c));
         /* Couche Créatures : les œufs (espèces qui en sortent) et les
            personnages neutres sont choisis séparément (Taekun, 2026-11-12).
@@ -37805,7 +38841,10 @@
         const i = couches.indexOf("creatures");
         if (i >= 0 && !choixCreatures.especes.length && !choixCreatures.neutres.length) couches.splice(i, 1);
         if (but === "couronnes" && !couches.length) return null;
-        return couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+        const demandeNette = couches.includes("creatures") ? { but, couches, creatures: choixCreatures } : { but, couches };
+        // Effondrement · Survie (rotation-effondrement.js).
+        if (but === "effondrement" && demande?.variante === "survie") demandeNette.variante = "survie";
+        return demandeNette;
       }
 
       const ROTATION_ESPECES = ["loup"];
@@ -37824,6 +38863,7 @@
           couches: Object.fromEntries(voulue.couches.map(c => [c, true])),
           ...(voulue.creatures ? { choixCreatures: voulue.creatures } : {})
         };
+        if (voulue.but === "effondrement") effondrementInstaller(voulue.variante);
         if (voulue.but !== "balises") { rotationIntituleBilan(); return; }
         Object.assign(state.rotation, {
           cible: ROTATION_CIBLE_BALISES,
@@ -37859,7 +38899,7 @@
           const k = ile.cells.findIndex(([cr, cc]) => cr === r && cc === c);
           return k >= 0 && rotation.absCells[k] ? { i, vers: rotation.absCells[k] } : null;
         }).filter(Boolean) : [];
-        const resultat = rotationMagieBase(islandId, rotation);
+        const resultat = rotationMagieBase.apply(this, arguments);
         if (resultat && suivantes.length) {
           const ecrit = rotationEcrire();
           suivantes.forEach(({ i, vers }) => { ecrit.balises[i] = [vers[0], vers[1]]; });
@@ -37869,8 +38909,8 @@
 
       /* Le bilan de fin compte des points, plus des couronnes. */
       function rotationIntituleBilan() {
-        const colonne = BILAN_COLONNES.find(col => col.titre === "Couronnes" || col.titre === "Points");
-        if (colonne) colonne.titre = butBalises() ? "Points" : "Couronnes";
+        const colonne = BILAN_COLONNES.find(col => ["Couronnes", "Points", "Éjectés"].includes(col.titre));
+        if (colonne) colonne.titre = butBalises() ? "Points" : butEffondrement() ? "Éjectés" : "Couronnes";
       }
 
       /* Décompte AU DÉBUT DU TOUR (Taekun, 2026-11-08) : le joueur qui prend
@@ -38275,19 +39315,125 @@
         return groupe;
       }
 
+
+      /* TRÔNES (Taekun, 2026-11-18) : apparence PAR DÉFAUT des balises. Un
+         trône royal (bois sombre et or, bloc plein, haut dossier à tenture)
+         tourné vers le centre du plateau ; le gardien qui tient la balise s'y
+         ASSOIT (pose figée Sit_Chair_Pose, aucune animation en continu). La
+         couleur d'état (éteinte gris, libre cyan, tenue couleur du camp) est
+         portée par le liseré au sol, le coussin, la tenture et la gemme. Une
+         balise FIXE repose sur une grande estrade de pierre à deux marches,
+         une balise MOBILE n'en a pas.
+         Menu > Graphismes > Mode Balises : « Balises » remet les cadres carrés
+         d'origine (réglage `ilyosBalisesStyle` dans le stockage local). */
+      const ROTATION_STYLE_CLE = "ilyosBalisesStyle";
+      let rotationStyleBalises = (() => {
+        try { return localStorage.getItem(ROTATION_STYLE_CLE) === "balise" ? "balise" : "trone"; } catch (_) { return "trone"; }
+      })();
+      const rotationTrones = () => rotationStyleBalises === "trone";
+      // Hauteur de l'estrade et de l'assise (mesurée sur les personnages KayKit :
+      // le bassin de la pose assise est à 0,105 au-dessus des pieds).
+      const ROTATION_TRONE_ECHELLE = .8;
+      const ROTATION_TRONE_ESTRADE = .26;
+      const ROTATION_TRONE_ASSISE = .35;
+
+      function rotationConstruireTrone(mobile) {
+        const groupe = new THREE.Group();
+        const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color: new THREE.Color(color).convertSRGBToLinear(), roughness: .78, metalness: 0, flatShading: true, ...extra });
+        const etatMat = new THREE.MeshStandardMaterial({ color: ROTATION_BALISE_CLAIRE, roughness: .5, metalness: .1, flatShading: true, emissive: ROTATION_BALISE_CLAIRE, emissiveIntensity: .35 });
+        // Géométries partagées (cache kaykitGeometry), comme les balises.
+        const box = (w, h, d, m, x, y, z) => {
+          const o = new THREE.Mesh(kaykitGeometry(`trone-b-${w}-${h}-${d}`, () => new THREE.BoxGeometry(w, h, d)), m);
+          o.position.set(x, y, z);
+          return o;
+        };
+        const geo = (cle, f) => kaykitGeometry("trone-" + cle, f);
+        // Liseré au sol à la couleur d'état : la case se lit de loin.
+        const L = .9, e = .06;
+        [[0, -L / 2 + e / 2, L, e], [0, L / 2 - e / 2, L, e], [-L / 2 + e / 2, 0, e, L - 2 * e], [L / 2 - e / 2, 0, e, L - 2 * e]]
+          .forEach(([x, z, w, d]) => groupe.add(box(w, .04, d, etatMat, x, .02, z)));
+        const estrade = mobile ? 0 : ROTATION_TRONE_ESTRADE;
+        if (!mobile) {
+          const pierre = mat(0x575d68), pierreHaut = mat(0x6c7380);
+          groupe.add(box(.88, .13, .88, pierre, 0, .065, 0), box(.72, .13, .72, pierreHaut, 0, .195, 0));
+          [[0, -.36, .72, .03], [0, .36, .72, .03], [-.36, 0, .03, .72], [.36, 0, .03, .72]]
+            .forEach(([x, z, w, d]) => groupe.add(box(w, .025, d, etatMat, x, .26, z)));
+        }
+        const bois = mat(0x4a2c19), boisClair = mat(0x6b4127), or = mat(0xe0b04a, { metalness: .5, roughness: .38 });
+        const siege = new THREE.Group();
+        [
+          box(.66, .1, .6, boisClair, 0, .05, 0),            // socle
+          box(.68, .03, .62, or, 0, .115, 0),                // filet doré du socle
+          box(.52, .16, .48, bois, 0, .21, 0),               // assise pleine
+          box(.46, .06, .42, etatMat, 0, .32, .02),          // coussin
+          box(.1, .3, .52, bois, -.3, .28, 0),               // accoudoirs pleins
+          box(.1, .3, .52, bois, .3, .28, 0),
+          box(.13, .035, .55, or, -.3, .445, 0),             // chapeaux dorés
+          box(.13, .035, .55, or, .3, .445, 0),
+          box(.62, .86, .1, bois, 0, .56, -.25),             // haut dossier
+          box(.44, .66, .03, etatMat, 0, .57, -.19),         // tenture
+          box(.05, .7, .04, or, -.245, .57, -.19),           // montants dorés
+          box(.05, .7, .04, or, .245, .57, -.19),
+          box(.54, .045, .04, or, 0, .93, -.19),
+          box(.62, .05, .12, or, 0, 1.0, -.25),              // linteau
+          // Dos du dossier, vu depuis l'autre camp : cadre doré.
+          box(.5, .04, .03, or, 0, .9, -.31), box(.5, .04, .03, or, 0, .24, -.31),
+          box(.04, .66, .03, or, -.23, .57, -.31), box(.04, .66, .03, or, .23, .57, -.31)
+        ].forEach(piece => siege.add(piece));
+        // Fronton doré ARRONDI, gemme d'état au sommet : aucune pointe derrière
+        // la tête du gardien assis.
+        const arche = new THREE.Mesh(geo("arche", () => new THREE.CylinderGeometry(.22, .22, .1, 14, 1, false, -Math.PI / 2, Math.PI)), or);
+        arche.rotation.x = Math.PI / 2;
+        arche.position.set(0, 1.02, -.25);
+        const gemme = new THREE.Mesh(geo("gemme", () => new THREE.OctahedronGeometry(.075)), etatMat);
+        gemme.scale.set(1, 1, .6);
+        gemme.position.set(0, 1.1, -.19);
+        const blason = new THREE.Mesh(geo("blason", () => new THREE.OctahedronGeometry(.11)), etatMat);
+        blason.scale.set(1, 1.3, .35);
+        blason.position.set(0, .6, -.31);
+        siege.add(arche, gemme, blason);
+        siege.scale.setScalar(ROTATION_TRONE_ECHELLE);
+        siege.position.y = estrade;
+        groupe.add(siege);
+        groupe.userData.rotationParties = {
+          cadreMat: etatMat, bornes: null, croix: null, trone: true,
+          assise: estrade + ROTATION_TRONE_ASSISE * ROTATION_TRONE_ECHELLE
+        };
+        return groupe;
+      }
+
+      const rotationConstruirePiece = mobile => (rotationTrones() ? rotationConstruireTrone(mobile) : rotationConstruireBalise(mobile));
+
+      /* Gardien assis sur son trône (lu à chaque image par kaykit3d.js) :
+         au repos, sur une balise allumée, hors sélection. Se lève de lui-même
+         dès qu'il bouge, est poussé ou sélectionné. */
+      kaykitPoseAssise = function kaykitPoseAssiseTrone(visual) {
+        if (!rotationTrones() || !butBalises() || !kaykit3D?.rotationBalises) return null;
+        const g = (state.characters || []).find(x => String(x.id) === visual.id);
+        if (!g) return null;
+        const i = state.rotation.balises.findIndex(([r, c]) => r === g.r && c === g.c);
+        if (i < 0 || !baliseAllumee(g.r, g.c)) return null;
+        const trone = kaykit3D.rotationBalises.children[i];
+        if (!trone?.userData.rotationParties?.trone) return null;
+        // Assis au bord de l'assise : le chapeau du mage ne traverse plus le dossier.
+        return { facing: trone.rotation.y, hauteur: trone.userData.rotationParties.assise - .105, avance: .08 };
+      };
+
       function rotationSyncBalises3D() {
         if (!kaykit3D?.dynamicGroup) return;
-        if (!butBalises()) {
+        const voulu = rotationStyleBalises;
+        if (!butBalises() || (kaykit3D.rotationBalises && kaykit3D.rotationBalises.userData.style !== voulu)) {
           if (kaykit3D.rotationBalises) {
             disposeKayKitObjects([kaykit3D.rotationBalises]);
             kaykit3D.rotationBalises = null;
           }
-          return;
+          if (!butBalises()) return;
         }
         if (!kaykit3D.rotationBalises || !kaykit3D.rotationBalises.parent) {
           const groupe = new THREE.Group();
           groupe.name = "rotation-balises";
-          state.rotation.balises.forEach((_, i) => groupe.add(rotationConstruireBalise(baliseMobile(i))));
+          groupe.userData.style = voulu;
+          state.rotation.balises.forEach((_, i) => groupe.add(rotationConstruirePiece(baliseMobile(i))));
           kaykit3D.dynamicGroup.add(groupe);
           kaykit3D.rotationBalises = groupe;
         }
@@ -38302,14 +39448,33 @@
             : allumee ? ROTATION_BALISE_CLAIRE : 0x5d7a8c;
           const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
           balise.position.set(p.x, allumee ? p.y + .005 : KAYKIT_LEVELS.islandTop + .01, p.z);
-          const { cadreMat, bornes } = balise.userData.rotationParties;
+          const { cadreMat, bornes, trone } = balise.userData.rotationParties;
           cadreMat.color.setHex(couleur);
           cadreMat.emissive.setHex(couleur);
+          if (trone) {
+            balise.rotation.y = kaykitFacingRotation(r, c, CENTER.r, CENTER.c);
+            // Couleurs du jeu en sRGB, passées en linéaire : sans cela le soleil
+            // les blanchit sur ces matières unies.
+            cadreMat.color.convertSRGBToLinear();
+            cadreMat.emissive.convertSRGBToLinear();
+            cadreMat.emissiveIntensity = g ? .45 : allumee ? .3 : 0;
+            return;
+          }
           cadreMat.emissiveIntensity = g ? .5 : allumee ? .35 : .1;
           bornes.visible = allumee;
           bornes.scale.y = g ? 1.35 : 1;
         });
       }
+
+      window.ILYOS_BALISES_STYLE = {
+        style: () => rotationStyleBalises,
+        regler(style) {
+          rotationStyleBalises = style === "balise" ? "balise" : "trone";
+          try { localStorage.setItem(ROTATION_STYLE_CLE, rotationStyleBalises); } catch (_) { /* stockage indisponible */ }
+          if (state) renderAll();
+          return rotationStyleBalises;
+        }
+      };
 
       /* Magie : une balise mobile de l'île tournée (hors pivot) part avec
          elle ; son double se pose à l'arrivée (kaykit3d.js). */
@@ -38329,7 +39494,7 @@
           }
           const vers = rotation.absCells?.[i];
           if (!vers || (vers[0] === r && vers[1] === c)) return;
-          const fantome = rotationConstruireBalise(true);
+          const fantome = rotationConstruirePiece(true);
           fantome.traverse(o => { if (o.material) o.material.userData = { ...(o.material.userData || {}), ilyosTransient: true }; });
           const p = kaykitCellPosition(vers[0], vers[1], sol ?? kaykitCellSurfaceY(vers[0], vers[1]));
           fantome.position.set(p.x, p.y, p.z);
@@ -38337,6 +39502,9 @@
         });
         return res;
       };
+
+      // Ni herbe ni arbre sur une case de balise : le décor passerait dans le trône.
+      kaykitCaseReservee = (r, c) => butBalises() && state.rotation.balises.some(([br, bc]) => br === r && bc === c);
 
       const rotationSyncKayKitSceneBase = syncKayKitScene;
       syncKayKitScene = function syncKayKitSceneRotation() {
@@ -39473,7 +40641,7 @@
           const i = ile.cells.findIndex(([r, c]) => r === oeuf.r && c === oeuf.c);
           return i >= 0 && rotation.absCells[i] ? { oeuf, vers: rotation.absCells[i] } : null;
         }).filter(Boolean) : [];
-        const resultat = creaturesMagieBase(islandId, rotation);
+        const resultat = creaturesMagieBase.apply(this, arguments);
         if (resultat) suivants.forEach(({ oeuf, vers }) => { oeuf.r = vers[0]; oeuf.c = vers[1]; });
         return resultat;
       };
@@ -40206,6 +41374,496 @@
           if (!j) return false;
           actions.forEach((action, i) => j.deck.push({ id: `banc-d${joueur}-${i}`, action, used: false }));
           return true;
+        }
+      };
+      /* =====================================================================
+         MODE ROTATION — but EFFONDREMENT (règles v1 du 01/11, doc de
+         conception du mode Rotation).
+
+         — Pas de pose obligatoire : poser une île coûte 2 cartes (règle des
+           îles payantes, rules-core.js) et fait toujours apparaître un
+           gardien.
+         — L'archipel s'effondre : à la fin de chaque tour, la plus ancienne
+           île sans personne dessus coule. Les villages et le sanctuaire ne
+           coulent jamais (ce ne sont pas des îles).
+         — Gagner : le premier camp qui a fait tomber 5 gardiens adverses
+           (3 au départ, 5 choisi par Taekun le 17/11 après le banc).
+           En duel, chaque gardien perdu compte pour l'adversaire (même poussé
+           par son propre camp). Plus de place pour poser : le plus de chutes
+           gagne, égalité = nul (vainqueurAuxCouronnes lit player.score).
+         — Pas de couronnes (butSansCouronnes, rotation.js).
+
+         Variante SURVIE (Taekun, 17/11) : la partie part d'un setup du duel
+         symétrique, 6 gardiens chacun (ceux du setup, complétés en miroir au
+         plus près de chaque village), aucune pose d'île donc aucune
+         invocation ; les îles tombent et le dernier camp qui a des gardiens
+         gagne. En duel, c'est exactement faire tomber les 6 gardiens
+         adverses : même compteur, cible 6.
+
+         Le compteur de chutes infligées est `player.score` : il voyage avec
+         l'état, les clones du planner et le bilan, comme les couronnes.
+
+         L'effondrement a lieu au passage de tour, dans scoreCrownsAtTurnStart,
+         que les trois transitions appellent (vraie partie, anticipation du
+         planner, self-play) : l'IA voit donc l'île couler.
+         ===================================================================== */
+      const EFFONDREMENT_CIBLE = 5;
+      const EFFONDREMENT_SURVIE_GARDIENS = 6;
+      // Setups assez fournis pour y loger 6 gardiens par camp.
+      const EFFONDREMENT_SURVIE_ILES_MIN = 8;
+
+      function butEffondrement(source = state) {
+        return source?.rotation?.but === "effondrement";
+      }
+
+      /* Appelé par rotationInstaller (rotation.js) une fois state.rotation
+         posé : îles payantes, une seule couronne, aucune en jeu. */
+      function effondrementInstaller(variante = null) {
+        const survie = variante === "survie";
+        Object.assign(state.rotation, {
+          cible: survie ? EFFONDREMENT_SURVIE_GARDIENS : EFFONDREMENT_CIBLE,
+          dernierEffondrement: 0,
+          ...(survie ? { variante: "survie" } : {})
+        });
+        state.rules = { ...(state.rules || {}), disableSecondCrown: true, ilesPayantes: true };
+        rotationRangerCouronnes();
+        if (survie) effondrementSurvieMiseEnPlace();
+      }
+
+      function effondrementSurvie(source = state) {
+        return butEffondrement(source) && source.rotation.variante === "survie";
+      }
+
+      /* Survie : un setup du duel symétrique tiré au hasard, puis chaque camp
+         complété à 6 gardiens. Les cases sont prises au plus près du village
+         du joueur 1, et leur miroir (demi-tour du plateau, la symétrie des
+         setups) va au joueur 2 : la mise en place reste parfaitement
+         équitable. */
+      function effondrementSurvieMiseEnPlace() {
+        if (!state || state.players.length !== 2) return;
+        const ids = Object.keys(SYMMETRIC_DUEL_SETUPS).filter(id => {
+          const def = SYMMETRIC_DUEL_SETUPS[id];
+          return def.camp !== "defense" && symmetricSetupDisponible(def)
+            && symmetricSetup(id).islands.length >= EFFONDREMENT_SURVIE_ILES_MIN;
+        });
+        if (!ids.length) return;
+        const choisi = ids[Math.floor(gameRandom() * ids.length)];
+        applyStartingBoardMode("symmetric", choisi);
+        state.rotation.setup = choisi;
+        const bord = GRID - 1;
+        const cle = ([r, c]) => `${r},${c}`;
+        /* Le miroir qui échange les deux camps : celui qui envoie les
+           gardiens du setup du joueur 1 sur ceux du joueur 2 et garde les
+           îles en place (les villages d'un même joueur sont en diagonale,
+           le demi-tour ne convient donc pas toujours). */
+        const transformations = [
+          ([r, c]) => [bord - r, bord - c], ([r, c]) => [r, bord - c], ([r, c]) => [bord - r, c],
+          ([r, c]) => [c, r], ([r, c]) => [bord - c, bord - r]
+        ];
+        const terreSetup = new Set(state.islands.flatMap(is => is.cells.map(cle)));
+        const deA = state.characters.filter(g => g.player === 0).map(g => [g.r, g.c]);
+        const deB = new Set(state.characters.filter(g => g.player === 1).map(g => cle([g.r, g.c])));
+        const miroir = transformations.find(t => deA.every(x => deB.has(cle(t(x))))
+          && [...terreSetup].every(k => terreSetup.has(cle(t(k.split(",").map(Number))))));
+        if (!miroir) return;
+        const occupees = new Set(state.characters.map(g => cle([g.r, g.c])));
+        const terre = (r, c) => isLand(r, c) && !isSanctuary(r, c);
+        const villages = villagesForPlayer(state.players[0]);
+        const dVillage = (r, c) => Math.min(...villages.map(v => Math.abs(r - v.r) + Math.abs(c - v.c)));
+        const candidates = [];
+        for (let r = 0; r <= bord; r++) for (let c = 0; c <= bord; c++) {
+          const [mr, mc] = miroir([r, c]);
+          if (!terre(r, c) || !terre(mr, mc) || occupees.has(cle([r, c])) || occupees.has(cle([mr, mc]))) continue;
+          // Seulement la moitié du joueur 1 : plus près de ses villages que le miroir.
+          const dMoi = dVillage(r, c);
+          if (dMoi < dVillage(mr, mc)) candidates.push({ r, c, d: dMoi });
+        }
+        candidates.sort((a, b) => a.d - b.d || a.r - b.r || a.c - b.c);
+        const compte = id => state.characters.filter(g => g.player === id).length;
+        for (const { r, c } of candidates) {
+          if (compte(0) >= EFFONDREMENT_SURVIE_GARDIENS || compte(1) >= EFFONDREMENT_SURVIE_GARDIENS) break;
+          const [mr, mc] = miroir([r, c]);
+          state.characters.push({ id: `char-${state.nextCharId++}`, player: 0, r, c });
+          state.characters.push({ id: `char-${state.nextCharId++}`, player: 1, r: mr, c: mc });
+        }
+      }
+
+      /* Survie : aucune pose d'île de toute la partie (donc aucune
+         invocation). La limite d'îles atteinte est la règle existante qui
+         rend la pose impossible, pour le joueur comme pour le planner. */
+      const effondrementLimiteBase = islandLimitReachedForPlayer;
+      islandLimitReachedForPlayer = function islandLimitReachedForPlayerSurvie(playerId) {
+        return effondrementSurvie() || effondrementLimiteBase(playerId);
+      };
+      /* …mais ce n'est pas une fin de partie : le plateau rétrécit, on joue
+         jusqu'au dernier gardien. */
+      const effondrementFinPoseBase = finParPoseImpossible;
+      finParPoseImpossible = function finParPoseImpossibleSurvie(playerId) {
+        return effondrementSurvie() ? false : effondrementFinPoseBase(playerId);
+      };
+
+      /** L'île qui coulera à la fin du tour en cours : la plus ancienne (plus
+       *  petit identifiant) sur laquelle ne se tient personne. Les îles de la
+       *  mise en place sont les plus anciennes. */
+      function effondrementProchaineIle(source = state) {
+        if (!source?.islands?.length) return null;
+        const occupees = new Set((source.characters || []).map(g => `${g.r},${g.c}`));
+        let choisie = null;
+        for (const ile of source.islands) {
+          if (ile.cells.some(([r, c]) => occupees.has(`${r},${c}`))) continue;
+          if (!choisie || ile.id < choisie.id) choisie = ile;
+        }
+        if (!choisie && effondrementSurvie(source)) return effondrementProchaineIleSurvie(source);
+        return choisie;
+      }
+
+      /* Survie : quand il ne reste plus d'île vide, une île occupée coule
+         quand même (sinon chacun se terrait sur son île et la partie ne
+         finissait jamais : 4 parties sur 4 bloquées à 120 tours au banc).
+         C'est la plus loin du sanctuaire ; à égalité, la plus ancienne. Les
+         gardiens restés dessus tombent avec elle. */
+      function effondrementDistanceCentre(ile) {
+        let d = Infinity;
+        for (const [r, c] of ile.cells) d = Math.min(d, Math.abs(r - CENTER.r) + Math.abs(c - CENTER.c));
+        return d;
+      }
+      function effondrementProchaineIleSurvie(source) {
+        let choisie = null, dChoisie = -1;
+        for (const ile of source.islands) {
+          const d = effondrementDistanceCentre(ile);
+          if (d > dChoisie || (d === dChoisie && ile.id < choisie.id)) { choisie = ile; dChoisie = d; }
+        }
+        return choisie;
+      }
+
+      /* Une île coule. Jamais de personnage dessus (choisie vide) ; un œuf
+         (couche Créatures) reste sur le vide et attend une nouvelle île. */
+      function effondrementCouler() {
+        const ile = effondrementProchaineIle();
+        if (!ile) return null;
+        if (!ilyosSimulationActive) effondrementAnimerChute(ile);
+        // Survie : ceux qui sont restés dessus tombent avec elle.
+        const dessus = new Set(ile.cells.map(([r, c]) => `${r},${c}`));
+        (state.characters || []).filter(g => dessus.has(`${g.r},${g.c}`)).forEach(g => {
+          if (state.winner === null) removeCharacterFromGame(g, g.r, g.c, { dr: 0, dc: 0, toR: g.r, toC: g.c });
+        });
+        state.islands = state.islands.filter(is => is.id !== ile.id);
+        if (state.selectedIslandId === ile.id) state.selectedIslandId = null;
+        return ile;
+      }
+
+      /* Passage de tour : l'île tombe avant que le joueur suivant joue. */
+      const effondrementScoreDebutBase = scoreCrownsAtTurnStart;
+      scoreCrownsAtTurnStart = function scoreCrownsAtTurnStartEffondrement(player, options = {}) {
+        if (butEffondrement() && !options.immediat && state && state.winner === null
+          && state.turn > 1 && state.rotation.dernierEffondrement !== state.turn) {
+          // Copie à l'écriture : un clone du planner peut partager l'objet.
+          state.rotation = { ...state.rotation, dernierEffondrement: state.turn };
+          effondrementCouler();
+          if (effondrementSurvie() && state.winner === null && !state.islands.length) effondrementFinSurvie();
+          return 0;
+        }
+        return effondrementScoreDebutBase(player, options);
+      };
+
+      /* Survie : la dernière île a coulé. Ne restent que les villages et le
+         sanctuaire : le camp qui a le plus de gardiens debout gagne, égalité
+         = nul. */
+      function effondrementFinSurvie() {
+        const debout = id => (state.characters || []).filter(g => !g.creature && !estNeutre(g) && memeEquipe(g.player, id)).length;
+        const [a, b] = state.players;
+        if (!a || !b) return;
+        const na = debout(a.id), nb = debout(b.id);
+        const gagnant = na === nb ? null : (na > nb ? a : b);
+        state.winner = gagnant ? gagnant.id : MATCH_NUL;
+        if (ilyosSimulationActive) return;
+        stopTurnTimer();
+        if (!gagnant) { setTimeout(() => showEgalite(`${a.name} ${na} · ${b.name} ${nb} gardiens debout`), 900); return; }
+        playVictoryCelebration(gagnant.id);
+        setTimeout(() => showVictory(gagnant,
+          `La dernière île a coulé : ${gagnant.name} garde ${Math.max(na, nb)} gardiens debout contre ${Math.min(na, nb)}.`), 1500);
+      }
+
+      /* ---------- Chutes ------------------------------------------------- */
+      /** Camp crédité de la chute d'un gardien de `victime` : le joueur actif
+       *  s'il est adverse ; sinon, en duel, l'autre camp. */
+      function effondrementAuteur(victime) {
+        const actif = state.players[state.currentPlayer];
+        if (actif && !memeEquipe(actif.id, victime)) return actif;
+        const adverses = state.players.filter(p => !memeEquipe(p.id, victime));
+        const camps = new Set(adverses.map(p => (gardiensPartages() ? p.id % 2 : p.id)));
+        return camps.size === 1 ? adverses[0] : null;
+      }
+
+      const effondrementRemoveBase = removeCharacterFromGame;
+      removeCharacterFromGame = function removeCharacterFromGameEffondrement(char, ...args) {
+        const compte = butEffondrement() && char && !char.creature && !estNeutre(char)
+          && state.winner === null && state.players[char.player];
+        const resultat = effondrementRemoveBase(char, ...args);
+        if (compte) effondrementCompterChute(char);
+        return resultat;
+      };
+
+      function effondrementCompterChute(char) {
+        const auteur = effondrementAuteur(char.player);
+        if (!auteur) return;
+        state.players.forEach(p => {
+          if (memeEquipe(p.id, auteur.id)) p.score = (p.score || 0) + 1;
+        });
+        if (!ilyosSimulationActive) triggerScoreAnimation(auteur.id);
+        if ((auteur.score || 0) < rotationCible()) return;
+        state.winner = auteur.id;
+        if (ilyosSimulationActive) return;
+        stopTurnTimer();
+        playVictoryCelebration(auteur.id);
+        setTimeout(() => showVictory(auteur,
+          effondrementSurvie()
+            ? `${auteur.name} est le dernier à tenir debout sur ce qu’il reste d’ILYOS.`
+            : `${auteur.name} a fait tomber ${rotationCible()} gardiens adverses et règne sur ce qu’il reste d’ILYOS.`), 1500);
+      }
+
+      /* ---------- HUD ----------------------------------------------------- */
+      /* Trois emplacements, comme les couronnes : chaque gardien adverse
+         tombé en remplit un. Silhouette de gardien qui chute, sans texte. */
+      const EFFONDREMENT_ICONE = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="5" r="2.6"/><path d="M6.4 9.2 C7.6 8 12.4 8 13.6 9.2 L12.6 14 L7.4 14 Z"/><path d="M5 17.5 H15" class="vide-ligne"/></svg>';
+      function effondrementScoreHud(joueur) {
+        if (!butEffondrement() || !joueur) return null;
+        const pleins = Math.max(0, Math.min(rotationCible(), joueur.score || 0));
+        let html = "";
+        for (let i = 0; i < rotationCible(); i++) {
+          html += `<span class="hud-v2-chute-icon${i < pleins ? " is-filled" : ""}">${EFFONDREMENT_ICONE}</span>`;
+        }
+        return `<span class="hud-v2-chutes" title="Gardiens adverses tombés : ${pleins}/${rotationCible()}">${html}</span>`;
+      }
+      const effondrementScoreHudBase = rotationScoreHud;
+      rotationScoreHud = function rotationScoreHudEffondrement(joueur) {
+        return butEffondrement() ? effondrementScoreHud(joueur) : effondrementScoreHudBase(joueur);
+      };
+
+      /* Annonce du premier tour. */
+      const effondrementBeginTurnBase = beginTurn;
+      beginTurn = function beginTurnEffondrement() {
+        const resultat = effondrementBeginTurnBase();
+        if (butEffondrement() && state?.turn === 1 && !state.rotation.annonce && !ilyosSimulationActive) {
+          state.rotation.annonce = true;
+          setTimeout(() => showToast(effondrementSurvie()
+            ? "Effondrement · Survie : à chaque fin de tour, la plus vieille île vide coule. Pas de pose d’île : le dernier camp debout gagne."
+            : `Rotation · Effondrement : à chaque fin de tour, la plus vieille île vide coule. Fais tomber ${rotationCible()} gardiens adverses. Une île coûte 2 cartes.`), 1400);
+        }
+        return resultat;
+      };
+
+      /* ---------- IA ------------------------------------------------------- */
+      /* Le planner sait déjà pousser, poser et tourner ; seule l'évaluation
+         change : chutes infligées, gardiens en jeu, gardiens exposés au vide
+         (plannerGraviteExpulsion, comme le jeu classique). */
+      /* Réglés au banc (scripts/selfplay-effondrement.js, 2026-11-16) :
+         plus prudent (expose 1200), l'IA se terrait et la partie calait ;
+         plus agressif (contact 120), elle se jetait au contact et le second
+         joueur gagnait 15 parties sur 16. */
+      const EFFONDREMENT_POIDS = {
+        chute: 2600,
+        // Un gardien de plus en jeu vaut plus que les 2 cartes de son île.
+        gardien: 900,
+        // Gardien qu'une poussée adverse peut jeter au vide au prochain tour.
+        expose: 700,
+        // Gardien adverse que JE peux jeter au vide.
+        cible: 500,
+        // Rapprochement : distance moyenne entre mes gardiens et les siens.
+        contact: 40,
+        // Survie : gardien sur l'île qui coulera au tour suivant.
+        sursis: 600
+      };
+
+      function effondrementEvaluer(playerId) {
+        const moi = state.players[playerId];
+        if (!moi) return 0;
+        if (state.winner !== null && state.winner !== undefined) {
+          if (state.winner === MATCH_NUL) return 0;
+          return memeEquipe(state.winner, playerId) ? 1e7 : -1e7;
+        }
+        const adverses = state.players.filter(p => !memeEquipe(p.id, playerId));
+        const leurScore = Math.max(0, ...adverses.map(p => p.score || 0));
+        let valeur = ((moi.score || 0) - leurScore) * EFFONDREMENT_POIDS.chute;
+        const gardiens = (state.characters || []).filter(g => !g.creature && !estNeutre(g) && state.players[g.player]);
+        const miens = gardiens.filter(g => memeEquipe(g.player, playerId));
+        const siens = gardiens.filter(g => !memeEquipe(g.player, playerId));
+        valeur += (miens.length - siens.length) * EFFONDREMENT_POIDS.gardien;
+        const adverse = adverses[0];
+        avecGrilleTerre(() => {
+          miens.forEach(g => { valeur -= plannerGraviteExpulsion(playerId, g.r, g.c, true) * EFFONDREMENT_POIDS.expose; });
+          if (adverse) siens.forEach(g => { valeur += plannerGraviteExpulsion(adverse.id, g.r, g.c, true) * EFFONDREMENT_POIDS.cible; });
+        });
+        /* Survie : un gardien encore sur l'île qui coulera à la fin du tour
+           est un gardien perdu ; sur la suivante, il est en sursis. */
+        if (effondrementSurvie()) {
+          const premiere = effondrementProchaineIle();
+          const rang = new Map();
+          if (premiere && premiere.cells.some(([r, c]) => gardiens.some(g => g.r === r && g.c === c))) {
+            premiere.cells.forEach(([r, c]) => rang.set(`${r},${c}`, 0));
+            const suivante = effondrementProchaineIleSurvie({ islands: state.islands.filter(is => is.id !== premiere.id) });
+            suivante?.cells.forEach(([r, c]) => rang.set(`${r},${c}`, 1));
+          }
+          gardiens.forEach(g => {
+            const i = rang.get(`${g.r},${g.c}`);
+            if (i === undefined) return;
+            const poids = i === 0 ? EFFONDREMENT_POIDS.chute * .9 : EFFONDREMENT_POIDS.sursis;
+            valeur += memeEquipe(g.player, playerId) ? -poids : poids;
+          });
+        }
+        if (miens.length && siens.length) {
+          let total = 0;
+          miens.forEach(a => { total += Math.min(...siens.map(b => Math.abs(a.r - b.r) + Math.abs(a.c - b.c))); });
+          valeur -= (total / miens.length) * EFFONDREMENT_POIDS.contact;
+        }
+        if (plannerTraceEval) plannerTraceEval.push({ terme: "effondrement", montant: valeur, note: null });
+        return valeur;
+      }
+
+      const effondrementEvaluerEtatBase = evaluerEtatStrategique;
+      evaluerEtatStrategique = function evaluerEtatStrategiqueEffondrement(playerId) {
+        return butEffondrement() ? effondrementEvaluer(playerId) : effondrementEvaluerEtatBase(playerId);
+      };
+
+      const effondrementAiConfigBase = aiConfig;
+      aiConfig = function aiConfigEffondrement() {
+        const cfg = effondrementAiConfigBase();
+        return butEffondrement() && !cfg.globalPlanning ? { ...cfg, globalPlanning: true } : cfg;
+      };
+
+      /* ---------- Rendu 3D ------------------------------------------------- */
+      /* L'île qui coulera à la fin du tour porte un liseré braise le long de
+         son pourtour : on voit sans texte ce qui va tomber, et on peut la
+         sauver en y posant un gardien (en Survie, il faut au contraire en
+         descendre). Statique, matériau de base, rien qui
+         tourne en continu. */
+      const EFFONDREMENT_BRAISE = 0xff4d12;
+
+      function effondrementConstruireLisere(ile) {
+        const groupe = new THREE.Group();
+        groupe.name = "effondrement-lisere";
+        groupe.userData.ileId = ile.id;
+        groupe.userData.cle = ile.cells.map(([r, c]) => `${r},${c}`).join(";");
+        // Couleur franche, insensible à la lumière du ciel (qui la délavait
+        // en saumon) : matériau non éclairé, hors correction de tons.
+        const matiere = new THREE.MeshBasicMaterial({ color: EFFONDREMENT_BRAISE, toneMapped: false });
+        matiere.userData = { ilyosTransient: true };
+        const sombre = new THREE.MeshStandardMaterial({ color: 0x2a0f06, roughness: .9, metalness: 0 });
+        sombre.userData = { ilyosTransient: true };
+        const L = KAYKIT_BLOCK_SIZE, e = .09, h = .05;
+        const barreH = kaykitGeometry("effondrement-barre-h", () => new THREE.BoxGeometry(L, h, e));
+        const barreV = kaykitGeometry("effondrement-barre-v", () => new THREE.BoxGeometry(e, h, L));
+        const ombreH = kaykitGeometry("effondrement-ombre-h", () => new THREE.BoxGeometry(L + .02, h * .6, e + .04));
+        const ombreV = kaykitGeometry("effondrement-ombre-v", () => new THREE.BoxGeometry(e + .04, h * .6, L + .02));
+        const dedans = new Set(ile.cells.map(([r, c]) => `${r},${c}`));
+        ile.cells.forEach(([r, c]) => {
+          const p = kaykitCellPosition(r, c, kaykitCellSurfaceY(r, c));
+          [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dr, dc]) => {
+            if (dedans.has(`${r + dr},${c + dc}`)) return;
+            const horizontale = dr !== 0;
+            const x = p.x + dc * (L / 2 - e / 2);
+            const z = p.z + dr * (L / 2 - e / 2);
+            const ombre = new THREE.Mesh(horizontale ? ombreH : ombreV, sombre);
+            ombre.position.set(x, p.y + h * .3, z);
+            const barre = new THREE.Mesh(horizontale ? barreH : barreV, matiere);
+            barre.position.set(x, p.y + h / 2 + .004, z);
+            groupe.add(ombre, barre);
+          });
+        });
+        groupe.traverse(o => { o.raycast = () => {}; });
+        return groupe;
+      }
+
+      function effondrementSync3D() {
+        if (!kaykit3D?.dynamicGroup) return;
+        const ile = butEffondrement() && state.winner === null && !state.draft ? effondrementProchaineIle() : null;
+        const actuel = kaykit3D.effondrementLisere;
+        const cle = ile ? ile.cells.map(([r, c]) => `${r},${c}`).join(";") : null;
+        if (actuel && actuel.parent && actuel.userData.cle === cle) return;
+        if (actuel) {
+          disposeKayKitObjects([actuel]);
+          kaykit3D.effondrementLisere = null;
+        }
+        if (!ile) return;
+        const lisere = effondrementConstruireLisere(ile);
+        kaykit3D.dynamicGroup.add(lisere);
+        kaykit3D.effondrementLisere = lisere;
+      }
+
+      const effondrementSyncSceneBase = syncKayKitScene;
+      syncKayKitScene = function syncKayKitSceneEffondrement() {
+        effondrementSyncSceneBase();
+        try {
+          effondrementSync3D();
+        } catch (erreur) {
+          console.warn("[ILYOS] effondrement 3D", erreur);
+        }
+      };
+
+      /* L'île coule : une copie de ses blocs (géométries et matériaux
+         partagés, rien d'alloué) glisse vers les nuages en 0,9 s, puis
+         disparaît. La vraie île a déjà quitté l'état. */
+      function effondrementAnimerChute(ile) {
+        try {
+          playSfx("fall", { c: ile.cells[0]?.[1] ?? CENTER.c, delay: .05 });
+          if (!kaykit3D?.dynamicGroup || !kaykit3D.scene) return;
+          const blocs = kaykit3D.dynamicGroup.children.filter(
+            enfant => enfant.userData?.islandBlock && String(enfant.userData.islandId) === String(ile.id));
+          const lisere = kaykit3D.effondrementLisere?.userData?.ileId === ile.id ? kaykit3D.effondrementLisere : null;
+          const copies = [...blocs, ...(lisere ? [lisere] : [])].map(bloc => {
+            const copie = bloc.clone(true);
+            bloc.updateWorldMatrix(true, false);
+            copie.matrixAutoUpdate = true;
+            bloc.matrixWorld.decompose(copie.position, copie.quaternion, copie.scale);
+            copie.traverse(o => { o.raycast = () => {}; });
+            kaykit3D.scene.add(copie);
+            return copie;
+          });
+          if (!copies.length) return;
+          if (kaykitReducedMotion()) { copies.forEach(c => c.parent?.remove(c)); return; }
+          copies.forEach((copie, i) => {
+            const baseY = copie.position.y;
+            const penche = (i % 2 ? 1 : -1) * .18;
+            kaykit3D.fxTweens.push({
+              object: copie,
+              startedAt: performance.now(),
+              duration: 900,
+              update: (obj, t) => {
+                // Tremble un instant, puis tombe en accélérant.
+                const chute = t < .18 ? 0 : Math.pow((t - .18) / .82, 3);
+                const tremble = t < .18 ? Math.sin(t * 160) * .025 : 0;
+                obj.position.y = baseY - chute * 4.2;
+                obj.position.x += tremble;
+                obj.rotation.z = penche * chute;
+              },
+              dispose: obj => { obj.parent?.remove(obj); }
+            });
+          });
+          kaykitChoc?.(1);
+        } catch (erreur) {
+          console.warn("[ILYOS] effondrement chute", erreur);
+        }
+      }
+
+      window.ILYOS_EFFONDREMENT = {
+        prochaineIle: () => effondrementProchaineIle()?.id ?? null,
+        evaluer: playerId => (butEffondrement() ? Math.round(effondrementEvaluer(playerId)) : null),
+        poids(nouveaux) {
+          const avant = { ...EFFONDREMENT_POIDS };
+          if (nouveaux) Object.assign(EFFONDREMENT_POIDS, nouveaux);
+          return avant;
+        },
+        /* Banc (scripts/selfplay-effondrement.js) : un départ de self-play
+           converti en partie Effondrement. */
+        depart(json, { setup = null, cible = null, variante = null } = {}) {
+          return withSimulatedState(JSON.parse(json), () => {
+            if (setup) applyStartingBoardMode("symmetric", setup);
+            state.rotation = null;
+            rotationInstaller({ but: "effondrement", couches: [], ...(variante ? { variante } : {}) });
+            if (cible) state.rotation.cible = cible;
+            state.islandPlacedThisTurn = false;
+            return snapshotState();
+          });
         }
       };
       /* =====================================================================
@@ -46245,7 +47903,8 @@
         II: "Acte II · Les Îles se souviennent",
         III: "Acte III · La Dissonance",
         CONFLUENCE: "Confluence",
-        IV: "Acte IV · Les Cimes"
+        IV: "Acte IV · Les Cimes",
+        V: "Acte V · Les Grands Archipels"
       };
 
       /* Les trois principes anciens ne sont JAMAIS présentés comme des
@@ -46312,6 +47971,67 @@
           .some(v => v.r === village?.r && v.c === village?.c);
         if (relais && villageDuJoueur) return relais.map(([r, c]) => [r, c]);
         return puzzleCornerCrownCellsBase(village);
+      };
+
+      /* ---------- Couronne validée --------------------------------------
+         Dans une partie, une couronne validée renaît au sanctuaire. Dans une
+         énigme elle a fini son voyage : elle quitte le plateau. Sans cela, une
+         énigme à deux couronnes se gagnerait en validant deux fois la même,
+         revenue au centre à mi-chemin du village. */
+      const puzzleResetArtifactBase = resetArtifactObject;
+      resetArtifactObject = function resetArtifactObjectPuzzleAware(artifact) {
+        if (PUZZLE.active && artifact) {
+          artifact.active = false;
+          artifact.carrierId = null;
+          return;
+        }
+        puzzleResetArtifactBase(artifact);
+      };
+
+      /* UNE COURONNE ÉTEINTE LE RESTE. ensureArtifactState() (core.js) rallume
+         la première couronne « par précaution » à chaque lecture : juste en
+         partie, faux en énigme, où une énigme SANS couronne en voyait surgir
+         une au centre du plateau (Destinée) et où une couronne validée
+         revenait en jeu sur la case du village. */
+      const puzzleEnsureArtifactBase = ensureArtifactState;
+      ensureArtifactState = function ensureArtifactStatePuzzleAware() {
+        const eteinte = !!(state && state.puzzle && state.artifact && state.artifact.active === false);
+        puzzleEnsureArtifactBase();
+        if (eteinte) state.artifact.active = false;
+      };
+
+      /* ---------- Formes autorisées ------------------------------------
+         `placement: { formes: { domino: 1 } }` n'ouvre que les formes listées,
+         chacune en nombre compté. Sans cette liste, une énigme qui rouvre la
+         pose offrirait les neuf formes à volonté — une Croix pose un pont
+         n'importe où et dissout le puzzle. */
+      function puzzleFormesAutorisees() {
+        return PUZZLE.active && PUZZLE.def?.placement?.formes || null;
+      }
+      const puzzleShapeLimitReachedBase = shapeLimitReached;
+      shapeLimitReached = function shapeLimitReachedPuzzleAware(shapeKey) {
+        const formes = puzzleFormesAutorisees();
+        if (!formes) return puzzleShapeLimitReachedBase(shapeKey);
+        const nombre = formes[shapeKey] || 0;
+        return shapeUsageCountForOwner(state.currentPlayer, shapeKey) >= nombre;
+      };
+
+      /* Îles encore posables dans l'énigme en cours, ou null si elle ne compte
+         pas ses formes. Le HUD l'affiche sur le bouton Île (ui.js). */
+      function puzzleIlesRestantes() {
+        const formes = puzzleFormesAutorisees();
+        if (!formes || !state) return null;
+        return Object.keys(formes).reduce((total, forme) =>
+          total + Math.max(0, (formes[forme] || 0) - shapeUsageCountForOwner(0, forme)), 0);
+      }
+
+      /* Dans une énigme, poser une île n'est JAMAIS une obligation : c'est un
+         coup comme un autre, à jouer au bon moment ou pas du tout. Sans cela,
+         le tour ne pourrait plus finir une fois le stock de formes épuisé. */
+      const puzzleObligationIleBase = obligationIleRemplie;
+      obligationIleRemplie = function obligationIleRempliePuzzleAware(source = state) {
+        if (PUZZLE.active && source?.puzzle) return true;
+        return puzzleObligationIleBase(source);
       };
 
       /* ---------- Comptage exact des cartes -----------------------------
@@ -46463,7 +48183,11 @@
              allié en faisait apparaître une seconde. */
           rules: {
             allowDissolve: false, islandLimitPerPlayer: 0,
-            shapeLimitPerOwner: 0, disableSecondCrown: true
+            shapeLimitPerOwner: 0, disableSecondCrown: true,
+            /* Une énigme qui rouvre la pose peut la rendre PAYANTE (deux
+               cartes, la règle du mode personnalisé) : invoquer un Gardien
+               devient alors un choix d'optimisation, pas un cadeau. */
+            ilesPayantes: !!def.placement?.payante
           },
           /* La pose est neutralisée : une énigme se résout avec les cartes
              qu'on lui donne, pas en fabriquant du terrain. Une définition peut
@@ -46523,6 +48247,12 @@
              faisait surgir les gardiens du Sanctuaire suivant au lieu de les
              faire entrer. */
           const char = { id: `pz${PUZZLE.serie}-${state.nextCharId++}`, player: g.p || 0, r: g.r, c: g.c };
+          /* CHACUN SA COULEUR. Quand l'énigme attend chaque Gardien sur SA case
+             (assignedCells), le chevalier prend la couleur de cette case :
+             c'est le seul appariement, sans signe à déchiffrer. */
+          const rangCouleur = def.goal?.type === "assignedCells" && g.key
+            ? Object.keys(def.goal.pairs || {}).indexOf(g.key) + 1 : 0;
+          if (rangCouleur > 0 && PUZZLE_SCEAU_COLORS[rangCouleur] != null) char.teinte = PUZZLE_SCEAU_COLORS[rangCouleur];
           state.characters.push(char);
           if (g.key) PUZZLE.charsByKey[g.key] = char.id;
           if (g.crown) {
@@ -46823,131 +48553,19 @@
             border-color:rgba(255,232,170,.30);box-shadow:0 4px 14px rgba(0,0,0,.32);}
 
           /* ================= LES SIGNES =================
-             Ce que l'image de référence appelle de la magie : des ORBES d'or
-             en perspective autour du plateau, avec leurs nœuds lumineux, des
-             glyphes et de la poussière de lumière. Tout est IMMOBILE : aucune
-             animation ni boucle JS, et rien ne capte le pointeur. Les traits sont
-             FINS et leur lumière est portée par la lueur (box-shadow), pas par
-             l'épaisseur : c'est ce qui permet de les voir passer devant le
-             plateau sans jamais gêner sa lecture. */
+             Ce que l'image de référence appelle de la magie : des glyphes et
+             de la poussière de lumière autour du plateau. Tout est IMMOBILE :
+             aucune animation ni boucle JS, et rien ne capte le pointeur. */
           #puzzleLayer .pz-signes{position:absolute;inset:0;z-index:1;
             overflow:hidden;pointer-events:none;opacity:0;
             transition:opacity 1.8s ease;}
           #puzzleLayer .pz-signes.on{opacity:1;}
-          /* Le trait reste d'un pixel : c'est la LUEUR qui le rend visible sur
-             un ciel de plein jour, pas l'épaisseur. Un trait plus gros barrerait
-             le plateau ; une lueur, on la traverse du regard. */
-          /* DES ARCS, PAS DES CERCLES. Rendre une bordure transparente
-             n'enlevait qu'un quart du tour, avec une coupe nette en diagonale :
-             il restait trois quarts de tracé, et l'œil refermait le cercle tout
-             seul. Un masque conique découpe un arc de longueur LIBRE et, mieux,
-             laisse ses deux extrémités s'éteindre en fondu — c'est ce fondu qui
-             fait qu'un arc se perd au loin au lieu d'être coupé.
-             Les deux variables d'arc sont posées par la construction,
-             avec les runes, pour que celles-ci tombent toujours SUR le tracé
-             conservé — masquées avec lui sinon. */
-          /* LE POIDS DU TRAIT. Le masque conique découpe aussi la lueur portée
-             par box-shadow : les arcs avaient beau être justes, ils ne pesaient
-             plus rien sur un ciel doré très clair. La lueur passe donc par
-             la propriete filter, qui suit le contour réellement conservé au lieu de
-             rayonner depuis la boîte carrée — elle survit au masque. Et le
-             trait passe à 1,4 px : sous cette épaisseur, l'anti-crénelage d'un
-             cercle incliné mange la moitié du pixel et le tracé clignote. */
-          #puzzleLayer .pz-anneau{position:absolute;left:50%;top:56%;
-            border:1.4px solid rgba(255,226,158,.95);border-radius:50%;
-            filter:drop-shadow(0 0 4px rgba(255,198,110,.85))
-                   drop-shadow(0 0 12px rgba(255,170,70,.45));
-            -webkit-mask-image:conic-gradient(from var(--pz-arc-de,0deg),
-              rgba(0,0,0,0) 0deg, #000 26deg,
-              #000 calc(var(--pz-arc-long,150deg) - 26deg),
-              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
-            mask-image:conic-gradient(from var(--pz-arc-de,0deg),
-              rgba(0,0,0,0) 0deg, #000 26deg,
-              #000 calc(var(--pz-arc-long,150deg) - 26deg),
-              rgba(0,0,0,0) var(--pz-arc-long,150deg), rgba(0,0,0,0) 360deg);
-            box-shadow:0 0 20px rgba(255,190,90,.32),
-              inset 0 0 70px rgba(255,190,90,.07);
-            /* IMMOBILES. Les orbes tournaient (un tour en 150 à 520 s) : un
-               mouvement imperceptible qui obligeait pourtant le navigateur à
-               recomposer huit très grands calques filtrés et masqués à chaque
-               rafraîchissement d'écran, au-dessus du plateau 3D (Taekun,
-               2026-11-03 : le mode puzzle faisait chauffer la machine). Même
-               dessin, posé une fois. */
-            transform:perspective(1400px) rotateX(var(--pz-assiette,72deg));}
-          /* LES NŒUDS. Chaque orbe porte deux points de lumière posés sur son
-             trait, qui tournent donc avec lui : un disque en haut, un losange
-             à droite. C'est ce qui fait lire une ORBITE plutôt qu'un cercle
-             dessiné — et cela ne coûte pas un élément de plus. */
-          #puzzleLayer .pz-anneau::before,#puzzleLayer .pz-anneau::after{
-            content:"";position:absolute;width:9px;height:9px;
-            background:rgba(255,244,214,.9);border-radius:50%;
-            box-shadow:0 0 12px rgba(255,214,140,.9),0 0 26px rgba(255,196,96,.5);}
-          #puzzleLayer .pz-anneau::before{left:50%;top:0;margin:-5px 0 0 -5px;}
-          #puzzleLayer .pz-anneau::after{left:100%;top:50%;margin:-5px 0 0 -5px;
-            border-radius:2px;transform:rotate(45deg);
-            background:rgba(255,236,186,.85);}
-          /* Chaque orbe a SON centre et SON assiette. Les décentrages sont
-             volontairement inégaux : deux orbes décalés du même écart
-             recréeraient une symétrie, qui est exactement ce qu'on fuit. */
-          #puzzleLayer .pz-anneau.a{width:152vmin;height:152vmin;margin:-76vmin 0 0 -76vmin;
-            left:57%;top:38%;--pz-assiette:67deg;}
-          /* ORBES DÉDOUBLÉS. Un second tracé collé au premier, à peine plus
-             large et un peu plus pâle : deux traits qui courent ensemble se
-             lisent comme une trajectoire, là où un trait seul n'est qu'un
-             cercle. Ils partagent la même assiette et le même centre, donc ils
-             restent parallèles en tournant. */
-          #puzzleLayer .pz-anneau.a2{width:160vmin;height:160vmin;margin:-80vmin 0 0 -80vmin;
-            left:57%;top:38%;--pz-assiette:67deg;
-            border-color:rgba(255,222,150,.62);
-            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            }
-          #puzzleLayer .pz-anneau.b{width:112vmin;height:112vmin;margin:-56vmin 0 0 -56vmin;
-            border-style:dashed;border-color:rgba(255,230,166,.98);
-            left:45%;top:47%;--pz-assiette:75deg;
-            }
-          #puzzleLayer .pz-anneau.b2{width:118vmin;height:118vmin;margin:-59vmin 0 0 -59vmin;
-            left:45%;top:47%;--pz-assiette:75deg;
-            border-color:rgba(255,222,150,.58);
-            box-shadow:none;filter:drop-shadow(0 0 3px rgba(255,198,110,.5));
-            }
-          /* Un arc, pas un cercle : deux côtés transparents ouvrent le tracé et
-             il se perd hors du regard au lieu de se refermer sur lui-même. */
-          #puzzleLayer .pz-anneau.c{width:74vmin;height:74vmin;margin:-37vmin 0 0 -37vmin;
-            border-color:rgba(255,228,162,.92);
-            left:63%;top:33%;--pz-assiette:61deg;}
-          /* DE TRAVERS. Deux arcs qui ne partagent l'assiette d'aucun autre :
-             ils coupent les orbes au lieu de les accompagner. Sans eux tout le
-             réseau reste couché dans le même plan et le ciel paraît plat. */
-          #puzzleLayer .pz-anneau.e{width:128vmin;height:128vmin;margin:-64vmin 0 0 -64vmin;
-            left:28%;top:30%;--pz-assiette:24deg;
-            border-color:rgba(255,222,150,.70);
-            box-shadow:0 0 16px rgba(255,190,90,.20);}
-          #puzzleLayer .pz-anneau.f{width:96vmin;height:96vmin;margin:-48vmin 0 0 -48vmin;
-            left:78%;top:26%;--pz-assiette:38deg;
-            border-color:rgba(255,222,150,.64);border-style:dashed;
-            box-shadow:none;}
-          /* Le quatrième orbe passe HORS CADRE sur les deux côtés : il ne se
-             lit que par ses arcs, très loin, et c'est lui qui donne au reste sa
-             profondeur. */
-          #puzzleLayer .pz-anneau.d{width:206vmin;height:206vmin;margin:-103vmin 0 0 -103vmin;
-            border-color:rgba(255,224,152,.78);border-style:dashed;
-            left:41%;top:52%;--pz-assiette:80deg;
-            }
-          /* L'inclinaison est une VARIABLE, pas une constante : c'est elle qui
-             empêche les orbes de se lire comme une cible. Quatre cercles
-             partageant le même centre et le même angle se superposent en
-             anneaux parfaitement emboîtés ; quatre orbes d'assiettes
-             différentes se croisent, et le ciel prend de la profondeur. */
-          /* LES RUNES. Elles ne flottent pas dans le cadre : elles sont posées
-             SUR un orbe, dans son assiette. La contre-rotation leur
-             rend leur lisibilité — sans elle, elles se retrouvent couchées à
-             plat dans l'assiette de l'orbe et deviennent illisibles. */
-          #puzzleLayer .pz-rune{position:absolute;
-            font-family:'Cinzel Decorative','Almendra',serif;font-size:14px;
-            color:rgba(255,236,190,.82);letter-spacing:.04em;
-            transform:translate(-50%,-50%) rotateX(calc(var(--pz-assiette,72deg) * -1));
-            text-shadow:0 0 10px rgba(255,214,140,.85),0 0 24px rgba(255,190,90,.45);
-            opacity:.75;}
+          /* PLUS D'ARCS. Les huit grands orbes d'or (jusqu'à 3 000 px de large,
+             filtrés et masqués) étaient recomposés par-dessus le plateau 3D à
+             chaque image : mesuré le 2026-11-15, une énigme au repos dessinait
+             quatre fois moins d'images que le solo, et autant que lui une fois
+             les arcs masqués. Ils sont retirés (Taekun) ; restent les glyphes
+             et la poussière de lumière, qui ne coûtent rien. */
           #puzzleLayer .pz-glyphe{position:absolute;font-size:15px;
             color:rgba(255,238,196,.85);
             text-shadow:0 0 10px rgba(255,214,140,.9),0 0 22px rgba(255,190,90,.5);
@@ -47092,7 +48710,7 @@
           #puzzleLayer.reveil .pz-signes{opacity:0;transition:opacity .8s ease;
             pointer-events:none;}
           /* EXCEPTION : l'ouverture des Voies garde ses signes célestes.
-             Les anneaux dorés, les glyphes et les poussières sont TOUT ce qu'il
+             Les glyphes et les poussières sont TOUT ce qu'il
              y a à voir pendant les premières secondes, quand la caméra est à
              240 unités d'altitude et que le monde 3D est hors de portée. Les
              masquer comme le reste du chrome — ce que fait toute séquence —
@@ -47540,10 +49158,9 @@
          sur les îles. */
       const PUZZLE_SCEAU_COLORS = {
         1: 0x2b9dff,   // bleu
-        2: 0xff8a32,   // orange
-        3: 0xe256cf,   // magenta
-        4: 0xff4d4d    // vermillon — le jaune essayé d'abord se dissolvait
-                       //   sur le vert clair des îles comme sur le ciel
+        2: 0xff4d4d,   // rouge
+        3: 0xffc93c,   // jaune — lisible depuis que la case porte son fond de nuit
+        4: 0xc86bff    // violet
       };
 
       function puzzleGoalCellsFrom(goal, sortie = []) {
@@ -47711,38 +49328,14 @@
           losange(.84);
           ctx.strokeStyle = teinte; ctx.lineWidth = 4; ctx.stroke();
 
-          /* Le motif tient dans le carré INSCRIT au losange, pas dans le
-             losange : au-delà il déborderait sur les pointes. */
-          const r = 54;
-          ctx.beginPath();
-          if (rang === 1) {
-            // le Croissant
-            ctx.arc(0, 0, r, Math.PI * .42, Math.PI * 1.58, false);
-            ctx.arc(r * .42, 0, r * .86, Math.PI * 1.5, Math.PI * .5, true);
-            ctx.closePath();
-          } else if (rang === 2) {
-            // l'Étoile — quatre branches, pas cinq : elles restent effilées
-            for (let i = 0; i < 8; i++) {
-              const a = i * Math.PI / 4 - Math.PI / 2;
-              const rr = i % 2 ? r * .32 : r;
-              ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
-            }
-            ctx.closePath();
-          } else if (rang === 3) {
-            // la Croix
-            const b = r * .32;
-            ctx.rect(-b, -r, b * 2, r * 2);
-            ctx.rect(-r, -b, r * 2, b * 2);
-          } else {
-            // l'Anneau — le trou est large, c'est lui qui porte la lecture
-            ctx.arc(0, 0, r, 0, Math.PI * 2);
-            ctx.arc(0, 0, r * .54, 0, Math.PI * 2, true);
-          }
+          /* UNE COULEUR, PAS UN SIGNE. Les quatre lumières (croissant, étoile,
+             croix, anneau) demandaient d'être déchiffrées ; la case porte
+             maintenant un losange plein de la couleur de SON chevalier
+             (Taekun, 2026-11-15). */
+          losange(.62);
           halo(teinte, 12);
           ctx.fillStyle = teinte; ctx.fill();
           sansHalo();
-          // Un liseré ivoire À L'INTÉRIEUR du motif : il lui donne son éclat
-          // sans lui retirer sa couleur, qui reste le signe d'appariement.
           ctx.strokeStyle = "rgba(255,246,226,.85)"; ctx.lineWidth = 4; ctx.stroke();
 
         } else {
@@ -48124,8 +49717,9 @@
         couche(
           new THREE.PlaneGeometry(cote, cote),
           new THREE.MeshBasicMaterial({
-            color: couleur, transparent: true,
-            opacity: kind === "sceau" ? .12 : (surTerre ? .34 : .24),
+            color: kind === "sceau" ? new THREE.Color(couleur).convertSRGBToLinear() : couleur,
+            transparent: true,
+            opacity: kind === "sceau" ? .82 : (surTerre ? .34 : .24),
             side: THREE.DoubleSide, depthWrite: false, depthTest: true
           }),
           .075, 44
@@ -48154,6 +49748,9 @@
         /* Le glyphe, à plat dans le carré. Il bat très légèrement — assez pour
            attirer l'oeil au premier regard, pas assez pour tirer dessus pendant
            toute la durée de l'énigme. */
+        /* La case d'un chevalier de couleur est une DALLE PLEINE de sa couleur,
+           sans motif : il n'y a rien d'autre à lire que la teinte. */
+        if (kind === "sceau") return;
         const glyphe = couche(
           new THREE.PlaneGeometry(cote * .74, cote * .74),
           new THREE.MeshBasicMaterial({
@@ -48201,62 +49798,12 @@
         cells.forEach(marque => puzzleAddMarker(marque === coeur ? { ...marque, faisceau: true } : marque));
       }
 
-      /* LE SIGNE PORTÉ. Le moteur n'a qu'UN modèle de Gardien par joueur : quatre
-         alliés sont visuellement identiques, et une consigne « celui-ci va
-         là-bas » serait injouable telle quelle. On accroche donc au-dessus de
-         chacun le même sceau que celui posé au sol — un sprite enfant de son
-         wrapper, qui le suit sans qu'on ait à le repositionner. C'est la
-         solution la plus légère : des variantes de modèle seraient un chantier
-         dans kaykit3d.js, pour une énigme.
-
-         Reconstruit quand un sceau a perdu son parent : les visuels de
-         personnage sont recréés par syncKayKitCharacters, et un sprite orphelin
-         cesse silencieusement d'être rendu. */
+      /* Plus de signe porté : le chevalier est TEINT de la couleur de sa case
+         (voir `teinte` au montage, appliquée par createCharacterVisual). On ne
+         fait ici que retirer d'anciens socles s'il en restait. */
       function puzzleRefreshSceaux() {
-        const paires = PUZZLE.def?.goal?.type === "assignedCells"
-          ? PUZZLE.def.goal.pairs : null;
         const poses = PUZZLE.sceaux || (PUZZLE.sceaux = []);
-        if (!paires || typeof kaykit3D === "undefined" || !kaykit3D?.characterVisuals) {
-          if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
-          return;
-        }
-        const cles = Object.keys(paires);
-        const complet = poses.length === cles.length && poses.every(sp => !!sp.parent);
-        if (complet) return;
-
-        poses.forEach(sp => sp.parent?.remove(sp));
-        poses.length = 0;
-        cles.forEach((cle, index) => {
-          const visual = kaykit3D.characterVisuals.get(String(PUZZLE.charsByKey[cle]));
-          if (!visual?.wrapper) return;
-          /* LE MÊME LOSANGE, à plat sous les pieds, et non un insigne flottant.
-             Deux essais ont échoué avant : haut dans le ciel, le sprite
-             dérivait sur la case du voisin — la vue est inclinée, tout ce qui
-             monte part vers le haut de l'écran, et les Gardiens se suivent en
-             file d'une case ; posé sur le casque, il se confondait avec le
-             modèle. Au sol, il ne peut désigner que la case où se tient son
-             porteur, et il porte exactement le tracé gravé sur la case
-             attendue : aucune traduction à faire. */
-          const teinte = PUZZLE_SCEAU_COLORS[index + 1] || PUZZLE_MARKER_COLORS.sceau;
-          /* Plus petit qu'une case : à pleine taille le losange débordait sous
-             les pieds et, la vue étant inclinée, se lisait comme une dalle
-             POSÉE DEVANT le Gardien plutôt que sous lui. Resserré, il devient
-             un socle et le Gardien se tient dedans. */
-          const anneau = new THREE.Mesh(
-            new THREE.PlaneGeometry(.82, .82),
-            new THREE.MeshBasicMaterial({
-              map: puzzleGlyphTexture("sceau", teinte, index + 1),
-              transparent: true,
-              side: THREE.DoubleSide, depthWrite: false, depthTest: false
-            })
-          );
-          anneau.rotation.x = -Math.PI / 2;
-          anneau.position.set(0, .05, 0);
-          anneau.renderOrder = 58;
-          anneau.userData = { ilyosTransient: true };
-          visual.wrapper.add(anneau);
-          poses.push(anneau);
-        });
+        if (poses.length) { poses.forEach(sp => sp.parent?.remove(sp)); poses.length = 0; }
       }
 
       function puzzleClearMarkers() {
@@ -48304,59 +49851,13 @@
         }, duree);
       }
 
-      /* Les signes : anneaux, glyphes, poussière de lumière. Les positions
+      /* Les signes : glyphes et poussière de lumière. Les positions
          sortent d'une suite déterministe — deux ouvertures du même Sanctuaire
          donnent le même ciel, et rien ne saute d'une image à l'autre. Rien ne
          tourne ensuite : ni boucle JS ni animation CSS. */
       function puzzleBuildSignes(hote) {
         if (!hote) return;
-        hote.innerHTML = '<div class="pz-anneau d"></div><div class="pz-anneau a"></div>'
-          + '<div class="pz-anneau a2"></div><div class="pz-anneau b"></div>'
-          + '<div class="pz-anneau b2"></div><div class="pz-anneau c"></div>'
-          + '<div class="pz-anneau e"></div><div class="pz-anneau f"></div>';
-
-        /* LES ARCS, et les runes qui vont avec.
-
-           `de` et `long` sont des angles de dégradé conique : ils partent de
-           midi et tournent dans le sens des aiguilles. Les runes, elles, sont
-           placées en coordonnées polaires ordinaires, où zéro est à trois
-           heures — d'où le quart de tour entre les deux repères.
-
-           Les deux sont décidés ICI et non dans la feuille de style, parce
-           qu'ils dépendent l'un de l'autre : une rune posée hors de l'arc
-           conservé serait masquée en même temps que lui et disparaîtrait sans
-           rien dire. On pose donc chaque rune au milieu de son arc.
-
-           Les longueurs vont de 96 à 168 degrés : entre le quart et la moitié
-           du tour. Au-delà, l'œil referme le cercle de lui-même et tout le
-           bénéfice de l'arc est perdu. */
-        const runes = ["ᛉ", "ᚨ", "ᛟ", "ᛞ", "ᚱ", "ᛊ"];
-        const arcs = [
-          { orbe: "a", de: 196, long: 150, rune: true },
-          { orbe: "a2", de: 188, long: 166 },
-          { orbe: "b", de: 32, long: 138, rune: true },
-          { orbe: "b2", de: 40, long: 124 },
-          { orbe: "c", de: 148, long: 112, rune: true },
-          { orbe: "d", de: 244, long: 168, rune: true },
-          { orbe: "e", de: 300, long: 96, rune: true },
-          { orbe: "f", de: 86, long: 118, rune: true }
-        ];
-        let rangRune = 0;
-        arcs.forEach(arc => {
-          const cible = hote.querySelector(`.pz-anneau.${arc.orbe}`);
-          if (!cible) return;
-          cible.style.setProperty("--pz-arc-de", `${arc.de}deg`);
-          cible.style.setProperty("--pz-arc-long", `${arc.long}deg`);
-          if (!arc.rune) return;
-          const milieu = (arc.de + arc.long / 2 - 90) * Math.PI / 180;
-          const rune = document.createElement("span");
-          rune.className = "pz-rune";
-          rune.textContent = runes[rangRune % runes.length];
-          rune.style.left = `${(50 + 50 * Math.cos(milieu)).toFixed(2)}%`;
-          rune.style.top = `${(50 + 50 * Math.sin(milieu)).toFixed(2)}%`;
-          cible.appendChild(rune);
-          rangRune++;
-        });
+        hote.innerHTML = "";
         let graine = 7;
         const suivant = () => (graine = (graine * 1103515245 + 12345) % 2147483648) / 2147483648;
         const glyphes = ["✦", "✧", "◈", "◇", "✶", "✷"];
@@ -49830,6 +51331,23 @@
           couronne.c = dc;
           return { action: null, cout: 0 };
         }
+        /* Pose d'île avec invocation : `cells` absolues, `spawn` la case où le
+           Gardien apparaît, `key` le nom sous lequel les coups suivants le
+           désignent. Le coût est celui du jeu (payerIle) : deux cartes si la
+           pose est payante, rien sinon. */
+        if (step.a === "POSE") {
+          if (state.islandPlacedThisTurn) return { error: "une seule île par tour" };
+          if (shapeLimitReached(step.forme)) return { error: `forme ${step.forme} non disponible` };
+          if (!step.cells.every(([r, c]) => inside(r, c) && !isLand(r, c))) {
+            return { error: `pose impossible en ${JSON.stringify(step.cells)}` };
+          }
+          if (!peutPayerIle(state.players[0])) return { error: "pas de quoi payer l'île" };
+          return {
+            action: { type: "POSE", shapeKey: step.forme, cells: step.cells, owner: 0, spawn: step.spawn },
+            cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0,
+            nouveau: step.key || null
+          };
+        }
         if (step.a === "MAGIC") {
           const islandId = PUZZLE.islandsByKey[step.island];
           if (islandId == null) return { error: `île ${step.island} introuvable` };
@@ -49871,6 +51389,7 @@
               if (!resultat) {
                 return { id: def.id, ok: false, raison: `coup ${i + 1} refusé par le noyau (${resolu.action.type})`, journal };
               }
+              if (resolu.nouveau && resultat.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             }
             journal.push(`${resolu.action ? resolu.action.type : def.solution[i].a} ${resolu.cout}`);
           }
@@ -49923,9 +51442,11 @@
             if (resolu.error) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} : ${resolu.error}`, journal };
             }
-            if (resolu.action && !appliquerActionNoyau(resolu.action)) {
+            const resultat = resolu.action ? appliquerActionNoyau(resolu.action) : null;
+            if (resolu.action && !resultat) {
               return { id: def.id, ok: false, raison: `T${t + 1} coup ${i + 1} refusé par le noyau`, journal };
             }
+            if (resolu.nouveau && resultat?.gardienId) PUZZLE.charsByKey[resolu.nouveau] = resultat.gardienId;
             journal.push(`T${t + 1} ${resolu.action ? resolu.action.type : tours[t][i].a} ${resolu.cout}`);
             tutoRender();
           }
@@ -50050,6 +51571,26 @@
           });
         }
 
+        /* Pose d'île : toutes les orientations des formes autorisées, toutes
+           les places libres, et chaque case d'invocation. Énorme, mais une
+           seule fois par tour — la recherche cesse de l'énumérer dès la pose. */
+        const formes = puzzleFormesAutorisees();
+        if (formes && !state.islandPlacedThisTurn && peutPayerIle(state.players[0])) {
+          Object.keys(formes).filter(forme => !shapeLimitReached(forme)).forEach(forme => {
+            puzzleOrientations(forme).forEach(rel => {
+              for (let r = 0; r < GRID; r++) {
+                for (let c = 0; c < GRID; c++) {
+                  const cells = rel.map(([dr, dc]) => [r + dr, c + dc]);
+                  if (!cells.every(([a, b]) => inside(a, b) && !isLand(a, b))) continue;
+                  cells.forEach(spawn => actions.push({
+                    a: "POSE", forme, cells, spawn, cout: ilesPayantes() ? COUT_ILE_PAYANTE : 0
+                  }));
+                }
+              }
+            });
+          });
+        }
+
         if (availableActionCount("MAGIC") > 0) {
           (state.islands || []).forEach(ile => {
             ile.cells.forEach(([pr, pc]) => {
@@ -50069,7 +51610,31 @@
         return actions;
       }
 
+      /* Les orientations distinctes d'une forme : quatre quarts de tour, plus
+         le miroir pour les formes qui se retournent. */
+      function puzzleOrientations(forme) {
+        const base = SHAPES[forme]?.cells || [];
+        const vues = new Map();
+        const variantes = SHAPES[forme]?.flippable ? [base, base.map(([r, c]) => [r, -c])] : [base];
+        variantes.forEach(cellules => {
+          let courant = cellules.map(([r, c]) => [r, c]);
+          for (let k = 0; k < 4; k++) {
+            courant = courant.map(([r, c]) => [c, -r]);
+            const mr = Math.min(...courant.map(x => x[0]));
+            const mc = Math.min(...courant.map(x => x[1]));
+            const norme = courant.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            vues.set(JSON.stringify(norme), norme);
+          }
+        });
+        return [...vues.values()];
+      }
+
       function puzzleSearchApply(action) {
+        if (action.a === "POSE") {
+          return !!appliquerActionNoyau({
+            type: "POSE", shapeKey: action.forme, cells: action.cells, owner: 0, spawn: action.spawn
+          });
+        }
         if (action.a === "PICKUP") {
           const char = characterById(action.charId);
           const couronne = artifactById(action.crownId);
@@ -50146,6 +51711,7 @@
         if (action.a === "PICKUP") return `PICKUP ${action.charId}`;
         if (action.a === "TRANSFER") return `TRANSFER ${action.fromId}->${action.toId}`;
         if (action.a === "DROP") return `DROP ${action.charId} en ${action.r},${action.c}`;
+        if (action.a === "POSE") return `POSE ${action.forme} ${JSON.stringify(action.cells)} gardien ${action.spawn}`;
         return action.a;
       }
 
@@ -50492,8 +52058,8 @@
       /* =====================================================================
          PUZZLES — la collection
 
-         Vingt-cinq énigmes, de la leçon de poussée aux Cimes, au-delà des neuf
-         mensonges. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
+         Vingt-trois énigmes, de la leçon de poussée aux Grands Archipels, au-delà
+         des Cimes. Le moteur vit dans js/game/puzzle.js ; ce fragment ne
          contient que des données, et leur ORDRE est celui de la campagne :
          « Les Voies d'Ilyos » se joue de haut en bas de ce tableau, pas dans
          l'ordre des identifiants, qui ne dit plus que l'ancienneté.
@@ -50662,45 +52228,6 @@
           ]
         },
         /* -----------------------------------------------------------------
-           04 — Le budget. Marcher jusqu'à la barre coûte trois cartes, et la
-           barre ne sert qu'au Gardien qui se tient DESSUS : pivoter avant
-           d'avoir marché laisse le porteur sur une corniche sans issue. Le
-           dernier rival, lui, ne se déloge que depuis la case du village. */
-        {
-          id: "p04-main-serree",
-          acte: "I",
-          principe: "MESURE",
-          verite: "Ce qui est dépensé trop tôt manque toujours au dernier instant.",
-          title: "Main serrée",
-          tagline: "Sept cartes, six coups justes. L'ordre décide de tout.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 13,
-          sanctuary: false,
-          focus: [2, 1],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[1, 0]],
-            { key: "B", cells: [[2, 1], [3, 1], [4, 1]] },
-            [[4, 2], [4, 3], [4, 4]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 4, c: 4, crown: 1 },
-            { p: 1, r: 1, c: 0 }
-          ],
-          hand: { MOVE: 4, MAGIC: 1, PUSH: 2 },
-          par: 6,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Six coups, pas un de plus",
-          winLine: "Marcher d'abord, pivoter ensuite : la barre ne porte que son passager.",
-          failLine: "La barre a tourné sans toi.",
-          solution: [
-            { a: "MOVE", who: "G", to: [4, 1] },
-            { a: "MAGIC", island: "B", pivot: [2, 1], turns: 2 },
-            { a: "MOVE", who: "G", to: [0, 0] },
-            { a: "PUSH", who: "G", on: [1, 0], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
            05 — Tout à la fois : une chaîne à éjecter par le bord de la
            corniche, une barre-navette pour franchir le gouffre, un dernier
            rival à décrocher du village. Les quatre cartes MOVE de la marche
@@ -50788,53 +52315,6 @@
             { a: "PICKUP", who: "C", on: [3, 0] },
             { a: "MOVE", who: "C", to: [0, 0] },
             { a: "PUSH", who: "C", on: [0, 1], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
-           18 — LES ACTIONS GRATUITES. Déposer, ramasser, transmettre ne coûtent
-           rien : ce sont les trois gestes que la collection n'avait jamais
-           obligé personne à voir, et dont l'oubli a faussé six barèmes. Ici le
-           gouffre interdit de porter la couronne, et un Gardien ne peut pas
-           voler : il faut la POSER, la POUSSER par-dessus le vide — une
-           couronne ne tombe jamais, elle atterrit sur la dernière terre à
-           portée — puis la faire RAMASSER par qui attend de l'autre côté. Le
-           Veilleur assis sur le Sanctuaire bloque la validation tant qu'il y
-           reste ; le déloger coûte la dernière carte de poussée. */
-        {
-          id: "p18-relais-des-mains",
-          acte: "II",
-          principe: "TRACE",
-          title: "Le relais des mains",
-          tagline: "Le gouffre ne se marche pas. La couronne, elle, se lance.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
-          sanctuary: false,
-          focus: [4, 0],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[0, 1]], [[1, 0]],
-            [[2, 0]], [[3, 0]], [[5, 0]], [[6, 0]], [[7, 0]], [[8, 0]], [[6, 1]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 8, c: 0, crown: 1 },
-            { key: "A", p: 0, r: 6, c: 1 },
-            { key: "B", p: 0, r: 0, c: 0 },
-            { p: 1, r: 0, c: 1 }
-          ],
-          hand: { MOVE: 3, PUSH: 5 },
-          par: 6,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Les mains se sont passé la lumière",
-          winLine: "Poser, lancer, ramasser : trois gestes qui ne coûtent rien, et une seule poussée qui compte.",
-          failLine: "La couronne est restée du mauvais côté du vide.",
-          solution: [
-            { a: "DROP", who: "G", on: [7, 0] },
-            { a: "MOVE", who: "A", to: [6, 0] },
-            { a: "PICKUP", who: "A", on: [7, 0] },
-            { a: "DROP", who: "A", on: [5, 0] },
-            { a: "PUSH", who: "A", on: [5, 0], force: 4 },
-            { a: "PUSH", who: "B", on: [0, 1], force: 1 },
-            { a: "PICKUP", who: "B", on: [1, 0] }
           ]
         },
         /* -----------------------------------------------------------------
@@ -51298,69 +52778,6 @@
           ]
         },
         /* -----------------------------------------------------------------
-           LA RELÈVE — libérer une place ne suffit pas, il faut s'y tenir.
-
-           Refonte. La première version ne pouvait pas fonctionner : le second
-           Veilleur était programmé pour prendre la place au troisième tour,
-           alors que la couronne comptait au début de ce même tour. La relève
-           n'arrivait jamais, et la leçon ne se jouait pas.
-
-           Elle arrive maintenant à la riposte SUIVANTE. Et comme un Veilleur
-           sur n'importe laquelle des trois cases du village interdit toute
-           validation, rester sur la case voisine — pourtant valide elle aussi —
-           ne sert à rien : il faut occuper précisément celle qu'on vient de
-           vider. Le paquet est calculé pour que ce pas de côté soit la
-           dernière carte, et pour qu'il ne reste rien après. */
-        {
-          id: "p21-la-releve",
-          acte: "III",
-          principe: "CADENCE",
-          verite: "On ne délivre pas une place. On la tient.",
-          title: "La relève",
-          tagline: "Tu peux le chasser. Un autre attend déjà son tour.",
-          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
-          board: 13,
-          sanctuary: false,
-          focus: [2, 0],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            [[0, 1]], [[1, 0]], [[2, 0]], [[3, 0]], [[4, 0]], [[5, 0]], [[6, 0]],
-            [[1, 1]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 6, c: 0, crown: 1 },
-            { key: "R", p: 1, r: 0, c: 1 },
-            { key: "S", p: 1, r: 1, c: 1 }
-          ],
-          deck: [
-            ["MOVE", "MOVE", "MOVE", "MOVE", "MOVE"],
-            ["MOVE", "MOVE", "PUSH", "MOVE", "MOVE"]
-          ],
-          par: 8,
-          rivalPlan: [
-            "le second Veilleur attend son tour.",
-            "il prend la place laissée vide."
-          ],
-          replies: [
-            [],
-            [{ a: "MOVE", who: "S", to: [0, 1] }]
-          ],
-          goal: { type: "scored", player: 0, count: 1 },
-          winTitle: "La place est tenue",
-          winLine: "La case voisine valide aussi. Elle ne défend rien.",
-          failLine: "La relève a eu lieu, et la couronne n'a rien valu.",
-          solution: [
-            [
-              { a: "MOVE", who: "G", to: [1, 0] }
-            ],
-            [
-              { a: "MOVE", who: "G", to: [0, 0] },
-              { a: "PUSH", who: "G", on: [0, 1], force: 1 },
-              { a: "MOVE", who: "G", to: [0, 1] }
-            ]
-          ]
-        },
-        /* -----------------------------------------------------------------
            15 — Le relais du vide.
 
            Trois Gardiens, deux terres, un gouffre entre elles. Aucun ne
@@ -51648,7 +53065,7 @@
            choix. Ici chaque case porte un SIGNE, chaque Gardien porte le même,
            et aucun ne peut prendre la place d'un autre.
 
-           Le signe de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
+           La case de chacun est à l'OPPOSÉ de lui. Les quatre trajets se
            croisent donc tous au carrefour, qui ne fait qu'une case, et les bras
            ne font qu'une case de large : personne ne double personne. Il faut
            GARER quelqu'un sur un bras déjà libéré, le temps que les autres
@@ -51671,38 +53088,38 @@
           avant: "Ils étaient trois.",
           verite: "Le carrefour en demandait quatre.",
           title: "Destinée",
-          tagline: "Chaque Gardien a sa place, et ce n'est jamais la plus proche.",
-          brief: "Conduis chaque Gardien sur la case qui porte son signe.",
-          board: 13,
+          tagline: "Quatre chevaliers, quatre couleurs, et jamais la case la plus proche.",
+          brief: "Conduis chaque chevalier sur la case de sa couleur.",
+          board: 11,
           sanctuary: false,
-          focus: [6, 6],
+          focus: [5, 5],
           villages: {},
           islands: [
-            [[3, 6]], [[4, 6]], [[5, 6]], [[6, 6]], [[7, 6]], [[8, 6]], [[9, 6]],
-            [[6, 3]], [[6, 4]], [[6, 5]], [[6, 7]], [[6, 8]], [[6, 9]]
+            [[2, 5]], [[3, 5]], [[4, 5]], [[5, 5]], [[6, 5]], [[7, 5]], [[8, 5]],
+            [[5, 2]], [[5, 3]], [[5, 4]], [[5, 6]], [[5, 7]], [[5, 8]]
           ],
           guardians: [
-            { key: "A", p: 0, r: 5, c: 6 },
-            { key: "B", p: 0, r: 6, c: 7 },
-            { key: "C", p: 0, r: 7, c: 6 },
-            { key: "D", p: 0, r: 8, c: 6 },
-            { key: "R", p: 1, r: 6, c: 6 }
+            { key: "A", p: 0, r: 4, c: 5 },
+            { key: "B", p: 0, r: 5, c: 6 },
+            { key: "C", p: 0, r: 6, c: 5 },
+            { key: "D", p: 0, r: 7, c: 5 },
+            { key: "R", p: 1, r: 5, c: 5 }
           ],
           hand: { MOVE: 20, PUSH: 5 },
           goal: {
             type: "assignedCells", player: 0,
-            pairs: { A: [9, 6], B: [6, 3], C: [3, 6], D: [6, 9] }
+            pairs: { A: [8, 5], B: [5, 2], C: [2, 5], D: [5, 8] }
           },
           winTitle: "Chacun à sa place",
           winLine: "Un carrefour d'une case et quatre routes qui s'y croisent : il fallait en garer un.",
-          failLine: "Un Gardien n'est pas sur son signe.",
+          failLine: "Un chevalier n'est pas sur sa couleur.",
           solution: [
-            { a: "PUSH", who: "B", on: [6, 6], force: 4 },
-            { a: "MOVE", who: "B", to: [6, 3] },
-            { a: "MOVE", who: "A", to: [6, 5] },
-            { a: "MOVE", who: "C", to: [3, 6] },
-            { a: "MOVE", who: "D", to: [6, 9] },
-            { a: "MOVE", who: "A", to: [9, 6] }
+            { a: "PUSH", who: "B", on: [5, 5], force: 4 },
+            { a: "MOVE", who: "B", to: [5, 2] },
+            { a: "MOVE", who: "A", to: [5, 4] },
+            { a: "MOVE", who: "C", to: [2, 5] },
+            { a: "MOVE", who: "D", to: [5, 8] },
+            { a: "MOVE", who: "A", to: [8, 5] }
           ]
         },
         /* =================================================================
@@ -51956,83 +53373,12 @@
           ]
         },
         /* -----------------------------------------------------------------
-           LE PASSAGER CLANDESTIN
-
-           Un rival barre la seule route, assis au pied de la barre qui porte
-           tout le puzzle. Le pousser jusqu'au vide coûterait quatre cartes ; on
-           ne le pousse que d'UNE case, sur la barre, et c'est la barre qui
-           l'emporte : retournée par son milieu, elle le dépose sur son autre
-           bout, qui deviendra justement le pivot du second retournement. Il
-           voyage, il ne gêne plus, et il sert de charnière.
-
-           Le porteur, lui, ne doit PAS monter avec la couronne : posée sur le
-           bout de la barre puis enjambée, elle voyage seule pendant que le
-           Gardien s'assoit au milieu. Le second retournement les dépose l'un
-           derrière l'autre, la couronne devant — juste ce qu'il faut pour la
-           lancer par-dessus le gouffre. Encore faut-il que le receveur ait
-           libéré la case d'arrivée.
-
-           Au nord, deux rivaux gardent le village. Celui de la rangée se jette
-           dans le vide en le poussant VERS le château, par-dessus le coin du
-           plateau ; le second ne tombe que poussé depuis le château lui-même.
-
-           Optimum 14 PROUVÉ (234 000 nœuds), solution unique. */
-        {
-          id: "p23-passager-clandestin",
-          acte: "IV",
-          principe: "TRACE",
-          verite: "Ce qui te barre la route peut aussi la porter.",
-          title: "Le passager clandestin",
-          tagline: "Il barre la seule route. La route, elle, peut l'emporter.",
-          brief: "Ramène la couronne jusqu'à ton village.",
-          board: 11,
-          sanctuary: false,
-          focus: [4, 2],
-          villages: { 0: [[0, 0]] },
-          islands: [
-            /* Le nord : le village et sa rangée, toutes en pierres d'une case,
-               donc immobiles. */
-            [[0, 1]], [[1, 0]], [[0, 2]], [[0, 3]],
-            /* La barre, seule pièce mobile du plateau. */
-            { key: "BARRE", cells: [[4, 3], [5, 3], [6, 3]] },
-            /* Le départ. */
-            [[7, 3]], [[8, 3]]
-          ],
-          guardians: [
-            { key: "G", p: 0, r: 8, c: 3, crown: 1 },
-            { key: "H", p: 0, r: 0, c: 3 },
-            { key: "R1", p: 1, r: 1, c: 0 },
-            { key: "R2", p: 1, r: 0, c: 1 },
-            { key: "R3", p: 1, r: 7, c: 3 }
-          ],
-          /* Deux cartes de marge : de quoi tenter l'éjection directe du rival
-             de la route — qui ne laisse ensuite plus rien pour le village. */
-          hand: { MOVE: 7, PUSH: 7, MAGIC: 2 },
-          par: 14,
-          goal: { type: "crownDelivered", player: 0 },
-          winTitle: "Le passager est descendu",
-          winLine: "Il barrait la route ; la barre l'a emporté, et il a servi de charnière.",
-          failLine: "La route était là. Il fallait la faire tourner avec lui dessus.",
-          solution: [
-            { a: "PUSH", who: "G", on: [7, 3], force: 1 },
-            { a: "MOVE", who: "G", to: [7, 3] },
-            { a: "MAGIC", island: "BARRE", pivot: [5, 3], turns: 2 },
-            { a: "DROP", who: "G", on: [6, 3] },
-            { a: "MOVE", who: "H", to: [0, 2] },
-            { a: "MOVE", who: "G", to: [5, 3] },
-            { a: "MAGIC", island: "BARRE", pivot: [4, 3], turns: 2 },
-            { a: "PUSH", who: "G", on: [2, 3], force: 2 },
-            { a: "PICKUP", who: "H", on: [0, 3] },
-            { a: "PUSH", who: "H", on: [0, 1], force: 2 },
-            { a: "MOVE", who: "H", to: [0, 0] },
-            { a: "PUSH", who: "H", on: [1, 0], force: 1 }
-          ]
-        },
-        /* -----------------------------------------------------------------
            LE BÉLIER
 
-           Le même gouffre que le Passager clandestin, et une case de plus au
-           nord — ce qui change tout. Le receveur est au bout de la rangée, et
+           (Le Passager clandestin, même gouffre moins une case au nord, a été
+           retiré le 2026-11-15 : celle-ci le contient en entier.)
+           Un rival barre la route au pied de la barre : poussé d'UNE case, il
+           monte dessus et c'est la barre retournée qui l'emporte. Le receveur est au bout de la rangée, et
            un rival dort sur la seule case où la couronne peut atterrir.
 
            On le décale d'une case vers le château : la couronne se pose à sa
@@ -52086,6 +53432,233 @@
             { a: "PUSH", who: "H", on: [0, 3], force: 3 },
             { a: "MOVE", who: "H", to: [0, 0] },
             { a: "PUSH", who: "H", on: [1, 0], force: 1 }
+          ]
+        },
+        /* =================================================================
+           ACTE V — LES GRANDS ARCHIPELS
+
+           Treize cases de côté, treize îles, et chacune est une vraie forme
+           du jeu : toutes pivotent, aucune case n'est figée en cachette. Le
+           plateau entier sert, plusieurs routes gagnent, et la moins chère ne
+           se voit pas d'abord. L'île à poser (et le Gardien qu'elle invoque)
+           fait partie du problème : on n'en a qu'une.
+
+           Ces énigmes dépassent le chercheur exhaustif. `par` y est la
+           MEILLEURE SOLUTION CONNUE, trouvée par une recherche guidée hors
+           moteur puis rejouée ici par l'oracle : rien ne prouve qu'on ne fait
+           pas mieux, et l'énigme reste gagnée au-dessus du barème tant que la
+           pioche suffit.
+           ================================================================= */
+
+        /* -----------------------------------------------------------------
+           L'ARCHIPEL SANS PONT
+
+           Une couronne, du coin sud-est au village du nord-ouest, et pas un
+           seul pont. Personne ne garde le village côté joueur : c'est l'île
+           posée qui y invoque un Gardien, et ce Gardien, placé de côté, fait
+           tomber les deux rivaux d'une carte chacun.
+
+           Ligne connue en 14 : le Carré pivote et dépose le porteur au pied
+           du Carrefour ; la couronne, posée dessus, tourne AVEC lui jusqu'au
+           Serpent déjà retourné ; un lancer de quatre cases la pose sur la
+           Croix creuse, qui la porte seule jusqu'au Mât ; une dernière
+           poussée, et le Gardien invoqué la cueille. Quatre Gardiens, aucun
+           ne fait le trajet.
+
+           Autres routes vérifiées, plus chères : par la Croix pleine en
+           poussant la couronne À TRAVERS le rival (18), par le sud. */
+        {
+          id: "p27-archipel-sans-pont",
+          acte: "V",
+          principe: "TRACE",
+          verite: "Ce qui ne se franchit pas se déplace.",
+          title: "L'archipel sans pont",
+          tagline: "Treize îles, aucune ne touche l'autre. Toutes tournent.",
+          brief: "Valide ta couronne — elle ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: { 0: [[0, 0]] },
+          placement: { formes: { l3: 1 } },
+          islands: [
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            { key: "VOL", cells: [[0, 8], [0, 10], [1, 9]] },
+            { key: "GUET", cells: [[1, 0], [2, 0], [2, 1]] },
+            { key: "FLECHE", cells: [[1, 12], [2, 12], [3, 12]] },
+            { key: "MAT", cells: [[3, 0], [4, 0], [5, 0]] },
+            { key: "CREUSE", cells: [[5, 3], [6, 2], [6, 4], [7, 3]] },
+            { key: "CROIX", cells: [[5, 7], [6, 6], [6, 7], [6, 8], [7, 7]] },
+            { key: "SERPENT", cells: [[5, 11], [5, 12], [6, 10], [6, 11]] },
+            { key: "CARREFOUR", cells: [[8, 11], [9, 10], [9, 11], [9, 12]] },
+            { key: "COUDE", cells: [[9, 2], [10, 2], [10, 3]] },
+            { key: "ECLAIR", cells: [[11, 1], [11, 2], [12, 2], [12, 3]] },
+            { key: "CARRE", cells: [[11, 11], [11, 12], [12, 11], [12, 12]] },
+            { key: "QUAI", cells: [[12, 6], [12, 7], [12, 8]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 12, c: 12, crown: 1 },
+            { key: "B", p: 0, r: 5, c: 11 },
+            { key: "C", p: 0, r: 5, c: 0 },
+            { key: "Q", p: 1, r: 0, c: 1 },
+            { key: "P", p: 1, r: 1, c: 0 },
+            { key: "R", p: 1, r: 6, c: 7 }
+          ],
+          deck: [
+            ["MAGIC", "MAGIC", "PUSH", "PUSH", "PUSH"],
+            ["MAGIC", "MOVE", "PUSH", "PUSH", "PUSH"],
+            ["MAGIC", "MOVE", "MOVE", "PUSH", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "PUSH", "MOVE"]
+          ],
+          par: 14,
+          rivalPlan: [
+            "ils campent sur ton village et n'en bougeront pas."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 1 },
+          winTitle: "L'archipel a tourné",
+          winLine: "Quatre Gardiens, et aucun n'a fait le voyage. Les îles l'ont fait pour eux.",
+          failLine: "Il restait une île à faire tourner.",
+          solution: [
+            [
+              { a: "POSE", forme: "l3", cells: [[1, 1], [1, 2], [2, 2]], spawn: [1, 1], key: "N" },
+              { a: "MAGIC", island: "CARRE", pivot: [11, 11], turns: 2 },
+              { a: "MAGIC", island: "SERPENT", pivot: [6, 10], turns: 2 },
+              { a: "PUSH", who: "N", on: [1, 0], force: 1 },
+              { a: "PUSH", who: "N", on: [0, 1], force: 1 }
+            ],
+            [
+              { a: "DROP", who: "G", on: [9, 10] },
+              { a: "MAGIC", island: "CARREFOUR", pivot: [8, 11], turns: 1, direction: 1 },
+              { a: "PICKUP", who: "B", on: [7, 10] },
+              { a: "MOVE", who: "B", to: [7, 8] },
+              { a: "DROP", who: "B", on: [7, 7] },
+              { a: "PUSH", who: "B", on: [7, 7], force: 4 }
+            ],
+            [
+              { a: "MAGIC", island: "CREUSE", pivot: [6, 2], turns: 2 },
+              { a: "PICKUP", who: "C", on: [5, 1] },
+              { a: "MOVE", who: "C", to: [4, 0] },
+              { a: "MOVE", who: "N", to: [1, 0] },
+              { a: "DROP", who: "C", on: [3, 0] },
+              { a: "PUSH", who: "C", on: [3, 0], force: 1 },
+              { a: "PICKUP", who: "N", on: [2, 0] }
+            ]
+          ]
+        },
+        /* -----------------------------------------------------------------
+           L'ARCHIPEL AUX DEUX COURONNES
+
+           Le même archipel, privé de son Quai, et DEUX couronnes : l'une part
+           du coin sud-est, l'autre du sud-ouest. Elles ne se valident pas
+           ensemble — la première compte au début d'un tour, quitte le
+           plateau, et son porteur reste assis sur la case que la seconde
+           devra prendre.
+
+           Ligne connue en 25 : le Seuil pivote et emporte le rival loin du
+           village ; l'Éclair monte en trois rotations et dépose la première
+           couronne sur la Croix creuse, qui la retourne jusqu'au Mât. Le
+           Carré, lui, roule le long du sud en trois rotations, un lancer de
+           quatre cases rend la seconde couronne à l'Éclair revenu la
+           chercher, et la dernière poussée emporte TOUTE la file : le
+           Gardien assis avance sur le château, la couronne prend sa place.
+
+           La route de l'est (Carrefour, Serpent, Croix pleine), celle de
+           L'archipel sans pont, marche toujours et coûte plus cher. */
+        {
+          id: "p28-deux-couronnes",
+          acte: "V",
+          principe: "TRACE",
+          verite: "Deux chemins qui se croisent n'en font pas un.",
+          title: "L'archipel aux deux couronnes",
+          tagline: "Deux couronnes, deux coins, et une seule porte.",
+          brief: "Valide les deux couronnes — chacune ne compte qu'au début de ton prochain tour.",
+          board: 13,
+          sanctuary: false,
+          focus: [6, 6],
+          villages: { 0: [[0, 0]] },
+          placement: { formes: { l3: 1 } },
+          islands: [
+            { key: "SEUIL", cells: [[0, 1], [0, 2], [0, 3]] },
+            { key: "VOL", cells: [[0, 8], [0, 10], [1, 9]] },
+            { key: "GUET", cells: [[1, 0], [2, 0], [2, 1]] },
+            { key: "FLECHE", cells: [[1, 12], [2, 12], [3, 12]] },
+            { key: "MAT", cells: [[3, 0], [4, 0], [5, 0]] },
+            { key: "CREUSE", cells: [[5, 3], [6, 2], [6, 4], [7, 3]] },
+            { key: "CROIX", cells: [[5, 7], [6, 6], [6, 7], [6, 8], [7, 7]] },
+            { key: "SERPENT", cells: [[5, 11], [5, 12], [6, 10], [6, 11]] },
+            { key: "CARREFOUR", cells: [[8, 11], [9, 10], [9, 11], [9, 12]] },
+            { key: "COUDE", cells: [[9, 2], [10, 2], [10, 3]] },
+            { key: "ECLAIR", cells: [[11, 1], [11, 2], [12, 2], [12, 3]] },
+            { key: "CARRE", cells: [[11, 11], [11, 12], [12, 11], [12, 12]] }
+          ],
+          guardians: [
+            { key: "G", p: 0, r: 12, c: 12, crown: 1 },
+            { key: "H", p: 0, r: 12, c: 3, crown: 2 },
+            { key: "B", p: 0, r: 5, c: 11 },
+            { key: "C", p: 0, r: 5, c: 0 },
+            { key: "Q", p: 1, r: 0, c: 1 },
+            { key: "P", p: 1, r: 1, c: 0 },
+            { key: "R", p: 1, r: 6, c: 7 }
+          ],
+          deck: [
+            ["MAGIC", "PUSH", "MAGIC", "MAGIC", "MOVE"],
+            ["MAGIC", "MAGIC", "MAGIC", "PUSH", "MOVE"],
+            ["MAGIC", "MOVE", "MAGIC", "MAGIC", "PUSH"],
+            ["PUSH", "PUSH", "PUSH", "MAGIC", "MOVE"],
+            ["MOVE", "MOVE", "PUSH", "MOVE", "MAGIC"],
+            ["MOVE", "MOVE", "MOVE", "MOVE", "PUSH"],
+            ["MOVE", "MOVE", "PUSH", "MAGIC", "MOVE"]
+          ],
+          par: 25,
+          rivalPlan: [
+            "ils campent sur ton village et n'en bougeront pas."
+          ],
+          replies: [],
+          goal: { type: "scored", player: 0, count: 2 },
+          winTitle: "Les deux sont rentrées",
+          winLine: "Deux couronnes, une seule porte : la première a dû laisser sa place à la seconde.",
+          failLine: "Il manque une couronne au village.",
+          solution: [
+            [
+              { a: "POSE", forme: "l3", cells: [[1, 1], [1, 2], [2, 2]], spawn: [1, 1], key: "N" },
+              { a: "MAGIC", island: "SEUIL", pivot: [0, 3], turns: 1, direction: -1 },
+              { a: "PUSH", who: "N", on: [1, 0], force: 1 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [12, 3], turns: 1, direction: 1 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [10, 4], turns: 2 }
+            ],
+            [
+              { a: "MAGIC", island: "ECLAIR", pivot: [9, 4], turns: 1, direction: -1 },
+              { a: "DROP", who: "H", on: [7, 3] },
+              { a: "MAGIC", island: "CREUSE", pivot: [6, 2], turns: 2 },
+              { a: "PICKUP", who: "C", on: [5, 1] },
+              { a: "MAGIC", island: "MAT", pivot: [4, 0], turns: 2 },
+              { a: "MOVE", who: "N", to: [1, 0] },
+              { a: "DROP", who: "C", on: [2, 0] },
+              { a: "PICKUP", who: "N", on: [2, 0] }
+            ],
+            [
+              { a: "MAGIC", island: "CARRE", pivot: [12, 11], turns: 1, direction: -1 },
+              { a: "MAGIC", island: "CARRE", pivot: [11, 10], turns: 2 },
+              { a: "MAGIC", island: "CARRE", pivot: [10, 9], turns: 2 },
+              { a: "DROP", who: "G", on: [9, 8] }
+            ],
+            [
+              { a: "PUSH", who: "G", on: [9, 8], force: 4 },
+              { a: "MAGIC", island: "ECLAIR", pivot: [8, 3], turns: 1, direction: -1 },
+              { a: "MOVE", who: "H", to: [7, 3] },
+              { a: "PICKUP", who: "H", on: [7, 4] },
+              { a: "MOVE", who: "H", to: [6, 2] }
+            ],
+            [
+              { a: "MOVE", who: "H", to: [5, 1] }
+            ],
+            [
+              { a: "MOVE", who: "H", to: [4, 0] },
+              { a: "TRANSFER", who: "H", to: "C" },
+              { a: "DROP", who: "C", on: [2, 0] },
+              { a: "PUSH", who: "H", on: [3, 0], force: 1 },
+              { a: "MOVE", who: "C", to: [1, 0] }
+            ]
           ]
         }
       );
@@ -56176,7 +57749,7 @@
         // Couronnes du vainqueur (aucune en Balises, où l'on compte des points).
         const couronnes = modal.querySelector(".fin2-couronnes");
         if (couronnes) {
-          const balises = typeof butBalises === "function" && butBalises();
+          const balises = typeof butSansCouronnes === "function" && butSansCouronnes();
           const marquees = vainqueur ? Math.min(3, vainqueur.score || 0) : 0;
           couronnes.innerHTML = balises ? ""
             : [0, 1, 2].map(i => finCouronneSvg(i < marquees ? "pleine" : "vide")).join("");
@@ -56352,7 +57925,7 @@
         liste.push({ ic: "◎", nom: "En ligne", fait: modes.has("online"), texte: "Contre un ami à distance" });
         liste.push({ ic: "⚖", nom: "Duels symétriques", fait: plateaux.has("symmetric"), texte: "Des terrains en miroir" });
         liste.push({ ic: "✎", nom: "Personnalisé", fait: plateaux.has("custom"), texte: "Tes propres règles" });
-        liste.push({ ic: "✦", nom: "Rotation", fait: rotationJouee, texte: "Balises, créatures, paquet à bâtir" });
+        liste.push({ ic: "✦", nom: "Rotation", fait: rotationJouee, texte: "Balises, Effondrement, créatures, paquet à bâtir" });
 
         // Collection : les prochains objets à débloquer.
         try {
@@ -56406,7 +57979,7 @@
          manquer (sortie, banc) : la couronne part alors du village. */
       function couronneCelebrer(player, char) {
         if (ilyosSimulationActive || !player || !state) return false;
-        if (typeof butBalises === "function" && butBalises()) return false;
+        if (typeof butSansCouronnes === "function" && butSansCouronnes()) return false;
         try {
           const score = Math.min(3, player.score || 0);
           const gagnante = score >= 3;
@@ -58663,6 +60236,7 @@
         const carte = menuDuelCarte();
         carte?.querySelectorAll("select[data-pas], select[data-seg], select[data-compteur]").forEach(lierListeMenu);
         [els.customPaidIslandsCheckbox, els.customScorerLeavesCheckbox, document.getElementById("customImmediateScoreCheckbox"),
+          document.getElementById("customWallsCheckbox"),
           els.symmetricAllowDissolveCheckbox]
           .forEach(caseACocher => caseACocher?.addEventListener("change", majMenuPerso));
 
@@ -60908,6 +62482,8 @@
            verif-profondeur-gratuite avait oublié le dépôt, puis aurait oublié
            le vol. */
         actionGratuite: type => plannerActionGratuite({ type }),
+        // Murs étoilés (murs.js) : poser, pousser, tourner sans interface.
+        murs: benchMurs(),
         poussee: benchPoussee,
         validation: benchValidation,
         reserve: benchReserve,
@@ -61207,6 +62783,9 @@
         btn.addEventListener("click", () => { avant = crans; jouerRotationMagie(crans); });
       });
       document.getElementById("hudV2MagicDissolve")?.addEventListener("click", () => dissolveSelectedIsland());
+      document.querySelectorAll("#hudV2MagicModes [data-magie-mode]").forEach(btn => {
+        btn.addEventListener("click", () => choisirModeMagie(btn.dataset.magieMode));
+      });
       document.getElementById("hudV2MagicConfirm")?.addEventListener("click", () => confirmMagicRotation());
       document.getElementById("hudV2MagicCancel")?.addEventListener("click", () => handleCancelButton());
 
