@@ -1005,9 +1005,34 @@
               pusher: pousseur, r: action.r, c: action.c, count: action.force
             }, token);
           }
+          case "POUSSER_MUR": {
+            // Murs étoilés (murs.js).
+            const applique = appliquerPousseeMurCore(action.murId, action.pusherId, action.force);
+            if (!applique) return false;
+            benchJournaliser({ type: "POUSSER_MUR", mur: action.murId, force: applique.force });
+            playSfx("push");
+            showToast(`${nomJoueurIA()} pousse un mur étoilé.`);
+            renderAll();
+            scheduleKayKitSync();
+            await sleep(720);
+            return true;
+          }
           case "MAGIC": {
             const ile = state.islands.find(i => i.id === action.islandId);
             if (!ile) return false;
+            if (action.mode === "mur" || action.mode === "deux") {
+              // Magie sur une île qui porte un mur : le mur seul, ou les deux.
+              const applique = appliquerActionNoyau(action);
+              if (!applique) return false;
+              benchJournaliser({ type: "MAGIC", mode: action.mode, ile: action.islandId });
+              playSfx("magic");
+              showToast(action.mode === "mur" ? `${nomJoueurIA()} fait tourner un mur.` : `${nomJoueurIA()} fait tourner une île et son mur.`);
+              if (kaykit3D) kaykit3D.lastStateSignature = "";
+              renderAll();
+              scheduleKayKitSync();
+              await sleep(820);
+              return true;
+            }
             return await aiPerformMagic({
               island: ile, pivot: action.pivot,
               steps: action.direction === -1 ? 3 : action.turns

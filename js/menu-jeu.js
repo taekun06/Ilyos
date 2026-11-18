@@ -177,6 +177,25 @@
       page('partie').appendChild(toucher);
     }
 
+    /* AIDER ILYOS : signalements et victoires contre l'Expert (js/retours.js). */
+    {
+      const aider = section('Aider ILYOS', 'Ton message ou ta partie arrive directement chez Taekun.');
+      aider.insertAdjacentHTML('beforeend', `
+        <div class="mj-grille-chocs">
+          <button type="button" class="mj-choix" data-mj-signaler><b>Signaler un bug ou donner un avis</b><small>Ouvre un petit formulaire</small></button>
+          <button type="button" class="mj-choix" data-mj-victoires><b>Envoyer mes victoires contre l'Expert</b><small>Pour rendre le CPU plus fort</small></button>
+        </div>`);
+      aider.querySelector('[data-mj-signaler]').addEventListener('click', () => window.ILYOS_RETOURS?.ouvrir());
+      const victoires = aider.querySelector('[data-mj-victoires]');
+      const majVictoires = () => victoires.setAttribute('aria-pressed', String(window.ILYOS_RETOURS ? window.ILYOS_RETOURS.victoiresAutorisees() : true));
+      victoires.addEventListener('click', () => {
+        window.ILYOS_RETOURS?.reglerVictoires(!window.ILYOS_RETOURS.victoiresAutorisees());
+        majVictoires();
+      });
+      majVictoires();
+      page('partie').appendChild(aider);
+    }
+
     // CAMÉRA : AUTO/LIBRE sont des modes, FACE/ISO des recadrages ponctuels.
     const camera = section('Caméra', 'Le choix s’applique aussitôt et referme le menu.');
     deplacer(cameraGrille, camera);
@@ -241,6 +260,27 @@
     majVoile();
     plateau.appendChild(plateauGrille);
     page('graphismes').appendChild(plateau);
+
+    // MODE BALISES : trônes (par défaut) ou balises carrées d'origine
+    // (js/game/rotation.js, ILYOS_BALISES_STYLE).
+    const balises = section('Mode Balises', 'L’apparence des balises à tenir.');
+    const balisesGrille = document.createElement('div');
+    balisesGrille.className = 'mj-grille-chocs';
+    balisesGrille.innerHTML = [['trone', 'Trônes', 'Par défaut, le gardien s’y assoit'], ['balise', 'Balises', 'Cadres carrés d’origine']]
+      .map(([n, titre, sous]) => `<button type="button" class="mj-choix" data-mj-balises="${n}"><b>${titre}</b><small>${sous}</small></button>`).join('');
+    const majBalises = () => {
+      const style = window.ILYOS_BALISES_STYLE?.style?.() || 'trone';
+      balisesGrille.querySelectorAll('[data-mj-balises]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mjBalises === style)));
+    };
+    balisesGrille.addEventListener('click', e => {
+      const bouton = e.target.closest('[data-mj-balises]');
+      if (!bouton || !window.ILYOS_BALISES_STYLE) return;
+      window.ILYOS_BALISES_STYLE.regler(bouton.dataset.mjBalises);
+      majBalises();
+    });
+    majBalises();
+    balises.appendChild(balisesGrille);
+    page('graphismes').appendChild(balises);
 
     // CHOCS : secousse de caméra et vibration au moment des coups forts
     // (js/game/kaykit3d.js, KAYKIT_CHOCS). Sans coût de rendu.
