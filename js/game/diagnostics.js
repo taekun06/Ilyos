@@ -1370,40 +1370,14 @@
       /* Transition de tour d'une VRAIE partie : contrairement à
          applyTurnTransitionCore, qui distribue la main plausible utilisée par
          l'anticipation, celle-ci pioche réellement. */
+      /* Une seule fin de tour pour toute la base : celle du moteur de règles
+         (applyEndTurnCore, regles.js). Elle range les cartes avec la même
+         fonction que la vraie fin de tour — une première version recopiée ici
+         divergeait aussitôt (cartes jouées jamais défaussées, partie de 121
+         tours sans un point). */
       function selfplayTransitionTour() {
-        const sortant = state.players[state.currentPlayer];
-
-        /* Rangement des cartes : MÊME fonction que la vraie fin de tour.
-           Une première version recopiait la logique et divergeait aussitôt —
-           les cartes jouées n'allaient plus à la défausse, la pioche se vidait
-           et une partie simulée durait 121 tours sans un seul point. */
-        rangerEtDefausserFinDeTour(sortant);
-
-        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
-        state.turn++;
-
-        const entrant = state.players[state.currentPlayer];
-        scoreCrownsAtTurnStart(entrant);
-        if (state.winner !== null && state.winner !== undefined) return false;
-
-        // Le joueur qui prend la main ne peut plus poser : la partie s'arrête.
-        if (finParPoseImpossible(entrant.id)) {
-          const vainqueur = vainqueurAuxCouronnes();
-          state.winner = vainqueur === null ? MATCH_NUL : vainqueur;
-          return false;
-        }
-
-        entrant.hand = [];
-        drawCards(entrant, cartesPiocheesParTour());
-        state.islandPlacedThisTurn = islandLimitReachedForPlayer(entrant.id) || poseImpossiblePour(entrant.id);
-        state.centerCrownTakenThisTurn = false;
-        faireEntrerCouronnesEnAttente();
-        state.phase = "ACTION_SELECT";
-        state.selectedActionType = null;
-        state.selectedCharId = null;
-        state.selectedIslandId = null;
-        state.reachable = new Set();
-        return true;
+        const fin = applyEndTurnCore();
+        return !!(fin && fin.continuer);
       }
 
       /* Joue un tour complet pour le joueur au trait. Renvoie le nombre
@@ -1654,6 +1628,58 @@
          défaut) : c'est la force qu'affronte un joueur humain qu'on mesure.
          Chaque build joue ses tours ; `scripts/selfplay-rapide.js` transporte
          l'état de l'un à l'autre. */
+      /* CONTRÔLE DU MOTEUR DE RÈGLES (scripts/verif-regles.js). Joue un tour
+         du CPU comme selfplayTourIsole et, avant chaque action du plan :
+         - demande au moteur si elle est permise (une action que l'IA joue et
+           que le moteur refuse = règle mal décrite d'un côté ou de l'autre) ;
+         - l'applique sur deux copies, par le moteur et par le planner, et
+           compare les états complets obtenus.
+         Le tour se termine par la fin de tour du moteur. */
+      function selfplayTourControle(json, { graine = null, budget } = {}) {
+        const clone = JSON.parse(json);
+        if (graine !== null) setTestRandomSeed(graine);
+        try {
+          return withSimulatedState(clone, () => {
+            const controle = { actions: 0, refusees: [], ecarts: [], evenements: {} };
+            const compter = evenements => evenements.forEach(e => {
+              controle.evenements[e.type] = (controle.evenements[e.type] || 0) + 1;
+            });
+            const rapport = plannerChercherPlanRobuste(state.currentPlayer, budget);
+            for (const action of (rapport && rapport.plan) || []) {
+              const verdict = reglesVerifier(action);
+              if (!verdict.ok) controle.refusees.push({ type: action.type, raison: verdict.raison });
+              // La garde de la partie réelle (sans essai) doit dire la même chose.
+              const garde = reglesVerifier(action, { essai: false });
+              if (!garde.ok) controle.refusees.push({ type: action.type, raison: "garde : " + garde.raison });
+              const parMoteur = copieRapide(state);
+              const parPlanner = copieRapide(state);
+              const moteur = withSimulatedState(parMoteur, () => {
+                const r = reglesAppliquer(action);
+                return { ok: r.ok, evenements: r.evenements || [], etat: snapshotState() };
+              });
+              const planner = withSimulatedState(parPlanner, () => ({
+                ok: !!plannerAppliquerAction(action), etat: snapshotState()
+              }));
+              if (moteur.ok !== planner.ok || (moteur.ok && moteur.etat !== planner.etat)) {
+                controle.ecarts.push({ type: action.type, moteur: moteur.ok, planner: planner.ok });
+              }
+              compter(moteur.evenements);
+              if (!plannerAppliquerAction(action)) break;
+              controle.actions++;
+            }
+            const fin = reglesAppliquer({ type: "FIN_TOUR" });
+            if (!fin.ok) controle.refusees.push({ type: "FIN_TOUR", raison: fin.raison });
+            compter(fin.evenements || []);
+            return {
+              etat: snapshotState(), vainqueur: state.winner ?? null, tour: state.turn,
+              fin: state.winner !== null && state.winner !== undefined, controle
+            };
+          });
+        } finally {
+          if (graine !== null) setTestRandomSeed(null);
+        }
+      }
+
       function selfplayTourIsole(json, { graine = null, budget, poids = null } = {}) {
         const clone = JSON.parse(json);
         if (graine !== null) setTestRandomSeed(graine);
@@ -2093,6 +2119,7 @@
         depart: canonicalDepart,
         departMelange: selfplayDepartMelange,
         tour: selfplayTourIsole,
+        tourControle: selfplayTourControle,
         departPropre: selfplayDepartPropre,
         voir: selfplayVoir,
         coups: selfplayCoups,

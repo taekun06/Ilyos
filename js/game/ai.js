@@ -961,6 +961,13 @@
         for (const action of rapport.plan) {
           if (token !== aiRunToken || !state || state.winner !== null) return true;
           let applique = false;
+          /* Le moteur de règles a le dernier mot (regles.js) : un coup qu'il
+             refuse n'est pas joué, le tour se termine proprement. */
+          const verdict = reglesVerifier(action, { essai: false });
+          if (!verdict.ok) {
+            console.warn("[ILYOS] coup du CPU refusé par le moteur de règles :", action.type, verdict.raison);
+            break;
+          }
           try {
             applique = await executerActionPlanifiee(action, token);
           } catch (erreur) {
@@ -1044,6 +1051,7 @@
               action.spawn || null
             );
             if (!applique) return false;
+            reglesNoter(action);
             playIslandDrop(applique.ileId);
             benchJournaliser({ type: "POSE", automatique: false, case: applique.gardienCase });
             renderAll();
@@ -1053,6 +1061,7 @@
           case "DEPOT": {
             const applique = applyFreeDropCore(action.charId, action.r, action.c);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser(applique);
             renderAll();
             await sleep(320);
@@ -1061,6 +1070,7 @@
           case "RAMASSAGE": {
             const applique = applyFreePickupCore(action.charId, action.artifactId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "RAMASSAGE", gardien: action.charId });
             renderAll();
             await sleep(320);
@@ -1069,6 +1079,7 @@
           case "DISSOLUTION": {
             const applique = applyDissolutionCore(action.islandId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "DISSOLUTION", ile: action.islandId });
             applique.cellules.forEach(([r, c]) => animateCellPulse(r, c, "magic-vanish"));
             if (kaykit3D) kaykit3D.lastStateSignature = "";
@@ -1082,6 +1093,7 @@
           case "VOL": {
             const applique = applyFreeStealCore(action.charId, action.artifactId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "VOL", gardien: action.charId, de: applique.deId });
             renderAll();
             const voleur = characterById(action.charId);
@@ -1094,6 +1106,7 @@
           case "TRANSMISSION": {
             const applique = applyFreeHandoffCore(action.deId, action.versId);
             if (!applique) return false;
+            reglesNoter(action);
             benchJournaliser({ type: "TRANSMISSION", de: action.deId, vers: action.versId,
               directe: applique.directe, depot: applique.depot });
             renderAll();

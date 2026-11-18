@@ -214,7 +214,7 @@ const assert = require('node:assert/strict');
           genere: !movementRange(characterById('A'), 1).has(key(5, 3)) && !!movementRange(characterById('A'), 3).size,
           applique: resoudrePousseeBloc(5, 4, 0, 1, 1) === null };
         resultat['POUSSER_MUR'] = { genere: !!pousseMur,
-          applique: !!pousseMur && withSimulatedState(cloneStateForSimulation(), () =>
+          applique: !!pousseMur && reglesVerifier(pousseMur, { essai: false }).ok && withSimulatedState(cloneStateForSimulation(), () =>
             !!plannerAppliquerAction(pousseMur) && murParId('m1').j === 4 && availableActionCount('PUSH') === 2 - pousseMur.force) };
         benchPoserPosition({ seed: 7, islandPlacedThisTurn: true, aiPlayer: 0,
           islands: [{ owner: 0, cells: [[3,1],[3,2],[3,3]] }, { owner: 1, cells: [[8,8]] }],
@@ -225,13 +225,14 @@ const assert = require('node:assert/strict');
         state.murs = [{ id: 'm1', o: 'h', i: 3, j: 1, n: 2 }];
         const magieMur = avecGrilleTerre(() => plannerCandidatsMagic(0)).find(a => a.mode === 'deux') || null;
         resultat['MAGIC île et mur'] = { genere: !!magieMur,
-          applique: !!magieMur && withSimulatedState(cloneStateForSimulation(), () => {
+          applique: !!magieMur && reglesVerifier(magieMur, { essai: false }).ok && withSimulatedState(cloneStateForSimulation(), () => {
             const avant = JSON.stringify(state.murs);
             return !!plannerAppliquerAction(magieMur) && JSON.stringify(state.murs) !== avant && availableActionCount('MAGIC') === 0;
           }) };
         const murSeul = withSimulatedState(cloneStateForSimulation(), () => {
           const action = { type: 'MAGIC', islandId: state.islands[0].id, pivot: [3, 1], direction: 1, turns: 1, mode: 'mur' };
           const cellules = JSON.stringify(state.islands[0].cells);
+          if (!reglesVerifier(action, { essai: false }).ok) return false;
           return !!plannerAppliquerAction(action) && JSON.stringify(state.islands[0].cells) === cellules
             && murParId('m1').o === 'v';
         });

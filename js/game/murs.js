@@ -434,12 +434,15 @@
         if (!option || option.targetType !== "mur") return false;
         const pousseur = characterById(option.pusherId);
         if (!pousseur) return false;
+        const note = { type: "POUSSER_MUR", murId: option.targetId, pusherId: option.pusherId, force: option.force };
+        if (reglesRefuserAuJoueur(note)) return false;
         saveUndoSnapshot();
         state.phase = "ACTION";
         state.selectedActionType = "PUSH";
         state.selectedActionCount = option.force;
         const applique = appliquerPousseeMurCore(option.targetId, option.pusherId, option.force);
         clearUnifiedPushOptions();
+        if (applique) reglesNoter(note);
         if (!applique) {
           discardLastUndoSnapshot();
           showToast("Ce mur ne peut plus être poussé ainsi.");
