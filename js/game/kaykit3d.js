@@ -12833,6 +12833,10 @@
           id: String(character.id),
           assetKey,
           playerId,
+          /* Couleur propre au gardien (énigmes « chacun sa case ») : lue par
+             js/character-materials-v1.js, qui a le dernier mot sur les
+             matériaux des personnages. */
+          teinte: character.teinte ?? null,
           wrapper,
           model,
           animator,
