@@ -21520,10 +21520,7 @@
           if (state.winner !== null) return;
           const artifact = artifactCarriedBy(char.id);
           if (!artifact) return;
-          queueKayKitActionAnimation(char.id, "victory", 1200);
-          animateCellPulse(char.r, char.c, "crown-burst");
-          playSfx("crown");
-          scoreCrownForPlayer(player, char, false, artifact, { immediat });
+          scoreCrownForPlayer(player, char, false, artifact, { immediat, auVillage: true });
           scored++;
         });
 
@@ -27680,53 +27677,36 @@
         return true;
       }
 
-      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id), { immediat = false } = {}) {
+      /* RÈGLE du point : le score, la victoire, la couronne et le gardien.
+         Tout ce qui se voit ou s'entend est annoncé (reglesAnnoncer,
+         regles.js) et présenté par presenterPoint / presenterVictoire, plus
+         bas ; en simulation, rien n'est présenté. Les annonces partent aux
+         mêmes moments que l'ancienne présentation : le gardien et la couronne
+         sont encore à leur place quand le point se montre. */
+      function scoreCrownForPlayer(player, char, throughExit = false, artifact = artifactCarriedBy(char?.id), { immediat = false, auVillage = false } = {}) {
         player.score++;
-        triggerScoreAnimation(player.id);
         /* Couronnes communes (2 contre 2, diagonale d'équipe) : le coéquipier
            marque avec lui, la victoire est celle de l'équipe. */
         const coequipier = gardiensPartages()
           ? state.players.find(j => j.id !== player.id && memeEquipe(j.id, player.id))
           : null;
-        if (coequipier) {
-          coequipier.score = player.score;
-          triggerScoreAnimation(coequipier.id);
-        }
-        const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
-        if (char) playCrownScore(char.id);
-        // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
-        kaykitChoc(2);
-        kaykitHameauEclat(player.id);
-        // La couronne rejoint sa place dans le HUD (fin-partie.js), avec un
-        // bandeau « Couronne validée » qui remplace la notification.
-        const celebree = couronneCelebrer(player, char);
+        if (coequipier) coequipier.score = player.score;
+        reglesAnnoncer({
+          type: "point",
+          joueur: player.id,
+          coequipier: coequipier ? coequipier.id : null,
+          gardienId: char ? char.id : null,
+          score: player.score,
+          sortie: !!(throughExit && char),
+          immediat,
+          auVillage
+        });
         if (artifact) artifact.carrierId = null;
-
-        if (throughExit && char) {
-          respawnCharacter(char);
-          showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
-        } else if (!celebree) {
-          showToast(coequipier
-            ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
-            : immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
-              : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
-        }
+        if (throughExit && char) respawnCharacter(char);
 
         if (player.score >= 3) {
           state.winner = player.id;
-          // Célébration sur le plateau AVANT l'écran de victoire : les gardiens
-          // gagnants fêtent le résultat pendant que l'interface se prépare.
-          /* Une victoire SIMULÉE ne doit rien montrer : le self-play joue des
-             milliers de parties dans l'ombre, et chacune ouvrirait sinon
-             l'écran de fin du jeu réel. */
-          if (!ilyosSimulationActive) {
-            playVictoryCelebration(player.id);
-            // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
-            if (char) kaykitMomentVictoire(char.r, char.c);
-            setTimeout(() => showVictory(player, coequipier
-              ? `${nomCamp} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
-              : null), char ? 1700 : 450);
-          }
+          reglesAnnoncer({ type: "victoire", joueur: player.id, coequipier: coequipier ? coequipier.id : null, gardienId: char ? char.id : null });
         } else {
           // Le gardien qui valide une couronne reste sur son village. Seul le
           // mode personnalisé peut rétablir l'ancienne règle, où il quittait
@@ -27737,6 +27717,56 @@
           resetArtifactObject(artifact);
         }
       }
+
+      function presenterPoint(evenement) {
+        const player = state.players.find(j => j.id === evenement.joueur);
+        if (!player) return;
+        const char = evenement.gardienId === null ? null
+          : (state.characters || []).find(g => g.id === evenement.gardienId) || null;
+        const coequipier = evenement.coequipier === null ? null : state.players.find(j => j.id === evenement.coequipier);
+        if (char && evenement.auVillage) {
+          queueKayKitActionAnimation(char.id, "victory", 1200);
+          animateCellPulse(char.r, char.c, "crown-burst");
+          playSfx("crown");
+        }
+        triggerScoreAnimation(player.id);
+        if (coequipier) triggerScoreAnimation(coequipier.id);
+        if (char) playCrownScore(char.id);
+        // Poids du point : secousse moyenne, vibration, hameau qui s'illumine.
+        kaykitChoc(2);
+        kaykitHameauEclat(player.id);
+        // La couronne rejoint sa place dans le HUD (fin-partie.js), avec un
+        // bandeau « Couronne validée » qui remplace la notification.
+        const celebree = couronneCelebrer(player, char);
+        const nomCamp = coequipier ? `${player.name} et ${coequipier.name}` : player.name;
+        if (evenement.sortie) {
+          showToast(`${player.name} sort avec la couronne et marque un point ! (${player.score}/3)`);
+        } else if (!celebree) {
+          showToast(coequipier
+            ? `${nomCamp} valident une couronne pour l’équipe ! (${player.score}/3)`
+            : evenement.immediat ? `${player.name} valide une couronne en arrivant au village ! (${player.score}/3)`
+              : `${player.name} valide une couronne au début de son tour ! (${player.score}/3)`);
+        }
+      }
+
+      // Célébration sur le plateau AVANT l'écran de victoire : les gardiens
+      // gagnants fêtent le résultat pendant que l'interface se prépare.
+      function presenterVictoire(evenement) {
+        const player = state.players.find(j => j.id === evenement.joueur);
+        if (!player) return;
+        const char = evenement.gardienId === null ? null
+          : (state.characters || []).find(g => g.id === evenement.gardienId) || null;
+        const coequipier = evenement.coequipier === null ? null : state.players.find(j => j.id === evenement.coequipier);
+        playVictoryCelebration(player.id);
+        // Le coup gagnant se voit avant l'écran de fin : rapproché + ralenti.
+        if (char) kaykitMomentVictoire(char.r, char.c);
+        setTimeout(() => showVictory(player, coequipier
+          ? `${player.name} et ${coequipier.name} ont validé trois couronnes ensemble et prennent le contrôle d’ILYOS.`
+          : null), char ? 1700 : 450);
+      }
+
+      reglesAbonner("point", presenterPoint);
+      reglesAbonner("victoire", presenterVictoire);
 
       function resolveArtifactForCharacter(char) {
         if (!characterCarriesCrown(char.id)) {
@@ -34580,7 +34610,7 @@
          Les ÉVÉNEMENTS sont déduits de l'état avant/après (qui a bougé, qui
          est tombé, quelle couronne a changé de mains, quelles cartes sont
          parties) : ils disent ce qui s'est passé, quel que soit le mode qui
-         l'a produit. L'interface ne les consomme pas encore (étape suivante).
+         l'a produit. La présentation s'y abonne (reglesAbonner, plus bas).
 
          Rien ici ne dessine, ne joue de son ni n'attend : tout est appelé
          sous ilyosSimulationActive quand l'état n'est pas la partie réelle.
@@ -35075,6 +35105,44 @@
           reglesArbitre.ignores++;
           return null;
         }
+      }
+
+      /* ---------------------------------------------------------------------
+         ANNONCES (refonte, étape 5) : la règle dit ce qui s'est passé, la
+         présentation (3D, sons, HUD) s'y abonne.
+
+           reglesAbonner(type, presenter)   presenter(evenement) à chaque annonce
+           reglesAnnoncer(evenement)        appelée par la règle, au moment exact
+                                            où l'ancienne présentation s'exécutait
+
+         En simulation (planner, self-play, ILYOS_REGLES, Worker sans écran),
+         l'annonce ne fait RIEN : un seul garde, au lieu d'un garde dans chaque
+         fonction de présentation. Une présentation qui échoue ne casse jamais
+         la règle qui l'annonce.
+
+         La liste vit sur la fonction (déclaration remontée) : un fragment
+         chargé AVANT celui-ci (ui.js) peut s'abonner dès son chargement.
+         ------------------------------------------------------------------- */
+      function reglesAbonnes() {
+        return reglesAbonnes.liste || (reglesAbonnes.liste = new Map());
+      }
+
+      function reglesAbonner(type, presenter) {
+        if (typeof presenter !== "function") return;
+        const liste = reglesAbonnes();
+        if (!liste.has(type)) liste.set(type, []);
+        liste.get(type).push(presenter);
+      }
+
+      function reglesAnnoncer(evenement) {
+        if (ilyosSimulationActive || !evenement) return;
+        (reglesAbonnes().get(evenement.type) || []).forEach(presenter => {
+          try {
+            presenter(evenement);
+          } catch (erreur) {
+            console.warn(`[ILYOS] présentation de « ${evenement.type} » en échec`, erreur);
+          }
+        });
       }
 
       /* ---------------------------------------------------------------------

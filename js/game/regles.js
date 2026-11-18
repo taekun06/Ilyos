@@ -42,7 +42,7 @@
          Les ÉVÉNEMENTS sont déduits de l'état avant/après (qui a bougé, qui
          est tombé, quelle couronne a changé de mains, quelles cartes sont
          parties) : ils disent ce qui s'est passé, quel que soit le mode qui
-         l'a produit. L'interface ne les consomme pas encore (étape suivante).
+         l'a produit. La présentation s'y abonne (reglesAbonner, plus bas).
 
          Rien ici ne dessine, ne joue de son ni n'attend : tout est appelé
          sous ilyosSimulationActive quand l'état n'est pas la partie réelle.
@@ -537,6 +537,44 @@
           reglesArbitre.ignores++;
           return null;
         }
+      }
+
+      /* ---------------------------------------------------------------------
+         ANNONCES (refonte, étape 5) : la règle dit ce qui s'est passé, la
+         présentation (3D, sons, HUD) s'y abonne.
+
+           reglesAbonner(type, presenter)   presenter(evenement) à chaque annonce
+           reglesAnnoncer(evenement)        appelée par la règle, au moment exact
+                                            où l'ancienne présentation s'exécutait
+
+         En simulation (planner, self-play, ILYOS_REGLES, Worker sans écran),
+         l'annonce ne fait RIEN : un seul garde, au lieu d'un garde dans chaque
+         fonction de présentation. Une présentation qui échoue ne casse jamais
+         la règle qui l'annonce.
+
+         La liste vit sur la fonction (déclaration remontée) : un fragment
+         chargé AVANT celui-ci (ui.js) peut s'abonner dès son chargement.
+         ------------------------------------------------------------------- */
+      function reglesAbonnes() {
+        return reglesAbonnes.liste || (reglesAbonnes.liste = new Map());
+      }
+
+      function reglesAbonner(type, presenter) {
+        if (typeof presenter !== "function") return;
+        const liste = reglesAbonnes();
+        if (!liste.has(type)) liste.set(type, []);
+        liste.get(type).push(presenter);
+      }
+
+      function reglesAnnoncer(evenement) {
+        if (ilyosSimulationActive || !evenement) return;
+        (reglesAbonnes().get(evenement.type) || []).forEach(presenter => {
+          try {
+            presenter(evenement);
+          } catch (erreur) {
+            console.warn(`[ILYOS] présentation de « ${evenement.type} » en échec`, erreur);
+          }
+        });
       }
 
       /* ---------------------------------------------------------------------
