@@ -5098,6 +5098,11 @@
               if (route) playCharacterMove(visual, route, duration);
               break;
             }
+            case "jump": {
+              const route = depart && target ? [[depart.r, depart.c], [target.r, target.c]] : null;
+              if (route) playCharacterJump(visual, route, duration);
+              break;
+            }
             case "attack":
             case "push":
               playCharacterPush(visual, target, duration);
@@ -13553,8 +13558,12 @@
           if (carries && !visual.crown) attachVisualCrown(visual);
           else if (!carries && visual.crown) detachVisualCrown(visual);
 
-          // Le gardien au repos revient à l'Idle adapté à sa situation.
-          if (visual.animator && !visual.animator.locked && !visual.move && !visual.fall) {
+          // Le gardien au repos revient à l'Idle adapté à sa situation. Assis
+          // sur un trône, il y reste : la pose assise est tenue image par
+          // image (kaykitAppliquerPoseAssise). Le remettre debout à chaque
+          // synchronisation le faisait se lever et se rasseoir en un éclair.
+          if (visual.animator && !visual.animator.locked && !visual.move && !visual.fall
+            && !(visual.assis && visual.animator.state === "assis")) {
             visual.animator.toIdle({ selected: visual.selected, carrying: visual.carrying });
           }
 
@@ -13640,6 +13649,37 @@
           visual.animator.play(locomotion, { fade: 0.08, timeScale });
         }
         emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[route.length - 1], cells });
+      }
+
+      /** Bond : un saut en cloche d'une case à l'autre, quelle que soit la
+       *  distance (1 ou 2 cases). Même mécanique que la marche (visual.move,
+       *  une seule ligne droite), plus une hauteur en arc et le clip de saut. */
+      function playCharacterJump(visual, route, duration) {
+        if (ilyosSimulationActive) return;
+        if (!visual || route.length < 2) return;
+        const [r0, c0] = route[0];
+        const [r1, c1] = route[1];
+        if (r0 !== r1 || c0 !== c1) visual.facingTarget = kaykitFacingRotation(r0, c0, r1, c1);
+        const reduced = kaykitReducedMotion();
+        const elan = reduced ? 0 : 110; // le gardien se ramasse avant de décoller
+        const travel = Math.max(300, duration - elan - 60);
+        const distance = Math.abs(r1 - r0) + Math.abs(c1 - c0);
+        visual.move = {
+          route: [[r0, c0], [r1, c1]],
+          startedAt: performance.now() + elan,
+          duration: travel,
+          cells: 1,
+          locomotion: "JUMP",
+          saut: reduced ? 0 : (distance >= 2 ? .62 : .46),
+          started: false
+        };
+        const animator = visual.animator;
+        if (animator?.hasState("JUMP")) {
+          const clip = animator.durationOf("JUMP");
+          const total = (elan + travel + 120) / 1000;
+          animator.play("JUMP", { fade: .06, force: true, timeScale: clip > 0 ? THREE.MathUtils.clamp(clip / total, .8, 2.4) : 1 });
+        }
+        emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[1], cells: distance, saut: true });
       }
 
       /** Poussée : anticipation, frappe, impact. */
@@ -14418,7 +14458,7 @@
           if (visual.plaque) visual.plaque.rotation.y = -visual.wrapper.rotation.y;
 
           /* --- 1 bis. Pose assise (trône des Balises, rotation.js) ---- */
-          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual));
+          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual), delta);
 
           /* --- 2. Orientation --------------------------------------- */
           // Une rotation progressive, jamais instantanée : c'est l'anticipation
@@ -14440,14 +14480,15 @@
               const scaled = progress * segmentCount;
               const segment = Math.min(segmentCount - 1, Math.floor(scaled));
               const t = THREE.MathUtils.clamp(scaled - segment, 0, 1);
-              const local = t * t * (3 - 2 * t);
+              // Saut (Bond) : allure régulière en l'air, hauteur en cloche.
+              const local = move.saut ? t : t * t * (3 - 2 * t);
               const [r0, c0] = move.route[segment];
               const [r1, c1] = move.route[segment + 1];
               const a = kaykitCellPosition(r0, c0, kaykitCellSurfaceY(r0, c0));
               const b = kaykitCellPosition(r1, c1, kaykitCellSurfaceY(r1, c1));
               visual.wrapper.position.set(
                 THREE.MathUtils.lerp(a.x, b.x, local),
-                THREE.MathUtils.lerp(a.y, b.y, local),
+                THREE.MathUtils.lerp(a.y, b.y, local) + (move.saut ? move.saut * 4 * t * (1 - t) : 0),
                 THREE.MathUtils.lerp(a.z, b.z, local)
               );
               // Le gardien regarde toujours le segment qu'il est en train de
@@ -14552,8 +14593,8 @@
               // Modèle animé : plus aucun balancement procédural. L'animation
               // squelette suffit, et la superposer produisait un flottement
               // parasite.
-              model.position.y = visual.baseModelY + settleOffset + (visual.assis?.hauteur || 0);
-              model.position.z = recoilOffset + (visual.assis?.avance || 0);
+              model.position.y = visual.baseModelY + settleOffset + (visual.assisDecalage?.hauteur || 0);
+              model.position.z = recoilOffset + (visual.assisDecalage?.avance || 0);
               model.scale.setScalar(visual.baseModelScale * spawnScale);
             } else {
               // Modèle de secours sans squelette : on conserve l'animation
@@ -14647,10 +14688,26 @@
          Sit_Chair_Pose est figée : rien ne tourne en continu. Le gardien se
          relève de lui-même dès qu'il est occupé ou sélectionné. */
       let kaykitPoseAssise = () => null;
-      function kaykitAppliquerPoseAssise(visual, pose) {
+      /* Fondu de la hauteur d'assise, calé sur le fondu du clip (0,2 s) : sans
+         lui, le gardien était hissé d'un coup sur le trône alors que ses
+         jambes étaient encore droites (il flottait un instant), et retombait
+         d'un coup en se levant. */
+      const KAYKIT_ASSIS_FONDU = .2;
+      function kaykitAssisFondu(visual, cible, delta) {
+        const pas = Math.max(0, Number(delta) || 0) / KAYKIT_ASSIS_FONDU;
+        const t = visual.assisT || 0;
+        visual.assisT = cible > t ? Math.min(cible, t + pas) : Math.max(cible, t - pas);
+        const pose = visual.assisPose;
+        visual.assisDecalage = pose && visual.assisT > 0
+          ? { hauteur: pose.hauteur * visual.assisT, avance: pose.avance * visual.assisT }
+          : null;
+      }
+      function kaykitAppliquerPoseAssise(visual, pose, delta = 0) {
         const anim = visual.animator;
         const clip = pose ? anim?.clipIndex?.get("Sit_Chair_Pose") : null;
         if (pose && clip) {
+          visual.assisPose = pose;
+          kaykitAssisFondu(visual, 1, delta);
           if (anim.state !== "assis") {
             const action = anim._action(clip);
             action.reset();
@@ -14666,6 +14723,9 @@
           visual.facingTarget = pose.facing;
           return;
         }
+        // En se levant (sélection, départ, poussée), il redescend du trône en
+        // même temps que ses jambes se déplient.
+        if (visual.assisT) kaykitAssisFondu(visual, 0, delta);
         if (!visual.assis && anim?.state !== "assis") return;
         visual.assis = null;
         // Encore figé dans la pose (plus sur un trône) : retour au repos.
@@ -16555,6 +16615,15 @@
         }
         return p; // CPU contre CPU
       }
+
+      /* Réserves du HUD du haut (js/hud-consolidation-v12.js) lues sur la
+         partie EN COURS, et non dans la sauvegarde : celle-ci n'est pas
+         écrite pendant le tour du CPU ni pendant le rejeu de son tour, et la
+         réserve adverse affichée restait périmée (Taekun, 2026-11-21).
+         Lecture seule, sans copie. */
+      window.ILYOS_HUD_JOUEURS = () => (state?.players?.length
+        ? { currentPlayer: state.currentPlayer, players: state.players }
+        : null);
 
       function sanitizeRoomCode(value) {
         return String(value || "")
@@ -38587,7 +38656,7 @@
           const vers = e.chemin[e.chemin.length - 1];
           const duree = Math.min(1600, 140 + (e.chemin.length - 1) * 340);
           tourAdversePoser(e.apres, e.charId);
-          if (anime) queueKayKitActionAnimation(e.charId, "move", duree, { r: vers[0], c: vers[1] }, e.chemin.slice(1), null, e.chemin[0]);
+          if (anime) queueKayKitActionAnimation(e.charId, e.bond ? "jump" : "move", e.bond ? Math.max(duree, 620) : duree, { r: vers[0], c: vers[1] }, e.chemin.slice(1), null, e.chemin[0]);
           renderAll();
           return duree + 250;
         }
@@ -39557,10 +39626,12 @@
            remplit aussitôt.
          — Affiner : en achetant, tu peux exiler un Déplacer de ta défausse.
            Le paquet ne descend jamais sous 8 cartes.
-         — Cartes fortes : Élan vaut 2 Déplacer, Bélier 2 Pousser, Arcane
-           2 Magie. Une carte forte se joue en premier, peut se jouer en deux
-           fois dans le tour, et ne va jamais en réserve : elle repart à la
-           défausse en fin de tour.
+         — Élan : ajoute 2 Déplacer à ta réserve ; Bélier : ajoute 2 Pousser
+           à ta réserve (Taekun, 2026-11-21). Jouée, la carte part aussitôt à
+           la défausse ; les 2 cartes ajoutées suivent la règle de la réserve
+           (5 par type au plus) et disparaissent une fois jouées.
+         — Arcane vaut 2 Magie : elle se joue en premier, peut se jouer en
+           deux fois dans le tour, et ne va jamais en réserve.
 
          Les cartes fortes portent leur propre nom d'action (ELAN, BELIER,
          ARCANE) : la réserve physique et l'ancien code les ignorent donc
@@ -39569,8 +39640,8 @@
          deux fonctions, en profite sans rien savoir de plus.
          ===================================================================== */
       const PAQUET_CARTES = {
-        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer", texte: "Compte comme deux Déplacer." },
-        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser", texte: "Compte comme deux Pousser." },
+        ELAN: { type: "MOVE", valeur: 2, reserve: true, nom: "Élan", effet: "+2 Déplacer en réserve", texte: "Ajoute 2 Déplacer à votre réserve." },
+        BELIER: { type: "PUSH", valeur: 2, reserve: true, nom: "Bélier", effet: "+2 Pousser en réserve", texte: "Ajoute 2 Pousser à votre réserve." },
         ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie", texte: "Compte comme deux Magie." },
         /* Bond (doc des nouvelles cartes, validé par Taekun) : vaut 1
            Déplacer, ou un SAUT par-dessus une case (gardien, œuf ou vide)
@@ -39615,8 +39686,49 @@
       }
 
       function paquetCharges(type, player) {
-        return paquetCartesFortes(type, player)
+        return paquetCartesFortes(type, player).filter(c => !PAQUET_CARTES[c.action].reserve)
           .reduce((total, c) => total + (c.restant ?? PAQUET_CARTES[c.action].valeur), 0);
+      }
+
+      /* ---------- Élan et Bélier : +2 cartes en réserve ------------------
+         Les cartes ajoutées sont des cartes de base marquées `temporaire` :
+         elles vivent dans la réserve (limite de 5 par type) et ne passent
+         jamais par la défausse, sinon chaque Élan grossirait le paquet. */
+      const PAQUET_RESERVE_MAX = (window.ILYOS_REGLES_RESERVE && window.ILYOS_REGLES_RESERVE.parType) || 5;
+      function paquetCartesReserve(type, player) {
+        return (player?.hand || []).filter(c => carteForte(c) && PAQUET_CARTES[c.action].reserve
+          && PAQUET_CARTES[c.action].type === type);
+      }
+      function paquetPlaceReserve(type, player) {
+        return Math.max(0, PAQUET_RESERVE_MAX - storedActionCount(type, player));
+      }
+      /** Ce que les Élan / Bélier en main ajouteraient, joués maintenant. */
+      function paquetGainReserve(type, player) {
+        const total = paquetCartesReserve(type, player)
+          .reduce((t, c) => t + PAQUET_CARTES[c.action].valeur, 0);
+        return Math.min(total, paquetPlaceReserve(type, player));
+      }
+      /** Joue un Élan / Bélier : la carte part à la défausse, 2 cartes de
+       *  son type entrent dans la réserve. Faux si la réserve est pleine. */
+      function paquetJouerReserve(player, carte) {
+        const def = PAQUET_CARTES[carte?.action];
+        if (!player || !def?.reserve) return false;
+        const place = paquetPlaceReserve(def.type, player);
+        if (place <= 0) return false;
+        paquetDefausserForte(player, carte);
+        player.reserveCards = Array.isArray(player.reserveCards) ? player.reserveCards : [];
+        for (let i = 0; i < Math.min(def.valeur, place); i++) {
+          player.reserveCards.push({ id: `${carte.id}-R${i}-${gameRandom().toString(36).slice(2, 7)}`, action: def.type,
+            used: false, fromStash: false, fromReserve: true, temporaire: true });
+        }
+        storedActionCount(def.type, player); // resynchronise le miroir player.stash
+        return true;
+      }
+      /** Les cartes temporaires jouées disparaissent au lieu d'aller en défausse. */
+      function paquetOterTemporaires(player) {
+        if (Array.isArray(player?.discard) && player.discard.some(c => c?.temporaire)) {
+          player.discard = player.discard.filter(c => !c?.temporaire);
+        }
       }
 
       /** Toutes les cartes du joueur : pioche, main, défausse et réserve. */
@@ -39659,7 +39771,7 @@
           const armee = paquetCarteArmee(player);
           return armee && PAQUET_CARTES[armee.action].type === type ? paquetChargeDe(armee) : base;
         }
-        return base + paquetCharges(type, player);
+        return base + paquetCharges(type, player) + paquetGainReserve(type, player);
       };
 
       function paquetDefausserForte(player, carte) {
@@ -39670,14 +39782,34 @@
 
       const paquetConsumeBase = consumeAvailableActions;
       consumeAvailableActions = function consumeAvailableActionsPaquet(type, count = 1, player = currentPlayer()) {
+        try {
+          return paquetConsommer(type, count, player);
+        } finally {
+          paquetOterTemporaires(player);
+        }
+      };
+      function paquetConsommer(type, count, player) {
         if (!paquetActif() || !player || count < 1) return paquetConsumeBase(type, count, player);
+        /* L'IA joue ses Élan / Bélier quand l'action en demande plus que ses
+           autres cartes n'en offrent (le joueur, lui, les joue au clic). */
+        if (!paquetAuClic(player)) {
+          const sans = () => paquetAvailableBase(type, player) + paquetCharges(type, player);
+          for (const carte of paquetCartesReserve(type, player)) {
+            if (Math.floor(count) <= sans()) break;
+            paquetJouerReserve(player, carte);
+          }
+        }
         if (paquetAuClic(player)) {
           const armee = paquetCarteArmee(player);
           if (!armee || PAQUET_CARTES[armee.action].type !== type) return paquetConsumeBase(type, count, player);
           const pris = Math.min(Math.floor(count), paquetChargeDe(armee));
+          if (PAQUET_CARTES[armee.action].saut) paquetBondJoue = true;
           paquetDefausserForte(player, armee);
           paquetArmeeId = null;
           carteJoueeEnvol(type, player);
+          // La carte quitte la main à l'écran tout de suite, sans attendre
+          // la fin de l'animation du geste.
+          if (!ilyosSimulationActive) { try { paquetRendreMain(); } catch (_) { } }
           return pris;
         }
         let reste = Math.min(Math.floor(count), availableActionCount(type, player));
@@ -39686,7 +39818,7 @@
         /* Les cartes fortes d'abord : elles ne peuvent pas aller en réserve,
            les cartes simples si. Un Bond passe en premier pour un saut, en
            dernier sinon (on le garde pour sauter). */
-        const fortes = paquetCartesFortes(type, player)
+        const fortes = paquetCartesFortes(type, player).filter(c => !PAQUET_CARTES[c.action].reserve)
           .sort((a, b) => (PAQUET_CARTES[a.action].saut ? 1 : 0) - (PAQUET_CARTES[b.action].saut ? 1 : 0));
         if (paquetSautEnCours) fortes.reverse();
         for (const carte of fortes) {
@@ -39696,12 +39828,13 @@
           carte.restant = charge - pris;
           reste -= pris;
           forte = true;
+          if (PAQUET_CARTES[carte.action].saut) paquetBondJoue = true;
           if (carte.restant <= 0) paquetDefausserForte(player, carte);
         }
         if (reste > 0) reste -= paquetConsumeBase(type, reste, player);
         if (forte) carteJoueeEnvol(type, player);
         return demande - reste;
-      };
+      }
 
       /** Clic sur une carte de la main (dock) : une carte avancée s'arme et
        *  lance son action ; une carte de base désarme et lance la sienne.
@@ -39710,6 +39843,23 @@
         if (!canLocalPlayerAct()) return;
         const joueur = currentPlayer();
         const carte = carteForte({ action }) ? (joueur.hand || []).find(c => c.action === action && carteForte(c)) : null;
+        if (carte && PAQUET_CARTES[action].reserve) {
+          const def = PAQUET_CARTES[action];
+          if (state.phase !== "ACTION_SELECT" && state.phase !== "SMART_CHAR" && state.phase !== "ACTION") return;
+          if (paquetPlaceReserve(def.type, joueur) <= 0) {
+            showToast(`Réserve pleine : pas de place pour d’autres ${ACTIONS[def.type]?.name || def.type}.`);
+            return;
+          }
+          // Une action en cours a compté ses cases avant l'ajout : on la relâche.
+          if (state.phase !== "ACTION_SELECT") cancelSelectedCard();
+          saveUndoSnapshot();
+          paquetJouerReserve(joueur, carte);
+          carteJoueeEnvol(def.type, joueur);
+          playSfx("crownTake");
+          showToast(`${def.nom} : ${def.effet}.`);
+          renderAll();
+          return;
+        }
         const armee = paquetCarteArmee(joueur);
         const enCours = (state.phase === "ACTION" || state.phase === "SMART_CHAR") && !!state.selectedActionType;
         if (carte && armee && armee.action === action && enCours) {
@@ -39732,6 +39882,11 @@
 
       /* ---------- Bond : le saut ---------------------------------------- */
       let paquetSautEnCours = false;
+      /* Un déplacement payé par un Bond se joue en SAUT, même d'une seule
+         case (Taekun, 2026-11-21) : drapeau posé par la consommation,
+         lu par applyMoveCore puis par l'animation qui suit. */
+      let paquetBondJoue = false;
+      let paquetSautAnime = null;
 
       /** Le joueur de ce gardien a-t-il un Bond chargé en main ? */
       function paquetBondDispo(char) {
@@ -39773,10 +39928,18 @@
       const paquetCheminBase = shortestMovementPath;
       shortestMovementPath = function shortestMovementPathBond(char, r, c, maxCost) {
         const chemin = paquetCheminBase(char, r, c, maxCost);
-        const coutChemin = chemin ? chemin.reduce((t, pas) => t + (pas.stepCost || 1), 0) : Infinity;
+        const coutChemin = chemin ? (chemin.cost ?? chemin.length) : Infinity;
         if (maxCost >= 1 && coutChemin > 1 && paquetCasesSaut(char).some(([sr, sc]) => sr === r && sc === c)) {
-          // Un seul pas, la case sautée n'est pas traversée.
-          return [{ r, c, diagonal: false, stepCost: 1, saut: true }];
+          /* Un seul pas, la case sautée n'est pas traversée. Même forme que
+             le chemin de base (liste de [r, c] avec cost et steps) : un objet
+             {r, c} faisait planter la fin de l'animation, et la carte Bond
+             restait affichée jusqu'à l'action suivante. */
+          const saut = [[r, c]];
+          saut.cost = 1;
+          saut.hasDiagonal = false;
+          saut.steps = [{ r, c, diagonal: false, stepCost: 1, saut: true }];
+          saut.saut = true;
+          return saut;
         }
         return chemin;
       };
@@ -39785,13 +39948,36 @@
       applyMoveCore = function applyMoveCoreBond(charId, r, c, cost) {
         const saut = paquetEstSaut(characterById(charId), r, c, cost);
         paquetSautEnCours = saut;
+        paquetBondJoue = false;
+        if (!ilyosSimulationActive) paquetSautAnime = null;
         try {
           const resultat = paquetMoveCoreBase(charId, r, c, cost);
           if (resultat && saut) resultat.saut = true;
+          if (resultat && paquetBondJoue) {
+            resultat.bond = true;
+            if (!ilyosSimulationActive) {
+              paquetSautAnime = String(charId);
+              // Rejeu du tour adverse : l'étape relevée se rejoue en saut.
+              const etapes = tourAdverse.courant?.etapes;
+              const etape = etapes?.[etapes.length - 1];
+              if (etape?.type === "move" && String(etape.charId) === String(charId)) etape.bond = true;
+            }
+          }
           return resultat;
         } finally {
           paquetSautEnCours = false;
+          paquetBondJoue = false;
         }
+      };
+
+      /* L'animation de marche qui suit un Bond devient un saut. */
+      const paquetAnimationBase = queueKayKitActionAnimation;
+      queueKayKitActionAnimation = function queueKayKitActionAnimationBond(characterId, intent, duration, ...reste) {
+        if (intent === "move" && paquetSautAnime !== null && String(characterId) === paquetSautAnime) {
+          paquetSautAnime = null;
+          return paquetAnimationBase.call(this, characterId, "jump", Math.max(duration || 0, 620), ...reste);
+        }
+        return paquetAnimationBase.call(this, characterId, intent, duration, ...reste);
       };
 
       /* Les cartes avancées non jouées RESTENT en main d'un tour à l'autre
@@ -40183,7 +40369,7 @@
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
               ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${def.reserve ? "<em>+2</em>" : forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
         paquetPanneau.classList.toggle("butin", !!butin);
@@ -40238,7 +40424,7 @@
           return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}${prise ? " prise" : ""}" data-choix="${i}"
               ${ia || prise ? "disabled" : ""} ${preneur ? `style="--pc:${preneur.color}"` : ""}
               title="${preneur ? `Prise par ${defaitesEchapper(preneur.name)}` : `Prendre ${def.nom} (remplace un Déplacer)`}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${def.reserve ? "<em>+2</em>" : forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i>${preneur ? `<u>${defaitesEchapper(preneur.name)}</u>` : ""}</button>`;
         }).join("");
         const pris = state.players.map(p => {
@@ -40303,7 +40489,7 @@
       function paquetFaceSpeciale(action) {
         const def = PAQUET_CARTES[action];
         if (!def) return "";
-        const marque = def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "";
+        const marque = def.reserve ? `+${def.valeur}` : def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "";
         return `<span class="cc-logo"><span class="cc-logo-rond">${paquetIcone(action)}${marque ? `<em>${marque}</em>` : ""}</span></span>`
           + `<span class="cc-texte"><b>${def.nom}</b><i>${def.texte || def.effet}</i></span>`;
       }
@@ -40396,7 +40582,7 @@
          (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
       window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
         ...Object.entries(PAQUET_CARTES).filter(([, def]) => defSpeciale(def))
-          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet, texte: def.texte || def.effet, get face() { return paquetFaceSpeciale(cle); } }]),
+          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, marque: def.reserve ? `+${def.valeur}` : def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "", effet: def.effet, texte: def.texte || def.effet, get face() { return paquetFaceSpeciale(cle); } }]),
         ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
       ]);
 
@@ -40420,6 +40606,21 @@
         /* Banc du Bond : cases de saut d'un gardien, puis le geste complet. */
         sauts: charId => paquetCasesSaut(characterById(charId)),
         deplacer: (charId, r, c) => performMoveToCell(characterById(charId), r, c),
+        /* Banc : met une carte du marché dans la main du joueur au trait. */
+        donner: action => {
+          const joueur = state && currentPlayer();
+          if (!joueur || !PAQUET_CARTES[action]) return false;
+          const carte = { id: `P${joueur.id}-B-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+          if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+          joueur.hand.push(carte);
+          renderAll();
+          return true;
+        },
+        reserve: playerId => {
+          const joueur = state?.players?.[playerId ?? state?.currentPlayer];
+          return joueur ? { MOVE: storedActionCount("MOVE", joueur), PUSH: storedActionCount("PUSH", joueur), MAGIC: storedActionCount("MAGIC", joueur),
+            defausse: (joueur.discard || []).map(c => c.action) } : null;
+        },
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];
@@ -40439,6 +40640,8 @@
          — Chaque éclosion fait apparaître un nouvel œuf (compte 2) au
            hasard sur une case libre de la croix du sanctuaire (ligne et
            colonne entières, hors balises).
+         — Jamais plus de 6 créatures en jeu : un œuf mûr attend alors
+           qu'une créature tombe.
          — Un œuf se pousse comme une couronne au sol, mais il flotte : il
            survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
@@ -40471,6 +40674,9 @@
       /* Quand un œuf éclot, un nouvel œuf apparaît sur une case libre de la
          croix du sanctuaire, avec ce compte à rebours. */
       const CREATURES_COMPTE_RELEVE = 2;
+      /* Jamais plus de 6 créatures sur le plateau (Taekun, 2026-11-21) :
+         au-delà, un œuf mûr attend qu'une créature tombe pour éclore. */
+      const CREATURES_MAX = 6;
 
       function creaturesActives(source = state) {
         /* Les œufs (et les créatures qui en sortent) : couche Créatures avec
@@ -40916,12 +41122,15 @@
         if (!etat) return false;
         let eclos = false;
         const avant = etat.oeufs.length;
+        let vivantes = creaturesVivantes().length;
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
+          if (vivantes >= CREATURES_MAX) return true; // plateau plein : il attend
           const naissance = creaturesCaseNaissance(oeuf);
           if (!naissance) return true; // case occupée : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
+          vivantes++;
           animateCellPulse(r, c, "crown-burst");
           showToast(`Un œuf éclot : ${etat.espece === "vase" ? "une Vase" : "un " + CREATURES[etat.espece].nom} apparaît !`);
           eclos = true;

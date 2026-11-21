@@ -10,10 +10,12 @@
            remplit aussitôt.
          — Affiner : en achetant, tu peux exiler un Déplacer de ta défausse.
            Le paquet ne descend jamais sous 8 cartes.
-         — Cartes fortes : Élan vaut 2 Déplacer, Bélier 2 Pousser, Arcane
-           2 Magie. Une carte forte se joue en premier, peut se jouer en deux
-           fois dans le tour, et ne va jamais en réserve : elle repart à la
-           défausse en fin de tour.
+         — Élan : ajoute 2 Déplacer à ta réserve ; Bélier : ajoute 2 Pousser
+           à ta réserve (Taekun, 2026-11-21). Jouée, la carte part aussitôt à
+           la défausse ; les 2 cartes ajoutées suivent la règle de la réserve
+           (5 par type au plus) et disparaissent une fois jouées.
+         — Arcane vaut 2 Magie : elle se joue en premier, peut se jouer en
+           deux fois dans le tour, et ne va jamais en réserve.
 
          Les cartes fortes portent leur propre nom d'action (ELAN, BELIER,
          ARCANE) : la réserve physique et l'ancien code les ignorent donc
@@ -22,8 +24,8 @@
          deux fonctions, en profite sans rien savoir de plus.
          ===================================================================== */
       const PAQUET_CARTES = {
-        ELAN: { type: "MOVE", valeur: 2, nom: "Élan", effet: "Vaut 2 Déplacer", texte: "Compte comme deux Déplacer." },
-        BELIER: { type: "PUSH", valeur: 2, nom: "Bélier", effet: "Vaut 2 Pousser", texte: "Compte comme deux Pousser." },
+        ELAN: { type: "MOVE", valeur: 2, reserve: true, nom: "Élan", effet: "+2 Déplacer en réserve", texte: "Ajoute 2 Déplacer à votre réserve." },
+        BELIER: { type: "PUSH", valeur: 2, reserve: true, nom: "Bélier", effet: "+2 Pousser en réserve", texte: "Ajoute 2 Pousser à votre réserve." },
         ARCANE: { type: "MAGIC", valeur: 2, nom: "Arcane", effet: "Vaut 2 Magie", texte: "Compte comme deux Magie." },
         /* Bond (doc des nouvelles cartes, validé par Taekun) : vaut 1
            Déplacer, ou un SAUT par-dessus une case (gardien, œuf ou vide)
@@ -68,8 +70,49 @@
       }
 
       function paquetCharges(type, player) {
-        return paquetCartesFortes(type, player)
+        return paquetCartesFortes(type, player).filter(c => !PAQUET_CARTES[c.action].reserve)
           .reduce((total, c) => total + (c.restant ?? PAQUET_CARTES[c.action].valeur), 0);
+      }
+
+      /* ---------- Élan et Bélier : +2 cartes en réserve ------------------
+         Les cartes ajoutées sont des cartes de base marquées `temporaire` :
+         elles vivent dans la réserve (limite de 5 par type) et ne passent
+         jamais par la défausse, sinon chaque Élan grossirait le paquet. */
+      const PAQUET_RESERVE_MAX = (window.ILYOS_REGLES_RESERVE && window.ILYOS_REGLES_RESERVE.parType) || 5;
+      function paquetCartesReserve(type, player) {
+        return (player?.hand || []).filter(c => carteForte(c) && PAQUET_CARTES[c.action].reserve
+          && PAQUET_CARTES[c.action].type === type);
+      }
+      function paquetPlaceReserve(type, player) {
+        return Math.max(0, PAQUET_RESERVE_MAX - storedActionCount(type, player));
+      }
+      /** Ce que les Élan / Bélier en main ajouteraient, joués maintenant. */
+      function paquetGainReserve(type, player) {
+        const total = paquetCartesReserve(type, player)
+          .reduce((t, c) => t + PAQUET_CARTES[c.action].valeur, 0);
+        return Math.min(total, paquetPlaceReserve(type, player));
+      }
+      /** Joue un Élan / Bélier : la carte part à la défausse, 2 cartes de
+       *  son type entrent dans la réserve. Faux si la réserve est pleine. */
+      function paquetJouerReserve(player, carte) {
+        const def = PAQUET_CARTES[carte?.action];
+        if (!player || !def?.reserve) return false;
+        const place = paquetPlaceReserve(def.type, player);
+        if (place <= 0) return false;
+        paquetDefausserForte(player, carte);
+        player.reserveCards = Array.isArray(player.reserveCards) ? player.reserveCards : [];
+        for (let i = 0; i < Math.min(def.valeur, place); i++) {
+          player.reserveCards.push({ id: `${carte.id}-R${i}-${gameRandom().toString(36).slice(2, 7)}`, action: def.type,
+            used: false, fromStash: false, fromReserve: true, temporaire: true });
+        }
+        storedActionCount(def.type, player); // resynchronise le miroir player.stash
+        return true;
+      }
+      /** Les cartes temporaires jouées disparaissent au lieu d'aller en défausse. */
+      function paquetOterTemporaires(player) {
+        if (Array.isArray(player?.discard) && player.discard.some(c => c?.temporaire)) {
+          player.discard = player.discard.filter(c => !c?.temporaire);
+        }
       }
 
       /** Toutes les cartes du joueur : pioche, main, défausse et réserve. */
@@ -112,7 +155,7 @@
           const armee = paquetCarteArmee(player);
           return armee && PAQUET_CARTES[armee.action].type === type ? paquetChargeDe(armee) : base;
         }
-        return base + paquetCharges(type, player);
+        return base + paquetCharges(type, player) + paquetGainReserve(type, player);
       };
 
       function paquetDefausserForte(player, carte) {
@@ -123,14 +166,34 @@
 
       const paquetConsumeBase = consumeAvailableActions;
       consumeAvailableActions = function consumeAvailableActionsPaquet(type, count = 1, player = currentPlayer()) {
+        try {
+          return paquetConsommer(type, count, player);
+        } finally {
+          paquetOterTemporaires(player);
+        }
+      };
+      function paquetConsommer(type, count, player) {
         if (!paquetActif() || !player || count < 1) return paquetConsumeBase(type, count, player);
+        /* L'IA joue ses Élan / Bélier quand l'action en demande plus que ses
+           autres cartes n'en offrent (le joueur, lui, les joue au clic). */
+        if (!paquetAuClic(player)) {
+          const sans = () => paquetAvailableBase(type, player) + paquetCharges(type, player);
+          for (const carte of paquetCartesReserve(type, player)) {
+            if (Math.floor(count) <= sans()) break;
+            paquetJouerReserve(player, carte);
+          }
+        }
         if (paquetAuClic(player)) {
           const armee = paquetCarteArmee(player);
           if (!armee || PAQUET_CARTES[armee.action].type !== type) return paquetConsumeBase(type, count, player);
           const pris = Math.min(Math.floor(count), paquetChargeDe(armee));
+          if (PAQUET_CARTES[armee.action].saut) paquetBondJoue = true;
           paquetDefausserForte(player, armee);
           paquetArmeeId = null;
           carteJoueeEnvol(type, player);
+          // La carte quitte la main à l'écran tout de suite, sans attendre
+          // la fin de l'animation du geste.
+          if (!ilyosSimulationActive) { try { paquetRendreMain(); } catch (_) { } }
           return pris;
         }
         let reste = Math.min(Math.floor(count), availableActionCount(type, player));
@@ -139,7 +202,7 @@
         /* Les cartes fortes d'abord : elles ne peuvent pas aller en réserve,
            les cartes simples si. Un Bond passe en premier pour un saut, en
            dernier sinon (on le garde pour sauter). */
-        const fortes = paquetCartesFortes(type, player)
+        const fortes = paquetCartesFortes(type, player).filter(c => !PAQUET_CARTES[c.action].reserve)
           .sort((a, b) => (PAQUET_CARTES[a.action].saut ? 1 : 0) - (PAQUET_CARTES[b.action].saut ? 1 : 0));
         if (paquetSautEnCours) fortes.reverse();
         for (const carte of fortes) {
@@ -149,12 +212,13 @@
           carte.restant = charge - pris;
           reste -= pris;
           forte = true;
+          if (PAQUET_CARTES[carte.action].saut) paquetBondJoue = true;
           if (carte.restant <= 0) paquetDefausserForte(player, carte);
         }
         if (reste > 0) reste -= paquetConsumeBase(type, reste, player);
         if (forte) carteJoueeEnvol(type, player);
         return demande - reste;
-      };
+      }
 
       /** Clic sur une carte de la main (dock) : une carte avancée s'arme et
        *  lance son action ; une carte de base désarme et lance la sienne.
@@ -163,6 +227,23 @@
         if (!canLocalPlayerAct()) return;
         const joueur = currentPlayer();
         const carte = carteForte({ action }) ? (joueur.hand || []).find(c => c.action === action && carteForte(c)) : null;
+        if (carte && PAQUET_CARTES[action].reserve) {
+          const def = PAQUET_CARTES[action];
+          if (state.phase !== "ACTION_SELECT" && state.phase !== "SMART_CHAR" && state.phase !== "ACTION") return;
+          if (paquetPlaceReserve(def.type, joueur) <= 0) {
+            showToast(`Réserve pleine : pas de place pour d’autres ${ACTIONS[def.type]?.name || def.type}.`);
+            return;
+          }
+          // Une action en cours a compté ses cases avant l'ajout : on la relâche.
+          if (state.phase !== "ACTION_SELECT") cancelSelectedCard();
+          saveUndoSnapshot();
+          paquetJouerReserve(joueur, carte);
+          carteJoueeEnvol(def.type, joueur);
+          playSfx("crownTake");
+          showToast(`${def.nom} : ${def.effet}.`);
+          renderAll();
+          return;
+        }
         const armee = paquetCarteArmee(joueur);
         const enCours = (state.phase === "ACTION" || state.phase === "SMART_CHAR") && !!state.selectedActionType;
         if (carte && armee && armee.action === action && enCours) {
@@ -185,6 +266,11 @@
 
       /* ---------- Bond : le saut ---------------------------------------- */
       let paquetSautEnCours = false;
+      /* Un déplacement payé par un Bond se joue en SAUT, même d'une seule
+         case (Taekun, 2026-11-21) : drapeau posé par la consommation,
+         lu par applyMoveCore puis par l'animation qui suit. */
+      let paquetBondJoue = false;
+      let paquetSautAnime = null;
 
       /** Le joueur de ce gardien a-t-il un Bond chargé en main ? */
       function paquetBondDispo(char) {
@@ -226,10 +312,18 @@
       const paquetCheminBase = shortestMovementPath;
       shortestMovementPath = function shortestMovementPathBond(char, r, c, maxCost) {
         const chemin = paquetCheminBase(char, r, c, maxCost);
-        const coutChemin = chemin ? chemin.reduce((t, pas) => t + (pas.stepCost || 1), 0) : Infinity;
+        const coutChemin = chemin ? (chemin.cost ?? chemin.length) : Infinity;
         if (maxCost >= 1 && coutChemin > 1 && paquetCasesSaut(char).some(([sr, sc]) => sr === r && sc === c)) {
-          // Un seul pas, la case sautée n'est pas traversée.
-          return [{ r, c, diagonal: false, stepCost: 1, saut: true }];
+          /* Un seul pas, la case sautée n'est pas traversée. Même forme que
+             le chemin de base (liste de [r, c] avec cost et steps) : un objet
+             {r, c} faisait planter la fin de l'animation, et la carte Bond
+             restait affichée jusqu'à l'action suivante. */
+          const saut = [[r, c]];
+          saut.cost = 1;
+          saut.hasDiagonal = false;
+          saut.steps = [{ r, c, diagonal: false, stepCost: 1, saut: true }];
+          saut.saut = true;
+          return saut;
         }
         return chemin;
       };
@@ -238,13 +332,36 @@
       applyMoveCore = function applyMoveCoreBond(charId, r, c, cost) {
         const saut = paquetEstSaut(characterById(charId), r, c, cost);
         paquetSautEnCours = saut;
+        paquetBondJoue = false;
+        if (!ilyosSimulationActive) paquetSautAnime = null;
         try {
           const resultat = paquetMoveCoreBase(charId, r, c, cost);
           if (resultat && saut) resultat.saut = true;
+          if (resultat && paquetBondJoue) {
+            resultat.bond = true;
+            if (!ilyosSimulationActive) {
+              paquetSautAnime = String(charId);
+              // Rejeu du tour adverse : l'étape relevée se rejoue en saut.
+              const etapes = tourAdverse.courant?.etapes;
+              const etape = etapes?.[etapes.length - 1];
+              if (etape?.type === "move" && String(etape.charId) === String(charId)) etape.bond = true;
+            }
+          }
           return resultat;
         } finally {
           paquetSautEnCours = false;
+          paquetBondJoue = false;
         }
+      };
+
+      /* L'animation de marche qui suit un Bond devient un saut. */
+      const paquetAnimationBase = queueKayKitActionAnimation;
+      queueKayKitActionAnimation = function queueKayKitActionAnimationBond(characterId, intent, duration, ...reste) {
+        if (intent === "move" && paquetSautAnime !== null && String(characterId) === paquetSautAnime) {
+          paquetSautAnime = null;
+          return paquetAnimationBase.call(this, characterId, "jump", Math.max(duration || 0, 620), ...reste);
+        }
+        return paquetAnimationBase.call(this, characterId, intent, duration, ...reste);
       };
 
       /* Les cartes avancées non jouées RESTENT en main d'un tour à l'autre
@@ -636,7 +753,7 @@
           const forte = def.valeur > 1;
           return `<button type="button" class="rt-mcarte rt-mcarte-${def.type.toLowerCase()}${forte ? " forte" : ""}" data-marche="${i}"
               ${refus ? "disabled" : ""} title="${refus || (butin ? `Prendre ${def.nom} gratuitement (butin)` : `Acheter ${def.nom} pour 2 cartes`)}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${def.reserve ? "<em>+2</em>" : forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i></button>`;
         }).join("");
         paquetPanneau.classList.toggle("butin", !!butin);
@@ -691,7 +808,7 @@
           return `<button type="button" class="rt-mcarte rt-ccarte${forte ? " forte" : ""}${prise ? " prise" : ""}" data-choix="${i}"
               ${ia || prise ? "disabled" : ""} ${preneur ? `style="--pc:${preneur.color}"` : ""}
               title="${preneur ? `Prise par ${defaitesEchapper(preneur.name)}` : `Prendre ${def.nom} (remplace un Déplacer)`}">
-            <span class="rt-mcarte-ico">${paquetIcone(action)}${forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
+            <span class="rt-mcarte-ico">${paquetIcone(action)}${def.reserve ? "<em>+2</em>" : forte ? "<em>×2</em>" : def.saut ? "<em>↷</em>" : ""}</span>
             <b>${def.nom}</b><i>${def.effet}</i>${preneur ? `<u>${defaitesEchapper(preneur.name)}</u>` : ""}</button>`;
         }).join("");
         const pris = state.players.map(p => {
@@ -756,7 +873,7 @@
       function paquetFaceSpeciale(action) {
         const def = PAQUET_CARTES[action];
         if (!def) return "";
-        const marque = def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "";
+        const marque = def.reserve ? `+${def.valeur}` : def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "";
         return `<span class="cc-logo"><span class="cc-logo-rond">${paquetIcone(action)}${marque ? `<em>${marque}</em>` : ""}</span></span>`
           + `<span class="cc-texte"><b>${def.nom}</b><i>${def.texte || def.effet}</i></span>`;
       }
@@ -849,7 +966,7 @@
          (js/deck-discard-viewer-v2.js), qui ne lisent que l'état sauvegardé. */
       window.ILYOS_CARTES_SPECIALES = Object.fromEntries([
         ...Object.entries(PAQUET_CARTES).filter(([, def]) => defSpeciale(def))
-          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, effet: def.effet, texte: def.texte || def.effet, get face() { return paquetFaceSpeciale(cle); } }]),
+          .map(([cle, def]) => [cle, { nom: def.nom, type: def.type, valeur: def.valeur, marque: def.reserve ? `+${def.valeur}` : def.valeur > 1 ? `×${def.valeur}` : def.saut ? "↷" : "", effet: def.effet, texte: def.texte || def.effet, get face() { return paquetFaceSpeciale(cle); } }]),
         ["BOUE", { nom: "Boue", type: null, valeur: 0, effet: "Ne fait rien" }]
       ]);
 
@@ -873,6 +990,21 @@
         /* Banc du Bond : cases de saut d'un gardien, puis le geste complet. */
         sauts: charId => paquetCasesSaut(characterById(charId)),
         deplacer: (charId, r, c) => performMoveToCell(characterById(charId), r, c),
+        /* Banc : met une carte du marché dans la main du joueur au trait. */
+        donner: action => {
+          const joueur = state && currentPlayer();
+          if (!joueur || !PAQUET_CARTES[action]) return false;
+          const carte = { id: `P${joueur.id}-B-${gameRandom().toString(36).slice(2, 7)}`, action, used: false };
+          if (carteForte(carte)) carte.restant = PAQUET_CARTES[action].valeur;
+          joueur.hand.push(carte);
+          renderAll();
+          return true;
+        },
+        reserve: playerId => {
+          const joueur = state?.players?.[playerId ?? state?.currentPlayer];
+          return joueur ? { MOVE: storedActionCount("MOVE", joueur), PUSH: storedActionCount("PUSH", joueur), MAGIC: storedActionCount("MAGIC", joueur),
+            defausse: (joueur.discard || []).map(c => c.action) } : null;
+        },
         choixIA: playerId => plannerChoisirAchat(playerId ?? state?.currentPlayer),
         paquet: playerId => {
           const joueur = state?.players?.[playerId ?? state?.currentPlayer];

@@ -52,7 +52,7 @@ function ilyosLoadScriptOnce(marker, src) {
 }
 
 (function loadIlyosHudPolishTargetedV1() {
-  const VERSION = '20261105-cartes-clic';
+  const VERSION = '20261121-elan-belier';
 
   function install() {
     // Les onze anciennes feuilles des cartes et des piles, bout à bout dans leur ordre d'origine.

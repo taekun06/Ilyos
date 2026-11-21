@@ -136,8 +136,9 @@ const assert = require('node:assert/strict');
         };
         /* ROTATION · DECKBUILDING (01/11) : le marché et les cartes fortes.
            Achat : choisi par l'IA (plannerChoisirAchat), payé 2 cartes,
-           carte achetée en défausse. Carte forte : Élan vaut 2 Déplacer,
-           et un déplacement de 2 cases généré par le planner la consomme. */
+           carte achetée en défausse. Élan ajoute 2 Déplacer à la réserve :
+           un déplacement de 2 cases généré par le planner le joue, et les
+           2 cartes ajoutées, jouées, ne restent pas dans le paquet. */
         const marche = main => {
           benchPoserPosition({ seed: 7, islandPlacedThisTurn: true, aiPlayer: 0,
             islands: [{ owner: 0, cells: [[5,0],[5,1],[5,2],[5,3]] }, { owner: 1, cells: [[8,8]] }],
@@ -160,10 +161,11 @@ const assert = require('node:assert/strict');
           }) };
         marche(['ELAN']);
         const elan = avecGrilleTerre(() => plannerCandidatsMove(0)).find(a => a.cost === 2) || null;
-        resultat['carte forte (Élan = 2)'] = { genere: availableActionCount('MOVE') === 2 && !!elan,
+        resultat['Élan (+2 Déplacer en réserve)'] = { genere: availableActionCount('MOVE') === 2 && !!elan,
           applique: !!elan && withSimulatedState(cloneStateForSimulation(), () =>
             !!plannerAppliquerAction(elan) && availableActionCount('MOVE') === 0
-            && state.players[0].discard.some(c => c.action === 'ELAN')) };
+            && state.players[0].discard.some(c => c.action === 'ELAN')
+            && !state.players[0].discard.some(c => c.temporaire)) };
         /* ROTATION · CHOIX DE DÉPART : l'IA prend une carte révélée, qui
            remplace un Déplacer de son paquet. */
         marche(['MOVE', 'MOVE', 'PUSH', 'MAGIC', 'MOVE']);
