@@ -299,7 +299,7 @@
           const vers = e.chemin[e.chemin.length - 1];
           const duree = Math.min(1600, 140 + (e.chemin.length - 1) * 340);
           tourAdversePoser(e.apres, e.charId);
-          if (anime) queueKayKitActionAnimation(e.charId, "move", duree, { r: vers[0], c: vers[1] }, e.chemin.slice(1), null, e.chemin[0]);
+          if (anime) queueKayKitActionAnimation(e.charId, e.bond ? "jump" : "move", e.bond ? Math.max(duree, 620) : duree, { r: vers[0], c: vers[1] }, e.chemin.slice(1), null, e.chemin[0]);
           renderAll();
           return duree + 250;
         }

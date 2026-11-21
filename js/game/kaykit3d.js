@@ -4714,6 +4714,11 @@
               if (route) playCharacterMove(visual, route, duration);
               break;
             }
+            case "jump": {
+              const route = depart && target ? [[depart.r, depart.c], [target.r, target.c]] : null;
+              if (route) playCharacterJump(visual, route, duration);
+              break;
+            }
             case "attack":
             case "push":
               playCharacterPush(visual, target, duration);
@@ -13169,8 +13174,12 @@
           if (carries && !visual.crown) attachVisualCrown(visual);
           else if (!carries && visual.crown) detachVisualCrown(visual);
 
-          // Le gardien au repos revient à l'Idle adapté à sa situation.
-          if (visual.animator && !visual.animator.locked && !visual.move && !visual.fall) {
+          // Le gardien au repos revient à l'Idle adapté à sa situation. Assis
+          // sur un trône, il y reste : la pose assise est tenue image par
+          // image (kaykitAppliquerPoseAssise). Le remettre debout à chaque
+          // synchronisation le faisait se lever et se rasseoir en un éclair.
+          if (visual.animator && !visual.animator.locked && !visual.move && !visual.fall
+            && !(visual.assis && visual.animator.state === "assis")) {
             visual.animator.toIdle({ selected: visual.selected, carrying: visual.carrying });
           }
 
@@ -13256,6 +13265,37 @@
           visual.animator.play(locomotion, { fade: 0.08, timeScale });
         }
         emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[route.length - 1], cells });
+      }
+
+      /** Bond : un saut en cloche d'une case à l'autre, quelle que soit la
+       *  distance (1 ou 2 cases). Même mécanique que la marche (visual.move,
+       *  une seule ligne droite), plus une hauteur en arc et le clip de saut. */
+      function playCharacterJump(visual, route, duration) {
+        if (ilyosSimulationActive) return;
+        if (!visual || route.length < 2) return;
+        const [r0, c0] = route[0];
+        const [r1, c1] = route[1];
+        if (r0 !== r1 || c0 !== c1) visual.facingTarget = kaykitFacingRotation(r0, c0, r1, c1);
+        const reduced = kaykitReducedMotion();
+        const elan = reduced ? 0 : 110; // le gardien se ramasse avant de décoller
+        const travel = Math.max(300, duration - elan - 60);
+        const distance = Math.abs(r1 - r0) + Math.abs(c1 - c0);
+        visual.move = {
+          route: [[r0, c0], [r1, c1]],
+          startedAt: performance.now() + elan,
+          duration: travel,
+          cells: 1,
+          locomotion: "JUMP",
+          saut: reduced ? 0 : (distance >= 2 ? .62 : .46),
+          started: false
+        };
+        const animator = visual.animator;
+        if (animator?.hasState("JUMP")) {
+          const clip = animator.durationOf("JUMP");
+          const total = (elan + travel + 120) / 1000;
+          animator.play("JUMP", { fade: .06, force: true, timeScale: clip > 0 ? THREE.MathUtils.clamp(clip / total, .8, 2.4) : 1 });
+        }
+        emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[1], cells: distance, saut: true });
       }
 
       /** Poussée : anticipation, frappe, impact. */
@@ -14034,7 +14074,7 @@
           if (visual.plaque) visual.plaque.rotation.y = -visual.wrapper.rotation.y;
 
           /* --- 1 bis. Pose assise (trône des Balises, rotation.js) ---- */
-          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual));
+          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual), delta);
 
           /* --- 2. Orientation --------------------------------------- */
           // Une rotation progressive, jamais instantanée : c'est l'anticipation
@@ -14056,14 +14096,15 @@
               const scaled = progress * segmentCount;
               const segment = Math.min(segmentCount - 1, Math.floor(scaled));
               const t = THREE.MathUtils.clamp(scaled - segment, 0, 1);
-              const local = t * t * (3 - 2 * t);
+              // Saut (Bond) : allure régulière en l'air, hauteur en cloche.
+              const local = move.saut ? t : t * t * (3 - 2 * t);
               const [r0, c0] = move.route[segment];
               const [r1, c1] = move.route[segment + 1];
               const a = kaykitCellPosition(r0, c0, kaykitCellSurfaceY(r0, c0));
               const b = kaykitCellPosition(r1, c1, kaykitCellSurfaceY(r1, c1));
               visual.wrapper.position.set(
                 THREE.MathUtils.lerp(a.x, b.x, local),
-                THREE.MathUtils.lerp(a.y, b.y, local),
+                THREE.MathUtils.lerp(a.y, b.y, local) + (move.saut ? move.saut * 4 * t * (1 - t) : 0),
                 THREE.MathUtils.lerp(a.z, b.z, local)
               );
               // Le gardien regarde toujours le segment qu'il est en train de
@@ -14168,8 +14209,8 @@
               // Modèle animé : plus aucun balancement procédural. L'animation
               // squelette suffit, et la superposer produisait un flottement
               // parasite.
-              model.position.y = visual.baseModelY + settleOffset + (visual.assis?.hauteur || 0);
-              model.position.z = recoilOffset + (visual.assis?.avance || 0);
+              model.position.y = visual.baseModelY + settleOffset + (visual.assisDecalage?.hauteur || 0);
+              model.position.z = recoilOffset + (visual.assisDecalage?.avance || 0);
               model.scale.setScalar(visual.baseModelScale * spawnScale);
             } else {
               // Modèle de secours sans squelette : on conserve l'animation
@@ -14263,10 +14304,26 @@
          Sit_Chair_Pose est figée : rien ne tourne en continu. Le gardien se
          relève de lui-même dès qu'il est occupé ou sélectionné. */
       let kaykitPoseAssise = () => null;
-      function kaykitAppliquerPoseAssise(visual, pose) {
+      /* Fondu de la hauteur d'assise, calé sur le fondu du clip (0,2 s) : sans
+         lui, le gardien était hissé d'un coup sur le trône alors que ses
+         jambes étaient encore droites (il flottait un instant), et retombait
+         d'un coup en se levant. */
+      const KAYKIT_ASSIS_FONDU = .2;
+      function kaykitAssisFondu(visual, cible, delta) {
+        const pas = Math.max(0, Number(delta) || 0) / KAYKIT_ASSIS_FONDU;
+        const t = visual.assisT || 0;
+        visual.assisT = cible > t ? Math.min(cible, t + pas) : Math.max(cible, t - pas);
+        const pose = visual.assisPose;
+        visual.assisDecalage = pose && visual.assisT > 0
+          ? { hauteur: pose.hauteur * visual.assisT, avance: pose.avance * visual.assisT }
+          : null;
+      }
+      function kaykitAppliquerPoseAssise(visual, pose, delta = 0) {
         const anim = visual.animator;
         const clip = pose ? anim?.clipIndex?.get("Sit_Chair_Pose") : null;
         if (pose && clip) {
+          visual.assisPose = pose;
+          kaykitAssisFondu(visual, 1, delta);
           if (anim.state !== "assis") {
             const action = anim._action(clip);
             action.reset();
@@ -14282,6 +14339,9 @@
           visual.facingTarget = pose.facing;
           return;
         }
+        // En se levant (sélection, départ, poussée), il redescend du trône en
+        // même temps que ses jambes se déplient.
+        if (visual.assisT) kaykitAssisFondu(visual, 0, delta);
         if (!visual.assis && anim?.state !== "assis") return;
         visual.assis = null;
         // Encore figé dans la pose (plus sur un trône) : retour au repos.
