@@ -13267,35 +13267,18 @@
         emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[route.length - 1], cells });
       }
 
-      /** Bond : un saut en cloche d'une case à l'autre, quelle que soit la
-       *  distance (1 ou 2 cases). Même mécanique que la marche (visual.move,
-       *  une seule ligne droite), plus une hauteur en arc et le clip de saut. */
+      /** Bond : le gardien pivote, disparaît, puis réapparaît sur la case
+       *  d'arrivée à la fin du trajet. C'est le rendu que donnait déjà un
+       *  saut de 2 cases et que Taekun a gardé (2026-11-22) : il vaut
+       *  désormais pour tout déplacement payé par un Bond, même d'une case. */
       function playCharacterJump(visual, route, duration) {
         if (ilyosSimulationActive) return;
         if (!visual || route.length < 2) return;
-        const [r0, c0] = route[0];
-        const [r1, c1] = route[1];
-        if (r0 !== r1 || c0 !== c1) visual.facingTarget = kaykitFacingRotation(r0, c0, r1, c1);
-        const reduced = kaykitReducedMotion();
-        const elan = reduced ? 0 : 110; // le gardien se ramasse avant de décoller
-        const travel = Math.max(300, duration - elan - 60);
-        const distance = Math.abs(r1 - r0) + Math.abs(c1 - c0);
-        visual.move = {
-          route: [[r0, c0], [r1, c1]],
-          startedAt: performance.now() + elan,
-          duration: travel,
-          cells: 1,
-          locomotion: "JUMP",
-          saut: reduced ? 0 : (distance >= 2 ? .62 : .46),
-          started: false
-        };
-        const animator = visual.animator;
-        if (animator?.hasState("JUMP")) {
-          const clip = animator.durationOf("JUMP");
-          const total = (elan + travel + 120) / 1000;
-          animator.play("JUMP", { fade: .06, force: true, timeScale: clip > 0 ? THREE.MathUtils.clamp(clip / total, .8, 2.4) : 1 });
+        playCharacterMove(visual, route, duration);
+        if (visual.move) {
+          visual.move.eclipse = true;
+          visual.eclipse = true;
         }
-        emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[1], cells: distance, saut: true });
       }
 
       /** Poussée : anticipation, frappe, impact. */
@@ -14088,6 +14071,12 @@
           }
 
           /* --- 3. Déplacement --------------------------------------- */
+          // Bond : invisible pendant le trajet, visible au départ et à l'arrivée.
+          if (visual.eclipse) {
+            const cache = !!visual.move?.eclipse && now >= visual.move.startedAt;
+            if (visual.wrapper.visible === cache) visual.wrapper.visible = !cache;
+            if (!visual.move?.eclipse) visual.eclipse = false;
+          }
           if (visual.move) {
             const move = visual.move;
             if (now >= move.startedAt) {
@@ -14096,15 +14085,14 @@
               const scaled = progress * segmentCount;
               const segment = Math.min(segmentCount - 1, Math.floor(scaled));
               const t = THREE.MathUtils.clamp(scaled - segment, 0, 1);
-              // Saut (Bond) : allure régulière en l'air, hauteur en cloche.
-              const local = move.saut ? t : t * t * (3 - 2 * t);
+              const local = t * t * (3 - 2 * t);
               const [r0, c0] = move.route[segment];
               const [r1, c1] = move.route[segment + 1];
               const a = kaykitCellPosition(r0, c0, kaykitCellSurfaceY(r0, c0));
               const b = kaykitCellPosition(r1, c1, kaykitCellSurfaceY(r1, c1));
               visual.wrapper.position.set(
                 THREE.MathUtils.lerp(a.x, b.x, local),
-                THREE.MathUtils.lerp(a.y, b.y, local) + (move.saut ? move.saut * 4 * t * (1 - t) : 0),
+                THREE.MathUtils.lerp(a.y, b.y, local),
                 THREE.MathUtils.lerp(a.z, b.z, local)
               );
               // Le gardien regarde toujours le segment qu'il est en train de

@@ -95,13 +95,6 @@
       pattern: [/run/i, /walk/i],
       loop: true
     },
-    // Bond (mode Rotation) : un vrai saut, même pour une seule case.
-    JUMP: {
-      exact: ["Jump_Full_Short", "Jump_Full_Long"],
-      pattern: [/jump_full/i, /jump/i],
-      loop: false,
-      fixed: true
-    },
     [STATES.PUSH_WINDUP]: {
       exact: ["Spellcast_Raise", "Interact"],
       pattern: [/raise/i],

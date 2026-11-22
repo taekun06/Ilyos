@@ -354,12 +354,13 @@
         }
       };
 
-      /* L'animation de marche qui suit un Bond devient un saut. */
+      /* L'animation de marche qui suit un Bond devient le saut du Bond
+         (disparition puis réapparition à l'arrivée, kaykit3d.js). */
       const paquetAnimationBase = queueKayKitActionAnimation;
       queueKayKitActionAnimation = function queueKayKitActionAnimationBond(characterId, intent, duration, ...reste) {
         if (intent === "move" && paquetSautAnime !== null && String(characterId) === paquetSautAnime) {
           paquetSautAnime = null;
-          return paquetAnimationBase.call(this, characterId, "jump", Math.max(duration || 0, 620), ...reste);
+          return paquetAnimationBase.call(this, characterId, "jump", duration, ...reste);
         }
         return paquetAnimationBase.call(this, characterId, intent, duration, ...reste);
       };
