@@ -107,7 +107,7 @@
       const nom = String(def.nom || action).toUpperCase().replace(/[<>&"]/g, '');
       return `<article class="ov2-discard-type-card ov2-discard-speciale ${classe}${def.valeur > 1 ? ' is-forte' : ''}" data-discard-speciale="${action}" aria-label="${nom}">
         <small>${nom}</small>
-        <span class="ov2-discard-type-icon" aria-hidden="true">${base ? base.symbol : '◆'}${def.valeur > 1 ? `<em>×${def.valeur}</em>` : ''}</span>
+        <span class="ov2-discard-type-icon" aria-hidden="true">${base ? base.symbol : '◆'}${def.marque ? `<em>${def.marque}</em>` : def.valeur > 1 ? `<em>×${def.valeur}</em>` : ''}</span>
         <b class="ov2-discard-type-count">×${count}</b>
       </article>`;
     }
@@ -156,7 +156,7 @@
         } else if (speciale.def.valeur > 1) {
           const badge = document.createElement('em');
           badge.className = 'ov2-discard-badge';
-          badge.textContent = `×${speciale.def.valeur}`;
+          badge.textContent = speciale.def.marque || `×${speciale.def.valeur}`;
           copie.appendChild(badge);
         }
         strip.appendChild(copie);

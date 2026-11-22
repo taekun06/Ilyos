@@ -977,6 +977,15 @@
         return p; // CPU contre CPU
       }
 
+      /* Réserves du HUD du haut (js/hud-consolidation-v12.js) lues sur la
+         partie EN COURS, et non dans la sauvegarde : celle-ci n'est pas
+         écrite pendant le tour du CPU ni pendant le rejeu de son tour, et la
+         réserve adverse affichée restait périmée (Taekun, 2026-11-21).
+         Lecture seule, sans copie. */
+      window.ILYOS_HUD_JOUEURS = () => (state?.players?.length
+        ? { currentPlayer: state.currentPlayer, players: state.players }
+        : null);
+
       function sanitizeRoomCode(value) {
         return String(value || "")
           .toUpperCase()

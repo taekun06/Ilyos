@@ -4714,6 +4714,11 @@
               if (route) playCharacterMove(visual, route, duration);
               break;
             }
+            case "jump": {
+              const route = depart && target ? [[depart.r, depart.c], [target.r, target.c]] : null;
+              if (route) playCharacterJump(visual, route, duration);
+              break;
+            }
             case "attack":
             case "push":
               playCharacterPush(visual, target, duration);
@@ -13169,8 +13174,12 @@
           if (carries && !visual.crown) attachVisualCrown(visual);
           else if (!carries && visual.crown) detachVisualCrown(visual);
 
-          // Le gardien au repos revient à l'Idle adapté à sa situation.
-          if (visual.animator && !visual.animator.locked && !visual.move && !visual.fall) {
+          // Le gardien au repos revient à l'Idle adapté à sa situation. Assis
+          // sur un trône, il y reste : la pose assise est tenue image par
+          // image (kaykitAppliquerPoseAssise). Le remettre debout à chaque
+          // synchronisation le faisait se lever et se rasseoir en un éclair.
+          if (visual.animator && !visual.animator.locked && !visual.move && !visual.fall
+            && !(visual.assis && visual.animator.state === "assis")) {
             visual.animator.toIdle({ selected: visual.selected, carrying: visual.carrying });
           }
 
@@ -13256,6 +13265,20 @@
           visual.animator.play(locomotion, { fade: 0.08, timeScale });
         }
         emitVisualEvent("characterMoved", { id: visual.id, from: route[0], to: route[route.length - 1], cells });
+      }
+
+      /** Bond : le gardien pivote, disparaît, puis réapparaît sur la case
+       *  d'arrivée à la fin du trajet. C'est le rendu que donnait déjà un
+       *  saut de 2 cases et que Taekun a gardé (2026-11-22) : il vaut
+       *  désormais pour tout déplacement payé par un Bond, même d'une case. */
+      function playCharacterJump(visual, route, duration) {
+        if (ilyosSimulationActive) return;
+        if (!visual || route.length < 2) return;
+        playCharacterMove(visual, route, duration);
+        if (visual.move) {
+          visual.move.eclipse = true;
+          visual.eclipse = true;
+        }
       }
 
       /** Poussée : anticipation, frappe, impact. */
@@ -14034,7 +14057,7 @@
           if (visual.plaque) visual.plaque.rotation.y = -visual.wrapper.rotation.y;
 
           /* --- 1 bis. Pose assise (trône des Balises, rotation.js) ---- */
-          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual));
+          kaykitAppliquerPoseAssise(visual, busy || visual.selected || visual.carrying ? null : kaykitPoseAssise(visual), delta);
 
           /* --- 2. Orientation --------------------------------------- */
           // Une rotation progressive, jamais instantanée : c'est l'anticipation
@@ -14048,6 +14071,12 @@
           }
 
           /* --- 3. Déplacement --------------------------------------- */
+          // Bond : invisible pendant le trajet, visible au départ et à l'arrivée.
+          if (visual.eclipse) {
+            const cache = !!visual.move?.eclipse && now >= visual.move.startedAt;
+            if (visual.wrapper.visible === cache) visual.wrapper.visible = !cache;
+            if (!visual.move?.eclipse) visual.eclipse = false;
+          }
           if (visual.move) {
             const move = visual.move;
             if (now >= move.startedAt) {
@@ -14168,8 +14197,8 @@
               // Modèle animé : plus aucun balancement procédural. L'animation
               // squelette suffit, et la superposer produisait un flottement
               // parasite.
-              model.position.y = visual.baseModelY + settleOffset + (visual.assis?.hauteur || 0);
-              model.position.z = recoilOffset + (visual.assis?.avance || 0);
+              model.position.y = visual.baseModelY + settleOffset + (visual.assisDecalage?.hauteur || 0);
+              model.position.z = recoilOffset + (visual.assisDecalage?.avance || 0);
               model.scale.setScalar(visual.baseModelScale * spawnScale);
             } else {
               // Modèle de secours sans squelette : on conserve l'animation
@@ -14263,10 +14292,26 @@
          Sit_Chair_Pose est figée : rien ne tourne en continu. Le gardien se
          relève de lui-même dès qu'il est occupé ou sélectionné. */
       let kaykitPoseAssise = () => null;
-      function kaykitAppliquerPoseAssise(visual, pose) {
+      /* Fondu de la hauteur d'assise, calé sur le fondu du clip (0,2 s) : sans
+         lui, le gardien était hissé d'un coup sur le trône alors que ses
+         jambes étaient encore droites (il flottait un instant), et retombait
+         d'un coup en se levant. */
+      const KAYKIT_ASSIS_FONDU = .2;
+      function kaykitAssisFondu(visual, cible, delta) {
+        const pas = Math.max(0, Number(delta) || 0) / KAYKIT_ASSIS_FONDU;
+        const t = visual.assisT || 0;
+        visual.assisT = cible > t ? Math.min(cible, t + pas) : Math.max(cible, t - pas);
+        const pose = visual.assisPose;
+        visual.assisDecalage = pose && visual.assisT > 0
+          ? { hauteur: pose.hauteur * visual.assisT, avance: pose.avance * visual.assisT }
+          : null;
+      }
+      function kaykitAppliquerPoseAssise(visual, pose, delta = 0) {
         const anim = visual.animator;
         const clip = pose ? anim?.clipIndex?.get("Sit_Chair_Pose") : null;
         if (pose && clip) {
+          visual.assisPose = pose;
+          kaykitAssisFondu(visual, 1, delta);
           if (anim.state !== "assis") {
             const action = anim._action(clip);
             action.reset();
@@ -14282,6 +14327,9 @@
           visual.facingTarget = pose.facing;
           return;
         }
+        // En se levant (sélection, départ, poussée), il redescend du trône en
+        // même temps que ses jambes se déplient.
+        if (visual.assisT) kaykitAssisFondu(visual, 0, delta);
         if (!visual.assis && anim?.state !== "assis") return;
         visual.assis = null;
         // Encore figé dans la pose (plus sur un trône) : retour au repos.

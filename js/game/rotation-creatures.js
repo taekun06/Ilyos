@@ -11,6 +11,8 @@
          — Chaque éclosion fait apparaître un nouvel œuf (compte 2) au
            hasard sur une case libre de la croix du sanctuaire (ligne et
            colonne entières, hors balises).
+         — Jamais plus de 6 créatures en jeu : un œuf mûr attend alors
+           qu'une créature tombe.
          — Un œuf se pousse comme une couronne au sol, mais il flotte : il
            survole le vide sans tomber et s'arrête au bord du plateau.
          — Une poussée de force 3 ou plus tue la créature, même sans chute.
@@ -43,6 +45,9 @@
       /* Quand un œuf éclot, un nouvel œuf apparaît sur une case libre de la
          croix du sanctuaire, avec ce compte à rebours. */
       const CREATURES_COMPTE_RELEVE = 2;
+      /* Jamais plus de 6 créatures sur le plateau (Taekun, 2026-11-21) :
+         au-delà, un œuf mûr attend qu'une créature tombe pour éclore. */
+      const CREATURES_MAX = 6;
 
       function creaturesActives(source = state) {
         /* Les œufs (et les créatures qui en sortent) : couche Créatures avec
@@ -488,12 +493,15 @@
         if (!etat) return false;
         let eclos = false;
         const avant = etat.oeufs.length;
+        let vivantes = creaturesVivantes().length;
         etat.oeufs = etat.oeufs.filter(oeuf => {
           if (!oeufMur(oeuf)) return true;
+          if (vivantes >= CREATURES_MAX) return true; // plateau plein : il attend
           const naissance = creaturesCaseNaissance(oeuf);
           if (!naissance) return true; // case occupée : il attend
           const [r, c] = naissance;
           state.characters.push({ id: `creature-${etat.prochainId++}`, player: -1, creature: etat.espece, r, c });
+          vivantes++;
           animateCellPulse(r, c, "crown-burst");
           showToast(`Un œuf éclot : ${etat.espece === "vase" ? "une Vase" : "un " + CREATURES[etat.espece].nom} apparaît !`);
           eclos = true;

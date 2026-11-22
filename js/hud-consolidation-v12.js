@@ -204,7 +204,11 @@
 
   function syncReserveBadges(){
     ensureReserveBadges();
-    const snapshot = readSavedGameState();
+    // La partie vivante d'abord (tour du CPU, rejeu de son tour, en ligne) ;
+    // la sauvegarde seulement si le jeu ne répond pas.
+    let snapshot = null;
+    try { snapshot = window.ILYOS_HUD_JOUEURS?.() || null; } catch (_) { snapshot = null; }
+    if (!snapshot) snapshot = readSavedGameState();
     const players = snapshot?.players;
     if (!Array.isArray(players) || !players.length) {
       byId('ov2LeftReserve')?.classList.toggle('ov2-off', true);
