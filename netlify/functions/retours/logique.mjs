@@ -188,7 +188,7 @@ export async function traiter(demande, store, { ip = "", code = "", prevenir = n
         for (const cle of await store.list("r/")) {
           const r = await store.get(cle);
           if (r && r.type === "victoire" && r.partie) {
-            victoires.push({ id: r.id, type: "victoire", texte: r.texte, recu: r.recu,
+            victoires.push({ id: r.id, type: "victoire", texte: r.texte, recu: r.recu, partie: true,
               analysee: !!r.analysee, contexte: { version: (r.contexte || {}).version || "" } });
           }
         }

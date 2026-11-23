@@ -72,6 +72,7 @@ assert.equal((await store.get(`r/${victoire.id}`)).lu, true);
 r = await traiter({ action: "victoires" }, store, opts({ code: "" }));
 assert.equal(r.statut, 200);
 assert.deepEqual(r.corps.retours.map(x => x.type), ["victoire"]);
+assert.equal(r.corps.retours[0].partie, true); // lu par recuperer-victoires.mjs
 assert.equal(r.corps.retours[0].contact, undefined);
 assert.equal(r.corps.erreurs, undefined);
 r = await traiter({ action: "victoire-partie", id: victoire.id }, store, opts({ code: "" }));
