@@ -76,6 +76,25 @@
         pousseeLongue: 4,
         // Gravité d'une expulsion selon la force requise (1, 2, 3+).
         graviteParForce: [1, 0.75, 0.6],
+        /* COÛT DU TRAJET (Taekun, 25/11) : tuer un gardien coûte aussi les
+           déplacements pour venir pousser, pas seulement la force. Facteur de
+           gravité selon les déplacements nécessaires (0, 1, 2, 3, 4+) ; un
+           pousseur déjà en place ou apparu sur une île garde 1. [] = ancien
+           calcul. */
+        graviteParTrajet: [1, 1, 0.9, 0.8, 0.7],
+        /* VALEUR CONTRE COÛT : un gardien éjectable coûte gardienExpose,
+           multiplié par (1 + exposeRole × rôle). Rôle : 1 s'il tient une case
+           d'un village adverse, 0,5 s'il garde une couronne au sol ou relaie
+           un porteur. Un gardien précieux et facile à tuer se protège en
+           priorité ; un gardien inutile compte peu. 0 = ancien calcul. */
+        exposeRole: 1,
+        /* PLACE D'INTERVENTION (Taekun, 25/11) : pouvoir encore poser une île
+           à 2 cases ou moins d'un village adverse, pour y faire apparaître un
+           gardien quand un porteur vient valider. Valeur par village, selon
+           le nombre de poses légales (0, 1, 2, 3+), pondérée par la menace
+           sur ce village ; le miroir compte contre moi. 0 = ignorée. */
+        placeIntervention: 800,
+        placeInterventionTable: [0, 0.6, 0.85, 1],
         /* Poussée longue prêtée à l'adversaire selon sa PIOCHE probable
            (plannerGraviteExpulsion). 0 = réserve seule, 1 = gardiens non
            porteurs, 2 = porteurs compris. Mesure REPRODUCTIBLE (départs
@@ -502,9 +521,11 @@
          recherches par nœud deviennent une. */
       function plannerPorteeReunie(ennemis, budgetMove) {
         const resultat = new Set();
+        const distances = new Map();
+        // Coût de marche de chaque case atteinte (plannerTrajetExpulsion).
+        resultat.couts = distances;
         if (!ennemis.length) return resultat;
         const occupees = new Set(state.characters.map(ch => key(ch.r, ch.c)));
-        const distances = new Map();
         const files = [[]];
         for (const e of ennemis) {
           distances.set(key(e.r, e.c), 0);
@@ -580,7 +601,12 @@
       function plannerGraviteExpulsion(playerId, r, c, pourGardien = false) {
         const table = PLAN_POIDS.graviteParForce || [1];
         const force = plannerForceExpulsion(playerId, r, c);
-        if (force) return table[Math.min(force, table.length) - 1];
+        if (force) {
+          const trajets = PLAN_POIDS.graviteParTrajet || [];
+          const facteur = trajets.length
+            ? trajets[Math.min(plannerDernierTrajetExpulsion, trajets.length - 1)] : 1;
+          return table[Math.min(force, table.length) - 1] * facteur;
+        }
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
         const enReserve = (state.players[adverse.id] && state.players[adverse.id].stash || {}).PUSH || 0;
@@ -649,29 +675,45 @@
       const plannerPiocheCache = new Map();
       function plannerPiocheProchaine(joueurId) {
         const joueur = state.players[joueurId] || {};
+        /* Cartes du marché (mode Rotation, rotation-paquet.js) : Élan,
+           Bélier, Arcane valent 2 actions de leur type, Bond 1 Déplacer.
+           Les ignorer faisait croire l'adversaire bien plus faible qu'il
+           n'était (parties du 21/11 : ripostes prévues -5 400, constatées
+           -11 400). `n` porte la VALEUR par type, `cartes` le nombre de
+           cartes tirables, `nb` le nombre de cartes par type (pour les
+           probabilités de tirage). */
         const compter = cartes => {
-          const n = { MOVE: 0, PUSH: 0, MAGIC: 0 };
-          (cartes || []).forEach(c => { if (n[c.action] !== undefined) n[c.action]++; });
+          const n = { MOVE: 0, PUSH: 0, MAGIC: 0, cartes: 0, nb: { MOVE: 0, PUSH: 0, MAGIC: 0 } };
+          (cartes || []).forEach(c => {
+            const def = PLAN_TYPES_CARTES.includes(c.action) ? null : PAQUET_CARTES[c.action];
+            const type = def ? def.type : c.action;
+            if (n[type] === undefined) return;
+            n[type] += def ? def.valeur || 1 : 1;
+            n.nb[type]++;
+            n.cartes++;
+          });
           return n;
         };
         const pioche = compter(joueur.deck), defausse = compter(joueur.discard);
-        const taille = PLAN_TYPES_CARTES.reduce((s, t) => s + pioche[t], 0);
+        const taille = pioche.cartes;
         // Taille de la main : 5 en classique, de 5 à 8 en mode personnalisé.
         const MAIN = cartesPiocheesParTour();
-        const cle = MAIN + ":" + PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t]).join("|");
+        const cle = MAIN + ":" + PLAN_TYPES_CARTES.map(t => pioche[t] + "," + defausse[t] + "," + pioche.nb[t] + "," + defausse.nb[t]).join("|");
         const connu = plannerPiocheCache.get(cle);
         if (connu) return connu;
 
-        const sures = taille >= MAIN ? { MOVE: 0, PUSH: 0, MAGIC: 0 } : pioche;
+        const vide = { MOVE: 0, PUSH: 0, MAGIC: 0, cartes: 0, nb: { MOVE: 0, PUSH: 0, MAGIC: 0 } };
+        const sures = taille >= MAIN ? vide : pioche;
         const tas = taille >= MAIN ? pioche : defausse;
-        const tasTotal = PLAN_TYPES_CARTES.reduce((s, t) => s + tas[t], 0);
+        const tasTotal = tas.cartes;
         const tirees = Math.min(taille >= MAIN ? MAIN : MAIN - taille, tasTotal);
 
-        // Main plausible : sûres + espérance du tirage, arrondie au plus fort reste.
-        const main = { ...sures };
+        // Main plausible : sûres + espérance du tirage (en valeur), arrondie au plus fort reste.
+        const main = { MOVE: sures.MOVE, PUSH: sures.PUSH, MAGIC: sures.MAGIC };
         const esperance = PLAN_TYPES_CARTES.map(t => [t, tasTotal ? tirees * tas[t] / tasTotal : 0]);
         esperance.forEach(([t, e]) => { main[t] += Math.floor(e); });
-        let reste = tirees - esperance.reduce((s, [, e]) => s + Math.floor(e), 0);
+        let reste = Math.round(esperance.reduce((s, [, e]) => s + e, 0))
+          - esperance.reduce((s, [, e]) => s + Math.floor(e), 0);
         esperance.sort((a, b) => (b[1] % 1) - (a[1] % 1))
           .forEach(([t]) => { if (reste > 0) { main[t]++; reste--; } });
 
@@ -685,14 +727,14 @@
         const auMoinsPush = [];
         for (let n = 0; n <= MAIN; n++) {
           let p = 0;
-          for (let k = Math.max(0, n - sures.PUSH); k <= Math.min(tas.PUSH, tirees); k++) {
-            p += comb(tas.PUSH, k) * comb(tasTotal - tas.PUSH, tirees - k) / comb(tasTotal, tirees);
+          for (let k = Math.max(0, n - sures.nb.PUSH); k <= Math.min(tas.nb.PUSH, tirees); k++) {
+            p += comb(tas.nb.PUSH, k) * comb(tasTotal - tas.nb.PUSH, tirees - k) / comb(tasTotal, tirees);
           }
-          auMoinsPush.push(n <= sures.PUSH ? 1 : tasTotal ? p : 0);
+          auMoinsPush.push(n <= sures.nb.PUSH ? 1 : tasTotal ? p : 0);
         }
         // P(au moins une MAGIE) : sûre, ou au moins une tirée.
-        const auMoinsMagie = sures.MAGIC > 0 ? 1
-          : tasTotal && tas.MAGIC > 0 ? 1 - comb(tasTotal - tas.MAGIC, tirees) / comb(tasTotal, tirees) : 0;
+        const auMoinsMagie = sures.nb.MAGIC > 0 ? 1
+          : tasTotal && tas.nb.MAGIC > 0 ? 1 - comb(tasTotal - tas.nb.MAGIC, tirees) / comb(tasTotal, tirees) : 0;
         const resultat = { main, auMoinsPush, auMoinsMagie };
         if (plannerPiocheCache.size > 256) plannerPiocheCache.clear();
         plannerPiocheCache.set(cle, resultat);
@@ -775,6 +817,8 @@
 
       /** Plus petite force de poussée avec laquelle un gardien adverse peut
        *  expulser ce qui se tient sur (r, c) à son prochain tour ; 0 si aucune. */
+      // Déplacements du pousseur pour la dernière expulsion trouvée.
+      let plannerDernierTrajetExpulsion = 0;
       function plannerForceExpulsion(playerId, r, c, budget) {
         const adverse = plannerAdversaire(playerId);
         if (!adverse) return 0;
@@ -802,18 +846,27 @@
         const portees = (budget && budget.portees) || plannerPorteesAdverses(playerId, budgetMove);
 
         let meilleure = 0;
+        let trajet = 0;
         for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
           const force = plannerVideAPortee(r, c, dr, dc, forceCertaine);
-          if (!force || (meilleure && force >= meilleure)) continue;
+          if (!force || (meilleure && force > meilleure)) continue;
           // Case d'où pousser, du côté opposé au vide.
           const [posteR, posteC, pousseurEnPlace] = plannerPosteDerriereBloc(playerId, r, c, dr, dc);
-          if (pousseurEnPlace) { meilleure = force; continue; }
+          if (pousseurEnPlace) {
+            if (!meilleure || force < meilleure || trajet > 0) { meilleure = force; trajet = 0; }
+            continue;
+          }
           if (!inside(posteR, posteC) || !isLand(posteR, posteC)) continue;
           if (characterAt(posteR, posteC)) continue;
           // Sinon, un gardien adverse peut-il rejoindre ce poste à temps ?
           const postePorte = key(posteR, posteC);
-          if (portees.some(portee => portee.has(postePorte))) meilleure = force;
+          for (const portee of portees) {
+            if (!portee.has(postePorte)) continue;
+            const pas = portee.couts ? portee.couts.get(postePorte) ?? 1 : 1;
+            if (!meilleure || force < meilleure || pas < trajet) { meilleure = force; trajet = pas; }
+          }
         }
+        plannerDernierTrajetExpulsion = trajet;
         return meilleure;
       }
 
@@ -1165,6 +1218,59 @@
           plannerCachePoseImpossible.set(cle, reponse);
         }
         return reponse;
+      }
+
+      /* PLACE D'INTERVENTION. Nombre de poses d'île légales (plafonné à
+         `plafond`) dont une case tombe à 2 cases ou moins d'une case du
+         village : c'est la place qui permet de faire apparaître un gardien
+         pour bloquer ou éjecter un porteur venu valider. Partie du 21/11
+         (n°2) : l'IA n'avait plus AUCUNE pose possible près du village humain
+         dès le tour 15, l'humain en gardait 5 à 10 près des siens ; ses deux
+         points tombent à ces moments-là. Ne dépend que du terrain et du
+         stock de formes : mis en cache. */
+      const plannerCachePlaceIntervention = new Map();
+      function plannerPlaceIntervention(joueurId, casesVillage, plafond = 3) {
+        /* Pas de condition sur canCreateGuardian : au plafond de gardiens,
+           l'île posée sert encore de passage aux gardiens présents, et
+           l'exiger aurait payé l'IA pour perdre des gardiens. */
+        if (islandLimitReachedForPlayer(joueurId)) return 0;
+        const limite = shapeLimitPerOwner();
+        const cle = plannerEmpreinteTerrain() + ":" + joueurId + ":" + limite + ":"
+          + state.islands.filter(i => i.owner === joueurId).map(i => i.shapeKey).sort().join(",")
+          + ":" + casesVillage.map(([r, c]) => r + "," + c).join("|") + ":" + plafond;
+        const connu = plannerCacheActif(8) ? plannerCachePlaceIntervention.get(cle) : undefined;
+        if (connu !== undefined) return connu;
+        const proche = (r, c) => casesVillage.some(([vr, vc]) => Math.abs(vr - r) + Math.abs(vc - c) <= 2);
+        const rMin = Math.min(...casesVillage.map(([r]) => r)), rMax = Math.max(...casesVillage.map(([r]) => r));
+        const cMin = Math.min(...casesVillage.map(([, c]) => c)), cMax = Math.max(...casesVillage.map(([, c]) => c));
+        const vues = new Set();
+        let n = 0;
+        for (const [shapeKey, shape] of Object.entries(SHAPES)) {
+          if (n >= plafond) break;
+          if (limite && shapeUsageCountForOwner(joueurId, shapeKey) >= limite) continue;
+          const depart = normalizeShape(shape.cells);
+          const orientations = shape.flippable ? [depart, normalizeShape(depart.map(([r, c]) => [r, -c]))] : [depart];
+          for (const base of orientations) {
+            let tournee = base;
+            for (let rot = 0; rot < 4 && n < plafond; rot++, tournee = normalizeShape(tournee.map(([r, c]) => [c, -r]))) {
+              const h = Math.max(...tournee.map(([r]) => r)), w = Math.max(...tournee.map(([, c]) => c));
+              for (let r = Math.max(0, rMin - 2 - h); r <= Math.min(GRID - 1 - h, rMax + 2) && n < plafond; r++) {
+                for (let c = Math.max(0, cMin - 2 - w); c <= Math.min(GRID - 1 - w, cMax + 2) && n < plafond; c++) {
+                  const cases = tournee.map(([dr, dc]) => [r + dr, c + dc]);
+                  if (!cases.some(([cr, cc]) => proche(cr, cc))) continue;
+                  if (cases.some(([cr, cc]) => isLand(cr, cc))) continue;
+                  const signature = cases.map(([cr, cc]) => cr + "," + cc).sort().join("|");
+                  if (vues.has(signature)) continue;
+                  vues.add(signature);
+                  n++;
+                }
+              }
+            }
+          }
+        }
+        if (plannerCachePlaceIntervention.size >= 256) plannerCachePlaceIntervention.clear();
+        plannerCachePlaceIntervention.set(cle, n);
+        return n;
       }
 
       /** Ce camp pourra-t-il encore porter une couronne un jour ? */
@@ -1601,7 +1707,15 @@
              coûtait RIEN. Or le perdre coûte une pose et un tempo pour le
              remplacer, et l'adversaire l'éjecte pour une seule carte. Le
              porteur a déjà son propre terme (porteurExpose). */
-          if (!characterCarriesCrown(g.id)) gardiensExposes += gravite;
+          if (!characterCarriesCrown(g.id)) {
+            let role = 0;
+            if (PLAN_POIDS.exposeRole) {
+              if (villagesAdverses.some(({ cases }) => cases.some(([vr, vc]) => vr === g.r && vc === g.c))) role = 1;
+              else if (couronnesLibres.some(a => Math.abs(a.r - g.r) + Math.abs(a.c - g.c) <= 1)
+                || porteursAmis.some(pg => Math.abs(pg.r - g.r) + Math.abs(pg.c - g.c) === 1)) role = 0.5;
+            }
+            gardiensExposes += gravite * (1 + (PLAN_POIDS.exposeRole || 0) * role);
+          }
         }
         ajouter("gardiensExposes", -gardiensExposes * PLAN_POIDS.gardienExpose,
           `${gardiensExposes.toFixed(2)} gardien(s) éjectable(s), pondérés par la force requise`);
@@ -1666,6 +1780,29 @@
             ajouter("presenceDefensive",
               menace * PLAN_POIDS.utiliteDefense * plannerProximite(d), `distance ${d}`);
           }
+        }
+
+        /* PLACE D'INTERVENTION (voir plannerPlaceIntervention) : pouvoir
+           encore poser une île près de chaque village adverse, et en priver
+           l'adversaire près des miens. Pondéré par la menace sur ce village,
+           avec un fond de 0,3 : la place se perd bien avant qu'un porteur
+           approche, et ne se reprend plus. */
+        if (adverse && PLAN_POIDS.placeIntervention) {
+          const table = PLAN_POIDS.placeInterventionTable || [0, 1];
+          const valeurPlace = n => table[Math.min(n, table.length - 1)];
+          let place = 0;
+          const notes = [];
+          for (const { cases, menace } of villagesAdverses) {
+            const n = plannerPlaceIntervention(playerId, cases);
+            place += PLAN_POIDS.placeIntervention * Math.max(0.3, menace) * valeurPlace(n);
+            notes.push("moi " + n);
+          }
+          for (const { cases, menace } of menacesParVillage(moi, marqueMoi, lieu => lieu.dm)) {
+            const n = plannerPlaceIntervention(adverse.id, cases);
+            place -= PLAN_POIDS.placeIntervention * Math.max(0.3, menace) * valeurPlace(n);
+            notes.push("lui " + n);
+          }
+          ajouter("placeIntervention", place, notes.join(" / "));
         }
 
         /* RESSOURCES : faibles, et à potentiel plafonné. Une carte doit être

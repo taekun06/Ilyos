@@ -39,13 +39,21 @@ aussi `/api/retours` en mémoire ; code de la page privée : `dev`.
 
 Chaque partie est rangée compressée (≈ 30 Ko au lieu de ≈ 0,6 Mo).
 
+Les victoires contre l'Expert se lisent **sans code** (lecture seule : rien
+que les coups de la partie, jamais les bugs, avis, contacts ni erreurs, qui
+restent derrière `RETOURS_CODE`) :
+
 ```
-ILYOS_RETOURS_CODE=<code> node scripts/recuperer-victoires.mjs --marquer
+node scripts/recuperer-victoires.mjs retours-victoires
 npm start
 node scripts/analyser-defaite.js retours-victoires/ilyos-defaite-<id>.json
 ```
 
-`recuperer-victoires.mjs` ne prend que les victoires pas encore analysées et,
+Sans code, le script reprend toutes les victoires et saute celles déjà
+présentes dans le dossier : dans une session Claude, utiliser un dossier qui
+dure (`/mnt/project-files/analyse-defaites/victoires/`).
+
+Avec le code (`ILYOS_RETOURS_CODE=<code> … --marquer`), `recuperer-victoires.mjs` ne prend que les victoires pas encore analysées et,
 avec `--marquer`, les marque sur le serveur : la session suivante ne reprend
 que les nouvelles. Dans une session Claude, donner le code par une variable
 d'environnement secrète de l'environnement (`ILYOS_RETOURS_CODE`) plutôt que

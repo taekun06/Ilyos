@@ -30,16 +30,16 @@ const assert = require('node:assert/strict');
 
     const r = await page.evaluate(j => window.ILYOS_SELFPLAY.analyser(j, { graine: 1, grille: 11 }), position.etat);
     const [er, ec] = position.attendu.ejecterPorteur;
-    /* Éjecter = pousser (1,0) depuis (1,1), vers le vide de l'ouest. On suit
-       la case de chaque pousseur au fil du plan : l'ancienne erreur poussait
-       aussi (1,0), mais depuis le coin (0,0), vers le bas — sans éjecter.
-       Voler d'abord puis éjecter est permis (et meilleur : −460, 02/10). */
-    const cases = {};
-    const ejecte = r.detail.some(a => {
-      if (a.type === 'MOVE') cases[a.charId] = [a.r, a.c];
-      return a.type === 'PUSH' && a.r === er && a.c === ec
-        && cases[a.pusherId] && cases[a.pusherId][0] === er && cases[a.pusherId][1] === ec + 1;
-    });
+    /* Le banc juge le RÉSULTAT : à la fin du plan, le gardien qui portait la
+       couronne en (1,0) a quitté le plateau. Jusqu'au 25/11 il exigeait aussi
+       la tactique (pousser depuis (1,1), vers l'ouest) ; avec la place
+       d'intervention, l'Expert vole depuis (2,0) puis éjecte de là, force 2 —
+       même issue. Pousser (1,0) depuis le coin sans éjecter reste refusé. */
+    const avant = JSON.parse(position.etat).characters.find(ch => ch.r === er && ch.c === ec);
+    const fin = await page.evaluate(([j, plan]) => window.ILYOS_SELFPLAY.jouer(j, plan, { apercu: true }), [position.etat, r.detail]);
+    assert.ok(!fin.erreur, `plan injouable : ${fin.erreur}`);
+    const etatFin = typeof fin.etat === 'string' ? JSON.parse(fin.etat) : fin.etat;
+    const ejecte = !!avant && !etatFin.characters.some(ch => ch.id === avant.id);
     const robuste = r.anticipation && r.anticipation.noteRobuste;
     console.log(`plan : ${r.detail.map(a => a.type).join(' ')} · après riposte ${robuste}`);
     assert.ok(ejecte, 'le porteur adossé au vide doit être éjecté');

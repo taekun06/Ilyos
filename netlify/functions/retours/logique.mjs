@@ -16,6 +16,10 @@
  *   l/<ip>/<heure> compteur anti-abus
  * Lecture (« lister », « lire », « partie », « supprimer ») : réservée au code
  * secret RETOURS_CODE.
+ * Lecture publique, sans code (« victoires », « victoire-partie ») : SEULEMENT
+ * les parties gagnées contre le CPU Expert (des coups de jeu, ni texte libre ni
+ * contact), en lecture seule, pour que scripts/recuperer-victoires.mjs puisse
+ * les reprendre et améliorer l'IA. Bugs, avis et erreurs restent sous code.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
@@ -29,7 +33,7 @@ const TEXTE_MAX = 3000;
 const CONTACT_MAX = 120;
 const PARTIE_MAX = 3 * 1024 * 1024;   // octets de JSON
 const PILE_MAX = 4000;
-const LIMITES = { signaler: 12, victoire: 12, erreur: 40 }; // par appareil et par heure
+const LIMITES = { signaler: 12, victoire: 12, erreur: 40, lecture: 300 }; // par appareil et par heure
 const TYPES = new Set(["bug", "avis"]);
 
 const erreur = (statut, code) => ({ statut, corps: { ok: false, erreur: code } });
@@ -173,6 +177,30 @@ export async function traiter(demande, store, { ip = "", code = "", prevenir = n
         });
       }
       return reussite({});
+    }
+
+    case "victoires":
+    case "victoire-partie": {
+      const refus = await limiter(store, ip, "lecture", maintenant);
+      if (refus) return refus;
+      if (demande.action === "victoires") {
+        const victoires = [];
+        for (const cle of await store.list("r/")) {
+          const r = await store.get(cle);
+          if (r && r.type === "victoire" && r.partie) {
+            victoires.push({ id: r.id, type: "victoire", texte: r.texte, recu: r.recu, partie: true,
+              analysee: !!r.analysee, contexte: { version: (r.contexte || {}).version || "" } });
+          }
+        }
+        victoires.sort((a, b) => b.recu - a.recu);
+        return reussite({ retours: victoires });
+      }
+      const id = typeof demande.id === "string" && /^[\w-]{6,80}$/.test(demande.id) ? demande.id : null;
+      if (!id) return erreur(400, "id");
+      const r = await store.get(`r/${id}`);
+      if (!r || r.type !== "victoire") return erreur(404, "absent");
+      const partie = deballer(await store.get(`p/${id}`));
+      return partie ? reussite({ partie }) : erreur(404, "absent");
     }
 
     case "lister":

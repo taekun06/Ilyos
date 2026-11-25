@@ -1,7 +1,11 @@
 /* Récupère les parties envoyées par les joueurs (/api/retours) pour les
    analyser avec scripts/analyser-defaite.js et améliorer le CPU Expert.
 
-     ILYOS_RETOURS_CODE=… node scripts/recuperer-victoires.mjs [dossier] [options]
+     node scripts/recuperer-victoires.mjs [dossier] [options]
+
+   Sans code : les victoires contre l'Expert sont lisibles par tous (lecture
+   seule) ; celles déjà présentes dans le dossier ne sont pas retéléchargées.
+   Avec ILYOS_RETOURS_CODE (code de la page privée) : aussi --marquer et --bugs.
 
    Par défaut : les victoires contre l'Expert pas encore analysées, rangées
    dans ./retours-victoires/ (ignoré par git), une par fichier
@@ -20,7 +24,10 @@ const option = nom => args.includes(`--${nom}`);
 const url = (args.find(a => a.startsWith("--url=")) || "").slice(6);
 const dossier = path.resolve(args.find(a => !a.startsWith("--")) || "retours-victoires");
 const code = process.env.ILYOS_RETOURS_CODE;
-if (!code) { console.error("Il manque ILYOS_RETOURS_CODE (le code de la page privée)."); process.exit(1); }
+if (!code && (option("marquer") || option("bugs"))) {
+  console.error("--marquer et --bugs demandent ILYOS_RETOURS_CODE (le code de la page privée).");
+  process.exit(1);
+}
 
 const URLS = url ? [url] : [
   "https://batbat.netlify.app/api/retours",
@@ -34,7 +41,7 @@ async function appeler(corps) {
         method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" },
         body: JSON.stringify({ ...corps, code })
       });
-      if (r.status === 404 && corps.action === "lister") continue;
+      if (r.status === 404 && (corps.action === "lister" || corps.action === "victoires")) continue;
       const donnees = await r.json().catch(() => null);
       if (donnees) return donnees;
     } catch (_) { /* adresse suivante */ }
@@ -42,11 +49,11 @@ async function appeler(corps) {
   return { ok: false, erreur: "indisponible" };
 }
 
-const liste = await appeler({ action: "lister" });
+const liste = await appeler({ action: code ? "lister" : "victoires" });
 if (!liste.ok) { console.error(`Lecture impossible : ${liste.erreur}`); process.exit(1); }
 const voulus = liste.retours.filter(r => r.partie
   && (r.type === "victoire" || (option("bugs") && r.type === "bug"))
-  && (option("toutes") || !r.analysee));
+  && (option("toutes") || !code || !r.analysee));
 fs.mkdirSync(dossier, { recursive: true });
 const indexFichier = path.join(dossier, "index.json");
 const index = fs.existsSync(indexFichier) ? JSON.parse(fs.readFileSync(indexFichier, "utf8")) : {};
@@ -56,7 +63,7 @@ for (const r of voulus) {
   const nom = `ilyos-${r.type === "victoire" ? "defaite" : "bug"}-${r.id}.json`;
   const fichier = path.join(dossier, nom);
   if (!fs.existsSync(fichier)) {
-    const p = await appeler({ action: "partie", id: r.id });
+    const p = await appeler({ action: code ? "partie" : "victoire-partie", id: r.id });
     if (!p.ok) { console.warn(`  ${r.id} : partie absente (${p.erreur})`); continue; }
     fs.writeFileSync(fichier, JSON.stringify(p.partie));
     nouveaux++;

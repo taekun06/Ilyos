@@ -68,6 +68,19 @@ assert.ok(typeof (await store.get(`p/${victoire.id}`)).gz === "string");
 await traiter({ action: "marquer", id: victoire.id, analysee: true, code: "secret" }, store, opts());
 assert.equal((await store.get(`r/${victoire.id}`)).analysee, true);
 assert.equal((await store.get(`r/${victoire.id}`)).lu, true);
+// Lecture publique : seulement les victoires, sans contact ni texte libre
+r = await traiter({ action: "victoires" }, store, opts({ code: "" }));
+assert.equal(r.statut, 200);
+assert.deepEqual(r.corps.retours.map(x => x.type), ["victoire"]);
+assert.equal(r.corps.retours[0].partie, true); // lu par recuperer-victoires.mjs
+assert.equal(r.corps.retours[0].contact, undefined);
+assert.equal(r.corps.erreurs, undefined);
+r = await traiter({ action: "victoire-partie", id: victoire.id }, store, opts({ code: "" }));
+assert.equal(r.corps.partie.type, "defaite-expert");
+const bug = [...memoire.keys()].find(k => k.startsWith("r/") && (JSON.parse(memoire.get(k)).partie) && JSON.parse(memoire.get(k)).type === "avis");
+assert.equal((await traiter({ action: "victoire-partie", id: bug.slice(2) }, store, opts())).statut, 404);
+assert.equal((await traiter({ action: "marquer", id: victoire.id, analysee: false }, store, opts())).statut, 401);
+assert.equal((await traiter({ action: "supprimer", id: victoire.id }, store, opts())).statut, 401);
 await traiter({ action: "supprimer", id: victoire.id, code: "secret" }, store, opts());
 assert.equal(await store.get(`p/${victoire.id}`), null);
 
