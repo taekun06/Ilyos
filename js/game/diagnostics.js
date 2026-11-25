@@ -2106,7 +2106,21 @@
         }
       }
 
+      /* Place d'intervention de `joueur` près de chaque village adverse
+         (plannerPlaceIntervention), sans plafond : outil de mesure. */
+      function selfplayPlace(json, joueur, plafond = 999) {
+        return withSimulatedState(JSON.parse(json), () => avecGrilleTerre(() => {
+          const adverse = plannerAdversaire(joueur);
+          if (!adverse) return [];
+          return villagesForPlayer(state.players[adverse.id]).map(v => {
+            const cases = cornerCrownCellsForVillage(v);
+            return { village: [v.r, v.c], poses: plannerPlaceIntervention(joueur, cases, plafond) };
+          });
+        }));
+      }
+
       window.ILYOS_SELFPLAY = {
+        place: selfplayPlace,
         exposes: selfplayExposes,
         evaluer: selfplayEvaluer,
         departPerso: selfplayDepartPerso,
