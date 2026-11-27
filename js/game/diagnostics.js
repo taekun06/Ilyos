@@ -60,7 +60,7 @@
         if (joueurs.length === 4) {
           const ia = joueurs.map((j, i) => j.isAI ? i : null).filter(i => i !== null).join("");
           fixer("teamSeatsSelect", ({ "13": "ai24", "123": "ai234" })[ia] || "none");
-          fixer("teamVillagesSelect", (joueurs[2]?.villages || []).length > 1 ? "team" : "solo");
+          fixer("teamVillagesSelect", (joueurs[2]?.villages || []).length > 1 ? (partie.tourEquipe ? "teamSimul" : "team") : "solo");
         }
         fixer("boardSizeSelect", GRID);
         fixer("startingBoardSelect", partie.startingBoardMode);

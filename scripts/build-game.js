@@ -53,6 +53,9 @@ const fragmentNames = [
   // But Effondrement : enveloppe le passage de tour, les chutes, le HUD,
   // l'évaluation et la sync 3D après les autres fragments de la Rotation.
   'rotation-effondrement.js',
+  // 2 contre 2, tour d'équipe simultané (essai) : enveloppe beginTurn,
+  // endTurn, le passage de tour et renderControls après tous les modes.
+  'equipe-simul.js',
   // Moteur/scénario historique « La Première Ascension ».
   'tutorial.js',
   // Nouvelle première découverte. Réutilise le moteur ci-dessus et conserve
