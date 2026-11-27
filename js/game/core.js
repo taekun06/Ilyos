@@ -938,6 +938,7 @@
             <select id="teamVillagesSelect">
               <option value="solo" selected>Un village par joueur</option>
               <option value="team">Diagonale partagée par l’équipe</option>
+              <option value="teamSimul">Diagonale partagée · tour d’équipe simultané (essai)</option>
             </select>
           </label>
         `;
@@ -3930,7 +3931,10 @@
           : ({ ai24: [1, 3], ai234: [1, 2, 3] })[document.getElementById("teamSeatsSelect")?.value] || [];
         const estIA = i => (soloMode && i === 1) || siegesIA.includes(i);
         siegesIA.forEach(i => { if (names[i] === `JOUEUR ${i + 1}`) names[i] = `CPU ${i + 1}`; });
-        const villagesEquipe = teamMode && document.getElementById("teamVillagesSelect")?.value === "team";
+        const choixVillages = document.getElementById("teamVillagesSelect")?.value || "solo";
+        const villagesEquipe = teamMode && (choixVillages === "team" || choixVillages === "teamSimul");
+        // Essai : les deux coéquipiers jouent leur tour ensemble (equipe-simul.js).
+        const tourEquipe = villagesEquipe && choixVillages === "teamSimul";
         const villageAssignments = villagesEquipe
           ? [0, 1, 2, 3].map(i => i < 2 ? getVillageAssignments(2)[i] : [...getVillageAssignments(2)[i - 2]].reverse())
           : getVillageAssignments(count);
@@ -3998,6 +4002,7 @@
           // Règles optionnelles : jamais activées en classique. Le duel
           // symétrique peut les personnaliser via confirmSymmetricSetup().
           rules: { allowDissolve: false, islandLimitPerPlayer: 0, gardiensPartages: villagesEquipe },
+          tourEquipe,
           islandPlacedThisTurn: false,
           centerCrownTakenThisTurn: false,
           couronnesEnAttente: [],
